@@ -162,3 +162,13 @@ C3 preview still failed on iPhone after 256bf88. Root cause: the `<audio>` eleme
 - Added an `error` state surfaced in a `role="alert"` `aria-live="assertive"` span under the button, set on HTTP error / decode error (`onerror`) / `play()` rejection / fetch failure. This makes the next iPhone test diagnostic (Kade can read the on-screen/VoiceOver message) instead of a silent "didn't work" — since there's no console access on her phone.
 
 Kade to retest on iPhone: pick a voice -> Preview. If it plays, done; if not, tell me the red error text that now appears.
+
+---
+
+## Patch P5 — voice-preview 401 fix (the actual root cause) (June 29 2026)
+
+P4's visible error readout paid off immediately: iPhone test showed **"server error 401"**. The preview `fetch('/api/files/speech/tts/manual')` sent `credentials: 'include'` (cookies) but NO `Authorization` header — and LibreChat's JWT strategy reads ONLY the Authorization header, never cookies (same fact the dashboard pages had to work around). So every preview request was 401 -> `!res.ok` -> stop() -> button untoggled. This was almost certainly the real bug all along; the earlier Content-Type/element-timing fixes never got far enough to matter.
+
+`client/src/components/Audio/Voices.tsx`: pull `token` from `useAuthContext()` and send `headers: { Authorization: \`Bearer ${token}\` }` on the preview fetch. (P4's silent-clip autoplay unlock kept as belt-and-suspenders for the iOS play()-after-await rule, which only matters once the fetch actually succeeds.)
+
+Kade to retest on iPhone: pick a voice -> Preview. Should now play. If a different error shows, read me the text.

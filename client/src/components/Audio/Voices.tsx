@@ -4,6 +4,7 @@ import { Volume2, Square } from 'lucide-react';
 import { Dropdown } from '@librechat/client';
 import type { Option } from '~/common';
 import { useLocalize, useTTSBrowser, useTTSExternal } from '~/hooks';
+import { useAuthContext } from '~/hooks/AuthContext';
 import { logger } from '~/utils';
 import store from '~/store';
 
@@ -20,6 +21,7 @@ const SILENT_WAV =
  * Returns { isPlaying, togglePreview } so the caller can wire up a play/stop button.
  */
 function useVoicePreview() {
+  const { token } = useAuthContext();
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -46,6 +48,9 @@ function useVoicePreview() {
         method: 'POST',
         body: fd,
         credentials: 'include',
+        // LibreChat's JWT auth reads ONLY the Authorization header (not cookies),
+        // so the in-memory access token must be sent explicitly or this 401s.
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
 
       if (!res.ok) {
@@ -90,7 +95,7 @@ function useVoicePreview() {
       setError('Preview failed: could not reach the voice server.');
       stop();
     }
-  }, [stop]);
+  }, [stop, token]);
 
   const togglePreview = useCallback(
     (voiceId: string) => {
