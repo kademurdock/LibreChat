@@ -13,6 +13,9 @@ type ReasoningProps = {
   isLast: boolean;
 };
 
+/** localStorage key tracking whether the user manually collapsed a reasoning bubble. */
+const REASONING_COLLAPSED_KEY = 'reasoningUserCollapsed';
+
 /**
  * Reasoning Component (MODERN SYSTEM)
  *
@@ -34,12 +37,23 @@ type ReasoningProps = {
  * - Can be interleaved with other content types
  *
  * For legacy text-based messages, see Thinking.tsx component.
+ *
+ * KADE PATCH C2: respect the user's last manual collapse action.
+ * If `showThinking` is true but the user has collapsed a bubble, new bubbles
+ * start collapsed. Expanding a bubble clears the flag so next bubble opens.
  */
 const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
   const contentId = useId();
   const localize = useLocalize();
   const showThinking = useAtomValue(showThinkingAtom);
-  const [isExpanded, setIsExpanded] = useState(showThinking);
+  const [isExpanded, setIsExpanded] = useState(() => {
+    if (!showThinking) return false;
+    try {
+      return localStorage.getItem(REASONING_COLLAPSED_KEY) !== 'true';
+    } catch {
+      return true;
+    }
+  });
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
@@ -55,7 +69,13 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
 
   const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    setIsExpanded((prev) => !prev);
+    setIsExpanded((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(REASONING_COLLAPSED_KEY, next ? 'false' : 'true');
+      } catch {}
+      return next;
+    });
   }, []);
 
   const handleFocus = useCallback(() => {
