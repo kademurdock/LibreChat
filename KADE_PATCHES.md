@@ -52,3 +52,25 @@ Branch: `kade` (based on upstream tag `v0.8.7`, commit `9e74cc0e57b395926122bd40
 **Commit:** `b598dad4e742e146ecf11e2844d4bcf63c957061`
 
 ---
+
+### C4/E2 — iOS safe area + form a11y (2026-06-29)
+
+**Files:**
+- `client/index.html` — added `viewport-fit=cover` to viewport meta
+- `client/src/mobile.css` — added `.pb-ios-safe` utility class using `env(safe-area-inset-bottom, 0px)`
+- `client/src/components/Chat/ChatView.tsx` — applied `pb-ios-safe` to the chat form wrapper div
+- `client/src/components/Chat/Input/ChatForm.tsx` — added `aria-label` to the `<form>` element
+
+**What changed:**
+- **iOS home pill fix:** Without `viewport-fit=cover`, the browser's default safe-area handling was incomplete in standalone PWA mode (apple-mobile-web-app-capable), causing the home indicator to overlap the chat input. Adding `viewport-fit=cover` + `env(safe-area-inset-bottom)` padding resolves this.
+- **Form ARIA landmark:** The `<form>` element now has `aria-label={localize('com_ui_message_input')}`, making it a named Forms landmark. VoiceOver users on iOS can jump directly to it via the Forms rotor.
+
+**Why not config/proxy:** CSS and HTML layout — not configurable via LibreChat YAML.
+
+**Commits:**
+- `5a791c8d271ef7c77416d1488a77d66aaeaec6ee` (index.html)
+- `67c0ae6e2f68d7894b40cf4e58cefb4166b46245` (mobile.css)
+- `80e8c3e2e81f72aaebeff3008c8c5974126ed4a3` (ChatView.tsx)
+- `28f7778b0ebaf69afe9988970ba58c82b124c215` (ChatForm.tsx)
+
+---
