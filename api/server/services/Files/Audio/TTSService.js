@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { genAzureEndpoint, logAxiosError, applyAxiosProxyConfig } = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
+const { logKadeUsage } = require('~/models/kadeUsage');
 const { getAppConfig } = require('~/server/services/Config');
 
 /**
@@ -290,6 +291,15 @@ class TTSService {
       return res.status(400).send('Missing text in request body');
     }
 
+    // [KadeUsage] log TTS characters (best-effort, never throws)
+    logKadeUsage({
+      userId: req.user && req.user.id,
+      service: 'tts',
+      quantity: input.length,
+      unit: 'chars',
+      metadata: { path: 'processTextToSpeech' },
+    });
+
     const appConfig =
       req.config ??
       (await getAppConfig({
@@ -380,6 +390,7 @@ class TTSService {
 
     const processChunks = createChunkProcessor(req.user.id, req.body.messageId);
 
+    let kadeTtsChars = 0; // [KadeUsage] accumulate streamed TTS characters
     try {
       while (shouldContinue) {
         const updates = await processChunks();
@@ -404,6 +415,8 @@ class TTSService {
             if (!shouldContinue) {
               break;
             }
+
+            kadeTtsChars += (update && update.text ? update.text.length : 0); // [KadeUsage]
 
             logger.debug(`[streamAudio] user: ${req?.user?.id} | writing audio stream`);
             await new Promise((resolve) => {
@@ -431,6 +444,15 @@ class TTSService {
           break;
         }
       }
+
+      // [KadeUsage] log accumulated streamed TTS characters (best-effort)
+      logKadeUsage({
+        userId: req.user && req.user.id,
+        service: 'tts',
+        quantity: kadeTtsChars,
+        unit: 'chars',
+        metadata: { path: 'streamAudio', messageId: req.body && req.body.messageId },
+      });
 
       if (!res.headersSent) {
         res.end();

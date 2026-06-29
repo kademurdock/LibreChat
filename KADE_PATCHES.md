@@ -101,3 +101,22 @@ Branch: `kade` (based on upstream tag `v0.8.7`, commit `9e74cc0e57b395926122bd40
 4. The `kade:agent_voices` key in localStorage holds the full map; inspect/clear via browser DevTools if needed.
 
 **What's NOT done yet (D1/D2):** The agent schema (`packages/data-schemas/`) doesn't have a `voice` field and the agent builder UI doesn't expose a picker yet. D3's localStorage approach works without schema changes — agent admins (Kade) set preferred voices by using the speech settings while in that agent's chat. A future D1/D2 pass could add a builder UI field and sync it to the schema for multi-user voice defaults.
+
+---
+
+## Patch P1 — Per-user usage tracker (TTS / Flux / Tavily) + admin usage route (June 29 2026)
+
+**Goal:** Track server-side per-user API usage that LibreChat does NOT already record in `transactions` (LLM spend is already there), and expose an admin-only aggregation endpoint.
+
+**New files:**
+- `api/models/kadeUsage.js` *(new)* — standalone Mongoose model + collection `kadeusage` (model name `KadeUsage`). Lives outside `@librechat/data-schemas` so no TS build step. Exports `logKadeUsage({userId, service, quantity, unit, costUSD, metadata})` — a fire-and-forget logger wrapped in try/catch that NEVER throws (usage logging must never break a user's request). Also exports `fluxCost(endpoint, images)`, `RATES`, `FLUX_ENDPOINT_USD`. Rates: TTS $5/1M chars, Flux $0.025/img (per-endpoint table), Tavily $0.008/search.
+- `api/server/routes/kade.js` *(new)* — `GET /api/kade/usage?days=30`. Gated by `requireJwtAuth` + `requireCapability(SystemCapabilities.ACCESS_ADMIN)`. Aggregates: LLM spend from `transactions` (`tokenValue`, USD = |value|/1e6), extra-service usage from `KadeUsage` (cost + quantity per service), and current `Balance` (tokenCredits/1e6). Returns all-time + windowed (default 30d) totals, `perService`, and `perUser` (sorted by all-time LLM spend).
+
+**Instrumented (each call best-effort, never throws):**
+- `api/server/services/Files/Audio/TTSService.js` — `processTextToSpeech` logs `input.length` chars; `streamAudio` accumulates `update.text.length` across chunks and logs once on completion. service='tts', unit='chars'.
+- `api/app/clients/tools/structured/FluxAPI.js` — logs 1 image after each successful generation in `_call` and `generateFinetunedImage` (uses `this.userId`, per-endpoint cost). service='flux', unit='images'.
+- `api/app/clients/tools/structured/TavilySearchResults.js` — captures `this.userId = fields.userId` in constructor; logs each search in `_call` (advanced depth = 2 requests). service='tavily', unit='searches'.
+
+**Wiring:** `api/server/routes/index.js` (require + export `kade`), `api/server/index.js` (`app.use('/api/kade', routes.kade)` after `/api/rum`).
+
+**Not in this patch:** the daily email digest is a Cowork scheduled task (external to the fork) that calls `/api/kade/usage` + the Twilio billing API and emails Kade.

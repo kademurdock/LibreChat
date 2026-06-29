@@ -2,6 +2,7 @@ const axios = require('axios');
 const fetch = require('node-fetch');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
+const { logKadeUsage, fluxCost } = require('~/models/kadeUsage');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const {
   applyAxiosProxyConfig,
@@ -303,6 +304,19 @@ class FluxAPI extends Tool {
     const imageUrl = resultData.sample;
     const imageName = `img-${uuidv4()}.png`;
 
+    // [KadeUsage] one image generated (best-effort, never throws)
+    {
+      const _ep = imageData.endpoint || '/v1/flux-pro';
+      logKadeUsage({
+        userId: this.userId,
+        service: 'flux',
+        quantity: 1,
+        unit: 'images',
+        costUSD: fluxCost(_ep, 1),
+        metadata: { endpoint: _ep, action: 'generate' },
+      });
+    }
+
     if (this.isAgent) {
       try {
         // Fetch the image and convert to base64
@@ -535,6 +549,19 @@ class FluxAPI extends Tool {
     }
 
     const imageUrl = resultData.sample;
+
+    // [KadeUsage] one finetuned image generated (best-effort, never throws)
+    {
+      const _ep = imageData.endpoint || '/v1/flux-pro-finetuned';
+      logKadeUsage({
+        userId: this.userId,
+        service: 'flux',
+        quantity: 1,
+        unit: 'images',
+        costUSD: fluxCost(_ep, 1),
+        metadata: { endpoint: _ep, action: 'generate_finetuned' },
+      });
+    }
     const imageName = `img-${uuidv4()}.png`;
 
     if (this.isAgent) {

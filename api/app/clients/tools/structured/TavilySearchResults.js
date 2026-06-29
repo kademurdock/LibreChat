@@ -2,6 +2,7 @@ const { fetch } = require('undici');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { getEnvironmentVariable } = require('@librechat/agents/langchain/utils/env');
 const { getEnvProxyDispatcher } = require('@librechat/api');
+const { logKadeUsage } = require('~/models/kadeUsage');
 
 const tavilySearchJsonSchema = {
   type: 'object',
@@ -81,6 +82,7 @@ class TavilySearchResults extends Tool {
     this.envVar = 'TAVILY_API_KEY';
     /* Used to initialize the Tool without necessary variables. */
     this.override = fields.override ?? false;
+    this.userId = fields.userId; // [KadeUsage]
     this.apiKey = fields[this.envVar] ?? this.getApiKey();
 
     this.kwargs = fields?.kwargs ?? {};
@@ -133,6 +135,18 @@ class TavilySearchResults extends Tool {
       throw new Error(
         `Request failed with status ${response.status}: ${json?.detail?.error || json?.error}`,
       );
+    }
+
+    // [KadeUsage] log search request(s). Advanced depth = 2 Tavily requests.
+    {
+      const _adv = (rest && rest.search_depth) === 'advanced';
+      logKadeUsage({
+        userId: this.userId,
+        service: 'tavily',
+        quantity: _adv ? 2 : 1,
+        unit: 'searches',
+        metadata: { search_depth: (rest && rest.search_depth) || 'basic' },
+      });
     }
 
     return JSON.stringify(json);
