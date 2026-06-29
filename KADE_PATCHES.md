@@ -120,3 +120,22 @@ Branch: `kade` (based on upstream tag `v0.8.7`, commit `9e74cc0e57b395926122bd40
 **Wiring:** `api/server/routes/index.js` (require + export `kade`), `api/server/index.js` (`app.use('/api/kade', routes.kade)` after `/api/rum`).
 
 **Not in this patch:** the daily email digest is a Cowork scheduled task (external to the fork) that calls `/api/kade/usage` + the Twilio billing API and emails Kade.
+
+---
+
+## Patch P2 — Usage dashboards + "Feed the Server" donation page (June 29 2026)
+
+Replaces the originally-planned daily email digest (Kade's call) with live web pages.
+
+**New self endpoint:**
+- `GET /api/kade/my-usage` (in `api/server/routes/kade.js`) — gated by `requireJwtAuth` only (any logged-in user, own data). Returns the caller's month-to-date + all-time spend (LLM + tts/flux/tavily), current balance, and `suggestedDonationUSD` = month-to-date total. Safe for non-admins — only ever the caller's own ObjectId.
+
+**New pages (`api/server/routes/kadePages.js`, served as static HTML shells):**
+- `/feed-the-server` — friendly personal page: "your tab so far this month" framed as an optional suggested donation, with a PayPal "Chip in" button (paypal.me/kademurdock), this-month breakdown, all-time totals, remaining balance. Public-appropriate copy (not Kiana voice). Accessible: semantic headings, `aria-live` status, tabular-nums, dark-mode aware, focus-visible outlines.
+- `/usage-dashboard` — admin-only full breakdown (totals, by-service table, by-person table). Shows "admins only" if the API returns 403.
+
+**Auth model for the pages:** the JWT strategy only reads the `Authorization` header (no cookie), so the HTML shells carry no server-side auth. Their client JS calls `POST /api/auth/refresh` (the same httpOnly refresh-cookie flow the SPA uses on boot) to obtain an access token, then calls the gated `/api/kade/*` APIs. Not signed in → page shows "please sign in at the chat site first."
+
+**Wiring:** friendly top-level routes `app.get('/usage-dashboard'|'/feed-the-server', ...)` registered in `api/server/index.js` immediately before the SPA fallback; same handlers also reachable at `/api/kade/dashboard` and `/api/kade/feed`. `kade.js` no longer applies a router-wide admin gate (it's now per-route) so `/my-usage` and the HTML shells are reachable by any/no auth as appropriate while `/usage` stays admin-only.
+
+**Not done (Kade's call):** adding a link to `/feed-the-server` in the login welcome message — that lives in `kademurdock/librechat.yaml` and needs a separate manual redeploy of the LibreChat config repo.
