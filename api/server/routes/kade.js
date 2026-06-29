@@ -17,6 +17,53 @@ const monthStart = () => {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 };
 
+/* Best-effort Twilio account spend (account-wide infra cost, NOT per-user).
+ * Reads TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN env vars on the LibreChat
+ * service. NEVER throws — returns null on missing creds or any failure so the
+ * dashboard always renders. Uses the rolled-up `totalprice` usage category. */
+const TWILIO_TIMEOUT_MS = 6000;
+async function fetchTwilioSpend() {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) return null;
+  const authHeader = 'Basic ' + Buffer.from(sid + ':' + token).toString('base64');
+  const base = 'https://api.twilio.com/2010-04-01/Accounts/' + sid;
+  const get = async (path) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TWILIO_TIMEOUT_MS);
+    try {
+      const r = await fetch(base + path, { headers: { Authorization: authHeader }, signal: ctrl.signal });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch (e) {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const totalPrice = (j) => {
+    const recs = j && Array.isArray(j.usage_records) ? j.usage_records : [];
+    const rec = recs.find((x) => x.category === 'totalprice');
+    return rec ? round(Math.abs(parseFloat(rec.price) || 0)) : 0;
+  };
+  try {
+    const [bal, month, all] = await Promise.all([
+      get('/Balance.json'),
+      get('/Usage/Records/ThisMonth.json?Category=totalprice&PageSize=1'),
+      get('/Usage/Records/AllTime.json?Category=totalprice&PageSize=1'),
+    ]);
+    if (!bal && !month && !all) return null;
+    return {
+      balanceUSD: bal ? round(Math.abs(parseFloat(bal.balance) || 0)) : null,
+      currency: (bal && bal.currency) || 'USD',
+      monthToDateUSD: month ? totalPrice(month) : null,
+      allTimeUSD: all ? totalPrice(all) : null,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
 function models() {
   return {
     Transaction: mongoose.models.Transaction || mongoose.model('Transaction'),
@@ -147,11 +194,19 @@ router.get('/usage', requireJwtAuth, requireAdminAccess, async (req, res) => {
       window: round(totals.llmSpendUSD.window + totals.extraSpendUSD.window),
     };
 
+    let twilio = null;
+    try {
+      twilio = await fetchTwilioSpend();
+    } catch (e) {
+      twilio = null;
+    }
+
     return res.json({
       generatedAt: new Date().toISOString(),
       windowDays: days,
       windowSince: since.toISOString(),
       totals,
+      twilio,
       perService,
       perUser,
     });

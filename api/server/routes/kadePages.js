@@ -164,6 +164,16 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
       </dl>
     </div>
 
+    <div class="card" id="twilio_card" hidden>
+      <h2 style="margin-top:0">Twilio &mdash; SMS &amp; voice <span class="muted">(account-wide, not per-user)</span></h2>
+      <dl class="kv">
+        <dt>Spent all time</dt><dd id="tw_all">&mdash;</dd>
+        <dt>Spent this month</dt><dd id="tw_month">&mdash;</dd>
+        <dt>Balance remaining</dt><dd id="tw_bal">&mdash;</dd>
+      </dl>
+      <p class="muted" style="font-size:.85rem;margin-top:.5rem">Phone numbers, calls, and texts. Separate from the LibreChat spend above (that's per-user; this is one shared account bill).</p>
+    </div>
+
     <h2>By service</h2>
     <div class="card" style="padding:.4rem .6rem">
       <table aria-label="Spend by service">
@@ -208,6 +218,14 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
       document.getElementById('t_extra').textContent = money(t.extraSpendUSD.allTime);
       document.getElementById('t_grand').innerHTML = '<strong>'+money(t.grandSpendUSD.allTime)+'</strong>';
       document.getElementById('t_bal').textContent = money(t.balanceUSD);
+
+      const tw = d.twilio;
+      if (tw) {
+        document.getElementById('tw_all').textContent = (tw.allTimeUSD==null?'\u2014':money(tw.allTimeUSD));
+        document.getElementById('tw_month').textContent = (tw.monthToDateUSD==null?'\u2014':money(tw.monthToDateUSD));
+        document.getElementById('tw_bal').textContent = (tw.balanceUSD==null?'\u2014':money(tw.balanceUSD));
+        document.getElementById('twilio_card').hidden = false;
+      }
 
       const svcBody = document.getElementById('svc_rows');
       const svcNames = Object.keys(d.perService||{});
