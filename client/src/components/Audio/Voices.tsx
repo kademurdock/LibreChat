@@ -1,9 +1,9 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { Volume2, Square } from 'lucide-react';
 import { Dropdown } from '@librechat/client';
 import type { Option } from '~/common';
-import { useLocalize, useTTSBrowser, useTTSExternal } from '~/hooks';
+import { useLocalize, useTTSBrowser, useTTSExternal, saveAgentVoicePreference } from '~/hooks';
 import { logger } from '~/utils';
 import store from '~/store';
 
@@ -166,12 +166,20 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
   const localize = useLocalize();
   const { voices = [] } = useTTSExternal();
   const [voice, setVoice] = useRecoilState(store.voice);
+  // D3: read the active agent for the primary chat so we can save per-agent voice preferences
+  const activeAgentId = useRecoilValue(store.conversationAgentIdByIndex(0));
 
   const handleVoiceChange = (newValue?: string | Option) => {
     logger.log('External Voice changed:', newValue);
     const newVoice = typeof newValue === 'string' ? newValue : newValue?.value;
     if (newVoice != null) {
-      return setVoice(newVoice.toString());
+      const v = newVoice.toString();
+      setVoice(v);
+      // D3: if an agent is active, save as that agent's preferred voice
+      if (activeAgentId) {
+        saveAgentVoicePreference(activeAgentId, v);
+      }
+      return;
     }
   };
 
