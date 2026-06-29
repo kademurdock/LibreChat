@@ -1,9 +1,9 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState } from 'recoil';
 import { Volume2, Square } from 'lucide-react';
 import { Dropdown } from '@librechat/client';
 import type { Option } from '~/common';
-import { useLocalize, useTTSBrowser, useTTSExternal, saveAgentVoicePreference } from '~/hooks';
+import { useLocalize, useTTSBrowser, useTTSExternal } from '~/hooks';
 import { logger } from '~/utils';
 import store from '~/store';
 
@@ -27,10 +27,10 @@ function useVoicePreview() {
     setIsPlaying(false);
   }, []);
 
+  // play() receives an <audio> element created synchronously inside the click
+  // handler (iOS Safari blocks play() if the element is first touched after an
+  // await), fetches the sample, and points the element at it.
   const play = useCallback(async (voiceId: string, audio: HTMLAudioElement) => {
-    // `audio` was created synchronously in togglePreview (iOS Safari autoplay requirement:
-    // the Audio element must exist before any awaits in a user-gesture handler)
-    setIsPlaying(true);
     try {
       const fd = new FormData();
       fd.append('input', PREVIEW_TEXT);
@@ -44,55 +44,55 @@ function useVoicePreview() {
 
       if (!res.ok) {
         logger.error(`[VoicePreview] HTTP ${res.status}`);
-        audioRef.current = null;
-        setIsPlaying(false);
+        stop();
         return;
       }
 
+      // The backend hardcodes Content-Type: audio/mpeg, but the Inworld proxy
+      // actually returns WAV bytes. Re-wrap the blob as audio/wav so the browser
+      // decodes it instead of firing onerror (which was untoggling the button).
       const rawBlob = await res.blob();
-      // The LibreChat backend hardcodes Content-Type: audio/mpeg but the Inworld
-      // proxy returns WAV (16-bit PCM, RIFF/WAVE). Override the MIME type so the
-      // Audio element can decode it correctly.
-      const blob = new Blob([rawBlob], { type: 'audio/wav' });
-      const url = URL.createObjectURL(blob);
-
-      audio.src = url;
+      const wavBlob = new Blob([rawBlob], { type: 'audio/wav' });
+      const url = URL.createObjectURL(wavBlob);
 
       audio.onended = () => {
         URL.revokeObjectURL(url);
-        audioRef.current = null;
+        if (audioRef.current === audio) {
+          audioRef.current = null;
+        }
         setIsPlaying(false);
       };
       audio.onerror = () => {
         URL.revokeObjectURL(url);
-        audioRef.current = null;
+        if (audioRef.current === audio) {
+          audioRef.current = null;
+        }
         setIsPlaying(false);
       };
 
+      audio.src = url;
       audio.play().catch((err) => {
         logger.error('[VoicePreview] play() failed:', err);
         URL.revokeObjectURL(url);
-        setIsPlaying(false);
+        stop();
       });
     } catch (err) {
       logger.error('[VoicePreview] fetch failed:', err);
-      audioRef.current = null;
-      setIsPlaying(false);
+      stop();
     }
-  }, []);
+  }, [stop]);
 
   const togglePreview = useCallback(
     (voiceId: string) => {
       if (isPlaying) {
         stop();
-      } else {
-        // Create the Audio element synchronously inside the user-gesture handler.
-        // iOS Safari will only allow audio.play() on an element that was
-        // instantiated before any async awaits in the same gesture chain.
-        const audio = new Audio();
-        audioRef.current = audio;
-        void play(voiceId, audio);
+        return;
       }
+      // Create the element NOW, inside the user gesture, before any await.
+      const audio = new Audio();
+      audioRef.current = audio;
+      setIsPlaying(true);
+      play(voiceId, audio);
     },
     [isPlaying, stop, play],
   );
@@ -179,20 +179,12 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
   const localize = useLocalize();
   const { voices = [] } = useTTSExternal();
   const [voice, setVoice] = useRecoilState(store.voice);
-  // D3: read the active agent for the primary chat so we can save per-agent voice preferences
-  const activeAgentId = useRecoilValue(store.conversationAgentIdByIndex(0));
 
   const handleVoiceChange = (newValue?: string | Option) => {
     logger.log('External Voice changed:', newValue);
     const newVoice = typeof newValue === 'string' ? newValue : newValue?.value;
     if (newVoice != null) {
-      const v = newVoice.toString();
-      setVoice(v);
-      // D3: if an agent is active, save as that agent's preferred voice
-      if (activeAgentId) {
-        saveAgentVoicePreference(activeAgentId, v);
-      }
-      return;
+      return setVoice(newVoice.toString());
     }
   };
 
