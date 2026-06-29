@@ -139,3 +139,14 @@ Replaces the originally-planned daily email digest (Kade's call) with live web p
 **Wiring:** friendly top-level routes `app.get('/usage-dashboard'|'/feed-the-server', ...)` registered in `api/server/index.js` immediately before the SPA fallback; same handlers also reachable at `/api/kade/dashboard` and `/api/kade/feed`. `kade.js` no longer applies a router-wide admin gate (it's now per-route) so `/my-usage` and the HTML shells are reachable by any/no auth as appropriate while `/usage` stays admin-only.
 
 **Not done (Kade's call):** adding a link to `/feed-the-server` in the login welcome message — that lives in `kademurdock/librechat.yaml` and needs a separate manual redeploy of the LibreChat config repo.
+
+---
+
+## Patch P3 — In-app nav links to Feed-the-Server + Usage Dashboard (PWA accessibility) (June 29 2026)
+
+Problem: in standalone PWA mode there's no address bar, so `/feed-the-server` and `/usage-dashboard` were unreachable from inside the installed app. Fix: surface them as items in the account dropdown menu.
+
+- `client/src/components/Nav/AccountSettings.tsx` — added two `Menu.MenuItem`s after Settings: **Feed the Server** (all users -> `window.location.href='/feed-the-server'`, Heart icon, aria-label) and **Usage Dashboard** (gated `user?.role === SystemRoles.ADMIN`, -> `/usage-dashboard`, Gauge icon). Same-origin navigation so it stays inside the PWA. Imported `Gauge, Heart` from lucide-react and `SystemRoles` from librechat-data-provider.
+- `api/server/routes/kadePages.js` — added an accessible "← Back to chat" link (href `/`) at the top of both pages, since a full-page load in standalone PWA has no back button. Added `a.back` style with focus-visible outline.
+
+Kade to eyeball: account menu (bottom-left avatar) should show "Feed the Server" for everyone and "Usage Dashboard" for admins; both should be VoiceOver-reachable; each page should have a "Back to chat" link.

@@ -45,6 +45,8 @@ const SHARED_HEAD = `
   dl.kv dt { opacity: .8; }
   dl.kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
   footer { margin-top: 2rem; font-size: .85rem; }
+  a.back { display:inline-block; margin:0 0 .25rem; font-weight:600; text-decoration:none; color:#2f6fed; }
+  a.back:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
 </style>
 <script>
   function money(n){ n = Number(n)||0; if(n>0 && n<0.01){ return '$'+n.toFixed(4); } return '$'+n.toFixed(2); }
@@ -65,6 +67,7 @@ const SHARED_HEAD = `
 
 const feedHtml = `<!doctype html><html lang="en"><head><title>Feed the Server</title>${SHARED_HEAD}</head>
 <body>
+  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a></p>
   <h1>Feed the Server</h1>
   <p class="muted">Kade keeps this AI running out of pocket for friends and family. No one has to pay a cent. But if you'd like to chip in just enough to cover what <em>you've</em> used, here's your honest tab.</p>
 
@@ -144,6 +147,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Feed the Server</t
 
 const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage Dashboard</title>${SHARED_HEAD}</head>
 <body>
+  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a></p>
   <h1>Kade-AI Usage Dashboard</h1>
   <p class="muted">Admin view. Spend, usage, and balances across everyone on the instance.</p>
 

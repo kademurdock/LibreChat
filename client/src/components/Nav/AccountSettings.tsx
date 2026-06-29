@@ -7,12 +7,15 @@ import {
   ChevronRight,
   CircleHelp,
   FileText,
+  Gauge,
+  Heart,
   Keyboard,
   LifeBuoy,
   LogOut,
   Scale,
   ShieldCheck,
 } from 'lucide-react';
+import { SystemRoles } from 'librechat-data-provider';
 import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/ArchivedChatsModal';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
@@ -176,6 +179,29 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
         </Menu.MenuItem>
+        <DropdownMenuSeparator />
+        <Menu.MenuItem
+          onClick={() => {
+            window.location.href = '/feed-the-server';
+          }}
+          className="select-item text-sm"
+          aria-label="Feed the Server: see what you've used and chip in"
+        >
+          <Heart className="icon-md" aria-hidden="true" />
+          Feed the Server
+        </Menu.MenuItem>
+        {user?.role === SystemRoles.ADMIN && (
+          <Menu.MenuItem
+            onClick={() => {
+              window.location.href = '/usage-dashboard';
+            }}
+            className="select-item text-sm"
+            aria-label="Usage dashboard (admin only)"
+          >
+            <Gauge className="icon-md" aria-hidden="true" />
+            Usage Dashboard
+          </Menu.MenuItem>
+        )}
         <DropdownMenuSeparator />
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
           <LogOut className="icon-md" aria-hidden="true" />
