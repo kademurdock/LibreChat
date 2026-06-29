@@ -9,7 +9,11 @@ import { logger } from '~/utils';
 import store from '~/store';
 
 /** Short phrase spoken when the user previews a voice. */
-const PREVIEW_TEXT = 'Hello! This is a preview of my voice. I hope you like how I sound.';
+const PREVIEW_TEXT =
+  "Hi there! This is a little sample of my voice, so you can hear how I sound "
+  + "before you pick me. I can be warm and friendly, or calm and clear when it "
+  + "matters — whatever your conversation needs. Thanks for listening, and I hope "
+  + "you like how I sound!";
 
 /** ~10ms of silence. Played synchronously inside the tap to UNLOCK the audio
  * element on iOS Safari, so the real play() after the fetch await is allowed. */
