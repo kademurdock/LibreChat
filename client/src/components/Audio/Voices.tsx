@@ -21,13 +21,15 @@ function useVoicePreview() {
   const stop = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.pause();
+      audioRef.current.src = '';
       audioRef.current = null;
     }
     setIsPlaying(false);
   }, []);
 
-  const play = useCallback(async (voiceId: string) => {
-    stop();
+  const play = useCallback(async (voiceId: string, audio: HTMLAudioElement) => {
+    // `audio` was created synchronously in togglePreview (iOS Safari autoplay requirement:
+    // the Audio element must exist before any awaits in a user-gesture handler)
     setIsPlaying(true);
     try {
       const fd = new FormData();
@@ -42,14 +44,19 @@ function useVoicePreview() {
 
       if (!res.ok) {
         logger.error(`[VoicePreview] HTTP ${res.status}`);
+        audioRef.current = null;
         setIsPlaying(false);
         return;
       }
 
-      const blob = await res.blob();
+      const rawBlob = await res.blob();
+      // The LibreChat backend hardcodes Content-Type: audio/mpeg but the Inworld
+      // proxy returns WAV (16-bit PCM, RIFF/WAVE). Override the MIME type so the
+      // Audio element can decode it correctly.
+      const blob = new Blob([rawBlob], { type: 'audio/wav' });
       const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audioRef.current = audio;
+
+      audio.src = url;
 
       audio.onended = () => {
         URL.revokeObjectURL(url);
@@ -69,16 +76,22 @@ function useVoicePreview() {
       });
     } catch (err) {
       logger.error('[VoicePreview] fetch failed:', err);
+      audioRef.current = null;
       setIsPlaying(false);
     }
-  }, [stop]);
+  }, []);
 
   const togglePreview = useCallback(
     (voiceId: string) => {
       if (isPlaying) {
         stop();
       } else {
-        play(voiceId);
+        // Create the Audio element synchronously inside the user-gesture handler.
+        // iOS Safari will only allow audio.play() on an element that was
+        // instantiated before any async awaits in the same gesture chain.
+        const audio = new Audio();
+        audioRef.current = audio;
+        void play(voiceId, audio);
       }
     },
     [isPlaying, stop, play],
