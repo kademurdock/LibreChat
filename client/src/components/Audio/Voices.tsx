@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { Volume2, Square } from 'lucide-react';
 import { Dropdown } from '@librechat/client';
 import type { Option } from '~/common';
@@ -7,6 +7,7 @@ import { useLocalize, useTTSBrowser, useTTSExternal } from '~/hooks';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { logger } from '~/utils';
 import store from '~/store';
+import { saveAgentVoicePreference } from '~/hooks/Agents/useAgentVoiceSync';
 
 /** Short phrase spoken when the user previews a voice. */
 const PREVIEW_TEXT =
@@ -217,12 +218,21 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
   const localize = useLocalize();
   const { voices = [] } = useTTSExternal();
   const [voice, setVoice] = useRecoilState(store.voice);
+  // ♿ D3: the agent active in the primary conversation, so a voice pick here can
+  // be remembered as THIS agent's preferred voice (per-user, localStorage).
+  const activeAgentId = useRecoilValue(store.conversationAgentIdByIndex(0));
 
   const handleVoiceChange = (newValue?: string | Option) => {
     logger.log('External Voice changed:', newValue);
     const newVoice = typeof newValue === 'string' ? newValue : newValue?.value;
     if (newVoice != null) {
-      return setVoice(newVoice.toString());
+      const voiceStr = newVoice.toString();
+      // ♿ D3: persist this choice for the active agent so useAgentVoiceSync
+      // re-applies it next time this agent's chat opens. Safe + fire-and-forget.
+      if (activeAgentId) {
+        saveAgentVoicePreference(activeAgentId, voiceStr);
+      }
+      return setVoice(voiceStr);
     }
   };
 
