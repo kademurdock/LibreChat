@@ -226,6 +226,9 @@ export const FloatingThinkingBar = memo(
   },
 );
 
+/** localStorage key tracking the user's last manual collapse action on reasoning bubbles. */
+const REASONING_COLLAPSED_KEY = 'reasoningUserCollapsed';
+
 /**
  * Thinking Component (LEGACY SYSTEM)
  *
@@ -240,11 +243,20 @@ export const FloatingThinkingBar = memo(
  * - User messages when manually adding thinking content
  *
  * For modern structured content (agents/assistants), see Reasoning.tsx component.
+ *
+ * KADE PATCH C2: respect the user's last manual collapse action.
  */
 const Thinking: React.ElementType = memo(({ children }: { children: React.ReactNode }) => {
   const localize = useLocalize();
   const showThinking = useAtomValue(showThinkingAtom);
-  const [isExpanded, setIsExpanded] = useState(showThinking);
+  const [isExpanded, setIsExpanded] = useState(() => {
+    if (!showThinking) return false;
+    try {
+      return localStorage.getItem(REASONING_COLLAPSED_KEY) !== 'true';
+    } catch {
+      return true;
+    }
+  });
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentId = useId();
@@ -252,7 +264,13 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
 
   const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    setIsExpanded((prev) => !prev);
+    setIsExpanded((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(REASONING_COLLAPSED_KEY, next ? 'false' : 'true');
+      } catch {}
+      return next;
+    });
   }, []);
 
   const handleFocus = useCallback(() => {
