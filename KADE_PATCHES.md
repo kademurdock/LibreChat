@@ -74,3 +74,30 @@ Branch: `kade` (based on upstream tag `v0.8.7`, commit `9e74cc0e57b395926122bd40
 - `28f7778b0ebaf69afe9988970ba58c82b124c215` (ChatForm.tsx)
 
 ---
+
+
+---
+
+## D3 — Per-agent default voices (June 29, 2026)
+
+**Commit:** `1f69691e7490be362906a1221278cf060314fa7a`
+
+**Why it couldn't be config/proxy:** Requires watching Recoil conversation state and imperatively setting another Recoil atom when the agent changes. No yaml config or proxy hook for this — it's client-side React state management.
+
+**Files changed:**
+
+- `client/src/hooks/Agents/useAgentVoiceSync.ts` *(new)* — the hook. Reads `store.conversationAgentIdByIndex(index)` (Recoil selector). On change, reads `localStorage['kade:agent_voices']` (a JSON map of `agent_id → voice_id`). If a saved preference exists, calls `useSetRecoilState(store.voice)` to switch the active TTS voice. Exports `saveAgentVoicePreference(agentId, voice)` utility for callers.
+
+- `client/src/hooks/Agents/index.ts` — added export for `useAgentVoiceSync`, `saveAgentVoicePreference`, and `AGENT_VOICES_KEY`.
+
+- `client/src/components/Chat/ChatView.tsx` — added `useAgentVoiceSync(index)` call after `useResumeOnLoad`. No JSX changes.
+
+- `client/src/components/Audio/Voices.tsx` — in `ExternalVoiceDropdown`: added `useRecoilValue(store.conversationAgentIdByIndex(0))` to track active agent; in `handleVoiceChange`, after setting `store.voice`, calls `saveAgentVoicePreference(activeAgentId, v)` if an agent is active.
+
+**How to use:**
+1. Open Settings → Speech → Voice → pick a voice for your current agent's chat. That's it — the preference is saved automatically.
+2. Switch to a different agent's conversation — voice auto-switches.
+3. Switch back — voice auto-switches back.
+4. The `kade:agent_voices` key in localStorage holds the full map; inspect/clear via browser DevTools if needed.
+
+**What's NOT done yet (D1/D2):** The agent schema (`packages/data-schemas/`) doesn't have a `voice` field and the agent builder UI doesn't expose a picker yet. D3's localStorage approach works without schema changes — agent admins (Kade) set preferred voices by using the speech settings while in that agent's chat. A future D1/D2 pass could add a builder UI field and sync it to the schema for multi-user voice defaults.
