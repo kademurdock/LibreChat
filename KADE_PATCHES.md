@@ -38,3 +38,17 @@ Branch: `kade` (based on upstream tag `v0.8.7`, commit `9e74cc0e57b395926122bd40
 - `9e6899f6324e8364125782c13ab54d6a02f72b18` (Thinking.tsx)
 
 ---
+
+### C3/E1 — Voice preview button in ExternalVoiceDropdown (2026-06-29)
+
+**File:** `client/src/components/Audio/Voices.tsx`
+
+**What changed:** Added `VoicePreviewButton` component and `useVoicePreview` hook. When the external (Inworld) voice engine is active and a voice is selected, a Play/Stop button appears beneath the voice picker. Clicking it fetches a short WAV sample via `POST /api/files/speech/tts/manual` (the existing manual TTS route — no new backend routes needed) using the selected voice ID and a fixed sample phrase. Clicking again stops playback.
+
+**Accessibility:** `aria-label` includes the voice name so VoiceOver announces "Preview voice: [name], button". `aria-pressed` reflects live play state. Fully keyboard-navigable with focus ring.
+
+**Why not config/proxy:** This is a React component UI change; no backend or config hook exists for adding UI controls.
+
+**Commit:** `b598dad4e742e146ecf11e2844d4bcf63c957061`
+
+---
