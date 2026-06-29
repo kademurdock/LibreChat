@@ -303,13 +303,13 @@ class TTSService {
       const ttsSchema = appConfig?.speech?.tts?.[provider];
       const voice = await this.getVoice(ttsSchema, requestVoice);
 
-      if (input.length < 4096) {
+      if (input.length < 32768) {
         const response = await this.ttsRequest(provider, ttsSchema, { input, voice });
         response.data.pipe(res);
         return;
       }
 
-      const textChunks = splitTextIntoChunks(input, 1000);
+      const textChunks = splitTextIntoChunks(input, 4000);
 
       for (const chunk of textChunks) {
         try {
