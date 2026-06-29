@@ -10,12 +10,18 @@ import store from '~/store';
 /** Short phrase spoken when the user previews a voice. */
 const PREVIEW_TEXT = 'Hello! This is a preview of my voice. I hope you like how I sound.';
 
+/** ~10ms of silence. Played synchronously inside the tap to UNLOCK the audio
+ * element on iOS Safari, so the real play() after the fetch await is allowed. */
+const SILENT_WAV =
+  'data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
+
 /**
  * useVoicePreview — fetches a WAV sample for the given voice ID and plays it.
  * Returns { isPlaying, togglePreview } so the caller can wire up a play/stop button.
  */
 function useVoicePreview() {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const stop = useCallback(() => {
@@ -44,6 +50,7 @@ function useVoicePreview() {
 
       if (!res.ok) {
         logger.error(`[VoicePreview] HTTP ${res.status}`);
+        setError(`Preview failed: server error ${res.status}.`);
         stop();
         return;
       }
@@ -67,17 +74,20 @@ function useVoicePreview() {
         if (audioRef.current === audio) {
           audioRef.current = null;
         }
+        setError('Preview failed: this device could not decode the audio.');
         setIsPlaying(false);
       };
 
       audio.src = url;
       audio.play().catch((err) => {
         logger.error('[VoicePreview] play() failed:', err);
+        setError(`Preview blocked by the browser (${err?.name || 'autoplay'}). Tap again.`);
         URL.revokeObjectURL(url);
         stop();
       });
     } catch (err) {
       logger.error('[VoicePreview] fetch failed:', err);
+      setError('Preview failed: could not reach the voice server.');
       stop();
     }
   }, [stop]);
@@ -88,8 +98,20 @@ function useVoicePreview() {
         stop();
         return;
       }
+      setError(null);
       // Create the element NOW, inside the user gesture, before any await.
       const audio = new Audio();
+      // iOS Safari only allows a later programmatic play() if THIS element was
+      // already played within the user gesture. Setting the silent clip
+      // and calling play() synchronously here "unlocks" it; the real sample
+      // (fetched async below) can then play without being blocked. The clip is
+      // pure silence, so it is inaudible — do NOT mute it (a muted play does
+      // not satisfy iOS's unlock requirement for later unmuted audio).
+      audio.src = SILENT_WAV;
+      const unlock = audio.play();
+      if (unlock && typeof unlock.catch === 'function') {
+        unlock.catch(() => {});
+      }
       audioRef.current = audio;
       setIsPlaying(true);
       play(voiceId, audio);
@@ -97,7 +119,7 @@ function useVoicePreview() {
     [isPlaying, stop, play],
   );
 
-  return { isPlaying, togglePreview };
+  return { isPlaying, togglePreview, error };
 }
 
 /** Preview button shown alongside the ExternalVoiceDropdown. */
@@ -109,13 +131,14 @@ function VoicePreviewButton({
   disabled: boolean;
 }) {
   const localize = useLocalize();
-  const { isPlaying, togglePreview } = useVoicePreview();
+  const { isPlaying, togglePreview, error } = useVoicePreview();
 
   const label = isPlaying
     ? localize('com_nav_stop_voice_preview') ?? 'Stop voice preview'
     : `${localize('com_nav_preview_voice') ?? 'Preview voice'}: ${voiceId}`;
 
   return (
+    <div className="flex flex-col gap-1">
     <button
       type="button"
       onClick={() => togglePreview(voiceId)}
@@ -139,6 +162,12 @@ function VoicePreviewButton({
           : (localize('com_nav_preview_voice') ?? 'Preview')}
       </span>
     </button>
+      {error && (
+        <span role="alert" aria-live="assertive" className="text-xs text-red-500">
+          {error}
+        </span>
+      )}
+    </div>
   );
 }
 

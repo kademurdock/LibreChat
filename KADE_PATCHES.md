@@ -150,3 +150,15 @@ Problem: in standalone PWA mode there's no address bar, so `/feed-the-server` an
 - `api/server/routes/kadePages.js` — added an accessible "← Back to chat" link (href `/`) at the top of both pages, since a full-page load in standalone PWA has no back button. Added `a.back` style with focus-visible outline.
 
 Kade to eyeball: account menu (bottom-left avatar) should show "Feed the Server" for everyone and "Usage Dashboard" for admins; both should be VoiceOver-reachable; each page should have a "Back to chat" link.
+
+---
+
+## Patch P4 — iOS voice-preview fix (autoplay unlock) + visible error readout (June 29 2026)
+
+C3 preview still failed on iPhone after 256bf88. Root cause: the `<audio>` element was created inside the tap, but `audio.play()` only ran AFTER `await fetch(...)`. iOS Safari requires the element to have been *played* within the user gesture; the fetch gap made the later play() count as non-user-initiated → blocked → button untoggled.
+
+`client/src/components/Audio/Voices.tsx`:
+- Added `SILENT_WAV` (a ~10ms inline silent WAV data URI). In `togglePreview`, synchronously set `audio.src = SILENT_WAV` and call `audio.play()` inside the tap to UNLOCK the element (unmuted — a muted play does not satisfy iOS's unlock for later unmuted audio; the clip is pure silence so it's inaudible anyway). The real sample fetched async then plays on the same unlocked element.
+- Added an `error` state surfaced in a `role="alert"` `aria-live="assertive"` span under the button, set on HTTP error / decode error (`onerror`) / `play()` rejection / fetch failure. This makes the next iPhone test diagnostic (Kade can read the on-screen/VoiceOver message) instead of a silent "didn't work" — since there's no console access on her phone.
+
+Kade to retest on iPhone: pick a voice -> Preview. If it plays, done; if not, tell me the red error text that now appears.
