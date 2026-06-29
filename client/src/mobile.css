@@ -322,3 +322,10 @@ p.whitespace-pre-wrap a, li a {
 .dark p.whitespace-pre-wrap a, .dark li a {
   color: #52a0ff;
 }
+/* KADE PATCH C4: iOS PWA safe area
+   Prevents the home-indicator pill from overlapping the chat input when the app
+   is added to the iPhone home screen (standalone PWA mode). Requires
+   viewport-fit=cover in the <meta name="viewport"> tag. */
+.pb-ios-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
