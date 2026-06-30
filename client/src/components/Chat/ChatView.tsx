@@ -21,6 +21,7 @@ import ProjectLandingChip from './ProjectLandingChip';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
+import ConversationMode from './ConversationMode';
 import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
@@ -124,7 +125,15 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                   >
                     {isProjectLandingPage && project && <ProjectLandingChip project={project} />}
                     {isLandingPage && <ConversationStarters />}
-                    <ChatForm index={index} placeholder={chatFormPlaceholder} />
+                    {/* F2: wrap ChatForm with voice button */}
+                    <div className="relative flex items-end gap-1">
+                      <div className="flex-1">
+                        <ChatForm index={index} placeholder={chatFormPlaceholder} />
+                      </div>
+                      <div className="mb-1 flex-shrink-0 pb-2">
+                        <ConversationMode index={index} />
+                      </div>
+                    </div>
                     {!isLandingPage && <Footer />}
                   </div>
                 </div>
