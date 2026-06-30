@@ -176,6 +176,13 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // Audio out (TTS playback)
   const audioCtxRef        = useRef<AudioContext | null>(null);
   const playQueueRef       = useRef<Promise<void>>(Promise.resolve());
+  // Output analyser (drives the volume-reactive "speaking" pulse -- decorative
+  // only, never read by anything assistive tech touches) + the orb DOM node it
+  // animates directly via rAF (bypassing React state for smoothness) + the
+  // rAF handle so it can be torn down cleanly.
+  const outputAnalyserRef  = useRef<AnalyserNode | null>(null);
+  const orbRef              = useRef<HTMLDivElement | null>(null);
+  const pulseRafRef         = useRef<number | null>(null);
   // Audio in (mic capture + VAD)
   const micStreamRef       = useRef<MediaStream | null>(null);
   const vadCtxRef          = useRef<AudioContext | null>(null);
@@ -200,6 +207,53 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
 
   useEffect(() => { statusRef.current = status; }, [status]);
 
+  // -- Volume-reactive "speaking" pulse -----------------------------------
+  // Purely decorative, purely visual: reads real amplitude off the agent's
+  // own TTS audio (via the analyser wired up in getAudioCtx/enqueueAudio)
+  // and scales the orb live off of it, so sighted family in the room get a
+  // genuine "she's talking" visual instead of a static icon. Skipped
+  // entirely under prefers-reduced-motion -- the existing static scale-110
+  // class on the orb is the fallback in that case. Never touches anything a
+  // screen reader reads; the srStatus live region above is unaffected.
+  useEffect(() => {
+    const reduceMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+    if (status !== 'speaking' || reduceMotion) {
+      if (pulseRafRef.current != null) {
+        window.cancelAnimationFrame(pulseRafRef.current);
+        pulseRafRef.current = null;
+      }
+      if (orbRef.current) orbRef.current.style.transform = '';
+      return;
+    }
+
+    const analyser = outputAnalyserRef.current;
+    if (!analyser) return;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i];
+      const avg = sum / data.length / 255; // 0..1
+      // Map to a gentle 1.0 - 1.16 scale range -- noticeable but not manic.
+      const scale = 1 + Math.min(avg * 0.6, 0.16);
+      if (orbRef.current) orbRef.current.style.transform = `scale(${scale.toFixed(3)})`;
+      pulseRafRef.current = window.requestAnimationFrame(tick);
+    };
+    pulseRafRef.current = window.requestAnimationFrame(tick);
+
+    return () => {
+      if (pulseRafRef.current != null) {
+        window.cancelAnimationFrame(pulseRafRef.current);
+        pulseRafRef.current = null;
+      }
+      if (orbRef.current) orbRef.current.style.transform = '';
+    };
+  }, [status]);
+
   useEffect(() => {
     const ok = typeof navigator !== 'undefined'
       && !!navigator.mediaDevices
@@ -217,6 +271,13 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     if (audioCtxRef.current.state === 'suspended') {
       void audioCtxRef.current.resume();
     }
+    if (!outputAnalyserRef.current) {
+      const an = audioCtxRef.current.createAnalyser();
+      an.fftSize = 256;
+      an.smoothingTimeConstant = 0.6;
+      an.connect(audioCtxRef.current.destination);
+      outputAnalyserRef.current = an;
+    }
     return audioCtxRef.current;
   }, []);
 
@@ -230,7 +291,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         await new Promise<void>(resolve => {
           const src = ctx.createBufferSource();
           src.buffer = decoded;
-          src.connect(ctx.destination);
+          // Route through the output analyser (falls back to a direct connect
+          // if it somehow isn't set up yet) so the speaking-state pulse has
+          // real amplitude data to animate from.
+          if (outputAnalyserRef.current) src.connect(outputAnalyserRef.current);
+          else src.connect(ctx.destination);
           src.onended = () => resolve();
           src.start();
         });
@@ -657,10 +722,12 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         }
         disabled={!agentId || !mediaAvail}
         className={cn(
-          'flex h-8 w-8 items-center justify-center rounded-full transition-colors',
+          'flex h-8 w-8 items-center justify-center rounded-full transition-all',
           'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
           agentId && mediaAvail
-            ? 'bg-surface-tertiary text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+            ? 'bg-surface-tertiary text-text-secondary hover:text-white ' +
+              'hover:bg-gradient-to-br hover:from-[#ff2e87] hover:to-[#ffac2f] ' +
+              'focus-visible:bg-gradient-to-br focus-visible:from-[#ff2e87] focus-visible:to-[#ffac2f] focus-visible:text-white'
             : 'cursor-not-allowed opacity-30 bg-surface-tertiary text-text-secondary',
         )}
       >
@@ -680,6 +747,18 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       aria-modal="true"
       aria-label="Voice conversation. Escape or End call to hang up."
     >
+      {/* Ambient brand-gradient glow -- decorative atmosphere only, sits behind
+          everything, never affects layout, contrast, or focus order. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 overflow-hidden"
+      >
+        <div
+          className="absolute left-1/2 top-1/2 h-[36rem] w-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-[0.10] blur-3xl"
+          style={{ background: 'radial-gradient(circle, #ff2e87 0%, #ffac2f 60%, transparent 75%)' }}
+        />
+      </div>
+
       {/* Single polite status region for screen readers (turn-taking only) */}
       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {srStatus}
@@ -689,11 +768,16 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         {error}
       </p>
 
-      {/* Status orb (decorative) */}
+      {/* Status orb (decorative). ref={orbRef}: the speaking-state pulse sets
+          transform directly via rAF for smoothness (see the effect above);
+          the listening-state "nod" is a plain CSS animation class instead,
+          since it doesn't need live audio data. Both are no-ops under
+          prefers-reduced-motion. */}
       <div
+        ref={orbRef}
         className={cn(
           'mb-6 h-28 w-28 rounded-full flex items-center justify-center transition-all duration-300',
-          status === 'listening' ? 'bg-blue-500/20 ring-4 ring-blue-500/40 scale-105' :
+          status === 'listening' ? 'bg-blue-500/20 ring-4 ring-blue-500/40 scale-105 animate-kade-nod' :
           status === 'thinking'  ? 'bg-amber-500/20 ring-4 ring-amber-500/40' :
           status === 'speaking'  ? 'bg-green-500/20 ring-4 ring-green-500/40 scale-110' :
                                    'bg-white/5',

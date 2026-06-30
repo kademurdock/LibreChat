@@ -137,11 +137,12 @@ export default defineConfig(({ command }) => ({
       },
       includeAssets: [],
       manifest: {
-        name: 'LibreChat',
-        short_name: 'LibreChat',
+        name: 'Kademurdock-AI',
+        short_name: 'Kade-AI',
+        description: 'A private, screen-reader-first AI chat and voice assistant.',
         display: 'standalone',
-        background_color: '#000000',
-        theme_color: '#009688',
+        background_color: '#0b0612',
+        theme_color: '#5b1042',
         icons: [
           {
             src: 'assets/favicon-32x32.png',

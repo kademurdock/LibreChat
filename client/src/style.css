@@ -2858,6 +2858,27 @@ html {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/** Voice call overlay: gentle "nodding" while actively listening, and a
+ * placeholder/fallback scale for "speaking" when the live audio-reactive
+ * pulse (set via inline style in ConversationMode.tsx) is disabled because
+ * the user prefers reduced motion. Purely decorative -- never applied to
+ * anything screen readers read, and fully disabled under reduced-motion. */
+@keyframes kade-nod {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  30%      { transform: rotate(-3.5deg) translateY(-2px); }
+  65%      { transform: rotate(3deg) translateY(0); }
+}
+
+.animate-kade-nod {
+  animation: kade-nod 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-kade-nod {
+    animation: none !important;
+  }
+}
+
 .animate-pulse-slow {
   animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
