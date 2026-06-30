@@ -47,6 +47,15 @@ const registrationController = async (req, res) => {
     const response = await registerUser(req.body);
     const { status, message } = response;
     res.status(status).send({ message });
+    // Fire-and-forget: register phone with the bridge if the user provided one
+    if ((status === 200 || status === 201) && req.body.phoneNumber && req.body.name) {
+      const bridgeSignupUrl = process.env.BRIDGE_SIGNUP_URL || 'https://kade-ai-bridge-production.up.railway.app/signup';
+      fetch(bridgeSignupUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+        body: JSON.stringify({ name: req.body.name, phone: req.body.phoneNumber }),
+      }).catch(() => {}); // never fail registration if bridge is unreachable
+    }
   } catch (err) {
     logger.error('[registrationController]', err);
     return res.status(500).json({ message: err.message });
