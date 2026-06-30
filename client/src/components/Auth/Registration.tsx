@@ -21,7 +21,7 @@ const Registration: React.FC = () => {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<TRegisterUser>({ mode: 'onChange' });
+  } = useForm<TRegisterUser & { phoneNumber?: string }>({ mode: 'onChange' });
   const password = watch('password');
 
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -191,6 +191,23 @@ const Registration: React.FC = () => {
                 message: localize('com_auth_email_pattern'),
               },
             })}
+
+            <div className="mb-4">
+              <div className="relative">
+                <input
+                  id="phoneNumber"
+                  type="tel"
+                  autoComplete="tel"
+                  aria-label="Phone number (optional)"
+                  {...register('phoneNumber')}
+                  className={authInputClassName}
+                  placeholder=" "
+                />
+                <label htmlFor="phoneNumber" className={authLabelClassName}>
+                  Phone number (optional — so the AI knows you when you call in)
+                </label>
+              </div>
+            </div>
             {renderInput('password', 'com_auth_password', 'password', {
               required: localize('com_auth_password_required'),
               minLength: {
