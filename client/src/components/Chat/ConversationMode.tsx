@@ -623,11 +623,18 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
   };
 
+  // Kept to single words on purpose: a screen reader interrupts/ducks whatever
+  // audio is currently playing every time this live region's text changes, so
+  // longer phrases here meant longer interruptions of the agent's actual voice.
+  // 'speaking' now gets a one-word announcement too (it used to be silent) --
+  // it fires once at the start of a reply, before the TTS fetch has even
+  // returned audio, so in practice it doesn't overlap the agent's voice.
   const srStatus =
     error                    ? '' :
-    status === 'listening'   ? 'Listening. Your turn to talk.' :
-    status === 'thinking'    ? 'Got it. One moment.' :
-    status === 'connecting'  ? 'Connecting.' :
+    status === 'listening'   ? 'Listening' :
+    status === 'thinking'    ? 'Thinking' :
+    status === 'speaking'    ? 'Speaking' :
+    status === 'connecting'  ? 'Connecting' :
                                '';
   const visibleStatus =
     status === 'listening'   ? 'Listening' :
@@ -671,7 +678,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-950/97 focus:outline-none"
       role="dialog"
       aria-modal="true"
-      aria-label="Voice conversation. Listening starts automatically. Press Escape or activate End call to hang up."
+      aria-label="Voice conversation. Escape or End call to hang up."
     >
       {/* Single polite status region for screen readers (turn-taking only) */}
       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
