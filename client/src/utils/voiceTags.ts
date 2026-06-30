@@ -32,5 +32,10 @@ export function stripVoiceTags(text: string): string {
     // A removed leading tag often leaves a stray space before the next
     // word, and removing one mid-sentence can leave doubled spaces behind.
     .replace(/[ \t]{2,}/g, ' ')
-    .replace(/^[ \t]+/gm, '');
+    .replace(/^[ \t]+/gm, '')
+    // A removed tag at the very start of the message leaves a blank line
+    // (the tag's own trailing newline) above the first real line. Trim
+    // leading whitespace/newlines from the start of the whole string only --
+    // never mid-document, where blank lines are real paragraph breaks.
+    .replace(/^\s+/, '');
 }
