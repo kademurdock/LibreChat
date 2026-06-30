@@ -1,13 +1,13 @@
 /**
- * ConversationMode — Patch F2
+ * ConversationMode — Patch F2 (+ a11y/streaming repair, June 30 2026)
  *
  * Web/PWA "Skype-style" voice conversation overlay. A phone button appears in
  * the chat area; tapping it opens a full-screen voice call UI where the user
  * can speak naturally and hear the active agent reply in their Inworld voice.
  *
  * Architecture:
- *   Web Speech API (STT) → LibreChat /api/agents/chat SSE → SentenceStreamer
- *   → Inworld TTS proxy /v1/audio/speech → Web Audio API playback
+ *   Web Speech API (STT) -> LibreChat /api/agents/chat (resumable SSE)
+ *   -> SentenceStreamer -> Inworld TTS proxy /v1/audio/speech -> Web Audio API
  *
  * iOS note: AudioContext is unlocked on the "Start Call" button tap (user
  * gesture), which is the only reliable way to enable auto-play audio on iOS.
@@ -15,6 +15,25 @@
  * Half-duplex: the agent speaks first, user listens; when audio ends, listening
  * restarts. While the agent is speaking, an amber "Stop" button lets the user
  * interrupt and take the turn immediately.
+ *
+ * Accessibility (June 30 fix):
+ *   - The overlay is NOT a live region. Captions are visual-only (aria-hidden)
+ *     so a screen reader never reads the streaming transcript over the user or
+ *     over the agent's own TTS voice.
+ *   - A single polite status region announces turn-taking ("Listening. Your
+ *     turn.", "One moment.") and falls SILENT while the agent is speaking so
+ *     VoiceOver doesn't talk over the reply.
+ *   - Errors surface in an assertive alert region instead of failing silently.
+ *   - Modal focus management: focus moves into the dialog on open and back to
+ *     the trigger on close; Escape ends the call; Tab is trapped in the dialog.
+ *
+ * Networking (June 30 fix):
+ *   - POSTs the real LibreChat agent submission ({ endpoint, agent_id, text,
+ *     conversationId, parentMessageId }); threads multi-turn via the returned
+ *     conversation + responseMessage ids (streamId === conversationId).
+ *   - Parses the resumable SSE: run-step `on_message_delta` text deltas for low
+ *     latency, reconciled against the `final` event so the full reply is always
+ *     spoken even if a delta shape is missed.
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
@@ -24,7 +43,7 @@ import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
-// ── SentenceStreamer ──────────────────────────────────────────────────────────
+// -- SentenceStreamer ----------------------------------------------------------
 // Port of the phase4 POC sentence splitter. Buffers streaming tokens and emits
 // complete sentences (split on .!?) with abbreviation-awareness.
 class SentenceStreamer {
@@ -83,13 +102,44 @@ class SentenceStreamer {
   }
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-type CallStatus = 'idle' | 'listening' | 'thinking' | 'speaking';
+// -- Types & constants ---------------------------------------------------------
+type CallStatus = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking';
 
 // Inworld TTS proxy (same service LibreChat uses for in-chat TTS)
 const TTS_BASE = 'https://inworld-tts-proxy-production.up.railway.app';
+// LibreChat conversation-threading sentinels (mirror data-provider Constants)
+const NO_PARENT = '00000000-0000-0000-0000-000000000000';
+const NEW_CONVO = 'new';
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// -- Text extraction helpers (stable, module-level) ---------------------------
+function partToText(p: any): string {
+  if (p == null) return '';
+  if (typeof p === 'string') return p;
+  if (typeof p.text === 'string') return p.text;
+  if (p.text && typeof p.text.value === 'string') return p.text.value;
+  return '';
+}
+function contentToText(content: any): string {
+  if (content == null) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map(partToText).join('');
+  return partToText(content);
+}
+function messageText(msg: any): string {
+  if (!msg) return '';
+  if (typeof msg.text === 'string' && msg.text) return msg.text;
+  return contentToText(msg.content);
+}
+function makeId(): string {
+  try {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+  } catch { /* ignore */ }
+  return 'id-' + Date.now().toString(16) + '-' + Math.random().toString(16).slice(2);
+}
+
+// -- Component -----------------------------------------------------------------
 interface ConversationModeProps {
   index?: number;
 }
@@ -104,18 +154,23 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const [transcript, setTranscript] = useState('');
   const [aiText,     setAiText]     = useState('');
   const [srAvail,    setSrAvail]    = useState(false);
+  const [error,      setError]      = useState('');
 
   // Refs that survive re-renders and break hook circular deps
-  const audioCtxRef       = useRef<AudioContext | null>(null);
-  const recRef            = useRef<any>(null);
-  const abortRef          = useRef(false);
-  const historyRef        = useRef<Array<{ role: string; content: string }>>([]);
-  const conversationIdRef = useRef<string | null>(null);
-  const playQueueRef      = useRef<Promise<void>>(Promise.resolve());
-  const statusRef         = useRef<CallStatus>('idle');
+  const audioCtxRef        = useRef<AudioContext | null>(null);
+  const recRef             = useRef<any>(null);
+  const abortRef           = useRef(false);
+  const conversationIdRef  = useRef<string | null>(null);
+  const parentMessageIdRef = useRef<string>(NO_PARENT);
+  const playQueueRef       = useRef<Promise<void>>(Promise.resolve());
+  const statusRef          = useRef<CallStatus>('idle');
   // Stable ref to the latest startListening so streamTurn can call it without
   // the circular useCallback dep chain.
-  const startListeningRef = useRef<() => void>(() => {});
+  const startListeningRef  = useRef<() => void>(() => {});
+  // Modal focus management
+  const triggerRef         = useRef<HTMLButtonElement | null>(null);
+  const dialogRef          = useRef<HTMLDivElement | null>(null);
+  const wasOpenRef         = useRef(false);
 
   useEffect(() => { statusRef.current = status; }, [status]);
 
@@ -124,7 +179,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setSrAvail(!!SR);
   }, []);
 
-  // ── Audio context ────────────────────────────────────────────────────────────
+  // -- Audio context -----------------------------------------------------------
   // Must be called inside a user gesture to unlock iOS auto-play.
   const getAudioCtx = useCallback(() => {
     if (!audioCtxRef.current) {
@@ -179,64 +234,73 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     }
   }, [voice, enqueueAudio]);
 
-  // ── LLM streaming turn ───────────────────────────────────────────────────────
+  // -- LLM streaming turn ------------------------------------------------------
   const streamTurn = useCallback(async (userText: string) => {
     if (abortRef.current) return;
+    setError('');
     setStatus('thinking');
     setAiText('');
     setTranscript('');
 
-    historyRef.current.push({ role: 'user', content: userText });
-    // Keep last 20 messages (~10 turns) for context
-    if (historyRef.current.length > 20) historyRef.current.splice(0, 2);
-
     const streamer = new SentenceStreamer();
-    let fullReply = '';
-    let firstToken = true;
+    let acc = '';            // text already handed to TTS / shown
+    let firstChunk = true;
 
     streamer.onsentence = (sentence) => {
       if (abortRef.current) return;
-      if (firstToken) { setStatus('speaking'); firstToken = false; }
+      if (firstChunk) { setStatus('speaking'); firstChunk = false; }
       void speakSentence(sentence);
     };
 
+    const pushText = (chunk: string) => {
+      if (!chunk) return;
+      acc += chunk;
+      setAiText(prev => prev + chunk);
+      streamer.push(chunk);
+    };
+
     try {
-      const authHeaders: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (compatible; LibreChat)',
-      };
-      if (token) authHeaders['Authorization'] = `Bearer ${token}`;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
+      // Standard LibreChat agent submission. The server rebuilds history from
+      // conversationId + parentMessageId, so we thread rather than resend.
       const body: Record<string, unknown> = {
+        endpoint: 'agents',
         agent_id: agentId,
-        messages: historyRef.current,
+        text: userText,
+        messageId: makeId(),
+        parentMessageId: parentMessageIdRef.current || NO_PARENT,
+        conversationId: conversationIdRef.current || NEW_CONVO,
       };
-      if (conversationIdRef.current) body['conversationId'] = conversationIdRef.current;
 
-      // Phase 1: start the agent stream
+      // Phase 1: start the generation job (returns streamId === conversationId)
       const startResp = await fetch('/api/agents/chat', {
         method: 'POST',
-        headers: authHeaders,
+        headers,
         credentials: 'include',
         body: JSON.stringify(body),
       });
       if (!startResp.ok) throw new Error(`chat start ${startResp.status}`);
+      const startData = await startResp.json() as { streamId?: string; conversationId?: string };
+      if (startData.conversationId) conversationIdRef.current = startData.conversationId;
+      if (!startData.streamId) throw new Error('no streamId from chat start');
 
-      const startData = await startResp.json() as { streamId: string; conversationId?: string };
-      if (startData.conversationId && !conversationIdRef.current) {
-        conversationIdRef.current = startData.conversationId;
-      }
-
-      // Phase 2: consume SSE token stream
-      const sseResp = await fetch(`/api/agents/chat/stream/${startData.streamId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        credentials: 'include',
-      });
+      // Phase 2: subscribe to the SSE token stream
+      const sseResp = await fetch(
+        `/api/agents/chat/stream/${encodeURIComponent(startData.streamId)}`,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          credentials: 'include',
+        },
+      );
       if (!sseResp.ok || !sseResp.body) throw new Error(`SSE ${sseResp.status}`);
 
       const reader  = sseResp.body.getReader();
       const decoder = new TextDecoder();
       let sseBuf = '';
+      let curEvent = 'message';
+      let finalized = false;
 
       streamLoop: while (true) {
         if (abortRef.current) { await reader.cancel(); break; }
@@ -247,52 +311,94 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         const lines = sseBuf.split('\n');
         sseBuf = lines.pop() ?? '';
 
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const raw = line.slice(6).trim();
-          if (raw === '[DONE]') { await reader.cancel(); break streamLoop; }
-          try {
-            const d = JSON.parse(raw) as any;
-            // on_message_delta format: d.data.delta.content[0].text
-            const tok: string =
-              d?.data?.delta?.content?.[0]?.text ??
-              d?.delta?.content?.[0]?.text ??
-              d?.token ??
-              '';
-            if (tok) {
-              fullReply += tok;
-              setAiText(prev => prev + tok);
-              streamer.push(tok);
+        for (const rawLine of lines) {
+          const line = rawLine.replace(/\r$/, '');
+          if (line === '') { curEvent = 'message'; continue; }
+          if (line.startsWith('event:')) { curEvent = line.slice(6).trim(); continue; }
+          if (!line.startsWith('data:')) continue;
+
+          const payload = line.slice(5).trim();
+          if (payload === '[DONE]') break streamLoop;
+          if (!payload) continue;
+
+          let obj: any;
+          try { obj = JSON.parse(payload); } catch { continue; }
+
+          if (curEvent === 'error' || obj?.error) {
+            throw new Error(typeof obj?.error === 'string' ? obj.error : 'stream error');
+          }
+
+          // Created: capture the real conversation id, nothing to speak yet.
+          if (obj.created != null) {
+            if (obj?.conversation?.conversationId) {
+              conversationIdRef.current = obj.conversation.conversationId;
             }
-          } catch { /* ignore malformed events */ }
+            continue;
+          }
+
+          // Final: full reply + thread ids. Speak any not-yet-spoken remainder.
+          if (obj.final != null) {
+            const rm = obj.responseMessage;
+            const full = messageText(rm) || (typeof obj.text === 'string' ? obj.text : '');
+            if (full && full.length > acc.length && full.startsWith(acc)) {
+              pushText(full.slice(acc.length));
+            } else if (full && acc === '') {
+              pushText(full);
+            }
+            if (rm?.messageId) parentMessageIdRef.current = rm.messageId;
+            if (obj?.conversation?.conversationId) {
+              conversationIdRef.current = obj.conversation.conversationId;
+            }
+            finalized = true;
+            break streamLoop;
+          }
+
+          if (obj.sync != null) continue;
+          // Never speak the model's private reasoning.
+          if (obj.event === 'on_reasoning_delta') continue;
+
+          // Run-step message delta (low-latency incremental text).
+          const deltaContent = obj?.data?.delta?.content ?? obj?.delta?.content;
+          if (deltaContent != null) { pushText(contentToText(deltaContent)); continue; }
+
+          // Legacy cumulative-text event.
+          if (typeof obj.text === 'string') {
+            if (obj.text.length > acc.length && obj.text.startsWith(acc)) {
+              pushText(obj.text.slice(acc.length));
+            }
+            continue;
+          }
         }
       }
 
       streamer.end();
-      if (fullReply) historyRef.current.push({ role: 'assistant', content: fullReply });
+      if (!finalized && acc === '' && !abortRef.current) {
+        setError("I didn't catch a reply — your turn, go ahead and try again.");
+      }
 
       // Once all queued audio finishes, hand the mic back to the user
       playQueueRef.current.then(() => {
         if (!abortRef.current) {
-          setStatus('listening');
           setAiText('');
+          setStatus('listening');
           startListeningRef.current();
         }
       });
     } catch (err) {
       console.error('[ConvMode] streamTurn error:', err);
       if (!abortRef.current) {
+        setError('Connection hiccup — your turn, try again.');
         setStatus('listening');
         startListeningRef.current();
       }
     }
   }, [agentId, token, speakSentence]);
 
-  // ── Speech recognition ───────────────────────────────────────────────────────
+  // -- Speech recognition ------------------------------------------------------
   const startListening = useCallback(() => {
     if (abortRef.current) return;
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
+    if (!SR) { setError('Speech recognition is not available in this browser. Try Safari or Chrome.'); return; }
 
     const rec = new SR() as any;
     rec.continuous = false;
@@ -314,8 +420,13 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     };
 
     rec.onerror = (e: any) => {
-      // 'aborted' fires when we .stop() intentionally — ignore
-      if (e.error !== 'aborted' && !abortRef.current) {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        setError('Microphone access is blocked. Enable mic permission, then end and restart the call.');
+        return;
+      }
+      // 'aborted' fires when we .stop() intentionally — ignore. 'no-speech'
+      // just means a silent window; the onend handler restarts listening.
+      if (e.error !== 'aborted' && e.error !== 'no-speech' && !abortRef.current) {
         setTimeout(() => startListeningRef.current(), 1000);
       }
     };
@@ -334,19 +445,20 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // Keep the ref in sync with the latest callback
   useEffect(() => { startListeningRef.current = startListening; }, [startListening]);
 
-  // ── Call controls ────────────────────────────────────────────────────────────
+  // -- Call controls -----------------------------------------------------------
   const startCall = useCallback(() => {
     getAudioCtx();               // iOS: unlock AudioContext on user gesture
     abortRef.current = false;
-    historyRef.current = [];
     conversationIdRef.current = null;
+    parentMessageIdRef.current = NO_PARENT;
     playQueueRef.current = Promise.resolve();
+    setError('');
     setOpen(true);
     setAiText('');
     setTranscript('');
-    setStatus('listening');
+    setStatus('connecting');
     // Small delay to let React settle the open state before starting SR
-    setTimeout(() => startListeningRef.current(), 100);
+    setTimeout(() => startListeningRef.current(), 250);
   }, [getAudioCtx]);
 
   const endCall = useCallback(() => {
@@ -358,8 +470,9 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setStatus('idle');
     setTranscript('');
     setAiText('');
-    historyRef.current = [];
+    setError('');
     conversationIdRef.current = null;
+    parentMessageIdRef.current = NO_PARENT;
   }, []);
 
   // Stop AI mid-speech and hand the mic back immediately
@@ -383,13 +496,61 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     };
   }, []);
 
-  // ── Trigger button ───────────────────────────────────────────────────────────
+  // Modal focus management: into the dialog on open, back to trigger on close.
+  useEffect(() => {
+    if (open) {
+      wasOpenRef.current = true;
+      const t = setTimeout(() => dialogRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+    if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      triggerRef.current?.focus();
+    }
+  }, [open]);
+
+  // Escape to end; trap Tab within the dialog's controls.
+  const onDialogKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { e.preventDefault(); endCall(); return; }
+    if (e.key !== 'Tab') return;
+    const nodes = dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled])');
+    if (!nodes || nodes.length === 0) return;
+    const list = Array.from(nodes);
+    const first = list[0];
+    const last = list[list.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (active === dialogRef.current) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+  };
+
+  // Announced only on turn hand-offs; SILENT while the agent speaks so the
+  // screen reader never talks over the agent's voice.
+  const srStatus =
+    error                    ? '' :
+    status === 'listening'   ? 'Listening. Your turn to talk.' :
+    status === 'thinking'    ? 'Got it. One moment.' :
+    status === 'connecting'  ? 'Connecting.' :
+                               '';
+  const visibleStatus =
+    status === 'listening'   ? 'Listening' :
+    status === 'thinking'    ? 'Thinking' :
+    status === 'speaking'    ? 'Speaking' :
+    status === 'connecting'  ? 'Connecting' :
+                               'Starting';
+
+  // -- Trigger button ----------------------------------------------------------
   if (!open) {
     return (
       <button
+        ref={triggerRef}
         onClick={startCall}
         aria-label="Start voice conversation with the active agent"
-        title={agentId ? 'Voice call mode' : 'Open a conversation to use voice call mode'}
+        title={
+          !srAvail ? 'Voice calls need a browser with speech recognition (Safari or Chrome)'
+          : agentId ? 'Voice call mode'
+          : 'Open a conversation to use voice call mode'
+        }
         disabled={!agentId || !srAvail}
         className={cn(
           'flex h-8 w-8 items-center justify-center rounded-full transition-colors',
@@ -404,16 +565,27 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     );
   }
 
-  // ── Call overlay ─────────────────────────────────────────────────────────────
+  // -- Call overlay ------------------------------------------------------------
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-950/97"
+      ref={dialogRef}
+      tabIndex={-1}
+      onKeyDown={onDialogKeyDown}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-950/97 focus:outline-none"
       role="dialog"
       aria-modal="true"
-      aria-label="Voice conversation mode — press the red button to end the call"
-      aria-live="polite"
+      aria-label="Voice conversation. Listening starts automatically. Press Escape or activate End call to hang up."
     >
-      {/* Status orb */}
+      {/* Single polite status region for screen readers (turn-taking only) */}
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {srStatus}
+      </p>
+      {/* Assertive alert region for errors */}
+      <p className="sr-only" role="alert" aria-live="assertive">
+        {error}
+      </p>
+
+      {/* Status orb (decorative) */}
       <div
         className={cn(
           'mb-6 h-28 w-28 rounded-full flex items-center justify-center transition-all duration-300',
@@ -424,45 +596,50 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         )}
         aria-hidden="true"
       >
-        {status === 'listening' && <Mic size={44} className="text-blue-400 animate-pulse" />}
-        {status === 'thinking'  && (
+        {status === 'listening'  && <Mic size={44} className="text-blue-400 animate-pulse" />}
+        {status === 'thinking'   && (
           <div className="h-7 w-7 rounded-full border-[3px] border-amber-400 border-t-transparent animate-spin" />
         )}
-        {status === 'speaking'  && <Phone size={44} className="text-green-400" />}
-        {status === 'idle'      && <Phone size={44} className="text-gray-500" />}
+        {status === 'speaking'   && <Phone size={44} className="text-green-400" />}
+        {(status === 'idle' || status === 'connecting') && <Phone size={44} className="text-gray-400" />}
       </div>
 
-      {/* Status label */}
-      <p className="mb-8 text-sm uppercase tracking-widest text-gray-400" aria-live="polite">
-        {status === 'listening' ? 'Listening...' :
-         status === 'thinking'  ? 'Thinking...' :
-         status === 'speaking'  ? 'Speaking' :
-                                  'Starting...'}
+      {/* Visible status label (decorative — announced via the sr-only region) */}
+      <p className="mb-6 text-sm uppercase tracking-widest text-gray-300" aria-hidden="true">
+        {visibleStatus}
       </p>
 
-      {/* Live text display */}
-      <div className="w-full max-w-xs space-y-3 px-4 min-h-[7rem]">
+      {/* Visible error (also announced via the alert region above) */}
+      {error && (
+        <p className="mb-4 max-w-xs px-4 text-center text-sm text-amber-300" aria-hidden="true">
+          {error}
+        </p>
+      )}
+
+      {/* Live captions — VISUAL ONLY. Hidden from screen readers so they are
+          never read over the user's speech or the agent's TTS voice. */}
+      <div className="w-full max-w-xs space-y-3 px-4 min-h-[7rem]" aria-hidden="true">
         {transcript && (
           <div className="rounded-2xl bg-blue-950/60 px-4 py-3 text-sm leading-relaxed">
-            <span className="mb-1 block text-xs uppercase tracking-wider text-blue-400">You</span>
+            <span className="mb-1 block text-xs uppercase tracking-wider text-blue-300">You</span>
             <span className="text-blue-100">{transcript}</span>
           </div>
         )}
         {aiText && (
           <div className="rounded-2xl bg-white/5 px-4 py-3 text-sm leading-relaxed">
-            <span className="mb-1 block text-xs uppercase tracking-wider text-gray-400">Agent</span>
-            <span className="text-gray-200">{aiText}</span>
+            <span className="mb-1 block text-xs uppercase tracking-wider text-gray-300">Agent</span>
+            <span className="text-gray-100">{aiText}</span>
           </div>
         )}
       </div>
 
       {/* Controls */}
       <div className="mt-10 flex items-center gap-6">
-        {/* Amber interrupt button — only while agent is speaking */}
+        {/* Amber interrupt button — only while agent is thinking/speaking */}
         {(status === 'speaking' || status === 'thinking') && (
           <button
             onClick={interruptAI}
-            aria-label="Interrupt — stop agent and start listening"
+            aria-label="Interrupt the agent and start listening"
             title="Interrupt agent"
             className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-600/90 text-white shadow-lg transition-colors hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-400"
           >
@@ -481,7 +658,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         </button>
       </div>
 
-      <p className="mt-5 text-xs text-gray-600">
+      <p className="mt-5 text-xs text-gray-400" aria-hidden="true">
         {status === 'speaking' || status === 'thinking'
           ? 'Tap amber to interrupt · Red to end call'
           : 'Red button ends the call'}
