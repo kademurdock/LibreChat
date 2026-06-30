@@ -21,6 +21,7 @@ import useBuildMessageTree from '~/hooks/Messages/useBuildMessageTree';
 import { useScreenshot } from '~/hooks/ScreenshotContext';
 import { useLocalize } from '~/hooks';
 import { cleanupPreset } from '~/utils';
+import { stripVoiceTags } from '~/utils/voiceTags';
 
 type ExportValues = {
   fieldName: string;
@@ -63,11 +64,15 @@ export default function useExportConversation({
       return '';
     }
 
+    // Exported files are read, not heard -- strip any invisible TTS-2 voice
+    // performance tag (utils/voiceTags.ts) out of the spoken-text content
+    // before it ever reaches formatText, same rule as the chat bubble.
     const formatText = (sender: string, text: string) => {
+      const cleanText = stripVoiceTags(text);
       if (format === 'text') {
-        return `>> ${sender}:\n${text}`;
+        return `>> ${sender}:\n${cleanText}`;
       }
-      return `**${sender}**\n${text}`;
+      return `**${sender}**\n${cleanText}`;
     };
 
     if (!message.content) {

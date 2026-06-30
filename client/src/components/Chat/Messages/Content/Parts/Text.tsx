@@ -2,6 +2,7 @@ import { memo, useMemo, ReactElement } from 'react';
 import { useRecoilValue } from 'recoil';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
+import { stripVoiceTags } from '~/utils/voiceTags';
 import { useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -22,15 +23,23 @@ const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: T
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const showCursorState = useMemo(() => showCursor && isSubmitting, [showCursor, isSubmitting]);
 
+  // Assistant text can carry invisible TTS-2 voice performance tags (see
+  // utils/voiceTags.ts) -- strip them here so they never reach the visible
+  // chat bubble. User-authored text never contains them, so it's left alone.
+  const displayText = useMemo(
+    () => (isCreatedByUser ? text : stripVoiceTags(text)),
+    [isCreatedByUser, text],
+  );
+
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {
-      return <Markdown content={text} isLatestMessage={isLatestMessage} />;
+      return <Markdown content={displayText} isLatestMessage={isLatestMessage} />;
     } else if (enableUserMsgMarkdown) {
-      return <MarkdownLite content={text} />;
+      return <MarkdownLite content={displayText} />;
     } else {
-      return <>{text}</>;
+      return <>{displayText}</>;
     }
-  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage]);
+  }, [isCreatedByUser, enableUserMsgMarkdown, displayText, isLatestMessage]);
 
   return (
     <div

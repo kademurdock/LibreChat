@@ -37,6 +37,7 @@ import { useRecoilValue } from 'recoil';
 import { Phone, PhoneOff, Mic, StopCircle } from 'lucide-react';
 import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
+import { stripVoiceTags } from '~/utils/voiceTags';
 import store from '~/store';
 
 // -- SentenceStreamer ----------------------------------------------------------
@@ -723,7 +724,12 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         {aiText && (
           <div className="rounded-2xl bg-white/5 px-4 py-3 text-sm leading-relaxed">
             <span className="mb-1 block text-xs uppercase tracking-wider text-gray-300">Agent</span>
-            <span className="text-gray-100">{aiText}</span>
+            {/* aiText accumulates the raw streamed reply, which may carry an
+                invisible TTS-2 voice performance tag (see utils/voiceTags.ts)
+                meant only for the audio path -- strip it for this caption.
+                speakSentence() above gets the untouched chunk, so the voice
+                itself stays expressive. */}
+            <span className="text-gray-100">{stripVoiceTags(aiText)}</span>
           </div>
         )}
       </div>

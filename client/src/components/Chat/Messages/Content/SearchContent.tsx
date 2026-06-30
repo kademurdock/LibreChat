@@ -13,6 +13,7 @@ import { UnfinishedMessage } from './MessageContent';
 import { cn, mapAttachments } from '~/utils';
 import { SearchContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
+import { stripVoiceTags } from '~/utils/voiceTags';
 import store from '~/store';
 import Part from './Part';
 
@@ -74,7 +75,7 @@ const SearchContent = ({
       )}
       dir="auto"
     >
-      <MarkdownLite content={message.text || ''} />
+      <MarkdownLite content={stripVoiceTags(message.text || '')} />
     </div>
   );
 };
