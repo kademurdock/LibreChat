@@ -1,39 +1,35 @@
 /**
- * ConversationMode — Patch F2 (+ a11y/streaming repair, June 30 2026)
+ * ConversationMode — Patch F2 (+ F3 a11y/streaming repair + F4 STT alignment)
  *
  * Web/PWA "Skype-style" voice conversation overlay. A phone button appears in
  * the chat area; tapping it opens a full-screen voice call UI where the user
  * can speak naturally and hear the active agent reply in their Inworld voice.
  *
  * Architecture:
- *   Web Speech API (STT) -> LibreChat /api/agents/chat (resumable SSE)
- *   -> SentenceStreamer -> Inworld TTS proxy /v1/audio/speech -> Web Audio API
+ *   MediaRecorder + silence VAD -> LibreChat /api/files/speech/stt (Whisper)
+ *   -> /api/agents/chat (resumable SSE) -> SentenceStreamer
+ *   -> Inworld TTS proxy /v1/audio/speech -> Web Audio API playback
  *
- * iOS note: AudioContext is unlocked on the "Start Call" button tap (user
- * gesture), which is the only reliable way to enable auto-play audio on iOS.
+ * F4 (June 30 2026): speech-to-text now uses the SAME server-side Whisper path
+ * as the in-app mic (useSpeechToTextExternal): record with MediaRecorder, detect
+ * end-of-turn with an AnalyserNode, POST the clip to /api/files/speech/stt. The
+ * previous build used the browser Web Speech API (webkitSpeechRecognition),
+ * which is unreliable in iOS home-screen PWAs. MediaRecorder + server Whisper
+ * works there, matching the phone line's server-side STT philosophy (Deepgram).
  *
- * Half-duplex: the agent speaks first, user listens; when audio ends, listening
+ * iOS note: AudioContext + getUserMedia are unlocked on the "Start Call" button
+ * tap (user gesture), the only reliable way to enable auto-play + mic on iOS.
+ *
+ * Half-duplex: the agent speaks first, user listens; when audio ends, recording
  * restarts. While the agent is speaking, an amber "Stop" button lets the user
  * interrupt and take the turn immediately.
  *
- * Accessibility (June 30 fix):
+ * Accessibility:
  *   - The overlay is NOT a live region. Captions are visual-only (aria-hidden)
- *     so a screen reader never reads the streaming transcript over the user or
- *     over the agent's own TTS voice.
- *   - A single polite status region announces turn-taking ("Listening. Your
- *     turn.", "One moment.") and falls SILENT while the agent is speaking so
- *     VoiceOver doesn't talk over the reply.
- *   - Errors surface in an assertive alert region instead of failing silently.
- *   - Modal focus management: focus moves into the dialog on open and back to
- *     the trigger on close; Escape ends the call; Tab is trapped in the dialog.
- *
- * Networking (June 30 fix):
- *   - POSTs the real LibreChat agent submission ({ endpoint, agent_id, text,
- *     conversationId, parentMessageId }); threads multi-turn via the returned
- *     conversation + responseMessage ids (streamId === conversationId).
- *   - Parses the resumable SSE: run-step `on_message_delta` text deltas for low
- *     latency, reconciled against the `final` event so the full reply is always
- *     spoken even if a delta shape is missed.
+ *     so a screen reader never reads them over the user or the agent's voice.
+ *   - One polite status region announces turn-taking and falls SILENT while the
+ *     agent speaks; errors surface in an assertive alert region.
+ *   - Modal focus management, Escape to end, Tab trapped in the dialog.
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
@@ -89,7 +85,6 @@ class SentenceStreamer {
         if (sentence.length > 4 && this.onsentence) this.onsentence(sentence);
         this.buf = this.buf.slice(end).trimStart();
         pos = 0;
-        // Safety valve: flush if buffer grows very large (no punctuation)
         if (this.buf.length > 1400) {
           if (this.onsentence) this.onsentence(this.buf.trim());
           this.buf = '';
@@ -105,11 +100,15 @@ class SentenceStreamer {
 // -- Types & constants ---------------------------------------------------------
 type CallStatus = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking';
 
-// Inworld TTS proxy (same service LibreChat uses for in-chat TTS)
 const TTS_BASE = 'https://inworld-tts-proxy-production.up.railway.app';
-// LibreChat conversation-threading sentinels (mirror data-provider Constants)
+const STT_URL = '/api/files/speech/stt';
 const NO_PARENT = '00000000-0000-0000-0000-000000000000';
 const NEW_CONVO = 'new';
+// VAD tuning
+const VAD_MIN_DECIBELS = -45;     // below this is treated as silence
+const VAD_SILENCE_MS = 1500;      // end the turn after this much trailing silence
+const VAD_MAX_TURN_MS = 30000;    // hard cap on a single utterance
+const VAD_NOSPEECH_MS = 12000;    // give the mic back if nothing is said
 
 // -- Text extraction helpers (stable, module-level) ---------------------------
 function partToText(p: any): string {
@@ -138,6 +137,23 @@ function makeId(): string {
   } catch { /* ignore */ }
   return 'id-' + Date.now().toString(16) + '-' + Math.random().toString(16).slice(2);
 }
+function pickMimeType(): string {
+  const types = ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus','audio/ogg','audio/wav'];
+  for (const t of types) {
+    try { if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t)) return t; } catch { /* ignore */ }
+  }
+  if (typeof navigator !== 'undefined') {
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes('safari') && !ua.includes('chrome')) return 'audio/mp4';
+  }
+  return '';
+}
+function fileExt(mime: string): string {
+  if (mime.includes('mp4')) return 'm4a';
+  if (mime.includes('ogg')) return 'ogg';
+  if (mime.includes('wav')) return 'wav';
+  return 'webm';
+}
 
 // -- Component -----------------------------------------------------------------
 interface ConversationModeProps {
@@ -153,20 +169,29 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const [status,     setStatus]     = useState<CallStatus>('idle');
   const [transcript, setTranscript] = useState('');
   const [aiText,     setAiText]     = useState('');
-  const [srAvail,    setSrAvail]    = useState(false);
+  const [mediaAvail, setMediaAvail] = useState(false);
   const [error,      setError]      = useState('');
 
-  // Refs that survive re-renders and break hook circular deps
+  // Audio out (TTS playback)
   const audioCtxRef        = useRef<AudioContext | null>(null);
-  const recRef             = useRef<any>(null);
+  const playQueueRef       = useRef<Promise<void>>(Promise.resolve());
+  // Audio in (mic capture + VAD)
+  const micStreamRef       = useRef<MediaStream | null>(null);
+  const vadCtxRef          = useRef<AudioContext | null>(null);
+  const analyserRef        = useRef<AnalyserNode | null>(null);
+  const rafRef             = useRef<number | null>(null);
+  const mediaRecorderRef   = useRef<MediaRecorder | null>(null);
+  const audioChunksRef     = useRef<Blob[]>([]);
+  const spokeRef           = useRef(false);
+  // Flow control + threading
   const abortRef           = useRef(false);
   const conversationIdRef  = useRef<string | null>(null);
   const parentMessageIdRef = useRef<string>(NO_PARENT);
-  const playQueueRef       = useRef<Promise<void>>(Promise.resolve());
   const statusRef          = useRef<CallStatus>('idle');
-  // Stable ref to the latest startListening so streamTurn can call it without
-  // the circular useCallback dep chain.
+  // Stable cross-call refs (break circular useCallback deps)
   const startListeningRef  = useRef<() => void>(() => {});
+  const stopRecordingRef   = useRef<() => void>(() => {});
+  const handleUtteranceRef = useRef<(mime: string) => void>(() => {});
   // Modal focus management
   const triggerRef         = useRef<HTMLButtonElement | null>(null);
   const dialogRef          = useRef<HTMLDivElement | null>(null);
@@ -175,12 +200,15 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   useEffect(() => { statusRef.current = status; }, [status]);
 
   useEffect(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    setSrAvail(!!SR);
+    const ok = typeof navigator !== 'undefined'
+      && !!navigator.mediaDevices
+      && typeof navigator.mediaDevices.getUserMedia === 'function'
+      && typeof window !== 'undefined'
+      && typeof (window as any).MediaRecorder !== 'undefined';
+    setMediaAvail(ok);
   }, []);
 
-  // -- Audio context -----------------------------------------------------------
-  // Must be called inside a user gesture to unlock iOS auto-play.
+  // -- Audio output ------------------------------------------------------------
   const getAudioCtx = useCallback(() => {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -191,9 +219,6 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     return audioCtxRef.current;
   }, []);
 
-  // Enqueue decoded audio on the Web Audio API. Ordered — each clip waits for
-  // the previous to finish. Returns the tail promise so callers can await
-  // "all audio done."
   const enqueueAudio = useCallback((raw: ArrayBuffer): Promise<void> => {
     const tail = playQueueRef.current.then(async () => {
       if (abortRef.current) return;
@@ -216,7 +241,6 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     return tail;
   }, []);
 
-  // Synthesize one sentence via Inworld TTS and enqueue it for playback.
   const speakSentence = useCallback(async (text: string) => {
     if (abortRef.current) return;
     const useVoice = voice || 'Kiana (Comedian)';
@@ -240,10 +264,9 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setError('');
     setStatus('thinking');
     setAiText('');
-    setTranscript('');
 
     const streamer = new SentenceStreamer();
-    let acc = '';            // text already handed to TTS / shown
+    let acc = '';
     let firstChunk = true;
 
     streamer.onsentence = (sentence) => {
@@ -263,8 +286,6 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      // Standard LibreChat agent submission. The server rebuilds history from
-      // conversationId + parentMessageId, so we thread rather than resend.
       const body: Record<string, unknown> = {
         endpoint: 'agents',
         agent_id: agentId,
@@ -274,7 +295,6 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         conversationId: conversationIdRef.current || NEW_CONVO,
       };
 
-      // Phase 1: start the generation job (returns streamId === conversationId)
       const startResp = await fetch('/api/agents/chat', {
         method: 'POST',
         headers,
@@ -286,7 +306,6 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       if (startData.conversationId) conversationIdRef.current = startData.conversationId;
       if (!startData.streamId) throw new Error('no streamId from chat start');
 
-      // Phase 2: subscribe to the SSE token stream
       const sseResp = await fetch(
         `/api/agents/chat/stream/${encodeURIComponent(startData.streamId)}`,
         {
@@ -327,45 +346,28 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           if (curEvent === 'error' || obj?.error) {
             throw new Error(typeof obj?.error === 'string' ? obj.error : 'stream error');
           }
-
-          // Created: capture the real conversation id, nothing to speak yet.
           if (obj.created != null) {
-            if (obj?.conversation?.conversationId) {
-              conversationIdRef.current = obj.conversation.conversationId;
-            }
+            if (obj?.conversation?.conversationId) conversationIdRef.current = obj.conversation.conversationId;
             continue;
           }
-
-          // Final: full reply + thread ids. Speak any not-yet-spoken remainder.
           if (obj.final != null) {
             const rm = obj.responseMessage;
             const full = messageText(rm) || (typeof obj.text === 'string' ? obj.text : '');
-            if (full && full.length > acc.length && full.startsWith(acc)) {
-              pushText(full.slice(acc.length));
-            } else if (full && acc === '') {
-              pushText(full);
-            }
+            if (full && full.length > acc.length && full.startsWith(acc)) pushText(full.slice(acc.length));
+            else if (full && acc === '') pushText(full);
             if (rm?.messageId) parentMessageIdRef.current = rm.messageId;
-            if (obj?.conversation?.conversationId) {
-              conversationIdRef.current = obj.conversation.conversationId;
-            }
+            if (obj?.conversation?.conversationId) conversationIdRef.current = obj.conversation.conversationId;
             finalized = true;
             break streamLoop;
           }
-
           if (obj.sync != null) continue;
-          // Never speak the model's private reasoning.
           if (obj.event === 'on_reasoning_delta') continue;
 
-          // Run-step message delta (low-latency incremental text).
           const deltaContent = obj?.data?.delta?.content ?? obj?.delta?.content;
           if (deltaContent != null) { pushText(contentToText(deltaContent)); continue; }
 
-          // Legacy cumulative-text event.
           if (typeof obj.text === 'string') {
-            if (obj.text.length > acc.length && obj.text.startsWith(acc)) {
-              pushText(obj.text.slice(acc.length));
-            }
+            if (obj.text.length > acc.length && obj.text.startsWith(acc)) pushText(obj.text.slice(acc.length));
             continue;
           }
         }
@@ -376,7 +378,6 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         setError("I didn't catch a reply — your turn, go ahead and try again.");
       }
 
-      // Once all queued audio finishes, hand the mic back to the user
       playQueueRef.current.then(() => {
         if (!abortRef.current) {
           setAiText('');
@@ -394,59 +395,149 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     }
   }, [agentId, token, speakSentence]);
 
-  // -- Speech recognition ------------------------------------------------------
-  const startListening = useCallback(() => {
+  // -- Speech-to-text (MediaRecorder -> Whisper) -------------------------------
+  // Transcribe one recorded utterance via the server STT route, then take a turn.
+  const handleUtterance = useCallback(async (mime: string) => {
     if (abortRef.current) return;
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) { setError('Speech recognition is not available in this browser. Try Safari or Chrome.'); return; }
+    const chunks = audioChunksRef.current;
+    audioChunksRef.current = [];
+    const blob = new Blob(chunks, { type: mime || 'audio/webm' });
 
-    const rec = new SR() as any;
-    rec.continuous = false;
-    rec.interimResults = true;
-    rec.lang = 'en-US';
-    rec.maxAlternatives = 1;
-    recRef.current = rec;
+    // Nothing meaningful was said — hand the mic straight back.
+    if (!spokeRef.current || blob.size < 1200) {
+      if (!abortRef.current) { setStatus('listening'); startListeningRef.current(); }
+      return;
+    }
 
-    rec.onstart = () => setStatus('listening');
-
-    rec.onresult = (e: any) => {
-      const result = e.results[e.results.length - 1];
-      const t = (result[0]?.transcript ?? '') as string;
-      setTranscript(t);
-      if (result.isFinal && t.trim()) {
-        rec.stop();
-        void streamTurn(t.trim());
+    setStatus('thinking');
+    try {
+      const fd = new FormData();
+      fd.append('audio', blob, `audio.${fileExt(mime)}`);
+      const resp = await fetch(STT_URL, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        credentials: 'include',
+        body: fd,
+      });
+      if (!resp.ok) throw new Error(`stt ${resp.status}`);
+      const data = await resp.json() as { text?: string };
+      const text = (data?.text ?? '').trim();
+      if (abortRef.current) return;
+      if (text) {
+        setTranscript(text);
+        void streamTurn(text);
+      } else {
+        setStatus('listening');
+        startListeningRef.current();
       }
-    };
+    } catch (err) {
+      console.error('[ConvMode] STT error:', err);
+      if (!abortRef.current) {
+        setError("Couldn't transcribe that — your turn, try again.");
+        setStatus('listening');
+        startListeningRef.current();
+      }
+    }
+  }, [token, streamTurn]);
+  useEffect(() => { handleUtteranceRef.current = handleUtterance; }, [handleUtterance]);
 
-    rec.onerror = (e: any) => {
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        setError('Microphone access is blocked. Enable mic permission, then end and restart the call.');
+  // Watch the mic level and stop recording once the user finishes speaking.
+  const monitorSilence = useCallback(() => {
+    const an = analyserRef.current;
+    if (!an) return;
+    const data = new Uint8Array(an.frequencyBinCount);
+    spokeRef.current = false;
+    let lastSound = Date.now();
+    const startedAt = Date.now();
+
+    const tick = () => {
+      const rec = mediaRecorderRef.current;
+      if (abortRef.current || !rec || rec.state !== 'recording') return;
+      an.getByteFrequencyData(data);
+      let sound = false;
+      for (let i = 0; i < data.length; i++) { if (data[i] > 0) { sound = true; break; } }
+      const now = Date.now();
+      if (sound) { spokeRef.current = true; lastSound = now; }
+      const silentFor = now - lastSound;
+      const total = now - startedAt;
+      if ((spokeRef.current && silentFor > VAD_SILENCE_MS) || total > VAD_MAX_TURN_MS) {
+        stopRecordingRef.current();
         return;
       }
-      // 'aborted' fires when we .stop() intentionally — ignore. 'no-speech'
-      // just means a silent window; the onend handler restarts listening.
-      if (e.error !== 'aborted' && e.error !== 'no-speech' && !abortRef.current) {
-        setTimeout(() => startListeningRef.current(), 1000);
+      if (!spokeRef.current && total > VAD_NOSPEECH_MS) {
+        stopRecordingRef.current();
+        return;
       }
+      rafRef.current = window.requestAnimationFrame(tick);
     };
+    rafRef.current = window.requestAnimationFrame(tick);
+  }, []);
 
-    rec.onend = () => {
-      // If we ended without a final result and we're still in listening mode,
-      // restart (handles the browser's automatic stop after silence)
-      if (!abortRef.current && statusRef.current === 'listening') {
-        setTimeout(() => startListeningRef.current(), 300);
-      }
-    };
+  const stopRecording = useCallback(() => {
+    if (rafRef.current != null) { window.cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state === 'recording') {
+      try { rec.stop(); } catch { /* ignore */ } // fires 'stop' -> handleUtterance
+    }
+  }, []);
+  useEffect(() => { stopRecordingRef.current = stopRecording; }, [stopRecording]);
 
-    try { rec.start(); } catch { /* ignore if already started */ }
-  }, [streamTurn]);
-
-  // Keep the ref in sync with the latest callback
+  const startListening = useCallback(() => {
+    if (abortRef.current) return;
+    const stream = micStreamRef.current;
+    if (!stream || typeof (window as any).MediaRecorder === 'undefined') {
+      setError('Recording is not available in this browser.');
+      return;
+    }
+    try {
+      audioChunksRef.current = [];
+      const mime = pickMimeType();
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = rec;
+      rec.addEventListener('dataavailable', (e: BlobEvent) => {
+        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+      });
+      rec.addEventListener('stop', () => { void handleUtteranceRef.current(rec.mimeType || mime); });
+      rec.start(100);
+      setStatus('listening');
+      monitorSilence();
+    } catch (err) {
+      console.error('[ConvMode] startListening error:', err);
+      if (!abortRef.current) setTimeout(() => startListeningRef.current(), 900);
+    }
+  }, [monitorSilence]);
   useEffect(() => { startListeningRef.current = startListening; }, [startListening]);
 
+  // -- Mic / analyser lifecycle ------------------------------------------------
+  const setupAnalyser = useCallback((stream: MediaStream) => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const source = ctx.createMediaStreamSource(stream);
+      const an = ctx.createAnalyser();
+      an.minDecibels = VAD_MIN_DECIBELS;
+      an.fftSize = 2048;
+      source.connect(an);
+      vadCtxRef.current = ctx;
+      analyserRef.current = an;
+    } catch (err) {
+      console.warn('[ConvMode] analyser setup failed:', err);
+    }
+  }, []);
+
+  const teardownMic = useCallback(() => {
+    if (rafRef.current != null) { window.cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    try { mediaRecorderRef.current?.state === 'recording' && mediaRecorderRef.current.stop(); } catch { /* ignore */ }
+    mediaRecorderRef.current = null;
+    audioChunksRef.current = [];
+    try { micStreamRef.current?.getTracks().forEach(t => t.stop()); } catch { /* ignore */ }
+    micStreamRef.current = null;
+    try { void vadCtxRef.current?.close(); } catch { /* ignore */ }
+    vadCtxRef.current = null;
+    analyserRef.current = null;
+  }, []);
+
   // -- Call controls -----------------------------------------------------------
-  const startCall = useCallback(() => {
+  const startCall = useCallback(async () => {
     getAudioCtx();               // iOS: unlock AudioContext on user gesture
     abortRef.current = false;
     conversationIdRef.current = null;
@@ -457,14 +548,21 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setAiText('');
     setTranscript('');
     setStatus('connecting');
-    // Small delay to let React settle the open state before starting SR
-    setTimeout(() => startListeningRef.current(), 250);
-  }, [getAudioCtx]);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      if (abortRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
+      micStreamRef.current = stream;
+      setupAnalyser(stream);
+      setTimeout(() => startListeningRef.current(), 200);
+    } catch (err) {
+      console.error('[ConvMode] mic permission error:', err);
+      setError('Microphone access is blocked. Enable mic permission, then end and start the call again.');
+    }
+  }, [getAudioCtx, setupAnalyser]);
 
   const endCall = useCallback(() => {
     abortRef.current = true;
-    try { recRef.current?.stop(); } catch { /* ignore */ }
-    recRef.current = null;
+    teardownMic();
     playQueueRef.current = Promise.resolve();
     setOpen(false);
     setStatus('idle');
@@ -473,14 +571,14 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setError('');
     conversationIdRef.current = null;
     parentMessageIdRef.current = NO_PARENT;
-  }, []);
+  }, [teardownMic]);
 
   // Stop AI mid-speech and hand the mic back immediately
   const interruptAI = useCallback(() => {
     abortRef.current = true;
     playQueueRef.current = Promise.resolve();
     setTimeout(() => {
-      if (!open) return; // call was ended
+      if (!open) return;
       abortRef.current = false;
       setAiText('');
       setStatus('listening');
@@ -492,9 +590,9 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   useEffect(() => {
     return () => {
       abortRef.current = true;
-      try { recRef.current?.stop(); } catch { /* ignore */ }
+      teardownMic();
     };
-  }, []);
+  }, [teardownMic]);
 
   // Modal focus management: into the dialog on open, back to trigger on close.
   useEffect(() => {
@@ -524,8 +622,6 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
   };
 
-  // Announced only on turn hand-offs; SILENT while the agent speaks so the
-  // screen reader never talks over the agent's voice.
   const srStatus =
     error                    ? '' :
     status === 'listening'   ? 'Listening. Your turn to talk.' :
@@ -547,15 +643,15 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         onClick={startCall}
         aria-label="Start voice conversation with the active agent"
         title={
-          !srAvail ? 'Voice calls need a browser with speech recognition (Safari or Chrome)'
+          !mediaAvail ? 'Voice calls need a browser with microphone recording support'
           : agentId ? 'Voice call mode'
           : 'Open a conversation to use voice call mode'
         }
-        disabled={!agentId || !srAvail}
+        disabled={!agentId || !mediaAvail}
         className={cn(
           'flex h-8 w-8 items-center justify-center rounded-full transition-colors',
           'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-          agentId && srAvail
+          agentId && mediaAvail
             ? 'bg-surface-tertiary text-text-secondary hover:bg-surface-hover hover:text-text-primary'
             : 'cursor-not-allowed opacity-30 bg-surface-tertiary text-text-secondary',
         )}
@@ -616,8 +712,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         </p>
       )}
 
-      {/* Live captions — VISUAL ONLY. Hidden from screen readers so they are
-          never read over the user's speech or the agent's TTS voice. */}
+      {/* Live captions — VISUAL ONLY (hidden from screen readers). */}
       <div className="w-full max-w-xs space-y-3 px-4 min-h-[7rem]" aria-hidden="true">
         {transcript && (
           <div className="rounded-2xl bg-blue-950/60 px-4 py-3 text-sm leading-relaxed">
@@ -635,7 +730,6 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
 
       {/* Controls */}
       <div className="mt-10 flex items-center gap-6">
-        {/* Amber interrupt button — only while agent is thinking/speaking */}
         {(status === 'speaking' || status === 'thinking') && (
           <button
             onClick={interruptAI}
@@ -647,7 +741,6 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           </button>
         )}
 
-        {/* Red end-call button */}
         <button
           onClick={endCall}
           aria-label="End voice conversation"
