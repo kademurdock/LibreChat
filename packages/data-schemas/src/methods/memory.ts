@@ -35,6 +35,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     userId: string | Types.ObjectId,
     options?: t.DeleteAllUserMemoriesOptions,
   ) => Promise<number>;
+  getActiveMemoryBuckets: () => Promise<t.MemoryBucketRef[]>;
 } {
   /**
    * Creates a new memory entry for a user (and optionally, one agent's bucket).
@@ -328,6 +329,32 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     }
   }
 
+  /**
+   * Returns every distinct (userId, agentId) bucket that currently has at least
+   * one ACTIVE memory entry, across EVERY user on the platform -- not scoped to
+   * a single caller. Used only by the platform-wide weekly consolidation sweep
+   * (api/server/services/Memory/consolidationSweep.js), which wraps this in
+   * runAsSystem() so tenant isolation (if ever enabled) doesn't silently filter
+   * it down to nothing.
+   */
+  async function getActiveMemoryBuckets(): Promise<t.MemoryBucketRef[]> {
+    try {
+      const MemoryEntry = mongoose.models.MemoryEntry;
+      const results = (await MemoryEntry.aggregate([
+        { $match: { status: { $ne: 'superseded' } } },
+        { $group: { _id: { userId: '$userId', agentId: '$agentId' } } },
+      ])) as Array<{ _id: { userId: Types.ObjectId; agentId?: string | null } }>;
+      return results.map((r) => ({
+        userId: r._id.userId,
+        agentId: r._id.agentId ?? null,
+      }));
+    } catch (error) {
+      throw new Error(
+        `Failed to get active memory buckets: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
   return {
     setMemory,
     createMemory,
@@ -335,6 +362,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     getAllUserMemories,
     getFormattedMemories,
     deleteAllUserMemories,
+    getActiveMemoryBuckets,
   };
 }
 

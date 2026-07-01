@@ -1,6 +1,7 @@
 const express = require('express');
 const { Tokenizer, generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { logger, runAsSystem, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   getAllUserMemories,
   getFormattedMemories,
@@ -14,12 +15,16 @@ const {
 } = require('~/models');
 const {
   consolidateMemoryBucket,
+  resolveMemoryAgentLLMConfig,
   AGENT_SCOPED_MEMORY_KEY,
-  getProviderConfig,
 } = require('@librechat/api');
+const { sweepMemoryConsolidation } = require('~/server/services/Memory/consolidationSweep');
+const { getAppConfig } = require('~/server/services/Config');
+const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 
 const router = express.Router();
+const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
 const memoryPayloadLimit = express.json({ limit: '100kb' });
 
@@ -364,27 +369,20 @@ router.post('/consolidate', checkMemoryUpdate, configMiddleware, async (req, res
     /**
      * memory.agent.provider (e.g. "OpenRouter") is usually a CUSTOM endpoint name,
      * not a first-party provider -- it needs the same credential/baseURL resolution
-     * useMemory() gets for free via initializeAgent() (see client.js). This is the
-     * narrow slice of that resolution actually needed here: no tools/files/MCP,
-     * just "turn a provider name into a real apiKey + baseURL". Skipping this and
-     * hand-building { provider, model } directly is what broke the first version
-     * of this route -- it silently had no apiKey/baseURL at all.
+     * useMemory() gets for free via initializeAgent() (see client.js). Shared with
+     * the platform-wide weekly sweep (packages/api/src/agents/memory.ts) so both
+     * the on-demand and automatic paths resolve credentials identically. Skipping
+     * this and hand-building { provider, model } directly is what broke the first
+     * version of this route -- it silently had no apiKey/baseURL at all.
      */
-    const { getOptions, overrideProvider } = getProviderConfig({
-      provider: memoryConfig.agent.provider,
+    const llmConfig = await resolveMemoryAgentLLMConfig({
       appConfig,
-    });
-    const resolved = await getOptions({
+      memoryConfig,
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
       req,
-      endpoint: memoryConfig.agent.provider,
-      model_parameters: { model: memoryConfig.agent.model, ...memoryConfig.agent.model_parameters },
       db: { getUserKey, getUserKeyValues },
     });
-    const llmConfig = {
-      provider: resolved.provider ?? overrideProvider,
-      ...resolved.llmConfig,
-      configuration: resolved.configOptions,
-    };
 
     const result = await consolidateMemoryBucket({
       userId: req.user.id,
@@ -397,6 +395,33 @@ router.post('/consolidate', checkMemoryUpdate, configMiddleware, async (req, res
     });
     res.json(result);
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /memories/consolidate-all
+ * ADMIN-ONLY. Manually fires the exact same platform-wide weekly consolidation
+ * sweep that runs automatically every Sunday ~09:00 UTC (see
+ * api/server/services/Memory/consolidationSweep.js and
+ * packages/api/src/agents/memory.ts: startMemoryConsolidationSweep). Iterates
+ * EVERY user's active memory buckets on the platform, not just the caller's own.
+ *
+ * Two purposes: (1) a real "break glass" catch-up trigger if the automatic
+ * schedule is ever suspected to have misfired or been skipped across a redeploy
+ * window, and (2) the only practical way to smoke-test the full sweep pipeline
+ * without waiting for the actual weekly window. Deliberately does NOT touch the
+ * persisted lastRunAt marker -- this is a separate, unscheduled path, so running
+ * it manually can never disturb (delay or double-fire) the automatic cadence.
+ */
+router.post('/consolidate-all', requireAdminAccess, async (req, res) => {
+  try {
+    const result = await runAsSystem(() =>
+      sweepMemoryConsolidation({ loadAppConfig: getAppConfig }),
+    );
+    res.json(result);
+  } catch (error) {
+    logger.error('[POST /memories/consolidate-all] Manual sweep failed:', error);
     res.status(500).json({ error: error.message });
   }
 });

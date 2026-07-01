@@ -15,10 +15,17 @@ import type {
 } from '@librechat/agents';
 import type { BaseMessage, ToolMessage } from '@librechat/agents/langchain/messages';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
-import type { ObjectId, MemoryMethods, IUser } from '@librechat/data-schemas';
-import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
+import type {
+  AppConfig,
+  ObjectId,
+  MemoryMethods,
+  MemoryBucketRef,
+  IUser,
+} from '@librechat/data-schemas';
+import type { TAttachment, TMemoryConfig, MemoryArtifact } from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
-import type { RunLLMConfig } from '~/types';
+import type { RunLLMConfig, EndpointDbMethods, ServerRequest } from '~/types';
+import { getProviderConfig } from '~/endpoints/config/providers';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { resolveConfigHeaders, createSafeUser } from '~/utils';
 import Tokenizer from '~/utils/tokenizer';
@@ -689,6 +696,331 @@ Do NOT invent new facts that are not already present below. Do NOT remove inform
   });
 
   return { ran: true, attachments };
+}
+
+/**
+ * Narrows `memory.agent` (from librechat.yaml) to the LLM-based shape (provider +
+ * model), as opposed to the alternate "point at an existing Agent id" shape. Both
+ * the on-demand consolidate route and the platform-wide sweep need this same check.
+ */
+function getMemoryAgentLLMSpec(memoryConfig: TMemoryConfig | undefined): {
+  provider: string;
+  model: string;
+  model_parameters?: Record<string, unknown>;
+} | null {
+  const agent = memoryConfig?.agent as
+    | { provider?: string; model?: string; model_parameters?: Record<string, unknown> }
+    | undefined;
+  if (!agent?.provider || !agent?.model) {
+    return null;
+  }
+  return {
+    provider: agent.provider,
+    model: agent.model,
+    model_parameters: agent.model_parameters,
+  };
+}
+
+/**
+ * Resolves the memory-writer LLM's real credentials (apiKey/baseURL/etc.) from
+ * `memory.agent.provider` (e.g. "OpenRouter" -- usually a CUSTOM endpoint, not a
+ * first-party provider recognized directly by the LLM-run library). Shared by the
+ * on-demand `/consolidate` route (real `req`, real logged-in user) and the
+ * platform-wide weekly sweep (no live HTTP request -- a minimal synthetic `req` is
+ * built from just `appConfig` + `userId`, which is all `initializeCustom` actually
+ * reads for a provider configured with an env-var apiKey/baseURL like ours).
+ *
+ * Skipping this and hand-building `{ provider, model }` directly is what broke the
+ * first version of the on-demand route -- it silently had no apiKey/baseURL at all.
+ */
+export async function resolveMemoryAgentLLMConfig({
+  appConfig,
+  memoryConfig,
+  userId,
+  tenantId,
+  req,
+  db,
+}: {
+  appConfig: AppConfig;
+  memoryConfig: TMemoryConfig | undefined;
+  userId: string;
+  tenantId?: string;
+  /** Pass the real Express request when available (the on-demand route always has one). */
+  req?: ServerRequest;
+  db: EndpointDbMethods;
+}): Promise<Partial<LLMConfig>> {
+  const spec = getMemoryAgentLLMSpec(memoryConfig);
+  if (!spec) {
+    throw new Error(
+      'No memory-writer provider/model configured (memory.agent.provider / memory.agent.model in librechat.yaml).',
+    );
+  }
+
+  const { getOptions, overrideProvider } = getProviderConfig({
+    provider: spec.provider,
+    appConfig,
+  });
+
+  const effectiveReq =
+    req ??
+    ({
+      config: appConfig,
+      body: {},
+      user: { id: userId, tenantId },
+    } as unknown as ServerRequest);
+
+  const resolved = await getOptions({
+    req: effectiveReq,
+    endpoint: spec.provider,
+    model_parameters: { model: spec.model, ...spec.model_parameters },
+    db,
+  });
+
+  return {
+    provider: resolved.provider ?? overrideProvider,
+    ...resolved.llmConfig,
+    configuration: resolved.configOptions,
+  } as Partial<LLMConfig>;
+}
+
+type MemoryConsolidationMethods = RequiredMemoryMethods & {
+  getActiveMemoryBuckets: () => Promise<MemoryBucketRef[]>;
+};
+
+export type MemoryConsolidationSweepLogger = Pick<typeof logger, 'info' | 'warn' | 'error' | 'debug'>;
+
+export interface MemoryConsolidationSweepOptions {
+  appConfig?: AppConfig;
+  /** Re-fetches the latest config at sweep time (mirrors files/sweep.ts) so a librechat.yaml edit takes effect without a restart. */
+  loadAppConfig?: () => Promise<AppConfig | null | undefined>;
+}
+
+export interface MemoryConsolidationSweepResult {
+  scanned: number;
+  consolidated: number;
+  skipped: number;
+  failed: number;
+}
+
+/**
+ * Platform-wide memory-hygiene pass (Kade-AI build plan, Part 2 -- the corrected,
+ * server-only design). Iterates EVERY (user, bucket) pair on the whole platform
+ * that currently has active memory content -- not just one account -- and runs
+ * the exact same consolidation used by the on-demand route for each one. One
+ * bucket failing (bad config, model hiccup, etc.) never stops the rest; each is
+ * independently caught and counted.
+ */
+export async function sweepMemoryConsolidation(
+  options: MemoryConsolidationSweepOptions | undefined = {},
+  {
+    memoryMethods,
+    db,
+    logger: sweepLogger,
+  }: {
+    memoryMethods: MemoryConsolidationMethods;
+    db: EndpointDbMethods;
+    logger: MemoryConsolidationSweepLogger;
+  },
+): Promise<MemoryConsolidationSweepResult> {
+  const { appConfig: initialAppConfig, loadAppConfig } = options;
+  const appConfig =
+    typeof loadAppConfig === 'function'
+      ? (await loadAppConfig()) ?? initialAppConfig
+      : initialAppConfig;
+
+  const result: MemoryConsolidationSweepResult = {
+    scanned: 0,
+    consolidated: 0,
+    skipped: 0,
+    failed: 0,
+  };
+
+  if (!appConfig) {
+    sweepLogger.warn('[sweepMemoryConsolidation] No app config available -- skipping this run.');
+    return result;
+  }
+
+  const memoryConfig = appConfig.memory;
+  if (!memoryConfig || memoryConfig.disabled === true) {
+    sweepLogger.info('[sweepMemoryConsolidation] Memory is disabled -- nothing to do.');
+    return result;
+  }
+
+  if (!getMemoryAgentLLMSpec(memoryConfig)) {
+    sweepLogger.warn(
+      '[sweepMemoryConsolidation] No memory-writer provider/model configured -- skipping this run.',
+    );
+    return result;
+  }
+
+  const buckets = await memoryMethods.getActiveMemoryBuckets();
+  sweepLogger.info(
+    `[sweepMemoryConsolidation] Starting sweep across ${buckets.length} active bucket(s).`,
+  );
+
+  for (const bucket of buckets) {
+    result.scanned++;
+    const userId = String(bucket.userId);
+    const agentId = bucket.agentId ?? undefined;
+    const scopeLabel = agentId
+      ? `agent ${agentId}'s own (key: ${AGENT_SCOPED_MEMORY_KEY})`
+      : 'shared';
+
+    try {
+      const llmConfig = await resolveMemoryAgentLLMConfig({
+        appConfig,
+        memoryConfig,
+        userId,
+        db,
+      });
+
+      const { ran } = await consolidateMemoryBucket({
+        userId,
+        agentId,
+        scopeLabel,
+        memoryMethods,
+        llmConfig,
+        tokenLimit: memoryConfig.tokenLimit,
+      });
+
+      if (ran) {
+        result.consolidated++;
+      } else {
+        result.skipped++;
+      }
+    } catch (error) {
+      result.failed++;
+      sweepLogger.error(
+        `[sweepMemoryConsolidation] Failed consolidating user ${userId}'s ${scopeLabel} bucket:`,
+        error,
+      );
+    }
+  }
+
+  sweepLogger.info(
+    `[sweepMemoryConsolidation] Done: ${result.scanned} scanned, ${result.consolidated} consolidated, ${result.skipped} already-clean, ${result.failed} failed.`,
+  );
+
+  return result;
+}
+
+const DEFAULT_MEMORY_CONSOLIDATION_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+/** Sunday, matching the existing daily Mongo backup's off-peak slot. */
+const DEFAULT_MEMORY_CONSOLIDATION_TARGET_UTC_DAY = 0;
+const DEFAULT_MEMORY_CONSOLIDATION_TARGET_UTC_HOUR = 9;
+const DEFAULT_MEMORY_CONSOLIDATION_MIN_GAP_MS = 6 * 24 * 60 * 60 * 1000;
+
+export function getMemoryConsolidationCheckInterval(
+  interval: string | undefined = process.env.MEMORY_CONSOLIDATION_SWEEP_INTERVAL_MS,
+): number {
+  if (interval == null || interval.trim() === '') {
+    return DEFAULT_MEMORY_CONSOLIDATION_CHECK_INTERVAL_MS;
+  }
+  const value = Number(interval);
+  if (!Number.isFinite(value) || value < 0 || (value > 0 && value < 1)) {
+    return DEFAULT_MEMORY_CONSOLIDATION_CHECK_INTERVAL_MS;
+  }
+  return value;
+}
+
+/**
+ * True exactly once per week's target window: the wall-clock UTC day+hour match
+ * AND at least `minGapMs` has passed since the last confirmed run (the persisted
+ * marker, not just "was this the right hour" -- a redeploy that bounces the
+ * process twice inside the same target hour must not double-fire).
+ */
+export function isMemoryConsolidationSweepDue({
+  now,
+  lastRunAt,
+  targetUtcDay = DEFAULT_MEMORY_CONSOLIDATION_TARGET_UTC_DAY,
+  targetUtcHour = DEFAULT_MEMORY_CONSOLIDATION_TARGET_UTC_HOUR,
+  minGapMs = DEFAULT_MEMORY_CONSOLIDATION_MIN_GAP_MS,
+}: {
+  now: Date;
+  lastRunAt?: Date | null;
+  targetUtcDay?: number;
+  targetUtcHour?: number;
+  minGapMs?: number;
+}): boolean {
+  if (now.getUTCDay() !== targetUtcDay || now.getUTCHours() !== targetUtcHour) {
+    return false;
+  }
+  if (lastRunAt && now.getTime() - lastRunAt.getTime() < minGapMs) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Boots the platform-wide weekly consolidation sweep. Entirely self-contained on
+ * this server: an hourly `setInterval` wall-clock check + a persisted last-run
+ * marker in Mongo (via `getLastSweepRunAt`/`setLastSweepRunAt`), no external
+ * scheduler and no dependency on any Claude/Cowork session being available --
+ * this must keep running even if Kade's Claude credit runs out. Mirrors the
+ * file-retention sweep pattern (`files/sweep.ts`), except it deliberately does
+ * NOT run immediately at boot (a redeploy shouldn't ever trigger a real
+ * consolidation pass -- only the actual weekly window should).
+ */
+export function startMemoryConsolidationSweep(
+  options: MemoryConsolidationSweepOptions | undefined = {},
+  {
+    memoryMethods,
+    db,
+    getLastSweepRunAt,
+    setLastSweepRunAt,
+    runAsSystem,
+    logger: sweepLogger,
+  }: {
+    memoryMethods: MemoryConsolidationMethods;
+    db: EndpointDbMethods;
+    getLastSweepRunAt: () => Promise<Date | null | undefined>;
+    setLastSweepRunAt: (date: Date) => Promise<void>;
+    runAsSystem: <T>(fn: () => Promise<T>) => Promise<T>;
+    logger: MemoryConsolidationSweepLogger;
+  },
+): NodeJS.Timeout | null {
+  const intervalMs = getMemoryConsolidationCheckInterval();
+  if (intervalMs === 0) {
+    sweepLogger.info(
+      '[sweepMemoryConsolidation] Disabled by MEMORY_CONSOLIDATION_SWEEP_INTERVAL_MS=0',
+    );
+    return null;
+  }
+
+  let isSweeping = false;
+  const checkAndMaybeRun = async () => {
+    if (isSweeping) {
+      return;
+    }
+
+    isSweeping = true;
+    try {
+      const now = new Date();
+      const lastRunAt = await runAsSystem(() => getLastSweepRunAt());
+      if (!isMemoryConsolidationSweepDue({ now, lastRunAt })) {
+        return;
+      }
+
+      sweepLogger.info(
+        '[sweepMemoryConsolidation] Weekly window reached -- starting platform-wide sweep.',
+      );
+      await runAsSystem(() => setLastSweepRunAt(now));
+      await runAsSystem(() =>
+        sweepMemoryConsolidation(options, { memoryMethods, db, logger: sweepLogger }),
+      );
+    } catch (error) {
+      sweepLogger.error('[sweepMemoryConsolidation] Background sweep failed:', error);
+    } finally {
+      isSweeping = false;
+    }
+  };
+
+  const interval = setInterval(checkAndMaybeRun, intervalMs);
+  interval.unref?.();
+  sweepLogger.info(
+    '[sweepMemoryConsolidation] Scheduler started -- checking hourly, fires Sundays ~09:00 UTC (server-side only, no external dependency).',
+  );
+  return interval;
 }
 
 async function handleMemoryArtifact({

@@ -79,6 +79,13 @@ export interface DeleteAllUserMemoriesOptions {
   agentId?: string | null;
 }
 
+/** One (user, bucket) pair that currently has active memory content. Platform-wide -- not scoped to a caller. */
+export interface MemoryBucketRef {
+  userId: Types.ObjectId;
+  /** null = the shared bucket; string = one agent's own agent_notes bucket. */
+  agentId: string | null;
+}
+
 // Result interfaces
 export interface MemoryResult {
   ok: boolean;
