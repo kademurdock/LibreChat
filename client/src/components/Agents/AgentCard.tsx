@@ -4,6 +4,7 @@ import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
 import AgentDetailContent from './AgentDetailContent';
+import MarketplaceBadges, { getAnswerStyle, getAwareness } from './MarketplaceBadges';
 
 interface AgentCardProps {
   agent: t.Agent;
@@ -35,6 +36,28 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
 
   const displayName = getContactDisplayName(agent);
 
+  /* The card is a single role="button" with an aria-label, so VoiceOver reads
+   * ONLY that label -- child elements (like visual badges) are never announced.
+   * The badge meaning therefore has to live in the label itself; the visual
+   * badges below are aria-hidden so desktop screen readers can't double-read. */
+  const badgeAria = useMemo(() => {
+    const style = getAnswerStyle(agent);
+    const parts = [
+      style === 'instant'
+        ? 'Answer style: instant, replies right away.'
+        : 'Answer style: reasoning, thinks before answering.',
+    ];
+    const awareness = getAwareness(agent);
+    if (awareness === 'aware') {
+      parts.push("Knows it's an AI.");
+    } else if (awareness === 'partial') {
+      parts.push('Partly aware of being an AI.');
+    } else if (awareness === 'real') {
+      parts.push('Plays it fully real.');
+    }
+    return parts.join(' ');
+  }, [agent]);
+
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
     if (open && onSelect) {
@@ -54,10 +77,10 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
             '[&_*]:cursor-pointer',
             className,
           )}
-          aria-label={localize('com_agents_agent_card_label', {
+          aria-label={`${localize('com_agents_agent_card_label', {
             name: agent.name,
             description: agent.description ?? '',
-          })}
+          })} ${badgeAria}`}
           aria-describedby={agent.description ? `agent-${agent.id}-description` : undefined}
           tabIndex={0}
           role="button"
@@ -101,6 +124,12 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
                 {agent.description}
               </p>
             )}
+
+            {/* Answer-style / awareness badges -- visual only; meaning is spoken
+                via the card's aria-label above (name, description, then badges) */}
+            <div className="mt-1.5" aria-hidden="true">
+              <MarketplaceBadges agent={agent} />
+            </div>
 
             {/* Author */}
             {displayName && (
