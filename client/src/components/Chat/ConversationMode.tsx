@@ -106,7 +106,12 @@ const STT_URL = '/api/files/speech/stt';
 const NO_PARENT = '00000000-0000-0000-0000-000000000000';
 const NEW_CONVO = 'new';
 // VAD tuning
-const VAD_MIN_DECIBELS = -45;     // below this is treated as silence
+const VAD_MIN_DECIBELS = -40;     // below this is treated as silence (was -45;
+                                   // nudged up slightly so room echo/ambient
+                                   // noise on speakerphone is less likely to
+                                   // register as speech -- if this makes it
+                                   // too hard to be heard, dial back toward
+                                   // -45)
 const VAD_SILENCE_MS = 1500;      // end the turn after this much trailing silence
 const VAD_MAX_TURN_MS = 30000;    // hard cap on a single utterance
 const VAD_NOSPEECH_MS = 12000;    // give the mic back if nothing is said
@@ -445,11 +450,17 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       }
 
       playQueueRef.current.then(() => {
-        if (!abortRef.current) {
-          setAiText('');
+        if (abortRef.current) return;
+        setAiText('');
+        // Brief settle delay: onended fires the instant the buffer finishes,
+        // but trailing room echo/reverb (especially on speakerphone) can
+        // still be audible for a moment after. Re-arming the mic instantly
+        // was picking that tail up as if it were the caller talking.
+        setTimeout(() => {
+          if (abortRef.current) return;
           setStatus('listening');
           startListeningRef.current();
-        }
+        }, 350);
       });
     } catch (err) {
       console.error('[ConvMode] streamTurn error:', err);
@@ -615,7 +626,19 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setTranscript('');
     setStatus('connecting');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      // Explicit constraints instead of bare `audio: true` -- echoCancellation
+      // in particular matters a lot more on speakerphone (loud, direct
+      // acoustic path from speaker back into the mic) than on headphones,
+      // and leaving it implicit means whatever the browser's default happens
+      // to be, which isn't consistent across browsers/devices.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      });
       if (abortRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
       micStreamRef.current = stream;
       setupAnalyser(stream);
