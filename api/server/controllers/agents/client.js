@@ -652,9 +652,21 @@ class AgentClient extends BaseClient {
     const userId = this.options.req.user.id + '';
     this.processMemory = undefined;
 
+    /**
+     * Kade-AI two-tier memory: the persona currently in the conversation (e.g. Kiana,
+     * Forge) gets its own additive memory bucket layered on top of the shared one.
+     * The ephemeral pseudo-agent (no real persona, e.g. a bare-model chat with no
+     * character selected) has no identity worth scoping memory to, so it falls
+     * through to `undefined` here -> shared-only, identical to pre-existing behavior.
+     */
+    const activeAgentId =
+      this.options.agent?.id && !isEphemeralAgentId(this.options.agent.id)
+        ? this.options.agent.id
+        : undefined;
+
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
-        const { withoutKeys } = await db.getFormattedMemories({ userId });
+        const { withoutKeys } = await db.getFormattedMemories({ userId, agentId: activeAgentId });
         return withoutKeys;
       } catch (error) {
         logger.error(
@@ -758,6 +770,7 @@ class AgentClient extends BaseClient {
     const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
+      agentId: activeAgentId,
       config,
       messageId,
       streamId,

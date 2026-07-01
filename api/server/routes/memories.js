@@ -3,12 +3,14 @@ const { Tokenizer, generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getAllUserMemories,
+  getFormattedMemories,
   toggleUserMemories,
   getRoleByName,
   createMemory,
   deleteMemory,
   setMemory,
 } = require('~/models');
+const { consolidateMemoryBucket, AGENT_SCOPED_MEMORY_KEY } = require('@librechat/api');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 
 const router = express.Router();
@@ -85,11 +87,11 @@ router.get('/', checkMemoryRead, configMiddleware, async (req, res) => {
 /**
  * POST /memories
  * Creates a new memory entry for the authenticated user.
- * Body: { key: string, value: string }
+ * Body: { key: string, value: string, agentId?: string } -- agentId scopes the entry to one agent's own bucket; omit for shared.
  * Returns 201 and { created: true, memory: <createdDoc> } when successful.
  */
 router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async (req, res) => {
-  const { key, value } = req.body;
+  const { key, value, agentId } = req.body;
 
   if (typeof key !== 'string' || key.trim() === '') {
     return res.status(400).json({ error: 'Key is required and must be a non-empty string.' });
@@ -115,6 +117,8 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
     });
   }
 
+  const scopedAgentId = typeof agentId === 'string' && agentId.trim() ? agentId.trim() : undefined;
+
   try {
     const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
 
@@ -138,6 +142,7 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
 
     const result = await createMemory({
       userId: req.user.id,
+      agentId: scopedAgentId,
       key: key.trim(),
       value: value.trim(),
       tokenCount,
@@ -148,12 +153,14 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
     }
 
     const updatedMemories = await getAllUserMemories(req.user.id);
-    const newMemory = updatedMemories.find((m) => m.key === key.trim());
+    const newMemory = updatedMemories.find(
+      (m) => m.key === key.trim() && (m.agentId ?? undefined) === scopedAgentId,
+    );
 
     res.status(201).json({ created: true, memory: newMemory });
   } catch (error) {
     if (error.message && error.message.includes('already exists')) {
-      return res.status(409).json({ error: 'Memory with this key already exists.' });
+      return res.status(409).json({ error: 'Memory with this key already exists in that bucket.' });
     }
     res.status(500).json({ error: error.message });
   }
@@ -193,12 +200,12 @@ router.patch('/preferences', checkMemoryOptOut, async (req, res) => {
 /**
  * PATCH /memories/:key
  * Updates the value of an existing memory entry for the authenticated user.
- * Body: { key?: string, value: string }
+ * Body: { key?: string, value: string, agentId?: string } -- agentId must match the bucket the existing entry is in; omit for shared.
  * Returns 200 and { updated: true, memory: <updatedDoc> } when successful.
  */
 router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, async (req, res) => {
   const { key: urlKey } = req.params;
-  const { key: bodyKey, value } = req.body || {};
+  const { key: bodyKey, value, agentId } = req.body || {};
 
   if (typeof value !== 'string' || value.trim() === '') {
     return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
@@ -221,24 +228,31 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
     });
   }
 
+  const scopedAgentId = typeof agentId === 'string' && agentId.trim() ? agentId.trim() : undefined;
+
   try {
     const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
 
     const memories = await getAllUserMemories(req.user.id);
-    const existingMemory = memories.find((m) => m.key === urlKey);
+    const existingMemory = memories.find(
+      (m) => m.key === urlKey && (m.agentId ?? undefined) === scopedAgentId,
+    );
 
     if (!existingMemory) {
       return res.status(404).json({ error: 'Memory not found.' });
     }
 
     if (newKey !== urlKey) {
-      const keyExists = memories.find((m) => m.key === newKey);
+      const keyExists = memories.find(
+        (m) => m.key === newKey && (m.agentId ?? undefined) === scopedAgentId,
+      );
       if (keyExists) {
-        return res.status(409).json({ error: 'Memory with this key already exists.' });
+        return res.status(409).json({ error: 'Memory with this key already exists in that bucket.' });
       }
 
       const createResult = await createMemory({
         userId: req.user.id,
+        agentId: scopedAgentId,
         key: newKey,
         value,
         tokenCount,
@@ -248,13 +262,18 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
         return res.status(500).json({ error: 'Failed to create new memory.' });
       }
 
-      const deleteResult = await deleteMemory({ userId: req.user.id, key: urlKey });
+      const deleteResult = await deleteMemory({
+        userId: req.user.id,
+        agentId: scopedAgentId,
+        key: urlKey,
+      });
       if (!deleteResult.ok) {
         return res.status(500).json({ error: 'Failed to delete old memory.' });
       }
     } else {
       const result = await setMemory({
         userId: req.user.id,
+        agentId: scopedAgentId,
         key: newKey,
         value,
         tokenCount,
@@ -266,7 +285,9 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
     }
 
     const updatedMemories = await getAllUserMemories(req.user.id);
-    const updatedMemory = updatedMemories.find((m) => m.key === newKey);
+    const updatedMemory = updatedMemories.find(
+      (m) => m.key === newKey && (m.agentId ?? undefined) === scopedAgentId,
+    );
 
     res.json({ updated: true, memory: updatedMemory });
   } catch (error) {
@@ -276,20 +297,78 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
 
 /**
  * DELETE /memories/:key
- * Deletes a memory entry for the authenticated user.
+ * Deletes a memory entry for the authenticated user -- removes the ENTIRE lineage
+ * for that key (the active entry plus any superseded history behind it), not just
+ * the current row. Query param: ?agentId=<id> to target one agent's own bucket;
+ * omit for shared.
  * Returns 200 and { deleted: true } when successful.
  */
 router.delete('/:key', checkMemoryDelete, async (req, res) => {
   const { key } = req.params;
+  const { agentId } = req.query;
+  const scopedAgentId = typeof agentId === 'string' && agentId.trim() ? agentId.trim() : undefined;
 
   try {
-    const result = await deleteMemory({ userId: req.user.id, key });
+    const result = await deleteMemory({ userId: req.user.id, agentId: scopedAgentId, key });
 
     if (!result.ok) {
       return res.status(404).json({ error: 'Memory not found.' });
     }
 
     res.json({ deleted: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /memories/consolidate
+ * Memory-hygiene consolidation pass (Kade-AI two-tier memory build plan, Part 2):
+ * reviews everything currently ACTIVE in ONE bucket and asks the same memory-writer
+ * model/instructions used for normal memory writes to merge near-duplicates and
+ * tighten stale phrasing -- never to invent new facts. Not wired to an automatic
+ * schedule; this is the on-demand trigger (self, or via the Forge proxy action)
+ * until/unless an automatic cadence is explicitly turned on.
+ * Body: { agentId? } -- omit or null for the shared bucket, or an agent's string
+ * id (e.g. "agent_6llV0eMu4fmIaj8f2x1Sb") for just that persona's own bucket.
+ * Returns { ran: boolean, attachments? } -- ran:false means the bucket was already
+ * empty, so nothing was sent to the model (no cost incurred).
+ */
+router.post('/consolidate', checkMemoryUpdate, configMiddleware, async (req, res) => {
+  const { agentId } = req.body || {};
+  const appConfig = req.config;
+  const memoryConfig = appConfig?.memory;
+
+  if (!memoryConfig || memoryConfig.disabled === true) {
+    return res.status(400).json({ error: 'Memory is disabled; nothing to consolidate.' });
+  }
+  if (!memoryConfig.agent?.provider || !memoryConfig.agent?.model) {
+    return res.status(400).json({
+      error:
+        'No memory-writer provider/model configured (memory.agent.provider / memory.agent.model in librechat.yaml). Consolidation reuses that same model, so it needs to be set.',
+    });
+  }
+
+  const targetAgentId = typeof agentId === 'string' && agentId.trim() ? agentId.trim() : undefined;
+  const llmConfig = Object.assign(
+    { provider: memoryConfig.agent.provider, model: memoryConfig.agent.model },
+    memoryConfig.agent.model_parameters,
+  );
+  const scopeLabel = targetAgentId
+    ? `agent ${targetAgentId}'s own (key: ${AGENT_SCOPED_MEMORY_KEY})`
+    : 'shared';
+
+  try {
+    const result = await consolidateMemoryBucket({
+      userId: req.user.id,
+      agentId: targetAgentId,
+      scopeLabel,
+      memoryMethods: { setMemory, deleteMemory, getFormattedMemories },
+      llmConfig,
+      tokenLimit: memoryConfig.tokenLimit,
+      user: req.user,
+    });
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -42,6 +42,14 @@ export interface MemoryConfig {
   tokenLimit?: number;
 }
 
+/**
+ * The single key used for an agent's own memory bucket (Kade-AI two-tier memory).
+ * Anything filed under this key, in a call that has an `agentId`, is scoped to that
+ * one agent only -- every other key is shared and visible to every agent, exactly
+ * as memory worked before this feature existed.
+ */
+export const AGENT_SCOPED_MEMORY_KEY = 'agent_notes';
+
 function normalizeMemoryLLMConfig(llmConfig?: Partial<LLMConfig>): SanitizedMemoryLLMConfig {
   const config = { ...(llmConfig ?? {}) } as Record<string, unknown>;
   if (typeof config.apiKey !== 'string') {
@@ -56,6 +64,7 @@ export const memoryInstructions =
 const getDefaultInstructions = (
   validKeys?: string[],
   tokenLimit?: number,
+  agentScoped?: boolean,
 ) => `Use the \`set_memory\` tool to save important information about the user, but ONLY when the user has requested you to remember something.
 
 The \`delete_memory\` tool should only be used in two scenarios:
@@ -79,6 +88,11 @@ The \`delete_memory\` tool should only be used in two scenarios:
 5. If the user doesn't ask you to remember or forget something, DO NOT use any memory tools.
 
 ${validKeys && validKeys.length > 0 ? `\nVALID KEYS: ${validKeys.join(', ')}` : ''}
+${
+  agentScoped
+    ? `\nKey choice: use "${AGENT_SCOPED_MEMORY_KEY}" for anything specific to YOUR OWN persona/relationship with the user -- things another assistant wouldn't know or share. Use one of the other keys for general facts about the user that any assistant should be able to see.`
+    : ''
+}
 
 ${tokenLimit ? `\nTOKEN LIMIT: Maximum ${tokenLimit} tokens per memory value.` : ''}
 
@@ -89,12 +103,15 @@ When in doubt, and the user hasn't asked to remember or forget anything, END THE
  */
 export const createMemoryTool = ({
   userId,
+  agentId,
   setMemory,
   validKeys,
   tokenLimit,
   totalTokens = 0,
 }: {
   userId: string | ObjectId;
+  /** The persona currently in the conversation, if any. Only writes to `agent_notes` are scoped to it; every other key stays shared. */
+  agentId?: string;
   setMemory: MemoryMethods['setMemory'];
   validKeys?: string[];
   tokenLimit?: number;
@@ -165,7 +182,9 @@ export const createMemoryTool = ({
           },
         };
 
-        const result = await setMemory({ userId, key, value, tokenCount });
+        /** Only the agent-scoped key actually scopes to this agent; every other key stays shared (agentId omitted), same as before this feature existed. */
+        const targetAgentId = agentId && key === AGENT_SCOPED_MEMORY_KEY ? agentId : undefined;
+        const result = await setMemory({ userId, agentId: targetAgentId, key, value, tokenCount });
         if (result.ok) {
           logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
           return [`Memory set for key "${key}" (${tokenCount} tokens)`, artifact];
@@ -204,10 +223,12 @@ export const createMemoryTool = ({
  */
 const createDeleteMemoryTool = ({
   userId,
+  agentId,
   deleteMemory,
   validKeys,
 }: {
   userId: string | ObjectId;
+  agentId?: string;
   deleteMemory: MemoryMethods['deleteMemory'];
   validKeys?: string[];
 }) => {
@@ -230,7 +251,8 @@ const createDeleteMemoryTool = ({
           },
         };
 
-        const result = await deleteMemory({ userId, key });
+        const targetAgentId = agentId && key === AGENT_SCOPED_MEMORY_KEY ? agentId : undefined;
+        const result = await deleteMemory({ userId, agentId: targetAgentId, key });
         if (result.ok) {
           logger.debug(`Memory deleted for key "${key}" for user "${userId}"`);
           return [`Memory deleted for key "${key}"`, artifact];
@@ -286,6 +308,7 @@ export class BasicToolEndHandler implements EventHandler {
 export async function processMemory({
   res,
   userId,
+  agentId,
   setMemory,
   deleteMemory,
   messages,
@@ -304,6 +327,8 @@ export async function processMemory({
   setMemory: MemoryMethods['setMemory'];
   deleteMemory: MemoryMethods['deleteMemory'];
   userId: string | ObjectId;
+  /** The persona currently in the conversation, if any (Kade-AI two-tier memory). */
+  agentId?: string;
   memory: string;
   messageId: string;
   conversationId: string;
@@ -319,6 +344,7 @@ export async function processMemory({
   try {
     const memoryTool = createMemoryTool({
       userId,
+      agentId,
       tokenLimit,
       setMemory,
       validKeys,
@@ -326,6 +352,7 @@ export async function processMemory({
     });
     const deleteMemoryTool = createDeleteMemoryTool({
       userId,
+      agentId,
       validKeys,
       deleteMemory,
     });
@@ -513,6 +540,7 @@ ${memory ?? 'No existing memories'}`;
 export async function createMemoryProcessor({
   res,
   userId,
+  agentId,
   messageId,
   memoryMethods,
   conversationId,
@@ -524,16 +552,30 @@ export async function createMemoryProcessor({
   messageId: string;
   conversationId: string;
   userId: string | ObjectId;
+  /** The persona currently in the conversation, if any (Kade-AI two-tier memory). Omit/undefined = shared-only, identical to pre-existing behavior. */
+  agentId?: string;
   memoryMethods: RequiredMemoryMethods;
   config?: MemoryConfig;
   streamId?: string | null;
   user?: IUser;
 }): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
-  const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
+
+  /**
+   * When there's an active agent, the tool's key enum grows by exactly one option
+   * (`agent_notes`) so the memory-writer can choose to file something under that
+   * one persona instead of the shared keys. This is a single combined LLM call per
+   * turn either way -- no extra per-message cost from adding the second tier.
+   */
+  const effectiveValidKeys = agentId
+    ? [...(validKeys ?? []), AGENT_SCOPED_MEMORY_KEY]
+    : validKeys;
+  const finalInstructions =
+    instructions || getDefaultInstructions(effectiveValidKeys, tokenLimit, Boolean(agentId));
 
   const { withKeys, withoutKeys, totalTokens } = await memoryMethods.getFormattedMemories({
     userId,
+    agentId,
   });
 
   return [
@@ -543,8 +585,9 @@ export async function createMemoryProcessor({
         return await processMemory({
           res,
           userId,
+          agentId,
           messages,
-          validKeys,
+          validKeys: effectiveValidKeys,
           llmConfig,
           messageId,
           tokenLimit,
@@ -562,6 +605,90 @@ export async function createMemoryProcessor({
       }
     },
   ];
+}
+
+/**
+ * Memory-hygiene consolidation pass (Kade-AI build plan, Part 2). Reviews everything
+ * currently ACTIVE in one bucket (the shared bucket, or one agent's own bucket) and
+ * asks the memory-writer LLM to merge near-duplicates and tighten stale phrasing --
+ * NOT to extract anything new. Reuses `processMemory` end-to-end (same tools, same
+ * supersede-on-write behavior), so a consolidation write is indistinguishable at the
+ * data layer from a normal one.
+ *
+ * `res` is optional because this is meant to be triggered outside of a live chat
+ * turn (an admin/self-serve route, or eventually a schedule) -- when omitted, a
+ * stub is used so `processMemory`'s artifact handling just resolves quietly instead
+ * of trying to write to a real HTTP stream.
+ */
+export async function consolidateMemoryBucket({
+  res,
+  userId,
+  agentId,
+  scopeLabel,
+  memoryMethods,
+  llmConfig,
+  tokenLimit,
+  user,
+}: {
+  res?: ServerResponse;
+  userId: string | ObjectId;
+  /** null/undefined = the shared bucket; an agent's string id = just that agent's own bucket. */
+  agentId?: string | null;
+  /** Human-readable label dropped into the prompt, e.g. "shared" or "Kiana's own". */
+  scopeLabel: string;
+  memoryMethods: RequiredMemoryMethods;
+  llmConfig?: Partial<LLMConfig>;
+  tokenLimit?: number;
+  user?: IUser;
+}): Promise<{ ran: boolean; attachments?: (TAttachment | null)[] }> {
+  const resolvedAgentId = agentId ?? undefined;
+  const { withKeys, totalTokens } = await memoryMethods.getFormattedMemories({
+    userId,
+    agentId: resolvedAgentId,
+    onlyThisBucket: true,
+  });
+
+  if (!withKeys) {
+    logger.debug('[MemoryAgent] Consolidation skipped -- bucket is empty', {
+      userId,
+      scopeLabel,
+    });
+    return { ran: false };
+  }
+
+  const instructions = `You are doing routine housekeeping on your own memory, NOT extracting anything new from a conversation.
+
+Below is everything currently active in the "${scopeLabel}" memory bucket. Your ONLY job:
+1. If entries are near-duplicates or say overlapping things, merge them into one tighter entry with \`set_memory\` on the key you're keeping.
+2. If an entry has become verbose, repetitive, or awkwardly phrased over time, rewrite it more concisely with \`set_memory\` on the same key.
+3. If an entry is fully redundant after a merge, or is clearly obsolete/contradicted by a newer one, remove it with \`delete_memory\`.
+
+Do NOT invent new facts that are not already present below. Do NOT remove information that is still true just to shorten things -- tighten phrasing, don't erase substance. If everything already looks clean, do nothing and end the turn immediately; most consolidation passes should result in few or zero writes.`;
+
+  const consolidationRequest = new HumanMessage(
+    `Here is everything currently active in the "${scopeLabel}" memory bucket:\n\n${withKeys}\n\nReview it per your instructions.`,
+  );
+
+  const stubRes = { headersSent: false } as unknown as ServerResponse;
+  const attachments = await processMemory({
+    res: res ?? stubRes,
+    userId,
+    agentId: resolvedAgentId,
+    setMemory: memoryMethods.setMemory,
+    deleteMemory: memoryMethods.deleteMemory,
+    messages: [consolidationRequest],
+    memory: withKeys,
+    messageId: `consolidation-${Date.now()}`,
+    conversationId: `consolidation-${userId}-${resolvedAgentId ?? 'shared'}`,
+    validKeys: resolvedAgentId ? [AGENT_SCOPED_MEMORY_KEY] : undefined,
+    instructions,
+    llmConfig,
+    tokenLimit,
+    totalTokens: totalTokens || 0,
+    user,
+  });
+
+  return { ran: true, attachments };
 }
 
 async function handleMemoryArtifact({
