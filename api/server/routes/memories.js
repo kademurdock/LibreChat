@@ -9,8 +9,14 @@ const {
   createMemory,
   deleteMemory,
   setMemory,
+  getUserKey,
+  getUserKeyValues,
 } = require('~/models');
-const { consolidateMemoryBucket, AGENT_SCOPED_MEMORY_KEY } = require('@librechat/api');
+const {
+  consolidateMemoryBucket,
+  AGENT_SCOPED_MEMORY_KEY,
+  getProviderConfig,
+} = require('@librechat/api');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 
 const router = express.Router();
@@ -350,15 +356,36 @@ router.post('/consolidate', checkMemoryUpdate, configMiddleware, async (req, res
   }
 
   const targetAgentId = typeof agentId === 'string' && agentId.trim() ? agentId.trim() : undefined;
-  const llmConfig = Object.assign(
-    { provider: memoryConfig.agent.provider, model: memoryConfig.agent.model },
-    memoryConfig.agent.model_parameters,
-  );
   const scopeLabel = targetAgentId
     ? `agent ${targetAgentId}'s own (key: ${AGENT_SCOPED_MEMORY_KEY})`
     : 'shared';
 
   try {
+    /**
+     * memory.agent.provider (e.g. "OpenRouter") is usually a CUSTOM endpoint name,
+     * not a first-party provider -- it needs the same credential/baseURL resolution
+     * useMemory() gets for free via initializeAgent() (see client.js). This is the
+     * narrow slice of that resolution actually needed here: no tools/files/MCP,
+     * just "turn a provider name into a real apiKey + baseURL". Skipping this and
+     * hand-building { provider, model } directly is what broke the first version
+     * of this route -- it silently had no apiKey/baseURL at all.
+     */
+    const { getOptions, overrideProvider } = getProviderConfig({
+      provider: memoryConfig.agent.provider,
+      appConfig,
+    });
+    const resolved = await getOptions({
+      req,
+      endpoint: memoryConfig.agent.provider,
+      model_parameters: { model: memoryConfig.agent.model, ...memoryConfig.agent.model_parameters },
+      db: { getUserKey, getUserKeyValues },
+    });
+    const llmConfig = {
+      provider: resolved.provider ?? overrideProvider,
+      ...resolved.llmConfig,
+      configuration: resolved.configOptions,
+    };
+
     const result = await consolidateMemoryBucket({
       userId: req.user.id,
       agentId: targetAgentId,
