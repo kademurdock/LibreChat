@@ -924,6 +924,43 @@ export function getMemoryConsolidationCheckInterval(
 }
 
 /**
+ * NaN-safe integer env reader for the weekly sweep's target slot. Same
+ * silent-fallback contract as getMemoryConsolidationCheckInterval: unset,
+ * blank, non-integer, or out-of-range values yield the default. The effective
+ * slot is echoed in the scheduler's startup log line so a glance at the
+ * Railway logs confirms what it's actually set to.
+ */
+function getTargetIntEnv(
+  raw: string | undefined,
+  defaultValue: number,
+  min: number,
+  max: number,
+): number {
+  if (raw == null || raw.trim() === '') {
+    return defaultValue;
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    return defaultValue;
+  }
+  return value;
+}
+
+/** UTC day-of-week (0=Sunday..6=Saturday) the weekly sweep targets. */
+export function getMemoryConsolidationTargetUtcDay(
+  raw: string | undefined = process.env.MEMORY_CONSOLIDATION_SWEEP_DAY,
+): number {
+  return getTargetIntEnv(raw, DEFAULT_MEMORY_CONSOLIDATION_TARGET_UTC_DAY, 0, 6);
+}
+
+/** UTC hour (0-23) the weekly sweep targets. */
+export function getMemoryConsolidationTargetUtcHour(
+  raw: string | undefined = process.env.MEMORY_CONSOLIDATION_SWEEP_HOUR,
+): number {
+  return getTargetIntEnv(raw, DEFAULT_MEMORY_CONSOLIDATION_TARGET_UTC_HOUR, 0, 23);
+}
+
+/**
  * True exactly once per week's target window: the wall-clock UTC day+hour match
  * AND at least `minGapMs` has passed since the last confirmed run (the persisted
  * marker, not just "was this the right hour" -- a redeploy that bounces the
@@ -987,6 +1024,9 @@ export function startMemoryConsolidationSweep(
     return null;
   }
 
+  const targetUtcDay = getMemoryConsolidationTargetUtcDay();
+  const targetUtcHour = getMemoryConsolidationTargetUtcHour();
+
   let isSweeping = false;
   const checkAndMaybeRun = async () => {
     if (isSweeping) {
@@ -997,7 +1037,7 @@ export function startMemoryConsolidationSweep(
     try {
       const now = new Date();
       const lastRunAt = await runAsSystem(() => getLastSweepRunAt());
-      if (!isMemoryConsolidationSweepDue({ now, lastRunAt })) {
+      if (!isMemoryConsolidationSweepDue({ now, lastRunAt, targetUtcDay, targetUtcHour })) {
         return;
       }
 
@@ -1018,7 +1058,7 @@ export function startMemoryConsolidationSweep(
   const interval = setInterval(checkAndMaybeRun, intervalMs);
   interval.unref?.();
   sweepLogger.info(
-    '[sweepMemoryConsolidation] Scheduler started -- checking hourly, fires Sundays ~09:00 UTC (server-side only, no external dependency).',
+    `[sweepMemoryConsolidation] Scheduler started -- checking hourly, fires on UTC day ${targetUtcDay} (0=Sunday) at hour ${targetUtcHour} UTC (server-side only, no external dependency).`,
   );
   return interval;
 }
