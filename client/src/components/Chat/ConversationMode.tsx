@@ -356,9 +356,28 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     };
   }, [status, getAudioCtx]);
 
-  const enqueueAudio = useCallback((raw: ArrayBuffer): Promise<void> => {
+  // Reserves this sentence's spot in the playback queue THE INSTANT it's
+  // called -- synchronously, in the order sentences were actually written --
+  // and only THEN waits on its audio fetch. The fetch itself can resolve
+  // whenever it wants, fast or slow, without changing play order, because
+  // the queue position was already locked in before anyone awaited anything.
+  //
+  // This used to be backwards: fetch the audio FIRST, and only call this
+  // (queue-reservation) function after the fetch resolved. That meant a
+  // short/fast-to-synthesize LATER sentence could finish fetching before an
+  // earlier, longer sentence and jump the queue -- playing out of order.
+  // That's what was making replies sound scrambled and rambly on the call
+  // screen, and it explains "reading the emotions strangely" too: a
+  // steering tag attached to one sentence would end up landing on whatever
+  // ELSE happened to be playing at that moment, not the content it was
+  // actually written for. The phone bridge never had this bug (its
+  // equivalent chain is built the same synchronous way already); this was
+  // web-only.
+  const enqueueAudio = useCallback((bufPromise: Promise<ArrayBuffer | null>): Promise<void> => {
     const tail = playQueueRef.current.then(async () => {
       if (abortRef.current) return;
+      const raw = await bufPromise;
+      if (!raw || abortRef.current) return;
       const ctx = audioCtxRef.current;
       if (!ctx) return;
       try {
@@ -382,8 +401,13 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     return tail;
   }, []);
 
-  const speakSentence = useCallback(async (text: string): Promise<void> => {
-    if (abortRef.current) return;
+  // Fetches one sentence's TTS audio. Called immediately on sentence
+  // detection so the network round-trip overlaps with everything else --
+  // but per the note on enqueueAudio above, this promise is only ever
+  // awaited FROM INSIDE an already-queued chain link, never used to decide
+  // WHEN that link gets queued.
+  const fetchSentenceAudio = useCallback(async (text: string): Promise<ArrayBuffer | null> => {
+    if (abortRef.current) return null;
     const useVoice = voice || 'Kiana (Comedian)';
     try {
       const resp = await fetch(`${TTS_BASE}/v1/audio/speech`, {
@@ -391,18 +415,13 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: 'tts-1', input: text, voice: useVoice }),
       });
-      if (!resp.ok) return;
-      const buf = await resp.arrayBuffer();
-      // Return (not fire-and-forget) the enqueue promise -- it only resolves
-      // once this sentence has actually finished PLAYING (see enqueueAudio's
-      // src.onended), not just once it's fetched. streamTurn awaits every
-      // sentence's promise before flipping back to 'listening' -- see the
-      // race-condition note there for why that distinction matters.
-      if (!abortRef.current) return enqueueAudio(buf);
+      if (!resp.ok) return null;
+      return await resp.arrayBuffer();
     } catch (err) {
       console.warn('[ConvMode] TTS error:', err);
+      return null;
     }
-  }, [voice, enqueueAudio]);
+  }, [voice]);
 
   // -- LLM streaming turn ------------------------------------------------------
   const streamTurn = useCallback(async (userText: string) => {
@@ -422,7 +441,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     streamer.onsentence = (sentence) => {
       if (abortRef.current) return;
       if (firstChunk) { setStatus('speaking'); firstChunk = false; }
-      speechPromises.push(speakSentence(sentence));
+      // Queue reservation happens synchronously right here, in detection
+      // order -- see enqueueAudio's note on why that matters. The fetch
+      // itself is passed in as a promise, not awaited before queuing.
+      speechPromises.push(enqueueAudio(fetchSentenceAudio(sentence)));
     };
 
     const pushText = (chunk: string) => {
@@ -559,7 +581,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         startListeningRef.current();
       }
     }
-  }, [agentId, token, speakSentence]);
+  }, [agentId, token, enqueueAudio, fetchSentenceAudio]);
 
   // -- Speech-to-text (MediaRecorder -> Whisper) -------------------------------
   // Transcribe one recorded utterance via the server STT route, then take a turn.
@@ -930,8 +952,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             {/* aiText accumulates the raw streamed reply, which may carry an
                 invisible TTS-2 voice performance tag (see utils/voiceTags.ts)
                 meant only for the audio path -- strip it for this caption.
-                speakSentence() above gets the untouched chunk, so the voice
-                itself stays expressive. */}
+                fetchSentenceAudio() above gets the untouched chunk, so the
+                voice itself stays expressive. */}
             <span className="text-gray-100">{stripVoiceTags(aiText)}</span>
           </div>
         )}
