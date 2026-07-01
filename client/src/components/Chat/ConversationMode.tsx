@@ -188,6 +188,14 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const outputAnalyserRef  = useRef<AnalyserNode | null>(null);
   const orbRef              = useRef<HTMLDivElement | null>(null);
   const pulseRafRef         = useRef<number | null>(null);
+  // Thinking-gap sound (same clip that plays on the phone line, ported here
+  // as a tactile "still working on it" cue): cached decoded buffer (fetched
+  // once, reused every turn), the currently-playing source node (so it can
+  // be stopped immediately the moment thinking ends), and the start-delay
+  // timer (so a fast reply never even triggers a blip of sound).
+  const thinkingBufferRef   = useRef<AudioBuffer | null>(null);
+  const thinkingSourceRef   = useRef<AudioBufferSourceNode | null>(null);
+  const thinkingDelayRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Audio in (mic capture + VAD)
   const micStreamRef       = useRef<MediaStream | null>(null);
   const vadCtxRef          = useRef<AudioContext | null>(null);
@@ -286,6 +294,68 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     return audioCtxRef.current;
   }, []);
 
+  // -- Thinking-gap sound --------------------------------------------------
+  // Same idea as the phone line's typing-sound filler: a quiet, looping
+  // texture that plays only while genuinely waiting on a reply, so a long
+  // pause reads as "still working on it" instead of dead air. 500ms delay
+  // before it starts (matches the phone's tuned delay) so ordinary fast
+  // replies never trigger even a blip of it. Stops the instant thinking
+  // ends, whichever way it ends (reply arrives, error, call hung up).
+  useEffect(() => {
+    if (status !== 'thinking') {
+      if (thinkingDelayRef.current != null) {
+        clearTimeout(thinkingDelayRef.current);
+        thinkingDelayRef.current = null;
+      }
+      if (thinkingSourceRef.current) {
+        try { thinkingSourceRef.current.stop(); } catch { /* already stopped */ }
+        thinkingSourceRef.current = null;
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    thinkingDelayRef.current = setTimeout(async () => {
+      thinkingDelayRef.current = null;
+      if (cancelled || abortRef.current) return;
+      const ctx = getAudioCtx();
+      try {
+        if (!thinkingBufferRef.current) {
+          const resp = await fetch('/assets/sounds/thinking-loop.wav');
+          const raw = await resp.arrayBuffer();
+          thinkingBufferRef.current = await ctx.decodeAudioData(raw);
+        }
+        if (cancelled || abortRef.current || statusRef.current !== 'thinking') return;
+        const src = ctx.createBufferSource();
+        src.buffer = thinkingBufferRef.current;
+        src.loop = true;
+        // Quiet -- a tactile texture in the background, not a sound effect
+        // competing with anything. Never routed through outputAnalyserRef:
+        // it's not Kiana's voice, so it shouldn't drive the speaking pulse.
+        const gain = ctx.createGain();
+        gain.gain.value = 0.35;
+        src.connect(gain).connect(ctx.destination);
+        src.start();
+        thinkingSourceRef.current = src;
+      } catch (err) {
+        console.warn('[ConvMode] thinking-sound error:', err);
+      }
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      if (thinkingDelayRef.current != null) {
+        clearTimeout(thinkingDelayRef.current);
+        thinkingDelayRef.current = null;
+      }
+      if (thinkingSourceRef.current) {
+        try { thinkingSourceRef.current.stop(); } catch { /* already stopped */ }
+        thinkingSourceRef.current = null;
+      }
+    };
+  }, [status, getAudioCtx]);
+
   const enqueueAudio = useCallback((raw: ArrayBuffer): Promise<void> => {
     const tail = playQueueRef.current.then(async () => {
       if (abortRef.current) return;
@@ -312,7 +382,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     return tail;
   }, []);
 
-  const speakSentence = useCallback(async (text: string) => {
+  const speakSentence = useCallback(async (text: string): Promise<void> => {
     if (abortRef.current) return;
     const useVoice = voice || 'Kiana (Comedian)';
     try {
@@ -323,7 +393,12 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       });
       if (!resp.ok) return;
       const buf = await resp.arrayBuffer();
-      if (!abortRef.current) enqueueAudio(buf);
+      // Return (not fire-and-forget) the enqueue promise -- it only resolves
+      // once this sentence has actually finished PLAYING (see enqueueAudio's
+      // src.onended), not just once it's fetched. streamTurn awaits every
+      // sentence's promise before flipping back to 'listening' -- see the
+      // race-condition note there for why that distinction matters.
+      if (!abortRef.current) return enqueueAudio(buf);
     } catch (err) {
       console.warn('[ConvMode] TTS error:', err);
     }
@@ -339,11 +414,15 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     const streamer = new SentenceStreamer();
     let acc = '';
     let firstChunk = true;
+    // Every sentence's full fetch-decode-play promise, so we can wait for
+    // the LAST one to actually finish playing before going back to
+    // 'listening' -- see the race-condition note below.
+    const speechPromises: Promise<void>[] = [];
 
     streamer.onsentence = (sentence) => {
       if (abortRef.current) return;
       if (firstChunk) { setStatus('speaking'); firstChunk = false; }
-      void speakSentence(sentence);
+      speechPromises.push(speakSentence(sentence));
     };
 
     const pushText = (chunk: string) => {
@@ -449,7 +528,17 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         setError("I didn't catch a reply — your turn, go ahead and try again.");
       }
 
-      playQueueRef.current.then(() => {
+      // Wait for every dispatched sentence to actually finish playing --
+      // NOT a snapshot of playQueueRef.current taken right here. Sentences
+      // are TTS-fetched over the network, each on its own timer; the SSE
+      // text stream can finish (and this code can run) while the LAST
+      // sentence's fetch is still in flight and hasn't chained onto
+      // playQueueRef yet. Reading the queue at that instant used to catch a
+      // stale/already-resolved reference, so 'listening' could fire before
+      // or during the final sentence's playback -- the "speaking and
+      // listening both come in at the same time" bug. Promise.all() over
+      // the actual per-sentence promises can't go stale like that.
+      Promise.all(speechPromises).then(() => {
         if (abortRef.current) return;
         setAiText('');
         // Brief settle delay: onended fires the instant the buffer finishes,
