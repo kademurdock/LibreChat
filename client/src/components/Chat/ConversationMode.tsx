@@ -33,7 +33,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Phone, PhoneOff, Mic, StopCircle } from 'lucide-react';
 import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
@@ -173,6 +173,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const agentId = useRecoilValue(store.conversationAgentIdByIndex(index));
   const voice   = useRecoilValue(store.voice);
   const voiceSpeed = useRecoilValue(store.voiceSpeed); // Kade D2d: agent's speaking rate
+  const setVoiceCallActive = useSetRecoilState(store.voiceCallActiveState);
   const { token } = useAuthContext();
 
   const [open,       setOpen]       = useState(false);
@@ -210,6 +211,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const spokeRef           = useRef(false);
   // Flow control + threading
   const abortRef           = useRef(false);
+  // Synchronous re-entry guard: statusRef updates a render late, so a fast
+  // double-tap on the phone button could start TWO overlapping call
+  // sessions (two mics, two turn loops = clips stepping on each other).
+  const callActiveRef      = useRef(false);
   const conversationIdRef  = useRef<string | null>(null);
   const parentMessageIdRef = useRef<string>(NO_PARENT);
   const statusRef          = useRef<CallStatus>('idle');
@@ -731,6 +736,20 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
 
   // -- Call controls -----------------------------------------------------------
   const startCall = useCallback(async () => {
+    if (callActiveRef.current) return; // double-tap guard (see ref note)
+    callActiveRef.current = true;
+    setVoiceCallActive(true);
+    /* KADE (July 2 2026): the call owns the speakers. Silence every other
+     * audio surface FIRST — the hidden auto-play element, any per-message
+     * read-aloud clip mid-play, and browser speech synthesis (devices still
+     * on engineTTS "browser") — live report from Skylee: taps the phone
+     * button and old clips all talk over each other. */
+    try {
+      document.querySelectorAll('audio').forEach((el) => {
+        try { (el as HTMLAudioElement).pause(); } catch { /* ignore */ }
+      });
+    } catch { /* ignore */ }
+    try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
     getAudioCtx();               // iOS: unlock AudioContext on user gesture
     abortRef.current = false;
     conversationIdRef.current = null;
@@ -763,9 +782,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       console.error('[ConvMode] mic permission error:', err);
       setError('Microphone access is blocked. Enable mic permission, then end and start the call again.');
     }
-  }, [getAudioCtx, setupAnalyser]);
+  }, [getAudioCtx, setupAnalyser, setVoiceCallActive]);
 
   const endCall = useCallback(() => {
+    callActiveRef.current = false;
+    setVoiceCallActive(false);
     abortRef.current = true;
     teardownMic();
     playQueueRef.current = Promise.resolve();
@@ -776,7 +797,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setError('');
     conversationIdRef.current = null;
     parentMessageIdRef.current = NO_PARENT;
-  }, [teardownMic]);
+  }, [teardownMic, setVoiceCallActive]);
 
   // Stop AI mid-speech and hand the mic back immediately
   const interruptAI = useCallback(() => {
@@ -795,9 +816,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   useEffect(() => {
     return () => {
       abortRef.current = true;
+      callActiveRef.current = false;
+      setVoiceCallActive(false);
       teardownMic();
     };
-  }, [teardownMic]);
+  }, [teardownMic, setVoiceCallActive]);
 
   // Modal focus management: into the dialog on open, back to trigger on close.
   useEffect(() => {

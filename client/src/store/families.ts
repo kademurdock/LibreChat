@@ -325,6 +325,16 @@ const audioRunFamily = atomFamily<string | null, string | number | null>({
   default: null,
 });
 
+/* KADE (July 2 2026): true while the in-app voice call (Conversation Mode)
+ * overlay is live. Every OTHER audio surface (StreamAudio auto-play, message
+ * read-aloud, browser speech synthesis) must stay quiet during a call —
+ * live report: old clips stepping on each other the moment the phone
+ * button is tapped. */
+const voiceCallActiveState = atom<boolean>({
+  key: 'voiceCallActive',
+  default: false,
+});
+
 const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
   key: 'messagesSiblingIdx',
   default: 0,
@@ -457,6 +467,7 @@ export default {
   globalAudioURLFamily,
   activeRunFamily,
   audioRunFamily,
+  voiceCallActiveState,
   globalAudioPlayingFamily,
   globalAudioFetchingFamily,
   showPlusPopoverFamily,

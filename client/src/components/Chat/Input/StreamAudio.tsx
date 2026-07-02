@@ -30,6 +30,7 @@ export default function StreamAudio({ index = 0 }) {
   const voiceSpeed = useRecoilValue(store.voiceSpeed); // Kade D2d
   const activeRunId = useRecoilValue(store.activeRunFamily(index));
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
+  const voiceCallActive = useRecoilValue(store.voiceCallActiveState);
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const latestMessage = useLatestMessage(index);
   const setIsPlaying = useSetRecoilState(store.globalAudioPlayingFamily(index));
@@ -63,6 +64,9 @@ export default function StreamAudio({ index = 0 }) {
     const shouldFetch = !!(
       token != null &&
       automaticPlayback &&
+      /* KADE (July 2 2026): never speak over the in-app voice call —
+       * Conversation Mode owns the speakers while it's open. */
+      !voiceCallActive &&
       !isSubmitting &&
       latestMessage &&
       !latestMessage.isCreatedByUser &&
@@ -195,6 +199,7 @@ export default function StreamAudio({ index = 0 }) {
     fetchAudio();
   }, [
     automaticPlayback,
+    voiceCallActive,
     setGlobalAudioURL,
     setAudioRunId,
     setIsFetching,
@@ -227,6 +232,14 @@ export default function StreamAudio({ index = 0 }) {
     // We only want the effect to run when the paramId changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramId]);
+
+  /* KADE (July 2 2026): the moment a voice call opens, kill whatever this
+   * element is doing (mid-play OR queued) so nothing talks over the call. */
+  useEffect(() => {
+    if (voiceCallActive) {
+      pauseGlobalAudio();
+    }
+  }, [voiceCallActive, pauseGlobalAudio]);
 
   logger.log('StreamAudio.tsx - globalAudioURL:', globalAudioURL);
   return (
