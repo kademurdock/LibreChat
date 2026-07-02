@@ -3,6 +3,17 @@ const { logger } = require('@librechat/data-schemas');
 const { genAzureEndpoint, logAxiosError, applyAxiosProxyConfig } = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
+
+/** Kade D2d: parse+clamp an optional TTS speaking rate (Inworld range 0.5-1.5).
+ * Multipart form fields arrive as strings; JSON bodies as numbers. Anything
+ * unparseable -> undefined -> provider/global default. */
+function parseKadeTtsSpeed(raw) {
+  const n = typeof raw === 'string' ? parseFloat(raw) : raw;
+  if (typeof n !== 'number' || !isFinite(n)) {
+    return undefined;
+  }
+  return Math.min(1.5, Math.max(0.5, n));
+}
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { getAppConfig } = require('~/server/services/Config');
 
@@ -102,7 +113,7 @@ class TTSService {
    * @returns {Array} An array containing the URL, data, and headers for the request.
    * @throws {Error} If the selected voice is not available.
    */
-  openAIProvider(ttsSchema, input, voice) {
+  openAIProvider(ttsSchema, input, voice, _stream, speed) {
     const url = ttsSchema?.url || 'https://api.openai.com/v1/audio/speech';
 
     if (
@@ -119,6 +130,9 @@ class TTSService {
       model: ttsSchema?.model,
       voice: ttsSchema?.voices && ttsSchema.voices.length > 0 ? voice : undefined,
       backend: ttsSchema?.backend,
+      // Kade D2d: optional per-request speaking rate; removeUndefined strips it
+      // when absent so the payload matches today's exactly.
+      speed,
     };
 
     const headers = {
@@ -255,13 +269,13 @@ class TTSService {
    * @returns {Promise<Object>} The axios response object.
    * @throws {Error} If the provider is invalid or the request fails.
    */
-  async ttsRequest(provider, ttsSchema, { input, voice, stream = true }) {
+  async ttsRequest(provider, ttsSchema, { input, voice, stream = true, speed }) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
     }
 
-    const [url, data, headers] = strategy.call(this, ttsSchema, input, voice, stream);
+    const [url, data, headers] = strategy.call(this, ttsSchema, input, voice, stream, speed);
 
     [data, headers].forEach(this.removeUndefined.bind(this));
 
@@ -286,6 +300,7 @@ class TTSService {
    */
   async processTextToSpeech(req, res) {
     const { input, voice: requestVoice } = req.body;
+    const speed = parseKadeTtsSpeed(req.body.speed); // Kade D2d
 
     if (!input) {
       return res.status(400).send('Missing text in request body');
@@ -314,7 +329,7 @@ class TTSService {
       const voice = await this.getVoice(ttsSchema, requestVoice);
 
       if (input.length < 32768) {
-        const response = await this.ttsRequest(provider, ttsSchema, { input, voice });
+        const response = await this.ttsRequest(provider, ttsSchema, { input, voice, speed });
         response.data.pipe(res);
         return;
       }
@@ -327,6 +342,7 @@ class TTSService {
             voice,
             input: chunk.text,
             stream: true,
+            speed,
           });
 
           logger.debug(`[textToSpeech] user: ${req?.user?.id} | writing audio stream`);
@@ -380,6 +396,7 @@ class TTSService {
     const provider = this.getProvider(appConfig);
     const ttsSchema = appConfig?.speech?.tts?.[provider];
     const voice = await this.getVoice(ttsSchema, req.body.voice);
+    const speed = parseKadeTtsSpeed(req.body.speed); // Kade D2d
 
     let shouldContinue = true;
 
@@ -410,6 +427,7 @@ class TTSService {
               voice,
               input: update.text,
               stream: true,
+              speed,
             });
 
             if (!shouldContinue) {

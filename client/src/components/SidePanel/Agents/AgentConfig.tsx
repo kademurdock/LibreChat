@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { X } from 'lucide-react';
 import { useQueries } from '@tanstack/react-query';
-import { Switch, useToastContext } from '@librechat/client';
+import { Dropdown, Switch, useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import {
   EModelEndpoint,
@@ -11,7 +11,7 @@ import {
   dataService,
   getEndpointField,
 } from 'librechat-data-provider';
-import type { AgentForm, IconComponentTypes } from '~/common';
+import type { AgentForm, IconComponentTypes, Option } from '~/common';
 import {
   removeFocusOutlines,
   processAgentOption,
@@ -82,6 +82,9 @@ export default function AgentConfig() {
   } = methods;
   const provider = useWatch({ control, name: 'provider' });
   const model = useWatch({ control, name: 'model' });
+  /** D2d: the agent's configured speaking rate — auditions and previews use it live. */
+  const watchedSpeakingRate = useWatch({ control, name: 'tts.speakingRate' });
+  const speakingRate = typeof watchedSpeakingRate === 'number' ? watchedSpeakingRate : undefined;
   const agent = useWatch({ control, name: 'agent' });
   const tools = useWatch({ control, name: 'tools' });
   const skills = useWatch({ control, name: 'skills' });
@@ -357,15 +360,63 @@ export default function AgentConfig() {
                   <AgentVoicePicker
                     value={current}
                     onChange={(v) => field.onChange(v ?? undefined)}
+                    speed={speakingRate}
                   />
                   <p className="text-xs text-text-secondary">
                     {localize('com_agents_default_voice_help')}
                   </p>
                   {current !== '' && (
                     <div className="flex justify-start">
-                      <VoicePreviewButton voiceId={current} disabled={false} />
+                      <VoicePreviewButton voiceId={current} disabled={false} speed={speakingRate} />
                     </div>
                   )}
+                </div>
+              );
+            }}
+          />
+        </div>
+        {/* ♿ KADE D2d: per-agent speaking rate (real synthesis rate via the
+            Inworld API, range 0.5–1.5; unset follows the server default).
+            A dropdown of preset steps — simplest control for VoiceOver. */}
+        <div className="mb-4">
+          <label className={labelClass} id="agent-rate-label" htmlFor="agent-rate-dropdown">
+            {localize('com_agents_speaking_rate')}
+          </label>
+          <Controller
+            name="tts.speakingRate"
+            control={control}
+            render={({ field }) => {
+              const rateOptions = [
+                { label: localize('com_agents_speaking_rate_default'), value: '' },
+                { label: '0.5 (slowest)', value: '0.5' },
+                { label: '0.6', value: '0.6' },
+                { label: '0.7', value: '0.7' },
+                { label: '0.8', value: '0.8' },
+                { label: '0.9', value: '0.9' },
+                { label: '1 (normal)', value: '1' },
+                { label: '1.1', value: '1.1' },
+                { label: '1.2', value: '1.2' },
+                { label: '1.3', value: '1.3' },
+                { label: '1.4', value: '1.4' },
+                { label: '1.5 (fastest)', value: '1.5' },
+              ];
+              return (
+                <div className="flex flex-col gap-2">
+                  <Dropdown
+                    value={field.value != null ? String(field.value) : ''}
+                    options={rateOptions}
+                    onChange={(newValue?: string | Option) => {
+                      const v = typeof newValue === 'string' ? newValue : newValue?.value;
+                      field.onChange(v === '' || v == null ? undefined : Number(v));
+                    }}
+                    sizeClasses="w-full"
+                    testId="AgentRateDropdown"
+                    className="z-50"
+                    aria-labelledby="agent-rate-label"
+                  />
+                  <p className="text-xs text-text-secondary">
+                    {localize('com_agents_speaking_rate_help')}
+                  </p>
                 </div>
               );
             }}

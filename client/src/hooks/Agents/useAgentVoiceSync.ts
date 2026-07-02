@@ -53,6 +53,7 @@ export function saveAgentVoicePreference(agentId: string, voice: string): void {
 export function useAgentVoiceSync(index: number = 0): void {
   const agentId = useRecoilValue(store.conversationAgentIdByIndex(index));
   const setVoice = useSetRecoilState(store.voice);
+  const setVoiceSpeed = useSetRecoilState(store.voiceSpeed);
   /** D1/D2: the agent record (cached, VIEW-level) carries its default voice. */
   const { data: agent } = useGetAgentByIdQuery(agentId);
 
@@ -64,5 +65,9 @@ export function useAgentVoiceSync(index: number = 0): void {
     if (resolved) {
       setVoice(resolved); // 3) neither -> untouched global default
     }
-  }, [agentId, agent?.tts?.voiceId, setVoice]);
+    // D2d: the agent's speaking rate — unlike voice this RESETS when the
+    // incoming agent has none, so one agent's pace never bleeds into the next.
+    const rate = agent?.tts?.speakingRate;
+    setVoiceSpeed(typeof rate === 'number' ? rate : undefined);
+  }, [agentId, agent?.tts?.voiceId, agent?.tts?.speakingRate, setVoice, setVoiceSpeed]);
 }

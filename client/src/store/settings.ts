@@ -6,6 +6,11 @@ import type { TOptionSettings } from '~/common';
 // Static atoms without localStorage
 const staticAtoms = {
   abortScroll: atom<boolean>({ key: 'abortScroll', default: false }),
+  /** Kade D2d: the ACTIVE AGENT's speaking rate (tts.speakingRate), set by
+   * useAgentVoiceSync on agent switch. Deliberately NOT persisted — it is
+   * derived from the agent record; undefined = server default rate. Distinct
+   * from `playbackRate` (the listener's client-side audio speed). */
+  voiceSpeed: atom<number | undefined>({ key: 'voiceSpeed', default: undefined }),
   optionSettings: atom<TOptionSettings>({ key: 'optionSettings', default: {} }),
   currentSettingsView: atom<SettingsViews>({
     key: 'currentSettingsView',

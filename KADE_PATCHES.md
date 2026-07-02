@@ -269,3 +269,20 @@ Turns D3's browser-localStorage trick into a real field on the agent record, wit
 **Why not config/proxy alone:** reordering the yaml voices array would lose the custom/library semantics, need a manual redeploy per change, and duplicate the truth into a third place.
 
 **Commit:** see this commit's hash in git log (fork); proxy `9c8e869` deployed SUCCESS + `/voices.json` verified live (210 voices / 70 custom / CORS header present) before this landed.
+
+---
+
+## D2d — Picker polish, catalog renumbering support, per-agent speaking rate (2026-07-01)
+
+**Fork files:** `AgentVoicePicker.tsx`, `Voices.tsx`, `AgentConfig.tsx`, `useAgentVoiceSync.ts`, `useTextToSpeechExternal.ts`, `StreamAudio.tsx`, `ConversationMode.tsx`, `store/settings.ts`, `main.jsx`, `utils/voiceRenumber2026.ts` (new), `packages/api/src/agents/validation.ts`, `translation.json`. **Companion proxy commits:** `7142ca5` (renumber + speed + sample) and `2e9995c` (clamp fix).
+
+Kade's feedback round on D2b/D2c, all four items:
+
+1. **Faster auditions:** debounce 450ms → 200ms — samples start about a quarter-second sooner after landing on a voice.
+2. **No custom/stock distinction:** the proxy catalog was RENUMBERED (her call, supervised): customs are now **Voice 1–70**, stock library **71–210** — so plain numeric order leads with her voices natively. Picker group headings, badges, and the "custom designed voice" announcements removed everywhere (picker + /voices page); the numbered list reads in clean numeric order.
+3. **Expressive samples:** auditions and the Preview button now speak the SAME performance monologue the /voices library page uses, served by `/voices.json` (`sample` field) so all three surfaces stay word-for-word identical. Falls back to a short built-in line if the fetch fails. Sample cache keys include text-variant and rate.
+4. **Speaking rate (both kinds):**
+   - *Per-agent synthesis rate* — new "Speaking rate for this agent" dropdown in the builder (0.5–1.5 presets; unset = server default 1.1), saved to the existing `tts.speakingRate` field (Zod max corrected 2 → 1.5 to match Inworld's real range, verified live: 2.0 returns HTTP 400). Flows end-to-end: builder auditions/preview play at the configured rate; `useAgentVoiceSync` publishes the active agent's rate to a new non-persisted `store.voiceSpeed` atom (RESETS on agent switch, unlike voice); read-aloud button, automatic playback (StreamAudio), and ConversationMode all send `speed`; fork TTSService forwards it (`parseKadeTtsSpeed`, clamped) through `ttsRequest` → openAI provider payload; proxy maps it to Inworld `audioConfig.speakingRate`. Rate verified live: same sentence at 0.5 vs 1.5 differs ~3× in audio duration.
+   - *Listener speed* — already existed (Settings → Speech → Playback Rate); confirmed applied to the automatic-playback audio element (`StreamAudio` sets `audioRef.current.playbackRate`). Untouched.
+
+**Voice renumber migration (the breaking half, handled):** old labels could not be aliased (label space collides), so `utils/voiceRenumber2026.ts` runs at boot before React/Recoil initialize — rewrites the saved global `voice` (JSON) and the `kade:agent_voices` map once per device, flag-guarded (`kade:voice_renumber_2026_07_01`), fail-silent, friendly-name labels passed through. Mapping is frozen history: 108–175→1–68, 209/210→69/70, 1–107→71–177, 176–208→178–210. Unit-tested against boundary cases + idempotency before shipping. Server-side agent records (`tts.voiceId`) migrated separately via the API (same session); `librechat.yaml` needed NO change (labels unchanged — meaning lives in the proxy map).

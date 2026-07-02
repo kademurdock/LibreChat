@@ -27,6 +27,7 @@ export default function StreamAudio({ index = 0 }) {
   const playbackRate = useRecoilValue(store.playbackRate);
 
   const voice = useRecoilValue(store.voice);
+  const voiceSpeed = useRecoilValue(store.voiceSpeed); // Kade D2d
   const activeRunId = useRecoilValue(store.activeRunFamily(index));
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
@@ -97,7 +98,13 @@ export default function StreamAudio({ index = 0 }) {
         const response = await fetch('/api/files/speech/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ messageId: latestMessage?.messageId, runId: activeRunId, voice }),
+          body: JSON.stringify({
+            messageId: latestMessage?.messageId,
+            runId: activeRunId,
+            voice,
+            // Kade D2d: active agent's speaking rate (undefined drops out of JSON)
+            speed: voiceSpeed,
+          }),
         });
 
         if (!response.ok) {

@@ -28,30 +28,32 @@ export const SILENT_WAV =
 const TTS_PROXY_BASE = 'https://inworld-tts-proxy-production.up.railway.app';
 
 /**
- * ♿ KADE D2c: which voice labels are Kade's custom-designed voices, fetched
- * from the TTS proxy (GET /voices.json) — the SAME source of truth that
- * floats and badges them on the /voices library page (CUSTOM_VOICE_NUMBERS
- * in the proxy's server.js). Nothing hardcoded here to go stale when that
- * set changes. Fail-soft: on any error this returns an empty set and the
- * pickers keep the plain numeric order they had before D2c.
+ * ♿ KADE D2c/D2d: voice-catalog metadata from the TTS proxy (GET /voices.json).
+ * `sample` is the expressive audition monologue the /voices library page
+ * performs — the in-app pickers use the same text so both surfaces sound
+ * identical. (The `custom` list is still served but no longer drives any UI:
+ * the 2026-07-01 renumbering made Kade's customs Voice 1–70, so plain numeric
+ * order already leads with them, indistinguishably — her call.)
+ * Fail-soft: on any fetch error `sample` is undefined and callers fall back
+ * to their built-in line.
  */
-export function useCustomVoiceSet(): Set<string> {
+export function useVoiceSampleText(): string | undefined {
   const { data } = useQuery(
-    ['kade', 'customVoices'],
+    ['kade', 'voiceCatalog'],
     async () => {
       const res = await fetch(`${TTS_PROXY_BASE}/voices.json`);
       if (!res.ok) {
         throw new Error(`voices.json ${res.status}`);
       }
-      return (await res.json()) as { custom?: string[] };
+      return (await res.json()) as { sample?: string };
     },
     { staleTime: Infinity, retry: 1, refetchOnWindowFocus: false },
   );
-  return useMemo(() => new Set(data?.custom ?? []), [data?.custom]);
+  return typeof data?.sample === 'string' && data.sample !== '' ? data.sample : undefined;
 }
 
 /** "Voice 12" sorts numerically; any non-numbered label sorts first, alphabetically. */
-function compareVoices(a: string, b: string): number {
+export function compareVoices(a: string, b: string): number {
   const ma = /^Voice (\d+)$/i.exec(a);
   const mb = /^Voice (\d+)$/i.exec(b);
   if (ma && mb) {
@@ -61,13 +63,6 @@ function compareVoices(a: string, b: string): number {
     return ma ? 1 : -1;
   }
   return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0;
-}
-
-/** ♿ D2c: Kade's custom voices first (numeric order), then the full library. */
-export function orderVoicesCustomFirst(voices: string[], custom: Set<string>): string[] {
-  const mine = voices.filter((v) => custom.has(v)).sort(compareVoices);
-  const rest = voices.filter((v) => !custom.has(v)).sort(compareVoices);
-  return [...mine, ...rest];
 }
 
 /**
@@ -92,11 +87,20 @@ function useVoicePreview() {
   // play() receives an <audio> element created synchronously inside the click
   // handler (iOS Safari blocks play() if the element is first touched after an
   // await), fetches the sample, and points the element at it.
-  const play = useCallback(async (voiceId: string, audio: HTMLAudioElement) => {
+  // D2d: `text` lets callers supply the catalog's expressive sample monologue;
+  // `speed` is the optional per-agent speaking rate (0.5–1.5).
+  const play = useCallback(async (
+    voiceId: string,
+    audio: HTMLAudioElement,
+    opts?: { text?: string; speed?: number },
+  ) => {
     try {
       const fd = new FormData();
-      fd.append('input', PREVIEW_TEXT);
+      fd.append('input', opts?.text ?? PREVIEW_TEXT);
       fd.append('voice', voiceId);
+      if (typeof opts?.speed === 'number') {
+        fd.append('speed', String(opts.speed));
+      }
 
       const res = await fetch('/api/files/speech/tts/manual', {
         method: 'POST',
@@ -152,7 +156,7 @@ function useVoicePreview() {
   }, [stop, token]);
 
   const togglePreview = useCallback(
-    (voiceId: string) => {
+    (voiceId: string, opts?: { text?: string; speed?: number }) => {
       if (isPlaying) {
         stop();
         return;
@@ -173,7 +177,7 @@ function useVoicePreview() {
       }
       audioRef.current = audio;
       setIsPlaying(true);
-      play(voiceId, audio);
+      play(voiceId, audio, opts);
     },
     [isPlaying, stop, play],
   );
@@ -186,12 +190,17 @@ function useVoicePreview() {
 export function VoicePreviewButton({
   voiceId,
   disabled,
+  speed,
 }: {
   voiceId: string;
   disabled: boolean;
+  /** D2d: optional speaking rate so the preview matches the agent's configured pace. */
+  speed?: number;
 }) {
   const localize = useLocalize();
   const { isPlaying, togglePreview, error } = useVoicePreview();
+  // The same expressive monologue the /voices library page performs.
+  const sampleText = useVoiceSampleText();
 
   const label = isPlaying
     ? localize('com_nav_stop_voice_preview') ?? 'Stop voice preview'
@@ -201,7 +210,7 @@ export function VoicePreviewButton({
     <div className="flex flex-col gap-1">
     <button
       type="button"
-      onClick={() => togglePreview(voiceId)}
+      onClick={() => togglePreview(voiceId, { text: sampleText, speed })}
       disabled={disabled || !voiceId}
       aria-label={label}
       aria-pressed={isPlaying}
@@ -267,13 +276,9 @@ export function BrowserVoiceDropdown({ disabled = false }: { disabled?: boolean 
 export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean }) {
   const localize = useLocalize();
   const { voices = [] } = useTTSExternal();
-  // ♿ D2c: Kade's custom voices float to the top of the dropdown; the numbered
-  // library stays available below, in numeric order.
-  const customSet = useCustomVoiceSet();
-  const orderedVoices = useMemo(
-    () => orderVoicesCustomFirst(voices.map((v) => String(v)), customSet),
-    [voices, customSet],
-  );
+  // ♿ D2c/D2d: plain numeric order — after the 2026-07-01 renumbering Kade's
+  // custom voices ARE Voice 1–70, so numeric order leads with them natively.
+  const orderedVoices = useMemo(() => voices.map((v) => String(v)).sort(compareVoices), [voices]);
   const [voice, setVoice] = useRecoilState(store.voice);
   // ♿ D3: the agent active in the primary conversation, so a voice pick here can
   // be remembered as THIS agent's preferred voice (per-user, localStorage).

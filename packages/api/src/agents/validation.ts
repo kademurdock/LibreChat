@@ -379,7 +379,7 @@ export const agentTtsSchema: z.ZodOptional<
 > = z
   .object({
     voiceId: z.string().min(1).optional(),
-    speakingRate: z.number().min(0.5).max(2).optional(),
+    speakingRate: z.number().min(0.5).max(1.5).optional(), // Inworld's hard range (2.0 rejects)
     deliveryMode: z.enum(['STABLE', 'BALANCED', 'CREATIVE']).optional(),
   })
   .optional();

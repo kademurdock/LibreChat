@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { ChevronDown, Volume2, Check } from 'lucide-react';
 import type { FocusEvent, KeyboardEvent } from 'react';
-import { SILENT_WAV, useCustomVoiceSet, orderVoicesCustomFirst } from '~/components/Audio/Voices';
+import { SILENT_WAV, useVoiceSampleText, compareVoices } from '~/components/Audio/Voices';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -35,15 +35,21 @@ import { cn } from '~/utils';
  * long-form Preview button below the picker still plays the selected voice.
  */
 
-const AUDITION_DEBOUNCE_MS = 450;
+const AUDITION_DEBOUNCE_MS = 200; // was 450; Kade wanted the sample to start
+                                  // quicker after landing on a voice (2026-07-01)
 const AUDITION_CACHE_MAX = 40;
 
-/** Short line per voice — quick to synthesize, enough to judge the timbre. */
+/** Fallback line if the catalog sample hasn't loaded — quick to synthesize. */
 function auditionLine(voice: string) {
   return `Hi there — ${voice} here. This is how I sound.`;
 }
 
-function useVoiceAudition() {
+/**
+ * D2d: auditions speak the SAME expressive monologue the /voices library page
+ * performs (fetched once via useVoiceSampleText), at the agent's configured
+ * speaking rate when one is set — so what you audition is what you'll get.
+ */
+function useVoiceAudition({ sampleText, speed }: { sampleText?: string; speed?: number }) {
   const { token } = useAuthContext();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   /** voice -> object URL of an already-fetched sample */
@@ -85,11 +91,17 @@ function useVoiceAudition() {
       const seq = ++seqRef.current;
       setError(null);
       try {
-        let url = cacheRef.current.get(voice);
+        // Cache key covers the text variant AND the rate — a sample recorded
+        // at 1.0 must not be replayed when the agent's rate is now 1.3.
+        const cacheKey = `${voice}|${sampleText ? 's' : 'f'}|${speed ?? ''}`;
+        let url = cacheRef.current.get(cacheKey);
         if (url == null) {
           const fd = new FormData();
-          fd.append('input', auditionLine(voice));
+          fd.append('input', sampleText ?? auditionLine(voice));
           fd.append('voice', voice);
+          if (typeof speed === 'number') {
+            fd.append('speed', String(speed));
+          }
           const res = await fetch('/api/files/speech/tts/manual', {
             method: 'POST',
             body: fd,
@@ -117,7 +129,7 @@ function useVoiceAudition() {
               cacheRef.current.delete(oldest);
             }
           }
-          cacheRef.current.set(voice, url);
+          cacheRef.current.set(cacheKey, url);
         }
         if (seq !== seqRef.current) {
           return; // user already moved to another voice
@@ -149,7 +161,7 @@ function useVoiceAudition() {
         }
       }
     },
-    [token],
+    [token, sampleText, speed],
   );
 
   /** Debounced audition — call on option focus/hover. Rapid movement through
@@ -183,19 +195,22 @@ function useVoiceAudition() {
 export default function AgentVoicePicker({
   value,
   onChange,
+  speed,
 }: {
   value?: string | null;
   onChange: (voice?: string) => void;
+  /** D2d: the agent's configured speaking rate — auditions play at this pace. */
+  speed?: number;
 }) {
   const localize = useLocalize();
   const { data: voicesData } = useVoicesQuery();
-  /* ♿ D2c: Kade's custom voices float to the top (labeled group); the numbered
-     library stays available below. The set comes from the proxy's
-     /voices.json — same truth as the /voices library page. */
-  const customSet = useCustomVoiceSet();
+  /* D2c note: grouping/badges removed on Kade's call — after the 2026-07-01
+     renumbering her custom voices ARE Voice 1–70, so plain numeric order
+     leads with them without giving away which entries are custom. */
+  const sampleText = useVoiceSampleText();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
-  const { unlock, audition, stop, playingVoice, error } = useVoiceAudition();
+  const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({ sampleText, speed });
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLButtonElement>(null);
@@ -212,21 +227,14 @@ export default function AgentVoicePicker({
           : String((v as { value?: unknown; label?: unknown })?.value ?? (v as { label?: unknown })?.label ?? ''),
       )
       .filter((v) => v !== '');
-    return orderVoicesCustomFirst(names, customSet);
-  }, [voicesData, customSet]);
+    return names.sort(compareVoices);
+  }, [voicesData]);
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return q ? voices.filter((v) => v.toLowerCase().includes(q)) : voices;
   }, [voices, filter]);
-  const customMatches = useMemo(
-    () => filtered.filter((v) => customSet.has(v)),
-    [filtered, customSet],
-  );
-  const libraryMatches = useMemo(
-    () => filtered.filter((v) => !customSet.has(v)),
-    [filtered, customSet],
-  );
+
 
   const current = typeof value === 'string' && value !== '' ? value : undefined;
 
@@ -285,15 +293,11 @@ export default function AgentVoicePicker({
     btns[next]?.focus();
   };
 
-  /** One voice row. Custom voices announce and show their "custom" badge —
-   * same wording as the /voices library page, so it sounds familiar. */
-  const renderVoiceOption = (v: string, isCustom: boolean) => {
+  /** One voice row — no custom/stock distinction, per Kade (2026-07-01). */
+  const renderVoiceOption = (v: string) => {
     const isCurrent = v === current;
     const isPlaying = v === playingVoice;
     const labelParts = [v];
-    if (isCustom) {
-      labelParts.push(localize('com_agents_voice_custom_badge'));
-    }
     if (isCurrent) {
       labelParts.push(localize('com_agents_voice_current'));
     }
@@ -313,14 +317,7 @@ export default function AgentVoicePicker({
           isCurrent && 'bg-surface-tertiary',
         )}
       >
-        <span className="flex items-center gap-2" aria-hidden="true">
-          {v}
-          {isCustom && (
-            <span className="rounded-full bg-surface-tertiary px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-text-secondary">
-              custom
-            </span>
-          )}
-        </span>
+        <span aria-hidden="true">{v}</span>
         <span className="flex items-center gap-1.5" aria-hidden="true">
           {isPlaying && <Volume2 className="h-4 w-4 animate-pulse" />}
           {isCurrent && <Check className="h-4 w-4" />}
@@ -394,18 +391,7 @@ export default function AgentVoicePicker({
               <span aria-hidden="true">{localize('com_agents_default_voice_none')}</span>
               {current == null && <Check className="h-4 w-4" aria-hidden="true" />}
             </button>
-            {customMatches.length > 0 && (
-              <p className="px-2.5 pb-1 pt-2 text-xs font-medium uppercase tracking-wider text-text-secondary">
-                {localize('com_agents_voice_group_custom')}
-              </p>
-            )}
-            {customMatches.map((v) => renderVoiceOption(v, true))}
-            {libraryMatches.length > 0 && (
-              <p className="px-2.5 pb-1 pt-3 text-xs font-medium uppercase tracking-wider text-text-secondary">
-                {localize('com_agents_voice_group_library')}
-              </p>
-            )}
-            {libraryMatches.map((v) => renderVoiceOption(v, false))}
+            {filtered.map((v) => renderVoiceOption(v))}
             {filtered.length === 0 && (
               <p className="px-2.5 py-2 text-sm text-text-secondary">
                 {localize('com_agents_voice_no_match')}

@@ -172,6 +172,7 @@ interface ConversationModeProps {
 export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const agentId = useRecoilValue(store.conversationAgentIdByIndex(index));
   const voice   = useRecoilValue(store.voice);
+  const voiceSpeed = useRecoilValue(store.voiceSpeed); // Kade D2d: agent's speaking rate
   const { token } = useAuthContext();
 
   const [open,       setOpen]       = useState(false);
@@ -416,7 +417,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       const resp = await fetch(`${TTS_BASE}/v1/audio/speech`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'tts-1', input: text, voice: useVoice }),
+        // speed: Kade D2d — the active agent's speaking rate (undefined drops out)
+        body: JSON.stringify({ model: 'tts-1', input: text, voice: useVoice, speed: voiceSpeed }),
       });
       if (!resp.ok) return null;
       return await resp.arrayBuffer();
@@ -424,7 +426,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       console.warn('[ConvMode] TTS error:', err);
       return null;
     }
-  }, [voice]);
+  }, [voice, voiceSpeed]);
 
   // -- LLM streaming turn ------------------------------------------------------
   const streamTurn = useCallback(async (userText: string) => {

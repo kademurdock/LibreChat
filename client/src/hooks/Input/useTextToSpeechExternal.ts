@@ -5,10 +5,13 @@ import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
-const createFormData = (text: string, voice: string) => {
+const createFormData = (text: string, voice: string, speed?: number) => {
   const formData = new FormData();
   formData.append('input', text);
   formData.append('voice', voice);
+  if (typeof speed === 'number') {
+    formData.append('speed', String(speed)); // Kade D2d: agent speaking rate
+  }
   return formData;
 };
 
@@ -30,6 +33,7 @@ function useTextToSpeechExternal({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const voice = useRecoilValue(store.voice);
+  const voiceSpeed = useRecoilValue(store.voiceSpeed); // Kade D2d
   const cacheTTS = useRecoilValue(store.cacheTTS);
   const playbackRate = useRecoilValue(store.playbackRate);
 
@@ -133,7 +137,7 @@ function useTextToSpeechExternal({
   });
 
   const startMutation = (text: string, download: boolean) => {
-    const formData = createFormData(text, voice ?? '');
+    const formData = createFormData(text, voice ?? '', voiceSpeed);
     setDownloadFile(download);
     processAudio(formData);
   };
