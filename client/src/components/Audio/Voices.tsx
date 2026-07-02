@@ -108,14 +108,26 @@ function useVoicePreview() {
         fd.append('speed', String(opts.speed));
       }
 
-      const res = await fetch('/api/files/speech/tts/manual', {
-        method: 'POST',
-        body: fd,
-        credentials: 'include',
-        // LibreChat's JWT auth reads ONLY the Authorization header (not cookies),
-        // so the in-memory access token must be sent explicitly or this 401s.
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
+      const doFetch = () =>
+        fetch('/api/files/speech/tts/manual', {
+          method: 'POST',
+          body: fd,
+          credentials: 'include',
+          // LibreChat's JWT auth reads ONLY the Authorization header (not cookies),
+          // so the in-memory access token must be sent explicitly or this 401s.
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+
+      let res = await doFetch();
+      if (!res.ok && res.status >= 500) {
+        // KADE July 2 2026: a 5xx here is usually transient (the TTS proxy
+        // mid-redeploy, or an upstream hiccup) — one quiet retry after a
+        // beat fixes it more often than not. Kade hit exactly this as a
+        // one-off 502 on a long preview.
+        logger.warn(`[VoicePreview] HTTP ${res.status}, retrying once...`);
+        await new Promise((r) => setTimeout(r, 1500));
+        res = await doFetch();
+      }
 
       if (!res.ok) {
         logger.error(`[VoicePreview] HTTP ${res.status}`);
