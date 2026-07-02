@@ -112,7 +112,10 @@ const VAD_MIN_DECIBELS = -40;     // below this is treated as silence (was -45;
                                    // register as speech -- if this makes it
                                    // too hard to be heard, dial back toward
                                    // -45)
-const VAD_SILENCE_MS = 1500;      // end the turn after this much trailing silence
+const VAD_SILENCE_MS = 2000;      // end the turn after this much trailing silence
+                                   // (was 1500; bumped 2026-07-01 -- natural
+                                   // mid-sentence pauses on the FIRST utterance
+                                   // of a call were ending the turn early)
 const VAD_MAX_TURN_MS = 30000;    // hard cap on a single utterance
 const VAD_NOSPEECH_MS = 12000;    // give the mic back if nothing is said
 
