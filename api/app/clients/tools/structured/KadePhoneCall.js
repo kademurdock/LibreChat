@@ -144,7 +144,9 @@ class KadePhoneCall extends Tool {
       _lastPlaced.set(uidPlace, Date.now());
       return (
         `Call placed to ${d.to} — it is dialing now, capped at ${d.timeLimitMin} minutes. ` +
-        `The user has ${d.callsLeftToday} outbound call(s) left today. The cost will appear on their Feed-the-Server tab after the call ends.`
+        `The user has ${d.callsLeftToday} outbound call(s) left today. The cost will appear on their Feed-the-Server tab after the call ends. ` +
+        "Tell the user the call is underway and that you'll have the answer when they next check in. " +
+        "IMPORTANT: on the user's NEXT message (even just 'hey' or 'well?'), run action='check_result' FIRST and report what the callee said before anything else."
       );
     } catch (err) {
       const msg = err?.response?.data?.error || err.message;
