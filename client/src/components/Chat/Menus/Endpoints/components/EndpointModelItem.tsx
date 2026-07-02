@@ -31,6 +31,9 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
   let isGlobal = false;
   let modelName = modelId;
   const avatarUrl = endpoint?.modelIcons?.[modelId ?? ''] || null;
+  // KADE July 2 2026: agent one-liner in the picker ("Indie — design & text-in-image")
+  const agentDescription =
+    (modelId && isAgentsEndpoint(endpoint.value) && endpoint.agentDescriptions?.[modelId]) || '';
 
   // Use custom names if available
   if (endpoint && modelId && isAgentsEndpoint(endpoint.value) && endpoint.agentNames?.[modelId]) {
@@ -105,7 +108,12 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
     >
       <div className="flex w-full min-w-0 items-center gap-2 px-1 py-1">
         {renderAvatar()}
-        <span className="truncate">{modelName}</span>
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate">{modelName}</span>
+          {agentDescription !== '' && (
+            <span className="truncate text-xs text-text-secondary">{agentDescription}</span>
+          )}
+        </div>
         {isGlobal && <EarthIcon className="ml-1 size-4 text-surface-submit" />}
       </div>
       <button

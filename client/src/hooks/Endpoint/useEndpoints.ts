@@ -130,6 +130,14 @@ export const useEndpoints = ({
           acc[agent.id] = agent.name || '';
           return acc;
         }, {});
+        // KADE July 2 2026: carry descriptions into the picker so nobody has
+        // to remember which agent does what (screen readers read them too).
+        result.agentDescriptions = agents?.reduce((acc, agent) => {
+          if (agent.description) {
+            acc[agent.id] = agent.description;
+          }
+          return acc;
+        }, {});
         result.modelIcons = agents?.reduce((acc, agent) => {
           acc[agent.id] = agent?.avatar?.filepath;
           return acc;
