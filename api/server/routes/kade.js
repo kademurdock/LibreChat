@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
+const { logKadeUsage } = require('~/models/kadeUsage');
 const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
@@ -250,16 +251,16 @@ router.get('/my-usage', requireJwtAuth, async (req, res) => {
       ]),
     ]);
 
-    const month = { llmUSD: 0, ttsUSD: 0, fluxUSD: 0, tavilyUSD: 0, tts_chars: 0, flux_images: 0, tavily_searches: 0 };
-    const all = { llmUSD: 0, ttsUSD: 0, fluxUSD: 0, tavilyUSD: 0, tts_chars: 0, flux_images: 0, tavily_searches: 0 };
+    const month = { llmUSD: 0, ttsUSD: 0, fluxUSD: 0, tavilyUSD: 0, phoneUSD: 0, otherUSD: 0, tts_chars: 0, flux_images: 0, tavily_searches: 0, phone_minutes: 0 };
+    const all = { llmUSD: 0, ttsUSD: 0, fluxUSD: 0, tavilyUSD: 0, phoneUSD: 0, otherUSD: 0, tts_chars: 0, flux_images: 0, tavily_searches: 0, phone_minutes: 0 };
 
     for (const r of txAgg) {
       const v = round(Math.abs(usd(r.spend)));
       all.llmUSD = round(all.llmUSD + v);
       if (r._id.recent) month.llmUSD = round(month.llmUSD + v);
     }
-    const qKey = { tts: 'tts_chars', flux: 'flux_images', tavily: 'tavily_searches' };
-    const cKey = { tts: 'ttsUSD', flux: 'fluxUSD', tavily: 'tavilyUSD' };
+    const qKey = { tts: 'tts_chars', flux: 'flux_images', tavily: 'tavily_searches', phone: 'phone_minutes' };
+    const cKey = { tts: 'ttsUSD', flux: 'fluxUSD', tavily: 'tavilyUSD', phone: 'phoneUSD' };
     for (const r of kuAgg) {
       const svc = r._id.service;
       if (cKey[svc]) {
@@ -269,10 +270,14 @@ router.get('/my-usage', requireJwtAuth, async (req, res) => {
           month[cKey[svc]] = round(month[cKey[svc]] + (r.costUSD || 0));
           month[qKey[svc]] += r.quantity || 0;
         }
+      } else {
+        // anything else (fal_video, fal_image, future services) rolls into "other"
+        all.otherUSD = round(all.otherUSD + (r.costUSD || 0));
+        if (r._id.recent) month.otherUSD = round(month.otherUSD + (r.costUSD || 0));
       }
     }
-    month.totalUSD = round(month.llmUSD + month.ttsUSD + month.fluxUSD + month.tavilyUSD);
-    all.totalUSD = round(all.llmUSD + all.ttsUSD + all.fluxUSD + all.tavilyUSD);
+    month.totalUSD = round(month.llmUSD + month.ttsUSD + month.fluxUSD + month.tavilyUSD + month.phoneUSD + month.otherUSD);
+    all.totalUSD = round(all.llmUSD + all.ttsUSD + all.fluxUSD + all.tavilyUSD + all.phoneUSD + all.otherUSD);
 
     return res.json({
       user: { name: req.user.name || req.user.username || req.user.email, email: req.user.email },
@@ -286,6 +291,37 @@ router.get('/my-usage', requireJwtAuth, async (req, res) => {
   } catch (error) {
     logger.error('[/api/kade/my-usage] error:', error);
     return res.status(500).json({ error: 'Failed to load your usage' });
+  }
+});
+
+
+/* ----------------------------------------------------------------------------
+ * SERVICE: POST /api/kade/usage-event — secret-guarded ingestion so external
+ * services (the phone bridge) can land per-user spend in kadeusage. No JWT:
+ * the caller is a machine; KADE_USAGE_EVENT_SECRET (env, both sides) gates it.
+ * -------------------------------------------------------------------------- */
+router.post('/usage-event', async (req, res) => {
+  try {
+    const expected = process.env.KADE_USAGE_EVENT_SECRET;
+    if (!expected || (req.body || {}).secret !== expected) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const { userId, service, quantity, unit, costUSD, metadata } = req.body || {};
+    if (!userId || !service || !(Number(quantity) > 0)) {
+      return res.status(400).json({ error: 'userId, service, and a positive quantity are required' });
+    }
+    await logKadeUsage({
+      userId: String(userId),
+      service: String(service).slice(0, 32),
+      quantity: Number(quantity),
+      unit: unit ? String(unit).slice(0, 16) : undefined,
+      costUSD: typeof costUSD === 'number' ? costUSD : undefined,
+      metadata,
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    logger.error('[/api/kade/usage-event] error:', error);
+    return res.status(500).json({ error: 'Failed to log usage event' });
   }
 });
 

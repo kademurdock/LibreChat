@@ -26,6 +26,8 @@ const {
   // Structured Tools
   DALLE3,
   FluxAPI,
+  FalAI,
+  KadePhoneCall,
   OpenWeather,
   StructuredSD,
   StructuredACS,
@@ -177,6 +179,8 @@ const loadTools = async ({
 }) => {
   const toolConstructors = {
     flux: FluxAPI,
+    fal_studio: FalAI,
+    kade_phone_call: KadePhoneCall,
     calculator: Calculator,
     google: GoogleSearchAPI,
     open_weather: OpenWeather,
@@ -257,6 +261,13 @@ const loadTools = async ({
 
   const toolOptions = {
     flux: imageGenOptions,
+    fal_studio: { req: options.req },
+    kade_phone_call: {
+      req: options.req,
+      userName: options.req?.user?.name || options.req?.user?.username,
+      agentId: agent?.id || agent?.agent_id,
+      agentName: agent?.name,
+    },
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
     gemini_image_gen: imageGenOptions,

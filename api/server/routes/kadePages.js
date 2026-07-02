@@ -89,6 +89,8 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Feed the Server</t
         <dt>Voice / read-aloud</dt><dd id="m_tts">$0.00</dd>
         <dt>Image generation</dt><dd id="m_flux">$0.00</dd>
         <dt>Web searches</dt><dd id="m_tav">$0.00</dd>
+        <dt>Phone calls</dt><dd id="m_phone">$0.00</dd>
+        <dt>Video &amp; design lab</dt><dd id="m_other">$0.00</dd>
         <dt><strong>Total this month</strong></dt><dd id="m_total"><strong>$0.00</strong></dd>
       </dl>
     </div>
@@ -132,13 +134,16 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Feed the Server</t
       document.getElementById('m_tts').textContent = money(m.ttsUSD);
       document.getElementById('m_flux').textContent = money(m.fluxUSD);
       document.getElementById('m_tav').textContent = money(m.tavilyUSD);
+      document.getElementById('m_phone').textContent = money(m.phoneUSD);
+      document.getElementById('m_other').textContent = money(m.otherUSD);
       document.getElementById('m_total').innerHTML = '<strong>'+money(m.totalUSD)+'</strong>';
       document.getElementById('a_total').textContent = money((d.allTime||{}).totalUSD);
       document.getElementById('balance').textContent = money(d.balanceUSD);
       const a = d.allTime || {};
       document.getElementById('qty').textContent =
         'All time, you have used about ' + num(a.tts_chars) + ' characters of voice, ' +
-        num(a.flux_images) + ' generated images, and ' + num(a.tavily_searches) + ' web searches.';
+        num(a.flux_images) + ' generated images, ' + num(a.tavily_searches) + ' web searches, and ' +
+        num(a.phone_minutes) + ' minutes of phone calls.';
       status.hidden = true;
       document.getElementById('content').hidden = false;
     })();

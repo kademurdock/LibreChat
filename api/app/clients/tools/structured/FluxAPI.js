@@ -55,6 +55,10 @@ const fluxApiJsonSchema = {
     endpoint: {
       type: 'string',
       enum: [
+        '/v1/flux-2-pro-preview',
+        '/v1/flux-2-pro',
+        '/v1/flux-2-flex',
+        '/v1/flux-2-klein-9b-preview',
         '/v1/flux-pro-1.1',
         '/v1/flux-pro',
         '/v1/flux-dev',
@@ -62,7 +66,8 @@ const fluxApiJsonSchema = {
         '/v1/flux-pro-finetuned',
         '/v1/flux-pro-1.1-ultra-finetuned',
       ],
-      description: 'Endpoint to use for image generation.',
+      description:
+        "Endpoint to use for image generation. DEFAULT to '/v1/flux-2-pro-preview' (FLUX.2 pro — best quality, photorealism, and prompt adherence, ~$0.03/image). '/v1/flux-2-klein-9b-preview' is the fast/cheap FLUX.2. Older flux-1 endpoints remain for compatibility and finetunes.",
     },
     raw: {
       type: 'boolean',
@@ -99,6 +104,10 @@ const displayMessage =
 class FluxAPI extends Tool {
   // Pricing constants in USD per image
   static PRICING = {
+    FLUX_2_PRO_PREVIEW: -0.03, // /v1/flux-2-pro-preview (~$0.03/MP)
+    FLUX_2_PRO: -0.03, // /v1/flux-2-pro
+    FLUX_2_FLEX: -0.06, // /v1/flux-2-flex
+    FLUX_2_KLEIN_9B_PREVIEW: -0.015, // /v1/flux-2-klein-9b-preview
     FLUX_PRO_1_1_ULTRA: -0.06, // /v1/flux-pro-1.1-ultra
     FLUX_PRO_1_1: -0.04, // /v1/flux-pro-1.1
     FLUX_PRO: -0.05, // /v1/flux-pro
@@ -140,7 +149,7 @@ class FluxAPI extends Tool {
     this.description_for_model = `// Transform any image description into a detailed, high-quality prompt. Never submit a prompt under 3 sentences. Follow these core rules:
     // 1. ALWAYS enhance basic prompts into 5-10 detailed sentences (e.g., "a cat" becomes: "A close-up photo of a sleek Siamese cat with piercing blue eyes. The cat sits elegantly on a vintage leather armchair, its tail curled gracefully around its paws. Warm afternoon sunlight streams through a nearby window, casting gentle shadows across its face and highlighting the subtle variations in its cream and chocolate-point fur. The background is softly blurred, creating a shallow depth of field that draws attention to the cat's expressive features. The overall composition has a peaceful, contemplative mood with a professional photography style.")
     // 2. Each prompt MUST be 3-6 descriptive sentences minimum, focusing on visual elements: lighting, composition, mood, and style
-    // Use action: 'list_finetunes' to see available custom models. When using finetunes, use endpoint: '/v1/flux-pro-finetuned' (default) or '/v1/flux-pro-1.1-ultra-finetuned' for higher quality and aspect ratio.`;
+    // 3. DEFAULT to endpoint '/v1/flux-2-pro-preview' (FLUX.2) unless the user asks for a specific older model or a finetune.\n    // Use action: 'list_finetunes' to see available custom models. When using finetunes, use endpoint: '/v1/flux-pro-finetuned' (default) or '/v1/flux-pro-1.1-ultra-finetuned' for higher quality and aspect ratio.`;
 
     // Add base URL from environment variable with fallback
     this.baseUrl = process.env.FLUX_API_BASE_URL || 'https://api.us1.bfl.ai';
@@ -235,7 +244,7 @@ class FluxAPI extends Tool {
       payload.raw = imageData.raw;
     }
 
-    const generateUrl = `${this.baseUrl}${imageData.endpoint || '/v1/flux-pro'}`;
+    const generateUrl = `${this.baseUrl}${imageData.endpoint || '/v1/flux-2-pro-preview'}`;
     const resultUrl = `${this.baseUrl}/v1/get_result`;
 
     logger.debug('[FluxAPI] Generating image with payload:', payload);
@@ -262,6 +271,9 @@ class FluxAPI extends Tool {
     }
 
     const taskId = taskResponse.data.id;
+    // FLUX.2 endpoints return a polling_url that MUST be used on the global
+    // api hosts; older endpoints still poll /v1/get_result?id=.
+    const pollingUrl = taskResponse.data.polling_url || resultUrl;
 
     // Polling for the result
     let status = 'Pending';
@@ -270,12 +282,12 @@ class FluxAPI extends Tool {
       try {
         // Wait 2 seconds between polls
         await new Promise((resolve) => setTimeout(resolve, 2000));
-        const resultResponse = await axios.get(resultUrl, {
+        const resultResponse = await axios.get(pollingUrl, {
           headers: {
             'x-key': requestApiKey,
             Accept: 'application/json',
           },
-          params: { id: taskId },
+          params: taskResponse.data.polling_url ? undefined : { id: taskId },
           ...this.getAxiosConfig(),
         });
         status = resultResponse.data.status;

@@ -33,12 +33,19 @@ const KadeUsage =
 /** Per-unit USD rates. */
 const RATES = {
   tts: 5 / 1e6, // $5 / 1M characters (Inworld 1.5 tier)
+  // phone / fal_video / fal_image events always arrive with an explicit
+  // costUSD (bridge posts real Twilio price; FalAI computes per-second fal
+  // pricing), so they need no per-unit rate here.
   flux: 0.025, // $0.025 / image (flux-dev default; overridden per-endpoint below)
   tavily: 0.008, // ~$0.008 / search
 };
 
 /** Flux per-endpoint pricing (USD/image). */
 const FLUX_ENDPOINT_USD = {
+  '/v1/flux-2-pro-preview': 0.03,
+  '/v1/flux-2-pro': 0.03,
+  '/v1/flux-2-flex': 0.06,
+  '/v1/flux-2-klein-9b-preview': 0.015,
   '/v1/flux-pro-1.1-ultra': 0.06,
   '/v1/flux-pro-1.1': 0.04,
   '/v1/flux-pro': 0.05,

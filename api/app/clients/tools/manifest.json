@@ -1,5 +1,27 @@
 [
   {
+    "name": "Phone Call",
+    "pluginKey": "kade_phone_call",
+    "description": "Place a real outbound phone call from the Kade-AI phone line on the user's behalf. Capped, recorded, billed to the user's tab.",
+    "icon": "assets/phone-call.svg",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
+    "name": "Fal Studio (Video + Design)",
+    "pluginKey": "fal_studio",
+    "description": "AI video clips (Kling 3.0 / Veo 3.1 Fast) and design images with perfect text (Seedream 4.5) via fal.ai.",
+    "icon": "assets/fal-ai.svg",
+    "isAuthRequired": "true",
+    "authConfig": [
+      {
+        "authField": "FAL_KEY",
+        "label": "fal.ai API Key",
+        "description": "API key from fal.ai (Keys page)."
+      }
+    ]
+  },
+  {
     "name": "Traversaal",
     "pluginKey": "traversaal_search",
     "description": "Traversaal is a robust search API tailored for LLM Agents. Get an API key here: https://api.traversaal.ai",
