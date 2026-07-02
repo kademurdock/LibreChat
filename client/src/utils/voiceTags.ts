@@ -23,12 +23,24 @@
 
 const VOICE_TAG_RE = /%%%([\s\S]*?)%%%/g;
 
+/**
+ * Tag-typo tolerance (July 2 2026, seen live): the model sometimes emits a
+ * malformed delimiter -- "%%sigh%%" or "%%%sigh%%" -- which the canonical
+ * regex above misses, leaking the raw tag into the chat bubble. This second
+ * pass catches 2-4 percent signs around a short, direction-looking span
+ * (must start with a letter, no % or newline inside, <= ~80 chars) so real
+ * prose that legitimately contains doubled percent signs (e.g. printf-style
+ * "%%d" in code discussions) is left alone as much as possible.
+ */
+const SLOPPY_VOICE_TAG_RE = /%{2,4}([a-zA-Z][a-zA-Z ’',!-]{0,60}?)%{2,4}/g;
+
 export function stripVoiceTags(text: string): string {
-  if (!text || text.indexOf('%%%') === -1) {
+  if (!text || text.indexOf('%%') === -1) {
     return text;
   }
   return text
     .replace(VOICE_TAG_RE, '')
+    .replace(SLOPPY_VOICE_TAG_RE, '')
     // A removed leading tag often leaves a stray space before the next
     // word, and removing one mid-sentence can leave doubled spaces behind.
     .replace(/[ \t]{2,}/g, ' ')
