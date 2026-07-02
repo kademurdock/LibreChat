@@ -59,7 +59,8 @@ class KadePhoneCall extends Tool {
       'Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user. ' +
       'An AI voice agent speaks on the call following the purpose you provide. Costs real money (~1.5 cents/minute, billed to the user\'s tab), ' +
       'hard-capped at 15 minutes and 10 calls per user per day. ONLY use when the user explicitly asks for a call, and ALWAYS confirm the exact ' +
-      'number and reason with them first. Never call emergency services, never harass anyone, never redial the same number repeatedly.';
+      'number and reason with them first. When confirming, ALSO tell the user (casually, not as a warning): the call will identify them by ' +
+      "first name as the person who requested it, and the call's cost is added to their Feed the Server page.";
     this.description_for_model =
       this.description +
       ' After placing the call you get a confirmation only — the conversation happens live on the phone. Tell the user the call is underway. ' +

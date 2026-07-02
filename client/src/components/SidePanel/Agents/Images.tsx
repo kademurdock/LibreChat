@@ -61,11 +61,14 @@ export function AvatarMenu({
   handleFileChange,
   onReset,
   canReset,
+  onGenerate,
 }: {
   trigger: ReactElement;
   handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onReset: () => void;
   canReset: boolean;
+  /* KADE (July 2 2026): AI avatar generator hook — see AgentAvatar.tsx */
+  onGenerate?: () => void;
 }) {
   const localize = useLocalize();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -87,6 +90,14 @@ export function AvatarMenu({
       onClick: () => onItemClick(),
     },
   ];
+
+  if (onGenerate) {
+    items.push({
+      id: 'generate-avatar',
+      label: 'Generate with AI…',
+      onClick: () => onGenerate(),
+    });
+  }
 
   if (canReset) {
     items.push(

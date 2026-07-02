@@ -333,6 +333,90 @@ const FEED_HTML = require('./kadePages').feedHtml;
 const DASH_HTML = require('./kadePages').dashboardHtml;
 const sendHtml = (html) => (req, res) => res.type('html').send(html);
 
+// ---------------------------------------------------------------------------
+// Avatar generator for the agent builder (July 2 2026, Kade's ask).
+// POST /api/kade/avatar-generate { prompt } -> { image: dataURL, costUSD }
+// Generates a square portrait via BFL FLUX.2 pro (~$0.03) and returns it as a
+// data URL; the CLIENT then attaches it through the normal avatar-upload form
+// flow (preview first, nothing committed until the user saves the agent).
+// Cost logs to kadeusage exactly like in-chat flux images.
+const axios = require('axios');
+const { fluxCost } = require('~/models/kadeUsage');
+const _avatarGenLast = new Map(); // userId -> ts (simple cooldown)
+const AVATAR_ENDPOINT = '/v1/flux-2-pro-preview';
+
+router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
+  try {
+    const apiKey = process.env.FLUX_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ error: 'Image generation is not configured on this server.' });
+    }
+    const prompt = String((req.body && req.body.prompt) || '').trim();
+    if (prompt.length < 3) {
+      return res.status(400).json({ error: 'A short description is required.' });
+    }
+    if (prompt.length > 2500) {
+      return res.status(400).json({ error: 'That description is too long.' });
+    }
+    const uid = String(req.user.id);
+    const last = _avatarGenLast.get(uid) || 0;
+    if (Date.now() - last < 12000) {
+      return res.status(429).json({ error: 'Hold on a few seconds between generations.' });
+    }
+    _avatarGenLast.set(uid, Date.now());
+
+    const baseUrl = process.env.FLUX_API_BASE_URL || 'https://api.us1.bfl.ai';
+    const task = await axios.post(
+      `${baseUrl}${AVATAR_ENDPOINT}`,
+      { prompt, width: 768, height: 768, safety_tolerance: 2 },
+      { headers: { 'x-key': apiKey, 'Content-Type': 'application/json', Accept: 'application/json' }, timeout: 20000 },
+    );
+    const pollingUrl = task.data.polling_url || `${baseUrl}/v1/get_result`;
+    const taskId = task.data.id;
+
+    let sampleUrl = null;
+    const deadline = Date.now() + 75000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const poll = await axios.get(pollingUrl, {
+        headers: { 'x-key': apiKey, Accept: 'application/json' },
+        params: task.data.polling_url ? undefined : { id: taskId },
+        timeout: 15000,
+      });
+      if (poll.data.status === 'Ready') {
+        sampleUrl = poll.data.result && poll.data.result.sample;
+        break;
+      }
+      if (poll.data.status === 'Error') {
+        logger.error('[kade/avatar-generate] BFL task error:', poll.data);
+        return res.status(502).json({ error: 'The image generator reported an error. Try rewording the description.' });
+      }
+    }
+    if (!sampleUrl) {
+      return res.status(504).json({ error: 'Image generation timed out. Try again.' });
+    }
+
+    const img = await axios.get(sampleUrl, { responseType: 'arraybuffer', timeout: 30000, maxContentLength: 15 * 1024 * 1024 });
+    const mime = (img.headers['content-type'] || 'image/jpeg').split(';')[0];
+    const costUSD = fluxCost(AVATAR_ENDPOINT, 1);
+    logKadeUsage({
+      userId: req.user.id,
+      service: 'flux',
+      quantity: 1,
+      unit: 'images',
+      costUSD,
+      metadata: { purpose: 'agent-avatar', endpoint: AVATAR_ENDPOINT },
+    });
+    return res.json({
+      image: `data:${mime};base64,${Buffer.from(img.data).toString('base64')}`,
+      costUSD,
+    });
+  } catch (err) {
+    logger.error(`[kade/avatar-generate] failed: ${err && err.message}`);
+    return res.status(500).json({ error: 'Avatar generation failed. Try again in a moment.' });
+  }
+});
+
 router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
 // Also reachable under the API namespace:

@@ -65,5 +65,29 @@
     "icon": "https://v2.jokeapi.dev/favicon.png",
     "isAuthRequired": "false",
     "authConfig": []
+  },
+  {
+    "name": "News briefing",
+    "pluginKey": "kade_news",
+    "description": "Real headlines from free news feeds — national, world, Springfield/Ozarks local, tech, entertainment, music, sports, or any custom feed. No key, no cost.",
+    "icon": "https://media.npr.org/chrome/favicon/favicon-32x32.png",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
+    "name": "Read a webpage",
+    "pluginKey": "kade_read_page",
+    "description": "Reads any link the user shares and returns just the article text — no ads, menus, or clutter. Great for listening. No key, no cost.",
+    "icon": "https://jina.ai/favicon.ico",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
+    "name": "Adventure save files",
+    "pluginKey": "kade_adventure",
+    "description": "Persistent save files for text-adventure and RPG games — save, load, and continue games across conversations. No key, no cost.",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
   }
 ]

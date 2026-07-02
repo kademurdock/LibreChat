@@ -219,6 +219,80 @@ export const kadePhoneCallSchema: ExtendedJsonSchema = {
   required: [],
 };
 
+export const kadeNewsSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    categories: {
+      type: 'array',
+      items: {
+        type: 'string',
+        enum: ['national', 'world', 'local', 'tech', 'entertainment', 'music', 'sports'],
+      },
+      description:
+        "Which news categories to include. 'local' = Springfield MO / Ozarks. Default ['national', 'local']. Use the user's remembered preferences when they have some.",
+    },
+    items_per_category: {
+      type: 'integer',
+      description: 'Headlines per category, 1-8. Default 4.',
+    },
+    feed_url: {
+      type: 'string',
+      description:
+        'Optional: a specific RSS/Atom feed URL to read INSTEAD of the categories. Remember feeds a user asks for repeatedly.',
+    },
+  },
+  required: [],
+};
+
+export const kadeReadPageSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    url: {
+      type: 'string',
+      description: 'Full http(s) URL of the page to read.',
+    },
+    max_chars: {
+      type: 'integer',
+      description: 'Cap on returned text length (2000-40000). Default 12000.',
+    },
+  },
+  required: ['url'],
+};
+
+export const kadeAdventureSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['save', 'load', 'list', 'delete'],
+      description:
+        "'save' writes the current game to a named slot, 'load' restores a slot, 'list' shows the user's save files, 'delete' removes one.",
+    },
+    slot: {
+      type: 'string',
+      description: "Save file name, e.g. 'dragon quest'. Required for save/load/delete.",
+    },
+    game_title: {
+      type: 'string',
+      description: "For save: the adventure's title.",
+    },
+    scene: {
+      type: 'string',
+      description: 'For save: ONE short line describing where the player is right now (shown in the save list).',
+    },
+    state: {
+      type: 'string',
+      description:
+        'For save: the COMPLETE game state needed to resume cold — story summary, location/chapter, character sheet, inventory, gold, quests, key NPCs, choices made, unresolved threads.',
+    },
+    turns: {
+      type: 'integer',
+      description: 'For save: rough number of turns played so far (optional).',
+    },
+  },
+  required: ['action'],
+};
+
 export const fluxApiSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -515,7 +589,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_phone_call: {
     name: 'kade_phone_call',
     description:
-      "Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user — and afterwards fetch the transcript with ONE action='check_result' call — it waits for the call to finish (up to ~1 min) and returns the transcript. Never call check_result more than once per turn; never dial the same call twice. Costs real money (~1.5 cents/minute, billed to the user's tab), hard-capped at 15 minutes and 10 calls per user per day. ONLY call when the user explicitly asks, ALWAYS confirm the exact number and reason first. Never call emergency services, never harass anyone, never redial the same number repeatedly. If the user asked you to find something out, checking the result and reporting back IS part of the job. NEVER claim a call was placed or invent a call result — only report what this tool actually returned.",
+      "Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user — and afterwards fetch the transcript with ONE action='check_result' call — it waits for the call to finish (up to ~1 min) and returns the transcript. Never call check_result more than once per turn; never dial the same call twice. Costs real money (~1.5 cents/minute, billed to the user's tab), hard-capped at 15 minutes and 10 calls per user per day. ONLY call when the user explicitly asks, ALWAYS confirm the exact number and reason first. When confirming, also tell the user casually that the call will identify them by first name as the requester and that its cost is added to their Feed the Server page. Never call emergency services, never harass anyone, never redial the same number repeatedly. If the user asked you to find something out, checking the result and reporting back IS part of the job. NEVER claim a call was placed or invent a call result — only report what this tool actually returned.",
     schema: kadePhoneCallSchema,
     toolType: 'builtin',
   },
@@ -531,6 +605,27 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Fetch a fresh joke from a live joke database — free, instant, no cost. Use when the user wants humor; keeps you from repeating your own material. Default mode is clean/family-safe. dirty=true unlocks adult humor and is ONLY for explicitly adult/uncensored personas with adult users — kid-friendly personas never set it. Deliver it naturally in your own voice. NEVER invent a joke and claim it came from this tool.',
     schema: kadeJokeSchema,
+    toolType: 'builtin',
+  },
+  kade_news: {
+    name: 'kade_news',
+    description:
+      "Get REAL current news headlines from free RSS feeds — no key, no cost. Categories: national, world, local (Springfield MO / Ozarks), tech, entertainment, music, sports — or any custom feed_url. Use for 'what's the news' and morning briefings. When a user tells you which categories or feeds they like, SAVE that preference to memory and use it next time without asking. Read results conversationally (often listened to, not read). NEVER invent news; only report what this tool returns.",
+    schema: kadeNewsSchema,
+    toolType: 'builtin',
+  },
+  kade_read_page: {
+    name: 'kade_read_page',
+    description:
+      'Fetch a webpage and return ONLY its readable content — article text with ads, menus, pop-ups, and link clutter stripped out. Free, no key, no cost. Use whenever a user shares a link they want read aloud, summarized, or discussed. Many users listen by voice or screen reader — present the content cleanly, in reading order. Use the ACTUAL returned text; never guess what a page says.',
+    schema: kadeReadPageSchema,
+    toolType: 'builtin',
+  },
+  kade_adventure: {
+    name: 'kade_adventure',
+    description:
+      "REAL persistent save files for text-adventure and RPG games — free, no cost. Saves live on the server per USER and can be loaded in any future conversation. Offer to save at natural stopping points and before risky moments. On load, resume faithfully from the returned state — never restart or contradict it. Use action='list' first when you don't know the user's slot names.",
+    schema: kadeAdventureSchema,
     toolType: 'builtin',
   },
   kade_wikipedia: {
