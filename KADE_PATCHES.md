@@ -172,3 +172,68 @@ P4's visible error readout paid off immediately: iPhone test showed **"server er
 `client/src/components/Audio/Voices.tsx`: pull `token` from `useAuthContext()` and send `headers: { Authorization: \`Bearer ${token}\` }` on the preview fetch. (P4's silent-clip autoplay unlock kept as belt-and-suspenders for the iOS play()-after-await rule, which only matters once the fetch actually succeeds.)
 
 Kade to retest on iPhone: pick a voice -> Preview. Should now play. If a different error shows, read me the text.
+
+---
+
+## C5 — Reasoning bubble expansion survives remounts (2026-07-01)
+
+**File:** `client/src/components/Chat/Messages/Content/Parts/Reasoning.tsx`
+
+**What changed:** Each bubble's expanded/collapsed state is remembered in a module-level Map keyed by `messageId:partIndex`, consulted before the C2 localStorage default in the `useState` initializer, and written on every manual toggle. `useState` re-runs its lazy initializer on every MOUNT, so any re-mount while reasoning deltas streamed (message re-keying on finalization, list re-renders) could snap a just-collapsed bubble back open. Now the user's explicit choice on a specific bubble outlives the component instance — a collapsed bubble can never re-expand on its own. Complements C2 (which governs what NEW bubbles default to).
+
+**Why not config/proxy:** React component state behavior.
+
+**Commit:** `3ae72d4`
+
+---
+
+## C6 — ConversationMode "Typing" vs "Thinking" status (2026-07-01)
+
+**File:** `client/src/components/Chat/ConversationMode.tsx`
+
+**What changed:** The 'thinking' phase covered two different waits: the model still reasoning (nothing streamed yet) and the reply already streaming while the first sentence's audio is fetched. Since `aiText` is empty during the former and non-empty during the latter, the visible status label and the one-word polite screen-reader region now report Thinking → Typing → Speaking. No new state.
+
+**Commit:** `810babf`
+
+---
+
+## C7 — ConversationMode VAD silence window 1.5s → 2s (2026-07-01)
+
+**File:** `client/src/components/Chat/ConversationMode.tsx` (`VAD_SILENCE_MS`)
+
+**What changed:** Trailing-silence turn-end bumped from 1500ms to 2000ms — natural mid-sentence pauses on the first utterance of a call were ending the turn early. CONDITIONAL: revert this single commit if turn-taking feels sluggish.
+
+**Commit:** `c66ca8e`
+
+---
+
+## E3 — Marketplace announces infinite-scroll page loads to screen readers (2026-07-01)
+
+**Files:** `client/src/components/Agents/AgentGrid.tsx`, `client/src/locales/en/translation.json`
+
+**What changed:** A single polite `role="status"` live region now announces the initial result count when a category/search resolves, "N more agents loaded, M agents shown" on each pagination, and "All N agents loaded" on the last page. Context switches reset silently. Also REMOVED `aria-live="polite"` from the whole tabpanel wrapper — announcing every DOM change in the panel garbled/swallowed the nested region's updates and is the likely reason the old count region never spoke.
+
+**To verify (Kade, VoiceOver):** open the marketplace, scroll (3-finger swipe) until a new page loads — VoiceOver should announce "6 more agents loaded…" without moving focus. New i18n keys: `com_agents_more_loaded`, `com_agents_all_loaded`.
+
+**Commit:** `a87c3d4`
+
+---
+
+## D1/D2 — Per-agent default voice: real backend field + builder picker (2026-07-01)
+
+**Commits:** `90d51c0` (backend), `abccb3b` (client)
+
+Turns D3's browser-localStorage trick into a real field on the agent record, with the localStorage override kept on top. Recipe from `PER_AGENT_VOICE_BACKEND_PATCH.md` (overnight build 2026-07-01).
+
+**Backend (`90d51c0`):**
+- `packages/data-schemas/src/schema/agent.ts` + `types/agent.ts` — optional `tts` Mixed subdoc `{ voiceId, speakingRate, deliveryMode }` (house style of `tool_options`/`subagents`). No migration: agents without `tts` behave exactly as before, all 90+ existing agents unaffected until a voice is set.
+- `packages/api/src/agents/validation.ts` — new `agentTtsSchema` added to base/create/update Zod schemas (LibreChat silently strips unknown fields otherwise). Shape-only validation on purpose: no hardcoded voice allowlist to go stale; `voiceId` non-empty string, `speakingRate` 0.5–2, `deliveryMode` STABLE|BALANCED|CREATIVE. Verified against zod 3.22.4 with strict tsc + runtime parse tests (unknown keys stripped, `tts:{}` clears, bad values rejected).
+- `api/server/controllers/agents/v1.js` — VIEW-level `GET /agents/:id` whitelist now includes `tts` (viewers need it to hear the agent's intended voice; EDIT responses already returned the full record).
+- `packages/data-provider` — `AgentTtsSettings` type, `Agent.tts`, create/update param Picks, and `defaultAgentFormValues.tts` (AgentSelect filters form population through those keys — without this the builder form would never receive the field).
+
+**Client (`abccb3b`):**
+- `AgentConfig.tsx` — "Default voice for this agent" picker right after Instructions, labeled for screen readers, options from the live voice library (`useVoicesQuery`), with the C3 `VoicePreviewButton` (now exported from `Voices.tsx`) right beside it so you can hear a candidate voice while building the character. Clearing the picker sends `tts: {}` (removes the override).
+- `useAgentVoiceSync.ts` — resolution order: (1) personal `kade:agent_voices` localStorage override, (2) the agent's own `tts.voiceId`, (3) untouched global Settings→Speech default. The update mutation writes the fresh agent into the `[QueryKeys.agent, id]` cache this hook reads, so a just-saved voice applies without a reload. Fail-soft: a stale voiceId gets snapped back to a valid voice by `useTTSExternal`'s existing voices effect.
+- Kiana: set her `tts.voiceId` once to her current voice and leave her be. The 90-persona gender-match audit is a separate draft-then-confirm content pass (see the patch doc), NOT part of this code change.
+
+**Why not config/proxy:** agent schema, API validation, builder UI, and client voice resolution are all fork surfaces; the proxy never learns which agent is speaking.
