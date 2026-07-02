@@ -145,6 +145,24 @@ function ExpandedPanel({
 
   return (
     <div className="flex h-full flex-shrink-0 flex-col gap-2 border-r border-border-light bg-surface-primary-alt px-2 py-2">
+      {/* ♿ KADE July 2 2026: first focusable in the sidebar — lets keyboard and
+          NVDA users bail straight to the message box instead of traversing the
+          whole panel. Visually hidden until focused. */}
+      <a
+        href="#prompt-textarea"
+        className="sr-only rounded-lg bg-surface-submit px-2 py-1 text-sm text-white focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50"
+        onClick={(e) => {
+          e.preventDefault();
+          const el = document.getElementById('prompt-textarea');
+          onCollapse?.();
+          // after a drawer close animation the textarea is still mounted;
+          // focus immediately, then once more on the next frame for safety.
+          el?.focus();
+          requestAnimationFrame(() => el?.focus());
+        }}
+      >
+        {localize('com_nav_skip_to_message_box')}
+      </a>
       <TooltipAnchor
         side="right"
         description={toggleSidebarHint}

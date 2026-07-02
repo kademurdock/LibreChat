@@ -1948,5 +1948,6 @@
   "com_agents_answer_speed_instant": "Instant — no thinking, fastest replies",
   "com_agents_answer_speed_quick": "Quick think — a short beat of thought",
   "com_agents_answer_speed_deep": "Deep think — slower, most careful",
-  "com_agents_answer_speed_help": "Instant turns off the model's hidden reasoning so replies start right away — great for conversation and phone calls. Deep think helps with hard problems but adds a thinking pause."
+  "com_agents_answer_speed_help": "Instant turns off the model's hidden reasoning so replies start right away — great for conversation and phone calls. Deep think helps with hard problems but adds a thinking pause.",
+  "com_nav_skip_to_message_box": "Skip to message box"
 }
