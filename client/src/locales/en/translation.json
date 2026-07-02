@@ -76,7 +76,7 @@
   "com_agents_default_voice_none": "No agent voice (each listener's own setting applies)",
   "com_agents_default_voice_help": "Anyone chatting with this agent hears this voice, unless they picked their own voice for it. Preview plays a short sample.",
   "com_agents_voice_opener_hint": "Opens a list of voices. Each voice speaks a short sample as you move through the list.",
-  "com_agents_voice_browse_hint": "Move through the list to hear each voice speak. Double-tap or press Enter to choose one.",
+  "com_agents_voice_browse_hint": "Each voice speaks a sample as you reach it. On a touch screen, swipe through the list. On a computer, press the down arrow from the filter box to walk the voices. Double-tap or press Enter to choose one.",
   "com_agents_voice_filter": "Filter voices",
   "com_agents_voice_current": "currently selected",
   "com_agents_voice_close": "Done — close voice list",

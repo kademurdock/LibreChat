@@ -33,6 +33,16 @@ import { cn } from '~/utils';
  * If a platform ever stops syncing VO focus to DOM focus, nothing breaks:
  * options still announce their names and select on activate, and the
  * long-form Preview button below the picker still plays the selected voice.
+ *
+ * WINDOWS/NVDA (added 2026-07-01, Kade's report): NVDA's browse mode moves a
+ * VIRTUAL cursor that never touches DOM focus, so focus-triggered samples
+ * were silent there. The list is therefore a real role="listbox" with
+ * focusable role="option" children (the APG roving-tabindex listbox
+ * variant): when focus lands on an option, NVDA auto-switches to focus mode,
+ * arrow keys reach the app, and each arrow step plays that voice. Tabbing
+ * into the list from the filter box — or pressing Down/Enter inside the
+ * filter — lands on the first option and starts the same flow. iOS VoiceOver
+ * behavior is unchanged (options are still focusable buttons).
  */
 
 const AUDITION_DEBOUNCE_MS = 200; // was 450; Kade wanted the sample to start
@@ -277,7 +287,14 @@ export default function AgentVoicePicker({
       close(true);
       return;
     }
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+      return;
+    }
+    // Home/End only when NOT typing in the filter box (there they move the caret)
+    if (
+      (e.key === 'Home' || e.key === 'End') &&
+      (document.activeElement as HTMLElement)?.tagName === 'INPUT'
+    ) {
       return;
     }
     e.preventDefault();
@@ -289,27 +306,32 @@ export default function AgentVoicePicker({
     }
     const i = btns.indexOf(document.activeElement as HTMLButtonElement);
     const next =
-      i === -1 ? 0 : e.key === 'ArrowDown' ? Math.min(i + 1, btns.length - 1) : Math.max(i - 1, 0);
+      e.key === 'Home' ? 0
+      : e.key === 'End' ? btns.length - 1
+      : i === -1 ? 0
+      : e.key === 'ArrowDown' ? Math.min(i + 1, btns.length - 1)
+      : Math.max(i - 1, 0);
     btns[next]?.focus();
   };
 
-  /** One voice row — no custom/stock distinction, per Kade (2026-07-01). */
+  /** One voice row — no custom/stock distinction, per Kade (2026-07-01).
+   * role="option" inside the listbox + roving tabindex = NVDA enters focus
+   * mode here, so its arrow keys reach the app and samples play per step. */
   const renderVoiceOption = (v: string) => {
     const isCurrent = v === current;
     const isPlaying = v === playingVoice;
-    const labelParts = [v];
-    if (isCurrent) {
-      labelParts.push(localize('com_agents_voice_current'));
-    }
     return (
       <button
         key={v}
         type="button"
+        role="option"
+        aria-selected={isCurrent}
+        tabIndex={isCurrent ? 0 : -1}
         data-voice-option
         onFocus={() => audition(v)}
         onMouseEnter={() => audition(v)}
         onClick={() => select(v)}
-        aria-label={labelParts.join(', ')}
+        aria-label={v}
         className={cn(
           'flex items-center justify-between rounded-md px-2.5 py-2 text-left text-sm',
           'text-text-primary hover:bg-surface-hover',
@@ -334,7 +356,7 @@ export default function AgentVoicePicker({
         id="agent-voice-dropdown"
         onClick={toggleOpen}
         aria-expanded={open}
-        aria-haspopup="true"
+        aria-haspopup="listbox"
         aria-label={`${localize('com_agents_default_voice')}: ${
           current ?? localize('com_agents_default_voice_none')
         }. ${localize('com_agents_voice_opener_hint')}`}
@@ -363,6 +385,17 @@ export default function AgentVoicePicker({
             type="text"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                // The picker sits INSIDE the agent builder <form> — a bare
+                // Enter here would submit the whole agent. Move into the
+                // list instead, same as ArrowDown.
+                e.preventDefault();
+                listRef.current
+                  ?.querySelector<HTMLButtonElement>('button[data-voice-option]')
+                  ?.focus();
+              }
+            }}
             placeholder={localize('com_agents_voice_filter')}
             aria-label={localize('com_agents_voice_filter')}
             className="rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm
@@ -370,18 +403,19 @@ export default function AgentVoicePicker({
           />
           <div
             ref={listRef}
-            role="group"
+            role="listbox"
             aria-label={localize('com_agents_default_voice')}
             className="flex max-h-64 flex-col overflow-y-auto"
           >
             <button
               type="button"
+              role="option"
+              aria-selected={current == null}
+              tabIndex={current == null || !filtered.includes(current) ? 0 : -1}
               data-voice-option
               onFocus={stop}
               onClick={() => select(undefined)}
-              aria-label={`${localize('com_agents_default_voice_none')}${
-                current == null ? `, ${localize('com_agents_voice_current')}` : ''
-              }`}
+              aria-label={localize('com_agents_default_voice_none')}
               className={cn(
                 'flex items-center justify-between rounded-md px-2.5 py-2 text-left text-sm',
                 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
@@ -392,12 +426,12 @@ export default function AgentVoicePicker({
               {current == null && <Check className="h-4 w-4" aria-hidden="true" />}
             </button>
             {filtered.map((v) => renderVoiceOption(v))}
-            {filtered.length === 0 && (
-              <p className="px-2.5 py-2 text-sm text-text-secondary">
-                {localize('com_agents_voice_no_match')}
-              </p>
-            )}
           </div>
+          {filtered.length === 0 && (
+            <p className="px-2.5 py-2 text-sm text-text-secondary" role="status">
+              {localize('com_agents_voice_no_match')}
+            </p>
+          )}
           {error && (
             <span role="alert" aria-live="assertive" className="text-xs text-red-500">
               {error}

@@ -286,3 +286,13 @@ Kade's feedback round on D2b/D2c, all four items:
    - *Listener speed* — already existed (Settings → Speech → Playback Rate); confirmed applied to the automatic-playback audio element (`StreamAudio` sets `audioRef.current.playbackRate`). Untouched.
 
 **Voice renumber migration (the breaking half, handled):** old labels could not be aliased (label space collides), so `utils/voiceRenumber2026.ts` runs at boot before React/Recoil initialize — rewrites the saved global `voice` (JSON) and the `kade:agent_voices` map once per device, flag-guarded (`kade:voice_renumber_2026_07_01`), fail-silent, friendly-name labels passed through. Mapping is frozen history: 108–175→1–68, 209/210→69/70, 1–107→71–177, 176–208→178–210. Unit-tested against boundary cases + idempotency before shipping. Server-side agent records (`tts.voiceId`) migrated separately via the API (same session); `librechat.yaml` needed NO change (labels unchanged — meaning lives in the proxy map).
+
+---
+
+## D2e — NVDA support for the voice picker (2026-07-01)
+
+**Files:** `AgentVoicePicker.tsx`, `translation.json`. **Companion bridge commit:** kade-ai-bridge `cbb1f0e` ("speak faster/slower" call commands — separate service, logged here since they shipped together).
+
+**Problem (Kade's report):** samples played on iOS VoiceOver but not Windows NVDA. Root cause: NVDA's browse mode navigates a VIRTUAL buffer — arrowing never moves DOM focus, so the focus-triggered auditions stayed silent (iOS VO is the odd one out in syncing its cursor to DOM focus).
+
+**Fix:** the list is now a real `role="listbox"` with focusable `role="option"` buttons — the APG roving-tabindex listbox variant. Focus landing on an option flips NVDA into focus mode automatically, so arrow keys reach the app, the roving-focus handler walks the options, and every step plays that voice. Entry paths that all work in NVDA: Tab from the filter box into the list, ArrowDown from the filter, or Enter in the filter (which previously — bug — would have SUBMITTED THE WHOLE AGENT FORM, since the picker lives inside the builder form; now prevented and repurposed to enter the list). Home/End jump to first/last voice. `aria-selected` now carries the "selected" announcement natively (the spoken "currently selected" suffix was removed to avoid double-speak); the no-match message moved outside the listbox (invalid ARIA child). iOS VoiceOver behavior unchanged — options are still focusable buttons, swipe→focus→sample as before.
