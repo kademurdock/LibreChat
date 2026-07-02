@@ -2,6 +2,11 @@ const axios = require('axios');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
 
+// July 2 2026 round 3: guards against agent tool-loops (a live turn hit
+// langgraph's recursion limit polling check_result 17 times, and dialed twice).
+const _lastPlaced = new Map(); // userId -> ts of last successful place_call
+const _lastChecked = new Map(); // userId -> ts of last check_result
+
 const phoneCallJsonSchema = {
   type: 'object',
   properties: {
@@ -58,8 +63,8 @@ class KadePhoneCall extends Tool {
     this.description_for_model =
       this.description +
       ' After placing the call you get a confirmation only — the conversation happens live on the phone. Tell the user the call is underway. ' +
-      "When the call ends, use action='check_result' to fetch the transcript and REPORT BACK what the callee said — if the user asked you to find something out, checking and reporting is part of the job, do not just stop after dialing. " +
-      "If check_result says the call is still in progress, tell the user and check again when they ask (or after a bit). NEVER invent a call result — only report what the transcript actually says.";
+      "To report back what the callee said, call action='check_result' ONCE — it WAITS for the call to finish (up to ~1 minute) and returns the transcript. NEVER call check_result more than once in a turn, and never place the same call twice. " +
+      "If it says the call is still in progress, tell the user you'll report when they ask, and END your reply. NEVER invent a call result — only report what the transcript actually says.";
     this.schema = phoneCallJsonSchema;
     this.bridgeUrl = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
     this.bridgeSecret = process.env.BRIDGE_SECRET || '';
@@ -71,16 +76,30 @@ class KadePhoneCall extends Tool {
     }
     const { action, to_number, purpose, callee_name, call_sid } = data || {};
     if (action === 'check_result') {
+      const uid = String(this.userId || '');
+      const lastCheck = _lastChecked.get(uid) || 0;
+      if (Date.now() - lastCheck < 15000) {
+        return (
+          'STOP: you just checked. Do NOT call this tool again in this turn. ' +
+          'Tell the user the call is still going and that you will report back when they ask. End your reply now.'
+        );
+      }
+      _lastChecked.set(uid, Date.now());
       try {
+        // waitSec: the BRIDGE waits for the call to wrap (up to ~50s) so one
+        // check usually returns the finished transcript — the model must not poll.
         const r = await axios.post(
           `${this.bridgeUrl}/outbound/result`,
-          { secret: this.bridgeSecret, userId: String(this.userId || ''), callSid: call_sid || undefined },
-          { timeout: 20000, headers: { 'User-Agent': 'Mozilla/5.0' } },
+          { secret: this.bridgeSecret, userId: uid, callSid: call_sid || undefined, waitSec: 50 },
+          { timeout: 60000, headers: { 'User-Agent': 'Mozilla/5.0' } },
         );
         const d = r.data || {};
         if (!d.found) return 'No outbound calls found for this user yet.';
         if (d.status === 'in-progress') {
-          return `The call to ${d.calleeName || d.to} is still in progress (started ${d.startedSecondsAgo}s ago). Check again shortly.`;
+          return (
+            `The call to ${d.calleeName || d.to} is still in progress after waiting (started ${d.startedSecondsAgo}s ago). ` +
+            'STOP: do NOT call this tool again in this turn. Tell the user the call is running long and you will report back when they ask. End your reply now.'
+          );
         }
         const lines = (d.transcript || [])
           .map((t) => `${t.role === 'assistant' ? 'Agent' : 'Callee'}: ${t.content}`)
@@ -99,6 +118,13 @@ class KadePhoneCall extends Tool {
     if (!to_number || !purpose) {
       return "To place a call I need both to_number and purpose. (Or use action='check_result' to get the last call's transcript.)";
     }
+    const uidPlace = String(this.userId || '');
+    if (Date.now() - (_lastPlaced.get(uidPlace) || 0) < 30000) {
+      return (
+        'STOP: you already placed a call moments ago — do NOT dial again. ' +
+        "Use action='check_result' (once) to get its result, or just tell the user the call is underway."
+      );
+    }
     try {
       const r = await axios.post(
         `${this.bridgeUrl}/outbound-call`,
@@ -115,6 +141,7 @@ class KadePhoneCall extends Tool {
         { timeout: 20000, headers: { 'User-Agent': 'Mozilla/5.0' } },
       );
       const d = r.data || {};
+      _lastPlaced.set(uidPlace, Date.now());
       return (
         `Call placed to ${d.to} — it is dialing now, capped at ${d.timeLimitMin} minutes. ` +
         `The user has ${d.callsLeftToday} outbound call(s) left today. The cost will appear on their Feed-the-Server tab after the call ends.`
