@@ -11,6 +11,8 @@
   position: fixed;
   z-index: 110;
   top: 0;
+  /* KADE C4b: keep drawer content below the iOS status bar (0 elsewhere) */
+  padding-top: env(safe-area-inset-top, 0px);
 
   /* max-width: 260px; */
 
@@ -328,4 +330,14 @@ p.whitespace-pre-wrap a, li a {
    viewport-fit=cover in the <meta name="viewport"> tag. */
 .pb-ios-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* KADE PATCH C4b (July 2 2026): top safe area for the chat header.
+   In standalone PWA mode the header (absolute top-0) slid under the iOS
+   status bar, putting the agent-picker button beside the CLOCK — taps hit
+   the status bar instead of the button unless the phone was rotated to
+   landscape (live report from Skylee's iPhone). env() is 0 everywhere
+   except notched iPhones in portrait, so this is invisible on desktop. */
+.pt-ios-safe {
+  padding-top: env(safe-area-inset-top, 0px);
 }
