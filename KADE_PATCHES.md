@@ -296,3 +296,11 @@ Kade's feedback round on D2b/D2c, all four items:
 **Problem (Kade's report):** samples played on iOS VoiceOver but not Windows NVDA. Root cause: NVDA's browse mode navigates a VIRTUAL buffer — arrowing never moves DOM focus, so the focus-triggered auditions stayed silent (iOS VO is the odd one out in syncing its cursor to DOM focus).
 
 **Fix:** the list is now a real `role="listbox"` with focusable `role="option"` buttons — the APG roving-tabindex listbox variant. Focus landing on an option flips NVDA into focus mode automatically, so arrow keys reach the app, the roving-focus handler walks the options, and every step plays that voice. Entry paths that all work in NVDA: Tab from the filter box into the list, ArrowDown from the filter, or Enter in the filter (which previously — bug — would have SUBMITTED THE WHOLE AGENT FORM, since the picker lives inside the builder form; now prevented and repurposed to enter the list). Home/End jump to first/last voice. `aria-selected` now carries the "selected" announcement natively (the spoken "currently selected" suffix was removed to avoid double-speak); the no-match message moved outside the listbox (invalid ARIA child). iOS VoiceOver behavior unchanged — options are still focusable buttons, swipe→focus→sample as before.
+
+---
+
+## D2f — Short expressive audition line (2026-07-01)
+
+**Files:** `Voices.tsx`, `AgentVoicePicker.tsx`. **Companion proxy commit:** `7732b28` (AUDITION_TEXT + `audition` field in /voices.json).
+
+The full library-page monologue (~460 chars) made browse-auditions lag on first play. Auditions now speak a one-liner that still PERFORMS: `%%%warm, playful, quietly showing off%%% Hey — {voice} here! And this right here? That's exactly how I sound.` — the %%% sentinel becomes real [bracket] delivery direction in the proxy's applySteeringTags on the synth path (the same conversion chat uses; this also closes the "confirm the preview path runs the %%% conversion" check from EMOTION_TAG_VOICE_PREVIEWS.md). Served from /voices.json (`audition`, `{voice}` filled client-side) so the line is editable in ONE place; matching built-in fallback. The long monologue stays on the full Preview button and the /voices page. Cache keys already covered text-variant + rate.

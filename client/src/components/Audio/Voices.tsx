@@ -37,7 +37,7 @@ const TTS_PROXY_BASE = 'https://inworld-tts-proxy-production.up.railway.app';
  * Fail-soft: on any fetch error `sample` is undefined and callers fall back
  * to their built-in line.
  */
-export function useVoiceSampleText(): string | undefined {
+export function useVoiceCatalogTexts(): { sample?: string; audition?: string } {
   const { data } = useQuery(
     ['kade', 'voiceCatalog'],
     async () => {
@@ -45,11 +45,17 @@ export function useVoiceSampleText(): string | undefined {
       if (!res.ok) {
         throw new Error(`voices.json ${res.status}`);
       }
-      return (await res.json()) as { sample?: string };
+      return (await res.json()) as { sample?: string; audition?: string };
     },
     { staleTime: Infinity, retry: 1, refetchOnWindowFocus: false },
   );
-  return typeof data?.sample === 'string' && data.sample !== '' ? data.sample : undefined;
+  return {
+    sample: typeof data?.sample === 'string' && data.sample !== '' ? data.sample : undefined,
+    /** Short expressive one-liner for browse-as-you-go auditions; `{voice}`
+     * placeholder is filled by the caller. %%% steering converts to [bracket]
+     * direction on the proxy's synth path. */
+    audition: typeof data?.audition === 'string' && data.audition !== '' ? data.audition : undefined,
+  };
 }
 
 /** "Voice 12" sorts numerically; any non-numbered label sorts first, alphabetically. */
@@ -200,7 +206,7 @@ export function VoicePreviewButton({
   const localize = useLocalize();
   const { isPlaying, togglePreview, error } = useVoicePreview();
   // The same expressive monologue the /voices library page performs.
-  const sampleText = useVoiceSampleText();
+  const { sample: sampleText } = useVoiceCatalogTexts();
 
   const label = isPlaying
     ? localize('com_nav_stop_voice_preview') ?? 'Stop voice preview'

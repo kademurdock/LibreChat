@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { ChevronDown, Volume2, Check } from 'lucide-react';
 import type { FocusEvent, KeyboardEvent } from 'react';
-import { SILENT_WAV, useVoiceSampleText, compareVoices } from '~/components/Audio/Voices';
+import { SILENT_WAV, useVoiceCatalogTexts, compareVoices } from '~/components/Audio/Voices';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -49,9 +49,16 @@ const AUDITION_DEBOUNCE_MS = 200; // was 450; Kade wanted the sample to start
                                   // quicker after landing on a voice (2026-07-01)
 const AUDITION_CACHE_MAX = 40;
 
-/** Fallback line if the catalog sample hasn't loaded — quick to synthesize. */
-function auditionLine(voice: string) {
-  return `Hi there — ${voice} here. This is how I sound.`;
+/** Audition line for one voice. Prefers the proxy-served template (single
+ * source of truth, `{voice}` placeholder); falls back to a matching built-in.
+ * Both carry %%% emotion steering, which the proxy converts to [bracket]
+ * delivery direction on the synth path — short AND performed, per Kade
+ * (2026-07-01: the full monologue lagged; a flat short line bored her). */
+function auditionLine(voice: string, template?: string) {
+  const line =
+    template ??
+    "%%%warm, playful, quietly showing off%%% Hey — {voice} here! And this right here? That's exactly how I sound.";
+  return line.split('{voice}').join(voice);
 }
 
 /**
@@ -59,7 +66,7 @@ function auditionLine(voice: string) {
  * performs (fetched once via useVoiceSampleText), at the agent's configured
  * speaking rate when one is set — so what you audition is what you'll get.
  */
-function useVoiceAudition({ sampleText, speed }: { sampleText?: string; speed?: number }) {
+function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate?: string; speed?: number }) {
   const { token } = useAuthContext();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   /** voice -> object URL of an already-fetched sample */
@@ -103,11 +110,11 @@ function useVoiceAudition({ sampleText, speed }: { sampleText?: string; speed?: 
       try {
         // Cache key covers the text variant AND the rate — a sample recorded
         // at 1.0 must not be replayed when the agent's rate is now 1.3.
-        const cacheKey = `${voice}|${sampleText ? 's' : 'f'}|${speed ?? ''}`;
+        const cacheKey = `${voice}|${auditionTemplate ? 's' : 'f'}|${speed ?? ''}`;
         let url = cacheRef.current.get(cacheKey);
         if (url == null) {
           const fd = new FormData();
-          fd.append('input', sampleText ?? auditionLine(voice));
+          fd.append('input', auditionLine(voice, auditionTemplate));
           fd.append('voice', voice);
           if (typeof speed === 'number') {
             fd.append('speed', String(speed));
@@ -171,7 +178,7 @@ function useVoiceAudition({ sampleText, speed }: { sampleText?: string; speed?: 
         }
       }
     },
-    [token, sampleText, speed],
+    [token, auditionTemplate, speed],
   );
 
   /** Debounced audition — call on option focus/hover. Rapid movement through
@@ -217,10 +224,10 @@ export default function AgentVoicePicker({
   /* D2c note: grouping/badges removed on Kade's call — after the 2026-07-01
      renumbering her custom voices ARE Voice 1–70, so plain numeric order
      leads with them without giving away which entries are custom. */
-  const sampleText = useVoiceSampleText();
+  const { audition: auditionTemplate } = useVoiceCatalogTexts();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
-  const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({ sampleText, speed });
+  const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({ auditionTemplate, speed });
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLButtonElement>(null);
