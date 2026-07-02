@@ -132,8 +132,9 @@ function useVoicePreview() {
   return { isPlaying, togglePreview, error };
 }
 
-/** Preview button shown alongside the ExternalVoiceDropdown. */
-function VoicePreviewButton({
+/** Preview button shown alongside the ExternalVoiceDropdown, and reused by the
+ * agent builder's default-voice picker (D1/D2) — same iOS-safe playback path. */
+export function VoicePreviewButton({
   voiceId,
   disabled,
 }: {

@@ -3,6 +3,7 @@ import type {
   AgentModelParameters,
   AgentSubagentsConfig,
   AgentToolOptions,
+  AgentTtsSettings,
   SupportContact,
   AgentProvider,
   GraphEdge,
@@ -49,6 +50,8 @@ export type AgentForm = {
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
   recursion_limit?: number;
   support_contact?: SupportContact;
+  /** Kade (D1/D2): per-agent TTS defaults (the builder's default-voice picker) */
+  tts?: AgentTtsSettings;
   category: string;
   // Avatar management fields
   avatar_file?: File | null;

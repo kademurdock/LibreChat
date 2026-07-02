@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { X } from 'lucide-react';
 import { useQueries } from '@tanstack/react-query';
-import { Switch, useToastContext } from '@librechat/client';
+import { Dropdown, Switch, useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import {
   EModelEndpoint,
@@ -11,7 +11,7 @@ import {
   dataService,
   getEndpointField,
 } from 'librechat-data-provider';
-import type { AgentForm, IconComponentTypes } from '~/common';
+import type { AgentForm, IconComponentTypes, Option } from '~/common';
 import {
   removeFocusOutlines,
   processAgentOption,
@@ -22,7 +22,7 @@ import {
 } from '~/utils';
 import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
-import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
+import { useListSkillsQuery, useGetAgentFiles, useVoicesQuery } from '~/data-provider';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import { useLocalize, useVisibleTools, useHasAccess } from '~/hooks';
 import { SkillSelectDialog } from '~/components/Skills/dialogs';
@@ -30,6 +30,7 @@ import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
 import { Panel, isEphemeralAgent } from '~/common';
 import { icons } from '~/hooks/Endpoint/Icons';
+import { VoicePreviewButton } from '~/components/Audio/Voices';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
@@ -80,6 +81,11 @@ export default function AgentConfig() {
   } = methods;
   const provider = useWatch({ control, name: 'provider' });
   const model = useWatch({ control, name: 'model' });
+  /** ♿ KADE D1/D2: live voice library for the default-voice picker below. */
+  const { data: voicesData } = useVoicesQuery();
+  const voiceList: Array<string | { label?: string; value?: string }> = Array.isArray(voicesData)
+    ? voicesData
+    : ((voicesData as unknown as { voices?: string[] } | undefined)?.voices ?? []);
   const agent = useWatch({ control, name: 'agent' });
   const tools = useWatch({ control, name: 'tools' });
   const skills = useWatch({ control, name: 'skills' });
@@ -336,6 +342,55 @@ export default function AgentConfig() {
         </div>
         {/* Instructions */}
         <Instructions />
+        {/* ♿ KADE D1/D2: default voice for this agent. Screen-reader-first:
+            the label names the control explicitly, and the existing C3
+            preview button sits right beside it so a builder can hear a
+            candidate voice instead of guessing by its number. */}
+        <div className="mb-4">
+          <label className={labelClass} id="agent-voice-label" htmlFor="agent-voice-dropdown">
+            {localize('com_agents_default_voice')}
+          </label>
+          <Controller
+            name="tts.voiceId"
+            control={control}
+            render={({ field }) => {
+              const current = typeof field.value === 'string' ? field.value : '';
+              const voiceOptions = [
+                { label: localize('com_agents_default_voice_none'), value: '' },
+                ...voiceList.map((v) =>
+                  typeof v === 'string'
+                    ? { label: v, value: v }
+                    : { label: v.label ?? String(v.value ?? ''), value: String(v.value ?? '') },
+                ),
+              ];
+              return (
+                <div className="flex flex-col gap-2">
+                  <Dropdown
+                    key={`agent-voice-dropdown-${voiceOptions.length}`}
+                    value={current}
+                    options={voiceOptions}
+                    onChange={(newValue?: string | Option) => {
+                      const v = typeof newValue === 'string' ? newValue : newValue?.value;
+                      field.onChange(v ? String(v) : undefined);
+                    }}
+                    sizeClasses="w-full"
+                    testId="AgentVoiceDropdown"
+                    className="z-50"
+                    aria-labelledby="agent-voice-label"
+                  />
+                  <p className="text-xs text-text-secondary">
+                    {localize('com_agents_default_voice_help')}
+                  </p>
+                  {current !== '' && (
+                    <div className="flex justify-start">
+                      <VoicePreviewButton voiceId={current} disabled={false} />
+                    </div>
+                  )}
+                </div>
+              );
+            }}
+          />
+        </div>
         {/* Model and Provider */}
         <div className="mb-4">
           <label className={labelClass} htmlFor="provider">

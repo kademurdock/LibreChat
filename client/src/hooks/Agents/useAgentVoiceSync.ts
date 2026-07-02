@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useGetAgentByIdQuery } from '~/data-provider/Agents';
 import store from '~/store';
 
 /** localStorage key for per-agent voice preferences (JSON map: agent_id → voice). */
@@ -29,25 +30,39 @@ export function saveAgentVoicePreference(agentId: string, voice: string): void {
 }
 
 /**
- * ♿ D3: Per-agent default voices.
+ * ♿ D3 + D1/D2: Per-agent voices.
  *
  * Watches the active agent for the conversation at `index`. When the agent
- * changes, looks up any saved voice preference in localStorage and applies it
- * to store.voice (the global TTS voice atom). If no saved preference exists
- * for the incoming agent, the current voice is left unchanged so the user's
- * last manual selection persists.
+ * changes, resolves which TTS voice to apply, in this order (2026-07-01):
+ *
+ *   1. The user's own per-agent override — the `kade:agent_voices`
+ *      localStorage map, saved whenever they pick a voice while this agent
+ *      is active. Kept on top: "I like this agent's default but want
+ *      something else" stays a personal, per-device choice.
+ *   2. The agent's own default — `agent.tts.voiceId`, the real backend field
+ *      set in the agent builder (D1/D2).
+ *   3. Neither set → leave store.voice alone, i.e. the user's global
+ *      Settings → Speech voice stays in effect.
+ *
+ * Fail-soft note: if a resolved voice no longer exists in the live library,
+ * the speech hooks' own reconciliation (useTTSExternal's voices effect)
+ * snaps playback back to a valid voice — a stale saved voice can't break TTS.
  *
  * Mount once inside ChatView so it runs for the lifetime of a chat.
  */
 export function useAgentVoiceSync(index: number = 0): void {
   const agentId = useRecoilValue(store.conversationAgentIdByIndex(index));
   const setVoice = useSetRecoilState(store.voice);
+  /** D1/D2: the agent record (cached, VIEW-level) carries its default voice. */
+  const { data: agent } = useGetAgentByIdQuery(agentId);
 
   useEffect(() => {
     if (!agentId) return;
-    const saved = readAgentVoiceMap()[agentId];
-    if (saved) {
-      setVoice(saved);
+    const personal = readAgentVoiceMap()[agentId]; // 1) personal override
+    const agentDefault = agent?.tts?.voiceId; // 2) agent's own default
+    const resolved = personal ?? agentDefault;
+    if (resolved) {
+      setVoice(resolved); // 3) neither -> untouched global default
     }
-  }, [agentId, setVoice]);
+  }, [agentId, agent?.tts?.voiceId, setVoice]);
 }
