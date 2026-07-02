@@ -52,6 +52,14 @@ export default function StreamAudio({ index = 0 }) {
   useEffect(() => {
     const latestText = getLatestText(latestMessage);
 
+    /* KADE (July 2 2026): only auto-play FRESH replies. View switches /
+     * remounts (e.g. opening Conversation Mode on an existing chat) used to
+     * re-trigger playback of messages from PREVIOUS turns — live report:
+     * several old clips played back-to-back at the start of a "call". A
+     * message older than 2 minutes is never something to auto-play. */
+    const createdAtMs = latestMessage?.createdAt ? new Date(latestMessage.createdAt).getTime() : 0;
+    const isFreshReply = createdAtMs > 0 && Date.now() - createdAtMs < 2 * 60 * 1000;
+
     const shouldFetch = !!(
       token != null &&
       automaticPlayback &&
@@ -59,6 +67,7 @@ export default function StreamAudio({ index = 0 }) {
       latestMessage &&
       !latestMessage.isCreatedByUser &&
       latestText &&
+      isFreshReply &&
       latestMessage.messageId &&
       !latestMessage.messageId.includes('_') &&
       !isFetching &&
