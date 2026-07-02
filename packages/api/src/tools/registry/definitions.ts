@@ -89,6 +89,74 @@ export const dalle3Schema: ExtendedJsonSchema = {
 };
 
 /** Flux API tool JSON schema */
+
+export const falStudioSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['generate_image', 'generate_video', 'check_video'],
+      description:
+        "'generate_image' = Seedream 4.5 design/photo image (fast, ~$0.04). 'generate_video' = text-to-video clip. 'check_video' = poll a video that wasn't finished when generate_video returned.",
+    },
+    prompt: {
+      type: 'string',
+      description:
+        'Detailed prompt. For video: describe shot, subject, motion, mood, camera. For images: Seedream 4.5 excels at legible TEXT inside images (logos, signs, flyers, memes) — quote any exact wording.',
+    },
+    quality: {
+      type: 'string',
+      enum: ['standard', 'premium'],
+      description:
+        "Video only. 'standard' = Kling 3.0 (default, ~$0.42-0.63 per 5s). 'premium' = Veo 3.1 Fast, cinematic + native audio (~$0.75 per 5-8s). Use premium only when the user asks for top quality.",
+    },
+    duration_seconds: {
+      type: 'integer',
+      description: 'Video length in seconds. Standard: 5 or 10 (default 5). Premium: 4, 6, or 8 (default 8).',
+    },
+    audio: {
+      type: 'boolean',
+      description: 'Video only: generate native audio/sound. Default false for standard (cheaper), true for premium.',
+    },
+    aspect_ratio: {
+      type: 'string',
+      enum: ['16:9', '9:16', '1:1'],
+      description: 'Aspect ratio (default 16:9). Use 9:16 for phone-style vertical video.',
+    },
+    image_size: {
+      type: 'string',
+      enum: ['square_hd', 'portrait_4_3', 'portrait_16_9', 'landscape_4_3', 'landscape_16_9'],
+      description: 'Image only: output shape (default landscape_4_3).',
+    },
+    request_id: {
+      type: 'string',
+      description: 'check_video only: the request id returned by generate_video.',
+    },
+  },
+  required: ['action'],
+};
+
+export const kadePhoneCallSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    to_number: {
+      type: 'string',
+      description:
+        "US/Canada phone number to call, 10 digits (e.g. '4175551234'). ALWAYS confirm the exact number with the user before calling.",
+    },
+    purpose: {
+      type: 'string',
+      description:
+        'Short plain-language reason for the call, phrased to complete the sentence "I\'m calling because ..." — it is read aloud to whoever answers and guides the whole call. Make it specific; include any facts the phone agent needs (names, order numbers, questions to ask).',
+    },
+    callee_name: {
+      type: 'string',
+      description: 'Optional: name of the person or business being called (e.g. "Tony\'s Pizza"), used in the greeting.',
+    },
+  },
+  required: ['to_number', 'purpose'],
+};
+
 export const fluxApiSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -373,6 +441,20 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Use Flux to generate images from text descriptions. This tool can generate images and list available finetunes. Each generate call creates one image. For multiple images, make multiple consecutive calls.',
     schema: fluxApiSchema,
+    toolType: 'builtin',
+  },
+  fal_studio: {
+    name: 'fal_studio',
+    description:
+      "Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium) and best-in-class design IMAGES with legible text (Seedream 4.5) via fal.ai. Video costs real money per second (~$0.42-1.30 per clip) and takes 1-4 minutes; images cost ~$0.04 and are fast. For video: state the rough cost and get the user's yes BEFORE generating; if generate_video returns a request_id instead of a URL, call check_video with it ~2 minutes later. Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url). Enhance thin prompts into rich visual descriptions first. NEVER claim media was generated without a real URL returned by this tool.",
+    schema: falStudioSchema,
+    toolType: 'builtin',
+  },
+  kade_phone_call: {
+    name: 'kade_phone_call',
+    description:
+      "Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user. An AI voice agent speaks on the call following the purpose you provide. Costs real money (~1.5 cents/minute, billed to the user's tab), hard-capped at 15 minutes and 4 calls per user per day. ONLY use when the user explicitly asks for a call, and ALWAYS confirm the exact number and reason with them first. Never call emergency services, never harass anyone, never redial the same number repeatedly. You get a confirmation only — the conversation happens live on the phone; you will NOT see its transcript. NEVER claim a call was placed unless this tool returned a success confirmation.",
+    schema: kadePhoneCallSchema,
     toolType: 'builtin',
   },
   open_weather: {
