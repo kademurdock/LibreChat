@@ -17,8 +17,10 @@ const PREVIEW_TEXT =
   + "you like how I sound!";
 
 /** ~10ms of silence. Played synchronously inside the tap to UNLOCK the audio
- * element on iOS Safari, so the real play() after the fetch await is allowed. */
-const SILENT_WAV =
+ * element on iOS Safari, so the real play() after the fetch await is allowed.
+ * Exported: AgentVoicePicker reuses the same unlock trick for its
+ * audition-as-you-browse playback (D2b). */
+export const SILENT_WAV =
   'data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
 
 /**

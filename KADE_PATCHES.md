@@ -237,3 +237,19 @@ Turns D3's browser-localStorage trick into a real field on the agent record, wit
 - Kiana: set her `tts.voiceId` once to her current voice and leave her be. The 90-persona gender-match audit is a separate draft-then-confirm content pass (see the patch doc), NOT part of this code change.
 
 **Why not config/proxy:** agent schema, API validation, builder UI, and client voice resolution are all fork surfaces; the proxy never learns which agent is speaking.
+
+---
+
+## D2b — Audition-as-you-browse voice picker in the agent builder (2026-07-01)
+
+**Files:** `client/src/components/SidePanel/Agents/AgentVoicePicker.tsx` (new), `AgentConfig.tsx`, `client/src/components/Audio/Voices.tsx` (SILENT_WAV exported), `client/src/locales/en/translation.json`
+
+**What changed:** Kade's UX feedback on the D1/D2 picker: having to commit a voice, leave the picker, and find the separate Preview button defeats the point when you can't see the list. Custom VoiceOver ROTOR actions aren't available to web content, so this implements her preferred alternative directly: voices play as you move through the list, then you activate one to choose it.
+
+- Every voice is a real `<button>`; iOS VoiceOver moves DOM focus with the VO cursor on focusable elements, so swiping onto a voice fires `onFocus` → a short sample ("Hi there — Voice 85 here. This is how I sound.") plays after a 450ms debounce (rest on a voice to hear it; swiping quickly stays silent). Keyboard arrows and mouse hover get the same. Double-tap/Enter/click selects and closes; Escape or Done closes without changing; focus returns to the opener, which announces the (new) selection in its label.
+- One audio element, unlocked with the P4 silent-WAV trick inside the tap that OPENS the list, reused for every sample (iOS gesture rule). Samples fetched via the same manual-TTS route with the P5 Authorization header; latest-wins sequencing (moving on cancels stale plays); ~40-entry object-URL cache so revisiting a voice replays instantly; visible `role="alert"` error line (P4 lesson: no console on the phone).
+- Filter input narrows the 210-voice list (ArrowDown from it jumps into the list). The full-length C3 Preview button stays below the picker for the selected voice.
+
+**Fail-soft:** if a platform doesn't sync VO focus to DOM focus, nothing regresses — options still announce and select normally, and the Preview button still plays the selected voice.
+
+**Why not config/proxy:** builder UI is React in the fork.
