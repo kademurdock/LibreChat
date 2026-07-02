@@ -422,6 +422,57 @@ export default function AgentConfig() {
             }}
           />
         </div>
+        {/* ♿ KADE (July 2 2026): reasoning on/off at the agent level, in plain
+            language. Writes model_parameters.reasoning_effort — the same field
+            the model-params panel and the marketplace Instant/Reasoning badges
+            already use. "Instant" = effort 'none' (verified to zero reasoning
+            tokens on GLM-5.2 and MiniMax-M3 via OpenRouter). */}
+        <div className="mb-4">
+          <label className={labelClass} id="agent-answer-speed-label" htmlFor="agent-answer-speed-dropdown">
+            {localize('com_agents_answer_speed')}
+          </label>
+          <Controller
+            name="model_parameters.reasoning_effort"
+            control={control}
+            render={({ field }) => {
+              const speedOptions = [
+                { label: localize('com_agents_answer_speed_auto'), value: '' },
+                { label: localize('com_agents_answer_speed_instant'), value: 'none' },
+                { label: localize('com_agents_answer_speed_quick'), value: 'low' },
+                { label: localize('com_agents_answer_speed_deep'), value: 'high' },
+              ];
+              const current = typeof field.value === 'string' ? field.value : '';
+              // Map any other stored effort (minimal/medium/xhigh, set via the
+              // model panel) onto the nearest of our four so the dropdown
+              // never silently shows the wrong thing.
+              const shown =
+                current === '' || current === 'none' || current === 'low' || current === 'high'
+                  ? current
+                  : current === 'minimal'
+                    ? 'low'
+                    : 'high';
+              return (
+                <div className="flex flex-col gap-2">
+                  <Dropdown
+                    value={shown}
+                    options={speedOptions}
+                    onChange={(newValue?: string | Option) => {
+                      const v = typeof newValue === 'string' ? newValue : newValue?.value;
+                      field.onChange(v === '' || v == null ? undefined : v);
+                    }}
+                    sizeClasses="w-full"
+                    testId="AgentAnswerSpeedDropdown"
+                    className="z-50"
+                    aria-labelledby="agent-answer-speed-label"
+                  />
+                  <p className="text-xs text-text-secondary">
+                    {localize('com_agents_answer_speed_help')}
+                  </p>
+                </div>
+              );
+            }}
+          />
+        </div>
         {/* Model and Provider */}
         <div className="mb-4">
           <label className={labelClass} htmlFor="provider">
