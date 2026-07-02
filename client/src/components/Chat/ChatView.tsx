@@ -15,6 +15,7 @@ import {
   useAgentVoiceSync,
 } from '~/hooks';
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
+import useCompletionChime from '~/hooks/useCompletionChime';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import ProjectLandingChip from './ProjectLandingChip';
@@ -77,6 +78,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
 
   // ♿ D3: When the active agent changes, switch TTS to that agent's saved voice preference.
   useAgentVoiceSync(index);
+  useCompletionChime(isSubmitting);
 
   let content: JSX.Element | null | undefined;
   const isLandingPage =

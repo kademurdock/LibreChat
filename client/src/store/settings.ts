@@ -31,6 +31,8 @@ const localStorageAtoms = {
     true,
   ),
   keepScreenAwake: atomWithLocalStorage('keepScreenAwake', true),
+  // KADE July 2 2026: soft chime when a reply finishes (accessibility)
+  chimeOnCompletion: atomWithLocalStorage('chimeOnCompletion', false),
   newChatSwitchToHistory: atomWithLocalStorage('newChatSwitchToHistory', true),
 
   // Chat settings

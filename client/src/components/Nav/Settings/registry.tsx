@@ -123,6 +123,18 @@ export const registry: SettingEntry[] = [
       switchId: 'keepScreenAwake',
     }),
   },
+  {
+    id: 'chimeOnCompletion',
+    tab: GENERAL,
+    section: 'accessibility',
+    labelKey: 'com_nav_chime_on_completion',
+    keywords: ['sound', 'chime', 'done', 'finished', 'notification', 'accessibility'],
+    Component: toggleControl({
+      stateAtom: store.chimeOnCompletion,
+      localizationKey: 'com_nav_chime_on_completion',
+      switchId: 'chimeOnCompletion',
+    }),
+  },
 
   // Chat · Sending
   {
