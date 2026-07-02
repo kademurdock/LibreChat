@@ -178,6 +178,11 @@ export const kadeJokeSchema: ExtendedJsonSchema = {
       type: 'string',
       description: 'Optional word the joke should contain (e.g. "cat").',
     },
+    dirty: {
+      type: 'boolean',
+      description:
+        'true = adult/uncensored jokes (safe-mode off). ONLY for explicitly adult/uncensored personas with adult users; family-friendly and kid-facing personas must NEVER set this. Default false = clean.',
+    },
   },
   required: [],
 };
@@ -524,7 +529,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_joke: {
     name: 'kade_joke',
     description:
-      'Fetch a fresh joke from a live joke database (safe-mode on) — free, instant, no cost. Use when the user wants humor; keeps you from repeating your own material. Deliver it naturally in your own voice. NEVER invent a joke and claim it came from this tool.',
+      'Fetch a fresh joke from a live joke database — free, instant, no cost. Use when the user wants humor; keeps you from repeating your own material. Default mode is clean/family-safe. dirty=true unlocks adult humor and is ONLY for explicitly adult/uncensored personas with adult users — kid-friendly personas never set it. Deliver it naturally in your own voice. NEVER invent a joke and claim it came from this tool.',
     schema: kadeJokeSchema,
     toolType: 'builtin',
   },

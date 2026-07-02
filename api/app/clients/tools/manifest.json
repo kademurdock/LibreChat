@@ -61,7 +61,7 @@
   {
     "name": "Jokes",
     "pluginKey": "kade_joke",
-    "description": "Fresh jokes from a live joke database (safe-mode). No key, no cost.",
+    "description": "Fresh jokes from a live joke database — clean by default, adult mode for uncensored personas. No key, no cost.",
     "icon": "https://v2.jokeapi.dev/favicon.png",
     "isAuthRequired": "false",
     "authConfig": []
