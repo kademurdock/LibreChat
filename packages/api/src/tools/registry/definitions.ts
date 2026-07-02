@@ -136,6 +136,36 @@ export const falStudioSchema: ExtendedJsonSchema = {
   required: ['action'],
 };
 
+export const kadeWeatherSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    location: {
+      type: 'string',
+      description: "City or place name, optionally with region (e.g. 'Ozark, Missouri').",
+    },
+    days: {
+      type: 'integer',
+      description: 'Forecast days to include (1-7). Default 3.',
+    },
+  },
+  required: ['location'],
+};
+
+export const kadeWikipediaSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      description: "Topic to look up (e.g. 'Ozarks', 'photosynthesis').",
+    },
+    full_intro: {
+      type: 'boolean',
+      description: 'true = longer introduction section instead of the one-paragraph summary.',
+    },
+  },
+  required: ['query'],
+};
+
 export const kadePhoneCallSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -464,8 +494,22 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_phone_call: {
     name: 'kade_phone_call',
     description:
-      "Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user. An AI voice agent speaks on the call following the purpose you provide. Costs real money (~1.5 cents/minute, billed to the user's tab), hard-capped at 15 minutes and 4 calls per user per day. ONLY use when the user explicitly asks for a call, and ALWAYS confirm the exact number and reason with them first. Never call emergency services, never harass anyone, never redial the same number repeatedly. You get a confirmation only — the conversation happens live on the phone; you will NOT see its transcript. NEVER claim a call was placed unless this tool returned a success confirmation.",
+      "Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user — and afterwards fetch the transcript with action='check_result' so you can report back what was said. Costs real money (~1.5 cents/minute, billed to the user's tab), hard-capped at 15 minutes and 10 calls per user per day. ONLY call when the user explicitly asks, ALWAYS confirm the exact number and reason first. Never call emergency services, never harass anyone, never redial the same number repeatedly. If the user asked you to find something out, checking the result and reporting back IS part of the job. NEVER claim a call was placed or invent a call result — only report what this tool actually returned.",
     schema: kadePhoneCallSchema,
+    toolType: 'builtin',
+  },
+  kade_weather: {
+    name: 'kade_weather',
+    description:
+      'Get REAL current weather and a short forecast for any city — free, instant, no cost (Open-Meteo). Use this instead of web_search for weather questions. NEVER invent weather; only report what this tool returns.',
+    schema: kadeWeatherSchema,
+    toolType: 'builtin',
+  },
+  kade_wikipedia: {
+    name: 'kade_wikipedia',
+    description:
+      'Look up a topic on Wikipedia — free, instant, no cost. Best for stable encyclopedic facts (people, places, history, science). For breaking news or local/current info use web_search instead. NEVER invent article content; only report what this tool returns.',
+    schema: kadeWikipediaSchema,
     toolType: 'builtin',
   },
   open_weather: {
