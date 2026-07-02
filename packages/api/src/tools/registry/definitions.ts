@@ -139,22 +139,33 @@ export const falStudioSchema: ExtendedJsonSchema = {
 export const kadePhoneCallSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
+    action: {
+      type: 'string',
+      enum: ['place_call', 'check_result'],
+      description:
+        "'place_call' (default) dials a number. 'check_result' fetches the status and transcript of the user's most recent call (or a specific call_sid) so you can report back what was said.",
+    },
     to_number: {
       type: 'string',
       description:
-        "US/Canada phone number to call, 10 digits (e.g. '4175551234'). ALWAYS confirm the exact number with the user before calling.",
+        "Required for place_call. US/Canada phone number, 10 digits (e.g. '4175551234'). ALWAYS confirm the exact number with the user before calling.",
     },
     purpose: {
       type: 'string',
       description:
-        'Short plain-language reason for the call, phrased to complete the sentence "I\'m calling because ..." — it is read aloud to whoever answers and guides the whole call. Make it specific; include any facts the phone agent needs (names, order numbers, questions to ask).',
+        'Required for place_call. Short plain-language reason for the call, phrased to complete the sentence "I\'m calling because ..." — it is read aloud to whoever answers and guides the whole call. Make it specific; include any facts the phone agent needs (names, order numbers, questions to ask).',
     },
     callee_name: {
       type: 'string',
-      description: 'Optional: name of the person or business being called (e.g. "Tony\'s Pizza"), used in the greeting.',
+      description:
+        "ONLY set this if you genuinely know the name of the person or business being called (e.g. \"Tony's Pizza\"). NEVER placeholders like 'whoever answers' — omit instead.",
+    },
+    call_sid: {
+      type: 'string',
+      description: 'Optional, for check_result: a specific call SID. Omit for the most recent call.',
     },
   },
-  required: ['to_number', 'purpose'],
+  required: [],
 };
 
 export const fluxApiSchema: ExtendedJsonSchema = {
