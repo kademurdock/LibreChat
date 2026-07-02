@@ -125,6 +125,11 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
       type: Schema.Types.Mixed,
       default: undefined,
     },
+    /** Kade (D1/D2): per-agent TTS defaults ({ voiceId, speakingRate, deliveryMode }) */
+    tts: {
+      type: Schema.Types.Mixed,
+      default: undefined,
+    },
     tenantId: {
       type: String,
       index: true,

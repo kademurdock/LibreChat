@@ -532,6 +532,9 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         provider: agent.provider,
         model: agent.model,
         model_parameters: getSafeModelParameters(agent.model_parameters),
+        // Kade (D1/D2): the agent's default TTS voice must be visible to any
+        // viewer so their client can speak this agent with its intended voice.
+        tts: agent.tts,
         isPublic: agent.isPublic,
         version: agent.version,
         // Safe metadata

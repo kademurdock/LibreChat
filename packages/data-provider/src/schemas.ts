@@ -329,6 +329,10 @@ export const defaultAgentFormValues = {
   [Tools.file_search]: false,
   [Tools.web_search]: false,
   category: 'general',
+  /** Kade (D1/D2): per-agent TTS defaults; undefined = no voice override on this agent */
+  tts: undefined as
+    | { voiceId?: string; speakingRate?: number; deliveryMode?: 'STABLE' | 'BALANCED' | 'CREATIVE' }
+    | undefined,
   support_contact: {
     name: '',
     email: '',

@@ -50,5 +50,11 @@ export interface IAgent extends Omit<Document, 'model'> {
   tool_options?: AgentToolOptions;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
+  /** Kade (D1/D2): per-agent TTS defaults */
+  tts?: {
+    voiceId?: string;
+    speakingRate?: number;
+    deliveryMode?: string;
+  };
   tenantId?: string;
 }

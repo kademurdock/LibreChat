@@ -254,6 +254,13 @@ export type AgentSubagentsConfig = {
   agent_ids?: string[];
 };
 
+/** Kade (D1/D2): per-agent TTS defaults — the voice an agent speaks with by default. */
+export type AgentTtsSettings = {
+  voiceId?: string;
+  speakingRate?: number;
+  deliveryMode?: 'STABLE' | 'BALANCED' | 'CREATIVE';
+};
+
 export type Agent = {
   _id?: string;
   id: string;
@@ -295,6 +302,8 @@ export type Agent = {
   skills_enabled?: boolean;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
+  /** Kade (D1/D2): per-agent TTS defaults (default voice, etc.) */
+  tts?: AgentTtsSettings;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -323,6 +332,7 @@ export type AgentCreateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'tts'
 >;
 
 export type AgentUpdateParams = {
@@ -350,6 +360,7 @@ export type AgentUpdateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'tts'
 >;
 
 export type AgentListParams = {

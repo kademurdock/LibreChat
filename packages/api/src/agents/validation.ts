@@ -359,6 +359,31 @@ export const agentSubagentsSchema: z.ZodOptional<
   .optional();
 
 /** Base agent schema with all common fields */
+/**
+ * Kade (2026-07-01, D1/D2): per-agent TTS defaults.
+ * Shape-only validation on purpose: the voice library is a moving set of
+ * numbered labels served by the TTS proxy, so a hardcoded voiceId allowlist
+ * would go stale the moment the library changes. The client resolution path
+ * fails soft to the user's global default when a saved voice no longer
+ * resolves, which is what makes the loose validation safe.
+ */
+export const agentTtsSchema: z.ZodOptional<
+  z.ZodObject<
+    {
+      voiceId: z.ZodOptional<z.ZodString>;
+      speakingRate: z.ZodOptional<z.ZodNumber>;
+      deliveryMode: z.ZodOptional<z.ZodEnum<['STABLE', 'BALANCED', 'CREATIVE']>>;
+    },
+    'strip'
+  >
+> = z
+  .object({
+    voiceId: z.string().min(1).optional(),
+    speakingRate: z.number().min(0.5).max(2).optional(),
+    deliveryMode: z.enum(['STABLE', 'BALANCED', 'CREATIVE']).optional(),
+  })
+  .optional();
+
 export const agentBaseSchema: z.ZodObject<
   {
     name: z.ZodOptional<z.ZodNullable<z.ZodString>>;
@@ -676,6 +701,16 @@ export const agentBaseSchema: z.ZodObject<
         }
       >
     >;
+    tts: z.ZodOptional<
+      z.ZodObject<
+        {
+          voiceId: z.ZodOptional<z.ZodString>;
+          speakingRate: z.ZodOptional<z.ZodNumber>;
+          deliveryMode: z.ZodOptional<z.ZodEnum<['STABLE', 'BALANCED', 'CREATIVE']>>;
+        },
+        'strip'
+      >
+    >;
     category: z.ZodOptional<z.ZodString>;
   },
   'strip'
@@ -700,6 +735,7 @@ export const agentBaseSchema: z.ZodObject<
   tool_options: agentToolOptionsSchema,
   subagents: agentSubagentsSchema,
   support_contact: agentSupportContactSchema,
+  tts: agentTtsSchema,
   category: z.string().optional(),
 });
 
@@ -1019,6 +1055,16 @@ export const agentCreateSchema: z.ZodObject<
         }
       >
     >;
+    tts: z.ZodOptional<
+      z.ZodObject<
+        {
+          voiceId: z.ZodOptional<z.ZodString>;
+          speakingRate: z.ZodOptional<z.ZodNumber>;
+          deliveryMode: z.ZodOptional<z.ZodEnum<['STABLE', 'BALANCED', 'CREATIVE']>>;
+        },
+        'strip'
+      >
+    >;
     category: z.ZodOptional<z.ZodString>;
   } & {
     provider: z.ZodString;
@@ -1327,6 +1373,16 @@ export const agentUpdateSchema: z.ZodObject<
           name?: string | undefined;
           email?: string | undefined;
         }
+      >
+    >;
+    tts: z.ZodOptional<
+      z.ZodObject<
+        {
+          voiceId: z.ZodOptional<z.ZodString>;
+          speakingRate: z.ZodOptional<z.ZodNumber>;
+          deliveryMode: z.ZodOptional<z.ZodEnum<['STABLE', 'BALANCED', 'CREATIVE']>>;
+        },
+        'strip'
       >
     >;
     category: z.ZodOptional<z.ZodString>;
