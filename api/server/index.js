@@ -284,6 +284,7 @@ const startServer = async () => {
    * client JS self-authenticates via /api/auth/refresh then calls /api/kade APIs). */
   app.get('/usage-dashboard', routes.kade.dashboardPage);
   app.get('/feed-the-server', routes.kade.feedPage);
+  app.get('/my-creations', routes.kade.creationsPage);
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);

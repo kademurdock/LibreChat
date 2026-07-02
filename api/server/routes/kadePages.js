@@ -99,6 +99,8 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Feed the Server</t
       </dl>
     </div>
 
+    <p><a class="back" href="/my-creations" aria-label="See your generated videos and images on the My Creations page">See everything you've made &rarr; My Creations</a></p>
+
     <div class="card">
       <h2 style="margin-top:0">For the curious</h2>
       <dl class="kv">
@@ -264,4 +266,77 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
   </script>
 </body></html>`;
 
-module.exports = { feedHtml, dashboardHtml };
+
+const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations</title>${SHARED_HEAD}
+<style>
+  .asset video, .asset img { width: 100%; max-width: 640px; border-radius: 10px; display: block; }
+  .asset .meta { font-size: .9rem; margin-top: .5rem; }
+  .asset .prompt { margin-top: .35rem; font-size: .95rem; }
+  .pill { display:inline-block; font-size:.8rem; font-weight:600; padding:.1rem .55rem; border-radius:999px; background:#e8f0fe; color:#1d4ed8; margin-right:.4rem; }
+  @media (prefers-color-scheme: dark) { .pill { background:#1e3a8a; color:#dbeafe; } }
+</style>
+</head>
+<body>
+  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a></p>
+  <h1>My Creations</h1>
+  <p class="muted">Every video and image you've generated here, newest first. Videos play right on this page.</p>
+
+  <div id="status" class="status" role="status" aria-live="polite">Loading your creations…</div>
+
+  <main id="content" hidden aria-label="Your generated videos and images"></main>
+
+  <footer class="muted">Fresh every time you open this page. Video links are hosted by fal.media and may eventually expire — download anything you want to keep forever. — Kade-AI</footer>
+
+  <script>
+    (async function(){
+      const status = document.getElementById('status');
+      const token = await getToken();
+      if(!token){
+        status.className = 'status err';
+        status.textContent = 'Please sign in at the chat site first, then reload this page.';
+        return;
+      }
+      const r = await apiGet('/api/kade/my-assets', token);
+      if(!r.ok){
+        status.className = 'status err';
+        status.textContent = 'Could not load your creations right now. Try reloading in a moment.';
+        return;
+      }
+      const d = await r.json();
+      const main = document.getElementById('content');
+      if(!d.assets || d.assets.length === 0){
+        status.textContent = 'Nothing here yet! Anything you generate with the video or image agents from now on will show up on this page automatically.';
+        return;
+      }
+      const vids = d.assets.filter(function(a){ return a.kind === 'video'; }).length;
+      const imgs = d.assets.length - vids;
+      status.textContent = 'You have ' + d.assets.length + ' creation' + (d.assets.length===1?'':'s') + ': ' + vids + ' video' + (vids===1?'':'s') + ' and ' + imgs + ' image' + (imgs===1?'':'s') + '.';
+      function esc(s){ const div=document.createElement('div'); div.textContent = s || ''; return div.innerHTML; }
+      function when(iso){
+        try { return new Date(iso).toLocaleString('en-US', { month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }); }
+        catch(e){ return ''; }
+      }
+      main.innerHTML = d.assets.map(function(a, i){
+        const title = (a.kind === 'video' ? 'Video' : 'Image') + ' — ' + when(a.createdAt);
+        const desc = a.prompt ? a.prompt : (a.kind === 'video' ? 'Generated video' : 'Generated image');
+        let media;
+        if(a.kind === 'video'){
+          media = '<video controls preload="metadata" playsinline aria-label="' + esc(desc) + '"><source src="' + esc(a.url) + '"></video>' +
+                  '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open or download this video in a new tab">Open or download this video</a>';
+        } else {
+          media = '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open full-size image in a new tab"><img loading="lazy" src="' + esc(a.url) + '" alt="' + esc(desc) + '"></a>';
+        }
+        return '<section class="card asset" aria-label="' + esc(title) + '">' +
+          '<h2 style="margin:0 0 .5rem;font-size:1.05rem">' + esc(title) + '</h2>' +
+          media +
+          '<p class="meta"><span class="pill">' + esc(a.kind) + '</span>' + esc(a.model || a.service) + (a.costUSD ? ' &middot; ' + money(a.costUSD) : '') + '</p>' +
+          (a.prompt ? '<p class="prompt"><strong>Prompt:</strong> ' + esc(a.prompt) + '</p>' : '') +
+        '</section>';
+      }).join('');
+      status.hidden = false;
+      main.hidden = false;
+    })();
+  </script>
+</body></html>`;
+
+module.exports = { feedHtml, dashboardHtml, creationsHtml };

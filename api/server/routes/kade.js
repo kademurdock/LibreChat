@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { logKadeUsage } = require('~/models/kadeUsage');
+const { KadeAsset } = require('~/models/kadeAsset');
 const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
@@ -296,6 +297,40 @@ router.get('/my-usage', requireJwtAuth, async (req, res) => {
 
 
 /* ----------------------------------------------------------------------------
+ * SELF: GET /api/kade/my-assets — the logged-in user's generated videos and
+ * images (newest first) for the /my-creations gallery. Any authenticated user.
+ * -------------------------------------------------------------------------- */
+router.get('/my-assets', requireJwtAuth, async (req, res) => {
+  try {
+    const userId = req.user.id || req.user._id;
+    const oid = new mongoose.Types.ObjectId(String(userId));
+    const docs = await KadeAsset.find({ user: oid })
+      .sort({ createdAt: -1 })
+      .limit(300)
+      .lean();
+    const assets = docs.map((d) => {
+      let url = String(d.url || '');
+      if (url && !/^https?:\/\//i.test(url) && !url.startsWith('/')) {
+        url = '/' + url;
+      }
+      return {
+        kind: d.kind,
+        service: d.service,
+        url,
+        prompt: d.prompt || '',
+        model: d.model || '',
+        costUSD: d.costUSD || 0,
+        createdAt: d.createdAt,
+      };
+    });
+    return res.json({ count: assets.length, assets });
+  } catch (error) {
+    logger.error('[/api/kade/my-assets] error:', error);
+    return res.status(500).json({ error: 'Failed to load your creations' });
+  }
+});
+
+/* ----------------------------------------------------------------------------
  * SERVICE: POST /api/kade/usage-event — secret-guarded ingestion so external
  * services (the phone bridge) can land per-user spend in kadeusage. No JWT:
  * the caller is a machine; KADE_USAGE_EVENT_SECRET (env, both sides) gates it.
@@ -331,6 +366,7 @@ router.post('/usage-event', async (req, res) => {
  * -------------------------------------------------------------------------- */
 const FEED_HTML = require('./kadePages').feedHtml;
 const DASH_HTML = require('./kadePages').dashboardHtml;
+const CREATIONS_HTML = require('./kadePages').creationsHtml;
 const sendHtml = (html) => (req, res) => res.type('html').send(html);
 
 // ---------------------------------------------------------------------------
@@ -419,8 +455,10 @@ router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
 
 router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
+router.creationsPage = sendHtml(CREATIONS_HTML);
 // Also reachable under the API namespace:
 router.get('/feed', router.feedPage);
 router.get('/dashboard', router.dashboardPage);
+router.get('/creations', router.creationsPage);
 
 module.exports = router;

@@ -100,6 +100,54 @@ export const codeNoExecution: React.ElementType = memo(function MarkdownCodeNoEx
 });
 codeNoExecution.displayName = 'MarkdownCodeNoExecution';
 
+/**
+ * Kade fork: inline video player for generated clips (fal.media etc.).
+ * Detects direct video-file URLs so `[Watch the video](...mp4)` — or a model
+ * mistakenly writing `![...](...mp4)` — renders as a real playable <video>
+ * instead of a bare link / forever-loading broken image.
+ */
+const VIDEO_URL_PATTERN = /^https?:\/\/\S+\.(mp4|webm|mov|m4v)(\?\S*)?$/i;
+
+export const isVideoUrl = (url?: string): boolean =>
+  typeof url === 'string' && VIDEO_URL_PATTERN.test(url.trim());
+
+type TInlineVideoProps = {
+  src: string;
+  label?: string;
+};
+
+export const InlineVideo: React.ElementType = memo(function InlineVideo({
+  src,
+  label,
+}: TInlineVideoProps) {
+  const description = label && label.trim() !== '' ? label.trim() : 'Generated video';
+  return (
+    <span className="my-2 block max-w-lg">
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <video
+        controls
+        preload="metadata"
+        playsInline
+        aria-label={description}
+        className="w-full rounded-lg border border-border-light"
+      >
+        <source src={src.trim()} />
+        Your browser cannot play this video inline.
+      </video>
+      <a
+        href={src.trim()}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-1 block text-sm text-text-secondary underline"
+        aria-label={`Open or download the video in a new tab: ${description}`}
+      >
+        {description} — open or download
+      </a>
+    </span>
+  );
+});
+InlineVideo.displayName = 'InlineVideo';
+
 type TAnchorProps = {
   href: string;
   children: React.ReactNode;
@@ -129,6 +177,11 @@ export const a: React.ElementType = memo(function MarkdownAnchor({ href, childre
 
   const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id, { direct: false });
   const props: { target?: string; onClick?: React.MouseEventHandler } = { target: '_blank' };
+
+  if (isVideoUrl(href)) {
+    const label = typeof children === 'string' ? children : undefined;
+    return <InlineVideo src={href} label={label} />;
+  }
 
   if (!file_id || !filename) {
     return (
@@ -228,6 +281,10 @@ export const img: React.ElementType = memo(function MarkdownImage({
     // Prepend base URL to the image path
     return `${baseURL}${src}`;
   }, [src, baseURL]);
+
+  if (isVideoUrl(fixedSrc)) {
+    return <InlineVideo src={fixedSrc as string} label={alt} />;
+  }
 
   return <img src={fixedSrc} alt={alt} title={title} className={className} style={style} />;
 });

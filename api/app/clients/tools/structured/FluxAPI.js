@@ -3,6 +3,7 @@ const fetch = require('node-fetch');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { logKadeUsage, fluxCost } = require('~/models/kadeUsage');
+const { logKadeAsset } = require('~/models/kadeAsset');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const {
   applyAxiosProxyConfig,
@@ -187,6 +188,47 @@ class FluxAPI extends Tool {
     return `![generated image](${serverDomain}${imageUrl})`;
   }
 
+  /**
+   * [KadeAsset] Persist a permanent copy of a BFL image (their delivery URLs
+   * expire within minutes) and record it in the user's /my-creations gallery.
+   * Fire-and-forget: never throws, never blocks the response path. In the
+   * agent path no local copy exists yet, so this saves one; in the non-agent
+   * path pass `savedFilepath` to skip the duplicate save.
+   */
+  recordAsset({ imageUrl, imageName, endpoint, prompt, savedFilepath }) {
+    const log = (filepath) =>
+      logKadeAsset({
+        userId: this.userId,
+        kind: 'image',
+        service: 'flux',
+        url: filepath,
+        prompt,
+        model: endpoint,
+        costUSD: fluxCost(endpoint, 1),
+        metadata: { endpoint },
+      });
+    try {
+      if (savedFilepath) {
+        log(savedFilepath).catch(() => {});
+        return;
+      }
+      this.processFileURL({
+        fileStrategy: this.fileStrategy,
+        userId: this.userId,
+        URL: imageUrl,
+        fileName: imageName,
+        basePath: 'images',
+        context: FileContext.image_generation,
+        tenantId: this.tenantId,
+        req: this.retentionRequest,
+      })
+        .then((result) => log(result.filepath))
+        .catch((e) => logger.warn('[FluxAPI] gallery save failed (non-fatal):', e.message));
+    } catch (e) {
+      logger.warn('[FluxAPI] recordAsset failed (non-fatal):', e.message);
+    }
+  }
+
   returnValue(value) {
     if (this.isAgent === true && typeof value === 'string') {
       return [value, {}];
@@ -330,6 +372,12 @@ class FluxAPI extends Tool {
     }
 
     if (this.isAgent) {
+      this.recordAsset({
+        imageUrl,
+        imageName,
+        endpoint: imageData.endpoint || '/v1/flux-pro',
+        prompt: imageData.prompt,
+      });
       try {
         // Fetch the image and convert to base64
         const fetchOptions = {};
@@ -376,6 +424,12 @@ class FluxAPI extends Tool {
       });
 
       logger.debug('[FluxAPI] Image saved to path:', result.filepath);
+
+      this.recordAsset({
+        endpoint: imageData.endpoint || '/v1/flux-pro',
+        prompt: imageData.prompt,
+        savedFilepath: result.filepath,
+      });
 
       // Calculate cost based on endpoint
       /**
@@ -577,6 +631,12 @@ class FluxAPI extends Tool {
     const imageName = `img-${uuidv4()}.png`;
 
     if (this.isAgent) {
+      this.recordAsset({
+        imageUrl,
+        imageName,
+        endpoint: imageData.endpoint || '/v1/flux-pro-finetuned',
+        prompt: imageData.prompt,
+      });
       try {
         const fetchOptions = {};
         const agent = getHttpsProxyAgent(imageUrl);
@@ -622,6 +682,12 @@ class FluxAPI extends Tool {
       });
 
       logger.debug('[FluxAPI] Finetuned image saved to path:', result.filepath);
+
+      this.recordAsset({
+        endpoint: imageData.endpoint || '/v1/flux-pro-finetuned',
+        prompt: imageData.prompt,
+        savedFilepath: result.filepath,
+      });
 
       this.result = this.returnMetadata ? result : this.wrapInMarkdown(result.filepath);
       return this.returnValue(this.result);

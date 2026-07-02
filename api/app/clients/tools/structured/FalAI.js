@@ -2,6 +2,7 @@ const axios = require('axios');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
 const { logKadeUsage } = require('~/models/kadeUsage');
+const { logKadeAsset } = require('~/models/kadeAsset');
 
 /**
  * FalAI ("fal_studio") — video + design-image generation via fal.ai.
@@ -128,7 +129,16 @@ class FalAI extends Tool {
     const img = r.data?.images?.[0];
     if (!img?.url) return 'Seedream returned no image. Try rewording the prompt.';
     this.logUsage('fal_image', 1, 'images', 0.04, { model: 'seedream-4.5' });
-    return `![${(data.prompt || 'generated image').slice(0, 80).replace(/[[\]]/g, '')}](${img.url})\n\nImage generated with Seedream 4.5 (~$0.04).`;
+    logKadeAsset({
+      userId: this.userId,
+      kind: 'image',
+      service: 'fal_image',
+      url: img.url,
+      prompt: data.prompt,
+      model: 'seedream-4.5',
+      costUSD: 0.04,
+    }).catch(() => {});
+    return `![${(data.prompt || 'generated image').slice(0, 80).replace(/[[\]]/g, '')}](${img.url})\n\nImage generated with Seedream 4.5 (~$0.04). Saved to your gallery at /my-creations.`;
   }
 
   videoPricing(quality, seconds, audio) {
@@ -187,7 +197,17 @@ class FalAI extends Tool {
           const out = await axios.get(responseUrl, { headers: this.headers(), timeout: 20000 });
           const url = out.data?.video?.url || out.data?.videos?.[0]?.url;
           if (url) {
-            return `[Watch the video](${url})\n\n${seconds}s ${quality} clip (~$${estUSD}) — link is hosted by fal.media.`;
+            logKadeAsset({
+              userId: this.userId,
+              kind: 'video',
+              service: 'fal_video',
+              url,
+              prompt: data.prompt,
+              model: quality === 'premium' ? 'veo-3.1-fast' : 'kling-3.0-standard',
+              costUSD: estUSD,
+              metadata: { requestId, seconds, audio },
+            }).catch(() => {});
+            return `[Watch the video](${url})\n\n${seconds}s ${quality} clip (~$${estUSD}) — it plays right in the chat, and it's saved to your gallery at /my-creations.`;
           }
           return `The video finished but no URL came back. Raw: ${JSON.stringify(out.data).slice(0, 300)}`;
         }
@@ -218,7 +238,18 @@ class FalAI extends Tool {
         timeout: 20000,
       });
       const url = out.data?.video?.url || out.data?.videos?.[0]?.url;
-      if (url) return `[Watch the video](${url})\n\nHosted by fal.media.`;
+      if (url) {
+        logKadeAsset({
+          userId: this.userId,
+          kind: 'video',
+          service: 'fal_video',
+          url,
+          prompt: data.prompt,
+          model: quality === 'premium' ? 'veo-3.1-fast' : 'kling-3.0-standard',
+          metadata: { requestId: data.request_id },
+        }).catch(() => {});
+        return `[Watch the video](${url})\n\nIt plays right in the chat, and it's saved to your gallery at /my-creations.`;
+      }
       return `Finished but no URL in the response: ${JSON.stringify(out.data).slice(0, 300)}`;
     }
     if (st.data?.status === 'FAILED') return 'That video generation failed on fal.ai.';
