@@ -70,6 +70,8 @@
   "com_agents_file_search_disabled": "Agent must be created before uploading files for File Search.",
   "com_agents_file_search_info": "When enabled, the agent will be informed of the exact filenames listed below, allowing it to retrieve relevant context from these files.",
   "com_agents_grid_announcement": "Showing {{count}} agents in {{category}} category",
+  "com_agents_more_loaded": "{{added}} more agents loaded, {{count}} agents shown",
+  "com_agents_all_loaded": "All {{count}} agents loaded",
   "com_agents_instructions_placeholder": "The system instructions that the agent uses",
   "com_agents_link_copied": "Link copied",
   "com_agents_link_copy_failed": "Failed to copy link",
