@@ -269,8 +269,8 @@ export default function DialogImage({
           onPointerDownOutside={(e) => e.preventDefault()}
           onClick={handleBackgroundClick}
         >
-          {/* Close button - top left */}
-          <div className="absolute left-4 top-4 z-20">
+          {/* Close button - top left. KADE: safe-area offset so the button is not under the iOS clock in standalone PWA mode */}
+          <div className="absolute left-4 z-20" style={{ top: 'calc(1rem + env(safe-area-inset-top, 0px))' }}>
             <TooltipAnchor
               description={localize('com_ui_close')}
               render={
@@ -289,7 +289,8 @@ export default function DialogImage({
 
           {/* Action buttons - top right (336px = 320px panel + 16px gap) */}
           <div
-            className={`absolute top-4 z-20 flex items-center gap-2 transition-[right] duration-300 ${isPromptOpen ? 'right-[336px]' : 'right-4'}`}
+            className={`absolute z-20 flex items-center gap-2 transition-[right] duration-300 ${isPromptOpen ? 'right-[336px]' : 'right-4'}`}
+            style={{ top: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
           >
             {zoom > 1 && (
               <TooltipAnchor

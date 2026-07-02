@@ -59,6 +59,10 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
     <div
       ref={bannerRef}
       className="sticky top-0 z-20 flex items-center bg-presentation px-2 py-1 text-text-primary dark:bg-gradient-to-r md:relative"
+      style={{
+        // KADE: banner sits at the very top on mobile; pad below the iOS clock in standalone PWA mode
+        paddingTop: 'calc(0.25rem + env(safe-area-inset-top, 0px))',
+      }}
     >
       <div
         className={cn(

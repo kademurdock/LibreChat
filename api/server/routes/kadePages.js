@@ -10,7 +10,11 @@ const SHARED_HEAD = `
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 1.25rem;
+    margin: 0;
+    /* KADE: safe-area padding keeps these pages clear of the iOS clock and
+       home indicator when opened inside the standalone PWA (same bug family
+       as the chat header clock overlap) */
+    padding: calc(1.25rem + env(safe-area-inset-top, 0px)) 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     line-height: 1.5; color: #16181d; background: #f6f7f9;
     max-width: 880px; margin-left: auto; margin-right: auto;

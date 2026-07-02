@@ -143,6 +143,9 @@ function UnifiedSidebar() {
           style={{
             width: 'min(85vw, 380px)',
             transition: `transform ${TRANSITION_MS}ms ${EASING}`,
+            // KADE: keep drawer content below the iOS status bar/clock in
+            // standalone PWA mode (0 everywhere else)
+            paddingTop: 'env(safe-area-inset-top, 0px)',
           }}
           inert={!expanded ? '' : undefined}
         >
