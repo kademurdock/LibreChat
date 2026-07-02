@@ -7,6 +7,7 @@ const FalAI = require('./structured/FalAI');
 const KadePhoneCall = require('./structured/KadePhoneCall');
 const KadeWeather = require('./structured/KadeWeather');
 const KadeWikipedia = require('./structured/KadeWikipedia');
+const KadeJoke = require('./structured/KadeJoke');
 const OpenWeather = require('./structured/OpenWeather');
 const StructuredWolfram = require('./structured/Wolfram');
 const StructuredACS = require('./structured/AzureAISearch');
@@ -26,6 +27,7 @@ module.exports = {
   KadePhoneCall,
   KadeWeather,
   KadeWikipedia,
+  KadeJoke,
   OpenWeather,
   StructuredSD,
   StructuredACS,

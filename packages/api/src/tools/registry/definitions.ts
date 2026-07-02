@@ -166,6 +166,22 @@ export const kadeWikipediaSchema: ExtendedJsonSchema = {
   required: ['query'],
 };
 
+export const kadeJokeSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    category: {
+      type: 'string',
+      description:
+        "Optional category: 'Programming', 'Misc', 'Pun', 'Spooky', 'Christmas', or 'Any' (default).",
+    },
+    search: {
+      type: 'string',
+      description: 'Optional word the joke should contain (e.g. "cat").',
+    },
+  },
+  required: [],
+};
+
 export const kadePhoneCallSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -503,6 +519,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Get REAL current weather and a short forecast for any city — free, instant, no cost (Open-Meteo). Use this instead of web_search for weather questions. NEVER invent weather; only report what this tool returns.',
     schema: kadeWeatherSchema,
+    toolType: 'builtin',
+  },
+  kade_joke: {
+    name: 'kade_joke',
+    description:
+      'Fetch a fresh joke from a live joke database (safe-mode on) — free, instant, no cost. Use when the user wants humor; keeps you from repeating your own material. Deliver it naturally in your own voice. NEVER invent a joke and claim it came from this tool.',
+    schema: kadeJokeSchema,
     toolType: 'builtin',
   },
   kade_wikipedia: {
