@@ -17,6 +17,26 @@ type ReasoningProps = {
 const REASONING_COLLAPSED_KEY = 'reasoningUserCollapsed';
 
 /**
+ * KADE PATCH (2026-07-01): per-bubble expansion memory, held at module level,
+ * keyed by message + content-part index. `useState` re-runs its lazy
+ * initializer on every MOUNT, so any re-mount of this component while
+ * reasoning deltas are still streaming (message re-keying on finalization,
+ * list re-renders, etc.) used to snap a just-collapsed bubble back open.
+ * Consulting this map first means the user's explicit toggle on a specific
+ * bubble always outlives the component instance — a collapsed bubble can
+ * never re-expand on its own, no matter how many times React re-mounts it.
+ */
+const expansionMemory = new Map<string, boolean>();
+const EXPANSION_MEMORY_MAX = 500;
+
+function rememberExpansion(key: string, value: boolean) {
+  if (expansionMemory.size >= EXPANSION_MEMORY_MAX && !expansionMemory.has(key)) {
+    expansionMemory.clear();
+  }
+  expansionMemory.set(key, value);
+}
+
+/**
  * Reasoning Component (MODERN SYSTEM)
  *
  * Used for structured content parts with ContentTypes.THINK type.
@@ -46,7 +66,12 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
   const contentId = useId();
   const localize = useLocalize();
   const showThinking = useAtomValue(showThinkingAtom);
+  const { isSubmitting, isLatestMessage, nextType, messageId, partIndex } = useMessageContext();
+  /** Stable identity for THIS bubble across re-mounts (see expansionMemory above). */
+  const memoryKey = `${messageId}:${partIndex ?? 0}`;
   const [isExpanded, setIsExpanded] = useState(() => {
+    const remembered = expansionMemory.get(memoryKey);
+    if (remembered !== undefined) return remembered;
     if (!showThinking) return false;
     try {
       return localStorage.getItem(REASONING_COLLAPSED_KEY) !== 'true';
@@ -57,7 +82,6 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
-  const { isSubmitting, isLatestMessage, nextType } = useMessageContext();
 
   // Strip <think> tags from the reasoning content (modern format)
   const reasoningText = useMemo(() => {
@@ -67,16 +91,20 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
       .trim();
   }, [reasoning]);
 
-  const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    setIsExpanded((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(REASONING_COLLAPSED_KEY, next ? 'false' : 'true');
-      } catch {}
-      return next;
-    });
-  }, []);
+  const handleClick = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      setIsExpanded((prev) => {
+        const next = !prev;
+        rememberExpansion(memoryKey, next);
+        try {
+          localStorage.setItem(REASONING_COLLAPSED_KEY, next ? 'false' : 'true');
+        } catch {}
+        return next;
+      });
+    },
+    [memoryKey],
+  );
 
   const handleFocus = useCallback(() => {
     setIsBarVisible(true);
