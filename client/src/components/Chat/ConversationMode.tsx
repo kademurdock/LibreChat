@@ -828,16 +828,22 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // 'speaking' now gets a one-word announcement too (it used to be silent) --
   // it fires once at the start of a reply, before the TTS fetch has even
   // returned audio, so in practice it doesn't overlap the agent's voice.
+  // 'thinking' covers two very different waits: the model still reasoning
+  // (nothing streamed yet) vs. the reply text already streaming in while the
+  // first sentence's audio is being fetched. aiText is empty during the
+  // former and non-empty during the latter, so it cleanly splits the label
+  // into Thinking -> Typing without any extra state. (2026-07-01)
+  const thinkingLabel = aiText ? 'Typing' : 'Thinking';
   const srStatus =
     error                    ? '' :
     status === 'listening'   ? 'Listening' :
-    status === 'thinking'    ? 'Thinking' :
+    status === 'thinking'    ? thinkingLabel :
     status === 'speaking'    ? 'Speaking' :
     status === 'connecting'  ? 'Connecting' :
                                '';
   const visibleStatus =
     status === 'listening'   ? 'Listening' :
-    status === 'thinking'    ? 'Thinking' :
+    status === 'thinking'    ? thinkingLabel :
     status === 'speaking'    ? 'Speaking' :
     status === 'connecting'  ? 'Connecting' :
                                'Starting';
