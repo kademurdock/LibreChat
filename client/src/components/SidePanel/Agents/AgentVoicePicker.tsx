@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { ChevronDown, Volume2, Check } from 'lucide-react';
 import type { FocusEvent, KeyboardEvent } from 'react';
-import { SILENT_WAV } from '~/components/Audio/Voices';
+import { SILENT_WAV, useCustomVoiceSet, orderVoicesCustomFirst } from '~/components/Audio/Voices';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -189,6 +189,10 @@ export default function AgentVoicePicker({
 }) {
   const localize = useLocalize();
   const { data: voicesData } = useVoicesQuery();
+  /* ♿ D2c: Kade's custom voices float to the top (labeled group); the numbered
+     library stays available below. The set comes from the proxy's
+     /voices.json — same truth as the /voices library page. */
+  const customSet = useCustomVoiceSet();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
   const { unlock, audition, stop, playingVoice, error } = useVoiceAudition();
@@ -201,19 +205,28 @@ export default function AgentVoicePicker({
     const arr = Array.isArray(raw)
       ? raw
       : ((raw as { voices?: unknown[] } | undefined)?.voices ?? []);
-    return arr
+    const names = arr
       .map((v) =>
         typeof v === 'string'
           ? v
           : String((v as { value?: unknown; label?: unknown })?.value ?? (v as { label?: unknown })?.label ?? ''),
       )
       .filter((v) => v !== '');
-  }, [voicesData]);
+    return orderVoicesCustomFirst(names, customSet);
+  }, [voicesData, customSet]);
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return q ? voices.filter((v) => v.toLowerCase().includes(q)) : voices;
   }, [voices, filter]);
+  const customMatches = useMemo(
+    () => filtered.filter((v) => customSet.has(v)),
+    [filtered, customSet],
+  );
+  const libraryMatches = useMemo(
+    () => filtered.filter((v) => !customSet.has(v)),
+    [filtered, customSet],
+  );
 
   const current = typeof value === 'string' && value !== '' ? value : undefined;
 
@@ -270,6 +283,50 @@ export default function AgentVoicePicker({
     const next =
       i === -1 ? 0 : e.key === 'ArrowDown' ? Math.min(i + 1, btns.length - 1) : Math.max(i - 1, 0);
     btns[next]?.focus();
+  };
+
+  /** One voice row. Custom voices announce and show their "custom" badge —
+   * same wording as the /voices library page, so it sounds familiar. */
+  const renderVoiceOption = (v: string, isCustom: boolean) => {
+    const isCurrent = v === current;
+    const isPlaying = v === playingVoice;
+    const labelParts = [v];
+    if (isCustom) {
+      labelParts.push(localize('com_agents_voice_custom_badge'));
+    }
+    if (isCurrent) {
+      labelParts.push(localize('com_agents_voice_current'));
+    }
+    return (
+      <button
+        key={v}
+        type="button"
+        data-voice-option
+        onFocus={() => audition(v)}
+        onMouseEnter={() => audition(v)}
+        onClick={() => select(v)}
+        aria-label={labelParts.join(', ')}
+        className={cn(
+          'flex items-center justify-between rounded-md px-2.5 py-2 text-left text-sm',
+          'text-text-primary hover:bg-surface-hover',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+          isCurrent && 'bg-surface-tertiary',
+        )}
+      >
+        <span className="flex items-center gap-2" aria-hidden="true">
+          {v}
+          {isCustom && (
+            <span className="rounded-full bg-surface-tertiary px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-text-secondary">
+              custom
+            </span>
+          )}
+        </span>
+        <span className="flex items-center gap-1.5" aria-hidden="true">
+          {isPlaying && <Volume2 className="h-4 w-4 animate-pulse" />}
+          {isCurrent && <Check className="h-4 w-4" />}
+        </span>
+      </button>
+    );
   };
 
   return (
@@ -337,33 +394,18 @@ export default function AgentVoicePicker({
               <span aria-hidden="true">{localize('com_agents_default_voice_none')}</span>
               {current == null && <Check className="h-4 w-4" aria-hidden="true" />}
             </button>
-            {filtered.map((v) => {
-              const isCurrent = v === current;
-              const isPlaying = v === playingVoice;
-              return (
-                <button
-                  key={v}
-                  type="button"
-                  data-voice-option
-                  onFocus={() => audition(v)}
-                  onMouseEnter={() => audition(v)}
-                  onClick={() => select(v)}
-                  aria-label={`${v}${isCurrent ? `, ${localize('com_agents_voice_current')}` : ''}`}
-                  className={cn(
-                    'flex items-center justify-between rounded-md px-2.5 py-2 text-left text-sm',
-                    'text-text-primary hover:bg-surface-hover',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-                    isCurrent && 'bg-surface-tertiary',
-                  )}
-                >
-                  <span aria-hidden="true">{v}</span>
-                  <span className="flex items-center gap-1.5" aria-hidden="true">
-                    {isPlaying && <Volume2 className="h-4 w-4 animate-pulse" />}
-                    {isCurrent && <Check className="h-4 w-4" />}
-                  </span>
-                </button>
-              );
-            })}
+            {customMatches.length > 0 && (
+              <p className="px-2.5 pb-1 pt-2 text-xs font-medium uppercase tracking-wider text-text-secondary">
+                {localize('com_agents_voice_group_custom')}
+              </p>
+            )}
+            {customMatches.map((v) => renderVoiceOption(v, true))}
+            {libraryMatches.length > 0 && (
+              <p className="px-2.5 pb-1 pt-3 text-xs font-medium uppercase tracking-wider text-text-secondary">
+                {localize('com_agents_voice_group_library')}
+              </p>
+            )}
+            {libraryMatches.map((v) => renderVoiceOption(v, false))}
             {filtered.length === 0 && (
               <p className="px-2.5 py-2 text-sm text-text-secondary">
                 {localize('com_agents_voice_no_match')}

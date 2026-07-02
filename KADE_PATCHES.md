@@ -253,3 +253,19 @@ Turns D3's browser-localStorage trick into a real field on the agent record, wit
 **Fail-soft:** if a platform doesn't sync VO focus to DOM focus, nothing regresses — options still announce and select normally, and the Preview button still plays the selected voice.
 
 **Why not config/proxy:** builder UI is React in the fork.
+
+---
+
+## D2c — Custom voices float to the top of the in-app voice pickers (2026-07-01)
+
+**Files:** `client/src/components/Audio/Voices.tsx`, `client/src/components/SidePanel/Agents/AgentVoicePicker.tsx`, `client/src/locales/en/translation.json`. Companion proxy commit: inworld-tts-proxy `9c8e869` (new `GET /voices.json`).
+
+**What changed:** Kade's 70 custom-designed voices (Voice 108–175, 209, 210 as of today) now lead both in-app voice lists; the rest of the numbered library stays available below them, in numeric order.
+
+- The proxy already knew which voices are custom (`CUSTOM_VOICE_NUMBERS` orders/badges the /voices library page). New `GET /voices.json` (CORS-open, labels only, 5-min cache) exposes that set, so the fork reads the SAME source of truth — nothing hardcoded client-side to go stale when the set changes. `useCustomVoiceSet()` fetches it once per session (react-query, staleTime Infinity); on any failure it returns an empty set and both pickers fall back to the flat numeric order they had before (fail-soft).
+- **Agent-builder picker:** two labeled sections, "Custom voices" then "Full library" — the headings are plain text VoiceOver reads in swipe order, so Kade hears which zone she's in. Custom options announce "Voice 120, custom designed voice" (identical wording to the library page) and show an aria-hidden "custom" chip. Filter spans both groups; empty groups hide their heading; arrow keys traverse across the boundary.
+- **Settings → Speech dropdown (ExternalVoiceDropdown):** same ordering applied flat (customs first, then library, numeric within each).
+
+**Why not config/proxy alone:** reordering the yaml voices array would lose the custom/library semantics, need a manual redeploy per change, and duplicate the truth into a third place.
+
+**Commit:** see this commit's hash in git log (fork); proxy `9c8e869` deployed SUCCESS + `/voices.json` verified live (210 voices / 70 custom / CORS header present) before this landed.

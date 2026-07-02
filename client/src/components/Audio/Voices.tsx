@@ -1,4 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Volume2, Square } from 'lucide-react';
 import { Dropdown } from '@librechat/client';
@@ -22,6 +23,52 @@ const PREVIEW_TEXT =
  * audition-as-you-browse playback (D2b). */
 export const SILENT_WAV =
   'data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
+
+/** Same proxy base the ConversationMode voice pipeline points at. */
+const TTS_PROXY_BASE = 'https://inworld-tts-proxy-production.up.railway.app';
+
+/**
+ * ♿ KADE D2c: which voice labels are Kade's custom-designed voices, fetched
+ * from the TTS proxy (GET /voices.json) — the SAME source of truth that
+ * floats and badges them on the /voices library page (CUSTOM_VOICE_NUMBERS
+ * in the proxy's server.js). Nothing hardcoded here to go stale when that
+ * set changes. Fail-soft: on any error this returns an empty set and the
+ * pickers keep the plain numeric order they had before D2c.
+ */
+export function useCustomVoiceSet(): Set<string> {
+  const { data } = useQuery(
+    ['kade', 'customVoices'],
+    async () => {
+      const res = await fetch(`${TTS_PROXY_BASE}/voices.json`);
+      if (!res.ok) {
+        throw new Error(`voices.json ${res.status}`);
+      }
+      return (await res.json()) as { custom?: string[] };
+    },
+    { staleTime: Infinity, retry: 1, refetchOnWindowFocus: false },
+  );
+  return useMemo(() => new Set(data?.custom ?? []), [data?.custom]);
+}
+
+/** "Voice 12" sorts numerically; any non-numbered label sorts first, alphabetically. */
+function compareVoices(a: string, b: string): number {
+  const ma = /^Voice (\d+)$/i.exec(a);
+  const mb = /^Voice (\d+)$/i.exec(b);
+  if (ma && mb) {
+    return Number(ma[1]) - Number(mb[1]);
+  }
+  if (ma || mb) {
+    return ma ? 1 : -1;
+  }
+  return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0;
+}
+
+/** ♿ D2c: Kade's custom voices first (numeric order), then the full library. */
+export function orderVoicesCustomFirst(voices: string[], custom: Set<string>): string[] {
+  const mine = voices.filter((v) => custom.has(v)).sort(compareVoices);
+  const rest = voices.filter((v) => !custom.has(v)).sort(compareVoices);
+  return [...mine, ...rest];
+}
 
 /**
  * useVoicePreview — fetches a WAV sample for the given voice ID and plays it.
@@ -220,6 +267,13 @@ export function BrowserVoiceDropdown({ disabled = false }: { disabled?: boolean 
 export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean }) {
   const localize = useLocalize();
   const { voices = [] } = useTTSExternal();
+  // ♿ D2c: Kade's custom voices float to the top of the dropdown; the numbered
+  // library stays available below, in numeric order.
+  const customSet = useCustomVoiceSet();
+  const orderedVoices = useMemo(
+    () => orderVoicesCustomFirst(voices.map((v) => String(v)), customSet),
+    [voices, customSet],
+  );
   const [voice, setVoice] = useRecoilState(store.voice);
   // ♿ D3: the agent active in the primary conversation, so a voice pick here can
   // be remembered as THIS agent's preferred voice (per-user, localStorage).
@@ -246,9 +300,9 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
       <div className="flex items-center justify-between">
         <div id={labelId}>{localize('com_nav_voice_select')}</div>
         <Dropdown
-          key={`external-voice-dropdown-${voices.length}`}
+          key={`external-voice-dropdown-${orderedVoices.length}`}
           value={voice ?? ''}
-          options={voices}
+          options={orderedVoices}
           onChange={handleVoiceChange}
           sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
           testId="ExternalVoiceDropdown"
