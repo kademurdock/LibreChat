@@ -58,7 +58,7 @@ const falJsonSchema = {
     image_url: {
       type: 'string',
       description:
-        "animate_image only: URL of the still image to animate. OMIT IT to auto-pick: a photo the user attached/uploaded in the last hour wins, otherwise their most recent generated image from the gallery. Any public https image URL also works.",
+        "animate_image only: URL of the still image to animate. OMIT IT to auto-pick: a photo the user attached/uploaded in the last 24 hours wins, otherwise their most recent generated image from the gallery. Any public https image URL also works. The tool's reply NAMES which image it used — relay that to the user. Oversized sources (>10MB) are auto-shrunk to fit fal's limit.",
     },
     quality: {
       type: 'string',
@@ -106,7 +106,7 @@ class FalAI extends Tool {
     this.description_for_model =
       this.description +
       " For video: tell the user the clip is rendering and the rough cost BEFORE generating; if generate_video or animate_image returns a request_id instead of a URL, wait for the user's next message or ~2 minutes, then call check_video with it. " +
-      "animate_image with no image_url automatically animates the photo the user just uploaded (last hour), or else their most recent generated image — perfect for 'here's my dog, make him wag' or 'now make it move'. " +
+      "animate_image with no image_url automatically animates the photo the user uploaded (last 24 hours), or else their most recent generated image — perfect for 'here's my dog, make him wag' or 'now make it move'. Its reply names WHICH image it used: repeat that to the user so nothing gets animated by surprise. animate_image always renders on Kling standard — never promise premium/Veo for an animation. " +
       "Before any video, if the user hasn't specified, ask ONCE whether they want sound (recommended here — blind users experience video through audio; standard 5s: ~$0.63 with sound vs ~$0.42 silent) and only use premium quality when the user picks it. " +
       'Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url). Enhance thin prompts into rich visual descriptions first.';
     this.schema = falJsonSchema;
@@ -224,7 +224,8 @@ class FalAI extends Tool {
   }
 
   /** Shared submit + in-call poll for all queue video jobs. */
-  async submitAndPollVideo({ model, body, quality, seconds, audio, estUSD, prompt, modelName, extraMeta }) {
+  async submitAndPollVideo({ model, body, quality, seconds, audio, estUSD, prompt, modelName, extraMeta, sourceNote }) {
+    const notePrefix = sourceNote ? `${sourceNote}\n\n` : '';
     const submit = await axios.post(`https://queue.fal.run/${model}`, body, {
       headers: this.headers(),
       timeout: 30000,
@@ -261,20 +262,41 @@ class FalAI extends Tool {
               costUSD: estUSD,
               metadata: { requestId, seconds, audio, ...(extraMeta || {}) },
             }).catch(() => {});
-            return `[Watch the video](${url})\n\n${seconds}s ${quality} clip (~$${estUSD}) — it plays right in the chat, and it's saved to your gallery at /my-creations.`;
+            return `${notePrefix}[Watch the video](${url})\n\n${seconds}s ${quality} clip (~$${estUSD}) — it plays right in the chat, and it's saved to your gallery at /my-creations.`;
           }
           return `The video finished but no URL came back. Raw: ${JSON.stringify(out.data).slice(0, 300)}`;
         }
         if (st.data?.status === 'FAILED') {
-          return 'Video generation failed on fal.ai (you were still charged ~$' + estUSD + ' per their billing — mention this to the user).';
+          const refunded = await this.refundVideoCharge(requestId, 'fal render FAILED');
+          return (
+            'Video generation failed on fal.ai.' +
+            (refunded ? " The estimated charge was removed from the user's tab — no cost." : '') +
+            ' Offer to try again or adjust the request.'
+          );
         }
       } catch (e) {
+        const httpStatus = e?.response?.status;
+        const detail = e?.response?.data ? JSON.stringify(e.response.data).slice(0, 300) : '';
+        if (httpStatus && httpStatus >= 400 && httpStatus < 500) {
+          /* fal validates lazily: the queue ACCEPTS a doomed job, then every
+             status poll 4xxes (July 3: file_too_large on a 14.5MB source).
+             Bail out honestly instead of pretending it's still rendering. */
+          const refunded = await this.refundVideoCharge(requestId, `fal validation error ${httpStatus}`);
+          const friendly = /file_too_large/.test(detail)
+            ? 'fal rejected the source image as too large (over 10MB).'
+            : `fal rejected the job (${httpStatus}): ${detail || e.message}.`;
+          return (
+            friendly +
+            (refunded ? " The estimated charge was removed from the user's tab — no cost." : '') +
+            ' Just try the same request again — oversized sources are auto-shrunk now.'
+          );
+        }
         logger.warn('[FalAI] poll error:', e.message);
       }
     }
     return (
-      `The video is still rendering (request_id: ${requestId}, quality: ${quality}). ` +
-      `Call check_video with that request_id and quality in about 2 minutes. Estimated cost ~$${estUSD} was logged.`
+      `${notePrefix}The video is still rendering (request_id: ${requestId}, quality: ${quality}). ` +
+      `Call check_video with that request_id and quality in about 2 minutes. Estimated cost ~$${estUSD} was logged (auto-refunded if the render fails).`
     );
   }
 
@@ -327,6 +349,7 @@ class FalAI extends Tool {
   async resolveSourceImage(imageUrl) {
     let src = imageUrl && String(imageUrl).trim();
     let source = 'explicit-url';
+    let label = 'the image URL that was provided';
     if (!src) {
       // 1st choice: an image the user ATTACHED/UPLOADED recently (last hour) —
       // "here's my dog, make him wag" — the model can't quote attachment URLs,
@@ -338,13 +361,18 @@ class FalAI extends Tool {
             user: new mongoose.Types.ObjectId(String(this.userId)),
             type: /^image\//,
             context: 'message_attachment',
-            createdAt: { $gte: new Date(Date.now() - 60 * 60 * 1000) },
+            /* 24h, not 1h — "the picture I uploaded earlier" (July 3 slinky
+               incident: a 2h-old photo silently lost to a gallery fallback). */
+            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
           })
             .sort({ createdAt: -1 })
             .lean();
           if (upload?.filepath) {
             src = String(upload.filepath);
             source = 'recent-upload';
+            label = upload.filename
+              ? `the photo the user uploaded ("${String(upload.filename).slice(0, 60)}")`
+              : 'the photo the user uploaded';
           }
         }
       } catch (e) {
@@ -364,6 +392,9 @@ class FalAI extends Tool {
       }
       src = String(latest.url);
       source = 'gallery-latest';
+      label = latest.description
+        ? `the user's newest gallery image ("${String(latest.description).slice(0, 70)}…")`
+        : "the user's newest gallery image";
     }
     if (!/^https?:\/\//i.test(src)) {
       const base = (process.env.DOMAIN_SERVER || 'https://kademurdock.com').replace(/\/$/, '');
@@ -382,7 +413,88 @@ class FalAI extends Tool {
     } catch (e) {
       logger.warn('[FalAI] source image re-sign skipped:', e.message);
     }
-    return { src, source };
+    return { src, source, label };
+  }
+
+  /**
+   * fal validates start images only AFTER the queue accepts the job (July 3
+   * slinky incident: a 14.5MB gallery PNG "submitted" fine, then every poll
+   * died with file_too_large while the charge stayed logged). Pre-check the
+   * size; auto-shrink oversized sources to a <2MB JPEG hosted on our S3.
+   */
+  async ensureFalSizedImage(src) {
+    const FAL_MAX = 10 * 1024 * 1024;
+    let tooBig = false;
+    try {
+      const head = await axios.head(src, { timeout: 12000, maxRedirects: 3 });
+      const len = Number(head.headers?.['content-length'] || 0);
+      tooBig = len > FAL_MAX * 0.92;
+    } catch (e) {
+      logger.warn('[FalAI] source size pre-check skipped:', e.message);
+      return { src };
+    }
+    if (!tooBig) return { src };
+    try {
+      const sharp = require('sharp');
+      const { saveBufferToS3 } = require('@librechat/api');
+      const img = await axios.get(src, {
+        responseType: 'arraybuffer',
+        timeout: 30000,
+        maxContentLength: 80 * 1024 * 1024,
+      });
+      const buffer = await sharp(Buffer.from(img.data))
+        .rotate()
+        .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      const url = await saveBufferToS3({
+        userId: String(this.userId),
+        buffer,
+        fileName: `kade-anim-src-${Date.now()}.jpg`,
+        basePath: 'images',
+      });
+      if (url) {
+        logger.info('[FalAI] oversized source image auto-shrunk for fal');
+        return { src: url, shrunk: true };
+      }
+    } catch (e) {
+      logger.warn('[FalAI] source image shrink failed:', e.message);
+    }
+    return { error: 'TOO_BIG' };
+  }
+
+  /**
+   * One-time compensating entry when a logged render never delivered — finds
+   * the original charge by request id and mirrors it negative. Idempotent.
+   */
+  async refundVideoCharge(requestId, reason) {
+    try {
+      if (!requestId) return false;
+      const original = await KadeUsage.findOne({
+        user: String(this.userId),
+        service: 'fal_video',
+        costUSD: { $gt: 0 },
+        'metadata.requestId': requestId,
+      }).lean();
+      if (!original) return false;
+      const already = await KadeUsage.findOne({
+        user: String(this.userId),
+        'metadata.refund_for': requestId,
+      }).lean();
+      if (already) return true;
+      await logKadeUsage({
+        userId: this.userId,
+        service: 'fal_video',
+        quantity: original.quantity || 1,
+        unit: original.unit || 'seconds',
+        costUSD: -Math.abs(original.costUSD || 0),
+        metadata: { refund_for: requestId, reason: String(reason || 'render failed').slice(0, 120) },
+      });
+      return true;
+    } catch (e) {
+      logger.warn('[FalAI] refund attempt failed:', e.message);
+      return false;
+    }
   }
 
   async animateImage(data) {
@@ -393,6 +505,16 @@ class FalAI extends Tool {
         'Suggest they generate a picture first (or paste a public image URL), then animate it.'
       );
     }
+    const sized = await this.ensureFalSizedImage(resolved.src);
+    if (sized.error === 'TOO_BIG') {
+      return (
+        `That source image (${resolved.label}) is over fal's 10MB limit and the automatic shrink failed — ` +
+        'nothing was submitted or charged. Ask the user for a smaller image, or generate a fresh one and animate that.'
+      );
+    }
+    const sourceNote =
+      `Source: ${resolved.label}${sized.shrunk ? " (auto-shrunk to fit fal's 10MB limit)" : ''}. ` +
+      'Tell the user which image is being animated; if it is not the one they meant, have them re-attach it.';
     const seconds = data.duration_seconds === 10 ? 10 : 5;
     const audio = data.audio === true;
     const estUSD = Math.round(this.videoPricing('standard', seconds, audio) * 100) / 100;
@@ -402,7 +524,7 @@ class FalAI extends Tool {
       prompt:
         data.prompt ||
         'Animate this image with natural, lifelike motion true to the scene. Keep the subject and style unchanged.',
-      start_image_url: resolved.src,
+      start_image_url: sized.src,
       duration: String(seconds),
       generate_audio: audio,
     };
@@ -415,7 +537,8 @@ class FalAI extends Tool {
       estUSD,
       prompt: data.prompt || 'animated from a still image',
       modelName: 'kling-3.0-i2v',
-      extraMeta: { sourceImage: resolved.source },
+      sourceNote,
+      extraMeta: { sourceImage: resolved.source, shrunk: sized.shrunk === true },
     });
   }
 
@@ -423,10 +546,27 @@ class FalAI extends Tool {
     if (!data.request_id) return 'request_id is required for check_video.';
     const quality = data.quality === 'premium' ? 'premium' : 'standard';
     const alias = QUEUE_ALIAS[`video_${quality}`];
-    const st = await axios.get(`https://queue.fal.run/${alias}/requests/${data.request_id}/status`, {
-      headers: this.headers(),
-      timeout: 20000,
-    });
+    let st;
+    try {
+      st = await axios.get(`https://queue.fal.run/${alias}/requests/${data.request_id}/status`, {
+        headers: this.headers(),
+        timeout: 20000,
+      });
+    } catch (e) {
+      const httpStatus = e?.response?.status;
+      const detail = e?.response?.data ? JSON.stringify(e.response.data).slice(0, 300) : e.message;
+      if (httpStatus && httpStatus >= 400 && httpStatus < 500) {
+        const refunded = await this.refundVideoCharge(data.request_id, `fal validation error ${httpStatus}`);
+        return (
+          'That render never made it — fal rejected it (' +
+          (/file_too_large/.test(detail) ? 'source image over the 10MB limit' : detail) +
+          ').' +
+          (refunded ? " The estimated charge was removed from the user's tab — no cost." : '') +
+          ' Just re-run the request — oversized sources are auto-shrunk now. Do NOT re-check this request_id.'
+        );
+      }
+      return `Couldn't reach fal to check (${detail}). Try check_video once more in a minute.`;
+    }
     if (st.data?.status === 'COMPLETED') {
       const out = await axios.get(`https://queue.fal.run/${alias}/requests/${data.request_id}`, {
         headers: this.headers(),
@@ -447,7 +587,14 @@ class FalAI extends Tool {
       }
       return `Finished but no URL in the response: ${JSON.stringify(out.data).slice(0, 300)}`;
     }
-    if (st.data?.status === 'FAILED') return 'That video generation failed on fal.ai.';
+    if (st.data?.status === 'FAILED') {
+      const refunded = await this.refundVideoCharge(data.request_id, 'fal render FAILED');
+      return (
+        'That video generation failed on fal.ai.' +
+        (refunded ? " The estimated charge was removed from the user's tab — no cost." : '') +
+        ' Offer to try again.'
+      );
+    }
     return `Still rendering (status: ${st.data?.status || 'IN_PROGRESS'}). Check again in a minute or two.`;
   }
 }
