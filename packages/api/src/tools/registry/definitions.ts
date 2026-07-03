@@ -299,6 +299,45 @@ export const kadeAdventureSchema: ExtendedJsonSchema = {
   required: ['action'],
 };
 
+export const kadeGamesSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['list_games', 'new_game', 'state', 'move', 'games', 'quit'],
+      description:
+        "'list_games' shows the menu; 'new_game' deals a fresh game; 'state' re-shows the table; 'move' plays ONE turn; 'games' lists saved tables; 'quit' ends a table.",
+    },
+    game: {
+      type: 'string',
+      description: "For new_game: 'blackjack', 'wild_eights', or 'go_fish'.",
+    },
+    move: {
+      type: 'string',
+      description:
+        'For move: the EXACT move token from the LEGAL MOVES list the engine just gave you (e.g. "hit", "play_KH", "ask_1_Q"). Never invent a token.',
+    },
+    opponents: {
+      type: 'integer',
+      description: 'For new_game (wild_eights / go_fish): number of AI opponents, 1-3. Default 1.',
+    },
+    bet: {
+      type: 'integer',
+      description: 'For new_game (blackjack): fake-chip wager 1-500, default 10. Never real money.',
+    },
+    names: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Optional names for the AI opponents so the engine log reads in their voice.',
+    },
+    game_id: {
+      type: 'string',
+      description: 'Optional short table id to act on a specific game; defaults to the most recent active table.',
+    },
+  },
+  required: ['action'],
+};
+
 export const fluxApiSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -632,6 +671,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       "REAL persistent save files for text-adventure and RPG games — free, no cost. Saves live on the server per USER and can be loaded in any future conversation. Offer to save at natural stopping points and before risky moments. On load, resume faithfully from the returned state — never restart or contradict it. Use action='list' first when you don't know the user's slot names.",
     schema: kadeAdventureSchema,
+    toolType: 'builtin',
+  },
+  kade_games: {
+    name: 'kade_games',
+    description:
+      'Server-refereed voice games (Blackjack, Wild Eights, Go Fish) — free, no cost. The engine deals and enforces every rule; you only relay the table and play the move the human picks from the LEGAL MOVES list. NEVER invent cards, totals, or outcomes. Games save per user and resume in any later conversation.',
+    schema: kadeGamesSchema,
     toolType: 'builtin',
   },
   kade_wikipedia: {

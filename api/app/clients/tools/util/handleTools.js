@@ -34,6 +34,7 @@ const {
   KadeNews,
   KadeReadPage,
   KadeAdventure,
+  KadeGames,
   OpenWeather,
   StructuredSD,
   StructuredACS,
@@ -193,6 +194,7 @@ const loadTools = async ({
     kade_news: KadeNews,
     kade_read_page: KadeReadPage,
     kade_adventure: KadeAdventure,
+    kade_games: KadeGames,
     calculator: Calculator,
     google: GoogleSearchAPI,
     open_weather: OpenWeather,
@@ -281,6 +283,9 @@ const loadTools = async ({
       agentName: agent?.name,
     },
     kade_adventure: {
+      agentName: agent?.name,
+    },
+    kade_games: {
       agentName: agent?.name,
     },
     dalle: imageGenOptions,

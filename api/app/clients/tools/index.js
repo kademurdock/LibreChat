@@ -11,6 +11,7 @@ const KadeJoke = require('./structured/KadeJoke');
 const KadeNews = require('./structured/KadeNews');
 const KadeReadPage = require('./structured/KadeReadPage');
 const KadeAdventure = require('./structured/KadeAdventure');
+const KadeGames = require('./structured/KadeGames');
 const OpenWeather = require('./structured/OpenWeather');
 const StructuredWolfram = require('./structured/Wolfram');
 const StructuredACS = require('./structured/AzureAISearch');
@@ -34,6 +35,7 @@ module.exports = {
   KadeNews,
   KadeReadPage,
   KadeAdventure,
+  KadeGames,
   OpenWeather,
   StructuredSD,
   StructuredACS,

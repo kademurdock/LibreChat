@@ -45,7 +45,7 @@
   {
     "name": "Weather",
     "pluginKey": "kade_weather",
-    "description": "Real current weather and forecasts for any city. Free and instant — no key, no cost.",
+    "description": "Real current weather and forecasts for any city. Free and instant \u2014 no key, no cost.",
     "icon": "https://open-meteo.com/favicon.ico",
     "isAuthRequired": "false",
     "authConfig": []
@@ -53,7 +53,7 @@
   {
     "name": "Wikipedia",
     "pluginKey": "kade_wikipedia",
-    "description": "Free encyclopedia lookups — people, places, history, science. No key, no cost.",
+    "description": "Free encyclopedia lookups \u2014 people, places, history, science. No key, no cost.",
     "icon": "https://en.wikipedia.org/static/favicon/wikipedia.ico",
     "isAuthRequired": "false",
     "authConfig": []
@@ -61,7 +61,7 @@
   {
     "name": "Jokes",
     "pluginKey": "kade_joke",
-    "description": "Fresh jokes from a live joke database — clean by default, adult mode for uncensored personas. No key, no cost.",
+    "description": "Fresh jokes from a live joke database \u2014 clean by default, adult mode for uncensored personas. No key, no cost.",
     "icon": "https://v2.jokeapi.dev/favicon.png",
     "isAuthRequired": "false",
     "authConfig": []
@@ -69,7 +69,7 @@
   {
     "name": "News briefing",
     "pluginKey": "kade_news",
-    "description": "Real headlines from free news feeds — national, world, Springfield/Ozarks local, tech, entertainment, music, sports, or any custom feed. No key, no cost.",
+    "description": "Real headlines from free news feeds \u2014 national, world, Springfield/Ozarks local, tech, entertainment, music, sports, or any custom feed. No key, no cost.",
     "icon": "https://media.npr.org/chrome/favicon/favicon-32x32.png",
     "isAuthRequired": "false",
     "authConfig": []
@@ -77,7 +77,7 @@
   {
     "name": "Read a webpage",
     "pluginKey": "kade_read_page",
-    "description": "Reads any link the user shares and returns just the article text — no ads, menus, or clutter. Great for listening. No key, no cost.",
+    "description": "Reads any link the user shares and returns just the article text \u2014 no ads, menus, or clutter. Great for listening. No key, no cost.",
     "icon": "https://jina.ai/favicon.ico",
     "isAuthRequired": "false",
     "authConfig": []
@@ -85,7 +85,15 @@
   {
     "name": "Adventure save files",
     "pluginKey": "kade_adventure",
-    "description": "Persistent save files for text-adventure and RPG games — save, load, and continue games across conversations. No key, no cost.",
+    "description": "Persistent save files for text-adventure and RPG games \u2014 save, load, and continue games across conversations. No key, no cost.",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
+    "name": "Game Parlor",
+    "pluginKey": "kade_games",
+    "description": "Server-refereed voice games \u2014 Blackjack, Wild Eights, Go Fish. The engine enforces every rule; the agent just deals the banter. No key, no cost.",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
