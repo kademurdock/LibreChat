@@ -8,6 +8,7 @@ import {
   CircleHelp,
   Compass,
   Clapperboard,
+  Dices,
   FileText,
   Gauge,
   Heart,
@@ -131,6 +132,14 @@ function ExploreSubmenu({ isAdmin, isChild }: { isAdmin: boolean; isChild: boole
         >
           <MessagesSquare className="icon-md" aria-hidden="true" />
           Debate Room
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={go('/game-room')}
+          className="select-item text-sm"
+          aria-label="Game Room: the Game Parlor leaderboard — family standings, records, and latest results"
+        >
+          <Dices className="icon-md" aria-hidden="true" />
+          Game Room
         </Menu.MenuItem>
         {!isChild && (
           <Menu.MenuItem

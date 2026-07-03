@@ -289,6 +289,7 @@ const startServer = async () => {
   app.get('/wall-of-fame', routes.kade.wallPage);
   app.get('/debate-room', routes.kadeRoom.page);
   app.get('/conversation-hall', routes.kadeRoom.hallPage);
+  app.get('/game-room', routes.kade.gameRoomPage);
   /** kademurdock.com/help — memorable front door for the help center, which is
    * served from the inworld proxy. Path + query carry through. (July 3 2026) */
   app.get(['/help', '/help/*path'], (req, res) =>

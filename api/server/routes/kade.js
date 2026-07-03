@@ -447,6 +447,129 @@ router.get('/wall', requireJwtAuth, async (req, res) => {
   }
 });
 
+
+/* ----------------------------------------------------------------------------
+ * GAME ROOM LEADERBOARD: GET /api/kade/game-leaderboard — family standings
+ * computed straight from kadegamestates (no separate results collection:
+ * finished tables keep their full engine state, so every game ever played
+ * counts). Any signed-in user — bragging rights are the whole point.
+ * A table quit mid-game (status 'over' but the engine says not over) is
+ * skipped entirely: walking away isn't a loss.
+ * -------------------------------------------------------------------------- */
+const { KadeGameState } = require('~/models/kadeGameState');
+const { getGame: getParlorGame } = require('~/app/clients/tools/kadegames');
+
+router.get('/game-leaderboard', requireJwtAuth, async (req, res) => {
+  try {
+    const docs = await KadeGameState.find({})
+      .sort({ updatedAt: -1 })
+      .limit(5000)
+      .populate('user', 'name username')
+      .lean();
+
+    const firstName = (u) =>
+      ((u && (u.name || u.username)) || 'Someone').trim().split(/\s+/)[0] || 'Someone';
+
+    const players = new Map(); // userId -> row
+    const perGame = new Map(); // gameKey -> { name, played, byPlayer: Map }
+    const recent = [];
+    let activeTables = 0;
+    let finished = 0;
+    let biggestBlackjack = null;
+    let bestTrivia = null;
+
+    for (const d of docs) {
+      const G = getParlorGame(d.gameKey);
+      if (!G) continue;
+      if (d.status === 'active') {
+        activeTables += 1;
+        continue;
+      }
+      let v;
+      try {
+        v = G.view(d.state);
+      } catch (_e) {
+        continue;
+      }
+      if (!v || !v.over || !v.winner) continue; // quit mid-game or unreadable — not a result
+      finished += 1;
+
+      const uid = String(d.user && d.user._id ? d.user._id : d.user || 'unknown');
+      const by = firstName(d.user);
+      const outcome = v.winner === 'player' ? 'won' : v.winner === 'push' || v.winner === 'tie' ? 'draw' : 'lost';
+
+      if (!players.has(uid)) {
+        players.set(uid, { by, wins: 0, losses: 0, draws: 0, played: 0, chips: 0 });
+      }
+      const p = players.get(uid);
+      p.played += 1;
+      if (outcome === 'won') p.wins += 1;
+      else if (outcome === 'lost') p.losses += 1;
+      else p.draws += 1;
+
+      if (!perGame.has(d.gameKey)) {
+        perGame.set(d.gameKey, { key: d.gameKey, name: G.meta.name, played: 0, byPlayer: new Map() });
+      }
+      const g = perGame.get(d.gameKey);
+      g.played += 1;
+      if (!g.byPlayer.has(uid)) g.byPlayer.set(uid, { by, w: 0, l: 0, d: 0, p: 0 });
+      const gp = g.byPlayer.get(uid);
+      gp.p += 1;
+      if (outcome === 'won') gp.w += 1;
+      else if (outcome === 'lost') gp.l += 1;
+      else gp.d += 1;
+
+      let detail = '';
+      if (d.gameKey === 'blackjack') {
+        const payout = Number(d.state && d.state.payout) || 0;
+        p.chips += payout;
+        detail = payout > 0 ? `won ${payout} chips` : payout < 0 ? `lost ${Math.abs(payout)} chips` : 'push';
+        if (payout > 0 && (!biggestBlackjack || payout > biggestBlackjack.chips)) {
+          biggestBlackjack = { by, chips: payout, when: d.updatedAt };
+        }
+      } else if (d.gameKey === 'trivia') {
+        const score = (d.state && d.state.scores && d.state.scores[0]) || 0;
+        const total = (d.state && d.state.qs && d.state.qs.length) || 0;
+        detail = total ? `scored ${score} of ${total}` : '';
+        if (total >= 3) {
+          const pct = score / total;
+          if (!bestTrivia || pct > bestTrivia.pct || (pct === bestTrivia.pct && total > bestTrivia.total)) {
+            bestTrivia = { by, score, total, pct, when: d.updatedAt };
+          }
+        }
+      } else if (d.gameKey === 'pig') {
+        const score = (d.state && d.state.scores && d.state.scores[0]) || 0;
+        detail = `finished with ${score} points`;
+      }
+
+      if (recent.length < 12) {
+        recent.push({ by, game: G.meta.name, outcome, detail, when: d.updatedAt });
+      }
+    }
+
+    const playerRows = [...players.values()].sort((a, b) => b.wins - a.wins || b.played - a.played);
+    const games = [...perGame.values()]
+      .sort((a, b) => b.played - a.played)
+      .map((g) => {
+        const rows = [...g.byPlayer.values()].sort((a, b) => b.w - a.w || b.p - a.p);
+        return { key: g.key, name: g.name, played: g.played, rows: rows.slice(0, 5) };
+      });
+    if (bestTrivia) delete bestTrivia.pct;
+
+    return res.json({
+      finished,
+      activeTables,
+      players: playerRows,
+      games,
+      highlights: { biggestBlackjack, bestTrivia },
+      recent,
+    });
+  } catch (error) {
+    logger.error('[/api/kade/game-leaderboard] error:', error);
+    return res.status(500).json({ error: 'Failed to load the leaderboard' });
+  }
+});
+
 /* ----------------------------------------------------------------------------
  * SERVICE: POST /api/kade/usage-event — secret-guarded ingestion so external
  * services (the phone bridge) can land per-user spend in kadeusage. No JWT:
@@ -485,6 +608,7 @@ const FEED_HTML = require('./kadePages').feedHtml;
 const DASH_HTML = require('./kadePages').dashboardHtml;
 const CREATIONS_HTML = require('./kadePages').creationsHtml;
 const WALL_HTML = require('./kadePages').wallHtml;
+const GAMEROOM_HTML = require('./kadePages').gameRoomHtml;
 const sendHtml = (html) => (req, res) => res.type('html').send(html);
 
 // ---------------------------------------------------------------------------
@@ -600,9 +724,11 @@ router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);
 router.wallPage = sendHtml(WALL_HTML);
+router.gameRoomPage = sendHtml(GAMEROOM_HTML);
 // Also reachable under the API namespace:
 router.get('/feed', router.feedPage);
 router.get('/dashboard', router.dashboardPage);
 router.get('/creations', router.creationsPage);
+router.get('/game-room-page', router.gameRoomPage);
 
 module.exports = router;

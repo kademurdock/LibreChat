@@ -528,4 +528,129 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
   </script>
 </body></html>`;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml };
+
+/* KADE July 3 2026: /game-room — the Game Parlor leaderboard. Family
+ * standings computed live from finished tables. Screen-reader-first:
+ * real tables with scoped headers, status region, prose summaries. */
+const gameRoomHtml = `<!doctype html><html lang="en"><head><title>The Game Room</title>${SHARED_HEAD}
+<style>
+  .crown { font-size: .8rem; font-weight: 700; padding: .1rem .55rem; border-radius: 999px; background: #fdf1d7; color: #8a6100; margin-left: .4rem; }
+  @media (prefers-color-scheme: dark) { .crown { background: #5c4300; color: #ffe9b3; } }
+  li.result { margin: .3rem 0; }
+</style>
+</head>
+<body>
+  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/games">How the games work</a></p>
+  <h1>The Game Room</h1>
+  <p class="muted">Family bragging rights, straight from the Game Parlor's referee. Every finished game of Blackjack, Wild Eights, Go Fish, Pig, and Trivia Night counts. Walking away from a table doesn't count against you — only played-out games land here.</p>
+
+  <div id="status" class="status" role="status" aria-live="polite">Loading the standings…</div>
+
+  <main id="content" hidden>
+    <section class="card" aria-labelledby="standings-h">
+      <h2 id="standings-h" style="margin-top:0">Family standings</h2>
+      <p id="standings-summary"></p>
+      <table id="standings">
+        <caption class="muted" style="text-align:left; caption-side:top">All games combined, most wins first. Chips are Blackjack's fake chips — never real money.</caption>
+        <thead><tr><th scope="col">Player</th><th scope="col" class="num">Wins</th><th scope="col" class="num">Losses</th><th scope="col" class="num">Draws</th><th scope="col" class="num">Played</th><th scope="col" class="num">Blackjack chips</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card" aria-labelledby="highlights-h" id="highlights-card" hidden>
+      <h2 id="highlights-h" style="margin-top:0">Best of the best</h2>
+      <dl class="kv" id="highlights"></dl>
+    </section>
+
+    <section aria-labelledby="pergame-h">
+      <h2 id="pergame-h">Game by game</h2>
+      <div id="pergame"></div>
+    </section>
+
+    <section class="card" aria-labelledby="recent-h" id="recent-card" hidden>
+      <h2 id="recent-h" style="margin-top:0">Latest results</h2>
+      <ul id="recent" style="list-style:none; padding:0; margin:0"></ul>
+    </section>
+  </main>
+
+  <footer class="muted">Start a game by telling Deuce or Kiana "deal me in" — in chat, in conversation mode, or on a call to +1&nbsp;833&nbsp;530&nbsp;0313. — Kade-AI</footer>
+
+  <script>
+    (async function(){
+      const status = document.getElementById('status');
+      const token = await getToken();
+      if(!token){
+        status.className = 'status err';
+        status.textContent = 'Please sign in at the chat site first, then reload this page.';
+        return;
+      }
+      const r = await apiGet('/api/kade/game-leaderboard', token);
+      if(!r.ok){
+        status.className = 'status err';
+        status.textContent = 'Could not load the standings right now. Try reloading in a moment.';
+        return;
+      }
+      const d = await r.json();
+      function esc(s){ const div=document.createElement('div'); div.textContent = s == null ? '' : s; return div.innerHTML; }
+      function when(iso){
+        try { return new Date(iso).toLocaleString('en-US', { month:'long', day:'numeric' }); }
+        catch(e){ return ''; }
+      }
+      if(!d.finished){
+        status.textContent = 'No finished games yet — the board is wide open. Tell Deuce or Kiana "deal me in" and claim the first win!';
+        return;
+      }
+      status.textContent = d.finished + ' finished game' + (d.finished===1?'':'s') + ' on the books' +
+        (d.activeTables ? ', ' + d.activeTables + ' table' + (d.activeTables===1?'':'s') + ' still in play.' : '.');
+
+      const champ = d.players[0];
+      document.getElementById('standings-summary').innerHTML = champ && champ.wins > 0
+        ? '<strong>' + esc(champ.by) + '</strong> leads the family with ' + champ.wins + ' win' + (champ.wins===1?'':'s') + ' across ' + champ.played + ' game' + (champ.played===1?'':'s') + '.'
+        : 'Nobody has a win on the books yet — first one to finish a game takes the lead.';
+      document.querySelector('#standings tbody').innerHTML = d.players.map(function(p, i){
+        return '<tr><th scope="row">' + esc(p.by) + (i===0 && p.wins>0 ? ' <span class="crown">Champ</span>' : '') + '</th>' +
+          '<td class="num">' + num(p.wins) + '</td><td class="num">' + num(p.losses) + '</td><td class="num">' + num(p.draws) + '</td>' +
+          '<td class="num">' + num(p.played) + '</td><td class="num">' + (p.chips>0?'+':'') + num(p.chips) + '</td></tr>';
+      }).join('');
+
+      const hl = [];
+      if(d.highlights && d.highlights.biggestBlackjack){
+        const b = d.highlights.biggestBlackjack;
+        hl.push('<dt>Biggest Blackjack win</dt><dd>' + esc(b.by) + ' — ' + num(b.chips) + ' chips (' + when(b.when) + ')</dd>');
+      }
+      if(d.highlights && d.highlights.bestTrivia){
+        const t = d.highlights.bestTrivia;
+        hl.push('<dt>Best Trivia Night score</dt><dd>' + esc(t.by) + ' — ' + t.score + ' of ' + t.total + ' (' + when(t.when) + ')</dd>');
+      }
+      if(hl.length){
+        document.getElementById('highlights').innerHTML = hl.join('');
+        document.getElementById('highlights-card').hidden = false;
+      }
+
+      document.getElementById('pergame').innerHTML = (d.games || []).map(function(g){
+        const leader = g.rows[0];
+        return '<section class="card" aria-label="' + esc(g.name) + ' standings">' +
+          '<h3 style="margin:0 0 .25rem; font-size:1.05rem">' + esc(g.name) + '</h3>' +
+          '<p class="muted" style="margin:.1rem 0 .4rem">' + num(g.played) + ' game' + (g.played===1?'':'s') + ' played' +
+          (leader && leader.w>0 ? ' &middot; ' + esc(leader.by) + ' leads with ' + leader.w + ' win' + (leader.w===1?'':'s') : '') + '.</p>' +
+          '<table><thead><tr><th scope="col">Player</th><th scope="col" class="num">Wins</th><th scope="col" class="num">Losses</th><th scope="col" class="num">Draws</th><th scope="col" class="num">Played</th></tr></thead><tbody>' +
+          g.rows.map(function(rw){
+            return '<tr><th scope="row">' + esc(rw.by) + '</th><td class="num">' + num(rw.w) + '</td><td class="num">' + num(rw.l) + '</td><td class="num">' + num(rw.d) + '</td><td class="num">' + num(rw.p) + '</td></tr>';
+          }).join('') + '</tbody></table></section>';
+      }).join('');
+
+      if(d.recent && d.recent.length){
+        document.getElementById('recent').innerHTML = d.recent.map(function(x){
+          const verb = x.outcome === 'won' ? 'won at' : x.outcome === 'lost' ? 'lost at' : 'drew at';
+          return '<li class="result">' + esc(x.by) + ' ' + verb + ' ' + esc(x.game) +
+            (x.detail ? ' — ' + esc(x.detail) : '') + ' <span class="muted">(' + when(x.when) + ')</span></li>';
+        }).join('');
+        document.getElementById('recent-card').hidden = false;
+      }
+      document.getElementById('content').hidden = false;
+    })();
+  </script>
+</body></html>`;
+
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml };
+
