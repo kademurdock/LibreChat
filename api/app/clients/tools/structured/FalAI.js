@@ -72,7 +72,8 @@ const falJsonSchema = {
     },
     audio: {
       type: 'boolean',
-      description: 'generate_video only: generate native audio/sound. Default false for standard (cheaper), true for premium.',
+      description:
+        "generate_video and animate_image: generate native audio/sound. SOUND MATTERS on this platform (blind users experience videos through it) — if the user hasn't said, ASK once: with sound (standard 5s ≈ $0.63) or silent (cheapest, 5s ≈ $0.42)? Defaults: false for standard/animate, true for premium.",
     },
     aspect_ratio: {
       type: 'string',
@@ -106,6 +107,7 @@ class FalAI extends Tool {
       this.description +
       " For video: tell the user the clip is rendering and the rough cost BEFORE generating; if generate_video or animate_image returns a request_id instead of a URL, wait for the user's next message or ~2 minutes, then call check_video with it. " +
       "animate_image with no image_url automatically animates the photo the user just uploaded (last hour), or else their most recent generated image — perfect for 'here's my dog, make him wag' or 'now make it move'. " +
+      "Before any video, if the user hasn't specified, ask ONCE whether they want sound (recommended here — blind users experience video through audio; standard 5s: ~$0.63 with sound vs ~$0.42 silent) and only use premium quality when the user picks it. " +
       'Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url). Enhance thin prompts into rich visual descriptions first.';
     this.schema = falJsonSchema;
     this.apiKey = fields.FAL_KEY || process.env.FAL_KEY || '';
@@ -392,7 +394,8 @@ class FalAI extends Tool {
       );
     }
     const seconds = data.duration_seconds === 10 ? 10 : 5;
-    const estUSD = Math.round(this.videoPricing('standard', seconds, false) * 100) / 100;
+    const audio = data.audio === true;
+    const estUSD = Math.round(this.videoPricing('standard', seconds, audio) * 100) / 100;
     const blocked = await this.checkBudget(estUSD);
     if (blocked) return blocked;
     const body = {
@@ -401,13 +404,14 @@ class FalAI extends Tool {
         'Animate this image with natural, lifelike motion true to the scene. Keep the subject and style unchanged.',
       start_image_url: resolved.src,
       duration: String(seconds),
+      generate_audio: audio,
     };
     return this.submitAndPollVideo({
       model: FAL_MODELS.video_animate,
       body,
       quality: 'standard',
       seconds,
-      audio: false,
+      audio,
       estUSD,
       prompt: data.prompt || 'animated from a still image',
       modelName: 'kling-3.0-i2v',
