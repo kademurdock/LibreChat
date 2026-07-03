@@ -67,6 +67,28 @@ const SHARED_HEAD = `
     const r = await fetch(path, {headers:{'Authorization':'Bearer '+token}});
     return r;
   }
+  async function downloadAsset(id, kind, btn, statusEl, token){
+    const prev = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Downloading…';
+    if(statusEl){ statusEl.textContent = 'Downloading your ' + kind + ' — hang tight…'; }
+    try{
+      const r = await fetch('/api/kade/asset-download/' + id, {headers:{'Authorization':'Bearer '+token}});
+      if(!r.ok){ throw new Error('HTTP '+r.status); }
+      const disp = r.headers.get('Content-Disposition') || '';
+      const m = disp.match(/filename="([^"]+)"/);
+      const name = m ? m[1] : ('kade-ai-' + kind);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+      if(statusEl){ statusEl.textContent = 'Downloaded! Check your files for ' + name + '.'; }
+    }catch(e){
+      if(statusEl){ statusEl.textContent = 'Download failed — try again in a moment.'; }
+    }
+    btn.disabled = false; btn.textContent = prev;
+  }
   async function apiPost(path, token, body){
     const r = await fetch(path, {method:'POST', headers:{'Authorization':'Bearer '+token, 'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
     return r;
@@ -277,12 +299,14 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
   .asset .meta { font-size: .9rem; margin-top: .5rem; }
   .asset .prompt, .asset .desc { margin-top: .35rem; font-size: .95rem; }
   .pill { display:inline-block; font-size:.8rem; font-weight:600; padding:.1rem .55rem; border-radius:999px; background:#e8f0fe; color:#1d4ed8; margin-right:.4rem; }
-  button.share { margin-top:.6rem; font: inherit; font-weight:600; padding:.5rem .9rem; border-radius:10px; border:1px solid #2f6fed; background:#fff; color:#2f6fed; cursor:pointer; }
+  button.share, button.dl { margin-top:.6rem; margin-right:.5rem; font: inherit; font-weight:600; padding:.5rem .9rem; border-radius:10px; border:1px solid #2f6fed; background:#fff; color:#2f6fed; cursor:pointer; }
+  button.dl { border-color:#2f8f5b; color:#2f8f5b; }
+  button.dl:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   button.share[aria-pressed="true"] { background:#2f6fed; color:#fff; }
   button.share:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   @media (prefers-color-scheme: dark) {
     .pill { background:#1e3a8a; color:#dbeafe; }
-    button.share { background:#1e2127; }
+    button.share, button.dl { background:#1e2127; }
     button.share[aria-pressed="true"] { background:#2f6fed; color:#fff; }
   }
 </style>
@@ -345,11 +369,17 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
           '<p class="meta"><span class="pill">' + esc(a.kind) + '</span>' + esc(a.model || a.service) + (a.costUSD ? ' &middot; ' + money(a.costUSD) : '') + '</p>' +
           (a.description ? '<p class="desc"><strong>What it looks like:</strong> ' + esc(a.description) + '</p>' : '') +
           (a.prompt ? '<p class="prompt"><strong>Prompt:</strong> ' + esc(a.prompt) + '</p>' : '') +
+          '<button type="button" class="dl" data-id="' + esc(a.id) + '" data-kind="' + esc(a.kind) + '" aria-label="Download this ' + esc(a.kind) + ' to your device">Download</button>' +
           '<button type="button" class="share" data-id="' + esc(a.id) + '" aria-pressed="' + (a.shared ? 'true' : 'false') + '">' +
             (a.shared ? 'On the Wall of Fame — tap to remove' : 'Share to the Wall of Fame') + '</button>' +
         '</section>';
       }).join('');
       main.addEventListener('click', async function(ev){
+        const dlBtn = ev.target.closest('button.dl');
+        if(dlBtn){
+          downloadAsset(dlBtn.getAttribute('data-id'), dlBtn.getAttribute('data-kind'), dlBtn, status, token);
+          return;
+        }
         const btn = ev.target.closest('button.share');
         if(!btn){ return; }
         const nowShared = btn.getAttribute('aria-pressed') !== 'true';
@@ -380,7 +410,9 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
   .asset .meta { font-size: .9rem; margin-top: .5rem; }
   .asset .prompt, .asset .desc { margin-top: .35rem; font-size: .95rem; }
   .pill { display:inline-block; font-size:.8rem; font-weight:600; padding:.1rem .55rem; border-radius:999px; background:#fdf1d7; color:#8a6100; margin-right:.4rem; }
-  @media (prefers-color-scheme: dark) { .pill { background:#5c4300; color:#ffe9b3; } }
+  button.dl { margin-top:.6rem; font: inherit; font-weight:600; padding:.5rem .9rem; border-radius:10px; border:1px solid #2f8f5b; background:#fff; color:#2f8f5b; cursor:pointer; }
+  button.dl:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
+  @media (prefers-color-scheme: dark) { .pill { background:#5c4300; color:#ffe9b3; } button.dl { background:#1e2127; } }
 </style>
 </head>
 <body>
@@ -438,8 +470,13 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
           '<p class="meta"><span class="pill">' + esc(a.by || 'Someone') + '</span>' + esc(a.kind) + (a.model ? ' &middot; ' + esc(a.model) : '') + '</p>' +
           (a.description ? '<p class="desc"><strong>What it looks like:</strong> ' + esc(a.description) + '</p>' : '') +
           (a.prompt ? '<p class="prompt"><strong>Prompt:</strong> ' + esc(a.prompt) + '</p>' : '') +
+          '<button type="button" class="dl" data-id="' + esc(a.id) + '" data-kind="' + esc(a.kind) + '" aria-label="Download this ' + esc(a.kind) + ' by ' + esc(a.by || 'Someone') + '">Download</button>' +
         '</section>';
       }).join('');
+      main.addEventListener('click', function(ev){
+        const dlBtn = ev.target.closest('button.dl');
+        if(dlBtn){ downloadAsset(dlBtn.getAttribute('data-id'), dlBtn.getAttribute('data-kind'), dlBtn, status, token); }
+      });
       status.hidden = false;
       main.hidden = false;
     })();

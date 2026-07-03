@@ -6,9 +6,11 @@ import {
   Archive,
   ChevronRight,
   CircleHelp,
+  Clapperboard,
   FileText,
   Gauge,
   Heart,
+  Trophy,
   Keyboard,
   LifeBuoy,
   LogOut,
@@ -189,6 +191,26 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         >
           <Heart className="icon-md" aria-hidden="true" />
           Feed the Server
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={() => {
+            window.location.href = '/my-creations';
+          }}
+          className="select-item text-sm"
+          aria-label="My Creations: every video and image you've generated, with descriptions and downloads"
+        >
+          <Clapperboard className="icon-md" aria-hidden="true" />
+          My Creations
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={() => {
+            window.location.href = '/wall-of-fame';
+          }}
+          className="select-item text-sm"
+          aria-label="Wall of Fame: creations everyone has chosen to share"
+        >
+          <Trophy className="icon-md" aria-hidden="true" />
+          Wall of Fame
         </Menu.MenuItem>
         {user?.role === SystemRoles.ADMIN && (
           <Menu.MenuItem

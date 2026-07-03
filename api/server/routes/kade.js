@@ -379,6 +379,55 @@ router.post('/my-assets/:id/share', requireJwtAuth, async (req, res) => {
 });
 
 /* ----------------------------------------------------------------------------
+ * DOWNLOAD: GET /api/kade/asset-download/:id — streams the media with a
+ * Content-Disposition attachment so browsers actually SAVE it instead of
+ * playing it (cross-origin fal.media links ignore the <a download> attribute).
+ * Allowed for the asset's owner, or anyone signed-in if the asset is shared.
+ * Prefers the primary URL, falls back to the B2 mirror.
+ * -------------------------------------------------------------------------- */
+router.get('/asset-download/:id', requireJwtAuth, async (req, res) => {
+  try {
+    const userId = String(req.user.id || req.user._id);
+    const d = await KadeAsset.findById(String(req.params.id)).lean();
+    if (!d || (String(d.user) !== userId && !d.shared)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const candidates = [d.url, d.backupUrl].filter(Boolean);
+    let upstream = null;
+    for (const raw of candidates) {
+      try {
+        let u = await freshAssetUrl(raw);
+        if (u.startsWith('/')) {
+          u = (process.env.DOMAIN_SERVER || 'https://kademurdock.com').replace(/\/$/, '') + u;
+        }
+        upstream = await axios.get(u, { responseType: 'stream', timeout: 60000 });
+        break;
+      } catch (e) {
+        logger.warn('[asset-download] source failed, trying next:', e.message);
+      }
+    }
+    if (!upstream) {
+      return res.status(502).json({ error: 'Could not fetch the media from its source' });
+    }
+    const ct = String(upstream.headers['content-type'] || (d.kind === 'video' ? 'video/mp4' : 'image/png'));
+    const ext =
+      { 'video/mp4': 'mp4', 'video/webm': 'webm', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[
+        ct.split(';')[0].trim()
+      ] || (d.kind === 'video' ? 'mp4' : 'png');
+    const stamp = new Date(d.createdAt || Date.now()).toISOString().slice(0, 10);
+    res.setHeader('Content-Type', ct);
+    if (upstream.headers['content-length']) {
+      res.setHeader('Content-Length', upstream.headers['content-length']);
+    }
+    res.setHeader('Content-Disposition', `attachment; filename="kade-ai-${d.kind}-${stamp}.${ext}"`);
+    upstream.data.pipe(res);
+  } catch (error) {
+    logger.error('[/api/kade/asset-download] error:', error);
+    return res.status(500).json({ error: 'Download failed' });
+  }
+});
+
+/* ----------------------------------------------------------------------------
  * WALL OF FAME: GET /api/kade/wall — every asset users chose to share, newest
  * first, with the creator's first name. Any signed-in user (family only —
  * the page requires a login, nothing is public).
