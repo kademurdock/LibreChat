@@ -21,6 +21,9 @@ const kadeRoomSchema = new mongoose.Schema(
           agentId: String,
           name: String,
           avatar: String,
+          /** agent's default TTS voice + rate at room-creation time (radio-play mode) */
+          voiceId: String,
+          rate: Number,
         },
       ],
       default: [],
@@ -37,6 +40,10 @@ const kadeRoomSchema = new mongoose.Schema(
       ],
       default: [],
     },
+    /** Conversation Hall (public greatest hits): shared rooms show for all signed-in ADULT accounts */
+    shared: { type: Boolean, default: false },
+    sharedTitle: { type: String, default: '' },
+    sharedAt: { type: Date, default: null },
     /** round-robin pointer into agents[] for whoever speaks next */
     nextIdx: { type: Number, default: 0 },
     /** total agent turns generated in this room */

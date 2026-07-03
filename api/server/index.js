@@ -288,6 +288,7 @@ const startServer = async () => {
   app.get('/my-creations', routes.kade.creationsPage);
   app.get('/wall-of-fame', routes.kade.wallPage);
   app.get('/debate-room', routes.kadeRoom.page);
+  app.get('/conversation-hall', routes.kadeRoom.hallPage);
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);

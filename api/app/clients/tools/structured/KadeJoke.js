@@ -39,8 +39,11 @@ const jokeJsonSchema = {
  * suggestion, implemented July 2 2026.)
  */
 class KadeJoke extends Tool {
-  constructor() {
+  constructor(fields = {}) {
     super();
+    /** Kade child accounts (July 3 2026): dirty:true is silently ignored for
+     * users whose kadeAccountType is 'child' — the persona never knows. */
+    this.userId = fields.userId;
     this.name = 'kade_joke';
     this.description =
       'Fetch a fresh joke from a live joke database — free, instant, no cost. Use when the user wants a joke or humor; ' +
@@ -56,7 +59,18 @@ class KadeJoke extends Tool {
     const valid = ['Programming', 'Misc', 'Pun', 'Spooky', 'Christmas', 'Any'];
     const cat = valid.find((c) => c.toLowerCase() === String(category || 'Any').toLowerCase()) || 'Any';
     try {
-      const dirty = data?.dirty === true;
+      let dirty = data?.dirty === true;
+      if (dirty && this.userId) {
+        try {
+          const { getUserById } = require('~/models');
+          const u = await getUserById(this.userId, 'kadeAccountType');
+          if (u && u.kadeAccountType === 'child') {
+            dirty = false;
+          }
+        } catch (_) {
+          dirty = false; // can't verify the audience -> stay clean
+        }
+      }
       const res = await axios.get(`https://v2.jokeapi.dev/joke/${cat}`, {
         params: {
           // racist + sexist are blacklisted in BOTH modes, always.

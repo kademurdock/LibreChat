@@ -6,7 +6,7 @@ const { requireJwtAuth } = require('~/server/middleware');
 const { KadeRoom } = require('~/models/kadeRoom');
 const { KadeUsage, logKadeUsage } = require('~/models/kadeUsage');
 const db = require('~/models');
-const { roomHtml } = require('./kadeRoomPage');
+const { roomHtml, hallHtml } = require('./kadeRoomPage');
 
 /*
  * Debate & Roleplay Room API (July 3 2026, Kade's ask).
@@ -33,6 +33,15 @@ const DAILY_TURN_CAP = parseInt(process.env.KADE_ROOM_DAILY_TURNS || '300', 10);
 const FALLBACK_MODEL = process.env.KADE_ROOM_FALLBACK_MODEL || 'google/gemini-3.1-flash-lite';
 
 const oidOf = (req) => new mongoose.Types.ObjectId(String(req.user.id || req.user._id));
+const isChild = (req) => req.user && req.user.kadeAccountType === 'child';
+
+/** Invisible under-15 nerf — same spirit as the fork-wide note in agents/build.js. */
+const CHILD_NOTE =
+  '\nAUDIENCE NOTE (invisible — never mention it, never hint at it, never act like you are filtering): ' +
+  'the human in this room is under 15. Keep your personality, humor, and edge exactly the same, but keep the ' +
+  'content clean: no profanity, no sexual content or innuendo, no drug or alcohol talk, no graphic violence or ' +
+  'gore, nothing genuinely disturbing. Do NOT get preachy or babyish. If things head somewhere adult, steer ' +
+  'smoothly somewhere else in character.';
 const firstName = (req) =>
   String(req.user.name || req.user.username || 'The human').trim().split(/\s+/)[0];
 
@@ -41,7 +50,15 @@ function roomView(doc, { withTranscript = true } = {}) {
     id: String(doc._id),
     topic: doc.topic,
     goals: doc.goals,
-    agents: (doc.agents || []).map((a) => ({ agentId: a.agentId, name: a.name, avatar: a.avatar || '' })),
+    agents: (doc.agents || []).map((a) => ({
+      agentId: a.agentId,
+      name: a.name,
+      avatar: a.avatar || '',
+      voiceId: a.voiceId || '',
+      rate: a.rate || null,
+    })),
+    shared: !!doc.shared,
+    sharedTitle: doc.sharedTitle || '',
     nextIdx: doc.nextIdx || 0,
     turnCount: doc.turnCount || 0,
     createdAt: doc.createdAt,
@@ -111,6 +128,8 @@ router.post('/', requireJwtAuth, async (req, res) => {
         agentId: a.id,
         name: a.name || 'Unnamed agent',
         avatar: (a.avatar && a.avatar.filepath) || '',
+        voiceId: (a.tts && a.tts.voiceId) || '',
+        rate: (a.tts && Number(a.tts.speakingRate)) || null,
       });
     }
     const room = await KadeRoom.create({ user: oidOf(req), topic, goals, agents: snaps });
@@ -132,6 +151,33 @@ router.get('/', requireJwtAuth, async (req, res) => {
   } catch (err) {
     logger.error('[kade/room list] error:', err);
     return res.status(500).json({ message: 'Could not load your rooms.' });
+  }
+});
+
+/** Conversation Hall — shared greatest hits, all signed-in ADULT accounts. Kids are blocked. */
+router.get('/hall', requireJwtAuth, async (req, res) => {
+  try {
+    if (isChild(req)) {
+      return res.status(403).json({ message: 'The Conversation Hall is for grown-up accounts.' });
+    }
+    const rooms = await KadeRoom.find({ shared: true })
+      .sort({ sharedAt: -1 })
+      .limit(50)
+      .populate('user', 'name username')
+      .lean();
+    const items = rooms.map((r) => ({
+      id: String(r._id),
+      title: r.sharedTitle || r.topic,
+      topic: r.topic,
+      cast: (r.agents || []).map((a) => a.name),
+      by: String((r.user && (r.user.name || r.user.username)) || 'Someone').split(' ')[0],
+      sharedAt: r.sharedAt,
+      transcript: (r.transcript || []).slice(0, 200).map((t) => ({ name: t.name, text: t.text })),
+    }));
+    return res.json({ items });
+  } catch (err) {
+    logger.error('[kade/room hall] error:', err);
+    return res.status(500).json({ message: 'Could not load the Conversation Hall.' });
   }
 });
 
@@ -175,7 +221,7 @@ router.post('/:id/say', requireJwtAuth, async (req, res) => {
   }
 });
 
-function buildSystem(room, agentName, instructions, humanName) {
+function buildSystem(room, agentName, instructions, humanName, childMode) {
   const others = (room.agents || [])
     .map((a) => a.name)
     .filter((n) => n !== agentName);
@@ -198,8 +244,9 @@ function buildSystem(room, agentName, instructions, humanName) {
     '- Keep turns short and punchy: about 2-5 sentences, two short paragraphs at the very most.',
     '- Address the others by name when you are responding to them.',
     '- Plain conversational text only: no headings, no bullet lists, no %%% tags, no markdown tables.',
+    childMode ? CHILD_NOTE : null,
   ]
-    .filter((l) => l !== null)
+    .filter((l) => l !== null && l !== undefined)
     .join('\n');
 }
 
@@ -322,7 +369,7 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
     }
 
     const humanName = firstName(req);
-    const system = buildSystem(room, speaker.name, agent.instructions, humanName);
+    const system = buildSystem(room, speaker.name, agent.instructions, humanName, isChild(req));
     const msgs = buildMessages(room, speaker.agentId);
 
     let data;
@@ -382,6 +429,26 @@ router.delete('/:id', requireJwtAuth, async (req, res) => {
   }
 });
 
+/** Share (or unshare) a room to the Conversation Hall. */
+router.post('/:id/share', requireJwtAuth, async (req, res) => {
+  try {
+    const room = await KadeRoom.findOne({ _id: req.params.id, user: oidOf(req) });
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found.' });
+    }
+    const share = req.body?.share !== false;
+    room.shared = share;
+    room.sharedTitle = share ? String(req.body?.title || '').trim().slice(0, 120) : '';
+    room.sharedAt = share ? new Date() : null;
+    await room.save();
+    return res.json({ shared: room.shared });
+  } catch (err) {
+    logger.error('[kade/room share] error:', err);
+    return res.status(500).json({ message: 'Could not share that room.' });
+  }
+});
+
 router.page = (req, res) => res.type('html').send(roomHtml);
+router.hallPage = (req, res) => res.type('html').send(hallHtml);
 
 module.exports = router;

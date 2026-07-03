@@ -10,6 +10,7 @@ import {
   FileText,
   Gauge,
   Heart,
+  Landmark,
   MessagesSquare,
   Trophy,
   Keyboard,
@@ -223,6 +224,18 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           <MessagesSquare className="icon-md" aria-hidden="true" />
           Debate Room
         </Menu.MenuItem>
+        {(user as { kadeAccountType?: string } | undefined)?.kadeAccountType !== 'child' && (
+          <Menu.MenuItem
+            onClick={() => {
+              window.location.href = '/conversation-hall';
+            }}
+            className="select-item text-sm"
+            aria-label="Conversation Hall: the greatest hits people have shared from the Debate Room"
+          >
+            <Landmark className="icon-md" aria-hidden="true" />
+            Conversation Hall
+          </Menu.MenuItem>
+        )}
         {user?.role === SystemRoles.ADMIN && (
           <Menu.MenuItem
             onClick={() => {

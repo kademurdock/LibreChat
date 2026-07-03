@@ -571,6 +571,31 @@ router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
   }
 });
 
+/* ----------------------------------------------------------------------------
+ * ADMIN: POST /api/kade/account-type { email, type: 'adult'|'child' }
+ * Flips kadeAccountType on an existing account (e.g. marking Skylee as child
+ * after the fact — signup codes only tag NEW accounts). July 3 2026.
+ * -------------------------------------------------------------------------- */
+router.post('/account-type', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const { findUser, updateUser } = require('~/models');
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const type = String(req.body?.type || '').trim();
+    if (!email || !['adult', 'child'].includes(type)) {
+      return res.status(400).json({ message: "Need an email and a type of 'adult' or 'child'." });
+    }
+    const user = await findUser({ email }, 'email name kadeAccountType');
+    if (!user) {
+      return res.status(404).json({ message: 'No account with that email.' });
+    }
+    await updateUser(user._id, { kadeAccountType: type });
+    return res.json({ ok: true, email, name: user.name, kadeAccountType: type });
+  } catch (error) {
+    logger.error('[/api/kade/account-type] error:', error);
+    return res.status(500).json({ message: 'Could not update the account type.' });
+  }
+});
+
 router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);

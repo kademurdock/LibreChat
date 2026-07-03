@@ -82,7 +82,7 @@ const roomHtml = `<!doctype html>
       <div class="controls">
         <button id="create" class="btn">Create room</button>
       </div>
-      <p class="muted" style="margin-top:.9rem">Each character turn costs a fraction of a cent and shows up on your <a href="/feed-the-server">Feed the Server</a> tab.</p>
+      <p class="muted" style="margin-top:.9rem">Each character turn costs a fraction of a cent and shows up on your <a href="/feed-the-server">Feed the Server</a> tab. Great conversations can be shared to the <a href="/conversation-hall">Conversation Hall</a>.</p>
     </section>
 
     <section class="card" aria-labelledby="rooms-h">
@@ -107,6 +107,8 @@ const roomHtml = `<!doctype html>
       <button id="stopBtn" hidden>Stop</button>
     </div>
     <div class="controls" style="margin-top:1rem">
+      <button id="raBtn" aria-pressed="false">Read aloud: OFF</button>
+      <button id="shareBtn">Share to the Hall</button>
       <button id="backBtn">Back to your rooms</button>
       <button id="delBtn" class="danger">Delete this room</button>
     </div>
@@ -117,6 +119,8 @@ const roomHtml = `<!doctype html>
 <script>
 (function(){
   var token = null, agents = [], room = null, busy = false, stopFlag = false;
+  var readAloud = false, audioEl = null, speakQ = [], speaking = false, voicesList = null;
+  try { readAloud = localStorage.getItem('kadeRoomRA') === '1'; } catch(e){}
   var $ = function(id){ return document.getElementById(id); };
   var statusEl = $('status');
 
@@ -202,6 +206,7 @@ const roomHtml = `<!doctype html>
     $('log').innerHTML = (r.transcript||[]).map(lineHtml).join('');
     $('log').scrollTop = $('log').scrollHeight;
     $('lobby').hidden = true; $('roomview').hidden = false;
+    raSync();
     setStatus('');
     $('rv-topic').focus();
   }
@@ -210,12 +215,64 @@ const roomHtml = `<!doctype html>
     catch(e){ setStatus(e.message, true); }
   }
 
+  /* ---------- radio-play mode ---------- */
+  function raSync(){
+    var b = $('raBtn');
+    b.setAttribute('aria-pressed', readAloud ? 'true' : 'false');
+    b.textContent = readAloud ? 'Read aloud: ON' : 'Read aloud: OFF';
+  }
+  async function voiceFor(ag){
+    if(ag && ag.voiceId) return ag.voiceId;
+    if(voicesList === null){
+      try{
+        var r = await fetch('/api/files/speech/tts/voices', {headers:{'Authorization':'Bearer '+token}});
+        var j = await r.json();
+        voicesList = Array.isArray(j) ? j : (j && j.voices) || [];
+      }catch(e){ voicesList = []; }
+    }
+    if(!voicesList.length) return '';
+    var h = 0, n = (ag && ag.name) || 'x';
+    for(var i=0;i<n.length;i++){ h = (h*31 + n.charCodeAt(i)) >>> 0; }
+    var v = voicesList[h % voicesList.length];
+    return typeof v === 'string' ? v : (v && (v.value || v.name)) || '';
+  }
+  function speakLine(m){
+    if(!readAloud || !m || m.speaker === 'user') return;
+    speakQ.push(m);
+    pumpSpeech();
+  }
+  async function pumpSpeech(){
+    if(speaking || !speakQ.length) return;
+    speaking = true;
+    var m = speakQ.shift();
+    try{
+      var ag = (room && room.agents || []).filter(function(a){ return a.agentId === m.speaker; })[0] || {};
+      var fd = new FormData();
+      fd.append('input', m.text);
+      var v = await voiceFor(ag);
+      if(v){ fd.append('voice', v); }
+      if(ag.rate){ fd.append('speed', ag.rate); }
+      var r = await fetch('/api/files/speech/tts/manual', {method:'POST', headers:{'Authorization':'Bearer '+token}, body: fd});
+      if(!r.ok){ throw new Error('tts '+r.status); }
+      var blob = await r.blob();
+      var url = URL.createObjectURL(blob);
+      if(!audioEl){ audioEl = new Audio(); }
+      audioEl.src = url;
+      await audioEl.play();
+      await new Promise(function(done){ audioEl.onended = done; audioEl.onerror = done; });
+      URL.revokeObjectURL(url);
+    }catch(e){ /* one bad clip never blocks the queue */ }
+    speaking = false;
+    pumpSpeech();
+  }
+
   async function oneTurn(){
     $('thinking').textContent = whoIsNext() + ' is thinking…';
     try{
       var j = await api('/'+room.id+'/next', {method:'POST', body:{}});
       room.nextIdx = j.nextIdx;
       appendLine(j.message);
+      speakLine(j.message);
       $('thinking').textContent = '';
       return true;
     }catch(e){
@@ -281,6 +338,29 @@ const roomHtml = `<!doctype html>
   $('round').addEventListener('click', function(){ runTurns(room.agents.length); });
   $('auto').addEventListener('click', function(){ runTurns(room.agents.length * 3); });
   $('stopBtn').addEventListener('click', function(){ stopFlag = true; $('stopBtn').textContent = 'Stopping…'; setTimeout(function(){ $('stopBtn').textContent='Stop'; }, 1500); });
+  $('raBtn').addEventListener('click', function(){
+    readAloud = !readAloud;
+    try{ localStorage.setItem('kadeRoomRA', readAloud ? '1' : '0'); }catch(e){}
+    raSync();
+    if(readAloud){
+      // unlock audio inside the tap gesture (iOS)
+      if(!audioEl){ audioEl = new Audio(); }
+      audioEl.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+      audioEl.play()['catch'](function(){});
+    } else {
+      speakQ = [];
+      if(audioEl){ try{ audioEl.pause(); }catch(e){} }
+    }
+  });
+  $('shareBtn').addEventListener('click', async function(){
+    if(!room) return;
+    var title = prompt('Give this conversation a title for the Hall (or leave as is):', room.topic);
+    if(title === null) return;
+    try{
+      await api('/'+room.id+'/share', {method:'POST', body:{share:true, title:title}});
+      setStatus('Shared! It now lives in the Conversation Hall.');
+    }catch(e){ setStatus(e.message, true); }
+  });
   $('backBtn').addEventListener('click', async function(){
     stopFlag = true; room = null;
     $('roomview').hidden = true; $('lobby').hidden = false;
@@ -309,4 +389,83 @@ const roomHtml = `<!doctype html>
 </script>
 </body></html>`;
 
-module.exports = { roomHtml };
+const hallHtml = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Conversation Hall — Kade-AI</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: calc(1.25rem + env(safe-area-inset-top, 0px)) 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5; color: #16181d; background: #f6f7f9;
+    max-width: 880px; margin-left: auto; margin-right: auto;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e7e9ee; background: #14161a; }
+    .card { background: #1e2127 !important; border-color: #2c2f37 !important; }
+  }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+  .muted { opacity: .75; }
+  .card { background: #fff; border: 1px solid #e3e6ea; border-radius: 14px; padding: 1.1rem 1.2rem; margin: 1rem 0; }
+  a.back { display:inline-block; margin:0 0 .25rem; font-weight:600; text-decoration:none; color:#2f6fed; }
+  a.back:focus-visible, summary:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
+  .status { padding:.75rem 1rem; border-radius:10px; background:#fff6da; color:#6b5500; margin:.75rem 0; }
+  .err { background:#ffe3e3; color:#8a1f1f; }
+  @media (prefers-color-scheme: dark){ .status { background:#3a3520; color:#ffe9a8; } .status.err { background:#402024; color:#ffc9c9; } }
+  summary { cursor:pointer; font-weight:600; }
+  .line { margin:.5rem 0; }
+  .who { font-weight:700; }
+  footer { margin-top:2rem; font-size:.85rem; }
+</style>
+</head>
+<body>
+  <a class="back" href="/debate-room">&larr; Back to the Debate Room</a>
+  <h1>Conversation Hall</h1>
+  <p class="muted">The greatest hits — room conversations people thought were too good to keep to themselves.</p>
+  <div id="status" class="status" role="status">Loading&hellip;</div>
+  <main id="list" hidden></main>
+  <footer class="muted"><a href="/">back to chat</a></footer>
+<script>
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  function esc(s){ var d=document.createElement('div'); d.textContent=String(s==null?'':s); return d.innerHTML; }
+  async function getToken(){
+    try{
+      var r = await fetch('/api/auth/refresh', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body:'{}'});
+      if(!r.ok) return null;
+      var j = await r.json();
+      return j && j.token ? j.token : null;
+    }catch(e){ return null; }
+  }
+  (async function(){
+    var token = await getToken();
+    if(!token){ $('status').textContent = 'You need to be signed in to see the Hall. Open the main site, sign in, then come back.'; $('status').className='status err'; return; }
+    var r = await fetch('/api/kade/room/hall', {headers:{'Authorization':'Bearer '+token}});
+    var j = null; try{ j = await r.json(); }catch(e){}
+    if(!r.ok){ $('status').textContent = (j && j.message) || ('Could not load the Hall (HTTP '+r.status+').'); $('status').className='status err'; return; }
+    var items = (j && j.items) || [];
+    if(!items.length){ $('status').textContent = 'Nothing here yet — share a room conversation from the Debate Room and it will show up.'; return; }
+    $('list').innerHTML = items.map(function(it){
+      var when = it.sharedAt ? new Date(it.sharedAt).toLocaleDateString('en-US', {month:'long', day:'numeric'}) : '';
+      var lines = (it.transcript||[]).map(function(t){
+        return '<p class="line"><span class="who">'+esc(t.name)+':</span> '+esc(t.text)+'</p>';
+      }).join('');
+      return '<section class="card" aria-label="'+esc(it.title)+'">' +
+        '<h2 style="margin:0 0 .25rem;font-size:1.1rem">'+esc(it.title)+'</h2>' +
+        '<p class="muted" style="margin:.1rem 0 .5rem">'+esc(it.cast.join(', '))+' &middot; shared by '+esc(it.by)+(when?' &middot; '+esc(when):'')+'</p>' +
+        '<details><summary>Read the conversation ('+(it.transcript||[]).length+' lines)</summary>'+lines+'</details>' +
+      '</section>';
+    }).join('');
+    $('status').hidden = true;
+    $('list').hidden = false;
+  })();
+})();
+</script>
+</body></html>`;
+
+module.exports = { roomHtml, hallHtml };
