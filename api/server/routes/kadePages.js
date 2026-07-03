@@ -67,23 +67,68 @@ const SHARED_HEAD = `
     const r = await fetch(path, {headers:{'Authorization':'Bearer '+token}});
     return r;
   }
+  const _dlCache = {};
+  function isIOS(){
+    return /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+  async function fetchAssetBlob(id, kind, token){
+    const r = await fetch('/api/kade/asset-download/' + id, {headers:{'Authorization':'Bearer '+token}});
+    if(!r.ok){ throw new Error('HTTP '+r.status); }
+    const disp = r.headers.get('Content-Disposition') || '';
+    const m = disp.match(/filename="([^"]+)"/);
+    const name = m ? m[1] : ('kade-ai-' + kind + (kind === 'video' ? '.mp4' : '.png'));
+    const blob = await r.blob();
+    return { blob: blob, name: name };
+  }
+  /* iPhone/iPad: downloads don't land in a Downloads folder like desktop —
+   * the native SHARE SHEET is how media gets saved (Save Video → Photos).
+   * navigator.share must run on a fresh tap, so iOS is a two-tap flow:
+   * tap 1 fetches ("Getting your video…"), tap 2 opens the share sheet. */
   async function downloadAsset(id, kind, btn, statusEl, token){
-    const prev = btn.textContent;
+    const prev = btn.getAttribute('data-label') || btn.textContent;
+    btn.setAttribute('data-label', prev);
+    if(isIOS()){
+      const cached = _dlCache[id];
+      if(cached){
+        try{
+          const file = new File([cached.blob], cached.name, { type: cached.blob.type || (kind === 'video' ? 'video/mp4' : 'image/png') });
+          if(navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share){
+            await navigator.share({ files: [file] });
+            if(statusEl){ statusEl.textContent = 'Share sheet opened — choose Save ' + (kind === 'video' ? 'Video' : 'Image') + ' to keep it in your Photos.'; }
+          } else {
+            const url = URL.createObjectURL(cached.blob);
+            window.open(url, '_blank');
+            if(statusEl){ statusEl.textContent = 'Opened in a new tab — use the share button there to save it.'; }
+          }
+        }catch(e){
+          if(statusEl && e && e.name !== 'AbortError'){ statusEl.textContent = 'Could not open the share sheet — try tapping Save again.'; }
+        }
+        return;
+      }
+      btn.disabled = true; btn.textContent = 'Getting your ' + kind + '…';
+      if(statusEl){ statusEl.textContent = 'Getting your ' + kind + ' ready — one moment…'; }
+      try{
+        _dlCache[id] = await fetchAssetBlob(id, kind, token);
+        btn.textContent = 'Save to device';
+        btn.setAttribute('aria-label', 'Ready! Tap again to open the share sheet and save this ' + kind);
+        if(statusEl){ statusEl.textContent = 'Ready! Tap "Save to device" to open the share sheet, then choose Save ' + (kind === 'video' ? 'Video' : 'Image') + '.'; }
+      }catch(e){
+        btn.textContent = prev;
+        if(statusEl){ statusEl.textContent = 'Download failed — try again in a moment.'; }
+      }
+      btn.disabled = false;
+      return;
+    }
     btn.disabled = true; btn.textContent = 'Downloading…';
     if(statusEl){ statusEl.textContent = 'Downloading your ' + kind + ' — hang tight…'; }
     try{
-      const r = await fetch('/api/kade/asset-download/' + id, {headers:{'Authorization':'Bearer '+token}});
-      if(!r.ok){ throw new Error('HTTP '+r.status); }
-      const disp = r.headers.get('Content-Disposition') || '';
-      const m = disp.match(/filename="([^"]+)"/);
-      const name = m ? m[1] : ('kade-ai-' + kind);
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
+      const got = await fetchAssetBlob(id, kind, token);
+      const url = URL.createObjectURL(got.blob);
       const a = document.createElement('a');
-      a.href = url; a.download = name;
+      a.href = url; a.download = got.name;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
-      if(statusEl){ statusEl.textContent = 'Downloaded! Check your files for ' + name + '.'; }
+      if(statusEl){ statusEl.textContent = 'Downloaded! Check your files for ' + got.name + '.'; }
     }catch(e){
       if(statusEl){ statusEl.textContent = 'Download failed — try again in a moment.'; }
     }
