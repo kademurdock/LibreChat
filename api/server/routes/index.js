@@ -37,9 +37,11 @@ const user = require('./user');
 const mcp = require('./mcp');
 const rum = require('./rum');
 const kade = require('./kade');
+const kadeRoom = require('./kadeRoom');
 
 module.exports = {
   kade,
+  kadeRoom,
   rum,
   mcp,
   auth,

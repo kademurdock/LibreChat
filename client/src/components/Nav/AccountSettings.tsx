@@ -10,6 +10,7 @@ import {
   FileText,
   Gauge,
   Heart,
+  MessagesSquare,
   Trophy,
   Keyboard,
   LifeBuoy,
@@ -211,6 +212,16 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         >
           <Trophy className="icon-md" aria-hidden="true" />
           Wall of Fame
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={() => {
+            window.location.href = '/debate-room';
+          }}
+          className="select-item text-sm"
+          aria-label="Debate and Roleplay Room: put two or more characters in a room with a topic and join in"
+        >
+          <MessagesSquare className="icon-md" aria-hidden="true" />
+          Debate Room
         </Menu.MenuItem>
         {user?.role === SystemRoles.ADMIN && (
           <Menu.MenuItem

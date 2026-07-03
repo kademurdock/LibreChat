@@ -276,6 +276,7 @@ const startServer = async () => {
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
   app.use('/api/rum', routes.rum);
+  app.use('/api/kade/room', routes.kadeRoom);
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);
@@ -286,6 +287,7 @@ const startServer = async () => {
   app.get('/feed-the-server', routes.kade.feedPage);
   app.get('/my-creations', routes.kade.creationsPage);
   app.get('/wall-of-fame', routes.kade.wallPage);
+  app.get('/debate-room', routes.kadeRoom.page);
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
