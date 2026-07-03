@@ -73,7 +73,11 @@ const registrationController = async (req, res) => {
       fetch(bridgeSignupUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
-        body: JSON.stringify({ name: req.body.name, phone: req.body.phoneNumber }),
+        body: JSON.stringify({
+          name: req.body.name,
+          phone: req.body.phoneNumber,
+          accountType: kadeAccountType === 'child' ? 'child' : undefined,
+        }),
       }).catch(() => {}); // never fail registration if bridge is unreachable
     }
   } catch (err) {
