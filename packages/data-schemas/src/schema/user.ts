@@ -153,6 +153,12 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       of: Boolean,
       default: () => new Map(),
     },
+    /** Kade-AI: which signup code registered this account (adult vs child) */
+    kadeAccountType: {
+      type: String,
+      enum: ['adult', 'child'],
+      default: 'adult',
+    },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
       type: String,

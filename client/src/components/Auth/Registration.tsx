@@ -21,7 +21,7 @@ const Registration: React.FC = () => {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<TRegisterUser & { phoneNumber?: string }>({ mode: 'onChange' });
+  } = useForm<TRegisterUser & { phoneNumber?: string; passcode?: string }>({ mode: 'onChange' });
   const password = watch('password');
 
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -191,6 +191,30 @@ const Registration: React.FC = () => {
                 message: localize('com_auth_email_pattern'),
               },
             })}
+
+            <div className="mb-4">
+              <div className="relative">
+                <input
+                  id="passcode"
+                  type="text"
+                  autoComplete="off"
+                  inputMode="numeric"
+                  aria-label="Signup code"
+                  {...register('passcode', { required: 'Signup code is required — ask Kade for it' })}
+                  aria-invalid={!!errors.passcode}
+                  className={authInputClassName}
+                  placeholder=" "
+                />
+                <label htmlFor="passcode" className={authLabelClassName}>
+                  Signup code (Kade gives you this)
+                </label>
+              </div>
+              {errors.passcode && (
+                <span role="alert" className="mt-1 text-sm text-red-500">
+                  {String(errors.passcode.message ?? '')}
+                </span>
+              )}
+            </div>
 
             <div className="mb-4">
               <div className="relative">

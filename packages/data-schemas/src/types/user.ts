@@ -31,6 +31,8 @@ export interface IUser extends Document {
   plugins?: string[];
   openidIssuer?: string;
   twoFactorEnabled?: boolean;
+  /** Kade-AI: which signup code registered this account */
+  kadeAccountType?: 'adult' | 'child';
   totpSecret?: string;
   backupCodes?: Array<{
     codeHash: string;

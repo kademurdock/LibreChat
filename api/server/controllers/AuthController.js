@@ -44,7 +44,27 @@ const OPENID_REUSE_MAX_SESSION_AGE_MS = math(
 
 const registrationController = async (req, res) => {
   try {
-    const response = await registerUser(req.body);
+    // Kade-AI signup-code gate: when codes are configured, one must match.
+    // KADE_REG_CODE_ADULT registers a normal account; KADE_REG_CODE_CHILD tags the
+    // account as a child account. Codes live in Railway env vars so Kade can rotate
+    // or kill a leaked code instantly without a code push.
+    const adultCode = (process.env.KADE_REG_CODE_ADULT || '').trim();
+    const childCode = (process.env.KADE_REG_CODE_CHILD || '').trim();
+    let kadeAccountType;
+    if (adultCode || childCode) {
+      const given = String(req.body?.passcode ?? '').trim();
+      if (adultCode && given === adultCode) {
+        kadeAccountType = 'adult';
+      } else if (childCode && given === childCode) {
+        kadeAccountType = 'child';
+      } else {
+        logger.warn(`[registrationController] bad signup code attempt [Email: ${req.body?.email}]`);
+        return res.status(403).send({
+          message: 'That signup code is not valid. Ask Kade for the current code.',
+        });
+      }
+    }
+    const response = await registerUser(req.body, kadeAccountType ? { kadeAccountType } : {});
     const { status, message } = response;
     res.status(status).send({ message });
     // Fire-and-forget: register phone with the bridge if the user provided one
