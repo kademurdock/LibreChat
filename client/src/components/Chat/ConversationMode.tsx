@@ -38,7 +38,8 @@ import { Phone, PhoneOff, Mic, StopCircle } from 'lucide-react';
 import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 import { stripVoiceTags } from '~/utils/voiceTags';
-import { stripGameSoundTags, gameSoundSrcsIn } from '~/utils/gameSounds';
+import { stripGameSoundTags, gameSoundSrcsIn, gameTableIdIn } from '~/utils/gameSounds';
+import GameTable from '~/components/Chat/Messages/Content/GameTable';
 import store from '~/store';
 
 // -- SentenceStreamer ----------------------------------------------------------
@@ -181,6 +182,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const [status,     setStatus]     = useState<CallStatus>('idle');
   const [transcript, setTranscript] = useState('');
   const [aiText,     setAiText]     = useState('');
+  // Game Parlor visual: sticky "current table" for this call. Set whenever a
+  // streamed reply carries a [table:id] token; turnSeq keys the refetch so a
+  // fresh move redraws the same table. Cleared on close.
+  const [liveTable,  setLiveTable]  = useState<{ id: string; seq: number } | null>(null);
+  const tableSeqRef = useRef(0);
   const [mediaAvail, setMediaAvail] = useState(false);
   const [error,      setError]      = useState('');
 
@@ -451,6 +457,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setAiText('');
 
     const streamer = new SentenceStreamer();
+    tableSeqRef.current += 1;
     let acc = '';
     let firstChunk = true;
     // Every sentence's full fetch-decode-play promise, so we can wait for
@@ -484,6 +491,14 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     const pushText = (chunk: string) => {
       if (!chunk) return;
       acc += chunk;
+      const tid = gameTableIdIn(acc);
+      if (tid) {
+        setLiveTable((prev) =>
+          prev && prev.id === tid && prev.seq === tableSeqRef.current
+            ? prev
+            : { id: tid, seq: tableSeqRef.current },
+        );
+      }
       setAiText(prev => prev + chunk);
       streamer.push(chunk);
     };
@@ -783,6 +798,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setOpen(true);
     setAiText('');
     setTranscript('');
+    setLiveTable(null);
     setStatus('connecting');
     try {
       // Explicit constraints instead of bare `audio: true` -- echoCancellation
@@ -997,6 +1013,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       )}
 
       {/* Live captions — VISUAL ONLY (hidden from screen readers). */}
+      {liveTable != null && (
+        <div className="w-full max-w-xs px-4">
+          <GameTable gameId={liveTable.id} refreshKey={liveTable.seq} compact />
+        </div>
+      )}
       <div className="w-full max-w-xs space-y-3 px-4 min-h-[7rem]" aria-hidden="true">
         {transcript && (
           <div className="rounded-2xl bg-blue-950/60 px-4 py-3 text-sm leading-relaxed">

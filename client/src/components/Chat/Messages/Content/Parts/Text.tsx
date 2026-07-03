@@ -3,7 +3,8 @@ import { useRecoilValue } from 'recoil';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
 import { stripVoiceTags } from '~/utils/voiceTags';
-import { stripGameSoundTags, maybePlayGameSounds } from '~/utils/gameSounds';
+import { stripGameSoundTags, maybePlayGameSounds, gameTableIdIn } from '~/utils/gameSounds';
+import GameTable from '~/components/Chat/Messages/Content/GameTable';
 import { useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -41,6 +42,14 @@ const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: T
     }
   }, [isCreatedByUser, isSubmitting, isLatestMessage, messageId, text]);
 
+  // Game Parlor visual table: an invisible [table:id] token in the latest
+  // assistant message mounts the live table widget (aria-hidden — screen
+  // reader flow is untouched; see GameTable.tsx).
+  const tableId = useMemo(
+    () => (isCreatedByUser ? null : gameTableIdIn(text)),
+    [isCreatedByUser, text],
+  );
+
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {
       return <Markdown content={displayText} isLatestMessage={isLatestMessage} />;
@@ -62,6 +71,7 @@ const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: T
       )}
     >
       {content}
+      {tableId != null && isLatestMessage && <GameTable gameId={tableId} refreshKey={messageId} />}
     </div>
   );
 });

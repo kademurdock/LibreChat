@@ -98,6 +98,15 @@ class KadeGames extends Tool {
     // plays the clip and strips the token from the visible text (see
     // client/src/utils/gameSounds.ts). Cues from the move just played come
     // first, then any state-level cues (e.g. game-over stings), deduped.
+    // Game Parlor visuals (July 3 2026): the [table:id] token makes the chat
+    // client draw the live table (cards/dice/scores) for sighted players.
+    // Same carry pattern as the sound cues; invisible in every text surface,
+    // stripped from TTS/phone/SMS, and the widget is aria-hidden so screen
+    // readers never notice it. Include it ONCE per reply.
+    out.unshift(
+      `TABLE PICTURE — copy this token into your reply exactly ONCE (ideally at the start): [table:${doc.gameId}] — it draws the live table on screen for sighted players and is invisible to everyone else. Never mention it.`,
+      '',
+    );
     const cues = [...new Set([...(extra.sounds || []), ...(v.sounds || [])])];
     if (cues.length) {
       out.unshift(

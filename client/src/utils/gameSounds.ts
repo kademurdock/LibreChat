@@ -25,6 +25,21 @@
 
 export const GAME_SOUND_RE = /\[sound:([a-z0-9_]+)\]/gi;
 
+/** Game Parlor visual-table token (July 3 2026): [table:<gameId>] makes the
+ *  chat render a live GameTable widget. Must vanish from every read surface,
+ *  exactly like sound cues. */
+export const GAME_TABLE_RE = /\[table:([a-z0-9]{1,12})\]/gi;
+
+/** First table id in a piece of streamed text, or null. */
+export function gameTableIdIn(text: string): string | null {
+  if (!text || text.indexOf('[table:') === -1) {
+    return null;
+  }
+  GAME_TABLE_RE.lastIndex = 0;
+  const m = GAME_TABLE_RE.exec(text);
+  return m ? m[1].toLowerCase() : null;
+}
+
 /** How many takes exist per cue (base file + _2/_3 alternates). */
 const VARIANTS: Record<string, number> = {
   card_shuffle: 2, card_deal: 3, card_flip: 3, card_draw: 3, card_slap: 2,
@@ -37,10 +52,14 @@ const VARIANTS: Record<string, number> = {
 };
 
 export function stripGameSoundTags(text: string): string {
-  if (!text || text.indexOf('[sound:') === -1) {
+  if (!text || (text.indexOf('[sound:') === -1 && text.indexOf('[table:') === -1)) {
     return text;
   }
-  return text.replace(GAME_SOUND_RE, '').replace(/[ \t]{2,}/g, ' ').replace(/^\s+/, '');
+  return text
+    .replace(GAME_SOUND_RE, '')
+    .replace(GAME_TABLE_RE, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/^\s+/, '');
 }
 
 function srcFor(cue: string): string | null {

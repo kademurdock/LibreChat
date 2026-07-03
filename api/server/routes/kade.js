@@ -458,6 +458,44 @@ router.get('/wall', requireJwtAuth, async (req, res) => {
  * -------------------------------------------------------------------------- */
 const { KadeGameState } = require('~/models/kadeGameState');
 const { getGame: getParlorGame } = require('~/app/clients/tools/kadegames');
+const { visualView } = require('~/app/clients/tools/kadegames/visual');
+
+/* ----------------------------------------------------------------------------
+ * GAME TABLE VISUAL: GET /api/kade/game-view/:gameId — render-ready JSON for
+ * the chat's GameTable widget (July 3 2026). Owner-scoped: you only ever see
+ * YOUR view of YOUR table (hole cards hidden, other hands as counts, trivia
+ * answers never included — see kadegames/visual.js). Purely decorative for
+ * sighted family; the widget is aria-hidden so screen readers are untouched.
+ * -------------------------------------------------------------------------- */
+router.get('/game-view/:gameId', requireJwtAuth, async (req, res) => {
+  try {
+    const gameId = String(req.params.gameId || '').slice(0, 12);
+    const doc = await KadeGameState.findOne({ user: req.user.id, gameId }).lean();
+    if (!doc) {
+      return res.status(404).json({ error: 'No such table' });
+    }
+    const G = getParlorGame(doc.gameKey);
+    if (!G) {
+      return res.status(404).json({ error: 'Unknown game' });
+    }
+    const visual = visualView(doc.gameKey, doc.state);
+    if (!visual) {
+      return res.status(404).json({ error: 'No visual for this game' });
+    }
+    return res.json({
+      gameId,
+      game: doc.gameKey,
+      name: G.meta.name,
+      status: doc.status,
+      updatedAt: doc.updatedAt,
+      visual,
+    });
+  } catch (error) {
+    logger.error('[/api/kade/game-view] error:', error);
+    return res.status(500).json({ error: 'Failed to load the table' });
+  }
+});
+
 
 router.get('/game-leaderboard', requireJwtAuth, async (req, res) => {
   try {
