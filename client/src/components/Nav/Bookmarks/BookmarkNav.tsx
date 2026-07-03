@@ -20,14 +20,17 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { data } = useGetConversationTags();
 
+  /* ♿ KADE July 2 2026 (late night): the icon rail already has a "Bookmarks"
+     button (the management panel) — this one FILTERS chat history, so it gets
+     its own name instead of announcing as an identical twin. */
   const label = useMemo(
-    () => (tags.length > 0 ? tags.join(', ') : localize('com_ui_bookmarks')),
+    () => (tags.length > 0 ? tags.join(', ') : localize('com_ui_bookmarks_filter_chats')),
     [tags, localize],
   );
 
   const buttonAriaLabel = useMemo(() => {
     if (tags.length === 0) {
-      return localize('com_ui_bookmarks');
+      return localize('com_ui_bookmarks_filter_chats');
     }
     return localize('com_ui_bookmarks_count_selected', { count: tags.length });
   }, [tags.length, localize]);
