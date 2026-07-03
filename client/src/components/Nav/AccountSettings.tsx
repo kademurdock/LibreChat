@@ -6,6 +6,7 @@ import {
   Archive,
   ChevronRight,
   CircleHelp,
+  Compass,
   Clapperboard,
   FileText,
   Gauge,
@@ -99,6 +100,87 @@ function HelpSubmenu({
   );
 }
 
+/** KADE July 3 2026: the fun pages were piling up as flat items in the account
+ * menu (Kade: "a lot stuffed into it that aren't account and settings related").
+ * One Explore submenu, same accessible pattern as HelpSubmenu. */
+function ExploreSubmenu({ isAdmin, isChild }: { isAdmin: boolean; isChild: boolean }) {
+  const go = (href: string) => () => {
+    window.location.href = href;
+  };
+  return (
+    <Menu.MenuProvider placement="right-start">
+      <Menu.MenuItem
+        hideOnClick={false}
+        render={
+          <Menu.MenuButton className="select-item flex w-full cursor-pointer items-center gap-2 text-sm" />
+        }
+      >
+        <Compass className="icon-md" aria-hidden="true" />
+        <span className="flex-1 text-left">Explore</span>
+        <ChevronRight className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+      </Menu.MenuItem>
+      <Menu.Menu
+        portal
+        gutter={12}
+        className="account-settings-popover popover-ui popover-from-left z-[126] w-[244px] rounded-lg"
+      >
+        <Menu.MenuItem
+          onClick={go('/debate-room')}
+          className="select-item text-sm"
+          aria-label="Debate Room: put two or more characters in a room with a topic and join in"
+        >
+          <MessagesSquare className="icon-md" aria-hidden="true" />
+          Debate Room
+        </Menu.MenuItem>
+        {!isChild && (
+          <Menu.MenuItem
+            onClick={go('/conversation-hall')}
+            className="select-item text-sm"
+            aria-label="Conversation Hall: the greatest hits people have shared from the Debate Room"
+          >
+            <Landmark className="icon-md" aria-hidden="true" />
+            Conversation Hall
+          </Menu.MenuItem>
+        )}
+        <Menu.MenuItem
+          onClick={go('/wall-of-fame')}
+          className="select-item text-sm"
+          aria-label="Wall of Fame: creations everyone has chosen to share"
+        >
+          <Trophy className="icon-md" aria-hidden="true" />
+          Wall of Fame
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={go('/my-creations')}
+          className="select-item text-sm"
+          aria-label="My Creations: every video and image you've generated, with descriptions and downloads"
+        >
+          <Clapperboard className="icon-md" aria-hidden="true" />
+          My Creations
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={go('/feed-the-server')}
+          className="select-item text-sm"
+          aria-label="Feed the Server: see what you've used and chip in"
+        >
+          <Heart className="icon-md" aria-hidden="true" />
+          Feed the Server
+        </Menu.MenuItem>
+        {isAdmin && (
+          <Menu.MenuItem
+            onClick={go('/usage-dashboard')}
+            className="select-item text-sm"
+            aria-label="Usage dashboard (admin only)"
+          >
+            <Gauge className="icon-md" aria-hidden="true" />
+            Usage Dashboard
+          </Menu.MenuItem>
+        )}
+      </Menu.Menu>
+    </Menu.MenuProvider>
+  );
+}
+
 function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const localize = useLocalize();
   const { user, isAuthenticated, logout } = useAuthContext();
@@ -184,70 +266,10 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           {localize('com_nav_settings')}
         </Menu.MenuItem>
         <DropdownMenuSeparator />
-        <Menu.MenuItem
-          onClick={() => {
-            window.location.href = '/feed-the-server';
-          }}
-          className="select-item text-sm"
-          aria-label="Feed the Server: see what you've used and chip in"
-        >
-          <Heart className="icon-md" aria-hidden="true" />
-          Feed the Server
-        </Menu.MenuItem>
-        <Menu.MenuItem
-          onClick={() => {
-            window.location.href = '/my-creations';
-          }}
-          className="select-item text-sm"
-          aria-label="My Creations: every video and image you've generated, with descriptions and downloads"
-        >
-          <Clapperboard className="icon-md" aria-hidden="true" />
-          My Creations
-        </Menu.MenuItem>
-        <Menu.MenuItem
-          onClick={() => {
-            window.location.href = '/wall-of-fame';
-          }}
-          className="select-item text-sm"
-          aria-label="Wall of Fame: creations everyone has chosen to share"
-        >
-          <Trophy className="icon-md" aria-hidden="true" />
-          Wall of Fame
-        </Menu.MenuItem>
-        <Menu.MenuItem
-          onClick={() => {
-            window.location.href = '/debate-room';
-          }}
-          className="select-item text-sm"
-          aria-label="Debate and Roleplay Room: put two or more characters in a room with a topic and join in"
-        >
-          <MessagesSquare className="icon-md" aria-hidden="true" />
-          Debate Room
-        </Menu.MenuItem>
-        {(user as { kadeAccountType?: string } | undefined)?.kadeAccountType !== 'child' && (
-          <Menu.MenuItem
-            onClick={() => {
-              window.location.href = '/conversation-hall';
-            }}
-            className="select-item text-sm"
-            aria-label="Conversation Hall: the greatest hits people have shared from the Debate Room"
-          >
-            <Landmark className="icon-md" aria-hidden="true" />
-            Conversation Hall
-          </Menu.MenuItem>
-        )}
-        {user?.role === SystemRoles.ADMIN && (
-          <Menu.MenuItem
-            onClick={() => {
-              window.location.href = '/usage-dashboard';
-            }}
-            className="select-item text-sm"
-            aria-label="Usage dashboard (admin only)"
-          >
-            <Gauge className="icon-md" aria-hidden="true" />
-            Usage Dashboard
-          </Menu.MenuItem>
-        )}
+        <ExploreSubmenu
+          isAdmin={user?.role === SystemRoles.ADMIN}
+          isChild={(user as { kadeAccountType?: string } | undefined)?.kadeAccountType === 'child'}
+        />
         <DropdownMenuSeparator />
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
           <LogOut className="icon-md" aria-hidden="true" />

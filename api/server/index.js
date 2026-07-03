@@ -289,6 +289,11 @@ const startServer = async () => {
   app.get('/wall-of-fame', routes.kade.wallPage);
   app.get('/debate-room', routes.kadeRoom.page);
   app.get('/conversation-hall', routes.kadeRoom.hallPage);
+  /** kademurdock.com/help — memorable front door for the help center, which is
+   * served from the inworld proxy. Path + query carry through. (July 3 2026) */
+  app.get(['/help', '/help/*path'], (req, res) =>
+    res.redirect(302, 'https://inworld-tts-proxy-production.up.railway.app' + req.originalUrl),
+  );
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
