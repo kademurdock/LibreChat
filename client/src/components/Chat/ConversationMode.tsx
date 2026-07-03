@@ -38,6 +38,7 @@ import { Phone, PhoneOff, Mic, StopCircle } from 'lucide-react';
 import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 import { stripVoiceTags } from '~/utils/voiceTags';
+import { stripGameSoundTags } from '~/utils/gameSounds';
 import store from '~/store';
 
 // -- SentenceStreamer ----------------------------------------------------------
@@ -988,7 +989,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
                 meant only for the audio path -- strip it for this caption.
                 fetchSentenceAudio() above gets the untouched chunk, so the
                 voice itself stays expressive. */}
-            <span className="text-gray-100">{stripVoiceTags(aiText)}</span>
+            <span className="text-gray-100">{stripGameSoundTags(stripVoiceTags(aiText))}</span>
           </div>
         )}
       </div>

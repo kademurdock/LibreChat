@@ -22,6 +22,7 @@ import { useScreenshot } from '~/hooks/ScreenshotContext';
 import { useLocalize } from '~/hooks';
 import { cleanupPreset } from '~/utils';
 import { stripVoiceTags } from '~/utils/voiceTags';
+import { stripGameSoundTags } from '~/utils/gameSounds';
 
 type ExportValues = {
   fieldName: string;
@@ -68,7 +69,7 @@ export default function useExportConversation({
     // performance tag (utils/voiceTags.ts) out of the spoken-text content
     // before it ever reaches formatText, same rule as the chat bubble.
     const formatText = (sender: string, text: string) => {
-      const cleanText = stripVoiceTags(text);
+      const cleanText = stripGameSoundTags(stripVoiceTags(text));
       if (format === 'text') {
         return `>> ${sender}:\n${cleanText}`;
       }

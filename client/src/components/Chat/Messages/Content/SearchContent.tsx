@@ -14,6 +14,7 @@ import { cn, mapAttachments } from '~/utils';
 import { SearchContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
 import { stripVoiceTags } from '~/utils/voiceTags';
+import { stripGameSoundTags } from '~/utils/gameSounds';
 import store from '~/store';
 import Part from './Part';
 
@@ -75,7 +76,7 @@ const SearchContent = ({
       )}
       dir="auto"
     >
-      <MarkdownLite content={stripVoiceTags(message.text || '')} />
+      <MarkdownLite content={stripGameSoundTags(stripVoiceTags(message.text || ''))} />
     </div>
   );
 };

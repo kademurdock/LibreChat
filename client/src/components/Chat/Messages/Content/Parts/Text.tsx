@@ -1,8 +1,9 @@
-import { memo, useMemo, ReactElement } from 'react';
+import { memo, useMemo, useEffect, ReactElement } from 'react';
 import { useRecoilValue } from 'recoil';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
 import { stripVoiceTags } from '~/utils/voiceTags';
+import { stripGameSoundTags, maybePlayGameSounds } from '~/utils/gameSounds';
 import { useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -19,7 +20,7 @@ type ContentType =
   | ReactElement;
 
 const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: TextPartProps) {
-  const { isSubmitting = false, isLatestMessage = false } = useMessageContext();
+  const { messageId, isSubmitting = false, isLatestMessage = false } = useMessageContext();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const showCursorState = useMemo(() => showCursor && isSubmitting, [showCursor, isSubmitting]);
 
@@ -27,9 +28,18 @@ const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: T
   // utils/voiceTags.ts) -- strip them here so they never reach the visible
   // chat bubble. User-authored text never contains them, so it's left alone.
   const displayText = useMemo(
-    () => (isCreatedByUser ? text : stripVoiceTags(text)),
+    () => (isCreatedByUser ? text : stripGameSoundTags(stripVoiceTags(text))),
     [isCreatedByUser, text],
   );
+
+  // Game Parlor sound cues: while THIS message is actively streaming, play
+  // any completed [sound:x] tokens exactly once each (see utils/gameSounds).
+  // Old conversations reopening never fire — the gate below is false there.
+  useEffect(() => {
+    if (!isCreatedByUser && isSubmitting && isLatestMessage) {
+      maybePlayGameSounds(messageId, text);
+    }
+  }, [isCreatedByUser, isSubmitting, isLatestMessage, messageId, text]);
 
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {

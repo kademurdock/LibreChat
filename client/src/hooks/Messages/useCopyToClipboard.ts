@@ -10,6 +10,7 @@ import {
   INVALID_CITATION_REGEX,
 } from '~/utils/citations';
 import { stripVoiceTags } from '~/utils/voiceTags';
+import { stripGameSoundTags } from '~/utils/gameSounds';
 
 type Source = {
   link: string;
@@ -65,7 +66,7 @@ export default function useCopyToClipboard({
       }
       // Strip invisible TTS-2 voice performance tags before anything ever
       // reaches the clipboard -- see utils/voiceTags.ts.
-      messageText = stripVoiceTags(messageText);
+      messageText = stripGameSoundTags(stripVoiceTags(messageText));
 
       // Early return if no search data
       if (!searchResults || Object.keys(searchResults).length === 0) {

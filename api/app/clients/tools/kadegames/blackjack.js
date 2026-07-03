@@ -86,7 +86,9 @@ function view(state) {
       push: `Push — it's a tie. Your bet comes back.`,
     }[state.result];
     lines.push(resultText);
-    sounds = wins ? ['chip_win', 'win_fanfare'] : push ? ['draw_game'] : ['lose_trombone'];
+    // A natural blackjack pays 3:2 — it gets the jackpot treatment.
+    sounds = state.result === 'blackjack' ? ['jackpot_win', 'coin_shower']
+      : wins ? ['chip_win', 'win_fanfare'] : push ? ['draw_game'] : ['lose_trombone'];
   }
   return { lines, legal: legal(state), sounds, over, winner };
 }

@@ -81,6 +81,18 @@ class KadeGames extends Tool {
     const G = getGame(doc.gameKey);
     const v = G.view(doc.state);
     const out = [`[${G.meta.name} — table ${doc.gameId}]`, ...v.lines];
+    // Game Parlor phase 2: surface the engine's sound cues as [sound:x]
+    // tokens. The agent copies them inline into its reply; the chat client
+    // plays the clip and strips the token from the visible text (see
+    // client/src/utils/gameSounds.ts). Cues from the move just played come
+    // first, then any state-level cues (e.g. game-over stings), deduped.
+    const cues = [...new Set([...(extra.sounds || []), ...(v.sounds || [])])];
+    if (cues.length) {
+      out.unshift(
+        `SOUND CUES — copy each token below into your reply EXACTLY as written, placed where that action happens in your telling. They are invisible to the reader and play as real table sounds, so never mention them: ${cues.map((c) => `[sound:${c}]`).join(' ')}`,
+        '',
+      );
+    }
     if (extra.log && extra.log.length) {
       out.push('', 'What just happened:', ...extra.log.map((l) => `· ${l}`));
     }
@@ -162,7 +174,7 @@ class KadeGames extends Tool {
           turns: 0,
           agentName: this.agentName,
         });
-        return this.render(doc);
+        return this.render(doc, { sounds: ['card_shuffle', 'card_deal'] });
       }
 
       // state / move / quit all act on a specific or the most-recent active table
@@ -199,7 +211,7 @@ class KadeGames extends Tool {
         doc.status = v.over ? 'over' : 'active';
         doc.markModified('state');
         await doc.save();
-        return this.render(doc, { log: (result && result.log) || [] });
+        return this.render(doc, { log: (result && result.log) || [], sounds: (result && result.sounds) || [] });
       }
 
       return "Unknown action. Use list_games, new_game, state, move, games, or quit.";

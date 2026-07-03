@@ -319,3 +319,14 @@ Kade's feedback round, all four items:
 4. **Clutter trims for screen readers:** non-active rows no longer expose invisible option buttons; one announcement per conversation instead of two; grid junk gone; generating spinner got `role="img"`.
 
 PWA note: everything above is plain DOM/ARIA + existing queries — nothing service-worker- or storage-API-dependent, so the installed iOS PWA behaves identically to Safari.
+
+## G1 — Game Parlor sounds, phase 2 (web surface) — July 3 2026
+
+The game engine's per-move `sounds` arrays (they existed since phase 1, unused) now reach the player's ears in the web app:
+
+1. **Server** (`KadeGames.js`): every render prepends a `SOUND CUES` instruction listing the turn's cues as `[sound:x]` tokens for the agent to copy inline — the same carry pattern as the `%%%` voice tags. `move` results and game-over stings both flow through; `new_game` cues `card_shuffle` + `card_deal`. Blackjack naturals (3:2 payout) now cue `jackpot_win` + `coin_shower` instead of the standard win pair.
+2. **Client** (`utils/gameSounds.ts` + `Parts/Text.tsx`): completed `[sound:x]` tokens in a streaming assistant message play the matching clip from `/assets/sounds/*.mp3` (29 cues, 65 files — most cues ship 2–3 alternate takes picked at random so repeats don't sound canned; clips volume-matched at −1 dB peak, played at 0.65 volume through a short serial queue so bursts cascade instead of mushing). Playback ONLY fires while the latest message is actively streaming — reopening old conversations is silent. A module-scope per-message registry of played token offsets survives remounts (C5 lesson). Unknown cue names fail silent.
+3. **Display hygiene**: tokens are stripped from the chat bubble, search results, copy-to-clipboard, conversation export, and ConversationMode captions (all the same places `%%%` tags are stripped).
+4. **Spoken hygiene**: inworld-tts-proxy strips `[sound:x]` before synthesis (separate repo commit) so read-aloud and the phone never SAY the tokens. Actual phone/conversation-mode clip playback = later phase.
+
+Sound pack provenance: Kenney CC0 casino foley + ElevenLabs generations, curated/mastered by Kade + assistant July 3; masters (WAV) live in Kade's local `game_sounds` folder.
