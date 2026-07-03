@@ -4,6 +4,7 @@ const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { KadeAsset } = require('~/models/kadeAsset');
+const { needsRefresh, getNewS3URL } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
@@ -300,6 +301,44 @@ router.get('/my-usage', requireJwtAuth, async (req, res) => {
  * SELF: GET /api/kade/my-assets — the logged-in user's generated videos and
  * images (newest first) for the /my-creations gallery. Any authenticated user.
  * -------------------------------------------------------------------------- */
+/** Re-sign S3-signed URLs at read time so stored gallery links never expire. */
+async function freshAssetUrl(url) {
+  let u = String(url || '');
+  if (u && !/^https?:\/\//i.test(u) && !u.startsWith('/')) {
+    u = '/' + u;
+  }
+  try {
+    if (/[?&]X-Amz-/.test(u) && typeof needsRefresh === 'function' && needsRefresh(u, 3600)) {
+      u = await getNewS3URL(u);
+    }
+  } catch (e) {
+    logger.warn('[kade] URL re-sign failed (serving stored URL):', e.message);
+  }
+  return u;
+}
+
+async function assetView(d, { withOwner = false } = {}) {
+  const view = {
+    id: String(d._id),
+    kind: d.kind,
+    service: d.service,
+    url: await freshAssetUrl(d.url),
+    backupUrl: d.backupUrl ? await freshAssetUrl(d.backupUrl) : '',
+    description: d.description || '',
+    shared: !!d.shared,
+    prompt: d.prompt || '',
+    model: d.model || '',
+    costUSD: d.costUSD || 0,
+    createdAt: d.createdAt,
+  };
+  if (withOwner) {
+    const name = (d.user && (d.user.name || d.user.username)) || 'Someone';
+    view.by = String(name).split(' ')[0];
+    delete view.costUSD;
+  }
+  return view;
+}
+
 router.get('/my-assets', requireJwtAuth, async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
@@ -308,25 +347,54 @@ router.get('/my-assets', requireJwtAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(300)
       .lean();
-    const assets = docs.map((d) => {
-      let url = String(d.url || '');
-      if (url && !/^https?:\/\//i.test(url) && !url.startsWith('/')) {
-        url = '/' + url;
-      }
-      return {
-        kind: d.kind,
-        service: d.service,
-        url,
-        prompt: d.prompt || '',
-        model: d.model || '',
-        costUSD: d.costUSD || 0,
-        createdAt: d.createdAt,
-      };
-    });
+    const assets = await Promise.all(docs.map((d) => assetView(d)));
     return res.json({ count: assets.length, assets });
   } catch (error) {
     logger.error('[/api/kade/my-assets] error:', error);
     return res.status(500).json({ error: 'Failed to load your creations' });
+  }
+});
+
+/* ----------------------------------------------------------------------------
+ * SELF: POST /api/kade/my-assets/:id/share — toggle an asset onto/off the
+ * communal Wall of Fame. Body: { shared: true|false }. Owner only.
+ * -------------------------------------------------------------------------- */
+router.post('/my-assets/:id/share', requireJwtAuth, async (req, res) => {
+  try {
+    const userId = req.user.id || req.user._id;
+    const oid = new mongoose.Types.ObjectId(String(userId));
+    const shared = req.body?.shared === true || req.body?.shared === 'true';
+    const r = await KadeAsset.updateOne(
+      { _id: new mongoose.Types.ObjectId(String(req.params.id)), user: oid },
+      { $set: { shared } },
+    );
+    if (!r.matchedCount) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return res.json({ ok: true, shared });
+  } catch (error) {
+    logger.error('[/api/kade/my-assets/share] error:', error);
+    return res.status(500).json({ error: 'Failed to update sharing' });
+  }
+});
+
+/* ----------------------------------------------------------------------------
+ * WALL OF FAME: GET /api/kade/wall — every asset users chose to share, newest
+ * first, with the creator's first name. Any signed-in user (family only —
+ * the page requires a login, nothing is public).
+ * -------------------------------------------------------------------------- */
+router.get('/wall', requireJwtAuth, async (req, res) => {
+  try {
+    const docs = await KadeAsset.find({ shared: true })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .populate('user', 'name username')
+      .lean();
+    const assets = await Promise.all(docs.map((d) => assetView(d, { withOwner: true })));
+    return res.json({ count: assets.length, assets });
+  } catch (error) {
+    logger.error('[/api/kade/wall] error:', error);
+    return res.status(500).json({ error: 'Failed to load the wall' });
   }
 });
 
@@ -367,6 +435,7 @@ router.post('/usage-event', async (req, res) => {
 const FEED_HTML = require('./kadePages').feedHtml;
 const DASH_HTML = require('./kadePages').dashboardHtml;
 const CREATIONS_HTML = require('./kadePages').creationsHtml;
+const WALL_HTML = require('./kadePages').wallHtml;
 const sendHtml = (html) => (req, res) => res.type('html').send(html);
 
 // ---------------------------------------------------------------------------
@@ -456,6 +525,7 @@ router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
 router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);
+router.wallPage = sendHtml(WALL_HTML);
 // Also reachable under the API namespace:
 router.get('/feed', router.feedPage);
 router.get('/dashboard', router.dashboardPage);

@@ -95,33 +95,38 @@ export const falStudioSchema: ExtendedJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['generate_image', 'generate_video', 'check_video'],
+      enum: ['generate_image', 'generate_video', 'animate_image', 'check_video'],
       description:
-        "'generate_image' = Seedream 4.5 design/photo image (fast, ~$0.04). 'generate_video' = text-to-video clip. 'check_video' = poll a video that wasn't finished when generate_video returned.",
+        "'generate_image' = Seedream 4.5 design/photo image (fast, ~$0.04). 'generate_video' = text-to-video clip. 'animate_image' = bring a still image to LIFE as video (Kling image-to-video) — e.g. make a dog photo wag its tail. 'check_video' = poll a video that wasn't finished when generate_video/animate_image returned.",
     },
     prompt: {
       type: 'string',
       description:
-        'Detailed prompt. For video: describe shot, subject, motion, mood, camera. For images: Seedream 4.5 excels at legible TEXT inside images (logos, signs, flyers, memes) — quote any exact wording.',
+        'Detailed prompt. For video: describe shot, subject, motion, mood, camera. For animate_image: describe the MOTION wanted. For images: Seedream 4.5 excels at legible TEXT inside images (logos, signs, flyers, memes) — quote any exact wording.',
+    },
+    image_url: {
+      type: 'string',
+      description:
+        "animate_image only: URL of the still image to animate. OMIT IT to automatically use the user's most recent generated image from their gallery. Any public https image URL also works.",
     },
     quality: {
       type: 'string',
       enum: ['standard', 'premium'],
       description:
-        "Video only. 'standard' = Kling 3.0 (default, ~$0.42-0.63 per 5s). 'premium' = Veo 3.1 Fast, cinematic + native audio (~$0.75 per 5-8s). Use premium only when the user asks for top quality.",
+        "generate_video only. 'standard' = Kling 3.0 (default, ~$0.42-0.63 per 5s). 'premium' = Veo 3.1 Fast, cinematic + native audio (~$0.75 per 5-8s). Use premium only when the user asks for top quality.",
     },
     duration_seconds: {
       type: 'integer',
-      description: 'Video length in seconds. Standard: 5 or 10 (default 5). Premium: 4, 6, or 8 (default 8).',
+      description: 'Video length in seconds. Standard/animate: 5 or 10 (default 5). Premium: 4, 6, or 8 (default 8).',
     },
     audio: {
       type: 'boolean',
-      description: 'Video only: generate native audio/sound. Default false for standard (cheaper), true for premium.',
+      description: 'generate_video only: generate native audio/sound. Default false for standard (cheaper), true for premium.',
     },
     aspect_ratio: {
       type: 'string',
       enum: ['16:9', '9:16', '1:1'],
-      description: 'Aspect ratio (default 16:9). Use 9:16 for phone-style vertical video.',
+      description: 'Aspect ratio (default 16:9). Use 9:16 for phone-style vertical video. Ignored for animate_image (follows the source image).',
     },
     image_size: {
       type: 'string',
@@ -130,7 +135,7 @@ export const falStudioSchema: ExtendedJsonSchema = {
     },
     request_id: {
       type: 'string',
-      description: 'check_video only: the request id returned by generate_video.',
+      description: 'check_video only: the request id returned by generate_video/animate_image.',
     },
   },
   required: ['action'],
@@ -582,7 +587,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   fal_studio: {
     name: 'fal_studio',
     description:
-      "Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium) and best-in-class design IMAGES with legible text (Seedream 4.5) via fal.ai. Video costs real money per second (~$0.42-1.30 per clip) and takes 1-4 minutes; images cost ~$0.04 and are fast. For video: state the rough cost and get the user's yes BEFORE generating; if generate_video returns a request_id instead of a URL, call check_video with it ~2 minutes later. Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url). Enhance thin prompts into rich visual descriptions first. NEVER claim media was generated without a real URL returned by this tool.",
+      "Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium), ANIMATE still images into video (image-to-video — e.g. make a dog photo wag its tail; with no image_url it animates the user's most recent generated image), and make best-in-class design IMAGES with legible text (Seedream 4.5) via fal.ai. Video costs real money per second (~$0.42-1.30 per clip) and takes 1-4 minutes; images cost ~$0.04 and are fast. Each user has a monthly video budget (~$5) the tool enforces — if it says the budget is hit, relay that warmly and offer a picture instead. For video: state the rough cost and get the user's yes BEFORE generating; if generate_video or animate_image returns a request_id instead of a URL, call check_video with it ~2 minutes later. Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url). Enhance thin prompts into rich visual descriptions first. NEVER claim media was generated without a real URL returned by this tool.",
     schema: falStudioSchema,
     toolType: 'builtin',
   },

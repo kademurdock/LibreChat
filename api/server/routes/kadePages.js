@@ -67,6 +67,10 @@ const SHARED_HEAD = `
     const r = await fetch(path, {headers:{'Authorization':'Bearer '+token}});
     return r;
   }
+  async function apiPost(path, token, body){
+    const r = await fetch(path, {method:'POST', headers:{'Authorization':'Bearer '+token, 'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
+    return r;
+  }
 </script>`;
 
 const feedHtml = `<!doctype html><html lang="en"><head><title>Feed the Server</title>${SHARED_HEAD}</head>
@@ -271,21 +275,28 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
 <style>
   .asset video, .asset img { width: 100%; max-width: 640px; border-radius: 10px; display: block; }
   .asset .meta { font-size: .9rem; margin-top: .5rem; }
-  .asset .prompt { margin-top: .35rem; font-size: .95rem; }
+  .asset .prompt, .asset .desc { margin-top: .35rem; font-size: .95rem; }
   .pill { display:inline-block; font-size:.8rem; font-weight:600; padding:.1rem .55rem; border-radius:999px; background:#e8f0fe; color:#1d4ed8; margin-right:.4rem; }
-  @media (prefers-color-scheme: dark) { .pill { background:#1e3a8a; color:#dbeafe; } }
+  button.share { margin-top:.6rem; font: inherit; font-weight:600; padding:.5rem .9rem; border-radius:10px; border:1px solid #2f6fed; background:#fff; color:#2f6fed; cursor:pointer; }
+  button.share[aria-pressed="true"] { background:#2f6fed; color:#fff; }
+  button.share:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
+  @media (prefers-color-scheme: dark) {
+    .pill { background:#1e3a8a; color:#dbeafe; }
+    button.share { background:#1e2127; }
+    button.share[aria-pressed="true"] { background:#2f6fed; color:#fff; }
+  }
 </style>
 </head>
 <body>
-  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a></p>
+  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/wall-of-fame">Wall of Fame &rarr;</a></p>
   <h1>My Creations</h1>
-  <p class="muted">Every video and image you've generated here, newest first. Videos play right on this page.</p>
+  <p class="muted">Every video and image you've generated here, newest first. Videos play right on this page. Hit "Share to the Wall of Fame" on a favorite and everyone on the site can enjoy it too.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading your creations…</div>
 
   <main id="content" hidden aria-label="Your generated videos and images"></main>
 
-  <footer class="muted">Fresh every time you open this page. Video links are hosted by fal.media and may eventually expire — download anything you want to keep forever. — Kade-AI</footer>
+  <footer class="muted">Fresh every time you open this page. Videos are backed up to Kade's own storage automatically, so they won't vanish — but download anything you want a personal copy of. — Kade-AI</footer>
 
   <script>
     (async function(){
@@ -318,11 +329,13 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
       }
       main.innerHTML = d.assets.map(function(a, i){
         const title = (a.kind === 'video' ? 'Video' : 'Image') + ' — ' + when(a.createdAt);
-        const desc = a.prompt ? a.prompt : (a.kind === 'video' ? 'Generated video' : 'Generated image');
+        const desc = a.description || a.prompt || (a.kind === 'video' ? 'Generated video' : 'Generated image');
         let media;
         if(a.kind === 'video'){
-          media = '<video controls preload="metadata" playsinline aria-label="' + esc(desc) + '"><source src="' + esc(a.url) + '"></video>' +
-                  '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open or download this video in a new tab">Open or download this video</a>';
+          media = '<video controls preload="metadata" playsinline aria-label="' + esc(desc) + '"><source src="' + esc(a.url) + '">' +
+                  (a.backupUrl ? '<source src="' + esc(a.backupUrl) + '">' : '') + '</video>' +
+                  '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open or download this video in a new tab">Open or download this video</a>' +
+                  (a.backupUrl ? ' &middot; <a href="' + esc(a.backupUrl) + '" target="_blank" rel="noreferrer" aria-label="Open the backup copy of this video">backup copy</a>' : '');
         } else {
           media = '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open full-size image in a new tab"><img loading="lazy" src="' + esc(a.url) + '" alt="' + esc(desc) + '"></a>';
         }
@@ -330,6 +343,100 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
           '<h2 style="margin:0 0 .5rem;font-size:1.05rem">' + esc(title) + '</h2>' +
           media +
           '<p class="meta"><span class="pill">' + esc(a.kind) + '</span>' + esc(a.model || a.service) + (a.costUSD ? ' &middot; ' + money(a.costUSD) : '') + '</p>' +
+          (a.description ? '<p class="desc"><strong>What it looks like:</strong> ' + esc(a.description) + '</p>' : '') +
+          (a.prompt ? '<p class="prompt"><strong>Prompt:</strong> ' + esc(a.prompt) + '</p>' : '') +
+          '<button type="button" class="share" data-id="' + esc(a.id) + '" aria-pressed="' + (a.shared ? 'true' : 'false') + '">' +
+            (a.shared ? 'On the Wall of Fame — tap to remove' : 'Share to the Wall of Fame') + '</button>' +
+        '</section>';
+      }).join('');
+      main.addEventListener('click', async function(ev){
+        const btn = ev.target.closest('button.share');
+        if(!btn){ return; }
+        const nowShared = btn.getAttribute('aria-pressed') !== 'true';
+        btn.disabled = true;
+        try{
+          const resp = await apiPost('/api/kade/my-assets/' + btn.getAttribute('data-id') + '/share', token, { shared: nowShared });
+          if(resp.ok){
+            btn.setAttribute('aria-pressed', nowShared ? 'true' : 'false');
+            btn.textContent = nowShared ? 'On the Wall of Fame — tap to remove' : 'Share to the Wall of Fame';
+            status.textContent = nowShared ? 'Shared to the Wall of Fame!' : 'Removed from the Wall of Fame.';
+          } else {
+            status.textContent = 'Could not update sharing just now — try again in a moment.';
+          }
+        }catch(e){
+          status.textContent = 'Could not update sharing just now — try again in a moment.';
+        }
+        btn.disabled = false;
+      });
+      status.hidden = false;
+      main.hidden = false;
+    })();
+  </script>
+</body></html>`;
+
+const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</title>${SHARED_HEAD}
+<style>
+  .asset video, .asset img { width: 100%; max-width: 640px; border-radius: 10px; display: block; }
+  .asset .meta { font-size: .9rem; margin-top: .5rem; }
+  .asset .prompt, .asset .desc { margin-top: .35rem; font-size: .95rem; }
+  .pill { display:inline-block; font-size:.8rem; font-weight:600; padding:.1rem .55rem; border-radius:999px; background:#fdf1d7; color:#8a6100; margin-right:.4rem; }
+  @media (prefers-color-scheme: dark) { .pill { background:#5c4300; color:#ffe9b3; } }
+</style>
+</head>
+<body>
+  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/my-creations">My Creations</a></p>
+  <h1>Wall of Fame</h1>
+  <p class="muted">The best AI creations from everyone on Kade-AI — shared by their makers. Add your own from your <a href="/my-creations">My Creations</a> page.</p>
+
+  <div id="status" class="status" role="status" aria-live="polite">Loading the wall…</div>
+
+  <main id="content" hidden aria-label="Creations shared by everyone on the site"></main>
+
+  <footer class="muted">Only things people chose to share appear here. — Kade-AI</footer>
+
+  <script>
+    (async function(){
+      const status = document.getElementById('status');
+      const token = await getToken();
+      if(!token){
+        status.className = 'status err';
+        status.textContent = 'Please sign in at the chat site first, then reload this page.';
+        return;
+      }
+      const r = await apiGet('/api/kade/wall', token);
+      if(!r.ok){
+        status.className = 'status err';
+        status.textContent = 'Could not load the wall right now. Try reloading in a moment.';
+        return;
+      }
+      const d = await r.json();
+      const main = document.getElementById('content');
+      if(!d.assets || d.assets.length === 0){
+        status.textContent = 'The wall is empty so far. Be the first: open My Creations and share a favorite!';
+        return;
+      }
+      status.textContent = d.assets.length + ' shared creation' + (d.assets.length===1?'':'s') + ' on the wall.';
+      function esc(s){ const div=document.createElement('div'); div.textContent = s || ''; return div.innerHTML; }
+      function when(iso){
+        try { return new Date(iso).toLocaleString('en-US', { month:'long', day:'numeric', year:'numeric' }); }
+        catch(e){ return ''; }
+      }
+      main.innerHTML = d.assets.map(function(a){
+        const title = (a.kind === 'video' ? 'Video' : 'Image') + ' by ' + (a.by || 'Someone') + ' — ' + when(a.createdAt);
+        const desc = a.description || a.prompt || (a.kind === 'video' ? 'Shared video' : 'Shared image');
+        let media;
+        if(a.kind === 'video'){
+          media = '<video controls preload="metadata" playsinline aria-label="' + esc(desc) + '"><source src="' + esc(a.url) + '">' +
+                  (a.backupUrl ? '<source src="' + esc(a.backupUrl) + '">' : '') + '</video>' +
+                  '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open or download this video in a new tab">Open or download this video</a>';
+        } else {
+          media = '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open full-size image in a new tab"><img loading="lazy" src="' + esc(a.url) + '" alt="' + esc(desc) + '"></a>';
+        }
+        return '<section class="card asset" aria-label="' + esc(title) + '">' +
+          '<h2 style="margin:0 0 .5rem;font-size:1.05rem">' + esc(title) + '</h2>' +
+          media +
+          '<p class="meta"><span class="pill">' + esc(a.by || 'Someone') + '</span>' + esc(a.kind) + (a.model ? ' &middot; ' + esc(a.model) : '') + '</p>' +
+          (a.description ? '<p class="desc"><strong>What it looks like:</strong> ' + esc(a.description) + '</p>' : '') +
           (a.prompt ? '<p class="prompt"><strong>Prompt:</strong> ' + esc(a.prompt) + '</p>' : '') +
         '</section>';
       }).join('');
@@ -339,4 +446,4 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
   </script>
 </body></html>`;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml };
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml };

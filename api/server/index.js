@@ -285,6 +285,7 @@ const startServer = async () => {
   app.get('/usage-dashboard', routes.kade.dashboardPage);
   app.get('/feed-the-server', routes.kade.feedPage);
   app.get('/my-creations', routes.kade.creationsPage);
+  app.get('/wall-of-fame', routes.kade.wallPage);
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
