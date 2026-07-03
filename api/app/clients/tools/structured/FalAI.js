@@ -105,7 +105,7 @@ class FalAI extends Tool {
       `Each user has a ~$${MONTHLY_CAP_USD}/month video budget; the tool enforces it and says so politely if they've hit it.`;
     this.description_for_model =
       this.description +
-      " For video: tell the user the clip is rendering and the rough cost BEFORE generating; if generate_video or animate_image returns a request_id instead of a URL, wait for the user's next message or ~2 minutes, then call check_video with it. " +
+      " For video: tell the user the clip is rendering and the rough cost BEFORE generating. If generate_video or animate_image returns a request_id instead of a URL: you CANNOT send messages on your own later, so NEVER say 'I'll ping you' or 'I'll check back' — instead END your reply by asking the user to send any message in ~2 minutes ('just say ready'), and on their NEXT message call check_video FIRST and deliver the result before anything else. " +
       "animate_image with no image_url automatically animates the photo the user uploaded (last 24 hours), or else their most recent generated image — perfect for 'here's my dog, make him wag' or 'now make it move'. Its reply names WHICH image it used: repeat that to the user so nothing gets animated by surprise. animate_image always renders on Kling standard — never promise premium/Veo for an animation. " +
       "Before any video, if the user hasn't specified, ask ONCE whether they want sound (recommended here — blind users experience video through audio; standard 5s: ~$0.63 with sound vs ~$0.42 silent) and only use premium quality when the user picks it. " +
       'Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url). Enhance thin prompts into rich visual descriptions first.';
@@ -296,7 +296,10 @@ class FalAI extends Tool {
     }
     return (
       `${notePrefix}The video is still rendering (request_id: ${requestId}, quality: ${quality}). ` +
-      `Call check_video with that request_id and quality in about 2 minutes. Estimated cost ~$${estUSD} was logged (auto-refunded if the render fails).`
+      `Estimated cost ~$${estUSD} was logged (auto-refunded if the render fails). ` +
+      'IMPORTANT: you cannot post a follow-up message on your own after this turn ends — do NOT promise to "ping" or "check back". ' +
+      "End your reply by telling the user the video is cooking and to send any message in about 2 minutes (even just 'ready?'). " +
+      'On the user\'s NEXT message, call check_video with this request_id FIRST and deliver the video before anything else.'
     );
   }
 
@@ -595,7 +598,11 @@ class FalAI extends Tool {
         ' Offer to try again.'
       );
     }
-    return `Still rendering (status: ${st.data?.status || 'IN_PROGRESS'}). Check again in a minute or two.`;
+    return (
+      `Still rendering (status: ${st.data?.status || 'IN_PROGRESS'}). ` +
+      'Do NOT keep polling in this turn and do NOT promise to check back on your own — ' +
+      "tell the user it needs another minute and to send any message ('ready?') so you can fetch it, then call check_video first thing on their next message."
+    );
   }
 }
 
