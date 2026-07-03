@@ -58,7 +58,7 @@ const falJsonSchema = {
     image_url: {
       type: 'string',
       description:
-        "animate_image only: URL of the still image to animate. OMIT IT to automatically use the user's most recent generated image from their gallery (e.g. right after they made a picture). Any public https image URL also works.",
+        "animate_image only: URL of the still image to animate. OMIT IT to auto-pick: a photo the user attached/uploaded in the last hour wins, otherwise their most recent generated image from the gallery. Any public https image URL also works.",
     },
     quality: {
       type: 'string',
@@ -105,7 +105,7 @@ class FalAI extends Tool {
     this.description_for_model =
       this.description +
       " For video: tell the user the clip is rendering and the rough cost BEFORE generating; if generate_video or animate_image returns a request_id instead of a URL, wait for the user's next message or ~2 minutes, then call check_video with it. " +
-      "animate_image with no image_url automatically animates the user's most recent generated image — perfect for 'now make it move'. " +
+      "animate_image with no image_url automatically animates the photo the user just uploaded (last hour), or else their most recent generated image — perfect for 'here's my dog, make him wag' or 'now make it move'. " +
       'Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url). Enhance thin prompts into rich visual descriptions first.';
     this.schema = falJsonSchema;
     this.apiKey = fields.FAL_KEY || process.env.FAL_KEY || '';
@@ -324,8 +324,33 @@ class FalAI extends Tool {
    */
   async resolveSourceImage(imageUrl) {
     let src = imageUrl && String(imageUrl).trim();
-    let fromGallery = false;
+    let source = 'explicit-url';
     if (!src) {
+      // 1st choice: an image the user ATTACHED/UPLOADED recently (last hour) —
+      // "here's my dog, make him wag" — the model can't quote attachment URLs,
+      // so we look them up ourselves.
+      try {
+        const File = mongoose.models.File;
+        if (File) {
+          const upload = await File.findOne({
+            user: new mongoose.Types.ObjectId(String(this.userId)),
+            type: /^image\//,
+            context: 'message_attachment',
+            createdAt: { $gte: new Date(Date.now() - 60 * 60 * 1000) },
+          })
+            .sort({ createdAt: -1 })
+            .lean();
+          if (upload?.filepath) {
+            src = String(upload.filepath);
+            source = 'recent-upload';
+          }
+        }
+      } catch (e) {
+        logger.warn('[FalAI] upload lookup failed:', e.message);
+      }
+    }
+    if (!src) {
+      // 2nd choice: the user's newest generated image from their gallery.
       const latest = await KadeAsset.findOne({
         user: new mongoose.Types.ObjectId(String(this.userId)),
         kind: 'image',
@@ -336,7 +361,7 @@ class FalAI extends Tool {
         return { error: 'NO_IMAGE' };
       }
       src = String(latest.url);
-      fromGallery = true;
+      source = 'gallery-latest';
     }
     if (!/^https?:\/\//i.test(src)) {
       const base = (process.env.DOMAIN_SERVER || 'https://kademurdock.com').replace(/\/$/, '');
@@ -355,7 +380,7 @@ class FalAI extends Tool {
     } catch (e) {
       logger.warn('[FalAI] source image re-sign skipped:', e.message);
     }
-    return { src, fromGallery };
+    return { src, source };
   }
 
   async animateImage(data) {
@@ -386,7 +411,7 @@ class FalAI extends Tool {
       estUSD,
       prompt: data.prompt || 'animated from a still image',
       modelName: 'kling-3.0-i2v',
-      extraMeta: { sourceImage: resolved.fromGallery ? 'gallery-latest' : 'explicit-url' },
+      extraMeta: { sourceImage: resolved.source },
     });
   }
 

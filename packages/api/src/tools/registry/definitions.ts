@@ -107,7 +107,7 @@ export const falStudioSchema: ExtendedJsonSchema = {
     image_url: {
       type: 'string',
       description:
-        "animate_image only: URL of the still image to animate. OMIT IT to automatically use the user's most recent generated image from their gallery. Any public https image URL also works.",
+        "animate_image only: URL of the still image to animate. OMIT IT to auto-pick: a photo the user attached/uploaded in the last hour wins, otherwise their most recent generated image from the gallery. Any public https image URL also works.",
     },
     quality: {
       type: 'string',
@@ -587,7 +587,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   fal_studio: {
     name: 'fal_studio',
     description:
-      "Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium), ANIMATE still images into video (image-to-video — e.g. make a dog photo wag its tail; with no image_url it animates the user's most recent generated image), and make best-in-class design IMAGES with legible text (Seedream 4.5) via fal.ai. Video costs real money per second (~$0.42-1.30 per clip) and takes 1-4 minutes; images cost ~$0.04 and are fast. Each user has a monthly video budget (~$5) the tool enforces — if it says the budget is hit, relay that warmly and offer a picture instead. For video: state the rough cost and get the user's yes BEFORE generating; if generate_video or animate_image returns a request_id instead of a URL, call check_video with it ~2 minutes later. Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url). Enhance thin prompts into rich visual descriptions first. NEVER claim media was generated without a real URL returned by this tool.",
+      "Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium), ANIMATE still images into video (image-to-video — e.g. make a dog photo wag its tail; with no image_url it animates the photo the user just uploaded, or else their most recent generated image), and make best-in-class design IMAGES with legible text (Seedream 4.5) via fal.ai. Video costs real money per second (~$0.42-1.30 per clip) and takes 1-4 minutes; images cost ~$0.04 and are fast. Each user has a monthly video budget (~$5) the tool enforces — if it says the budget is hit, relay that warmly and offer a picture instead. For video: state the rough cost and get the user's yes BEFORE generating; if generate_video or animate_image returns a request_id instead of a URL, call check_video with it ~2 minutes later. Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url). Enhance thin prompts into rich visual descriptions first. NEVER claim media was generated without a real URL returned by this tool.",
     schema: falStudioSchema,
     toolType: 'builtin',
   },
