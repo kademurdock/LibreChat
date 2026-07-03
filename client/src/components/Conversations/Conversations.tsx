@@ -449,6 +449,11 @@ const Conversations: FC<ConversationsProps> = ({
         </div>
       ) : (
         <div ref={listContainerRef} className="min-h-0 flex-1 overflow-hidden">
+          {/* ♿ KADE July 2 2026 (evening 2): react-virtualized used to render
+              role="grid" > "rowgroup" with no rows/cells inside — an invalid
+              ARIA grid that confused VoiceOver/NVDA table navigation. Both
+              levels are presentational now; the real semantics are the h2 date
+              headers and the conversation links themselves. */}
           <List
             ref={containerRef}
             width={listWidth}
@@ -457,14 +462,13 @@ const Conversations: FC<ConversationsProps> = ({
             rowCount={flattenedItems.length}
             rowHeight={getRowHeight}
             rowRenderer={rowRenderer}
-            overscanRowCount={10}
-            aria-readonly={false}
+            overscanRowCount={15}
             className="outline-none"
-            aria-label="Conversations"
             onRowsRendered={handleRowsRendered}
             tabIndex={-1}
             style={{ outline: 'none' }}
-            containerRole="rowgroup"
+            role="presentation"
+            containerRole="presentation"
           />
         </div>
       )}

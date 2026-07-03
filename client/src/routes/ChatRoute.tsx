@@ -3,7 +3,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
+import {
+  Constants,
+  EModelEndpoint,
+  isAgentsEndpoint,
+  isEphemeralAgentId,
+} from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset } from 'librechat-data-provider';
 import {
@@ -11,6 +16,7 @@ import {
   processValidSettings,
   getDefaultModelSpec,
   getModelSpecPreset,
+  getLocalStorageItems,
   isNotFoundError,
   isTemporaryConversation,
   logger,
@@ -170,6 +176,29 @@ export default function ChatRoute() {
       const spec = result?.default ?? result?.last ?? result?.softDefault;
       const specPreset = spec ? getModelSpecPreset(spec) : undefined;
 
+      /* ♿ KADE July 2 2026 (evening 2): open the site ready to talk to the
+         LAST agent you were chatting with. Without this, the landing chat
+         waited on a race of selector effects (and after a logout wiped
+         localStorage, could land on an arbitrary endpoint with no agent).
+         Priority: admin model spec → last stored agent → agents endpoint
+         (the selector effect then fills in the newest conversation's agent
+         from the server — see useSelectorEffects). */
+      let basePreset = specPreset;
+      if (!basePreset) {
+        try {
+          const { lastConversationSetup } = getLocalStorageItems();
+          const lastEndpoint = lastConversationSetup?.endpoint ?? '';
+          const lastAgentId = lastConversationSetup?.agent_id ?? '';
+          if (isAgentsEndpoint(lastEndpoint) && lastAgentId && !isEphemeralAgentId(lastAgentId)) {
+            basePreset = { endpoint: lastEndpoint, agent_id: lastAgentId } as TPreset;
+          } else if (!lastEndpoint && endpointsQuery.data?.[EModelEndpoint.agents] != null) {
+            basePreset = { endpoint: EModelEndpoint.agents } as TPreset;
+          }
+        } catch {
+          // corrupted localStorage — fall through to stock behavior
+        }
+      }
+
       const queryParams: Record<string, string> = {};
       searchParams.forEach((value, key) => {
         if (key !== 'prompt' && key !== 'q' && key !== 'submit' && key !== 'projectId') {
@@ -179,9 +208,9 @@ export default function ChatRoute() {
       const querySettings = processValidSettings(queryParams);
 
       if (Object.keys(querySettings).length > 0) {
-        return mergeQuerySettingsWithSpec(specPreset, querySettings);
+        return mergeQuerySettingsWithSpec(basePreset, querySettings);
       }
-      return specPreset;
+      return basePreset;
     };
 
     if (isNewConvo && endpointsQuery.data && modelsQuery.data) {

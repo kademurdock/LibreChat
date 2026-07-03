@@ -304,3 +304,18 @@ Kade's feedback round on D2b/D2c, all four items:
 **Files:** `Voices.tsx`, `AgentVoicePicker.tsx`. **Companion proxy commit:** `7732b28` (AUDITION_TEXT + `audition` field in /voices.json).
 
 The full library-page monologue (~460 chars) made browse-auditions lag on first play. Auditions now speak a one-liner that still PERFORMS: `%%%warm, playful, quietly showing off%%% Hey — {voice} here! And this right here? That's exactly how I sound.` — the %%% sentinel becomes real [bracket] delivery direction in the proxy's applySteeringTags on the synth path (the same conversion chat uses; this also closes the "confirm the preview path runs the %%% conversion" check from EMOTION_TAG_VOICE_PREVIEWS.md). Served from /voices.json (`audition`, `{voice}` filled client-side) so the line is editable in ONE place; matching built-in fallback. The long monologue stays on the full Preview button and the /voices page. Cache keys already covered text-variant + rate.
+
+---
+
+## A11y round — chat history opens with VoiceOver, account button label, land on last agent (2026-07-02, evening 2)
+
+**Files:** `Convo.tsx`, `ConvoLink.tsx`, `Conversations.tsx`, `ChatRoute.tsx`, `useSelectorEffects.ts`, `translation.json`.
+
+Kade's feedback round, all four items:
+
+1. **Old conversations wouldn't open with VoiceOver.** Three stacked causes in the history list: (a) each row was a `div role="button"` with a nested double-click-rename trap and a duplicate `aria-label` on the title; (b) the row's own DOM *mutated the moment it received focus* (options menu lazily mounted on hover/focus) — exactly the churn that makes iOS VO drop double-tap activations; (c) react-virtualized rendered `role="grid"` > `rowgroup` with no rows/cells — an invalid ARIA grid that pushes screen readers into broken table navigation. Fixes: each conversation is now a REAL `<a href="/c/…">` (native VO activation; SPA navigation intercepted on click, and the href still works as a hard fallback), the options button is always mounted (no focus-triggered DOM swap; hidden rows use `visibility:hidden` so VO doesn't hit ghost buttons), and both virtualization wrappers are `role="presentation"` — the real semantics are the h2 date headers plus the links. Double-click-to-rename removed (rename stays in the options menu). Title text is `aria-hidden` (the link carries the accessible name — no more double-speak). `overscanRowCount` 10→15 for smoother sequential swiping.
+2. **Account button label:** `com_nav_account_settings` "Account Settings" → **"Account and settings"** (bottom-left avatar button, per Kade's ask).
+3. **Open the site on the last agent you were talking to.** Two layers: (a) `ChatRoute.getNewConvoPreset` now seeds the landing chat from `LAST_CONVO_SETUP_0` (endpoint + non-ephemeral `agent_id`) — deterministic, no effect race; with NO stored setup it at least lands on the agents endpoint. (b) The real reason it kept failing: `clearLocalStorage` runs on logout/session expiry, and iOS Safari vs the installed PWA don't share storage — so `useSelectorEffects` now falls back to the **newest conversation's agent from the server** (the same conversations query the sidebar runs — cache hit, no extra request; the list endpoint already returns `agent_id`). It WAITS for that query rather than grabbing `agents[0]`, which remains the true last resort.
+4. **Clutter trims for screen readers:** non-active rows no longer expose invisible option buttons; one announcement per conversation instead of two; grid junk gone; generating spinner got `role="img"`.
+
+PWA note: everything above is plain DOM/ARIA + existing queries — nothing service-worker- or storage-API-dependent, so the installed iOS PWA behaves identically to Safari.

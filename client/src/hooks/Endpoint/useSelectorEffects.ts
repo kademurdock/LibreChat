@@ -7,6 +7,7 @@ import {
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { SelectedValues } from '~/common';
+import { useConversationsInfiniteQuery } from '~/data-provider';
 import useSetIndexOptions from '~/hooks/Conversations/useSetIndexOptions';
 
 export default function useSelectorEffects({
@@ -38,6 +39,26 @@ export default function useSelectorEffects({
     return Object.values(assistantsMap?.[endpoint ?? ''] ?? {}) as t.Assistant[];
   }, [assistantsMap, endpoint]);
 
+  /* ♿ KADE July 2 2026 (evening 2): localStorage is wiped on logout, and iOS
+     Safari and the installed PWA don't even share storage — so the old
+     "remember the last agent in localStorage" restore silently failed and the
+     landing chat grabbed the first agent in the list. When there is no usable
+     stored agent, fall back to the newest conversation's agent from the
+     SERVER (same query the sidebar already runs, so this is usually a cache
+     hit). Only then take agents[0] as the last resort. */
+  const needsServerFallback = useMemo(() => {
+    if (!isAgentsEndpoint(endpoint as string) || selectedAgentId != null) {
+      return false;
+    }
+    const stored = localStorage.getItem(`${LocalStorageKeys.AGENT_ID_PREFIX}${index}`);
+    return stored == null || isEphemeralAgentId(stored);
+  }, [endpoint, selectedAgentId, index]);
+
+  const convoQuery = useConversationsInfiniteQuery(
+    {},
+    { enabled: needsServerFallback, staleTime: 30000 },
+  );
+
   useEffect(() => {
     if (!isAgentsEndpoint(endpoint as string)) {
       return;
@@ -45,7 +66,19 @@ export default function useSelectorEffects({
     if (selectedAgentId == null && agents.length > 0) {
       let agent_id = localStorage.getItem(`${LocalStorageKeys.AGENT_ID_PREFIX}${index}`);
       if (agent_id == null || isEphemeralAgentId(agent_id)) {
-        agent_id = agents[0]?.id;
+        if (needsServerFallback && !convoQuery.isFetched && !convoQuery.isError) {
+          /* conversations still loading — wait for the real answer instead of
+             grabbing an arbitrary agent */
+          return;
+        }
+        /* The list endpoint DOES return agent_id (see getConvosByCursor's
+           .select in data-schemas), it's just missing from the
+           MinimalConversation type — hence the cast. */
+        const newestConvo = convoQuery.data?.pages?.[0]?.conversations?.find((c) => {
+          const id = (c as Partial<t.TConversation> | undefined)?.agent_id;
+          return id != null && id !== '' && !isEphemeralAgentId(id);
+        }) as Partial<t.TConversation> | undefined;
+        agent_id = newestConvo?.agent_id ?? agents[0]?.id;
       }
       const agent = agentsMap?.[agent_id];
 
@@ -54,7 +87,18 @@ export default function useSelectorEffects({
         setOption('agent_id')(agent_id);
       }
     }
-  }, [index, agents, selectedAgentId, agentsMap, endpoint, setOption]);
+  }, [
+    index,
+    agents,
+    selectedAgentId,
+    agentsMap,
+    endpoint,
+    setOption,
+    needsServerFallback,
+    convoQuery.data,
+    convoQuery.isFetched,
+    convoQuery.isError,
+  ]);
   useEffect(() => {
     if (!isAssistantsEndpoint(endpoint as string)) {
       return;
