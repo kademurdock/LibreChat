@@ -6,11 +6,15 @@
 const blackjack = require('./blackjack');
 const wildEights = require('./wildEights');
 const goFish = require('./goFish');
+const pig = require('./pig');
+const trivia = require('./trivia');
 
 const GAMES = {
   blackjack,
   wild_eights: wildEights,
   go_fish: goFish,
+  pig,
+  trivia,
 };
 
 function getGame(key) {

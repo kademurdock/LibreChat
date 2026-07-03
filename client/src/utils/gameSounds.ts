@@ -52,6 +52,30 @@ function srcFor(cue: string): string | null {
   return `/assets/sounds/${cue}${n === 1 ? '' : `_${n}`}.mp3`;
 }
 
+/**
+ * Ordered clip URLs for every [sound:x] token in a piece of text, with the
+ * usual random variant pick. Used by Conversation Mode (phase 3) to schedule
+ * cue clips in its Web Audio playback queue in sentence order.
+ */
+export function gameSoundSrcsIn(text: string): string[] {
+  if (!text || text.indexOf('[sound:') === -1) {
+    return [];
+  }
+  const out: string[] = [];
+  GAME_SOUND_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = GAME_SOUND_RE.exec(text)) !== null) {
+    const src = srcFor(m[1].toLowerCase());
+    if (src) {
+      out.push(src);
+    }
+    if (out.length >= 6) {
+      break; // sanity cap per chunk
+    }
+  }
+  return out;
+}
+
 /** message id -> set of already-played token character offsets */
 const played = new Map<string, Set<number>>();
 const MAX_TRACKED_MESSAGES = 60;

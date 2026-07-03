@@ -310,7 +310,7 @@ export const kadeGamesSchema: ExtendedJsonSchema = {
     },
     game: {
       type: 'string',
-      description: "For new_game: 'blackjack', 'wild_eights', or 'go_fish'.",
+      description: "For new_game: 'blackjack', 'wild_eights', 'go_fish', 'pig', or 'trivia'.",
     },
     move: {
       type: 'string',
@@ -319,11 +319,23 @@ export const kadeGamesSchema: ExtendedJsonSchema = {
     },
     opponents: {
       type: 'integer',
-      description: 'For new_game (wild_eights / go_fish): number of AI opponents, 1-3. Default 1.',
+      description: 'For new_game (wild_eights / go_fish / pig / trivia): AI opponents. Cards/dice 1-3 (default 1); trivia 0-3 rivals (default 0 = solo).',
     },
     bet: {
       type: 'integer',
       description: 'For new_game (blackjack): fake-chip wager 1-500, default 10. Never real money.',
+    },
+    rounds: {
+      type: 'integer',
+      description: 'For new_game (trivia): how many questions, 3-15. Default 5.',
+    },
+    difficulty: {
+      type: 'string',
+      description: "For new_game (trivia): 'easy', 'medium', or 'hard'. Omit for a mix.",
+    },
+    category: {
+      type: 'string',
+      description: 'For new_game (trivia): optional topic (general, film, music, science, sports, history, animals, video_games, and more).',
     },
     names: {
       type: 'array',
@@ -676,7 +688,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_games: {
     name: 'kade_games',
     description:
-      'Server-refereed voice games (Blackjack, Wild Eights, Go Fish) — free, no cost. The engine deals and enforces every rule; you only relay the table and play the move the human picks from the LEGAL MOVES list. NEVER invent cards, totals, or outcomes. Games save per user and resume in any later conversation.',
+      'Server-refereed voice games (Blackjack, Wild Eights, Go Fish, Pig dice, Trivia Night) — free, no cost. The engine deals and enforces every rule; you only relay the table and play the move the human picks from the LEGAL MOVES list. NEVER invent cards, totals, or outcomes. Games save per user and resume in any later conversation.',
     schema: kadeGamesSchema,
     toolType: 'builtin',
   },

@@ -93,7 +93,7 @@
   {
     "name": "Game Parlor",
     "pluginKey": "kade_games",
-    "description": "Server-refereed voice games \u2014 Blackjack, Wild Eights, Go Fish. The engine enforces every rule; the agent just deals the banter. No key, no cost.",
+    "description": "Server-refereed voice games \u2014 Blackjack, Wild Eights, Go Fish, Pig dice, Trivia Night. The engine enforces every rule; the agent just deals the banter. No key, no cost.",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []

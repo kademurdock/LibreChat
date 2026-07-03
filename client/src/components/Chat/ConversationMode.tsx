@@ -38,7 +38,7 @@ import { Phone, PhoneOff, Mic, StopCircle } from 'lucide-react';
 import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 import { stripVoiceTags } from '~/utils/voiceTags';
-import { stripGameSoundTags } from '~/utils/gameSounds';
+import { stripGameSoundTags, gameSoundSrcsIn } from '~/utils/gameSounds';
 import store from '~/store';
 
 // -- SentenceStreamer ----------------------------------------------------------
@@ -383,7 +383,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // actually written for. The phone bridge never had this bug (its
   // equivalent chain is built the same synchronous way already); this was
   // web-only.
-  const enqueueAudio = useCallback((bufPromise: Promise<ArrayBuffer | null>): Promise<void> => {
+  const enqueueAudio = useCallback((bufPromise: Promise<ArrayBuffer | null>, gain?: number): Promise<void> => {
     const tail = playQueueRef.current.then(async () => {
       if (abortRef.current) return;
       const raw = await bufPromise;
@@ -398,8 +398,17 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           // Route through the output analyser (falls back to a direct connect
           // if it somehow isn't set up yet) so the speaking-state pulse has
           // real amplitude data to animate from.
-          if (outputAnalyserRef.current) src.connect(outputAnalyserRef.current);
-          else src.connect(ctx.destination);
+          const sink = outputAnalyserRef.current ?? ctx.destination;
+          if (typeof gain === 'number' && gain !== 1) {
+            // Game Parlor cue clips are peak-normalized way hotter than the
+            // -20 dBFS speech the TTS proxy sends; duck them under the voice.
+            const g = ctx.createGain();
+            g.gain.value = gain;
+            src.connect(g);
+            g.connect(sink);
+          } else {
+            src.connect(sink);
+          }
           src.onended = () => resolve();
           src.start();
         });
@@ -452,10 +461,24 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     streamer.onsentence = (sentence) => {
       if (abortRef.current) return;
       if (firstChunk) { setStatus('speaking'); firstChunk = false; }
+      // Game Parlor phase 3: any [sound:x] cue in this sentence plays as a
+      // real clip IN the speech queue (so it lands between sentences, in
+      // order), and the token never reaches TTS. Clips are ducked to sit
+      // under the voice (they're mastered much hotter than -20 dBFS speech).
+      for (const cueSrc of gameSoundSrcsIn(sentence)) {
+        speechPromises.push(
+          enqueueAudio(
+            fetch(cueSrc).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null),
+            0.45,
+          ),
+        );
+      }
+      const spoken = stripGameSoundTags(sentence);
+      if (spoken.trim().length < 2) return; // token-only fragment, nothing to say
       // Queue reservation happens synchronously right here, in detection
       // order -- see enqueueAudio's note on why that matters. The fetch
       // itself is passed in as a promise, not awaited before queuing.
-      speechPromises.push(enqueueAudio(fetchSentenceAudio(sentence)));
+      speechPromises.push(enqueueAudio(fetchSentenceAudio(spoken)));
     };
 
     const pushText = (chunk: string) => {

@@ -21,7 +21,7 @@ const kadeGamesJsonSchema = {
     game: {
       type: 'string',
       description:
-        "For new_game: which game — 'blackjack', 'wild_eights', or 'go_fish'. Use list_games if unsure.",
+        "For new_game: which game — 'blackjack', 'wild_eights', 'go_fish', 'pig' (press-your-luck dice), or 'trivia' (real quiz questions). Use list_games if unsure.",
     },
     move: {
       type: 'string',
@@ -31,11 +31,23 @@ const kadeGamesJsonSchema = {
     opponents: {
       type: 'integer',
       description:
-        'For new_game (wild_eights / go_fish): how many AI opponents at the table, 1–3. Default 1.',
+        'For new_game (wild_eights / go_fish / pig / trivia): how many AI opponents at the table. Cards/dice: 1–3 (default 1). Trivia: 0–3 rivals (default 0 = solo quiz).',
     },
     bet: {
       type: 'integer',
       description: 'For new_game (blackjack): fake-chip wager, 1–500. Default 10. Never real money.',
+    },
+    rounds: {
+      type: 'integer',
+      description: 'For new_game (trivia): how many questions, 3–15. Default 5.',
+    },
+    difficulty: {
+      type: 'string',
+      description: "For new_game (trivia): 'easy', 'medium', or 'hard'. Omit for a mix.",
+    },
+    category: {
+      type: 'string',
+      description: "For new_game (trivia): optional topic — general, books, film, music, tv, video_games, science, computers, math, sports, geography, history, politics, art, celebrities, animals, vehicles, comics, anime, cartoons.",
     },
     names: {
       type: 'array',
@@ -68,7 +80,7 @@ class KadeGames extends Tool {
     this.agentName = fields.agentName || '';
     this.name = 'kade_games';
     this.description =
-      'REAL, server-refereed parlor games (Blackjack, Wild Eights, Go Fish) — free, no cost, playable entirely by voice. ' +
+      'REAL, server-refereed parlor games (Blackjack, Wild Eights, Go Fish, Pig dice, Trivia Night) — free, no cost, playable entirely by voice. ' +
       'The engine deals and enforces the rules; YOU only relay the table and play the move the human chooses. ' +
       "Flow: action='new_game' to deal, read the LEGAL MOVES to the player in your own voice, then action='move' with the " +
       'EXACT token they pick. NEVER invent cards, totals, or outcomes and never claim a move the engine did not return — ' +
@@ -118,7 +130,7 @@ class KadeGames extends Tool {
   }
 
   async _call(data) {
-    const { action, game, move, opponents, bet, names, game_id } = data || {};
+    const { action, game, move, opponents, bet, names, game_id, rounds, difficulty, category } = data || {};
     if (!this.userId) return 'Games are unavailable (no user on this request).';
 
     try {
@@ -158,9 +170,12 @@ class KadeGames extends Tool {
         if (active >= MAX_ACTIVE) {
           return `You have ${active} tables going (max ${MAX_ACTIVE}). Quit one first (action='quit') — 'games' lists them.`;
         }
-        const state = G.newGame({
-          opponents: parseInt(opponents, 10) || 1,
+        const state = await G.newGame({
+          opponents: Number.isFinite(parseInt(opponents, 10)) ? parseInt(opponents, 10) : undefined,
           bet: parseInt(bet, 10) || 10,
+          rounds,
+          difficulty,
+          category,
           names: Array.isArray(names) ? names.map((n) => String(n).slice(0, 40)) : [],
         });
         const gameId = shortId();
@@ -174,7 +189,7 @@ class KadeGames extends Tool {
           turns: 0,
           agentName: this.agentName,
         });
-        return this.render(doc, { sounds: ['card_shuffle', 'card_deal'] });
+        return this.render(doc, { sounds: G.meta.dealSounds || ['card_shuffle', 'card_deal'] });
       }
 
       // state / move / quit all act on a specific or the most-recent active table
