@@ -90,9 +90,29 @@ function legal(state) {
   return moves;
 }
 
+// Frozen-table check (bug fix July 4 2026): pile dead (no deck, nothing to
+// reshuffle) AND no seat holds a playable card = the game can never move
+// again. Classic table rule: fewest cards takes it; even counts tie.
+// Without this, the table pass-looped forever (same family as the old
+// Go Fish deadlock).
+function deadCheck(state) {
+  if (state.status !== 'active') return false;
+  if (state.deck.length > 0 || state.discard.length > 1) return false;
+  for (const hand of state.hands) {
+    if (hand.some((c) => playable(c, state))) return false;
+  }
+  const min = Math.min(...state.hands.map((h) => h.length));
+  const leaders = state.hands.map((h, i) => (h.length === min ? i : -1)).filter((i) => i >= 0);
+  state.status = 'over';
+  state.winner = leaders.length === 1 ? leaders[0] : 'tie';
+  state.endedBy = 'deadpile';
+  return true;
+}
+
 function advance(state) {
   state.drew = false;
   state.turn = (state.turn + 1) % state.hands.length;
+  deadCheck(state);
 }
 
 function applyPlay(state, seat, cardCode, declaredSuit, log) {
@@ -161,7 +181,22 @@ function move(state, token) {
     state.drew = true;
     return { sounds: ['card_draw'], log: [`You drew the ${cardName(d)}.`] };
   }
-  if (token === 'pass') { advance(state); log.push('You passed.'); sounds = ['card_slap', ...runAI(state, log)]; return { sounds, log }; }
+  if (token === 'pass') {
+    // move() must enforce what legal() offers (bug fix July 4 2026: a bare
+    // 'pass' used to sail through even with plays + draws available).
+    const plays = legalFor(state, 0);
+    const canDraw = state.deck.length > 0 || state.discard.length > 1;
+    if (!state.drew && canDraw) {
+      return { error: plays.length ? 'No free passes — play a card, or draw first.' : 'Nothing playable? Draw a card first; then you can pass.' };
+    }
+    if (!state.drew && !canDraw && plays.length > 0) {
+      return { error: 'You have a playable card, so you have to play it.' };
+    }
+    advance(state);
+    log.push('You passed.');
+    sounds = ['card_slap', ...runAI(state, log)];
+    return { sounds, log };
+  }
   if (token.startsWith('play_')) {
     const parts = token.slice(5).split('_');
     const cardCode = parts[0];
@@ -186,9 +221,16 @@ function view(state) {
   let winner = null;
   let sounds = [];
   if (over) {
-    winner = state.winner === 0 ? 'player' : state.names[state.winner];
-    lines.push(state.winner === 0 ? 'You went out — you win!' : `${state.names[state.winner]} went out and wins this hand.`);
-    sounds = state.winner === 0 ? ['win_fanfare'] : ['lose_trombone'];
+    if (state.winner === 'tie') {
+      winner = 'tie';
+      lines.push("The pile went dead and nobody could move — even cards, so it's a tie!");
+      sounds = ['draw_game'];
+    } else {
+      winner = state.winner === 0 ? 'player' : state.names[state.winner];
+      const how = state.endedBy === 'deadpile' ? 'had the fewest cards when the pile went dead' : 'went out';
+      lines.push(state.winner === 0 ? `You ${how} — you win!` : `${state.names[state.winner]} ${how} and wins this hand.`);
+      sounds = state.winner === 0 ? ['win_fanfare'] : ['lose_trombone'];
+    }
   }
   return { lines, legal: legal(state), sounds, over, winner };
 }

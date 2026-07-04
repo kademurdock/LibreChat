@@ -225,7 +225,7 @@ class KadeGames extends Tool {
         if (!token) {
           return `I need a move token. ${this.render(doc)}`;
         }
-        const result = G.move(doc.state, token);
+        const result = await G.move(doc.state, token);
         if (result && result.error) {
           // Re-show legal moves so the agent can correct itself.
           return `That move didn't work: ${result.error}\n\n${this.render(doc)}`;

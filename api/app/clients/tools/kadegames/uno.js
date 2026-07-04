@@ -130,19 +130,37 @@ function nextSeat(state, from) {
   return (from + state.direction + state.hands.length) % state.hands.length;
 }
 
+// Frozen-table check (bug fix July 4 2026, same family as Wild Eights):
+// dead pile + no playable card anywhere = game over, fewest cards wins.
+function deadCheck(state) {
+  if (state.status !== 'active') return false;
+  if (state.deck.length > 0 || state.discard.length > 1) return false;
+  for (const hand of state.hands) {
+    if (hand.some((c) => playable(c, state))) return false;
+  }
+  const min = Math.min(...state.hands.map((h) => h.length));
+  const leaders = state.hands.map((h, i) => (h.length === min ? i : -1)).filter((i) => i >= 0);
+  state.status = 'over';
+  state.winner = leaders.length === 1 ? leaders[0] : 'tie';
+  state.endedBy = 'deadpile';
+  return true;
+}
+
 function legalFor(state, seat) {
   const hand = state.hands[seat];
   const out = [];
+  const seen = new Set(); // twin cards (two Red 5s) must not double the menu
+  const push = (m) => { if (!seen.has(m.token)) { seen.add(m.token); out.push(m); } };
   for (const c of hand) {
     if (!playable(c, state)) continue;
     if (c === 'W') {
       for (const s of COLORS)
-        out.push({ token: `play_W_${s}`, label: `Play Wild, call ${COLOR_WORD[s]}` });
+        push({ token: `play_W_${s}`, label: `Play Wild, call ${COLOR_WORD[s]}` });
     } else if (c === 'WD4') {
       for (const s of COLORS)
-        out.push({ token: `play_WD4_${s}`, label: `Play Wild Draw Four, call ${COLOR_WORD[s]}` });
+        push({ token: `play_WD4_${s}`, label: `Play Wild Draw Four, call ${COLOR_WORD[s]}` });
     } else {
-      out.push({ token: `play_${c}`, label: `Play the ${cardName(c)}` });
+      push({ token: `play_${c}`, label: `Play the ${cardName(c)}` });
     }
   }
   return out;
@@ -166,6 +184,7 @@ function advance(state, skip = false) {
   } else {
     state.turn = nextSeat(state, state.turn);
   }
+  deadCheck(state);
 }
 
 function applyPlay(state, seat, cardCode, declaredColor, log) {
@@ -319,6 +338,16 @@ function move(state, token) {
   }
 
   if (token === 'pass') {
+    // move() must enforce what legal() offers (bug fix July 4 2026: a bare
+    // 'pass' used to sail through even with plays + draws available).
+    const plays = legalFor(state, 0);
+    const canDraw = state.deck.length > 0 || state.discard.length > 1;
+    if (!state.drew && canDraw) {
+      return { error: plays.length ? 'No free passes — play a card, or draw first.' : 'Nothing playable? Draw a card first; then you can pass.' };
+    }
+    if (!state.drew && !canDraw && plays.length > 0) {
+      return { error: 'You have a playable card, so you have to play it.' };
+    }
     advance(state);
     log.push('You passed.');
     sounds = ['card_slap', ...runAI(state, log)];
@@ -379,13 +408,20 @@ function view(state) {
   let winner = null;
   let sounds = [];
   if (over) {
-    winner = state.winner === 0 ? 'player' : state.names[state.winner];
-    lines.push(
-      state.winner === 0
-        ? 'You went out — you win!'
-        : `${state.names[state.winner]} went out and wins this hand.`
-    );
-    sounds = state.winner === 0 ? ['win_fanfare'] : ['lose_trombone'];
+    if (state.winner === 'tie') {
+      winner = 'tie';
+      lines.push("The pile went dead and nobody could move — even cards, so it's a tie!");
+      sounds = ['draw_game'];
+    } else {
+      winner = state.winner === 0 ? 'player' : state.names[state.winner];
+      const how = state.endedBy === 'deadpile' ? 'had the fewest cards when the pile went dead' : 'went out';
+      lines.push(
+        state.winner === 0
+          ? `You ${how} — you win!`
+          : `${state.names[state.winner]} ${how} and wins this hand.`
+      );
+      sounds = state.winner === 0 ? ['win_fanfare'] : ['lose_trombone'];
+    }
   }
 
   return { lines, legal: legal(state), sounds, over, winner };

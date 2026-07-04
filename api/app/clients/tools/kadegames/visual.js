@@ -11,7 +11,7 @@
 const { scoreBlackjack, rankOf } = require('./deck');
 
 function card(c) {
-  // 'KH' -> { r: 'K', s: 'H' } (10 is two chars of rank)
+  // 'K:H' -> { r: 'K', s: 'H' } (deck.js compact strings, rank:suit)
   return { r: rankOf(c), s: c.slice(-1) };
 }
 
@@ -125,7 +125,7 @@ function visualView(gameKey, state) {
           { name: 'The house', cards: [flip(state.lastAiCard)], total: state.aiDeck.length + state.aiWon.length },
           { name: 'You', cards: [flip(state.lastPlayerCard)], total: state.playerDeck.length + state.playerWon.length, you: true },
         ],
-        pile: state.warPile.length,
+        pool: state.warPile.length,
         over: done,
         winner: state.winner,
       };

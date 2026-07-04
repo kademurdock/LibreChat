@@ -111,7 +111,11 @@ function view(state) {
       ],
       legal: [],
       over: true,
-      sounds: won ? ['win_fanfare'] : [],
+      // 'player' | 'The house' — the leaderboard needs a truthy winner or the
+      // game is treated as a walked-away table and never counts (bug found by
+      // harness July 4 2026: EVERY war game was invisible on /game-room).
+      winner: won ? 'player' : 'The house',
+      sounds: won ? ['win_fanfare'] : ['lose_trombone'],
     };
   }
   const lines = [
@@ -128,7 +132,7 @@ function view(state) {
 }
 
 function move(state, token) {
-  if (state.status !== 'active') return { log: [], sounds: [] };
+  if (state.status !== 'active') return { error: 'This game is over. Start a new one to play again.' };
   const log = [];
   const sounds = [];
 
