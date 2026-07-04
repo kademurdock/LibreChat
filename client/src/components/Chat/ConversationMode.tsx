@@ -42,6 +42,9 @@ import { stripGameSoundTags, gameSoundSrcsIn, gameTableIdIn } from '~/utils/game
 import GameTable from '~/components/Chat/Messages/Content/GameTable';
 import store from '~/store';
 
+// Bigger synth units = better prosody (context batching, July 4 2026).
+const TTS_CHUNK_TARGET = 320;
+
 // -- SentenceStreamer ----------------------------------------------------------
 // Port of the phase4 POC sentence splitter. Buffers streaming tokens and emits
 // complete sentences (split on .!?) with abbreviation-awareness.
@@ -506,7 +509,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     // 'listening' -- see the race-condition note below.
     const speechPromises: Promise<void>[] = [];
 
-    streamer.onsentence = (sentence) => {
+    const processUnit = (sentence: string) => {
       if (superseded()) return;
       if (firstChunk) { setStatus('speaking'); firstChunk = false; }
       // Game Parlor phase 3: any [sound:x] cue in this sentence plays as a
@@ -527,6 +530,33 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       // order -- see enqueueAudio's note on why that matters. The fetch
       // itself is passed in as a promise, not awaited before queuing.
       speechPromises.push(enqueueAudio(fetchSentenceAudio(spoken)));
+    };
+    // TTS context batching (July 4 2026 — Kade: "make the chunks bigger; it
+    // can't remember it sounds like it's listing games"): sentence 1 ships
+    // alone for fast first audio; after that, sentences accumulate to
+    // ~TTS_CHUNK_TARGET chars and synth as ONE passage so the voice keeps
+    // its rhythm through lists. Cue/table sentences flush and pass solo;
+    // a leading %%%direction%%% tag starts its own chunk.
+    let chunkBuf = '';
+    let firstShipped = false;
+    const flushChunk = () => {
+      if (chunkBuf) { const c = chunkBuf; chunkBuf = ''; processUnit(c); }
+    };
+    streamer.onsentence = (sentence) => {
+      if (superseded()) return;
+      if (!firstShipped) { firstShipped = true; processUnit(sentence); return; }
+      if (sentence.indexOf('[sound:') !== -1 || sentence.indexOf('[table:') !== -1) {
+        flushChunk();
+        processUnit(sentence);
+        return;
+      }
+      if (/^\s*%%%/.test(sentence)) {
+        flushChunk();
+        chunkBuf = sentence;
+        return;
+      }
+      chunkBuf = chunkBuf ? `${chunkBuf} ${sentence}` : sentence;
+      if (chunkBuf.length >= TTS_CHUNK_TARGET) flushChunk();
     };
 
     const pushText = (chunk: string) => {
@@ -652,6 +682,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       }
 
       streamer.end();
+      flushChunk();
       if (!finalized && acc === '' && !superseded()) {
         setError("I didn't catch a reply — your turn, go ahead and try again.");
       }
