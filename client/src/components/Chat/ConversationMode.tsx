@@ -137,7 +137,17 @@ const VAD_SILENCE_MS = 2000;      // end the turn after this much trailing silen
                                    // (was 1500; bumped 2026-07-01 -- natural
                                    // mid-sentence pauses on the FIRST utterance
                                    // of a call were ending the turn early)
-const VAD_MAX_TURN_MS = 30000;    // hard cap on a single utterance
+const VAD_MAX_TURN_MS = 300000;   // hard cap on a single utterance.
+                                   // July 4 2026 (Kade: "cuts me off after
+                                   // a minute or so of talking... I can't
+                                   // have multi-minute rants"): was 30s,
+                                   // which force-stopped the recorder mid-
+                                   // word on any long turn. Turns still end
+                                   // naturally on 2s of trailing silence
+                                   // (VAD_SILENCE_MS); this cap is now a
+                                   // pure runaway-mic emergency brake.
+                                   // 5 min of webm/opus is well under the
+                                   // STT size limits.
 const VAD_NOSPEECH_MS = 12000;    // give the mic back if nothing is said
 
 // -- Text extraction helpers (stable, module-level) ---------------------------
