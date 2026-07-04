@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
+import { useLiveAnnouncer } from '~/Providers';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 /**
@@ -8,6 +10,13 @@ import store from '~/store';
  * is ready without re-polling the screen reader or watching the spinner.
  * Off by default; Settings → General → Accessibility → "Chime when a reply
  * finishes". WebAudio oscillator, no audio asset, fail-soft everywhere.
+ *
+ * KADE July 4 2026 — screen-reader status announcements ride the same
+ * transition (her report: "NVDA doesn't see the progress thing... I never
+ * know when he's done"). Polite live region, always on: "Working on a
+ * reply" at start, a "Still working" reassurance every 25s on long tool
+ * turns, "Reply ready" at the end. The visual pulse was invisible to NVDA;
+ * this is the non-visual twin of the Cowork-style progress feel.
  */
 let audioCtx: AudioContext | null = null;
 
@@ -43,13 +52,32 @@ function playChime() {
   }
 }
 
+const STILL_WORKING_INTERVAL_MS = 25000;
+
 export default function useCompletionChime(isSubmitting: boolean) {
   const enabled = useRecoilValue(store.chimeOnCompletion);
+  const { announcePolite } = useLiveAnnouncer();
+  const localize = useLocalize();
   const wasSubmitting = useRef(false);
+
   useEffect(() => {
-    if (wasSubmitting.current && !isSubmitting && enabled) {
-      playChime();
+    if (isSubmitting) {
+      announcePolite({ message: localize('com_ui_reply_working'), isStatus: true });
+      const iv = setInterval(() => {
+        announcePolite({ message: localize('com_ui_reply_still_working'), isStatus: true });
+      }, STILL_WORKING_INTERVAL_MS);
+      return () => clearInterval(iv);
     }
+    if (wasSubmitting.current) {
+      announcePolite({ message: localize('com_ui_reply_finished'), isStatus: true });
+      if (enabled) {
+        playChime();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSubmitting]);
+
+  useEffect(() => {
     wasSubmitting.current = isSubmitting;
-  }, [isSubmitting, enabled]);
+  }, [isSubmitting]);
 }
