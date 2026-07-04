@@ -20,6 +20,7 @@ import {
   LogOut,
   Scale,
   ShieldCheck,
+  HeartHandshake,
 } from 'lucide-react';
 import { SystemRoles } from 'librechat-data-provider';
 import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/ArchivedChatsModal';
@@ -140,6 +141,14 @@ function ExploreSubmenu({ isAdmin, isChild }: { isAdmin: boolean; isChild: boole
         >
           <Dices className="icon-md" aria-hidden="true" />
           Game Room
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={go('/matchmaker')}
+          className="select-item text-sm"
+          aria-label="The Matchmaker: five quick questions that match you with characters you'll get along with"
+        >
+          <HeartHandshake className="icon-md" aria-hidden="true" />
+          The Matchmaker
         </Menu.MenuItem>
         {!isChild && (
           <Menu.MenuItem

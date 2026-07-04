@@ -277,6 +277,7 @@ const startServer = async () => {
   app.use('/api/mcp', routes.mcp);
   app.use('/api/rum', routes.rum);
   app.use('/api/kade/room', routes.kadeRoom);
+  app.use('/api/kade/matchmaker', routes.kadeMatchmaker);
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);
@@ -290,6 +291,7 @@ const startServer = async () => {
   app.get('/debate-room', routes.kadeRoom.page);
   app.get('/conversation-hall', routes.kadeRoom.hallPage);
   app.get('/game-room', routes.kade.gameRoomPage);
+  app.get('/matchmaker', routes.kadeMatchmaker.page);
   /** kademurdock.com/help — memorable front door for the help center, which is
    * served from the inworld proxy. Path + query carry through. (July 3 2026) */
   app.get(['/help', '/help/*path'], (req, res) =>
