@@ -47,6 +47,7 @@ import store from '~/store';
 // complete sentences (split on .!?) with abbreviation-awareness.
 class SentenceStreamer {
   private buf = '';
+  private held = '';
   private abbrevs = new Set([
     'dr','mr','mrs','ms','prof','vs','etc','e.g','i.e','a.m','p.m',
     'st','ave','jr','sr','no','vol','fig','dept','inc','ltd','corp',
@@ -60,7 +61,8 @@ class SentenceStreamer {
 
   end() {
     this.flush(true);
-    const rem = this.buf.trim();
+    let rem = this.buf.trim();
+    if (this.held) { rem = rem ? `${this.held} ${rem}` : this.held; this.held = ''; }
     if (rem.length > 3 && this.onsentence) this.onsentence(rem);
     this.buf = '';
   }
@@ -79,13 +81,27 @@ class SentenceStreamer {
       const next = this.buf[abs + 1];
       if (!next && !isFinal) break;
       if (term === '.' && next && /\d/.test(next)) { pos = abs + 1; continue; }
+      // KADE July 4 2026 (choppy speech, same fix as the phone bridge):
+      // a line-start number's period is a LIST marker ("\n 1. Card text"),
+      // not a sentence end — splitting there made every numbered card two
+      // tiny TTS clips with a fetch gap between them.
+      if (term === '.' && /(^|\n)[ \t]*\d{1,3}$/.test(this.buf.slice(0, abs))) { pos = abs + 1; continue; }
       const pre = this.buf.slice(0, abs).split(/\s+/).pop() ?? '';
       if (term === '.' && this.isAbbrev(pre)) { pos = abs + 1; continue; }
       if (!next || /[\s.!?]/.test(next)) {
         let end = abs;
         while (end < this.buf.length && /[.!?]/.test(this.buf[end])) end++;
-        const sentence = this.buf.slice(0, end).trim();
-        if (sentence.length > 4 && this.onsentence) this.onsentence(sentence);
+        let sentence = this.buf.slice(0, end).trim();
+        // Short-fragment merging: "Round one." as its own synth = a
+        // stop-to-think pause mid-speech. Under 24 chars rides in the
+        // same breath as whatever comes next.
+        if (this.held) { sentence = `${this.held} ${sentence}`; this.held = ''; }
+        if (sentence.length > 4) {
+          if (sentence.length < 24 && !isFinal) this.held = sentence;
+          else if (this.onsentence) this.onsentence(sentence);
+        } else if (sentence.length > 0 && !isFinal) {
+          this.held = this.held ? `${this.held} ${sentence}` : sentence;
+        }
         this.buf = this.buf.slice(end).trimStart();
         pos = 0;
         if (this.buf.length > 1400) {
