@@ -116,6 +116,20 @@ function visualView(gameKey, state) {
         winner: state.winner,
       };
     }
+    case 'war': {
+      const done = state.status === 'over';
+      const flip = (c) => (c ? card(c) : { back: true });
+      return {
+        kind: 'cards',
+        seats: [
+          { name: 'The house', cards: [flip(state.lastAiCard)], total: state.aiDeck.length + state.aiWon.length },
+          { name: 'You', cards: [flip(state.lastPlayerCard)], total: state.playerDeck.length + state.playerWon.length, you: true },
+        ],
+        pile: state.warPile.length,
+        over: done,
+        winner: state.winner,
+      };
+    }
     default:
       return null;
   }

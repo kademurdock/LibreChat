@@ -9,6 +9,7 @@ const goFish = require('./goFish');
 const pig = require('./pig');
 const trivia = require('./trivia');
 const uno = require('./uno');
+const war = require('./war');
 
 const GAMES = {
   blackjack,
@@ -17,6 +18,7 @@ const GAMES = {
   pig,
   trivia,
   uno,
+  war,
 };
 
 function getGame(key) {

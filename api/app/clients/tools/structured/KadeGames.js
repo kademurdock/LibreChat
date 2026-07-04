@@ -21,7 +21,7 @@ const kadeGamesJsonSchema = {
     game: {
       type: 'string',
       description:
-        "For new_game: which game — 'blackjack', 'wild_eights', 'go_fish', 'uno', 'pig' (press-your-luck dice), or 'trivia' (real quiz questions). Use list_games if unsure.",
+        "For new_game: which game — 'blackjack', 'wild_eights', 'go_fish', 'uno', 'war', 'pig' (press-your-luck dice), or 'trivia' (real quiz questions). Use list_games if unsure.",
     },
     move: {
       type: 'string',
@@ -80,7 +80,7 @@ class KadeGames extends Tool {
     this.agentName = fields.agentName || '';
     this.name = 'kade_games';
     this.description =
-      'REAL, server-refereed parlor games (Blackjack, Wild Eights, Go Fish, Pig dice, Trivia Night) — free, no cost, playable entirely by voice. ' +
+      'REAL, server-refereed parlor games (Blackjack, Wild Eights, Go Fish, Uno, War, Pig dice, Trivia Night) — free, no cost, playable entirely by voice. ' +
       'The engine deals and enforces the rules; YOU only relay the table and play the move the human chooses. ' +
       "Flow: action='new_game' to deal, read the LEGAL MOVES to the player in your own voice, then action='move' with the " +
       'EXACT token they pick. NEVER invent cards, totals, or outcomes and never claim a move the engine did not return — ' +
