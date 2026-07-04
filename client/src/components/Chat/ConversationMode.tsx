@@ -218,6 +218,23 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const spokeRef           = useRef(false);
   // Flow control + threading
   const abortRef           = useRef(false);
+  // Turn generation (July 4 2026 — Kade: "interrupt button doesn't work" +
+  // "hung on app conversation"): the old interrupt set abortRef true for
+  // 150ms and flipped it back — a pure race. If the SSE read loop didn't
+  // happen to check the flag inside that window, the reply kept streaming,
+  // chained onto the FRESH play queue, and the agent talked straight
+  // through the interrupt; the stale turn's finish handler then re-armed
+  // the mic a second time. A monotonic turn id can't race: every async
+  // callback captures its turn number and bails forever once superseded.
+  // Also new: the currently-playing source and live SSE reader are held in
+  // refs so interrupt/end can stop them INSTANTLY (the old code never
+  // stopped the buffer already coming out of the speakers), and a stall
+  // watchdog kills turns that stop producing bytes (the "hung on app
+  // conversation" report — there was no turn deadline at all).
+  const turnIdRef          = useRef(0);
+  const currentSourceRef   = useRef<AudioBufferSourceNode | null>(null);
+  const sseReaderRef       = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const lastByteAtRef      = useRef(0);
   // Synchronous re-entry guard: statusRef updates a render late, so a fast
   // double-tap on the phone button could start TWO overlapping call
   // sessions (two mics, two turn loops = clips stepping on each other).
@@ -390,10 +407,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // equivalent chain is built the same synchronous way already); this was
   // web-only.
   const enqueueAudio = useCallback((bufPromise: Promise<ArrayBuffer | null>, gain?: number): Promise<void> => {
+    const myTurn = turnIdRef.current;
     const tail = playQueueRef.current.then(async () => {
-      if (abortRef.current) return;
+      if (abortRef.current || turnIdRef.current !== myTurn) return;
       const raw = await bufPromise;
-      if (!raw || abortRef.current) return;
+      if (!raw || abortRef.current || turnIdRef.current !== myTurn) return;
       const ctx = audioCtxRef.current;
       if (!ctx) return;
       try {
@@ -415,8 +433,12 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           } else {
             src.connect(sink);
           }
-          src.onended = () => resolve();
+          src.onended = () => {
+            if (currentSourceRef.current === src) currentSourceRef.current = null;
+            resolve();
+          };
           src.start();
+          currentSourceRef.current = src;
         });
       } catch (err) {
         console.warn('[ConvMode] audio decode error:', err);
@@ -452,6 +474,9 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // -- LLM streaming turn ------------------------------------------------------
   const streamTurn = useCallback(async (userText: string) => {
     if (abortRef.current) return;
+    const myTurn = ++turnIdRef.current;
+    const superseded = () => abortRef.current || turnIdRef.current !== myTurn;
+    let watchdog: ReturnType<typeof setInterval> | null = null;
     setError('');
     setStatus('thinking');
     setAiText('');
@@ -466,7 +491,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     const speechPromises: Promise<void>[] = [];
 
     streamer.onsentence = (sentence) => {
-      if (abortRef.current) return;
+      if (superseded()) return;
       if (firstChunk) { setStatus('speaking'); firstChunk = false; }
       // Game Parlor phase 3: any [sound:x] cue in this sentence plays as a
       // real clip IN the speech queue (so it lands between sentences, in
@@ -537,14 +562,30 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       if (!sseResp.ok || !sseResp.body) throw new Error(`SSE ${sseResp.status}`);
 
       const reader  = sseResp.body.getReader();
+      sseReaderRef.current = reader;
+      lastByteAtRef.current = Date.now();
+      // Stall watchdog: LibreChat's resumable-streams subsystem is known to
+      // occasionally strand a turn (documented open watch item). The phone
+      // bridge got a 45s deadline long ago; Conversation Mode had NOTHING —
+      // a stranded stream meant "thinking" forever. 75s with zero bytes =
+      // cancel the reader; the normal end-of-stream path hands the mic back.
+      watchdog = setInterval(() => {
+        if (turnIdRef.current !== myTurn) { if (watchdog) clearInterval(watchdog); return; }
+        if (Date.now() - lastByteAtRef.current > 75000) {
+          if (watchdog) clearInterval(watchdog);
+          console.warn('[ConvMode] turn stalled >75s — cancelling stream');
+          try { void reader.cancel(); } catch { /* ignore */ }
+        }
+      }, 5000);
       const decoder = new TextDecoder();
       let sseBuf = '';
       let curEvent = 'message';
       let finalized = false;
 
       streamLoop: while (true) {
-        if (abortRef.current) { await reader.cancel(); break; }
+        if (superseded()) { await reader.cancel(); break; }
         const { done, value } = await reader.read();
+        lastByteAtRef.current = Date.now();
         if (done) break;
 
         sseBuf += decoder.decode(value, { stream: true });
@@ -595,7 +636,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       }
 
       streamer.end();
-      if (!finalized && acc === '' && !abortRef.current) {
+      if (!finalized && acc === '' && !superseded()) {
         setError("I didn't catch a reply — your turn, go ahead and try again.");
       }
 
@@ -610,25 +651,28 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       // listening both come in at the same time" bug. Promise.all() over
       // the actual per-sentence promises can't go stale like that.
       Promise.all(speechPromises).then(() => {
-        if (abortRef.current) return;
+        if (superseded()) return;
         setAiText('');
         // Brief settle delay: onended fires the instant the buffer finishes,
         // but trailing room echo/reverb (especially on speakerphone) can
         // still be audible for a moment after. Re-arming the mic instantly
         // was picking that tail up as if it were the caller talking.
         setTimeout(() => {
-          if (abortRef.current) return;
+          if (superseded()) return;
           setStatus('listening');
           startListeningRef.current();
         }, 350);
       });
     } catch (err) {
       console.error('[ConvMode] streamTurn error:', err);
-      if (!abortRef.current) {
+      if (!superseded()) {
         setError('Connection hiccup — your turn, try again.');
         setStatus('listening');
         startListeningRef.current();
       }
+    } finally {
+      if (watchdog) clearInterval(watchdog);
+      if (sseReaderRef.current && turnIdRef.current === myTurn) sseReaderRef.current = null;
     }
   }, [agentId, token, enqueueAudio, fetchSentenceAudio]);
 
@@ -828,6 +872,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     callActiveRef.current = false;
     setVoiceCallActive(false);
     abortRef.current = true;
+    turnIdRef.current += 1;
+    try { void sseReaderRef.current?.cancel(); } catch { /* ignore */ }
+    sseReaderRef.current = null;
+    try { currentSourceRef.current?.stop(); } catch { /* ignore */ }
+    currentSourceRef.current = null;
     teardownMic();
     playQueueRef.current = Promise.resolve();
     setOpen(false);
@@ -839,18 +888,26 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     parentMessageIdRef.current = NO_PARENT;
   }, [teardownMic, setVoiceCallActive]);
 
-  // Stop AI mid-speech and hand the mic back immediately
+  // Stop AI mid-speech and hand the mic back immediately.
+  // July 4 2026 rewrite: supersede the turn (monotonic id — no 150ms flag
+  // window to race), cancel the live SSE stream, and STOP the buffer that
+  // is coming out of the speakers right now (the old version never did —
+  // that's why the button "didn't work": the current sentence kept playing
+  // and, if the stream was still live, the rest of the reply followed it).
   const interruptAI = useCallback(() => {
-    abortRef.current = true;
+    turnIdRef.current += 1;
+    try { void sseReaderRef.current?.cancel(); } catch { /* ignore */ }
+    sseReaderRef.current = null;
+    try { currentSourceRef.current?.stop(); } catch { /* already stopped */ }
+    currentSourceRef.current = null;
     playQueueRef.current = Promise.resolve();
     setTimeout(() => {
-      if (!open) return;
-      abortRef.current = false;
+      if (abortRef.current) return; // call ended meanwhile
       setAiText('');
       setStatus('listening');
       startListeningRef.current();
     }, 150);
-  }, [open]);
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
