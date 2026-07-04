@@ -1,6 +1,8 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
+const { ResourceType, PermissionBits } = require('librechat-data-provider');
 const { requireJwtAuth } = require('~/server/middleware');
+const { findPubliclyAccessibleResources } = require('~/server/services/PermissionService');
 const db = require('~/models');
 
 /*
@@ -81,9 +83,19 @@ function tagsFor(agent) {
 
 router.get('/', requireJwtAuth, async (req, res) => {
   try {
+    /* "Published to the marketplace" here means ACL-public (the agent_viewer
+     * public principal) — the SAME check the marketplace list uses. The old
+     * projectIds check matched nothing on this instance (publishing goes
+     * through PUT /api/permissions/agent/:id, not project shares) — caught
+     * in tonight's live smoke: the roster came back empty. */
+    const publicIds = await findPubliclyAccessibleResources({
+      resourceType: ResourceType.AGENT,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+    const publicSet = new Set(publicIds.map((oid) => String(oid)));
     const all = (await db.getAgents({})) || [];
     const agents = all
-      .filter((a) => Array.isArray(a.projectIds) && a.projectIds.length > 0)
+      .filter((a) => a._id && publicSet.has(String(a._id)))
       .map((a) => ({
         id: a.id,
         name: a.name || 'Unnamed',
