@@ -3,7 +3,12 @@ import { useRecoilValue } from 'recoil';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
 import { stripVoiceTags } from '~/utils/voiceTags';
-import { stripGameSoundTags, maybePlayGameSounds, gameTableIdIn } from '~/utils/gameSounds';
+import {
+  stripGameSoundTags,
+  stripDeepThinkTag,
+  maybePlayGameSounds,
+  gameTableIdIn,
+} from '~/utils/gameSounds';
 import GameTable from '~/components/Chat/Messages/Content/GameTable';
 import { useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
@@ -29,7 +34,9 @@ const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: T
   // utils/voiceTags.ts) -- strip them here so they never reach the visible
   // chat bubble. User-authored text never contains them, so it's left alone.
   const displayText = useMemo(
-    () => (isCreatedByUser ? text : stripGameSoundTags(stripVoiceTags(text))),
+    // User text can carry the invisible per-message [DEEP THINK <ts>] marker
+    // appended by the Deep Think button -- hide it from the bubble too.
+    () => (isCreatedByUser ? stripDeepThinkTag(text) : stripGameSoundTags(stripVoiceTags(text))),
     [isCreatedByUser, text],
   );
 

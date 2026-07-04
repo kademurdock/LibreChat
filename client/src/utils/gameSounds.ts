@@ -51,13 +51,31 @@ const VARIANTS: Record<string, number> = {
   page_turn: 2, drumroll_short: 2, jackpot_win: 2, coin_shower: 2,
 };
 
+/** Per-message deep-think marker (July 4 2026): the Deep Think button appends
+ *  "[DEEP THINK <epoch-ms>]" to the outgoing user message for reframe-proxy.
+ *  It must vanish from every read surface, exactly like sound cues. */
+export const DEEP_THINK_RE = /\[DEEP THINK(?:\s+\d{10,17})?\]/gi;
+
+export function stripDeepThinkTag(text: string): string {
+  if (!text || text.indexOf('[DEEP THINK') === -1) {
+    return text;
+  }
+  return text.replace(DEEP_THINK_RE, '').replace(/[ \t]{2,}/g, ' ').replace(/\s+$/, '');
+}
+
 export function stripGameSoundTags(text: string): string {
-  if (!text || (text.indexOf('[sound:') === -1 && text.indexOf('[table:') === -1)) {
+  if (
+    !text ||
+    (text.indexOf('[sound:') === -1 &&
+      text.indexOf('[table:') === -1 &&
+      text.indexOf('[DEEP THINK') === -1)
+  ) {
     return text;
   }
   return text
     .replace(GAME_SOUND_RE, '')
     .replace(GAME_TABLE_RE, '')
+    .replace(DEEP_THINK_RE, '')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/^\s+/, '');
 }

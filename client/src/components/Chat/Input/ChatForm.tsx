@@ -36,6 +36,7 @@ import CollapseChat from './CollapseChat';
 import QuoteButton from './QuoteButton';
 import StreamAudio from './StreamAudio';
 import TokenUsage from './TokenUsage';
+import DeepThinkToggle from './DeepThinkToggle';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
 import EditBadges from './EditBadges';
@@ -393,6 +394,7 @@ const ChatForm = memo(function ChatForm({
               />
               <div className="mx-auto flex" />
               <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
+              <DeepThinkToggle disabled={disableInputs || isNotAppendable} />
               {SpeechToText && (
                 <AudioRecorder
                   methods={methods}

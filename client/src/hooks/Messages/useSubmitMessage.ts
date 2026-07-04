@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
 import { replaceSpecialVars } from 'librechat-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
@@ -15,6 +15,7 @@ export default function useSubmitMessage() {
   const latestMessage = useLatestMessage(index);
 
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
+  const [deepThinkArmed, setDeepThinkArmed] = useRecoilState(store.deepThinkArmedState);
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
 
   const submitMessage = useCallback(
@@ -30,9 +31,14 @@ export default function useSubmitMessage() {
         setMessages([...(rootMessages || []), latestMessage]);
       }
 
+      // Deep Think button armed: stamp THIS message with a timestamped marker.
+      // reframe-proxy honors only a fresh timestamp, so history replays of
+      // this text on later turns cannot re-trigger deep reasoning.
+      const text = deepThinkArmed ? `${data.text} [DEEP THINK ${Date.now()}]` : data.text;
+
       const submitted = ask(
         {
-          text: data.text,
+          text,
         },
         {
           addedConvo: addedConvo ?? undefined,
@@ -41,9 +47,21 @@ export default function useSubmitMessage() {
       if (submitted === false) {
         return false;
       }
+      if (deepThinkArmed) {
+        setDeepThinkArmed(false);
+      }
       methods.reset();
     },
-    [ask, methods, addedConvo, setMessages, getMessages, latestMessage],
+    [
+      ask,
+      methods,
+      addedConvo,
+      setMessages,
+      getMessages,
+      latestMessage,
+      deepThinkArmed,
+      setDeepThinkArmed,
+    ],
   );
 
   const submitPrompt = useCallback(

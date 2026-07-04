@@ -335,6 +335,16 @@ const voiceCallActiveState = atom<boolean>({
   default: false,
 });
 
+/** Per-MESSAGE deep-think arm (July 4 2026). When true, the next message the
+ * user sends gets a "[DEEP THINK <epoch-ms>]" marker appended; reframe-proxy
+ * sees a FRESH marker and runs that one turn at reasoning effort high (beats
+ * the agent's Answer-speed setting and the phone effort:none override).
+ * Auto-resets after the send — per-message by design, per Kade. */
+const deepThinkArmedState = atom<boolean>({
+  key: 'deepThinkArmed',
+  default: false,
+});
+
 const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
   key: 'messagesSiblingIdx',
   default: 0,
@@ -468,6 +478,7 @@ export default {
   activeRunFamily,
   audioRunFamily,
   voiceCallActiveState,
+  deepThinkArmedState,
   globalAudioPlayingFamily,
   globalAudioFetchingFamily,
   showPlusPopoverFamily,
