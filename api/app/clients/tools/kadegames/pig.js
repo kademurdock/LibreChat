@@ -1,3 +1,4 @@
+const { houseNames } = require('./deck');
 // Pig — press-your-luck dice, engine-refereed. Seat 0 is the human; the rest
 // are AI. Roll to build turn points; roll a 1 ("pig!") and the turn's points
 // vanish; hold to bank them. First to 100 wins. Perfect on the phone: two
@@ -18,6 +19,7 @@ function newGame(opts = {}) {
   const rivals = Math.max(1, Math.min(3, Number.isFinite(parseInt(opts.opponents, 10)) ? parseInt(opts.opponents, 10) : 1));
   const n = rivals + 1;
   const names = ['You', ...(opts.names || []).slice(0, rivals)];
+  names.push(...houseNames(n - names.length, names));
   while (names.length < n) names.push(`Player ${names.length}`);
   return {
     g: 'pig',

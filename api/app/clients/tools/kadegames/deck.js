@@ -80,6 +80,26 @@ function scoreBlackjack(cards) {
 // Rank ordering for rummy/gin/go-fish comparisons (A low here; games override as needed).
 const RANK_ORDER = Object.fromEntries(RANKS.map((r, i) => [r, i]));
 
+// House players (July 4 2026 — Kade: "why is it always the same agents in
+// the game?"): every unnamed seat used to fill from the same hardcoded trio
+// (Sterling, Nana Pearl, Duke) or a robotic "Player 2". One shared pool of
+// house characters — all real marketplace/companion personas — shuffled
+// fresh per game, so tables feel different night to night. Agents can still
+// seat specific characters via the tool's `names` option.
+const HOUSE_PLAYERS = [
+  'Sterling', 'Nana Pearl', 'Duke', 'Earl', 'Dottie', 'Big Tom', 'Wanda',
+  'Denny', 'Ray', 'Josie', 'Miss Opal', 'Otis', 'Tammy Lynn', 'Grace',
+];
+function houseNames(count, taken = []) {
+  const lower = taken.map((t) => String(t).toLowerCase());
+  const pool = HOUSE_PLAYERS.filter((n) => !lower.includes(n.toLowerCase()));
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, Math.max(0, count));
+}
+
 module.exports = {
   RANKS,
   SUITS,
@@ -91,8 +111,11 @@ module.exports = {
   suitOf,
   cardName,
   handWords,
+
+
   makeDeck,
   shuffle,
   blackjackValue,
   scoreBlackjack,
+  houseNames,
 };

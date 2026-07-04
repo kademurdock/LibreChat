@@ -3,7 +3,7 @@
 // Match the top card's rank or suit, or drop an Eight (wild) and call a suit.
 // First to empty their hand wins. Eights are wild; there are no reverses.
 
-const { makeDeck, shuffle, cardName, handWords, rankOf, suitOf, SUIT_WORD, SUITS } = require('./deck');
+const { makeDeck, shuffle, cardName, handWords, rankOf, suitOf, SUIT_WORD, SUITS, houseNames } = require('./deck');
 
 const meta = {
   key: 'wild_eights',
@@ -51,6 +51,7 @@ function newGame(opts = {}) {
   let starter = deck.pop();
   while (rankOf(starter) === '8') { deck.unshift(starter); starter = deck.pop(); }
   const names = ['You', ...(opts.names || []).slice(0, n - 1)];
+  names.push(...houseNames(n - names.length, names));
   while (names.length < n) names.push(`Player ${names.length}`);
   return {
     g: 'wild_eights',

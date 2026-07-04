@@ -4,7 +4,7 @@
 // Draw Two, Wild, Wild Draw Four. First to empty their hand wins.
 // Two-player Reverse acts as a Skip (standard Uno rule).
 
-const { shuffle } = require('./deck');
+const { shuffle, houseNames } = require('./deck');
 
 const COLORS = ['R', 'Y', 'G', 'B'];
 const COLOR_WORD = { R: 'Red', Y: 'Yellow', G: 'Green', B: 'Blue' };
@@ -110,6 +110,7 @@ function newGame(opts = {}) {
     starter = deck.pop();
   }
   const names = ['You', ...(opts.names || []).slice(0, n - 1)];
+  names.push(...houseNames(n - names.length, names));
   while (names.length < n) names.push(`Player ${names.length}`);
   return {
     g: 'uno',

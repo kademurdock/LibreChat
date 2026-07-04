@@ -1,3 +1,4 @@
+const { houseNames } = require('./deck');
 /**
  * Farkle (July 4 2026 overnight build — from the GAMES_PLAN dice list).
  * Press-your-luck with real choices: roll six dice, set aside scoring dice,
@@ -52,8 +53,8 @@ function newGame(opts = {}) {
   const rivals = Math.max(1, Math.min(3, Number.isFinite(parseInt(opts.opponents, 10)) ? parseInt(opts.opponents, 10) : 1));
   const target = Math.max(2, Math.min(10, parseInt(opts.rounds, 10) || 4)) * 1000;
   const names = ['You', ...(opts.names || []).slice(0, rivals)];
-  const housePlayers = ['Sterling', 'Nana Pearl', 'Duke'];
-  while (names.length < rivals + 1) names.push(housePlayers[(names.length - 1) % housePlayers.length]);
+  names.push(...houseNames(rivals + 1 - names.length, names));
+  while (names.length < rivals + 1) names.push(`Player ${names.length}`);
   const state = {
     g: 'farkle',
     target,

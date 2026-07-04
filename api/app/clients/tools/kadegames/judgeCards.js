@@ -1,3 +1,4 @@
+const { houseNames } = require('./deck');
 /**
  * Judge-card party games (July 4 2026 overnight build — Kade's direct ask:
  * "cards against humanity, apples to apples, all kinds of stuff like that").
@@ -102,8 +103,8 @@ function makeJudgeGame(config) {
     const clean = kind === 'apples' ? true : opts.clean !== false; // tool decides; default clean unless explicitly adult
     const built = buildDecks(clean);
     const names = ['You', ...(opts.names || []).slice(0, rivals)];
-    const housePlayers = ['Sterling', 'Nana Pearl', 'Duke'];
-    while (names.length < rivals + 1) names.push(housePlayers[(names.length - 1) % housePlayers.length]);
+    names.push(...houseNames(rivals + 1 - names.length, names));
+    while (names.length < rivals + 1) names.push(`Player ${names.length}`);
     const state = {
       g: key,
       clean,

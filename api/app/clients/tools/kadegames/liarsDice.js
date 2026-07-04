@@ -1,3 +1,4 @@
+const { houseNames } = require('./deck');
 /**
  * Liar's Dice (July 4 2026 overnight build — from the GAMES_PLAN wish list).
  * Perudo-style: everyone rolls five dice under their cup, then the table
@@ -27,8 +28,8 @@ function newGame(opts = {}) {
   const rivals = Math.max(1, Math.min(3, Number.isFinite(parseInt(opts.opponents, 10)) ? parseInt(opts.opponents, 10) : 2));
   const n = rivals + 1;
   const names = ['You', ...(opts.names || []).slice(0, rivals)];
-  const housePlayers = ['Sterling', 'Nana Pearl', 'Duke'];
-  while (names.length < n) names.push(housePlayers[(names.length - 1) % housePlayers.length]);
+  names.push(...houseNames(n - names.length, names));
+  while (names.length < n) names.push(`Player ${names.length}`);
   const state = {
     g: 'liars_dice',
     names,

@@ -3,7 +3,7 @@
 // and go again, otherwise you "go fish" from the pond. Four of a kind = a book.
 // Most books when the cards run out wins. Kid-friendly, great by voice.
 
-const { makeDeck, shuffle, cardName, handWords, rankOf, RANK_WORD, RANKS } = require('./deck');
+const { makeDeck, shuffle, cardName, handWords, rankOf, RANK_WORD, RANKS, houseNames } = require('./deck');
 
 const meta = {
   key: 'go_fish',
@@ -28,6 +28,7 @@ function newGame(opts = {}) {
   const per = n === 2 ? 7 : 5;
   for (let k = 0; k < per; k++) for (let i = 0; i < n; i++) hands[i].push(deck.pop());
   const names = ['You', ...(opts.names || []).slice(0, n - 1)];
+  names.push(...houseNames(n - names.length, names));
   while (names.length < n) names.push(`Player ${names.length}`);
   const state = { g: 'go_fish', deck, hands, books, bookRanks, names, turn: 0, status: 'active', winner: null };
   for (let i = 0; i < n; i++) bookCheck(state, i, null);
