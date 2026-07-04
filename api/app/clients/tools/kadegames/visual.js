@@ -50,6 +50,27 @@ function visualView(gameKey, state) {
         winner: state.winner,
       };
     }
+    case 'uno': {
+      const unoCard = (c) => {
+        if (c === 'W') return { r: 'W', s: null };
+        if (c === 'WD4') return { r: 'D4', s: null };
+        return { r: c.slice(1), s: c[0] };
+      };
+      const top = state.discard[state.discard.length - 1];
+      return {
+        kind: 'cards',
+        seats: state.names.map((name, i) => ({
+          name,
+          you: i === 0,
+          cards: i === 0 ? state.hands[0].map(unoCard) : state.hands[i].map(() => ({ back: true })),
+          turn: state.turn === i && state.status === 'active',
+        })),
+        pile: top ? unoCard(top) : null,
+        suit: state.color || null,
+        over: state.status === 'over',
+        winner: state.winner,
+      };
+    }
     case 'go_fish': {
       return {
         kind: 'cards',
