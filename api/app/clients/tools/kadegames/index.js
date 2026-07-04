@@ -1,6 +1,6 @@
 // Game Parlor engine registry. Each module is a server-side referee: it holds
 // the deck/hands/turn and only ever exposes a player's own view + the LEGAL
-// moves. The AInever referees — it plays a legal move and brings the banter.
+// moves. The AI never referees — it plays a legal move and brings the banter.
 // Add a new game = drop a module here with { meta, newGame, view, move }.
 
 const blackjack = require('./blackjack');
@@ -8,6 +8,7 @@ const wildEights = require('./wildEights');
 const goFish = require('./goFish');
 const pig = require('./pig');
 const trivia = require('./trivia');
+const uno = require('./uno');
 
 const GAMES = {
   blackjack,
@@ -15,6 +16,7 @@ const GAMES = {
   go_fish: goFish,
   pig,
   trivia,
+  uno,
 };
 
 function getGame(key) {
