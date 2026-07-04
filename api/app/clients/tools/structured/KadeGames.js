@@ -93,16 +93,6 @@ class KadeGames extends Tool {
     const G = getGame(doc.gameKey);
     const v = G.view(doc.state);
     const out = [`[${G.meta.name} — table ${doc.gameId}]`, ...v.lines];
-    // Game Parlor phase 2: surface the engine's sound cues as [sound:x]
-    // tokens. The agent copies them inline into its reply; the chat client
-    // plays the clip and strips the token from the visible text (see
-    // client/src/utils/gameSounds.ts). Cues from the move just played come
-    // first, then any state-level cues (e.g. game-over stings), deduped.
-    // Game Parlor visuals (July 3 2026): the [table:id] token makes the chat
-    // client draw the live table (cards/dice/scores) for sighted players.
-    // Same carry pattern as the sound cues; invisible in every text surface,
-    // stripped from TTS/phone/SMS, and the widget is aria-hidden so screen
-    // readers never notice it. Include it ONCE per reply.
     out.unshift(
       `TABLE PICTURE — copy this token into your reply exactly ONCE (ideally at the start): [table:${doc.gameId}] — it draws the live table on screen for sighted players and is invisible to everyone else. Never mention it.`,
       '',
@@ -201,7 +191,6 @@ class KadeGames extends Tool {
         return this.render(doc, { sounds: G.meta.dealSounds || ['card_shuffle', 'card_deal'] });
       }
 
-      // state / move / quit all act on a specific or the most-recent active table
       const doc = await this.findGame(game_id);
       if (!doc) return "No game to act on. Start one with new_game (or 'games' to find a saved table).";
       const G = getGame(doc.gameKey);
@@ -227,7 +216,6 @@ class KadeGames extends Tool {
         }
         const result = G.move(doc.state, token);
         if (result && result.error) {
-          // Re-show legal moves so the agent can correct itself.
           return `That move didn't work: ${result.error}\n\n${this.render(doc)}`;
         }
         const v = G.view(doc.state);
