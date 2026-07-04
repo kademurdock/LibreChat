@@ -1603,7 +1603,7 @@
   "com_ui_seconds": "seconds",
   "com_ui_secret_key": "Secret Key",
   "com_ui_select": "Select",
-  "com_ui_select_agent": "Select Agent",
+  "com_ui_select_agent": "Select an agent",
   "com_ui_select_all": "Select All",
   "com_ui_select_file": "Select a file",
   "com_ui_select_model": "Select a model",
@@ -1951,5 +1951,7 @@
   "com_agents_answer_speed_deep": "Deep think — slower, most careful",
   "com_agents_answer_speed_help": "Instant turns off the model's hidden reasoning so replies start right away — great for conversation and phone calls. Deep think helps with hard problems but adds a thinking pause.",
   "com_nav_skip_to_message_box": "Skip to message box",
-  "com_nav_chime_on_completion": "Chime when a reply finishes"
+  "com_nav_chime_on_completion": "Chime when a reply finishes",
+  "com_ui_using_n_tools": "Still working — {{0}} tools used so far",
+  "com_ui_context_window_explainer": "This is how much of the conversation the AI can remember at once. As it fills up, the oldest messages are the first to fall out of its memory."
 }

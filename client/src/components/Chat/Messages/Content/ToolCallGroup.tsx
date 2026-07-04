@@ -221,9 +221,15 @@ export default function ToolCallGroup({
     subagentsDone
       ? localize('com_ui_ran_n_agents', { 0: String(count) })
       : localize('com_ui_running_n_agents', { 0: String(count) });
+  /** KADE July 4 2026: while the reply is still generating, "Used N tools"
+   *  read like the turn was finished — callers thought the agent was stuck.
+   *  The last message in a live submission now says it's still working. */
+  const stillWorking = isSubmitting && isLast;
   const groupLabel = allSubagents
     ? getSubagentLabel()
-    : localize('com_ui_used_n_tools', { 0: String(count) });
+    : stillWorking
+      ? localize('com_ui_using_n_tools', { 0: String(count) })
+      : localize('com_ui_used_n_tools', { 0: String(count) });
 
   const hasActiveToolCall = useMemo(
     () => isSubmitting && toolMetadata.some((m) => m && !m.hasOutput),
@@ -254,7 +260,7 @@ export default function ToolCallGroup({
           <div
             className={cn(
               'flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary',
-              !allCompleted && isSubmitting && 'animate-pulse text-primary',
+              (stillWorking || (!allCompleted && isSubmitting)) && 'animate-pulse text-primary',
             )}
             aria-hidden="true"
           >

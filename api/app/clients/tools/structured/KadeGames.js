@@ -21,7 +21,7 @@ const kadeGamesJsonSchema = {
     game: {
       type: 'string',
       description:
-        "For new_game: which game — 'blackjack', 'wild_eights', 'go_fish', 'pig' (press-your-luck dice), or 'trivia' (real quiz questions). Use list_games if unsure.",
+        "For new_game: which game — 'blackjack', 'wild_eights', 'go_fish', 'uno', 'pig' (press-your-luck dice), or 'trivia' (real quiz questions). Use list_games if unsure.",
     },
     move: {
       type: 'string',
@@ -31,7 +31,7 @@ const kadeGamesJsonSchema = {
     opponents: {
       type: 'integer',
       description:
-        'For new_game (wild_eights / go_fish / pig / trivia): how many AI opponents at the table. Cards/dice: 1–3 (default 1). Trivia: 0–3 rivals (default 0 = solo quiz).',
+        'For new_game (wild_eights / go_fish / uno / pig / trivia): how many AI opponents at the table. Cards/dice: 1–3 (default 1). Trivia: 0–3 rivals (default 0 = solo quiz).',
     },
     bet: {
       type: 'integer',

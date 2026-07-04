@@ -83,6 +83,12 @@ export default function Breakdown({ view, showCost, currency }: BreakdownProps) 
         </span>
       </div>
 
+      {/* KADE July 4 2026: the gauge meant nothing to non-technical users.
+          One plain sentence, visible to everyone, read by screen readers. */}
+      <p className="text-xs leading-snug text-text-secondary">
+        {localize('com_ui_context_window_explainer')}
+      </p>
+
       <div
         role="progressbar"
         aria-valuemin={0}

@@ -8,7 +8,6 @@ import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { MessagesViewProvider } from '~/Providers';
 import { fontSizeAtom } from '~/store/fontSize';
 import MultiMessage from './MultiMessage';
-import MessageNav from './MessageNav';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -94,7 +93,7 @@ function MessagesViewContent({
             <ScrollToBottom ref={scrollToBottomRef} scrollHandler={handleSmoothToRef} />
           </CSSTransition>
 
-          <MessageNav scrollableRef={scrollableRef} />
+          {/* MessageNav removed July 4 2026 (Kade: jump-to-message hover buttons were page clutter; VoiceOver already navigates messages better). Restore by re-importing ./MessageNav and re-adding <MessageNav scrollableRef={scrollableRef} /> here. */}
         </div>
       </div>
     </>

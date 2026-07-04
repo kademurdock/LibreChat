@@ -198,13 +198,13 @@ export const getDisplayValue = ({
 }) => {
   if (selectedValues.modelSpec) {
     const spec = modelSpecs.find((s) => s.name === selectedValues.modelSpec);
-    return spec?.label || spec?.name || localize('com_ui_select_model');
+    return spec?.label || spec?.name || localize('com_ui_select_agent');
   }
 
   if (selectedValues.model && selectedValues.endpoint) {
     const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
     if (!endpoint) {
-      return localize('com_ui_select_model');
+      return localize('com_ui_select_agent');
     }
 
     if (
@@ -231,8 +231,8 @@ export const getDisplayValue = ({
 
   if (selectedValues.endpoint) {
     const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
-    return endpoint?.label || localize('com_ui_select_model');
+    return endpoint?.label || localize('com_ui_select_agent');
   }
 
-  return localize('com_ui_select_model');
+  return localize('com_ui_select_agent');
 };

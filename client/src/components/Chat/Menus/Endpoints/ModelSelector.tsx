@@ -20,7 +20,7 @@ const defaultInterface = getConfigDefaults().interface;
 
 function ModelSelectorContent() {
   const localize = useLocalize();
-  const modelSelectorHint = useShortcutHint('openModelSelector', localize('com_ui_select_model'));
+  const modelSelectorHint = useShortcutHint('openModelSelector', localize('com_ui_select_agent'));
   const modelSelectorAriaKey = useShortcutAriaKey('openModelSelector');
 
   const {
@@ -66,14 +66,14 @@ function ModelSelectorContent() {
 
   const trigger = (
     <TooltipAnchor
-      aria-label={localize('com_ui_select_model')}
+      aria-label={localize('com_ui_select_agent')}
       description={modelSelectorHint}
       render={
         <button
           data-testid="model-selector-button"
           aria-keyshortcuts={modelSelectorAriaKey}
           className="my-1 flex h-9 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
-          aria-label={localize('com_ui_select_model')}
+          aria-label={localize('com_ui_select_agent')}
         >
           {selectedIcon && React.isValidElement(selectedIcon) && (
             <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
