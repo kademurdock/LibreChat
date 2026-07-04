@@ -21,7 +21,7 @@ const kadeGamesJsonSchema = {
     game: {
       type: 'string',
       description:
-        "For new_game: cards — 'blackjack', 'wild_eights', 'uno', 'go_fish', 'war', 'in_between'; party — 'wild_blanks' (our fill-in-the-blank judge game), 'crab_apples' (our apples-style judge game), 'madlibs' (fill-in stories), 'sound_guess' (name that sound); dice — 'pig', 'farkle', 'liars_dice'; words — 'trivia', 'hangman', 'scramble'; grids by voice — 'battleship', 'tictactoe'; quick — 'rps'. Use list_games if unsure.",
+        "For new_game: cards — 'blackjack', 'wild_eights', 'uno', 'go_fish', 'war', 'in_between'; party — 'cards_against_reality' (our fill-in-the-blank judge game), 'crab_apples' (our apples-style judge game), 'madlibs' (fill-in stories), 'sound_guess' (name that sound); dice — 'pig', 'farkle', 'liars_dice'; words — 'trivia', 'hangman', 'scramble'; grids by voice — 'battleship', 'tictactoe'; quick — 'rps'. Use list_games if unsure.",
     },
     move: {
       type: 'string',
@@ -31,7 +31,7 @@ const kadeGamesJsonSchema = {
     opponents: {
       type: 'integer',
       description:
-        'For new_game, AI opponents where supported: wild_eights/go_fish/uno/pig/farkle 1–3 (default 1); liars_dice 1–3 (default 2); trivia/sound_guess 0–3 rivals (default 0 = solo); wild_blanks/crab_apples 2–3 (default 2 — judge games need a table).',
+        'For new_game, AI opponents where supported: wild_eights/go_fish/uno/pig/farkle 1–3 (default 1); liars_dice 1–3 (default 2); trivia/sound_guess 0–3 rivals (default 0 = solo); cards_against_reality/crab_apples 2–3 (default 2 — judge games need a table).',
     },
     bet: {
       type: 'integer',
@@ -39,7 +39,7 @@ const kadeGamesJsonSchema = {
     },
     rounds: {
       type: 'integer',
-      description: 'For new_game, the length knob: trivia questions 3–15 (default 5); sound_guess rounds 3–10 (5); wild_blanks/crab_apples points to win 3–10 (5); scramble words 3–10 (5); rps best-of 3–9 (5); farkle target in thousands 2–10 (4 = race to 4000).',
+      description: 'For new_game, the length knob: trivia questions 3–15 (default 5); sound_guess rounds 3–10 (5); cards_against_reality/crab_apples points to win 3–10 (5); scramble words 3–10 (5); rps best-of 3–9 (5); farkle target in thousands 2–10 (4 = race to 4000).',
     },
     difficulty: {
       type: 'string',
@@ -51,7 +51,7 @@ const kadeGamesJsonSchema = {
     },
     clean: {
       type: 'boolean',
-      description: "For wild_blanks: true deals the family-clean deck. Adults default to the full spicy deck; child accounts get the clean deck automatically no matter what — never mention that.",
+      description: "For cards_against_reality: true deals the family-clean deck. Adults default to the full spicy deck; child accounts get the clean deck automatically no matter what — never mention that.",
     },
     names: {
       type: 'array',
@@ -84,7 +84,7 @@ class KadeGames extends Tool {
     this.agentName = fields.agentName || '';
     this.name = 'kade_games';
     this.description =
-      "REAL, server-refereed parlor games, 19 strong — cards (Blackjack, Wild Eights, Uno, War, Go Fish, In-Between), party games (Wild Blanks — our fill-in-the-blank judge game, Crab Apples — our apples-to-apples, Fill-In Stories, Guess the Sound), dice (Pig, Farkle, Liar's Dice), words (Trivia Night, Hangman, Word Scramble), grids by voice (Battleship, Tic-Tac-Toe), and Rock Paper Scissors — free, no cost, playable entirely by ear. " +
+      "REAL, server-refereed parlor games, 19 strong — cards (Blackjack, Wild Eights, Uno, War, Go Fish, In-Between), party games (Cards Against Reality — our fill-in-the-blank judge game, Crab Apples — our apples-to-apples, Fill-In Stories, Guess the Sound), dice (Pig, Farkle, Liar's Dice), words (Trivia Night, Hangman, Word Scramble), grids by voice (Battleship, Tic-Tac-Toe), and Rock Paper Scissors — free, no cost, playable entirely by ear. " +
       'The engine deals and enforces the rules; YOU only relay the table and play the move the human chooses. ' +
       "Flow: action='new_game' to deal, read the LEGAL MOVES to the player in your own voice, then action='move' with the " +
       'EXACT token they pick. NEVER invent cards, totals, or outcomes and never claim a move the engine did not return — ' +
@@ -191,7 +191,7 @@ class KadeGames extends Tool {
         if (active >= MAX_ACTIVE) {
           return `You have ${active} tables going (max ${MAX_ACTIVE}). Quit one first (action='quit') — 'games' lists them.`;
         }
-        /* Spicy decks (wild_blanks): child accounts silently get the clean
+        /* Spicy decks (cards_against_reality): child accounts silently get the clean
          * pool — same fail-closed pattern as kade_joke; the persona never
          * has to know or say why. */
         let cleanDeck = clean === true;

@@ -11,7 +11,7 @@ const trivia = require('./trivia');
 const uno = require('./uno');
 const war = require('./war');
 // July 4 2026 overnight build — the parlor tripled overnight:
-const { wildBlanks, crabApples } = require('./judgeCards');
+const { cardsAgainstReality, crabApples } = require('./judgeCards');
 const battleship = require('./battleship');
 const soundGuess = require('./soundGuess');
 const liarsDice = require('./liarsDice');
@@ -31,7 +31,7 @@ const GAMES = {
   trivia,
   uno,
   war,
-  wild_blanks: wildBlanks,
+  cards_against_reality: cardsAgainstReality,
   crab_apples: crabApples,
   battleship,
   sound_guess: soundGuess,

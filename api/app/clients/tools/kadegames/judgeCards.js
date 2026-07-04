@@ -3,9 +3,11 @@
  * "cards against humanity, apples to apples, all kinds of stuff like that").
  *
  * One core, two games:
- *   WILD BLANKS (key wild_blanks) — fill-in-the-blank party game. Adults get
- *     the MILD+SPICY pools shuffled together; child accounts and clean:true
- *     tables get MILD only (the tool layer decides — same silent pattern as
+ *   CARDS AGAINST REALITY (key cards_against_reality) — the Cards-Against-
+ *     Humanity-style game, renamed July 4 2026 on Kade's morning feedback
+ *     ("Wild Blanks isn't self-explanatory"). Adults get the MILD+SPICY
+ *     pools shuffled together; child accounts and clean:true tables get
+ *     MILD only (the tool layer decides — same silent pattern as
  *     kade_joke; the persona never has to mention it).
  *   CRAB APPLES (key crab_apples) — Apples-to-Apples-style: judge flips a
  *     description card, players play the thing that fits (or hilariously
@@ -260,10 +262,10 @@ function makeJudgeGame(config) {
   };
 }
 
-const wildBlanks = makeJudgeGame({
-  key: 'wild_blanks',
-  name: 'Wild Blanks',
-  blurb: 'Our fill-in-the-blank party game. The judge flips a prompt, everyone plays their funniest card. First to 5 points.',
+const cardsAgainstReality = makeJudgeGame({
+  key: 'cards_against_reality',
+  name: 'Cards Against Reality',
+  blurb: 'Our house spin on the cards-against game — judge flips a prompt, everyone plays their funniest card. 500+ original cards, spicy or clean. First to 5.',
   kind: 'blanks',
 });
 
@@ -274,4 +276,4 @@ const crabApples = makeJudgeGame({
   kind: 'apples',
 });
 
-module.exports = { wildBlanks, crabApples, makeJudgeGame };
+module.exports = { cardsAgainstReality, crabApples, makeJudgeGame };

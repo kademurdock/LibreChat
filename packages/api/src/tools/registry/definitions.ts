@@ -311,7 +311,7 @@ export const kadeGamesSchema: ExtendedJsonSchema = {
     game: {
       type: 'string',
       description:
-        "For new_game: cards — 'blackjack', 'wild_eights', 'uno', 'go_fish', 'war', 'in_between'; party — 'wild_blanks', 'crab_apples', 'madlibs', 'sound_guess'; dice — 'pig', 'farkle', 'liars_dice'; words — 'trivia', 'hangman', 'scramble'; grids — 'battleship', 'tictactoe'; quick — 'rps'.",
+        "For new_game: cards — 'blackjack', 'wild_eights', 'uno', 'go_fish', 'war', 'in_between'; party — 'cards_against_reality', 'crab_apples', 'madlibs', 'sound_guess'; dice — 'pig', 'farkle', 'liars_dice'; words — 'trivia', 'hangman', 'scramble'; grids — 'battleship', 'tictactoe'; quick — 'rps'.",
     },
     move: {
       type: 'string',
@@ -320,7 +320,7 @@ export const kadeGamesSchema: ExtendedJsonSchema = {
     },
     opponents: {
       type: 'integer',
-      description: 'AI opponents where supported: card/dice games 1-3; trivia/sound_guess 0-3 rivals; wild_blanks/crab_apples 2-3 (judge games need a table).',
+      description: 'AI opponents where supported: card/dice games 1-3; trivia/sound_guess 0-3 rivals; cards_against_reality/crab_apples 2-3 (judge games need a table).',
     },
     bet: {
       type: 'integer',
@@ -328,7 +328,7 @@ export const kadeGamesSchema: ExtendedJsonSchema = {
     },
     rounds: {
       type: 'integer',
-      description: 'Length knob: trivia questions 3-15; sound_guess/scramble rounds 3-10; wild_blanks/crab_apples points to win 3-10; rps best-of 3-9; farkle target in thousands 2-10.',
+      description: 'Length knob: trivia questions 3-15; sound_guess/scramble rounds 3-10; cards_against_reality/crab_apples points to win 3-10; rps best-of 3-9; farkle target in thousands 2-10.',
     },
     difficulty: {
       type: 'string',
@@ -340,7 +340,7 @@ export const kadeGamesSchema: ExtendedJsonSchema = {
     },
     clean: {
       type: 'boolean',
-      description: 'For wild_blanks: true = family-clean deck. Adults default spicy; child accounts are always clean automatically (never mention it).',
+      description: 'For cards_against_reality: true = family-clean deck. Adults default spicy; child accounts are always clean automatically (never mention it).',
     },
     names: {
       type: 'array',
@@ -693,7 +693,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_games: {
     name: 'kade_games',
     description:
-      "Server-refereed voice games, 19 strong — Blackjack, Wild Eights, Uno, War, Go Fish, In-Between, Wild Blanks (fill-in-the-blank judge game), Crab Apples, Fill-In Stories, Guess the Sound, Pig, Farkle, Liar's Dice, Trivia Night, Hangman, Word Scramble, Battleship, Tic-Tac-Toe, Rock Paper Scissors — free, no cost. The engine deals and enforces every rule; you only relay the table and play the move the human picks from the LEGAL MOVES list. NEVER invent cards, totals, or outcomes. Games save per user and resume in any later conversation.",
+      "Server-refereed voice games, 19 strong — Blackjack, Wild Eights, Uno, War, Go Fish, In-Between, Cards Against Reality (fill-in-the-blank judge game), Crab Apples, Fill-In Stories, Guess the Sound, Pig, Farkle, Liar's Dice, Trivia Night, Hangman, Word Scramble, Battleship, Tic-Tac-Toe, Rock Paper Scissors — free, no cost. The engine deals and enforces every rule; you only relay the table and play the move the human picks from the LEGAL MOVES list. NEVER invent cards, totals, or outcomes. Games save per user and resume in any later conversation.",
     schema: kadeGamesSchema,
     toolType: 'builtin',
   },

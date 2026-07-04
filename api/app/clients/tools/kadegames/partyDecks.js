@@ -1,7 +1,7 @@
 /**
  * Party decks for the judge-card games (July 4 2026 overnight build).
  *
- * WILD BLANKS — our fill-in-the-blank party game (the Cards-Against-style
+ * CARDS AGAINST REALITY — our fill-in-the-blank party game (the Cards-Against-style
  * one Kade asked for, 100% original cards). Two pools:
  *   MILD  — family table. Kids' accounts ONLY ever see this pool.
  *   SPICY — the adult table (weed, drinking, innuendo, midlife despair).

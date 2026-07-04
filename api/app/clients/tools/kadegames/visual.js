@@ -132,7 +132,7 @@ function visualView(gameKey, state) {
       };
     }
     /* ---------- July 4 2026 overnight additions ---------- */
-    case 'wild_blanks':
+    case 'cards_against_reality':
     case 'crab_apples': {
       const done = state.status === 'over';
       const judging = state.phase === 'judge';
@@ -146,7 +146,7 @@ function visualView(gameKey, state) {
         question: done ? null : {
           q: state.prompt,
           options: judging ? state.subs.map((sub) => sub.card) : state.hands[0],
-          cat: gameKey === 'wild_blanks' ? 'Wild Blanks' : 'Crab Apples',
+          cat: gameKey === 'cards_against_reality' ? 'Cards Against Reality' : 'Crab Apples',
           diff: judging ? 'you judge' : `${state.names[state.judge]} judges`,
         },
         over: done,

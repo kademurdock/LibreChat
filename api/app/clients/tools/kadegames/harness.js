@@ -299,18 +299,18 @@ async function surgical() {
   {
     const decks = require('./partyDecks');
     const mild = new Set([...decks.BLANK_PROMPTS_MILD, ...decks.BLANK_RESPONSES_MILD]);
-    const G = GAMES.wild_blanks;
+    const G = GAMES.cards_against_reality;
     srand(35);
     for (let i = 0; i < 40; i++) {
       const st = G.newGame({ opponents: 2, clean: true });
       const everything = [...st.prompts, ...st.responses, ...st.hands.flat(), st.prompt];
       const dirty = everything.filter((c) => !mild.has(c));
-      if (!ok(dirty.length === 0, `wild_blanks clean deck leaked spicy cards: ${dirty[0]}`)) break;
+      if (!ok(dirty.length === 0, `cards_against_reality clean deck leaked spicy cards: ${dirty[0]}`)) break;
     }
     // and the adult deck actually contains spice
-    const st2 = GAMES.wild_blanks.newGame({ opponents: 2, clean: false });
+    const st2 = GAMES.cards_against_reality.newGame({ opponents: 2, clean: false });
     const all2 = [...st2.prompts, ...st2.responses, ...st2.hands.flat()];
-    ok(all2.some((c) => !mild.has(c)), 'wild_blanks adult deck has no spicy cards at all?');
+    ok(all2.some((c) => !mild.has(c)), 'cards_against_reality adult deck has no spicy cards at all?');
   }
 
   // Battleship: the house may never fire at the same square twice.
@@ -383,8 +383,8 @@ async function surgical() {
     ['trivia', { opponents: 0, rounds: 5 }, Math.min(N, 1500)],
     ['trivia', { opponents: 3, rounds: 10 }, Math.min(N, 1500)],
     ['war', {}, Math.min(N, 1500)],
-    ['wild_blanks', { opponents: 2, clean: false }, Math.min(N, 1200)],
-    ['wild_blanks', { opponents: 3, rounds: 3, clean: true }, Math.min(N, 1200)],
+    ['cards_against_reality', { opponents: 2, clean: false }, Math.min(N, 1200)],
+    ['cards_against_reality', { opponents: 3, rounds: 3, clean: true }, Math.min(N, 1200)],
     ['crab_apples', { opponents: 2 }, Math.min(N, 1200)],
     ['battleship', {}, Math.min(N, 400)],
     ['sound_guess', { opponents: 2, rounds: 5 }, Math.min(N, 1200)],
