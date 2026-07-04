@@ -27,9 +27,13 @@ type Seat = {
   score?: number;
   books?: string[];
 };
+type GridT = { name: string; cells: string[][] };
+type RowT = { label?: string; value: string; strong?: boolean };
 type Visual = {
-  kind: 'cards' | 'dice' | 'quiz';
+  kind: 'cards' | 'dice' | 'quiz' | 'grid' | 'board';
   seats: Seat[];
+  grids?: GridT[];
+  rows?: RowT[];
   pile?: CardT | null;
   suit?: string | null;
   pool?: number;
@@ -44,8 +48,12 @@ type Visual = {
   winner?: number | string | null;
 };
 
-const SUIT_CHAR: Record<string, string> = { S: '♠', H: '♥', D: '♦', C: '♣' };
-const SUIT_NAME: Record<string, string> = { S: 'Spades', H: 'Hearts', D: 'Diamonds', C: 'Clubs' };
+const SUIT_CHAR: Record<string, string> = { S: '♠', H: '♥', D: '♦', C: '♣', R: '●', Y: '●', G: '●', B: '●' };
+const SUIT_NAME: Record<string, string> = {
+  S: 'Spades', H: 'Hearts', D: 'Diamonds', C: 'Clubs',
+  R: 'Red', Y: 'Yellow', G: 'Green', B: 'Blue',
+};
+const SUIT_COLOR: Record<string, string> = { R: '#c2262e', Y: '#b8860b', G: '#2e7d32', B: '#1e5aa8' };
 const WIN_RESULTS = new Set(['win', 'blackjack', 'dealer_bust']);
 
 function youWon(v: Visual): boolean {
@@ -63,10 +71,11 @@ function youWon(v: Visual): boolean {
 
 function PlayingCard({ c, i, small }: { c: CardT; i: number; small?: boolean }) {
   const red = c.s === 'H' || c.s === 'D';
+  const tint = (c.s != null && SUIT_COLOR[c.s]) || (red ? '#c2262e' : '#1c1c2e');
   return (
     <span
       className={`kgt-card ${small ? 'kgt-sm' : ''} ${c.back ? 'kgt-back' : ''}`}
-      style={{ animationDelay: `${Math.min(i * 90, 720)}ms`, color: red ? '#c2262e' : '#1c1c2e' }}
+      style={{ animationDelay: `${Math.min(i * 90, 720)}ms`, color: tint }}
     >
       {!c.back && (
         <>
@@ -231,6 +240,36 @@ const GameTable = memo(function GameTable({
           </>
         )}
 
+        {v.kind === 'grid' &&
+          (v.grids ?? []).map((g, gi) => (
+            <div key={gi} className="kgt-gridwrap">
+              <span className="kgt-label">{g.name}</span>
+              <div
+                className="kgt-grid"
+                style={{ gridTemplateColumns: `repeat(${g.cells[0]?.length ?? 1}, 1fr)` }}
+              >
+                {g.cells.flatMap((row, ri) =>
+                  row.map((cell, ci) => (
+                    <span key={`${ri}-${ci}`} className={`kgt-cell kgt-c-${cell || 'e'}`}>
+                      {cell === 'X' || cell === 'K' || cell === 'x' ? '✕' : cell === 'M' ? '•' : cell === 'o' ? '○' : ''}
+                    </span>
+                  )),
+                )}
+              </div>
+            </div>
+          ))}
+
+        {v.kind === 'board' && (
+          <div className="kgt-board">
+            {(v.rows ?? []).map((r, ri) => (
+              <div key={ri} className={`kgt-row ${r.strong ? 'kgt-strong' : ''}`}>
+                {r.label ? <span className="kgt-rowlabel">{r.label}</span> : null}
+                <span className="kgt-rowval">{r.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {v.over === true && (
           <div className={`kgt-banner ${won ? 'kgt-won' : ''}`}>{won ? 'You win!' : 'Game over'}</div>
         )}
@@ -297,6 +336,22 @@ const KGT_CSS = `
   .kgt-die.kgt-shake{animation:kgt-shake 1.1s ease-in-out infinite}
   @keyframes kgt-shake{0%,100%{transform:rotate(0)}20%{transform:rotate(-9deg)}40%{transform:rotate(7deg)}60%{transform:rotate(-5deg)}80%{transform:rotate(3deg)}}
 }
+.kgt-gridwrap{margin:8px 0}
+.kgt-grid{display:grid;gap:2px;max-width:300px;margin-top:4px}
+.kgt-cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+  border-radius:3px;background:rgba(255,255,255,.08);color:#f3ead2;font-size:.7rem;font-weight:700;
+  min-width:0;min-height:18px}
+.kgt-c-S{background:rgba(91,141,239,.55)}
+.kgt-c-X{background:rgba(226,87,76,.75)}
+.kgt-c-K{background:rgba(122,34,28,.85)}
+.kgt-c-M{background:rgba(255,255,255,.16);color:#bdb6a0}
+.kgt-c-x{background:rgba(246,201,69,.28);color:#f6c945}
+.kgt-c-o{background:rgba(91,141,239,.28);color:#9db9f5}
+.kgt-board{margin:6px 0 2px;display:flex;flex-direction:column;gap:4px}
+.kgt-row{display:flex;gap:8px;align-items:baseline}
+.kgt-rowlabel{color:#d8d2bd;font-size:.72rem;min-width:84px}
+.kgt-rowval{color:#f3ead2;font-size:.82rem;letter-spacing:.03em}
+.kgt-row.kgt-strong .kgt-rowval{font-weight:700;font-size:.95rem;color:#f6c945}
 .kgt-confetti{position:absolute;inset:0;overflow:hidden}
 .kgt-confetti span{position:absolute;top:-10px;width:7px;height:11px;border-radius:2px;opacity:.9;
   animation:kgt-fall 1.9s ease-in forwards}

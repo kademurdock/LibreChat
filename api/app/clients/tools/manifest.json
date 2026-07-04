@@ -93,7 +93,7 @@
   {
     "name": "Game Parlor",
     "pluginKey": "kade_games",
-    "description": "Server-refereed voice games \u2014 Blackjack, Wild Eights, Go Fish, Pig dice, Trivia Night. The engine enforces every rule; the agent just deals the banter. No key, no cost.",
+    "description": "Server-refereed voice games, 19 strong \u2014 Blackjack, Uno, War, Go Fish, Wild Eights, In-Between, Wild Blanks (the fill-in-the-blank party game), Crab Apples, Fill-In Stories, Guess the Sound, Pig, Farkle, Liar's Dice, Trivia Night, Hangman, Word Scramble, Battleship, Tic-Tac-Toe, and Rock Paper Scissors. The engine enforces every rule; the agent just deals the banter. No key, no cost.",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []

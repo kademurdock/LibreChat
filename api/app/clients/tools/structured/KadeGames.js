@@ -21,7 +21,7 @@ const kadeGamesJsonSchema = {
     game: {
       type: 'string',
       description:
-        "For new_game: which game — 'blackjack', 'wild_eights', 'go_fish', 'uno', 'war', 'pig' (press-your-luck dice), or 'trivia' (real quiz questions). Use list_games if unsure.",
+        "For new_game: cards — 'blackjack', 'wild_eights', 'uno', 'go_fish', 'war', 'in_between'; party — 'wild_blanks' (our fill-in-the-blank judge game), 'crab_apples' (our apples-style judge game), 'madlibs' (fill-in stories), 'sound_guess' (name that sound); dice — 'pig', 'farkle', 'liars_dice'; words — 'trivia', 'hangman', 'scramble'; grids by voice — 'battleship', 'tictactoe'; quick — 'rps'. Use list_games if unsure.",
     },
     move: {
       type: 'string',
@@ -31,7 +31,7 @@ const kadeGamesJsonSchema = {
     opponents: {
       type: 'integer',
       description:
-        'For new_game (wild_eights / go_fish / uno / pig / trivia): how many AI opponents at the table. Cards/dice: 1–3 (default 1). Trivia: 0–3 rivals (default 0 = solo quiz).',
+        'For new_game, AI opponents where supported: wild_eights/go_fish/uno/pig/farkle 1–3 (default 1); liars_dice 1–3 (default 2); trivia/sound_guess 0–3 rivals (default 0 = solo); wild_blanks/crab_apples 2–3 (default 2 — judge games need a table).',
     },
     bet: {
       type: 'integer',
@@ -39,7 +39,7 @@ const kadeGamesJsonSchema = {
     },
     rounds: {
       type: 'integer',
-      description: 'For new_game (trivia): how many questions, 3–15. Default 5.',
+      description: 'For new_game, the length knob: trivia questions 3–15 (default 5); sound_guess rounds 3–10 (5); wild_blanks/crab_apples points to win 3–10 (5); scramble words 3–10 (5); rps best-of 3–9 (5); farkle target in thousands 2–10 (4 = race to 4000).',
     },
     difficulty: {
       type: 'string',
@@ -47,7 +47,11 @@ const kadeGamesJsonSchema = {
     },
     category: {
       type: 'string',
-      description: "For new_game (trivia): optional topic — general, books, film, music, tv, video_games, science, computers, math, sports, geography, history, politics, art, celebrities, animals, vehicles, comics, anime, cartoons.",
+      description: "Optional topic. Trivia: general, books, film, music, tv, video_games, science, computers, math, sports, geography, history, politics, art, celebrities, animals, vehicles, comics, anime, cartoons. Hangman: animals, food, around_the_house, places, music, games_and_fun.",
+    },
+    clean: {
+      type: 'boolean',
+      description: "For wild_blanks: true deals the family-clean deck. Adults default to the full spicy deck; child accounts get the clean deck automatically no matter what — never mention that.",
     },
     names: {
       type: 'array',
@@ -80,7 +84,7 @@ class KadeGames extends Tool {
     this.agentName = fields.agentName || '';
     this.name = 'kade_games';
     this.description =
-      'REAL, server-refereed parlor games (Blackjack, Wild Eights, Go Fish, Uno, War, Pig dice, Trivia Night) — free, no cost, playable entirely by voice. ' +
+      "REAL, server-refereed parlor games, 19 strong — cards (Blackjack, Wild Eights, Uno, War, Go Fish, In-Between), party games (Wild Blanks — our fill-in-the-blank judge game, Crab Apples — our apples-to-apples, Fill-In Stories, Guess the Sound), dice (Pig, Farkle, Liar's Dice), words (Trivia Night, Hangman, Word Scramble), grids by voice (Battleship, Tic-Tac-Toe), and Rock Paper Scissors — free, no cost, playable entirely by ear. " +
       'The engine deals and enforces the rules; YOU only relay the table and play the move the human chooses. ' +
       "Flow: action='new_game' to deal, read the LEGAL MOVES to the player in your own voice, then action='move' with the " +
       'EXACT token they pick. NEVER invent cards, totals, or outcomes and never claim a move the engine did not return — ' +
@@ -120,10 +124,18 @@ class KadeGames extends Tool {
     if (v.over) {
       out.push('', 'GAME OVER. Relay the result warmly, then offer a rematch (new_game) or a different game.');
     } else {
+      const MAX_SHOWN = 14;
+      const legalLines =
+        v.legal.length > MAX_SHOWN && v.legalHint
+          ? [
+              ...v.legal.slice(0, 8).map((m) => `- ${m.token}  →  ${m.label}`),
+              `- …plus ${v.legal.length - 8} more — ${v.legalHint}`,
+            ]
+          : v.legal.map((m) => `- ${m.token}  →  ${m.label}`);
       out.push(
         '',
         'LEGAL MOVES — you may ONLY use one of these exact tokens; the engine rejects anything else:',
-        ...v.legal.map((m) => `- ${m.token}  →  ${m.label}`),
+        ...legalLines,
         '',
         "Tell the player their options in your own voice (don't read the raw tokens aloud). When they choose, call kade_games action='move' with the matching token.",
       );
@@ -139,7 +151,7 @@ class KadeGames extends Tool {
   }
 
   async _call(data) {
-    const { action, game, move, opponents, bet, names, game_id, rounds, difficulty, category } = data || {};
+    const { action, game, move, opponents, bet, names, game_id, rounds, difficulty, category, clean } = data || {};
     if (!this.userId) return 'Games are unavailable (no user on this request).';
 
     try {
@@ -179,12 +191,26 @@ class KadeGames extends Tool {
         if (active >= MAX_ACTIVE) {
           return `You have ${active} tables going (max ${MAX_ACTIVE}). Quit one first (action='quit') — 'games' lists them.`;
         }
+        /* Spicy decks (wild_blanks): child accounts silently get the clean
+         * pool — same fail-closed pattern as kade_joke; the persona never
+         * has to know or say why. */
+        let cleanDeck = clean === true;
+        if (G.meta.hasSpice && !cleanDeck) {
+          try {
+            const { getUserById } = require('~/models');
+            const u = await getUserById(this.userId, 'kadeAccountType');
+            if (u && u.kadeAccountType === 'child') cleanDeck = true;
+          } catch (_) {
+            cleanDeck = true; // can't verify the audience -> stay clean
+          }
+        }
         const state = await G.newGame({
           opponents: Number.isFinite(parseInt(opponents, 10)) ? parseInt(opponents, 10) : undefined,
           bet: parseInt(bet, 10) || 10,
           rounds,
           difficulty,
           category,
+          clean: cleanDeck,
           names: Array.isArray(names) ? names.map((n) => String(n).slice(0, 40)) : [],
         });
         const gameId = shortId();

@@ -45,6 +45,23 @@ const { GAMES } = require('./index');
 const { visualView } = require('./visual');
 const { rankOf } = require('./deck');
 
+// Every cue name the sound pack actually ships (client VARIANTS map +
+// bridge/inworld WAVs). Any engine sound outside this set would be silent
+// on every surface — the harness treats that as a failure.
+const KNOWN_CUES = new Set([
+  'card_shuffle', 'card_deal', 'card_flip', 'card_draw', 'card_slap',
+  'uno_sting', 'dice_shake', 'dice_roll', 'dice_bad',
+  'chip_bet', 'chip_win', 'chip_stack', 'coin_flip',
+  'your_turn', 'correct_ding', 'wrong_buzz', 'timer_tick', 'timer_up',
+  'win_fanfare', 'lose_trombone', 'draw_game',
+  'bingo_tumble', 'bingo_pop', 'battleship_splash', 'battleship_boom',
+  'page_turn', 'drumroll_short', 'jackpot_win', 'coin_shower',
+]);
+const seenCues = new Set();
+function collectCues(arr) {
+  for (const c of arr || []) seenCues.add(c);
+}
+
 let failures = 0;
 let checks = 0;
 function fail(msg) {
@@ -84,6 +101,9 @@ function visualLeakCheck(key, state) {
   checks += 1;
   if (key === 'trivia') {
     if (/"correct"/.test(raw)) return fail('trivia visual leaks the answer key');
+  }
+  if (key === 'sound_guess') {
+    if (/"correct"/.test(raw) || /"cue"/.test(raw)) return fail('sound_guess visual leaks the answer');
   }
   if (key === 'blackjack' && state.phase === 'player') {
     // hole card must be face down during play
@@ -168,6 +188,8 @@ async function playOne(key, G, gameNo, opts) {
     } catch (e) {
       return fail(`${key}#${gameNo} move(${pick}) threw: ${e.message} (seed ${seed})`);
     }
+    if (res) collectCues(res.sounds);
+    collectCues(v.sounds);
     if (!ok(!(res && res.error), `${key}#${gameNo}: legal move ${pick} rejected: ${res && res.error} (seed ${seed})`)) return false;
     if (CONSERVE[key]) {
       if (!ok(CONSERVE[key](state), `${key}#${gameNo}: conservation broken after ${pick} (seed ${seed})`)) return false;
@@ -240,6 +262,77 @@ async function surgical() {
     ok(r && r.error, 'UNO: free pass accepted while a play + draw were available (known bug if failing)');
   }
 
+  // Scramble: free-text guessing paths (the soak only ever hints/skips).
+  {
+    const G = GAMES.scramble;
+    srand(31);
+    const st = G.newGame({ rounds: 3 });
+    const word = st.words[0];
+    let r = await G.move(st, 'guess_zzzz');
+    ok(r && !r.error, 'scramble wrong guess should not be an ERROR (it is a miss)');
+    r = await G.move(st, `guess_${word}`);
+    ok(r && !r.error && st.score >= 2, `scramble right guess should score 2 (got score ${st.score})`);
+    r = await G.move(st, 'hint');
+    ok(r && !r.error, 'scramble hint rejected');
+    r = await G.move(st, `guess_${st.words[1]}`);
+    ok(st.score === 3, `scramble hinted solve should score 1 (score ${st.score})`);
+    r = await G.move(st, 'total_nonsense');
+    ok(r && r.error, 'scramble should reject a non-token move');
+    for (let i = 0; i < 3; i++) await G.move(st, 'guess_wrongwrong');
+    ok(G.view(st).over, 'scramble: 3 wrongs on the last word should end the game');
+  }
+
+  // Fill-In Stories: word collection + reveal.
+  {
+    const G = GAMES.madlibs;
+    srand(33);
+    const st = G.newGame();
+    let r = await G.move(st, 'word_taco_truck');
+    ok(r && !r.error && st.words[0] === 'taco truck', 'madlibs word_ underscores should become spaces');
+    r = await G.move(st, 'gibberish');
+    ok(r && r.error, 'madlibs should reject non-word_ moves');
+    while (!G.view(st).over) await G.move(st, 'surprise_me');
+    ok(/TACO TRUCK/.test(st.story || ''), 'madlibs reveal should contain the collected word uppercased');
+  }
+
+  // Judge games: the clean deck must be PURELY the mild pool.
+  {
+    const decks = require('./partyDecks');
+    const mild = new Set([...decks.BLANK_PROMPTS_MILD, ...decks.BLANK_RESPONSES_MILD]);
+    const G = GAMES.wild_blanks;
+    srand(35);
+    for (let i = 0; i < 40; i++) {
+      const st = G.newGame({ opponents: 2, clean: true });
+      const everything = [...st.prompts, ...st.responses, ...st.hands.flat(), st.prompt];
+      const dirty = everything.filter((c) => !mild.has(c));
+      if (!ok(dirty.length === 0, `wild_blanks clean deck leaked spicy cards: ${dirty[0]}`)) break;
+    }
+    // and the adult deck actually contains spice
+    const st2 = GAMES.wild_blanks.newGame({ opponents: 2, clean: false });
+    const all2 = [...st2.prompts, ...st2.responses, ...st2.hands.flat()];
+    ok(all2.some((c) => !mild.has(c)), 'wild_blanks adult deck has no spicy cards at all?');
+  }
+
+  // Battleship: the house may never fire at the same square twice.
+  {
+    const G = GAMES.battleship;
+    srand(37);
+    const st = G.newGame();
+    let v = G.view(st);
+    let n = 0;
+    while (!v.over && n < 300) {
+      await G.move(st, v.legal[Math.floor(Math.random() * v.legal.length)].token);
+      v = G.view(st);
+      n++;
+    }
+    ok(v.over, 'battleship did not terminate');
+    const aiShots = Object.keys(st.shots.ai);
+    ok(new Set(aiShots).size === aiShots.length, 'battleship: house fired a square twice');
+    const hitsOnPlayer = st.ships.player.reduce((a, sh) => a + sh.hits.length, 0);
+    const aiHitMarks = Object.values(st.shots.ai).filter((x) => x === 'hit').length;
+    ok(hitsOnPlayer === aiHitMarks, 'battleship: hit bookkeeping out of sync');
+  }
+
   // Blackjack: payout math spot-checks.
   {
     const G = GAMES.blackjack;
@@ -290,6 +383,23 @@ async function surgical() {
     ['trivia', { opponents: 0, rounds: 5 }, Math.min(N, 1500)],
     ['trivia', { opponents: 3, rounds: 10 }, Math.min(N, 1500)],
     ['war', {}, Math.min(N, 1500)],
+    ['wild_blanks', { opponents: 2, clean: false }, Math.min(N, 1200)],
+    ['wild_blanks', { opponents: 3, rounds: 3, clean: true }, Math.min(N, 1200)],
+    ['crab_apples', { opponents: 2 }, Math.min(N, 1200)],
+    ['battleship', {}, Math.min(N, 400)],
+    ['sound_guess', { opponents: 2, rounds: 5 }, Math.min(N, 1200)],
+    ['liars_dice', { opponents: 2 }, Math.min(N, 1200)],
+    ['liars_dice', { opponents: 3 }, Math.min(N, 800)],
+    ['farkle', { opponents: 1 }, Math.min(N, 800)],
+    ['farkle', { opponents: 3, rounds: 3 }, Math.min(N, 800)],
+    ['hangman', {}, Math.min(N, 1500)],
+    ['hangman', { category: 'food' }, Math.min(N, 800)],
+    ['scramble', {}, Math.min(N, 1000)],
+    ['in_between', {}, Math.min(N, 1500)],
+    ['rps', {}, Math.min(N, 1500)],
+    ['rps', { rounds: 7 }, Math.min(N, 800)],
+    ['tictactoe', {}, Math.min(N, 1500)],
+    ['madlibs', {}, Math.min(N, 800)],
   ];
   console.log(`Game Parlor harness — seed ${BASE_SEED}, up to ${N} games per plan\n`);
   await surgical();
@@ -307,6 +417,10 @@ async function surgical() {
     }
     console.log(`  ${key} ${JSON.stringify(opts)}: ${count} games, ${failures - f0} failures`);
   }
-  console.log(`\n${checks} checks, ${failures} failures.`);
+  const badCues = [...seenCues].filter((c) => !KNOWN_CUES.has(c));
+  checks += 1;
+  if (badCues.length) fail(`engine emitted cues the sound pack doesn't ship: ${badCues.join(', ')}`);
+  console.log(`\ncue check: ${seenCues.size} distinct cues heard, ${badCues.length} unknown.`);
+  console.log(`${checks} checks, ${failures} failures.`);
   process.exit(failures ? 1 : 0);
 })();

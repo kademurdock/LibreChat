@@ -9,6 +9,7 @@
 // visuals must not step on access).
 
 const { scoreBlackjack, rankOf } = require('./deck');
+const battleshipMod = require('./battleship');
 
 function card(c) {
   // 'K:H' -> { r: 'K', s: 'H' } (deck.js compact strings, rank:suit)
@@ -129,6 +130,142 @@ function visualView(gameKey, state) {
         over: done,
         winner: state.winner,
       };
+    }
+    /* ---------- July 4 2026 overnight additions ---------- */
+    case 'wild_blanks':
+    case 'crab_apples': {
+      const done = state.status === 'over';
+      const judging = state.phase === 'judge';
+      return {
+        kind: 'quiz',
+        seats: state.names.map((name, i) => ({ name, you: i === 0, score: state.scores[i] })),
+        round: state.round,
+        rounds: state.target,
+        // your own hand while playing, anonymized submissions while judging —
+        // nothing here the player can't legally see
+        question: done ? null : {
+          q: state.prompt,
+          options: judging ? state.subs.map((sub) => sub.card) : state.hands[0],
+          cat: gameKey === 'wild_blanks' ? 'Wild Blanks' : 'Crab Apples',
+          diff: judging ? 'you judge' : `${state.names[state.judge]} judges`,
+        },
+        over: done,
+        winner: state.winner,
+      };
+    }
+    case 'sound_guess': {
+      const done = state.status === 'over';
+      const cur = !done && state.qs[state.idx] ? state.qs[state.idx] : null;
+      return {
+        kind: 'quiz',
+        seats: state.names.map((name, i) => ({ name, you: i === 0, score: state.scores[i] })),
+        round: Math.min(state.idx + 1, state.qs.length),
+        rounds: state.qs.length,
+        // options only — the cue name and answer index NEVER leave the server
+        question: cur ? { q: 'What was that sound?', options: cur.options, cat: 'Guess the Sound', diff: '' } : null,
+        over: done,
+        winner: state.winner,
+      };
+    }
+    case 'battleship': {
+      return {
+        kind: 'grid',
+        grids: battleshipMod.grids(state),
+        seats: [],
+        over: state.status === 'over',
+        winner: state.winner === 'player' ? 'player' : state.winner ? 'The house' : null,
+      };
+    }
+    case 'tictactoe': {
+      const cells = [[], [], []];
+      state.board.forEach((v, i) => {
+        cells[Math.floor(i / 3)].push(v === 'X' ? 'x' : v === 'O' ? 'o' : '');
+      });
+      return {
+        kind: 'grid',
+        grids: [{ name: 'You are X', cells }],
+        seats: [],
+        over: state.status === 'over',
+        winner: state.winner,
+      };
+    }
+    case 'liars_dice': {
+      const over = state.status === 'over';
+      const rows = [
+        { label: 'Your dice', value: state.dice[0] ? state.dice[0].join('  ') : '', strong: true },
+        {
+          label: 'Bid',
+          value: state.bid ? `${state.bid.count} × ${state.bid.face}s (${state.names[state.bid.seat]})` : '—',
+        },
+        ...state.names.map((n, i) => ({ label: n, value: `${state.diceCounts[i]} dice` })),
+      ];
+      return { kind: 'board', rows, seats: [], over, winner: over ? (state.winner === 0 ? 'player' : state.names[state.winner]) : null };
+    }
+    case 'farkle': {
+      const over = state.status === 'over';
+      const rows = [
+        { label: 'Live roll', value: state.dice.join('  ') || '—', strong: true },
+        { label: 'Set aside', value: state.kept.join('  ') || '—' },
+        { label: 'Riding', value: String(state.turnPoints) },
+        ...state.names.map((n, i) => ({ label: n, value: `${state.scores[i]} / ${state.target}` })),
+      ];
+      return { kind: 'board', rows, seats: [], over, winner: over ? (state.winner === 0 ? 'player' : state.names[state.winner]) : null };
+    }
+    case 'hangman': {
+      const over = state.status === 'over';
+      const masked = state.word
+        .split('')
+        .map((ch) => (ch === ' ' ? ' / ' : state.guessed.includes(ch) || over ? ch.toUpperCase() : '_'))
+        .join(' ');
+      const missed = state.guessed.filter((c) => !state.word.includes(c));
+      const rows = [
+        { label: '', value: masked, strong: true },
+        { label: 'Missed', value: missed.map((c) => c.toUpperCase()).join(' ') || '—' },
+        { label: 'Lives', value: String(6 - state.misses) },
+      ];
+      return { kind: 'board', rows, seats: [], over, winner: over ? state.winner : null };
+    }
+    case 'scramble': {
+      const over = state.status === 'over';
+      const rows = over
+        ? [{ label: 'Final score', value: `${state.score} (par ${state.words.length})`, strong: true }]
+        : [
+            { label: `Word ${state.idx + 1} of ${state.words.length}`, value: state.scrambles[state.idx].toUpperCase().split('').join(' '), strong: true },
+            { label: 'Score', value: `${state.score} (par ${state.words.length})` },
+          ];
+      return { kind: 'board', rows, seats: [], over, winner: over ? state.winner : null };
+    }
+    case 'in_between': {
+      const over = state.status === 'over';
+      return {
+        kind: 'cards',
+        seats: [
+          { name: 'The posts', cards: state.posts ? state.posts.map(card) : [] },
+          { name: 'Your draw', cards: state.drawn ? [card(state.drawn)] : [{ back: true }], you: true },
+        ],
+        chips: state.bank,
+        over,
+        winner: over ? state.winner : null,
+      };
+    }
+    case 'rps': {
+      const over = state.status === 'over';
+      const last = state.history.slice(-3).map((h) => `${h.p[0].toUpperCase()}${h.p.slice(1)} vs ${h.a}`).join(' · ');
+      const rows = [
+        { label: 'Score', value: `You ${state.you} — House ${state.house} (first to ${state.need})`, strong: true },
+        { label: 'Recent', value: last || '—' },
+      ];
+      return { kind: 'board', rows, seats: [], over, winner: over ? state.winner : null };
+    }
+    case 'madlibs': {
+      const over = state.status === 'over';
+      const rows = over
+        ? [{ label: 'The story is told', value: '— scroll the chat for the reveal —', strong: true }]
+        : [
+            { label: 'Words collected', value: `${state.words.length}`, strong: true },
+            { label: 'Last word', value: state.words.length ? `"${state.words[state.words.length - 1]}"` : '—' },
+          ];
+      return { kind: 'board', rows, seats: [], over, winner: null };
     }
     default:
       return null;
