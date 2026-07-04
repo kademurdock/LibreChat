@@ -322,7 +322,27 @@ const useNewConvo = (index = 0) => {
         updatedAt: '',
       };
 
+      // Kade-AI (July 4 2026): carry forward the previous agent when starting a
+      // new chat instead of always resetting to the softDefault (Kiana). New
+      // chat = fresh context, same character. Only applies to real (non-ephemeral)
+      // agent conversations; explicit presets/templates are respected.
+      const prevConversation = getConversation();
+      const prevOnAgent =
+        prevConversation &&
+        isAgentsEndpoint(prevConversation.endpoint) &&
+        prevConversation.agent_id &&
+        !isEphemeralAgentId(prevConversation.agent_id);
+
       let preset = _preset;
+      if (!preset && prevOnAgent && prevConversation) {
+        preset = {
+          endpoint: prevConversation.endpoint!,
+          agent_id: prevConversation.agent_id!,
+          model: prevConversation.model,
+          ...(prevConversation.spec ? { spec: prevConversation.spec } : {}),
+        };
+      }
+
       const result = getDefaultModelSpec(startupConfig, endpointsConfig);
       const defaultModelSpec = result?.default ?? result?.last ?? result?.softDefault;
       const shouldApplyModelSpec =
@@ -336,7 +356,6 @@ const useNewConvo = (index = 0) => {
         preset = getModelSpecPreset(defaultModelSpec);
       }
 
-      const prevConversation = getConversation();
       applyModelSpecEffects({
         startupConfig,
         specName: preset?.spec,
