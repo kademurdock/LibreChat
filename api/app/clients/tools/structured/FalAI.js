@@ -140,6 +140,7 @@ class FalAI extends Tool {
     super();
     this.override = fields.override ?? false;
     this.userId = fields.userId;
+    this.req = fields.req;
     this.name = 'fal_studio';
     this.description =
       'Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium), ANIMATE still images into video (image-to-video), make best-in-class design IMAGES with legible text (Seedream 4.5), and generate CINEMATIC AUDIO — dialogue, sound effects, music and voice cloning (Seed Audio 1.0) — via fal.ai. ' +
@@ -323,38 +324,66 @@ class FalAI extends Tool {
       raw = [data.audio_urls.trim()];
     }
     let note = '';
-    if (raw.length === 0 && data.use_recent_audio && this.userId) {
+    if (raw.length === 0 && this.userId) {
       const oid = new mongoose.Types.ObjectId(String(this.userId));
+      const File = mongoose.models.File;
+      // 1) Audio files attached to THIS message win — freshly uploaded, in the
+      //    order attached, and scoped to this turn (no bleed from an earlier
+      //    conversation's uploads).
       try {
-        const File = mongoose.models.File;
-        if (File) {
-          const ups = await File.find({
+        const ids = this._currentMessageAudioFileIds();
+        if (File && ids.length) {
+          const docs = await File.find({
             user: oid,
+            file_id: { $in: ids },
             type: /^audio\//,
-            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-          })
-            .sort({ createdAt: -1 })
-            .limit(3)
-            .lean();
-          if (ups && ups.length) {
-            const ordered = ups.reverse(); // earliest of the recent batch -> @Audio1
-            raw = ordered.map((u) => String(u.filepath)).filter(Boolean);
+          }).lean();
+          const byId = new Map(docs.map((d) => [String(d.file_id), d]));
+          const ordered = ids
+            .map((id) => byId.get(String(id)))
+            .filter(Boolean)
+            .slice(0, 3);
+          if (ordered.length) {
+            raw = ordered.map((d) => String(d.filepath)).filter(Boolean);
             const names = ordered
-              .map((u, i) => `@Audio${i + 1} = ${u.filename ? '"' + String(u.filename).slice(0, 40) + '"' : 'clip'}`)
+              .map((d, i) => `@Audio${i + 1} = ${d.filename ? '"' + String(d.filename).slice(0, 40) + '"' : 'clip'}`)
               .join(', ');
-            note = `Using the ${raw.length} clip${raw.length > 1 ? 's' : ''} you uploaded (${names}).`;
+            note = `Using the ${raw.length} clip${raw.length > 1 ? 's' : ''} you attached here (${names}).`;
           }
         }
       } catch (e) {
-        logger.warn('[FalAI] audio upload lookup failed:', e.message);
+        logger.warn('[FalAI] current-message audio lookup failed:', e.message);
       }
-      if (raw.length === 0) {
-        const latest = await KadeAsset.findOne({ user: oid, kind: 'audio' })
-          .sort({ createdAt: -1 })
-          .lean();
-        if (latest?.url) {
-          raw = [String(latest.url)];
-          note = 'Reference @Audio1 = your most recent generated clip.';
+      // 2) "extend/edit my last clip" with nothing attached to this message:
+      //    the single most-recent uploaded clip, else the last generated clip.
+      if (raw.length === 0 && data.use_recent_audio) {
+        try {
+          if (File) {
+            const up = await File.findOne({
+              user: oid,
+              type: /^audio\//,
+              createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+            })
+              .sort({ createdAt: -1 })
+              .lean();
+            if (up?.filepath) {
+              raw = [String(up.filepath)];
+              note = up.filename
+                ? `Reference @Audio1 = the clip you uploaded ("${String(up.filename).slice(0, 60)}").`
+                : 'Reference @Audio1 = the clip you uploaded.';
+            }
+          }
+        } catch (e) {
+          logger.warn('[FalAI] recent audio lookup failed:', e.message);
+        }
+        if (raw.length === 0) {
+          const latest = await KadeAsset.findOne({ user: oid, kind: 'audio' })
+            .sort({ createdAt: -1 })
+            .lean();
+          if (latest?.url) {
+            raw = [String(latest.url)];
+            note = 'Reference @Audio1 = your most recent generated clip.';
+          }
         }
       }
     }
@@ -364,6 +393,24 @@ class FalAI extends Tool {
       urls.push(await this.trimAudioRefIfLong(abs));
     }
     return { urls, note };
+  }
+
+  /** file_ids of audio files attached to the CURRENT message (req.body.files). */
+  _currentMessageAudioFileIds() {
+    try {
+      const files = this.req && this.req.body && this.req.body.files;
+      if (!Array.isArray(files)) {
+        return [];
+      }
+      return files
+        .filter((f) => f && (!f.type || /^audio\//.test(String(f.type))))
+        .map((f) => f && (f.file_id || f.fileId))
+        .filter(Boolean)
+        .map(String);
+    } catch (e) {
+      void e;
+      return [];
+    }
   }
 
   /**
