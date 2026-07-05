@@ -174,7 +174,8 @@ function view(state) {
       lines.push(`Score so far — ${state.names.map((nm, i) => `${nm}: ${state.scores[i]}`).join(', ')}.`);
     }
     lines.push(...questionLines(state));
-    lines.push('Read the question and all four options to the player, then lock in their letter.');
+    lines.push('HOST RULE: You may personally know the correct answer -- do NOT say it, spell it, hint at it, emphasize the right option, or think out loud about it. Read the question and all four options (A through D) in a neutral, even voice, then wait for the player to lock in their letter.');
+    lines.push('The engine reveals the correct answer to you only AFTER the player commits (it comes back in the result log) -- that is the ONLY moment you confirm right or wrong. Telegraphing it early ruins the game.');
   }
   return { lines, legal: legal(state), sounds, over, winner };
 }
