@@ -369,19 +369,38 @@ class FalAI extends Tool {
    */
   async generateAudio(data) {
     if (!data.prompt) return 'prompt is required for generate_audio.';
-    if (String(data.prompt).length > 2048) {
+    const fullPrompt = String(data.prompt);
+    const { urls: refUrls, note: refNote } = await this.resolveAudioRefs(data);
+    const hasRefsOrImage = refUrls.length > 0 || !!data.image_url;
+    // A prompt over Seed Audio's 2,048-char cap is AUTO-SPLIT into parts and
+    // each is generated, so the caller always gets audio instead of a dead-end
+    // error (only when there are no reference clips/image to keep semantics).
+    if (fullPrompt.length > 2048 && !hasRefsOrImage) {
+      return await this.generateAudioParts(fullPrompt, data);
+    }
+    if (fullPrompt.length > 2048) {
       return (
-        "That audio prompt is over Seed Audio's 2,048-character limit. Tighten it " +
-        '(each generation is ~2 minutes max anyway), or split it into parts and generate them one at a time.'
+        "That audio prompt is over Seed Audio's 2,048-character limit and can't be auto-split " +
+        'because it uses reference audio/image. Shorten it to one ~2-minute piece, or drop the references.'
       );
     }
-    const { urls: refUrls, note: refNote } = await this.resolveAudioRefs(data);
-    // Worst-case 2-min clip is ~$0.15; the real cost is logged from the
-    // returned duration after generation. Audio still counts against the cap.
     const blocked = await this.checkBudget(0.15);
     if (blocked) return blocked;
+    const res = await this._genOneAudio(fullPrompt, data, refUrls);
+    if (!res) return 'Seed Audio returned no clip. Try rewording the prompt.';
+    const mmss = `${Math.floor(res.seconds / 60)}:${String(res.seconds % 60).padStart(2, '0')}`;
+    const notePrefix = refNote ? `${refNote}\n\n` : '';
+    return (
+      `${notePrefix}[Play the audio](${res.url})\n\n` +
+      `Seed Audio clip — ${mmss} long (~$${res.costUSD.toFixed(3)}). It plays right here in the chat, ` +
+      "and it's saved to your gallery at /my-creations."
+    );
+  }
+
+  /** One Seed Audio generation -> { url, seconds, costUSD } or null. Logs usage + gallery. */
+  async _genOneAudio(promptText, data, refUrls) {
     const body = {
-      prompt: data.prompt,
+      prompt: promptText,
       output_format: ['mp3', 'wav', 'pcm', 'ogg_opus'].includes(data.output_format)
         ? data.output_format
         : 'mp3',
@@ -392,8 +411,8 @@ class FalAI extends Tool {
     if (Number.isInteger(data.pitch) && data.pitch >= -12 && data.pitch <= 12) {
       body.pitch = data.pitch;
     }
-    if (refUrls.length > 0) {
-      body.audio_urls = refUrls; // reference clips override any preset voice
+    if (refUrls && refUrls.length > 0) {
+      body.audio_urls = refUrls;
     } else if (data.image_url) {
       body.image_url = await this.absoluteResign(data.image_url);
     } else if (data.voice && AUDIO_VOICES.includes(data.voice)) {
@@ -404,12 +423,12 @@ class FalAI extends Tool {
       timeout: 180000,
     });
     const audio = r.data?.audio;
-    if (!audio?.url) return 'Seed Audio returned no clip. Try rewording the prompt.';
+    if (!audio?.url) return null;
     const seconds = Math.max(1, Math.round(Number(audio.duration) || 0));
     const costUSD = this.audioCost(seconds);
     this.logUsage('fal_audio', seconds, 'seconds', costUSD, {
       model: 'seed-audio-1.0',
-      refs: refUrls.length,
+      refs: (refUrls && refUrls.length) || 0,
       format: body.output_format,
     });
     logKadeAsset({
@@ -417,17 +436,82 @@ class FalAI extends Tool {
       kind: 'audio',
       service: 'fal_audio',
       url: audio.url,
-      prompt: data.prompt,
+      prompt: promptText,
       model: 'seed-audio-1.0',
       costUSD,
-      metadata: { seconds, refs: refUrls.length },
+      metadata: { seconds, refs: (refUrls && refUrls.length) || 0 },
     }).catch(() => {});
-    const mmss = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-    const notePrefix = refNote ? `${refNote}\n\n` : '';
+    return { url: audio.url, seconds, costUSD };
+  }
+
+  /** Split a long audio script into <=maxLen chunks at paragraph/sentence breaks. */
+  splitAudioPrompt(text, maxLen) {
+    const parts = [];
+    let rest = String(text).trim();
+    while (rest.length > maxLen) {
+      let cut = rest.lastIndexOf('\n\n', maxLen);
+      if (cut < maxLen * 0.5) cut = rest.lastIndexOf('\n', maxLen);
+      if (cut < maxLen * 0.5) {
+        const seg = rest.slice(0, maxLen);
+        cut = Math.max(seg.lastIndexOf('." '), seg.lastIndexOf('. '), seg.lastIndexOf('! '), seg.lastIndexOf('? '));
+        cut = cut > maxLen * 0.5 ? cut + 1 : maxLen;
+      }
+      parts.push(rest.slice(0, cut).trim());
+      rest = rest.slice(cut).trim();
+    }
+    if (rest) parts.push(rest);
+    return parts;
+  }
+
+  /**
+   * Long text-to-audio prompt -> split into parts and generate each (bounded by
+   * MAX_PARTS + a wall-clock deadline), returning all playable links. Parts 2+
+   * carry a continuity lead-in so Seed Audio keeps the same voices/mood/bed.
+   */
+  async generateAudioParts(fullPrompt, data) {
+    const MAX_PARTS = 4;
+    const chunks = this.splitAudioPrompt(fullPrompt, 1850);
+    const planned = Math.min(chunks.length, MAX_PARTS);
+    const blocked = await this.checkBudget(0.15 * planned);
+    if (blocked) return blocked;
+    const CONT =
+      '[Continuation of the same audio piece - keep the same voices, mood, pacing, and background sound bed.] ';
+    const deadline = Date.now() + 150000;
+    const links = [];
+    let totalSec = 0;
+    let totalCost = 0;
+    let made = 0;
+    for (let i = 0; i < planned; i++) {
+      if (i > 0 && Date.now() > deadline) break;
+      const chunk = i === 0 ? chunks[i] : (CONT + chunks[i]).slice(0, 2048);
+      let res = null;
+      try {
+        res = await this._genOneAudio(chunk, data, []);
+      } catch (e) {
+        logger.warn('[FalAI] audio part failed:', e.message);
+      }
+      if (!res) {
+        if (i === 0) {
+          return 'Seed Audio could not generate the first part. Try rewording the opening of the prompt.';
+        }
+        break;
+      }
+      made += 1;
+      const mm = `${Math.floor(res.seconds / 60)}:${String(res.seconds % 60).padStart(2, '0')}`;
+      links.push(`[Play Part ${i + 1}](${res.url}) - ${mm}`);
+      totalSec += res.seconds;
+      totalCost += res.costUSD;
+    }
+    const leftover = chunks.length - made;
+    const more =
+      leftover > 0
+        ? ` Your script was long enough for ${chunks.length} parts; I generated the first ${made} - say "continue" for the rest.`
+        : '';
+    const totalMM = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
     return (
-      `${notePrefix}[Play the audio](${audio.url})\n\n` +
-      `Seed Audio clip — ${mmss} long (~$${costUSD.toFixed(3)}). It plays right here in the chat, ` +
-      "and it's saved to your gallery at /my-creations."
+      `Your piece was longer than one 2-minute clip, so I split it into ${made} part${made > 1 ? 's' : ''} and generated ${made > 1 ? 'them all' : 'it'}:\n\n` +
+      `${links.join('\n')}\n\n` +
+      `Total ~${totalMM}, about $${totalCost.toFixed(2)}. All saved to your gallery at /my-creations - play them in order, or ask me to stitch them into one track.${more}`
     );
   }
 
