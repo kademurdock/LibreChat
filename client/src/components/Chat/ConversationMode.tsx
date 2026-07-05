@@ -269,6 +269,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // sessions (two mics, two turn loops = clips stepping on each other).
   const callActiveRef      = useRef(false);
   const conversationIdRef  = useRef<string | null>(null);
+  const callTurnsRef       = useRef<Array<{ role: string; text: string }>>([]);
+  const callStartedRef     = useRef<string | null>(null);
   const parentMessageIdRef = useRef<string>(NO_PARENT);
   const statusRef          = useRef<CallStatus>('idle');
   // Stable cross-call refs (break circular useCallback deps)
@@ -693,6 +695,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
 
       streamer.end();
       flushChunk();
+      try {
+        const clean = acc.replace(/\[(?:table|sound):[^\]]*\]/g, '').replace(/%%%[\s\S]*?%%%/g, '').trim();
+        if (clean) callTurnsRef.current.push({ role: 'assistant', text: clean });
+      } catch { /* ignore */ }
       if (!finalized && acc === '' && !superseded()) {
         setError("I didn't catch a reply — your turn, go ahead and try again.");
       }
@@ -763,6 +769,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       if (abortRef.current) return;
       if (text) {
         setTranscript(text);
+        callTurnsRef.current.push({ role: 'user', text });
         void streamTurn(text);
       } else {
         setStatus('listening');
@@ -896,6 +903,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     parentMessageIdRef.current = NO_PARENT;
     playQueueRef.current = Promise.resolve();
     setError('');
+    callTurnsRef.current = [];
+    callStartedRef.current = new Date().toISOString();
     setOpen(true);
     setAiText('');
     setTranscript('');
@@ -927,6 +936,26 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
 
   const endCall = useCallback(() => {
     callActiveRef.current = false;
+    try {
+      const turns = callTurnsRef.current;
+      if (turns && turns.length) {
+        const payload = JSON.stringify({
+          agentId,
+          conversationId: conversationIdRef.current,
+          startedAt: callStartedRef.current,
+          endedAt: new Date().toISOString(),
+          turns,
+        });
+        callTurnsRef.current = [];
+        fetch('/api/kade/calls/mine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          credentials: 'include',
+          keepalive: true,
+          body: payload,
+        }).catch(() => {});
+      }
+    } catch { /* never block hang-up */ }
     setVoiceCallActive(false);
     abortRef.current = true;
     turnIdRef.current += 1;
@@ -943,7 +972,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setError('');
     conversationIdRef.current = null;
     parentMessageIdRef.current = NO_PARENT;
-  }, [teardownMic, setVoiceCallActive]);
+  }, [teardownMic, setVoiceCallActive, agentId, token]);
 
   // Stop AI mid-speech and hand the mic back immediately.
   // July 4 2026 rewrite: supersede the turn (monotonic id — no 150ms flag
