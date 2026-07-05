@@ -14,6 +14,7 @@ import {
   Heart,
   Landmark,
   MessagesSquare,
+  PhoneCall,
   Trophy,
   Keyboard,
   LifeBuoy,
@@ -175,6 +176,14 @@ function ExploreSubmenu({ isAdmin, isChild }: { isAdmin: boolean; isChild: boole
         >
           <Clapperboard className="icon-md" aria-hidden="true" />
           My Creations
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={go('/calls')}
+          className="select-item text-sm"
+          aria-label="Call History: readable transcripts of your phone calls and voice conversations, newest first"
+        >
+          <PhoneCall className="icon-md" aria-hidden="true" />
+          Call History
         </Menu.MenuItem>
         <Menu.MenuItem
           onClick={go('/feed-the-server')}
