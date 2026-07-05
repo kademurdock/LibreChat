@@ -5,6 +5,7 @@ import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
+import DownloadAudioButton from './DownloadAudioButton';
 import Feedback from './Feedback';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -191,8 +192,8 @@ const HoverButtons = ({
 
   return (
     <div className="group visible flex justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
-      {/* Text to Speech */}
-      {TextToSpeech && (
+      {/* Text to Speech — only on AI replies (no point reading your own text back) */}
+      {TextToSpeech && !isCreatedByUser && (
         <MessageAudio
           index={index}
           isLast={isLast}
@@ -206,6 +207,22 @@ const HoverButtons = ({
               isActive={props.isActive}
               isLast={isLast}
               dataTestId={isLast && !isCreatedByUser ? 'read-aloud-button' : undefined}
+            />
+          )}
+        />
+      )}
+
+      {/* Save / share the AI reply's voice clip — download on desktop, share sheet on mobile */}
+      {TextToSpeech && !isCreatedByUser && (
+        <DownloadAudioButton
+          content={extractMessageContent(message)}
+          renderButton={(props) => (
+            <HoverButton
+              onClick={props.onClick}
+              title={props.title}
+              icon={props.icon}
+              isDisabled={props.isDisabled}
+              isLast={isLast}
             />
           )}
         />
