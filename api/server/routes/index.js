@@ -39,11 +39,13 @@ const rum = require('./rum');
 const kade = require('./kade');
 const kadeRoom = require('./kadeRoom');
 const kadeMatchmaker = require('./kadeMatchmaker');
+const kadeCalls = require('./kadeCalls');
 
 module.exports = {
   kade,
   kadeRoom,
   kadeMatchmaker,
+  kadeCalls,
   rum,
   mcp,
   auth,
