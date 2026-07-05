@@ -360,9 +360,86 @@ class FalAI extends Tool {
     }
     const urls = [];
     for (const u of raw.slice(0, 3)) {
-      urls.push(await this.absoluteResign(u));
+      const abs = await this.absoluteResign(u);
+      urls.push(await this.trimAudioRefIfLong(abs));
     }
     return { urls, note };
+  }
+
+  /**
+   * Seed Audio caps voice-clone reference clips at 30 seconds. If a resolved
+   * reference is longer, download it, trim to 29s (mono 24kHz WAV via ffmpeg),
+   * re-host on S3, and return the trimmed URL. Fails OPEN (returns the original
+   * URL) if ffprobe/ffmpeg or the S3 upload isn't available.
+   */
+  async trimAudioRefIfLong(url) {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const { spawnSync } = require('child_process');
+    let tmpIn = null;
+    let tmpOut = null;
+    try {
+      if (!url || !/^https?:\/\//i.test(url) || !this.userId) {
+        return url;
+      }
+      const resp = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 30000,
+        maxContentLength: 15 * 1024 * 1024,
+      });
+      tmpIn = path.join(os.tmpdir(), `kade-ref-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      fs.writeFileSync(tmpIn, Buffer.from(resp.data));
+      const probe = spawnSync(
+        'ffprobe',
+        ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', tmpIn],
+        { encoding: 'utf8', timeout: 15000 },
+      );
+      const dur = parseFloat(String(probe.stdout || '').trim());
+      if (!Number.isFinite(dur) || dur <= 30.2) {
+        return url;
+      }
+      tmpOut = `${tmpIn}.wav`;
+      const cut = spawnSync(
+        'ffmpeg',
+        ['-y', '-i', tmpIn, '-t', '29', '-ac', '1', '-ar', '24000', tmpOut],
+        { timeout: 30000 },
+      );
+      if (cut.status !== 0 || !fs.existsSync(tmpOut)) {
+        logger.warn('[FalAI] reference trim: ffmpeg failed, using original clip');
+        return url;
+      }
+      const buffer = fs.readFileSync(tmpOut);
+      const { saveBufferToS3 } = require('@librechat/api');
+      if (typeof saveBufferToS3 !== 'function') {
+        return url;
+      }
+      const newUrl = await saveBufferToS3({
+        userId: String(this.userId),
+        buffer,
+        fileName: `kade-ref-trim-${Date.now()}.wav`,
+        basePath: 'audios',
+      });
+      if (newUrl) {
+        logger.info(`[FalAI] trimmed reference clip ${dur.toFixed(1)}s -> 29s for Seed Audio`);
+        return newUrl;
+      }
+      return url;
+    } catch (e) {
+      logger.warn('[FalAI] reference trim skipped:', e.message);
+      return url;
+    } finally {
+      try {
+        if (tmpIn && fs.existsSync(tmpIn)) fs.unlinkSync(tmpIn);
+      } catch (e) {
+        void e;
+      }
+      try {
+        if (tmpOut && fs.existsSync(tmpOut)) fs.unlinkSync(tmpOut);
+      } catch (e) {
+        void e;
+      }
+    }
   }
 
   /**

@@ -6,6 +6,9 @@ FROM node:24.16.0-alpine AS node
 RUN apk upgrade --no-cache
 RUN apk add --no-cache jemalloc
 RUN apk add --no-cache python3 py3-pip uv
+# Kade fork: ffmpeg to auto-trim Seed Audio voice-clone reference clips
+# to the model's 30s max (see FalAI.js trimAudioRefIfLong).
+RUN apk add --no-cache ffmpeg
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
