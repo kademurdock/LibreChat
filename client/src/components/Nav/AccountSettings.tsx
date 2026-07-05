@@ -225,7 +225,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
     <Menu.MenuProvider placement={collapsed ? 'right-end' : undefined}>
       <Menu.MenuButton
         ref={accountSettingsButtonRef}
-        aria-label={localize('com_nav_account_settings')}
+        aria-label="Main Menu — account, settings, and more"
         data-testid="nav-user"
         className={
           collapsed
