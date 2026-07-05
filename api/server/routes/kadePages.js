@@ -275,6 +275,7 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
           <th scope="col" class="num">Searches</th>
           <th scope="col" class="num">Extra $</th>
           <th scope="col" class="num">Balance</th>
+          <th scope="col" class="num">Add credit</th>
         </tr></thead>
         <tbody id="user_rows"></tbody>
       </table>
@@ -328,8 +329,26 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
           '</td><td class="num">'+num(svcQty(u,'flux'))+
           '</td><td class="num">'+num(svcQty(u,'tavily'))+
           '</td><td class="num">'+money(svcExtra(u))+
-          '</td><td class="num">'+money(u.balanceUSD)+'</td></tr>';
+          '</td><td class="num">'+money(u.balanceUSD)+
+          '</td><td class="num"><button type="button" class="addcred" data-uid="'+(u.userId||'')+'" aria-label="Add five dollars of credit to '+(u.name||'this user').replace(/["&<>]/g,'')+'">+$5</button></td></tr>';
       }).join('');
+
+      ub.addEventListener('click', async function(ev){
+        const btn = ev.target.closest('button.addcred'); if(!btn){ return; }
+        const uid = btn.getAttribute('data-uid'); if(!uid){ return; }
+        const orig = btn.textContent; btn.disabled = true; btn.textContent = '...';
+        try {
+          const resp = await apiPost('/api/kade/add-credits', token, { userId: uid, amountUSD: 5 });
+          if(resp.ok){
+            const j = await resp.json();
+            const balCell = btn.closest('tr').querySelector('td:nth-last-child(2)');
+            if(balCell){ balCell.textContent = money(j.balanceUSD); }
+            btn.textContent = 'Added';
+            status.hidden = false; status.className = 'status'; status.textContent = 'Added $5 -- new balance ' + money(j.balanceUSD) + '.';
+          } else { btn.textContent = 'Failed'; }
+        } catch(e){ btn.textContent = 'Failed'; }
+        setTimeout(function(){ btn.textContent = orig; btn.disabled = false; }, 1600);
+      });
 
       status.hidden = true;
       document.getElementById('content').hidden = false;

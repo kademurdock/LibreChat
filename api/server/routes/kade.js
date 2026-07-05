@@ -764,6 +764,40 @@ router.post('/account-type', requireJwtAuth, requireAdminAccess, async (req, res
   }
 });
 
+/* ----------------------------------------------------------------------------
+ * ADMIN: POST /api/kade/add-credits { userId, amountUSD? }
+ * Instant prepaid top-up — adds credit to a user's shared wallet (1,000,000 = $1).
+ * Default $5 per click, $100 ceiling. Upserts the Balance record so it works even
+ * for users who never had one. July 5 2026 (prepaid Stage C — the "+$5" button).
+ * -------------------------------------------------------------------------- */
+router.post('/add-credits', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const userId = String(req.body?.userId || '').trim();
+    let amountUSD = Number(req.body?.amountUSD);
+    if (!Number.isFinite(amountUSD) || amountUSD <= 0) amountUSD = 5;
+    if (amountUSD > 100) amountUSD = 100;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Need a valid userId.' });
+    }
+    const Balance = mongoose.models.Balance;
+    if (!Balance) return res.status(500).json({ message: 'Balance system unavailable.' });
+    const oid = new mongoose.Types.ObjectId(userId);
+    const credits = Math.round(amountUSD * 1e6);
+    const doc = await Balance.findOneAndUpdate(
+      { user: oid },
+      { $inc: { tokenCredits: credits } },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    ).lean();
+    const balanceUSD = (doc?.tokenCredits || 0) / 1e6;
+    logger.info(`[/api/kade/add-credits] +$${amountUSD} to ${userId} -> $${balanceUSD.toFixed(2)}`);
+    return res.json({ ok: true, userId, addedUSD: amountUSD, balanceUSD });
+  } catch (error) {
+    logger.error('[/api/kade/add-credits] error:', error);
+    return res.status(500).json({ message: 'Could not add credits.' });
+  }
+});
+
 router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);
