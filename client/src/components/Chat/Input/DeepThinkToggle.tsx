@@ -7,13 +7,14 @@ import { cn } from '~/utils';
 import store from '~/store';
 
 /**
- * Per-message "Deep think" arm button (July 4 2026).
+ * Sticky "Deep think" toggle (July 4 2026; made sticky July 2026).
  *
- * Pressing it arms deep thinking for the NEXT message only: useSubmitMessage
- * appends an invisible timestamped [DEEP THINK <ms>] marker to that one
- * message, reframe-proxy runs that turn at reasoning effort high (overriding
- * the agent's Answer-speed setting), and the button disarms itself after the
- * send. Fully screen-reader first: aria-pressed state plus a polite live
+ * Toggling it ON keeps deep thinking on across turns until you turn it OFF:
+ * while on, useSubmitMessage appends an invisible fresh timestamped
+ * [DEEP THINK <ms>] marker to every message, and reframe-proxy runs those turns
+ * at reasoning effort high (overriding the agent's Answer-speed setting). With
+ * it OFF, messages use the agent's own Answer-speed (Instant by default, so no
+ * reasoning). Fully screen-reader first: aria-pressed state plus a polite live
  * announcement on every toggle, since the visual state change is silent.
  */
 const DeepThinkToggle = memo(function DeepThinkToggle({ disabled }: { disabled?: boolean }) {

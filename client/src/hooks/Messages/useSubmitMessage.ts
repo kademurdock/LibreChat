@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { replaceSpecialVars } from 'librechat-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
@@ -15,7 +15,7 @@ export default function useSubmitMessage() {
   const latestMessage = useLatestMessage(index);
 
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
-  const [deepThinkArmed, setDeepThinkArmed] = useRecoilState(store.deepThinkArmedState);
+  const deepThinkArmed = useRecoilValue(store.deepThinkArmedState);
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
 
   const submitMessage = useCallback(
@@ -31,9 +31,9 @@ export default function useSubmitMessage() {
         setMessages([...(rootMessages || []), latestMessage]);
       }
 
-      // Deep Think button armed: stamp THIS message with a timestamped marker.
-      // reframe-proxy honors only a fresh timestamp, so history replays of
-      // this text on later turns cannot re-trigger deep reasoning.
+      // Deep Think toggle is sticky: while it's on, stamp EVERY message with a
+      // fresh timestamped marker. reframe-proxy honors only a fresh timestamp,
+      // so old markers replayed from history can't re-trigger deep reasoning.
       const text = deepThinkArmed ? `${data.text} [DEEP THINK ${Date.now()}]` : data.text;
 
       const submitted = ask(
@@ -47,9 +47,8 @@ export default function useSubmitMessage() {
       if (submitted === false) {
         return false;
       }
-      if (deepThinkArmed) {
-        setDeepThinkArmed(false);
-      }
+      // Sticky Deep Think: intentionally do NOT disarm after send — the toggle
+      // stays on across turns until the user turns it off.
       methods.reset();
     },
     [
@@ -60,7 +59,6 @@ export default function useSubmitMessage() {
       getMessages,
       latestMessage,
       deepThinkArmed,
-      setDeepThinkArmed,
     ],
   );
 
