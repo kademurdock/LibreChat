@@ -79,7 +79,13 @@ export async function encodeAndFormatAudios(
         mimeType: file.type,
         data: content,
       });
-    } else if (provider === Providers.OPENROUTER) {
+    } else if (provider === Providers.OPENROUTER && process.env.KADE_OPENROUTER_AUDIO_INPUT === '1') {
+      // Kade fork: the OpenRouter models this platform runs (glm-5.2, minimax-m3,
+      // gemini-lite, etc.) do NOT accept audio input — shipping an input_audio
+      // part 404s with "No endpoints found that support input audio". Audio
+      // uploads here are meant for the Seed Audio TOOL (fal_studio generate_audio),
+      // not the LLM, so this branch stays OFF unless KADE_OPENROUTER_AUDIO_INPUT=1.
+      // The file is still recorded (result.files) so the tool can fetch it.
       // Extract format from filename extension (e.g., 'audio.mp3' -> 'mp3')
       // OpenRouter expects format values like: wav, mp3, aiff, aac, ogg, flac, m4a, pcm16, pcm24
       // Note: MIME types don't always match (e.g., 'audio/mpeg' is mp3, not mpeg), so that is why we are using the file extension instead

@@ -328,18 +328,21 @@ class FalAI extends Tool {
       try {
         const File = mongoose.models.File;
         if (File) {
-          const up = await File.findOne({
+          const ups = await File.find({
             user: oid,
             type: /^audio\//,
             createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
           })
             .sort({ createdAt: -1 })
+            .limit(3)
             .lean();
-          if (up?.filepath) {
-            raw = [String(up.filepath)];
-            note = up.filename
-              ? `Reference @Audio1 = the clip you uploaded ("${String(up.filename).slice(0, 60)}").`
-              : 'Reference @Audio1 = the clip you uploaded.';
+          if (ups && ups.length) {
+            const ordered = ups.reverse(); // earliest of the recent batch -> @Audio1
+            raw = ordered.map((u) => String(u.filepath)).filter(Boolean);
+            const names = ordered
+              .map((u, i) => `@Audio${i + 1} = ${u.filename ? '"' + String(u.filename).slice(0, 40) + '"' : 'clip'}`)
+              .join(', ');
+            note = `Using the ${raw.length} clip${raw.length > 1 ? 's' : ''} you uploaded (${names}).`;
           }
         }
       } catch (e) {
