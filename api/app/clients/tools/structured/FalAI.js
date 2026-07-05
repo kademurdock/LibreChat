@@ -27,12 +27,23 @@ const FAL_MODELS = {
   video_standard: 'fal-ai/kling-video/v3/standard/text-to-video',
   video_premium: 'fal-ai/veo3.1/fast',
   video_animate: 'fal-ai/kling-video/v3/standard/image-to-video',
+  audio: 'bytedance/seed-audio-1.0',
 };
 const QUEUE_ALIAS = {
   video_standard: 'fal-ai/kling-video',
   video_premium: 'fal-ai/veo3.1',
   video_animate: 'fal-ai/kling-video',
 };
+
+// Seed Audio 1.0 preset voices (English/Chinese leaning). A reference clip in
+// audio_urls overrides any preset.
+const AUDIO_VOICES = [
+  'vivi_mixed_en_zh_ja_es_id', 'mindy_en_es_id_pt_zh', 'kian_en_zh', 'cedric_en_zh',
+  'sophie_en_zh', 'jean_en_zh', 'magnus_en_zh', 'mabel_en_zh', 'nadia_en_zh',
+  'opal_en_zh', 'pearl_en_zh', 'quentin_en_zh', 'corinne_mixed_en_zh',
+  'esther_mixed_en_zh', 'lyla_mixed_en_zh', 'tracy_es_zh', 'sandy_es_mixed_en_zh',
+  'felix_zh', 'celeste_zh', 'monkey_king_zh',
+];
 
 const MONTHLY_CAP_USD = (() => {
   const v = parseFloat(process.env.KADE_FAL_MONTHLY_CAP_USD ?? '5');
@@ -44,21 +55,22 @@ const falJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['generate_image', 'generate_video', 'animate_image', 'check_video'],
+      enum: ['generate_image', 'generate_video', 'animate_image', 'check_video', 'generate_audio'],
       description:
         "'generate_image' = Seedream 4.5 design/photo image (fast, ~$0.04). 'generate_video' = text-to-video clip. " +
         "'animate_image' = bring a still image to LIFE as a video (Kling image-to-video) — e.g. make a dog photo wag its tail. " +
-        "'check_video' = poll a video that wasn't finished when generate_video/animate_image returned.",
+        "'check_video' = poll a video that wasn't finished when generate_video/animate_image returned. " +
+        "'generate_audio' = Seed Audio 1.0 CINEMATIC AUDIO: multi-character dialogue, sound effects, music and ambience in ONE clip (up to ~2 min), plus text-to-speech, voice cloning, and editing existing audio (extend / inpaint / stitch / swap a line) via audio_urls. Returns fast and synchronously with a real audio URL. ~$0.075/minute.",
     },
     prompt: {
       type: 'string',
       description:
-        'Detailed prompt. For video: describe shot, subject, motion, mood, camera. For animate_image: describe the MOTION you want (what moves and how). For images: Seedream 4.5 excels at legible TEXT inside images (logos, signs, flyers, memes) — quote any exact wording.',
+        'Detailed prompt. For video: describe shot, subject, motion, mood, camera. For animate_image: describe the MOTION you want (what moves and how). For images: Seedream 4.5 excels at legible TEXT inside images (logos, signs, flyers, memes) — quote any exact wording. For generate_audio: write it like a short audio SCRIPT — [genre + environment + mood], a continuous sound bed, then each line as `Name (voice traits, emotion, pace) says: \"dialogue.\"` with concrete [sound effect] cues; specify the language (English or Chinese). Max 2,048 characters (~2 minutes).',
     },
     image_url: {
       type: 'string',
       description:
-        "animate_image only: URL of the still image to animate. OMIT IT to auto-pick: a photo the user attached/uploaded in the last 24 hours wins, otherwise their most recent generated image from the gallery. Any public https image URL also works. The tool's reply NAMES which image it used — relay that to the user. Oversized sources (>10MB) are auto-shrunk to fit fal's limit.",
+        "animate_image: URL of the still image to animate. OMIT IT to auto-pick: a photo the user attached/uploaded in the last 24 hours wins, otherwise their most recent generated image from the gallery. Any public https image URL also works. The tool's reply NAMES which image it used — relay that to the user. Oversized sources (>10MB) are auto-shrunk to fit fal's limit. generate_audio: optional single reference image to generate a matching audio scene from (cannot be combined with audio_urls).",
     },
     quality: {
       type: 'string',
@@ -85,6 +97,36 @@ const falJsonSchema = {
       enum: ['square_hd', 'portrait_4_3', 'portrait_16_9', 'landscape_4_3', 'landscape_16_9'],
       description: 'Image only: output shape (default landscape_4_3).',
     },
+    voice: {
+      type: 'string',
+      enum: AUDIO_VOICES,
+      description:
+        'generate_audio only: optional preset voice. Omit to let the prompt describe the voice, or when using audio_urls (a reference clip overrides any preset).',
+    },
+    audio_urls: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        "generate_audio only: up to 3 reference audio clip URLs (≤30s each), referenced in the prompt as @Audio1/@Audio2/@Audio3. This is how you CLONE a voice, EXTEND / EDIT / INPAINT an existing clip, or STITCH two clips together. Accepts public https URLs or the user's own gallery/upload URLs.",
+    },
+    use_recent_audio: {
+      type: 'boolean',
+      description:
+        "generate_audio only: set true when the user says 'extend/continue/edit/redo MY last clip' (or similar) and gives no URL — auto-loads their most recent uploaded or generated clip as @Audio1. Leave false/absent for brand-new scenes.",
+    },
+    output_format: {
+      type: 'string',
+      enum: ['mp3', 'wav', 'pcm', 'ogg_opus'],
+      description: 'generate_audio only: output audio format (default mp3).',
+    },
+    speed: {
+      type: 'number',
+      description: 'generate_audio only: speech speed, 0.5–2.0 (default 1).',
+    },
+    pitch: {
+      type: 'integer',
+      description: 'generate_audio only: voice pitch shift in semitones, -12 to 12 (default 0).',
+    },
     request_id: {
       type: 'string',
       description: "check_video only: the request id returned by generate_video/animate_image.",
@@ -100,15 +142,16 @@ class FalAI extends Tool {
     this.userId = fields.userId;
     this.name = 'fal_studio';
     this.description =
-      'Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium), ANIMATE still images into video (image-to-video), and make best-in-class design IMAGES with legible text (Seedream 4.5) via fal.ai. ' +
-      'Video costs real money per second (~$0.42-1.30 per clip) and takes 1-4 minutes to render; images cost ~$0.04 and are fast. ' +
-      `Each user has a ~$${MONTHLY_CAP_USD}/month video budget; the tool enforces it and says so politely if they've hit it.`;
+      'Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium), ANIMATE still images into video (image-to-video), make best-in-class design IMAGES with legible text (Seedream 4.5), and generate CINEMATIC AUDIO — dialogue, sound effects, music and voice cloning (Seed Audio 1.0) — via fal.ai. ' +
+      'Video costs real money per second (~$0.42-1.30 per clip) and takes 1-4 minutes to render; images cost ~$0.04 and audio ~$0.075/minute, both fast. ' +
+      `Each user has a ~$${MONTHLY_CAP_USD}/month fal budget; the tool enforces it and says so politely if they've hit it.`;
     this.description_for_model =
       this.description +
       " For video: tell the user the clip is rendering and the rough cost BEFORE generating. If generate_video or animate_image returns a request_id instead of a URL: you CANNOT send messages on your own later, so NEVER say 'I'll ping you' or 'I'll check back' — instead END your reply by asking the user to send any message in ~2 minutes ('just say ready'), and on their NEXT message call check_video FIRST and deliver the result before anything else. " +
       "animate_image with no image_url automatically animates the photo the user uploaded (last 24 hours), or else their most recent generated image — perfect for 'here's my dog, make him wag' or 'now make it move'. Its reply names WHICH image it used: repeat that to the user so nothing gets animated by surprise. animate_image always renders on Kling standard — never promise premium/Veo for an animation. " +
       "Before any video, if the user hasn't specified, ask ONCE whether they want sound (recommended here — blind users experience video through audio; standard 5s: ~$0.63 with sound vs ~$0.42 silent) and only use premium quality when the user picks it. " +
-      'Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url). Enhance thin prompts into rich visual descriptions first.';
+      'Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url), audio as [Play the audio](url). Enhance thin prompts into rich visual descriptions first. ' +
+      "AUDIO (generate_audio, Seed Audio 1.0): cinematic scenes with dialogue + sound effects + music + ambience in one ~2-min pass, plus TTS, voice cloning, and editing existing clips (extend / inpaint / stitch / swap a line). It returns FAST and synchronously with a real audio URL — there is NO request_id and NO check step, so never promise to follow up. Return it as [Play the audio](url) so it plays inline; it is auto-saved to the gallery with a blind-friendly description of what the listener will hear. It is cheap (~$0.075/min, about 15 cents for a full 2 minutes) and rides the same monthly fal budget — mention the small cost but there is no need to pre-ask for a normal clip. For voice cloning or editing, pass reference clips in audio_urls (or set use_recent_audio:true for 'my last clip'). English and Chinese only; keep prompts under 2,048 characters.";
     this.schema = falJsonSchema;
     this.apiKey = fields.FAL_KEY || process.env.FAL_KEY || '';
     if (!this.apiKey && !this.override) {
@@ -149,7 +192,7 @@ class FalAI extends Tool {
         {
           $match: {
             user: oid,
-            service: { $in: ['fal_video', 'fal_image'] },
+            service: { $in: ['fal_video', 'fal_image', 'fal_audio'] },
             createdAt: { $gte: monthStart },
           },
         },
@@ -183,7 +226,8 @@ class FalAI extends Tool {
       if (action === 'generate_video') return await this.generateVideo(data);
       if (action === 'animate_image') return await this.animateImage(data);
       if (action === 'check_video') return await this.checkVideo(data);
-      return "Unknown action. Use 'generate_image', 'generate_video', 'animate_image', or 'check_video'.";
+      if (action === 'generate_audio') return await this.generateAudio(data);
+      return "Unknown action. Use 'generate_image', 'generate_video', 'animate_image', 'check_video', or 'generate_audio'.";
     } catch (err) {
       const msg = err?.response?.data ? JSON.stringify(err.response.data).slice(0, 300) : err.message;
       logger.error('[FalAI] error:', msg);
@@ -216,6 +260,156 @@ class FalAI extends Tool {
       costUSD: 0.04,
     }).catch(() => {});
     return `![${(data.prompt || 'generated image').slice(0, 80).replace(/[[\]]/g, '')}](${img.url})\n\nImage generated with Seedream 4.5 (~$0.04). Saved to your gallery at /my-creations.`;
+  }
+
+  audioCost(seconds) {
+    // $0.075 per minute of generated audio, kept to 3 decimals.
+    return Math.round((Number(seconds) / 60) * 0.075 * 1000) / 1000;
+  }
+
+  /** Absolutize a site-relative URL and re-sign it if it is a stale S3 link. */
+  async absoluteResign(u) {
+    let src = String(u || '').trim();
+    if (src && !/^https?:\/\//i.test(src)) {
+      const base = (process.env.DOMAIN_SERVER || 'https://kademurdock.com').replace(/\/$/, '');
+      src = base + (src.startsWith('/') ? src : '/' + src);
+    }
+    try {
+      const { needsRefresh, getNewS3URL } = require('@librechat/api');
+      if (
+        typeof needsRefresh === 'function' &&
+        typeof getNewS3URL === 'function' &&
+        /[?&]X-Amz-/.test(src) &&
+        needsRefresh(src, 300)
+      ) {
+        src = await getNewS3URL(src);
+      }
+    } catch (e) {
+      logger.warn('[FalAI] audio ref re-sign skipped:', e.message);
+    }
+    return src;
+  }
+
+  /**
+   * Resolve up to 3 reference clips for Seed Audio. Explicit audio_urls win.
+   * With none given, use_recent_audio pulls the user's most recent uploaded
+   * (last 24h) or generated audio as @Audio1 — the "extend/edit my last clip"
+   * flow. Brand-new scenes pass nothing and stay reference-free.
+   */
+  async resolveAudioRefs(data) {
+    let raw = [];
+    if (Array.isArray(data.audio_urls)) {
+      raw = data.audio_urls.filter(Boolean).map(String);
+    } else if (typeof data.audio_urls === 'string' && data.audio_urls.trim()) {
+      raw = [data.audio_urls.trim()];
+    }
+    let note = '';
+    if (raw.length === 0 && data.use_recent_audio && this.userId) {
+      const oid = new mongoose.Types.ObjectId(String(this.userId));
+      try {
+        const File = mongoose.models.File;
+        if (File) {
+          const up = await File.findOne({
+            user: oid,
+            type: /^audio\//,
+            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+          })
+            .sort({ createdAt: -1 })
+            .lean();
+          if (up?.filepath) {
+            raw = [String(up.filepath)];
+            note = up.filename
+              ? `Reference @Audio1 = the clip you uploaded ("${String(up.filename).slice(0, 60)}").`
+              : 'Reference @Audio1 = the clip you uploaded.';
+          }
+        }
+      } catch (e) {
+        logger.warn('[FalAI] audio upload lookup failed:', e.message);
+      }
+      if (raw.length === 0) {
+        const latest = await KadeAsset.findOne({ user: oid, kind: 'audio' })
+          .sort({ createdAt: -1 })
+          .lean();
+        if (latest?.url) {
+          raw = [String(latest.url)];
+          note = 'Reference @Audio1 = your most recent generated clip.';
+        }
+      }
+    }
+    const urls = [];
+    for (const u of raw.slice(0, 3)) {
+      urls.push(await this.absoluteResign(u));
+    }
+    return { urls, note };
+  }
+
+  /**
+   * generate_audio — Seed Audio 1.0 (bytedance/seed-audio-1.0), synchronous.
+   * One call covers cinematic scenes, TTS, voice cloning, and audio editing;
+   * the workflow is chosen by the prompt plus which reference clips ride along.
+   */
+  async generateAudio(data) {
+    if (!data.prompt) return 'prompt is required for generate_audio.';
+    if (String(data.prompt).length > 2048) {
+      return (
+        "That audio prompt is over Seed Audio's 2,048-character limit. Tighten it " +
+        '(each generation is ~2 minutes max anyway), or split it into parts and generate them one at a time.'
+      );
+    }
+    const { urls: refUrls, note: refNote } = await this.resolveAudioRefs(data);
+    // Worst-case 2-min clip is ~$0.15; the real cost is logged from the
+    // returned duration after generation. Audio still counts against the cap.
+    const blocked = await this.checkBudget(0.15);
+    if (blocked) return blocked;
+    const body = {
+      prompt: data.prompt,
+      output_format: ['mp3', 'wav', 'pcm', 'ogg_opus'].includes(data.output_format)
+        ? data.output_format
+        : 'mp3',
+    };
+    if (typeof data.speed === 'number' && data.speed >= 0.5 && data.speed <= 2) {
+      body.speed = data.speed;
+    }
+    if (Number.isInteger(data.pitch) && data.pitch >= -12 && data.pitch <= 12) {
+      body.pitch = data.pitch;
+    }
+    if (refUrls.length > 0) {
+      body.audio_urls = refUrls; // reference clips override any preset voice
+    } else if (data.image_url) {
+      body.image_url = await this.absoluteResign(data.image_url);
+    } else if (data.voice && AUDIO_VOICES.includes(data.voice)) {
+      body.voice = data.voice;
+    }
+    const r = await axios.post(`https://fal.run/${FAL_MODELS.audio}`, body, {
+      headers: this.headers(),
+      timeout: 180000,
+    });
+    const audio = r.data?.audio;
+    if (!audio?.url) return 'Seed Audio returned no clip. Try rewording the prompt.';
+    const seconds = Math.max(1, Math.round(Number(audio.duration) || 0));
+    const costUSD = this.audioCost(seconds);
+    this.logUsage('fal_audio', seconds, 'seconds', costUSD, {
+      model: 'seed-audio-1.0',
+      refs: refUrls.length,
+      format: body.output_format,
+    });
+    logKadeAsset({
+      userId: this.userId,
+      kind: 'audio',
+      service: 'fal_audio',
+      url: audio.url,
+      prompt: data.prompt,
+      model: 'seed-audio-1.0',
+      costUSD,
+      metadata: { seconds, refs: refUrls.length },
+    }).catch(() => {});
+    const mmss = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    const notePrefix = refNote ? `${refNote}\n\n` : '';
+    return (
+      `${notePrefix}[Play the audio](${audio.url})\n\n` +
+      `Seed Audio clip — ${mmss} long (~$${costUSD.toFixed(3)}). It plays right here in the chat, ` +
+      "and it's saved to your gallery at /my-creations."
+    );
   }
 
   videoPricing(quality, seconds, audio) {

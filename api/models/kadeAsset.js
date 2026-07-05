@@ -26,7 +26,7 @@ const { logger } = require('@librechat/data-schemas');
 const kadeAssetSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
-    kind: { type: String, enum: ['video', 'image'], index: true },
+    kind: { type: String, enum: ['video', 'image', 'audio'], index: true },
     service: { type: String },
     url: { type: String },
     prompt: { type: String },
@@ -67,19 +67,20 @@ async function mirrorAsset(doc) {
     if (process.env.KADE_ASSET_MIRROR === '0') {
       return null;
     }
-    if (doc.kind !== 'video' || !/^https?:\/\//i.test(String(doc.url || ''))) {
+    if ((doc.kind !== 'video' && doc.kind !== 'audio') || !/^https?:\/\//i.test(String(doc.url || ''))) {
       return null;
     }
     const { saveURLToS3 } = require('@librechat/api');
     if (typeof saveURLToS3 !== 'function') {
       return null;
     }
-    const fileName = `kade-${doc._id}.mp4`;
+    const isAudio = doc.kind === 'audio';
+    const fileName = `kade-${doc._id}.${isAudio ? 'mp3' : 'mp4'}`;
     const signedUrl = await saveURLToS3({
       userId: String(doc.user),
       URL: doc.url,
       fileName,
-      basePath: 'videos',
+      basePath: isAudio ? 'audios' : 'videos',
     });
     return signedUrl || null;
   } catch (err) {
@@ -118,10 +119,37 @@ const DESCRIBE_INSTRUCTION =
   'lighting, mood, composition, any text that appears, and (for video) what happens over time. ' +
   'No preamble like "This image shows" — start straight in on the scene.';
 
+async function describeAudio(doc) {
+  try {
+    if (process.env.KADE_ASSET_DESCRIBE === '0' || !process.env.OPENROUTER_KEY || !doc.prompt) {
+      return null;
+    }
+    const text = await openRouterChat(
+      [
+        {
+          type: 'text',
+          text:
+            `This is an AI-generated AUDIO clip (any mix of dialogue, sound effects, music, and narration) created from this direction: "${String(doc.prompt).slice(0, 1500)}". ` +
+            'In 2-4 sentences, tell a blind listener what they will HEAR: who speaks and their tone/emotion, key sound effects, any music, and the overall atmosphere. ' +
+            'Start straight in with "You will hear" — no other preamble.',
+        },
+      ],
+      220,
+    );
+    return text ? text.slice(0, 2000) : null;
+  } catch (err) {
+    logger.warn('[kadeAsset] audio describe failed:', err.message);
+    return null;
+  }
+}
+
 async function describeAsset(doc) {
   try {
     if (process.env.KADE_ASSET_DESCRIBE === '0' || !process.env.OPENROUTER_KEY) {
       return null;
+    }
+    if (doc.kind === 'audio') {
+      return await describeAudio(doc);
     }
     const src = absoluteUrl(doc.url);
     const media = await axios.get(src, {

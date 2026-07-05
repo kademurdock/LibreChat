@@ -148,6 +148,48 @@ export const InlineVideo: React.ElementType = memo(function InlineVideo({
 });
 InlineVideo.displayName = 'InlineVideo';
 
+/**
+ * Kade fork: inline audio player for generated clips (Seed Audio / fal.media).
+ * Detects direct audio-file URLs so `[Play the audio](...mp3)` renders as a
+ * real playable <audio> element — audio is how blind users experience this
+ * platform, so a working inline player matters.
+ */
+const AUDIO_URL_PATTERN = /^https?:\/\/\S+\.(mp3|wav|m4a|aac|ogg|oga|opus|flac)(\?\S*)?$/i;
+
+export const isAudioUrl = (url?: string): boolean =>
+  typeof url === 'string' && AUDIO_URL_PATTERN.test(url.trim());
+
+type TInlineAudioProps = {
+  src: string;
+  label?: string;
+};
+
+export const InlineAudio: React.ElementType = memo(function InlineAudio({
+  src,
+  label,
+}: TInlineAudioProps) {
+  const description = label && label.trim() !== '' ? label.trim() : 'Generated audio';
+  return (
+    <span className="my-2 block max-w-lg">
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <audio controls preload="metadata" aria-label={description} className="w-full">
+        <source src={src.trim()} />
+        Your browser cannot play this audio inline.
+      </audio>
+      <a
+        href={src.trim()}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-1 block text-sm text-text-secondary underline"
+        aria-label={`Open or download the audio in a new tab: ${description}`}
+      >
+        {description} — open or download
+      </a>
+    </span>
+  );
+});
+InlineAudio.displayName = 'InlineAudio';
+
 type TAnchorProps = {
   href: string;
   children: React.ReactNode;
@@ -181,6 +223,11 @@ export const a: React.ElementType = memo(function MarkdownAnchor({ href, childre
   if (isVideoUrl(href)) {
     const label = typeof children === 'string' ? children : undefined;
     return <InlineVideo src={href} label={label} />;
+  }
+
+  if (isAudioUrl(href)) {
+    const label = typeof children === 'string' ? children : undefined;
+    return <InlineAudio src={href} label={label} />;
   }
 
   if (!file_id || !filename) {
@@ -284,6 +331,10 @@ export const img: React.ElementType = memo(function MarkdownImage({
 
   if (isVideoUrl(fixedSrc)) {
     return <InlineVideo src={fixedSrc as string} label={alt} />;
+  }
+
+  if (isAudioUrl(fixedSrc)) {
+    return <InlineAudio src={fixedSrc as string} label={alt} />;
   }
 
   return <img src={fixedSrc} alt={alt} title={title} className={className} style={style} />;

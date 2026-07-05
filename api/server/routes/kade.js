@@ -409,11 +409,17 @@ router.get('/asset-download/:id', requireJwtAuth, async (req, res) => {
     if (!upstream) {
       return res.status(502).json({ error: 'Could not fetch the media from its source' });
     }
-    const ct = String(upstream.headers['content-type'] || (d.kind === 'video' ? 'video/mp4' : 'image/png'));
+    const kindDefaultCt =
+      d.kind === 'video' ? 'video/mp4' : d.kind === 'audio' ? 'audio/mpeg' : 'image/png';
+    const kindDefaultExt = d.kind === 'video' ? 'mp4' : d.kind === 'audio' ? 'mp3' : 'png';
+    const ct = String(upstream.headers['content-type'] || kindDefaultCt);
     const ext =
-      { 'video/mp4': 'mp4', 'video/webm': 'webm', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[
-        ct.split(';')[0].trim()
-      ] || (d.kind === 'video' ? 'mp4' : 'png');
+      {
+        'video/mp4': 'mp4', 'video/webm': 'webm',
+        'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp',
+        'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav',
+        'audio/ogg': 'ogg', 'audio/webm': 'weba',
+      }[ct.split(';')[0].trim()] || kindDefaultExt;
     const stamp = new Date(d.createdAt || Date.now()).toISOString().slice(0, 10);
     res.setHeader('Content-Type', ct);
     if (upstream.headers['content-length']) {

@@ -95,19 +95,19 @@ export const falStudioSchema: ExtendedJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['generate_image', 'generate_video', 'animate_image', 'check_video'],
+      enum: ['generate_image', 'generate_video', 'animate_image', 'check_video', 'generate_audio'],
       description:
-        "'generate_image' = Seedream 4.5 design/photo image (fast, ~$0.04). 'generate_video' = text-to-video clip. 'animate_image' = bring a still image to LIFE as video (Kling image-to-video) — e.g. make a dog photo wag its tail. 'check_video' = poll a video that wasn't finished when generate_video/animate_image returned.",
+        "'generate_image' = Seedream 4.5 design/photo image (fast, ~$0.04). 'generate_video' = text-to-video clip. 'animate_image' = bring a still image to LIFE as video (Kling image-to-video) — e.g. make a dog photo wag its tail. 'check_video' = poll a video that wasn't finished when generate_video/animate_image returned. 'generate_audio' = Seed Audio 1.0 cinematic audio (dialogue + sound effects + music + ambience in one ~2-min clip), plus TTS, voice cloning, and editing existing audio (extend/inpaint/stitch/swap a line) via audio_urls. Synchronous; ~$0.075/minute.",
     },
     prompt: {
       type: 'string',
       description:
-        'Detailed prompt. For video: describe shot, subject, motion, mood, camera. For animate_image: describe the MOTION wanted. For images: Seedream 4.5 excels at legible TEXT inside images (logos, signs, flyers, memes) — quote any exact wording.',
+        'Detailed prompt. For video: describe shot, subject, motion, mood, camera. For animate_image: describe the MOTION wanted. For images: Seedream 4.5 excels at legible TEXT inside images (logos, signs, flyers, memes) — quote any exact wording. For generate_audio: write a short audio SCRIPT — [genre + environment + mood], a continuous sound bed, then each line as Name (voice traits, emotion, pace) says: dialogue, with [sound effect] cues; name the language (English or Chinese); max 2,048 characters.',
     },
     image_url: {
       type: 'string',
       description:
-        "animate_image only: URL of the still image to animate. OMIT IT to auto-pick: a photo the user attached/uploaded in the last 24 hours wins, otherwise their most recent generated image from the gallery. Any public https image URL also works. The tool's reply NAMES which image it used — relay that to the user. Oversized sources (>10MB) are auto-shrunk.",
+        "animate_image: URL of the still image to animate. OMIT IT to auto-pick: a photo the user attached/uploaded in the last 24 hours wins, otherwise their most recent generated image from the gallery. Any public https image URL also works. The tool's reply NAMES which image it used — relay that to the user. Oversized sources (>10MB) are auto-shrunk. generate_audio: optional single reference image to generate a matching audio scene (cannot be combined with audio_urls).",
     },
     quality: {
       type: 'string',
@@ -133,6 +133,42 @@ export const falStudioSchema: ExtendedJsonSchema = {
       type: 'string',
       enum: ['square_hd', 'portrait_4_3', 'portrait_16_9', 'landscape_4_3', 'landscape_16_9'],
       description: 'Image only: output shape (default landscape_4_3).',
+    },
+    voice: {
+      type: 'string',
+      enum: [
+        'vivi_mixed_en_zh_ja_es_id', 'mindy_en_es_id_pt_zh', 'kian_en_zh', 'cedric_en_zh',
+        'sophie_en_zh', 'jean_en_zh', 'magnus_en_zh', 'mabel_en_zh', 'nadia_en_zh',
+        'opal_en_zh', 'pearl_en_zh', 'quentin_en_zh', 'corinne_mixed_en_zh',
+        'esther_mixed_en_zh', 'lyla_mixed_en_zh', 'tracy_es_zh', 'sandy_es_mixed_en_zh',
+        'felix_zh', 'celeste_zh', 'monkey_king_zh',
+      ],
+      description:
+        'generate_audio only: optional preset voice. Omit to let the prompt describe the voice, or when using audio_urls (a reference clip overrides any preset).',
+    },
+    audio_urls: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        "generate_audio only: up to 3 reference audio clip URLs (≤30s each), referenced in the prompt as @Audio1/@Audio2/@Audio3 — how you CLONE a voice, EXTEND/EDIT/INPAINT a clip, or STITCH two clips. Public https URLs or the user's own gallery/upload URLs.",
+    },
+    use_recent_audio: {
+      type: 'boolean',
+      description:
+        "generate_audio only: set true when the user says 'extend/edit/redo MY last clip' with no URL — auto-loads their most recent uploaded or generated clip as @Audio1. Leave false for brand-new scenes.",
+    },
+    output_format: {
+      type: 'string',
+      enum: ['mp3', 'wav', 'pcm', 'ogg_opus'],
+      description: 'generate_audio only: output audio format (default mp3).',
+    },
+    speed: {
+      type: 'number',
+      description: 'generate_audio only: speech speed, 0.5–2.0 (default 1).',
+    },
+    pitch: {
+      type: 'integer',
+      description: 'generate_audio only: voice pitch shift in semitones, -12 to 12 (default 0).',
     },
     request_id: {
       type: 'string',
@@ -644,7 +680,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   fal_studio: {
     name: 'fal_studio',
     description:
-      "Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium), ANIMATE still images into video (image-to-video — e.g. make a dog photo wag its tail; with no image_url it animates the photo the user uploaded in the last 24 hours, or else their most recent generated image — its reply names WHICH image it used, relay that; animations are always Kling standard, never promise premium/Veo for them), and make best-in-class design IMAGES with legible text (Seedream 4.5) via fal.ai. Video costs real money per second (~$0.42-1.30 per clip) and takes 1-4 minutes; images cost ~$0.04 and are fast. Each user has a monthly video budget (~$5) the tool enforces — if it says the budget is hit, relay that warmly and offer a picture instead. Failed renders auto-refund the logged charge — if the tool says a job failed or was rejected, tell the user there was NO cost and simply retry or adjust. For video: state the rough cost and get the user's yes BEFORE generating; if they haven't said, ask ONCE whether they want sound (recommended — blind users experience video through audio; ~$0.63 vs $0.42 per standard 5s) and only use premium when the user picks it; if generate_video or animate_image returns a request_id instead of a URL, you CANNOT come back on your own (agents can't send unprompted messages) — never say 'I'll ping you'; end your reply asking the user to send any message in ~2 minutes, then call check_video FIRST on their next message and deliver it. Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url). Enhance thin prompts into rich visual descriptions first. NEVER claim media was generated without a real URL returned by this tool.",
+      "Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium), ANIMATE still images into video (image-to-video — e.g. make a dog photo wag its tail; with no image_url it animates the photo the user uploaded in the last 24 hours, or else their most recent generated image — its reply names WHICH image it used, relay that; animations are always Kling standard, never promise premium/Veo for them), and make best-in-class design IMAGES with legible text (Seedream 4.5) via fal.ai. Video costs real money per second (~$0.42-1.30 per clip) and takes 1-4 minutes; images cost ~$0.04 and are fast. Each user has a monthly video budget (~$5) the tool enforces — if it says the budget is hit, relay that warmly and offer a picture instead. Failed renders auto-refund the logged charge — if the tool says a job failed or was rejected, tell the user there was NO cost and simply retry or adjust. For video: state the rough cost and get the user's yes BEFORE generating; if they haven't said, ask ONCE whether they want sound (recommended — blind users experience video through audio; ~$0.63 vs $0.42 per standard 5s) and only use premium when the user picks it; if generate_video or animate_image returns a request_id instead of a URL, you CANNOT come back on your own (agents can't send unprompted messages) — never say 'I'll ping you'; end your reply asking the user to send any message in ~2 minutes, then call check_video FIRST on their next message and deliver it. Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url), audio as [Play the audio](url). generate_audio (Seed Audio 1.0) makes cinematic audio — dialogue + sound effects + music + ambience in one ~2-min clip — plus TTS, voice cloning, and editing existing clips; it returns fast and synchronously (no request_id, no check step), is cheap (~$0.075/min), rides the same monthly fal budget, and auto-saves to the gallery with a blind-friendly description. Enhance thin prompts into rich descriptions first. NEVER claim media was generated without a real URL returned by this tool.",
     schema: falStudioSchema,
     toolType: 'builtin',
   },
