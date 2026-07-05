@@ -1159,7 +1159,9 @@ class AgentClient extends BaseClient {
     /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
     const appConfig = this.options.req.config;
-    const balanceConfig = getBalanceConfig(appConfig);
+    let balanceConfig = getBalanceConfig(appConfig);
+    // KADE prepaid Stage A: admin (Kade) never draws down or gets capped.
+    if (this.options?.req?.user?.role === 'ADMIN') { balanceConfig = { ...balanceConfig, enabled: false }; }
     const transactionsConfig = getTransactionsConfig(appConfig);
     try {
       if (!abortController) {
@@ -1821,7 +1823,9 @@ class AgentClient extends BaseClient {
         };
       });
 
-      const balanceConfig = getBalanceConfig(appConfig);
+      let balanceConfig = getBalanceConfig(appConfig);
+    // KADE prepaid Stage A: admin (Kade) never draws down or gets capped.
+    if (this.options?.req?.user?.role === 'ADMIN') { balanceConfig = { ...balanceConfig, enabled: false }; }
       const transactionsConfig = getTransactionsConfig(appConfig);
       await this.recordCollectedUsage({
         collectedUsage,

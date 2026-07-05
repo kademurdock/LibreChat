@@ -780,7 +780,9 @@ const OpenAIChatCompletionController = async (req, res) => {
     });
 
     // Record token usage against balance
-    const balanceConfig = getBalanceConfig(appConfig);
+    let balanceConfig = getBalanceConfig(appConfig);
+    // KADE prepaid Stage A: admin (Kade) never draws down or gets capped.
+    if (req?.user?.role === 'ADMIN') { balanceConfig = { ...balanceConfig, enabled: false }; }
     const transactionsConfig = getTransactionsConfig(appConfig);
     recordCollectedUsage(
       {

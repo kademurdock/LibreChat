@@ -19,7 +19,7 @@ const TokenCreditsItem: React.FC<TokenCreditsItemProps> = ({ tokenCredits }) => 
 
       {/* Right Section: tokenCredits Value */}
       <span className="text-sm font-medium text-gray-800 dark:text-gray-200" role="note">
-        {tokenCredits !== undefined ? tokenCredits.toFixed(2) : '0.00'}
+        {tokenCredits !== undefined ? `$${(tokenCredits / 1e6).toFixed(2)}` : '$0.00'}
       </span>
     </div>
   );

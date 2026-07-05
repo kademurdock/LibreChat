@@ -667,7 +667,10 @@ class BaseClient {
     }
 
     const balanceConfig = getBalanceConfig(appConfig);
+    // KADE prepaid Stage A (2026-07-05): the admin (Kade) is never balance-capped.
+    const isKadeAdmin = this.options?.req?.user?.role === 'ADMIN';
     if (
+      !isKadeAdmin &&
       balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {

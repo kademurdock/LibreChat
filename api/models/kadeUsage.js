@@ -60,6 +60,30 @@ function fluxCost(endpoint, images = 1) {
 }
 
 /**
+ * KADE prepaid Stage A (2026-07-05): non-LLM services (fal/tts/flux/tavily/phone/
+ * debate) draw from the SAME wallet as LLM tokens. 1,000,000 tokenCredits = $1.
+ * Admins (Kade) are exempt. Only touches an EXISTING Balance record, so this is
+ * inert until balance is enabled (no record = no grant = no-op). Never throws.
+ */
+async function deductKadeCredits(userId, costUSD) {
+  try {
+    if (!userId || !costUSD || costUSD <= 0) return;
+    const User = mongoose.models.User;
+    if (User) {
+      const u = await User.findById(userId).select('role').lean();
+      if (u && String(u.role).toUpperCase() === 'ADMIN') return; // Kade uncapped
+    }
+    const Balance = mongoose.models.Balance;
+    if (!Balance) return;
+    const credits = Math.round(costUSD * 1e6);
+    if (credits <= 0) return;
+    await Balance.updateOne({ user: userId }, { $inc: { tokenCredits: -credits } });
+  } catch (err) {
+    try { logger.warn(`[KadeUsage] credit deduct failed: ${err && err.message}`); } catch (_) { /* noop */ }
+  }
+}
+
+/**
  * Fire-and-forget usage logger. NEVER throws.
  */
 async function logKadeUsage({ userId, service, quantity, unit, costUSD, metadata }) {
@@ -69,6 +93,7 @@ async function logKadeUsage({ userId, service, quantity, unit, costUSD, metadata
     }
     const cost = typeof costUSD === 'number' ? costUSD : (RATES[service] || 0) * quantity;
     await KadeUsage.create({ user: userId, service, quantity, unit, costUSD: cost, metadata });
+    await deductKadeCredits(userId, cost);
   } catch (err) {
     try {
       logger.warn(`[KadeUsage] failed to log ${service} usage: ${err && err.message}`);
@@ -78,4 +103,4 @@ async function logKadeUsage({ userId, service, quantity, unit, costUSD, metadata
   }
 }
 
-module.exports = { KadeUsage, logKadeUsage, fluxCost, RATES, FLUX_ENDPOINT_USD };
+module.exports = { KadeUsage, logKadeUsage, deductKadeCredits, fluxCost, RATES, FLUX_ENDPOINT_USD };

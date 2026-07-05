@@ -265,7 +265,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           <>
             <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
               {localize('com_nav_balance')}:{' '}
-              {new Intl.NumberFormat().format(Math.round(balanceQuery.data.tokenCredits))}
+              {`$${(balanceQuery.data.tokenCredits / 1e6).toFixed(2)}`}
             </div>
             <DropdownMenuSeparator />
           </>

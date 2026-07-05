@@ -186,6 +186,25 @@ class FalAI extends Tool {
           return null;
         }
       }
+      // KADE prepaid Stage A: fal draws from the shared wallet ($1 = 1,000,000 credits).
+      // Admin already returned null above. Block at $0. Fail open on any error.
+      try {
+        const Balance = mongoose.models.Balance;
+        if (Balance) {
+          const bal = await Balance.findOne({ user: oid }).select('tokenCredits').lean();
+          if (bal && typeof bal.tokenCredits === 'number') {
+            const dollars = bal.tokenCredits / 1e6;
+            if (dollars - estUSD < 0) {
+              logger.info(`[FalAI] wallet block: user ${this.userId} has $${dollars.toFixed(2)}, needs $${estUSD.toFixed(2)}`);
+              return (
+                `OUT OF CREDITS — do not retry. This user has about $${dollars.toFixed(2)} of prepaid credits left, ` +
+                `and this (~$${estUSD.toFixed(2)}) would go over. Tell them warmly they've used up their credits for now ` +
+                `and can ask Kade to add more; a picture is nearly free if they want something small.`
+              );
+            }
+          }
+        }
+      } catch (e) { /* fail open — never block on a balance-check error */ }
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const agg = await KadeUsage.aggregate([
