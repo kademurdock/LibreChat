@@ -11,6 +11,8 @@ import Thinking from './Parts/Thinking';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
 import Markdown from './Markdown';
+import { stripVoiceTags } from '~/utils/voiceTags';
+import { stripGameSoundTags, stripDeepThinkTag } from '~/utils/gameSounds';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -101,13 +103,19 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
   );
 
   const content = useMemo(() => {
+    // Strip invisible control markers before display, matching Content/Parts/Text.tsx:
+    // user text can carry the [DEEP THINK <ts>] marker from the Deep Think button;
+    // assistant text can carry %%% voice tags and [sound:]/[table:] cues.
+    const displayText = isCreatedByUser
+      ? stripDeepThinkTag(text)
+      : stripGameSoundTags(stripVoiceTags(text));
     if (!isCreatedByUser) {
-      return <Markdown content={text} isLatestMessage={isLatestMessage} />;
+      return <Markdown content={displayText} isLatestMessage={isLatestMessage} />;
     }
     if (enableUserMsgMarkdown) {
-      return <MarkdownLite content={text} />;
+      return <MarkdownLite content={displayText} />;
     }
-    return <>{text}</>;
+    return <>{displayText}</>;
   }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage]);
 
   return (
