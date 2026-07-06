@@ -35,6 +35,7 @@ const {
   KadeReadPage,
   KadeAdventure,
   KadeGames,
+  KadeFeedback,
   OpenWeather,
   StructuredSD,
   StructuredACS,
@@ -133,7 +134,7 @@ const validateTools = async (user, tools = []) => {
  * @param {Array<string>} authFields Array of strings representing the authentication fields. Supports alternate fields delimited by "||".
  * @param {ToolConstructor} ToolConstructor The constructor function for the tool to be initialized.
  * @param {Object} options Optional parameters to be passed to the tool constructor alongside authentication values.
- * @returns {() => Promise<Tool>} An Async function that, when called, asynchronously initializes and returns an instance of the tool with authentication.
+ * @returns {() => Promise<Tool>} An async function that, when called, asynchronously initializes and returns an instance of the tool with authentication.
  */
 const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => {
   return async function () {
@@ -195,6 +196,7 @@ const loadTools = async ({
     kade_read_page: KadeReadPage,
     kade_adventure: KadeAdventure,
     kade_games: KadeGames,
+    kade_feedback: KadeFeedback,
     calculator: Calculator,
     google: GoogleSearchAPI,
     open_weather: OpenWeather,
@@ -286,6 +288,10 @@ const loadTools = async ({
       agentName: agent?.name,
     },
     kade_games: {
+      agentName: agent?.name,
+    },
+    kade_feedback: {
+      userId: user,
       agentName: agent?.name,
     },
     dalle: imageGenOptions,
