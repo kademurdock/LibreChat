@@ -48,7 +48,7 @@ class KadeFeedback extends Tool {
     this.description =
       "File a bug report, feature request, or feedback to Kade (the platform owner) on behalf of the user. " +
       "Use this when a user mentions something broken, frustrating, or asks for a feature — offer to log it first " +
-      '(\"Want me to send that to Kade for you?\"), then call this tool with their description. ' +
+      '(\\"Want me to send that to Kade for you?\\"), then call this tool with their description. ' +
       "The report is attributed to the user so Kade can follow up. Free, instant, no cost. " +
       "NEVER file a report without the user's OK; NEVER invent details they didn't give you.";
     this.schema = feedbackSchema;
