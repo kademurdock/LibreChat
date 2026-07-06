@@ -81,7 +81,14 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
     tool_options,
     tool_resources,
   }) {
-    const agent = { id: agentId, tools, provider, model, tool_options };
+    // KADE 2026-07-06: every agent on the platform can file user bug reports,
+    // feature requests, and feedback. Inject kade_feedback into EVERY agent's
+    // tool set at load time — automatic and future-proof (no per-agent
+    // assignment; new agents get it for free). Deduped so an agent that already
+    // lists it doesn't double up. The tool never fires without the user's OK.
+    const _tools = Array.isArray(tools) ? tools : [];
+    const withFeedback = _tools.includes('kade_feedback') ? _tools : [..._tools, 'kade_feedback'];
+    const agent = { id: agentId, tools: withFeedback, provider, model, tool_options };
     try {
       return await loadAgentTools({
         req,
