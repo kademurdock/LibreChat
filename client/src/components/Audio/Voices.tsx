@@ -80,12 +80,33 @@ function useVoicePreview() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  /** Object URL currently pointed at by audioRef — tracked so stop() can revoke
+   * it even after we detach the element's own onended/onerror handlers. */
+  const urlRef = useRef<string | null>(null);
 
   const stop = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = '';
+    const el = audioRef.current;
+    if (el) {
+      // Detach handlers BEFORE tearing down. The old code set src = '' here,
+      // which makes Safari resolve the empty URL to the page itself, try to
+      // decode the HTML as media, and fire onerror — that is exactly what
+      // popped the spurious "this device could not decode the audio" message
+      // when Kade tapped the button a second time to STOP mid-preview. Remove
+      // the attribute and load() instead: aborts playback with no error event.
+      el.onended = null;
+      el.onerror = null;
+      el.pause();
+      el.removeAttribute('src');
+      try {
+        el.load();
+      } catch {
+        /* no-op: nothing to load, just releasing the element */
+      }
       audioRef.current = null;
+    }
+    if (urlRef.current) {
+      URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
     }
     setIsPlaying(false);
   }, []);
@@ -142,16 +163,23 @@ function useVoicePreview() {
       const rawBlob = await res.blob();
       const wavBlob = new Blob([rawBlob], { type: 'audio/wav' });
       const url = URL.createObjectURL(wavBlob);
+      urlRef.current = url;
 
       audio.onended = () => {
-        URL.revokeObjectURL(url);
+        if (urlRef.current === url) {
+          URL.revokeObjectURL(url);
+          urlRef.current = null;
+        }
         if (audioRef.current === audio) {
           audioRef.current = null;
         }
         setIsPlaying(false);
       };
       audio.onerror = () => {
-        URL.revokeObjectURL(url);
+        if (urlRef.current === url) {
+          URL.revokeObjectURL(url);
+          urlRef.current = null;
+        }
         if (audioRef.current === audio) {
           audioRef.current = null;
         }
@@ -163,7 +191,6 @@ function useVoicePreview() {
       audio.play().catch((err) => {
         logger.error('[VoicePreview] play() failed:', err);
         setError(`Preview blocked by the browser (${err?.name || 'autoplay'}). Tap again.`);
-        URL.revokeObjectURL(url);
         stop();
       });
     } catch (err) {

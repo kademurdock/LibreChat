@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { ChevronDown, Volume2, Check } from 'lucide-react';
 import type { FocusEvent, KeyboardEvent } from 'react';
-import { SILENT_WAV, useVoiceCatalogTexts, compareVoices } from '~/components/Audio/Voices';
+import { useVoiceCatalogTexts, compareVoices } from '~/components/Audio/Voices';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -68,42 +68,71 @@ function auditionLine(voice: string, template?: string) {
  */
 function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate?: string; speed?: number }) {
   const { token } = useAuthContext();
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  /** voice -> object URL of an already-fetched sample */
-  const cacheRef = useRef<Map<string, string>>(new Map());
+  /** ONE AudioContext, unlocked inside the tap that opens the list. Web Audio is
+   * the reliable iOS path here: once a context is resumed by a real gesture,
+   * buffer sources can start on later FOCUS events (VoiceOver swipes) without
+   * needing their own user-activation. The previous <audio>.play() approach DID
+   * need that per-play activation, and newer iOS quietly stopped granting it to
+   * focus-driven playback — so swipe-auditions went silent with no error. This
+   * is the same pipeline ConversationMode already uses for Kiana's call voice. */
+  const ctxRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  /** cacheKey (voice|variant|rate) -> decoded AudioBuffer */
+  const cacheRef = useRef<Map<string, AudioBuffer>>(new Map());
   /** latest-wins guard: bumping it invalidates any pending/in-flight play */
   const seqRef = useRef(0);
   const timerRef = useRef<number | undefined>(undefined);
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  /** Stop whatever buffer source is sounding. Unlike clearing an <audio> src,
+   * stopping a BufferSource fires no error event. */
+  const stopSource = useCallback(() => {
+    if (sourceRef.current) {
+      try {
+        sourceRef.current.onended = null;
+        sourceRef.current.stop();
+      } catch {
+        /* already stopped */
+      }
+      try {
+        sourceRef.current.disconnect();
+      } catch {
+        /* already disconnected */
+      }
+      sourceRef.current = null;
+    }
+  }, []);
+
   /** MUST be called inside a real user gesture (the tap that opens the list):
-   * plays a silent clip to unlock the element for later programmatic play(). */
+   * creates the context if needed and resumes it (iOS starts it suspended). */
   const unlock = useCallback(() => {
-    if (audioRef.current) {
-      return;
+    if (!ctxRef.current) {
+      ctxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
-    const el = new Audio();
-    el.src = SILENT_WAV;
-    const p = el.play();
-    if (p && typeof p.catch === 'function') {
-      p.catch(() => {});
+    if (ctxRef.current.state === 'suspended') {
+      void ctxRef.current.resume().catch(() => {});
     }
-    audioRef.current = el;
   }, []);
 
   const stop = useCallback(() => {
     window.clearTimeout(timerRef.current);
     seqRef.current += 1;
-    audioRef.current?.pause();
+    stopSource();
     setPlayingVoice(null);
-  }, []);
+  }, [stopSource]);
 
   const playNow = useCallback(
     async (voice: string) => {
-      const el = audioRef.current;
-      if (!el) {
+      const ctx = ctxRef.current;
+      if (!ctx) {
         return;
+      }
+      // iOS can quietly re-suspend a context between samples; nudge it awake.
+      // Best-effort: if the OS refuses outside a gesture, reopening the list
+      // re-arms it via unlock().
+      if (ctx.state === 'suspended') {
+        void ctx.resume().catch(() => {});
       }
       const seq = ++seqRef.current;
       setError(null);
@@ -111,8 +140,8 @@ function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate?: stri
         // Cache key covers the text variant AND the rate — a sample recorded
         // at 1.0 must not be replayed when the agent's rate is now 1.3.
         const cacheKey = `${voice}|${auditionTemplate ? 's' : 'f'}|${speed ?? ''}`;
-        let url = cacheRef.current.get(cacheKey);
-        if (url == null) {
+        let buffer = cacheRef.current.get(cacheKey);
+        if (buffer == null) {
           const fd = new FormData();
           fd.append('input', auditionLine(voice, auditionTemplate));
           fd.append('voice', voice);
@@ -133,52 +162,41 @@ function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate?: stri
             }
             return;
           }
-          // Proxy returns WAV bytes regardless of declared content type (C3 lesson)
-          const blob = new Blob([await res.blob()], { type: 'audio/wav' });
-          url = URL.createObjectURL(blob);
+          // Proxy returns WAV bytes regardless of declared content type (C3
+          // lesson). decodeAudioData detaches its input, so hand it a copy.
+          const raw = await res.arrayBuffer();
+          buffer = await ctx.decodeAudioData(raw.slice(0));
           if (cacheRef.current.size >= AUDITION_CACHE_MAX) {
             const oldest = cacheRef.current.keys().next().value as string | undefined;
             if (oldest != null) {
-              const oldUrl = cacheRef.current.get(oldest);
-              if (oldUrl != null) {
-                URL.revokeObjectURL(oldUrl);
-              }
               cacheRef.current.delete(oldest);
             }
           }
-          cacheRef.current.set(cacheKey, url);
+          cacheRef.current.set(cacheKey, buffer);
         }
-        if (seq !== seqRef.current) {
-          return; // user already moved to another voice
+        if (buffer == null || seq !== seqRef.current) {
+          return; // decode produced nothing, or user moved to another voice
         }
-        el.pause();
-        el.src = url;
-        el.onended = () => {
+        stopSource();
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(ctx.destination);
+        src.onended = () => {
           if (seq === seqRef.current) {
             setPlayingVoice(null);
           }
         };
-        el.onerror = () => {
-          if (seq === seqRef.current) {
-            setError('Sample failed: this device could not decode the audio.');
-            setPlayingVoice(null);
-          }
-        };
-        const p = el.play();
-        if (p && typeof p.catch === 'function') {
-          p.catch((err: unknown) => {
-            logger.error('[VoiceAudition] play() failed:', err);
-          });
-        }
+        sourceRef.current = src;
+        src.start();
         setPlayingVoice(voice);
       } catch (err) {
-        logger.error('[VoiceAudition] fetch failed:', err);
+        logger.error('[VoiceAudition] play failed:', err);
         if (seq === seqRef.current) {
-          setError('Sample failed: could not reach the voice server.');
+          setError('Sample failed: this device could not play the audio.');
         }
       }
     },
-    [token, auditionTemplate, speed],
+    [token, auditionTemplate, speed, stopSource],
   );
 
   /** Debounced audition — call on option focus/hover. Rapid movement through
@@ -199,10 +217,20 @@ function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate?: stri
     return () => {
       window.clearTimeout(timerRef.current);
       seqRef.current += 1;
-      audioRef.current?.pause();
-      audioRef.current = null;
-      cache.forEach((u) => URL.revokeObjectURL(u));
+      if (sourceRef.current) {
+        try {
+          sourceRef.current.onended = null;
+          sourceRef.current.stop();
+        } catch {
+          /* already stopped */
+        }
+        sourceRef.current = null;
+      }
       cache.clear();
+      if (ctxRef.current) {
+        void ctxRef.current.close().catch(() => {});
+        ctxRef.current = null;
+      }
     };
   }, []);
 
