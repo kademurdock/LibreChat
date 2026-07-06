@@ -11,6 +11,7 @@ import {
   Dices,
   FileText,
   Gauge,
+  MessageSquare,
   Heart,
   Landmark,
   MessagesSquare,
@@ -201,6 +202,16 @@ function ExploreSubmenu({ isAdmin, isChild }: { isAdmin: boolean; isChild: boole
           >
             <Gauge className="icon-md" aria-hidden="true" />
             Usage Dashboard
+          </Menu.MenuItem>
+        )}
+        {isAdmin && (
+          <Menu.MenuItem
+            onClick={go('/feedback-dashboard')}
+            className="select-item text-sm"
+            aria-label="Feedback and bug reports from your users (admin only)"
+          >
+            <MessageSquare className="icon-md" aria-hidden="true" />
+            Feedback &amp; Bug Reports
           </Menu.MenuItem>
         )}
       </Menu.Menu>
