@@ -97,5 +97,13 @@
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
+  },
+  {
+    "name": "Send Feedback",
+    "pluginKey": "kade_feedback",
+    "description": "File a bug report, feature request, or feedback to Kade (the platform owner) on the user's behalf. Free, instant, no cost.",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
   }
 ]
