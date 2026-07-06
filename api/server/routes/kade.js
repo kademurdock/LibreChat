@@ -434,6 +434,66 @@ router.get('/asset-download/:id', requireJwtAuth, async (req, res) => {
 });
 
 /* ----------------------------------------------------------------------------
+ * SAVE BY URL: GET /api/kade/media-save?u=<encoded media url>
+ * Sibling of /asset-download/:id, but keyed on the media URL itself so the
+ * in-chat inline players (Seed Audio / Rio video) can offer a real "save to
+ * device" button the instant a clip is posted — without needing its gallery
+ * asset id (which is written fire-and-forget and may not exist yet). Streams
+ * the file with a Content-Disposition attachment so iOS Safari SAVES it (via
+ * the share sheet) instead of just playing it. Host-allowlisted to fal's
+ * media/CDN hosts so it can't be abused as an open proxy. Auth required.
+ * -------------------------------------------------------------------------- */
+const MEDIA_SAVE_HOSTS = /(^|\.)fal\.media$|(^|\.)fal\.run$|(^|\.)fal\.ai$/i;
+router.get('/media-save', requireJwtAuth, async (req, res) => {
+  try {
+    const raw = String(req.query.u || '');
+    let parsed;
+    try {
+      parsed = new URL(raw);
+    } catch (e) {
+      return res.status(400).json({ error: 'Bad url' });
+    }
+    if (parsed.protocol !== 'https:' || !MEDIA_SAVE_HOSTS.test(parsed.hostname)) {
+      return res.status(400).json({ error: 'Unsupported media host' });
+    }
+    let upstream;
+    try {
+      upstream = await axios.get(parsed.toString(), { responseType: 'stream', timeout: 60000 });
+    } catch (e) {
+      logger.warn('[media-save] fetch failed:', e.message);
+      return res.status(502).json({ error: 'Could not fetch the media from its source' });
+    }
+    const ct = String(upstream.headers['content-type'] || 'application/octet-stream');
+    const extFromCt = {
+      'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
+      'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp',
+      'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav',
+      'audio/ogg': 'ogg', 'audio/webm': 'weba', 'audio/aac': 'aac', 'audio/mp4': 'm4a',
+    }[ct.split(';')[0].trim()];
+    // Prefer the real extension from the URL path when it has one.
+    const pathExt = (parsed.pathname.match(/\.([a-z0-9]{2,4})$/i) || [])[1];
+    const ext = String(pathExt || extFromCt || 'bin').toLowerCase();
+    const kind = ct.startsWith('video')
+      ? 'video'
+      : ct.startsWith('audio')
+        ? 'audio'
+        : ct.startsWith('image')
+          ? 'image'
+          : 'file';
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', ct);
+    if (upstream.headers['content-length']) {
+      res.setHeader('Content-Length', upstream.headers['content-length']);
+    }
+    res.setHeader('Content-Disposition', `attachment; filename="kade-ai-${kind}-${stamp}.${ext}"`);
+    upstream.data.pipe(res);
+  } catch (error) {
+    logger.error('[/api/kade/media-save] error:', error);
+    return res.status(500).json({ error: 'Download failed' });
+  }
+});
+
+/* ----------------------------------------------------------------------------
  * WALL OF FAME: GET /api/kade/wall — every asset users chose to share, newest
  * first, with the creator's first name. Any signed-in user (family only —
  * the page requires a login, nothing is public).

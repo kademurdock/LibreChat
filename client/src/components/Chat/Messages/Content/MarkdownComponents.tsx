@@ -1,4 +1,5 @@
-import React, { memo, useMemo, useRef, useEffect } from 'react';
+import React, { memo, useMemo, useRef, useEffect, useState, useContext } from 'react';
+import { Download, Loader } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provider';
@@ -9,6 +10,7 @@ import { useFileDownload } from '~/data-provider';
 import { useCodeBlockContext } from '~/Providers';
 import { handleDoubleClick, triggerDownload } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { AuthContext } from '~/hooks/AuthContext';
 import store from '~/store';
 
 type TCodeProps = {
@@ -101,6 +103,144 @@ export const codeNoExecution: React.ElementType = memo(function MarkdownCodeNoEx
 codeNoExecution.displayName = 'MarkdownCodeNoExecution';
 
 /**
+ * Kade fork: iPhone-friendly "Save to device" button for inline generated clips
+ * (Seed Audio / Rio video). Safari's native <audio>/<video> players give no
+ * reliable way to KEEP a clip, and a plain <a download> to a cross-origin
+ * fal.media URL just plays it. So we pull the file through our own same-origin,
+ * authenticated proxy (/api/kade/media-save) and hand it to the platform: on
+ * iOS the native share sheet (Save to Files / Messages), on desktop a normal
+ * download. iOS needs share() on a fresh tap, so there it is a two-tap flow
+ * (tap 1 fetches, tap 2 shares). Mirrors the working /my-creations button.
+ */
+type TInlineMediaSaveProps = {
+  src: string;
+  kind: 'audio' | 'video';
+  description: string;
+};
+
+const isIOSDevice = (): boolean => {
+  const nav = navigator as Navigator & { maxTouchPoints?: number };
+  return (
+    /iP(hone|ad|od)/.test(nav.userAgent) ||
+    (nav.platform === 'MacIntel' && (nav.maxTouchPoints ?? 0) > 1)
+  );
+};
+
+export const InlineMediaSaveButton: React.ElementType = memo(function InlineMediaSaveButton({
+  src,
+  kind,
+  description,
+}: TInlineMediaSaveProps) {
+  const auth = useContext(AuthContext);
+  const token = auth?.token;
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  const cacheRef = useRef<{ blob: Blob; name: string } | null>(null);
+  const kindWord = kind === 'video' ? 'video' : 'audio clip';
+  const defaultType = kind === 'video' ? 'video/mp4' : 'audio/mpeg';
+
+  const fetchBlob = async (): Promise<{ blob: Blob; name: string }> => {
+    const res = await fetch('/api/kade/media-save?u=' + encodeURIComponent(src.trim()), {
+      credentials: 'include',
+      headers: token != null && token !== '' ? { Authorization: 'Bearer ' + token } : undefined,
+    });
+    if (!res.ok) {
+      throw new Error('HTTP ' + res.status);
+    }
+    const cd = res.headers.get('Content-Disposition') ?? '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const name = m != null ? m[1] : 'kade-ai-' + kind + (kind === 'video' ? '.mp4' : '.mp3');
+    const blob = await res.blob();
+    return { blob, name };
+  };
+
+  const run = async (): Promise<void> => {
+    if (busy) {
+      return;
+    }
+    // iOS: share() must fire on a fresh tap -> fetch first, share on the next tap.
+    if (isIOSDevice()) {
+      if (cacheRef.current != null) {
+        try {
+          const { blob, name } = cacheRef.current;
+          const file = new File([blob], name, { type: blob.type || defaultType });
+          const nav = navigator as Navigator & {
+            canShare?: (data?: { files?: File[] }) => boolean;
+            share?: (data?: { files?: File[]; title?: string }) => Promise<void>;
+          };
+          if (nav.canShare?.({ files: [file] }) === true && nav.share) {
+            await nav.share({ files: [file], title: name });
+            setStatus('Share sheet opened — choose Save to Files (or send it) to keep this ' + kindWord + '.');
+          } else {
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+            setStatus('Opened in a new tab — use the share button there to save it.');
+          }
+        } catch (e) {
+          if ((e as Error).name !== 'AbortError') {
+            setStatus('Could not open the share sheet — tap Save again.');
+          }
+        }
+        return;
+      }
+      setBusy(true);
+      setStatus('Getting your ' + kindWord + ' ready…');
+      try {
+        cacheRef.current = await fetchBlob();
+        setStatus('Ready! Tap “Save to device” again to open the share sheet, then choose Save.');
+      } catch {
+        setStatus('Could not get the file — try again in a moment.');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    // Desktop / Android: fetch then download.
+    setBusy(true);
+    setStatus('Downloading your ' + kindWord + '…');
+    try {
+      const got = cacheRef.current ?? (await fetchBlob());
+      const url = URL.createObjectURL(got.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = got.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setStatus('Saved! Check your downloads for ' + got.name + '.');
+    } catch {
+      setStatus('Download failed — try again in a moment.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span className="mt-1 block">
+      <button
+        type="button"
+        onClick={() => void run()}
+        disabled={busy}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-border-medium bg-surface-secondary px-3 py-1.5 text-sm font-semibold text-text-primary hover:bg-surface-hover disabled:opacity-60"
+        aria-label={'Save this ' + kindWord + ' to your device: ' + description}
+      >
+        {busy ? (
+          <Loader className="h-[18px] w-[18px] animate-spin" aria-hidden="true" />
+        ) : (
+          <Download className="h-[18px] w-[18px]" aria-hidden="true" />
+        )}
+        Save to device
+      </button>
+      <span role="status" aria-live="polite" className="mt-1 block text-sm text-text-secondary">
+        {status}
+      </span>
+    </span>
+  );
+});
+InlineMediaSaveButton.displayName = 'InlineMediaSaveButton';
+
+/**
  * Kade fork: inline video player for generated clips (fal.media etc.).
  * Detects direct video-file URLs so `[Watch the video](...mp4)` — or a model
  * mistakenly writing `![...](...mp4)` — renders as a real playable <video>
@@ -143,6 +283,7 @@ export const InlineVideo: React.ElementType = memo(function InlineVideo({
       >
         {description} — open or download
       </a>
+      <InlineMediaSaveButton src={src.trim()} kind="video" description={description} />
     </span>
   );
 });
@@ -185,6 +326,7 @@ export const InlineAudio: React.ElementType = memo(function InlineAudio({
       >
         {description} — open or download
       </a>
+      <InlineMediaSaveButton src={src.trim()} kind="audio" description={description} />
     </span>
   );
 });
