@@ -208,6 +208,27 @@ export const kadeWikipediaSchema: ExtendedJsonSchema = {
   required: ['query'],
 };
 
+export const kadeFeedbackSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    category: {
+      type: 'string',
+      description:
+        "What kind of report: 'bug' (something broken), 'feature' (something the user wishes existed), or 'feedback' (a general thought or suggestion). Default 'feedback'.",
+    },
+    subject: {
+      type: 'string',
+      description: "A short title, 3-10 words, summarizing the user's report.",
+    },
+    detail: {
+      type: 'string',
+      description:
+        "The full description in the user's own words — what they were doing, what happened, and any details they gave (which page, which agent, what device). This goes straight to Kade.",
+    },
+  },
+  required: ['detail'],
+};
+
 export const kadeJokeSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -738,6 +759,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Look up a topic on Wikipedia — free, instant, no cost. Best for stable encyclopedic facts (people, places, history, science). For breaking news or local/current info use web_search instead. NEVER invent article content; only report what this tool returns.',
     schema: kadeWikipediaSchema,
+    toolType: 'builtin',
+  },
+  kade_feedback: {
+    name: 'kade_feedback',
+    description:
+      "File a bug report, feature request, or feedback to Kade (the platform owner) on behalf of the user — free, instant, no cost. Use when a user mentions something broken or frustrating, or wishes a feature existed: OFFER first (\"Want me to send that to Kade for you?\"), then call this with their description. Attributed to the user so Kade can follow up. NEVER file without the user's OK; NEVER invent details they didn't give.",
+    schema: kadeFeedbackSchema,
     toolType: 'builtin',
   },
   open_weather: {

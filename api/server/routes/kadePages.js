@@ -685,5 +685,78 @@ const gameRoomHtml = `<!doctype html><html lang="en"><head><title>The Game Room<
   </script>
 </body></html>`;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml };
+
+const feedbackHtml = `<!doctype html><html lang="en"><head><title>Feedback & Bug Reports</title>${SHARED_HEAD}</head>
+<body>
+  <a class="back" href="/">&larr; Back to chat</a>
+  <h1>Feedback &amp; Bug Reports</h1>
+  <p class="muted">Everything your users filed by telling any character. Newest first.</p>
+  <div id="filters" hidden style="margin:.5rem 0">
+    <button id="f-open" class="btn" type="button" aria-pressed="true">Open only</button>
+    <button id="f-all" class="btn" type="button" aria-pressed="false" style="background:#555">Show all</button>
+  </div>
+  <div id="status" class="status" role="status">Loading your feedback&hellip;</div>
+  <div id="list" aria-live="polite"></div>
+  <footer class="muted">Free feature. Reports are attributed to the user who sent them.</footer>
+<script>
+  var TOKEN=null; var MODE='open';
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function whenStr(d){ try{ return new Date(d).toLocaleString('en-US'); }catch(e){ return ''; } }
+  function catLabel(c){ return c==='bug'?'Bug':c==='feature'?'Feature request':'Feedback'; }
+  function stBtn(id,st,label){ return '<button class="btn" type="button" data-id="'+id+'" data-st="'+st+'" style="background:#555;font-size:.85rem;padding:.4rem .8rem;margin:.2rem .3rem 0 0">'+label+'</button>'; }
+  function render(items){
+    var list=document.getElementById('list'); list.innerHTML='';
+    items.forEach(function(it){
+      var who = it.user ? (it.user.name||it.user.email||'a user') : 'a user';
+      var card=document.createElement('div'); card.className='card';
+      card.innerHTML =
+        '<h2>'+esc(it.subject||'(no subject)')+' <span class="muted">&mdash; '+catLabel(it.category)+'</span></h2>'+
+        '<p>'+esc(it.detail)+'</p>'+
+        '<dl class="kv" style="grid-template-columns:auto 1fr">'+
+          '<dt>From</dt><dd style="text-align:left">'+esc(who)+'</dd>'+
+          '<dt>Filed by</dt><dd style="text-align:left">'+esc(it.agent||'agent')+' ('+esc(it.surface||'chat')+')</dd>'+
+          '<dt>When</dt><dd style="text-align:left">'+esc(whenStr(it.createdAt))+'</dd>'+
+          '<dt>Status</dt><dd style="text-align:left" id="st-'+it._id+'"><strong>'+esc(it.status)+'</strong></dd>'+
+        '</dl>'+
+        '<div>'+stBtn(it._id,'acknowledged','Mark seen')+stBtn(it._id,'resolved','Resolved')+stBtn(it._id,'wontfix','Ignore')+'</div>';
+      list.appendChild(card);
+    });
+    list.querySelectorAll('button[data-id]').forEach(function(b){
+      b.addEventListener('click', function(){ setStatus(b.getAttribute('data-id'), b.getAttribute('data-st'), b); });
+    });
+  }
+  async function load(){
+    var statusEl=document.getElementById('status');
+    if(!TOKEN){ TOKEN=await getToken(); }
+    if(!TOKEN){ statusEl.className='status err'; statusEl.textContent='Please sign in on the main site first, then reload this page.'; return; }
+    statusEl.className='status'; statusEl.textContent='Loading your feedback…';
+    var r=await apiGet('/api/kade/feedback?status='+MODE, TOKEN);
+    if(r.status===401||r.status===403){ statusEl.className='status err'; statusEl.textContent='This page is for admins only.'; return; }
+    if(!r.ok){ statusEl.className='status err'; statusEl.textContent='Could not load feedback (error '+r.status+').'; return; }
+    var items=await r.json();
+    document.getElementById('filters').hidden=false;
+    render(items);
+    statusEl.className='status';
+    statusEl.textContent = items.length ? (items.length+' report'+(items.length===1?'':'s')+' shown.') : ('No '+(MODE==='open'?'open ':'')+'reports yet.');
+  }
+  async function setStatus(id,st,b){
+    b.disabled=true; var old=b.textContent; b.textContent='Saving…';
+    var r=await apiPost('/api/kade/feedback/'+id+'/status', TOKEN, {status:st});
+    if(r.ok){ var cell=document.getElementById('st-'+id); if(cell){ cell.innerHTML='<strong>'+st+'</strong>'; } b.textContent='Done'; if(MODE==='open'){ setTimeout(load,400); } }
+    else { b.textContent=old; b.disabled=false; }
+  }
+  function setMode(m){
+    MODE=m;
+    var o=document.getElementById('f-open'), a=document.getElementById('f-all');
+    o.setAttribute('aria-pressed', m==='open'?'true':'false'); o.style.background = m==='open'?'#2f8f5b':'#555';
+    a.setAttribute('aria-pressed', m==='all'?'true':'false'); a.style.background = m==='all'?'#2f8f5b':'#555';
+    load();
+  }
+  document.getElementById('f-open').addEventListener('click', function(){ setMode('open'); });
+  document.getElementById('f-all').addEventListener('click', function(){ setMode('all'); });
+  load();
+</script>
+</body></html>`;
+
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml };
 

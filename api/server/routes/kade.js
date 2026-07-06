@@ -648,11 +648,56 @@ router.post('/usage-event', async (req, res) => {
  * HTML pages (no server-side auth; client JS gets a token via /api/auth/refresh
  * exactly like the SPA does, then calls the gated APIs above).
  * -------------------------------------------------------------------------- */
+/* --- Feedback / bug reports (the kade_feedback tool writes here) ---------- */
+const { KadeFeedback } = require('~/models/kadeFeedback');
+const FEEDBACK_STATUSES = ['open', 'acknowledged', 'resolved', 'wontfix'];
+
+/** ADMIN: GET /api/kade/feedback?status=open|all — user-filed reports, newest first. */
+router.get('/feedback', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const q = {};
+    if (req.query.status && req.query.status !== 'all') {
+      q.status = FEEDBACK_STATUSES.includes(req.query.status) ? req.query.status : 'open';
+    }
+    const items = await KadeFeedback.find(q)
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .populate('user', 'name email')
+      .lean();
+    res.json(items);
+  } catch (err) {
+    logger.error(`[kade/feedback] list failed: ${err.message}`);
+    res.status(500).json({ error: 'Could not load feedback.' });
+  }
+});
+
+/** ADMIN: POST /api/kade/feedback/:id/status { status } — triage a report. */
+router.post('/feedback/:id/status', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    if (!FEEDBACK_STATUSES.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status.' });
+    }
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid id.' });
+    }
+    const doc = await KadeFeedback.findByIdAndUpdate(req.params.id, { status }, { new: true }).lean();
+    if (!doc) {
+      return res.status(404).json({ error: 'Report not found.' });
+    }
+    res.json({ ok: true, id: String(doc._id), status: doc.status });
+  } catch (err) {
+    logger.error(`[kade/feedback] status update failed: ${err.message}`);
+    res.status(500).json({ error: 'Could not update status.' });
+  }
+});
+
 const FEED_HTML = require('./kadePages').feedHtml;
 const DASH_HTML = require('./kadePages').dashboardHtml;
 const CREATIONS_HTML = require('./kadePages').creationsHtml;
 const WALL_HTML = require('./kadePages').wallHtml;
 const GAMEROOM_HTML = require('./kadePages').gameRoomHtml;
+const FEEDBACK_HTML = require('./kadePages').feedbackHtml;
 const sendHtml = (html) => (req, res) => res.type('html').send(html);
 
 // ---------------------------------------------------------------------------
@@ -803,6 +848,7 @@ router.dashboardPage = sendHtml(DASH_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);
 router.wallPage = sendHtml(WALL_HTML);
 router.gameRoomPage = sendHtml(GAMEROOM_HTML);
+router.feedbackPage = sendHtml(FEEDBACK_HTML);
 // Also reachable under the API namespace:
 router.get('/feed', router.feedPage);
 router.get('/dashboard', router.dashboardPage);
