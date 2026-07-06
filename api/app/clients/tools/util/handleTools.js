@@ -411,7 +411,7 @@ const loadTools = async ({
         continue;
       }
       const serverConfig = serverName
-        ? await getMCPServersRegistry().getServerConfig(serverName, user, configServers)
+        ? await getMCPServersTools().getServerConfig(serverName, user, configServers)
         : null;
       if (!serverConfig) {
         logger.warn(
