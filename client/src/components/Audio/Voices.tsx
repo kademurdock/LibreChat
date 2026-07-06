@@ -1,12 +1,14 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { Volume2, Square } from 'lucide-react';
+import { Volume2, Square, ChevronDown, Check } from 'lucide-react';
 import { Dropdown } from '@librechat/client';
 import type { Option } from '~/common';
 import { useLocalize, useTTSBrowser, useTTSExternal } from '~/hooks';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { logger } from '~/utils';
+import { cn, logger } from '~/utils';
+import type { FocusEvent, KeyboardEvent } from 'react';
+import { useVoiceAudition } from '~/components/Audio/useVoiceAudition';
 import store from '~/store';
 import { saveAgentVoicePreference } from '~/hooks/Agents/useAgentVoiceSync';
 
@@ -328,45 +330,221 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
   // ♿ D3: the agent active in the primary conversation, so a voice pick here can
   // be remembered as THIS agent's preferred voice (per-user, localStorage).
   const activeAgentId = useRecoilValue(store.conversationAgentIdByIndex(0));
+  // ♿ 2026-07-05 (Kade): the SAME audition-as-you-swipe engine the agent-builder
+  // picker uses — she navigates voices HERE in Settings → Speech, so each voice
+  // must speak as she swipes onto it, not only in the builder. Web Audio path,
+  // reliable on iOS VoiceOver. The long-form Preview button stays below.
+  const { audition: auditionTemplate } = useVoiceCatalogTexts();
+  const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({ auditionTemplate });
 
-  const handleVoiceChange = (newValue?: string | Option) => {
-    logger.log('External Voice changed:', newValue);
-    const newVoice = typeof newValue === 'string' ? newValue : newValue?.value;
-    if (newVoice != null) {
-      const voiceStr = newVoice.toString();
-      // ♿ D3: persist this choice for the active agent so useAgentVoiceSync
-      // re-applies it next time this agent's chat opens. Safe + fire-and-forget.
-      if (activeAgentId) {
-        saveAgentVoicePreference(activeAgentId, voiceStr);
-      }
-      return setVoice(voiceStr);
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLButtonElement>(null);
+
+  const current = typeof voice === 'string' && voice !== '' ? voice : undefined;
+
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    return q ? orderedVoices.filter((v) => v.toLowerCase().includes(q)) : orderedVoices;
+  }, [orderedVoices, filter]);
+
+  const commitVoice = (newVoice: string) => {
+    // ♿ D3: persist this choice for the active agent so useAgentVoiceSync
+    // re-applies it next time this agent's chat opens. Safe + fire-and-forget.
+    if (activeAgentId) {
+      saveAgentVoicePreference(activeAgentId, newVoice);
     }
+    setVoice(newVoice);
+  };
+
+  const close = useCallback(
+    (refocusOpener: boolean) => {
+      stop();
+      setOpen(false);
+      setFilter('');
+      if (refocusOpener) {
+        openerRef.current?.focus();
+      }
+    },
+    [stop],
+  );
+
+  const toggleOpen = () => {
+    if (disabled) {
+      return;
+    }
+    if (open) {
+      close(false);
+    } else {
+      unlock(); // inside the user gesture — the whole browse experience depends on this
+      setOpen(true);
+    }
+  };
+
+  const select = (v: string) => {
+    commitVoice(v);
+    close(true);
+  };
+
+  /** Stop audition audio if focus genuinely leaves the widget. */
+  const onRootBlur = (e: FocusEvent) => {
+    if (!rootRef.current?.contains(e.relatedTarget as Node)) {
+      stop();
+    }
+  };
+
+  const onListKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close(true);
+      return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+      return;
+    }
+    // Home/End only when NOT typing in the filter box (there they move the caret)
+    if (
+      (e.key === 'Home' || e.key === 'End') &&
+      (document.activeElement as HTMLElement)?.tagName === 'INPUT'
+    ) {
+      return;
+    }
+    e.preventDefault();
+    const btns = Array.from(
+      listRef.current?.querySelectorAll<HTMLButtonElement>('button[data-voice-option]') ?? [],
+    );
+    if (btns.length === 0) {
+      return;
+    }
+    const i = btns.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      e.key === 'Home' ? 0
+      : e.key === 'End' ? btns.length - 1
+      : i === -1 ? 0
+      : e.key === 'ArrowDown' ? Math.min(i + 1, btns.length - 1)
+      : Math.max(i - 1, 0);
+    btns[next]?.focus();
   };
 
   const labelId = 'external-voice-dropdown-label';
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <div id={labelId}>{localize('com_nav_voice_select')}</div>
-        <Dropdown
-          key={`external-voice-dropdown-${orderedVoices.length}`}
-          value={voice ?? ''}
-          options={orderedVoices}
-          onChange={handleVoiceChange}
-          sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
-          testId="ExternalVoiceDropdown"
-          className="z-50"
-          aria-labelledby={labelId}
-          disabled={disabled}
+    <div ref={rootRef} onBlur={onRootBlur} className="flex flex-col gap-2">
+      <div id={labelId}>{localize('com_nav_voice_select')}</div>
+      <button
+        ref={openerRef}
+        type="button"
+        id="external-voice-opener"
+        onClick={toggleOpen}
+        disabled={disabled}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={`${localize('com_nav_voice_select')}: ${current ?? ''}. ${localize(
+          'com_agents_voice_opener_hint',
+        )}`}
+        className="flex w-full items-center justify-between rounded-lg border border-border-medium
+          bg-surface-primary px-3 py-2 text-sm text-text-primary
+          hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2
+          focus-visible:ring-border-heavy transition-colors duration-150
+          disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <span aria-hidden="true">{current ?? '—'}</span>
+        <ChevronDown
+          className={cn('h-4 w-4 transition-transform', open && 'rotate-180')}
+          aria-hidden="true"
         />
-      </div>
-      {/* ♿ C3: Voice preview button — lets the user hear the selected voice before committing.
-           Keyboard-accessible and VoiceOver-friendly: aria-label includes the voice name,
-           aria-pressed reflects play state. */}
-      {voice != null && voice !== '' && (
+      </button>
+
+      {open && (
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+        <div
+          onKeyDown={onListKeyDown}
+          className="flex flex-col gap-2 rounded-lg border border-border-medium bg-surface-primary p-2"
+        >
+          <p className="text-xs text-text-secondary">{localize('com_agents_voice_browse_hint')}</p>
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                listRef.current
+                  ?.querySelector<HTMLButtonElement>('button[data-voice-option]')
+                  ?.focus();
+              }
+            }}
+            placeholder={localize('com_agents_voice_filter')}
+            aria-label={localize('com_agents_voice_filter')}
+            className="rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm
+              text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+          />
+          <div
+            ref={listRef}
+            role="listbox"
+            aria-label={localize('com_nav_voice_select')}
+            className="flex max-h-64 flex-col overflow-y-auto"
+          >
+            {filtered.map((v) => {
+              const isCurrent = v === current;
+              const isPlaying = v === playingVoice;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  role="option"
+                  aria-selected={isCurrent}
+                  tabIndex={isCurrent ? 0 : -1}
+                  data-voice-option
+                  onFocus={() => audition(v)}
+                  onMouseEnter={() => audition(v)}
+                  onClick={() => select(v)}
+                  aria-label={v}
+                  className={cn(
+                    'flex items-center justify-between rounded-md px-2.5 py-2 text-left text-sm',
+                    'text-text-primary hover:bg-surface-hover',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+                    isCurrent && 'bg-surface-tertiary',
+                  )}
+                >
+                  <span aria-hidden="true">{v}</span>
+                  <span className="flex items-center gap-1.5" aria-hidden="true">
+                    {isPlaying && <Volume2 className="h-4 w-4 animate-pulse" />}
+                    {isCurrent && <Check className="h-4 w-4" />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {filtered.length === 0 && (
+            <p className="px-2.5 py-2 text-sm text-text-secondary" role="status">
+              {localize('com_agents_voice_no_match')}
+            </p>
+          )}
+          {error && (
+            <span role="alert" aria-live="assertive" className="text-xs text-red-500">
+              {error}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => close(true)}
+            className="self-end rounded-lg px-2.5 py-1.5 text-sm text-text-secondary
+              hover:bg-surface-hover hover:text-text-primary
+              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+          >
+            {localize('com_agents_voice_close')}
+          </button>
+        </div>
+      )}
+
+      {/* ♿ C3: long-form Preview button stays — hear the full audition of the
+           currently selected voice. Keyboard + VoiceOver friendly. */}
+      {current != null && (
         <div className="flex justify-end">
-          <VoicePreviewButton voiceId={voice} disabled={disabled} />
+          <VoicePreviewButton voiceId={current} disabled={disabled} />
         </div>
       )}
     </div>
