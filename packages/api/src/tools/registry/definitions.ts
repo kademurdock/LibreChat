@@ -95,9 +95,9 @@ export const falStudioSchema: ExtendedJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['generate_image', 'generate_video', 'animate_image', 'check_video', 'generate_audio'],
+      enum: ['generate_image', 'generate_video', 'animate_image', 'check_video', 'generate_audio', 'generate_song'],
       description:
-        "'generate_image' = Seedream 4.5 design/photo image (fast, ~$0.04). 'generate_video' = text-to-video clip. 'animate_image' = bring a still image to LIFE as video (Kling image-to-video) — e.g. make a dog photo wag its tail. 'check_video' = poll a video that wasn't finished when generate_video/animate_image returned. 'generate_audio' = Seed Audio 1.0 cinematic audio (dialogue + sound effects + music + ambience in one ~2-min clip), plus TTS, voice cloning, and editing existing audio (extend/inpaint/stitch/swap a line) via audio_urls. Synchronous; ~$0.075/minute.",
+        "'generate_image' = Seedream 4.5 design/photo image (fast, ~$0.04). 'generate_video' = text-to-video clip. 'animate_image' = bring a still image to LIFE as video (Kling image-to-video) — e.g. make a dog photo wag its tail. 'check_video' = poll a video that wasn't finished when generate_video/animate_image returned. 'generate_audio' = Seed Audio 1.0 cinematic audio (dialogue + sound effects + music + ambience in one ~2-min clip), plus TTS, voice cloning, and editing existing audio (extend/inpaint/stitch/swap a line) via audio_urls. Synchronous; ~$0.075/minute. 'generate_song' = full MUSIC with SUNG vocals from a style brief + lyrics (engine 'lyria3_pro' = Google Lyria 3 Pro up to ~3-min songs, default; 'minimax' = MiniMax Music 2.6). Style in prompt, words to sing in lyrics, avoid-list in negative_prompt, instrumental:true for a backing track. ~$0.08-0.15/song.",
     },
     prompt: {
       type: 'string',
@@ -169,6 +169,26 @@ export const falStudioSchema: ExtendedJsonSchema = {
     pitch: {
       type: 'integer',
       description: 'generate_audio only: voice pitch shift in semitones, -12 to 12 (default 0).',
+    },
+    engine: {
+      type: 'string',
+      enum: ['lyria3_pro', 'minimax'],
+      description:
+        "generate_song only: which music engine. 'lyria3_pro' (default) = Google Lyria 3 Pro — up to ~3-minute full songs with sung vocals + timed lyrics, richest quality (~$0.08). 'minimax' = MiniMax Music 2.6 — separate style + lyrics fields with clean [Verse]/[Chorus] structure control (~$0.15).",
+    },
+    lyrics: {
+      type: 'string',
+      description:
+        "generate_song only: the actual words to be SUNG, with structure tags like [Verse]/[Chorus]/[Bridge] and newlines between lines. Paste the Lyrics Box straight from the Lyric agent. Omit for an instrumental, or to let the engine write its own words.",
+    },
+    negative_prompt: {
+      type: 'string',
+      description:
+        "generate_song only (Lyria 3 Pro engine): what to keep OUT of the track — e.g. 'harsh distortion, muddy mix, spoken word'. Maps to the Lyric agent's Negative Tag Box. Ignored by the minimax engine.",
+    },
+    instrumental: {
+      type: 'boolean',
+      description: 'generate_song only: set true for a vocal-free instrumental/backing track (no lyrics sung).',
     },
     request_id: {
       type: 'string',

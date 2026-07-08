@@ -28,6 +28,8 @@ const FAL_MODELS = {
   video_premium: 'fal-ai/veo3.1/fast',
   video_animate: 'fal-ai/kling-video/v3/standard/image-to-video',
   audio: 'bytedance/seed-audio-1.0',
+  song_lyria: 'fal-ai/lyria3/pro',
+  song_minimax: 'fal-ai/minimax-music/v2.6',
 };
 const QUEUE_ALIAS = {
   video_standard: 'fal-ai/kling-video',
@@ -55,12 +57,13 @@ const falJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['generate_image', 'generate_video', 'animate_image', 'check_video', 'generate_audio'],
+      enum: ['generate_image', 'generate_video', 'animate_image', 'check_video', 'generate_audio', 'generate_song'],
       description:
         "'generate_image' = Seedream 4.5 design/photo image (fast, ~$0.04). 'generate_video' = text-to-video clip. " +
         "'animate_image' = bring a still image to LIFE as a video (Kling image-to-video) — e.g. make a dog photo wag its tail. " +
         "'check_video' = poll a video that wasn't finished when generate_video/animate_image returned. " +
-        "'generate_audio' = Seed Audio 1.0 CINEMATIC AUDIO: multi-character dialogue, sound effects, music and ambience in ONE clip (up to ~2 min), plus text-to-speech, voice cloning, and editing existing audio (extend / inpaint / stitch / swap a line) via audio_urls. Returns fast and synchronously with a real audio URL. ~$0.075/minute.",
+        "'generate_audio' = Seed Audio 1.0 CINEMATIC AUDIO: multi-character dialogue, sound effects, music and ambience in ONE clip (up to ~2 min), plus text-to-speech, voice cloning, and editing existing audio (extend / inpaint / stitch / swap a line) via audio_urls. Returns fast and synchronously with a real audio URL. ~$0.075/minute. " +
+        "'generate_song' = full MUSIC with SUNG vocals from a style brief + lyrics. engine 'lyria3_pro' (default) = Google Lyria 3 Pro, up to ~3-min songs; engine 'minimax' = MiniMax Music 2.6. Put the STYLE in prompt, the words to sing in lyrics, things to avoid in negative_prompt, and set instrumental:true for a backing track. Queue job, ~1-2 min. ~$0.08-0.15/song.",
     },
     prompt: {
       type: 'string',
@@ -126,6 +129,26 @@ const falJsonSchema = {
     pitch: {
       type: 'integer',
       description: 'generate_audio only: voice pitch shift in semitones, -12 to 12 (default 0).',
+    },
+    engine: {
+      type: 'string',
+      enum: ['lyria3_pro', 'minimax'],
+      description:
+        "generate_song only: which music engine. 'lyria3_pro' (default) = Google Lyria 3 Pro — up to ~3-minute full songs with sung vocals + timed lyrics, richest quality (~$0.08). 'minimax' = MiniMax Music 2.6 — separate style + lyrics fields with clean [Verse]/[Chorus] structure control (~$0.15).",
+    },
+    lyrics: {
+      type: 'string',
+      description:
+        "generate_song only: the actual words to be SUNG, with structure tags like [Verse]/[Chorus]/[Bridge] and newlines between lines. Paste the Lyrics Box straight from the Lyric agent. Omit for an instrumental, or to let the engine write its own words.",
+    },
+    negative_prompt: {
+      type: 'string',
+      description:
+        "generate_song only (Lyria 3 Pro engine): what to keep OUT of the track — e.g. 'harsh distortion, muddy mix, spoken word'. Maps to the Lyric agent's Negative Tag Box. Ignored by the minimax engine.",
+    },
+    instrumental: {
+      type: 'boolean',
+      description: 'generate_song only: set true for a vocal-free instrumental/backing track (no lyrics sung).',
     },
     request_id: {
       type: 'string',
@@ -212,7 +235,7 @@ class FalAI extends Tool {
         {
           $match: {
             user: oid,
-            service: { $in: ['fal_video', 'fal_image', 'fal_audio'] },
+            service: { $in: ['fal_video', 'fal_image', 'fal_audio', 'fal_song'] },
             createdAt: { $gte: monthStart },
           },
         },
@@ -247,7 +270,8 @@ class FalAI extends Tool {
       if (action === 'animate_image') return await this.animateImage(data);
       if (action === 'check_video') return await this.checkVideo(data);
       if (action === 'generate_audio') return await this.generateAudio(data);
-      return "Unknown action. Use 'generate_image', 'generate_video', 'animate_image', 'check_video', or 'generate_audio'.";
+      if (action === 'generate_song') return await this.generateSong(data);
+      return "Unknown action. Use 'generate_image', 'generate_video', 'animate_image', 'check_video', 'generate_audio', or 'generate_song'.";
     } catch (err) {
       const msg = err?.response?.data ? JSON.stringify(err.response.data).slice(0, 300) : err.message;
       logger.error('[FalAI] error:', msg);
@@ -639,6 +663,131 @@ class FalAI extends Tool {
       `Your piece was longer than one 2-minute clip, so I split it into ${made} part${made > 1 ? 's' : ''} and generated ${made > 1 ? 'them all' : 'it'}:\n\n` +
       `${links.join('\n')}\n\n` +
       `Total ~${totalMM}, about $${totalCost.toFixed(2)}. All saved to your gallery at /my-creations - play them in order, or ask me to stitch them into one track.${more}`
+    );
+  }
+
+  /**
+   * generate_song — full MUSIC with sung vocals from a style brief + lyrics.
+   * Engines: 'lyria3_pro' (Google Lyria 3 Pro, default) and 'minimax'
+   * (MiniMax Music 2.6). Both are fal QUEUE jobs (~60-150s), so this submits
+   * and polls in-call, then returns a playable link. Flat-priced per song;
+   * usage + gallery are logged on SUCCESS only, so there is nothing to refund.
+   */
+  async generateSong(data) {
+    const style = String(data.prompt || '').trim();
+    if (!style) {
+      return 'generate_song needs a prompt describing the STYLE — genre, mood, tempo, instrumentation, and vocal type (e.g. "moody R&B ballad, 70 BPM, warm female vocal, Rhodes and soft drums"). Put the words to sing in "lyrics".';
+    }
+    const engine = data.engine === 'minimax' ? 'minimax' : 'lyria3_pro';
+    const instrumental = data.instrumental === true;
+    const lyrics = typeof data.lyrics === 'string' ? data.lyrics.trim() : '';
+    let model, body, estUSD, modelName, engLabel;
+    if (engine === 'minimax') {
+      model = FAL_MODELS.song_minimax;
+      modelName = 'minimax-music-2.6';
+      engLabel = 'MiniMax Music 2.6';
+      estUSD = 0.15;
+      body = { prompt: style.slice(0, 2000) };
+      if (instrumental) {
+        body.is_instrumental = true;
+      } else if (lyrics) {
+        body.lyrics = lyrics;
+      } else {
+        body.lyrics_optimizer = true;
+      }
+    } else {
+      model = FAL_MODELS.song_lyria;
+      modelName = 'lyria-3-pro';
+      engLabel = 'Lyria 3 Pro';
+      estUSD = 0.08;
+      let p = style;
+      if (!instrumental && lyrics) {
+        p += `\n\nLyrics:\n${lyrics}`;
+      }
+      body = { prompt: p };
+      const neg = [];
+      if (data.negative_prompt) neg.push(String(data.negative_prompt));
+      if (instrumental) neg.push('vocals, singing, spoken word');
+      if (neg.length) body.negative_prompt = neg.join(', ');
+      if (data.image_url) body.image_url = await this.absoluteResign(data.image_url);
+    }
+
+    const blocked = await this.checkBudget(estUSD);
+    if (blocked) return blocked;
+
+    let submit;
+    try {
+      submit = await axios.post(`https://queue.fal.run/${model}`, body, {
+        headers: this.headers(),
+        timeout: 30000,
+      });
+    } catch (e) {
+      const detail = e?.response?.data ? JSON.stringify(e.response.data).slice(0, 300) : e.message;
+      return `fal did not accept the ${engLabel} song job: ${detail}. Try adjusting the style or lyrics.`;
+    }
+    const requestId = submit.data?.request_id;
+    const statusUrl = submit.data?.status_url;
+    const responseUrl = submit.data?.response_url;
+    if (!requestId || !statusUrl || !responseUrl) {
+      return 'fal did not return a song job id. Try again in a moment.';
+    }
+
+    const deadline = Date.now() + 180000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 6000));
+      let st;
+      try {
+        st = await axios.get(statusUrl, { headers: this.headers(), timeout: 15000 });
+      } catch (e) {
+        logger.warn('[FalAI] song poll error:', e.message);
+        continue;
+      }
+      const status = st.data?.status;
+      if (status === 'COMPLETED') {
+        let out;
+        try {
+          out = await axios.get(responseUrl, { headers: this.headers(), timeout: 25000 });
+        } catch (e) {
+          return `The song finished but the result could not be fetched: ${e.message}. Try again.`;
+        }
+        const a = out.data?.audio;
+        const url = (a && a.url) || out.data?.audio_url || (typeof a === 'string' ? a : null);
+        if (!url) {
+          return `The song finished but no audio URL came back. Raw: ${JSON.stringify(out.data).slice(0, 200)}`;
+        }
+        let seconds = Number(a && a.duration) || 0;
+        if (!seconds && typeof out.data?.lyrics === 'string') {
+          const m = out.data.lyrics.match(/duration_secs?:\s*([\d.]+)/i);
+          if (m) seconds = Math.round(parseFloat(m[1]));
+        }
+        const lenStr = seconds
+          ? ` — ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} long`
+          : '';
+        this.logUsage('fal_song', 1, 'songs', estUSD, { engine, model: modelName, requestId });
+        logKadeAsset({
+          userId: this.userId,
+          kind: 'audio',
+          service: 'fal_song',
+          url,
+          prompt: lyrics ? `${style}\n\n[lyrics]\n${lyrics}` : style,
+          model: modelName,
+          costUSD: estUSD,
+          metadata: { engine, seconds, instrumental },
+        }).catch(() => {});
+        return (
+          `[Play the song](${url})\n\n` +
+          `${engLabel} song${lenStr} (~$${estUSD.toFixed(2)}). It plays right here in the chat, ` +
+          "and it's saved to your gallery at /my-creations."
+        );
+      }
+      if (status === 'FAILED') {
+        return `The ${engLabel} song job failed on fal — no charge. Offer to try again or tweak the style/lyrics.`;
+      }
+    }
+    return (
+      `The ${engLabel} song is taking longer than usual to render (request id ${requestId}); no charge was logged. ` +
+      'You cannot follow up on your own, so tell the user warmly to send any message in a minute ' +
+      "(just 'ready?') and re-run the same request — it usually lands the second time."
     );
   }
 
