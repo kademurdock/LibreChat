@@ -40,6 +40,7 @@ import { cn } from '~/utils';
 import { stripVoiceTags } from '~/utils/voiceTags';
 import { stripGameSoundTags, gameSoundSrcsIn, gameTableIdIn } from '~/utils/gameSounds';
 import GameTable from '~/components/Chat/Messages/Content/GameTable';
+import useStreamingCall from './useStreamingCall';
 import store from '~/store';
 
 // Bigger synth units = better prosody (context batching, July 4 2026).
@@ -268,6 +269,16 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // double-tap on the phone button could start TWO overlapping call
   // sessions (two mics, two turn loops = clips stepping on each other).
   const callActiveRef      = useRef(false);
+  // Streaming Call (beta) — July 9 2026, duplex workup Track A. When the
+  // localStorage flag is on, startCall uses the phone bridge's WebSocket
+  // engine (continuous mic, VOICE barge-in, server Deepgram STT, filler,
+  // spoken agent/voice switching) instead of the classic record->upload
+  // turn loop. Engine choice is read AT CALL START (no mid-call flips).
+  const streamingRef       = useRef(false);
+  const streamingEngine    = useStreamingCall();
+  const [streamPref, setStreamPref] = useState<boolean>(() => {
+    try { return localStorage.getItem('kadeStreamingCall') === '1'; } catch { return false; }
+  });
   const conversationIdRef  = useRef<string | null>(null);
   const callTurnsRef       = useRef<Array<{ role: string; text: string }>>([]);
   const callStartedRef     = useRef<string | null>(null);
@@ -910,6 +921,42 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setTranscript('');
     setLiveTable(null);
     setStatus('connecting');
+    let useStreaming = false;
+    try { useStreaming = localStorage.getItem('kadeStreamingCall') === '1' && typeof WebSocket !== 'undefined'; } catch { /* classic */ }
+    if (useStreaming) {
+      // -- Streaming Call (beta): the phone engine over a WebSocket --------
+      // Mic capture, STT, barge-in, and TTS all live server-side (bridge);
+      // this client streams PCM up and schedules WAV clips down. Transcript
+      // is ingested by the bridge (surface 'web') — endCall must NOT also
+      // POST /api/kade/calls/mine or the call would appear twice.
+      streamingRef.current = true;
+      try {
+        await streamingEngine.start({
+          agentId,
+          ctx: getAudioCtx(),
+          analyser: outputAnalyserRef.current,
+          token,
+          handlers: {
+            onStatus: (st) => { if (!abortRef.current) setStatus(st); },
+            onUserCaption: (t) => {
+              if (!abortRef.current) { setTranscript(t); setAiText(''); }
+            },
+            onAgentCaption: (t) => {
+              if (!abortRef.current) setAiText((prev) => (prev ? `${prev} ${t}` : t));
+            },
+            onError: (m) => { if (!abortRef.current) setError(m); },
+            onEnded: (graceful) => {
+              if (abortRef.current || !callActiveRef.current) return;
+              if (!graceful) setError('The call connection dropped. End the call and try again.');
+            },
+          },
+        });
+      } catch (err: any) {
+        console.error('[ConvMode] streaming start error:', err);
+        setError(err?.message || 'Streaming call failed to start. Turn the beta off below to use the classic call.');
+      }
+      return;
+    }
     try {
       // Explicit constraints instead of bare `audio: true` -- echoCancellation
       // in particular matters a lot more on speakerphone (loud, direct
@@ -936,6 +983,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
 
   const endCall = useCallback(() => {
     callActiveRef.current = false;
+    if (streamingRef.current) {
+      streamingRef.current = false;
+      try { streamingEngine.stop(true); } catch { /* ignore */ }
+      callTurnsRef.current = []; // bridge already ingested this transcript
+    }
     try {
       const turns = callTurnsRef.current;
       if (turns && turns.length) {
@@ -981,6 +1033,13 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // that's why the button "didn't work": the current sentence kept playing
   // and, if the stream was still live, the rest of the reply followed it).
   const interruptAI = useCallback(() => {
+    if (streamingRef.current) {
+      // Same effect as talking over her: flush local audio now, tell the
+      // server to kill generation. Status follows the server's events.
+      streamingEngine.barge();
+      setAiText('');
+      return;
+    }
     turnIdRef.current += 1;
     try { void sseReaderRef.current?.cancel(); } catch { /* ignore */ }
     sseReaderRef.current = null;
@@ -1206,9 +1265,31 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
 
       <p className="mt-5 text-xs text-gray-400" aria-hidden="true">
         {status === 'speaking' || status === 'thinking'
-          ? 'Tap amber to interrupt · Red to end call'
+          ? streamingRef.current
+            ? 'Just start talking to interrupt · Red to end call'
+            : 'Tap amber to interrupt · Red to end call'
           : 'Red button ends the call'}
       </p>
+
+      {/* Streaming Call (beta) toggle — takes effect on the NEXT call so an
+          engine can never be swapped out from under a live one. Real button
+          (in the dialog's Tab order for screen readers); state is announced
+          via aria-pressed + the label text itself. */}
+      <button
+        onClick={() => {
+          setStreamPref((prev) => {
+            const next = !prev;
+            try { localStorage.setItem('kadeStreamingCall', next ? '1' : '0'); } catch { /* ignore */ }
+            return next;
+          });
+        }}
+        aria-pressed={streamPref}
+        className="mt-4 rounded-full border border-gray-600 px-4 py-2 text-xs text-gray-300 transition-colors hover:border-gray-400 hover:text-white focus:outline-none focus:ring-2 focus:ring-gray-400"
+      >
+        {streamPref
+          ? 'Streaming call beta: ON — applies to your next call'
+          : 'Streaming call beta: OFF — turn on for instant replies and voice interrupting (next call)'}
+      </button>
     </div>
   );
 }

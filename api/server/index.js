@@ -279,6 +279,7 @@ const startServer = async () => {
   app.use('/api/kade/room', routes.kadeRoom);
   app.use('/api/kade/matchmaker', routes.kadeMatchmaker);
   app.use('/api/kade/calls', routes.kadeCalls);
+  app.use('/api/kade/web-voice', routes.kadeWebVoice);
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);

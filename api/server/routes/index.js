@@ -40,12 +40,14 @@ const kade = require('./kade');
 const kadeRoom = require('./kadeRoom');
 const kadeMatchmaker = require('./kadeMatchmaker');
 const kadeCalls = require('./kadeCalls');
+const kadeWebVoice = require('./kadeWebVoice');
 
 module.exports = {
   kade,
   kadeRoom,
   kadeMatchmaker,
   kadeCalls,
+  kadeWebVoice,
   rum,
   mcp,
   auth,
