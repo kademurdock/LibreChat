@@ -28,6 +28,8 @@ export interface StreamingHandlers {
   onError: (message: string) => void;
   /** Server closed the socket (any reason). Fires once per call. */
   onEnded: (graceful: boolean) => void;
+  /** A game table changed — redraw the GameTable widget for this id. */
+  onTable?: (id: string) => void;
 }
 
 export interface StreamingStartArgs {
@@ -299,6 +301,9 @@ export default function useStreamingCall() {
             break;
           case 'clear':
             flushPlayback();
+            break;
+          case 'table':
+            if (handlers.onTable && m.id) handlers.onTable(String(m.id));
             break;
           case 'error':
             handlers.onError(String(m.message || 'Call error.'));

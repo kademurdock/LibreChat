@@ -945,6 +945,15 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
               if (!abortRef.current) setAiText((prev) => (prev ? `${prev} ${t}` : t));
             },
             onError: (m) => { if (!abortRef.current) setError(m); },
+            onTable: (id) => {
+              // Same widget classic mode draws; every event = one move = one
+              // refetch (seq bump). GameTable is fail-soft, so a table the
+              // signed-in user can't see (bridge games run under the admin
+              // session — the known phone-guest caveat) renders nothing.
+              if (abortRef.current || !id) return;
+              tableSeqRef.current += 1;
+              setLiveTable({ id, seq: tableSeqRef.current });
+            },
             onEnded: (graceful) => {
               if (abortRef.current || !callActiveRef.current) return;
               if (!graceful) setError('The call connection dropped. End the call and try again.');
