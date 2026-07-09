@@ -276,9 +276,6 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // turn loop. Engine choice is read AT CALL START (no mid-call flips).
   const streamingRef       = useRef(false);
   const streamingEngine    = useStreamingCall();
-  const [streamPref, setStreamPref] = useState<boolean>(() => {
-    try { return localStorage.getItem('kadeStreamingCall') === '1'; } catch { return false; }
-  });
   const conversationIdRef  = useRef<string | null>(null);
   const callTurnsRef       = useRef<Array<{ role: string; text: string }>>([]);
   const callStartedRef     = useRef<string | null>(null);
@@ -921,8 +918,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setTranscript('');
     setLiveTable(null);
     setStatus('connecting');
-    let useStreaming = false;
-    try { useStreaming = localStorage.getItem('kadeStreamingCall') === '1' && typeof WebSocket !== 'undefined'; } catch { /* classic */ }
+    // Streaming is the DEFAULT engine now (promoted from beta July 9 2026 —
+    // Kade's device test passed). localStorage kadeStreamingCall='0' is the
+    // silent escape hatch back to the classic engine (debug/emergencies).
+    let useStreaming = typeof WebSocket !== 'undefined';
+    try { if (localStorage.getItem('kadeStreamingCall') === '0') useStreaming = false; } catch { /* stay streaming */ }
     if (useStreaming) {
       // -- Streaming Call (beta): the phone engine over a WebSocket --------
       // Mic capture, STT, barge-in, and TTS all live server-side (bridge);
@@ -951,11 +951,17 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             },
           },
         });
+        return; // streaming call is live
       } catch (err: any) {
-        console.error('[ConvMode] streaming start error:', err);
-        setError(err?.message || 'Streaming call failed to start. Turn the beta off below to use the classic call.');
+        // Ticket/WS/mic trouble: fall back to the classic engine in the SAME
+        // call so the phone button always works. (If the mic itself is
+        // blocked, classic will surface its own clear error below.)
+        console.error('[ConvMode] streaming start failed — falling back to classic:', err);
+        streamingRef.current = false;
+        try { streamingEngine.stop(false); } catch { /* ignore */ }
+        setError('');
+        setStatus('connecting');
       }
-      return;
     }
     try {
       // Explicit constraints instead of bare `audio: true` -- echoCancellation
@@ -1270,26 +1276,6 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             : 'Tap amber to interrupt · Red to end call'
           : 'Red button ends the call'}
       </p>
-
-      {/* Streaming Call (beta) toggle — takes effect on the NEXT call so an
-          engine can never be swapped out from under a live one. Real button
-          (in the dialog's Tab order for screen readers); state is announced
-          via aria-pressed + the label text itself. */}
-      <button
-        onClick={() => {
-          setStreamPref((prev) => {
-            const next = !prev;
-            try { localStorage.setItem('kadeStreamingCall', next ? '1' : '0'); } catch { /* ignore */ }
-            return next;
-          });
-        }}
-        aria-pressed={streamPref}
-        className="mt-4 rounded-full border border-gray-600 px-4 py-2 text-xs text-gray-300 transition-colors hover:border-gray-400 hover:text-white focus:outline-none focus:ring-2 focus:ring-gray-400"
-      >
-        {streamPref
-          ? 'Streaming call beta: ON — applies to your next call'
-          : 'Streaming call beta: OFF — turn on for instant replies and voice interrupting (next call)'}
-      </button>
     </div>
   );
 }
