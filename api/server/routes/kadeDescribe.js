@@ -208,12 +208,9 @@ router.post('/reminder', optionalJwt, express.json(), async (req, res) => {
     }
     const cleanLabel = String(label || 'Appointment from a shared document').trim().slice(0, 160);
     const value = `${cleanLabel} — ${String(when).trim()} (saved from a shared document on /describe)`;
-    const key = (
-      'reminder_' +
-      cleanLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) +
-      '_' +
-      String(when).replace(/[^0-9]/g, '').slice(0, 12)
-    ).slice(0, 64);
+    // MemoryEntry keys allow ONLY lowercase letters + underscores (no digits).
+    const slug = cleanLabel.toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48);
+    const key = ('reminder_' + (slug || 'from_document')).replace(/_+$/g, '');
     const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
     try {
       await createMemory({ userId, key, value, tokenCount, type: 'reminder', dueAt });
