@@ -115,20 +115,23 @@ export const createMemoryTool = ({
   validKeys,
   tokenLimit,
   totalTokens = 0,
+  forceAgentScope = false,
 }: {
   userId: string | ObjectId;
-  /** The persona currently in the conversation, if any. Only writes to `agent_notes` are scoped to it; every other key stays shared. */
+  /** The persona currently in the conversation, if any. Writes with `scope: 'agent'` (or the legacy `agent_notes` key) go to this persona's own bucket; everything else stays shared. */
   agentId?: string;
   setMemory: MemoryMethods['setMemory'];
   validKeys?: string[];
   tokenLimit?: number;
   totalTokens?: number;
+  /** When true (agent-bucket consolidation), EVERY write is scoped to `agentId` regardless of key/scope -- keeps card splits inside the bucket being consolidated. */
+  forceAgentScope?: boolean;
 }): DynamicStructuredTool => {
   const remainingTokens = tokenLimit ? tokenLimit - totalTokens : Infinity;
   const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
 
   return tool(
-    async ({ key, value }) => {
+    async ({ key, value, scope }) => {
       try {
         if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
           logger.warn(
@@ -189,8 +192,11 @@ export const createMemoryTool = ({
           },
         };
 
-        /** Only the agent-scoped key actually scopes to this agent; every other key stays shared (agentId omitted), same as before this feature existed. */
-        const targetAgentId = agentId && key === AGENT_SCOPED_MEMORY_KEY ? agentId : undefined;
+        /** Scope resolution: explicit `scope: 'agent'` (or the legacy `agent_notes` key, or a forced consolidation pass) files this card in the current persona's own bucket; everything else stays shared. */
+        const targetAgentId =
+          agentId && (forceAgentScope || scope === 'agent' || key === AGENT_SCOPED_MEMORY_KEY)
+            ? agentId
+            : undefined;
         const result = await setMemory({ userId, agentId: targetAgentId, key, value, tokenCount });
         if (result.ok) {
           logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
@@ -213,12 +219,18 @@ export const createMemoryTool = ({
           .describe(
             validKeys && validKeys.length > 0
               ? `The key of the memory value. Must be one of: ${validKeys.join(', ')}`
-              : 'The key identifier for this memory',
+              : 'Short snake_case topic name for this memory card (e.g. "dad_health", "concert_crew"). Reuse an existing key to update that card.',
           ),
         value: z
           .string()
           .describe(
             'Value MUST be a complete sentence that fully describes relevant user information.',
+          ),
+        scope: z
+          .enum(['shared', 'agent'])
+          .optional()
+          .describe(
+            'Where this card lives: "shared" = visible to every assistant on the platform (default); "agent" = private to you, the current character, only. Ignored when no character is active.',
           ),
       }),
     },
@@ -233,14 +245,17 @@ const createDeleteMemoryTool = ({
   agentId,
   deleteMemory,
   validKeys,
+  forceAgentScope = false,
 }: {
   userId: string | ObjectId;
   agentId?: string;
   deleteMemory: MemoryMethods['deleteMemory'];
   validKeys?: string[];
+  /** When true (agent-bucket consolidation), deletions always target `agentId`'s bucket. */
+  forceAgentScope?: boolean;
 }) => {
   return tool(
-    async ({ key }) => {
+    async ({ key, scope }) => {
       try {
         if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
           logger.warn(
@@ -258,7 +273,10 @@ const createDeleteMemoryTool = ({
           },
         };
 
-        const targetAgentId = agentId && key === AGENT_SCOPED_MEMORY_KEY ? agentId : undefined;
+        const targetAgentId =
+          agentId && (forceAgentScope || scope === 'agent' || key === AGENT_SCOPED_MEMORY_KEY)
+            ? agentId
+            : undefined;
         const result = await deleteMemory({ userId, agentId: targetAgentId, key });
         if (result.ok) {
           logger.debug(`Memory deleted for key "${key}" for user "${userId}"`);
@@ -282,7 +300,13 @@ const createDeleteMemoryTool = ({
           .describe(
             validKeys && validKeys.length > 0
               ? `The key of the memory to delete. Must be one of: ${validKeys.join(', ')}`
-              : 'The key identifier of the memory to delete',
+              : 'The key identifier of the memory card to delete',
+          ),
+        scope: z
+          .enum(['shared', 'agent'])
+          .optional()
+          .describe(
+            'Which bucket the card lives in: "shared" (default) or "agent" (your own private card). Ignored when no character is active.',
           ),
       }),
     },
@@ -329,6 +353,7 @@ export async function processMemory({
   totalTokens = 0,
   streamId = null,
   user,
+  forceAgentScope = false,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -347,6 +372,8 @@ export async function processMemory({
   llmConfig?: Partial<LLMConfig>;
   streamId?: string | null;
   user?: IUser;
+  /** When true, every write/delete is pinned to `agentId`'s bucket (used by agent-bucket consolidation). */
+  forceAgentScope?: boolean;
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -356,12 +383,14 @@ export async function processMemory({
       setMemory,
       validKeys,
       totalTokens,
+      forceAgentScope,
     });
     const deleteMemoryTool = createDeleteMemoryTool({
       userId,
       agentId,
       validKeys,
       deleteMemory,
+      forceAgentScope,
     });
 
     const currentMemoryTokens = totalTokens;
@@ -574,9 +603,16 @@ export async function createMemoryProcessor({
    * one persona instead of the shared keys. This is a single combined LLM call per
    * turn either way -- no extra per-message cost from adding the second tier.
    */
-  const effectiveValidKeys = agentId
-    ? [...(validKeys ?? []), AGENT_SCOPED_MEMORY_KEY]
-    : validKeys;
+  /**
+   * With a curated validKeys list, an active persona adds exactly one extra option
+   * (the legacy `agent_notes`). With NO validKeys configured (free-form "memory
+   * cards" mode), keys stay unrestricted -- appending here would otherwise
+   * accidentally lock the writer down to `agent_notes` only.
+   */
+  const effectiveValidKeys =
+    agentId && validKeys && validKeys.length > 0
+      ? [...validKeys, AGENT_SCOPED_MEMORY_KEY]
+      : validKeys;
   const finalInstructions =
     instructions || getDefaultInstructions(effectiveValidKeys, tokenLimit, Boolean(agentId));
 
@@ -665,12 +701,13 @@ export async function consolidateMemoryBucket({
 
   const instructions = `You are doing routine housekeeping on your own memory, NOT extracting anything new from a conversation.
 
-Below is everything currently active in the "${scopeLabel}" memory bucket. Your ONLY job:
-1. If entries are near-duplicates or say overlapping things, merge them into one tighter entry with \`set_memory\` on the key you're keeping.
-2. If an entry has become verbose, repetitive, or awkwardly phrased over time, rewrite it more concisely with \`set_memory\` on the same key.
-3. If an entry is fully redundant after a merge, or is clearly obsolete/contradicted by a newer one, remove it with \`delete_memory\`.
+Below is everything currently active in the "${scopeLabel}" memory bucket. The target shape is MEMORY CARDS: each entry covers exactly ONE topic, in one or two plain sentences (aim under ~60 tokens), under a short descriptive snake_case key that names the topic (e.g. "dad_health", "concert_crew", "cat_kasper"). Your jobs, in priority order:
+1. SPLIT: if an entry lumps several unrelated topics together, break it into separate cards -- \`set_memory\` each new topic under its own new key, then \`set_memory\` the original key down to just its remaining topic (or \`delete_memory\` it if nothing is left).
+2. MERGE: if entries are near-duplicates or say overlapping things about the same topic, combine them into ONE card and \`delete_memory\` the leftovers.
+3. TIGHTEN: rewrite verbose, repetitive, or stale-phrased cards more concisely with \`set_memory\` on the same key. Keep the human substance -- what matters and why -- not a log of how it came up.
+4. PRUNE: \`delete_memory\` cards that are obsolete, contradicted by a newer card, or were never really durable (one-off task chatter, moment-only details).
 
-Do NOT invent new facts that are not already present below. Do NOT remove information that is still true just to shorten things -- tighten phrasing, don't erase substance. If everything already looks clean, do nothing and end the turn immediately; most consolidation passes should result in few or zero writes.`;
+Emit ALL of your set_memory/delete_memory calls together in a single response. Do NOT invent facts that are not already present below. Do NOT erase information that is still true just to shorten things -- tighten phrasing, don't erase substance. If everything already looks like clean one-topic cards, do nothing and end the turn immediately.`;
 
   const consolidationRequest = new HumanMessage(
     `Here is everything currently active in the "${scopeLabel}" memory bucket:\n\n${withKeys}\n\nReview it per your instructions.`,
@@ -687,8 +724,10 @@ Do NOT invent new facts that are not already present below. Do NOT remove inform
     memory: withKeys,
     messageId: `consolidation-${Date.now()}`,
     conversationId: `consolidation-${userId}-${resolvedAgentId ?? 'shared'}`,
-    validKeys: resolvedAgentId ? [AGENT_SCOPED_MEMORY_KEY] : undefined,
+    /** Free-form keys in BOTH buckets (memory-cards mode); forceAgentScope pins agent-bucket writes in-bucket so card splits can't leak into shared. */
+    validKeys: undefined,
     instructions,
+    forceAgentScope: Boolean(resolvedAgentId),
     llmConfig,
     tokenLimit,
     totalTokens: totalTokens || 0,

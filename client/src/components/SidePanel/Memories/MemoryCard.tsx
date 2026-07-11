@@ -27,9 +27,14 @@ export default function MemoryCard({ memory, hasUpdateAccess }: MemoryCardProps)
         'hover:bg-surface-secondary',
       )}
     >
-      {/* Row 1: Key + Token count + Actions */}
+      {/* Row 1: Key + bucket label + Token count + Actions */}
       <div className="flex items-center gap-2">
         <span className="truncate text-sm font-semibold text-text-primary">{memory.key}</span>
+        {memory.agentId != null && (
+          <span className="shrink-0 rounded-full border border-border-medium px-1.5 py-0.5 text-xs text-text-secondary">
+            {localize('com_ui_memory_only_agent', { 0: memory.agentName || localize('com_ui_agent') })}
+          </span>
+        )}
         {memory.tokenCount !== undefined && (
           <span className="shrink-0 text-xs text-text-secondary">
             {memory.tokenCount}{' '}

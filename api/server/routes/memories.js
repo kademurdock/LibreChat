@@ -12,7 +12,56 @@ const {
   setMemory,
   getUserKey,
   getUserKeyValues,
+  getAgent,
 } = require('~/models');
+
+/**
+ * The token number that actually matters for a conversation is what one chat can
+ * INJECT: the shared bucket plus (at most) ONE agent's own bucket. Summing every
+ * agent's bucket together would falsely saturate the limit once several personas
+ * keep their own cards. Worst case = shared total + the single largest agent bucket.
+ */
+function computeWorstCaseMemoryTokens(memories) {
+  let sharedTotal = 0;
+  const agentTotals = new Map();
+  for (const memory of memories) {
+    const tokens = memory.tokenCount || 0;
+    if (memory.agentId) {
+      agentTotals.set(memory.agentId, (agentTotals.get(memory.agentId) || 0) + tokens);
+    } else {
+      sharedTotal += tokens;
+    }
+  }
+  const largestAgentBucket = agentTotals.size > 0 ? Math.max(...agentTotals.values()) : 0;
+  return sharedTotal + largestAgentBucket;
+}
+
+/**
+ * Resolves agent ids -> display names so the memory panel can label per-character
+ * cards. Fail-soft: an unknown/deleted agent id just gets no name.
+ */
+async function attachAgentNames(memories) {
+  const ids = [...new Set(memories.map((m) => m.agentId).filter(Boolean))];
+  if (ids.length === 0) {
+    return memories;
+  }
+  const nameById = new Map();
+  await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const agent = await getAgent({ id });
+        if (agent?.name) {
+          nameById.set(id, agent.name);
+        }
+      } catch {
+        /* fail-soft: name stays unset */
+      }
+    }),
+  );
+  return memories.map((m) =>
+    m.agentId ? { ...m, agentName: nameById.get(m.agentId) ?? null } : m,
+  );
+}
 const {
   consolidateMemoryBucket,
   resolveMemoryAgentLLMConfig,
@@ -63,15 +112,13 @@ router.use(requireJwtAuth);
  */
 router.get('/', checkMemoryRead, configMiddleware, async (req, res) => {
   try {
-    const memories = await getAllUserMemories(req.user.id);
+    const memories = await attachAgentNames(await getAllUserMemories(req.user.id));
 
     const sortedMemories = memories.sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
     );
 
-    const totalTokens = memories.reduce((sum, memory) => {
-      return sum + (memory.tokenCount || 0);
-    }, 0);
+    const totalTokens = computeWorstCaseMemoryTokens(memories);
 
     const appConfig = req.config;
     const memoryConfig = appConfig?.memory;
@@ -140,10 +187,11 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
     const tokenLimit = memoryConfig?.tokenLimit;
 
     if (tokenLimit) {
-      const currentTotalTokens = memories.reduce(
-        (sum, memory) => sum + (memory.tokenCount || 0),
-        0,
+      /** Gate on what a conversation can actually inject (shared + this card's own bucket), not the sum of every persona's bucket. */
+      const relevant = memories.filter(
+        (m) => !m.agentId || (scopedAgentId != null && m.agentId === scopedAgentId),
       );
+      const currentTotalTokens = relevant.reduce((sum, m) => sum + (m.tokenCount || 0), 0);
       if (currentTotalTokens + tokenCount > tokenLimit) {
         return res.status(400).json({
           error: `Adding this memory would exceed the token limit of ${tokenLimit}. Current usage: ${currentTotalTokens} tokens.`,

@@ -150,6 +150,10 @@ export type TUserMemory = {
   value: string;
   updated_at: string;
   tokenCount?: number;
+  /** Set when this card lives in one agent's own bucket (Kade-AI two-tier memory). */
+  agentId?: string | null;
+  /** Display name for `agentId`, resolved server-side; null if the agent no longer exists. */
+  agentName?: string | null;
 };
 
 export type MemoriesResponse = {

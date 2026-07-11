@@ -19,23 +19,32 @@ export const useMemoriesQuery = (
   });
 };
 
+export type DeleteMemoryParams = { key: string; agentId?: string | null };
 export const useDeleteMemoryMutation = () => {
   const queryClient = useQueryClient();
-  return useMutation((key: string) => dataService.deleteMemory(key), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.memories]);
+  return useMutation(
+    ({ key, agentId }: DeleteMemoryParams) => dataService.deleteMemory(key, agentId),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.memories]);
+      },
     },
-  });
+  );
 };
 
-export type UpdateMemoryParams = { key: string; value: string; originalKey?: string };
+export type UpdateMemoryParams = {
+  key: string;
+  value: string;
+  originalKey?: string;
+  agentId?: string | null;
+};
 export const useUpdateMemoryMutation = (
   options?: UseMutationOptions<TUserMemory, Error, UpdateMemoryParams>,
 ) => {
   const queryClient = useQueryClient();
   return useMutation(
-    ({ key, value, originalKey }: UpdateMemoryParams) =>
-      dataService.updateMemory(key, value, originalKey),
+    ({ key, value, originalKey, agentId }: UpdateMemoryParams) =>
+      dataService.updateMemory(key, value, originalKey, agentId),
     {
       ...options,
       onSuccess: (...params) => {

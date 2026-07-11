@@ -118,6 +118,7 @@ export default function MemoryEditDialog({
       key: key.trim(),
       value: value.trim(),
       ...(originalKey !== key.trim() && { originalKey }),
+      agentId: memory?.agentId ?? undefined,
     });
   };
 

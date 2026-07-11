@@ -39,7 +39,7 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
   );
 
   const confirmDelete = () => {
-    deleteMemory(memory.key, {
+    deleteMemory({ key: memory.key, agentId: memory.agentId ?? undefined }, {
       onSuccess: () => {
         showToast({ message: localize('com_ui_deleted'), status: 'success' });
         setDeleteOpen(false);

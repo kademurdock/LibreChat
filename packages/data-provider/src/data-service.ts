@@ -1299,16 +1299,22 @@ export const getMemories = (): Promise<q.MemoriesResponse> => {
   return request.get(endpoints.memories());
 };
 
-export const deleteMemory = (key: string): Promise<void> => {
-  return request.delete(endpoints.memory(key));
+export const deleteMemory = (key: string, agentId?: string | null): Promise<void> => {
+  const base = endpoints.memory(key);
+  return request.delete(agentId ? `${base}?agentId=${encodeURIComponent(agentId)}` : base);
 };
 
 export const updateMemory = (
   key: string,
   value: string,
   originalKey?: string,
+  agentId?: string | null,
 ): Promise<q.TUserMemory> => {
-  return request.patch(endpoints.memory(originalKey || key), { key, value });
+  return request.patch(endpoints.memory(originalKey || key), {
+    key,
+    value,
+    ...(agentId ? { agentId } : {}),
+  });
 };
 
 export const updateMemoryPreferences = (preferences: {
