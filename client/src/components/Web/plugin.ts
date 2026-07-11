@@ -1,7 +1,13 @@
 import { visit } from 'unist-util-visit';
 import type { Node } from 'unist';
 import type { Citation, CitationNode } from './types';
-import { SPAN_REGEX, STANDALONE_PATTERN, CLEANUP_REGEX, COMPOSITE_REGEX } from '~/utils/citations';
+import {
+  SPAN_REGEX,
+  STANDALONE_PATTERN,
+  CLEANUP_REGEX,
+  COMPOSITE_REGEX,
+  LITERAL_NBSP_REGEX,
+} from '~/utils/citations';
 
 /**
  * Checks if a standalone marker is truly standalone (not inside a composite block).
@@ -97,6 +103,14 @@ function processTree(tree: Node) {
     const parentNode = parent as CitationNode;
 
     if (typeof textNode.value !== 'string') return;
+
+    // KADE July 11 2026: models sometimes type "\u00A0" literally in prose
+    // (escape-sequence habit from the citation format). Normalize to a real
+    // space before any citation parsing — text nodes only, so code blocks
+    // discussing escapes are untouched.
+    if (textNode.value.indexOf('\\u00') !== -1) {
+      textNode.value = textNode.value.replace(LITERAL_NBSP_REGEX, ' ');
+    }
 
     const originalValue = textNode.value;
     const segments: Array<CitationNode> = [];

@@ -19,7 +19,7 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
 - Highlight: "\\ue203Cited text.\\ue204\\ue202turn0search0"
 - Image: "See photo\\ue202turn0image0."
 
-**CRITICAL:** Output escape sequences EXACTLY as shown. Do NOT substitute with † or other symbols. Place anchors AFTER punctuation. Cite every non-obvious fact/quote. NEVER use markdown links, [1], footnotes, or HTML tags.`.trim();
+**CRITICAL:** Output escape sequences EXACTLY as shown. Do NOT substitute with † or other symbols. Place anchors AFTER punctuation. Cite every non-obvious fact/quote. NEVER use markdown links, [1], footnotes, or HTML tags. These escape sequences are ONLY for citation anchors — never write escape-sequence text (like \\u00a0) anywhere else in your reply; type normal spaces and characters.`.trim();
 }
 
 /** Builds dynamic web search context scoped to the conversation anchor time. */

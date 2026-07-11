@@ -5,6 +5,7 @@ import type { TMessage } from 'librechat-data-provider';
 import {
   SPAN_REGEX,
   CLEANUP_REGEX,
+  LITERAL_NBSP_REGEX,
   COMPOSITE_REGEX,
   STANDALONE_PATTERN,
   INVALID_CITATION_REGEX,
@@ -73,7 +74,7 @@ export default function useCopyToClipboard({
         // Clean up any citation markers before returning
         const cleanedText = messageText
           .replace(INVALID_CITATION_REGEX, '')
-          .replace(CLEANUP_REGEX, '');
+          .replace(CLEANUP_REGEX, '').replace(LITERAL_NBSP_REGEX, ' ');
 
         copy(cleanedText, { format: 'text/plain' });
         copyTimeoutRef.current = setTimeout(() => {
@@ -339,7 +340,7 @@ function processCitations(text: string, searchResults: { [key: string]: SearchRe
 
   // Step 6: Clean up any remaining citation markers
   formattedText = formattedText.replace(INVALID_CITATION_REGEX, '');
-  formattedText = formattedText.replace(CLEANUP_REGEX, '');
+  formattedText = formattedText.replace(CLEANUP_REGEX, '').replace(LITERAL_NBSP_REGEX, ' ');
 
   return {
     formattedText,

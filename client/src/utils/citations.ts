@@ -44,3 +44,12 @@ export const CLEANUP_REGEX =
 /** Matches invalid/orphaned citations (with leading whitespace) for removal */
 export const INVALID_CITATION_REGEX =
   /\s*(?:\\ue202|\ue202)turn\d+(search|news|image|video|ref|file)\d+/g;
+
+/**
+ * KADE July 11 2026: literal escaped non-breaking spaces typed as TEXT by the
+ * model ("\u00A0" appearing verbatim in prose — a habit Hermes 4 picked up
+ * from the citation escape-sequence format; seen live in Kade's chat).
+ * Replace with a plain space at display/announce/copy time. Applied only to
+ * markdown TEXT nodes (and speech/announcement strings), never code blocks.
+ */
+export const LITERAL_NBSP_REGEX = /\\u00a0/gi;

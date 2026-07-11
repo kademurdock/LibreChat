@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { AnnounceOptions } from '~/common';
 import AnnouncerContext from '~/Providers/AnnouncerContext';
-import { INVALID_CITATION_REGEX, CLEANUP_REGEX } from '~/utils/citations';
+import { INVALID_CITATION_REGEX, CLEANUP_REGEX, LITERAL_NBSP_REGEX } from '~/utils/citations';
 import { stripGameSoundTags, stripDeepThinkTag } from '~/utils/gameSounds';
 import { stripVoiceTags } from '~/utils/voiceTags';
 import { useLocalize } from '~/hooks';
@@ -28,6 +28,7 @@ export function scrubAnnouncement(text: string): string {
     .replace(THINKING_BLOCK_RE, '')
     .replace(INVALID_CITATION_REGEX, '')
     .replace(CLEANUP_REGEX, '')
+    .replace(LITERAL_NBSP_REGEX, ' ')
     .replace(PUA_CHARS_RE, '')
     .replace(MD_IMAGE_RE, '$1')
     .replace(MD_LINK_RE, '$1')
