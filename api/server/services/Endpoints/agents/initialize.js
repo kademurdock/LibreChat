@@ -87,7 +87,34 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
     // assignment; new agents get it for free). Deduped so an agent that already
     // lists it doesn't double up. The tool never fires without the user's OK.
     const _tools = Array.isArray(tools) ? tools : [];
-    const withFeedback = _tools.includes('kade_feedback') ? _tools : [..._tools, 'kade_feedback'];
+    // KADE 2026-07-09: some OpenRouter models have NO provider that accepts a
+    // `tools` param AT ALL — sending any tool (including the auto-injected
+    // kade_feedback) makes OpenRouter 404 ("No endpoints found that support
+    // tool use") and the agent fails as a silent EMPTY reply. Third sighting
+    // of this bug class (minimax-m2-her 2026-07-02, Hermes 4 duo 2026-07-09,
+    // confirmed via OpenRouter's /endpoints API: supported_parameters lacks
+    // 'tools' on every host). For models on this list the injection is
+    // skipped and ALL tools are stripped, so the request carries no tools
+    // param and the model can actually answer. Extend via env
+    // KADE_NO_TOOLS_MODELS (comma-separated) without a redeploy of this list.
+    const NO_TOOLS_MODELS = new Set(
+      [
+        'nousresearch/hermes-4-70b',
+        'nousresearch/hermes-4-405b',
+        'nousresearch/hermes-3-llama-3.1-405b',
+        'minimax/minimax-m2-her',
+        ...String(process.env.KADE_NO_TOOLS_MODELS || '')
+          .split(',')
+          .map((m) => m.trim())
+          .filter(Boolean),
+      ].map((m) => m.toLowerCase()),
+    );
+    const toolless = NO_TOOLS_MODELS.has(String(model || '').toLowerCase());
+    const withFeedback = toolless
+      ? []
+      : _tools.includes('kade_feedback')
+        ? _tools
+        : [..._tools, 'kade_feedback'];
     const agent = { id: agentId, tools: withFeedback, provider, model, tool_options };
     try {
       return await loadAgentTools({

@@ -216,6 +216,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // streamed reply carries a [table:id] token; turnSeq keys the refetch so a
   // fresh move redraws the same table. Cleared on close.
   const [liveTable,  setLiveTable]  = useState<{ id: string; seq: number } | null>(null);
+  // FaceTime Lite (July 9 2026, sister's ask): the agent's avatar photo fills
+  // the call orb so the screen feels like a video call. Fail-soft — no
+  // avatar, no fetch, or an error just keeps the classic orb. Decorative
+  // only (aria-hidden with the rest of the visuals).
+  const [avatarUrl,  setAvatarUrl]  = useState<string>('');
   const tableSeqRef = useRef(0);
   const [mediaAvail, setMediaAvail] = useState(false);
   const [error,      setError]      = useState('');
@@ -918,6 +923,19 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setTranscript('');
     setLiveTable(null);
     setStatus('connecting');
+    setAvatarUrl('');
+    if (agentId) {
+      fetch(`/api/agents/${encodeURIComponent(agentId)}`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        credentials: 'include',
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((a) => {
+          const fp = a?.avatar?.filepath;
+          if (fp && !abortRef.current) setAvatarUrl(String(fp));
+        })
+        .catch(() => { /* keep the orb */ });
+    }
     // Streaming is the DEFAULT engine now (promoted from beta July 9 2026 —
     // Kade's device test passed). localStorage kadeStreamingCall='0' is the
     // silent escape hatch back to the classic engine (debug/emergencies).
@@ -1037,6 +1055,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setTranscript('');
     setAiText('');
     setError('');
+    setAvatarUrl('');
     conversationIdRef.current = null;
     parentMessageIdRef.current = NO_PARENT;
   }, [teardownMic, setVoiceCallActive, agentId, token]);
@@ -1201,20 +1220,59 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       <div
         ref={orbRef}
         className={cn(
-          'mb-6 h-28 w-28 rounded-full flex items-center justify-center transition-all duration-300',
-          status === 'listening' ? 'bg-blue-500/20 ring-4 ring-blue-500/40 scale-105 animate-kade-nod' :
-          status === 'thinking'  ? 'bg-amber-500/20 ring-4 ring-amber-500/40' :
-          status === 'speaking'  ? 'bg-green-500/20 ring-4 ring-green-500/40 scale-110' :
-                                   'bg-white/5',
+          'relative mb-6 rounded-full flex items-center justify-center transition-all duration-300',
+          avatarUrl ? 'h-44 w-44' : 'h-28 w-28',
+          status === 'listening' ? 'ring-4 ring-blue-500/40 scale-105 animate-kade-nod' :
+          status === 'thinking'  ? 'ring-4 ring-amber-500/40' :
+          status === 'speaking'  ? 'ring-4 ring-green-500/40 scale-110' : '',
+          avatarUrl
+            ? 'bg-white/5'
+            : status === 'listening' ? 'bg-blue-500/20'
+            : status === 'thinking'  ? 'bg-amber-500/20'
+            : status === 'speaking'  ? 'bg-green-500/20'
+            : 'bg-white/5',
         )}
         aria-hidden="true"
       >
-        {status === 'listening'  && <Mic size={44} className="text-blue-400 animate-pulse" />}
-        {status === 'thinking'   && (
-          <div className="h-7 w-7 rounded-full border-[3px] border-amber-400 border-t-transparent animate-spin" />
+        {avatarUrl ? (
+          <>
+            {/* FaceTime Lite: the character's face IS the orb. The rAF
+                speaking pulse scales this whole container, so the photo
+                breathes with the voice. onError falls back to the orb. */}
+            <img
+              src={avatarUrl}
+              alt=""
+              draggable={false}
+              onError={() => setAvatarUrl('')}
+              className="h-full w-full select-none rounded-full object-cover"
+            />
+            <span
+              className={cn(
+                'absolute -bottom-1 -right-1 flex h-11 w-11 items-center justify-center rounded-full border-2 border-gray-950',
+                status === 'listening' ? 'bg-blue-500/90' :
+                status === 'thinking'  ? 'bg-amber-500/90' :
+                status === 'speaking'  ? 'bg-green-600/90' : 'bg-gray-700/90',
+              )}
+            >
+              {status === 'listening' && <Mic size={20} className="text-white animate-pulse" />}
+              {status === 'thinking' && (
+                <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+              )}
+              {(status === 'speaking' || status === 'idle' || status === 'connecting') && (
+                <Phone size={20} className="text-white" />
+              )}
+            </span>
+          </>
+        ) : (
+          <>
+            {status === 'listening'  && <Mic size={44} className="text-blue-400 animate-pulse" />}
+            {status === 'thinking'   && (
+              <div className="h-7 w-7 rounded-full border-[3px] border-amber-400 border-t-transparent animate-spin" />
+            )}
+            {status === 'speaking'   && <Phone size={44} className="text-green-400" />}
+            {(status === 'idle' || status === 'connecting') && <Phone size={44} className="text-gray-400" />}
+          </>
         )}
-        {status === 'speaking'   && <Phone size={44} className="text-green-400" />}
-        {(status === 'idle' || status === 'connecting') && <Phone size={44} className="text-gray-400" />}
       </div>
 
       {/* Visible status label (decorative — announced via the sr-only region) */}
