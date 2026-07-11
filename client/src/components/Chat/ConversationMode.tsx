@@ -36,6 +36,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Phone, PhoneOff, Mic, StopCircle } from 'lucide-react';
 import { useAuthContext } from '~/hooks';
+import { usePauseGlobalAudio } from '~/hooks/Audio';
 import { cn } from '~/utils';
 import { stripVoiceTags } from '~/utils/voiceTags';
 import { stripGameSoundTags, gameSoundSrcsIn, gameTableIdIn } from '~/utils/gameSounds';
@@ -206,6 +207,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const voice   = useRecoilValue(store.voice);
   const voiceSpeed = useRecoilValue(store.voiceSpeed); // Kade D2d: agent's speaking rate
   const setVoiceCallActive = useSetRecoilState(store.voiceCallActiveState);
+  const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const { token } = useAuthContext();
 
   const [open,       setOpen]       = useState(false);
@@ -904,13 +906,32 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
      * read-aloud clip mid-play, and browser speech synthesis (devices still
      * on engineTTS "browser") — live report from Skylee: taps the phone
      * button and old clips all talk over each other. */
+    /* KADE (July 9 2026 — Skylee's iOS PWA bug): pause() alone was not
+     * enough. On iOS, a per-message clip that was loaded but not finished
+     * keeps its buffered src queued; the moment the call unlocks the audio
+     * system (getAudioCtx below is a fresh user gesture), iOS flushes ALL of
+     * those queued clips at once and they play overlapping on top of the
+     * call. So we now fully NEUTRALIZE every audio surface BEFORE unlocking:
+     * clear the app's global-audio player state, then pause + strip src +
+     * reload each <audio> element so there is physically nothing buffered
+     * left to flush. Elements get a fresh src the next time a message is
+     * played, so this doesn't harm post-call playback. */
+    try { pauseGlobalAudio(); } catch { /* ignore */ }
     try {
       document.querySelectorAll('audio').forEach((el) => {
-        try { (el as HTMLAudioElement).pause(); } catch { /* ignore */ }
+        const a = el as HTMLAudioElement;
+        try {
+          a.pause();
+          a.autoplay = false;
+          try { a.srcObject = null; } catch { /* not a stream */ }
+          a.removeAttribute('src');
+          try { a.currentTime = 0; } catch { /* ignore */ }
+          a.load(); // flush the buffered audio so nothing can auto-flush on unlock
+        } catch { /* ignore */ }
       });
     } catch { /* ignore */ }
     try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
-    getAudioCtx();               // iOS: unlock AudioContext on user gesture
+    getAudioCtx();               // iOS: unlock AudioContext on user gesture (now safe — queue is empty)
     abortRef.current = false;
     conversationIdRef.current = null;
     parentMessageIdRef.current = NO_PARENT;
@@ -1012,7 +1033,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       console.error('[ConvMode] mic permission error:', err);
       setError('Microphone access is blocked. Enable mic permission, then end and start the call again.');
     }
-  }, [getAudioCtx, setupAnalyser, setVoiceCallActive]);
+  }, [getAudioCtx, setupAnalyser, setVoiceCallActive, pauseGlobalAudio]);
 
   const endCall = useCallback(() => {
     callActiveRef.current = false;
