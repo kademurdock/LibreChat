@@ -275,9 +275,10 @@ export const kadePhoneCallSchema: ExtendedJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['place_call', 'check_result'],
+      enum: ['place_call', 'check_result', 'schedule_checkin', 'list_checkins', 'pause_checkin', 'cancel_checkin', 'test_checkin'],
       description:
-        "'place_call' (default) dials a number. 'check_result' fetches the status and transcript of the user's most recent call (or a specific call_sid) so you can report back what was said.",
+        "'place_call' (default) dials a number. 'check_result' fetches the status and transcript of the user's most recent call (or a specific call_sid) so you can report back what was said. " +
+        "The checkin actions manage FAMILY WELLNESS CALLS — recurring companion check-in calls to registered family members: 'schedule_checkin' creates/updates one (who + time required), 'list_checkins' shows the user's schedules, 'pause_checkin' pauses/resumes one, 'cancel_checkin' deletes one, 'test_checkin' places one RIGHT NOW so the user can hear it (use for the first-ever run — the user should experience a test to THEIR OWN number before family gets enrolled).",
     },
     to_number: {
       type: 'string',
@@ -297,6 +298,29 @@ export const kadePhoneCallSchema: ExtendedJsonSchema = {
     call_sid: {
       type: 'string',
       description: 'Optional, for check_result: a specific call SID. Omit for the most recent call.',
+    },
+    who: {
+      type: 'string',
+      description:
+        "For schedule_checkin: the registered family member's NAME as Kade registered it (e.g. 'Skylee', 'Dad'). Check-ins can ONLY go to registered family numbers — the tool lists the registered names if the match fails.",
+    },
+    time: {
+      type: 'string',
+      description:
+        "For schedule_checkin: call time, 24-hour US Central, 'HH:mm' (e.g. '10:30'). Scheduled check-ins only run between 08:00 and 21:00.",
+    },
+    days: {
+      type: 'string',
+      description: "For schedule_checkin: 'daily' (default) or comma-separated day names like 'mon,wed,fri'.",
+    },
+    topics: {
+      type: 'string',
+      description:
+        "For schedule_checkin, optional: what the user wants woven into the calls or listened for (e.g. 'ask about his garden, make sure he's eating, remind him we love him').",
+    },
+    schedule_id: {
+      type: 'string',
+      description: 'For pause_checkin / cancel_checkin / test_checkin: the schedule id from list_checkins or schedule_checkin.',
     },
   },
   required: [],
@@ -728,7 +752,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_phone_call: {
     name: 'kade_phone_call',
     description:
-      "Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user — and afterwards fetch the transcript with ONE action='check_result' call — it waits for the call to finish (up to ~1 min) and returns the transcript. Never call check_result more than once per turn; never dial the same call twice. Costs real money (~1.5 cents/minute, billed to the user's tab), hard-capped at 15 minutes and 10 calls per user per day. ONLY call when the user explicitly asks, ALWAYS confirm the exact number and reason first. When confirming, also tell the user casually that the call will identify them by first name as the requester and that its cost is added to their Feed the Server page. Never call emergency services, never harass anyone, never redial the same number repeatedly. If the user asked you to find something out, checking the result and reporting back IS part of the job. NEVER claim a call was placed or invent a call result — only report what this tool actually returned.",
+      "Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user — and afterwards fetch the transcript with ONE action='check_result' call — it waits for the call to finish (up to ~1 min) and returns the transcript. Never call check_result more than once per turn; never dial the same call twice. Costs real money (~1.5 cents/minute, billed to the user's tab), hard-capped at 15 minutes and 10 calls per user per day. ONLY call when the user explicitly asks, ALWAYS confirm the exact number and reason first. When confirming, also tell the user casually that the call will identify them by first name as the requester and that its cost is added to their Feed the Server page. Never call emergency services, never harass anyone, never redial the same number repeatedly. If the user asked you to find something out, checking the result and reporting back IS part of the job. NEVER claim a call was placed or invent a call result — only report what this tool actually returned. ALSO manages FAMILY WELLNESS CHECK-INS (schedule_checkin / list_checkins / pause_checkin / cancel_checkin / test_checkin): recurring companion calls to REGISTERED family only — this agent makes the call, chats warmly, and a rich summary of how the person seemed comes back to the user as a nudge afterwards. Before switching a schedule on: state the rough cost (about 5-10 cents per call; a daily schedule is a few dollars a month) and get an explicit yes; for a first-ever setup offer test_checkin so the user hears one themselves first. Check-ins run 08:00-21:00 Central only.",
     schema: kadePhoneCallSchema,
     toolType: 'builtin',
   },

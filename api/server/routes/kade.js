@@ -1005,6 +1005,144 @@ router.post('/nudges/test', requireJwtAuth, async (req, res) => {
   }
 });
 
+/**
+ * SERVICE: POST /api/kade/nudges/ingest — secret-guarded (same secret as
+ * /usage-event) so the BRIDGE can hand a wellness-call summary (or any
+ * server-side note) to the nudge engine for a specific user. Delivery rides
+ * the user's own channel prefs; 'wellness' type uses the reminders pref.
+ */
+router.post('/nudges/ingest', async (req, res) => {
+  try {
+    const expected = process.env.KADE_USAGE_EVENT_SECRET;
+    if (!expected || (req.body || {}).secret !== expected) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const { userId, text, type } = req.body || {};
+    if (!userId || !text) {
+      return res.status(400).json({ error: 'userId and text required' });
+    }
+    const channel = await deliverKadeNudge(String(userId), String(text).slice(0, 3000), {
+      type: ['reminder', 'birthday', 'wellness'].includes(type) ? type : 'reminder',
+    });
+    return res.json({ ok: true, channel });
+  } catch (error) {
+    logger.error('[/api/kade/nudges/ingest] error:', error);
+    return res.status(500).json({ error: 'Failed to ingest nudge' });
+  }
+});
+
+/* ----------------------------------------------------------------------------
+ * FAMILY WELLNESS CALLS (July 11 2026): thin JWT-gated proxy onto the bridge's
+ * /wellness store so the Notifications page (and agents via kade_phone_call)
+ * can manage check-in schedules. Non-admins only ever see/touch their own.
+ * -------------------------------------------------------------------------- */
+const BRIDGE_URL = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
+
+function bridgeSecretOk(res) {
+  if (!process.env.BRIDGE_SECRET) {
+    res.status(503).json({ error: 'Bridge is not configured on this server.' });
+    return false;
+  }
+  return true;
+}
+
+router.get('/wellness', requireJwtAuth, async (req, res) => {
+  try {
+    if (!bridgeSecretOk(res)) return;
+    const isAdmin = req.user.role === 'ADMIN';
+    const qs = new URLSearchParams({ secret: process.env.BRIDGE_SECRET });
+    if (!isAdmin || req.query.mine === '1') qs.set('userId', String(req.user.id));
+    const r = await fetch(`${BRIDGE_URL}/wellness?${qs}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const j = await r.json();
+    return res.status(r.status).json(j);
+  } catch (e) {
+    logger.error('[kade/wellness] list failed:', e);
+    return res.status(502).json({ error: 'Could not reach the phone bridge.' });
+  }
+});
+
+/** People available for check-ins (registry names; numbers admin-only). */
+router.get('/wellness/people', requireJwtAuth, async (req, res) => {
+  try {
+    if (!bridgeSecretOk(res)) return;
+    const r = await fetch(`${BRIDGE_URL}/users?secret=${encodeURIComponent(process.env.BRIDGE_SECRET)}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+    const j = await r.json();
+    const isAdmin = req.user.role === 'ADMIN';
+    const people = Object.entries(j || {}).map(([phone, u]) => ({
+      name: (u && u.name) || 'Friend',
+      ...(isAdmin ? { phone } : {}),
+    }));
+    return res.json({ people });
+  } catch (e) {
+    logger.error('[kade/wellness] people failed:', e);
+    return res.status(502).json({ error: 'Could not reach the phone bridge.' });
+  }
+});
+
+router.post('/wellness', requireJwtAuth, async (req, res) => {
+  try {
+    if (!bridgeSecretOk(res)) return;
+    const b = req.body || {};
+    const isAdmin = req.user.role === 'ADMIN';
+    // Ownership: non-admins may only touch their own schedules.
+    if (b.id && !isAdmin) {
+      const check = await fetch(
+        `${BRIDGE_URL}/wellness?secret=${encodeURIComponent(process.env.BRIDGE_SECRET)}&userId=${encodeURIComponent(String(req.user.id))}`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' } },
+      ).then((r) => r.json());
+      if (!(check.schedules || []).some((w) => w.id === b.id)) {
+        return res.status(403).json({ error: 'Not your schedule.' });
+      }
+    }
+    const action = String(b.action || 'save');
+    if (action === 'toggle') {
+      const r = await fetch(`${BRIDGE_URL}/wellness/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+        body: JSON.stringify({ secret: process.env.BRIDGE_SECRET, id: b.id, enabled: b.enabled }),
+      });
+      return res.status(r.status).json(await r.json());
+    }
+    if (action === 'fire') {
+      const r = await fetch(`${BRIDGE_URL}/wellness/fire`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+        body: JSON.stringify({ secret: process.env.BRIDGE_SECRET, id: b.id }),
+      });
+      return res.status(r.status).json(await r.json());
+    }
+    if (action === 'delete') {
+      const r = await fetch(
+        `${BRIDGE_URL}/wellness?secret=${encodeURIComponent(process.env.BRIDGE_SECRET)}&id=${encodeURIComponent(String(b.id || ''))}`,
+        { method: 'DELETE', headers: { 'User-Agent': 'Mozilla/5.0' } },
+      );
+      return res.status(r.status).json(await r.json());
+    }
+    const r = await fetch(`${BRIDGE_URL}/wellness`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      body: JSON.stringify({
+        secret: process.env.BRIDGE_SECRET,
+        id: b.id || undefined,
+        who: b.who,
+        time: b.time,
+        days: b.days,
+        agentId: b.agentId,
+        agentName: b.agentName,
+        topics: b.topics,
+        enabled: b.enabled,
+        enrolledBy: { userId: String(req.user.id), userName: req.user.name || req.user.username || 'a Kade-AI user' },
+      }),
+    });
+    return res.status(r.status).json(await r.json());
+  } catch (e) {
+    logger.error('[kade/wellness] save failed:', e);
+    return res.status(502).json({ error: 'Could not reach the phone bridge.' });
+  }
+});
+
 router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);

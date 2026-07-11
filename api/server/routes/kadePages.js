@@ -808,6 +808,32 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
   </div>
 
   <div class="card">
+    <h2>Family check-in calls</h2>
+    <p class="muted">Companion calls to a registered family member on a schedule you choose &mdash; the character calls them, chats warmly, and a written report of how they're doing comes back to you as a nudge. Each call costs about 5&ndash;10 cents (a daily schedule is a few dollars a month), billed to your Feed the Server tab. Calls run between 8am and 9pm Central. You can also just tell any character, "set up a daily check-in call for Dad at 10."</p>
+    <div id="wellList" aria-live="polite"><p class="muted">Loading&hellip;</p></div>
+    <form id="wellForm" style="margin-top:.8rem;">
+      <h3 style="margin:.4rem 0;">New check-in schedule</h3>
+      <label>Who (registered family)
+        <select id="wWho" required></select>
+      </label>
+      <label style="margin-left:.8rem;">Time (Central)
+        <input type="time" id="wTime" required value="10:00">
+      </label>
+      <fieldset style="border:0;padding:.4rem 0;margin:0;">
+        <legend style="font-weight:600;">Days</legend>
+        <label><input type="radio" name="wDays" value="daily" checked> Every day</label>
+        <label style="margin-left:.7rem;"><input type="radio" name="wDays" value="custom"> Pick days:</label>
+        <span id="wDayBoxes"></span>
+      </fieldset>
+      <label style="display:block;">Anything to weave in or listen for (optional)
+        <input type="text" id="wTopics" maxlength="600" style="width:100%;" placeholder="ask about his garden, make sure he's eating okay">
+      </label>
+      <button class="btn" id="wCreate" type="submit">Create schedule (starts paused until you test it)</button>
+    </form>
+    <p class="muted" id="wellNote">New schedules start PAUSED. Use "Call me as a test" on the schedule to hear exactly what your person will hear, then Resume it.</p>
+  </div>
+
+  <div class="card">
     <h2>Recent nudges</h2>
     <div id="recent" aria-live="polite"><p class="muted">Nothing yet.</p></div>
   </div>
@@ -894,6 +920,72 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
     }catch(e){ /* non-fatal */ }
   }
 
+  /* ---- Family check-in calls (July 11 2026) ---- */
+  var DAYNAMES=['mon','tue','wed','thu','fri','sat','sun'];
+  function wellDayBoxes(){
+    var span=document.getElementById('wDayBoxes');
+    DAYNAMES.forEach(function(d){
+      var l=document.createElement('label'); l.style.marginLeft='.45rem';
+      var c=document.createElement('input'); c.type='checkbox'; c.value=d; c.className='wDayBox';
+      c.addEventListener('change',function(){ document.querySelector('input[name=wDays][value=custom]').checked=true; });
+      l.appendChild(c); l.appendChild(document.createTextNode(' '+d));
+      span.appendChild(l);
+    });
+  }
+  async function wellLoad(){
+    var wrap=document.getElementById('wellList');
+    try{
+      var d=await apiGet('/api/kade/wellness');
+      var rows=d.schedules||[];
+      if(!rows.length){ wrap.innerHTML='<p class="muted">No check-in schedules yet.</p>'; return; }
+      wrap.innerHTML='';
+      rows.forEach(function(w){
+        var div=document.createElement('div');
+        div.style.cssText='padding:.6rem 0;border-bottom:1px solid rgba(128,128,128,.25);';
+        var days=w.days==='daily'?'every day':(Array.isArray(w.days)?w.days.join(', '):String(w.days));
+        var head=document.createElement('p'); head.style.margin='0 0 .3rem';
+        head.innerHTML='<strong>'+esc(w.targetName)+'</strong> &mdash; '+esc(days)+' at '+esc(w.time)+' Central with '+esc(w.agentName)+
+          (w.topics?(' <span class="muted">(topics: '+esc(w.topics)+')</span>'):'')+
+          ' &mdash; <strong>'+(w.enabled?'ACTIVE':'PAUSED')+'</strong>'+
+          (w.lastRun?(' <span class="muted">&middot; last ran '+esc(w.lastRun)+'</span>'):' <span class="muted">&middot; never run yet</span>')+
+          (w.enrolledBy&&w.enrolledBy.userName?(' <span class="muted">&middot; set up by '+esc(w.enrolledBy.userName)+'</span>'):'');
+        div.appendChild(head);
+        function mkBtn(txt,fn){ var b=document.createElement('button'); b.type='button'; b.className='btn'; b.style.cssText='background:#555;margin-right:.5rem;padding:.45rem .8rem;font-size:.9rem;'; b.textContent=txt; b.addEventListener('click',async function(){ b.disabled=true; try{ await fn(); await wellLoad(); }catch(e){ say('Check-in change failed: '+e.message,true); b.disabled=false; } }); return b; }
+        div.appendChild(mkBtn(w.enabled?'Pause':'Resume',function(){ return apiPost('/api/kade/wellness',{action:'toggle',id:w.id,enabled:!w.enabled}); }));
+        div.appendChild(mkBtn('Call now as a test',async function(){ var r=await apiPost('/api/kade/wellness',{action:'fire',id:w.id}); say(r.note||'Test call dialing.'); }));
+        div.appendChild(mkBtn('Delete',function(){ if(!confirm('Delete the check-in schedule for '+w.targetName+'?')) return Promise.resolve(); return apiPost('/api/kade/wellness',{action:'delete',id:w.id}); }));
+        wrap.appendChild(div);
+      });
+    }catch(e){ wrap.innerHTML='<p class="muted">Could not load schedules: '+esc(e.message)+'</p>'; }
+  }
+  async function wellInit(){
+    wellDayBoxes();
+    try{
+      var d=await apiGet('/api/kade/wellness/people');
+      var sel=document.getElementById('wWho');
+      (d.people||[]).forEach(function(pp){ var o=document.createElement('option'); o.value=pp.name; o.textContent=pp.name; sel.appendChild(o); });
+      if(!(d.people||[]).length){ var o=document.createElement('option'); o.textContent='(nobody registered yet — ask Kade)'; o.value=''; sel.appendChild(o); }
+    }catch(e){}
+    document.getElementById('wellForm').addEventListener('submit',async function(ev){
+      ev.preventDefault();
+      var who=document.getElementById('wWho').value;
+      var time=document.getElementById('wTime').value;
+      if(!who||!time){ say('Pick a person and a time first.',true); return; }
+      var days='daily';
+      if(document.querySelector('input[name=wDays][value=custom]').checked){
+        var picked=[].slice.call(document.querySelectorAll('.wDayBox:checked')).map(function(c){return c.value;});
+        if(!picked.length){ say('Pick at least one day (or choose Every day).',true); return; }
+        days=picked.join(',');
+      }
+      try{
+        var r=await apiPost('/api/kade/wellness',{who:who,time:time,days:days,topics:document.getElementById('wTopics').value,enabled:false});
+        say('Schedule created for '+((r.schedule&&r.schedule.targetName)||who)+' — it starts PAUSED. Use "Call now as a test" to hear one, then Resume.');
+        wellLoad();
+      }catch(e){ say('Could not create the schedule: '+e.message,true); }
+    });
+    wellLoad();
+  }
+
   (async function init(){
     TOKEN=await getToken();
     if(!TOKEN){ say('Please sign in on the main site first, then reload this page.', true); return; }
@@ -906,7 +998,7 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
       if(p.birthdayDate && /^\\d{2}-\\d{2}$/.test(p.birthdayDate)){ mSel.value=p.birthdayDate.slice(0,2); dSel.value=p.birthdayDate.slice(3,5); }
       if(p.phone){ document.getElementById('phone').value=p.phone; }
       say('Loaded. '+(d.pushSubscriptions?('Push is on for '+d.pushSubscriptions+' device(s).'):'Push is not set up yet — in-chat delivery works regardless.'));
-      refreshPushState(); loadRecent();
+      refreshPushState(); loadRecent(); wellInit();
     }catch(e){ say('Could not load settings: '+e.message, true); }
   })();
 </script>
