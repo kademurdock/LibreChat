@@ -411,6 +411,20 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
     return res.json({ message: line, nextIdx: room.nextIdx, turnCount: room.turnCount });
   } catch (err) {
     logger.error('[kade/room next] error:', err?.response?.data || err);
+    // KNOWN-GAP fix (July 9 2026): the room calls OpenRouter directly, so the
+    // reframe proxy's friendly out-of-credits rewrite never sees these
+    // failures. Credit/quota errors get their own honest message instead of
+    // a generic "try again" that can't possibly work.
+    const orStatus = err?.response?.status;
+    const orMsg = String(
+      err?.response?.data?.error?.message || err?.response?.data?.message || '',
+    );
+    if (orStatus === 402 || /insufficient|credit|quota|balance/i.test(orMsg)) {
+      return res.status(402).json({
+        message:
+          "The room's AI tab ran dry mid-debate, so this turn couldn't be generated. Let Kade know the server needs feeding — details on the Feed the Server page.",
+      });
+    }
     return res.status(500).json({ message: 'That turn failed — give it another try.' });
   }
 });
