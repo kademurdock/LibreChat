@@ -97,11 +97,16 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
     // skipped and ALL tools are stripped, so the request carries no tools
     // param and the model can actually answer. Extend via env
     // KADE_NO_TOOLS_MODELS (comma-separated) without a redeploy of this list.
+    // NOTE (July 9 2026): the Hermes models MOVED OUT of this list. reframe-
+    // proxy now runs a TOOL SHIM (prompt-injects tool schemas, parses the
+    // model'''s <tool_call> text back into OpenAI tool_calls) for them + Euryale,
+    // so they should RECEIVE tools and let reframe translate — NOT be stripped
+    // here. This list is now only for models with NO tools host AND no shim
+    // (a hard "this model truly cannot call tools" fallback). Keep them in
+    // sync: a model belongs in EITHER reframe TOOL_SHIM_MODELS OR here, never
+    // both (being here strips tools before reframe ever sees them).
     const NO_TOOLS_MODELS = new Set(
       [
-        'nousresearch/hermes-4-70b',
-        'nousresearch/hermes-4-405b',
-        'nousresearch/hermes-3-llama-3.1-405b',
         'minimax/minimax-m2-her',
         ...String(process.env.KADE_NO_TOOLS_MODELS || '')
           .split(',')
