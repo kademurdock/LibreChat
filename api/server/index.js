@@ -40,6 +40,7 @@ const { capabilityContextMiddleware } = require('./middleware/roles/capabilities
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { startMemoryConsolidationSweep } = require('./services/Memory/consolidationSweep');
+const { startNudgeSweep } = require('./services/kadeNudges');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
@@ -126,6 +127,7 @@ const startServer = async () => {
   initializeGitHubSkillSync(appConfig);
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   startMemoryConsolidationSweep({ appConfig, loadAppConfig: getAppConfig });
+  startNudgeSweep();
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
@@ -288,6 +290,7 @@ const startServer = async () => {
    * client JS self-authenticates via /api/auth/refresh then calls /api/kade APIs). */
   app.get('/usage-dashboard', routes.kade.dashboardPage);
   app.get('/feedback-dashboard', routes.kade.feedbackPage);
+  app.get('/notifications', routes.kade.notificationsPage);
   app.get('/feed-the-server', routes.kade.feedPage);
   app.get('/my-creations', routes.kade.creationsPage);
   app.get('/wall-of-fame', routes.kade.wallPage);

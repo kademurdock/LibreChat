@@ -57,6 +57,66 @@ export interface MemoryConfig {
  */
 export const AGENT_SCOPED_MEMORY_KEY = 'agent_notes';
 
+/** ---- Kade nudge engine: US-Central wall-time helpers (family is all Missouri; DST-safe) ---- */
+function chicagoPartsOf(date: Date): { y: number; m: number; d: number; hh: number; mm: number } {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts: Record<string, string> = {};
+  for (const p of fmt.formatToParts(date)) {
+    parts[p.type] = p.value;
+  }
+  return {
+    y: Number(parts.year),
+    m: Number(parts.month),
+    d: Number(parts.day),
+    hh: Number(parts.hour === '24' ? 0 : parts.hour),
+    mm: Number(parts.minute),
+  };
+}
+
+/** "YYYY-MM-DD HH:mm" Central wall time -> UTC Date; null if unparseable. Mirrors api/server/services/kadeNudges.js. */
+export function parseCentralReminderTime(str: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})$/.exec(String(str || '').trim());
+  if (!m) {
+    return null;
+  }
+  const [y, mo, d, hh, mm] = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5])];
+  for (const offsetHours of [5, 6]) {
+    const candidate = new Date(Date.UTC(y, mo - 1, d, hh + offsetHours, mm));
+    const back = chicagoPartsOf(candidate);
+    if (back.y === y && back.m === mo && back.d === d && back.hh === hh && back.mm === mm) {
+      return candidate;
+    }
+  }
+  const fallback = new Date(Date.UTC(y, mo - 1, d, hh + 6, mm));
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
+}
+
+/** Human-readable current Central date/time line injected into the memory-writer's status block. */
+export function centralNowLine(): string {
+  const now = new Date();
+  const dateStr = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(now);
+  const p = chicagoPartsOf(now);
+  const iso = `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')} ${String(p.hh).padStart(2, '0')}:${String(p.mm).padStart(2, '0')}`;
+  return `Current date/time (US Central): ${dateStr} [${iso}]`;
+}
+
 function normalizeMemoryLLMConfig(llmConfig?: Partial<LLMConfig>): SanitizedMemoryLLMConfig {
   const config = { ...(llmConfig ?? {}) } as Record<string, unknown>;
   if (typeof config.apiKey !== 'string') {
@@ -131,7 +191,7 @@ export const createMemoryTool = ({
   const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
 
   return tool(
-    async ({ key, value, scope }) => {
+    async ({ key, value, scope, remind_at, remind_repeat }) => {
       try {
         if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
           logger.warn(
@@ -197,7 +257,31 @@ export const createMemoryTool = ({
           agentId && (forceAgentScope || scope === 'agent' || key === AGENT_SCOPED_MEMORY_KEY)
             ? agentId
             : undefined;
-        const result = await setMemory({ userId, agentId: targetAgentId, key, value, tokenCount });
+        /** Reminder cards (Kade nudge engine): a parseable remind_at upgrades this card to type:'reminder' with a real dueAt the server sweep will fire. */
+        const dueAt = remind_at ? parseCentralReminderTime(remind_at) : null;
+        if (remind_at && !dueAt) {
+          return [
+            `Could not parse remind_at "${remind_at}" — use 24h US Central time formatted exactly as YYYY-MM-DD HH:mm. Memory NOT saved; retry with a valid time.`,
+            undefined,
+          ];
+        }
+        const reminderFields = dueAt
+          ? {
+              type: 'reminder' as const,
+              dueAt,
+              recurrence:
+                remind_repeat && remind_repeat !== 'none' ? remind_repeat : undefined,
+              completed: false,
+            }
+          : {};
+        const result = await setMemory({
+          userId,
+          agentId: targetAgentId,
+          key,
+          value,
+          tokenCount,
+          ...reminderFields,
+        });
         if (result.ok) {
           logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
           return [`Memory set for key "${key}" (${tokenCount} tokens)`, artifact];
@@ -232,6 +316,16 @@ export const createMemoryTool = ({
           .describe(
             'Where this card lives: "shared" = visible to every assistant on the platform (default); "agent" = private to you, the current character, only. Ignored when no character is active.',
           ),
+        remind_at: z
+          .string()
+          .optional()
+          .describe(
+            'ONLY when the user asks to be reminded: the moment the reminder should fire, as 24h US Central time formatted exactly "YYYY-MM-DD HH:mm" (compute it from the current date/time in your status block). The card then becomes a real scheduled reminder.',
+          ),
+        remind_repeat: z
+          .enum(['none', 'daily', 'weekly', 'monthly', 'yearly'])
+          .optional()
+          .describe('How the reminder repeats after it fires. Omit or "none" for one-shot.'),
       }),
     },
   );
@@ -395,11 +489,14 @@ export async function processMemory({
 
     const currentMemoryTokens = totalTokens;
 
-    let memoryStatus = `# Existing memory:\n${memory ?? 'No existing memories'}`;
+    const nowLine = centralNowLine();
+    let memoryStatus = `${nowLine}\n\n# Existing memory:\n${memory ?? 'No existing memories'}`;
 
     if (tokenLimit) {
       const remainingTokens = tokenLimit - currentMemoryTokens;
-      memoryStatus = `# Memory Status:
+      memoryStatus = `${nowLine}
+
+# Memory Status:
 Current memory usage: ${currentMemoryTokens} tokens
 Token limit: ${tokenLimit} tokens
 Remaining capacity: ${remainingTokens} tokens

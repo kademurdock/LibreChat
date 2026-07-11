@@ -758,5 +758,159 @@ const feedbackHtml = `<!doctype html><html lang="en"><head><title>Feedback & Bug
 </script>
 </body></html>`;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml };
+
+const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notifications & Reminders</title>${SHARED_HEAD}</head>
+<body>
+  <a class="back" href="/">&larr; Back to chat</a>
+  <h1>Notifications &amp; Reminders</h1>
+  <p class="muted">Everything here is opt-in and off by default (except in-chat reminders, which are free and silent). Say "remind me to take my meds at 9" to any character and it becomes a real reminder. You pick how each kind of nudge reaches you.</p>
+  <div id="status" class="status" role="status">Loading your settings&hellip;</div>
+
+  <div class="card">
+    <h2>Push notifications on this device</h2>
+    <p>Real notifications on your phone or computer, even with the site closed. On iPhone this only works from the installed app &mdash; Share button, then "Add to Home Screen" &mdash; and iOS 16.4 or newer.</p>
+    <p id="push-state" class="muted">Checking&hellip;</p>
+    <button id="btn-push" class="btn" type="button">Turn on push for this device</button>
+    <button id="btn-push-off" class="btn" type="button" style="background:#555" hidden>Turn push off everywhere</button>
+  </div>
+
+  <div class="card">
+    <h2>How should each nudge reach you?</h2>
+    <form id="prefs-form">
+      <fieldset style="border:1px solid #8884;border-radius:8px;margin:.6rem 0;padding:.6rem">
+        <legend><strong>Reminders</strong> (things you asked a character to remind you about)</legend>
+        <label style="display:block;margin:.25rem 0"><input type="radio" name="reminders" value="chat"> In chat &mdash; your next conversation opens with it (free, silent)</label>
+        <label style="display:block;margin:.25rem 0"><input type="radio" name="reminders" value="push"> Push notification to my devices (free)</label>
+        <label style="display:block;margin:.25rem 0"><input type="radio" name="reminders" value="call"> Phone call &mdash; a character calls and tells me out loud</label>
+        <label style="display:block;margin:.25rem 0"><input type="radio" name="reminders" value="off"> Off &mdash; never remind me</label>
+      </fieldset>
+      <fieldset style="border:1px solid #8884;border-radius:8px;margin:.6rem 0;padding:.6rem">
+        <legend><strong>Birthday</strong> (a happy-birthday nudge once a year, around 9am)</legend>
+        <label style="display:block;margin:.25rem 0"><input type="radio" name="birthday" value="off"> Off</label>
+        <label style="display:block;margin:.25rem 0"><input type="radio" name="birthday" value="chat"> In chat</label>
+        <label style="display:block;margin:.25rem 0"><input type="radio" name="birthday" value="push"> Push notification</label>
+        <label style="display:block;margin:.25rem 0"><input type="radio" name="birthday" value="call"> Phone call</label>
+        <div style="margin-top:.5rem">
+          <label for="bday-month">My birthday: month</label>
+          <select id="bday-month"><option value="">--</option></select>
+          <label for="bday-day">day</label>
+          <select id="bday-day"><option value="">--</option></select>
+        </div>
+      </fieldset>
+      <div style="margin:.6rem 0">
+        <label for="phone">Phone number for the call option (10 digits, US):</label>
+        <input id="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="4175551234" style="padding:.5rem;border-radius:6px;border:1px solid #8886;max-width:14rem">
+        <p class="muted">Calls cost the site a few pennies each; push and in-chat are free. Calls announce themselves as AI, like every Kade-AI call.</p>
+      </div>
+      <button class="btn" id="btn-save" type="submit">Save my choices</button>
+      <button class="btn" id="btn-test" type="button" style="background:#555">Send me a test nudge</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Recent nudges</h2>
+    <div id="recent" aria-live="polite"><p class="muted">Nothing yet.</p></div>
+  </div>
+  <footer class="muted">Reminders live as memory cards too &mdash; you can see and delete them in any chat's side panel under Memories.</footer>
+<script>
+  var TOKEN=null, CFG=null;
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  async function getToken(){ try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include'}); if(!r.ok) return null; var j=await r.json(); return j&&j.token||null; }catch(e){ return null; } }
+  async function apiGet(p){ var r=await fetch(p,{headers:{Authorization:'Bearer '+TOKEN}}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+  async function apiPost(p,body){ var r=await fetch(p,{method:'POST',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify(body||{})}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+  function say(msg, err){ var el=document.getElementById('status'); el.textContent=msg; el.className='status'+(err?' err':''); }
+  function b64ToU8(base64){ var pad='='.repeat((4-base64.length%4)%4); var b=(base64+pad).replace(/-/g,'+').replace(/_/g,'/'); var raw=atob(b); var arr=new Uint8Array(raw.length); for(var i=0;i<raw.length;i++){arr[i]=raw.charCodeAt(i);} return arr; }
+
+  var mSel=document.getElementById('bday-month'), dSel=document.getElementById('bday-day');
+  ['January','February','March','April','May','June','July','August','September','October','November','December'].forEach(function(n,i){ var o=document.createElement('option'); o.value=String(i+1).padStart(2,'0'); o.textContent=n; mSel.appendChild(o); });
+  for(var i=1;i<=31;i++){ var o=document.createElement('option'); o.value=String(i).padStart(2,'0'); o.textContent=i; dSel.appendChild(o); }
+
+  async function refreshPushState(){
+    var stateEl=document.getElementById('push-state'), on=document.getElementById('btn-push'), off=document.getElementById('btn-push-off');
+    if(!('serviceWorker' in navigator) || !('PushManager' in window)){
+      stateEl.textContent='This browser cannot do push. On iPhone: add Kade-AI to your Home Screen from Safari first, then open it from there.';
+      on.disabled=true; return;
+    }
+    if(!CFG || !CFG.pushConfigured){ stateEl.textContent='Push is not switched on server-side yet.'; on.disabled=true; return; }
+    try{
+      var reg=await navigator.serviceWorker.ready;
+      var sub=await reg.pushManager.getSubscription();
+      if(sub){ stateEl.textContent='Push is ON for this device.'; off.hidden=false; }
+      else { stateEl.textContent='Push is not set up on this device yet.'; }
+    }catch(e){ stateEl.textContent='Could not check push state: '+e.message; }
+  }
+
+  document.getElementById('btn-push').addEventListener('click', async function(){
+    try{
+      say('Asking this device for permission…');
+      var perm=await Notification.requestPermission();
+      if(perm!=='granted'){ say('Permission was not granted. On iPhone, make sure you opened the Home Screen app, not Safari.', true); return; }
+      var reg=await navigator.serviceWorker.ready;
+      var sub=await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey: b64ToU8(CFG.vapidPublicKey) });
+      await apiPost('/api/kade/nudges/subscribe',{subscription: sub.toJSON()});
+      say('Push is on for this device. Send yourself a test nudge to hear it land.');
+      refreshPushState();
+    }catch(e){ say('Could not turn on push: '+e.message, true); }
+  });
+  document.getElementById('btn-push-off').addEventListener('click', async function(){
+    try{
+      var reg=await navigator.serviceWorker.ready;
+      var sub=await reg.pushManager.getSubscription();
+      if(sub){ await sub.unsubscribe(); }
+      await apiPost('/api/kade/nudges/unsubscribe',{});
+      say('Push is off everywhere for your account.');
+      refreshPushState();
+    }catch(e){ say('Could not turn push off: '+e.message, true); }
+  });
+
+  document.getElementById('prefs-form').addEventListener('submit', async function(ev){
+    ev.preventDefault();
+    try{
+      var rem=(document.querySelector('input[name=reminders]:checked')||{}).value||'chat';
+      var bd=(document.querySelector('input[name=birthday]:checked')||{}).value||'off';
+      var bdate=(mSel.value&&dSel.value)?(mSel.value+'-'+dSel.value):'';
+      var phone=document.getElementById('phone').value||'';
+      await apiPost('/api/kade/nudges/prefs',{reminders:rem,birthday:bd,birthdayDate:bdate,phone:phone});
+      say('Saved. Nudges will use these choices from now on.');
+    }catch(e){ say('Could not save: '+e.message, true); }
+  });
+  document.getElementById('btn-test').addEventListener('click', async function(){
+    try{ say('Sending a test nudge…'); var r=await apiPost('/api/kade/nudges/test',{}); say('Test sent via the "'+r.channel+'" channel.'+(r.channel==='chat'?' Open any chat and the character will pass it along.':'')); loadRecent(); }
+    catch(e){ say('Test failed: '+e.message, true); }
+  });
+
+  async function loadRecent(){
+    try{
+      var d=await apiGet('/api/kade/nudges/prefs');
+      var wrap=document.getElementById('recent');
+      if(!d.recent || !d.recent.length){ wrap.innerHTML='<p class="muted">Nothing yet.</p>'; return; }
+      wrap.innerHTML='';
+      d.recent.forEach(function(n){
+        var p=document.createElement('p');
+        var when=new Date(n.createdAt).toLocaleString('en-US');
+        p.innerHTML='<strong>'+esc(n.type)+'</strong> via '+esc(n.channel)+(n.deliveredAt?'':' (waiting for your next chat)')+' &mdash; '+esc(n.text)+' <span class="muted">('+esc(when)+')</span>';
+        wrap.appendChild(p);
+      });
+    }catch(e){ /* non-fatal */ }
+  }
+
+  (async function init(){
+    TOKEN=await getToken();
+    if(!TOKEN){ say('Please sign in on the main site first, then reload this page.', true); return; }
+    try{
+      CFG=await apiGet('/api/kade/nudges/config');
+      var d=await apiGet('/api/kade/nudges/prefs');
+      var p=d.prefs||{};
+      var remEl=document.querySelector('input[name=reminders][value='+(p.reminders||'chat')+']'); if(remEl){ remEl.checked=true; }
+      var bdEl=document.querySelector('input[name=birthday][value='+(p.birthday||'off')+']'); if(bdEl){ bdEl.checked=true; }
+      if(p.birthdayDate && /^\\d{2}-\\d{2}$/.test(p.birthdayDate)){ mSel.value=p.birthdayDate.slice(0,2); dSel.value=p.birthdayDate.slice(3,5); }
+      if(p.phone){ document.getElementById('phone').value=p.phone; }
+      say('Loaded. '+(d.pushSubscriptions?('Push is on for '+d.pushSubscriptions+' device(s).'):'Push is not set up yet — in-chat delivery works regardless.'));
+      refreshPushState(); loadRecent();
+    }catch(e){ say('Could not load settings: '+e.message, true); }
+  })();
+</script>
+</body></html>`;
+
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml };
 

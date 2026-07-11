@@ -16,6 +16,7 @@ import {
   Landmark,
   MessagesSquare,
   PhoneCall,
+  BellRing,
   Trophy,
   Keyboard,
   LifeBuoy,
@@ -185,6 +186,14 @@ function ExploreSubmenu({ isAdmin, isChild }: { isAdmin: boolean; isChild: boole
         >
           <PhoneCall className="icon-md" aria-hidden="true" />
           Call History
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={go('/notifications')}
+          className="select-item text-sm"
+          aria-label="Notifications and Reminders: opt into birthday nudges and reminders, and choose whether they arrive in chat, as push notifications, or by phone call"
+        >
+          <BellRing className="icon-md" aria-hidden="true" />
+          Notifications &amp; Reminders
         </Menu.MenuItem>
         <Menu.MenuItem
           onClick={go('/feed-the-server')}

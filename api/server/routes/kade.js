@@ -757,6 +757,7 @@ const DASH_HTML = require('./kadePages').dashboardHtml;
 const CREATIONS_HTML = require('./kadePages').creationsHtml;
 const WALL_HTML = require('./kadePages').wallHtml;
 const GAMEROOM_HTML = require('./kadePages').gameRoomHtml;
+const NOTIFICATIONS_HTML = require('./kadePages').notificationsHtml;
 const FEEDBACK_HTML = require('./kadePages').feedbackHtml;
 const sendHtml = (html) => (req, res) => res.type('html').send(html);
 
@@ -903,12 +904,114 @@ router.post('/add-credits', requireJwtAuth, requireAdminAccess, async (req, res)
   }
 });
 
+/** ---- KADE NUDGE ENGINE (July 11 2026): push subscriptions, prefs, test ---- */
+const {
+  isPushConfigured,
+  deliverNudge: deliverKadeNudge,
+} = require('~/server/services/kadeNudges');
+const { KadePushSub, KadeNudgePref, KadePendingNudge, CHANNELS } = require('~/models/kadeNudge');
+
+router.get('/nudges/config', requireJwtAuth, async (req, res) => {
+  res.json({
+    pushConfigured: isPushConfigured(),
+    vapidPublicKey: process.env.KADE_VAPID_PUBLIC_KEY || null,
+  });
+});
+
+router.get('/nudges/prefs', requireJwtAuth, async (req, res) => {
+  try {
+    const [prefs, subCount, recent] = await Promise.all([
+      KadeNudgePref.findOne({ userId: req.user.id }).lean(),
+      KadePushSub.countDocuments({ userId: req.user.id }),
+      KadePendingNudge.find({ userId: req.user.id }).sort({ createdAt: -1 }).limit(15).lean(),
+    ]);
+    res.json({
+      prefs: prefs || { reminders: 'chat', birthday: 'off', birthdayDate: '', phone: '' },
+      pushSubscriptions: subCount,
+      recent,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/nudges/prefs', requireJwtAuth, async (req, res) => {
+  try {
+    const { reminders, birthday, birthdayDate, phone } = req.body || {};
+    const update = {};
+    if (CHANNELS.includes(reminders)) {
+      update.reminders = reminders;
+    }
+    if (CHANNELS.includes(birthday)) {
+      update.birthday = birthday;
+    }
+    if (typeof birthdayDate === 'string' && (/^\d{2}-\d{2}$/.test(birthdayDate) || birthdayDate === '')) {
+      update.birthdayDate = birthdayDate;
+    }
+    if (typeof phone === 'string') {
+      const digits = phone.replace(/\D/g, '').replace(/^1/, '');
+      update.phone = digits.length === 10 ? digits : '';
+    }
+    const prefs = await KadeNudgePref.findOneAndUpdate(
+      { userId: req.user.id },
+      { $set: update },
+      { new: true, upsert: true },
+    ).lean();
+    res.json({ ok: true, prefs });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/nudges/subscribe', requireJwtAuth, async (req, res) => {
+  try {
+    const { subscription } = req.body || {};
+    if (!subscription || typeof subscription.endpoint !== 'string') {
+      return res.status(400).json({ error: 'subscription object with endpoint required' });
+    }
+    await KadePushSub.findOneAndUpdate(
+      { userId: req.user.id, endpoint: subscription.endpoint },
+      { $set: { subscription, userAgent: String(req.headers['user-agent'] || '').slice(0, 200) } },
+      { upsert: true },
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/nudges/unsubscribe', requireJwtAuth, async (req, res) => {
+  try {
+    const { endpoint } = req.body || {};
+    const r = await KadePushSub.deleteMany(
+      endpoint ? { userId: req.user.id, endpoint } : { userId: req.user.id },
+    );
+    res.json({ ok: true, removed: r.deletedCount });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/nudges/test', requireJwtAuth, async (req, res) => {
+  try {
+    const channel = await deliverKadeNudge(
+      req.user.id,
+      'Test nudge from Kade-AI — if you can read this, nudges are working for you.',
+      { type: 'reminder', userName: req.user.name || req.user.username || '' },
+    );
+    res.json({ ok: true, channel });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);
 router.wallPage = sendHtml(WALL_HTML);
 router.gameRoomPage = sendHtml(GAMEROOM_HTML);
 router.feedbackPage = sendHtml(FEEDBACK_HTML);
+router.notificationsPage = sendHtml(NOTIFICATIONS_HTML);
 // Also reachable under the API namespace:
 router.get('/feed', router.feedPage);
 router.get('/dashboard', router.dashboardPage);

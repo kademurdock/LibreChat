@@ -83,6 +83,13 @@ export default defineConfig(({ command }) => ({
           fileName: 'sw-heal.js',
           source: fs.readFileSync(path.resolve(__dirname, 'sw/heal.js'), 'utf8'),
         });
+        /* KADE: push handlers for the nudge engine ride into the generated
+         * service worker the same way heal does. */
+        this.emitFile({
+          type: 'asset',
+          fileName: 'sw-push.js',
+          source: fs.readFileSync(path.resolve(__dirname, 'sw/push.js'), 'utf8'),
+        });
       },
     },
     VitePWA({
@@ -107,6 +114,7 @@ export default defineConfig(({ command }) => ({
           '**/*.map',
           'index.html',
           'sw-heal.js',
+          'sw-push.js',
           'assets/rum.*.js',
           'assets/locale-*.js',
           'assets/query-devtools*.js',
@@ -117,7 +125,7 @@ export default defineConfig(({ command }) => ({
         /** Reloads window clients that cannot answer a ping after activation —
          * pages stuck on a previous build's purged precache (stale index.html)
          * have no working code of their own to recover with. */
-        importScripts: ['sw-heal.js'],
+        importScripts: ['sw-heal.js', 'sw-push.js'],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => /\/assets\/locale-[^/]+\.js$/.test(url.pathname),

@@ -518,9 +518,25 @@ class AgentClient extends BaseClient {
 
     /** Memory context (user preferences/memories) */
     const withoutKeys = await this.useMemory();
-    const memoryContext = withoutKeys
+    let memoryContext = withoutKeys
       ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
       : undefined;
+
+    /** KADE NUDGE ENGINE: pending 'chat'-channel nudges ride into this turn's
+     * context and get relayed naturally by the character (reminders the user
+     * asked for, birthday wishes, etc.). Marked delivered on pickup. Fail-soft:
+     * a nudge-store hiccup must never break a chat turn. */
+    try {
+      const { takePendingChatNudges } = require('~/server/services/kadeNudges');
+      const pendingNudges = await takePendingChatNudges(this.options.req.user.id);
+      if (pendingNudges.length > 0) {
+        const nudgeLines = pendingNudges.map((n) => `- ${n.text}`).join('\n');
+        const nudgeBlock = `# Waiting nudges for this user\nDeliver these naturally near the START of your reply (in character, briefly — do not read them like a list robot):\n${nudgeLines}`;
+        memoryContext = memoryContext ? `${memoryContext}\n\n${nudgeBlock}` : nudgeBlock;
+      }
+    } catch (nudgeError) {
+      logger.warn('[AgentClient] pending-nudge pickup failed (non-fatal):', nudgeError.message);
+    }
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
