@@ -912,5 +912,275 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
 </script>
 </body></html>`;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml };
+
+/* ---------------------------------------------------------------------------
+ * /describe — SHARE-TO-DESCRIBE (July 11 2026). Blind-first: big Play button,
+ * aria-live status, auto-read attempt, reminder offers for detected dates,
+ * in-page picker, and the iPhone share-sheet Shortcut setup (iOS Safari has
+ * no Web Share Target; Android installed PWAs share straight in).
+ * ------------------------------------------------------------------------- */
+const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — Kade-AI</title>${SHARED_HEAD}
+<style>
+  .playbtn { font-size:1.35rem; font-weight:700; padding:1rem 2.2rem; border-radius:14px;
+    border:0; background:#2f6fed; color:#fff; cursor:pointer; }
+  .playbtn:focus-visible, button:focus-visible, .pickbtn:focus-visible { outline:4px solid #ffbf47; outline-offset:3px; }
+  button.small { font-size:1rem; padding:.6rem 1.1rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; cursor:pointer; }
+  @media (prefers-color-scheme: dark){ button.small{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
+  .pickbtn { display:inline-block; font-size:1.1rem; font-weight:700; padding:.9rem 1.6rem; border-radius:12px;
+    background:#2f8f5b; color:#fff; cursor:pointer; }
+  #descText { font-size:1.12rem; }
+  .datebtn { display:block; width:100%; text-align:left; margin:.4rem 0; font-size:1rem;
+    padding:.7rem 1rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; cursor:pointer; }
+  @media (prefers-color-scheme: dark){ .datebtn{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
+  code.tok { user-select:all; word-break:break-all; display:block; padding:.5rem; background:#eef1f4; border-radius:8px; }
+  @media (prefers-color-scheme: dark){ code.tok{ background:#24272f; } }
+</style>
+</head><body>
+<a class="back" href="/">&larr; Back to Kade-AI</a>
+<h1>Describe</h1>
+<p class="muted">Share or pick a photo, video, PDF, Word file, or text file — I will describe it or read it to you.</p>
+<div id="status" class="status" role="status" aria-live="polite">Loading&hellip;</div>
+<div id="controls" style="display:none; margin:1rem 0;">
+  <button id="playBtn" class="playbtn" type="button">Play</button>
+  <button id="stopBtn" class="small" type="button" style="margin-left:.6rem;">Stop</button>
+  <label style="margin-left:.9rem;">Speed
+    <select id="speed" aria-label="Reading speed">
+      <option value="0.9">Slower</option>
+      <option value="1" selected>Normal</option>
+      <option value="1.2">Faster</option>
+      <option value="1.4">Fastest</option>
+    </select>
+  </label>
+</div>
+<section id="resultSec" aria-label="Description" style="display:none;" class="card">
+  <h2 id="resultTitle">Description</h2>
+  <div id="descText"></div>
+</section>
+<section id="datesSec" aria-label="Dates found in this document" style="display:none;" class="card">
+  <h2>Dates I spotted</h2>
+  <p class="muted">Want me to remind you? Each button saves a reminder card — it will nudge you the way you chose on the Notifications page.</p>
+  <div id="dateBtns"></div>
+</section>
+<section class="card" aria-label="Describe something">
+  <h2>Describe another</h2>
+  <label class="pickbtn" for="pick">Choose a photo or document</label>
+  <input type="file" id="pick" accept="image/*,video/*,application/pdf,.pdf,.docx,.txt,.md,.csv,text/plain" style="position:absolute;width:1px;height:1px;opacity:0;">
+</section>
+<section class="card" aria-label="Set up sharing from your phone">
+  <h2>Share straight from your phone</h2>
+  <p><strong>Android:</strong> install Kade-AI (Add to Home Screen in Chrome) and "Kade-AI" appears right in the share menu for photos and files — nothing else to set up.</p>
+  <details>
+    <summary style="font-weight:700; cursor:pointer;">iPhone: add "Describe with Kade-AI" to your share sheet (one-time setup)</summary>
+    <div id="iosSetup"><p class="muted">Sign in to see your personal setup link.</p></div>
+  </details>
+</section>
+<footer class="muted">Descriptions cost about a tenth of a cent each — they land on your Feed the Server page like everything else.</footer>
+<script>
+(function(){
+  var TOKEN=null, shareId=null, result=null;
+  var qs=new URLSearchParams(location.search);
+  shareId=qs.get('id');
+  var statusEl=document.getElementById('status');
+  function setStatus(t,isErr){ statusEl.textContent=t; statusEl.className='status'+(isErr?' err':''); }
+
+  /* ---------- speech: platform TTS when signed in, device voice otherwise ---------- */
+  var chunks=[], qi=0, playing=false, paused=false, curAudio=null, blobCache={};
+  function chunkText(s){
+    var out=[], cur='';
+    var parts=String(s).replace(/\s+/g,' ').split(/(?<=[.!?])\s+/);
+    for(var i=0;i<parts.length;i++){
+      if((cur+' '+parts[i]).length>600){ if(cur)out.push(cur); cur=parts[i]; }
+      else cur=cur?cur+' '+parts[i]:parts[i];
+    }
+    if(cur)out.push(cur);
+    return out.filter(function(x){return x.trim();});
+  }
+  function speed(){ return Number(document.getElementById('speed').value)||1; }
+  async function fetchClip(i){
+    if(blobCache[i])return blobCache[i];
+    var fd=new FormData();
+    fd.append('input',chunks[i]);
+    fd.append('speed',String(speed()));
+    var r=await fetch('/api/files/speech/tts/manual',{method:'POST',headers:{Authorization:'Bearer '+TOKEN},body:fd});
+    if(!r.ok)throw new Error('tts '+r.status);
+    var b=await r.blob();
+    blobCache[i]=URL.createObjectURL(b);
+    return blobCache[i];
+  }
+  function stopAll(){
+    playing=false; paused=false; qi=0;
+    if(curAudio){ curAudio.pause(); curAudio=null; }
+    try{ speechSynthesis.cancel(); }catch(e){}
+    document.getElementById('playBtn').textContent='Play';
+  }
+  async function playFrom(i){
+    if(!chunks.length)return;
+    playing=true; paused=false;
+    document.getElementById('playBtn').textContent='Pause';
+    if(TOKEN){
+      for(qi=i; qi<chunks.length && playing; ){
+        var idx=qi;
+        try{
+          var url=await fetchClip(idx);
+          if(!playing || qi!==idx)break;
+          await new Promise(function(res,rej){
+            curAudio=new Audio(url);
+            curAudio.onended=function(){res();};
+            curAudio.onerror=function(){rej(new Error('audio'));};
+            curAudio.play().then(function(){ if(chunks[idx+1])fetchClip(idx+1).catch(function(){}); }).catch(rej);
+          });
+          if(!playing)break;
+          qi++;
+        }catch(e){ TOKEN=null; break; } /* fall through to device voice */
+      }
+      if(playing && qi>=chunks.length){ stopAll(); setStatus('Done reading.'); return; }
+      if(!TOKEN && playing){ playFrom(qi); return; }
+    } else {
+      var remaining=chunks.slice(i).join(' ');
+      var u=new SpeechSynthesisUtterance(remaining);
+      u.rate=speed();
+      u.onend=function(){ if(playing){ stopAll(); setStatus('Done reading.'); } };
+      try{ speechSynthesis.cancel(); speechSynthesis.speak(u); }catch(e){ setStatus('This browser cannot speak — the text is written out below.',true); }
+    }
+  }
+  document.getElementById('playBtn').addEventListener('click',function(){
+    if(!playing){ playFrom(qi||0); return; }
+    if(TOKEN){
+      if(paused){ paused=false; if(curAudio)curAudio.play(); this.textContent='Pause'; }
+      else { paused=true; if(curAudio)curAudio.pause(); this.textContent='Play'; }
+    } else {
+      if(paused){ paused=false; try{speechSynthesis.resume();}catch(e){} this.textContent='Pause'; }
+      else { paused=true; try{speechSynthesis.pause();}catch(e){} this.textContent='Play'; }
+    }
+  });
+  document.getElementById('stopBtn').addEventListener('click',function(){ stopAll(); setStatus('Stopped.'); });
+
+  /* ---------- render ---------- */
+  function speakable(){
+    if(!result)return '';
+    var t=result.description||'';
+    if(result.readText){ t+=' ... Now the full text. ... '+result.readText; }
+    return t;
+  }
+  function render(){
+    var sec=document.getElementById('resultSec');
+    var kindWord=result.kind==='image'?'photo':(result.kind==='video'?'video':'document');
+    document.getElementById('resultTitle').textContent=
+      'Your '+kindWord+(result.name?' — '+result.name:'');
+    var d=document.getElementById('descText');
+    d.textContent='';
+    var p1=document.createElement('p'); p1.textContent=result.description; d.appendChild(p1);
+    if(result.readText){
+      var h=document.createElement('h3'); h.textContent='Full text'; d.appendChild(h);
+      var p2=document.createElement('p'); p2.textContent=result.readText; d.appendChild(p2);
+    }
+    sec.style.display='';
+    document.getElementById('controls').style.display='';
+    chunks=chunkText(speakable()); qi=0; blobCache={};
+    if(result.dates && result.dates.length){
+      var wrap=document.getElementById('dateBtns'); wrap.textContent='';
+      result.dates.forEach(function(dt){
+        var b=document.createElement('button');
+        b.type='button'; b.className='datebtn';
+        b.textContent='Save reminder — '+dt.label+' on '+dt.when+' (Central)';
+        b.addEventListener('click',async function(){
+          b.disabled=true; b.textContent='Saving…';
+          try{
+            var r=await fetch('/api/kade/describe/reminder',{method:'POST',
+              headers:Object.assign({'Content-Type':'application/json'},TOKEN?{Authorization:'Bearer '+TOKEN}:{}),
+              body:JSON.stringify({id:shareId,when:dt.when,label:dt.label})});
+            var j=await r.json();
+            if(!r.ok)throw new Error(j.error||'failed');
+            b.textContent='Saved — I will remind you: '+dt.label;
+            setStatus('Reminder saved for '+dt.when+' Central.');
+          }catch(e){ b.disabled=false; b.textContent='Save reminder — '+dt.label+' on '+dt.when+' (try again)'; setStatus('Could not save that reminder: '+e.message,true); }
+        });
+        wrap.appendChild(b);
+      });
+      document.getElementById('datesSec').style.display='';
+    }
+    var pb=document.getElementById('playBtn');
+    pb.focus();
+    playFrom(0); /* autoplay attempt; browsers may require one press of Play */
+  }
+
+  async function run(){
+    setStatus('Describing — this usually takes a few seconds…');
+    try{
+      var r=await fetch('/api/kade/describe/run',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},TOKEN?{Authorization:'Bearer '+TOKEN}:{}),
+        body:JSON.stringify({id:shareId})});
+      var j=await r.json();
+      if(r.status===401){ setStatus('Please sign in to Kade-AI first, then share it again.',true); return; }
+      if(!r.ok)throw new Error(j.error||('error '+r.status));
+      result=j;
+      setStatus(qs.get('more')?'Done. You shared more than one file — I described the first one; one at a time for now.':'Done.');
+      render();
+    }catch(e){ setStatus(e.message,true); }
+  }
+
+  async function uploadPicked(f){
+    if(!TOKEN){ setStatus('Please sign in to Kade-AI first (open the app and log in), then come back.',true); return; }
+    setStatus('Uploading '+f.name+'…');
+    try{
+      var fd=new FormData(); fd.append('media',f,f.name);
+      var r=await fetch('/api/kade/describe/upload',{method:'POST',headers:{Authorization:'Bearer '+TOKEN},body:fd});
+      var j=await r.json();
+      if(!r.ok)throw new Error(j.error||('upload '+r.status));
+      shareId=j.id; stopAll();
+      document.getElementById('resultSec').style.display='none';
+      document.getElementById('datesSec').style.display='none';
+      run();
+    }catch(e){ setStatus('Upload failed: '+e.message,true); }
+  }
+  document.getElementById('pick').addEventListener('change',function(){
+    if(this.files && this.files[0]) uploadPicked(this.files[0]);
+  });
+
+  async function iosSetup(){
+    if(!TOKEN)return;
+    try{
+      var r=await fetch('/api/kade/describe/token',{headers:{Authorization:'Bearer '+TOKEN}});
+      var j=await r.json();
+      if(!r.ok)return;
+      var el=document.getElementById('iosSetup');
+      el.innerHTML='';
+      var steps=[
+        'Open the Shortcuts app and tap the plus button to make a new Shortcut.',
+        'Tap the info button at the bottom, turn ON "Show in Share Sheet", then set the accepted types to Images, Media, PDFs, and Files.',
+        'Add the action "Get Contents of URL". Set the URL to your personal link below. Change Method to POST, and under Request Body choose Form; add one Form field named media, set its type to File, and choose the Shortcut Input (the shared file) as its value.',
+        'Add the action "Get Dictionary Value" — key: url — from the Contents of URL result.',
+        'Add the action "Open URLs" with that value.',
+        'Name it "Describe with Kade-AI" and you are done — from any photo or PDF, tap Share, then Describe with Kade-AI, and this page opens and starts reading.'
+      ];
+      var intro=document.createElement('p');
+      intro.textContent='Your personal upload link (treat it like a password — it lets things be described on your account):';
+      el.appendChild(intro);
+      var code=document.createElement('code'); code.className='tok'; code.textContent=j.ingestUrl; el.appendChild(code);
+      var copy=document.createElement('button'); copy.type='button'; copy.className='small'; copy.textContent='Copy my link';
+      copy.style.margin='.5rem 0 1rem';
+      copy.addEventListener('click',function(){ navigator.clipboard.writeText(j.ingestUrl).then(function(){ copy.textContent='Copied'; setTimeout(function(){copy.textContent='Copy my link';},2000); }); });
+      el.appendChild(copy);
+      var ol=document.createElement('ol');
+      steps.forEach(function(t){ var li=document.createElement('li'); li.textContent=t; li.style.margin='.4rem 0'; ol.appendChild(li); });
+      el.appendChild(ol);
+    }catch(e){}
+  }
+
+  (async function init(){
+    TOKEN=await getToken();
+    var err=qs.get('err');
+    if(err==='empty'){ setStatus('That share came through empty — try again and pick the actual photo or file.',true); return; }
+    if(err==='share'){ setStatus('Something went wrong receiving that share — try again.',true); return; }
+    iosSetup();
+    if(shareId){ run(); }
+    else if(TOKEN){ setStatus('Pick a photo or document below, or share one straight from your phone.'); }
+    else { setStatus('Sign in to Kade-AI (open the app and log in), then come back to this page.',true); }
+  })();
+})();
+</script>
+</body></html>`;
+
+
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml, describeHtml };
 

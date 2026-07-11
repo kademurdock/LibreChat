@@ -282,6 +282,7 @@ const startServer = async () => {
   app.use('/api/kade/matchmaker', routes.kadeMatchmaker);
   app.use('/api/kade/calls', routes.kadeCalls);
   app.use('/api/kade/web-voice', routes.kadeWebVoice);
+  app.use('/api/kade/describe', routes.kadeDescribe);
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);
@@ -291,6 +292,7 @@ const startServer = async () => {
   app.get('/usage-dashboard', routes.kade.dashboardPage);
   app.get('/feedback-dashboard', routes.kade.feedbackPage);
   app.get('/notifications', routes.kade.notificationsPage);
+  app.get('/describe', routes.kadeDescribe.page);
   app.get('/feed-the-server', routes.kade.feedPage);
   app.get('/my-creations', routes.kade.creationsPage);
   app.get('/wall-of-fame', routes.kade.wallPage);

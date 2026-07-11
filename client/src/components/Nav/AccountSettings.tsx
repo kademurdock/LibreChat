@@ -17,6 +17,7 @@ import {
   MessagesSquare,
   PhoneCall,
   BellRing,
+  ScanEye,
   Trophy,
   Keyboard,
   LifeBuoy,
@@ -186,6 +187,14 @@ function ExploreSubmenu({ isAdmin, isChild }: { isAdmin: boolean; isChild: boole
         >
           <PhoneCall className="icon-md" aria-hidden="true" />
           Call History
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={go('/describe')}
+          className="select-item text-sm"
+          aria-label="Describe: share or pick any photo, video, PDF, or document and have it described or read aloud to you"
+        >
+          <ScanEye className="icon-md" aria-hidden="true" />
+          Describe a Photo or Document
         </Menu.MenuItem>
         <Menu.MenuItem
           onClick={go('/notifications')}

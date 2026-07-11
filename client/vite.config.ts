@@ -179,6 +179,36 @@ export default defineConfig(({ command }) => ({
             purpose: 'maskable',
           },
         ],
+        /** SHARE-TO-DESCRIBE (July 11 2026): installed PWAs register in the OS
+         * share sheet (Android/Chromium today; iOS still lacks Web Share Target
+         * — WebKit bug 194593 — iPhones use the /describe Shortcut instead).
+         * The OS POSTs the shared file here; the route 303s to /describe. */
+        share_target: {
+          action: '/api/kade/describe/share',
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url',
+            files: [
+              {
+                name: 'media',
+                accept: [
+                  'image/*',
+                  'video/*',
+                  'application/pdf',
+                  'text/plain',
+                  '.pdf',
+                  '.txt',
+                  '.md',
+                  '.csv',
+                  '.docx',
+                ],
+              },
+            ],
+          },
+        },
       },
     }),
     ...(buildSourceMap ? [sourcemapExclude({ excludeNodeModules: true })] : []),
