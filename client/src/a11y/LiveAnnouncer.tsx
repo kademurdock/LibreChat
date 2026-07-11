@@ -1,8 +1,40 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { AnnounceOptions } from '~/common';
 import AnnouncerContext from '~/Providers/AnnouncerContext';
+import { INVALID_CITATION_REGEX, CLEANUP_REGEX } from '~/utils/citations';
+import { stripGameSoundTags, stripDeepThinkTag } from '~/utils/gameSounds';
+import { stripVoiceTags } from '~/utils/voiceTags';
 import { useLocalize } from '~/hooks';
 import Announcer from './Announcer';
+
+/**
+ * KADE July 11 2026 — screen-reader announcement scrub. The aria-live region
+ * receives RAW message text, so VoiceOver was reading web-citation anchors
+ * ("turn0search1"), %%%voice-performance%%% tags, [sound:]/[table:] game
+ * cues, and :::thinking::: blocks out loud on every finished reply (Kade's
+ * bug report: "it's reading the weird message tags"). Announcements must
+ * hear like the visible bubble reads: scrub everything the renderers strip.
+ */
+const THINKING_BLOCK_RE = /:::thinking[\s\S]*?:::/g;
+const PUA_CHARS_RE = /[\ue000-\uf8ff]/g;
+const MD_IMAGE_RE = /!\[([^\]]*)\]\([^)]*\)/g;
+const MD_LINK_RE = /\[([^\]]+)\]\(([^)]*)\)/g;
+
+export function scrubAnnouncement(text: string): string {
+  if (!text) {
+    return text;
+  }
+  return stripGameSoundTags(stripVoiceTags(stripDeepThinkTag(text)))
+    .replace(THINKING_BLOCK_RE, '')
+    .replace(INVALID_CITATION_REGEX, '')
+    .replace(CLEANUP_REGEX, '')
+    .replace(PUA_CHARS_RE, '')
+    .replace(MD_IMAGE_RE, '$1')
+    .replace(MD_LINK_RE, '$1')
+    .replace(/[*`_#]/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
 
 interface LiveAnnouncerProps {
   children: React.ReactNode;
@@ -46,7 +78,7 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
 
   const announcePolite = useCallback(
     ({ message, isStatus = false }: AnnounceOptions) => {
-      const finalMessage = (events[message] ?? message).replace(/[*`_]/g, '');
+      const finalMessage = scrubAnnouncement(events[message] ?? message);
 
       if (isStatus) {
         announceStatus(finalMessage);

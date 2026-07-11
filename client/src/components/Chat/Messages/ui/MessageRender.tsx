@@ -3,7 +3,7 @@ import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon, TMessageChatContext } from '~/common';
-import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
+import { cn, getHeaderPrefixForScreenReader } from '~/utils';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
@@ -185,10 +185,12 @@ const MessageRender = memo(function MessageRender({
     focus: 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
   };
 
+  // KADE July 11 2026: no aria-label on the root div — a label on this layout
+  // div made iOS VoiceOver read every message twice (grouped stop + children).
+  // The sr-only Prompt/Response heading prefix carries the context instead.
   return (
     <div
       id={msg.messageId}
-      aria-label={getMessageAriaLabel(msg, localize)}
       className={cn(
         baseClasses.common,
         baseClasses.chat,

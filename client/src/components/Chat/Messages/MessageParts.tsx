@@ -4,7 +4,7 @@ import { useRecoilValue } from 'recoil';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
-import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
+import { cn, getHeaderPrefixForScreenReader } from '~/utils';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
@@ -105,10 +105,10 @@ export default function Message(props: TMessageProps) {
         onTouchMove={handleScroll}
       >
         <div className="m-auto justify-center p-4 py-2 md:gap-6">
+      {/* KADE July 11 2026: no aria-label here — a label on this layout div made iOS VoiceOver read every message twice (grouped stop + children). The sr-only Prompt/Response heading prefix carries the context instead. */}
           <div
             id={messageId ?? ''}
-            aria-label={getMessageAriaLabel(message, localize)}
-            className={cn(
+                  className={cn(
               baseClasses.common,
               baseClasses.chat,
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
