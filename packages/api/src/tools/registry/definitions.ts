@@ -249,6 +249,23 @@ export const kadeFeedbackSchema: ExtendedJsonSchema = {
   required: ['detail'],
 };
 
+export const kadeMessageSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    to: {
+      type: 'string',
+      description:
+        'Who the message is for — their first name as the user says it, or their email. Must be a person with an account on this site.',
+    },
+    message: {
+      type: 'string',
+      description:
+        "The message to pass along, faithfully in the sender's own words (first person).",
+    },
+  },
+  required: ['to', 'message'],
+};
+
 export const kadeJokeSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -815,6 +832,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       "File a bug report, feature request, or feedback to Kade (the platform owner) on behalf of the user — free, instant, no cost. Use when a user mentions something broken or frustrating, or wishes a feature existed: OFFER first (\"Want me to send that to Kade for you?\"), then call this with their description. Attributed to the user so Kade can follow up. NEVER file without the user's OK; NEVER invent details they didn't give.",
     schema: kadeFeedbackSchema,
+    toolType: 'builtin',
+  },
+  kade_message: {
+    name: 'kade_message',
+    description:
+      'Take a message for another person on this site ("tell Skylee...", "let Kade know...") — the site holds it and delivers it the next time they open a chat, by their own notification choice, or on their next phone call with a character. Free, instant. Deliver messages FAITHFULLY in the sender\'s words. If the recipient can\'t be found, ask for their email.',
+    schema: kadeMessageSchema,
     toolType: 'builtin',
   },
   open_weather: {

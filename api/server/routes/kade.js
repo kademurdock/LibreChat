@@ -1281,7 +1281,28 @@ router.get('/call-memories', async (req, res) => {
     }
     const { getFormattedMemories } = require('~/models');
     const { withoutKeys } = await getFormattedMemories({ userId: uid, agentId });
-    const text = (withoutKeys || '').slice(0, 6000);
+    let text = (withoutKeys || '').slice(0, 6000);
+    /* KADE July 13 2026 (family messages): phone calls deliver waiting
+     * nudges too — reminders and "tell Skylee..." messages were stuck
+     * waiting for a WEB chat before. Same consume-once semantics as chat
+     * injection (takePendingChatNudges marks them delivered). */
+    try {
+      /* Consume-on-fetch is only safe when a human is DEFINITELY on the line —
+       * the bridge passes nudges=1 on INBOUND calls (they dialed us). Outbound
+       * legs skip it: an unheard voicemail must not eat someone's messages. */
+      if (String(req.query.nudges || '') !== '1') { throw { skip: true }; }
+      const { takePendingChatNudges } = require('~/server/services/kadeNudges');
+      const pending = await takePendingChatNudges(uid);
+      if (pending.length > 0) {
+        const lines = pending.map((n) => `- ${n.text}`).join('\n');
+        text +=
+          `\n\n[WAITING FOR THIS CALLER — deliver these naturally EARLY in the call, they have not heard them yet:\n${lines}]`;
+      }
+    } catch (e) {
+      if (!e || e.skip !== true) {
+        logger.warn('[kade/call-memories] nudge attach failed (non-fatal): ' + (e && e.message));
+      }
+    }
     return res.json({ text: text || null, userId: uid });
   } catch (e) {
     logger.error('[kade/call-memories] failed:', e);

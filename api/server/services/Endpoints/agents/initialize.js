@@ -115,11 +115,12 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
       ].map((m) => m.toLowerCase()),
     );
     const toolless = NO_TOOLS_MODELS.has(String(model || '').toLowerCase());
+    /* KADE 2026-07-13: kade_message (family message-taking) rides the same
+     * auto-injection — every agent can take "tell Skylee..." messages. */
+    const autoTools = ['kade_feedback', 'kade_message'];
     const withFeedback = toolless
       ? []
-      : _tools.includes('kade_feedback')
-        ? _tools
-        : [..._tools, 'kade_feedback'];
+      : [..._tools, ...autoTools.filter((t) => !_tools.includes(t))];
     const agent = { id: agentId, tools: withFeedback, provider, model, tool_options };
     try {
       return await loadAgentTools({

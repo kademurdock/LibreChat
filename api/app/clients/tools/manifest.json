@@ -105,5 +105,13 @@
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
+  },
+  {
+    "name": "Family Messages",
+    "pluginKey": "kade_message",
+    "description": "Take a message for another person on the site (\"tell Skylee...\") — held and delivered the next time they open a chat or call. Free, no key.",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
   }
 ]

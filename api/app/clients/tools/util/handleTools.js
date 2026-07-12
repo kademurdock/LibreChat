@@ -36,6 +36,7 @@ const {
   KadeAdventure,
   KadeGames,
   KadeFeedback,
+  KadeMessage,
   OpenWeather,
   StructuredSD,
   StructuredACS,
@@ -197,6 +198,7 @@ const loadTools = async ({
     kade_adventure: KadeAdventure,
     kade_games: KadeGames,
     kade_feedback: KadeFeedback,
+    kade_message: KadeMessage,
     calculator: Calculator,
     google: GoogleSearchAPI,
     open_weather: OpenWeather,
@@ -292,6 +294,11 @@ const loadTools = async ({
     },
     kade_feedback: {
       userId: user,
+      agentName: agent?.name,
+    },
+    kade_message: {
+      userId: user,
+      userName: options?.req?.user?.name,
       agentName: agent?.name,
     },
     dalle: imageGenOptions,
