@@ -1173,6 +1173,87 @@ router.post('/voice-prefs', requireJwtAuth, async (req, res) => {
   }
 });
 
+/* ----------------------------------------------------------------------------
+ * PHONE-LINE PERSONAL VOICES (July 12 2026): secret-guarded server-to-server
+ * lookup/ingest so the BRIDGE can apply (and save) a caller's own per-agent
+ * voice pick. Caller resolved by userId, email, or the phone number on their
+ * Notifications prefs. Same trust model as /usage-event.
+ * -------------------------------------------------------------------------- */
+const { getUserVoicePref: lookupVoicePref, setUserVoicePref: ingestVoicePref } = require('~/models/kadeVoicePref');
+const { KadeNudgePref: VoiceLookupPrefs } = require('~/models/kadeNudge');
+
+async function resolveUserForVoice({ userId, email, phone }) {
+  if (userId) {
+    return String(userId);
+  }
+  if (email) {
+    try {
+      const { findUser } = require('~/models');
+      const u = await findUser({ email: String(email).toLowerCase() }, '_id');
+      if (u) {
+        return String(u._id);
+      }
+    } catch { /* fall through */ }
+  }
+  if (phone) {
+    const last10 = String(phone).replace(/\D/g, '').slice(-10);
+    if (last10.length === 10) {
+      try {
+        const rows = await VoiceLookupPrefs.find({ phone: { $ne: '' } }, 'userId phone').lean();
+        const hit = rows.find((r) => String(r.phone).replace(/\D/g, '').slice(-10) === last10);
+        if (hit) {
+          return String(hit.userId);
+        }
+      } catch { /* fall through */ }
+    }
+  }
+  return null;
+}
+
+router.get('/voice-pref-lookup', async (req, res) => {
+  try {
+    const expected = process.env.KADE_USAGE_EVENT_SECRET;
+    if (!expected || req.query.secret !== expected) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const agentId = String(req.query.agentId || '').slice(0, 64);
+    if (!agentId) {
+      return res.status(400).json({ error: 'agentId required' });
+    }
+    const uid = await resolveUserForVoice({ userId: req.query.userId, email: req.query.email, phone: req.query.phone });
+    if (!uid) {
+      return res.json({ voice: null, userId: null });
+    }
+    const voice = await lookupVoicePref(uid, agentId);
+    return res.json({ voice: voice || null, userId: uid });
+  } catch (e) {
+    logger.error('[kade/voice-pref-lookup] failed:', e);
+    return res.status(500).json({ error: 'lookup failed' });
+  }
+});
+
+router.post('/voice-pref-ingest', async (req, res) => {
+  try {
+    const expected = process.env.KADE_USAGE_EVENT_SECRET;
+    if (!expected || (req.body || {}).secret !== expected) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const { userId, email, phone, agentId, voice } = req.body || {};
+    if (!agentId) {
+      return res.status(400).json({ error: 'agentId required' });
+    }
+    const uid = await resolveUserForVoice({ userId, email, phone });
+    if (!uid) {
+      return res.json({ ok: false, note: 'no matching account' });
+    }
+    await ingestVoicePref(uid, String(agentId).slice(0, 64), voice ? String(voice) : null);
+    return res.json({ ok: true, userId: uid });
+  } catch (e) {
+    logger.error('[kade/voice-pref-ingest] failed:', e);
+    return res.status(500).json({ error: 'ingest failed' });
+  }
+});
+
 router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);

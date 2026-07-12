@@ -38,6 +38,8 @@ const nudgePrefSchema = new mongoose.Schema(
     birthdayDate: { type: String, default: '' },
     /** 10-digit US number used only for the 'call' channel */
     phone: { type: String, default: '' },
+    /** July 12 2026: the once-ever "add your number" chat nudge fired */
+    promptedPhone: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
@@ -58,6 +60,7 @@ const nudgeStateSchema = new mongoose.Schema(
   {
     _id: { type: String, default: 'singleton' },
     lastBirthdayDay: { type: String, default: '' },
+    lastPhonePromptDay: { type: String, default: '' },
   },
   { timestamps: true },
 );

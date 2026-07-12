@@ -271,6 +271,53 @@ async function sweepBirthdays() {
   return fired;
 }
 
+/** July 12 2026 (Kade: "people need to be prompted to add a number"):
+ * ONE-TIME chat nudge for users with no phone on file — daily pass from 10am
+ * Central, marks promptedPhone so nobody ever hears it twice. Chat channel
+ * only (zero permission, lands at the start of their next conversation). */
+async function sweepPhonePrompts() {
+  const nowCentral = chicagoParts();
+  if (nowCentral.hh < 10) {
+    return 0;
+  }
+  const today = `${nowCentral.y}-${String(nowCentral.m).padStart(2, '0')}-${String(nowCentral.d).padStart(2, '0')}`;
+  const state =
+    (await KadeNudgeState.findById('singleton')) || new KadeNudgeState({ _id: 'singleton' });
+  if (state.lastPhonePromptDay === today) {
+    return 0;
+  }
+  state.lastPhonePromptDay = today;
+  await state.save();
+  const User = mongoose.models.User;
+  if (!User) {
+    return 0;
+  }
+  const users = await User.find({}, '_id').lean();
+  let fired = 0;
+  for (const u of users) {
+    try {
+      const pref = await KadeNudgePref.findOne({ userId: u._id }).lean();
+      if (pref && (pref.promptedPhone || (pref.phone && pref.phone.trim()))) {
+        continue;
+      }
+      await KadeNudgePref.updateOne(
+        { userId: u._id },
+        { $set: { promptedPhone: true } },
+        { upsert: true },
+      );
+      await queueChatNudge(
+        u._id,
+        'One-time tip from the platform: if you add your phone number on the Notifications & Reminders page (account menu), reminders can CALL you, and the Kade-AI phone line can know it\'s you when you call in. Totally optional — mention it casually and move on.',
+        'reminder',
+      );
+      fired += 1;
+    } catch (err) {
+      logger.warn('[kadeNudges] phone prompt failed for a user: ' + err.message);
+    }
+  }
+  return fired;
+}
+
 let sweepTimer = null;
 function startNudgeSweep() {
   const intervalMs = Number(process.env.KADE_NUDGE_SWEEP_INTERVAL_MS || 60000);
@@ -282,8 +329,9 @@ function startNudgeSweep() {
     try {
       const reminders = await sweepDueReminders();
       const birthdays = await sweepBirthdays();
-      if (reminders || birthdays) {
-        logger.info(`[kadeNudges] sweep fired ${reminders} reminder(s), ${birthdays} birthday nudge(s)`);
+      const phonePrompts = await sweepPhonePrompts();
+      if (reminders || birthdays || phonePrompts) {
+        logger.info(`[kadeNudges] sweep fired ${reminders} reminder(s), ${birthdays} birthday nudge(s), ${phonePrompts} phone prompt(s)`);
       }
     } catch (err) {
       logger.error('[kadeNudges] sweep error:', err.message);
