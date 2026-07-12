@@ -108,7 +108,12 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       tool_options,
       skills,
       skills_enabled,
-      tts,
+      /* KADE July 12 2026: only send tts when it actually carries something —
+       * an empty/default tts object in form state must never wipe a saved
+       * voice on the server (see AgentSelect hydration note). */
+      ...(tts && typeof tts === 'object' && (tts.voiceId || tts.speakingRate != null)
+        ? { tts }
+        : {}),
       ...(shouldResetAvatar ? { avatar: null } : {}),
     },
     provider,

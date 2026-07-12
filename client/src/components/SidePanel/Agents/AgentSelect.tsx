@@ -135,6 +135,16 @@ function AgentSelect({
           return;
         }
 
+        /* KADE July 12 2026: tts is an OBJECT, and the catch-all below only
+         * copies primitives — so an agent's saved voice NEVER entered the
+         * form, and every builder save wrote the empty default back, silently
+         * de-voicing the agent (live casualty: Kiana, v49/v50/v52/v53 all
+         * came out voiceless while Kade tried to set Voice 65). */
+        if (name === 'tts' && typeof value === 'object' && value !== null) {
+          formValues[name] = value;
+          return;
+        }
+
         if (!keys.has(name)) {
           return;
         }
