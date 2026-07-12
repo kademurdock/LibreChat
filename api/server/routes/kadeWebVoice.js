@@ -20,6 +20,7 @@ const crypto = require('crypto');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
+const { getUserVoicePref } = require('~/models/kadeVoicePref');
 
 const router = express.Router();
 
@@ -48,6 +49,17 @@ router.get('/ticket', requireJwtAuth, async (req, res) => {
         }
       } catch (err) {
         logger.warn('[kadeWebVoice] agent lookup failed: ' + err.message);
+      }
+      /* KADE July 12 2026: the caller's own per-agent voice pick beats the
+       * builder default on web calls too — same order the in-app read-aloud
+       * resolves (personal -> agent default). Fail-soft. */
+      try {
+        const personal = await getUserVoicePref(String(req.user.id || req.user._id), agentId);
+        if (personal) {
+          voiceId = personal;
+        }
+      } catch (err) {
+        logger.warn('[kadeWebVoice] voice pref lookup failed (using agent default): ' + err.message);
       }
     }
 

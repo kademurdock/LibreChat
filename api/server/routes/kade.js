@@ -1143,6 +1143,36 @@ router.post('/wellness', requireJwtAuth, async (req, res) => {
   }
 });
 
+/* ----------------------------------------------------------------------------
+ * PER-USER VOICE OVERRIDES (July 12 2026): "my Kiana sounds like Voice 27."
+ * Kade's builder voices are suggestions; each person's pick follows them
+ * across devices + surfaces (read-aloud, web calls; phone pending registry map).
+ * -------------------------------------------------------------------------- */
+const { getUserVoicePrefs, setUserVoicePref } = require('~/models/kadeVoicePref');
+
+router.get('/voice-prefs', requireJwtAuth, async (req, res) => {
+  try {
+    return res.json({ prefs: await getUserVoicePrefs(req.user.id) });
+  } catch (e) {
+    logger.error('[kade/voice-prefs] get failed:', e);
+    return res.status(500).json({ error: 'Could not load voice preferences' });
+  }
+});
+
+router.post('/voice-prefs', requireJwtAuth, async (req, res) => {
+  try {
+    const { agentId, voice } = req.body || {};
+    if (!agentId) {
+      return res.status(400).json({ error: 'agentId required' });
+    }
+    await setUserVoicePref(req.user.id, String(agentId).slice(0, 64), voice ? String(voice) : null);
+    return res.json({ ok: true });
+  } catch (e) {
+    logger.error('[kade/voice-prefs] set failed:', e);
+    return res.status(500).json({ error: 'Could not save voice preference' });
+  }
+});
+
 router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);

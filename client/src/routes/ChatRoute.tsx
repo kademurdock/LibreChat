@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Constants,
   EModelEndpoint,
@@ -67,6 +67,47 @@ export default function ChatRoute() {
   const chatProjectId = isValidChatProjectId(projectIdParam) ? projectIdParam : null;
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
+  const navigate = useNavigate();
+
+  /* KADE July 12 2026: "same character, fresh chat" when you come back.
+   * iOS keeps the PWA's page state alive across app switches, so people
+   * reopened Kade-AI into yesterday's conversation. When the app has been
+   * hidden for a while and you return into an OLD conversation, route to
+   * /c/new and re-run the new-convo init — the July 2 preset logic then
+   * opens a FRESH chat with the SAME character (last agent). Quick app
+   * switches (checking a text) stay untouched. Threshold minutes:
+   * localStorage kadeFreshReturnMinutes, default 15; '0' disables. */
+  useEffect(() => {
+    let hiddenAt: number | null = null;
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+        return;
+      }
+      const awayMs = hiddenAt != null ? Date.now() - hiddenAt : 0;
+      hiddenAt = null;
+      let thresholdMin = 15;
+      try {
+        const stored = localStorage.getItem('kadeFreshReturnMinutes');
+        if (stored != null && Number.isFinite(Number(stored))) {
+          thresholdMin = Number(stored);
+        }
+      } catch {
+        /* default stands */
+      }
+      if (
+        thresholdMin > 0 &&
+        awayMs > thresholdMin * 60000 &&
+        conversationId != null &&
+        conversationId !== Constants.NEW_CONVO
+      ) {
+        hasSetConversation.current = false;
+        navigate('/c/new');
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [conversationId, navigate, hasSetConversation]);
   const { newConversation } = useNewConvo();
   const { showToast } = useToastContext();
   const localize = useLocalize();
