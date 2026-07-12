@@ -100,16 +100,33 @@ async function mirrorAsset(doc) {
 const DESCRIBE_MODEL = process.env.KADE_VISION_MODEL || 'google/gemini-3.1-flash-lite';
 const MAX_MEDIA_BYTES = 30 * 1024 * 1024;
 
-async function openRouterChat(content, maxTokens = 260) {
+async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
   const key = process.env.OPENROUTER_KEY;
   if (!key) {
     return null;
   }
   const r = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
-    { model: DESCRIBE_MODEL, max_tokens: maxTokens, messages: [{ role: 'user', content }] },
+    /* July 13 2026 money audit: request usage so gallery descriptions stop
+     * being the one billable call that never hit kadeusage. */
+    { model: DESCRIBE_MODEL, max_tokens: maxTokens, messages: [{ role: 'user', content }], usage: { include: true } },
     { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 90000 },
   );
+  if (usageOwner) {
+    try {
+      const u = r.data?.usage || {};
+      const cost = typeof u.cost === 'number' ? u.cost : 0;
+      const { logKadeUsage } = require('~/models/kadeUsage');
+      logKadeUsage({
+        userId: String(usageOwner),
+        service: 'describe',
+        quantity: 1,
+        unit: 'items',
+        costUSD: cost,
+        metadata: { source: 'gallery_auto_description', model: DESCRIBE_MODEL },
+      });
+    } catch { /* logging must never break a description */ }
+  }
   const text = r.data?.choices?.[0]?.message?.content;
   return typeof text === 'string' ? text.trim() : null;
 }
@@ -135,6 +152,7 @@ async function describeAudio(doc) {
         },
       ],
       220,
+      doc.user,
     );
     return text ? text.slice(0, 2000) : null;
   } catch (err) {
@@ -169,7 +187,7 @@ async function describeAsset(doc) {
       doc.kind === 'video'
         ? { type: 'video_url', video_url: { url: dataUrl } }
         : { type: 'image_url', image_url: { url: dataUrl } };
-    const text = await openRouterChat([{ type: 'text', text: DESCRIBE_INSTRUCTION }, part]);
+    const text = await openRouterChat([{ type: 'text', text: DESCRIBE_INSTRUCTION }, part], 260, doc.user);
     if (text) {
       return text.slice(0, 2000);
     }
@@ -190,7 +208,7 @@ async function describeAsset(doc) {
             'Write 1-2 sentences telling a blind person what the result most likely looks like. ' +
             'Start with "Likely shows:" so it is clear this is inferred from the prompt.',
         },
-      ], 120);
+      ], 120, doc.user);
       return text ? text.slice(0, 2000) : null;
     } catch (err2) {
       logger.warn('[kadeAsset] prompt-based describe failed too:', err2.message);

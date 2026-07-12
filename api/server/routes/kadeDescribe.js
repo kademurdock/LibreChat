@@ -190,7 +190,10 @@ router.post('/run', optionalJwt, express.json(), async (req, res) => {
     return res.json({ ok: true, ...result });
   } catch (err) {
     logger.error('[kadeDescribe] /run failed: ' + err.message);
-    return res.status(500).json({ error: err.message || 'Describe failed' });
+    /* July 13 2026 money audit: never surface raw OpenRouter error text on the
+     * describe page — an empty account now says so in plain language. */
+    const { friendlyAiErrorMessage } = require('~/server/utils/kadeCredits');
+    return res.status(500).json({ error: friendlyAiErrorMessage(err, err.message || 'Describe failed') });
   }
 });
 

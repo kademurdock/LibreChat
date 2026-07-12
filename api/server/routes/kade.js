@@ -1213,7 +1213,8 @@ async function resolveUserForVoice({ userId, email, phone }) {
 router.get('/voice-pref-lookup', async (req, res) => {
   try {
     const expected = process.env.KADE_USAGE_EVENT_SECRET;
-    if (!expected || req.query.secret !== expected) {
+    /* July 13 2026 security sweep: header-first (query secrets land in edge logs). */
+    if (!expected || (req.get('x-kade-secret') || req.query.secret) !== expected) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
     const agentId = String(req.query.agentId || '').slice(0, 64);
@@ -1265,7 +1266,8 @@ router.post('/voice-pref-ingest', async (req, res) => {
 router.get('/call-memories', async (req, res) => {
   try {
     const expected = process.env.KADE_USAGE_EVENT_SECRET;
-    if (!expected || req.query.secret !== expected) {
+    /* July 13 2026 security sweep: header-first (query secrets land in edge logs). */
+    if (!expected || (req.get('x-kade-secret') || req.query.secret) !== expected) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
     const agentId = String(req.query.agentId || '').slice(0, 64) || undefined;

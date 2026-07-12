@@ -22,6 +22,7 @@ import { useScreenshot } from '~/hooks/ScreenshotContext';
 import { useLocalize } from '~/hooks';
 import { cleanupPreset } from '~/utils';
 import { stripVoiceTags } from '~/utils/voiceTags';
+import { INVALID_CITATION_REGEX, CLEANUP_REGEX, LITERAL_NBSP_REGEX } from '~/utils/citations';
 import { stripGameSoundTags } from '~/utils/gameSounds';
 
 type ExportValues = {
@@ -69,7 +70,14 @@ export default function useExportConversation({
     // performance tag (utils/voiceTags.ts) out of the spoken-text content
     // before it ever reaches formatText, same rule as the chat bubble.
     const formatText = (sender: string, text: string) => {
-      const cleanText = stripGameSoundTags(stripVoiceTags(text));
+      /* July 13 2026 scrub audit: exports also carried citation glyphs,
+       * literal \u00a0 escape-text, and :::thinking::: blocks. Exported
+       * files are READ — same rule as the chat bubble and clipboard. */
+      const cleanText = stripGameSoundTags(stripVoiceTags(text))
+        .replace(/:::thinking[\s\S]*?:::\n?/g, '')
+        .replace(INVALID_CITATION_REGEX, '')
+        .replace(CLEANUP_REGEX, '')
+        .replace(LITERAL_NBSP_REGEX, ' ');
       if (format === 'text') {
         return `>> ${sender}:\n${cleanText}`;
       }

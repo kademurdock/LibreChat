@@ -106,7 +106,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     key,
     value,
     tokenCount = 0,
-    type = 'fact',
+    type,
     dueAt,
     recurrence,
     completed,
@@ -139,6 +139,14 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         await existing.save();
       }
 
+      /** KADE July 13 2026 — WIPE-BUG GUARD: rewriting a card's text must never
+       * silently strip its reminder scheduling. Any field the caller does NOT
+       * explicitly provide is inherited from the entry being superseded, so a
+       * value-only rewrite (panel edit, writer tighten, consolidation pass)
+       * keeps type/dueAt/recurrence/completed intact. A caller that DOES pass
+       * dueAt is setting a fresh schedule: completed resets to false unless
+       * stated, and recurrence: null explicitly clears an inherited repeat. */
+      const explicitDueAt = dueAt !== undefined;
       await MemoryEntry.create({
         userId,
         agentId: agentId ?? undefined,
@@ -146,10 +154,11 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         value,
         tokenCount,
         status: 'active',
-        type,
-        dueAt,
-        recurrence,
-        completed,
+        type: type ?? existing?.type ?? 'fact',
+        dueAt: explicitDueAt ? (dueAt ?? undefined) : existing?.dueAt,
+        recurrence: recurrence !== undefined ? (recurrence ?? undefined) : existing?.recurrence,
+        completed:
+          completed !== undefined ? completed : explicitDueAt ? false : existing?.completed,
         supersedes: existing ? existing._id : undefined,
         updated_at: new Date(),
       });
@@ -256,12 +265,35 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
           (a, b) => new Date(a.updated_at!).getTime() - new Date(b.updated_at!).getTime(),
         );
 
+      /** KADE July 13 2026: reminder cards carry live scheduling — surface it so
+       * the memory writer (and consolidation passes) can SEE which cards are
+       * scheduled alarms, and so personas can answer "when's my reminder?". */
+      const describeReminder = (memory: t.IMemoryEntryLean, compact = false) => {
+        if (memory.type !== 'reminder' || !memory.dueAt) {
+          return '';
+        }
+        const fires = new Date(memory.dueAt).toLocaleString('en-US', {
+          timeZone: 'America/Chicago',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        });
+        const repeat = memory.recurrence ? `, repeats ${memory.recurrence}` : '';
+        const fired = memory.completed ? ', already fired' : '';
+        return compact
+          ? ` (reminder fires ${fires} CT${repeat}${fired})`
+          : ` ["reminder": fires ${fires} CT${repeat}${fired}]`;
+      };
+
       const formatWithKeys = (list: t.IMemoryEntryLean[]) =>
         sortAsc(list)
           .map((memory, index) => {
             const date = formatDate(new Date(memory.updated_at!));
             const tokenInfo = memory.tokenCount ? ` [${memory.tokenCount} tokens]` : '';
-            return `${index + 1}. [${date}]. ["key": "${memory.key}"]${tokenInfo}. ["value": "${memory.value}"]`;
+            return `${index + 1}. [${date}]. ["key": "${memory.key}"]${tokenInfo}. ["value": "${memory.value}"]${describeReminder(memory)}`;
           })
           .join('\n\n');
 
@@ -269,7 +301,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         sortAsc(list)
           .map((memory, index) => {
             const date = formatDate(new Date(memory.updated_at!));
-            return `${index + 1}. [${date}]. ${memory.value}`;
+            return `${index + 1}. [${date}]. ${memory.value}${describeReminder(memory, true)}`;
           })
           .join('\n\n');
 

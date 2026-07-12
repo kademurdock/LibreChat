@@ -46,10 +46,13 @@ export interface SetMemoryParams {
   key: string;
   value: string;
   tokenCount?: number;
-  /** Reminder-groundwork fields (Part 3) -- optional, default type is 'fact'. */
+  /** Reminder-groundwork fields (Part 3) -- optional. When superseding an
+   * existing entry, omitted fields are INHERITED from it (July 13 2026 wipe
+   * guard); pass null to explicitly clear dueAt/recurrence. Brand-new entries
+   * default to type 'fact'. */
   type?: MemoryEntryType;
-  dueAt?: Date;
-  recurrence?: string;
+  dueAt?: Date | null;
+  recurrence?: string | null;
   completed?: boolean;
 }
 

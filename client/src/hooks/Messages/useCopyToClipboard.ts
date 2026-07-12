@@ -67,7 +67,12 @@ export default function useCopyToClipboard({
       }
       // Strip invisible TTS-2 voice performance tags before anything ever
       // reaches the clipboard -- see utils/voiceTags.ts.
-      messageText = stripGameSoundTags(stripVoiceTags(messageText));
+      messageText = stripGameSoundTags(stripVoiceTags(messageText)).replace(
+        /* July 13 2026 scrub audit: saved text can carry a :::thinking:::
+         * reasoning block (reframe embeds it for the bubble) — never copy it. */
+        /:::thinking[\s\S]*?:::\n?/g,
+        '',
+      );
 
       // Early return if no search data
       if (!searchResults || Object.keys(searchResults).length === 0) {

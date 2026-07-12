@@ -310,7 +310,14 @@ async function callOpenRouter(model, system, msgs, key) {
 
 function cleanReply(text, agentName) {
   let t = String(text || '').trim();
-  t = t.replace(/%%%[^%]*%%%/g, ' ').replace(/[ \t]{2,}/g, ' ');
+  t = t.replace(/%%%[^%]*%%%/g, ' ')
+    /* July 13 2026 scrub audit: Hermes models sometimes type literal escape
+     * text ("\u00a0") or citation-shaped anchors in prose — debate turns are
+     * rendered AND synthesized, so clean them here at the source. */
+    .replace(/\\u00a0/gi, ' ')
+    .replace(/[\uE000-\uF8FF]/g, '')
+    .replace(/turn\d+(?:search|image|news|video|ref|file)\d+/g, '')
+    .replace(/[ \t]{2,}/g, ' ');
   const prefix = new RegExp(
     `^\\s*(?:\\*\\*)?${agentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\*\\*)?\\s*:\\s*`,
     'i',

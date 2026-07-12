@@ -92,6 +92,18 @@ const callsHtml = `<!doctype html>
 (function(){
   var token = null, currentId = null;
   function $(id){ return document.getElementById(id); }
+  /* July 13 2026 scrub audit: transcripts saved before today carry raw
+   * %%%voice tags / [sound:] cues / citation escape-text — clean at render. */
+  function scrubTag(x){ return String(x==null?'':x)
+    .replace(/%{2,4}[a-zA-Z][^%\n]{0,80}%{2,4}/g,'')
+    .replace(/\[(?:sound:[a-z0-9_]+|table:[a-z0-9]{1,12})\]/gi,'')
+    .replace(/\[END CALL\]/gi,'')
+    .replace(/[\uE000-\uF8FF]/g,'')
+    .replace(/\\?u[eE]20[0-9a-fA-F]turn\d+[a-zA-Z]+\d+/g,'')
+    .replace(/\\?u[eE]20[0-9a-fA-F]/g,'')
+    .replace(/turn\d+(?:search|image|news|video|ref|file)\d+/g,'')
+    .replace(/\\u00a0/gi,' ')
+    .replace(/[ \t]{2,}/g,' ').trim(); }
   function setStatus(msg, err){ var s=$('status'); s.textContent=msg; s.className='status'+(err?' err':''); }
 
   async function getToken(){
@@ -140,7 +152,7 @@ const callsHtml = `<!doctype html>
       btn.innerHTML =
         '<span class="top"><span class="badge '+badge+'">'+(c.surface==='phone'?'Phone':'Voice')+'</span>'+escapeHtml(who)+'</span>'+
         '<span class="sub">'+escapeHtml(when)+' &middot; '+escapeHtml(dur)+' &middot; '+c.turnCount+' turn'+(c.turnCount===1?'':'s')+'</span>'+
-        (c.preview ? '<span class="prev">'+escapeHtml(c.preview)+'</span>' : '');
+        (c.preview ? '<span class="prev">'+escapeHtml(scrubTag(c.preview))+'</span>' : '');
       btn.addEventListener('click', function(){ openCall(c.id); });
       li.appendChild(btn); ul.appendChild(li);
     });
@@ -173,7 +185,7 @@ const callsHtml = `<!doctype html>
     (d.turns||[]).forEach(function(t){
       var whoTurn = t.role==='user' ? (d.surface==='phone' ? (d.callerName||'Caller') : 'You') : who;
       html += '<div class="line '+(t.role==='user'?'user':'assistant')+'">'+
-              '<span class="who">'+escapeHtml(whoTurn)+' said</span>'+escapeHtml(t.text)+'</div>';
+              '<span class="who">'+escapeHtml(whoTurn)+' said</span>'+escapeHtml(scrubTag(t.text))+'</div>';
     });
     if(!(d.turns||[]).length){ html += '<p class="muted">This call has no saved transcript text.</p>'; }
     $('detail').innerHTML = html;

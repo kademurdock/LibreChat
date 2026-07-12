@@ -40,6 +40,17 @@ import { usePauseGlobalAudio } from '~/hooks/Audio';
 import { cn } from '~/utils';
 import { stripVoiceTags } from '~/utils/voiceTags';
 import { stripGameSoundTags, gameSoundSrcsIn, gameTableIdIn } from '~/utils/gameSounds';
+import { INVALID_CITATION_REGEX, CLEANUP_REGEX, LITERAL_NBSP_REGEX } from '~/utils/citations';
+
+/** July 13 2026 scrub audit: live captions also showed citation glyphs and
+ * literal escape-text on web-search turns — captions are READ surfaces. */
+function scrubCaption(text: string): string {
+  return stripGameSoundTags(stripVoiceTags(text))
+    .replace(INVALID_CITATION_REGEX, '')
+    .replace(CLEANUP_REGEX, '')
+    .replace(LITERAL_NBSP_REGEX, ' ')
+    .replace(/turn\d+(?:search|image|news|video|ref|file)\d+/g, '');
+}
 import GameTable from '~/components/Chat/Messages/Content/GameTable';
 import useStreamingCall from './useStreamingCall';
 import store from '~/store';
@@ -1329,7 +1340,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
                 meant only for the audio path -- strip it for this caption.
                 fetchSentenceAudio() above gets the untouched chunk, so the
                 voice itself stays expressive. */}
-            <span className="text-gray-100">{stripGameSoundTags(stripVoiceTags(aiText))}</span>
+            <span className="text-gray-100">{scrubCaption(aiText)}</span>
           </div>
         )}
       </div>

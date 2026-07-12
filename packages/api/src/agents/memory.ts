@@ -265,12 +265,14 @@ export const createMemoryTool = ({
             undefined,
           ];
         }
+        /** recurrence: null (not undefined) when a fresh remind_at has no repeat —
+         * setMemory inherits omitted fields from the superseded entry (July 13
+         * wipe guard), so an explicit null is what clears a previous repeat. */
         const reminderFields = dueAt
           ? {
               type: 'reminder' as const,
               dueAt,
-              recurrence:
-                remind_repeat && remind_repeat !== 'none' ? remind_repeat : undefined,
+              recurrence: remind_repeat && remind_repeat !== 'none' ? remind_repeat : null,
               completed: false,
             }
           : {};
@@ -803,6 +805,8 @@ Below is everything currently active in the "${scopeLabel}" memory bucket. The t
 2. MERGE: if entries are near-duplicates or say overlapping things about the same topic, combine them into ONE card and \`delete_memory\` the leftovers.
 3. TIGHTEN: rewrite verbose, repetitive, or stale-phrased cards more concisely with \`set_memory\` on the same key. Keep the human substance -- what matters and why -- not a log of how it came up.
 4. PRUNE: \`delete_memory\` cards that are obsolete, contradicted by a newer card, or were never really durable (one-off task chatter, moment-only details).
+
+HARD RULE — cards marked [\"reminder\": …] are LIVE SCHEDULED ALARMS: never merge them into other cards, never fold other cards into them, never delete them, and never change their key. At most, tighten their value wording with \`set_memory\` on the SAME key — the schedule survives a value rewrite.
 
 Emit ALL of your set_memory/delete_memory calls together in a single response. Do NOT invent facts that are not already present below. Do NOT erase information that is still true just to shorten things -- tighten phrasing, don't erase substance. If everything already looks like clean one-topic cards, do nothing and end the turn immediately.`;
 

@@ -435,8 +435,11 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
         } else {
           media = '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open full-size image in a new tab"><img loading="lazy" src="' + esc(a.url) + '" alt="' + esc(desc) + '"></a>';
         }
-        return '<section class="card asset" aria-label="' + esc(title) + '">' +
-          '<h2 style="margin:0 0 .5rem;font-size:1.05rem">' + esc(title) + '</h2>' +
+        /* July 13 2026 VO audit: aria-label repeating the inner h2 = iOS
+         * VoiceOver double-read (same class as the July 11 message bug).
+         * The heading labels the section instead. */
+        return '<section class="card asset" aria-labelledby="asset-h-' + esc(a.id) + '">' +
+          '<h2 id="asset-h-' + esc(a.id) + '" style="margin:0 0 .5rem;font-size:1.05rem">' + esc(title) + '</h2>' +
           media +
           '<p class="meta"><span class="pill">' + esc(a.kind) + '</span>' + esc(a.model || a.service) + (a.costUSD ? ' &middot; ' + money(a.costUSD) : '') + '</p>' +
           (a.description ? '<p class="desc"><strong>' + (a.kind === 'audio' ? 'What you will hear:' : 'What it looks like:') + '</strong> ' + esc(a.description) + '</p>' : '') +
@@ -542,8 +545,11 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
         } else {
           media = '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open full-size image in a new tab"><img loading="lazy" src="' + esc(a.url) + '" alt="' + esc(desc) + '"></a>';
         }
-        return '<section class="card asset" aria-label="' + esc(title) + '">' +
-          '<h2 style="margin:0 0 .5rem;font-size:1.05rem">' + esc(title) + '</h2>' +
+        /* July 13 2026 VO audit: aria-label repeating the inner h2 = iOS
+         * VoiceOver double-read (same class as the July 11 message bug).
+         * The heading labels the section instead. */
+        return '<section class="card asset" aria-labelledby="asset-h-' + esc(a.id) + '">' +
+          '<h2 id="asset-h-' + esc(a.id) + '" style="margin:0 0 .5rem;font-size:1.05rem">' + esc(title) + '</h2>' +
           media +
           '<p class="meta"><span class="pill">' + esc(a.by || 'Someone') + '</span>' + esc(a.kind) + (a.model ? ' &middot; ' + esc(a.model) : '') + '</p>' +
           (a.description ? '<p class="desc"><strong>' + (a.kind === 'audio' ? 'What you will hear:' : 'What it looks like:') + '</strong> ' + esc(a.description) + '</p>' : '') +
@@ -662,8 +668,9 @@ const gameRoomHtml = `<!doctype html><html lang="en"><head><title>The Game Room<
 
       document.getElementById('pergame').innerHTML = (d.games || []).map(function(g){
         const leader = g.rows[0];
-        return '<section class="card" aria-label="' + esc(g.name) + ' standings">' +
-          '<h3 style="margin:0 0 .25rem; font-size:1.05rem">' + esc(g.name) + '</h3>' +
+        /* July 13 2026 VO audit: heading labels the section (no double-read). */
+        return '<section class="card" aria-labelledby="pg-h-' + esc(g.id || g.name).replace(/[^a-zA-Z0-9_-]/g,'') + '">' +
+          '<h3 id="pg-h-' + esc(g.id || g.name).replace(/[^a-zA-Z0-9_-]/g,'') + '" style="margin:0 0 .25rem; font-size:1.05rem">' + esc(g.name) + '</h3>' +
           '<p class="muted" style="margin:.1rem 0 .4rem">' + num(g.played) + ' game' + (g.played===1?'':'s') + ' played' +
           (leader && leader.w>0 ? ' &middot; ' + esc(leader.by) + ' leads with ' + leader.w + ' win' + (leader.w===1?'':'s') : '') + '.</p>' +
           '<table><thead><tr><th scope="col">Player</th><th scope="col" class="num">Wins</th><th scope="col" class="num">Losses</th><th scope="col" class="num">Draws</th><th scope="col" class="num">Played</th></tr></thead><tbody>' +
@@ -802,7 +809,7 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
         <input id="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="4175551234" style="padding:.5rem;border-radius:6px;border:1px solid #8886;max-width:14rem">
         <p class="muted">Calls cost the site a few pennies each; push and in-chat are free. Calls announce themselves as AI, like every Kade-AI call.</p>
       </div>
-      <button class="btn" id="btn-save" type="submit">Save my choices</button>
+      <button class="btn" id="btn-save" type="submit" disabled>Save my choices (loading&hellip;)</button>
       <button class="btn" id="btn-test" type="button" style="background:#555">Send me a test nudge</button>
     </form>
   </div>
@@ -997,9 +1004,12 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
       var bdEl=document.querySelector('input[name=birthday][value='+(p.birthday||'off')+']'); if(bdEl){ bdEl.checked=true; }
       if(p.birthdayDate && /^\\d{2}-\\d{2}$/.test(p.birthdayDate)){ mSel.value=p.birthdayDate.slice(0,2); dSel.value=p.birthdayDate.slice(3,5); }
       if(p.phone){ document.getElementById('phone').value=p.phone; }
+      /* July 13 2026 wipe guard: only arm Save once the saved values are IN the
+       * form — saving an unhydrated form silently blanked phone + birthday. */
+      var saveBtn=document.getElementById('btn-save'); saveBtn.disabled=false; saveBtn.textContent='Save my choices';
       say('Loaded. '+(d.pushSubscriptions?('Push is on for '+d.pushSubscriptions+' device(s).'):'Push is not set up yet — in-chat delivery works regardless.'));
       refreshPushState(); loadRecent(); wellInit();
-    }catch(e){ say('Could not load settings: '+e.message, true); }
+    }catch(e){ say('Could not load your saved settings — reload the page before saving, or your saved phone and birthday could be lost: '+e.message, true); }
   })();
 </script>
 </body></html>`;

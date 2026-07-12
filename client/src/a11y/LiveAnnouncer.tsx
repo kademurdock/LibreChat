@@ -28,6 +28,9 @@ export function scrubAnnouncement(text: string): string {
     .replace(THINKING_BLOCK_RE, '')
     .replace(INVALID_CITATION_REGEX, '')
     .replace(CLEANUP_REGEX, '')
+    /* July 13 2026: bare anchors with NO marker glyph ("turn0search3" typed
+     * plain) — the TTS proxy already catch-alls these; the announcer must too. */
+    .replace(/turn\d+(?:search|image|news|video|ref|file)\d+/g, '')
     .replace(LITERAL_NBSP_REGEX, ' ')
     .replace(PUA_CHARS_RE, '')
     .replace(MD_IMAGE_RE, '$1')

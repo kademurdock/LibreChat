@@ -309,12 +309,19 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
         return res.status(409).json({ error: 'Memory with this key already exists in that bucket.' });
       }
 
+      /** KADE July 13 2026 wipe guard: a key rename must carry the reminder
+       * scheduling with it — otherwise renaming a reminder card via the memory
+       * panel silently turned it back into a plain fact and the alarm died. */
       const createResult = await createMemory({
         userId: req.user.id,
         agentId: scopedAgentId,
         key: newKey,
         value,
         tokenCount,
+        type: existingMemory.type,
+        dueAt: existingMemory.dueAt,
+        recurrence: existingMemory.recurrence,
+        completed: existingMemory.completed,
       });
 
       if (!createResult.ok) {
