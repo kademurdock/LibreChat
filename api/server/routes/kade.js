@@ -1254,6 +1254,39 @@ router.post('/voice-pref-ingest', async (req, res) => {
   }
 });
 
+/**
+ * SERVICE: GET /api/kade/call-memories — the CALLER'S own memory cards for
+ * phone calls (July 12 2026, Kade: "phone agents seem way more clueless than
+ * text agents"). Phone turns run through the admin LibreChat session, so the
+ * caller's per-user memories never reach the model — this hands the bridge
+ * the same formatted memory block the web injects (shared + agent bucket),
+ * resolved by email/phone/userId. Secret-guarded like /usage-event.
+ */
+router.get('/call-memories', async (req, res) => {
+  try {
+    const expected = process.env.KADE_USAGE_EVENT_SECRET;
+    if (!expected || req.query.secret !== expected) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const agentId = String(req.query.agentId || '').slice(0, 64) || undefined;
+    const uid = await resolveUserForVoice({
+      userId: req.query.userId,
+      email: req.query.email,
+      phone: req.query.phone,
+    });
+    if (!uid) {
+      return res.json({ text: null });
+    }
+    const { getFormattedMemories } = require('~/models');
+    const { withoutKeys } = await getFormattedMemories({ userId: uid, agentId });
+    const text = (withoutKeys || '').slice(0, 6000);
+    return res.json({ text: text || null, userId: uid });
+  } catch (e) {
+    logger.error('[kade/call-memories] failed:', e);
+    return res.status(500).json({ error: 'lookup failed' });
+  }
+});
+
 router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);
