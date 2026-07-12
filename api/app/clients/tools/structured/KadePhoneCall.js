@@ -56,6 +56,11 @@ const phoneCallJsonSchema = {
       type: 'string',
       description: 'For pause_checkin / cancel_checkin / test_checkin: the schedule id from list_checkins or schedule_checkin.',
     },
+    call_as: {
+      type: 'string',
+      description:
+        "HOST PRIVILEGE — works ONLY when you are Kiana. The NAME of another character who should place this call instead of you (their own voice and persona), e.g. call_as='Lilly' to have Lilly call Skylee. Any other character given this request must tell the user to ask Kiana — she is the host and the only one who can hand calls to the rest of the cast.",
+    },
   },
   required: [],
 };
@@ -147,6 +152,36 @@ class KadePhoneCall extends Tool {
     if (!to_number || !purpose) {
       return "To place a call I need both to_number and purpose. (Or use action='check_result' to get the last call's transcript.)";
     }
+    // KIANA-ONLY DELEGATION (July 12 2026, Kade: "she's the host"): Kiana may
+    // hand a call to any other character; everyone else routes through her.
+    const KIANA_ID = 'agent_6llV0eMu4fmIaj8f2x1Sb';
+    let callAgentId = this.agentId;
+    let callAgentName = this.agentName;
+    const callAs = String(data?.call_as || '').trim();
+    if (callAs && callAs.toLowerCase() !== String(this.agentName || '').toLowerCase()) {
+      if (this.agentId !== KIANA_ID) {
+        return (
+          'Only Kiana can hand a call to another character — she is the host. ' +
+          'Tell the user to ask Kiana (e.g. "Kiana, have ' + callAs + ' call...").'
+        );
+      }
+      try {
+        const mongoose = require('mongoose');
+        const AgentModel = mongoose.models.Agent;
+        const esc = callAs.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const found =
+          (await AgentModel.findOne({ name: new RegExp('^' + esc + '$', 'i') }).lean()) ||
+          (await AgentModel.findOne({ name: new RegExp(esc, 'i') }).lean());
+        if (!found) {
+          return `I couldn't find a character named "${callAs}" — check the name and try again.`;
+        }
+        callAgentId = found.id;
+        callAgentName = found.name;
+      } catch (err) {
+        logger.warn(`[KadePhoneCall] call_as lookup failed: ${err.message}`);
+        return `Couldn't look up "${callAs}" right now — try again in a moment.`;
+      }
+    }
     const uidPlace = String(this.userId || '');
     if (Date.now() - (_lastPlaced.get(uidPlace) || 0) < 30000) {
       return (
@@ -163,8 +198,8 @@ class KadePhoneCall extends Tool {
           calleeName: callee_name,
           userId: String(this.userId || ''),
           userName: this.userName,
-          agentId: this.agentId,
-          agentName: this.agentName,
+          agentId: callAgentId,
+          agentName: callAgentName,
           secret: this.bridgeSecret,
         },
         { timeout: 20000, headers: { 'User-Agent': 'Mozilla/5.0' } },
@@ -172,7 +207,7 @@ class KadePhoneCall extends Tool {
       const d = r.data || {};
       _lastPlaced.set(uidPlace, Date.now());
       return (
-        `Call placed to ${d.to} — it is dialing now, capped at ${d.timeLimitMin} minutes. ` +
+        `Call placed to ${d.to}${callAgentId !== this.agentId ? ` — ${callAgentName} is making this call in their own voice` : ''} — it is dialing now, capped at ${d.timeLimitMin} minutes. ` +
         `The user has ${d.callsLeftToday} outbound call(s) left today. The cost will appear on their Feed-the-Server tab after the call ends. ` +
         "Tell the user the call is underway and that you'll have the answer when they next check in. " +
         "IMPORTANT: on the user's NEXT message (even just 'hey' or 'well?'), run action='check_result' FIRST and report what the callee said before anything else."
