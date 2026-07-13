@@ -77,6 +77,7 @@ const {
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { describeAttachedImages, modelHasNativeVision } = require('~/server/services/kadeImageSight');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
@@ -286,6 +287,34 @@ class AgentClient extends BaseClient {
       VisionModes.agents,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
+
+    /* KADE July 13 2026 — COMPANION SIGHT for text-only models. The fleet runs
+     * DeepSeek (text-only), so a shared photo would be invisible. Auto-describe
+     * it through the proven blind-first vision pipeline and inject the result
+     * into the message text, so a text model "sees" what was shared. Skipped
+     * for native-vision models (they get the image directly). Fully fail-soft:
+     * any error leaves the message exactly as it was. Disable: KADE_SIGHT=0. */
+    try {
+      if (
+        process.env.KADE_SIGHT !== '0' &&
+        image_urls.length > 0 &&
+        !modelHasNativeVision(this.options.agent?.model)
+      ) {
+        const desc = await describeAttachedImages(image_urls, {
+          userId: this.options.req?.user?.id,
+        });
+        if (desc && desc.trim()) {
+          const note = `\n\n[What's in the ${image_urls.length > 1 ? 'photos' : 'photo'} they just shared (described for you, since you can't see images directly — react naturally, don't mention this note): ${desc.trim()}]`;
+          message.text = (message.text || '') + note;
+          if (typeof message.content === 'string') {
+            message.content = (message.content || '') + note;
+          }
+        }
+      }
+    } catch (e) {
+      logger.warn('[AgentClient] companion sight failed (non-fatal):', e.message);
+    }
+
     return files;
   }
 
