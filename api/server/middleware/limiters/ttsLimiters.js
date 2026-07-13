@@ -4,9 +4,9 @@ const { limiterCache, removePorts } = require('@librechat/api');
 const logViolation = require('~/cache/logViolation');
 
 const getEnvironmentVariables = () => {
-  const TTS_IP_MAX = parseInt(process.env.TTS_IP_MAX) || 100;
+  const TTS_IP_MAX = parseInt(process.env.TTS_IP_MAX) || 300;
   const TTS_IP_WINDOW = parseInt(process.env.TTS_IP_WINDOW) || 1;
-  const TTS_USER_MAX = parseInt(process.env.TTS_USER_MAX) || 50;
+  const TTS_USER_MAX = parseInt(process.env.TTS_USER_MAX) || 200;
   const TTS_USER_WINDOW = parseInt(process.env.TTS_USER_WINDOW) || 1;
   const TTS_VIOLATION_SCORE = process.env.TTS_VIOLATION_SCORE;
 
@@ -42,19 +42,33 @@ const createTTSHandler = (ip = true) => {
       windowInMinutes: ip ? ttsIpWindowInMinutes : ttsUserWindowInMinutes,
     };
 
-    await logViolation(req, res, type, errorMessage, ttsViolationScore);
-    res.status(429).json({ message: 'Too many TTS requests. Try again later' });
+    /* KADE July 13 2026: voice-sampling must NEVER contribute to a BAN — Kade:
+     * "don't harass my people about switching voices too fast." Hitting the TTS
+     * rate limit now returns a gentle 429 ONLY (a brief "slow down"); it no
+     * longer calls logViolation, so it can't accrue toward the 15-min ban.
+     * The rate cap still protects against runaway synthesis cost. To restore
+     * ban-scoring, set env TTS_VIOLATION_SCORE and re-enable the logViolation
+     * line below. */
+    void type; void errorMessage; void ttsViolationScore; // (kept for shape)
+    res.status(429).json({ message: 'One moment — give the voices a second to catch up, then try again.' });
   };
 };
 
 const createTTSLimiters = () => {
   const { ttsIpWindowMs, ttsIpMax, ttsUserWindowMs, ttsUserMax } = getEnvironmentVariables();
 
+  /* KADE July 13 2026: admin (Kade) is never TTS-rate-limited — she sampled her
+   * own voices into a ban. */
+  let SystemRoles;
+  try { ({ SystemRoles } = require('librechat-data-provider')); } catch { SystemRoles = { ADMIN: 'ADMIN' }; }
+  const skipAdmin = (req) => req.user?.role === SystemRoles.ADMIN;
+
   const ipLimiterOptions = {
     windowMs: ttsIpWindowMs,
     max: ttsIpMax,
     handler: createTTSHandler(),
     keyGenerator: removePorts,
+    skip: skipAdmin,
     store: limiterCache('tts_ip_limiter'),
   };
 
@@ -65,6 +79,7 @@ const createTTSLimiters = () => {
     keyGenerator: function (req) {
       return req.user?.id;
     },
+    skip: skipAdmin,
     store: limiterCache('tts_user_limiter'),
   };
 

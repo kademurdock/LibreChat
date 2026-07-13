@@ -45,6 +45,28 @@ const banViolation = async (req, res, errorMessage) => {
     return;
   }
 
+  /* KADE July 13 2026: NEVER ban an ADMIN. Kade got locked out of her own
+   * platform by the anti-abuse system while sampling voices. She's already
+   * exempt from balance + fal caps; exempt from bans too. Fast path = req.user
+   * role; fallback = a one-off DB lookup (only runs here, i.e. only when a ban
+   * would otherwise fire — rare). Fail-open on lookup error: better to skip a
+   * ban than crash the request. */
+  try {
+    const { SystemRoles } = require('librechat-data-provider');
+    let isAdmin = req.user?.role === SystemRoles.ADMIN;
+    if (!isAdmin && user_id) {
+      const { findUser } = require('~/models');
+      const u = await findUser({ _id: user_id }, 'role');
+      isAdmin = u?.role === SystemRoles.ADMIN;
+    }
+    if (isAdmin) {
+      logger.info(`[BAN] skipped for admin user ${user_id} (exempt)`);
+      return;
+    }
+  } catch (e) {
+    logger.warn(`[BAN] admin-exemption check failed (proceeding as non-admin): ${e.message}`);
+  }
+
   await deleteAllUserSessions({ userId: user_id });
 
   /** Clear OpenID session tokens if present */
