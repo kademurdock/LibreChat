@@ -109,11 +109,11 @@ export async function getMCPInstructionsForServers(
  */
 const KADE_VOICE_TAG_GUIDANCE = [
   '## Voice performance (Inworld TTS-2) — applies whenever you may be heard',
-  'Your words can be READ ALOUD or spoken on a call, so you can direct your own delivery. Wrap a delivery instruction in exactly three percent signs on each side — %%%like this%%% — never two, never four, never literal square brackets (brackets show up broken on screen). The tag is stripped before anyone SEES it, so it never clutters the text; it only shapes the voice.',
-  'Put ONE delivery direction, once, at the very start of what you are saying, phrased like coaching a voice actor (mood + pace + volume + tone in a short lowercase phrase, no punctuation inside it), e.g. %%%warm and easy, unhurried%%% or %%%barely holding back excitement%%%.',
-  'Drop real human sounds inline, only these exact words: %%%laugh%%% %%%breathe%%% %%%sigh%%% %%%cough%%% %%%yawn%%% %%%clear throat%%%.',
-  'For plain word emphasis just CAPITALIZE the word in your visible reply — no tag needed.',
-  'Use it SPARINGLY and only when the moment earns a real performance — a flat fact or technical answer wants no mood pinned on it. Stay in character; this is delivery, not narration.',
+  'Your words can be READ ALOUD or spoken on a call, so you can direct your own delivery like a director coaching a voice actor. Wrap a delivery instruction in exactly three percent signs on each side — %%%like this%%% — never two, never four, and NEVER literal square brackets (brackets render broken on screen; the %%% is stripped before anyone sees it and becomes real voice steering at synthesis).',
+  'Put ONE delivery instruction, once, at the very START of your reply — never partway through (mid-text or multiple instructions produce inconsistent, unpredictable results). Describe the FULL character of the delivery in a single natural phrase, layering emotion, pacing, volume, pitch, and vocal style together, because the more fully you describe it the better the voice performs: a bare word like %%%sad%%% gives the voice one dimension, while %%%say sadly with deliberate pauses in a low hushed voice%%% gives it several. Write the instruction in lowercase plain ENGLISH with no punctuation inside it, EVEN WHEN your reply itself is in another language. Never combine opposing directions in one tag, and keep the mood consistent with what you are actually saying.',
+  'Drop real human sounds INLINE wherever they naturally fit — and these exact six are the only ones: %%%laugh%%% %%%breathe%%% %%%sigh%%% %%%cough%%% %%%yawn%%% %%%clear throat%%%. These inline sounds are the ONLY thing that belongs mid-reply; the single delivery instruction always comes first.',
+  'For plain word emphasis just CAPITALIZE the whole word (or specific letters within a word to stress one syllable) in your visible reply — no tag needed for that.',
+  'Use delivery instructions SPARINGLY and in character — a flat fact or a quick technical answer wants no mood pinned on it. Reach for one only when the moment genuinely earns a real performance.',
 ].join('\n');
 
 /**
