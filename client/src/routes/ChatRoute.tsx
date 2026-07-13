@@ -76,7 +76,11 @@ export default function ChatRoute() {
    * /c/new and re-run the new-convo init — the July 2 preset logic then
    * opens a FRESH chat with the SAME character (last agent). Quick app
    * switches (checking a text) stay untouched. Threshold minutes:
-   * localStorage kadeFreshReturnMinutes, default 15; '0' disables. */
+   * localStorage kadeFreshReturnMinutes, default 360 (6h); '0' disables.
+   * KADE July 13 2026: default was 15 min — but a locked phone counts as
+   * "hidden", so a chat left open through a normal mid-day idle got yanked
+   * to a fresh one ("randomly switches", her words). 6 hours = a new
+   * SITTING boundary: overnight returns open fresh, smoke breaks don't. */
   useEffect(() => {
     let hiddenAt: number | null = null;
     const onVisibility = () => {
@@ -86,7 +90,7 @@ export default function ChatRoute() {
       }
       const awayMs = hiddenAt != null ? Date.now() - hiddenAt : 0;
       hiddenAt = null;
-      let thresholdMin = 15;
+      let thresholdMin = 360;
       try {
         const stored = localStorage.getItem('kadeFreshReturnMinutes');
         if (stored != null && Number.isFinite(Number(stored))) {

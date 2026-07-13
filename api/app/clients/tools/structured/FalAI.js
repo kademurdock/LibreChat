@@ -687,6 +687,21 @@ class FalAI extends Tool {
       modelName = 'minimax-music-2.6';
       engLabel = 'MiniMax Music 2.6';
       estUSD = 0.15;
+      /* July 13 2026 (Kade: "Muse is having issues creating a minimax track"):
+       * fal's v2.6 schema enforces prompt 10-2000 chars and lyrics <= 3500 —
+       * a full Lyric song with every chorus written out sails past 3500 and
+       * the job is rejected before it starts. Check UP FRONT with an
+       * actionable message instead of relaying fal's raw validation error. */
+      if (style.length < 10) {
+        return 'MiniMax needs a fuller style description (at least 10 characters) — genre, mood, tempo, vocal type.';
+      }
+      if (lyrics && lyrics.length > 3500) {
+        return (
+          `MiniMax Music caps lyrics at 3,500 characters and this song is ${lyrics.length}. ` +
+          'Trim it — the usual wins are writing repeated choruses as [Chorus] (repeat) instead of pasting them in full, or dropping a verse — ' +
+          "or switch engine to 'lyria3_pro', which handles longer lyric sheets. Tell the user which you're doing."
+        );
+      }
       body = { prompt: style.slice(0, 2000) };
       if (instrumental) {
         body.is_instrumental = true;
@@ -781,7 +796,13 @@ class FalAI extends Tool {
         );
       }
       if (status === 'FAILED') {
-        return `The ${engLabel} song job failed on fal — no charge. Offer to try again or tweak the style/lyrics.`;
+        /* Surface fal's actual failure reason when it offers one. */
+        let detail = '';
+        try {
+          const out = await axios.get(responseUrl, { headers: this.headers(), timeout: 15000 });
+          detail = JSON.stringify(out.data?.detail || out.data?.error || '').slice(0, 220);
+        } catch { /* best effort */ }
+        return `The ${engLabel} song job failed on fal — no charge.${detail && detail !== '""' ? ` fal says: ${detail}.` : ''} Offer to try again or tweak the style/lyrics.`;
       }
     }
     return (
