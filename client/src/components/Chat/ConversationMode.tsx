@@ -1170,11 +1170,15 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // former and non-empty during the latter, so it cleanly splits the label
   // into Thinking -> Typing without any extra state. (2026-07-01)
   const thinkingLabel = aiText ? 'Typing' : 'Thinking';
+  /* KADE July 12 2026 (her ask: "take the thinking/listening/speaking labels
+   * off voiceover specifically so they don't talk over the AI"): the per-turn
+   * state words are silenced for screen readers — every live-region change
+   * ducks/interrupts the agent's actual voice, and the states are already
+   * audible by design (typing sound = thinking, her voice = speaking, quiet =
+   * your turn). Only the one-time 'Connecting' survives, so a blind caller
+   * still knows the tap worked. The VISIBLE label keeps all states. */
   const srStatus =
     error                    ? '' :
-    status === 'listening'   ? 'Listening' :
-    status === 'thinking'    ? thinkingLabel :
-    status === 'speaking'    ? 'Speaking' :
     status === 'connecting'  ? 'Connecting' :
                                '';
   const visibleStatus =
