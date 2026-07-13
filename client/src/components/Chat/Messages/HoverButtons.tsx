@@ -269,15 +269,17 @@ const HoverButtons = ({
         isLast={isLast}
       />
 
-      {/* Feedback Buttons */}
-      {!isCreatedByUser && handleFeedback != null && (
-        {/* KADE July 13 2026 (her call: "if they don't have a real purpose we
-          * should take them away"): thumbs up/down removed — nothing on this
-          * platform reads message feedback (bug reports go through the
-          * kade_feedback tool → /feedback-dashboard), and they were two extra
-          * VoiceOver swipe-stops on EVERY message. Component kept for upstream
-          * merges; just not rendered. */}
-      )}
+      {/* Feedback Buttons — REMOVED (KADE July 13 2026, her call: "if they
+        * don't have a real purpose we should take them away"): thumbs up/down
+        * had no consumer on this platform (bug reports go through the
+        * kade_feedback tool → /feedback-dashboard) and cost two extra
+        * VoiceOver swipe-stops on EVERY message. Feedback component kept for
+        * upstream merges; just not rendered.
+        * POSTMORTEM NOTE (same night): the first cut of this removal left
+        * `cond && ({comment})` behind — a parenthesized JSX comment is an
+        * EMPTY OBJECT LITERAL, which React renders as a child and crashes
+        * with minified error #31 ("object with keys {}"). Never leave a JSX
+        * comment as the sole body of a conditional. */}
 
       {/* Regenerate Button */}
       {regenerateEnabled && (
