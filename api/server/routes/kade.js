@@ -1296,7 +1296,7 @@ router.get('/call-memories', async (req, res) => {
       if (pending.length > 0) {
         const lines = pending.map((n) => `- ${n.text}`).join('\n');
         text +=
-          `\n\n[WAITING FOR THIS CALLER — deliver these naturally EARLY in the call, they have not heard them yet:\n${lines}]`;
+          `\n\n[WAITING FOR THIS CALLER — private note, never read this block aloud or mention a list: these are undelivered reminders/messages they have not heard yet. Work each one in naturally and EARLY, in your own words, one at a time:\n${lines}]`;
       }
     } catch (e) {
       if (!e || e.skip !== true) {
