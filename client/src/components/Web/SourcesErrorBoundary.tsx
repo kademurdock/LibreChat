@@ -5,6 +5,10 @@ interface Props {
   fallback?: ReactNode;
   onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
   showDetails?: boolean;
+  /* KADE July 13 2026: change this to auto-clear a transient error and re-try
+   * rendering the children (e.g. when the message re-renders during a
+   * share/read-aloud). Prevents the error UI from sticking + looping. */
+  resetKey?: unknown;
 }
 
 interface State {
@@ -23,6 +27,15 @@ class SourcesErrorBoundary extends Component<Props, State> {
     this.props.onError?.(error, errorInfo);
   }
 
+  componentDidUpdate(prevProps: Props) {
+    // A transient error (thrown during a share/re-render on a news convo) must
+    // NOT stick and trap VoiceOver. When the resetKey changes, drop hasError so
+    // the children get one clean re-render.
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false });
+    }
+  }
+
   render() {
     if (this.state.hasError) {
       // Use custom fallback if provided
@@ -30,22 +43,16 @@ class SourcesErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
 
-      // Default simple error UI (using localized strings from Sources.tsx fallback)
+      /* KADE July 13 2026: QUIET fallback — NOT a live region (was role="alert"
+       * aria-live="polite", which re-announced "Refresh" on every re-render and
+       * trapped VoiceOver in a refresh-refresh-refresh loop), and NO
+       * window.location.reload() button (it nuked the whole app). Sources are
+       * supplementary; if they can't render, show a small static note and let
+       * the resetKey auto-recover them on the next good render. */
       /* eslint-disable i18next/no-literal-string */
       return (
-        <div
-          className="flex flex-col items-center justify-center rounded-lg border border-border-medium bg-surface-secondary p-4 text-center"
-          role="alert"
-          aria-live="polite"
-        >
-          <div className="mb-2 text-sm text-text-secondary">Sources temporarily unavailable</div>
-          <button
-            onClick={() => window.location.reload()}
-            className="hover:bg-surface-primary-hover rounded-md bg-surface-primary px-3 py-1 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-ring"
-            aria-label="Reload the page"
-          >
-            Refresh
-          </button>
+        <div className="rounded-lg border border-border-medium bg-surface-secondary p-3 text-center text-xs text-text-tertiary">
+          Sources couldn't load.
         </div>
       );
       /* eslint-enable i18next/no-literal-string */

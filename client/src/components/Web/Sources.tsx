@@ -741,22 +741,17 @@ export default function Sources(props: SourcesProps) {
     // analytics.track('sources_error', { error: error.message });
   };
 
+  /* KADE July 13 2026: this fallback USED to be a role="alert" aria-live region
+   * with a window.location.reload() "Refresh" button. On a news convo, hitting
+   * Save/Share voice clip re-rendered the message, Sources threw transiently,
+   * this alert re-announced every re-render, and VoiceOver got trapped in a
+   * "refresh refresh refresh" loop (forcing an app restart); the reload button
+   * also nuked all state. Now it's a QUIET, static, non-live note with no
+   * page-reload — supplementary sources failing must never trap the reader.
+   * The boundary's resetKey (below) auto-recovers them on the next good render. */
   const fallbackUI = (
-    <div
-      className="flex flex-col items-center justify-center rounded-lg border border-border-medium bg-surface-secondary p-4 text-center"
-      role="alert"
-      aria-live="polite"
-    >
-      <div className="mb-2 text-sm text-text-secondary">
-        {localize('com_sources_error_fallback')}
-      </div>
-      <button
-        onClick={() => window.location.reload()}
-        className="hover:bg-surface-primary-hover rounded-md bg-surface-primary px-3 py-1 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-ring"
-        aria-label={localize('com_sources_reload_page')}
-      >
-        {localize('com_ui_refresh')}
-      </button>
+    <div className="rounded-lg border border-border-medium bg-surface-secondary p-3 text-center text-xs text-text-tertiary">
+      {localize('com_sources_error_fallback')}
     </div>
   );
 
@@ -764,6 +759,7 @@ export default function Sources(props: SourcesProps) {
     <SourcesErrorBoundary
       onError={handleError}
       fallback={fallbackUI}
+      resetKey={props.messageId ?? props.conversationId}
       showDetails={process.env.NODE_ENV === 'development'}
     >
       <SourcesComponent {...props} />
