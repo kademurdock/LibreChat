@@ -92,6 +92,8 @@ export interface MemoryBucketRef {
 // Result interfaces
 export interface MemoryResult {
   ok: boolean;
+  /** true = value was byte-identical to what's stored; nothing actually changed. */
+  unchanged?: boolean;
 }
 
 export interface FormattedMemoriesResult {

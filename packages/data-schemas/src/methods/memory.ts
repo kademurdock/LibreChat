@@ -131,7 +131,10 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
           existing.tokenCount = tokenCount;
         }
         await existing.save();
-        return { ok: true };
+        /* July 13 2026 (Kade: "updated memory bubble before every message,
+         * same Kasper card"): identical re-saves are a silent refresh, NOT an
+         * update — flag it so the tool can skip the UI bubble. */
+        return { ok: true, unchanged: true };
       }
 
       if (existing) {

@@ -284,6 +284,17 @@ export const createMemoryTool = ({
           tokenCount,
           ...reminderFields,
         });
+        if (result.ok && result.unchanged) {
+          /* July 13 2026: identical re-save — no artifact, so the chat UI shows
+           * NO "updated memory" bubble (Kade saw one before every message when
+           * the writer kept re-affirming the same card), and the reply coaches
+           * the writer out of the habit. */
+          logger.debug(`Memory unchanged for key "${key}" for user "${userId}" — re-save skipped`);
+          return [
+            `"${key}" is already saved exactly like that — no update made. Facts already in your memory list do not need re-saving unless their substance changes; prefer ending the turn with no calls.`,
+            undefined,
+          ];
+        }
         if (result.ok) {
           logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
           return [`Memory set for key "${key}" (${tokenCount} tokens)`, artifact];

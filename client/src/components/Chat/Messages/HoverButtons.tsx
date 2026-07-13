@@ -271,7 +271,12 @@ const HoverButtons = ({
 
       {/* Feedback Buttons */}
       {!isCreatedByUser && handleFeedback != null && (
-        <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
+        {/* KADE July 13 2026 (her call: "if they don't have a real purpose we
+          * should take them away"): thumbs up/down removed — nothing on this
+          * platform reads message feedback (bug reports go through the
+          * kade_feedback tool → /feedback-dashboard), and they were two extra
+          * VoiceOver swipe-stops on EVERY message. Component kept for upstream
+          * merges; just not rendered. */}
       )}
 
       {/* Regenerate Button */}
