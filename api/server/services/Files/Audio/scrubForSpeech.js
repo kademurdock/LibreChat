@@ -38,11 +38,25 @@ const MD_IMAGE_RE = /!\[([^\]]*)\]\((?:[^)]*)\)/g;
 // Bare URLs anywhere → dropped (a spoken URL is noise).
 const BARE_URL_RE = /\bhttps?:\/\/\S+/gi;
 
+// KADE July 13 2026: DeepSeek V4 Pro is a thinking model. Its reasoning is
+// supposed to stay in a hidden channel, but on tool turns it can surface as
+// tagged thinking blocks in the spoken text. Strip every tagged form so
+// read-aloud never voices the model's reasoning (untagged reasoning-in-content
+// is a separate, model-side issue — this covers the tagged forms).
+const THINK_TAG_RE = /<think>[\s\S]*?<\/think>/gi;
+const THINK_BLOCK_RE = /:::thinking[\s\S]*?:::\n?/gi;
+const PUA_REASON_RE = /\uF001[\s\S]*?\uF002/g;
+const DEEP_THINK_MARKER_RE = /\[DEEP THINK(?:\s+\d{10,17})?\]/gi;
+
 function scrubForSpeech(text) {
   if (!text || typeof text !== 'string') {
     return text;
   }
   return text
+    .replace(THINK_TAG_RE, '')
+    .replace(THINK_BLOCK_RE, '')
+    .replace(PUA_REASON_RE, '')
+    .replace(DEEP_THINK_MARKER_RE, '')
     .replace(TRAILING_SOURCES_RE, '')
     .replace(MD_IMAGE_RE, '$1')
     .replace(MD_LINK_RE, '$1')
