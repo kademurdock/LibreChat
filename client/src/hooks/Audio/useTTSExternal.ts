@@ -2,6 +2,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { parseTextParts } from 'librechat-data-provider';
+import { scrubForSpeech } from '~/utils/scrubForSpeech';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import useTextToSpeechExternal from '~/hooks/Input/useTextToSpeechExternal';
 import usePauseGlobalAudio from '~/hooks/Audio/usePauseGlobalAudio';
@@ -63,7 +64,7 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
         const messageContent = content ?? '';
         const parsedMessage =
           typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent, true);
-        generateSpeech(parsedMessage, false);
+        generateSpeech(scrubForSpeech(parsedMessage), false);
       }
     }, 1000);
   };
@@ -83,7 +84,8 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
       const messageContent = content ?? '';
       const parsedMessage =
         typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent, true);
-      generateSpeech(parsedMessage, false);
+      /* July 13 2026: strip sources/citations Grok appends, KEEP %%% voice tags. */
+      generateSpeech(scrubForSpeech(parsedMessage), false);
     }
   };
 

@@ -2,6 +2,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { parseTextParts } from 'librechat-data-provider';
+import { scrubForSpeech } from '~/utils/scrubForSpeech';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import useTextToSpeechBrowser from '~/hooks/Input/useTextToSpeechBrowser';
 import usePauseGlobalAudio from '~/hooks/Audio/usePauseGlobalAudio';
@@ -62,7 +63,7 @@ const useTTSBrowser = (props?: TUseTextToSpeech) => {
         const messageContent = content ?? '';
         const parsedMessage =
           typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent, true);
-        generateSpeech(parsedMessage);
+        generateSpeech(scrubForSpeech(parsedMessage));
       }
     }, 1000);
   };
@@ -82,7 +83,7 @@ const useTTSBrowser = (props?: TUseTextToSpeech) => {
       const messageContent = content ?? '';
       const parsedMessage =
         typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent, true);
-      generateSpeech(parsedMessage);
+      generateSpeech(scrubForSpeech(parsedMessage));
     }
   };
 

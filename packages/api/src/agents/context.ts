@@ -95,6 +95,43 @@ export async function getMCPInstructionsForServers(
  * @param {string} [params.mcpInstructions] - Agent's MCP server instructions
  * @returns {string | undefined} Combined instructions, or undefined if empty
  */
+/**
+ * KADE July 13 2026 — PLATFORM-WIDE VOICE PERFORMANCE TAGS.
+ * Kade's decree: EVERY agent (current and future) must use Inworld TTS-2
+ * emotional steering the way it's intended — not just the 3 that had it in
+ * their own instructions. Injected here (the universal agent-instruction
+ * chokepoint, same spirit as the fleet-wide kade_feedback/kade_message tool
+ * injection) so no agent record needs editing and new agents inherit it free.
+ * Additive + fail-soft: it only APPENDS; the tag is stripped before display on
+ * every surface, so it's invisible in text and harmless to non-voice use.
+ * Disable with env KADE_VOICE_TAGS=0. Keep the %%% convention in sync with the
+ * inworld-tts-proxy steering converter + the scrub layers.
+ */
+const KADE_VOICE_TAG_GUIDANCE = [
+  '## Voice performance (Inworld TTS-2) — applies whenever you may be heard',
+  'Your words can be READ ALOUD or spoken on a call, so you can direct your own delivery. Wrap a delivery instruction in exactly three percent signs on each side — %%%like this%%% — never two, never four, never literal square brackets (brackets show up broken on screen). The tag is stripped before anyone SEES it, so it never clutters the text; it only shapes the voice.',
+  'Put ONE delivery direction, once, at the very start of what you are saying, phrased like coaching a voice actor (mood + pace + volume + tone in a short lowercase phrase, no punctuation inside it), e.g. %%%warm and easy, unhurried%%% or %%%barely holding back excitement%%%.',
+  'Drop real human sounds inline, only these exact words: %%%laugh%%% %%%breathe%%% %%%sigh%%% %%%cough%%% %%%yawn%%% %%%clear throat%%%.',
+  'For plain word emphasis just CAPITALIZE the word in your visible reply — no tag needed.',
+  'Use it SPARINGLY and only when the moment earns a real performance — a flat fact or technical answer wants no mood pinned on it. Stay in character; this is delivery, not narration.',
+].join('\n');
+
+/**
+ * Appends the platform-wide voice-tag guidance to an agent's base
+ * instructions, unless the agent already teaches the %%% convention (the few
+ * that hand-authored it keep their richer version) or it's disabled by env.
+ */
+export function withKadeVoiceTags(baseInstructions?: string): string {
+  const base = baseInstructions || '';
+  if (process.env.KADE_VOICE_TAGS === '0') {
+    return base;
+  }
+  if (base.includes('%%%')) {
+    return base; // already has bespoke voice-tag guidance
+  }
+  return base ? `${base}\n\n${KADE_VOICE_TAG_GUIDANCE}` : KADE_VOICE_TAG_GUIDANCE;
+}
+
 export function buildAgentInstructions({
   baseInstructions,
   mcpInstructions,
@@ -102,7 +139,11 @@ export function buildAgentInstructions({
   baseInstructions?: string;
   mcpInstructions?: string;
 }): string | undefined {
-  const parts = [baseInstructions, mcpInstructions].filter(Boolean);
+  /* July 13 2026: guarantee the platform-wide voice-tag guidance regardless of
+   * which path assembled baseInstructions (idempotent — the %%% guard inside
+   * withKadeVoiceTags no-ops if it's already present, so agents with bespoke
+   * guidance and the applyAgentContext pre-wrap are both untouched). */
+  const parts = [withKadeVoiceTags(baseInstructions), mcpInstructions].filter(Boolean);
   const combined = parts.join('\n\n').trim();
   return combined || undefined;
 }
@@ -153,7 +194,7 @@ export async function applyContextToAgent({
   logger?: Logger;
   configServers?: Record<string, ParsedServerConfig>;
 }): Promise<void> {
-  const baseInstructions = agent.instructions || '';
+  const baseInstructions = withKadeVoiceTags(agent.instructions || '');
   const additionalInstructions = agent.additional_instructions || '';
 
   try {

@@ -302,6 +302,16 @@ export default function Feedback({
     );
   };
 
+  /* KADE July 13 2026: thumbs up/down retired platform-wide. Removing the
+   * <Feedback/> render from HoverButtons (c742fc8) missed a path — she still
+   * saw thumbs on some agent (Forge) messages — so this is the belt-and-
+   * suspenders kill switch: the component renders NOTHING no matter which
+   * render path mounts it. Nothing on this platform consumes message
+   * feedback (bug reports go through kade_feedback → /feedback-dashboard).
+   * Whole component kept intact below for clean upstream merges. */
+  return null;
+
+  // eslint-disable-next-line no-unreachable
   return (
     <>
       {feedback ? (

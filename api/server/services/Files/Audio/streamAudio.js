@@ -8,6 +8,7 @@ const {
 } = require('librechat-data-provider');
 const { getLogStores } = require('~/cache');
 const { getMessage } = require('~/models');
+const { scrubForSpeech } = require('./scrubForSpeech');
 
 /**
  * @param {string[]} voiceIds - Array of voice IDs
@@ -93,7 +94,14 @@ function createChunkProcessor(user, messageId) {
       notFoundCount++;
       return [];
     } else {
-      const text = message.content?.length > 0 ? parseTextParts(message.content) : message.text;
+      /* KADE July 13 2026: (1) skipReasoning=true so read-aloud speaks the
+       * ANSWER, not the model's reasoning (Grok reasons more than Hermes did —
+       * the manual read-aloud path already skipped it, this path didn't, so
+       * auto-play "started reading from the middle"). (2) scrubForSpeech strips
+       * web-search sources/citations/URLs that Grok appends (she heard them
+       * recited at the end). */
+      const rawText = message.content?.length > 0 ? parseTextParts(message.content, true) : message.text;
+      const text = scrubForSpeech(rawText);
       messageCache.set(
         cacheKey,
         {
