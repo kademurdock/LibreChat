@@ -106,9 +106,30 @@ const callsHtml = `<!doctype html>
     .replace(/[ \t]{2,}/g,' ').trim(); }
   function setStatus(msg, err){ var s=$('status'); s.textContent=msg; s.className='status'+(err?' err':''); }
 
+  /* July 14 2026: every network call is time-boxed so a hung request can never
+   * freeze the page on "Loading..." (the bug Kade hit on NVDA/VoiceOver -- no
+   * timeout and no try/catch meant one stalled fetch = permanent "Loading your
+   * history..."). AbortController -> a clear, actionable message instead. */
+  function fetchT(url, opts, ms){
+    opts = opts || {};
+    var ctl = new AbortController();
+    var timer = setTimeout(function(){ ctl.abort(); }, ms || 12000);
+    opts.signal = ctl.signal;
+    return fetch(url, opts).finally(function(){ clearTimeout(timer); });
+  }
+  function showReload(){
+    var existing = document.getElementById('reloadBtn');
+    if(existing){ existing.focus(); return; }
+    var b = document.createElement('button');
+    b.type='button'; b.id='reloadBtn'; b.className='btn primary'; b.style.margin='.5rem 0';
+    b.textContent='Reload this page';
+    b.addEventListener('click', function(){ location.reload(); });
+    var st = $('status'); st.parentNode.insertBefore(b, st.nextSibling);
+    b.focus();
+  }
   async function getToken(){
     try{
-      var r = await fetch('/api/auth/refresh', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body:'{}'});
+      var r = await fetchT('/api/auth/refresh', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body:'{}'}, 12000);
       if(!r.ok) return null;
       var j = await r.json();
       return j && j.token ? j.token : null;
@@ -117,7 +138,7 @@ const callsHtml = `<!doctype html>
   async function api(path, opts){
     opts = opts || {};
     opts.headers = Object.assign({'Authorization':'Bearer '+token}, opts.headers||{});
-    return fetch('/api/kade/calls'+path, opts);
+    return fetchT('/api/kade/calls'+path, opts, 15000);
   }
 
   function fmtWhen(iso){
@@ -164,19 +185,28 @@ const callsHtml = `<!doctype html>
 
   async function loadList(){
     setStatus('Loading your history…');
-    var r = await api('');
+    var r;
+    try{ r = await api(''); }
+    catch(e){ setStatus('Could not reach the server (the request timed out). Check your connection and use the Reload button below.', true); showReload(); return; }
     if(r.status===401 || r.status===403){ notSignedIn(); return; }
-    if(!r.ok){ setStatus('Could not load your history. Try again in a moment.', true); return; }
-    var j = await r.json();
-    renderList(j.calls || []);
+    if(!r.ok){ setStatus('Could not load your history right now. Use the Reload button below to try again.', true); showReload(); return; }
+    var j = null;
+    try{ j = await r.json(); }
+    catch(e){ setStatus('Got an unexpected response loading your history. Use the Reload button below.', true); showReload(); return; }
+    try{ renderList((j && j.calls) || []); }
+    catch(e){ setStatus('Something went wrong showing your history. Use the Reload button below.', true); showReload(); }
   }
 
   async function openCall(id){
     currentId = id;
     setStatus('Loading transcript…');
-    var r = await api('/'+encodeURIComponent(id));
+    var r;
+    try{ r = await api('/'+encodeURIComponent(id)); }
+    catch(e){ setStatus('Could not load that transcript (the request timed out). Try again.', true); return; }
     if(!r.ok){ setStatus('Could not load that transcript.', true); return; }
-    var d = await r.json();
+    var d = null;
+    try{ d = await r.json(); }
+    catch(e){ setStatus('Got an unexpected response for that transcript. Try again.', true); return; }
     var who = d.agentName || 'Kiana';
     var head = surfaceWord(d.surface)+' with '+who;
     $('detailHead').textContent = head;
@@ -215,17 +245,23 @@ const callsHtml = `<!doctype html>
   }
 
   function notSignedIn(){
-    setStatus('You need to be signed in to see your history. Open the main site, sign in, then come back to this page.', true);
+    setStatus('You need to be signed in to see your history. Open the main site, sign in, then use the Reload button below.', true);
     $('calls').innerHTML = '';
+    showReload();
   }
 
   $('backToList').addEventListener('click', showList);
   $('deleteCall').addEventListener('click', deleteCurrent);
 
   (async function init(){
-    token = await getToken();
-    if(!token){ notSignedIn(); return; }
-    await loadList();
+    try{
+      token = await getToken();
+      if(!token){ notSignedIn(); return; }
+      await loadList();
+    }catch(e){
+      setStatus('Something went wrong loading this page. Use the Reload button below.', true);
+      showReload();
+    }
   })();
 })();
 </script>
