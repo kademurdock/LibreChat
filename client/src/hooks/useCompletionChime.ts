@@ -14,8 +14,9 @@ import store from '~/store';
  * KADE July 4 2026 — screen-reader status announcements ride the same
  * transition (her report: "NVDA doesn't see the progress thing... I never
  * know when he's done"). Polite live region, always on: "Working on a
- * reply" at start, a "Still working" reassurance every 25s on long tool
- * turns, "Reply ready" at the end. The visual pulse was invisible to NVDA;
+ * reply" at start, ONE non-repeating "Still generating" reassurance on a
+ * long turn (July 13 2026: the old every-25s repeat read as obsessive to
+ * the screen reader, per Kade), "Reply ready" at the end. Invisible to NVDA;
  * this is the non-visual twin of the Cowork-style progress feel.
  */
 let audioCtx: AudioContext | null = null;
@@ -52,7 +53,8 @@ function playChime() {
   }
 }
 
-const STILL_WORKING_INTERVAL_MS = 25000;
+/* July 13 2026: fires ONCE after this delay (was a repeating 25s interval). */
+const STILL_WORKING_DELAY_MS = 30000;
 
 export default function useCompletionChime(isSubmitting: boolean) {
   const enabled = useRecoilValue(store.chimeOnCompletion);
@@ -63,10 +65,10 @@ export default function useCompletionChime(isSubmitting: boolean) {
   useEffect(() => {
     if (isSubmitting) {
       announcePolite({ message: localize('com_ui_reply_working'), isStatus: true });
-      const iv = setInterval(() => {
+      const t = setTimeout(() => {
         announcePolite({ message: localize('com_ui_reply_still_working'), isStatus: true });
-      }, STILL_WORKING_INTERVAL_MS);
-      return () => clearInterval(iv);
+      }, STILL_WORKING_DELAY_MS);
+      return () => clearTimeout(t);
     }
     if (wasSubmitting.current) {
       announcePolite({ message: localize('com_ui_reply_finished'), isStatus: true });

@@ -1958,7 +1958,7 @@
   "com_ui_deep_think_on": "Deep think is on for your next message. The reply will take longer but be more thought out.",
   "com_ui_deep_think_off": "Deep think is off.",
   "com_ui_context_window_explainer": "This is how much of the conversation the AI can remember at once. As it fills up, the oldest messages are the first to fall out of its memory.",
-  "com_ui_reply_working": "Working on a reply",
-  "com_ui_reply_still_working": "Still working",
+  "com_ui_reply_working": "Generating reply...",
+  "com_ui_reply_still_working": "Still generating...",
   "com_ui_reply_finished": "Reply ready"
 }

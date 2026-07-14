@@ -54,9 +54,17 @@ const LiveAnnouncer: React.FC<LiveAnnouncerProps> = ({ children }) => {
 
   const events: Record<string, string | undefined> = useMemo(
     () => ({
-      start: localize('com_a11y_start'),
-      end: localize('com_a11y_end'),
-      composing: localize('com_a11y_ai_composing'),
+      /* KADE July 13 2026 — reply-status announcements are owned SOLELY by
+       * useCompletionChime (one "Generating reply..." at start, one late
+       * "Still generating..." reassurance on long turns, one "Reply ready"
+       * at the end). The built-in start/composing/end duplicated that, and
+       * the throttled "composing" re-fired every 7s (MESSAGE_UPDATE_INTERVAL)
+       * = obsessive screen-reader repetition (Kade's report). Silenced to ''
+       * so the SSE handlers keep calling them harmlessly; restore the
+       * localize() calls to revert. summarize_* stay (infrequent + useful). */
+      start: '',
+      end: '',
+      composing: '',
       summarize_started: localize('com_a11y_summarize_started'),
       summarize_completed: localize('com_a11y_summarize_completed'),
       summarize_failed: localize('com_a11y_summarize_failed'),
