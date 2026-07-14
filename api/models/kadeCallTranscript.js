@@ -37,6 +37,7 @@ const kadeCallTranscriptSchema = new mongoose.Schema(
     turnCount: { type: Number, default: 0 },
     turns: { type: [turnSchema], default: [] },
     conversationId: { type: String }, // conversation mode: link back to the chat convo
+    mergedConversationId: { type: String }, // phone->history merge: the minted conversation (idempotency marker)
     metadata: { type: mongoose.Schema.Types.Mixed },
   },
   { timestamps: true },

@@ -14,6 +14,7 @@ const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { KadeCallTranscript, logKadeCall } = require('~/models/kadeCallTranscript');
 const { callsHtml } = require('./kadeCallsPage');
+const { mintConversationFromTranscript, backfillPhoneTranscripts } = require('~/server/services/kadeCallMerge');
 
 const router = express.Router();
 
@@ -113,6 +114,13 @@ router.post('/ingest', async (req, res) => {
       turns: b.turns,
       metadata: b.metadata,
     });
+    if (id) {
+      // going-forward: mirror this phone call into the normal chat history (fail-soft)
+      KadeCallTranscript.findById(id)
+        .lean()
+        .then((doc) => doc && mintConversationFromTranscript(doc))
+        .catch(() => {});
+    }
     res.json({ ok: true, saved: !!id, id: id ? String(id) : null });
   } catch (err) {
     logger.error('[/api/kade/calls/ingest] error:', err);
@@ -139,6 +147,56 @@ router.post('/mine', requireJwtAuth, async (req, res) => {
   } catch (err) {
     logger.error('[/api/kade/calls/mine] error:', err);
     res.status(500).json({ error: 'save failed' });
+  }
+});
+
+/* ---- merge maintenance (secret-guarded): mint call transcripts into chats --- */
+function mergeSecretOk(req) {
+  const expected = process.env.KADE_CALL_INGEST_SECRET || process.env.KADE_USAGE_EVENT_SECRET;
+  return !!expected && (req.body || {}).secret === expected;
+}
+
+// Mint ONE transcript (by id, or the most recent phone call) — the safe test path.
+router.post('/merge-one', async (req, res) => {
+  if (!mergeSecretOk(req)) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  try {
+    const b = req.body || {};
+    const doc = b.id
+      ? await KadeCallTranscript.findById(b.id).lean()
+      : await KadeCallTranscript.findOne({ surface: 'phone' }).sort({ createdAt: -1 }).lean();
+    if (!doc) {
+      return res.json({ ok: true, found: false });
+    }
+    const conversationId = await mintConversationFromTranscript(doc, { force: !!b.force });
+    res.json({
+      ok: true,
+      found: true,
+      transcriptId: String(doc._id),
+      surface: doc.surface,
+      agentName: doc.agentName,
+      turns: Array.isArray(doc.turns) ? doc.turns.length : 0,
+      conversationId,
+    });
+  } catch (err) {
+    logger.error('[/api/kade/calls/merge-one] error:', err);
+    res.status(500).json({ error: 'merge failed' });
+  }
+});
+
+// Backfill every not-yet-merged PHONE transcript (bounded).
+router.post('/merge-backfill', async (req, res) => {
+  if (!mergeSecretOk(req)) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  try {
+    const limit = Math.min(500, parseInt((req.body || {}).limit, 10) || 50);
+    const result = await backfillPhoneTranscripts({ limit });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    logger.error('[/api/kade/calls/merge-backfill] error:', err);
+    res.status(500).json({ error: 'backfill failed' });
   }
 });
 
