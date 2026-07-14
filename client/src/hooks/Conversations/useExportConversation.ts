@@ -22,7 +22,12 @@ import { useScreenshot } from '~/hooks/ScreenshotContext';
 import { useLocalize } from '~/hooks';
 import { cleanupPreset } from '~/utils';
 import { stripVoiceTags } from '~/utils/voiceTags';
-import { INVALID_CITATION_REGEX, CLEANUP_REGEX, LITERAL_NBSP_REGEX } from '~/utils/citations';
+import {
+  INVALID_CITATION_REGEX,
+  BARE_CITATION_REGEX,
+  CLEANUP_REGEX,
+  LITERAL_NBSP_REGEX,
+} from '~/utils/citations';
 import { stripGameSoundTags } from '~/utils/gameSounds';
 
 type ExportValues = {
@@ -76,6 +81,7 @@ export default function useExportConversation({
       const cleanText = stripGameSoundTags(stripVoiceTags(text))
         .replace(/:::thinking[\s\S]*?:::\n?/g, '')
         .replace(INVALID_CITATION_REGEX, '')
+        .replace(BARE_CITATION_REGEX, '')
         .replace(CLEANUP_REGEX, '')
         .replace(LITERAL_NBSP_REGEX, ' ');
       if (format === 'text') {

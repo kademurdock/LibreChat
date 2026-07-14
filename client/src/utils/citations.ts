@@ -53,3 +53,15 @@ export const INVALID_CITATION_REGEX =
  * markdown TEXT nodes (and speech/announcement strings), never code blocks.
  */
 export const LITERAL_NBSP_REGEX = /\\u00a0/gi;
+
+/**
+ * KADE July 13 2026 -- BARE citation anchors with NO leading PUA glyph.
+ * DeepSeek + Grok emit "turn0search1" as PLAIN TEXT (the  sentinel wrap
+ * is provider-specific to OpenAI-style search), so the glyph-REQUIRED
+ * INVALID_CITATION_REGEX / STANDALONE_PATTERN miss them and they leak into the
+ * copy + export output (Kade's report on Kiana/DeepSeek). Matches the anchor
+ * with or without a glyph/escape prefix; mirrors scrubForSpeech.ts and the
+ * inline regexes already in LiveAnnouncer/ConversationMode.
+ */
+export const BARE_CITATION_REGEX =
+  /(?:\\?u[eE]20[0-9a-fA-F])?turn\d+(?:search|image|news|video|ref|file)\d+/g;

@@ -9,6 +9,7 @@ import {
   COMPOSITE_REGEX,
   STANDALONE_PATTERN,
   INVALID_CITATION_REGEX,
+  BARE_CITATION_REGEX,
 } from '~/utils/citations';
 import { stripVoiceTags } from '~/utils/voiceTags';
 import { stripGameSoundTags } from '~/utils/gameSounds';
@@ -79,6 +80,7 @@ export default function useCopyToClipboard({
         // Clean up any citation markers before returning
         const cleanedText = messageText
           .replace(INVALID_CITATION_REGEX, '')
+          .replace(BARE_CITATION_REGEX, '')
           .replace(CLEANUP_REGEX, '').replace(LITERAL_NBSP_REGEX, ' ');
 
         copy(cleanedText, { format: 'text/plain' });
@@ -345,6 +347,9 @@ function processCitations(text: string, searchResults: { [key: string]: SearchRe
 
   // Step 6: Clean up any remaining citation markers
   formattedText = formattedText.replace(INVALID_CITATION_REGEX, '');
+  // Bare anchors (no PUA glyph) from DeepSeek/Grok that STANDALONE_PATTERN could
+  // not convert to [N] -- strip them so they never reach the clipboard.
+  formattedText = formattedText.replace(BARE_CITATION_REGEX, '');
   formattedText = formattedText.replace(CLEANUP_REGEX, '').replace(LITERAL_NBSP_REGEX, ' ');
 
   return {
