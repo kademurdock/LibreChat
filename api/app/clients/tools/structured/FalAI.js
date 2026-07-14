@@ -68,7 +68,7 @@ const falJsonSchema = {
     prompt: {
       type: 'string',
       description:
-        'Detailed prompt. For video: describe shot, subject, motion, mood, camera. For animate_image: describe the MOTION you want (what moves and how). For images: Seedream 4.5 excels at legible TEXT inside images (logos, signs, flyers, memes) — quote any exact wording. For generate_audio: write it like a short audio SCRIPT — [genre + environment + mood], a continuous sound bed, then each line as `Name (voice traits, emotion, pace) says: \"dialogue.\"` with concrete [sound effect] cues; specify the language (English or Chinese). Max 2,048 characters (~2 minutes).',
+        'Detailed prompt. For video: describe shot, subject, motion, mood, camera. For animate_image: describe the MOTION you want (what moves and how). For images: Seedream 4.5 excels at legible TEXT inside images (logos, signs, flyers, memes) — quote any exact wording. For generate_audio: write it like a short audio SCRIPT — [genre + environment + mood], a continuous sound bed, then each line as `Name (voice traits, emotion, pace) says: \"dialogue.\"` with concrete [sound effect] cues; specify the language (English or Chinese). Keep it to ONE clip: under ~1,900 characters (a full 2-minute scene is only ~1,400-2,000 chars). The HARD cap is 2,048 chars / ~2 min per clip; going over makes just the FIRST clip unless the user explicitly wants a multi-minute piece (then set long_form:true).',
     },
     image_url: {
       type: 'string',
@@ -129,6 +129,21 @@ const falJsonSchema = {
     pitch: {
       type: 'integer',
       description: 'generate_audio only: voice pitch shift in semitones, -12 to 12 (default 0).',
+    },
+    long_form: {
+      type: 'boolean',
+      description:
+        "generate_audio only: leave FALSE by default. Seed Audio caps at ~2 min / 2,048 chars per clip, so a longer script normally makes JUST the first 2-minute clip and offers to continue. Set TRUE only when the user explicitly asks for a full multi-minute piece (audiobook chapter, long podcast) — then every part generates at once (up to 4). Do NOT set it just because a script is a little long; keep scenes to one clip.",
+    },
+    audio_quality: {
+      type: 'string',
+      enum: ['standard', 'high'],
+      description:
+        "generate_audio only: 'standard' (default) = 24kHz MP3, small + perfect for speech. 'high' = 48kHz lossless WAV (studio fidelity, bigger file, SAME price — Seed Audio bills by length, not quality). Use 'high' when the user asks for high/studio/lossless quality or wants a master to keep.",
+    },
+    volume: {
+      type: 'number',
+      description: 'generate_audio only: output loudness, 0.5-2.0 (default 1).',
     },
     engine: {
       type: 'string',
@@ -550,12 +565,20 @@ class FalAI extends Tool {
 
   /** One Seed Audio generation -> { url, seconds, costUSD } or null. Logs usage + gallery. */
   async _genOneAudio(promptText, data, refUrls) {
+    const hq = data.audio_quality === 'high';
+    const explicitFmt = ['mp3', 'wav', 'pcm', 'ogg_opus'].includes(data.output_format)
+      ? data.output_format
+      : null;
     const body = {
       prompt: promptText,
-      output_format: ['mp3', 'wav', 'pcm', 'ogg_opus'].includes(data.output_format)
-        ? data.output_format
-        : 'mp3',
+      // 'high' -> 48kHz lossless WAV (studio master); else Seed Audio's default 24kHz MP3.
+      // Sample rate / format do NOT change generation cost (billed by duration).
+      output_format: explicitFmt || (hq ? 'wav' : 'mp3'),
+      sample_rate: hq ? 48000 : 24000,
     };
+    if (typeof data.volume === 'number' && data.volume >= 0.5 && data.volume <= 2) {
+      body.volume = data.volume;
+    }
     if (typeof data.speed === 'number' && data.speed >= 0.5 && data.speed <= 2) {
       body.speed = data.speed;
     }
@@ -581,6 +604,7 @@ class FalAI extends Tool {
       model: 'seed-audio-1.0',
       refs: (refUrls && refUrls.length) || 0,
       format: body.output_format,
+      sampleRate: body.sample_rate,
     });
     logKadeAsset({
       userId: this.userId,
@@ -622,7 +646,8 @@ class FalAI extends Tool {
   async generateAudioParts(fullPrompt, data) {
     const MAX_PARTS = 4;
     const chunks = this.splitAudioPrompt(fullPrompt, 1850);
-    const planned = Math.min(chunks.length, MAX_PARTS);
+    const wantAll = !!data.long_form;
+    const planned = wantAll ? Math.min(chunks.length, MAX_PARTS) : 1;
     const blocked = await this.checkBudget(0.15 * planned);
     if (blocked) return blocked;
     const CONT =
@@ -649,18 +674,27 @@ class FalAI extends Tool {
       }
       made += 1;
       const mm = `${Math.floor(res.seconds / 60)}:${String(res.seconds % 60).padStart(2, '0')}`;
-      links.push(`[Play Part ${i + 1}](${res.url}) - ${mm}`);
+      links.push(wantAll ? `[Play Part ${i + 1}](${res.url}) - ${mm}` : `[Play the audio](${res.url})`);
       totalSec += res.seconds;
       totalCost += res.costUSD;
+    }
+    const totalMM = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
+    if (!wantAll) {
+      // ONE clip is the default now: make the first ~2-min part and OFFER the rest,
+      // instead of surprising the user with a pile of clips from one script.
+      return (
+        `${links[0]}\n\n` +
+        `Seed Audio clip - ${totalMM} (~$${totalCost.toFixed(3)}), saved to your gallery at /my-creations.\n\n` +
+        `Heads up: your script ran longer than one 2-minute clip (about ${chunks.length} parts' worth), so I made just the FIRST part. Want the rest? Say "continue" and I'll pick up from here, or "make the whole thing" and I'll generate every part at once.`
+      );
     }
     const leftover = chunks.length - made;
     const more =
       leftover > 0
         ? ` Your script was long enough for ${chunks.length} parts; I generated the first ${made} - say "continue" for the rest.`
         : '';
-    const totalMM = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
     return (
-      `Your piece was longer than one 2-minute clip, so I split it into ${made} part${made > 1 ? 's' : ''} and generated ${made > 1 ? 'them all' : 'it'}:\n\n` +
+      `You asked for the full piece, so I split it into ${made} part${made > 1 ? 's' : ''} and generated ${made > 1 ? 'them all' : 'it'}:\n\n` +
       `${links.join('\n')}\n\n` +
       `Total ~${totalMM}, about $${totalCost.toFixed(2)}. All saved to your gallery at /my-creations - play them in order, or ask me to stitch them into one track.${more}`
     );
