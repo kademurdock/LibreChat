@@ -15,7 +15,6 @@ import {
   Heart,
   Landmark,
   MessagesSquare,
-  PhoneCall,
   BellRing,
   ScanEye,
   Trophy,
@@ -180,14 +179,10 @@ function ExploreSubmenu({ isAdmin, isChild }: { isAdmin: boolean; isChild: boole
           <Clapperboard className="icon-md" aria-hidden="true" />
           My Creations
         </Menu.MenuItem>
-        <Menu.MenuItem
-          onClick={go('/calls')}
-          className="select-item text-sm"
-          aria-label="Call History: readable transcripts of your phone calls and voice conversations, newest first"
-        >
-          <PhoneCall className="icon-md" aria-hidden="true" />
-          Call History
-        </Menu.MenuItem>
+        {/* Call History link RETIRED July 14 2026 — phone calls now MERGE into the
+            normal chat history (kadeCallMerge), read by the standard chat screen. The
+            /calls page + route stay served but unlinked; restore this MenuItem to bring
+            the standalone page back. */}
         <Menu.MenuItem
           onClick={go('/describe')}
           className="select-item text-sm"
