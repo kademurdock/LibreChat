@@ -213,6 +213,24 @@ export const kadeWeatherSchema: ExtendedJsonSchema = {
   required: ['location'],
 };
 
+export const kadeCodeSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    language: {
+      type: 'string',
+      enum: ['python', 'bash', 'node'],
+      description:
+        "Runtime: 'python' (default) for math/data/logic, 'bash' for shell commands, 'node' for JavaScript.",
+    },
+    code: {
+      type: 'string',
+      description:
+        'Complete, self-contained program that PRINTS its result (print / echo / console.log) — only what it prints comes back. No input() prompts.',
+    },
+  },
+  required: ['code'],
+};
+
 export const kadeWikipediaSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -783,6 +801,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Get REAL current weather and a short forecast for any city — free, instant, no cost (Open-Meteo). Use this instead of web_search for weather questions. NEVER invent weather; only report what this tool returns.',
     schema: kadeWeatherSchema,
+    toolType: 'builtin',
+  },
+  kade_code: {
+    name: 'kade_code',
+    description:
+      'Run a small Python/Bash/Node program in a safe isolated sandbox and get back what it prints — free, no cost, CPU only. Use for real math, data crunching, text processing, or building small things instead of guessing. ~20s limit; NO access to the site, its data, or any secrets. Make the code PRINT its result, then present the output to the user in plain, screen-reader-friendly words — never a raw dump.',
+    schema: kadeCodeSchema,
     toolType: 'builtin',
   },
   kade_joke: {

@@ -113,5 +113,13 @@
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
+  },
+  {
+    "name": "Code Runner",
+    "pluginKey": "kade_code",
+    "description": "Run a small Python/Bash/Node program in a safe sandbox and get back what it prints. Free, no key, no cost.",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
   }
 ]

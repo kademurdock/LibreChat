@@ -29,6 +29,7 @@ const {
   FalAI,
   KadePhoneCall,
   KadeWeather,
+  KadeCode,
   KadeWikipedia,
   KadeJoke,
   KadeNews,
@@ -191,6 +192,7 @@ const loadTools = async ({
     fal_studio: FalAI,
     kade_phone_call: KadePhoneCall,
     kade_weather: KadeWeather,
+    kade_code: KadeCode,
     kade_wikipedia: KadeWikipedia,
     kade_joke: KadeJoke,
     kade_news: KadeNews,
@@ -299,6 +301,10 @@ const loadTools = async ({
     kade_message: {
       userId: user,
       userName: options?.req?.user?.name,
+      agentName: agent?.name,
+    },
+    kade_code: {
+      userId: user,
       agentName: agent?.name,
     },
     dalle: imageGenOptions,
