@@ -15,6 +15,7 @@ const { requireJwtAuth } = require('~/server/middleware');
 const { KadeCallTranscript, logKadeCall } = require('~/models/kadeCallTranscript');
 const { callsHtml } = require('./kadeCallsPage');
 const { mintConversationFromTranscript, backfillPhoneTranscripts } = require('~/server/services/kadeCallMerge');
+const { extractMemoryFromCall } = require('~/server/services/kadeCallMemoryWrite');
 
 const router = express.Router();
 
@@ -118,7 +119,17 @@ router.post('/ingest', async (req, res) => {
       // going-forward: mirror this phone call into the normal chat history (fail-soft)
       KadeCallTranscript.findById(id)
         .lean()
-        .then((doc) => doc && mintConversationFromTranscript(doc))
+        .then(async (doc) => {
+          if (!doc) {
+            return;
+          }
+          await mintConversationFromTranscript(doc);
+          // Calls TEACH memory now (parity with text): run the salience-fixed
+          // memory-writer over the finished transcript. Re-read so it sees the
+          // fresh mergedConversationId. Fully fail-soft — never breaks ingest.
+          const fresh = await KadeCallTranscript.findById(id).lean();
+          await extractMemoryFromCall(fresh || doc);
+        })
         .catch(() => {});
     }
     res.json({ ok: true, saved: !!id, id: id ? String(id) : null });

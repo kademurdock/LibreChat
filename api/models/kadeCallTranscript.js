@@ -38,6 +38,7 @@ const kadeCallTranscriptSchema = new mongoose.Schema(
     turns: { type: [turnSchema], default: [] },
     conversationId: { type: String }, // conversation mode: link back to the chat convo
     mergedConversationId: { type: String }, // phone->history merge: the minted conversation (idempotency marker)
+    memoryExtractedAt: { type: Date }, // calls-teach-memory: run-once stamp so the writer fires exactly once per transcript
     metadata: { type: mongoose.Schema.Types.Mixed },
   },
   { timestamps: true },
