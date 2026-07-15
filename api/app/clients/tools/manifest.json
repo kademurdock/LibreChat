@@ -8,6 +8,14 @@
     "authConfig": []
   },
   {
+    "name": "Push Notification",
+    "pluginKey": "kade_notify",
+    "description": "Send a guardrailed push notification to the user's own phone (reminders, task-done pings). Server-enforced quiet hours, cooldown, and daily caps.",
+    "icon": "assets/phone-call.svg",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Fal Studio (Video + Design)",
     "pluginKey": "fal_studio",
     "description": "AI video clips (Kling 3.0 / Veo 3.1 Fast) and design images with perfect text (Seedream 4.5) via fal.ai.",

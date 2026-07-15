@@ -366,6 +366,27 @@ export const kadePhoneCallSchema: ExtendedJsonSchema = {
   required: [],
 };
 
+export const kadeNotifySchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    body: {
+      type: 'string',
+      description:
+        "REQUIRED. The notification text shown on the user's phone lock screen. Keep it short and clear (under ~200 characters), written the way you would text them.",
+    },
+    title: {
+      type: 'string',
+      description: "Optional short title / sender line (a few words). Defaults to your name.",
+    },
+    urgent: {
+      type: 'boolean',
+      description:
+        "Optional. Set true ONLY for genuinely time-sensitive alerts — they bypass the user's quiet hours (9pm to 8am Central). Use very sparingly.",
+    },
+  },
+  required: ['body'],
+};
+
 export const kadeNewsSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -794,6 +815,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       "Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user — and afterwards fetch the transcript with ONE action='check_result' call — it waits for the call to finish (up to ~1 min) and returns the transcript. Never call check_result more than once per turn; never dial the same call twice. Costs real money (~1.5 cents/minute, billed to the user's tab), hard-capped at 15 minutes and 10 calls per user per day. ONLY call when the user explicitly asks, ALWAYS confirm the exact number and reason first. When confirming, also tell the user casually that the call will identify them by first name as the requester and that its cost is added to their Feed the Server page. Never call emergency services, never harass anyone, never redial the same number repeatedly. If the user asked you to find something out, checking the result and reporting back IS part of the job. NEVER claim a call was placed or invent a call result — only report what this tool actually returned. ALSO manages FAMILY WELLNESS CHECK-INS (schedule_checkin / list_checkins / pause_checkin / cancel_checkin / test_checkin): recurring companion calls to REGISTERED family only — this agent makes the call, chats warmly, and a rich summary of how the person seemed comes back to the user as a nudge afterwards. Before switching a schedule on: state the rough cost (about 5-10 cents per call; a daily schedule is a few dollars a month) and get an explicit yes; for a first-ever setup offer test_checkin so the user hears one themselves first. Check-ins run 08:00-21:00 Central only. DELEGATION: call_as lets KIANA (and only Kiana — she is the host) have another character place a call in that character's own voice and persona; other characters must route such requests through Kiana.",
     schema: kadePhoneCallSchema,
+    toolType: 'builtin',
+  },
+  kade_notify: {
+    name: 'kade_notify',
+    description:
+      "Send a push notification to the user's OWN phone (their Kade-AI app) — for reminders they asked for, or to tell them a background job finished. It lands on their lock screen. The server enforces quiet hours (9pm to 8am), a cooldown, and daily caps, so keep notifications meaningful, not chatter. NEVER claim you notified them unless the tool confirms it sent; if it reports blocked or that no phone is registered, say so plainly. Do not duplicate what you just said in chat unless the user asked to be pinged on their phone.",
+    schema: kadeNotifySchema,
     toolType: 'builtin',
   },
   kade_weather: {
