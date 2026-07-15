@@ -39,7 +39,7 @@ const { getAppConfig } = require('~/server/services/Config');
 /* Keep the writer's input bounded — a long ramble call is fine, but we cap the
  * buffer so one giant call can't blow the writer's context or cost. The tail is
  * the most memory-worthy part (where they land on the real news). */
-const MAX_CALL_BUFFER_CHARS = 16000;
+const MAX_CALL_BUFFER_CHARS = 120000;
 
 /**
  * Run the memory-writer over one finished call transcript so durable facts get

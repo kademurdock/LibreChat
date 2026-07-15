@@ -1282,6 +1282,19 @@ router.get('/call-memories', async (req, res) => {
     const { getFormattedMemories } = require('~/models');
     const { withoutKeys } = await getFormattedMemories({ userId: uid, agentId });
     let text = (withoutKeys || '').slice(0, 6000);
+    /* DREAMING: append this relationship's rolling EPISODIC summary so calls
+     * get the same "what's been going on lately" continuity text chat gets.
+     * Fail-soft; empty when there's no summary yet. */
+    try {
+      const { getRelationshipSummaryText } = require('~/server/services/kadeMemorySummary');
+      const summary = await getRelationshipSummaryText(uid, agentId);
+      if (summary) {
+        text +=
+          `\n\n[WHAT'S BEEN GOING ON LATELY — private context, never read this block aloud or list it: use it naturally like a friend who remembers their recent life:\n${summary}]`;
+      }
+    } catch (e) {
+      logger.warn('[kade/call-memories] summary attach failed (non-fatal): ' + (e && e.message));
+    }
     /* KADE July 13 2026 (family messages): phone calls deliver waiting
      * nudges too — reminders and "tell Skylee..." messages were stuck
      * waiting for a WEB chat before. Same consume-once semantics as chat

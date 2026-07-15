@@ -16,6 +16,8 @@ const { KadeCallTranscript, logKadeCall } = require('~/models/kadeCallTranscript
 const { callsHtml } = require('./kadeCallsPage');
 const { mintConversationFromTranscript, backfillPhoneTranscripts } = require('~/server/services/kadeCallMerge');
 const { extractMemoryFromCall } = require('~/server/services/kadeCallMemoryWrite');
+const { refreshSummaryFromCall } = require('~/server/services/kadeMemorySummary');
+const { runSummarySweep } = require('~/server/services/kadeMemorySummarySweep');
 
 const router = express.Router();
 
@@ -129,6 +131,9 @@ router.post('/ingest', async (req, res) => {
           // fresh mergedConversationId. Fully fail-soft — never breaks ingest.
           const fresh = await KadeCallTranscript.findById(id).lean();
           await extractMemoryFromCall(fresh || doc);
+          // DREAMING: also refresh this relationship's rolling episodic
+          // summary from the call (instant draft; nightly sweep tidies it).
+          await refreshSummaryFromCall(fresh || doc);
         })
         .catch(() => {});
     }
@@ -208,6 +213,22 @@ router.post('/merge-backfill', async (req, res) => {
   } catch (err) {
     logger.error('[/api/kade/calls/merge-backfill] error:', err);
     res.status(500).json({ error: 'backfill failed' });
+  }
+});
+
+// Manually fire the nightly DREAMING summary sweep (secret-guarded) — lets us
+// smoke-test the episodic-summary path on demand instead of waiting for the
+// scheduled UTC hour. Same secret as the merge routes.
+router.post('/summary-sweep', async (req, res) => {
+  if (!mergeSecretOk(req)) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  try {
+    const result = await runSummarySweep();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    logger.error('[/api/kade/calls/summary-sweep] error:', err);
+    res.status(500).json({ error: 'summary sweep failed' });
   }
 });
 

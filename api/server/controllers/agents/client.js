@@ -567,6 +567,23 @@ class AgentClient extends BaseClient {
       logger.warn('[AgentClient] pending-nudge pickup failed (non-fatal):', nudgeError.message);
     }
 
+    /** KADE DREAMING: rolling per-relationship EPISODIC summary ("what's been
+     * going on lately"), injected BESIDE the durable memory cards so fresh chats
+     * (and calls) have continuity the cards alone can't give. One short stored
+     * paragraph -> negligible tokens. Fail-soft: never breaks a chat turn. */
+    try {
+      const { getRelationshipSummaryBlock } = require('~/server/services/kadeMemorySummary');
+      const summaryBlock = await getRelationshipSummaryBlock(
+        this.options.req.user.id,
+        this.options.agent?.id,
+      );
+      if (summaryBlock) {
+        memoryContext = memoryContext ? `${memoryContext}\n\n${summaryBlock}` : summaryBlock;
+      }
+    } catch (summaryError) {
+      logger.warn('[AgentClient] episodic-summary inject failed (non-fatal):', summaryError.message);
+    }
+
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 

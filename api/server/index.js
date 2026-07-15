@@ -41,6 +41,7 @@ const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { startMemoryConsolidationSweep } = require('./services/Memory/consolidationSweep');
 const { startNudgeSweep } = require('./services/kadeNudges');
+const { startMemorySummarySweep } = require('./services/kadeMemorySummarySweep');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
@@ -128,6 +129,7 @@ const startServer = async () => {
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   startMemoryConsolidationSweep({ appConfig, loadAppConfig: getAppConfig });
   startNudgeSweep();
+  startMemorySummarySweep(); // KADE DREAMING nightly episodic-summary sweep + decay
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
