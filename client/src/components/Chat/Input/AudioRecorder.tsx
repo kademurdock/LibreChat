@@ -82,6 +82,23 @@ export default memo(function AudioRecorder({
 
   const handleStartRecording = async () => {
     existingTextRef.current = getValues('text') || '';
+    /**
+     * KADE (July 2026) — iOS PWA fix: leaving and re-entering the installed app
+     * leaves the previous reply's auto-read clip QUEUED (iOS blocks autoplay
+     * until the first user gesture). Tapping the mic IS that gesture, so the
+     * stale clip was firing and playing OVER the dictation. Stop + rewind the
+     * shared audio element before we start listening so nothing barges in.
+     * Fail-soft: recording still starts even if the element isn't there.
+     */
+    try {
+      const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement | null;
+      if (globalAudio) {
+        globalAudio.pause();
+        globalAudio.currentTime = 0;
+      }
+    } catch {
+      /* non-fatal */
+    }
     startRecording();
   };
 
