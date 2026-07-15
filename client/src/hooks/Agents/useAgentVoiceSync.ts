@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useGetAgentByIdQuery } from '~/data-provider/Agents';
+import { request } from 'librechat-data-provider';
 import store from '~/store';
 
 /** localStorage key for per-agent voice preferences (JSON map: agent_id → voice). */
@@ -26,6 +27,23 @@ export function saveAgentVoicePreference(agentId: string, voice: string): void {
     localStorage.setItem(AGENT_VOICES_KEY, JSON.stringify(map));
   } catch {
     // localStorage unavailable — fail silently
+  }
+  /**
+   * KADE (July 2026): ALSO sync this pick to the SERVER per-user voice pref
+   * (`/api/kade/voice-prefs`, model kadeVoicePref) so it carries to the PHONE
+   * and web calls — the call ticket + phone lookup read that server row. Until
+   * now the picker only wrote localStorage (in-app read-aloud), so a voice
+   * chosen in the app never followed you onto a call. Fire-and-forget + fail-
+   * soft: a sync hiccup never blocks the in-app voice change. request.post
+   * carries auth via the shared axios interceptors.
+   */
+  if (agentId && voice) {
+    try {
+      void request.post('/api/kade/voice-prefs', { agentId, voice });
+    } catch {
+      // network/auth hiccup — the local pick still applied; phone sync will
+      // catch up on the next pick.
+    }
   }
 }
 
