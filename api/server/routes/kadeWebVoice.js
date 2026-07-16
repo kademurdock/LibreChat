@@ -50,16 +50,44 @@ router.get('/ticket', requireJwtAuth, async (req, res) => {
       } catch (err) {
         logger.warn('[kadeWebVoice] agent lookup failed: ' + err.message);
       }
-      /* KADE July 12 2026: the caller's own per-agent voice pick beats the
-       * builder default on web calls too — same order the in-app read-aloud
-       * resolves (personal -> agent default). Fail-soft. */
+      /* KADE July 17 2026: the UNIFIED RESOLVER (kadeVoiceResolver.js) now
+       * decides the chain — personal pick -> builder -> name-match -> default,
+       * live-catalog-validated — so this surface can never drift from the
+       * bridge again. Fail-soft: resolver trouble -> the pre-resolver
+       * personal-pick override below (the July 12 behavior) still runs. */
+      let resolvedBySharedChain = false;
       try {
-        const personal = await getUserVoicePref(String(req.user.id || req.user._id), agentId);
-        if (personal) {
-          voiceId = personal;
+        const { resolveVoice } = require('~/server/services/kadeVoiceResolver');
+        const resolved = await resolveVoice({
+          userId: String(req.user.id || req.user._id),
+          agentId,
+          surface: 'web',
+        });
+        if (resolved && resolved.voice) {
+          voiceId = resolved.voice;
+          if (resolved.rate != null) {
+            rate = resolved.rate;
+          }
+          resolvedBySharedChain = true;
+          logger.info(
+            `[kadeWebVoice] resolver: voice="${resolved.voice}" source=${resolved.source} agent=${agentId}`,
+          );
         }
       } catch (err) {
-        logger.warn('[kadeWebVoice] voice pref lookup failed (using agent default): ' + err.message);
+        logger.warn('[kadeWebVoice] unified resolver failed (falling back): ' + err.message);
+      }
+      /* KADE July 12 2026 (fallback path): the caller's own per-agent voice
+       * pick beats the builder default on web calls too — same order the
+       * in-app read-aloud resolves (personal -> agent default). Fail-soft. */
+      if (!resolvedBySharedChain) {
+        try {
+          const personal = await getUserVoicePref(String(req.user.id || req.user._id), agentId);
+          if (personal) {
+            voiceId = personal;
+          }
+        } catch (err) {
+          logger.warn('[kadeWebVoice] voice pref lookup failed (using agent default): ' + err.message);
+        }
       }
     }
 

@@ -1233,6 +1233,43 @@ router.get('/voice-pref-lookup', async (req, res) => {
   }
 });
 
+/**
+ * SERVICE: GET /api/kade/resolve-voice — UNIFIED VOICE RESOLVER (July 17 2026,
+ * overnight proposal A). One authoritative answer to "what voice does this
+ * user hear for this agent?" — personal pick -> builder voice -> name-match
+ * -> platform default, each validated against the live catalog. The bridge's
+ * lookupVoicePref and kadeWebVoice's ticket mint both consume this chain so
+ * the precedence logic can never drift between surfaces again.
+ * /voice-pref-lookup below stays for compat (personal-pick-only contract).
+ */
+router.get('/resolve-voice', async (req, res) => {
+  try {
+    const expected = process.env.KADE_USAGE_EVENT_SECRET;
+    if (!expected || (req.get('x-kade-secret') || req.query.secret) !== expected) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const agentId = String(req.query.agentId || '').slice(0, 64);
+    if (!agentId) {
+      return res.status(400).json({ error: 'agentId required' });
+    }
+    const uid = await resolveUserForVoice({
+      userId: req.query.userId,
+      email: req.query.email,
+      phone: req.query.phone,
+    });
+    const { resolveVoice } = require('~/server/services/kadeVoiceResolver');
+    const out = await resolveVoice({
+      userId: uid || undefined,
+      agentId,
+      surface: String(req.query.surface || '').slice(0, 16) || undefined,
+    });
+    return res.json({ ...out, userId: uid || null });
+  } catch (e) {
+    logger.error('[kade/resolve-voice] failed:', e);
+    return res.status(500).json({ error: 'resolve failed' });
+  }
+});
+
 router.post('/voice-pref-ingest', async (req, res) => {
   try {
     const expected = process.env.KADE_USAGE_EVENT_SECRET;
