@@ -4,7 +4,9 @@ import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@l
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
+import { BookOpenText } from 'lucide-react';
 import MessageAudio from './MessageAudio';
+import KadeReadingView from './KadeReadingView';
 import DownloadAudioButton from './DownloadAudioButton';
 import Feedback from './Feedback';
 import { cn } from '~/utils';
@@ -130,6 +132,8 @@ const HoverButtons = ({
 }: THoverButtons) => {
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
+  // KADE July 16 2026: distraction-free full-screen reading view (low vision)
+  const [showReadingView, setShowReadingView] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
 
   const endpoint = useMemo(() => {
@@ -225,6 +229,23 @@ const HoverButtons = ({
               isLast={isLast}
             />
           )}
+        />
+      )}
+
+      {/* KADE: full-screen reading view — AI replies only */}
+      {!isCreatedByUser && (
+        <HoverButton
+          onClick={() => setShowReadingView(true)}
+          title={localize('com_ui_kade_reading_view')}
+          icon={<BookOpenText size={19} aria-hidden="true" />}
+          isLast={isLast}
+          dataTestId={isLast ? 'kade-reading-view-button' : undefined}
+        />
+      )}
+      {showReadingView && (
+        <KadeReadingView
+          text={extractMessageContent(message)}
+          onClose={() => setShowReadingView(false)}
         />
       )}
 
