@@ -303,7 +303,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   /* -- Video call (July 16 2026, Kade's yes): caller camera -> agent vision.
    * Two lanes: 'standard' (front camera, cheap presence frames) and 'hq'
    * (rear camera, the platform's best eyes for labels/text/details).
-   * Frames sample every 5s over the SAME call socket; the bridge holds only
+   * Frames sample every 2s over the SAME call socket; the bridge holds only
    * the newest one in memory. Server is the gatekeeper (VIDEO_ENABLED flag,
    * daily minutes, first-use notice) — this side just captures and obeys. */
   const [videoMode,   setVideoMode]   = useState<'off' | 'standard' | 'hq'>('off');
@@ -348,7 +348,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       g.drawImage(vid, 0, 0, w, h);
       const b64 = canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
       if (b64) streamingEngine.sendJson({ type: 'frame', data: b64 });
-    }, 5000);
+    }, 2000);
   }, [stopCamera, streamingEngine]);
 
   const requestVideo = useCallback((mode: 'standard' | 'hq', ack = false) => {
@@ -1559,7 +1559,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             <button
               onClick={() => requestVideo('standard')}
               aria-label="Turn on video. The agent sees your front camera — everyday video call."
-              title="Video"
+              title="Video (standard quality, front camera)"
               className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white shadow-lg transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-400"
             >
               <Camera size={22} aria-hidden="true" />
@@ -1567,7 +1567,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             <button
               onClick={() => requestVideo('hq')}
               aria-label="Turn on HQ video. Rear camera with the agent's best eyes — for reading labels, text, and details."
-              title="HQ video (be my eyes)"
+              title="HQ video (high quality, rear camera — best for reading text)"
               className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white shadow-lg transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400"
             >
               <ScanEye size={22} aria-hidden="true" />
