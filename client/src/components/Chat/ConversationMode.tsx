@@ -213,6 +213,16 @@ interface ConversationModeProps {
   index?: number;
 }
 
+// KADE July 16 2026 (?kade=call — Action Button / Siri deep link): capture the
+// param at MODULE scope, before any router redirect can strip the query string
+// (the iPhone Action Button intent and "Hey Siri, talk to Kiana" load
+// kademurdock.com/?kade=call, and the app's boot redirects don't preserve
+// search params). Consumed exactly once per page load by the effect below.
+const KADE_AUTO_CALL = (() => {
+  try { return new URLSearchParams(window.location.search).get('kade') === 'call'; } catch { return false; }
+})();
+let kadeAutoCallConsumed = false;
+
 export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const agentId = useRecoilValue(store.conversationAgentIdByIndex(index));
   const voice   = useRecoilValue(store.voice);
@@ -1349,6 +1359,25 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     status === 'speaking'    ? 'Speaking' :
     status === 'connecting'  ? 'Connecting' :
                                'Starting';
+
+  // KADE July 16 2026 (?kade=call): hands-free call start for the Action
+  // Button / Siri path. Fires once, only when the trigger button below WOULD
+  // be tappable (agent ready + mic support), and strips the param defensively
+  // so a manual refresh can't re-dial. A failed deep link never breaks chat.
+  useEffect(() => {
+    if (!KADE_AUTO_CALL || kadeAutoCallConsumed || open) return;
+    if (!agentId || !mediaAvail) return;
+    kadeAutoCallConsumed = true;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('kade') === 'call') {
+        params.delete('kade');
+        const rest = params.toString();
+        window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
+      }
+    } catch { /* cosmetic only */ }
+    void startCall();
+  }, [open, agentId, mediaAvail, startCall]);
 
   // -- Trigger button ----------------------------------------------------------
   if (!open) {
