@@ -227,6 +227,49 @@ export default function StreamAudio({ index = 0 }) {
     }
   }, [audioRef, globalAudioURL, playbackRate]);
 
+  /* KADE (July 15 2026): iOS/WebKit surfaces a lock-screen "Now Playing"
+   * widget for any playing <audio>, and with no explicit Media Session
+   * metadata it falls back to document.title -- which carries whatever the
+   * current conversation's title is (see useDocumentTitle.ts). That's how a
+   * one-off "read this message aloud" tap ends up showing conversation
+   * content on the lock screen. Give it clean, generic info instead, and
+   * keep playbackState honest so the widget doesn't linger after the clip
+   * stops. */
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator) || !globalAudioURL) {
+      return;
+    }
+
+    const senderName = latestMessage?.sender || 'Kade-AI';
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: `Voice reply - ${senderName}`,
+      artist: 'Kade-AI',
+    });
+    navigator.mediaSession.playbackState = 'playing';
+
+    const audioEl = audioRef.current;
+    const handlePlaying = () => {
+      navigator.mediaSession.playbackState = 'playing';
+    };
+    const handlePaused = () => {
+      navigator.mediaSession.playbackState = 'paused';
+    };
+    const handleDone = () => {
+      navigator.mediaSession.playbackState = 'none';
+      navigator.mediaSession.metadata = null;
+    };
+
+    audioEl?.addEventListener('play', handlePlaying);
+    audioEl?.addEventListener('pause', handlePaused);
+    audioEl?.addEventListener('ended', handleDone);
+
+    return () => {
+      audioEl?.removeEventListener('play', handlePlaying);
+      audioEl?.removeEventListener('pause', handlePaused);
+      audioEl?.removeEventListener('ended', handleDone);
+    };
+  }, [audioRef, globalAudioURL, latestMessage?.sender]);
+
   useEffect(() => {
     pauseGlobalAudio();
     // We only want the effect to run when the paramId changes

@@ -258,6 +258,9 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const thinkingDelayRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Call-start "pickup" cue (July 15 2026): cached decoded buffer, one-shot.
   const pickupBufferRef     = useRef<AudioBuffer | null>(null);
+  // Call-end "hangup" cue (July 15 2026): the pickup clip played backwards,
+  // cached decoded buffer, one-shot.
+  const hangupBufferRef     = useRef<AudioBuffer | null>(null);
   // Audio in (mic capture + VAD)
   const micStreamRef       = useRef<MediaStream | null>(null);
   const vadCtxRef          = useRef<AudioContext | null>(null);
@@ -410,6 +413,29 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       src.start();
     } catch (err) {
       console.warn('[ConvMode] pickup-sound error:', err);
+    }
+  }, [getAudioCtx]);
+
+  // Same cue, played backwards, for hanging up -- the audio equivalent of
+  // setting the receiver back down. Fires the instant End Call is tapped,
+  // same fail-soft rule as pickup: a fetch/decode hiccup just means a
+  // silent hang-up, never a blocked one.
+  const playHangupSound = useCallback(async () => {
+    try {
+      const ctx = getAudioCtx();
+      if (!hangupBufferRef.current) {
+        const resp = await fetch('/assets/sounds/phone-hangup.wav');
+        const raw = await resp.arrayBuffer();
+        hangupBufferRef.current = await ctx.decodeAudioData(raw);
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = hangupBufferRef.current;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.5;
+      src.connect(gain).connect(ctx.destination);
+      src.start();
+    } catch (err) {
+      console.warn('[ConvMode] hangup-sound error:', err);
     }
   }, [getAudioCtx]);
 
@@ -1077,6 +1103,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   }, [getAudioCtx, setupAnalyser, setVoiceCallActive, pauseGlobalAudio]);
 
   const endCall = useCallback(() => {
+    void playHangupSound();       // soft "receiver down" cue -- fires immediately, mirrors playPickupSound on start
     callActiveRef.current = false;
     if (streamingRef.current) {
       streamingRef.current = false;
@@ -1120,7 +1147,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setAvatarUrl('');
     conversationIdRef.current = null;
     parentMessageIdRef.current = NO_PARENT;
-  }, [teardownMic, setVoiceCallActive, agentId, token]);
+  }, [teardownMic, setVoiceCallActive, agentId, token, playHangupSound]);
 
   // Stop AI mid-speech and hand the mic back immediately.
   // July 4 2026 rewrite: supersede the turn (monotonic id — no 150ms flag

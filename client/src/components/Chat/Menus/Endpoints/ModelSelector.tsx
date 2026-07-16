@@ -64,16 +64,30 @@ function ModelSelectorContent() {
     [localize, agentsMap, modelSpecs, selectedValues, mappedEndpoints],
   );
 
+  // Screen readers don't get any visual cue like sighted users glancing at the
+  // avatar/name in the button -- so the accessible name has to carry the
+  // current selection itself, not just a generic "Select an agent" label.
+  // Without this, VoiceOver/NVDA users can operate the picker fine but have
+  // no way to find out afterward (or later, by just swiping back to this
+  // button) which agent is actually active.
+  const agentPickerAriaLabel = useMemo(
+    () =>
+      selectedDisplayValue
+        ? localize('com_ui_select_agent_with_current', { 0: selectedDisplayValue })
+        : localize('com_ui_select_agent'),
+    [localize, selectedDisplayValue],
+  );
+
   const trigger = (
     <TooltipAnchor
-      aria-label={localize('com_ui_select_agent')}
+      aria-label={agentPickerAriaLabel}
       description={modelSelectorHint}
       render={
         <button
           data-testid="model-selector-button"
           aria-keyshortcuts={modelSelectorAriaKey}
           className="my-1 flex h-9 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
-          aria-label={localize('com_ui_select_agent')}
+          aria-label={agentPickerAriaLabel}
         >
           {selectedIcon && React.isValidElement(selectedIcon) && (
             <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
