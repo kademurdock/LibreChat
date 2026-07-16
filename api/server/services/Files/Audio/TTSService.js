@@ -3,7 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { genAzureEndpoint, logAxiosError, applyAxiosProxyConfig } = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
-const { fetchLiveVoices } = require('./voiceCatalog');
+const { fetchLiveVoices, getCachedLiveVoices } = require('./voiceCatalog');
 
 /** Kade D2d: parse+clamp an optional TTS speaking rate (Inworld range 0.5-1.5).
  * Multipart form fields arrive as strings; JSON bodies as numbers. Anything
@@ -136,11 +136,22 @@ class TTSService {
   openAIProvider(ttsSchema, input, voice, _stream, speed) {
     const url = ttsSchema?.url || 'https://api.openai.com/v1/audio/speech';
 
+    // KADE July 16 2026: getVoice() already validated/resolved `voice`
+    // against the live 324-voice catalog when this is the inworld proxy (see
+    // voiceCatalog.js). This function is plain sync (all 4 provider
+    // strategies are, per the shared `strategy.call(...)` dispatch in
+    // ttsRequest), so it can't await a fresh fetch -- it uses whatever
+    // getVoice() already cached moments ago instead of the raw static
+    // ttsSchema.voices list, so it doesn't re-reject a valid Voice 211-324
+    // that getVoice() correctly just let through.
+    const liveVoices = getCachedLiveVoices();
+    const knownVoices = liveVoices && liveVoices.length ? liveVoices : ttsSchema?.voices;
+
     if (
-      ttsSchema?.voices &&
-      ttsSchema.voices.length > 0 &&
-      !ttsSchema.voices.includes(voice) &&
-      !ttsSchema.voices.includes('ALL')
+      knownVoices &&
+      knownVoices.length > 0 &&
+      !knownVoices.includes(voice) &&
+      !knownVoices.includes('ALL')
     ) {
       throw new Error(`Voice ${voice} is not available.`);
     }
@@ -148,7 +159,7 @@ class TTSService {
     const data = {
       input,
       model: ttsSchema?.model,
-      voice: ttsSchema?.voices && ttsSchema.voices.length > 0 ? voice : undefined,
+      voice: knownVoices && knownVoices.length > 0 ? voice : undefined,
       backend: ttsSchema?.backend,
       // Kade D2d: optional per-request speaking rate; removeUndefined strips it
       // when absent so the payload matches today's exactly.

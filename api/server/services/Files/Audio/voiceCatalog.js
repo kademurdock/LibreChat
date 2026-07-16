@@ -60,4 +60,17 @@ async function fetchLiveVoices(ttsUrl) {
   }
 }
 
-module.exports = { fetchLiveVoices };
+
+/**
+ * Synchronous, best-effort peek at whatever fetchLiveVoices() last cached --
+ * no fetch, never blocks. Used by TTSService.js's provider-strategy functions
+ * (e.g. openAIProvider), which are plain sync functions and run AFTER
+ * getVoice() has already awaited fetchLiveVoices() once for this request, so
+ * the cache is warm by the time they need it. Returns null if nothing has
+ * been fetched yet (fail-soft: caller falls back to the static yaml list).
+ */
+function getCachedLiveVoices() {
+  return _voiceCache.voices;
+}
+
+module.exports = { fetchLiveVoices, getCachedLiveVoices };
