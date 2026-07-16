@@ -841,6 +841,11 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
   </div>
 
   <div class="card">
+    <h2>Agent check-ins (Kade-AI iPhone app)</h2>
+    <p class="muted">Beyond reminders you set yourself, any character can reach out and check on YOU the way they choose to &mdash; right now, or on a repeating schedule. Just ask one directly: <em>"text me every evening at 6"</em> sets up a recurring check-in; <em>"send me a note that says goodnight"</em> fires one immediately. Ask what schedules you have going, and pause or cancel any of them in chat &mdash; no form to fill out here. This rides your <strong>Kade-AI iPhone app's</strong> notifications (the permission prompt it shows the first time you open it) rather than the browser push above, so it needs that app specifically. Free, and it shares the same quiet hours and daily caps as everything else on this page.</p>
+  </div>
+
+  <div class="card">
     <h2>Recent nudges</h2>
     <div id="recent" aria-live="polite"><p class="muted">Nothing yet.</p></div>
   </div>

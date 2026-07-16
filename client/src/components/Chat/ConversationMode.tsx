@@ -256,6 +256,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const thinkingBufferRef   = useRef<AudioBuffer | null>(null);
   const thinkingSourceRef   = useRef<AudioBufferSourceNode | null>(null);
   const thinkingDelayRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Call-start "pickup" cue (July 15 2026): cached decoded buffer, one-shot.
+  const pickupBufferRef     = useRef<AudioBuffer | null>(null);
   // Audio in (mic capture + VAD)
   const micStreamRef       = useRef<MediaStream | null>(null);
   const vadCtxRef          = useRef<AudioContext | null>(null);
@@ -383,6 +385,33 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     }
     return audioCtxRef.current;
   }, []);
+
+  // -- Call-start pickup sound ----------------------------------------------
+  // A quick, soft "something just happened" cue the instant Start Call is
+  // tapped -- fires before the call even connects, the audio equivalent of
+  // physically lifting a phone receiver. One-shot (unlike the looped
+  // thinking-gap sound below), cached buffer reused on every call. Never
+  // routed through outputAnalyserRef -- it's not Kiana's voice, so it
+  // shouldn't drive the speaking pulse. Fail-soft: a fetch/decode hiccup
+  // just means a silent call start, never a blocked one.
+  const playPickupSound = useCallback(async () => {
+    try {
+      const ctx = getAudioCtx();
+      if (!pickupBufferRef.current) {
+        const resp = await fetch('/assets/sounds/phone-pickup.wav');
+        const raw = await resp.arrayBuffer();
+        pickupBufferRef.current = await ctx.decodeAudioData(raw);
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = pickupBufferRef.current;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.5;
+      src.connect(gain).connect(ctx.destination);
+      src.start();
+    } catch (err) {
+      console.warn('[ConvMode] pickup-sound error:', err);
+    }
+  }, [getAudioCtx]);
 
   // -- Thinking-gap sound --------------------------------------------------
   // Same idea as the phone line's typing-sound filler: a quiet, looping
@@ -943,6 +972,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     } catch { /* ignore */ }
     try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
     getAudioCtx();               // iOS: unlock AudioContext on user gesture (now safe — queue is empty)
+    void playPickupSound();       // soft "receiver lift" cue -- fires immediately, before the call connects
     abortRef.current = false;
     conversationIdRef.current = null;
     parentMessageIdRef.current = NO_PARENT;
