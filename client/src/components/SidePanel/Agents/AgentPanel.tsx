@@ -25,6 +25,7 @@ import {
 import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
+import { reconcileAgentVoicePreference } from '~/hooks/Agents';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
@@ -352,6 +353,17 @@ export default function AgentPanel() {
       const agentOption = getValues('agent');
       if (agentOption && typeof agentOption !== 'string') {
         setValue('agent', { ...agentOption, ...data }, { shouldDirty: false });
+      }
+
+      /* KADE July 16 2026: builder voice saved -> drop the editor's own stale
+       * personal pick for this agent (device localStorage + server row) so the
+       * builder voice actually plays for them on calls and read-aloud. See
+       * reconcileAgentVoicePreference for the full story (web call spoke old
+       * personal Voice 23 after builder was set to Voice 294). Fail-soft. */
+      try {
+        reconcileAgentVoicePreference(data.id ?? agent_id, data.tts?.voiceId);
+      } catch {
+        // never let pref cleanup interfere with the save flow
       }
 
       try {

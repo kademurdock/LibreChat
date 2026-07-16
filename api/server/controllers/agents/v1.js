@@ -705,6 +705,26 @@ const updateAgentHandler = async (req, res) => {
           })
         : existingAgent;
 
+    /* KADE July 16 2026: a builder voice CHANGE is the editor's freshest voice
+     * intent — drop their own per-user personal pick for this agent (model
+     * kadeVoicePref), otherwise the stale pick keeps overriding the new
+     * builder voice on their web/phone calls (kadeWebVoice.js mints call
+     * tickets personal-pick-first by design, for everyone else's sake).
+     * Live report: builder set to Voice 294; web call still spoke the old
+     * personal pick, Voice 23. Only the EDITING user's pick is touched —
+     * other users' personal picks survive. Fire-and-forget + fail-soft:
+     * pref cleanup must never fail or delay an agent save. */
+    try {
+      const prevVoiceId = existingAgent.tts?.voiceId ?? null;
+      const nextVoiceId = updateData.tts?.voiceId ?? null;
+      if (nextVoiceId && nextVoiceId !== prevVoiceId) {
+        const { setUserVoicePref } = require('~/models/kadeVoicePref');
+        Promise.resolve(setUserVoicePref(req.user.id, id, null)).catch(() => {});
+      }
+    } catch (_e) {
+      /* fail-soft */
+    }
+
     // Add version count to the response
     updatedAgent.version = updatedAgent.versions ? updatedAgent.versions.length : 0;
 

@@ -48,6 +48,47 @@ export function saveAgentVoicePreference(agentId: string, voice: string): void {
 }
 
 /**
+ * KADE July 16 2026: a voice change saved in the AGENT BUILDER is the editor's
+ * freshest voice intent. If this user's own personal pick for that agent
+ * (localStorage map + server kadeVoicePref row) disagrees with the voice they
+ * just saved, drop the pick — otherwise the stale pick silently overrides the
+ * new builder voice on web/phone calls (kadeWebVoice.js mints call tickets
+ * personal-pick-first, by design, for everyone ELSE's sake) and on this
+ * device's read-aloud. Live report that prompted this: builder set to
+ * Voice 294; the web call still spoke the old personal pick, Voice 23.
+ * Only ever runs for the editor's own account — other users' picks untouched.
+ * Fail-soft everywhere: cleanup must never block or break the agent save.
+ */
+export function reconcileAgentVoicePreference(agentId: string, builderVoice?: string | null): void {
+  if (!agentId || !builderVoice) {
+    return;
+  }
+  let hadStaleLocal = false;
+  try {
+    const map = readAgentVoiceMap();
+    const personal = map[agentId];
+    if (personal != null && personal !== builderVoice) {
+      hadStaleLocal = true;
+      delete map[agentId];
+      localStorage.setItem(AGENT_VOICES_KEY, JSON.stringify(map));
+    }
+  } catch {
+    // localStorage unavailable — still try the server row below
+  }
+  /* The server row is ALSO cleared by the agent-update route itself when the
+   * voice actually changes; this client POST additionally covers the re-save
+   * self-heal case (builder voice unchanged but a stale local pick existed,
+   * e.g. a device that picked before the server-side hook shipped). */
+  if (hadStaleLocal) {
+    try {
+      void request.post('/api/kade/voice-prefs', { agentId, voice: null });
+    } catch {
+      // fail-soft: server hook and/or the next save will catch up
+    }
+  }
+}
+
+/**
  * ♿ D3 + D1/D2: Per-agent voices.
  *
  * Watches the active agent for the conversation at `index`. When the agent
