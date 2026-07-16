@@ -8,6 +8,7 @@ import { Toast, ThemeProvider, ToastProvider } from '@librechat/client';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
 import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
 import WakeLockManager from '~/components/System/WakeLockManager';
+import PushTokenRegistrar from '~/components/System/PushTokenRegistrar';
 import QueryDevtoolsGate from '~/components/QueryDevtoolsGate';
 import LanguageSync from '~/components/System/LanguageSync';
 import { getThemeFromEnv } from './utils/getThemeFromEnv';
@@ -65,6 +66,7 @@ const App = () => {
                 <DndProvider backend={HTML5Backend}>
                   <RouterProvider router={router} />
                   <WakeLockManager />
+                  <PushTokenRegistrar />
                   <QueryDevtoolsGate />
                   <Toast />
                   {/* KADE: pt-ios-safe keeps toasts below the iOS status bar/clock in standalone PWA mode (same bug family as the C4 header fix) */}

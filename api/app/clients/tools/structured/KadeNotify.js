@@ -108,7 +108,7 @@ class KadeNotify extends Tool {
     try {
       const r = await axios.post(
         `${this.bridgeUrl}/notify`,
-        { secret: this.notifySecret, agentId: this.agentId || 'unknown', agentName: this.agentName, title, body: body.slice(0, 300), urgent },
+        { secret: this.notifySecret, agentId: this.agentId || 'unknown', agentName: this.agentName, title, body: body.slice(0, 300), urgent, userId: this.userId },
         { timeout: 15000, headers: { 'User-Agent': 'Mozilla/5.0' } },
       );
       const d = r.data || {};
@@ -131,15 +131,10 @@ class KadeNotify extends Tool {
   }
 
   async _schedule(action, data) {
-    // Device tokens are not yet linked to individual users, so scheduled outreach
-    // can only be aimed at the account owner for now. Gate accordingly; the
-    // mechanism is multi-user-ready once push tokens are tagged by user.
-    if (!this.isAdmin) {
-      return (
-        "Scheduled check-ins are only available for the account owner right now — each person's phone isn't linked individually yet, " +
-        "so I can't guarantee a scheduled message would reach only you. I can still send you a notification right now if you'd like (that works for everyone)."
-      );
-    }
+    // Device tokens are linked to individual users (bridge /push-register +
+    // /outreach target only the requesting user's own device — see kade-ai-bridge
+    // July 2026 multi-user push targeting), so every user can manage their own
+    // check-ins now, not just the account owner.
     const uid = String(this.userId || '');
     const { time, days, topic, schedule_id } = data;
     try {
