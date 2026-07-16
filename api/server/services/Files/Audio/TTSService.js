@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { genAzureEndpoint, logAxiosError, applyAxiosProxyConfig } = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
+const { fetchLiveVoices } = require('./voiceCatalog');
 
 /** Kade D2d: parse+clamp an optional TTS speaking rate (Inworld range 0.5-1.5).
  * Multipart form fields arrive as strings; JSON bodies as numbers. Anything
@@ -77,10 +78,29 @@ class TTSService {
    * @async
    * @param {Object} providerSchema - The schema for the selected provider.
    * @param {string} requestVoice - The requested voice.
+   * @param {string} [provider] - The TTS provider name (e.g. TTSProviders.OPENAI).
    * @returns {Promise<string>} The selected voice.
    */
-  async getVoice(providerSchema, requestVoice) {
-    const voices = providerSchema.voices.filter((voice) => voice && voice.toUpperCase() !== 'ALL');
+  async getVoice(providerSchema, requestVoice, provider) {
+    // KADE July 16 2026: the picker (getVoices.js) has pulled the LIVE voice
+    // catalog (324+) from the inworld proxy since July 13, but this
+    // validation step kept checking requests against the STATIC
+    // librechat.yaml list, frozen at 210. Any voice 211-324 -- all valid,
+    // all shown in the picker -- failed `voices.includes(voice)` below and
+    // fell into the random-substitution branch, silently swapping in an
+    // unrelated voice from the 1-210 pool while the audition text (already
+    // built client-side from the real request) kept announcing the correct
+    // number. Root cause of "the sample sounds like a different voice."
+    // Fail-soft: if the live fetch errors, `liveVoices` is null and behavior
+    // is unchanged (falls back to the yaml list, same as before this fix).
+    let allowedVoices = providerSchema.voices;
+    if (provider === TTSProviders.OPENAI) {
+      const liveVoices = await fetchLiveVoices(providerSchema?.url);
+      if (liveVoices && liveVoices.length) {
+        allowedVoices = liveVoices;
+      }
+    }
+    const voices = (allowedVoices || []).filter((voice) => voice && voice.toUpperCase() !== 'ALL');
     let voice = requestVoice;
     if (!voice || !voices.includes(voice) || (voice.toUpperCase() === 'ALL' && voices.length > 1)) {
       voice = getRandomVoiceId(voices);
@@ -326,7 +346,7 @@ class TTSService {
       res.setHeader('Content-Type', 'audio/mpeg');
       const provider = this.getProvider(appConfig);
       const ttsSchema = appConfig?.speech?.tts?.[provider];
-      const voice = await this.getVoice(ttsSchema, requestVoice);
+      const voice = await this.getVoice(ttsSchema, requestVoice, provider);
 
       if (input.length < 32768) {
         const response = await this.ttsRequest(provider, ttsSchema, { input, voice, speed });
@@ -395,7 +415,7 @@ class TTSService {
       }));
     const provider = this.getProvider(appConfig);
     const ttsSchema = appConfig?.speech?.tts?.[provider];
-    const voice = await this.getVoice(ttsSchema, req.body.voice);
+    const voice = await this.getVoice(ttsSchema, req.body.voice, provider);
     const speed = parseKadeTtsSpeed(req.body.speed); // Kade D2d
 
     let shouldContinue = true;
