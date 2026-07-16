@@ -107,7 +107,13 @@ router.post('/ingest', async (req, res) => {
     const id = await logKadeCall({
       userId: b.userId,
       userEmail: b.userEmail,
-      surface: 'phone',
+      /* KADE July 16 2026 (overnight audit): the bridge has sent the real
+       * surface ('web' for browser streaming calls) all along — this route
+       * hardcoded 'phone' and threw it away, so every web call was stored,
+       * titled ("Phone call with…" instead of the intended "Voice chat
+       * with…", see kadeCallMerge's surfaceWord), and logged as a phone
+       * call. Allowlisted, not passed through blind. */
+      surface: b.surface === 'web' ? 'web' : 'phone',
       agentId: b.agentId,
       agentName: b.agentName,
       callerName: b.callerName,
@@ -181,7 +187,7 @@ router.post('/merge-one', async (req, res) => {
     const b = req.body || {};
     const doc = b.id
       ? await KadeCallTranscript.findById(b.id).lean()
-      : await KadeCallTranscript.findOne({ surface: 'phone' }).sort({ createdAt: -1 }).lean();
+      : await KadeCallTranscript.findOne({ surface: { $in: ['phone', 'web'] } }).sort({ createdAt: -1 }).lean();
     if (!doc) {
       return res.json({ ok: true, found: false });
     }

@@ -113,7 +113,7 @@ async function mintConversationFromTranscript(doc, opts = {}) {
 /** Backfill: mint every not-yet-merged PHONE transcript (bounded per call). */
 async function backfillPhoneTranscripts({ limit = 50 } = {}) {
   const docs = await KadeCallTranscript.find({
-    surface: 'phone',
+    surface: { $in: ['phone', 'web'] },
     $or: [{ mergedConversationId: { $exists: false } }, { mergedConversationId: null }],
   })
     .sort({ createdAt: 1 })

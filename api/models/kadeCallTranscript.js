@@ -9,7 +9,7 @@ const { logger } = require('@librechat/data-schemas');
  * but was never surfaced as a "call." This collection is the single source for
  * the Calls history page. Transcript text only — no audio is stored.
  *
- *   surface: 'phone' | 'conversation'
+ *   surface: 'phone' | 'web' | 'conversation'
  *   turns:   [{ role: 'user'|'assistant', text, at }]
  *
  * Bespoke to Kade's instance; lives outside data-schemas so it needs no TS build.
@@ -26,7 +26,7 @@ const turnSchema = new mongoose.Schema(
 const kadeCallTranscriptSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
-    surface: { type: String, index: true }, // 'phone' | 'conversation'
+    surface: { type: String, index: true }, // 'phone' | 'web' | 'conversation'
     agentId: { type: String },
     agentName: { type: String },
     callerName: { type: String }, // phone: who was on the line (registration name)
