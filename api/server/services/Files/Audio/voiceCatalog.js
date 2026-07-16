@@ -54,10 +54,27 @@ async function fetchLiveVoices(ttsUrl) {
       _voiceCache = { at: Date.now(), voices };
       return voices;
     }
-    return null;
+    return staleButGood();
   } catch {
-    return null;
+    return staleButGood();
   }
+}
+
+/**
+ * KADE July 16 2026 (overnight audit): last-known-good fallback. A fetch
+ * failure AFTER the 5-min TTL used to return null even though a previously
+ * good live list was still sitting in _voiceCache — so a transient proxy
+ * blip dropped callers back to the stale 210-voice yaml list, which (a)
+ * transiently resurrects the random-voice-substitution bug for Voice 211-324
+ * in getVoice(), and (b) can make the client's reconciliation effect
+ * (useTTSExternal.ts, snaps a voice missing from the list to voices[0])
+ * permanently rewrite a user's stored voice during the blip. An out-of-date
+ * live list is strictly better than the frozen yaml one: the catalog only
+ * ever grows. Yaml fallback now only happens before the FIRST successful
+ * fetch after a boot.
+ */
+function staleButGood() {
+  return _voiceCache.voices || null;
 }
 
 
