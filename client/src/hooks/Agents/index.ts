@@ -10,5 +10,5 @@ export { default as useAgentToolPermissions } from './useAgentToolPermissions';
 export { default as useMCPToolOptions } from './useMCPToolOptions';
 export * from './useApplyModelSpecAgents';
 // D3: per-agent voice sync
-export { useAgentVoiceSync, saveAgentVoicePreference, reconcileAgentVoicePreference, AGENT_VOICES_KEY } from './useAgentVoiceSync';
+export { useAgentVoiceSync, saveAgentVoicePreference, reconcileAgentVoicePreference, getAgentVoicePreference, clearAgentVoicePreference, AGENT_VOICES_KEY } from './useAgentVoiceSync';
 

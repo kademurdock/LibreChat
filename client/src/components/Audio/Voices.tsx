@@ -10,7 +10,12 @@ import { cn, logger } from '~/utils';
 import type { FocusEvent, KeyboardEvent } from 'react';
 import { useVoiceAudition } from '~/components/Audio/useVoiceAudition';
 import store from '~/store';
-import { saveAgentVoicePreference } from '~/hooks/Agents/useAgentVoiceSync';
+import {
+  saveAgentVoicePreference,
+  getAgentVoicePreference,
+  clearAgentVoicePreference,
+} from '~/hooks/Agents/useAgentVoiceSync';
+import { useGetAgentByIdQuery } from '~/data-provider/Agents';
 
 /** Short phrase spoken when the user previews a voice. */
 const PREVIEW_TEXT =
@@ -326,6 +331,19 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
   const orderedVoices = useMemo(() => voices.map((v) => String(v)).sort(compareVoices), [voices]);
   const [voice, setVoice] = useRecoilState(store.voice);
   const activeAgentId = useRecoilValue(store.conversationAgentIdByIndex(0));
+  /* ♿ KADE July 17 2026 (proposal B): voice-SOURCE transparency. Blind-first:
+   * the picker says WHERE the active voice comes from ("your personal pick"
+   * vs "<agent>'s default") and offers "Use character default" to clear a
+   * personal pick — the exact confusion behind the July 16 wrong-voice call
+   * (a forgotten personal pick silently shadowing a new builder voice). */
+  const { data: activeAgent } = useGetAgentByIdQuery(activeAgentId);
+  const [personalPick, setPersonalPick] = useState<string | undefined>(() =>
+    getAgentVoicePreference(activeAgentId),
+  );
+  useEffect(() => {
+    setPersonalPick(getAgentVoicePreference(activeAgentId));
+  }, [activeAgentId]);
+  const [resetAnnouncement, setResetAnnouncement] = useState('');
   // ♿ 2026-07-05 (Kade): SAME swipe-to-hear the builder has — she picks voices HERE.
   const { audition: auditionTemplate } = useVoiceCatalogTexts();
   const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({ auditionTemplate });
@@ -371,8 +389,47 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
   const commitVoice = (newVoice: string) => {
     if (activeAgentId) {
       saveAgentVoicePreference(activeAgentId, newVoice);
+      setPersonalPick(newVoice);
     }
     setVoice(newVoice);
+    setResetAnnouncement('');
+  };
+
+  const builderVoice = activeAgent?.tts?.voiceId ?? undefined;
+  const agentDisplayName = activeAgent?.name ?? '';
+  /** Which chain link is actually sounding right now (mirrors useAgentVoiceSync). */
+  const voiceSourceText = useMemo(() => {
+    if (current == null || activeAgentId == null || activeAgentId === '') {
+      return '';
+    }
+    if (personalPick != null && current === personalPick) {
+      return localize('com_agents_voice_source_personal', { voice: current });
+    }
+    if (builderVoice != null && current === builderVoice) {
+      return agentDisplayName !== ''
+        ? localize('com_agents_voice_source_builder', { voice: current, name: agentDisplayName })
+        : '';
+    }
+    return localize('com_agents_voice_source_global', { voice: current });
+  }, [current, activeAgentId, personalPick, builderVoice, agentDisplayName, localize]);
+
+  const useCharacterDefault = () => {
+    if (!activeAgentId) {
+      return;
+    }
+    clearAgentVoicePreference(activeAgentId);
+    setPersonalPick(undefined);
+    if (builderVoice != null && builderVoice !== '') {
+      setVoice(builderVoice);
+      setResetAnnouncement(
+        localize('com_agents_voice_reset_done', {
+          name: agentDisplayName || localize('com_agents_voice_this_character'),
+          voice: builderVoice,
+        }),
+      );
+    } else {
+      setResetAnnouncement(localize('com_agents_voice_reset_done_novoice'));
+    }
   };
 
   const close = useCallback(
@@ -456,9 +513,9 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
         disabled={disabled}
         aria-expanded={open}
         aria-haspopup="listbox"
-        aria-label={`${localize('com_nav_voice_select')}: ${current ?? ''}. ${localize(
-          'com_agents_voice_opener_hint',
-        )}`}
+        aria-label={`${localize('com_nav_voice_select')}: ${
+          voiceSourceText !== '' ? voiceSourceText : (current ?? '')
+        }. ${localize('com_agents_voice_opener_hint')}`}
         className="flex w-full items-center justify-between rounded-lg border border-border-medium
           bg-surface-primary px-3 py-2 text-sm text-text-primary
           hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2
@@ -472,6 +529,29 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
         />
       </button>
 
+      {voiceSourceText !== '' && (
+        <p className="text-xs text-text-secondary">{voiceSourceText}</p>
+      )}
+      {personalPick != null && activeAgentId != null && activeAgentId !== '' && (
+        <div className="flex justify-start">
+          <button
+            type="button"
+            onClick={useCharacterDefault}
+            aria-label={localize('com_agents_voice_use_default_aria', {
+              name: agentDisplayName || localize('com_agents_voice_this_character'),
+            })}
+            className="rounded-lg px-2.5 py-1.5 text-sm text-text-secondary
+              hover:bg-surface-hover hover:text-text-primary
+              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+          >
+            {localize('com_agents_voice_use_default')}
+          </button>
+        </div>
+      )}
+      {/* ♿ the reset outcome is ANNOUNCED — VoiceOver hears what just happened. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {resetAnnouncement}
+      </span>
       {open && (
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions
         <div

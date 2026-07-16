@@ -15,6 +15,41 @@ function readAgentVoiceMap(): Record<string, string> {
   }
 }
 
+/** Read this device's saved personal pick for one agent (or undefined). */
+export function getAgentVoicePreference(agentId?: string | null): string | undefined {
+  if (!agentId) {
+    return undefined;
+  }
+  return readAgentVoiceMap()[agentId];
+}
+
+/**
+ * ♿ KADE July 17 2026 (proposal B): "Use character default" — clears the
+ * user's own personal pick for an agent on BOTH layers (this device's
+ * localStorage entry + the server kadeVoicePref row that web/phone calls
+ * read), so the builder voice shows through everywhere. Fail-soft: a sync
+ * hiccup never blocks the local clear.
+ */
+export function clearAgentVoicePreference(agentId: string): void {
+  if (!agentId) {
+    return;
+  }
+  try {
+    const map = readAgentVoiceMap();
+    if (map[agentId] != null) {
+      delete map[agentId];
+      localStorage.setItem(AGENT_VOICES_KEY, JSON.stringify(map));
+    }
+  } catch {
+    // localStorage unavailable — still clear the server row below
+  }
+  try {
+    void request.post('/api/kade/voice-prefs', { agentId, voice: null });
+  } catch {
+    // fail-soft
+  }
+}
+
 /**
  * Persist a per-agent voice preference to localStorage.
  * Called from ExternalVoiceDropdown when the user picks a voice while an agent

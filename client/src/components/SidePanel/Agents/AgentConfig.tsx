@@ -361,6 +361,7 @@ export default function AgentConfig() {
                     value={current}
                     onChange={(v) => field.onChange(v ?? undefined)}
                     speed={speakingRate}
+                    agentId={agent_id}
                   />
                   <p className="text-xs text-text-secondary">
                     {localize('com_agents_default_voice_help')}

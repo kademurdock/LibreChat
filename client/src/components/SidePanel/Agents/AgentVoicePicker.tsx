@@ -2,6 +2,10 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { ChevronDown, Volume2, Check } from 'lucide-react';
 import type { FocusEvent, KeyboardEvent } from 'react';
 import { useVoiceCatalogTexts, compareVoices } from '~/components/Audio/Voices';
+import {
+  getAgentVoicePreference,
+  clearAgentVoicePreference,
+} from '~/hooks/Agents/useAgentVoiceSync';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -241,13 +245,40 @@ export default function AgentVoicePicker({
   value,
   onChange,
   speed,
+  agentId,
 }: {
   value?: string | null;
   onChange: (voice?: string) => void;
   /** D2d: the agent's configured speaking rate — auditions play at this pace. */
   speed?: number;
+  /** ♿ July 17 2026 (proposal B): lets the picker warn the EDITOR when their
+   * own personal pick is shadowing the builder voice they're setting here. */
+  agentId?: string | null;
 }) {
   const localize = useLocalize();
+  /* Voice-source transparency (blind-first): if the editing user has a
+   * personal pick for this agent that differs from the builder voice, SAY so
+   * — that shadowing is exactly what made the July 16 web call speak Voice 23
+   * after the builder was set to Voice 294. (Saving a CHANGED builder voice
+   * auto-clears the pick since fork 71ab268; this covers looking without
+   * saving, and offers a manual clear.) */
+  const [editorPick, setEditorPick] = useState<string | undefined>(() =>
+    getAgentVoicePreference(agentId),
+  );
+  useEffect(() => {
+    setEditorPick(getAgentVoicePreference(agentId));
+  }, [agentId]);
+  const [shadowCleared, setShadowCleared] = useState('');
+  const shadowing =
+    editorPick != null && typeof value === 'string' && value !== '' && editorPick !== value;
+  const clearEditorPick = () => {
+    if (!agentId) {
+      return;
+    }
+    clearAgentVoicePreference(agentId);
+    setEditorPick(undefined);
+    setShadowCleared(localize('com_agents_voice_builder_shadow_cleared'));
+  };
   const { data: voicesData } = useVoicesQuery();
   /* D2c note: grouping/badges removed on Kade's call — after the 2026-07-01
      renumbering her custom voices ARE Voice 1–70, so plain numeric order
@@ -385,6 +416,30 @@ export default function AgentVoicePicker({
 
   return (
     <div ref={rootRef} onBlur={onRootBlur} className="flex flex-col gap-2">
+      {shadowing && (
+        <div
+          role="note"
+          className="flex flex-col gap-1.5 rounded-lg border border-border-medium bg-surface-secondary p-2"
+        >
+          <p className="text-xs text-text-secondary">
+            {localize('com_agents_voice_builder_shadow_note', { voice: editorPick ?? '' })}
+          </p>
+          <div className="flex justify-start">
+            <button
+              type="button"
+              onClick={clearEditorPick}
+              className="rounded-lg px-2.5 py-1.5 text-sm text-text-secondary
+                hover:bg-surface-hover hover:text-text-primary
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+            >
+              {localize('com_agents_voice_clear_personal')}
+            </button>
+          </div>
+        </div>
+      )}
+      <span role="status" aria-live="polite" className="sr-only">
+        {shadowCleared}
+      </span>
       <button
         ref={openerRef}
         type="button"
