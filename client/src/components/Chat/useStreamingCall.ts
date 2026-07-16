@@ -30,6 +30,8 @@ export interface StreamingHandlers {
   onEnded: (graceful: boolean) => void;
   /** A game table changed — redraw the GameTable widget for this id. */
   onTable?: (id: string) => void;
+  /** Video events: {type:'video-notice'|'video-state', ...} (July 16 2026). */
+  onVideo?: (m: Record<string, unknown>) => void;
 }
 
 export interface StreamingStartArgs {
@@ -305,6 +307,10 @@ export default function useStreamingCall() {
           case 'table':
             if (handlers.onTable && m.id) handlers.onTable(String(m.id));
             break;
+          case 'video-notice':
+          case 'video-state':
+            handlers.onVideo?.(m);
+            break;
           case 'error':
             handlers.onError(String(m.message || 'Call error.'));
             if (!settled) { settled = true; clearTimeout(connectTimer); stop(false); reject(new Error(String(m.message || 'Call error.'))); }
@@ -331,5 +337,13 @@ export default function useStreamingCall() {
 
   const isActive = useCallback(() => activeRef.current, []);
 
-  return { start, stop, barge, isActive };
+  /** Send a JSON control message on the live call socket (video toggles, frames). */
+  const sendJson = useCallback((obj: Record<string, unknown>) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.send(JSON.stringify(obj)); } catch { /* socket raced closed */ }
+    }
+  }, []);
+
+  return { start, stop, barge, isActive, sendJson };
 }

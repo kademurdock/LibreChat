@@ -34,7 +34,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { Phone, PhoneOff, Mic, StopCircle } from 'lucide-react';
+import { Phone, PhoneOff, Mic, StopCircle, Camera, CameraOff, ScanEye } from 'lucide-react';
 import { useAuthContext } from '~/hooks';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
 import { cn } from '~/utils';
@@ -299,6 +299,106 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // turn loop. Engine choice is read AT CALL START (no mid-call flips).
   const streamingRef       = useRef(false);
   const streamingEngine    = useStreamingCall();
+
+  /* -- Video call (July 16 2026, Kade's yes): caller camera -> agent vision.
+   * Two lanes: 'standard' (front camera, cheap presence frames) and 'hq'
+   * (rear camera, the platform's best eyes for labels/text/details).
+   * Frames sample every 5s over the SAME call socket; the bridge holds only
+   * the newest one in memory. Server is the gatekeeper (VIDEO_ENABLED flag,
+   * daily minutes, first-use notice) — this side just captures and obeys. */
+  const [videoMode,   setVideoMode]   = useState<'off' | 'standard' | 'hq'>('off');
+  const [videoNotice, setVideoNotice] = useState<{ text: string; mode: 'standard' | 'hq' } | null>(null);
+  const [videoInfo,   setVideoInfo]   = useState('');
+  const camStreamRef = useRef<MediaStream | null>(null);
+  const camVideoRef  = useRef<HTMLVideoElement | null>(null);
+  const camTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const videoConfirmRef = useRef<HTMLButtonElement | null>(null);
+
+  const stopCamera = useCallback(() => {
+    if (camTimerRef.current) { clearInterval(camTimerRef.current); camTimerRef.current = null; }
+    try { camStreamRef.current?.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
+    camStreamRef.current = null;
+    if (camVideoRef.current) { try { camVideoRef.current.srcObject = null; } catch { /* ignore */ } }
+    camVideoRef.current = null;
+  }, []);
+
+  const startCamera = useCallback(async (mode: 'standard' | 'hq') => {
+    stopCamera();
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: mode === 'hq' ? 'environment' : 'user', width: { ideal: 1024 } },
+      audio: false,
+    });
+    camStreamRef.current = stream;
+    const v = document.createElement('video');
+    v.muted = true;
+    (v as HTMLVideoElement & { playsInline: boolean }).playsInline = true;
+    v.srcObject = stream;
+    camVideoRef.current = v;
+    try { await v.play(); } catch { /* iOS may defer to next tick */ }
+    const canvas = document.createElement('canvas');
+    camTimerRef.current = setInterval(() => {
+      const vid = camVideoRef.current;
+      if (!vid || !vid.videoWidth) return;
+      const w = 768;
+      const h = Math.round((vid.videoHeight / vid.videoWidth) * w) || 576;
+      canvas.width = w;
+      canvas.height = h;
+      const g = canvas.getContext('2d');
+      if (!g) return;
+      g.drawImage(vid, 0, 0, w, h);
+      const b64 = canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
+      if (b64) streamingEngine.sendJson({ type: 'frame', data: b64 });
+    }, 5000);
+  }, [stopCamera, streamingEngine]);
+
+  const requestVideo = useCallback((mode: 'standard' | 'hq', ack = false) => {
+    streamingEngine.sendJson({ type: 'video', on: true, mode, ...(ack ? { ack: true } : {}) });
+  }, [streamingEngine]);
+
+  const turnVideoOff = useCallback(() => {
+    streamingEngine.sendJson({ type: 'video', on: false });
+    stopCamera();
+    setVideoMode('off');
+    setVideoNotice(null);
+    setVideoInfo('Video off.');
+  }, [streamingEngine, stopCamera]);
+
+  const onVideoEvent = useCallback((m: Record<string, unknown>) => {
+    if (m.type === 'video-notice') {
+      // The bridge SPEAKS this notice too — this panel is the visible +
+      // focusable half of the one-time cost heads-up.
+      setVideoNotice({ text: String(m.text || ''), mode: m.mode === 'hq' ? 'hq' : 'standard' });
+      return;
+    }
+    if (m.on) {
+      setVideoNotice(null);
+      const mode = m.mode === 'hq' ? 'hq' : 'standard';
+      setVideoMode(mode);
+      setVideoInfo(
+        `Video on — ${mode === 'hq' ? 'HQ (rear camera)' : 'standard (front camera)'}${
+          typeof m.minutesLeft === 'number' ? `. About ${m.minutesLeft} video minutes left today.` : '.'
+        }`,
+      );
+      startCamera(mode).catch(() => {
+        streamingEngine.sendJson({ type: 'video', on: false });
+        setVideoMode('off');
+        setVideoInfo('');
+        setError('Camera access is blocked. Enable camera permission for this site, then try video again.');
+      });
+    } else {
+      stopCamera();
+      setVideoMode('off');
+      setVideoInfo(m.message ? String(m.message) : m.reason === 'cap' ? 'Out of video minutes for today — voice continues as normal.' : 'Video off.');
+    }
+  }, [startCamera, stopCamera, streamingEngine]);
+
+  // Move keyboard focus onto the confirm button when the notice appears.
+  useEffect(() => {
+    if (videoNotice) {
+      const t = setTimeout(() => videoConfirmRef.current?.focus(), 80);
+      return () => clearTimeout(t);
+    }
+  }, [videoNotice]);
   const conversationIdRef  = useRef<string | null>(null);
   const callTurnsRef       = useRef<Array<{ role: string; text: string }>>([]);
   const callStartedRef     = useRef<string | null>(null);
@@ -1060,6 +1160,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
               tableSeqRef.current += 1;
               setLiveTable({ id, seq: tableSeqRef.current });
             },
+            onVideo: (m) => { if (!abortRef.current) onVideoEvent(m); },
             onEnded: (graceful) => {
               if (abortRef.current || !callActiveRef.current) return;
               if (!graceful) setError('The call connection dropped. End the call and try again.');
@@ -1105,6 +1206,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const endCall = useCallback(() => {
     void playHangupSound();       // soft "receiver down" cue -- fires immediately, mirrors playPickupSound on start
     callActiveRef.current = false;
+    stopCamera();
+    setVideoMode('off');
+    setVideoNotice(null);
+    setVideoInfo('');
     if (streamingRef.current) {
       streamingRef.current = false;
       try { streamingEngine.stop(true); } catch { /* ignore */ }
@@ -1147,7 +1252,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setAvatarUrl('');
     conversationIdRef.current = null;
     parentMessageIdRef.current = NO_PARENT;
-  }, [teardownMic, setVoiceCallActive, agentId, token, playHangupSound]);
+  }, [teardownMic, setVoiceCallActive, agentId, token, playHangupSound, stopCamera]);
 
   // Stop AI mid-speech and hand the mic back immediately.
   // July 4 2026 rewrite: supersede the turn (monotonic id — no 150ms flag
@@ -1373,6 +1478,36 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         {visibleStatus}
       </p>
 
+      {/* Video status line — spoken politely (minutes left, on/off, cap) */}
+      {videoInfo && (
+        <p className="mb-3 max-w-xs px-4 text-center text-xs text-gray-300" role="status" aria-live="polite">
+          {videoInfo}
+        </p>
+      )}
+
+      {/* First-use video cost notice: the bridge speaks it; this is the
+          visible + focusable half. Confirm actually turns the camera on. */}
+      {videoNotice && (
+        <div className="mb-4 w-full max-w-xs rounded-2xl bg-white/10 px-4 py-3" role="group" aria-label="Video cost notice">
+          <p className="mb-3 text-sm leading-relaxed text-gray-100">{videoNotice.text}</p>
+          <div className="flex gap-3">
+            <button
+              ref={videoConfirmRef}
+              onClick={() => requestVideo(videoNotice.mode, true)}
+              className="flex-1 rounded-full bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-400"
+            >
+              Turn camera on
+            </button>
+            <button
+              onClick={() => { setVideoNotice(null); setVideoInfo('Video canceled.'); }}
+              className="flex-1 rounded-full bg-white/10 px-3 py-2 text-sm text-gray-200 hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-gray-400"
+            >
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Visible error (also announced via the alert region above) */}
       {error && (
         <p className="mb-4 max-w-xs px-4 text-center text-sm text-amber-300" aria-hidden="true">
@@ -1416,6 +1551,37 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-600/90 text-white shadow-lg transition-colors hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-400"
           >
             <StopCircle size={24} aria-hidden="true" />
+          </button>
+        )}
+
+        {streamingRef.current && videoMode === 'off' && !videoNotice && (
+          <>
+            <button
+              onClick={() => requestVideo('standard')}
+              aria-label="Turn on video. The agent sees your front camera — everyday video call."
+              title="Video"
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white shadow-lg transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            >
+              <Camera size={22} aria-hidden="true" />
+            </button>
+            <button
+              onClick={() => requestVideo('hq')}
+              aria-label="Turn on HQ video. Rear camera with the agent's best eyes — for reading labels, text, and details."
+              title="HQ video (be my eyes)"
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white shadow-lg transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400"
+            >
+              <ScanEye size={22} aria-hidden="true" />
+            </button>
+          </>
+        )}
+        {videoMode !== 'off' && (
+          <button
+            onClick={turnVideoOff}
+            aria-label={`Turn off video (currently ${videoMode === 'hq' ? 'HQ' : 'standard'})`}
+            title="Video off"
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600/90 text-white shadow-lg transition-colors hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <CameraOff size={22} aria-hidden="true" />
           </button>
         )}
 
