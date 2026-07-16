@@ -1,4 +1,4 @@
-/* Self-contained HTML for the usage dashboard + "Feed the Server" page.
+/* Self-contained HTML for the usage dashboard + "Usage & Balance" page (renamed from "Feed the Server", July 16 2026).
  * No server-side auth: client JS fetches a token from /api/auth/refresh (the
  * same httpOnly refresh-cookie flow the SPA uses on boot), then calls the
  * gated /api/kade APIs. Fully static — no server-side interpolation. */
@@ -140,25 +140,25 @@ const SHARED_HEAD = `
   }
 </script>`;
 
-const feedHtml = `<!doctype html><html lang="en"><head><title>Feed the Server</title>${SHARED_HEAD}</head>
+const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</title>${SHARED_HEAD}</head>
 <body>
   <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a></p>
-  <h1>Feed the Server</h1>
-  <p class="muted">Kade keeps this AI running out of pocket for friends and family. No one has to pay a cent. But if you'd like to chip in just enough to cover what <em>you've</em> used, here's your honest tab.</p>
+  <h1>Usage &amp; Balance</h1>
+  <p class="muted">The deal, plainly: your account starts with <strong>$10 of credit</strong> loaded by Kade, everything you do draws from it at exactly what it costs (no markup, no profit), and when it runs dry you top it up below and keep going.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading your usage…</div>
 
   <main id="content" hidden>
     <div class="card" aria-labelledby="tabhead">
-      <h2 id="tabhead" style="margin-top:0">Your tab so far this <span id="monthLabel">month</span></h2>
+      <h2 id="tabhead" style="margin-top:0">Your balance</h2>
       <div class="big" id="suggested" aria-live="polite">$0.00</div>
-      <p class="muted" id="tabnote">That's roughly what your chats, voices, and images have cost the server this month.</p>
-      <a class="btn" id="donate" href="#" target="_blank" rel="noopener">Chip in via PayPal</a>
-      <p class="muted" style="font-size:.85rem;margin-top:.6rem">Totally optional. Give what feels right — or nothing at all.</p>
+      <p class="muted" id="tabnote">That's what you have left to spend. Chat barely touches it — pictures, phone calls, and video draw it down faster.</p>
+      <a class="btn" id="donate" href="#" target="_blank" rel="noopener">Top up via PayPal</a>
+      <p class="muted" style="font-size:.85rem;margin-top:.6rem">Any amount works. <strong>Put your name in the PayPal note</strong> so Kade knows whose balance to load — it's added to your account, usually the same day.</p>
     </div>
 
     <div class="card">
-      <h2 style="margin-top:0">This month, broken down</h2>
+      <h2 style="margin-top:0">This <span id="monthLabel">month</span>, broken down</h2>
       <dl class="kv">
         <dt>Chat (the AI thinking)</dt><dd id="m_llm">$0.00</dd>
         <dt>Voice / read-aloud</dt><dd id="m_tts">$0.00</dd>
@@ -176,7 +176,6 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Feed the Server</t
       <h2 style="margin-top:0">For the curious</h2>
       <dl class="kv">
         <dt>All-time total you've used</dt><dd id="a_total">$0.00</dd>
-        <dt>Your remaining monthly balance</dt><dd id="balance">$0.00</dd>
       </dl>
       <p class="muted" id="qty" style="margin-top:.6rem;font-size:.9rem"></p>
     </div>
@@ -201,11 +200,11 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Feed the Server</t
       }
       const d = await r.json();
       document.getElementById('monthLabel').textContent = d.monthLabel || 'month';
-      document.getElementById('suggested').textContent = money(d.suggestedDonationUSD);
-      document.getElementById('suggested').setAttribute('aria-label', 'Suggested donation ' + money(d.suggestedDonationUSD));
+      document.getElementById('suggested').textContent = money(d.balanceUSD);
+      document.getElementById('suggested').setAttribute('aria-label', 'Balance remaining ' + money(d.balanceUSD));
       const dn = document.getElementById('donate');
       dn.href = d.paypal;
-      dn.setAttribute('aria-label', 'Chip in via PayPal, opens in a new tab');
+      dn.setAttribute('aria-label', 'Top up via PayPal, opens in a new tab');
       const m = d.monthToDate || {};
       document.getElementById('m_llm').textContent = money(m.llmUSD);
       document.getElementById('m_tts').textContent = money(m.ttsUSD);
@@ -215,7 +214,6 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Feed the Server</t
       document.getElementById('m_other').textContent = money(m.otherUSD);
       document.getElementById('m_total').innerHTML = '<strong>'+money(m.totalUSD)+'</strong>';
       document.getElementById('a_total').textContent = money((d.allTime||{}).totalUSD);
-      document.getElementById('balance').textContent = money(d.balanceUSD);
       const a = d.allTime || {};
       document.getElementById('qty').textContent =
         'All time, you have used about ' + num(a.tts_chars) + ' characters of voice, ' +
@@ -816,7 +814,7 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
 
   <div class="card">
     <h2>Family check-in calls</h2>
-    <p class="muted">Companion calls to a registered family member on a schedule you choose &mdash; the character calls them, chats warmly, and a written report of how they're doing comes back to you as a nudge. Each call costs about 5&ndash;10 cents (a daily schedule is a few dollars a month), billed to your Feed the Server tab. Calls run between 8am and 9pm Central. You can also just tell any character, "set up a daily check-in call for Dad at 10."</p>
+    <p class="muted">Companion calls to a registered family member on a schedule you choose &mdash; the character calls them, chats warmly, and a written report of how they're doing comes back to you as a nudge. Each call costs about 5&ndash;10 cents (a daily schedule is a few dollars a month), billed to your Usage &amp; Balance tab. Calls run between 8am and 9pm Central. You can also just tell any character, "set up a daily check-in call for Dad at 10."</p>
     <div id="wellList" aria-live="polite"><p class="muted">Loading&hellip;</p></div>
     <form id="wellForm" style="margin-top:.8rem;">
       <h3 style="margin:.4rem 0;">New check-in schedule</h3>
@@ -1081,7 +1079,7 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
     <div id="iosSetup"><p class="muted">Sign in to see your personal setup link.</p></div>
   </details>
 </section>
-<footer class="muted">Descriptions cost about a tenth of a cent each — they land on your Feed the Server page like everything else.</footer>
+<footer class="muted">Descriptions cost about a tenth of a cent each — they land on your Usage &amp; Balance page like everything else.</footer>
 <script>
 (function(){
   var TOKEN=null, shareId=null, result=null;

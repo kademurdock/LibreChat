@@ -202,10 +202,10 @@ function ExploreSubmenu({ isAdmin, isChild }: { isAdmin: boolean; isChild: boole
         <Menu.MenuItem
           onClick={go('/feed-the-server')}
           className="select-item text-sm"
-          aria-label="Feed the Server: see what you've used and chip in"
+          aria-label="Usage and Balance: see what you've used, what's left, and top up"
         >
           <Heart className="icon-md" aria-hidden="true" />
-          Feed the Server
+          Usage &amp; Balance
         </Menu.MenuItem>
         {isAdmin && (
           <Menu.MenuItem
