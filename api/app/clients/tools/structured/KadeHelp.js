@@ -16,32 +16,38 @@ const { logger } = require('@librechat/data-schemas');
  * added/renamed there.
  */
 
+// `path` is the ACTUAL route registered in help.js's SECTIONS array — most
+// keys match their path 1:1 (topic "voice" -> /help/voice) but a few don't
+// (whatsnew -> /help/whats-new, starthere -> /help/start-here, rooms ->
+// /help/debate-room), so this is spelled out explicitly rather than templated
+// from the key. A mismatch here is a silent 404, not an error anyone sees.
 const HELP_TOPICS = [
-  { key: 'home', label: 'Help home — overview of every section' },
-  { key: 'starthere', label: 'Start Here — brand new to AI in general' },
-  { key: 'quickstart', label: 'Your First Five Minutes — first-time orientation' },
-  { key: 'faq', label: 'Questions & Answers — general FAQ' },
-  { key: 'whatsnew', label: "What's New — recent features and changes, dated" },
-  { key: 'voice', label: 'Talking & Listening — voice input/output, in-app calls basics' },
-  { key: 'phone', label: 'Phone Calls — the real phone number, calls FOR you, deep think, family check-in calls' },
-  { key: 'describe', label: 'Describe My World — photo/document/video description' },
-  { key: 'characters', label: 'Characters & the Marketplace' },
-  { key: 'rooms', label: 'The Debate Room' },
-  { key: 'games', label: 'The Game Parlor' },
-  { key: 'build', label: 'Build Your Own Character' },
-  { key: 'memory', label: 'What It Remembers — memory cards, forgetting, consolidation' },
-  { key: 'images', label: 'Making Pictures' },
-  { key: 'audio', label: 'Making Audio & Voices' },
-  { key: 'temporary', label: 'Starting Over & Private/Temporary Chats' },
-  { key: 'cheatsheet', label: 'The Cheat Sheet — quick command reference' },
-  { key: 'tokens', label: 'What Are Tokens?' },
-  { key: 'costs', label: 'What This Costs Kade' },
-  { key: 'donate', label: 'Feed the Server — balance, usage, donating' },
-  { key: 'accessibility', label: 'Accessibility Tips' },
-  { key: 'troubleshooting', label: 'When Something Breaks / how to report a bug' },
-  { key: 'notifications', label: 'Notifications & Reminders — push setup, reminder delivery choices, agent check-ins' },
+  { key: 'home', path: '/help', label: 'Help home — overview of every section' },
+  { key: 'starthere', path: '/help/start-here', label: 'Start Here — brand new to AI in general' },
+  { key: 'quickstart', path: '/help/quickstart', label: 'Your First Five Minutes — first-time orientation' },
+  { key: 'faq', path: '/help/faq', label: 'Questions & Answers — general FAQ' },
+  { key: 'whatsnew', path: '/help/whats-new', label: "What's New — recent features and changes, dated" },
+  { key: 'voice', path: '/help/voice', label: 'Talking & Listening — voice input/output, in-app calls basics' },
+  { key: 'phone', path: '/help/phone', label: 'Phone Calls — the real phone number, calls FOR you, deep think, family check-in calls' },
+  { key: 'describe', path: '/help/describe', label: 'Describe My World — photo/document/video description' },
+  { key: 'characters', path: '/help/characters', label: 'Characters & the Marketplace' },
+  { key: 'rooms', path: '/help/debate-room', label: 'The Debate Room' },
+  { key: 'games', path: '/help/games', label: 'The Game Parlor' },
+  { key: 'build', path: '/help/build', label: 'Build Your Own Character' },
+  { key: 'memory', path: '/help/memory', label: 'What It Remembers — memory cards, forgetting, consolidation' },
+  { key: 'images', path: '/help/images', label: 'Making Pictures' },
+  { key: 'audio', path: '/help/audio', label: 'Making Audio & Voices' },
+  { key: 'temporary', path: '/help/temporary', label: 'Starting Over & Private/Temporary Chats' },
+  { key: 'cheatsheet', path: '/help/cheatsheet', label: 'The Cheat Sheet — quick command reference' },
+  { key: 'tokens', path: '/help/tokens', label: 'What Are Tokens?' },
+  { key: 'costs', path: '/help/costs', label: 'What This Costs Kade' },
+  { key: 'donate', path: '/help/donate', label: 'Feed the Server — balance, usage, donating' },
+  { key: 'accessibility', path: '/help/accessibility', label: 'Accessibility Tips' },
+  { key: 'troubleshooting', path: '/help/troubleshooting', label: 'When Something Breaks / how to report a bug' },
+  { key: 'notifications', path: '/notifications', label: 'Notifications & Reminders — push setup, reminder delivery choices, agent check-ins' },
 ];
 const TOPIC_KEYS = HELP_TOPICS.map((t) => t.key);
+const TOPIC_PATHS = Object.fromEntries(HELP_TOPICS.map((t) => [t.key, t.path]));
 
 const kadeHelpJsonSchema = {
   type: 'object',
@@ -59,8 +65,9 @@ const kadeHelpJsonSchema = {
 
 const HELP_BASE = (process.env.HELP_SITE_URL || 'https://inworld-tts-proxy-production.up.railway.app').replace(/\/$/, '');
 // "notifications" lives on the main site itself (a live settings page), not
-// under the proxy's /help/* set — route it there instead.
-const NOTIFICATIONS_URL = (process.env.CHAT_SITE_URL || 'https://kademurdock.com').replace(/\/$/, '') + '/notifications';
+// on the help proxy — its TOPIC_PATHS entry ('/notifications') gets the
+// CHAT base instead of HELP_BASE, handled in _call() below.
+const CHAT_BASE = (process.env.CHAT_SITE_URL || 'https://kademurdock.com').replace(/\/$/, '');
 
 /** Turn a help page's HTML into clean, read-aloud-friendly plain text. Many
  * users here listen by voice or screen reader, so links become their visible
@@ -121,7 +128,8 @@ class KadeHelp extends Tool {
       return cached.text;
     }
 
-    const url = topic === 'notifications' ? NOTIFICATIONS_URL : `${HELP_BASE}${topic === 'home' ? '/help' : `/help/${topic}`}`;
+    const topicPath = TOPIC_PATHS[topic];
+    const url = topic === 'notifications' ? `${CHAT_BASE}${topicPath}` : `${HELP_BASE}${topicPath}`;
     try {
       const r = await axios.get(url, {
         timeout: 15000,
