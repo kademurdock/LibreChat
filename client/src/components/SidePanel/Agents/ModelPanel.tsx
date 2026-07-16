@@ -32,7 +32,31 @@ export default function ModelPanel({
   const { control, setValue } = useFormContext<AgentForm>();
 
   const model = useWatch({ control, name: 'model' });
-  const providerOption = useWatch({ control, name: 'provider' });
+  
+// KADE July 16 2026: honest, plain-language notes for the curated model picker
+// (librechat.yaml's OpenRouter list). Grounded in what is actually wired and
+// measured on this fleet -- no marketing. Models not listed just show nothing.
+const KADE_MODEL_NOTES: Record<string, string> = {
+  'z-ai/glm-5.2': 'The house default. Smart, dependable, and great with tools -- if you are not sure, pick this.',
+  'minimax/minimax-m3': 'Big flagship brain that can also see images you share. Good all-rounder, costs more than the default.',
+  'z-ai/glm-4.7': 'The default’s cheaper sibling. Solid all-rounder for everyday characters.',
+  'deepseek/deepseek-v4-flash': 'Very cheap and fast with a huge memory -- great for long, chatty conversations.',
+  'deepseek/deepseek-v4-pro': 'The deep thinker. Slower, but strongest on hard problems and careful reasoning.',
+  'google/gemini-3-flash-preview': 'Fast, and can see images, audio, and video you share.',
+  'google/gemini-3.1-flash-lite': 'The fastest we have tested (replies in about a second) -- perfect for snappy characters.',
+  'google/gemini-2.5-flash-lite': 'The cheapest quick chat. Fine for light banter, not for heavy lifting.',
+  'xiaomi/mimo-v2.5': 'Cheap all-rounder that handles several media types.',
+  'openai/gpt-4o-mini': 'The familiar one -- cheap, quick, and can see images.',
+  'mistralai/mistral-nemo': 'A creative-roleplay classic. Cheap and playful; not built for tools or deep reasoning.',
+  'nousresearch/hermes-4-70b': 'Uncensored workhorse for adult personas -- about 6x cheaper than the default. Cannot use tools (chat only).',
+  'nousresearch/hermes-4-405b': 'Uncensored flagship, priced like the default. Cannot use tools (chat only).',
+  'sao10k/l3.1-euryale-70b': 'A roleplay-community favorite with real personality. Tools work on this one.',
+  'mistralai/mistral-small-2603': 'Light-touch and cheap, with tools and thinking. Good budget pick for capable characters.',
+  'moonshotai/kimi-k2.5': 'Huge model that still feels fast in conversation. A star at lyrics and wordplay.',
+  'x-ai/grok-4.20': 'Witty, with an enormous memory for very long chats. Strong at lyrics; pricier than most here.',
+};
+
+const providerOption = useWatch({ control, name: 'provider' });
   const modelParameters = useWatch({ control, name: 'model_parameters' });
 
   const provider = useMemo(() => {
@@ -216,6 +240,14 @@ export default function ModelPanel({
                       {localize('com_ui_field_required')}
                     </span>
                   )}
+                  {/* KADE July 16 2026: plain-language note for the selected model.
+                    * Ordinary in-flow text (not aria-live), so screen readers hit it
+                    * right after the picker and sighted users see it update on pick. */}
+                  {field.value && KADE_MODEL_NOTES[field.value] ? (
+                    <p className="mt-2 text-sm text-text-secondary" id="kade-model-note">
+                      {KADE_MODEL_NOTES[field.value]}
+                    </p>
+                  ) : null}
                 </>
               );
             }}

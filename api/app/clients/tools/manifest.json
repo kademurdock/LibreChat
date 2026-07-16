@@ -2,7 +2,7 @@
   {
     "name": "Phone Call",
     "pluginKey": "kade_phone_call",
-    "description": "Place a real outbound phone call from the Kade-AI phone line on the user's behalf. Capped, recorded, billed to the user's tab.",
+    "description": "Lets this agent place a real phone call for you — it dials out from the Kade-AI phone line, talks, and saves a transcript in Calls & Conversations. Calls are capped and recorded, and each one costs a little real money on the phone bill. It can't receive calls, only place them. Try: \"call my pharmacy and ask if my refill is ready.\"",
     "icon": "assets/phone-call.svg",
     "isAuthRequired": "false",
     "authConfig": []
@@ -10,7 +10,7 @@
   {
     "name": "Push Notification",
     "pluginKey": "kade_notify",
-    "description": "Send a guardrailed push notification to the user's own phone (reminders, task-done pings). Server-enforced quiet hours, cooldown, and daily caps.",
+    "description": "Lets this agent ping your phone's lock screen — reminders, check-ins, and \"your long task is done\" notes. It has built-in manners: quiet hours at night, cooldowns, and daily caps it cannot break. It can't text other people, only notify YOUR phone. Try: \"remind me at 4 to take the bread out.\"",
     "icon": "assets/phone-call.svg",
     "isAuthRequired": "false",
     "authConfig": []
@@ -18,7 +18,7 @@
   {
     "name": "Fal Studio (Video + Design)",
     "pluginKey": "fal_studio",
-    "description": "AI video clips (Kling 3.0 / Veo 3.1 Fast) and design images with perfect text (Seedream 4.5) via fal.ai.",
+    "description": "Makes short AI video clips and polished design images (posters, cards, logos — the kind where the text comes out spelled right). Each video costs real money (roughly 50 cents to a dollar per short clip), design images a few cents. It can't edit videos you upload. Try: \"make a 5-second video of a corgi surfing.\"",
     "icon": "assets/fal-ai.svg",
     "isAuthRequired": "true",
     "authConfig": [
@@ -32,14 +32,14 @@
   {
     "name": "Calculator",
     "pluginKey": "calculator",
-    "description": "Perform simple and complex mathematical calculations.",
+    "description": "Does exact math — arithmetic, percentages, conversions — so numbers are computed, not guessed. It can't graph or solve word problems by itself; it just crunches what the agent feeds it. Try: \"what's 15% of 1,240?\"",
     "icon": "assets/calculator.svg",
     "authConfig": []
   },
   {
     "name": "Flux",
     "pluginKey": "flux",
-    "description": "Generate images using text with the Flux API.",
+    "description": "Draws brand-new pictures from a description, using the site's shared image credits. It can't edit or look at photos you upload — it only creates new ones. Try: \"paint me a cozy cabin in the Ozarks at sunset.\"",
     "icon": "assets/bfl-ai.svg",
     "isAuthRequired": "true",
     "authConfig": [
@@ -53,7 +53,7 @@
   {
     "name": "Weather",
     "pluginKey": "kade_weather",
-    "description": "Real current weather and forecasts for any city. Free and instant — no key, no cost.",
+    "description": "Looks up real, current weather and forecasts for any city — free and instant. It can't do past weather history. Try: \"what's the weather in Springfield this weekend?\"",
     "icon": "https://open-meteo.com/favicon.ico",
     "isAuthRequired": "false",
     "authConfig": []
@@ -61,7 +61,7 @@
   {
     "name": "Wikipedia",
     "pluginKey": "kade_wikipedia",
-    "description": "Free encyclopedia lookups — people, places, history, science. No key, no cost.",
+    "description": "Looks things up on Wikipedia — people, places, history, science — so answers come from the encyclopedia instead of memory. Free. It only knows what Wikipedia knows. Try: \"who was Bass Reeves?\"",
     "icon": "https://en.wikipedia.org/static/favicon/wikipedia.ico",
     "isAuthRequired": "false",
     "authConfig": []
@@ -69,7 +69,7 @@
   {
     "name": "Jokes",
     "pluginKey": "kade_joke",
-    "description": "Fresh jokes from a live joke database — clean by default, adult mode for uncensored personas. No key, no cost.",
+    "description": "Pulls fresh jokes from a live joke database — clean by default, uncensored only for adult personas. Try: \"tell me a dad joke.\"",
     "icon": "https://v2.jokeapi.dev/favicon.png",
     "isAuthRequired": "false",
     "authConfig": []
@@ -77,7 +77,7 @@
   {
     "name": "News briefing",
     "pluginKey": "kade_news",
-    "description": "Real headlines from free news feeds — national, world, Springfield/Ozarks local, tech, entertainment, music, sports, or any custom feed. No key, no cost.",
+    "description": "Reads real, current headlines from free news feeds — national, world, Springfield/Ozarks local, tech, entertainment, music, sports. It gets headlines and summaries, not full articles. Try: \"what's happening in the news this morning?\"",
     "icon": "https://media.npr.org/chrome/favicon/favicon-32x32.png",
     "isAuthRequired": "false",
     "authConfig": []
@@ -85,7 +85,7 @@
   {
     "name": "Read a webpage",
     "pluginKey": "kade_read_page",
-    "description": "Reads any link the user shares and returns just the article text — no ads, menus, or clutter. Great for listening. No key, no cost.",
+    "description": "You share a link, it reads the page and returns just the article text — no ads, menus, or clutter. Great for having a webpage read aloud. It can't log into sites or fill out forms, and some paywalled pages won't open. Try: \"read me this article\" with a link pasted in.",
     "icon": "https://jina.ai/favicon.ico",
     "isAuthRequired": "false",
     "authConfig": []
@@ -93,7 +93,7 @@
   {
     "name": "Adventure save files",
     "pluginKey": "kade_adventure",
-    "description": "Persistent save files for text-adventure and RPG games — save, load, and continue games across conversations. No key, no cost.",
+    "description": "Gives story games a save file — so a text adventure or RPG can save, load, and pick up where you left off days later, even in a new conversation. Only useful for games. Try: \"continue my dungeon adventure from last time.\"",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
@@ -101,7 +101,7 @@
   {
     "name": "Game Parlor",
     "pluginKey": "kade_games",
-    "description": "Server-refereed voice games, 19 strong — Blackjack, Uno, War, Go Fish, Wild Eights, In-Between, Cards Against Reality (the fill-in-the-blank party game), Crab Apples, Fill-In Stories, Guess the Sound, Pig, Farkle, Liar's Dice, Trivia Night, Hangman, Word Scramble, Battleship, Tic-Tac-Toe, and Rock Paper Scissors. The engine enforces every rule; the agent just deals the banter. No key, no cost.",
+    "description": "The Game Parlor: 19 voice-friendly games with a real referee keeping score — Blackjack, Uno, War, Go Fish, Farkle, Battleship, trivia, and more. The server tracks cards and dice, so the agent can't cheat or lose count. Try: \"deal me some blackjack.\"",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
@@ -109,7 +109,7 @@
   {
     "name": "Send Feedback",
     "pluginKey": "kade_feedback",
-    "description": "File a bug report, feature request, or feedback to Kade (the platform owner) on the user's behalf. Free, instant, no cost.",
+    "description": "Sends a bug report, feature idea, or general feedback straight to Kade, the person who runs this site. Free and instant. Try: \"tell Kade the voice cut out during my call.\"",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
@@ -117,7 +117,7 @@
   {
     "name": "Family Messages",
     "pluginKey": "kade_message",
-    "description": "Take a message for another person on the site (\"tell Skylee...\") — held and delivered the next time they open a chat or call. Free, no key.",
+    "description": "Takes a message for another person on this site — it's held and delivered next time they open a chat. It can't reach people outside Kade-AI (no texts or emails). Try: \"tell Skylee I said happy birthday.\"",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
@@ -125,7 +125,7 @@
   {
     "name": "Code Runner",
     "pluginKey": "kade_code",
-    "description": "Run a small Python/Bash/Node program in a safe sandbox and get back what it prints. Free, no key, no cost.",
+    "description": "Runs a small computer program (Python, Bash, or Node) in a safe sandbox and reports what it prints — handy for exact calculations, date math, or quick data crunching. It can't reach the internet or your files. Try: \"figure out how many days until Christmas.\"",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []

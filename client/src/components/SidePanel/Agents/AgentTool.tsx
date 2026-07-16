@@ -8,6 +8,7 @@ import {
   useToastContext,
   OGDialogTrigger,
   OGDialogTemplate,
+  InfoHoverCard,
 } from '@librechat/client';
 import type { TPlugin } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
@@ -90,6 +91,11 @@ export default function AgentTool({
           >
             {currentTool.name}
           </div>
+          {/* KADE July 16 2026: plain-language "what does this tool actually do?"
+            * on hover/focus. InfoHoverCard's trigger is focusable with the full
+            * text as its aria-label, so VoiceOver reads the same explanation
+            * sighted users see — newbies get confidence, pros just tab past. */}
+          {currentTool.description ? <InfoHoverCard text={currentTool.description} /> : null}
         </div>
 
         <OGDialogTrigger asChild>
