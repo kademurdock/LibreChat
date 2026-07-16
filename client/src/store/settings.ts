@@ -33,6 +33,10 @@ const localStorageAtoms = {
   keepScreenAwake: atomWithLocalStorage('keepScreenAwake', true),
   // KADE July 2 2026: soft chime when a reply finishes (accessibility)
   chimeOnCompletion: atomWithLocalStorage('chimeOnCompletion', false),
+  // KADE July 16 2026: low-vision display prefs (classes applied by utils/kadeA11yPrefs.ts)
+  kadeA11yHighContrast: atomWithLocalStorage('kadeA11yHighContrast', false),
+  kadeA11yFont: atomWithLocalStorage<'default' | 'lexend' | 'opendyslexic'>('kadeA11yFont', 'default'),
+  kadeA11yLineSpacing: atomWithLocalStorage<'default' | 'relaxed' | 'loose'>('kadeA11yLineSpacing', 'default'),
   newChatSwitchToHistory: atomWithLocalStorage('newChatSwitchToHistory', true),
 
   // Chat settings

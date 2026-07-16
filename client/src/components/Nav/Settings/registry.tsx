@@ -38,6 +38,11 @@ import Avatar from '../SettingsTabs/Account/Avatar';
 import About from '../SettingsTabs/About/About';
 import ApiKeys from '../SettingsTabs/ApiKeys';
 import MemoryToggle from './MemoryToggle';
+import {
+  KadeHighContrastToggle,
+  KadeFontSelector,
+  KadeLineSpacingSelector,
+} from '../SettingsTabs/General/KadeA11y';
 import { TTSEndpoints } from '~/common';
 import store from '~/store';
 
@@ -134,6 +139,31 @@ export const registry: SettingEntry[] = [
       localizationKey: 'com_nav_chime_on_completion',
       switchId: 'chimeOnCompletion',
     }),
+  },
+  // KADE July 16 2026: low-vision display preferences (research paper Section C)
+  {
+    id: 'kadeHighContrast',
+    tab: GENERAL,
+    section: 'accessibility',
+    labelKey: 'com_nav_kade_high_contrast',
+    keywords: ['contrast', 'black', 'low vision', 'accessibility', 'theme'],
+    Component: KadeHighContrastToggle,
+  },
+  {
+    id: 'kadeEasyFont',
+    tab: GENERAL,
+    section: 'accessibility',
+    labelKey: 'com_nav_kade_easy_font',
+    keywords: ['font', 'dyslexia', 'lexend', 'opendyslexic', 'low vision', 'accessibility'],
+    Component: KadeFontSelector,
+  },
+  {
+    id: 'kadeLineSpacing',
+    tab: GENERAL,
+    section: 'accessibility',
+    labelKey: 'com_nav_kade_line_spacing',
+    keywords: ['spacing', 'line height', 'readability', 'low vision', 'accessibility'],
+    Component: KadeLineSpacingSelector,
   },
 
   // Chat · Sending

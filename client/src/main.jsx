@@ -9,11 +9,16 @@ import { ApiErrorBoundaryProvider } from './hooks/ApiErrorBoundaryContext';
 import 'katex/dist/katex.min.css';
 import 'katex/dist/contrib/copy-tex.js';
 import { migrateVoiceNumbering } from './utils/voiceRenumber2026';
+import { applyKadeA11yPrefs } from './utils/kadeA11yPrefs';
 
 // KADE: rewrite saved voice labels for the 2026-07-01 catalog renumbering.
 // Must run before React mounts (Recoil's localStorage effects read `voice`
 // at atom initialization). One-time, flag-guarded, fail-silent.
 migrateVoiceNumbering();
+
+// KADE: apply saved low-vision display prefs (contrast/font/spacing) before
+// first paint so there is no flash of default styling. Fail-soft inside.
+applyKadeA11yPrefs();
 
 window.addEventListener('vite:preloadError', (event) => {
   if (window.__lcRecoverStaleAssets?.()) {

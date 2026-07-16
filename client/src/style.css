@@ -2983,3 +2983,185 @@ html {
 .sharepoint-picker-bg {
   background-color: #f5f5f5;
 }
+/* ============================================================================
+   KADE LOW-VISION display preferences — July 16 2026
+   (Accessibility research paper, Section C. Classes set by utils/kadeA11yPrefs.ts;
+   controls in Settings › General › Accessibility. All additive + fail-soft:
+   remove the class and everything returns to stock.)
+   ========================================================================== */
+
+/* ---- Easy-read fonts (lazy: browsers only download a face when it's used) ---- */
+@font-face {
+  font-family: 'Lexend';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/lexend/files/lexend-latin-400-normal.woff2')
+    format('woff2');
+}
+@font-face {
+  font-family: 'Lexend';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/lexend/files/lexend-latin-600-normal.woff2')
+    format('woff2');
+}
+@font-face {
+  font-family: 'Lexend';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/lexend/files/lexend-latin-700-normal.woff2')
+    format('woff2');
+}
+@font-face {
+  font-family: 'OpenDyslexic';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/woff/OpenDyslexic-Regular.woff')
+    format('woff');
+}
+@font-face {
+  font-family: 'OpenDyslexic';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/woff/OpenDyslexic-Bold.woff')
+    format('woff');
+}
+
+html.kade-font-lexend body {
+  font-family:
+    'Lexend',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif !important;
+}
+html.kade-font-opendyslexic body {
+  font-family:
+    'OpenDyslexic',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif !important;
+}
+/* Tailwind's font-sans utility sets font-family explicitly — pull it back to inherit */
+html.kade-font-lexend .font-sans,
+html.kade-font-opendyslexic .font-sans {
+  font-family: inherit !important;
+}
+/* Code stays monospace regardless of the reading font */
+html.kade-font-lexend code,
+html.kade-font-lexend pre,
+html.kade-font-lexend kbd,
+html.kade-font-lexend samp,
+html.kade-font-opendyslexic code,
+html.kade-font-opendyslexic pre,
+html.kade-font-opendyslexic kbd,
+html.kade-font-opendyslexic samp {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+}
+
+/* ---- Line spacing (WCAG recommends >=1.5x; "loose" adds paragraph air too) ---- */
+html.kade-space-relaxed .prose,
+html.kade-space-relaxed .markdown,
+html.kade-space-relaxed textarea {
+  line-height: 1.65 !important;
+}
+html.kade-space-relaxed .prose p,
+html.kade-space-relaxed .markdown p {
+  margin-bottom: 1em;
+}
+html.kade-space-loose .prose,
+html.kade-space-loose .markdown,
+html.kade-space-loose textarea {
+  line-height: 1.95 !important;
+}
+html.kade-space-loose .prose p,
+html.kade-space-loose .markdown p {
+  margin-bottom: 1.4em;
+}
+
+/* ---- High contrast, true black (rides the dark theme's semantic variables) ---- */
+html.kade-hc.dark {
+  --presentation: #000;
+  --text-primary: #fff;
+  --text-secondary: #f2f2f2;
+  --text-secondary-alt: #d9d9d9;
+  --text-tertiary: #ccc;
+  --header-primary: #0a0a0a;
+  --header-hover: #202020;
+  --header-button-hover: #202020;
+  --surface-active: #333;
+  --surface-active-alt: #1a1a1a;
+  --surface-hover: #262626;
+  --surface-hover-alt: #262626;
+  --surface-primary: #000;
+  --surface-primary-alt: #000;
+  --surface-primary-contrast: #0a0a0a;
+  --surface-secondary: #050505;
+  --surface-secondary-alt: #050505;
+  --surface-tertiary: #101010;
+  --surface-tertiary-alt: #101010;
+  --surface-dialog: #000;
+  --surface-chat: #0d0d0d;
+  --border-light: #4d4d4d;
+  --border-medium-alt: #6e6e6e;
+  --border-medium: #6e6e6e;
+  --border-heavy: #999;
+  --border-xheavy: #ccc;
+  --background: 0 0% 0%;
+  --card: 0 0% 0%;
+  --secondary: 0 0% 12%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 80%;
+  --accent: 0 0% 15%;
+  --border: 0 0% 32%;
+  --input: 0 0% 12%;
+}
+/* If the user flips back to light theme with high contrast still on: max-contrast light */
+html.kade-hc:not(.dark) {
+  --text-primary: #000;
+  --text-secondary: #111;
+  --text-secondary-alt: #222;
+  --text-tertiary: #333;
+  --surface-primary: #fff;
+  --surface-primary-alt: #fff;
+  --surface-secondary: #fafafa;
+  --border-light: #767676;
+  --border-medium-alt: #555;
+  --border-medium: #555;
+  --border-heavy: #333;
+  --border-xheavy: #000;
+}
+
+/* ---- KADE full-screen reading view (Chat › message hover button) ---- */
+.kade-reading-view {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--surface-primary);
+  color: var(--text-primary);
+}
+.kade-reading-view__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 1.5rem clamp(1rem, 8vw, 8rem) 4rem;
+}
+.kade-reading-view__text {
+  max-width: 46em;
+  margin: 0 auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  font-size: clamp(1.25rem, 2.6vw, 1.6rem);
+  line-height: 1.7;
+}
+html.kade-space-loose .kade-reading-view__text {
+  line-height: 2;
+}
