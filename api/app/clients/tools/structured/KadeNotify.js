@@ -7,14 +7,26 @@ const notifyJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['send', 'schedule_checkin', 'list_checkins', 'pause_checkin', 'cancel_checkin', 'test_checkin'],
+      enum: [
+        'send',
+        'schedule_checkin',
+        'list_checkins',
+        'pause_checkin',
+        'cancel_checkin',
+        'test_checkin',
+        'set_reminder',
+        'list_reminders',
+        'cancel_reminder',
+      ],
       description:
-        "What to do. 'send' (default) pushes a notification to the user's phone RIGHT NOW. The others manage RECURRING CHECK-INS where YOU reach out to the user on a schedule: 'schedule_checkin' creates/updates one (needs time), 'list_checkins' lists the user's, 'pause_checkin' pauses/resumes one, 'cancel_checkin' deletes one, 'test_checkin' fires one immediately so they can hear it. Only set up a check-in when the user asks you to.",
+        "What to do. 'send' (default) pushes a notification to the user's phone RIGHT NOW -- use it for an immediate ping, OR to report that a long job you were just running has finished. " +
+        "'schedule_checkin' / 'list_checkins' / 'pause_checkin' / 'cancel_checkin' / 'test_checkin' manage a RECURRING check-in where YOU reach out with fresh, improvised wording on a repeating daily/weekly schedule (needs time). " +
+        "'set_reminder' / 'list_reminders' / 'cancel_reminder' manage a ONE-OFF reminder for a single future moment, delivered with the EXACT text you give it (not improvised again later) -- use this for 'remind me to X at/in Y', not schedule_checkin. Only set up a check-in or reminder when the user actually asks for one.",
     },
     body: {
       type: 'string',
       description:
-        "REQUIRED for action='send'. The notification text shown on the user's phone lock screen. Keep it short and clear (under ~200 characters), written the way you would text them.",
+        "REQUIRED for action='send' and action='set_reminder'. The text shown on the user's phone lock screen. For 'send', write it now, in your own voice. For 'set_reminder', write the FINAL reminder text now (e.g. 'Time to take your meds!') -- it is stored as-is and delivered verbatim later, not regenerated. Keep it short and clear (under ~200 characters).",
     },
     title: {
       type: 'string',
@@ -23,7 +35,7 @@ const notifyJsonSchema = {
     urgent: {
       type: 'boolean',
       description:
-        "Optional (action='send'). Set true ONLY for genuinely time-sensitive alerts — they bypass quiet hours (9pm-8am Central). Use very sparingly.",
+        "Optional (action='send'). Set true ONLY for genuinely time-sensitive alerts — they bypass quiet hours (9pm-8am Central). Use very sparingly. (set_reminder always bypasses quiet hours automatically -- the user picked that exact moment on purpose, so this flag isn't needed there.)",
     },
     time: {
       type: 'string',
@@ -41,7 +53,20 @@ const notifyJsonSchema = {
     },
     schedule_id: {
       type: 'string',
-      description: 'For pause_checkin / cancel_checkin / test_checkin: the id from list_checkins or schedule_checkin.',
+      description: 'For pause_checkin / cancel_checkin / test_checkin / cancel_reminder: the id from list_checkins / list_reminders, or schedule_checkin / set_reminder.',
+    },
+    in_minutes: {
+      type: 'number',
+      description:
+        "For set_reminder: fire this many minutes from now (e.g. 45 for 'remind me in 45 minutes'). Use this OR fire_date+fire_time, not both -- whichever is more natural for how the user phrased it.",
+    },
+    fire_date: {
+      type: 'string',
+      description: "For set_reminder (with fire_time): the calendar date to fire, US Central, as 'YYYY-MM-DD'. Work out the actual date yourself from today's date and what the user said (e.g. 'tomorrow', 'next Friday').",
+    },
+    fire_time: {
+      type: 'string',
+      description: "For set_reminder (with fire_date): the time that day to fire, 24-hour US Central 'HH:mm'. Unlike schedule_checkin, ANY time is allowed here, including overnight -- it's a one-off the user specifically asked for.",
     },
   },
   required: [],
@@ -67,13 +92,15 @@ class KadeNotify extends Tool {
     this.name = 'kade_notify';
     this.description =
       "Send a push notification to the user's own phone (their Kade-AI app), or set up a recurring check-in where YOU reach out to them on a schedule. " +
-      "Use 'send' when the user asked to be pinged/reminded on their phone or to report a finished background job. Use the check-in actions when the user asks you to check in on them regularly (e.g. 'text me every evening'). " +
-      'The server enforces quiet hours (9pm-8am), a cooldown, and daily caps, so keep notifications meaningful, not chatter. ' +
+      "Use 'send' when the user asked to be pinged right now, or to report that a long job you were running has finished. Use the reminder actions for a ONE-OFF future ping with exact text (e.g. 'remind me to call the pharmacy at 3'). Use the check-in actions when the user asks you to reach out regularly with fresh wording (e.g. 'text me every evening'). " +
+      'The server enforces quiet hours (9pm-8am) for send/check-ins, a cooldown, and daily caps, so keep notifications meaningful, not chatter. Reminders are the one exception that can land inside quiet hours, since the user picked that exact moment on purpose. ' +
       'Do NOT duplicate something you just said in chat unless the user asked to be notified on their phone.';
     this.description_for_model =
       this.description +
-      " For 'send', write the 'body' in your own voice, short and plain (under ~200 chars). The tool tells you whether it ACTUALLY sent: if it reports blocked (quiet hours, cooldown, cap) or that no phone is registered, say so plainly and do NOT claim you notified them. NEVER claim you sent or scheduled anything unless the tool confirms it. " +
-      "For a recurring check-in, use action='schedule_checkin' with a 'time' (and optional 'days'/'topic'); confirm the time with the user first. Offer a 'test_checkin' so they can hear one. Only set urgent:true for truly time-critical alerts.";
+      " For 'send', write the 'body' in your own voice, short and plain (under ~200 chars). The tool tells you whether it ACTUALLY sent: if it reports blocked (quiet hours, cooldown, cap) or that no phone is registered, say so plainly and do NOT claim you notified them. NEVER claim you sent, scheduled, or reminded anything unless the tool confirms it. " +
+      "For a ONE-OFF reminder, use action='set_reminder' with 'body' (the exact text to deliver later) and either 'in_minutes' or both 'fire_date' (YYYY-MM-DD, work out the real date from today's date) and 'fire_time' (HH:mm Central); confirm the wording and timing with the user first, then offer list_reminders/cancel_reminder if they want to check or change it. " +
+      "For a recurring check-in, use action='schedule_checkin' with a 'time' (and optional 'days'/'topic'); confirm the time with the user first. Offer a 'test_checkin' so they can hear one. Only set urgent:true for truly time-critical send/schedule_checkin alerts. " +
+      "If the user asks for something that will take a while and might step away, tell them plainly you'll ping their phone when it's done, then actually call action='send' with a short done message once you finish -- before your final reply, not instead of it.";
     this.schema = notifyJsonSchema;
     this.bridgeUrl = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
     this.notifySecret = process.env.NOTIFY_AGENT_SECRET || process.env.BRIDGE_SECRET || '';
@@ -95,7 +122,11 @@ class KadeNotify extends Tool {
     if (SCHED.includes(action)) {
       return await this._schedule(action, data || {});
     }
-    return `Unknown action "${action}". Use 'send' or a check-in action.`;
+    const REMIND = ['set_reminder', 'list_reminders', 'cancel_reminder'];
+    if (REMIND.includes(action)) {
+      return await this._reminder(action, data || {});
+    }
+    return `Unknown action "${action}". Use 'send', a check-in action, or a reminder action.`;
   }
 
   async _send(data) {
@@ -185,6 +216,62 @@ class KadeNotify extends Tool {
         return 'Check-in schedule cancelled. No more scheduled reach-outs for it.';
       }
       return 'Unknown check-in action.';
+    } catch (err) {
+      const msg = err?.response?.data?.error || err.message;
+      logger.warn(`[KadeNotify] ${action} failed: ${msg}`);
+      return `Could not complete ${action}: ${msg}`;
+    }
+  }
+
+  async _reminder(action, data) {
+    // One-off reminders (Phase 3a): a single future moment, delivered with the
+    // exact text given at creation time -- unlike check-ins, the bridge does
+    // NOT call the agent again to improvise wording when it fires.
+    const uid = String(this.userId || '');
+    const { body, title, in_minutes, fire_date, fire_time, schedule_id } = data;
+    try {
+      if (action === 'list_reminders') {
+        const r = await axios.get(`${this.bridgeUrl}/reminders?userId=${encodeURIComponent(uid)}`, { timeout: 15000, headers: this._hdrs() });
+        const rows = (r.data && r.data.reminders) || [];
+        if (!rows.length) {
+          return 'No reminders pending. Create one with set_reminder (needs body, and either in_minutes or fire_date+fire_time).';
+        }
+        return rows
+          .map((rm) => `id ${rm.id}: "${rm.text}" at ${rm.fireAtCentral || rm.fireAt}`)
+          .join('\n');
+      }
+      if (action === 'set_reminder') {
+        const text = String(body || '').trim();
+        if (!text) {
+          return "set_reminder needs 'body' -- the exact text to deliver later.";
+        }
+        if (!in_minutes && !(fire_date && fire_time)) {
+          return "set_reminder needs either 'in_minutes' (e.g. 45) or both 'fire_date' (YYYY-MM-DD) and 'fire_time' (HH:mm Central).";
+        }
+        const r = await axios.post(
+          `${this.bridgeUrl}/reminders`,
+          {
+            agentId: this.agentId,
+            agentName: this.agentName,
+            userId: uid,
+            userName: this.userName,
+            text,
+            title: title || '',
+            in_minutes,
+            fire_date,
+            fire_time,
+          },
+          { timeout: 15000, headers: this._hdrs() },
+        );
+        const rm = r.data && r.data.reminder;
+        return `Reminder set (id ${rm.id}): I'll deliver "${rm.text}" to their phone at ${rm.fireAtCentral || rm.fireAt} -- it fires even in quiet hours since they picked this exact moment. Offer list_reminders/cancel_reminder if they want to check or change it.`;
+      }
+      if (action === 'cancel_reminder') {
+        if (!schedule_id) return 'cancel_reminder needs schedule_id (from list_reminders).';
+        await axios.delete(`${this.bridgeUrl}/reminders?id=${encodeURIComponent(schedule_id)}`, { timeout: 15000, headers: this._hdrs() });
+        return 'Reminder cancelled.';
+      }
+      return 'Unknown reminder action.';
     } catch (err) {
       const msg = err?.response?.data?.error || err.message;
       logger.warn(`[KadeNotify] ${action} failed: ${msg}`);
