@@ -674,6 +674,29 @@ export function getOpenAILLMConfig({
     llmConfig.includeReasoningContent = true;
   }
 
+  /** ♿ KADE (July 17 2026): DIRECT DeepSeek endpoints (api.deepseek.com) ignore
+   * OpenRouter-style reasoning_effort values — thinking is ON by default and only
+   * `thinking: { type: 'enabled' | 'disabled' }` switches it, with effort accepting
+   * only 'high' | 'max'. Without this mapping, "Instant" (effort 'none') silently
+   * still thinks — visible thought bubbles + slow answers. Kade's contract:
+   * instant means instant, on EVERY endpoint. No-op on the OpenRouter/reframe
+   * path (useOpenRouter handles that dialect above, verified live July 17). */
+  if (isDeepSeekModel && !useOpenRouter) {
+    const dsEffort =
+      typeof modelKwargs.reasoning_effort === 'string' ? modelKwargs.reasoning_effort : undefined;
+    if (dsEffort === 'none') {
+      delete modelKwargs.reasoning_effort;
+      modelKwargs.thinking = { type: 'disabled' };
+      hasModelKwargs = true;
+    } else if (dsEffort != null && dsEffort !== '') {
+      /** DeepSeek maps low/medium→high and xhigh→max itself, but 'minimal' is
+       * undocumented — normalize everything to the two values it accepts. */
+      modelKwargs.reasoning_effort = dsEffort === 'xhigh' || dsEffort === 'max' ? 'max' : 'high';
+      modelKwargs.thinking = { type: 'enabled' };
+      hasModelKwargs = true;
+    }
+  }
+
   /**
    * Note: OpenAI reasoning models (o1/o3/gpt-5) do not support temperature and other sampling parameters
    * Exception: gpt-5-chat and versioned models like gpt-5.1 DO support these parameters
