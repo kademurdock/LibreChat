@@ -121,6 +121,20 @@ function verifyShareToken(token) {
 const IN_USD_PER_M = Number(process.env.KADE_DESCRIBE_IN_USD_PER_M || 0.1);
 const OUT_USD_PER_M = Number(process.env.KADE_DESCRIBE_OUT_USD_PER_M || 0.4);
 
+
+/** Reasoning effort for the vision call: KADE_VISION_REASONING=off|minimal|low|medium|high.
+ *  Default: 'low' for Pro-class models (which have mandatory reasoning), omitted otherwise. */
+function visionReasoning(model) {
+  const eff = process.env.KADE_VISION_REASONING;
+  if (eff === 'off') {
+    return null;
+  }
+  if (eff) {
+    return { effort: eff };
+  }
+  return /-pro/.test(String(model)) ? { effort: 'low' } : null;
+}
+
 async function orChat(content, maxTokens = 900) {
   const key = process.env.OPENROUTER_KEY;
   if (!key) {
@@ -128,15 +142,23 @@ async function orChat(content, maxTokens = 900) {
   }
   const r = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
-    { model: DESCRIBE_MODEL, max_tokens: maxTokens, messages: [{ role: 'user', content }] },
+    {
+      model: DESCRIBE_MODEL,
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content }],
+      usage: { include: true },
+      ...(visionReasoning(DESCRIBE_MODEL) ? { reasoning: visionReasoning(DESCRIBE_MODEL) } : {}),
+    },
     { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 120000 },
   );
   const text = r.data?.choices?.[0]?.message?.content;
   const usage = r.data?.usage || {};
-  const costUSD =
+  const estUSD =
     ((Number(usage.prompt_tokens) || 0) * IN_USD_PER_M +
       (Number(usage.completion_tokens) || 0) * OUT_USD_PER_M) /
     1e6;
+  // Prefer OpenRouter's real reported cost; fall back to the env-tunable estimate.
+  const costUSD = typeof usage.cost === 'number' && usage.cost >= 0 ? usage.cost : estUSD;
   return { text: typeof text === 'string' ? text.trim() : null, costUSD };
 }
 

@@ -48,6 +48,20 @@ const SIGHT_INSTRUCTION =
  * @param {string} [opts.userId] - for usage logging.
  * @returns {Promise<string|null>} combined description, or null on any failure / no key.
  */
+
+/** Reasoning effort for the vision call: KADE_VISION_REASONING=off|minimal|low|medium|high.
+ *  Default: 'low' for Pro-class models (which have mandatory reasoning), omitted otherwise. */
+function visionReasoning(model) {
+  const eff = process.env.KADE_VISION_REASONING;
+  if (eff === 'off') {
+    return null;
+  }
+  if (eff) {
+    return { effort: eff };
+  }
+  return /-pro/.test(String(model)) ? { effort: 'low' } : null;
+}
+
 async function describeAttachedImages(imageParts, opts = {}) {
   try {
     const key = process.env.OPENROUTER_KEY;
@@ -74,6 +88,7 @@ async function describeAttachedImages(imageParts, opts = {}) {
           max_tokens: 700,
           messages: [{ role: 'user', content }],
           usage: { include: true },
+          ...(visionReasoning(VISION_MODEL) ? { reasoning: visionReasoning(VISION_MODEL) } : {}),
         },
         {
           headers: {
