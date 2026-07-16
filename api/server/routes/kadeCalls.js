@@ -222,6 +222,95 @@ router.post('/merge-backfill', async (req, res) => {
   }
 });
 
+/* ---- OLD WEB CALLS STORED AS PHONE (July 17 2026, proposal D) -------------
+ * Before fork 6cadd89, /ingest hardcoded surface:'phone', so WEB calls were
+ * stored and titled as phone calls ("Phone call with…" instead of "Voice chat
+ * with…"). The bridge has always sent from:"web:<email>" for web calls, so
+ * the mislabeled docs are cleanly identifiable. Two secret-guarded routes:
+ * a read-only LIST (show Kade first — house rule) and a bounded RETITLE that
+ * fixes the transcript's surface AND the merged conversation's title. */
+router.post('/web-mislabeled', async (req, res) => {
+  if (!mergeSecretOk(req)) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  try {
+    const docs = await KadeCallTranscript.find(
+      { surface: 'phone', from: { $regex: '^web:' } },
+      '_id from agentName startedAt endedAt mergedConversationId user',
+    )
+      .sort({ startedAt: 1 })
+      .limit(500)
+      .lean();
+    const mongoose = require('mongoose');
+    const Conversation = mongoose.models.Conversation;
+    const out = [];
+    for (const d of docs) {
+      let title = null;
+      if (d.mergedConversationId && Conversation) {
+        const c = await Conversation.findOne(
+          { conversationId: String(d.mergedConversationId) },
+          'title',
+        ).lean();
+        title = (c && c.title) || null;
+      }
+      out.push({
+        id: String(d._id),
+        from: d.from || null,
+        agentName: d.agentName || null,
+        startedAt: d.startedAt || null,
+        mergedConversationId: d.mergedConversationId || null,
+        currentTitle: title,
+      });
+    }
+    res.json({ ok: true, count: out.length, calls: out });
+  } catch (err) {
+    logger.error('[/api/kade/calls/web-mislabeled] error:', err);
+    res.status(500).json({ error: 'list failed' });
+  }
+});
+
+router.post('/web-retitle', async (req, res) => {
+  if (!mergeSecretOk(req)) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  try {
+    const dryRun = (req.body || {}).dryRun !== false; // DEFAULT DRY RUN — real writes need dryRun:false
+    const docs = await KadeCallTranscript.find(
+      { surface: 'phone', from: { $regex: '^web:' } },
+      '_id mergedConversationId',
+    )
+      .limit(500)
+      .lean();
+    const mongoose = require('mongoose');
+    const Conversation = mongoose.models.Conversation;
+    let surfaceFixed = 0;
+    let retitled = 0;
+    const changes = [];
+    for (const d of docs) {
+      if (!dryRun) {
+        await KadeCallTranscript.updateOne({ _id: d._id }, { $set: { surface: 'web' } });
+      }
+      surfaceFixed += 1;
+      if (d.mergedConversationId && Conversation) {
+        const cid = String(d.mergedConversationId);
+        const c = await Conversation.findOne({ conversationId: cid }, 'title').lean();
+        if (c && typeof c.title === 'string' && c.title.startsWith('Phone call')) {
+          const newTitle = c.title.replace(/^Phone call/, 'Voice chat');
+          changes.push({ conversationId: cid, from: c.title, to: newTitle });
+          if (!dryRun) {
+            await Conversation.updateOne({ conversationId: cid }, { $set: { title: newTitle } });
+          }
+          retitled += 1;
+        }
+      }
+    }
+    res.json({ ok: true, dryRun, surfaceFixed, retitled, changes });
+  } catch (err) {
+    logger.error('[/api/kade/calls/web-retitle] error:', err);
+    res.status(500).json({ error: 'retitle failed' });
+  }
+});
+
 // Manually fire the nightly DREAMING summary sweep (secret-guarded) — lets us
 // smoke-test the episodic-summary path on demand instead of waiting for the
 // scheduled UTC hour. Same secret as the merge routes.
