@@ -369,10 +369,16 @@ export const kadePhoneCallSchema: ExtendedJsonSchema = {
 export const kadeNotifySchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
+    action: {
+      type: 'string',
+      enum: ['send', 'schedule_checkin', 'list_checkins', 'pause_checkin', 'cancel_checkin', 'test_checkin'],
+      description:
+        "What to do. 'send' (default) pushes a notification to the user's phone now. The others manage recurring check-ins where you reach out on a schedule: 'schedule_checkin' (needs time), 'list_checkins', 'pause_checkin', 'cancel_checkin', 'test_checkin'. Only set up a check-in when the user asks.",
+    },
     body: {
       type: 'string',
       description:
-        "REQUIRED. The notification text shown on the user's phone lock screen. Keep it short and clear (under ~200 characters), written the way you would text them.",
+        "REQUIRED for action='send'. The notification text shown on the user's phone lock screen. Keep it short and clear (under ~200 characters).",
     },
     title: {
       type: 'string',
@@ -381,10 +387,26 @@ export const kadeNotifySchema: ExtendedJsonSchema = {
     urgent: {
       type: 'boolean',
       description:
-        "Optional. Set true ONLY for genuinely time-sensitive alerts — they bypass the user's quiet hours (9pm to 8am Central). Use very sparingly.",
+        "Optional (send). Set true ONLY for genuinely time-sensitive alerts — they bypass quiet hours (9pm to 8am Central). Use very sparingly.",
+    },
+    time: {
+      type: 'string',
+      description: "For schedule_checkin: daily time to reach out, 24-hour US Central 'HH:mm' (e.g. '18:00'). Daytime/evening only.",
+    },
+    days: {
+      type: 'string',
+      description: "For schedule_checkin: 'daily' (default) or comma-separated day names like 'mon,wed,fri'.",
+    },
+    topic: {
+      type: 'string',
+      description: 'For schedule_checkin, optional: what to weave into the check-in.',
+    },
+    schedule_id: {
+      type: 'string',
+      description: 'For pause_checkin / cancel_checkin / test_checkin: the id from list_checkins or schedule_checkin.',
     },
   },
-  required: ['body'],
+  required: [],
 };
 
 export const kadeNewsSchema: ExtendedJsonSchema = {
@@ -820,7 +842,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_notify: {
     name: 'kade_notify',
     description:
-      "Send a push notification to the user's OWN phone (their Kade-AI app) — for reminders they asked for, or to tell them a background job finished. It lands on their lock screen. The server enforces quiet hours (9pm to 8am), a cooldown, and daily caps, so keep notifications meaningful, not chatter. NEVER claim you notified them unless the tool confirms it sent; if it reports blocked or that no phone is registered, say so plainly. Do not duplicate what you just said in chat unless the user asked to be pinged on their phone.",
+      "Send a push notification to the user's OWN phone (their Kade-AI app) — for reminders they asked for, or to tell them a background job finished. It lands on their lock screen. The server enforces quiet hours (9pm to 8am), a cooldown, and daily caps, so keep notifications meaningful, not chatter. NEVER claim you notified them unless the tool confirms it sent; if it reports blocked or that no phone is registered, say so plainly. Do not duplicate what you just said in chat unless the user asked to be pinged on their phone. Also sets up RECURRING check-ins (action='schedule_checkin' with a time; list/pause/cancel/test actions manage them) where you reach out to the user on a schedule — only when they ask.",
     schema: kadeNotifySchema,
     toolType: 'builtin',
   },
