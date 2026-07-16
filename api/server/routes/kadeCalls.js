@@ -275,22 +275,28 @@ router.post('/web-retitle', async (req, res) => {
   }
   try {
     const dryRun = (req.body || {}).dryRun !== false; // DEFAULT DRY RUN — real writes need dryRun:false
+    /* surface $in both: a partial earlier run may have fixed a transcript's
+     * surface while its conversation title is still wrong — reselect those. */
     const docs = await KadeCallTranscript.find(
-      { surface: 'phone', from: { $regex: '^web:' } },
-      '_id mergedConversationId',
+      { surface: { $in: ['phone', 'web'] }, from: { $regex: '^web:' } },
+      '_id user surface mergedConversationId',
     )
       .limit(500)
       .lean();
+    const { saveConvo } = require('~/models');
     const mongoose = require('mongoose');
     const Conversation = mongoose.models.Conversation;
     let surfaceFixed = 0;
     let retitled = 0;
     const changes = [];
     for (const d of docs) {
-      if (!dryRun) {
-        await KadeCallTranscript.updateOne({ _id: d._id }, { $set: { surface: 'web' } });
+      logger.info(`[web-retitle] processing transcript ${d._id} (surface ${d.surface})`);
+      if (d.surface === 'phone') {
+        if (!dryRun) {
+          await KadeCallTranscript.updateOne({ _id: d._id }, { $set: { surface: 'web' } });
+        }
+        surfaceFixed += 1;
       }
-      surfaceFixed += 1;
       if (d.mergedConversationId && Conversation) {
         const cid = String(d.mergedConversationId);
         const c = await Conversation.findOne({ conversationId: cid }, 'title').lean();
@@ -298,9 +304,18 @@ router.post('/web-retitle', async (req, res) => {
           const newTitle = c.title.replace(/^Phone call/, 'Voice chat');
           changes.push({ conversationId: cid, from: c.title, to: newTitle });
           if (!dryRun) {
-            await Conversation.updateOne({ conversationId: cid }, { $set: { title: newTitle } });
+            /* saveConvo, NOT a raw Conversation.updateOne — the raw query-level
+             * update stalled in production (first attempt, July 17: response
+             * never returned; suspicion is the meili sync hook path). saveConvo
+             * is the exact call kadeCallMerge titles every minted call with. */
+            await saveConvo(
+              { userId: String(d.user) },
+              { conversationId: cid, title: newTitle },
+              { context: 'kadeWebRetitle' },
+            );
           }
           retitled += 1;
+          logger.info(`[web-retitle] retitled ${cid}: "${c.title}" -> "${newTitle}"`);
         }
       }
     }
