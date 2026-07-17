@@ -391,9 +391,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         setLiveNotice(null);
         setLiveMode(true);
         liveModeRef.current = true;
+        const who = m.spotterName ? String(m.spotterName) : 'Your Spotter';
         setVideoInfo(
-          `Live mode on${typeof m.minutesLeft === 'number' ? ` — about ${m.minutesLeft} live minutes left today` : ''}. ` +
-            'Different voice, continuous sight. Say "live off" or tap the live button to go back.',
+          `${who} is on the line${typeof m.minutesLeft === 'number' ? ` — about ${m.minutesLeft} live minutes left today` : ''}. ` +
+            'Continuous sight, instant replies. Say "live off" or tap the button to bring your character back.',
         );
         // Live needs eyes: if no camera is running, start one WITHOUT arming
         // the snapshot lane (frames route to the live relay server-side).
@@ -412,7 +413,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             ? String(m.message)
             : m.reason === 'cap'
               ? 'Out of live minutes for today — the regular call continues as normal.'
-              : 'Live mode off — back to the normal voice. Tap the camera button if you want regular video.',
+              : 'Your Spotter is off the line — your character is back. Tap the camera button if you want regular video.',
         );
       }
       return;
@@ -1594,7 +1595,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
 
       {/* First-use LIVE cost notice: bridge speaks it; confirm actually starts. */}
       {liveNotice && (
-        <div className="mb-4 w-full max-w-xs rounded-2xl bg-white/10 px-4 py-3" role="group" aria-label="Live mode cost notice">
+        <div className="mb-4 w-full max-w-xs rounded-2xl bg-white/10 px-4 py-3" role="group" aria-label="Spotter first-use notice">
           <p className="mb-3 text-sm leading-relaxed text-gray-100">{liveNotice}</p>
           <div className="flex gap-3">
             <button
@@ -1602,10 +1603,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
               onClick={() => streamingEngine.sendJson({ type: 'live', on: true, ack: true })}
               className="flex-1 rounded-full bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-400"
             >
-              Start live mode
+              Put them on
             </button>
             <button
-              onClick={() => { setLiveNotice(null); setVideoInfo('Live mode canceled.'); }}
+              onClick={() => { setLiveNotice(null); setVideoInfo('Okay — no Spotter this time.'); }}
               className="flex-1 rounded-full bg-white/10 px-3 py-2 text-sm text-gray-200 hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-gray-400"
             >
               Not now
@@ -1663,8 +1664,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         {streamingRef.current && !liveMode && !liveNotice && (
           <button
             onClick={() => streamingEngine.sendJson({ type: 'live', on: true })}
-            aria-label="Turn on live mode. Experimental: continuous sight and instant back-and-forth with a different voice — has its own small daily allowance."
-            title="Live mode (experimental — continuous sight, different voice)"
+            aria-label="Call your Spotter — your personal live companion: continuous sight, instant back-and-forth, their own voice. Has its own small daily allowance. Design them under Explore, Your Spotter."
+            title="Your Spotter (live mode — continuous sight, their own voice)"
             className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white shadow-lg transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-emerald-400"
           >
             <Radio size={22} aria-hidden="true" />
@@ -1673,32 +1674,24 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         {liveMode && (
           <button
             onClick={() => streamingEngine.sendJson({ type: 'live', on: false })}
-            aria-label="Turn off live mode and go back to the normal voice"
-            title="Live mode off"
+            aria-label="Send your Spotter home and bring the character back"
+            title="Spotter off — back to your character"
             className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600/90 text-white shadow-lg transition-colors hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-400"
           >
             <Radio size={22} aria-hidden="true" />
           </button>
         )}
         {streamingRef.current && !liveMode && videoMode === 'off' && !videoNotice && (
-          <>
-            <button
-              onClick={() => requestVideo('standard')}
-              aria-label="Turn on video. The agent sees your front camera — everyday video call."
-              title="Video (standard quality, front camera)"
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white shadow-lg transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-400"
-            >
-              <Camera size={22} aria-hidden="true" />
-            </button>
-            <button
-              onClick={() => requestVideo('hq')}
-              aria-label="Turn on HQ video. Rear camera with the agent's best eyes — for reading labels, text, and details."
-              title="HQ video (high quality, rear camera — best for reading text)"
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white shadow-lg transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400"
-            >
-              <ScanEye size={22} aria-hidden="true" />
-            </button>
-          </>
+          /* ONE video button (Kade July 16: three modes confused everyone —
+             now it's Video and your Spotter). Everyone gets the HQ eyes. */
+          <button
+            onClick={() => requestVideo('hq')}
+            aria-label="Turn on video. The agent sees your rear camera with its best eyes — for describing, reading labels, and details."
+            title="Video (the agent's best eyes)"
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white shadow-lg transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <Camera size={22} aria-hidden="true" />
+          </button>
         )}
         {videoMode !== 'off' && !liveMode && (
           <button

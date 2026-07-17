@@ -24,6 +24,7 @@ import {
   Scale,
   ShieldCheck,
   HeartHandshake,
+  RadioTower,
 } from 'lucide-react';
 import { SystemRoles } from 'librechat-data-provider';
 import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/ArchivedChatsModal';
@@ -183,6 +184,14 @@ function ExploreSubmenu({ isAdmin, isChild }: { isAdmin: boolean; isChild: boole
             normal chat history (kadeCallMerge), read by the standard chat screen. The
             /calls page + route stay served but unlinked; restore this MenuItem to bring
             the standalone page back. */}
+        <Menu.MenuItem
+          onClick={go('/spotter')}
+          className="select-item text-sm"
+          aria-label="Your Spotter: name, voice, and personality for your personal live video companion"
+        >
+          <RadioTower className="icon-md" aria-hidden="true" />
+          Your Spotter
+        </Menu.MenuItem>
         <Menu.MenuItem
           onClick={go('/describe')}
           className="select-item text-sm"

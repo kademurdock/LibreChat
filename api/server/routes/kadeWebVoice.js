@@ -101,8 +101,20 @@ router.get('/ticket', requireJwtAuth, async (req, res) => {
       } catch { /* slim ticket is still valid */ }
     }
 
+    /* SPOTTER (July 16 2026): the account's personal live companion rides the
+     * ticket so the bridge greets live mode with THEIR name/voice/personality.
+     * Fail-soft: no spotter row (or lookup trouble) = null = generic Spotter. */
+    let spotter = null;
+    try {
+      const { getSpotter } = require('~/models/kadeSpotter');
+      spotter = await getSpotter(String(u.id || u._id || req.user.id || req.user._id));
+    } catch (err) {
+      logger.warn('[kadeWebVoice] spotter lookup failed (generic live persona): ' + err.message);
+    }
+
     const payload = {
       v: 1,
+      spotter,
       email: u.email || null,
       uid: String(u.id || u._id || ''),
       name: u.name || u.username || null,

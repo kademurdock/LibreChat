@@ -41,6 +41,7 @@ const kadeRoom = require('./kadeRoom');
 const kadeMatchmaker = require('./kadeMatchmaker');
 const kadeCalls = require('./kadeCalls');
 const kadeWebVoice = require('./kadeWebVoice');
+const kadeSpotter = require('./kadeSpotter');
 const kadeDescribe = require('./kadeDescribe');
 
 module.exports = {
@@ -49,6 +50,7 @@ module.exports = {
   kadeMatchmaker,
   kadeCalls,
   kadeWebVoice,
+  kadeSpotter,
   kadeDescribe,
   rum,
   mcp,
