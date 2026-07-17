@@ -34,7 +34,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { Phone, PhoneOff, Mic, StopCircle, Camera, CameraOff, ScanEye } from 'lucide-react';
+import { Phone, PhoneOff, Mic, StopCircle, Camera, CameraOff, ScanEye, Radio } from 'lucide-react';
 import { useAuthContext } from '~/hooks';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
 import { cn } from '~/utils';
@@ -319,6 +319,13 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const [videoMode,   setVideoMode]   = useState<'off' | 'standard' | 'hq'>('off');
   const [videoNotice, setVideoNotice] = useState<{ text: string; mode: 'standard' | 'hq' } | null>(null);
   const [videoInfo,   setVideoInfo]   = useState('');
+  // Gemini Live lane (July 16 2026): while on, the LIVE session owns sight and
+  // speech (different voice, continuous). liveModeRef mirrors the state for
+  // callbacks that fire out of render order (video-state races at handoff).
+  const [liveMode,   setLiveMode]   = useState(false);
+  const [liveNotice, setLiveNotice] = useState<string | null>(null);
+  const liveModeRef    = useRef(false);
+  const liveConfirmRef = useRef<HTMLButtonElement | null>(null);
   const camStreamRef = useRef<MediaStream | null>(null);
   const camVideoRef  = useRef<HTMLVideoElement | null>(null);
   const camTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -374,6 +381,42 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   }, [streamingEngine, stopCamera]);
 
   const onVideoEvent = useCallback((m: Record<string, unknown>) => {
+    if (m.type === 'live-notice') {
+      // Bridge speaks the first-use cost notice too; this is the visible half.
+      setLiveNotice(String(m.text || ''));
+      return;
+    }
+    if (m.type === 'live-state') {
+      if (m.on) {
+        setLiveNotice(null);
+        setLiveMode(true);
+        liveModeRef.current = true;
+        setVideoInfo(
+          `Live mode on${typeof m.minutesLeft === 'number' ? ` — about ${m.minutesLeft} live minutes left today` : ''}. ` +
+            'Different voice, continuous sight. Say "live off" or tap the live button to go back.',
+        );
+        // Live needs eyes: if no camera is running, start one WITHOUT arming
+        // the snapshot lane (frames route to the live relay server-side).
+        if (!camStreamRef.current) {
+          startCamera('standard').catch(() => {
+            setVideoInfo('Live mode is on but the camera is blocked — it can hear you, just not see. Enable camera permission for this site to add sight.');
+          });
+        }
+      } else {
+        const wasLive = liveModeRef.current;
+        setLiveMode(false);
+        liveModeRef.current = false;
+        if (wasLive) { stopCamera(); setVideoMode('off'); }
+        setVideoInfo(
+          m.message
+            ? String(m.message)
+            : m.reason === 'cap'
+              ? 'Out of live minutes for today — the regular call continues as normal.'
+              : 'Live mode off — back to the normal voice. Tap the camera button if you want regular video.',
+        );
+      }
+      return;
+    }
     if (m.type === 'video-notice') {
       // The bridge SPEAKS this notice too — this panel is the visible +
       // focusable half of the one-time cost heads-up.
@@ -396,6 +439,12 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         setError('Camera access is blocked. Enable camera permission for this site, then try video again.');
       });
     } else {
+      if (liveModeRef.current) {
+        // Live handoff: the snapshot lane stood down (so it stops billing),
+        // but live still needs the camera — keep it rolling.
+        setVideoMode('off');
+        return;
+      }
       stopCamera();
       setVideoMode('off');
       setVideoInfo(m.message ? String(m.message) : m.reason === 'cap' ? 'Out of video minutes for today — voice continues as normal.' : 'Video off.');
@@ -409,6 +458,12 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       return () => clearTimeout(t);
     }
   }, [videoNotice]);
+  useEffect(() => {
+    if (liveNotice) {
+      const t = setTimeout(() => liveConfirmRef.current?.focus(), 80);
+      return () => clearTimeout(t);
+    }
+  }, [liveNotice]);
   const conversationIdRef  = useRef<string | null>(null);
   const callTurnsRef       = useRef<Array<{ role: string; text: string }>>([]);
   const callStartedRef     = useRef<string | null>(null);
@@ -1537,6 +1592,28 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         </div>
       )}
 
+      {/* First-use LIVE cost notice: bridge speaks it; confirm actually starts. */}
+      {liveNotice && (
+        <div className="mb-4 w-full max-w-xs rounded-2xl bg-white/10 px-4 py-3" role="group" aria-label="Live mode cost notice">
+          <p className="mb-3 text-sm leading-relaxed text-gray-100">{liveNotice}</p>
+          <div className="flex gap-3">
+            <button
+              ref={liveConfirmRef}
+              onClick={() => streamingEngine.sendJson({ type: 'live', on: true, ack: true })}
+              className="flex-1 rounded-full bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-400"
+            >
+              Start live mode
+            </button>
+            <button
+              onClick={() => { setLiveNotice(null); setVideoInfo('Live mode canceled.'); }}
+              className="flex-1 rounded-full bg-white/10 px-3 py-2 text-sm text-gray-200 hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-gray-400"
+            >
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Visible error (also announced via the alert region above) */}
       {error && (
         <p className="mb-4 max-w-xs px-4 text-center text-sm text-amber-300" aria-hidden="true">
@@ -1583,7 +1660,27 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           </button>
         )}
 
-        {streamingRef.current && videoMode === 'off' && !videoNotice && (
+        {streamingRef.current && !liveMode && !liveNotice && (
+          <button
+            onClick={() => streamingEngine.sendJson({ type: 'live', on: true })}
+            aria-label="Turn on live mode. Experimental: continuous sight and instant back-and-forth with a different voice — has its own small daily allowance."
+            title="Live mode (experimental — continuous sight, different voice)"
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white shadow-lg transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+          >
+            <Radio size={22} aria-hidden="true" />
+          </button>
+        )}
+        {liveMode && (
+          <button
+            onClick={() => streamingEngine.sendJson({ type: 'live', on: false })}
+            aria-label="Turn off live mode and go back to the normal voice"
+            title="Live mode off"
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600/90 text-white shadow-lg transition-colors hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+          >
+            <Radio size={22} aria-hidden="true" />
+          </button>
+        )}
+        {streamingRef.current && !liveMode && videoMode === 'off' && !videoNotice && (
           <>
             <button
               onClick={() => requestVideo('standard')}
@@ -1603,7 +1700,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             </button>
           </>
         )}
-        {videoMode !== 'off' && (
+        {videoMode !== 'off' && !liveMode && (
           <button
             onClick={turnVideoOff}
             aria-label={`Turn off video (currently ${videoMode === 'hq' ? 'HQ' : 'standard'})`}

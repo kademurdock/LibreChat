@@ -17,9 +17,41 @@ export function sanitizeTitle(rawTitle: string): string {
   }
 
   const thinkBlockRegex = /<think\b[^>]*>[\s\S]*?<\/think>/gi;
-  const cleaned = rawTitle.replace(thinkBlockRegex, '');
+  let cleaned = rawTitle.replace(thinkBlockRegex, '');
+
+  // KADE July 16 2026 — titles were picking up junk from this platform's own
+  // pipeline. Strip, in order:
+  // 1. PUA-sentinel reasoning blocks (reframe-proxy wraps streamed reasoning
+  //    in U+F001/U+F002 — a title generated through the streamed path can
+  //    carry the whole hidden think block), then any stray PUA characters.
+  cleaned = cleaned.replace(/\uF001[\s\S]*?\uF002/g, '');
+  cleaned = cleaned.replace(/[\uE000-\uF8FF]/g, '');
+  // 2. %%%…%%% voice-performance tags and [sound:]/[watch:] cue tokens — never
+  //    meant for any reading surface, titles included.
+  cleaned = cleaned.replace(/%%%[\s\S]*?%%%/g, ' ').replace(/%%%/g, ' ');
+  cleaned = cleaned.replace(/\[(?:sound|watch)\s*:[^\]]*\]/gi, ' ');
+  // 3. Markdown dressing some title models add despite the prompt.
+  cleaned = cleaned.replace(/[*_\`#]+/g, '');
+
   const normalized = cleaned.replace(/\s+/g, ' ');
-  const trimmed = normalized.trim();
+  let trimmed = normalized.trim();
+
+  // 4. "Title:" prefixes, one pair of surrounding quotes, trailing period.
+  trimmed = trimmed.replace(/^title\s*[:\u2014-]\s*/i, '');
+  const quotePairs: Array<[string, string]> = [
+    ['"', '"'],
+    ["'", "'"],
+    ['\u201C', '\u201D'],
+    ['\u2018', '\u2019'],
+    ['\u00AB', '\u00BB'],
+  ];
+  for (const [open, close] of quotePairs) {
+    if (trimmed.length > 1 && trimmed.startsWith(open) && trimmed.endsWith(close)) {
+      trimmed = trimmed.slice(1, -1).trim();
+      break;
+    }
+  }
+  trimmed = trimmed.replace(/[.\u3002]+$/, '').trim();
 
   if (trimmed.length === 0) {
     return DEFAULT_TITLE_FALLBACK;

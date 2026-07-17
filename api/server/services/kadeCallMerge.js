@@ -17,8 +17,13 @@ const { KadeCallTranscript } = require('~/models/kadeCallTranscript');
 const NO_PARENT = '00000000-0000-0000-0000-000000000000';
 
 function fmtWhen(d) {
+  // KADE July 16 2026: this runs SERVER-side (Railway = UTC), so without an
+  // explicit zone every merged call was titled 5-6 hours off ("4:55 AM" for a
+  // late-evening call). The user base is Kade's Central-time family; override
+  // with KADE_DISPLAY_TZ if that ever changes.
   try {
     return new Date(d).toLocaleString('en-US', {
+      timeZone: process.env.KADE_DISPLAY_TZ || 'America/Chicago',
       month: 'short',
       day: 'numeric',
       year: 'numeric',

@@ -174,6 +174,44 @@ describe('sanitizeTitle', () => {
     });
   });
 
+  describe('Kade pipeline junk (July 16 2026)', () => {
+    it('strips PUA-sentinel reasoning blocks', () => {
+      expect(sanitizeTitle('\uF001hidden reasoning\uF002Skylee birthday call')).toBe(
+        'Skylee birthday call',
+      );
+    });
+
+    it('strips stray PUA characters', () => {
+      expect(sanitizeTitle('Weird\uF001chars\uE010here')).toBe('Weirdcharshere');
+    });
+
+    it('strips %%% voice-performance tags', () => {
+      expect(sanitizeTitle('%%%warm, playful%%% Catching up with Mom')).toBe(
+        'Catching up with Mom',
+      );
+    });
+
+    it('strips sound and watch cue tokens', () => {
+      expect(sanitizeTitle('Blackjack night [sound:jackpot_win]')).toBe('Blackjack night');
+      expect(sanitizeTitle('[watch: car in driveway] Video call chat')).toBe('Video call chat');
+    });
+
+    it('strips markdown, quote wrappers, Title: prefixes, trailing periods', () => {
+      expect(sanitizeTitle('**Planning the move**')).toBe('Planning the move');
+      expect(sanitizeTitle('"Planning the move"')).toBe('Planning the move');
+      expect(sanitizeTitle('Title: Planning the move')).toBe('Planning the move');
+      expect(sanitizeTitle('Planning the move.')).toBe('Planning the move');
+    });
+
+    it('leaves citations and apostrophes alone', () => {
+      expect(sanitizeTitle("Skylee's birthday [1] plan")).toBe("Skylee's birthday [1] plan");
+    });
+
+    it('falls back when the whole title was junk', () => {
+      expect(sanitizeTitle('%%%sigh%%%')).toBe(DEFAULT_TITLE_FALLBACK);
+    });
+  });
+
   describe('Max Length Truncation', () => {
     const ellipsis = '...';
     const maxContent = MAX_TITLE_LENGTH - ellipsis.length;

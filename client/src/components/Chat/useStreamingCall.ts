@@ -30,7 +30,8 @@ export interface StreamingHandlers {
   onEnded: (graceful: boolean) => void;
   /** A game table changed — redraw the GameTable widget for this id. */
   onTable?: (id: string) => void;
-  /** Video events: {type:'video-notice'|'video-state', ...} (July 16 2026). */
+  /** Video + live-lane events:
+   *  {type:'video-notice'|'video-state'|'live-notice'|'live-state', ...}. */
   onVideo?: (m: Record<string, unknown>) => void;
 }
 
@@ -90,6 +91,37 @@ export default function useStreamingCall() {
         return;
       }
       if (!activeRef.current || seq !== flushSeqRef.current) return;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(outAnalyserRef.current ?? ctx.destination);
+      const t = Math.max(ctx.currentTime + 0.03, nextTimeRef.current || 0);
+      try { src.start(t); } catch { return; }
+      nextTimeRef.current = t + buf.duration;
+      sourcesRef.current.add(src);
+      src.onended = () => sourcesRef.current.delete(src);
+    });
+    decodeChainRef.current = chain.catch(() => { /* keep the chain alive */ });
+  }, []);
+
+  // LIVE lane (July 16 2026): raw 24kHz PCM16 chunks from the bridge's Gemini
+  // Live relay, shipped as binary frames prefixed with the 4-byte magic "LIVE"
+  // (WAV clips start with "RIFF", so routing is unambiguous). No decode step —
+  // build the AudioBuffer directly — but ride the SAME serial chain and
+  // nextTime refs as WAV clips so live audio can never overlap a clip and
+  // flushPlayback()/'clear' kills it identically.
+  const LIVE_PCM_RATE = 24000;
+  const enqueueLivePcm = useCallback((ab: ArrayBuffer) => {
+    const seq = flushSeqRef.current;
+    const chain = decodeChainRef.current.then(async () => {
+      if (!activeRef.current || seq !== flushSeqRef.current) return;
+      const ctx = outCtxRef.current;
+      if (!ctx) return;
+      const sampleCount = Math.floor((ab.byteLength - 4) / 2);
+      if (sampleCount <= 0) return;
+      const pcm = new Int16Array(ab, 4, sampleCount);
+      const buf = ctx.createBuffer(1, sampleCount, LIVE_PCM_RATE);
+      const ch = buf.getChannelData(0);
+      for (let i = 0; i < sampleCount; i++) ch[i] = pcm[i] / 32768;
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.connect(outAnalyserRef.current ?? ctx.destination);
@@ -284,7 +316,16 @@ export default function useStreamingCall() {
         try { ws.send(JSON.stringify({ type: 'hello', ticket })); } catch { /* ignore */ }
       };
       ws.onmessage = (ev: MessageEvent) => {
-        if (ev.data instanceof ArrayBuffer) { enqueueWav(ev.data); return; }
+        if (ev.data instanceof ArrayBuffer) {
+          const u8 = new Uint8Array(ev.data);
+          // "LIVE" = raw live-lane PCM chunk; anything else (RIFF...) = WAV clip.
+          if (u8.length > 4 && u8[0] === 0x4c && u8[1] === 0x49 && u8[2] === 0x56 && u8[3] === 0x45) {
+            enqueueLivePcm(ev.data);
+            return;
+          }
+          enqueueWav(ev.data);
+          return;
+        }
         let m: any;
         try { m = JSON.parse(String(ev.data)); } catch { return; }
         switch (m.type) {
@@ -309,6 +350,8 @@ export default function useStreamingCall() {
             break;
           case 'video-notice':
           case 'video-state':
+          case 'live-notice':
+          case 'live-state':
             handlers.onVideo?.(m);
             break;
           case 'error':
@@ -333,7 +376,7 @@ export default function useStreamingCall() {
         }
       };
     });
-  }, [startMic, stop, stopMic, flushPlayback, enqueueWav]);
+  }, [startMic, stop, stopMic, flushPlayback, enqueueWav, enqueueLivePcm]);
 
   const isActive = useCallback(() => activeRef.current, []);
 
