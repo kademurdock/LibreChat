@@ -228,6 +228,20 @@ const KADE_AUTO_CALL = (() => {
 })();
 let kadeAutoCallConsumed = false;
 
+// KADE July 17 2026 — Live Activity during calls (iOS app shell only; a no-op
+// everywhere else). The KadeLiveActivity Capacitor plugin puts an
+// "On a call with <agent>" banner with a live timer on the Lock Screen /
+// Dynamic Island for the duration of the call, and clears it on hang-up.
+// Agent-neutral by design: whatever agent is on the line, their name rides in
+// as data. Every call is fail-soft — Live Activity trouble can never touch
+// the call itself.
+function kadeLiveActivityPlugin(): any {
+  try { return (window as any).Capacitor?.Plugins?.KadeLiveActivity ?? null; } catch { return null; }
+}
+const KADE_LA_STATUS: Record<string, string> = {
+  connecting: 'Connecting', listening: 'Listening', thinking: 'Thinking', speaking: 'Speaking',
+};
+
 export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const agentId = useRecoilValue(store.conversationAgentIdByIndex(index));
   const voice   = useRecoilValue(store.voice);
@@ -250,6 +264,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // only (aria-hidden with the rest of the visuals).
   const [avatarUrl,  setAvatarUrl]  = useState<string>('');
   const tableSeqRef = useRef(0);
+  // Live Activity state: true while a call banner is up on the Lock Screen.
+  const laActiveRef = useRef(false);
   const [mediaAvail, setMediaAvail] = useState(false);
   const [error,      setError]      = useState('');
 
@@ -1289,6 +1305,12 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setLiveTable(null);
     setStatus('connecting');
     setAvatarUrl('');
+    const laStart = (name: string) => {
+      const la = kadeLiveActivityPlugin();
+      if (!la || laActiveRef.current) return;
+      laActiveRef.current = true;
+      try { Promise.resolve(la.start({ agentName: name, status: 'Connecting' })).catch(() => {}); } catch { /* fail-soft */ }
+    };
     if (agentId) {
       fetch(`/api/agents/${encodeURIComponent(agentId)}`, {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -1298,8 +1320,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         .then((a) => {
           const fp = a?.avatar?.filepath;
           if (fp && !abortRef.current) setAvatarUrl(String(fp));
+          laStart(String(a?.name || 'Your AI'));
         })
-        .catch(() => { /* keep the orb */ });
+        .catch(() => { laStart('Your AI'); /* keep the orb */ });
+    } else {
+      laStart('Your AI');
     }
     // Streaming is the DEFAULT engine now (promoted from beta July 9 2026 —
     // Kade's device test passed). localStorage kadeStreamingCall='0' is the
@@ -1387,6 +1412,15 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     }
   }, [getAudioCtx, setupAnalyser, setVoiceCallActive, pauseGlobalAudio]);
 
+  // Mirror the call status onto the Live Activity (both engines funnel
+  // through setStatus, so one effect covers streaming and classic).
+  useEffect(() => {
+    if (!laActiveRef.current) return;
+    const la = kadeLiveActivityPlugin();
+    if (!la || status === 'idle') return;
+    try { Promise.resolve(la.update({ status: KADE_LA_STATUS[status] || status })).catch(() => {}); } catch { /* fail-soft */ }
+  }, [status]);
+
   const endCall = useCallback(() => {
     void playHangupSound();       // soft "receiver down" cue -- fires immediately, mirrors playPickupSound on start
     callActiveRef.current = false;
@@ -1436,6 +1470,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
      * (and VoiceOver back to its full-quality output). getAudioCtx() resumes
      * it automatically the next time anything needs to play. */
     try { void audioCtxRef.current?.suspend(); } catch { /* ignore */ }
+    // Take the Live Activity banner down with the call.
+    if (laActiveRef.current) {
+      laActiveRef.current = false;
+      try { Promise.resolve(kadeLiveActivityPlugin()?.end()).catch(() => {}); } catch { /* fail-soft */ }
+    }
     playQueueRef.current = Promise.resolve();
     setOpen(false);
     setStatus('idle');
