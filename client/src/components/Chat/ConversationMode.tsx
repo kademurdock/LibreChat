@@ -34,7 +34,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { Phone, PhoneOff, Mic, StopCircle, Camera, CameraOff, ScanEye, Radio, Flashlight, FlashlightOff } from 'lucide-react';
+import { Phone, PhoneOff, Mic, StopCircle, Camera, CameraOff, ScanEye, Radio, Flashlight, FlashlightOff, SwitchCamera } from 'lucide-react';
 import { useAuthContext } from '~/hooks';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
 import { cn } from '~/utils';
@@ -327,6 +327,9 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const liveModeRef    = useRef(false);
   const liveConfirmRef = useRef<HTMLButtonElement | null>(null);
   const camStreamRef = useRef<MediaStream | null>(null);
+  // Which physical camera is live right now (July 17, Kade's calls: Spotters
+  // ALWAYS use the back camera; regular HQ video gets a flip button).
+  const camFacingRef = useRef<'user' | 'environment'>('user');
   const camVideoRef  = useRef<HTMLVideoElement | null>(null);
   const camTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoConfirmRef = useRef<HTMLButtonElement | null>(null);
@@ -351,10 +354,12 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     camVideoRef.current = null;
   }, []);
 
-  const startCamera = useCallback(async (mode: 'standard' | 'hq') => {
+  const startCamera = useCallback(async (mode: 'standard' | 'hq', facing?: 'user' | 'environment') => {
     stopCamera();
+    const face = facing ?? (mode === 'hq' ? 'environment' : 'user');
+    camFacingRef.current = face;
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: mode === 'hq' ? 'environment' : 'user', width: { ideal: 1024 } },
+      video: { facingMode: face, width: { ideal: 1024 } },
       audio: false,
     });
     camStreamRef.current = stream;
@@ -404,6 +409,17 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     }
   }, [torchOn]);
 
+  const flipCamera = useCallback(async () => {
+    const mode = videoMode === 'off' ? 'hq' : videoMode;
+    const next = camFacingRef.current === 'environment' ? 'user' : 'environment';
+    try {
+      await startCamera(mode, next);
+      setVideoInfo(next === 'environment' ? 'Rear camera — pointing at the world.' : 'Front camera — pointing at you.');
+    } catch {
+      setVideoInfo('Could not switch cameras.');
+    }
+  }, [videoMode, startCamera]);
+
   const requestVideo = useCallback((mode: 'standard' | 'hq', ack = false) => {
     streamingEngine.sendJson({ type: 'video', on: true, mode, ...(ack ? { ack: true } : {}) });
   }, [streamingEngine]);
@@ -435,7 +451,9 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         // Live needs eyes: if no camera is running, start one WITHOUT arming
         // the snapshot lane (frames route to the live relay server-side).
         if (!camStreamRef.current) {
-          startCamera('standard').catch(() => {
+          // Spotters always use the BACK camera (Kade, July 17): their job is
+          // seeing the world, not the caller's face.
+          startCamera('standard', 'environment').catch(() => {
             setVideoInfo('Live mode is on but the camera is blocked — it can hear you, just not see. Enable camera permission for this site to add sight.');
           });
         }
@@ -1746,6 +1764,20 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600/90 text-white shadow-lg transition-colors hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
           >
             <CameraOff size={22} aria-hidden="true" />
+          </button>
+        )}
+        {videoMode !== 'off' && !liveMode && (
+          <button
+            onClick={flipCamera}
+            aria-label={
+              camFacingRef.current === 'environment'
+                ? 'Switch to the front camera — it will see you instead of the world'
+                : 'Switch to the rear camera — it will see the world instead of you'
+            }
+            title="Flip camera"
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white shadow-lg transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <SwitchCamera size={22} aria-hidden="true" />
           </button>
         )}
         {torchAvailable && (videoMode !== 'off' || liveMode) && (
