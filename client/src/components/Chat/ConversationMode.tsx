@@ -34,7 +34,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { Phone, PhoneOff, Mic, StopCircle, Camera, CameraOff, ScanEye, Radio } from 'lucide-react';
+import { Phone, PhoneOff, Mic, StopCircle, Camera, CameraOff, ScanEye, Radio, Flashlight, FlashlightOff } from 'lucide-react';
 import { useAuthContext } from '~/hooks';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
 import { cn } from '~/utils';
@@ -331,7 +331,19 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const camTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoConfirmRef = useRef<HTMLButtonElement | null>(null);
 
+  /* -- Torch (July 17 2026, Kade's ask): a flashlight button during video.
+   * WebKit has supported the MediaStream `torch` constraint since iOS 17.5,
+   * so this works from the web call — no native code. Rear camera only by
+   * hardware reality: the button renders ONLY when the RUNNING video track
+   * actually reports the torch capability, so front-camera sessions and
+   * older devices simply never see it. Fail-soft: if applyConstraints
+   * rejects anyway, the button hides itself and says so politely. */
+  const [torchAvailable, setTorchAvailable] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+
   const stopCamera = useCallback(() => {
+    setTorchAvailable(false);
+    setTorchOn(false);
     if (camTimerRef.current) { clearInterval(camTimerRef.current); camTimerRef.current = null; }
     try { camStreamRef.current?.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
     camStreamRef.current = null;
@@ -346,6 +358,16 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       audio: false,
     });
     camStreamRef.current = stream;
+    // Torch: advertise the button only if this exact track can actually do it.
+    setTorchOn(false);
+    try {
+      const caps = stream.getVideoTracks()[0]?.getCapabilities?.() as
+        | (MediaTrackCapabilities & { torch?: boolean })
+        | undefined;
+      setTorchAvailable(caps?.torch === true);
+    } catch {
+      setTorchAvailable(false);
+    }
     const v = document.createElement('video');
     v.muted = true;
     (v as HTMLVideoElement & { playsInline: boolean }).playsInline = true;
@@ -367,6 +389,20 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       if (b64) streamingEngine.sendJson({ type: 'frame', data: b64 });
     }, 2000);
   }, [stopCamera, streamingEngine]);
+
+  const toggleTorch = useCallback(async () => {
+    const track = camStreamRef.current?.getVideoTracks()[0];
+    if (!track) { return; }
+    const next = !torchOn;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: next }] } as unknown as MediaTrackConstraints);
+      setTorchOn(next);
+      setVideoInfo(next ? 'Flashlight on.' : 'Flashlight off.');
+    } catch {
+      setTorchAvailable(false);
+      setVideoInfo('The flashlight is not available on this camera.');
+    }
+  }, [torchOn]);
 
   const requestVideo = useCallback((mode: 'standard' | 'hq', ack = false) => {
     streamingEngine.sendJson({ type: 'video', on: true, mode, ...(ack ? { ack: true } : {}) });
@@ -1710,6 +1746,23 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600/90 text-white shadow-lg transition-colors hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
           >
             <CameraOff size={22} aria-hidden="true" />
+          </button>
+        )}
+        {torchAvailable && (videoMode !== 'off' || liveMode) && (
+          <button
+            onClick={toggleTorch}
+            aria-label={
+              torchOn
+                ? 'Turn the flashlight off'
+                : 'Turn the flashlight on — lights up whatever the camera is pointed at in the dark'
+            }
+            title={torchOn ? 'Flashlight off' : 'Flashlight'}
+            className={cn(
+              'flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-400',
+              torchOn ? 'bg-yellow-500/90 hover:bg-yellow-500' : 'bg-white/10 hover:bg-white/20',
+            )}
+          >
+            {torchOn ? <FlashlightOff size={22} aria-hidden="true" /> : <Flashlight size={22} aria-hidden="true" />}
           </button>
         )}
 
