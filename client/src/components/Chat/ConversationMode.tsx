@@ -219,7 +219,12 @@ interface ConversationModeProps {
 // kademurdock.com/?kade=call, and the app's boot redirects don't preserve
 // search params). Consumed exactly once per page load by the effect below.
 const KADE_AUTO_CALL = (() => {
-  try { return new URLSearchParams(window.location.search).get('kade') === 'call'; } catch { return false; }
+  // July 17 2026: also accepts ?kade=spotter — same hands-free start, but the
+  // Spotter is asked for the moment the call connects (see onStatus below).
+  try {
+    const v = new URLSearchParams(window.location.search).get('kade');
+    return v === 'call' || v === 'spotter' ? v : null;
+  } catch { return null; }
 })();
 let kadeAutoCallConsumed = false;
 
@@ -326,6 +331,13 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const [liveNotice, setLiveNotice] = useState<string | null>(null);
   const liveModeRef    = useRef(false);
   const liveConfirmRef = useRef<HTMLButtonElement | null>(null);
+  // Spotter DIRECT call (July 17 2026, Kade's ask: "a button for spotters to
+  // start a fresh call with them specifically"): when set, the first
+  // 'listening' status after connect immediately sends {type:'live', on:true},
+  // so the whole flow is one tap — call starts, character hands to the
+  // Spotter (first-use notice still applies for brand-new users). Fail-soft:
+  // on the classic (non-streaming) engine the flag simply never fires.
+  const spotterAutoRef = useRef(false);
   const camStreamRef = useRef<MediaStream | null>(null);
   // Which physical camera is live right now (July 17, Kade's calls: Spotters
   // ALWAYS use the back camera; regular HQ video gets a flip button).
@@ -343,10 +355,18 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
    * rejects anyway, the button hides itself and says so politely. */
   const [torchAvailable, setTorchAvailable] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
+  /* Auto-flash (July 17 2026, Kade's ask: "detects if it needs flash"):
+   * every frame tick also reads the average brightness of a tiny 48x36
+   * downsample. Two consecutive dark reads (~4s of genuinely dark scene) and
+   * the torch lights ITSELF, once per camera session, with a spoken note.
+   * Deliberately no auto-OFF: the lit scene reads bright, so auto-off would
+   * flicker-loop. Manual toggle takes over completely (manual=true). */
+  const torchCtlRef = useRef({ on: false, manual: false, autoLit: false, dark: 0 });
 
   const stopCamera = useCallback(() => {
     setTorchAvailable(false);
     setTorchOn(false);
+    torchCtlRef.current = { on: false, manual: false, autoLit: false, dark: 0 };
     if (camTimerRef.current) { clearInterval(camTimerRef.current); camTimerRef.current = null; }
     try { camStreamRef.current?.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
     camStreamRef.current = null;
@@ -365,11 +385,14 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     camStreamRef.current = stream;
     // Torch: advertise the button only if this exact track can actually do it.
     setTorchOn(false);
+    torchCtlRef.current = { on: false, manual: false, autoLit: false, dark: 0 };
+    let torchOk = false;
     try {
       const caps = stream.getVideoTracks()[0]?.getCapabilities?.() as
         | (MediaTrackCapabilities & { torch?: boolean })
         | undefined;
-      setTorchAvailable(caps?.torch === true);
+      torchOk = caps?.torch === true;
+      setTorchAvailable(torchOk);
     } catch {
       setTorchAvailable(false);
     }
@@ -380,6 +403,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     camVideoRef.current = v;
     try { await v.play(); } catch { /* iOS may defer to next tick */ }
     const canvas = document.createElement('canvas');
+    const lumaCanvas = document.createElement('canvas'); // auto-flash brightness probe
     camTimerRef.current = setInterval(() => {
       const vid = camVideoRef.current;
       if (!vid || !vid.videoWidth) return;
@@ -392,6 +416,37 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       g.drawImage(vid, 0, 0, w, h);
       const b64 = canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
       if (b64) streamingEngine.sendJson({ type: 'frame', data: b64 });
+      // Auto-flash: cheap brightness read on a tiny downsample (see ref note).
+      const c = torchCtlRef.current;
+      if (torchOk && !c.manual && !c.autoLit && !c.on) {
+        try {
+          lumaCanvas.width = 48;
+          lumaCanvas.height = 36;
+          const lg = lumaCanvas.getContext('2d');
+          if (lg) {
+            lg.drawImage(vid, 0, 0, 48, 36);
+            const d = lg.getImageData(0, 0, 48, 36).data;
+            let sum = 0;
+            for (let i = 0; i < d.length; i += 4) sum += d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+            const avg = sum / (d.length / 4);
+            c.dark = avg < 30 ? c.dark + 1 : 0;
+            if (c.dark >= 2) {
+              c.autoLit = true; // one shot per camera session, even if it fails
+              const track = camStreamRef.current?.getVideoTracks()[0];
+              if (track) {
+                track
+                  .applyConstraints({ advanced: [{ torch: true }] } as unknown as MediaTrackConstraints)
+                  .then(() => {
+                    c.on = true;
+                    setTorchOn(true);
+                    setVideoInfo('Looks dark — flashlight on. The flashlight button turns it off.');
+                  })
+                  .catch(() => { /* fail-soft: stay dark, button still there */ });
+              }
+            }
+          }
+        } catch { /* brightness read is best-effort */ }
+      }
     }, 2000);
   }, [stopCamera, streamingEngine]);
 
@@ -399,9 +454,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     const track = camStreamRef.current?.getVideoTracks()[0];
     if (!track) { return; }
     const next = !torchOn;
+    torchCtlRef.current.manual = true; // user took over — auto-flash stands down
     try {
       await track.applyConstraints({ advanced: [{ torch: next }] } as unknown as MediaTrackConstraints);
       setTorchOn(next);
+      torchCtlRef.current.on = next;
       setVideoInfo(next ? 'Flashlight on.' : 'Flashlight off.');
     } catch {
       setTorchAvailable(false);
@@ -1263,7 +1320,14 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           analyser: outputAnalyserRef.current,
           token,
           handlers: {
-            onStatus: (st) => { if (!abortRef.current) setStatus(st); },
+            onStatus: (st) => {
+              if (!abortRef.current) setStatus(st);
+              // Spotter direct call: first moment the line is live, ask for them.
+              if (st === 'listening' && spotterAutoRef.current) {
+                spotterAutoRef.current = false;
+                streamingEngine.sendJson({ type: 'live', on: true });
+              }
+            },
             onUserCaption: (t) => {
               if (!abortRef.current) { setTranscript(t); setAiText(''); }
             },
@@ -1326,6 +1390,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const endCall = useCallback(() => {
     void playHangupSound();       // soft "receiver down" cue -- fires immediately, mirrors playPickupSound on start
     callActiveRef.current = false;
+    spotterAutoRef.current = false;
     stopCamera();
     setVideoMode('off');
     setVideoNotice(null);
@@ -1363,6 +1428,14 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     try { currentSourceRef.current?.stop(); } catch { /* ignore */ }
     currentSourceRef.current = null;
     teardownMic();
+    /* KADE July 17 2026 (her report: VoiceOver sounds tinny/"phone-y" after a
+     * Spotter call until the app is force-closed): iOS keeps the whole app in
+     * the call-style audio session as long as ANY audio surface looks active.
+     * Mic tracks are stopped above; also SUSPEND the shared playback
+     * AudioContext so iOS can hand the session back to normal media playback
+     * (and VoiceOver back to its full-quality output). getAudioCtx() resumes
+     * it automatically the next time anything needs to play. */
+    try { void audioCtxRef.current?.suspend(); } catch { /* ignore */ }
     playQueueRef.current = Promise.resolve();
     setOpen(false);
     setStatus('idle');
@@ -1480,18 +1553,20 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     kadeAutoCallConsumed = true;
     try {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('kade') === 'call') {
+      if (params.get('kade')) {
         params.delete('kade');
         const rest = params.toString();
         window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
       }
     } catch { /* cosmetic only */ }
+    if (KADE_AUTO_CALL === 'spotter') spotterAutoRef.current = true;
     void startCall();
   }, [open, agentId, mediaAvail, startCall]);
 
   // -- Trigger button ----------------------------------------------------------
   if (!open) {
     return (
+      <>
       <button
         ref={triggerRef}
         onClick={startCall}
@@ -1514,7 +1589,32 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       >
         <Phone size={15} aria-hidden="true" />
       </button>
-    );
+      {/* Spotter DIRECT call (July 17 2026): one tap = fresh call with your
+          Spotter specifically — no need to be mid-call with a character
+          first. Same enable rules as the phone button. */}
+      <button
+        onClick={() => { spotterAutoRef.current = true; void startCall(); }}
+        aria-label="Call your Spotter — starts a call and puts your personal live companion straight on the line"
+        title={
+          !mediaAvail ? 'Voice calls need a browser with microphone recording support'
+          : agentId ? 'Call your Spotter (live mode)'
+          : 'Open a conversation to call your Spotter'
+        }
+        disabled={!agentId || !mediaAvail}
+        className={cn(
+          'flex h-8 w-8 items-center justify-center rounded-full transition-all',
+          'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+          agentId && mediaAvail
+            ? 'bg-surface-tertiary text-text-secondary hover:text-white ' +
+              'hover:bg-gradient-to-br hover:from-[#10b981] hover:to-[#34d399] ' +
+              'focus-visible:bg-gradient-to-br focus-visible:from-[#10b981] focus-visible:to-[#34d399] focus-visible:text-white'
+            : 'cursor-not-allowed opacity-30 bg-surface-tertiary text-text-secondary',
+        )}
+      >
+        <Radio size={15} aria-hidden="true" />
+      </button>
+    </>
+  );
   }
 
   // -- Call overlay ------------------------------------------------------------
