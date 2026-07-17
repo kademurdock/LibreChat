@@ -1505,6 +1505,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         className={cn(
           'relative mb-6 rounded-full flex items-center justify-center transition-all duration-300',
           avatarUrl ? 'h-44 w-44' : 'h-28 w-28',
+          liveMode ? 'ring-4 ring-emerald-500/60' :
           status === 'listening' ? 'ring-4 ring-blue-500/40 scale-105 animate-kade-nod' :
           status === 'thinking'  ? 'ring-4 ring-amber-500/40' :
           status === 'speaking'  ? 'ring-4 ring-green-500/40 scale-110' : '',
@@ -1517,7 +1518,15 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         )}
         aria-hidden="true"
       >
-        {avatarUrl ? (
+        {liveMode ? (
+          /* SPOTTER orb (July 16 2026): while live, a different SOMEBODY has
+             the call — showing the character's face would be a lie. Emerald
+             radio orb instead; the rAF pulse still breathes with the
+             Spotter's voice (live PCM feeds the same analyser). */
+          <div className="flex h-full w-full items-center justify-center rounded-full bg-emerald-600/25">
+            <Radio size={avatarUrl ? 64 : 44} aria-hidden="true" className="text-emerald-300" />
+          </div>
+        ) : avatarUrl ? (
           <>
             {/* FaceTime Lite: the character's face IS the orb. The rAF
                 speaking pulse scales this whole container, so the photo

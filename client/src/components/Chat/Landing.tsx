@@ -40,7 +40,39 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const assistantMap = useAssistantsMapContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const { user } = useAuthContext();
+  const { user, token } = useAuthContext();
+
+  /* SPOTTER onboarding push (July 16 2026, Kade's ask): accounts with no
+   * saved Spotter get ONE prominent, dismissible card on the landing —
+   * strong pitch, never spammy: "Maybe later" kills it forever (localStorage),
+   * and building one kills it automatically. New accounts see it on their
+   * very first landing, which makes Spotter setup feel like part of signup. */
+  const [showSpotterNudge, setShowSpotterNudge] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('kadeSpotterNudgeDone') === '1') return;
+    } catch {
+      return;
+    }
+    if (!token) return;
+    let dead = false;
+    fetch('/api/kade/spotter', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (dead || !j) return;
+        if (j.spotter) {
+          try { localStorage.setItem('kadeSpotterNudgeDone', '1'); } catch { /* fine */ }
+          return;
+        }
+        setShowSpotterNudge(true);
+      })
+      .catch(() => { /* fail-soft: no nudge */ });
+    return () => { dead = true; };
+  }, [token]);
+  const dismissSpotterNudge = useCallback(() => {
+    setShowSpotterNudge(false);
+    try { localStorage.setItem('kadeSpotterNudgeDone', '1'); } catch { /* fine */ }
+  }, []);
   const localize = useLocalize();
 
   const [textHasMultipleLines, setTextHasMultipleLines] = useState(false);
@@ -223,6 +255,36 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             />
           )}
         </div>
+        {showSpotterNudge && (
+          <section
+            aria-label="Set up your Spotter — your personal live video companion"
+            className="animate-fadeIn mt-6 w-full max-w-md rounded-2xl border border-border-light bg-surface-primary p-4 text-left shadow-sm"
+          >
+            <h2 className="mb-1 text-base font-semibold text-text-primary">Meet your Spotter</h2>
+            <p className="mb-3 text-sm leading-relaxed text-text-primary">
+              Two minutes, once: design your own live companion — name, voice, personality. On any
+              video call they can take over live: describing the world as it moves, reading labels
+              and screens out loud, finding the thing you just dropped, double-checking wiring or
+              a form before you commit, watching the driveway while your hands are full. Until
+              then, Scout — the starter Spotter — covers for you.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <a
+                href="/spotter"
+                className="rounded-full bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-400"
+              >
+                Set mine up now
+              </a>
+              <button
+                type="button"
+                onClick={dismissSpotterNudge}
+                className="rounded-full border border-border-light px-4 py-2 text-sm text-text-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-gray-400"
+              >
+                Maybe later — I know it's in the menu
+              </button>
+            </div>
+          </section>
+        )}
         {description &&
           (descriptionIsHTML ? (
             <div

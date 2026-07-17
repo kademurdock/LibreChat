@@ -141,7 +141,7 @@ const SPOTTER_HTML = `<!doctype html>
 <body>
 <a class="back" href="/c/new">&larr; Back to chat</a>
 <h1>Your Spotter</h1>
-<p class="muted">Your Spotter is your personal live companion — the one who takes over when you go live on a video call: instant back-and-forth, continuous sight, speaks up on their own. You get one, you design them, and they're the same person no matter which character you were talking to. Blind or low vision? They're your eyes. Sighted and elbow-deep in wiring? Second pair of eyes.</p>
+<p class="muted">Your Spotter is your personal live companion — the one who takes over when you go live on a video call: instant back-and-forth, continuous sight, speaks up on their own. You get one, you design them, and they're the same person no matter which character you were talking to. Blind or low vision? They're your eyes — the world described as it moves, labels and screens read out loud, the thing you dropped found. Sighted? They're the second pair of eyes you always wanted: double-check the wiring before you flip the breaker, watch the driveway while your hands are full, read the tiny print without hunting for glasses.</p>
 <div id="status" class="status" role="status">Loading&hellip;</div>
 
 <form id="builder" hidden>
@@ -324,7 +324,7 @@ const SPOTTER_HTML = `<!doctype html>
       document.getElementById('persona').value = j.spotter.persona || '';
       setStatus('This is ' + (j.spotter.name || 'your Spotter') + ' as saved today — change anything and save again.', 'ok');
     } else {
-      statusEl.hidden = true;
+      setStatus("Right now you have Scout — the starter Spotter everyone gets: friendly, quick, honest about what they see. Keep Scout, or make this one yours: new name, new voice, your kind of personality.", '');
     }
     form.hidden = false;
   }).catch(function (e) {
