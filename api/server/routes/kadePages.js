@@ -51,6 +51,24 @@ const SHARED_HEAD = `
   footer { margin-top: 2rem; font-size: .85rem; }
   a.back { display:inline-block; margin:0 0 .25rem; font-weight:600; text-decoration:none; color:#2f6fed; }
   a.back:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
+  body { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; }
+  nav.kadetabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: flex; background: #ffffff; border-top: 1px solid #d9dde3; padding-bottom: env(safe-area-inset-bottom, 0px); box-shadow: 0 -2px 10px rgba(0,0,0,.06); }
+  nav.kadetabs a { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 8px 4px 10px; min-height: 56px; text-decoration: none; color: #5b6270; font-size: .78rem; font-weight: 600; }
+  nav.kadetabs a .ic { font-size: 1.45rem; line-height: 1; }
+  nav.kadetabs a[aria-current="page"] { color: #2f6fed; }
+  nav.kadetabs a:focus-visible { outline: 3px solid #ffbf47; outline-offset: -3px; }
+  nav.hublist { display: grid; gap: .6rem; margin-top: 1rem; }
+  a.hubitem { display: flex; align-items: center; gap: .9rem; background: #fff; border: 1px solid #e3e6ea; border-radius: 14px; padding: 1rem 1.1rem; text-decoration: none; color: inherit; }
+  a.hubitem:focus-visible { outline: 3px solid #ffbf47; outline-offset: 2px; }
+  a.hubitem .hicon { font-size: 1.6rem; line-height: 1; flex: none; }
+  a.hubitem strong { display: block; font-size: 1.08rem; }
+  a.hubitem small { display: block; opacity: .7; font-size: .88rem; margin-top: .1rem; }
+  @media (prefers-color-scheme: dark) {
+    nav.kadetabs { background: #1a1d23; border-top-color: #2c2f37; }
+    nav.kadetabs a { color: #9aa3b5; }
+    nav.kadetabs a[aria-current="page"] { color: #6ea8ff; }
+    a.hubitem { background:#1e2127; border-color:#2c2f37; }
+  }
 </style>
 <script>
   function money(n){ n = Number(n)||0; if(n>0 && n<0.01){ return '$'+n.toFixed(4); } return '$'+n.toFixed(2); }
@@ -138,6 +156,39 @@ const SHARED_HEAD = `
     const r = await fetch(path, {method:'POST', headers:{'Authorization':'Bearer '+token, 'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
     return r;
   }
+  (function(){
+    function kadeBuildTabs(){
+      if (document.querySelector('nav.kadetabs')) return;
+      if (!document.body) return;
+      var path = location.pathname;
+      if (path.length > 1 && path.charAt(path.length-1) === '/') path = path.slice(0, -1);
+      if (!path) path = '/';
+      var toolPages = ['/tools','/describe','/transcribe','/spotter','/debate-room','/conversation-hall','/game-room','/matchmaker','/wall-of-fame','/my-creations','/calls'];
+      var youPages = ['/you','/feed-the-server','/usage-dashboard','/feedback-dashboard'];
+      var active = 'chats';
+      if (path === '/notifications') active = 'alerts';
+      else if (youPages.indexOf(path) !== -1) active = 'you';
+      else if (toolPages.indexOf(path) !== -1) active = 'tools';
+      else if (path === '/') active = 'chats';
+      else active = 'tools';
+      var items = [['chats','/','Chats','💬'],['tools','/tools','Tools','🧰'],['alerts','/notifications','Alerts','🔔'],['you','/you','You','👤']];
+      var nav = document.createElement('nav');
+      nav.className = 'kadetabs';
+      nav.setAttribute('aria-label','Main navigation');
+      for (var i=0;i<items.length;i++){
+        var it = items[i];
+        var a = document.createElement('a');
+        a.href = it[1];
+        var ic = document.createElement('span'); ic.className='ic'; ic.setAttribute('aria-hidden','true'); ic.textContent = it[3];
+        var tx = document.createElement('span'); tx.textContent = it[2];
+        a.appendChild(ic); a.appendChild(tx);
+        if (it[0] === active) { a.setAttribute('aria-current','page'); }
+        nav.appendChild(a);
+      }
+      document.body.appendChild(nav);
+    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', kadeBuildTabs); } else { kadeBuildTabs(); }
+  })();
 </script>`;
 
 const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</title>${SHARED_HEAD}</head>
@@ -1287,5 +1338,39 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
 </body></html>`;
 
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml, describeHtml };
+const toolsHtml = `<!doctype html><html lang="en"><head><title>Tools — Kade-AI</title>${SHARED_HEAD}</head>
+<body>
+<a class="back" href="/">&larr; Back to chat</a>
+<h1>Tools</h1>
+<p class="muted">Everything Kade-AI can do, in one place. Tap any one.</p>
+<nav class="hublist" aria-label="Tools">
+  <a class="hubitem" href="/transcribe"><span class="hicon" aria-hidden="true">🎙️</span><span><strong>Transcribe &amp; dictate</strong><small>Record or upload audio, get clean text, or organize it into notes</small></span></a>
+  <a class="hubitem" href="/describe"><span class="hicon" aria-hidden="true">🖼️</span><span><strong>Describe</strong><small>Have any photo, video, PDF, or document described or read aloud</small></span></a>
+  <a class="hubitem" href="/spotter"><span class="hicon" aria-hidden="true">👁️</span><span><strong>Your Spotter</strong><small>Set up your personal live video companion</small></span></a>
+  <a class="hubitem" href="/debate-room"><span class="hicon" aria-hidden="true">🗣️</span><span><strong>Debate Room</strong><small>Put characters in a room with a topic and jump in</small></span></a>
+  <a class="hubitem" href="/conversation-hall"><span class="hicon" aria-hidden="true">🏛️</span><span><strong>Conversation Hall</strong><small>The greatest hits people have shared from the Debate Room</small></span></a>
+  <a class="hubitem" href="/game-room"><span class="hicon" aria-hidden="true">🎲</span><span><strong>Game Room</strong><small>Family standings, records, and the latest game results</small></span></a>
+  <a class="hubitem" href="/matchmaker"><span class="hicon" aria-hidden="true">💘</span><span><strong>Matchmaker</strong><small>Five quick questions to match you with characters</small></span></a>
+  <a class="hubitem" href="/wall-of-fame"><span class="hicon" aria-hidden="true">🏆</span><span><strong>Wall of Fame</strong><small>Creations everyone has chosen to share</small></span></a>
+  <a class="hubitem" href="/my-creations"><span class="hicon" aria-hidden="true">🎨</span><span><strong>My Creations</strong><small>Every video and image you have made, with downloads</small></span></a>
+</nav>
+<footer class="muted">— Kade-AI</footer>
+</body></html>`;
+
+const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</title>${SHARED_HEAD}</head>
+<body>
+<a class="back" href="/">&larr; Back to chat</a>
+<h1>You</h1>
+<p class="muted">Your account and settings.</p>
+<nav class="hublist" aria-label="Your account">
+  <a class="hubitem" href="/feed-the-server"><span class="hicon" aria-hidden="true">💳</span><span><strong>Usage &amp; Balance</strong><small>See what you have used, what is left, and top up</small></span></a>
+  <a class="hubitem" href="/notifications"><span class="hicon" aria-hidden="true">🔔</span><span><strong>Notifications &amp; Reminders</strong><small>Birthday nudges and reminders — in chat, push, or by phone</small></span></a>
+  <a class="hubitem" href="/help"><span class="hicon" aria-hidden="true">❓</span><span><strong>Help &amp; FAQ</strong><small>How everything works</small></span></a>
+</nav>
+<p class="muted" style="margin-top:1.25rem">Settings, your files, and signing out live in the account menu — tap your picture at the top of the chat screen.</p>
+<footer class="muted">— Kade-AI</footer>
+</body></html>`;
+
+
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml };
 

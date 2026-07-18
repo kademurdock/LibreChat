@@ -759,6 +759,8 @@ const WALL_HTML = require('./kadePages').wallHtml;
 const GAMEROOM_HTML = require('./kadePages').gameRoomHtml;
 const NOTIFICATIONS_HTML = require('./kadePages').notificationsHtml;
 const FEEDBACK_HTML = require('./kadePages').feedbackHtml;
+const TOOLS_HTML = require('./kadePages').toolsHtml;
+const YOU_HTML = require('./kadePages').youHtml;
 const sendHtml = (html) => (req, res) => res.type('html').send(html);
 
 // ---------------------------------------------------------------------------
@@ -1367,6 +1369,8 @@ router.wallPage = sendHtml(WALL_HTML);
 router.gameRoomPage = sendHtml(GAMEROOM_HTML);
 router.feedbackPage = sendHtml(FEEDBACK_HTML);
 router.notificationsPage = sendHtml(NOTIFICATIONS_HTML);
+router.toolsPage = sendHtml(TOOLS_HTML);
+router.youPage = sendHtml(YOU_HTML);
 // Also reachable under the API namespace:
 router.get('/feed', router.feedPage);
 router.get('/dashboard', router.dashboardPage);

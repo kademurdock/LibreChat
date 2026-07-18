@@ -314,6 +314,8 @@ const startServer = async () => {
   app.get('/feed-the-server', routes.kade.feedPage);
   app.get('/my-creations', routes.kade.creationsPage);
   app.get('/wall-of-fame', routes.kade.wallPage);
+  app.get('/tools', routes.kade.toolsPage);
+  app.get('/you', routes.kade.youPage);
   app.get('/debate-room', routes.kadeRoom.page);
   app.get('/conversation-hall', routes.kadeRoom.hallPage);
   app.get('/game-room', routes.kade.gameRoomPage);
