@@ -135,24 +135,6 @@ export default function Root() {
         <AssistantsMapContext.Provider value={assistantsMap}>
           <AgentsMapContext.Provider value={agentsMap}>
             <PromptGroupsProvider>
-              {/* KADE July 18 2026 (her gripe: the sidebar is the FIRST thing a
-                  screen reader lands on, every single page). Standard skip-nav:
-                  the very first focusable element on the page is a visually
-                  hidden link that appears on focus and jumps straight to the
-                  message box. One Tab/swipe -> Enter -> you're typing. */}
-              <a
-                href="#prompt-textarea"
-                className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-[100] focus:rounded-md focus:bg-surface-primary focus:px-4 focus:py-2 focus:text-text-primary focus:shadow-lg"
-                onClick={(e) => {
-                  e.preventDefault();
-                  const el = document.getElementById('prompt-textarea');
-                  if (el) {
-                    (el as HTMLElement).focus();
-                  }
-                }}
-              >
-                Skip to the message box
-              </a>
               <Banner onHeightChange={setBannerHeight} />
               <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px${isSmallScreen ? ' - 64px - env(safe-area-inset-bottom, 0px)' : ''})` }}>
                 <div className="relative z-0 flex h-full w-full overflow-hidden">

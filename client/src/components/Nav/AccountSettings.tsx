@@ -54,56 +54,40 @@ function HelpSubmenu({
   const showLegalDivider = (hasHelpFaq || true) && (hasTos || hasPrivacy);
 
   return (
-    <Menu.MenuProvider placement="right-start">
-      <Menu.MenuItem
-        hideOnClick={false}
-        render={
-          <Menu.MenuButton className="select-item flex w-full cursor-pointer items-center gap-2 text-sm" />
-        }
-      >
-        <CircleHelp className="icon-md" aria-hidden="true" />
-        <span className="flex-1 text-left">{localize('com_nav_help')}</span>
-        <ChevronRight className="h-4 w-4 text-text-secondary" aria-hidden="true" />
-      </Menu.MenuItem>
-      <Menu.Menu
-        portal
-        gutter={12}
-        className="account-settings-popover popover-ui popover-from-left z-[126] w-[244px] rounded-lg"
-      >
-        {hasHelpFaq && (
-          <Menu.MenuItem
-            onClick={() => window.open(helpAndFaqURL, '_blank', 'noopener,noreferrer')}
-            className="select-item text-sm"
-          >
-            <LifeBuoy className="icon-md" aria-hidden="true" />
-            {localize('com_nav_help_faq')}
-          </Menu.MenuItem>
-        )}
-        <Menu.MenuItem onClick={onShowShortcuts} className="select-item text-sm">
-          <Keyboard className="icon-md" aria-hidden="true" />
-          {localize('com_shortcut_keyboard_shortcuts')}
+    <>
+      {hasHelpFaq && (
+        <Menu.MenuItem
+          onClick={() => window.open(helpAndFaqURL, '_blank', 'noopener,noreferrer')}
+          className="select-item text-sm"
+        >
+          <LifeBuoy className="icon-md" aria-hidden="true" />
+          {localize('com_nav_help_faq')}
         </Menu.MenuItem>
-        {showLegalDivider && (hasTos || hasPrivacy) && <DropdownMenuSeparator />}
-        {hasTos && (
-          <Menu.MenuItem
-            onClick={() => window.open(termsOfServiceURL, '_blank', 'noopener,noreferrer')}
-            className="select-item text-sm"
-          >
-            <Scale className="icon-md" aria-hidden="true" />
-            {localize('com_ui_terms_of_service')}
-          </Menu.MenuItem>
-        )}
-        {hasPrivacy && (
-          <Menu.MenuItem
-            onClick={() => window.open(privacyPolicyURL, '_blank', 'noopener,noreferrer')}
-            className="select-item text-sm"
-          >
-            <ShieldCheck className="icon-md" aria-hidden="true" />
-            {localize('com_ui_privacy_policy')}
-          </Menu.MenuItem>
-        )}
-      </Menu.Menu>
-    </Menu.MenuProvider>
+      )}
+      <Menu.MenuItem onClick={onShowShortcuts} className="select-item text-sm">
+        <Keyboard className="icon-md" aria-hidden="true" />
+        {localize('com_shortcut_keyboard_shortcuts')}
+      </Menu.MenuItem>
+      {(hasTos || hasPrivacy) && <DropdownMenuSeparator />}
+      {hasTos && (
+        <Menu.MenuItem
+          onClick={() => window.open(termsOfServiceURL, '_blank', 'noopener,noreferrer')}
+          className="select-item text-sm"
+        >
+          <Scale className="icon-md" aria-hidden="true" />
+          {localize('com_ui_terms_of_service')}
+        </Menu.MenuItem>
+      )}
+      {hasPrivacy && (
+        <Menu.MenuItem
+          onClick={() => window.open(privacyPolicyURL, '_blank', 'noopener,noreferrer')}
+          className="select-item text-sm"
+        >
+          <ShieldCheck className="icon-md" aria-hidden="true" />
+          {localize('com_ui_privacy_policy')}
+        </Menu.MenuItem>
+      )}
+    </>
   );
 }
 
