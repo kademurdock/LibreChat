@@ -41,7 +41,7 @@ const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { startMemoryConsolidationSweep } = require('./services/Memory/consolidationSweep');
 const { startKadeNightlyRestart } = require('./services/kadeNightlyRestart');
-const { startNudgeSweep } = require('./services/kadeNudges');
+const { startNudgeSweep, startDueTimeReporter } = require('./services/kadeNudges');
 const { startMemorySummarySweep } = require('./services/kadeMemorySummarySweep');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
@@ -133,6 +133,9 @@ const startServer = async () => {
    * itself exactly as before — that's the instant revert. */
   if (process.env.KADE_CLOCK_EXTERNAL === '1') {
     logger.info('[kadeClock] KADE_CLOCK_EXTERNAL=1 — in-process timers OFF; the bridge clock owns the schedule.');
+    /* Phase 2 (App Sleeping): while awake, keep the bridge told when the next
+     * reminder is due so it only wakes the app when something needs delivering. */
+    startDueTimeReporter();
   } else {
     startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
     startMemoryConsolidationSweep({ appConfig, loadAppConfig: getAppConfig });

@@ -351,6 +351,65 @@ function startNudgeSweep() {
   logger.info(`[kadeNudges] Nudge sweep started — every ${Math.round(intervalMs / 1000)}s (push ${pushConfigured ? 'CONFIGURED' : 'not configured — chat/call only'})`);
 }
 
+
+/** ---- Phase 2 (App Sleeping, July 18 2026): next-due reporting ----
+ * While the app is awake it TELLS the bridge when the next reminder is due,
+ * so the bridge's clock can stop poking every 60s and only wake the app when
+ * something actually needs delivering. New reminders can only be created
+ * while the app is awake (they come from live chats), so a 60s reporter
+ * always gets the word out before Railway's idle-sleep window closes. */
+async function computeNextDueAt() {
+  const MemoryEntry = mongoose.models.MemoryEntry;
+  if (!MemoryEntry) {
+    return null;
+  }
+  const next = await MemoryEntry.findOne({
+    type: 'reminder',
+    completed: { $ne: true },
+    status: { $ne: 'superseded' },
+    dueAt: { $ne: null },
+  })
+    .sort({ dueAt: 1 })
+    .select('dueAt')
+    .lean();
+  return next && next.dueAt ? new Date(next.dueAt).toISOString() : null;
+}
+
+let dueReportTimer = null;
+let lastReportedDue = 'unreported'; // sentinel: always report once on boot
+function startDueTimeReporter() {
+  const bridgeUrl = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
+  const secret = process.env.BRIDGE_SECRET;
+  if (!secret) {
+    logger.warn('[kadeNudges] due-time reporter disabled — no BRIDGE_SECRET');
+    return;
+  }
+  const intervalMs = Number(process.env.KADE_DUE_REPORT_INTERVAL_MS || 60000);
+  dueReportTimer = setInterval(async () => {
+    try {
+      const nextDueAt = await computeNextDueAt();
+      const key = nextDueAt || 'none';
+      if (key === lastReportedDue) {
+        return;
+      }
+      const resp = await fetch(`${bridgeUrl}/clock/next-due`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-kade-secret': secret },
+        body: JSON.stringify({ nextDueAt }),
+      });
+      if (resp.ok) {
+        lastReportedDue = key; // only mark reported on success — failures retry next tick
+      }
+    } catch (err) {
+      logger.warn('[kadeNudges] due-time report failed (will retry): ' + err.message);
+    }
+  }, intervalMs);
+  if (dueReportTimer.unref) {
+    dueReportTimer.unref();
+  }
+  logger.info(`[kadeNudges] Due-time reporter started — every ${Math.round(intervalMs / 1000)}s (App Sleeping phase 2)`);
+}
+
 module.exports = {
   isPushConfigured,
   deliverNudge,
@@ -358,6 +417,8 @@ module.exports = {
   takePendingChatNudges,
   startNudgeSweep,
   runNudgeSweepOnce,
+  computeNextDueAt,
+  startDueTimeReporter,
   parseCentralDateTime,
   chicagoParts,
 };

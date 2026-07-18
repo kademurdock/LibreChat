@@ -23,7 +23,7 @@
  */
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { runNudgeSweepOnce } = require('~/server/services/kadeNudges');
+const { runNudgeSweepOnce, computeNextDueAt } = require('~/server/services/kadeNudges');
 const { runSummarySweep } = require('~/server/services/kadeMemorySummarySweep');
 const { sweepMemoryConsolidation } = require('~/server/services/Memory/consolidationSweep');
 const { sweepExpiredFiles } = require('~/server/services/Files/process');
@@ -53,7 +53,10 @@ router.post('/nudges', async (req, res) => {
   if (!authed(req, res)) return;
   try {
     const stats = await runNudgeSweepOnce();
-    res.json({ ok: true, ...stats });
+    /* Phase 2 (App Sleeping): tell the clock when to poke next, in the same
+     * breath — the bridge stores this and stays quiet until then. */
+    const nextDueAt = await computeNextDueAt().catch(() => null);
+    res.json({ ok: true, ...stats, nextDueAt });
   } catch (e) {
     logger.error('[kadeClock] nudges job failed:', e);
     res.status(500).json({ ok: false, error: e.message });
