@@ -182,7 +182,7 @@ const PAGE_HTML = `<!doctype html>
   #rec { width:100%; margin-top:6px; background:#c0392b; font-size:1.15rem; padding:16px; font-weight:700; }
   #rec.on { background:#e74c3c; }
 </style>
-</head>
+<script defer src="/kade-tabbar.js"></script></head>
 <body>
 <main>
   <a class="back" href="/">&larr; Back to Kade-AI</a>

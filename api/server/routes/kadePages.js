@@ -1372,5 +1372,29 @@ const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</ti
 </body></html>`;
 
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml };
+const tabBarAsset = `(function(){
+  if (window.__kadeTabsLoaded) return; window.__kadeTabsLoaded = true;
+  var css = "body{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px)) !important;} nav.kadetabs{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;background:#ffffff;border-top:1px solid #d9dde3;padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 10px rgba(0,0,0,.06);} nav.kadetabs a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px 10px;min-height:56px;text-decoration:none;color:#5b6270;font-size:.78rem;font-weight:600;} nav.kadetabs a .ic{font-size:1.45rem;line-height:1;} nav.kadetabs a[aria-current=page]{color:#2f6fed;} nav.kadetabs a:focus-visible{outline:3px solid #ffbf47;outline-offset:-3px;} @media (prefers-color-scheme:dark){nav.kadetabs{background:#1a1d23;border-top-color:#2c2f37;} nav.kadetabs a{color:#9aa3b5;} nav.kadetabs a[aria-current=page]{color:#6ea8ff;}}";
+  function build(){
+    if (!document.body || document.querySelector('nav.kadetabs')) return;
+    var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+    var path = location.pathname; if (path.length > 1 && path.charAt(path.length-1) === '/') path = path.slice(0,-1); if (!path) path = '/';
+    var toolPages = ['/tools','/describe','/transcribe','/spotter','/debate-room','/conversation-hall','/game-room','/matchmaker','/wall-of-fame','/my-creations','/calls'];
+    var youPages = ['/you','/feed-the-server','/usage-dashboard','/feedback-dashboard'];
+    var active = 'chats';
+    if (path === '/notifications') active = 'alerts';
+    else if (youPages.indexOf(path) !== -1) active = 'you';
+    else if (toolPages.indexOf(path) !== -1) active = 'tools';
+    else if (path === '/') active = 'chats';
+    else active = 'tools';
+    var items = [['chats','/','Chats','💬'],['tools','/tools','Tools','🧰'],['alerts','/notifications','Alerts','🔔'],['you','/you','You','👤']];
+    var nav = document.createElement('nav'); nav.className = 'kadetabs'; nav.setAttribute('aria-label','Main navigation');
+    for (var i=0;i<items.length;i++){ var it=items[i]; var a=document.createElement('a'); a.href=it[1]; var ic=document.createElement('span'); ic.className='ic'; ic.setAttribute('aria-hidden','true'); ic.textContent=it[3]; var tx=document.createElement('span'); tx.textContent=it[2]; a.appendChild(ic); a.appendChild(tx); if(it[0]===active) a.setAttribute('aria-current','page'); nav.appendChild(a); }
+    document.body.appendChild(nav);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
+})();
+`;
+
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, tabBarAsset };
 

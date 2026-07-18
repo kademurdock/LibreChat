@@ -761,6 +761,7 @@ const NOTIFICATIONS_HTML = require('./kadePages').notificationsHtml;
 const FEEDBACK_HTML = require('./kadePages').feedbackHtml;
 const TOOLS_HTML = require('./kadePages').toolsHtml;
 const YOU_HTML = require('./kadePages').youHtml;
+const TABBAR_JS = require('./kadePages').tabBarAsset;
 const sendHtml = (html) => (req, res) => res.type('html').send(html);
 
 // ---------------------------------------------------------------------------
@@ -1371,6 +1372,7 @@ router.feedbackPage = sendHtml(FEEDBACK_HTML);
 router.notificationsPage = sendHtml(NOTIFICATIONS_HTML);
 router.toolsPage = sendHtml(TOOLS_HTML);
 router.youPage = sendHtml(YOU_HTML);
+router.tabBarAssetPage = (req, res) => res.type('application/javascript').send(TABBAR_JS);
 // Also reachable under the API namespace:
 router.get('/feed', router.feedPage);
 router.get('/dashboard', router.dashboardPage);

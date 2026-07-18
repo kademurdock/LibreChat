@@ -150,7 +150,7 @@ const MATCH_HTML = `<!doctype html>
   .status { padding:.75rem 1rem; border-radius:10px; background:#fff6da; color:#6b5500; }
   .err { background:#ffe3e3; color:#8a1f1f; }
 </style>
-</head>
+<script defer src="/kade-tabbar.js"></script></head>
 <body>
 <a class="back" href="/c/new">&larr; Back to chat</a>
 <h1>The Matchmaker</h1>

@@ -59,7 +59,7 @@ const roomHtml = `<!doctype html>
   ul.rooms .topic { font-weight:600; }
   footer { margin-top:2rem; font-size:.85rem; }
 </style>
-</head>
+<script defer src="/kade-tabbar.js"></script></head>
 <body>
   <a class="back" href="/">&larr; Back to chat</a>
   <h1>Debate &amp; Roleplay Room</h1>
@@ -422,7 +422,7 @@ const hallHtml = `<!doctype html>
   .who { font-weight:700; }
   footer { margin-top:2rem; font-size:.85rem; }
 </style>
-</head>
+<script defer src="/kade-tabbar.js"></script></head>
 <body>
   <a class="back" href="/debate-room">&larr; Back to the Debate Room</a>
   <h1>Conversation Hall</h1>

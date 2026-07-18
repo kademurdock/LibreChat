@@ -137,7 +137,7 @@ const SPOTTER_HTML = `<!doctype html>
   .vrow { display:flex; align-items:center; gap:.7rem; }
   .vrow .vtext { flex:1; }
 </style>
-</head>
+<script defer src="/kade-tabbar.js"></script></head>
 <body>
 <a class="back" href="/c/new">&larr; Back to chat</a>
 <h1>Your Spotter</h1>
