@@ -127,11 +127,19 @@ const startServer = async () => {
   initializeFileStorage(appConfig);
   await initializeDeploymentSkills({ projectRoot: path.resolve(__dirname, '../..') });
   initializeGitHubSkillSync(appConfig);
-  startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
-  startMemoryConsolidationSweep({ appConfig, loadAppConfig: getAppConfig });
-  startKadeNightlyRestart();
-  startNudgeSweep();
-  startMemorySummarySweep(); // KADE DREAMING nightly episodic-summary sweep + decay
+  /* KADE CLOCK MIGRATION (July 18 2026): KADE_CLOCK_EXTERNAL=1 hands ALL
+   * recurring timers to the bridge's clock service (which pokes the routes in
+   * routes/kadeClock.js on schedule). Unset/anything else = the app schedules
+   * itself exactly as before — that's the instant revert. */
+  if (process.env.KADE_CLOCK_EXTERNAL === '1') {
+    logger.info('[kadeClock] KADE_CLOCK_EXTERNAL=1 — in-process timers OFF; the bridge clock owns the schedule.');
+  } else {
+    startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
+    startMemoryConsolidationSweep({ appConfig, loadAppConfig: getAppConfig });
+    startKadeNightlyRestart();
+    startNudgeSweep();
+    startMemorySummarySweep(); // KADE DREAMING nightly episodic-summary sweep + decay
+  }
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
@@ -288,6 +296,7 @@ const startServer = async () => {
   app.use('/api/kade/web-voice', routes.kadeWebVoice);
   app.use('/api/kade/spotter', routes.kadeSpotter);
   app.use('/api/kade/describe', routes.kadeDescribe);
+  app.use('/api/kade/clock', routes.kadeClock);
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);

@@ -318,6 +318,19 @@ async function sweepPhonePrompts() {
   return fired;
 }
 
+/* One sweep pass — extracted (July 18 2026, clock migration) so the bridge's
+ * clock service can run it via POST /api/kade/clock/nudges. Identical work to
+ * what the interval below always did. */
+async function runNudgeSweepOnce() {
+  const reminders = await sweepDueReminders();
+  const birthdays = await sweepBirthdays();
+  const phonePrompts = await sweepPhonePrompts();
+  if (reminders || birthdays || phonePrompts) {
+    logger.info(`[kadeNudges] sweep fired ${reminders} reminder(s), ${birthdays} birthday nudge(s), ${phonePrompts} phone prompt(s)`);
+  }
+  return { reminders, birthdays, phonePrompts };
+}
+
 let sweepTimer = null;
 function startNudgeSweep() {
   const intervalMs = Number(process.env.KADE_NUDGE_SWEEP_INTERVAL_MS || 60000);
@@ -327,12 +340,7 @@ function startNudgeSweep() {
   }
   sweepTimer = setInterval(async () => {
     try {
-      const reminders = await sweepDueReminders();
-      const birthdays = await sweepBirthdays();
-      const phonePrompts = await sweepPhonePrompts();
-      if (reminders || birthdays || phonePrompts) {
-        logger.info(`[kadeNudges] sweep fired ${reminders} reminder(s), ${birthdays} birthday nudge(s), ${phonePrompts} phone prompt(s)`);
-      }
+      await runNudgeSweepOnce();
     } catch (err) {
       logger.error('[kadeNudges] sweep error:', err.message);
     }
@@ -349,6 +357,7 @@ module.exports = {
   sendPushToUser,
   takePendingChatNudges,
   startNudgeSweep,
+  runNudgeSweepOnce,
   parseCentralDateTime,
   chicagoParts,
 };
