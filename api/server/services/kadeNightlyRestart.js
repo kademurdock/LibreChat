@@ -15,7 +15,7 @@
  *   KADE_NIGHTLY_RESTART=0      -- disable entirely
  *   KADE_NIGHTLY_RESTART_HOUR   -- UTC hour to restart (default 10 = 5am CDT; NOT 9, which would stomp the Sunday 09:00 UTC consolidation sweep mid-pass)
  */
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 
 function startKadeNightlyRestart() {
   if (process.env.KADE_NIGHTLY_RESTART === '0') {
