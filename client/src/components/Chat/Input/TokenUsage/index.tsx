@@ -9,6 +9,7 @@ import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import Breakdown from './Breakdown';
 import Gauge from './Gauge';
+import { fullnessKey, estimateMessagesLeft } from './insights';
 
 interface TokenUsageProps {
   index: number;
@@ -38,25 +39,42 @@ function TokenUsageIndicator({
   }
 
   const hasMax = view.maxTokens != null && view.maxTokens > 0;
-  const ariaLabel = hasMax
-    ? localize('com_ui_context_usage_label', {
-        0: formatTokens(view.usedTokens),
-        1: formatTokens(view.maxTokens ?? 0),
-        2: String(Math.round(view.percent)),
-      })
-    : localize('com_ui_context_usage_label_unknown', { 0: formatTokens(view.usedTokens) });
+  const costKnown = showCost && view.hasUsage && view.branchUsage.costKnown;
+  const fullnessPhrase = localize(fullnessKey(view.percent));
+  const messagesLeft = hasMax ? estimateMessagesLeft(view) : null;
+
+  /** Screen readers land on the gauge and hear this. Lead with running cost
+   *  (Kade's priority), then a plain-language fullness read, then room-left in
+   *  messages. Every clause is fail-soft — an unknown one is simply dropped. */
+  const ariaParts: string[] = [];
+  if (costKnown) {
+    ariaParts.push(
+      localize('com_ui_context_usage_cost_spoken', { 0: formatCost(view.branchCost, currency) }),
+    );
+  }
+  ariaParts.push(
+    hasMax
+      ? localize('com_ui_context_usage_fullness', {
+          0: String(Math.round(view.percent)),
+          1: fullnessPhrase,
+        })
+      : localize('com_ui_context_usage_label_unknown', { 0: formatTokens(view.usedTokens) }),
+  );
+  if (messagesLeft != null) {
+    ariaParts.push(localize('com_ui_context_usage_msgs_spoken', { 0: String(messagesLeft) }));
+  }
+  const ariaLabel = `${ariaParts.join('. ')}.`;
 
   const snapshotSummary = hasMax
-    ? localize('com_ui_context_usage_snapshot', {
+    ? `${localize('com_ui_context_usage_snapshot', {
         0: formatTokens(view.usedTokens),
         1: formatTokens(view.maxTokens ?? 0),
         2: String(Math.round(view.percent)),
-      })
+      })} — ${fullnessPhrase}`
     : localize('com_ui_context_usage_snapshot_unknown', { 0: formatTokens(view.usedTokens) });
-  const snapshot =
-    showCost && view.hasUsage && view.branchUsage.costKnown
-      ? `${snapshotSummary} · ${formatCost(view.branchCost, currency)}`
-      : snapshotSummary;
+  const snapshot = costKnown
+    ? `${snapshotSummary} · ${formatCost(view.branchCost, currency)}`
+    : snapshotSummary;
 
   return (
     <>

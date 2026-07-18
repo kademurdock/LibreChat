@@ -2,6 +2,7 @@ import type { TokenUsageView } from '~/hooks/Chat/useTokenUsage';
 import type { CurrencyConfig } from '~/utils';
 import { groupToolTokens, formatTokens, formatCost } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { estimateMessagesLeft, cacheSavingsUSD } from './insights';
 
 interface RowProps {
   label: string;
@@ -40,6 +41,8 @@ export default function Breakdown({ view, showCost, currency }: BreakdownProps) 
    *  unbranched conversation — and (b) has COMPLETE cost coverage, so a sibling
    *  branch saved without cost can't render an under-reported total. */
   const showTotal = view.totalUsage.costKnown && view.totalCost - view.branchCost > 1e-9;
+  const messagesLeft = estimateMessagesLeft(view);
+  const cacheSaved = showCost ? cacheSavingsUSD(view) : null;
 
   const breakdown = snapshotActive ? snapshot?.breakdown : undefined;
   const instructionTokens =
@@ -88,6 +91,19 @@ export default function Breakdown({ view, showCost, currency }: BreakdownProps) 
       <p className="text-xs leading-snug text-text-secondary">
         {localize('com_ui_context_window_explainer')}
       </p>
+
+      {/* KADE July 18 2026: running cost up top (her priority) + room-left in
+          plain messages. Both fail-soft — omitted when they can't be computed. */}
+      {showCost && hasUsage && branchUsage.costKnown && (
+        <p className="text-sm font-medium text-text-primary">
+          {localize('com_ui_context_cost_sentence', { 0: formatCost(view.branchCost, currency) })}
+        </p>
+      )}
+      {messagesLeft != null && (
+        <p className="text-xs leading-snug text-text-secondary">
+          {localize('com_ui_context_msgs_left_sentence', { 0: String(messagesLeft) })}
+        </p>
+      )}
 
       <div
         role="progressbar"
@@ -198,6 +214,14 @@ export default function Breakdown({ view, showCost, currency }: BreakdownProps) 
               <div className="flex items-center justify-between text-xs">
                 <span className="text-text-secondary">{localize('com_ui_context_cost_total')}</span>
                 <span className="text-text-secondary">{formatCost(view.totalCost, currency)}</span>
+              </div>
+            )}
+            {cacheSaved != null && (
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-text-secondary">
+                  {localize('com_ui_context_cache_saved_label')}
+                </span>
+                <span className="text-text-secondary">{formatCost(cacheSaved, currency)}</span>
               </div>
             )}
           </div>
