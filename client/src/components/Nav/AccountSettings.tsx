@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   HeartHandshake,
   RadioTower,
+  FileAudio,
 } from 'lucide-react';
 import { SystemRoles } from 'librechat-data-provider';
 import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/ArchivedChatsModal';
@@ -199,6 +200,14 @@ function ExploreSubmenu({ isAdmin, isChild }: { isAdmin: boolean; isChild: boole
         >
           <ScanEye className="icon-md" aria-hidden="true" />
           Describe a Photo or Document
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={go('/transcribe')}
+          className="select-item text-sm"
+          aria-label="Transcribe a Voice Memo: upload an audio recording and get back clean written text you can copy or download"
+        >
+          <FileAudio className="icon-md" aria-hidden="true" />
+          Transcribe a Voice Memo
         </Menu.MenuItem>
         <Menu.MenuItem
           onClick={go('/notifications')}
