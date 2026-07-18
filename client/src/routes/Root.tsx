@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Outlet } from 'react-router-dom';
 import { useMediaQuery } from '@librechat/client';
 import {
@@ -43,8 +43,24 @@ function KeyboardShortcutsProvider() {
  *  server-rendered hub pages, reached by full navigation like the account menu's
  *  existing links. Rendered only on small screens; desktop is unchanged. */
 function KadeTabBar() {
-  const tabs = [
-    { key: 'chats', href: '/', label: 'Chats', icon: '\uD83D\uDCAC' },
+  // Chats opens the conversation list (full-screen on mobile); the others go to
+  // the server-rendered hub pages. Bottom tab bar, small screens only.
+  const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
+  const itemStyle = {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    textDecoration: 'none',
+    fontSize: '0.72rem',
+    fontWeight: 600,
+    border: 0,
+    background: 'transparent',
+    cursor: 'pointer',
+  };
+  const links = [
     { key: 'tools', href: '/tools', label: 'Tools', icon: '\uD83E\uDDF0' },
     { key: 'alerts', href: '/notifications', label: 'Alerts', icon: '\uD83D\uDD14' },
     { key: 'you', href: '/you', label: 'You', icon: '\uD83D\uDC64' },
@@ -61,23 +77,22 @@ function KadeTabBar() {
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}
     >
-      {tabs.map((t) => (
+      <button
+        type="button"
+        onClick={() => setSidebarExpanded(true)}
+        aria-label="Chats. Open your conversation list."
+        style={{ ...itemStyle, color: '#6ea8ff' }}
+      >
+        <span aria-hidden="true" style={{ fontSize: '1.4rem', lineHeight: 1 }}>
+          {'\uD83D\uDCAC'}
+        </span>
+        <span>Chats</span>
+      </button>
+      {links.map((t) => (
         <a
           key={t.key}
           href={t.href}
-          aria-current={t.key === 'chats' ? 'page' : undefined}
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 3,
-            textDecoration: 'none',
-            fontSize: '0.72rem',
-            fontWeight: 600,
-            color: t.key === 'chats' ? '#6ea8ff' : 'var(--text-secondary, #9aa3b5)',
-          }}
+          style={{ ...itemStyle, color: 'var(--text-secondary, #9aa3b5)' }}
         >
           <span aria-hidden="true" style={{ fontSize: '1.4rem', lineHeight: 1 }}>
             {t.icon}
@@ -142,8 +157,7 @@ export default function Root() {
                   <div
                     className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden"
                     style={{
-                      transform:
-                        isSmallScreen && sidebarExpanded ? 'translateX(min(85vw, 380px))' : 'none',
+                      transform: 'none',
                       transition: 'transform 300ms cubic-bezier(0.2, 0, 0, 1)',
                     }}
                     inert={isSmallScreen && sidebarExpanded ? '' : undefined}

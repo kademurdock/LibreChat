@@ -914,6 +914,10 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
 
   async function refreshPushState(){
     var stateEl=document.getElementById('push-state'), on=document.getElementById('btn-push'), off=document.getElementById('btn-push-off');
+    if(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()){
+      stateEl.textContent='You are in the Kade-AI app, so your phone notifications are handled by the app itself — you already turned them on the first time you opened it. The button below is only for using Kade-AI in a plain web browser, so it is switched off here.';
+      on.disabled=true; on.hidden=true; if(off){ off.hidden=true; } return;
+    }
     if(!('serviceWorker' in navigator) || !('PushManager' in window)){
       stateEl.textContent='This browser cannot do push. On iPhone: add Kade-AI to your Home Screen from Safari first, then open it from there.';
       on.disabled=true; return;
