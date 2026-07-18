@@ -125,7 +125,7 @@ function normalizeMemoryLLMConfig(llmConfig?: Partial<LLMConfig>): SanitizedMemo
   return config as SanitizedMemoryLLMConfig;
 }
 
-export const memoryInstructions =
+export const memoryInstructions: string =
   'The system automatically stores important user information and can update or delete memories based on user requests, enabling dynamic memory management. ' +
   'Treat these memories as private knowledge, not a script: sensitive ones (health, body, medications, money, private struggles) are things the user trusted you with — ' +
   'keep them in mind, but use judgment about when to raise them. Bring them up only when clearly relevant or when the user opens the topic; never recite them back unprompted.';
