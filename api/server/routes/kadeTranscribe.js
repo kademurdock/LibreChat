@@ -97,6 +97,64 @@ router.post(
   },
 );
 
+// ---- Organize / clean the transcript with an LLM (notes or prose) ----------
+// July 18 2026: the "organize your thoughts" mode. Runs the current transcript
+// through OpenRouter (KADE_ORGANIZE_MODEL, default openai/gpt-4o-mini) and
+// returns either structured notes or cleaned-up prose. Reads OPENROUTER_KEY.
+async function organizeText(text, style) {
+  const key = process.env.OPENROUTER_KEY;
+  if (!key) {
+    throw new Error("The note organizer is not configured on the server (no OpenRouter key).");
+  }
+  const clean = String(text || "").trim();
+  if (!clean) {
+    throw new Error("There is no transcript to organize yet.");
+  }
+  const model = process.env.KADE_ORGANIZE_MODEL || "openai/gpt-4o-mini";
+  const NOTES = "You reorganize a person's dictated speech into tidy, well-structured notes. Output ONLY the notes and nothing else. Begin with a short title line in bold, then group the content into clear bullet points, adding brief bold sub-headers only if the material naturally splits into sections. Fix grammar, remove filler words and false starts, and tighten rambling. Never add facts, opinions, or details the speaker did not say, and keep their meaning intact.";
+  const PROSE = "You clean up a person's dictated speech into smooth, readable prose. Keep everything they said and their full meaning: do not summarize, do not drop content, and do not convert it into bullet points. Only fix grammar and punctuation, remove filler words and false starts, improve the flow, and break it into sensible paragraphs. Output ONLY the cleaned text and nothing else.";
+  const sys = style === "prose" ? PROSE : NOTES;
+  const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: sys },
+        { role: "user", content: clean },
+      ],
+      temperature: 0.3,
+      max_tokens: 2000,
+    }),
+  });
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => "");
+    throw new Error("Organizer " + resp.status + ": " + t.slice(0, 200));
+  }
+  const j = await resp.json();
+  const out = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+  const result = String(out || "").trim();
+  if (!result) {
+    throw new Error("The organizer returned nothing. Please try again.");
+  }
+  return result;
+}
+
+router.post("/organize", requireJwtAuth, express.json({ limit: "1mb" }), async (req, res) => {
+  try {
+    const style = req.body && req.body.style === "prose" ? "prose" : "notes";
+    const out = await organizeText(req.body && req.body.text, style);
+    logger.info(`[kadeTranscribe] organize (${style}) for ${req.user?.email || req.user?.id}`);
+    return res.json({ text: out, style });
+  } catch (e) {
+    logger.warn("[kadeTranscribe] organize failed: " + (e && e.message));
+    return res.status(400).json({ error: e.message || "Could not organize the text." });
+  }
+});
+
+router.organizeText = organizeText;
+
+
 const PAGE_HTML = `<!doctype html>
 <html lang="en">
 <head>
@@ -144,6 +202,11 @@ const PAGE_HTML = `<!doctype html>
     <p class="hint">Tap Record, talk, tap again. Your words are added to the transcript below — great for quick dictation. The space bar starts and stops it too.</p>
 
     <div class="row">
+      <button id="notesBtn" hidden>Organize into notes</button>
+      <button id="proseBtn" hidden>Clean up text</button>
+      <button id="undoBtn" hidden>Undo</button>
+    </div>
+    <div class="row">
       <button id="copy" hidden>Copy transcript</button>
       <a class="btn" id="dl" hidden download="transcript.txt">Download as text file</a>
     </div>
@@ -161,6 +224,10 @@ const PAGE_HTML = `<!doctype html>
   var outEl = document.getElementById('out');
   var copyEl = document.getElementById('copy');
   var dlEl = document.getElementById('dl');
+  var notesBtn = document.getElementById('notesBtn');
+  var proseBtn = document.getElementById('proseBtn');
+  var undoBtn = document.getElementById('undoBtn');
+  var lastText = null;
   var NL = String.fromCharCode(10);
   function setStatus(m) { statusEl.textContent = m; }
   function getToken() {
@@ -173,6 +240,7 @@ const PAGE_HTML = `<!doctype html>
     else { outEl.value = j.transcript; }
     outEl.hidden = false; copyEl.hidden = false;
     try { dlEl.href = URL.createObjectURL(new Blob([outEl.value], { type: 'text/plain' })); dlEl.hidden = false; } catch (e) {}
+    revealOrganize(); undoBtn.hidden = true;
   }
   function transcribe(body, contentType, append) {
     return getToken()
@@ -277,6 +345,48 @@ const PAGE_HTML = `<!doctype html>
       e.preventDefault(); recording ? stopRec() : startRec();
     }
   });
+  function revealOrganize() {
+    var has = !!outEl.value.trim();
+    notesBtn.hidden = !has;
+    proseBtn.hidden = !has;
+  }
+  function organize(style, label) {
+    if (busy) return;
+    if (!outEl.value.trim()) { setStatus('Nothing to organize yet.'); return; }
+    busy = true; lastText = outEl.value;
+    notesBtn.disabled = true; proseBtn.disabled = true;
+    setStatus(label + ' - one moment.');
+    getToken()
+      .then(function () {
+        return fetch('/api/kade/transcribe/organize', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: outEl.value, style: style }),
+        });
+      })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; }); })
+      .then(function (j) {
+        outEl.value = j.text;
+        try { dlEl.href = URL.createObjectURL(new Blob([outEl.value], { type: 'text/plain' })); } catch (e) {}
+        undoBtn.hidden = false;
+        setStatus('Done. Your ' + label + ' is below. Press Undo to get your original words back.');
+        outEl.focus();
+      })
+      .catch(function (e) { setStatus('Sorry - ' + e.message); })
+      .then(function () { busy = false; notesBtn.disabled = false; proseBtn.disabled = false; });
+  }
+  notesBtn.addEventListener('click', function () { organize('notes', 'notes'); });
+  proseBtn.addEventListener('click', function () { organize('prose', 'cleaned-up text'); });
+  undoBtn.addEventListener('click', function () {
+    if (lastText != null) {
+      outEl.value = lastText;
+      try { dlEl.href = URL.createObjectURL(new Blob([outEl.value], { type: 'text/plain' })); } catch (e) {}
+      setStatus('Restored your original transcript.');
+      outEl.focus();
+    }
+    undoBtn.hidden = true;
+  });
+
   if (!navigator.mediaDevices || !window.MediaRecorder) {
     recEl.disabled = true;
     recEl.textContent = 'Recording not supported in this browser';
