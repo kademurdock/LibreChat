@@ -118,24 +118,34 @@ const PAGE_HTML = `<!doctype html>
   #status { margin-top:16px; min-height:1.5em; font-weight:600; }
   textarea { width:100%; min-height:320px; margin-top:12px; background:#12151d; color:#e8eaf0; border:1px solid #3b4254; border-radius:10px; padding:12px; font-size:1rem; line-height:1.6; box-sizing:border-box; }
   .hint { color:#9aa3b5; font-size:.92rem; }
+  .orbar { text-align:center; color:#9aa3b5; margin:18px 0 4px; font-size:.85rem; text-transform:uppercase; letter-spacing:.08em; }
+  #rec { width:100%; margin-top:6px; background:#c0392b; font-size:1.15rem; padding:16px; font-weight:700; }
+  #rec.on { background:#e74c3c; }
 </style>
 </head>
 <body>
 <main>
   <h1>Transcribe a voice memo</h1>
-  <p class="hint">Pick an audio file (voice memo, mp3, m4a, wav — up to about two hours). You get back clean, punctuated text you can copy or download. Free to use.</p>
+  <p class="hint">Upload an audio file (voice memo, mp3, m4a, wav — up to about two hours), or record yourself live. You get back clean, punctuated text you can copy or download. Free to use.</p>
   <div class="card">
     <label class="file" id="drop">
       <span id="fileLabel">Choose an audio file</span>
       <input type="file" id="file" accept="audio/*,video/mp4,.m4a,.mp3,.wav,.ogg,.opus,.aac,.amr,.flac" aria-describedby="status">
     </label>
     <div class="row">
-      <button id="go" disabled>Transcribe</button>
+      <button id="go" disabled>Transcribe file</button>
+    </div>
+
+    <div class="orbar">or record live</div>
+    <button id="rec" aria-pressed="false">Record now</button>
+    <p class="hint">Tap Record, talk, tap again. Your words are added to the transcript below — great for quick dictation. The space bar starts and stops it too.</p>
+
+    <div class="row">
       <button id="copy" hidden>Copy transcript</button>
       <a class="btn" id="dl" hidden download="transcript.txt">Download as text file</a>
     </div>
     <p id="status" role="status" aria-live="polite"></p>
-    <textarea id="out" hidden readonly aria-label="Transcript"></textarea>
+    <textarea id="out" hidden aria-label="Transcript. Editable — fix any word before copying."></textarea>
   </div>
 </main>
 <script>
@@ -143,43 +153,49 @@ const PAGE_HTML = `<!doctype html>
   var TOKEN = null, FILE = null;
   var fileEl = document.getElementById('file');
   var goEl = document.getElementById('go');
+  var recEl = document.getElementById('rec');
   var statusEl = document.getElementById('status');
   var outEl = document.getElementById('out');
   var copyEl = document.getElementById('copy');
   var dlEl = document.getElementById('dl');
+  var NL = String.fromCharCode(10);
   function setStatus(m) { statusEl.textContent = m; }
   function getToken() {
     return fetch('/api/auth/refresh', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('Please sign in at kademurdock.com first, then come back.')); })
       .then(function (j) { TOKEN = j && j.token; if (!TOKEN) throw new Error('Please sign in at kademurdock.com first, then come back.'); });
   }
+  function showResult(j, append) {
+    if (append && outEl.value.trim()) { outEl.value = outEl.value + NL + NL + j.transcript; }
+    else { outEl.value = j.transcript; }
+    outEl.hidden = false; copyEl.hidden = false;
+    try { dlEl.href = URL.createObjectURL(new Blob([outEl.value], { type: 'text/plain' })); dlEl.hidden = false; } catch (e) {}
+  }
+  function transcribe(body, contentType, append) {
+    return getToken()
+      .then(function () {
+        return fetch('/api/kade/transcribe', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': contentType || 'application/octet-stream' },
+          body: body,
+        });
+      })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; }); })
+      .then(function (j) { showResult(j, append); return j; });
+  }
   fileEl.addEventListener('change', function () {
     FILE = fileEl.files && fileEl.files[0];
     document.getElementById('fileLabel').textContent = FILE ? FILE.name : 'Choose an audio file';
     goEl.disabled = !FILE;
-    if (FILE) setStatus('Ready — ' + FILE.name + ', ' + Math.round(FILE.size / 1048576) + ' megabytes. Press Transcribe.');
+    if (FILE) setStatus('Ready — ' + FILE.name + ', ' + Math.round(FILE.size / 1048576) + ' megabytes. Press Transcribe file.');
   });
   goEl.addEventListener('click', function () {
     if (!FILE) return;
     goEl.disabled = true;
     setStatus('Uploading and transcribing — longer memos take a minute or two. Hang tight.');
-    getToken()
-      .then(function () {
-        return fetch('/api/kade/transcribe', {
-          method: 'POST',
-          headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': FILE.type || 'application/octet-stream' },
-          body: FILE,
-        });
-      })
-      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; }); })
+    transcribe(FILE, FILE.type || 'application/octet-stream', false)
       .then(function (j) {
-        outEl.value = j.transcript;
-        outEl.hidden = false; copyEl.hidden = false;
         var mins = Math.round(j.seconds / 60);
-        try {
-          dlEl.href = URL.createObjectURL(new Blob([j.transcript], { type: 'text/plain' }));
-          dlEl.hidden = false;
-        } catch (e) {}
         setStatus('Done — about ' + (mins || 1) + ' minute' + (mins === 1 ? '' : 's') + ' of audio transcribed. The transcript is below.');
         outEl.focus();
       })
@@ -192,6 +208,76 @@ const PAGE_HTML = `<!doctype html>
       function () { outEl.select(); document.execCommand('copy'); setStatus('Copied.'); }
     );
   });
+
+  var mediaRec = null, chunks = [], stream = null, recording = false, busy = false, ac = null, maxTimer = null;
+  function beep(kind) {
+    try {
+      if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+      if (ac.state === 'suspended') ac.resume();
+      var o = ac.createOscillator(), g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.frequency.value = kind === 'start' ? 660 : 440;
+      g.gain.setValueAtTime(0.0001, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.25, ac.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.18);
+      o.start(); o.stop(ac.currentTime + 0.2);
+    } catch (e) {}
+  }
+  function pickMime() {
+    var opts = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
+    for (var i = 0; i < opts.length; i++) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported(opts[i])) return opts[i];
+    }
+    return '';
+  }
+  function startRec() {
+    if (recording || busy) return;
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+      .then(function (s) {
+        stream = s; chunks = [];
+        var mime = pickMime();
+        try { mediaRec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream); }
+        catch (e) { mediaRec = new MediaRecorder(stream); }
+        mediaRec.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
+        mediaRec.onstop = onRecStop;
+        mediaRec.start();
+        recording = true;
+        recEl.classList.add('on'); recEl.setAttribute('aria-pressed', 'true'); recEl.textContent = 'Stop and transcribe';
+        beep('start'); setStatus('Listening. Talk now.');
+        clearTimeout(maxTimer); maxTimer = setTimeout(function () { if (recording) stopRec(); }, 120000);
+      })
+      .catch(function () { setStatus('Microphone blocked. Allow mic access for this site, then try again.'); });
+  }
+  function stopRec() {
+    if (!recording) return;
+    recording = false; clearTimeout(maxTimer);
+    recEl.classList.remove('on'); recEl.setAttribute('aria-pressed', 'false'); recEl.textContent = 'Record now';
+    beep('stop');
+    try { mediaRec.stop(); } catch (e) {}
+  }
+  function onRecStop() {
+    try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    if (!chunks.length) { setStatus('Did not catch any audio. Try again.'); return; }
+    var type = (mediaRec && mediaRec.mimeType) || (chunks[0] && chunks[0].type) || 'audio/webm';
+    var ct = type.split(';')[0] || 'audio/webm';
+    var blob = new Blob(chunks, { type: type });
+    busy = true; setStatus('Processing your recording...');
+    transcribe(blob, ct, true)
+      .then(function () { busy = false; setStatus('Added to the transcript below.'); outEl.focus(); })
+      .catch(function (e) { busy = false; setStatus('Sorry — ' + e.message); });
+  }
+  recEl.addEventListener('click', function () { recording ? stopRec() : startRec(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.code === 'Space') {
+      var tag = (document.activeElement && document.activeElement.tagName) || '';
+      if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'BUTTON') return;
+      e.preventDefault(); recording ? stopRec() : startRec();
+    }
+  });
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    recEl.disabled = true;
+    recEl.textContent = 'Recording not supported in this browser';
+  }
 })();
 </script>
 </body>
