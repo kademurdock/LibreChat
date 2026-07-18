@@ -330,3 +330,13 @@ The game engine's per-move `sounds` arrays (they existed since phase 1, unused) 
 4. **Spoken hygiene**: inworld-tts-proxy strips `[sound:x]` before synthesis (separate repo commit) so read-aloud and the phone never SAY the tokens. Actual phone/conversation-mode clip playback = later phase.
 
 Sound pack provenance: Kenney CC0 casino foley + ElevenLabs generations, curated/mastered by Kade + assistant July 3; masters (WAV) live in Kade's local `game_sounds` folder.
+
+## Context-usage indicator — plain-language + running cost (July 18 2026)
+
+Kade's ask: make the composer's context gauge "say something more interesting and useful," with **running cost most important / top of mind.** Screen-reader-first — the visual dial says nothing to a blind user, so the work is in the spoken `aria-label` and the click-open breakdown. Everything additive and fail-soft; token accounting untouched.
+
+- **New** `client/src/components/Chat/Input/TokenUsage/insights.ts` — three pure helpers off the existing `TokenUsageView` (no new plumbing): `fullnessKey(percent)` → a plain-language band as a localization key (plenty of room / filling up / getting full / nearly full); `estimateMessagesLeft(view)` = free tokens ÷ this branch's average message size, computed from `branchTotals.(input+output)/counted` so the fixed system/tool overhead doesn't inflate the per-message figure; `cacheSavingsUSD(view)` = `cacheRead × (rates.prompt − rates.cacheRead) / 1M`. Each returns `null` when uncomputable so the caller simply drops that clause.
+- **`index.tsx`** — the gauge's spoken `aria-label` is now composed from fail-soft clauses, **leading with running cost** (Kade's priority), then "{n} percent full — {fullness}", then "Room for roughly {n} more messages at this pace." The hover tooltip gained the fullness phrase.
+- **`Breakdown.tsx`** (click-open panel) — a prominent running-cost sentence up top, the messages-left line under the explainer, and a "Saved by caching" row in the cost section.
+- **Locale** (`client/src/locales/en/translation.json`) — 10 new `com_ui_context_*` keys (fullness bands, spoken cost, spoken/panel messages-left, cache-saved label). The old `com_ui_context_usage_label` is left in place (now unused).
+- Gated by the existing `interface.contextUsage` / `interface.contextCost` (both `true` in Kade's `librechat.yaml`). esbuild-gated pre-push. **REVERT:** `git revert <sha>` on `kade` + let it auto-deploy.
