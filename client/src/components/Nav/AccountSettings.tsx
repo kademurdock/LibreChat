@@ -110,143 +110,44 @@ function HelpSubmenu({
 /** KADE July 3 2026: the fun pages were piling up as flat items in the account
  * menu (Kade: "a lot stuffed into it that aren't account and settings related").
  * One Explore submenu, same accessible pattern as HelpSubmenu. */
-function ExploreSubmenu({ isAdmin, isChild }: { isAdmin: boolean; isChild: boolean }) {
+function ExploreSubmenu({ isAdmin, isChild: _isChild }: { isAdmin: boolean; isChild: boolean }) {
   const go = (href: string) => () => {
     window.location.href = href;
   };
+  // KADE July 18 2026: DE-NESTED. Everything that used to live in this nested
+  // submenu now lives on the flat /tools hub page (also reachable from the new
+  // bottom tab bar). One tap, no submenu-inside-a-submenu.
   return (
-    <Menu.MenuProvider placement="right-start">
+    <>
       <Menu.MenuItem
-        hideOnClick={false}
-        render={
-          <Menu.MenuButton className="select-item flex w-full cursor-pointer items-center gap-2 text-sm" />
-        }
+        onClick={go('/tools')}
+        className="select-item text-sm"
+        aria-label="Tools: transcribe, describe, your Spotter, games, creations, and more, all in one place"
       >
         <Compass className="icon-md" aria-hidden="true" />
-        <span className="flex-1 text-left">Explore</span>
-        <ChevronRight className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+        Tools
       </Menu.MenuItem>
-      <Menu.Menu
-        portal
-        gutter={12}
-        className="account-settings-popover popover-ui popover-from-left z-[126] w-[244px] rounded-lg"
-      >
+      {isAdmin && (
         <Menu.MenuItem
-          onClick={go('/debate-room')}
+          onClick={go('/usage-dashboard')}
           className="select-item text-sm"
-          aria-label="Debate Room: put two or more characters in a room with a topic and join in"
+          aria-label="Usage dashboard (admin only)"
         >
-          <MessagesSquare className="icon-md" aria-hidden="true" />
-          Debate Room
+          <Gauge className="icon-md" aria-hidden="true" />
+          Usage Dashboard
         </Menu.MenuItem>
+      )}
+      {isAdmin && (
         <Menu.MenuItem
-          onClick={go('/game-room')}
+          onClick={go('/feedback-dashboard')}
           className="select-item text-sm"
-          aria-label="Game Room: the Game Parlor leaderboard — family standings, records, and latest results"
+          aria-label="Feedback and bug reports from your users (admin only)"
         >
-          <Dices className="icon-md" aria-hidden="true" />
-          Game Room
+          <MessageSquare className="icon-md" aria-hidden="true" />
+          Feedback &amp; Bug Reports
         </Menu.MenuItem>
-        <Menu.MenuItem
-          onClick={go('/matchmaker')}
-          className="select-item text-sm"
-          aria-label="The Matchmaker: five quick questions that match you with characters you'll get along with"
-        >
-          <HeartHandshake className="icon-md" aria-hidden="true" />
-          The Matchmaker
-        </Menu.MenuItem>
-        {!isChild && (
-          <Menu.MenuItem
-            onClick={go('/conversation-hall')}
-            className="select-item text-sm"
-            aria-label="Conversation Hall: the greatest hits people have shared from the Debate Room"
-          >
-            <Landmark className="icon-md" aria-hidden="true" />
-            Conversation Hall
-          </Menu.MenuItem>
-        )}
-        <Menu.MenuItem
-          onClick={go('/wall-of-fame')}
-          className="select-item text-sm"
-          aria-label="Wall of Fame: creations everyone has chosen to share"
-        >
-          <Trophy className="icon-md" aria-hidden="true" />
-          Wall of Fame
-        </Menu.MenuItem>
-        <Menu.MenuItem
-          onClick={go('/my-creations')}
-          className="select-item text-sm"
-          aria-label="My Creations: every video and image you've generated, with descriptions and downloads"
-        >
-          <Clapperboard className="icon-md" aria-hidden="true" />
-          My Creations
-        </Menu.MenuItem>
-        {/* Call History link RETIRED July 14 2026 — phone calls now MERGE into the
-            normal chat history (kadeCallMerge), read by the standard chat screen. The
-            /calls page + route stay served but unlinked; restore this MenuItem to bring
-            the standalone page back. */}
-        <Menu.MenuItem
-          onClick={go('/spotter')}
-          className="select-item text-sm"
-          aria-label="Your Spotter: name, voice, and personality for your personal live video companion"
-        >
-          <RadioTower className="icon-md" aria-hidden="true" />
-          Your Spotter
-        </Menu.MenuItem>
-        <Menu.MenuItem
-          onClick={go('/describe')}
-          className="select-item text-sm"
-          aria-label="Describe: share or pick any photo, video, PDF, or document and have it described or read aloud to you"
-        >
-          <ScanEye className="icon-md" aria-hidden="true" />
-          Describe a Photo or Document
-        </Menu.MenuItem>
-        <Menu.MenuItem
-          onClick={go('/transcribe')}
-          className="select-item text-sm"
-          aria-label="Transcribe a Voice Memo: upload an audio recording and get back clean written text you can copy or download"
-        >
-          <FileAudio className="icon-md" aria-hidden="true" />
-          Transcribe a Voice Memo
-        </Menu.MenuItem>
-        <Menu.MenuItem
-          onClick={go('/notifications')}
-          className="select-item text-sm"
-          aria-label="Notifications and Reminders: opt into birthday nudges and reminders, and choose whether they arrive in chat, as push notifications, or by phone call"
-        >
-          <BellRing className="icon-md" aria-hidden="true" />
-          Notifications &amp; Reminders
-        </Menu.MenuItem>
-        <Menu.MenuItem
-          onClick={go('/feed-the-server')}
-          className="select-item text-sm"
-          aria-label="Usage and Balance: see what you've used, what's left, and top up"
-        >
-          <Heart className="icon-md" aria-hidden="true" />
-          Usage &amp; Balance
-        </Menu.MenuItem>
-        {isAdmin && (
-          <Menu.MenuItem
-            onClick={go('/usage-dashboard')}
-            className="select-item text-sm"
-            aria-label="Usage dashboard (admin only)"
-          >
-            <Gauge className="icon-md" aria-hidden="true" />
-            Usage Dashboard
-          </Menu.MenuItem>
-        )}
-        {isAdmin && (
-          <Menu.MenuItem
-            onClick={go('/feedback-dashboard')}
-            className="select-item text-sm"
-            aria-label="Feedback and bug reports from your users (admin only)"
-          >
-            <MessageSquare className="icon-md" aria-hidden="true" />
-            Feedback &amp; Bug Reports
-          </Menu.MenuItem>
-        )}
-      </Menu.Menu>
-    </Menu.MenuProvider>
+      )}
+    </>
   );
 }
 
