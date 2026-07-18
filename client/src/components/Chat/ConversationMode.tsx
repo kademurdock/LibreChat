@@ -519,9 +519,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         setLiveMode(true);
         liveModeRef.current = true;
         const who = m.spotterName ? String(m.spotterName) : 'Your Spotter';
+        /* July 18 2026 (Kade: "the whole intro loop is spammy"): one short line.
+         * The how-to coaching lives in the one-time first-use notice only. */
         setVideoInfo(
-          `${who} is on the line${typeof m.minutesLeft === 'number' ? ` — about ${m.minutesLeft} live minutes left today` : ''}. ` +
-            'Continuous sight, instant replies. Say "live off" or tap the button to bring your character back.',
+          `${who} is on the line${typeof m.minutesLeft === 'number' ? ` — about ${m.minutesLeft} live minutes left today` : ''}.`,
         );
         // Live needs eyes: if no camera is running, start one WITHOUT arming
         // the snapshot lane (frames route to the live relay server-side).
@@ -1343,6 +1344,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       try {
         await streamingEngine.start({
           agentId,
+          spotterDirect: spotterAutoRef.current,
           ctx: getAudioCtx(),
           analyser: outputAnalyserRef.current,
           token,
@@ -1352,7 +1354,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
               // Spotter direct call: first moment the line is live, ask for them.
               if (st === 'listening' && spotterAutoRef.current) {
                 spotterAutoRef.current = false;
-                streamingEngine.sendJson({ type: 'live', on: true });
+                streamingEngine.sendJson({ type: 'live', on: true, direct: true });
               }
             },
             onUserCaption: (t) => {
@@ -1472,6 +1474,18 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
      * (and VoiceOver back to its full-quality output). getAudioCtx() resumes
      * it automatically the next time anything needs to play. */
     try { void audioCtxRef.current?.suspend(); } catch { /* ignore */ }
+    /* July 18 2026 (her report: the app doesn't ALWAYS release the audio
+     * session after a Spotter call): suspend() alone can lose a race — the
+     * hangup cue's own getAudioCtx() may resume the context right after this
+     * line, leaving iOS pinned in the call-style session. So ~1.5s later
+     * (receiver-down cue done) fully CLOSE the context and drop the refs.
+     * getAudioCtx() builds a fresh context the next time anything plays. */
+    setTimeout(() => {
+      if (callActiveRef.current) { return; } // a new call took over — leave audio alone
+      try { void audioCtxRef.current?.close(); } catch { /* ignore */ }
+      audioCtxRef.current = null;
+      outputAnalyserRef.current = null;
+    }, 1500);
     // Take the Live Activity banner down with the call.
     if (laActiveRef.current) {
       laActiveRef.current = false;
@@ -1670,7 +1684,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           first. Same enable rules as the phone button. */}
       <button
         onClick={() => { spotterAutoRef.current = true; void startCall(); }}
-        aria-label="Call your Spotter — starts a call and puts your personal live companion straight on the line"
+        aria-label="Call your Spotter"
         title={
           !mediaAvail ? 'Voice calls need a browser with microphone recording support'
           : agentId ? 'Call your Spotter (live mode)'
@@ -1903,7 +1917,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         {streamingRef.current && !liveMode && !liveNotice && (
           <button
             onClick={() => streamingEngine.sendJson({ type: 'live', on: true })}
-            aria-label="Call your Spotter — your personal live companion: continuous sight, instant back-and-forth, their own voice. Has its own small daily allowance. Design them under Explore, Your Spotter."
+            aria-label="Call your Spotter — continuous sight, their own voice"
             title="Your Spotter (live mode — continuous sight, their own voice)"
             className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white shadow-lg transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-emerald-400"
           >

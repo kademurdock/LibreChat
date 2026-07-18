@@ -37,6 +37,9 @@ export interface StreamingHandlers {
 
 export interface StreamingStartArgs {
   agentId?: string | null;
+  /** Direct Spotter call: tells the bridge to skip the character's greeting —
+   *  the Spotter opens the line themselves (July 18 2026). */
+  spotterDirect?: boolean;
   /** Unlocked playback AudioContext from ConversationMode (iOS gesture). */
   ctx: AudioContext;
   /** Existing output analyser (drives the orb pulse); already wired to destination. */
@@ -258,7 +261,7 @@ export default function useStreamingCall() {
     }
   }, [flushPlayback]);
 
-  const start = useCallback(async ({ agentId, ctx, analyser, token, handlers }: StreamingStartArgs) => {
+  const start = useCallback(async ({ agentId, spotterDirect, ctx, analyser, token, handlers }: StreamingStartArgs) => {
     if (activeRef.current) return;
     activeRef.current = true;
     endedFiredRef.current = false;
@@ -313,7 +316,7 @@ export default function useStreamingCall() {
       wsRef.current = ws;
       ws.binaryType = 'arraybuffer';
       ws.onopen = () => {
-        try { ws.send(JSON.stringify({ type: 'hello', ticket })); } catch { /* ignore */ }
+        try { ws.send(JSON.stringify({ type: 'hello', ticket, spotterDirect: spotterDirect === true })); } catch { /* ignore */ }
       };
       ws.onmessage = (ev: MessageEvent) => {
         if (ev.data instanceof ArrayBuffer) {
