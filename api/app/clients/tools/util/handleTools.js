@@ -29,6 +29,7 @@ const {
   FalAI,
   KadePhoneCall,
   KadeNotify,
+  KadeTranscribe,
   KadeWeather,
   KadeCode,
   KadeWikipedia,
@@ -194,6 +195,7 @@ const loadTools = async ({
     fal_studio: FalAI,
     kade_phone_call: KadePhoneCall,
     kade_notify: KadeNotify,
+    kade_transcribe: KadeTranscribe,
     kade_weather: KadeWeather,
     kade_code: KadeCode,
     kade_wikipedia: KadeWikipedia,
@@ -291,6 +293,9 @@ const loadTools = async ({
       userName: options.req?.user?.name || options.req?.user?.username,
       agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,
+    },
+    kade_transcribe: {
+      userId: user,
     },
     kade_notify: {
       req: options.req,

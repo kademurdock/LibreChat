@@ -16,6 +16,14 @@
     "authConfig": []
   },
   {
+    "name": "Voice Memo Transcriber",
+    "pluginKey": "kade_transcribe",
+    "description": "Turns an uploaded voice memo or audio recording into clean, formatted text. Attach the audio to the chat, then ask the agent to transcribe or summarize it. Free to use. There's also a standalone page at /transcribe.",
+    "icon": "assets/phone-call.svg",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Fal Studio (Video + Design)",
     "pluginKey": "fal_studio",
     "description": "Makes short AI video clips and polished design images (posters, cards, logos — the kind where the text comes out spelled right). Each video costs real money (roughly 50 cents to a dollar per short clip), design images a few cents. It can't edit videos you upload. Try: \"make a 5-second video of a corgi surfing.\"",
