@@ -118,6 +118,8 @@ const PAGE_HTML = `<!doctype html>
   #status { margin-top:16px; min-height:1.5em; font-weight:600; }
   textarea { width:100%; min-height:320px; margin-top:12px; background:#12151d; color:#e8eaf0; border:1px solid #3b4254; border-radius:10px; padding:12px; font-size:1rem; line-height:1.6; box-sizing:border-box; }
   .hint { color:#9aa3b5; font-size:.92rem; }
+  a.back { display:inline-block; margin:0 0 10px; font-weight:600; text-decoration:none; color:#7aa2ff; font-size:1rem; }
+  a.back:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   .orbar { text-align:center; color:#9aa3b5; margin:18px 0 4px; font-size:.85rem; text-transform:uppercase; letter-spacing:.08em; }
   #rec { width:100%; margin-top:6px; background:#c0392b; font-size:1.15rem; padding:16px; font-weight:700; }
   #rec.on { background:#e74c3c; }
@@ -125,6 +127,7 @@ const PAGE_HTML = `<!doctype html>
 </head>
 <body>
 <main>
+  <a class="back" href="/">&larr; Back to Kade-AI</a>
   <h1>Transcribe a voice memo</h1>
   <p class="hint">Upload an audio file (voice memo, mp3, m4a, wav — up to about two hours), or record yourself live. You get back clean, punctuated text you can copy or download. Free to use.</p>
   <div class="card">
