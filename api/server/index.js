@@ -40,6 +40,7 @@ const { capabilityContextMiddleware } = require('./middleware/roles/capabilities
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { startMemoryConsolidationSweep } = require('./services/Memory/consolidationSweep');
+const { startKadeNightlyRestart } = require('./services/kadeNightlyRestart');
 const { startNudgeSweep } = require('./services/kadeNudges');
 const { startMemorySummarySweep } = require('./services/kadeMemorySummarySweep');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
@@ -128,6 +129,7 @@ const startServer = async () => {
   initializeGitHubSkillSync(appConfig);
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   startMemoryConsolidationSweep({ appConfig, loadAppConfig: getAppConfig });
+  startKadeNightlyRestart();
   startNudgeSweep();
   startMemorySummarySweep(); // KADE DREAMING nightly episodic-summary sweep + decay
   await runAsSystem(async () => {

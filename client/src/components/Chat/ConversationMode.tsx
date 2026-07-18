@@ -33,6 +33,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Phone, PhoneOff, Mic, StopCircle, Camera, CameraOff, ScanEye, Radio, Flashlight, FlashlightOff, SwitchCamera } from 'lucide-react';
 import { useAuthContext } from '~/hooks';
@@ -249,6 +250,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const setVoiceCallActive = useSetRecoilState(store.voiceCallActiveState);
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const { token } = useAuthContext();
+  const navigate = useNavigate();
 
   const [open,       setOpen]       = useState(false);
   const [status,     setStatus]     = useState<CallStatus>('idle');
@@ -1476,6 +1478,41 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       try { Promise.resolve(kadeLiveActivityPlugin()?.end()).catch(() => {}); } catch { /* fail-soft */ }
     }
     playQueueRef.current = Promise.resolve();
+    /* KADE July 18 2026 (her ask): after hang-up, land in the CALL'S chat
+     * instead of whatever conversation happened to be open underneath. The
+     * streaming engine's transcript is minted into a real conversation
+     * server-side moments AFTER the socket closes, so poll the convo list a
+     * few times and jump to the newest conversation touched since the call
+     * began. Entirely fail-soft: no match, no fetch, no auth -> stay put. */
+    try {
+      const startedAtMs = callStartedRef.current ? Date.parse(callStartedRef.current) : 0;
+      if (startedAtMs > 0) {
+        const tryLand = (attempt: number) => {
+          fetch('/api/convos?pageNumber=1', {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            credentials: 'include',
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              const list = (data && (data.conversations ?? data)) as
+                | Array<{ conversationId?: string; updatedAt?: string }>
+                | null;
+              const newest = Array.isArray(list) ? list[0] : null;
+              if (
+                newest?.conversationId &&
+                newest.updatedAt &&
+                Date.parse(newest.updatedAt) >= startedAtMs
+              ) {
+                navigate(`/c/${newest.conversationId}`);
+              } else if (attempt < 3) {
+                setTimeout(() => tryLand(attempt + 1), 2500);
+              }
+            })
+            .catch(() => { /* stay put */ });
+        };
+        setTimeout(() => tryLand(1), 1800);
+      }
+    } catch { /* never block hang-up */ }
     setOpen(false);
     setStatus('idle');
     setTranscript('');
@@ -1484,7 +1521,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     setAvatarUrl('');
     conversationIdRef.current = null;
     parentMessageIdRef.current = NO_PARENT;
-  }, [teardownMic, setVoiceCallActive, agentId, token, playHangupSound, stopCamera]);
+  }, [teardownMic, setVoiceCallActive, agentId, token, playHangupSound, stopCamera, navigate]);
 
   // Stop AI mid-speech and hand the mic back immediately.
   // July 4 2026 rewrite: supersede the turn (monotonic id — no 150ms flag
