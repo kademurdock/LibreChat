@@ -39,14 +39,21 @@ import { Phone, PhoneOff, Mic, StopCircle, Camera, CameraOff, ScanEye, Radio, Fl
 import { useAuthContext } from '~/hooks';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
 import { cn } from '~/utils';
-import { stripVoiceTags } from '~/utils/voiceTags';
+import { stripVoiceTags, hideDanglingVoiceTag } from '~/utils/voiceTags';
 import { stripGameSoundTags, gameSoundSrcsIn, gameTableIdIn } from '~/utils/gameSounds';
 import { INVALID_CITATION_REGEX, CLEANUP_REGEX, LITERAL_NBSP_REGEX } from '~/utils/citations';
 
 /** July 13 2026 scrub audit: live captions also showed citation glyphs and
  * literal escape-text on web-search turns — captions are READ surfaces. */
 function scrubCaption(text: string): string {
-  return stripGameSoundTags(stripVoiceTags(text))
+  // aiText (this function's only caller) always accumulates a LIVE,
+  // still-streaming reply, never a finished/saved one -- so unlike
+  // Content/Parts/Text.tsx and MessageContent.tsx, hideDanglingVoiceTag
+  // applies unconditionally here rather than being gated on
+  // isSubmitting/isLatestMessage (July 19 2026, Kade: tags flashing in
+  // the web chat view -- captions are the other live surface with the
+  // same not-yet-closed-tag gap; see hideDanglingVoiceTag's own doc).
+  return hideDanglingVoiceTag(stripGameSoundTags(stripVoiceTags(text)))
     .replace(INVALID_CITATION_REGEX, '')
     .replace(CLEANUP_REGEX, '')
     .replace(LITERAL_NBSP_REGEX, ' ')

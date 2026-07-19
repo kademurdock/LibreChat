@@ -2,7 +2,7 @@ import { memo, useMemo, useEffect, ReactElement } from 'react';
 import { useRecoilValue } from 'recoil';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
-import { stripVoiceTags } from '~/utils/voiceTags';
+import { stripVoiceTags, hideDanglingVoiceTag } from '~/utils/voiceTags';
 import {
   stripGameSoundTags,
   stripDeepThinkTag,
@@ -33,12 +33,21 @@ const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: T
   // Assistant text can carry invisible TTS-2 voice performance tags (see
   // utils/voiceTags.ts) -- strip them here so they never reach the visible
   // chat bubble. User-authored text never contains them, so it's left alone.
-  const displayText = useMemo(
+  const displayText = useMemo(() => {
     // User text can carry the invisible per-message [DEEP THINK <ts>] marker
     // appended by the Deep Think button -- hide it from the bubble too.
-    () => (isCreatedByUser ? stripDeepThinkTag(text) : stripGameSoundTags(stripVoiceTags(text))),
-    [isCreatedByUser, text],
-  );
+    if (isCreatedByUser) {
+      return stripDeepThinkTag(text);
+    }
+    const stripped = stripGameSoundTags(stripVoiceTags(text));
+    // July 19 2026 (Kade: tags flashing in the web chat view): while THIS
+    // message is still actively streaming in, also hide a not-yet-closed
+    // "%%%" tag -- see hideDanglingVoiceTag's own doc for why. A finished
+    // message never takes this branch, so a genuinely unclosed tag in
+    // already-saved history still shows up raw rather than silently eating
+    // real text.
+    return isSubmitting && isLatestMessage ? hideDanglingVoiceTag(stripped) : stripped;
+  }, [isCreatedByUser, text, isSubmitting, isLatestMessage]);
 
   // Game Parlor sound cues: while THIS message is actively streaming, play
   // any completed [sound:x] tokens exactly once each (see utils/gameSounds).

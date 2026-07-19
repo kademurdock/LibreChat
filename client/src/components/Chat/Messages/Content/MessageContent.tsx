@@ -11,7 +11,7 @@ import Thinking from './Parts/Thinking';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
 import Markdown from './Markdown';
-import { stripVoiceTags } from '~/utils/voiceTags';
+import { stripVoiceTags, hideDanglingVoiceTag } from '~/utils/voiceTags';
 import { stripGameSoundTags, stripDeepThinkTag } from '~/utils/gameSounds';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -106,9 +106,17 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
     // Strip invisible control markers before display, matching Content/Parts/Text.tsx:
     // user text can carry the [DEEP THINK <ts>] marker from the Deep Think button;
     // assistant text can carry %%% voice tags and [sound:]/[table:] cues.
-    const displayText = isCreatedByUser
-      ? stripDeepThinkTag(text)
-      : stripGameSoundTags(stripVoiceTags(text));
+    let displayText: string;
+    if (isCreatedByUser) {
+      displayText = stripDeepThinkTag(text);
+    } else {
+      const stripped = stripGameSoundTags(stripVoiceTags(text));
+      // July 19 2026 (Kade: tags flashing in the web chat view): while
+      // still streaming, also hide a not-yet-closed "%%%" tag -- see
+      // hideDanglingVoiceTag's own doc (client/src/utils/voiceTags.ts) for
+      // why this never applies to a finished/saved message.
+      displayText = isSubmitting && isLatestMessage ? hideDanglingVoiceTag(stripped) : stripped;
+    }
     if (!isCreatedByUser) {
       return <Markdown content={displayText} isLatestMessage={isLatestMessage} />;
     }
@@ -116,7 +124,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
       return <MarkdownLite content={displayText} />;
     }
     return <>{displayText}</>;
-  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage]);
+  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage, isSubmitting]);
 
   return (
     <Container message={message}>

@@ -51,3 +51,35 @@ export function stripVoiceTags(text: string): string {
     // never mid-document, where blank lines are real paragraph breaks.
     .replace(/^\s+/, '');
 }
+
+/**
+ * Hides a NOT-YET-CLOSED "%%%" tag from a piece of text that is still
+ * actively streaming in -- a live assistant reply mid-generation, or a live
+ * Conversation Mode caption (July 19 2026, Kade: "the web chat view ... is
+ * showing the emotional expressive steering tags").
+ *
+ * Root cause: `stripVoiceTags` only removes a COMPLETE `%%%...%%%` pair. The
+ * model emits the opening delimiter and its direction text BEFORE the
+ * closing delimiter exists yet, so for the brief window while a reply is
+ * still typing in, the raw "%%%gentle, warm..." fragment has no match yet
+ * and flashes on screen -- then vanishes the instant the closing "%%%"
+ * arrives and `stripVoiceTags` can see the whole pair. Confirmed live: two
+ * real captured messages ("%%%gentle, warm but direct...%%%Which three...",
+ * "%%%laughing, warm%%%That was you, Kade...") both strip perfectly clean
+ * once complete -- the gap is specifically the in-flight/partial window,
+ * not the regex itself.
+ *
+ * Call this ONLY on text that is known to still be streaming (gate on
+ * `isSubmitting && isLatestMessage`, or an always-live surface like
+ * Conversation Mode's caption). Deliberately NOT applied to a
+ * finished/saved message: after `stripVoiceTags` has already removed every
+ * COMPLETE pair, anything left starting with "%%" in a message that is
+ * actually done streaming would mean a tag was truly never closed (a rare
+ * model mistake) -- showing that raw fragment is safer than silently
+ * swallowing whatever real text follows it, matching this app's existing
+ * "never silently hide a loading problem" stance elsewhere in the chat UI.
+ */
+export function hideDanglingVoiceTag(strippedText: string): string {
+  const danglingIndex = strippedText.indexOf('%%');
+  return danglingIndex === -1 ? strippedText : strippedText.slice(0, danglingIndex);
+}
