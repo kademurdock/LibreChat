@@ -50,6 +50,23 @@ router.get('/', requireJwtAuth, async (req, res) => {
       durationSec: d.durationSec || 0,
       turnCount: d.turnCount || (Array.isArray(d.turns) ? d.turns.length : 0),
       preview: preview(d.turns),
+      /* KADE July 19 2026 (session 14): "It doesn't drop you into your
+       * current voice conversation via text after the call. I'd like you to
+       * improve that if you can."
+       *
+       * The server has ALWAYS done the hard half of this -- ingest mints the
+       * finished transcript into a normal chat conversation
+       * (mintConversationFromTranscript) and stamps mergedConversationId back
+       * onto the transcript doc. But that id was never exposed on any read
+       * route, so a client had no way to find the conversation it had just
+       * caused to exist, short of guessing by title and timestamp against
+       * /api/convos. Surfacing it here (and on GET /:id below) is the whole
+       * server-side cost of the native app's post-call handoff.
+       *
+       * Null while the mint is still in flight -- ingest fires it fail-soft
+       * and asynchronously -- so a client polls this until it turns up rather
+       * than treating the first null as "there isn't one." */
+      mergedConversationId: d.mergedConversationId ? String(d.mergedConversationId) : null,
     }));
     res.json({ calls });
   } catch (err) {
@@ -76,6 +93,9 @@ router.get('/:id', requireJwtAuth, async (req, res) => {
       endedAt: doc.endedAt || null,
       durationSec: doc.durationSec || 0,
       turnCount: doc.turnCount || (Array.isArray(doc.turns) ? doc.turns.length : 0),
+      /* See the list route above: the id of the chat conversation this call
+       * was minted into, or null while that is still in flight. */
+      mergedConversationId: doc.mergedConversationId ? String(doc.mergedConversationId) : null,
       turns: (doc.turns || []).map((t) => ({ role: t.role, text: t.text, at: t.at })),
     });
   } catch (err) {
