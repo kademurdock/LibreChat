@@ -80,6 +80,24 @@ export function stripVoiceTags(text: string): string {
  * "never silently hide a loading problem" stance elsewhere in the chat UI.
  */
 export function hideDanglingVoiceTag(strippedText: string): string {
-  const danglingIndex = strippedText.indexOf('%%');
-  return danglingIndex === -1 ? strippedText : strippedText.slice(0, danglingIndex);
+  // Two distinct things to hide, and only these two:
+  //  1. A COMPLETE opener that has no closer yet. stripVoiceTags already
+  //     removed every complete %%%...%%% pair, so any "%%%" still present is
+  //     by definition an opener whose closer hasn't streamed in yet.
+  //  2. A PARTIAL opener still mid-arrival at the very end of the text --
+  //     "%" or "%%" that is about to become "%%%" on the next token.
+  // Refined July 19 2026 (self-audit): this originally cut at the first "%%"
+  // anywhere, which also truncated a literal double-percent in ordinary prose
+  // ("I am 100%% sure about that." rendered as "I am 100" while streaming).
+  // That was transient -- the gate is streaming-only, so the full text came
+  // back the moment the message finished -- but it was still real text
+  // disappearing mid-stream for no good reason. Anchoring case 2 to the end
+  // of the string fixes it: a "%%" with more text after it cannot be an
+  // in-progress opener, because the rest of the token already arrived.
+  const openerIndex = strippedText.indexOf('%%%');
+  if (openerIndex !== -1) {
+    return strippedText.slice(0, openerIndex);
+  }
+  const partial = /%{1,2}$/.exec(strippedText);
+  return partial ? strippedText.slice(0, partial.index) : strippedText;
 }
