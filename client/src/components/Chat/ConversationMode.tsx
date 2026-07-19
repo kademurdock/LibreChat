@@ -75,6 +75,21 @@ import store from '~/store';
 
 // Bigger synth units = better prosody (context batching, July 4 2026).
 const TTS_CHUNK_TARGET = 320;
+// Minimum size for the FIRST synth unit (July 19 2026, Kade: "she'll be like,
+// Hey Kadie, three second pause, then speak the rest... I almost think that
+// first chunk might need to be longer"). Sentence 1 used to ship alone no
+// matter how short, for fast first audio -- but a greeting like "Hey Keighty,"
+// is under a second of speech, and it finishes playing well before chunk 2
+// (which accumulates to TTS_CHUNK_TARGET before it even starts synthesizing)
+// is ready. The result is exactly the gap she described: fast first word,
+// then dead air. A floor keeps the fast-start behavior for any first sentence
+// that's already substantial, and otherwise glues on following sentences until
+// there's enough audio to cover the next chunk's stream+synth time. ~100 chars
+// is roughly 6 seconds of speech, comfortably more than the ~3-4s chunk 2
+// needs, while costing only a fraction of a second of extra initial latency.
+// End-of-stream still force-flushes (streamer.end() then flushChunk()), so a
+// genuinely short one-line reply is never held back waiting to reach this.
+const TTS_FIRST_CHUNK_MIN = 100;
 
 // -- SentenceStreamer ----------------------------------------------------------
 // Port of the phase4 POC sentence splitter. Buffers streaming tokens and emits
@@ -950,13 +965,27 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     };
     streamer.onsentence = (sentence) => {
       if (superseded()) return;
-      if (!firstShipped) { firstShipped = true; processUnit(sentence); return; }
-      if (sentence.indexOf('[sound:') !== -1 || sentence.indexOf('[table:') !== -1) {
+      const isCue = sentence.indexOf('[sound:') !== -1 || sentence.indexOf('[table:') !== -1;
+      const isTag = /^\s*%%%/.test(sentence);
+      if (!firstShipped) {
+        // Plain opening sentence: accumulate until TTS_FIRST_CHUNK_MIN so the
+        // first unit is long enough to cover chunk 2's stream+synth time.
+        if (!isCue && !isTag) {
+          chunkBuf = chunkBuf ? `${chunkBuf} ${sentence}` : sentence;
+          if (chunkBuf.length >= TTS_FIRST_CHUNK_MIN) { firstShipped = true; flushChunk(); }
+          return;
+        }
+        // A cue or a leading direction tag keeps its original solo handling
+        // below -- those have ordering/prosody meaning that batching would
+        // break, and they were never the source of the dead-air gap.
+        firstShipped = true;
+      }
+      if (isCue) {
         flushChunk();
         processUnit(sentence);
         return;
       }
-      if (/^\s*%%%/.test(sentence)) {
+      if (isTag) {
         flushChunk();
         chunkBuf = sentence;
         return;
