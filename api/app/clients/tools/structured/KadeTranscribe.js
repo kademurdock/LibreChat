@@ -58,7 +58,15 @@ class KadeTranscribe extends Tool {
       }
       const buf = Buffer.concat(chunks);
       const { transcribeBuffer } = require('~/server/routes/kadeTranscribe');
-      const out = await transcribeBuffer(buf, String(file.type || ''));
+      // Kade July 20 2026: same per-user pronunciation dictionary the
+      // /transcribe page now uses, applied as Deepgram keyterms here too --
+      // best-effort, never blocks transcription if the lookup fails.
+      let keyterms = [];
+      try {
+        const { getUserDictionary } = require('~/models/kadePronunciation');
+        keyterms = (await getUserDictionary(this.userId)).map((e) => e.term).filter(Boolean);
+      } catch { /* keyterms stay empty */ }
+      const out = await transcribeBuffer(buf, String(file.type || ''), keyterms);
       const mins = Math.max(1, Math.round(out.seconds / 60));
       let text = out.transcript;
       let clipped = '';

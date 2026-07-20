@@ -17,6 +17,21 @@ function parseKadeTtsSpeed(raw) {
 }
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { getAppConfig } = require('~/server/services/Config');
+const { getUserDictionary, applyPronunciationRespellings } = require('~/models/kadePronunciation');
+
+/** Best-effort dictionary fetch -- TTS must never break because this lookup
+ * failed (bad userId, DB hiccup, whatever). Empty list is a safe no-op for
+ * applyPronunciationRespellings. */
+async function safeGetDictionary(userId) {
+  if (!userId) {
+    return [];
+  }
+  try {
+    return await getUserDictionary(userId);
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Service class for handling Text-to-Speech (TTS) operations.
@@ -330,12 +345,18 @@ class TTSService {
    * @returns {Promise<void>}
    */
   async processTextToSpeech(req, res) {
-    const { input, voice: requestVoice } = req.body;
+    const { input: rawInput, voice: requestVoice } = req.body;
     const speed = parseKadeTtsSpeed(req.body.speed); // Kade D2d
 
-    if (!input) {
+    if (!rawInput) {
       return res.status(400).send('Missing text in request body');
     }
+    // Kade July 20 2026: respell before anything else touches `input` so
+    // BOTH branches below (short direct call, long chunked loop) already
+    // get the speakable version -- see kadePronunciation.js for why this is
+    // a text substitution rather than a provider-side phoneme hint.
+    const dictionary = await safeGetDictionary(req.user && req.user.id);
+    const input = applyPronunciationRespellings(rawInput, dictionary);
 
     // [KadeUsage] log TTS characters (best-effort, never throws)
     logKadeUsage({
@@ -428,6 +449,8 @@ class TTSService {
     const ttsSchema = appConfig?.speech?.tts?.[provider];
     const voice = await this.getVoice(ttsSchema, req.body.voice, provider);
     const speed = parseKadeTtsSpeed(req.body.speed); // Kade D2d
+    // Kade July 20 2026: fetched once per stream, applied per chunk below.
+    const dictionary = await safeGetDictionary(req.user && req.user.id);
 
     let shouldContinue = true;
 
@@ -456,7 +479,7 @@ class TTSService {
           try {
             const response = await this.ttsRequest(provider, ttsSchema, {
               voice,
-              input: update.text,
+              input: applyPronunciationRespellings(update.text, dictionary),
               stream: true,
               speed,
             });

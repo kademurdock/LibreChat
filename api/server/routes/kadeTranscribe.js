@@ -18,15 +18,41 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
+const { getUserDictionary } = require('~/models/kadePronunciation');
 
 const router = express.Router();
 
 const MAX_UPLOAD = '150mb';
 const DG_URL = 'https://api.deepgram.com/v1/listen';
 
-function dgParams() {
+// Kade July 20 2026: same keyterm mechanism voice-stream.js uses for phone/
+// web calls (Deepgram nova-3 + Flux, GA feature) -- biases recognition
+// toward each name/word's correct SPELLING. `keyterms` is a plain array of
+// strings; repeated `&keyterm=` params, never comma-joined (Deepgram's own
+// syntax, not this codebase's convention).
+function dgParams(keyterms) {
   const model = process.env.KADE_DG_MODEL || 'nova-3';
-  return `model=${encodeURIComponent(model)}&smart_format=true&punctuate=true&paragraphs=true&diarize=true`;
+  let qs = `model=${encodeURIComponent(model)}&smart_format=true&punctuate=true&paragraphs=true&diarize=true`;
+  for (const term of keyterms || []) {
+    const t = String(term || '').trim();
+    if (t) {
+      qs += `&keyterm=${encodeURIComponent(t)}`;
+    }
+  }
+  return qs;
+}
+
+/** Best-effort: a failed dictionary lookup should never break transcription. */
+async function safeGetDictionaryTerms(userId) {
+  if (!userId) {
+    return [];
+  }
+  try {
+    const entries = await getUserDictionary(userId);
+    return entries.map((e) => e.term).filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 /** Turn a Deepgram response into readable text. Speaker labels only when the
@@ -52,7 +78,7 @@ function formatTranscript(dg) {
 }
 
 /** Shared with the kade_transcribe agent tool. */
-async function transcribeBuffer(buf, contentType) {
+async function transcribeBuffer(buf, contentType, keyterms) {
   const key = process.env.DEEPGRAM_API_KEY;
   if (!key) {
     throw new Error('Transcription is not configured on the server (no Deepgram key).');
@@ -60,7 +86,7 @@ async function transcribeBuffer(buf, contentType) {
   if (!buf || !buf.length) {
     throw new Error('No audio received.');
   }
-  const resp = await fetch(`${DG_URL}?${dgParams()}`, {
+  const resp = await fetch(`${DG_URL}?${dgParams(keyterms)}`, {
     method: 'POST',
     headers: {
       Authorization: `Token ${key}`,
@@ -87,7 +113,8 @@ router.post(
   express.raw({ type: () => true, limit: MAX_UPLOAD }),
   async (req, res) => {
     try {
-      const out = await transcribeBuffer(req.body, req.get('content-type') || '');
+      const keyterms = await safeGetDictionaryTerms(req.user && req.user.id);
+      const out = await transcribeBuffer(req.body, req.get('content-type') || '', keyterms);
       logger.info(`[kadeTranscribe] ${req.user?.email || req.user?.id}: ${out.seconds}s transcribed`);
       return res.json(out);
     } catch (e) {

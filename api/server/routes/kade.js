@@ -1295,6 +1295,78 @@ router.post('/voice-pref-ingest', async (req, res) => {
   }
 });
 
+/* ----------------------------------------------------------------------------
+ * PER-USER PRONUNCIATION DICTIONARY (July 20 2026): "I know my name Kade is
+ * pronounced Katie. What if everyone had a dictionary they can put their own
+ * names in?" User-facing CRUD here; STT (Deepgram keyterms, both the call
+ * path and /api/kade/transcribe) and TTS (voice-message read-aloud, phone/
+ * Spotter call speech) each consume the same list differently -- see
+ * kadePronunciation.js's file header for the term-vs-pronunciation split.
+ * -------------------------------------------------------------------------- */
+const {
+  getUserDictionary,
+  setUserDictionaryEntry,
+  deleteUserDictionaryEntry,
+} = require('~/models/kadePronunciation');
+
+router.get('/pronunciation-dictionary', requireJwtAuth, async (req, res) => {
+  try {
+    return res.json({ entries: await getUserDictionary(req.user.id) });
+  } catch (e) {
+    logger.error('[kade/pronunciation-dictionary] get failed:', e);
+    return res.status(500).json({ error: 'Could not load your pronunciation dictionary' });
+  }
+});
+
+router.post('/pronunciation-dictionary', requireJwtAuth, async (req, res) => {
+  try {
+    const { term, pronunciation } = req.body || {};
+    const entry = await setUserDictionaryEntry(req.user.id, term, pronunciation);
+    return res.json({ entry });
+  } catch (e) {
+    logger.warn('[kade/pronunciation-dictionary] set failed:', e && e.message);
+    return res.status(400).json({ error: e.message || 'Could not save that entry' });
+  }
+});
+
+router.delete('/pronunciation-dictionary/:id', requireJwtAuth, async (req, res) => {
+  try {
+    await deleteUserDictionaryEntry(req.user.id, req.params.id);
+    return res.json({ ok: true });
+  } catch (e) {
+    logger.error('[kade/pronunciation-dictionary] delete failed:', e);
+    return res.status(500).json({ error: 'Could not remove that entry' });
+  }
+});
+
+/* ----------------------------------------------------------------------------
+ * PHONE-LINE / SPOTTER PRONUNCIATION LOOKUP (July 20 2026): secret-guarded
+ * server-to-server read so the BRIDGE can pull a caller's dictionary the same
+ * way it already pulls their voice pick -- resolved by userId, email, or the
+ * phone number on their Notifications prefs. Same trust model as
+ * /voice-pref-lookup and /usage-event.
+ * -------------------------------------------------------------------------- */
+router.get('/pronunciation-lookup', async (req, res) => {
+  try {
+    const expected = process.env.KADE_USAGE_EVENT_SECRET;
+    if (!expected || (req.get('x-kade-secret') || req.query.secret) !== expected) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const uid = await resolveUserForVoice({
+      userId: req.query.userId,
+      email: req.query.email,
+      phone: req.query.phone,
+    });
+    if (!uid) {
+      return res.json({ entries: [], userId: null });
+    }
+    return res.json({ entries: await getUserDictionary(uid), userId: uid });
+  } catch (e) {
+    logger.error('[kade/pronunciation-lookup] failed:', e);
+    return res.status(500).json({ error: 'lookup failed' });
+  }
+});
+
 /**
  * SERVICE: GET /api/kade/call-memories — the CALLER'S own memory cards for
  * phone calls (July 12 2026, Kade: "phone agents seem way more clueless than
