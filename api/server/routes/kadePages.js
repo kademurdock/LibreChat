@@ -1511,13 +1511,18 @@ const pronunciationDictionaryHtml = `<!doctype html><html lang="en"><head><title
     var saveBtn=document.getElementById('saveBtn');
     saveBtn.disabled=true; saveBtn.textContent='Saving…';
     try{
-      var data=await apiPost('/api/kade/pronunciation-dictionary', {term:term, pronunciation:pron});
-      var savedId=data.entry && data.entry.id;
-      var idx=entries.findIndex(function(x){ return x.id===savedId || x.term===term; });
-      if(idx>=0) entries[idx]=data.entry; else entries.push(data.entry);
-      renderList();
+      // POST's own response is just {entry:{term,pronunciation}} -- no id
+      // (confirmed live: the id only comes back from GET, a real Mongo
+      // _id assigned server-side). Re-fetching the canonical list rather
+      // than trying to patch local state from this response is what
+      // PronunciationDictionaryService.swift's saveEntry() already does
+      // natively for the exact same reason -- matching that here rather
+      // than pushing a locally-built object that would be missing the id
+      // its own Delete/Change buttons need.
+      await apiPost('/api/kade/pronunciation-dictionary', {term:term, pronunciation:pron});
       setStatus('Saved "'+term+'".');
       resetForm();
+      await load();
     }catch(err){
       setStatus(err && err.message ? err.message : 'Could not save that entry — try again.', true);
     }
