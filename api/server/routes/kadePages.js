@@ -164,7 +164,7 @@ const SHARED_HEAD = `
       if (path.length > 1 && path.charAt(path.length-1) === '/') path = path.slice(0, -1);
       if (!path) path = '/';
       var toolPages = ['/tools','/describe','/transcribe','/spotter','/debate-room','/conversation-hall','/game-room','/matchmaker','/wall-of-fame','/my-creations','/calls'];
-      var youPages = ['/you','/feed-the-server','/usage-dashboard','/feedback-dashboard'];
+      var youPages = ['/you','/feed-the-server','/usage-dashboard','/feedback-dashboard','/pronunciation-dictionary'];
       var active = 'chats';
       if (path === '/notifications') active = 'alerts';
       else if (youPages.indexOf(path) !== -1) active = 'you';
@@ -1369,12 +1369,169 @@ const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</ti
 <nav class="hublist" aria-label="Your account">
   <a class="hubitem" href="/feed-the-server"><span class="hicon" aria-hidden="true">💳</span><span><strong>Usage &amp; Balance</strong><small>See what you have used, what is left, and top up</small></span></a>
   <a class="hubitem" href="/notifications"><span class="hicon" aria-hidden="true">🔔</span><span><strong>Notifications &amp; Reminders</strong><small>Birthday nudges and reminders — in chat, push, or by phone</small></span></a>
+  <a class="hubitem" href="/pronunciation-dictionary"><span class="hicon" aria-hidden="true">🗣️</span><span><strong>Pronunciation Dictionary</strong><small>Teach Kade-AI how to say names or words you use</small></span></a>
   <a class="hubitem" href="/help"><span class="hicon" aria-hidden="true">❓</span><span><strong>Help &amp; FAQ</strong><small>How everything works</small></span></a>
 </nav>
 <p class="muted" style="margin-top:1.25rem">Settings, your files, and signing out live in the account menu — tap your picture at the top of the chat screen.</p>
 <footer class="muted">— Kade-AI</footer>
 </body></html>`;
 
+
+const pronunciationDictionaryHtml = `<!doctype html><html lang="en"><head><title>Pronunciation Dictionary — Kade-AI</title>${SHARED_HEAD}
+<style>
+  .dict-row { display:flex; align-items:center; justify-content:space-between; gap:.75rem; padding:.75rem 0; border-bottom:1px solid #e3e6ea; flex-wrap:wrap; }
+  @media (prefers-color-scheme: dark){ .dict-row{ border-color:#2c2f37; } }
+  .dict-row:last-child { border-bottom:0; }
+  .dict-term { font-weight:700; }
+  .dict-pron { opacity:.8; }
+  button.small { font-size:1rem; padding:.6rem 1.1rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; cursor:pointer; }
+  @media (prefers-color-scheme: dark){ button.small{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
+  button.small:focus-visible { outline:4px solid #ffbf47; outline-offset:2px; }
+  button.danger { border-color:#c0392b; color:#c0392b; }
+  @media (prefers-color-scheme: dark){ button.danger{ color:#ff8f80; border-color:#7a2c22; } }
+  form.addform label { display:block; font-weight:600; margin:.6rem 0 .3rem; }
+  form.addform input[type=text] { width:100%; font-size:1rem; padding:.6rem .7rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; }
+  @media (prefers-color-scheme: dark){ form.addform input[type=text]{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
+  form.addform input:focus-visible { outline:4px solid #ffbf47; outline-offset:2px; }
+  .pickbtn { display:inline-block; font-size:1.1rem; font-weight:700; padding:.9rem 1.6rem; border-radius:12px; border:0;
+    background:#2f8f5b; color:#fff; cursor:pointer; }
+  .pickbtn:focus-visible { outline:4px solid #ffbf47; outline-offset:3px; }
+</style>
+</head><body>
+<a class="back" href="/you">&larr; Back</a>
+<h1>Pronunciation Dictionary</h1>
+<p class="muted">A name or word Kade-AI mishears or says wrong? Add it once, spelled the way it sounds, and it is used everywhere: recognizing your voice on calls and in Transcribe, and reading it back correctly in voice messages and Spotter calls.</p>
+<div id="status" class="status" role="status" aria-live="polite">Loading your dictionary&hellip;</div>
+<section id="listSec" class="card" aria-label="Your words" style="display:none;">
+  <h2>Your words</h2>
+  <div id="list"></div>
+</section>
+<section class="card" aria-label="Add a word">
+  <h2 id="formTitle">Add a word</h2>
+  <form class="addform" id="addForm">
+    <label for="term">Word, as it is normally spelled</label>
+    <input type="text" id="term" name="term" autocomplete="off" required>
+    <label for="pron">Respelling, for how it should sound</label>
+    <input type="text" id="pron" name="pron" autocomplete="off" required placeholder="for example, Katie">
+    <div style="margin-top:1rem;">
+      <button class="pickbtn" type="submit" id="saveBtn">Save</button>
+      <button class="small" type="button" id="cancelBtn" style="display:none; margin-left:.6rem;">Cancel</button>
+    </div>
+  </form>
+</section>
+<footer class="muted">— Kade-AI</footer>
+<script>
+(function(){
+  var TOKEN=null, entries=[], editingId=null;
+  var statusEl=document.getElementById('status');
+  function setStatus(t,isErr){ statusEl.textContent=t; statusEl.className='status'+(isErr?' err':''); }
+  async function getToken(){ try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include'}); if(!r.ok) return null; var j=await r.json(); return j&&j.token||null; }catch(e){ return null; } }
+  async function apiGet(p){ var r=await fetch(p,{headers:{Authorization:'Bearer '+TOKEN}}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+  async function apiPost(p,body){
+    var r=await fetch(p,{method:'POST',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+    if(!r.ok){ var t=await r.text(); var msg=t; try{ msg=JSON.parse(t).error||t; }catch(e){} throw new Error(msg); }
+    return r.json();
+  }
+  async function apiDelete(p){ var r=await fetch(p,{method:'DELETE',headers:{Authorization:'Bearer '+TOKEN}}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+
+  function renderList(){
+    var listSec=document.getElementById('listSec'), list=document.getElementById('list');
+    list.innerHTML='';
+    if(!entries.length){ listSec.style.display='none'; return; }
+    listSec.style.display='';
+    entries.forEach(function(e){
+      var row=document.createElement('div');
+      row.className='dict-row';
+      var text=document.createElement('div');
+      var term=document.createElement('div'); term.className='dict-term'; term.textContent=e.term;
+      var pron=document.createElement('div'); pron.className='dict-pron'; pron.textContent='sounds like: '+e.pronunciation;
+      text.appendChild(term); text.appendChild(pron);
+      var actions=document.createElement('div');
+      var editBtn=document.createElement('button'); editBtn.type='button'; editBtn.className='small'; editBtn.textContent='Change';
+      editBtn.setAttribute('aria-label','Change pronunciation for '+e.term);
+      editBtn.addEventListener('click', function(){ startEdit(e); });
+      var delBtn=document.createElement('button'); delBtn.type='button'; delBtn.className='small danger'; delBtn.textContent='Delete'; delBtn.style.marginLeft='.5rem';
+      delBtn.setAttribute('aria-label','Delete '+e.term+' from your dictionary');
+      delBtn.addEventListener('click', function(){ removeEntry(e); });
+      actions.appendChild(editBtn); actions.appendChild(delBtn);
+      row.appendChild(text); row.appendChild(actions);
+      list.appendChild(row);
+    });
+  }
+
+  function startEdit(e){
+    editingId=e.id;
+    document.getElementById('formTitle').textContent='Change pronunciation for "'+e.term+'"';
+    var termInput=document.getElementById('term');
+    termInput.value=e.term;
+    termInput.disabled=true;
+    document.getElementById('pron').value=e.pronunciation;
+    document.getElementById('cancelBtn').style.display='';
+    document.getElementById('pron').focus();
+  }
+
+  function resetForm(){
+    editingId=null;
+    document.getElementById('formTitle').textContent='Add a word';
+    var termInput=document.getElementById('term');
+    termInput.disabled=false;
+    document.getElementById('addForm').reset();
+    document.getElementById('cancelBtn').style.display='none';
+  }
+
+  async function removeEntry(e){
+    if(!confirm('Remove "'+e.term+'" from your dictionary?')) return;
+    try{
+      await apiDelete('/api/kade/pronunciation-dictionary/'+encodeURIComponent(e.id));
+      entries=entries.filter(function(x){ return x.id!==e.id; });
+      renderList();
+      setStatus('Removed "'+e.term+'".');
+    }catch(err){
+      setStatus('Could not remove that entry — try again.', true);
+    }
+  }
+
+  async function load(){
+    try{
+      var data=await apiGet('/api/kade/pronunciation-dictionary');
+      entries=data.entries||[];
+      renderList();
+      setStatus(entries.length ? ('You have '+entries.length+' word'+(entries.length===1?'':'s')+' in your dictionary.') : 'No words yet — add your first one below.');
+    }catch(err){
+      setStatus('Could not load your pronunciation dictionary — try again in a moment.', true);
+    }
+  }
+
+  document.getElementById('cancelBtn').addEventListener('click', resetForm);
+  document.getElementById('addForm').addEventListener('submit', async function(ev){
+    ev.preventDefault();
+    var term=document.getElementById('term').value.trim();
+    var pron=document.getElementById('pron').value.trim();
+    if(!term || !pron) return;
+    var saveBtn=document.getElementById('saveBtn');
+    saveBtn.disabled=true; saveBtn.textContent='Saving…';
+    try{
+      var data=await apiPost('/api/kade/pronunciation-dictionary', {term:term, pronunciation:pron});
+      var savedId=data.entry && data.entry.id;
+      var idx=entries.findIndex(function(x){ return x.id===savedId || x.term===term; });
+      if(idx>=0) entries[idx]=data.entry; else entries.push(data.entry);
+      renderList();
+      setStatus('Saved "'+term+'".');
+      resetForm();
+    }catch(err){
+      setStatus(err && err.message ? err.message : 'Could not save that entry — try again.', true);
+    }
+    saveBtn.disabled=false; saveBtn.textContent='Save';
+  });
+
+  (async function init(){
+    TOKEN=await getToken();
+    if(!TOKEN){ setStatus('Sign in to Kade-AI (open the app and log in), then come back to this page.', true); return; }
+    await load();
+  })();
+})();
+</script>
+</body></html>`;
 
 const tabBarAsset = `(function(){
   if (window.__kadeTabsLoaded) return; window.__kadeTabsLoaded = true;
@@ -1384,7 +1541,7 @@ const tabBarAsset = `(function(){
     var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
     var path = location.pathname; if (path.length > 1 && path.charAt(path.length-1) === '/') path = path.slice(0,-1); if (!path) path = '/';
     var toolPages = ['/tools','/describe','/transcribe','/spotter','/debate-room','/conversation-hall','/game-room','/matchmaker','/wall-of-fame','/my-creations','/calls'];
-    var youPages = ['/you','/feed-the-server','/usage-dashboard','/feedback-dashboard'];
+    var youPages = ['/you','/feed-the-server','/usage-dashboard','/feedback-dashboard','/pronunciation-dictionary'];
     var active = 'chats';
     if (path === '/notifications') active = 'alerts';
     else if (youPages.indexOf(path) !== -1) active = 'you';
@@ -1400,5 +1557,5 @@ const tabBarAsset = `(function(){
 })();
 `;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, tabBarAsset };
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, tabBarAsset };
 

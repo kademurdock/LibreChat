@@ -316,6 +316,7 @@ const startServer = async () => {
   app.get('/wall-of-fame', routes.kade.wallPage);
   app.get('/tools', routes.kade.toolsPage);
   app.get('/you', routes.kade.youPage);
+  app.get('/pronunciation-dictionary', routes.kade.pronunciationDictionaryPage);
   app.get('/kade-tabbar.js', routes.kade.tabBarAssetPage);
   app.get('/debate-room', routes.kadeRoom.page);
   app.get('/conversation-hall', routes.kadeRoom.hallPage);

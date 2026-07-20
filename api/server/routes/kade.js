@@ -762,6 +762,12 @@ const FEEDBACK_HTML = require('./kadePages').feedbackHtml;
 const TOOLS_HTML = require('./kadePages').toolsHtml;
 const YOU_HTML = require('./kadePages').youHtml;
 const TABBAR_JS = require('./kadePages').tabBarAsset;
+// Session 17/18 (Kade: "If you wanna add a webpage that's fine too" --
+// re: the pronunciation dictionary). Permissive web parity for the same
+// CRUD the native PronunciationDictionaryView already covers -- both hit
+// the exact same /pronunciation-dictionary JSON API a few hundred lines
+// down in this file.
+const PRONUNCIATION_DICTIONARY_HTML = require('./kadePages').pronunciationDictionaryHtml;
 const sendHtml = (html) => (req, res) => res.type('html').send(html);
 
 // ---------------------------------------------------------------------------
@@ -1444,6 +1450,7 @@ router.feedbackPage = sendHtml(FEEDBACK_HTML);
 router.notificationsPage = sendHtml(NOTIFICATIONS_HTML);
 router.toolsPage = sendHtml(TOOLS_HTML);
 router.youPage = sendHtml(YOU_HTML);
+router.pronunciationDictionaryPage = sendHtml(PRONUNCIATION_DICTIONARY_HTML);
 router.tabBarAssetPage = (req, res) => res.type('application/javascript').send(TABBAR_JS);
 // Also reachable under the API namespace:
 router.get('/feed', router.feedPage);
