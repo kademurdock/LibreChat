@@ -19,6 +19,12 @@ const turnSchema = new mongoose.Schema(
     role: { type: String, enum: ['user', 'assistant', 'system'], default: 'assistant' },
     text: { type: String, default: '' },
     at: { type: Date },
+    // Per-turn speaker attribution (July 2026). When a Spotter takes over a
+    // call, its spoken turns carry the Spotter's OWN name here so the minted
+    // transcript credits them to the Spotter, not the base agent the call
+    // started on. Absent on ordinary turns, which fall back to the call's
+    // top-level agentName.
+    agentName: { type: String },
   },
   { _id: false },
 );
@@ -93,7 +99,11 @@ function normalizeTurns(turns) {
       continue;
     }
     const at = t.at ? new Date(t.at) : undefined;
-    out.push({ role, text: text.slice(0, 8000), at });
+    const agentName =
+      typeof t.agentName === 'string' && t.agentName.trim()
+        ? t.agentName.trim().slice(0, 80)
+        : undefined;
+    out.push({ role, text: text.slice(0, 8000), at, agentName });
   }
   return out.slice(0, 400); // hard cap so one call can never balloon a document
 }

@@ -70,7 +70,11 @@ async function mintConversationFromTranscript(doc, opts = {}) {
           messageId,
           conversationId,
           parentMessageId: parent,
-          sender: isUser ? callerLabel : agentName,
+          // Per-turn attribution (July 2026): a Spotter turn carries its own
+          // agentName so it's credited to the Spotter (e.g. Whitney) rather
+          // than the base agent the call started on (e.g. Kiana). Ordinary
+          // turns have no per-turn agentName and fall back to the call's.
+          sender: isUser ? callerLabel : (t.agentName || agentName),
           text: String(t.text || ''),
           isCreatedByUser: isUser,
           user: userId,
