@@ -753,6 +753,26 @@ router.post('/feedback/:id/status', requireJwtAuth, requireAdminAccess, async (r
 });
 
 const FEED_HTML = require('./kadePages').feedHtml;
+/** ADMIN: GET /api/kade/usage-by-model — LLM spend grouped by model, all-time.
+ * Same conversion as /usage (abs(sum(tokenValue))/1e6). Answers "which model
+ * cost the most." */
+router.get('/usage-by-model', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const { Transaction } = models();
+    const agg = await Transaction.aggregate([
+      { $group: { _id: '$model', spend: { $sum: '$tokenValue' }, txns: { $sum: 1 } } },
+    ]);
+    const rows = agg
+      .map((r) => ({ model: r._id || '(unknown)', spendUSD: round(Math.abs(usd(r.spend))), txns: r.txns }))
+      .filter((r) => r.spendUSD > 0.0001)
+      .sort((a, b) => b.spendUSD - a.spendUSD);
+    res.json({ models: rows });
+  } catch (e) {
+    logger.error('[kade/usage-by-model]', e);
+    res.status(500).json({ error: 'usage-by-model failed' });
+  }
+});
+
 /* ============================================================================
  * ADMIN LOGS VIEWER (session 21h, Kade: "put a logs link in my admin dashboard
  * ... by user, then the users' conversations ... so if someone says my chatbot
