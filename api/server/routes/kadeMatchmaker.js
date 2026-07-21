@@ -134,19 +134,19 @@ const MATCH_HTML = `<!doctype html>
   h1 { font-size: 1.7rem; margin: 0 0 .2rem; }
   h2 { font-size: 1.2rem; }
   .muted { opacity: .75; }
-  a.back { display:inline-block; margin:0 0 .5rem; font-weight:600; text-decoration:none; color:#2f6fed; }
+  a.back { display:inline-block; margin:0 0 .5rem; font-weight:600; text-decoration:none; color:#1d55d0; }
   a.back:focus-visible, button:focus-visible, label.opt:focus-within { outline: 3px solid #ffbf47; outline-offset: 2px; }
   .card, fieldset { background:#fff; border:1px solid #e3e6ea; border-radius:14px; padding:1.1rem 1.2rem; margin:1rem 0; }
   fieldset legend { font-weight:700; font-size:1.05rem; padding:0 .4rem; }
   label.opt { display:flex; gap:.6rem; align-items:flex-start; padding:.65rem .7rem; border:1px solid #dfe3e8; border-radius:10px; margin:.45rem 0; cursor:pointer; font-size:1rem; }
   label.opt input { margin-top:.2rem; width:1.15rem; height:1.15rem; flex:none; }
-  button.go { display:block; width:100%; background:#2f8f5b; color:#fff; border:0; border-radius:12px; font-size:1.15rem; font-weight:700; padding:1rem; cursor:pointer; margin:1.2rem 0; }
-  button.lite { background:transparent; color:#2f6fed; border:1px solid #2f6fed; border-radius:10px; padding:.6rem 1rem; font-weight:600; cursor:pointer; margin-right:.5rem; }
+  button.go { display:block; width:100%; background:#1f7a49; color:#fff; border:0; border-radius:12px; font-size:1.15rem; font-weight:700; padding:1rem; cursor:pointer; margin:1.2rem 0; }
+  button.lite { background:transparent; color:#1d55d0; border:1px solid #1d55d0; border-radius:10px; padding:.6rem 1rem; font-weight:600; cursor:pointer; margin-right:.5rem; }
   .match { display:flex; gap:.9rem; align-items:flex-start; }
   .match img { width:56px; height:56px; border-radius:50%; object-fit:cover; flex:none; background:#dde2e8; }
   .match .ph { width:56px; height:56px; border-radius:50%; flex:none; background:#c9d2dd; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1.3rem; color:#4a5563; }
   .why { margin:.3rem 0 .5rem; }
-  a.talk { display:inline-block; background:#2f6fed; color:#fff; text-decoration:none; font-weight:700; padding:.7rem 1.1rem; border-radius:10px; }
+  a.talk { display:inline-block; background:#1d55d0; color:#fff; text-decoration:none; font-weight:700; padding:.7rem 1.1rem; border-radius:10px; }
   .status { padding:.75rem 1rem; border-radius:10px; background:#fff6da; color:#6b5500; }
   .err { background:#ffe3e3; color:#8a1f1f; }
 </style>

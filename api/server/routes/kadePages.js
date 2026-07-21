@@ -22,9 +22,14 @@ const SHARED_HEAD = `
   @media (prefers-color-scheme: dark) {
     body { color: #e7e9ee; background: #14161a; }
     .card { background: #1e2127 !important; border-color: #2c2f37 !important; }
-    a.btn { background: #2f8f5b !important; }
+    a.btn { background: #1f7a49 !important; }
     th { background: #24272f !important; }
     tr:nth-child(even) td { background: #1b1e24 !important; }
+  }
+  @media (prefers-contrast: more) {
+    .muted { opacity: 1; }
+    .card { border-width: 2px; }
+    nav.kadetabs a { color: #3a4150; }
   }
   h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
   h2 { font-size: 1.15rem; margin: 1.5rem 0 .5rem; }
@@ -35,7 +40,7 @@ const SHARED_HEAD = `
   }
   .big { font-size: 2.6rem; font-weight: 700; line-height: 1.1; margin: .2rem 0; }
   a.btn {
-    display: inline-block; background: #2f8f5b; color: #fff; text-decoration: none;
+    display: inline-block; background: #1f7a49; color: #fff; text-decoration: none;
     font-weight: 600; padding: .8rem 1.3rem; border-radius: 10px; margin-top: .6rem;
   }
   a.btn:focus-visible { outline: 3px solid #ffbf47; outline-offset: 2px; }
@@ -49,13 +54,13 @@ const SHARED_HEAD = `
   dl.kv dt { opacity: .8; }
   dl.kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
   footer { margin-top: 2rem; font-size: .85rem; }
-  a.back { display:inline-block; margin:0 0 .25rem; font-weight:600; text-decoration:none; color:#2f6fed; }
+  a.back { display:inline-block; margin:0 0 .25rem; font-weight:600; text-decoration:none; color:#1d55d0; }
   a.back:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   body { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; }
   nav.kadetabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: flex; background: #ffffff; border-top: 1px solid #d9dde3; padding-bottom: env(safe-area-inset-bottom, 0px); box-shadow: 0 -2px 10px rgba(0,0,0,.06); }
   nav.kadetabs a { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 8px 4px 10px; min-height: 56px; text-decoration: none; color: #5b6270; font-size: .78rem; font-weight: 600; }
   nav.kadetabs a .ic { font-size: 1.45rem; line-height: 1; }
-  nav.kadetabs a[aria-current="page"] { color: #2f6fed; }
+  nav.kadetabs a[aria-current="page"] { color: #1d55d0; }
   nav.kadetabs a:focus-visible { outline: 3px solid #ffbf47; outline-offset: -3px; }
   nav.hublist { display: grid; gap: .6rem; margin-top: 1rem; }
   a.hubitem { display: flex; align-items: center; gap: .9rem; background: #fff; border: 1px solid #e3e6ea; border-radius: 14px; padding: 1rem 1.1rem; text-decoration: none; color: inherit; }
@@ -414,15 +419,15 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
   .asset .meta { font-size: .9rem; margin-top: .5rem; }
   .asset .prompt, .asset .desc { margin-top: .35rem; font-size: .95rem; }
   .pill { display:inline-block; font-size:.8rem; font-weight:600; padding:.1rem .55rem; border-radius:999px; background:#e8f0fe; color:#1d4ed8; margin-right:.4rem; }
-  button.share, button.dl { margin-top:.6rem; margin-right:.5rem; font: inherit; font-weight:600; padding:.5rem .9rem; border-radius:10px; border:1px solid #2f6fed; background:#fff; color:#2f6fed; cursor:pointer; }
-  button.dl { border-color:#2f8f5b; color:#2f8f5b; }
+  button.share, button.dl { margin-top:.6rem; margin-right:.5rem; font: inherit; font-weight:600; padding:.5rem .9rem; border-radius:10px; border:1px solid #1d55d0; background:#fff; color:#1d55d0; cursor:pointer; }
+  button.dl { border-color:#1f7a49; color:#1f7a49; }
   button.dl:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
-  button.share[aria-pressed="true"] { background:#2f6fed; color:#fff; }
+  button.share[aria-pressed="true"] { background:#1d55d0; color:#fff; }
   button.share:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   @media (prefers-color-scheme: dark) {
     .pill { background:#1e3a8a; color:#dbeafe; }
     button.share, button.dl { background:#1e2127; }
-    button.share[aria-pressed="true"] { background:#2f6fed; color:#fff; }
+    button.share[aria-pressed="true"] { background:#1d55d0; color:#fff; }
   }
 </style>
 </head>
@@ -536,7 +541,7 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
   .asset .meta { font-size: .9rem; margin-top: .5rem; }
   .asset .prompt, .asset .desc { margin-top: .35rem; font-size: .95rem; }
   .pill { display:inline-block; font-size:.8rem; font-weight:600; padding:.1rem .55rem; border-radius:999px; background:#fdf1d7; color:#8a6100; margin-right:.4rem; }
-  button.dl { margin-top:.6rem; font: inherit; font-weight:600; padding:.5rem .9rem; border-radius:10px; border:1px solid #2f8f5b; background:#fff; color:#2f8f5b; cursor:pointer; }
+  button.dl { margin-top:.6rem; font: inherit; font-weight:600; padding:.5rem .9rem; border-radius:10px; border:1px solid #1f7a49; background:#fff; color:#1f7a49; cursor:pointer; }
   button.dl:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   @media (prefers-color-scheme: dark) { .pill { background:#5c4300; color:#ffe9b3; } button.dl { background:#1e2127; } }
 </style>
@@ -805,8 +810,8 @@ const feedbackHtml = `<!doctype html><html lang="en"><head><title>Feedback & Bug
   function setMode(m){
     MODE=m;
     var o=document.getElementById('f-open'), a=document.getElementById('f-all');
-    o.setAttribute('aria-pressed', m==='open'?'true':'false'); o.style.background = m==='open'?'#2f8f5b':'#555';
-    a.setAttribute('aria-pressed', m==='all'?'true':'false'); a.style.background = m==='all'?'#2f8f5b':'#555';
+    o.setAttribute('aria-pressed', m==='open'?'true':'false'); o.style.background = m==='open'?'#1f7a49':'#555';
+    a.setAttribute('aria-pressed', m==='all'?'true':'false'); a.style.background = m==='all'?'#1f7a49':'#555';
     load();
   }
   document.getElementById('f-open').addEventListener('click', function(){ setMode('open'); });
@@ -1083,12 +1088,12 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
 const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — Kade-AI</title>${SHARED_HEAD}
 <style>
   .playbtn { font-size:1.35rem; font-weight:700; padding:1rem 2.2rem; border-radius:14px;
-    border:0; background:#2f6fed; color:#fff; cursor:pointer; }
+    border:0; background:#1d55d0; color:#fff; cursor:pointer; }
   .playbtn:focus-visible, button:focus-visible, .pickbtn:focus-visible { outline:4px solid #ffbf47; outline-offset:3px; }
   button.small { font-size:1rem; padding:.6rem 1.1rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; cursor:pointer; }
   @media (prefers-color-scheme: dark){ button.small{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
   .pickbtn { display:inline-block; font-size:1.1rem; font-weight:700; padding:.9rem 1.6rem; border-radius:12px;
-    background:#2f8f5b; color:#fff; cursor:pointer; }
+    background:#1f7a49; color:#fff; cursor:pointer; }
   #descText { font-size:1.12rem; }
   .datebtn { display:block; width:100%; text-align:left; margin:.4rem 0; font-size:1rem;
     padding:.7rem 1rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; cursor:pointer; }
@@ -1395,7 +1400,7 @@ const pronunciationDictionaryHtml = `<!doctype html><html lang="en"><head><title
   @media (prefers-color-scheme: dark){ form.addform input[type=text]{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
   form.addform input:focus-visible { outline:4px solid #ffbf47; outline-offset:2px; }
   .pickbtn { display:inline-block; font-size:1.1rem; font-weight:700; padding:.9rem 1.6rem; border-radius:12px; border:0;
-    background:#2f8f5b; color:#fff; cursor:pointer; }
+    background:#1f7a49; color:#fff; cursor:pointer; }
   .pickbtn:focus-visible { outline:4px solid #ffbf47; outline-offset:3px; }
 </style>
 </head><body>
@@ -1541,7 +1546,7 @@ const pronunciationDictionaryHtml = `<!doctype html><html lang="en"><head><title
 
 const tabBarAsset = `(function(){
   if (window.__kadeTabsLoaded) return; window.__kadeTabsLoaded = true;
-  var css = "body{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px)) !important;} nav.kadetabs{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;background:#ffffff;border-top:1px solid #d9dde3;padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 10px rgba(0,0,0,.06);} nav.kadetabs a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px 10px;min-height:56px;text-decoration:none;color:#5b6270;font-size:.78rem;font-weight:600;} nav.kadetabs a .ic{font-size:1.45rem;line-height:1;} nav.kadetabs a[aria-current=page]{color:#2f6fed;} nav.kadetabs a:focus-visible{outline:3px solid #ffbf47;outline-offset:-3px;} @media (prefers-color-scheme:dark){nav.kadetabs{background:#1a1d23;border-top-color:#2c2f37;} nav.kadetabs a{color:#9aa3b5;} nav.kadetabs a[aria-current=page]{color:#6ea8ff;}}";
+  var css = "body{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px)) !important;} nav.kadetabs{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;background:#ffffff;border-top:1px solid #d9dde3;padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 10px rgba(0,0,0,.06);} nav.kadetabs a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px 10px;min-height:56px;text-decoration:none;color:#5b6270;font-size:.78rem;font-weight:600;} nav.kadetabs a .ic{font-size:1.45rem;line-height:1;} nav.kadetabs a[aria-current=page]{color:#1d55d0;} nav.kadetabs a:focus-visible{outline:3px solid #ffbf47;outline-offset:-3px;} @media (prefers-color-scheme:dark){nav.kadetabs{background:#1a1d23;border-top-color:#2c2f37;} nav.kadetabs a{color:#9aa3b5;} nav.kadetabs a[aria-current=page]{color:#6ea8ff;}}";
   function build(){
     if (!document.body || document.querySelector('nav.kadetabs')) return;
     var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
@@ -1572,16 +1577,16 @@ const logsHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Logs</titl
   .logrow { display:flex; justify-content:space-between; align-items:center; gap:.6rem;
     width:100%; text-align:left; padding:.8rem 1rem; border:1px solid #d9dde3; border-radius:12px;
     background:#fff; margin-bottom:.5rem; cursor:pointer; font:inherit; color:inherit; }
-  .logrow:hover { border-color:#2f6fed; }
+  .logrow:hover { border-color:#1d55d0; }
   .logrow:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   .logrow .meta { color:#5b6270; font-size:.82rem; white-space:nowrap; }
   .bubble { max-width:46rem; padding:.6rem .9rem; border-radius:14px; margin:.4rem 0; white-space:pre-wrap; }
-  .bubble.user { background:#2f6fed; color:#fff; margin-left:auto; }
+  .bubble.user { background:#1d55d0; color:#fff; margin-left:auto; }
   .bubble.bot  { background:#eef1f6; color:#12151b; margin-right:auto; }
   .bubble .who { display:block; font-size:.72rem; font-weight:700; opacity:.85; margin-bottom:.15rem; }
   .bubble .ts  { display:block; font-size:.68rem; opacity:.7; margin-top:.2rem; }
   .crumbs { color:#5b6270; font-size:.9rem; margin:.2rem 0 1rem; }
-  .crumbs button { font:inherit; color:#2f6fed; background:none; border:none; cursor:pointer; padding:0; }
+  .crumbs button { font:inherit; color:#1d55d0; background:none; border:none; cursor:pointer; padding:0; }
   #search { width:100%; padding:.7rem .9rem; border:1px solid #d9dde3; border-radius:12px; font:inherit; margin-bottom:1rem; }
   @media (prefers-color-scheme: dark) {
     .logrow { background:#1a1d23; border-color:#2c2f37; } .logrow .meta { color:#9aa3b5; }

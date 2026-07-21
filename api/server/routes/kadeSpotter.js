@@ -131,7 +131,7 @@ const SPOTTER_HTML = `<!doctype html>
   }
   h1 { font-size: 1.7rem; margin: 0 0 .2rem; }
   .muted { opacity: .75; }
-  a.back { display:inline-block; margin:0 0 .5rem; font-weight:600; text-decoration:none; color:#2f6fed; }
+  a.back { display:inline-block; margin:0 0 .5rem; font-weight:600; text-decoration:none; color:#1d55d0; }
   a.back:focus-visible, button:focus-visible, label.opt:focus-within, textarea:focus-visible, input:focus-visible { outline: 3px solid #ffbf47; outline-offset: 2px; }
   .card, fieldset { background:#fff; border:1px solid #e3e6ea; border-radius:14px; padding:1.1rem 1.2rem; margin:1rem 0; }
   fieldset legend { font-weight:700; font-size:1.05rem; padding:0 .4rem; }
@@ -139,9 +139,9 @@ const SPOTTER_HTML = `<!doctype html>
   label.opt input { margin-top:.2rem; width:1.15rem; height:1.15rem; flex:none; }
   textarea { width:100%; min-height:9rem; font: inherit; border:1px solid #dfe3e8; border-radius:10px; padding:.7rem; }
   input[type=text] { width:100%; font: inherit; border:1px solid #dfe3e8; border-radius:10px; padding:.7rem; }
-  button.go { display:block; width:100%; background:#2f8f5b; color:#fff; border:0; border-radius:12px; font-size:1.15rem; font-weight:700; padding:1rem; cursor:pointer; margin:1.2rem 0; }
-  button.lite { background:transparent; color:#2f6fed; border:1px solid #2f6fed; border-radius:10px; padding:.6rem 1rem; font-weight:600; cursor:pointer; margin:.3rem .5rem .3rem 0; }
-  button.play { background:#2f6fed; color:#fff; border:0; border-radius:8px; padding:.45rem .8rem; font-weight:600; cursor:pointer; flex:none; }
+  button.go { display:block; width:100%; background:#1f7a49; color:#fff; border:0; border-radius:12px; font-size:1.15rem; font-weight:700; padding:1rem; cursor:pointer; margin:1.2rem 0; }
+  button.lite { background:transparent; color:#1d55d0; border:1px solid #1d55d0; border-radius:10px; padding:.6rem 1rem; font-weight:600; cursor:pointer; margin:.3rem .5rem .3rem 0; }
+  button.play { background:#1d55d0; color:#fff; border:0; border-radius:8px; padding:.45rem .8rem; font-weight:600; cursor:pointer; flex:none; }
   .status { padding:.75rem 1rem; border-radius:10px; background:#fff6da; color:#6b5500; margin:.75rem 0; }
   .ok { background:#e2f6e9; color:#1c5c34; }
   .err { background:#ffe3e3; color:#8a1f1f; }
