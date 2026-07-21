@@ -920,10 +920,32 @@ class BaseClient {
       isTemporary: options?.req?.body?.isTemporary,
       interfaceConfig: options?.req?.config?.interfaceConfig,
     };
+    // LIVE ANTI-TELL SCRUB (July 21 2026): clean phrase-based AI tells from the
+    // FINAL saved assistant message (text + text content parts). The stream the
+    // user watched may have briefly shown raw text; the persisted/re-read copy
+    // is clean, and history fed back to the model stays clean too. User turns
+    // are saved verbatim. Fail-soft inside stripAiTells.
+    let scrubbed = message;
+    try {
+      if (message && message.isCreatedByUser === false) {
+        const { stripAiTells } = require('~/server/utils/stripAiTells');
+        scrubbed = { ...message };
+        if (typeof scrubbed.text === 'string') scrubbed.text = stripAiTells(scrubbed.text);
+        if (Array.isArray(scrubbed.content)) {
+          scrubbed.content = scrubbed.content.map((part) =>
+            part && part.type === 'text' && typeof part.text === 'string'
+              ? { ...part, text: stripAiTells(part.text) }
+              : part,
+          );
+        }
+      }
+    } catch (e) {
+      scrubbed = message;
+    }
     const savedMessage = await db.saveMessage(
       reqCtx,
       {
-        ...message,
+        ...scrubbed,
         endpoint: options.endpoint,
         unfinished: false,
         user,
