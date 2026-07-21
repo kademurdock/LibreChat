@@ -149,6 +149,16 @@ const MATCH_HTML = `<!doctype html>
   a.talk { display:inline-block; background:#1d55d0; color:#fff; text-decoration:none; font-weight:700; padding:.7rem 1.1rem; border-radius:10px; }
   .status { padding:.75rem 1rem; border-radius:10px; background:#fff6da; color:#6b5500; }
   .err { background:#ffe3e3; color:#8a1f1f; }
+  /* KADE session 22: press-down feedback on anything tappable. Motion only
+     under prefers-reduced-motion: no-preference; static pages otherwise. */
+  @media (prefers-reduced-motion: no-preference) {
+    button, a.btn, [role="button"], input[type="submit"] {
+      transition: transform .15s ease;
+    }
+    button:active, a.btn:active, [role="button"]:active, input[type="submit"]:active {
+      transform: scale(.985);
+    }
+  }
 </style>
 <script defer src="/kade-tabbar.js"></script></head>
 <body>

@@ -208,6 +208,16 @@ const PAGE_HTML = `<!doctype html>
   .orbar { text-align:center; color:#9aa3b5; margin:18px 0 4px; font-size:.85rem; text-transform:uppercase; letter-spacing:.08em; }
   #rec { width:100%; margin-top:6px; background:#c0392b; font-size:1.15rem; padding:16px; font-weight:700; }
   #rec.on { background:#e74c3c; }
+  /* KADE session 22: press-down feedback on anything tappable. Motion only
+     under prefers-reduced-motion: no-preference; static pages otherwise. */
+  @media (prefers-reduced-motion: no-preference) {
+    button, a.btn, [role="button"], input[type="submit"] {
+      transition: transform .15s ease;
+    }
+    button:active, a.btn:active, [role="button"]:active, input[type="submit"]:active {
+      transform: scale(.985);
+    }
+  }
 </style>
 <script defer src="/kade-tabbar.js"></script></head>
 <body>

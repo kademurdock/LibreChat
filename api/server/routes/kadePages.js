@@ -74,6 +74,38 @@ const SHARED_HEAD = `
     nav.kadetabs a[aria-current="page"] { color: #6ea8ff; }
     a.hubitem { background:#1e2127; border-color:#2c2f37; }
   }
+  /* KADE session 22 polish (July 21 2026): micro-interactions + gentle
+     entrances for sighted eyes. Every rule that MOVES lives inside
+     prefers-reduced-motion: no-preference, so reduced-motion users get the
+     exact static page that shipped before this block existed. The AA
+     palette from the July 21 contrast pass is untouched; hover cues that
+     are pure color/shadow (not motion) apply everywhere. */
+  nav.kadetabs a { border-top: 3px solid transparent; }
+  nav.kadetabs a[aria-current="page"] { border-top-color: #1d55d0; }
+  a.btn:hover { box-shadow: 0 3px 10px rgba(0,0,0,.22); }
+  a.hubitem:hover { border-color: #1d55d0; box-shadow: 0 2px 8px rgba(0,0,0,.10); }
+  @media (prefers-color-scheme: dark) {
+    nav.kadetabs a[aria-current="page"] { border-top-color: #6ea8ff; }
+    a.hubitem:hover { border-color: #6ea8ff; }
+  }
+  @media (prefers-contrast: more) {
+    a.btn:hover, a.hubitem:hover { box-shadow: none; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    a.btn, a.hubitem, nav.kadetabs a, a.back {
+      transition: transform .15s ease, box-shadow .2s ease, border-color .15s ease;
+    }
+    a.btn:hover, a.hubitem:hover { transform: translateY(-1px); }
+    a.btn:active, a.hubitem:active, nav.kadetabs a:active { transform: scale(.985); }
+    @keyframes kadeRise {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: none; }
+    }
+    .card, a.hubitem { animation: kadeRise .28s ease-out both; }
+    .card:nth-of-type(2), nav.hublist a.hubitem:nth-child(2) { animation-delay: .05s; }
+    .card:nth-of-type(3), nav.hublist a.hubitem:nth-child(3) { animation-delay: .1s; }
+    .card:nth-of-type(n+4), nav.hublist a.hubitem:nth-child(n+4) { animation-delay: .14s; }
+  }
 </style>
 <script>
   function money(n){ n = Number(n)||0; if(n>0 && n<0.01){ return '$'+n.toFixed(4); } return '$'+n.toFixed(2); }

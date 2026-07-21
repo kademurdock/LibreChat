@@ -66,6 +66,16 @@ const callsHtml = `<!doctype html>
   button.btn.danger { color:#b42318; border-color:#b42318; background:transparent; }
   button.btn[disabled] { opacity:.5; cursor:default; }
   .visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+  /* KADE session 22: press-down feedback on anything tappable. Motion only
+     under prefers-reduced-motion: no-preference; static pages otherwise. */
+  @media (prefers-reduced-motion: no-preference) {
+    button, a.btn, [role="button"], input[type="submit"] {
+      transition: transform .15s ease;
+    }
+    button:active, a.btn:active, [role="button"]:active, input[type="submit"]:active {
+      transform: scale(.985);
+    }
+  }
 </style>
 </head>
 <body>

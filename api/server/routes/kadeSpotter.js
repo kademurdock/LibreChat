@@ -147,6 +147,16 @@ const SPOTTER_HTML = `<!doctype html>
   .err { background:#ffe3e3; color:#8a1f1f; }
   .vrow { display:flex; align-items:center; gap:.7rem; }
   .vrow .vtext { flex:1; }
+  /* KADE session 22: press-down feedback on anything tappable. Motion only
+     under prefers-reduced-motion: no-preference; static pages otherwise. */
+  @media (prefers-reduced-motion: no-preference) {
+    button, a.btn, [role="button"], input[type="submit"] {
+      transition: transform .15s ease;
+    }
+    button:active, a.btn:active, [role="button"]:active, input[type="submit"]:active {
+      transform: scale(.985);
+    }
+  }
 </style>
 <script defer src="/kade-tabbar.js"></script></head>
 <body>
