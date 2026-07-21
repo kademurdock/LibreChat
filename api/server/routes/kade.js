@@ -700,6 +700,48 @@ router.get('/game-leaderboard', requireJwtAuth, async (req, res) => {
 });
 
 /* ----------------------------------------------------------------------------
+ * ADMIN: POST /api/kade/admin/phone-register { phone, name?, email? }
+ * Session 22 (Kade: "you can build that thing you were talking about into my
+ * dashboard"). Browser-safe skeleton key: the dashboard's "Add or link a
+ * caller" card posts here with her ordinary admin login; this route holds
+ * BRIDGE_SECRET server-side (env, set July 21) and forwards to the bridge's
+ * /register, which MERGES onto any existing row. If an email is given, it's
+ * checked against real site accounts first — attaching is still allowed
+ * either way (fail-soft), but the card says out loud whether it matched,
+ * because an email with no account attributes nothing and bills nobody.
+ * -------------------------------------------------------------------------- */
+router.post('/admin/phone-register', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const bridgeSecret = process.env.BRIDGE_SECRET;
+    const bridgeUrl = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
+    if (!bridgeSecret) return res.status(500).json({ error: 'BRIDGE_SECRET not configured on this service.' });
+    const phone = String(req.body?.phone || '').replace(/\D/g, '');
+    if (phone.length < 10) return res.status(400).json({ error: 'Need a full phone number (10 digits).' });
+    const name = String(req.body?.name || '').trim().slice(0, 60);
+    const email = String(req.body?.email || '').trim().toLowerCase().slice(0, 120);
+
+    let accountMatch = null;
+    if (email) {
+      const { User } = models();
+      const u = await User.findOne({ email }, { _id: 1, name: 1 }).lean();
+      accountMatch = u ? { found: true, name: u.name || email } : { found: false };
+    }
+
+    const body = { secret: bridgeSecret, phone };
+    if (name) body.name = name;
+    if (email) body.lcEmail = email;
+    const axios = require('axios');
+    const r = await axios.post(`${bridgeUrl}/register`, body, { timeout: 10000 });
+
+    logger.info(`[kade/admin/phone-register] ${req.user.email} wired ${phone}${email ? ' -> ' + email : ''}`);
+    return res.json({ ok: true, phone: r.data && r.data.phone, accountMatch });
+  } catch (e) {
+    logger.error('[kade/admin/phone-register]', e);
+    return res.status(500).json({ error: 'Could not reach the bridge. Row not saved.' });
+  }
+});
+
+/* ----------------------------------------------------------------------------
  * SERVICE: POST /api/kade/usage-event — secret-guarded ingestion so external
  * services (the phone bridge) can land per-user spend in kadeusage. No JWT:
  * the caller is a machine; KADE_USAGE_EVENT_SECRET (env, both sides) gates it.

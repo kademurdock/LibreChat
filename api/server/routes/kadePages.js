@@ -360,6 +360,27 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
       <p class="muted" style="font-size:.85rem;margin-top:.5rem">Family voice is free to them &mdash; it comes out of this monthly pool, which renews with your plan. Overage would bill $10 per million characters. Phone-call voice runs through the bridge and is not in this count; the Inworld console has the true account-wide number.</p>
     </div>
 
+    <div class="card">
+      <h2 style="margin-top:0">Add or link a caller</h2>
+      <p class="muted" style="margin:.2rem 0 .8rem">The skeleton key. Give a phone number plus whatever you know — name, the email they use on the site — and their calls start landing on their own account and wallet. Works for brand-new folks and for fixing up existing ones (fields you leave blank stay as they were).</p>
+      <div style="display:grid;gap:.7rem;max-width:26rem">
+        <div>
+          <label for="ac_name" style="display:block;font-weight:600;margin-bottom:.2rem">Name</label>
+          <input id="ac_name" type="text" autocomplete="off" style="width:100%;padding:.6rem;border:1px solid #b9c0cb;border-radius:8px;font:inherit">
+        </div>
+        <div>
+          <label for="ac_phone" style="display:block;font-weight:600;margin-bottom:.2rem">Phone number</label>
+          <input id="ac_phone" type="tel" inputmode="tel" autocomplete="off" style="width:100%;padding:.6rem;border:1px solid #b9c0cb;border-radius:8px;font:inherit">
+        </div>
+        <div>
+          <label for="ac_email" style="display:block;font-weight:600;margin-bottom:.2rem">Email on their site account</label>
+          <input id="ac_email" type="email" autocomplete="off" style="width:100%;padding:.6rem;border:1px solid #b9c0cb;border-radius:8px;font:inherit">
+        </div>
+        <button type="button" id="ac_btn" class="addcred" style="font:inherit;font-weight:600;padding:.7rem 1rem;border-radius:10px;border:1px solid #1f7a49;background:#1f7a49;color:#fff;cursor:pointer">Wire them up</button>
+        <p id="ac_status" role="status" aria-live="polite" class="muted" style="margin:.2rem 0 0"></p>
+      </div>
+    </div>
+
     <h2>By service</h2>
     <!-- KADE July 21 2026: was a 3-column table. Kade (screen-reader user):
          tables mean silently tracking which column you're in. Every value now
@@ -403,6 +424,35 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
         document.getElementById('tw_bal').textContent = (tw.balanceUSD==null?'\u2014':money(tw.balanceUSD));
         document.getElementById('twilio_card').hidden = false;
       }
+
+      const acBtn = document.getElementById('ac_btn');
+      acBtn.addEventListener('click', async function(){
+        const st = document.getElementById('ac_status');
+        const phone = document.getElementById('ac_phone').value.trim();
+        const name = document.getElementById('ac_name').value.trim();
+        const email = document.getElementById('ac_email').value.trim();
+        if(phone.replace(/\D/g,'').length < 10){ st.textContent = 'Need a full 10-digit phone number.'; return; }
+        acBtn.disabled = true; st.textContent = 'Wiring\u2026';
+        try {
+          const resp = await apiPost('/api/kade/admin/phone-register', token, { phone: phone, name: name, email: email });
+          const j = await resp.json();
+          if(resp.ok && j.ok){
+            let line = 'Wired ' + (name || 'caller') + ' at ' + (j.phone || phone) + '.';
+            if(email && j.accountMatch){
+              line += j.accountMatch.found
+                ? ' Email matched the site account for ' + j.accountMatch.name + ' \u2014 calls will attribute and bill to them.'
+                : ' Heads up: no site account uses that email yet \u2014 the row is saved, but nothing attributes until that account exists.';
+            }
+            st.textContent = line;
+            document.getElementById('ac_name').value = '';
+            document.getElementById('ac_phone').value = '';
+            document.getElementById('ac_email').value = '';
+          } else {
+            st.textContent = (j && j.error) || 'That did not save \u2014 try again.';
+          }
+        } catch(e){ st.textContent = 'That did not save \u2014 try again.'; }
+        acBtn.disabled = false;
+      });
 
       const iw = d.inworld;
       if (iw && iw.includedChars) {
