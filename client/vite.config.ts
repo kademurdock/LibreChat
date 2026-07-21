@@ -90,6 +90,17 @@ export default defineConfig(({ command }) => ({
           fileName: 'sw-push.js',
           source: fs.readFileSync(path.resolve(__dirname, 'sw/push.js'), 'utf8'),
         });
+        /* KADE (July 21 2026): the SMS opt-in screenshot must be reachable at
+         * kademurdock.com/optin.png for Twilio's toll-free verification —
+         * production builds have publicDir disabled, so root-level public
+         * files never reach dist on their own; emitting it here is the same
+         * proven route the service-worker files already ride. Binary read
+         * (no encoding) on purpose. */
+        this.emitFile({
+          type: 'asset',
+          fileName: 'optin.png',
+          source: fs.readFileSync(path.resolve(__dirname, 'public/optin.png')),
+        });
       },
     },
     VitePWA({
