@@ -109,6 +109,8 @@ const SHARED_HEAD = `
 </style>
 <script>
   function money(n){ n = Number(n)||0; if(n>0 && n<0.01){ return '$'+n.toFixed(4); } return '$'+n.toFixed(2); }
+  /* ~1,000 characters of text ~= one minute of spoken audio. */
+  function listenTime(chars){ var m = Math.round((Number(chars)||0)/1000); if(m < 1){ return 'under a minute'; } if(m < 120){ return m + ' minutes'; } return (Math.round(m/6)/10) + ' hours'; }
   function num(n){ return (Number(n)||0).toLocaleString('en-US'); }
   async function getToken(){
     try{
@@ -232,7 +234,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
 <body>
   <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a></p>
   <h1>Usage &amp; Balance</h1>
-  <p class="muted">The deal, plainly: your account starts with <strong>$10 of credit</strong> loaded by Kade, everything you do draws from it at exactly what it costs (no markup, no profit), and when it runs dry you top it up below and keep going.</p>
+  <p class="muted">The deal, plainly: your account starts with <strong>$10 of credit</strong> loaded by Kade, everything you do draws from it at exactly what it costs (no markup, no profit), and when it runs dry you top it up below and keep going. <strong>Voice is the exception: talking and listening are included free with Kade's own voice plan</strong> &mdash; they never touch your balance.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading your usage…</div>
 
@@ -249,7 +251,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
       <h2 style="margin-top:0">This <span id="monthLabel">month</span>, broken down</h2>
       <dl class="kv">
         <dt>Chat (the AI thinking)</dt><dd id="m_llm">$0.00</dd>
-        <dt>Voice / read-aloud</dt><dd id="m_tts">$0.00</dd>
+        <dt>Voice / read-aloud</dt><dd id="m_tts">Included</dd>
         <dt>Image generation</dt><dd id="m_flux">$0.00</dd>
         <dt>Web searches</dt><dd id="m_tav">$0.00</dd>
         <dt>Phone calls</dt><dd id="m_phone">$0.00</dd>
@@ -295,7 +297,12 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
       dn.setAttribute('aria-label', 'Top up via PayPal, opens in a new tab');
       const m = d.monthToDate || {};
       document.getElementById('m_llm').textContent = money(m.llmUSD);
-      document.getElementById('m_tts').textContent = money(m.ttsUSD);
+      /* Voice is included with Kade's plan (July 21 2026). Show real minutes
+         instead of a confusing $0.00; if an older charge from earlier in the
+         month exists, show it honestly alongside. */
+      var ttsLabel = 'Included' + (m.tts_chars > 0 ? ' \u00b7 ~' + listenTime(m.tts_chars) : '');
+      if (m.ttsUSD > 0) { ttsLabel += ' (' + money(m.ttsUSD) + ' charged earlier this month, before voice went free)'; }
+      document.getElementById('m_tts').textContent = ttsLabel;
       document.getElementById('m_flux').textContent = money(m.fluxUSD);
       document.getElementById('m_tav').textContent = money(m.tavilyUSD);
       document.getElementById('m_phone').textContent = money(m.phoneUSD);
@@ -304,7 +311,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
       document.getElementById('a_total').textContent = money((d.allTime||{}).totalUSD);
       const a = d.allTime || {};
       document.getElementById('qty').textContent =
-        'All time, you have used about ' + num(a.tts_chars) + ' characters of voice, ' +
+        'All time, you have used about ' + num(a.tts_chars) + ' characters of voice (roughly ' + listenTime(a.tts_chars) + ' of listening \u2014 included free with Kade\u0027s voice plan), ' +
         num(a.flux_images) + ' generated images, ' + num(a.tavily_searches) + ' web searches, and ' +
         num(a.phone_minutes) + ' minutes of phone calls.';
       status.hidden = true;
@@ -343,30 +350,30 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
       <p class="muted" style="font-size:.85rem;margin-top:.5rem">Phone numbers, calls, and texts. Separate from the LibreChat spend above (that's per-user; this is one shared account bill).</p>
     </div>
 
+    <div class="card" id="inworld_card" hidden>
+      <h2 style="margin-top:0">Voice pool &mdash; Inworld <span class="muted">(your founder plan)</span></h2>
+      <dl class="kv">
+        <dt>Used this month, site + apps</dt><dd id="iw_used">&mdash;</dd>
+        <dt>Included in your plan</dt><dd id="iw_incl">&mdash;</dd>
+        <dt>Left before overage</dt><dd id="iw_left">&mdash;</dd>
+      </dl>
+      <p class="muted" style="font-size:.85rem;margin-top:.5rem">Family voice is free to them &mdash; it comes out of this monthly pool, which renews with your plan. Overage would bill $10 per million characters. Phone-call voice runs through the bridge and is not in this count; the Inworld console has the true account-wide number.</p>
+    </div>
+
     <h2>By service</h2>
-    <div class="card" style="padding:.4rem .6rem">
-      <table aria-label="Spend by service">
-        <thead><tr><th scope="col">Service</th><th scope="col" class="num">Quantity (all time)</th><th scope="col" class="num">Cost (all time)</th></tr></thead>
-        <tbody id="svc_rows"></tbody>
-      </table>
+    <!-- KADE July 21 2026: was a 3-column table. Kade (screen-reader user):
+         tables mean silently tracking which column you're in. Every value now
+         sits DIRECTLY after its own label in a definition list. -->
+    <div class="card">
+      <dl class="kv" id="svc_list"></dl>
+      <p class="muted" id="svc_empty" hidden>No voice / image / search usage logged yet.</p>
     </div>
 
     <h2>By person</h2>
-    <div class="card" style="padding:.4rem .6rem">
-      <table aria-label="Spend by person">
-        <thead><tr>
-          <th scope="col">Name</th>
-          <th scope="col" class="num">LLM (all time)</th>
-          <th scope="col" class="num">Voice chars</th>
-          <th scope="col" class="num">Images</th>
-          <th scope="col" class="num">Searches</th>
-          <th scope="col" class="num">Extra $</th>
-          <th scope="col" class="num">Balance</th>
-          <th scope="col" class="num">Add credit</th>
-        </tr></thead>
-        <tbody id="user_rows"></tbody>
-      </table>
-    </div>
+    <!-- Same reason: was an 8-column table -- the worst offender. One card
+         per person, every number labeled where it sits, +$5 button at the
+         end of each card. -->
+    <div id="user_cards"></div>
   </main>
 
   <footer class="muted">Refreshes on every load. — Kade-AI</footer>
@@ -397,27 +404,43 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
         document.getElementById('twilio_card').hidden = false;
       }
 
-      const svcBody = document.getElementById('svc_rows');
+      const iw = d.inworld;
+      if (iw && iw.includedChars) {
+        var iwUsed = iw.monthChars || 0;
+        var iwPct = Math.round(iwUsed * 100 / iw.includedChars);
+        document.getElementById('iw_used').textContent = num(iwUsed) + ' characters \u2014 about ' + listenTime(iwUsed) + ' of speech, ' + iwPct + '% of the pool';
+        document.getElementById('iw_incl').textContent = num(iw.includedChars) + ' characters a month';
+        document.getElementById('iw_left').textContent = num(Math.max(0, iw.includedChars - iwUsed)) + ' characters';
+        document.getElementById('inworld_card').hidden = false;
+      }
+
+      const svcList = document.getElementById('svc_list');
       const svcNames = Object.keys(d.perService||{});
       if(svcNames.length===0){
-        svcBody.innerHTML = '<tr><td colspan="3" class="muted">No voice / image / search usage logged yet.</td></tr>';
+        document.getElementById('svc_empty').hidden = false;
       } else {
-        svcBody.innerHTML = svcNames.map(function(name){
+        svcList.innerHTML = svcNames.map(function(name){
           const s = d.perService[name];
-          return '<tr><td>'+name+'</td><td class="num">'+num(s.quantity.allTime)+' '+(s.unit||'')+'</td><td class="num">'+money(s.costUSD.allTime)+'</td></tr>';
+          return '<dt>'+name+'</dt><dd>'+num(s.quantity.allTime)+' '+(s.unit||'')+' \u00b7 '+money(s.costUSD.allTime)+'</dd>';
         }).join('');
       }
 
-      const ub = document.getElementById('user_rows');
+      const ub = document.getElementById('user_cards');
       ub.innerHTML = (d.perUser||[]).map(function(u){
-        return '<tr><td>'+ (u.name||'') + (u.role==='ADMIN'?' <span class="muted">(admin)</span>':'') +
-          '</td><td class="num">'+money(u.llmSpendUSD.allTime)+
-          '</td><td class="num">'+num(svcQty(u,'tts'))+
-          '</td><td class="num">'+num(svcQty(u,'flux'))+
-          '</td><td class="num">'+num(svcQty(u,'tavily'))+
-          '</td><td class="num">'+money(svcExtra(u))+
-          '</td><td class="num">'+money(u.balanceUSD)+
-          '</td><td class="num"><button type="button" class="addcred" data-uid="'+(u.userId||'')+'" aria-label="Add five dollars of credit to '+(u.name||'this user').replace(/["&<>]/g,'')+'">+$5</button></td></tr>';
+        const uid = String(u.userId||'').replace(/[^a-zA-Z0-9]/g,'');
+        const safeName = (u.name||'this user').replace(/["&<>]/g,'');
+        return '<section class="card">'+
+          '<h3 style="margin:.1rem 0 .5rem;font-size:1.05rem">'+(u.name||'')+(u.role==='ADMIN'?' <span class="muted">(admin)</span>':'')+'</h3>'+
+          '<dl class="kv">'+
+          '<dt>Chat (LLM), all time</dt><dd>'+money(u.llmSpendUSD.allTime)+'</dd>'+
+          '<dt>Voice, all time</dt><dd>'+num(svcQty(u,'tts'))+' chars \u00b7 ~'+listenTime(svcQty(u,'tts'))+'</dd>'+
+          '<dt>Images</dt><dd>'+num(svcQty(u,'flux'))+'</dd>'+
+          '<dt>Searches</dt><dd>'+num(svcQty(u,'tavily'))+'</dd>'+
+          '<dt>Extra services, all time</dt><dd>'+money(svcExtra(u))+'</dd>'+
+          '<dt>Balance</dt><dd id="bal_'+uid+'">'+money(u.balanceUSD)+'</dd>'+
+          '</dl>'+
+          '<button type="button" class="addcred" data-uid="'+(u.userId||'')+'" data-balid="bal_'+uid+'" aria-label="Add five dollars of credit to '+safeName+'">+$5 credit</button>'+
+          '</section>';
       }).join('');
 
       ub.addEventListener('click', async function(ev){
@@ -428,7 +451,7 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
           const resp = await apiPost('/api/kade/add-credits', token, { userId: uid, amountUSD: 5 });
           if(resp.ok){
             const j = await resp.json();
-            const balCell = btn.closest('tr').querySelector('td:nth-last-child(2)');
+            const balCell = document.getElementById(btn.getAttribute('data-balid') || '');
             if(balCell){ balCell.textContent = money(j.balanceUSD); }
             btn.textContent = 'Added';
             status.hidden = false; status.className = 'status'; status.textContent = 'Added $5 -- new balance ' + money(j.balanceUSD) + '.';

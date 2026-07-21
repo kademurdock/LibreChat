@@ -204,12 +204,32 @@ router.get('/usage', requireJwtAuth, requireAdminAccess, async (req, res) => {
       twilio = null;
     }
 
+    // KADE July 21 2026: Inworld voice-pool meter for the admin dashboard.
+    // CALENDAR month (the pool renews monthly), not the rolling ?days window.
+    // Site+apps TTS only -- phone-call synthesis happens on the bridge and is
+    // not in kadeusage; the card's copy says so out loud.
+    let inworld = null;
+    try {
+      const ttsMonth = await KadeUsage.aggregate([
+        { $match: { service: 'tts', createdAt: { $gte: monthStart() } } },
+        { $group: { _id: null, chars: { $sum: '$quantity' } } },
+      ]);
+      inworld = {
+        monthChars: (ttsMonth[0] && ttsMonth[0].chars) || 0,
+        includedChars: 25e6, // founder/creator plan allowance
+        overagePerMillionUSD: 10,
+      };
+    } catch (e) {
+      inworld = null;
+    }
+
     return res.json({
       generatedAt: new Date().toISOString(),
       windowDays: days,
       windowSince: since.toISOString(),
       totals,
       twilio,
+      inworld,
       perService,
       perUser,
     });

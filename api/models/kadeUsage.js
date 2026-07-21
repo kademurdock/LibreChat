@@ -32,7 +32,17 @@ const KadeUsage =
 
 /** Per-unit USD rates. */
 const RATES = {
-  tts: 5 / 1e6, // $5 / 1M characters (Inworld 1.5 tier)
+  // KADE July 21 2026 (Kade's explicit pick via AskUserQuestion: "Free --
+  // included in my plan"): voice does NOT draw from user balances. Her real
+  // Inworld plan is founder/creator -- 25,000,000 characters/month INCLUDED
+  // in the subscription she already pays, overage $10 per 1M after that.
+  // The old rate here ($5/1e6, commented "Inworld 1.5 tier") was stale and
+  // matched neither number. Characters are still LOGGED per user (quantity)
+  // so /usage-dashboard's pool meter can watch the 25M ceiling -- if the
+  // family ever gets close, flip this to 10 / 1e6 and every page picks it
+  // up automatically (costs are computed at write time; old rows keep the
+  // cost they were written with, by design -- see schema comment above).
+  tts: 0,
   // phone / fal_video / fal_image events always arrive with an explicit
   // costUSD (bridge posts real Twilio price; FalAI computes per-second fal
   // pricing), so they need no per-unit rate here.
