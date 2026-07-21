@@ -12,6 +12,7 @@ const {
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { sendError } = require('~/server/middleware/error');
+const { scrubMessageForTransmit } = require('~/server/utils/stripAiTells');
 const { abortRun } = require('./abortRun');
 const db = require('~/models');
 
@@ -172,7 +173,7 @@ async function abortMessage(req, res) {
       isTemporary: req?.body?.isTemporary,
       interfaceConfig: req?.config?.interfaceConfig,
     },
-    { ...responseMessage, user: userId },
+    { ...scrubMessageForTransmit(responseMessage), user: userId },
     { context: 'api/server/middleware/abortMiddleware.js' },
   );
 
@@ -193,7 +194,7 @@ async function abortMessage(req, res) {
           isCreatedByUser: true,
         })
       : null,
-    responseMessage,
+    responseMessage: scrubMessageForTransmit(responseMessage),
   };
 
   logger.debug(

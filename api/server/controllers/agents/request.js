@@ -21,6 +21,7 @@ const {
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
 const { saveMessage, getMessages, getConvo } = require('~/models');
+const { scrubMessageForTransmit } = require('~/server/utils/stripAiTells');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -613,7 +614,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             conversation,
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
-            responseMessage: { ...response },
+            responseMessage: scrubMessageForTransmit({ ...response }),
           };
 
           logger.debug(`[ResumableAgentController] Emitting FINAL event`, {
@@ -633,7 +634,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             conversation,
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
-            responseMessage: { ...response, unfinished: true },
+            responseMessage: scrubMessageForTransmit({ ...response, unfinished: true }),
           };
 
           logger.debug(`[ResumableAgentController] Emitting ABORTED FINAL event`, {
@@ -993,7 +994,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
     // Only send if not aborted
     if (!job.abortController.signal.aborted) {
       // Create a new response object with minimal copies
-      const finalResponse = { ...response };
+      const finalResponse = scrubMessageForTransmit({ ...response });
 
       sendEvent(res, {
         final: true,
@@ -1024,7 +1025,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
         '[AgentController] Handling edge case: `sendMessage` completed but aborted during `sendCompletion`',
       );
 
-      const finalResponse = { ...response };
+      const finalResponse = scrubMessageForTransmit({ ...response });
       finalResponse.error = true;
 
       sendEvent(res, {

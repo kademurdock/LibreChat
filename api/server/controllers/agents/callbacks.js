@@ -23,6 +23,7 @@ const {
   isCodeSessionToolName,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
+const { createStreamScrubber } = require('~/server/utils/stripAiTells');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
@@ -341,12 +342,30 @@ function getDefaultHandlers({
     }
     return emitEvent(res, streamId, { event: UsageEvents.ON_TOKEN_USAGE, data: payload });
   };
+  // Live anti-tell scrub (July 21 2026): sentence-buffers outgoing message
+  // deltas through the deterministic tell filter so phrase tells never flash
+  // on screen mid-stream. Fail-soft: any hiccup flips it to pure pass-through.
+  const liveScrub = createStreamScrubber();
+  const modelEndHandler = new ModelEndHandler(
+    collectedUsage,
+    collectedThoughtSignatures,
+    emitTokenUsage,
+  );
   const handlers = {
-    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(
-      collectedUsage,
-      collectedThoughtSignatures,
-      emitTokenUsage,
-    ),
+    [GraphEvents.CHAT_MODEL_END]: {
+      handle: async (...args) => {
+        // Flush live-scrub held text BEFORE model-end so the final sentence
+        // is on screen the moment generation finishes.
+        try {
+          for (const fd of liveScrub.flushAll()) {
+            await emitEvent(res, streamId, { event: GraphEvents.ON_MESSAGE_DELTA, data: fd });
+          }
+        } catch {
+          /* fail-soft: the final SSE event still carries the full text */
+        }
+        return modelEndHandler.handle(...args);
+      },
+    },
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {
       /**
@@ -422,10 +441,14 @@ function getDefaultHandlers({
        */
       handle: async (event, data, metadata) => {
         aggregateContent({ event, data });
-        if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
-          await emitEvent(res, streamId, { event, data });
-        } else if (!metadata?.hide_sequential_outputs) {
-          await emitEvent(res, streamId, { event, data });
+        const shouldEmit =
+          checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node) ||
+          !metadata?.hide_sequential_outputs;
+        if (!shouldEmit) {
+          return;
+        }
+        for (const out of liveScrub.transform(data)) {
+          await emitEvent(res, streamId, { event, data: out });
         }
       },
     },
