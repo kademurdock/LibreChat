@@ -107,7 +107,15 @@ router.get('/ticket', requireJwtAuth, async (req, res) => {
     let spotter = null;
     try {
       const { getSpotter } = require('~/models/kadeSpotter');
-      spotter = await getSpotter(String(u.id || u._id || req.user.id || req.user._id));
+      const suid = String(u.id || u._id || req.user.id || req.user._id);
+      spotter = await getSpotter(suid);
+      // Session 21i: make sure this account's textable Spotter agent exists so
+      // the call can be attributed to it (shared memory + post-call handoff
+      // into the Spotter's own conversation). Fire-and-forget; a null agentId
+      // this call just falls back to the old attribution.
+      if (spotter && spotter.name && !spotter.agentId) {
+        try { require('~/models/kadeSpotterAgent').ensureSpotterAgent(suid, spotter).catch(() => {}); } catch (e) {}
+      }
     } catch (err) {
       logger.warn('[kadeWebVoice] spotter lookup failed (generic live persona): ' + err.message);
     }

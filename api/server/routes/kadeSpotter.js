@@ -18,6 +18,7 @@ const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { getSpotter, setSpotter, deleteSpotter } = require('~/models/kadeSpotter');
+const { ensureSpotterAgent } = require('~/models/kadeSpotterAgent');
 
 const router = express.Router();
 
@@ -35,7 +36,14 @@ const VOICE_IDS = new Set(SPOTTER_VOICES.map((v) => v.id));
 
 router.get('/', requireJwtAuth, async (req, res) => {
   try {
-    const spotter = await getSpotter(String(req.user.id || req.user._id));
+    const uid = String(req.user.id || req.user._id);
+    const spotter = await getSpotter(uid);
+    // Session 21i: lazily back-fill the textable Spotter agent for anyone who
+    // set up a Spotter before this existed. Fire-and-forget so the page never
+    // waits on it; it self-links the agentId on first run.
+    if (spotter && spotter.name && !spotter.agentId) {
+      ensureSpotterAgent(uid, spotter).catch(() => {});
+    }
     return res.json({ spotter, voices: SPOTTER_VOICES });
   } catch (err) {
     logger.error('[kadeSpotter] get failed', err);
@@ -56,7 +64,10 @@ router.post('/', requireJwtAuth, async (req, res) => {
     if (!name) return res.status(400).json({ error: 'Your Spotter needs a name.' });
     if (!VOICE_IDS.has(voice)) return res.status(400).json({ error: 'Pick one of the eight voices.' });
     const spotter = await setSpotter(uid, { name, voice, persona });
-    return res.json({ spotter });
+    // Create or update this account's textable Spotter agent to match. Awaited
+    // so the returned spotter carries the agentId, but fail-soft inside.
+    const agentId = await ensureSpotterAgent(uid, spotter);
+    return res.json({ spotter: { ...spotter, agentId: agentId || (spotter && spotter.agentId) || null } });
   } catch (err) {
     logger.error('[kadeSpotter] save failed', err);
     return res.status(500).json({ error: 'spotter save failed' });

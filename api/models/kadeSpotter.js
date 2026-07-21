@@ -15,6 +15,10 @@ const kadeSpotterSchema = new mongoose.Schema(
     name: { type: String, required: true, maxlength: 40 },
     voice: { type: String, required: true, maxlength: 24 },
     persona: { type: String, default: '', maxlength: 12000 },
+    // Session 21i: the private, textable LibreChat agent auto-created from this
+    // Spotter so text + calls are ONE identity that shares memory. Linked here
+    // once ensureSpotterAgent has created it.
+    agentId: { type: String, default: null },
   },
   { timestamps: true },
 );
@@ -24,7 +28,7 @@ const KadeSpotter =
 
 async function getSpotter(userId) {
   const row = await KadeSpotter.findOne({ userId: String(userId) }).lean();
-  return row ? { name: row.name, voice: row.voice, persona: row.persona || '' } : null;
+  return row ? { name: row.name, voice: row.voice, persona: row.persona || '', agentId: row.agentId || null } : null;
 }
 
 async function setSpotter(userId, { name, voice, persona }) {
