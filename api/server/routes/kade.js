@@ -282,15 +282,20 @@ router.get('/my-usage', requireJwtAuth, async (req, res) => {
       if (r._id.recent) month.llmUSD = round(month.llmUSD + v);
     }
     const qKey = { tts: 'tts_chars', flux: 'flux_images', tavily: 'tavily_searches', phone: 'phone_minutes' };
-    const cKey = { tts: 'ttsUSD', flux: 'fluxUSD', tavily: 'tavilyUSD', phone: 'phoneUSD' };
+    // Session 22: voice_chat = the bridge's per-call LLM estimate (calls ride
+    // the proxy's own login, so LibreChat's balance system never sees them).
+    // Its COST joins the Chat line -- it IS chat thinking, just by voice; its
+    // token quantity deliberately joins no quantity counter (tokens aren't
+    // minutes/chars/images).
+    const cKey = { tts: 'ttsUSD', flux: 'fluxUSD', tavily: 'tavilyUSD', phone: 'phoneUSD', voice_chat: 'llmUSD' };
     for (const r of kuAgg) {
       const svc = r._id.service;
       if (cKey[svc]) {
         all[cKey[svc]] = round(all[cKey[svc]] + (r.costUSD || 0));
-        all[qKey[svc]] += r.quantity || 0;
+        if (qKey[svc]) { all[qKey[svc]] += r.quantity || 0; }
         if (r._id.recent) {
           month[cKey[svc]] = round(month[cKey[svc]] + (r.costUSD || 0));
-          month[qKey[svc]] += r.quantity || 0;
+          if (qKey[svc]) { month[qKey[svc]] += r.quantity || 0; }
         }
       } else {
         // anything else (fal_video, fal_image, future services) rolls into "other"
@@ -705,12 +710,21 @@ router.post('/usage-event', async (req, res) => {
     if (!expected || (req.body || {}).secret !== expected) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    const { userId, service, quantity, unit, costUSD, metadata } = req.body || {};
-    if (!userId || !service || !(Number(quantity) > 0)) {
-      return res.status(400).json({ error: 'userId, service, and a positive quantity are required' });
+    const { userId, userEmail, service, quantity, unit, costUSD, metadata } = req.body || {};
+    // Session 22 (voice-chat billing): the bridge's PHONE registry rows carry
+    // the linked EMAIL (lcEmail), not the LibreChat user id -- accept either
+    // and resolve email -> id here, where the User model lives.
+    let uid = userId ? String(userId) : null;
+    if (!uid && userEmail) {
+      const { User } = models();
+      const u = await User.findOne({ email: String(userEmail).toLowerCase().trim() }, { _id: 1 }).lean();
+      if (u) uid = String(u._id);
+    }
+    if (!uid || !service || !(Number(quantity) > 0)) {
+      return res.status(400).json({ error: 'userId (or a known userEmail), service, and a positive quantity are required' });
     }
     await logKadeUsage({
-      userId: String(userId),
+      userId: uid,
       service: String(service).slice(0, 32),
       quantity: Number(quantity),
       unit: unit ? String(unit).slice(0, 16) : undefined,
