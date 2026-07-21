@@ -308,6 +308,7 @@ const startServer = async () => {
   /** Friendly URLs for the usage dashboard + Feed the Server page (HTML shells;
    * client JS self-authenticates via /api/auth/refresh then calls /api/kade APIs). */
   app.get('/usage-dashboard', routes.kade.dashboardPage);
+  app.get('/logs', routes.kade.logsPage);
   app.get('/feedback-dashboard', routes.kade.feedbackPage);
   app.get('/notifications', routes.kade.notificationsPage);
   app.get('/describe', routes.kadeDescribe.page);

@@ -753,7 +753,114 @@ router.post('/feedback/:id/status', requireJwtAuth, requireAdminAccess, async (r
 });
 
 const FEED_HTML = require('./kadePages').feedHtml;
+/* ============================================================================
+ * ADMIN LOGS VIEWER (session 21h, Kade: "put a logs link in my admin dashboard
+ * ... by user, then the users' conversations ... so if someone says my chatbot
+ * did this, I can pull up the log"). Read-only. Three admin-guarded endpoints
+ * feed a drill-down page (users -> their conversations -> the messages), laid
+ * out the way a user sees their own chat.
+ * ========================================================================== */
+const logsModels = () => ({
+  User: mongoose.models.User || mongoose.model('User'),
+  Conversation: mongoose.models.Conversation || mongoose.model('Conversation'),
+  Message: mongoose.models.Message || mongoose.model('Message'),
+});
+
+const logsMsgText = (m) => {
+  if (Array.isArray(m.content) && m.content.length) {
+    const joined = m.content
+      .filter((b) => b && b.type === 'text')
+      .map((b) => b.text)
+      .filter(Boolean)
+      .join('\n\n');
+    if (joined) return joined;
+  }
+  if (typeof m.text === 'string' && m.text.trim()) return m.text;
+  return m.isCreatedByUser ? '' : '(no text — tool activity only)';
+};
+
+// Everyone on the instance, with a conversation count, most-active first.
+router.get('/admin/logs-users', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const { User, Conversation } = logsModels();
+    const [users, counts] = await Promise.all([
+      User.find({}, { name: 1, username: 1, email: 1, role: 1 }).lean(),
+      Conversation.aggregate([{ $group: { _id: '$user', n: { $sum: 1 } } }]),
+    ]);
+    const countMap = {};
+    for (const c of counts) countMap[String(c._id)] = c.n;
+    const out = users
+      .map((u) => ({
+        id: String(u._id),
+        name: u.name || u.username || '(no name)',
+        email: u.email || '',
+        role: u.role || 'USER',
+        convoCount: countMap[String(u._id)] || 0,
+      }))
+      .sort((a, b) => b.convoCount - a.convoCount || a.name.localeCompare(b.name));
+    res.json({ users: out });
+  } catch (e) {
+    logger.error('[kade/admin/logs-users]', e);
+    res.status(500).json({ error: 'Could not load users' });
+  }
+});
+
+// One user's conversations, newest first (same order they see them).
+router.get('/admin/logs-convos', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const userId = String(req.query.userId || '').trim();
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const { Conversation } = logsModels();
+    const convos = await Conversation.find(
+      { user: userId },
+      { conversationId: 1, title: 1, updatedAt: 1, endpoint: 1 },
+    )
+      .sort({ updatedAt: -1 })
+      .limit(500)
+      .lean();
+    res.json({
+      convos: convos.map((c) => ({
+        conversationId: c.conversationId,
+        title: c.title || '(untitled)',
+        updatedAt: c.updatedAt,
+        endpoint: c.endpoint || '',
+      })),
+    });
+  } catch (e) {
+    logger.error('[kade/admin/logs-convos]', e);
+    res.status(500).json({ error: 'Could not load conversations' });
+  }
+});
+
+// The messages of one conversation, oldest-first, laid out like the chat.
+router.get('/admin/logs-messages', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const conversationId = String(req.query.conversationId || '').trim();
+    if (!conversationId) return res.status(400).json({ error: 'conversationId required' });
+    const { Message } = logsModels();
+    const msgs = await Message.find(
+      { conversationId },
+      { sender: 1, text: 1, content: 1, isCreatedByUser: 1, createdAt: 1 },
+    )
+      .sort({ createdAt: 1 })
+      .limit(2000)
+      .lean();
+    res.json({
+      messages: msgs.map((m) => ({
+        sender: m.isCreatedByUser ? 'User' : m.sender || 'Assistant',
+        isUser: !!m.isCreatedByUser,
+        text: logsMsgText(m),
+        createdAt: m.createdAt,
+      })),
+    });
+  } catch (e) {
+    logger.error('[kade/admin/logs-messages]', e);
+    res.status(500).json({ error: 'Could not load messages' });
+  }
+});
+
 const DASH_HTML = require('./kadePages').dashboardHtml;
+const LOGS_HTML = require('./kadePages').logsHtml;
 const CREATIONS_HTML = require('./kadePages').creationsHtml;
 const WALL_HTML = require('./kadePages').wallHtml;
 const GAMEROOM_HTML = require('./kadePages').gameRoomHtml;
@@ -1443,6 +1550,7 @@ router.get('/call-memories', async (req, res) => {
 
 router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
+router.logsPage = sendHtml(LOGS_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);
 router.wallPage = sendHtml(WALL_HTML);
 router.gameRoomPage = sendHtml(GAMEROOM_HTML);
@@ -1455,6 +1563,7 @@ router.tabBarAssetPage = (req, res) => res.type('application/javascript').send(T
 // Also reachable under the API namespace:
 router.get('/feed', router.feedPage);
 router.get('/dashboard', router.dashboardPage);
+router.get('/logs', router.logsPage);
 router.get('/creations', router.creationsPage);
 router.get('/game-room-page', router.gameRoomPage);
 

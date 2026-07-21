@@ -281,6 +281,7 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
   <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a></p>
   <h1>Kade-AI Usage Dashboard</h1>
   <p class="muted">Admin view. Spend, usage, and balances across everyone on the instance.</p>
+  <p><a class="back" href="/logs" style="font-weight:600">&#128220; Logs &mdash; look up any user's conversations &rarr;</a></p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading…</div>
 
@@ -1562,5 +1563,148 @@ const tabBarAsset = `(function(){
 })();
 `;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, tabBarAsset };
+
+/* ADMIN LOGS VIEWER (session 21h). Drill-down: users -> their conversations ->
+ * the messages, laid out like the user's own chat. Read-only support tool.
+ * Reuses SHARED_HEAD's getToken()/apiGet()/styles; the API is admin-guarded. */
+const logsHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Logs</title>${SHARED_HEAD}
+<style>
+  .logrow { display:flex; justify-content:space-between; align-items:center; gap:.6rem;
+    width:100%; text-align:left; padding:.8rem 1rem; border:1px solid #d9dde3; border-radius:12px;
+    background:#fff; margin-bottom:.5rem; cursor:pointer; font:inherit; color:inherit; }
+  .logrow:hover { border-color:#2f6fed; }
+  .logrow:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
+  .logrow .meta { color:#5b6270; font-size:.82rem; white-space:nowrap; }
+  .bubble { max-width:46rem; padding:.6rem .9rem; border-radius:14px; margin:.4rem 0; white-space:pre-wrap; }
+  .bubble.user { background:#2f6fed; color:#fff; margin-left:auto; }
+  .bubble.bot  { background:#eef1f6; color:#12151b; margin-right:auto; }
+  .bubble .who { display:block; font-size:.72rem; font-weight:700; opacity:.85; margin-bottom:.15rem; }
+  .bubble .ts  { display:block; font-size:.68rem; opacity:.7; margin-top:.2rem; }
+  .crumbs { color:#5b6270; font-size:.9rem; margin:.2rem 0 1rem; }
+  .crumbs button { font:inherit; color:#2f6fed; background:none; border:none; cursor:pointer; padding:0; }
+  #search { width:100%; padding:.7rem .9rem; border:1px solid #d9dde3; border-radius:12px; font:inherit; margin-bottom:1rem; }
+  @media (prefers-color-scheme: dark) {
+    .logrow { background:#1a1d23; border-color:#2c2f37; } .logrow .meta { color:#9aa3b5; }
+    .bubble.bot { background:#242832; color:#e6e9ef; } #search { background:#1a1d23; border-color:#2c2f37; color:#e6e9ef; }
+  }
+</style></head>
+<body>
+  <p><a class="back" href="/usage-dashboard" aria-label="Back to the dashboard">&larr; Back to dashboard</a></p>
+  <h1>Logs</h1>
+  <p class="muted">Admin view. Look up any user's conversations to see exactly what happened — the same layout they see.</p>
+  <div id="status" class="status" role="status" aria-live="polite">Loading&hellip;</div>
+  <main id="content" hidden>
+    <div id="crumbs" class="crumbs" aria-live="polite"></div>
+    <div id="usersView">
+      <input id="search" type="search" placeholder="Search users by name or email" aria-label="Search users" />
+      <div id="usersList"></div>
+    </div>
+    <div id="convosView" hidden><div id="convosList"></div></div>
+    <div id="messagesView" hidden><div id="messagesList"></div></div>
+  </main>
+  <script>
+    (function(){
+      var status = document.getElementById('status');
+      var content = document.getElementById('content');
+      var usersView = document.getElementById('usersView');
+      var convosView = document.getElementById('convosView');
+      var messagesView = document.getElementById('messagesView');
+      var crumbs = document.getElementById('crumbs');
+      var allUsers = [];
+      var token = null;
+
+      function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+      function when(d){ if(!d) return ''; try { return new Date(d).toLocaleString(); } catch(e){ return ''; } }
+      function show(view){ usersView.hidden = view!=='users'; convosView.hidden = view!=='convos'; messagesView.hidden = view!=='messages'; }
+
+      function setCrumbs(parts){
+        crumbs.innerHTML = '';
+        parts.forEach(function(p, i){
+          if(i) crumbs.appendChild(document.createTextNode('  ›  '));
+          if(p.onClick){ var b=document.createElement('button'); b.textContent=p.label; b.onclick=p.onClick; crumbs.appendChild(b); }
+          else { crumbs.appendChild(document.createTextNode(p.label)); }
+        });
+      }
+
+      function renderUsers(list){
+        var box = document.getElementById('usersList');
+        if(!list.length){ box.innerHTML = '<p class="muted">No users found.</p>'; return; }
+        box.innerHTML = '';
+        list.forEach(function(u){
+          var b = document.createElement('button');
+          b.className = 'logrow';
+          b.innerHTML = '<span>'+esc(u.name)+(u.role==='ADMIN'?' <span class="meta">(admin)</span>':'')+'<br><span class="meta">'+esc(u.email)+'</span></span>'+
+                        '<span class="meta">'+u.convoCount+' chat'+(u.convoCount===1?'':'s')+'</span>';
+          b.setAttribute('aria-label', u.name+', '+u.email+', '+u.convoCount+' conversations');
+          b.onclick = function(){ openUser(u); };
+          box.appendChild(b);
+        });
+      }
+
+      function filterUsers(){
+        var q = (document.getElementById('search').value||'').toLowerCase().trim();
+        if(!q){ renderUsers(allUsers); return; }
+        renderUsers(allUsers.filter(function(u){ return (u.name+' '+u.email).toLowerCase().indexOf(q)>=0; }));
+      }
+
+      async function openUser(u){
+        show('convos'); status.textContent=''; status.className='status';
+        setCrumbs([{label:'Users', onClick:backToUsers}, {label:u.name}]);
+        var box = document.getElementById('convosList');
+        box.innerHTML = '<p class="muted">Loading conversations&hellip;</p>';
+        var r = await apiGet('/api/kade/admin/logs-convos?userId='+encodeURIComponent(u.id), token);
+        if(!r.ok){ box.innerHTML = '<p class="status err">Could not load conversations.</p>'; return; }
+        var d = await r.json();
+        var convos = d.convos||[];
+        if(!convos.length){ box.innerHTML = '<p class="muted">This user has no conversations.</p>'; return; }
+        box.innerHTML = '';
+        convos.forEach(function(c){
+          var b = document.createElement('button');
+          b.className = 'logrow';
+          b.innerHTML = '<span>'+esc(c.title)+'</span><span class="meta">'+esc(when(c.updatedAt))+'</span>';
+          b.setAttribute('aria-label', c.title+', last active '+when(c.updatedAt));
+          b.onclick = function(){ openConvo(u, c); };
+          box.appendChild(b);
+        });
+      }
+
+      async function openConvo(u, c){
+        show('messages'); status.textContent=''; status.className='status';
+        setCrumbs([{label:'Users', onClick:backToUsers}, {label:u.name, onClick:function(){ openUser(u); }}, {label:c.title}]);
+        var box = document.getElementById('messagesList');
+        box.innerHTML = '<p class="muted">Loading messages&hellip;</p>';
+        var r = await apiGet('/api/kade/admin/logs-messages?conversationId='+encodeURIComponent(c.conversationId), token);
+        if(!r.ok){ box.innerHTML = '<p class="status err">Could not load messages.</p>'; return; }
+        var d = await r.json();
+        var msgs = d.messages||[];
+        if(!msgs.length){ box.innerHTML = '<p class="muted">No messages in this conversation.</p>'; return; }
+        box.innerHTML = '';
+        msgs.forEach(function(m){
+          var div = document.createElement('div');
+          div.className = 'bubble ' + (m.isUser?'user':'bot');
+          div.innerHTML = '<span class="who">'+esc(m.isUser?'User':m.sender)+'</span>'+esc(m.text)+'<span class="ts">'+esc(when(m.createdAt))+'</span>';
+          box.appendChild(div);
+        });
+      }
+
+      function backToUsers(){ show('users'); setCrumbs([{label:'Users'}]); }
+
+      (async function(){
+        token = await getToken();
+        if(!token){ status.className='status err'; status.textContent='Please sign in at the chat site first, then reload this page.'; return; }
+        var r = await apiGet('/api/kade/admin/logs-users', token);
+        if(r.status===401 || r.status===403){ status.className='status err'; status.textContent='This page is for admins only.'; return; }
+        if(!r.ok){ status.className='status err'; status.textContent='Could not load the logs right now. Try reloading.'; return; }
+        var d = await r.json();
+        allUsers = d.users||[];
+        status.hidden = true; content.hidden = false;
+        setCrumbs([{label:'Users'}]);
+        renderUsers(allUsers);
+        document.getElementById('search').addEventListener('input', filterUsers);
+      })();
+    })();
+  </script>
+</body></html>`;
+
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, tabBarAsset, logsHtml };
 
