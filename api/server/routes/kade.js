@@ -766,16 +766,40 @@ const logsModels = () => ({
   Message: mongoose.models.Message || mongoose.model('Message'),
 });
 
+// Strip the same tag families the speech/chat display path strips, so the log
+// shows what the user actually SAW/heard, not the raw stored markup. Mirrors
+// the bridge's scrubTranscriptText: %%%voice tags, [sound:]/[table:] cues,
+// think blocks, [END CALL], and the citation glyphs / turnN-searchN tokens
+// (the "searchterms"). These are stored raw on purpose (the TTS proxy needs
+// the %%% tags), but the client always cleans them before display — so seeing
+// them here was a LOG artifact, never something the user received.
+const logsScrub = (text) => {
+  if (!text) return text;
+  return String(text)
+    .replace(/:::thinking[\s\S]*?:::\n?/g, '')
+    .replace(/<think>[\s\S]*?<\/think>\n?/g, '')
+    .replace(/%{2,4}[a-zA-Z][^%\n]{0,80}%{2,4}/g, '')
+    .replace(/\[(?:sound:[a-z0-9_]+|table:[a-z0-9]{1,12})\]/gi, '')
+    .replace(/\[END CALL\]/gi, '')
+    .replace(/[\uE200-\uE20F]turn\d+[a-z]+\d+/gi, '')
+    .replace(/[\uE000-\uF8FF]/g, '')
+    .replace(/turn\d+(?:search|image|news|video|ref|file)\d+/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+};
+
 const logsMsgText = (m) => {
+  let raw = '';
   if (Array.isArray(m.content) && m.content.length) {
-    const joined = m.content
+    raw = m.content
       .filter((b) => b && b.type === 'text')
       .map((b) => b.text)
       .filter(Boolean)
       .join('\n\n');
-    if (joined) return joined;
   }
-  if (typeof m.text === 'string' && m.text.trim()) return m.text;
+  if (!raw && typeof m.text === 'string' && m.text.trim()) raw = m.text;
+  const clean = logsScrub(raw);
+  if (clean) return clean;
   return m.isCreatedByUser ? '' : '(no text — tool activity only)';
 };
 
