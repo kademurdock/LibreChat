@@ -10,6 +10,7 @@
  * PHONE transcripts are minted.
  */
 const { v4: uuidv4 } = require('uuid');
+const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { saveConvo, saveMessage } = require('~/models');
 const { KadeCallTranscript } = require('~/models/kadeCallTranscript');
@@ -53,13 +54,54 @@ async function mintConversationFromTranscript(doc, opts = {}) {
       return null;
     }
 
-    const conversationId = uuidv4();
+    /* KADE July 22 2026 (call continuity, her spec: "if it's still open
+     * when they hit call again, it needs to continue that open conversation
+     * instead of making multiple conversations for what could be the same
+     * session"): a bridge ingest can now carry the app's OPEN conversation
+     * on doc.conversationId (the schema's existing link-back field). When
+     * it names a real conversation OWNED BY THIS USER, the call's turns are
+     * APPENDED there -- chained off its real last message, title left
+     * alone -- and mergedConversationId is stamped with the SAME id, so the
+     * app's post-call handoff resolves to the conversation the caller was
+     * already inside. Any mismatch (wrong owner, deleted, malformed) falls
+     * back to the fresh mint, exactly as before. */
+    let conversationId = uuidv4();
+    let appendTarget = null;
+    let parent = NO_PARENT;
+    if (doc.conversationId) {
+      try {
+        const Conversation = mongoose.models.Conversation || mongoose.model('Conversation');
+        const existing = await Conversation.findOne(
+          { conversationId: String(doc.conversationId), user: userId },
+          { conversationId: 1 },
+        ).lean();
+        if (existing) {
+          appendTarget = String(doc.conversationId);
+          conversationId = appendTarget;
+          const Message = mongoose.models.Message || mongoose.model('Message');
+          const lastMsg = await Message.find(
+            { conversationId: appendTarget, user: userId },
+            { messageId: 1 },
+          )
+            .sort({ createdAt: -1 })
+            .limit(1)
+            .lean();
+          if (lastMsg && lastMsg[0] && lastMsg[0].messageId) {
+            parent = String(lastMsg[0].messageId);
+          }
+        }
+      } catch (e) {
+        logger.warn(`[kadeCallMerge] append-target lookup failed, minting fresh: ${e.message}`);
+        appendTarget = null;
+        conversationId = uuidv4();
+        parent = NO_PARENT;
+      }
+    }
     const agentName = doc.agentName || 'Kiana';
     const callerLabel = doc.callerName || 'You';
     const when = doc.startedAt || doc.createdAt || new Date();
     const surfaceWord = doc.surface === 'phone' ? 'Phone call' : 'Voice chat';
 
-    let parent = NO_PARENT;
     for (const t of turns) {
       const messageId = uuidv4();
       const isUser = t.role === 'user';
@@ -88,14 +130,21 @@ async function mintConversationFromTranscript(doc, opts = {}) {
       parent = messageId;
     }
 
-    const convoFields = {
-      conversationId,
-      title: `${surfaceWord} with ${agentName} — ${fmtWhen(when)}`,
-      endpoint: 'agents',
-      createdAt: new Date(when),
-      updatedAt: new Date(doc.endedAt || when),
-    };
-    if (doc.agentId) {
+    const convoFields = appendTarget
+      ? {
+          // Appending: the conversation already has its name and birthday --
+          // only its freshness moves.
+          conversationId,
+          updatedAt: new Date(doc.endedAt || when),
+        }
+      : {
+          conversationId,
+          title: `${surfaceWord} with ${agentName} — ${fmtWhen(when)}`,
+          endpoint: 'agents',
+          createdAt: new Date(when),
+          updatedAt: new Date(doc.endedAt || when),
+        };
+    if (!appendTarget && doc.agentId) {
       convoFields.agent_id = doc.agentId;
     }
     await saveConvo({ userId }, convoFields, {
@@ -108,7 +157,7 @@ async function mintConversationFromTranscript(doc, opts = {}) {
       { $set: { mergedConversationId: conversationId } },
     );
     logger.info(
-      `[kadeCallMerge] minted convo ${conversationId} from transcript ${doc._id} (${turns.length} turns, ${doc.surface})`,
+      `[kadeCallMerge] ${appendTarget ? 'appended into' : 'minted'} convo ${conversationId} from transcript ${doc._id} (${turns.length} turns, ${doc.surface})`,
     );
     return conversationId;
   } catch (err) {

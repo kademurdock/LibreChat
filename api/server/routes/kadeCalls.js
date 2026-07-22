@@ -10,6 +10,7 @@
  * Transcript text only; no audio is stored.
  */
 const express = require('express');
+const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { KadeCallTranscript, logKadeCall } = require('~/models/kadeCallTranscript');
@@ -141,6 +142,14 @@ router.post('/ingest', async (req, res) => {
       startedAt: b.startedAt,
       endedAt: b.endedAt,
       turns: b.turns,
+      /* KADE July 22 2026 (call continuity): the bridge sends the app's open
+       * conversation id when the call was started from inside one; rides the
+       * schema's existing conversationId link-back field and turns the mint
+       * into an append (see kadeCallMerge). Length-capped, shape-checked. */
+      conversationId:
+        typeof b.targetConversationId === 'string' && /^[0-9a-f-]{8,64}$/i.test(b.targetConversationId)
+          ? b.targetConversationId
+          : undefined,
       metadata: b.metadata,
     });
     if (id) {
@@ -167,6 +176,88 @@ router.post('/ingest', async (req, res) => {
   } catch (err) {
     logger.error('[/api/kade/calls/ingest] error:', err);
     res.status(500).json({ error: 'ingest failed' });
+  }
+});
+
+/* KADE July 22 2026 (call continuity): the bridge asks for the TAIL of an
+ * existing conversation to seed a call that CONTINUES it -- so calling again
+ * from the same open conversation picks up where the last call/text left
+ * off instead of starting amnesiac. Secret-guarded server-to-server (same
+ * header convention as call-memories), and scoped twice: the email must
+ * resolve to an account AND that account must own the conversation. Text is
+ * given in clean spoken form (content-block extraction + the same tag
+ * families the admin logs strip), capped at the newest 12 turns. */
+const CTX_SCRUB = (text) => {
+  if (!text) return '';
+  return String(text)
+    .replace(/:::thinking[\s\S]*?:::\n?/g, '')
+    .replace(/<think>[\s\S]*?<\/think>\n?/g, '')
+    .replace(/%{2,4}[a-zA-Z][^%\n]{0,80}%{2,4}/g, '')
+    .replace(/\[(?:sound:[a-z0-9_]+|table:[a-z0-9]{1,12})\]/gi, '')
+    .replace(/\[END CALL\]/gi, '')
+    .replace(/\[DEEP THINK \d+\]/gi, '')
+    .replace(/[\uE200-\uE20F]turn\d+[a-z]+\d+/gi, '')
+    .replace(/[\uE000-\uF8FF]/g, '')
+    .replace(/turn\d+(?:search|image|news|video|ref|file)\d+/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+};
+const ctxMsgText = (m) => {
+  let raw = '';
+  if (Array.isArray(m.content) && m.content.length) {
+    raw = m.content
+      .filter((b) => b && b.type === 'text')
+      .map((b) => b.text)
+      .filter(Boolean)
+      .join('\n\n');
+  }
+  if (!raw && typeof m.text === 'string' && m.text.trim()) raw = m.text;
+  return CTX_SCRUB(raw);
+};
+router.post('/context', async (req, res) => {
+  try {
+    const expected = process.env.KADE_CALL_INGEST_SECRET || process.env.KADE_USAGE_EVENT_SECRET;
+    const provided = req.headers['x-kade-secret'] || (req.body || {}).secret;
+    if (!expected || provided !== expected) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+    const email = String((req.body || {}).email || '').trim();
+    const conversationId = String((req.body || {}).conversationId || '').trim();
+    if (!email || !conversationId) {
+      return res.status(400).json({ error: 'email and conversationId required' });
+    }
+    const User = mongoose.models.User || mongoose.model('User');
+    const user = await User.findOne(
+      { email: { $in: [email, email.toLowerCase()] } },
+      { _id: 1 },
+    ).lean();
+    if (!user) {
+      return res.json({ turns: [] });
+    }
+    const Conversation = mongoose.models.Conversation || mongoose.model('Conversation');
+    const convo = await Conversation.findOne(
+      { conversationId, user: String(user._id) },
+      { conversationId: 1 },
+    ).lean();
+    if (!convo) {
+      return res.json({ turns: [] });
+    }
+    const Message = mongoose.models.Message || mongoose.model('Message');
+    const msgs = await Message.find(
+      { conversationId },
+      { sender: 1, text: 1, content: 1, isCreatedByUser: 1, createdAt: 1 },
+    )
+      .sort({ createdAt: -1 })
+      .limit(12)
+      .lean();
+    msgs.reverse();
+    const turns = msgs
+      .map((m) => ({ role: m.isCreatedByUser ? 'user' : 'assistant', text: ctxMsgText(m) }))
+      .filter((t) => t.text);
+    return res.json({ turns });
+  } catch (err) {
+    logger.error('[/api/kade/calls/context] error:', err);
+    return res.status(500).json({ error: 'context failed' });
   }
 });
 
