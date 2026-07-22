@@ -276,13 +276,13 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
   <script>
     (async function(){
       const status = document.getElementById('status');
-      const token = await getToken();
+      let token = null; try { token = await getToken(); } catch(e) {}
       if(!token){
         status.className = 'status err';
         status.textContent = 'Please sign in at the chat site first, then reload this page.';
         return;
       }
-      const r = await apiGet('/api/kade/my-usage', token);
+      let r; try { r = await apiGet('/api/kade/my-usage', token); } catch(e) { status.className='status err'; status.textContent='Could not reach the server. Check your connection and reload.'; return; }
       if(!r.ok){
         status.className = 'status err';
         status.textContent = 'Could not load your usage right now. Try reloading in a moment.';
@@ -404,9 +404,9 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
     function svcExtra(u){ let t=0; for(const k in (u.services||{})){ t += u.services[k].costUSD.allTime; } return t; }
     (async function(){
       const status = document.getElementById('status');
-      const token = await getToken();
+      let token = null; try { token = await getToken(); } catch(e) {}
       if(!token){ status.className='status err'; status.textContent='Please sign in at the chat site first, then reload this page.'; return; }
-      const r = await apiGet('/api/kade/usage?days=30', token);
+      let r; try { r = await apiGet('/api/kade/usage?days=30', token); } catch(e) { status.className='status err'; status.textContent='Could not reach the server. Check your connection and reload.'; return; }
       if(r.status===401 || r.status===403){ status.className='status err'; status.textContent='This dashboard is for admins only.'; return; }
       if(!r.ok){ status.className='status err'; status.textContent='Could not load the dashboard right now. Try reloading.'; return; }
       const d = await r.json();
@@ -550,7 +550,7 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
   <script>
     (async function(){
       const status = document.getElementById('status');
-      const token = await getToken();
+      let token = null; try { token = await getToken(); } catch(e) {}
       if(!token){
         status.className = 'status err';
         status.textContent = 'Please sign in at the chat site first, then reload this page.';
@@ -665,7 +665,7 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
   <script>
     (async function(){
       const status = document.getElementById('status');
-      const token = await getToken();
+      let token = null; try { token = await getToken(); } catch(e) {}
       if(!token){
         status.className = 'status err';
         status.textContent = 'Please sign in at the chat site first, then reload this page.';
@@ -777,7 +777,7 @@ const gameRoomHtml = `<!doctype html><html lang="en"><head><title>The Game Room<
   <script>
     (async function(){
       const status = document.getElementById('status');
-      const token = await getToken();
+      let token = null; try { token = await getToken(); } catch(e) {}
       if(!token){
         status.className = 'status err';
         status.textContent = 'Please sign in at the chat site first, then reload this page.';
@@ -1478,7 +1478,7 @@ const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</ti
 <h1>You</h1>
 <p class="muted">Your account and settings.</p>
 <nav class="hublist" aria-label="Your account">
-  <a class="hubitem" href="/feed-the-server"><span class="hicon" aria-hidden="true">💳</span><span><strong>Usage &amp; Balance</strong><small>See what you have used, what is left, and top up</small></span></a>
+  <a class="hubitem" href="/feed-the-server"><span class="hicon" aria-hidden="true">💳</span><span><strong>Donate &mdash; Feed the Server</strong><small>See your usage and balance, and chip in to keep this running</small></span></a>
   <a class="hubitem" href="/notifications"><span class="hicon" aria-hidden="true">🔔</span><span><strong>Notifications &amp; Reminders</strong><small>Birthday nudges and reminders — in chat, push, or by phone</small></span></a>
   <a class="hubitem" href="/pronunciation-dictionary"><span class="hicon" aria-hidden="true">🗣️</span><span><strong>Pronunciation Dictionary</strong><small>Teach Kade-AI how to say names or words you use</small></span></a>
   <a class="hubitem" href="/help"><span class="hicon" aria-hidden="true">❓</span><span><strong>Help &amp; FAQ</strong><small>How everything works</small></span></a>
