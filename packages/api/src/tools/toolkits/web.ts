@@ -1,4 +1,5 @@
 import { Tools, replaceSpecialVars } from 'librechat-data-provider';
+import { quantizeTimeAnchor } from '~/utils/timeAnchor';
 
 /** Builds the web search tool context with citation format instructions. */
 export function buildWebSearchContext(): string {
@@ -22,8 +23,12 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
 **CRITICAL:** Output escape sequences EXACTLY as shown. Do NOT substitute with † or other symbols. Place anchors AFTER punctuation. Cite every non-obvious fact/quote. NEVER use markdown links, [1], footnotes, or HTML tags. These escape sequences are ONLY for citation anchors — never write escape-sequence text (like \\u00a0) anywhere else in your reply; type normal spaces and characters.`.trim();
 }
 
-/** Builds dynamic web search context scoped to the conversation anchor time. */
+/** Builds dynamic web search context scoped to the conversation anchor time.
+ * KADE July 22 2026: the anchor is quantized (LC_TIME_ANCHOR_QUANTUM_MIN,
+ * default 60 min) so this line — which rides the injected context message on
+ * EVERY request — renders byte-identical within a window instead of mutating
+ * per request and killing the Moonshot prompt cache (see utils/timeAnchor). */
 export function buildWebSearchDynamicContext(now?: string | number | Date): string {
   return `# \`${Tools.web_search}\` Runtime Context
-Conversation Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}', now })}`.trim();
+Conversation Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}', now: quantizeTimeAnchor(now) })}`.trim();
 }

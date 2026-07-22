@@ -25,6 +25,7 @@ export * from './sanitizeTitle';
 export * from './text';
 export * from './yaml';
 export * from './http';
+export * from './timeAnchor';
 export * from './tokens';
 export * from './tokenMap';
 export * from './url';

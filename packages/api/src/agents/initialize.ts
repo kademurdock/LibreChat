@@ -44,6 +44,7 @@ import {
   extractLibreChatParams,
   getModelMaxTokens,
   getThreadData,
+  quantizeTimeAnchor,
 } from '~/utils';
 import {
   registerCodeExecutionTools,
@@ -1144,10 +1145,15 @@ export async function initializeAgent(
   }
 
   if (agent.instructions && agent.instructions !== '') {
+    /** KADE July 22 2026: quantized anchor (LC_TIME_ANCHOR_QUANTUM_MIN) so
+     * temporal special vars render byte-identical within a window — on the
+     * call lane conversationCreatedAt is fresh wall-clock every turn
+     * (conversationId "new" per turn) and an exact timestamp here mutates
+     * the payload hash every request = Moonshot cache miss. See utils/timeAnchor. */
     const resolvedInstructions = replaceSpecialVars({
       text: agent.instructions,
       user: req.user ? (req.user as unknown as TUser) : null,
-      now: req.conversationCreatedAt,
+      now: quantizeTimeAnchor(req.conversationCreatedAt),
       timezone: req.body?.timezone,
     });
     if (hasTemporalSpecialVars(agent.instructions)) {
