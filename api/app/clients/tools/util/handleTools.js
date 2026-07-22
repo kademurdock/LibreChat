@@ -285,22 +285,35 @@ const loadTools = async ({
     uploadImageBuffer: options.uploadImageBuffer,
   };
 
+  /** KADE session 23 — voice-lane identity threading: on headless voice/call
+   * turns the request authenticates as the SERVICE account, but
+   * req.kadeOnBehalfOf (resolved admin-only from the bridge's session email —
+   * see services/kadeOnBehalfOf) names who is REALLY on the line. The
+   * per-user Kade tools act as that person, so Amber's bug report files as
+   * Amber, her notifies push to her, her reopens find HER reports. Absent
+   * the field (every normal chat), this is exactly the old behavior. */
+  const kadeActingUserId = options.req?.kadeOnBehalfOf?.id || user;
+  const kadeActingUserName =
+    options.req?.kadeOnBehalfOf?.name ||
+    options.req?.user?.name ||
+    options.req?.user?.username;
+
   const toolOptions = {
     flux: imageGenOptions,
     fal_studio: { req: options.req },
     kade_phone_call: {
       req: options.req,
-      userName: options.req?.user?.name || options.req?.user?.username,
+      userName: kadeActingUserName,
       agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,
     },
     kade_transcribe: {
-      userId: user,
+      userId: kadeActingUserId,
     },
     kade_notify: {
       req: options.req,
-      userId: user,
-      userName: options.req?.user?.name || options.req?.user?.username,
+      userId: kadeActingUserId,
+      userName: kadeActingUserName,
       agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,
     },
@@ -311,12 +324,12 @@ const loadTools = async ({
       agentName: agent?.name,
     },
     kade_feedback: {
-      userId: user,
+      userId: kadeActingUserId,
       agentName: agent?.name,
     },
     kade_message: {
-      userId: user,
-      userName: options?.req?.user?.name,
+      userId: kadeActingUserId,
+      userName: kadeActingUserName,
       agentName: agent?.name,
     },
     kade_code: {

@@ -898,6 +898,46 @@ router.post('/feedback/:id/status', requireJwtAuth, requireAdminAccess, async (r
   }
 });
 
+/** ADMIN: POST /api/kade/feedback/:id/reassign { email } — point a report at
+ * the user it actually belongs to. Session 23: needed because pre-identity-
+ * threading voice turns filed reports as the SERVICE account (Amber's row bug
+ * landed under Kade's name); with the report reassigned, the resolved-relay
+ * and the reopen path both reach the real reporter. */
+router.post('/feedback/:id/reassign', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const email = String((req.body || {}).email || '').trim().toLowerCase();
+    if (!email) {
+      return res.status(400).json({ error: 'email required' });
+    }
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid id.' });
+    }
+    const User = mongoose.models.User || mongoose.model('User');
+    const target = await User.findOne(
+      { email: { $in: [email, email.toLowerCase()] } },
+      { _id: 1, name: 1, email: 1 },
+    ).lean();
+    if (!target) {
+      return res.status(404).json({ error: 'No user with that email.' });
+    }
+    const doc = await KadeFeedback.findByIdAndUpdate(
+      req.params.id,
+      { user: target._id },
+      { new: true },
+    ).lean();
+    if (!doc) {
+      return res.status(404).json({ error: 'Report not found.' });
+    }
+    logger.info(
+      `[kade/feedback] report ${doc._id} reassigned to ${target.email} (${target._id}) by admin ${req.user.id}`,
+    );
+    res.json({ ok: true, id: String(doc._id), user: String(target._id), email: target.email });
+  } catch (err) {
+    logger.error(`[kade/feedback] reassign failed: ${err.message}`);
+    res.status(500).json({ error: 'Could not reassign.' });
+  }
+});
+
 const FEED_HTML = require('./kadePages').feedHtml;
 /** ADMIN: GET /api/kade/usage-by-model — LLM spend grouped by model, all-time.
  * Same conversion as /usage (abs(sum(tokenValue))/1e6). Answers "which model
