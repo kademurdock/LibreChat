@@ -841,7 +841,19 @@ router.get('/feedback', requireJwtAuth, requireAdminAccess, async (req, res) => 
   }
 });
 
-/** ADMIN: POST /api/kade/feedback/:id/status { status } — triage a report. */
+/** ADMIN: POST /api/kade/feedback/:id/status { status } — triage a report.
+ * Session 23 (Kade: "When I mark a bug resolved, it should probably be
+ * relayed to that person... Whoever they reported the bug to, kiana or
+ * whatever, should let them know. Then they can reopen it if they need
+ * to."): flipping a report TO 'resolved' (from any other status) now
+ * notifies the reporter over the SAME rail reminders use (deliverNudge):
+ * push if that's their channel, else it queues for their next chat, where
+ * whichever companion they talk to delivers it naturally in character. The
+ * text names the report and the persona it was filed through, and tells
+ * them they can reopen it by just saying so — the kade_feedback tool now
+ * has action:'reopen' for exactly that. Fail-soft: a relay hiccup NEVER
+ * breaks the admin action; the response's `relayed` field is the receipt
+ * ('push' | 'chat' | 'call' | 'off' | null when no relay fired). */
 router.post('/feedback/:id/status', requireJwtAuth, requireAdminAccess, async (req, res) => {
   try {
     const { status } = req.body || {};
@@ -851,11 +863,35 @@ router.post('/feedback/:id/status', requireJwtAuth, requireAdminAccess, async (r
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ error: 'Invalid id.' });
     }
-    const doc = await KadeFeedback.findByIdAndUpdate(req.params.id, { status }, { new: true }).lean();
-    if (!doc) {
+    const prev = await KadeFeedback.findById(req.params.id).lean();
+    if (!prev) {
       return res.status(404).json({ error: 'Report not found.' });
     }
-    res.json({ ok: true, id: String(doc._id), status: doc.status });
+    const doc = await KadeFeedback.findByIdAndUpdate(req.params.id, { status }, { new: true }).lean();
+    let relayed = null;
+    if (status === 'resolved' && prev.status !== 'resolved' && doc.user) {
+      try {
+        const { deliverNudge } = require('~/server/services/kadeNudges');
+        const label =
+          doc.category === 'bug'
+            ? 'bug you reported'
+            : doc.category === 'feature'
+              ? 'feature you asked for'
+              : 'feedback you sent';
+        const via = doc.agent && doc.agent !== 'Report a problem' ? ` through ${doc.agent}` : '';
+        const subject = doc.subject ? ` — "${doc.subject}"` : '';
+        const text =
+          `Good news: the ${label}${via}${subject} has been marked SOLVED by Kade. ` +
+          `If it's still not working right, just say "reopen it" and it goes straight back on Kade's list.`;
+        relayed = await deliverNudge(doc.user, text, { type: 'feedback' });
+        logger.info(
+          `[kade/feedback] resolved-relay for report ${doc._id} -> ${relayed} (user ${doc.user})`,
+        );
+      } catch (relayErr) {
+        logger.warn(`[kade/feedback] resolved-relay failed (non-fatal): ${relayErr.message}`);
+      }
+    }
+    res.json({ ok: true, id: String(doc._id), status: doc.status, relayed });
   } catch (err) {
     logger.error(`[kade/feedback] status update failed: ${err.message}`);
     res.status(500).json({ error: 'Could not update status.' });

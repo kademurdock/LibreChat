@@ -857,7 +857,7 @@ const feedbackHtml = `<!doctype html><html lang="en"><head><title>Feedback & Bug
 <body>
   <a class="back" href="/">&larr; Back to chat</a>
   <h1>Feedback &amp; Bug Reports</h1>
-  <p class="muted">Everything your users filed by telling any character. Newest first.</p>
+  <p class="muted">Everything your users filed by telling any character. Newest first. Marking a report <strong>Solved</strong> notifies the reporter (push or their next chat, delivered by their companion) — and they can reopen it by just saying so.</p>
   <div id="filters" hidden style="margin:.5rem 0">
     <button id="f-open" class="btn" type="button" aria-pressed="true">Open only</button>
     <button id="f-all" class="btn" type="button" aria-pressed="false" style="background:#555">Show all</button>
