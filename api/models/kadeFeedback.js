@@ -22,7 +22,7 @@ const kadeFeedbackSchema = new mongoose.Schema(
     subject: { type: String, maxlength: 200 },
     detail: { type: String, required: true, maxlength: 8000 },
     agent: { type: String, maxlength: 100 },
-    surface: { type: String, enum: ['chat', 'phone', 'conversation', 'web'], default: 'chat' },
+    surface: { type: String, enum: ['chat', 'phone', 'conversation', 'web', 'app'], default: 'chat' },
     status: { type: String, enum: ['open', 'acknowledged', 'resolved', 'wontfix'], default: 'open', index: true },
   },
   { timestamps: true },

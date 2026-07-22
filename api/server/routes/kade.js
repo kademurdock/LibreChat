@@ -788,6 +788,40 @@ router.post('/usage-event', async (req, res) => {
 const { KadeFeedback } = require('~/models/kadeFeedback');
 const FEEDBACK_STATUSES = ['open', 'acknowledged', 'resolved', 'wontfix'];
 
+/* ----------------------------------------------------------------------------
+ * SELF: POST /api/kade/feedback { detail, category?, subject?, surface? } —
+ * any signed-in user files a report directly. Session 23: the native app's
+ * "Report a problem" screen posts here; the model's own doc comment always
+ * claimed this route existed ("or directly via POST /api/kade/feedback") —
+ * now it does. Same collection the kade_feedback chat tool writes and the
+ * admin /feedback-dashboard reads, so reports land in one pile either way.
+ * -------------------------------------------------------------------------- */
+router.post('/feedback', requireJwtAuth, async (req, res) => {
+  try {
+    const detail = String((req.body || {}).detail || '').trim().slice(0, 8000);
+    if (detail.length < 3) {
+      return res.status(400).json({ error: 'Say a little about what happened.' });
+    }
+    const category = ['bug', 'feature', 'feedback'].includes((req.body || {}).category)
+      ? req.body.category : 'feedback';
+    const subjectRaw = String((req.body || {}).subject || '').trim().slice(0, 200);
+    const surface = ['chat', 'phone', 'conversation', 'web', 'app'].includes((req.body || {}).surface)
+      ? req.body.surface : 'app';
+    const doc = await KadeFeedback.create({
+      user: req.user.id,
+      category,
+      subject: subjectRaw || undefined,
+      detail,
+      surface,
+      agent: 'Report a problem',
+    });
+    return res.json({ ok: true, id: String(doc._id) });
+  } catch (err) {
+    logger.error(`[kade/feedback] user submit failed: ${err.message}`);
+    return res.status(500).json({ error: 'Could not save your report. Try again.' });
+  }
+});
+
 /** ADMIN: GET /api/kade/feedback?status=open|all — user-filed reports, newest first. */
 router.get('/feedback', requireJwtAuth, requireAdminAccess, async (req, res) => {
   try {
