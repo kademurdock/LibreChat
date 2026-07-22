@@ -93,6 +93,15 @@ class KadeFeedback extends Tool {
         status: 'open',
       });
       logger.info(`[KadeFeedback] report ${report._id} filed by user ${this.userId} via ${this.agentName}: ${report.subject}`);
+      /* Session 23: owner alert — in-chat nudge + app push to Kade the
+       * moment a report lands. Fire-and-forget; a hiccup never breaks
+       * the filing (the service is fail-soft end to end). */
+      try {
+        const { alertOwnerNewFeedback } = require('~/server/services/kadeOwnerAlerts');
+        alertOwnerNewFeedback(report).catch(() => {});
+      } catch (_) {
+        /* non-fatal */
+      }
       return `Report filed. Category: ${validCat}. Kade will see it in the feedback dashboard. Thank you for taking the time to share this.`;
     } catch (err) {
       logger.error(`[KadeFeedback] failed to file report: ${err.message}`);

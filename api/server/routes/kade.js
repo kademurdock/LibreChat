@@ -815,6 +815,14 @@ router.post('/feedback', requireJwtAuth, async (req, res) => {
       surface,
       agent: 'Report a problem',
     });
+    /* Session 23: owner alert (in-chat nudge + app push) — see
+     * services/kadeOwnerAlerts. Fire-and-forget, never blocks the 200. */
+    try {
+      const { alertOwnerNewFeedback } = require('~/server/services/kadeOwnerAlerts');
+      alertOwnerNewFeedback(doc, req.user.name || req.user.username).catch(() => {});
+    } catch (_) {
+      /* non-fatal */
+    }
     return res.json({ ok: true, id: String(doc._id) });
   } catch (err) {
     logger.error(`[kade/feedback] user submit failed: ${err.message}`);

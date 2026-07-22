@@ -1,5 +1,7 @@
 const axios = require('axios');
 const express = require('express');
+const { ResourceType, PermissionBits } = require('librechat-data-provider');
+const { findPubliclyAccessibleResources } = require('~/server/services/PermissionService');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -81,13 +83,21 @@ function roomView(doc, { withTranscript = true } = {}) {
 router.get('/agents', requireJwtAuth, async (req, res) => {
   try {
     const userId = String(req.user.id || req.user._id);
+    /* Session 23 LIVE BUG (found via the vischeck test seat: roster came
+     * back EMPTY — 0 agents — for a regular user): "published" here still
+     * meant the legacy projectIds field, which the ACL migration left
+     * empty on this instance, so only the author branch ever matched and
+     * non-Kade users saw nobody. Same root cause (and same fix) as
+     * kadeMatchmaker's July fix: ACL-public via the agent_viewer public
+     * principal, plus your own agents. */
+    const publicIds = await findPubliclyAccessibleResources({
+      resourceType: ResourceType.AGENT,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+    const publicSet = new Set(publicIds.map((oid) => String(oid)));
     const all = (await db.getAgents({})) || [];
     const list = all
-      .filter(
-        (a) =>
-          (Array.isArray(a.projectIds) && a.projectIds.length > 0) ||
-          String(a.author) === userId,
-      )
+      .filter((a) => (a._id && publicSet.has(String(a._id))) || String(a.author) === userId)
       .map((a) => ({
         id: a.id,
         name: a.name || 'Unnamed agent',
