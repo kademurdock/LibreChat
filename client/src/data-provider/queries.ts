@@ -375,10 +375,19 @@ export const useGetAssistantDocsQuery = <TData = AssistantDocument[]>(
 export const useVoicesQuery = (
   config?: UseQueryOptions<t.VoiceResponse>,
 ): QueryObserverResult<t.VoiceResponse> => {
+  /** KADE July 22 2026 (her report: agent-builder picker missing the new
+   *  Beta/Fish voices in a long-lived tab): this query used to fetch ONCE per
+   *  tab lifetime (every refetch flag false) — the server list grows (fork
+   *  getVoices pulls the proxy's live catalog, 5-min cache), but a tab open
+   *  since before an expansion never saw it without a full reload. Now: fresh
+   *  for 5 minutes, refetches on mount/focus only when stale — at most a few
+   *  minutes behind the catalog, still cheap (the list is a small string
+   *  array; audition audio caches separately). */
   return useQuery<t.VoiceResponse>([QueryKeys.voices], () => dataService.getVoices(), {
-    refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
     refetchOnReconnect: false,
-    refetchOnMount: false,
+    refetchOnMount: true,
     retry: false,
     ...config,
   });
