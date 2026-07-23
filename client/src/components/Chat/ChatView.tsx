@@ -78,7 +78,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
 
   // ♿ D3: When the active agent changes, switch TTS to that agent's saved voice preference.
   useAgentVoiceSync(index);
-  useCompletionChime(isSubmitting);
+  useCompletionChime(isSubmitting, index); // index: the TTS-wait watcher reads this pane's globalAudio atoms
 
   let content: JSX.Element | null | undefined;
   const isLandingPage =

@@ -93,7 +93,9 @@ const SOUND_URLS: Record<string, string> = {
 const SOUND_GAINS: Record<string, number> = {
   sent: 0.5,
   received: 0.8,
-  thinking: 0.55,
+  // July 22 2026 night, Kade after living with it: "could go quite a bit down
+  // in volume... I just don't need to hear it all that much." 0.55 -> 0.22.
+  thinking: 0.22,
 };
 
 /** Matches ConversationMode's tuned call-side delay: ordinary fast replies
@@ -159,7 +161,7 @@ async function playOneShot(name: string): Promise<boolean> {
 /* July 13 2026: fires ONCE after this delay (was a repeating 25s interval). */
 const STILL_WORKING_DELAY_MS = 30000;
 
-export default function useCompletionChime(isSubmitting: boolean) {
+export default function useCompletionChime(isSubmitting: boolean, index: string | number = 0) {
   const enabled = useRecoilValue(store.chimeOnCompletion);
   const { announcePolite } = useLiveAnnouncer();
   const localize = useLocalize();
@@ -168,6 +170,34 @@ export default function useCompletionChime(isSubmitting: boolean) {
   const thinkingDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thinkingSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const thinkingGainRef = useRef<GainNode | null>(null);
+  // ── July 22 2026 night (Kade: "it's strange when there is a blank space
+  // between this thing is done thinking, and this thing is generating text
+  // to speech"): when auto-read is on, the reply finishing is NOT the end of
+  // the wait — the TTS fetch is. So the bubbling loop now stays alive from
+  // reply-complete until the voice actually starts (globalAudioPlaying flips
+  // true), then stops. Received still plays at reply-complete, so her
+  // sequence is: bubbles → "reply ready" ding → quiet bubbles → voice, with
+  // no dead air anywhere. Safety rails: a 2.5s grace timer (no TTS activity
+  // appeared — nothing is coming, stop) and a 15s hard cap (fetch wedged).
+  const autoPlayback = useRecoilValue(store.automaticPlayback);
+  const globalPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
+  const globalFetching = useRecoilValue(store.globalAudioFetchingFamily(index));
+  const globalPlayingRef = useRef(false);
+  const globalFetchingRef = useRef(false);
+  const awaitingVoiceRef = useRef(false);
+  const awaitGraceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const awaitCapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearAwaitTimers = () => {
+    if (awaitGraceRef.current != null) {
+      clearTimeout(awaitGraceRef.current);
+      awaitGraceRef.current = null;
+    }
+    if (awaitCapRef.current != null) {
+      clearTimeout(awaitCapRef.current);
+      awaitCapRef.current = null;
+    }
+  };
 
   const stopThinkingLoop = () => {
     if (thinkingDelayRef.current != null) {
@@ -229,9 +259,18 @@ export default function useCompletionChime(isSubmitting: boolean) {
     }, THINKING_START_DELAY_MS);
   };
 
+  const endAwaitingVoice = () => {
+    awaitingVoiceRef.current = false;
+    clearAwaitTimers();
+    stopThinkingLoop();
+  };
+
   useEffect(() => {
     submittingRef.current = isSubmitting;
     if (isSubmitting) {
+      // A fresh send cancels any voice-wait left over from the last turn.
+      awaitingVoiceRef.current = false;
+      clearAwaitTimers();
       announcePolite({ message: localize('com_ui_reply_working'), isStatus: true });
       const t = setTimeout(() => {
         announcePolite({ message: localize('com_ui_reply_still_working'), isStatus: true });
@@ -240,13 +279,19 @@ export default function useCompletionChime(isSubmitting: boolean) {
         void playOneShot('sent');
         startThinkingLoop();
       }
+      // NOTE: this cleanup runs on the submitting->done transition, BEFORE
+      // the falling-edge branch below. It must NOT stop the loop — whether
+      // the loop survives into the TTS wait is that branch's decision. It
+      // only clears this run's timers (the unmount effect owns final teardown).
       return () => {
         clearTimeout(t);
-        stopThinkingLoop();
+        if (thinkingDelayRef.current != null) {
+          clearTimeout(thinkingDelayRef.current);
+          thinkingDelayRef.current = null;
+        }
       };
     }
     if (wasSubmitting.current) {
-      stopThinkingLoop();
       announcePolite({ message: localize('com_ui_reply_finished'), isStatus: true });
       if (enabled) {
         void playOneShot('received').then((ok) => {
@@ -255,14 +300,42 @@ export default function useCompletionChime(isSubmitting: boolean) {
           }
         });
       }
+      if (enabled && autoPlayback && !globalPlayingRef.current) {
+        // Voice is (probably) coming: hold the bubbles until it starts.
+        awaitingVoiceRef.current = true;
+        awaitGraceRef.current = setTimeout(() => {
+          if (awaitingVoiceRef.current && !globalFetchingRef.current && !globalPlayingRef.current) {
+            endAwaitingVoice(); // nothing ever started fetching — no voice coming
+          }
+        }, 2500);
+        awaitCapRef.current = setTimeout(endAwaitingVoice, 15000);
+      } else {
+        stopThinkingLoop();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSubmitting]);
+
+  // Voice-wait watcher: the instant playback starts, the bubbles bow out.
+  useEffect(() => {
+    globalPlayingRef.current = globalPlaying;
+    globalFetchingRef.current = globalFetching;
+    if (awaitingVoiceRef.current && globalPlaying) {
+      endAwaitingVoice();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalPlaying, globalFetching]);
 
   useEffect(() => {
     wasSubmitting.current = isSubmitting;
   }, [isSubmitting]);
 
   // Unmount safety: never leave the loop bubbling after the chat view goes away.
-  useEffect(() => stopThinkingLoop, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(
+    () => () => {
+      clearAwaitTimers();
+      stopThinkingLoop();
+    },
+    [], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 }
