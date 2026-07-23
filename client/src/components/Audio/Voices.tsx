@@ -65,12 +65,22 @@ export function useVoiceCatalogTexts(): { sample?: string; audition?: string } {
   };
 }
 
-/** "Voice 12" sorts numerically; any non-numbered label sorts first, alphabetically. */
+/** "Voice 12" sorts numerically. KADE July 22 2026: the match is now
+ * suffix-tolerant — "Voice 327 (Beta) Kade calm and casual" sorts as 327,
+ * between 326 and 328, instead of failing the old ^Voice (\d+)$ exact match
+ * and being hoisted (with the whole Beta wave) above "Voice 1" — her report:
+ * "voices from fish are on top of the old ones, and the numbering looks
+ * weird that way." Equal numbers tie-break alphabetically; any label with no
+ * leading "Voice N" keeps the old behavior (first, alphabetically). */
 export function compareVoices(a: string, b: string): number {
-  const ma = /^Voice (\d+)$/i.exec(a);
-  const mb = /^Voice (\d+)$/i.exec(b);
+  const ma = /^Voice (\d+)\b/i.exec(a);
+  const mb = /^Voice (\d+)\b/i.exec(b);
   if (ma && mb) {
-    return Number(ma[1]) - Number(mb[1]);
+    const d = Number(ma[1]) - Number(mb[1]);
+    if (d !== 0) {
+      return d;
+    }
+    return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0;
   }
   if (ma || mb) {
     return ma ? 1 : -1;
