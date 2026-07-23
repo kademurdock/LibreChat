@@ -628,6 +628,9 @@ function shapeSummarizationConfig(
       updatePrompt: config?.updatePrompt,
       reserveRatio: config?.reserveRatio,
       maxSummaryTokens: config?.maxSummaryTokens,
+      /** KADE July 22 2026: thread the yaml's retainRecent through to the SDK
+       *  (recency window: newest tail kept verbatim, oldest head summarized). */
+      retainRecent: config?.retainRecent,
     } satisfies AgentSummarizationConfig,
     contextPruning: config?.contextPruning as ContextPruningConfig | undefined,
     reserveRatio: config?.reserveRatio,
