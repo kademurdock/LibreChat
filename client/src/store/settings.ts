@@ -32,7 +32,7 @@ const localStorageAtoms = {
   ),
   keepScreenAwake: atomWithLocalStorage('keepScreenAwake', true),
   // KADE July 2 2026: soft chime when a reply finishes (accessibility)
-  chimeOnCompletion: atomWithLocalStorage('chimeOnCompletion', false),
+  chimeOnCompletion: atomWithLocalStorage('chimeOnCompletion', true), // July 22 2026: chat sound kit default ON, toggle = opt-out (Kade's call; key name kept so prior opt-outs stick)
   // KADE July 16 2026: low-vision display prefs (classes applied by utils/kadeA11yPrefs.ts)
   kadeA11yHighContrast: atomWithLocalStorage('kadeA11yHighContrast', false),
   kadeA11yFont: atomWithLocalStorage<'default' | 'lexend' | 'opendyslexic'>('kadeA11yFont', 'default'),

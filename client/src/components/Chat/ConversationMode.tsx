@@ -729,14 +729,16 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     try {
       const ctx = getAudioCtx();
       if (!pickupBufferRef.current) {
-        const resp = await fetch('/assets/sounds/phone-pickup.wav');
+        const resp = await fetch('/assets/sounds/call-connected.mp3');
         const raw = await resp.arrayBuffer();
         pickupBufferRef.current = await ctx.decodeAudioData(raw);
       }
       const src = ctx.createBufferSource();
       src.buffer = pickupBufferRef.current;
       const gain = ctx.createGain();
-      gain.gain.value = 0.5;
+      // July 22 2026: Kade's own Connected cue (peaks ~-12.5 dBFS, softer
+      // master than the old synth wav) — 0.75 lands it where 0.5 used to.
+      gain.gain.value = 0.75;
       src.connect(gain).connect(ctx.destination);
       src.start();
     } catch (err) {
@@ -752,14 +754,15 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     try {
       const ctx = getAudioCtx();
       if (!hangupBufferRef.current) {
-        const resp = await fetch('/assets/sounds/phone-hangup.wav');
+        const resp = await fetch('/assets/sounds/call-disconnected.mp3');
         const raw = await resp.arrayBuffer();
         hangupBufferRef.current = await ctx.decodeAudioData(raw);
       }
       const src = ctx.createBufferSource();
       src.buffer = hangupBufferRef.current;
       const gain = ctx.createGain();
-      gain.gain.value = 0.5;
+      // July 22 2026: same compensation as the Connected cue above.
+      gain.gain.value = 0.75;
       src.connect(gain).connect(ctx.destination);
       src.start();
     } catch (err) {
@@ -795,7 +798,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       const ctx = getAudioCtx();
       try {
         if (!thinkingBufferRef.current) {
-          const resp = await fetch('/assets/sounds/thinking-loop.wav');
+          const resp = await fetch('/assets/sounds/chat-thinking-loop.wav');
           const raw = await resp.arrayBuffer();
           thinkingBufferRef.current = await ctx.decodeAudioData(raw);
         }
