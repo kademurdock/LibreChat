@@ -1666,6 +1666,16 @@ export const summarizationConfigSchema = z.object({
   updatePrompt: z.string().optional(),
   reserveRatio: z.number().min(0).max(1).optional(),
   maxSummaryTokens: z.number().positive().optional(),
+  /** KADE July 22 2026 (conversation compacting): pass-through for the agents
+   *  SDK's recency window — newest messages kept verbatim during compaction.
+   *  `turns` caps how many user-led turns the tail may hold; `tokens` caps the
+   *  tail's size. Without this schema entry zod strips the key from yaml. */
+  retainRecent: z
+    .object({
+      turns: z.number().int().min(0).optional(),
+      tokens: z.number().int().positive().optional(),
+    })
+    .optional(),
   contextPruning: contextPruningSchema.optional(),
 });
 
