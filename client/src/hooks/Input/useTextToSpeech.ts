@@ -9,6 +9,7 @@ import useGetAudioSettings from '~/hooks/Input/useGetAudioSettings';
 import useAudioRef from '~/hooks/Audio/useAudioRef';
 import { usePauseGlobalAudio } from '../Audio';
 import { logger } from '~/utils';
+import { normalizeVoiceLabel } from '~/utils/voiceLabels';
 import store from '~/store';
 
 type TUseTextToSpeech = {
@@ -107,6 +108,17 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
       if (lastSelectedVoice != null) {
         logger.log('useTextToSpeech.ts - Effect:', { voices, voice: lastSelectedVoice });
         setVoice(lastSelectedVoice.toString());
+        return;
+      }
+      // KADE July 23 2026: migrate a stored beta-era spelling to its
+      // graduated label instead of snapping the user's pick to voices[0].
+      const graduated = normalizeVoiceLabel(
+        typeof voice === 'string' ? voice : undefined,
+        voices.map((v) => String(v)),
+      );
+      if (graduated != null) {
+        logger.log('useTextToSpeech.ts - Effect: graduated voice label', { voice, graduated });
+        setVoice(graduated);
         return;
       }
       logger.log('useTextToSpeech.ts - Effect:', { voices, voice: firstVoice });

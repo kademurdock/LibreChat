@@ -8,6 +8,7 @@ import useTextToSpeechExternal from '~/hooks/Input/useTextToSpeechExternal';
 import usePauseGlobalAudio from '~/hooks/Audio/usePauseGlobalAudio';
 import useAudioRef from '~/hooks/Audio/useAudioRef';
 import { logger } from '~/utils';
+import { normalizeVoiceLabel } from '~/utils/voiceLabels';
 import store from '~/store';
 
 type TUseTextToSpeech = {
@@ -50,6 +51,17 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
       if (lastSelectedVoice != null) {
         logger.log('useTextToSpeech.ts - Effect:', { voices, voice: lastSelectedVoice });
         setVoice(lastSelectedVoice.toString());
+        return;
+      }
+      // KADE July 23 2026: before snapping a missing stored voice to
+      // voices[0] (which PERMANENTLY rewrites the user's pick — see
+      // voiceCatalog.js's staleButGood story), try its graduated spelling.
+      // Beta-era labels ("Voice 340 (Beta)") migrate to their clean
+      // successors instead of being lost to Voice 1.
+      const graduated = normalizeVoiceLabel(typeof voice === 'string' ? voice : undefined, voices);
+      if (graduated != null) {
+        logger.log('useTTSExternal.ts - Effect: graduated voice label', { voice, graduated });
+        setVoice(graduated);
         return;
       }
       logger.log('useTextToSpeech.ts - Effect:', { voices, voice: firstVoice });

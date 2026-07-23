@@ -1,7 +1,12 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { ChevronDown, Volume2, Check } from 'lucide-react';
 import type { FocusEvent, KeyboardEvent } from 'react';
-import { useVoiceCatalogTexts, compareVoices } from '~/components/Audio/Voices';
+import {
+  useVoiceCatalogTexts,
+  compareVoices,
+  groupVoices,
+  normalizeVoiceLabel,
+} from '~/components/Audio/Voices';
 import {
   getAgentVoicePreference,
   clearAgentVoicePreference,
@@ -283,7 +288,10 @@ export default function AgentVoicePicker({
   /* D2c note: grouping/badges removed on Kade's call — after the 2026-07-01
      renumbering her custom voices ARE Voice 1–70, so plain numeric order
      leads with them without giving away which entries are custom. */
-  const { audition: auditionTemplate } = useVoiceCatalogTexts();
+  // July 23 2026: categories = loose picker sections (Kade's ask). The old
+  // D2c "grouping removed" note above was about custom-vs-stock BADGES that
+  // gave customs away — these sections are sound-based and she asked for them.
+  const { audition: auditionTemplate, categories } = useVoiceCatalogTexts();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
   const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({ auditionTemplate, speed });
@@ -312,7 +320,11 @@ export default function AgentVoicePicker({
   }, [voices, filter]);
 
 
-  const current = typeof value === 'string' && value !== '' ? value : undefined;
+  const rawCurrent = typeof value === 'string' && value !== '' ? value : undefined;
+  // Graduated-spelling tolerance (July 23 2026): an agent record still
+  // carrying a beta-era label ("Voice 340 (Beta)") selects/checks its clean
+  // successor in this list; saving writes the clean label forward.
+  const current = normalizeVoiceLabel(rawCurrent, voices) ?? rawCurrent;
 
   const close = useCallback(
     (refocusOpener: boolean) => {
@@ -515,7 +527,29 @@ export default function AgentVoicePicker({
               <span aria-hidden="true">{localize('com_agents_default_voice_none')}</span>
               {current == null && <Check className="h-4 w-4" aria-hidden="true" />}
             </button>
-            {filtered.map((v) => renderVoiceOption(v))}
+            {/* ♿ July 23 2026: category sections — same construction as
+              * ExternalVoiceDropdown's (see Voices.tsx for the full note).
+              * Keyboard nav queries button[data-voice-option]; headers are
+              * invisible to it. No categories -> one unnamed group = the
+              * exact old flat render. */}
+            {groupVoices(filtered, categories).map((group, gi) => (
+              <div
+                key={group.name ?? `flat-${gi}`}
+                role={group.name != null ? 'group' : undefined}
+                aria-label={group.name ?? undefined}
+                className="flex flex-col"
+              >
+                {group.name != null && (
+                  <div
+                    aria-hidden="true"
+                    className="px-2.5 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-text-secondary"
+                  >
+                    {group.name}
+                  </div>
+                )}
+                {group.voices.map((v) => renderVoiceOption(v))}
+              </div>
+            ))}
           </div>
           {filtered.length === 0 && (
             <p className="px-2.5 py-2 text-sm text-text-secondary" role="status">

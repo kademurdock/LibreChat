@@ -26,7 +26,7 @@
  * list (unchanged behavior for the 1-210 range that yaml still gets right).
  * 5-min cache so every audition/synthesis call doesn't hammer the proxy.
  */
-let _voiceCache = { at: 0, voices: null };
+let _voiceCache = { at: 0, voices: null, hidden: null };
 
 async function fetchLiveVoices(ttsUrl) {
   try {
@@ -51,7 +51,11 @@ async function fetchLiveVoices(ttsUrl) {
     const d = await r.json();
     const voices = Array.isArray(d?.voices) ? d.voices : null;
     if (voices && voices.length) {
-      _voiceCache = { at: Date.now(), voices };
+      // `hidden` (July 23 2026): old picker spellings — the graduated beta-era
+      // labels — that the proxy still resolves but no longer lists. Cached
+      // alongside so validators can union them with `voices` and stored old
+      // picks never get random-substituted or snapped away.
+      _voiceCache = { at: Date.now(), voices, hidden: Array.isArray(d?.hidden) ? d.hidden : null };
       return voices;
     }
     return staleButGood();
@@ -90,4 +94,10 @@ function getCachedLiveVoices() {
   return _voiceCache.voices;
 }
 
-module.exports = { fetchLiveVoices, getCachedLiveVoices };
+/** Same peek for the hidden-alias list (see fetchLiveVoices). Null until the
+ * first successful fetch against a proxy that serves `hidden`. */
+function getCachedLiveHidden() {
+  return _voiceCache.hidden;
+}
+
+module.exports = { fetchLiveVoices, getCachedLiveVoices, getCachedLiveHidden };

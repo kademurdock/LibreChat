@@ -3,7 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { genAzureEndpoint, logAxiosError, applyAxiosProxyConfig } = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
-const { fetchLiveVoices, getCachedLiveVoices } = require('./voiceCatalog');
+const { fetchLiveVoices, getCachedLiveVoices, getCachedLiveHidden } = require('./voiceCatalog');
 
 /** Kade D2d: parse+clamp an optional TTS speaking rate (Inworld range 0.5-1.5).
  * Multipart form fields arrive as strings; JSON bodies as numbers. Anything
@@ -116,8 +116,14 @@ class TTSService {
       }
     }
     const voices = (allowedVoices || []).filter((voice) => voice && voice.toUpperCase() !== 'ALL');
+    // KADE July 23 2026: `hidden` = old picker spellings the proxy still
+    // resolves (e.g. the graduated "(Beta)" labels). A stored old pick must
+    // keep synthesizing as itself, never fall into the random branch.
+    const hidden = provider === TTSProviders.OPENAI ? getCachedLiveHidden() : null;
     let voice = requestVoice;
-    if (!voice || !voices.includes(voice) || (voice.toUpperCase() === 'ALL' && voices.length > 1)) {
+    const known =
+      voice && (voices.includes(voice) || (Array.isArray(hidden) && hidden.includes(voice)));
+    if (!voice || !known || (voice.toUpperCase() === 'ALL' && voices.length > 1)) {
       voice = getRandomVoiceId(voices);
     }
     return voice;
@@ -161,11 +167,15 @@ class TTSService {
     // that getVoice() correctly just let through.
     const liveVoices = getCachedLiveVoices();
     const knownVoices = liveVoices && liveVoices.length ? liveVoices : ttsSchema?.voices;
+    // KADE July 23 2026: hidden aliases (graduated beta-era spellings) are
+    // valid too — same reasoning as getVoice(), same warm cache.
+    const hiddenAliases = getCachedLiveHidden();
 
     if (
       knownVoices &&
       knownVoices.length > 0 &&
       !knownVoices.includes(voice) &&
+      !(Array.isArray(hiddenAliases) && hiddenAliases.includes(voice)) &&
       !knownVoices.includes('ALL')
     ) {
       throw new Error(`Voice ${voice} is not available.`);

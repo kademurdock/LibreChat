@@ -44,7 +44,16 @@ const TTS_PROXY_BASE = 'https://inworld-tts-proxy-production.up.railway.app';
  * Fail-soft: on any fetch error `sample` is undefined and callers fall back
  * to their built-in line.
  */
-export function useVoiceCatalogTexts(): { sample?: string; audition?: string } {
+/** One picker section: category name + the display labels filed under it.
+ * Served by the proxy (/voices.json `categories`, July 23 2026) — presentation
+ * only, derived from the voice catalog's descriptions. */
+export type VoiceCategory = { name: string; voices: string[] };
+
+export function useVoiceCatalogTexts(): {
+  sample?: string;
+  audition?: string;
+  categories?: VoiceCategory[];
+} {
   const { data } = useQuery(
     ['kade', 'voiceCatalog'],
     async () => {
@@ -52,17 +61,65 @@ export function useVoiceCatalogTexts(): { sample?: string; audition?: string } {
       if (!res.ok) {
         throw new Error(`voices.json ${res.status}`);
       }
-      return (await res.json()) as { sample?: string; audition?: string };
+      return (await res.json()) as {
+        sample?: string;
+        audition?: string;
+        categories?: VoiceCategory[];
+      };
     },
-    { staleTime: Infinity, retry: 1, refetchOnWindowFocus: false },
+    { staleTime: 5 * 60 * 1000, retry: 1, refetchOnWindowFocus: false },
   );
+  const categories = Array.isArray(data?.categories)
+    ? data?.categories.filter(
+        (c): c is VoiceCategory =>
+          !!c && typeof c.name === 'string' && Array.isArray((c as VoiceCategory).voices),
+      )
+    : undefined;
   return {
     sample: typeof data?.sample === 'string' && data.sample !== '' ? data.sample : undefined,
     /** Short expressive one-liner for browse-as-you-go auditions; `{voice}`
      * placeholder is filled by the caller. %%% steering converts to [bracket]
      * direction on the proxy's synth path. */
     audition: typeof data?.audition === 'string' && data.audition !== '' ? data.audition : undefined,
+    /** Loose picker sections (Kade, July 23 2026). Absent/empty -> flat list. */
+    categories: categories && categories.length > 0 ? categories : undefined,
   };
+}
+
+/** Graduated-spelling normalization — real implementation in
+ * ~/utils/voiceLabels (the TTS hooks need it too; importing from this
+ * component there would be circular). Re-exported here so picker code keeps
+ * one import site for voice-list helpers. */
+export { normalizeVoiceLabel } from '~/utils/voiceLabels';
+
+/** Split an (already filtered/sorted) voice list into ordered picker sections.
+ * Voices missing from every category land in a trailing "More voices" group;
+ * no categories at all -> one unnamed group (render flat, exactly the old
+ * behavior). Fail-soft by construction. */
+export function groupVoices(
+  list: string[],
+  categories?: VoiceCategory[],
+): { name: string | null; voices: string[] }[] {
+  if (!categories || categories.length === 0) {
+    return [{ name: null, voices: list }];
+  }
+  const present = new Set(list);
+  const seen = new Set<string>();
+  const groups: { name: string | null; voices: string[] }[] = [];
+  for (const c of categories) {
+    const vs = c.voices.filter((v) => present.has(v) && !seen.has(v));
+    for (const v of vs) {
+      seen.add(v);
+    }
+    if (vs.length > 0) {
+      groups.push({ name: c.name, voices: vs });
+    }
+  }
+  const rest = list.filter((v) => !seen.has(v));
+  if (rest.length > 0) {
+    groups.push({ name: groups.length > 0 ? 'More voices' : null, voices: rest });
+  }
+  return groups;
 }
 
 /** "Voice 12" sorts numerically. KADE July 22 2026: the match is now
@@ -355,7 +412,9 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
   }, [activeAgentId]);
   const [resetAnnouncement, setResetAnnouncement] = useState('');
   // ♿ 2026-07-05 (Kade): SAME swipe-to-hear the builder has — she picks voices HERE.
-  const { audition: auditionTemplate } = useVoiceCatalogTexts();
+  // July 23 2026: + loose category sections for the same list (her ask: "the
+  // madness and chaos should have some form and shape").
+  const { audition: auditionTemplate, categories } = useVoiceCatalogTexts();
   const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({ auditionTemplate });
 
   const [open, setOpen] = useState(false);
@@ -364,7 +423,10 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
   const listRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLButtonElement>(null);
 
-  const current = typeof voice === 'string' && voice !== '' ? voice : undefined;
+  const rawCurrent = typeof voice === 'string' && voice !== '' ? voice : undefined;
+  // Graduated-spelling tolerance (July 23 2026): a stored beta-era label
+  // ("Voice 340 (Beta)") displays/selects as its clean successor.
+  const current = normalizeVoiceLabel(rawCurrent, orderedVoices) ?? rawCurrent;
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -592,36 +654,60 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
             aria-label={localize('com_nav_voice_select')}
             className="flex max-h-64 flex-col overflow-y-auto"
           >
-            {filtered.map((v) => {
-              const isCurrent = v === current;
-              const isPlaying = v === playingVoice;
-              return (
-                <button
-                  key={v}
-                  type="button"
-                  role="option"
-                  aria-selected={isCurrent}
-                  tabIndex={isCurrent ? 0 : -1}
-                  data-voice-option
-                  onFocus={() => audition(v)}
-                  onMouseEnter={() => audition(v)}
-                  onClick={() => select(v)}
-                  aria-label={v}
-                  className={cn(
-                    'flex items-center justify-between rounded-md px-2.5 py-2 text-left text-sm',
-                    'text-text-primary hover:bg-surface-hover',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-                    isCurrent && 'bg-surface-tertiary',
-                  )}
-                >
-                  <span aria-hidden="true">{v}</span>
-                  <span className="flex items-center gap-1.5" aria-hidden="true">
-                    {isPlaying && <Volume2 className="h-4 w-4 animate-pulse" />}
-                    {isCurrent && <Check className="h-4 w-4" />}
-                  </span>
-                </button>
-              );
-            })}
+            {/* ♿ July 23 2026: loose category sections. role="group" wrappers
+              * announce the section name as VoiceOver/NVDA cross into it; the
+              * visible header is aria-hidden (the group label already carries
+              * it). Keyboard nav is untouched — onListKeyDown navigates by
+              * querying button[data-voice-option], never DOM siblings. With no
+              * category data this renders one unnamed group = the old flat
+              * list, byte-identical behavior. */}
+            {groupVoices(filtered, categories).map((group, gi) => (
+              <div
+                key={group.name ?? `flat-${gi}`}
+                role={group.name != null ? 'group' : undefined}
+                aria-label={group.name ?? undefined}
+                className="flex flex-col"
+              >
+                {group.name != null && (
+                  <div
+                    aria-hidden="true"
+                    className="px-2.5 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-text-secondary"
+                  >
+                    {group.name}
+                  </div>
+                )}
+                {group.voices.map((v) => {
+                  const isCurrent = v === current;
+                  const isPlaying = v === playingVoice;
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      role="option"
+                      aria-selected={isCurrent}
+                      tabIndex={isCurrent ? 0 : -1}
+                      data-voice-option
+                      onFocus={() => audition(v)}
+                      onMouseEnter={() => audition(v)}
+                      onClick={() => select(v)}
+                      aria-label={v}
+                      className={cn(
+                        'flex items-center justify-between rounded-md px-2.5 py-2 text-left text-sm',
+                        'text-text-primary hover:bg-surface-hover',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+                        isCurrent && 'bg-surface-tertiary',
+                      )}
+                    >
+                      <span aria-hidden="true">{v}</span>
+                      <span className="flex items-center gap-1.5" aria-hidden="true">
+                        {isPlaying && <Volume2 className="h-4 w-4 animate-pulse" />}
+                        {isCurrent && <Check className="h-4 w-4" />}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
           {filtered.length === 0 && (
             <p className="px-2.5 py-2 text-sm text-text-secondary" role="status">

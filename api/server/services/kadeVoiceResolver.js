@@ -39,11 +39,11 @@ const PROXY_URL = (
 
 /** Aliases (named voice labels) — separate 5-min cache; /voices.json may not
  * expose them yet (proxy-side addition rides the catalog-integrity commit). */
-let _aliasCache = { at: 0, aliases: null };
+let _aliasCache = { at: 0, aliases: null, hidden: null };
 async function fetchAliases() {
   try {
     if (_aliasCache.aliases && Date.now() - _aliasCache.at < 5 * 60 * 1000) {
-      return _aliasCache.aliases;
+      return _aliasCache;
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4000);
@@ -55,14 +55,20 @@ async function fetchAliases() {
       },
     });
     clearTimeout(timer);
-    if (!r.ok) return _aliasCache.aliases;
+    if (!r.ok) return _aliasCache;
     const d = await r.json();
     if (Array.isArray(d?.aliases)) {
-      _aliasCache = { at: Date.now(), aliases: d.aliases };
+      // `hidden` (July 23 2026): old picker spellings — the graduated
+      // beta-era labels — still resolvable at synth, never shown in pickers.
+      _aliasCache = {
+        at: Date.now(),
+        aliases: d.aliases,
+        hidden: Array.isArray(d?.hidden) ? d.hidden : null,
+      };
     }
-    return _aliasCache.aliases;
+    return _aliasCache;
   } catch {
-    return _aliasCache.aliases;
+    return _aliasCache;
   }
 }
 
@@ -72,12 +78,25 @@ async function fetchAliases() {
  *  - a named label when the proxy publishes aliases and it isn't one of them.
  * No catalog reachable -> everything passes (current pre-resolver behavior).
  */
-function isValidLabel(label, liveVoices, aliases) {
+function isValidLabel(label, liveVoices, aliases, hidden) {
   if (!label) return false;
-  if (/^Voice \d+$/i.test(String(label))) {
-    return !Array.isArray(liveVoices) || liveVoices.includes(label);
+  const l = String(label);
+  const inHidden = Array.isArray(hidden) && hidden.includes(l);
+  // KADE July 23 2026, two fixes in one:
+  // (1) the numbered test is now SUFFIX-TOLERANT (\b instead of $). Display
+  //     labels like "Voice 434 (Beta)" / "Voice 327 Kade calm and casual"
+  //     failed the old exact ^Voice \d+$ match, fell into the named-label
+  //     branch, missed the aliases list (which only has legacy NAMES), and
+  //     got REJECTED — so every agent cast onto a suffixed voice was silently
+  //     losing its builder voice on the call lane and falling to
+  //     name-match/default. Found July 23 while graduating the beta labels;
+  //     it had been live since the fish wave shipped.
+  // (2) `hidden` — old spellings the proxy still resolves — validate too, so
+  //     stored beta-era picks keep working forever after the rename.
+  if (/^Voice \d+\b/i.test(l)) {
+    return !Array.isArray(liveVoices) || liveVoices.includes(l) || inHidden;
   }
-  return !Array.isArray(aliases) || aliases.includes(label);
+  return !Array.isArray(aliases) || aliases.includes(l) || inHidden;
 }
 
 /**
@@ -103,16 +122,19 @@ async function resolveVoice({ userId, agentId, agent, surface }) {
 
   let liveVoices = null;
   let aliases = null;
+  let hidden = null;
   try {
     liveVoices = await fetchLiveVoices(`${PROXY_URL}/v1/audio/speech`);
-    aliases = await fetchAliases();
+    const aliasInfo = await fetchAliases();
+    aliases = aliasInfo && aliasInfo.aliases;
+    hidden = aliasInfo && aliasInfo.hidden;
   } catch { /* validation degrades to pass-through */ }
 
   /* 1. personal */
   if (userId && agentId) {
     try {
       const personal = await getUserVoicePref(String(userId), String(agentId));
-      if (personal && isValidLabel(personal, liveVoices, aliases)) {
+      if (personal && isValidLabel(personal, liveVoices, aliases, hidden)) {
         return { voice: personal, source: 'personal', rate, agentName };
       }
       if (personal) {
@@ -127,7 +149,7 @@ async function resolveVoice({ userId, agentId, agent, surface }) {
 
   /* 2. builder */
   const builder = (a && a.tts && a.tts.voiceId) || null;
-  if (builder && isValidLabel(builder, liveVoices, aliases)) {
+  if (builder && isValidLabel(builder, liveVoices, aliases, hidden)) {
     return { voice: builder, source: 'builder', rate, agentName };
   }
   if (builder) {
