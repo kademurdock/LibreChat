@@ -344,14 +344,20 @@ async function ytLadder(baseArgs, timeoutMs) {
   const pot = process.env.KADE_POT_URL
     ? ['--extractor-args', 'youtubepot-bgutilhttp:base_url=' + process.env.KADE_POT_URL]
     : [];
-  for (let i = 0; i < YT_LADDER.length; i++) {
-    const rung = (ytRung + i) % YT_LADDER.length;
-    try {
-      const out = await runYtDlp([...baseArgs, ...cookies, ...pot, ...YT_LADDER[rung]], timeoutMs);
-      ytRung = rung;
-      return out;
-    } catch (e) {
-      lastErr = e;
+  // TWO passes over the whole ladder with a breath between: YouTube's wall
+  // FLICKERS (live receipts July 24: same video, same rung — through at
+  // 21:05, walled at 21:26). A second wind lands more often than not.
+  for (let pass = 0; pass < 2; pass++) {
+    if (pass) await new Promise((r) => setTimeout(r, 3000));
+    for (let i = 0; i < YT_LADDER.length; i++) {
+      const rung = (ytRung + i) % YT_LADDER.length;
+      try {
+        const out = await runYtDlp([...baseArgs, ...cookies, ...pot, ...YT_LADDER[rung]], timeoutMs);
+        ytRung = rung;
+        return out;
+      } catch (e) {
+        lastErr = e;
+      }
     }
   }
   throw lastErr || new Error('every client refused');
