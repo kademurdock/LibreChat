@@ -295,7 +295,9 @@ router.post('/talk/:gameId', requireJwtAuth, async (req, res) => {
       'https://openrouter.ai/api/v1/chat/completions',
       {
         model: agent.model || 'google/gemini-3.1-flash-lite',
-        max_tokens: 80,
+        // 160 not 80: a reasoning-happy model can think through a tight cap and
+        // hand back empty content (seen once on the first live table-talk try).
+        max_tokens: 160,
         messages: [{ role: 'system', content: system }, { role: 'user', content: userMsg }],
         usage: { include: true },
       },
