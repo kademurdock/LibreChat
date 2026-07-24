@@ -508,7 +508,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
 
     <div class="card" id="bot-card">
       <h3 style="margin-top:0">Company</h3>
-      <p class="muted">Invite a companion to sit in as a guest. They take turns like a polite guest: press their talk button when it's their turn, and they answer out loud in their own voice. Between turns they listen along through a rough transcription. Anyone can ask them to leave.</p>
+      <p class="muted">Invite a companion to sit in as a guest. They take turns like a polite guest: press their talk button when it's their turn, and they answer out loud in their own voice. Between turns they listen along through a rough transcription with names on it &mdash; they know who said what. Anyone can ask them to leave.</p>
       <div id="bot-invite-row">
         <label class="blk" for="bot-filter">Find a companion &mdash; type a few letters to shorten the list</label>
         <input type="text" id="bot-filter" autocomplete="off" autocapitalize="none">
@@ -1377,7 +1377,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       /* ── BOT GUEST (anchored on the inviter's device) ── */
       let botCtx=null, botDest=null, botTrack=null;
       let TRANS = '';
-      let capTimer=null, capRec=null, capCtx=null;
+      let capTimer=null, capRecs=[], capCtx=null, capGen=0;
 
       function sendBotState(){
         sendData({ t:'bot', bot: BOT && BOT.anchor === myIdentity ? BOT : (BOT || null) });
@@ -1502,17 +1502,24 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         if(botCtx){ try{ botCtx.close(); }catch(e){} botCtx = null; }
       }
 
-      /* room ears: 15-second capture cycles of mic + voices (never the
-       * music, never the bot itself), each cycle a standalone file posted
-       * to the existing transcribe lane. Runs ONLY on the anchor's device,
-       * ONLY while a guest is seated. */
+      /* room ears, PER SEAT (July 24 round 6, her ask: "Do the bots also
+       * have speaker diorisation?"): the room already keeps every person on
+       * their own track, so instead of blending everyone into one stream
+       * and guessing, each 15-second cycle records EACH SEAT separately,
+       * transcribes the ones that actually spoke (silent seats cost
+       * nothing), and hands the guest lines with real names on them —
+       * "Kade: ..., Amber: ..." — perfect attribution, zero guesswork.
+       * Never the music, never the bot itself. Runs ONLY on the anchor's
+       * device, ONLY while a guest is seated. */
       function startCapture(){
         stopCapture();
         capCycle();
       }
       function stopCapture(){
+        capGen++;
         if(capTimer){ clearTimeout(capTimer); capTimer = null; }
-        if(capRec){ try{ if(capRec.state !== 'inactive'){ capRec.onstop = null; capRec.stop(); } }catch(e){} capRec = null; }
+        capRecs.forEach(function(r){ try{ if(r.state !== 'inactive'){ r.stop(); } }catch(e){} });
+        capRecs = [];
         capCleanup();
       }
       function capCleanup(){
@@ -1520,54 +1527,77 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       }
       function capCycle(){
         if(!BOT || BOT.anchor !== myIdentity || !lkRoom) return;
+        var gen = ++capGen;
         try{
           if(!window.MediaRecorder) return; // guest still works, just with no ears
           capCtx = new AC();
-          var dest = capCtx.createMediaStreamDestination();
-          var sources = 0;
+          var mime = '';
+          if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mime = 'audio/webm;codecs=opus';
+          else if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/mp4')) mime = 'audio/mp4';
+          var seats = [];
           if(micTrack && micTrack.mediaStreamTrack && !micMuted){
-            try{ capCtx.createMediaStreamSource(new MediaStream([micTrack.mediaStreamTrack])).connect(dest); sources++; }catch(e){}
+            seats.push({ name: myName, mst: micTrack.mediaStreamTrack });
           }
           lkRoom.remoteParticipants.forEach(function(p){
+            if(isDj(p.identity)) return;
             (p.audioTrackPublications || new Map()).forEach(function(pub){
               var nm = (pub && (pub.trackName || pub.name)) || '';
               if(nm === 'music' || nm === 'bot') return;
               if(pub.track && pub.track.mediaStreamTrack){
-                try{ capCtx.createMediaStreamSource(new MediaStream([pub.track.mediaStreamTrack])).connect(dest); sources++; }catch(e){}
+                seats.push({ name: (p.name || p.identity || 'Somebody'), mst: pub.track.mediaStreamTrack });
               }
             });
           });
-          if(!sources){ capCleanup(); capTimer = setTimeout(capCycle, 15000); return; }
-          var mime = '';
-          if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mime = 'audio/webm;codecs=opus';
-          else if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/mp4')) mime = 'audio/mp4';
-          capRec = new MediaRecorder(dest.stream, mime ? { mimeType: mime } : undefined);
-          var chunks = [];
-          capRec.ondataavailable = function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
-          capRec.onstop = function(){
-            var blob = new Blob(chunks, { type: (capRec && capRec.mimeType) || mime || 'audio/webm' });
+          if(!seats.length){ capCleanup(); capTimer = setTimeout(capCycle, 15000); return; }
+          capRecs = [];
+          var takes = [];
+          seats.forEach(function(seat){
+            try{
+              var dest = capCtx.createMediaStreamDestination();
+              capCtx.createMediaStreamSource(new MediaStream([seat.mst])).connect(dest);
+              var rec = new MediaRecorder(dest.stream, mime ? { mimeType: mime } : undefined);
+              var chunks = [];
+              rec.ondataavailable = function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
+              takes.push(new Promise(function(done){
+                rec.onstop = function(){ done({ name: seat.name, blob: new Blob(chunks, { type: rec.mimeType || mime || 'audio/webm' }) }); };
+                rec.onerror = function(){ done(null); };
+              }));
+              rec.start();
+              capRecs.push(rec);
+            }catch(e){}
+          });
+          if(!capRecs.length){ capCleanup(); capTimer = setTimeout(capCycle, 15000); return; }
+          capTimer = setTimeout(function(){
+            capRecs.forEach(function(r){ try{ if(r.state !== 'inactive') r.stop(); }catch(e){} });
+          }, 15000);
+          Promise.all(takes).then(function(got){
+            if(gen !== capGen) return null;
             capCleanup();
-            capRec = null;
-            sendChunk(blob);
+            capRecs = [];
+            var talkers = (got || []).filter(function(t){ return t && t.blob && t.blob.size >= 2500; });
+            return Promise.all(talkers.map(function(t){
+              return transcribeBlob(t.blob).then(function(text){
+                return text ? (t.name + ': ' + text) : null;
+              }).catch(function(){ return null; });
+            }));
+          }).then(function(lines){
+            if(gen !== capGen) return;
+            var spoke = (lines || []).filter(Boolean);
+            if(spoke.length && BOT && BOT.anchor === myIdentity){
+              TRANS += '\n' + spoke.join('\n');
+              if(TRANS.length > 3800) TRANS = TRANS.slice(-3800);
+            }
             if(BOT && BOT.anchor === myIdentity){ capTimer = setTimeout(capCycle, 250); }
-          };
-          capRec.start();
-          capTimer = setTimeout(function(){ try{ if(capRec && capRec.state !== 'inactive') capRec.stop(); }catch(e){} }, 15000);
+          });
         }catch(e){
           capCleanup();
           capTimer = setTimeout(capCycle, 15000);
         }
       }
-      async function sendChunk(blob){
-        if(!blob || blob.size < 2500) return; // near-silence — save the pennies
-        try{
-          const r = await fetch('/api/kade/transcribe', { method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type': blob.type || 'audio/webm', 'x-kade-club':'1' }, body: blob });
-          const j = await r.json();
-          if(r.ok && j.transcript){
-            TRANS += '\n' + j.transcript;
-            if(TRANS.length > 3800) TRANS = TRANS.slice(-3800);
-          }
-        }catch(e){ /* quiet ears are fail-soft ears */ }
+      async function transcribeBlob(blob){
+        const r = await fetch('/api/kade/transcribe', { method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type': blob.type || 'audio/webm', 'x-kade-club':'1' }, body: blob });
+        const j = await r.json();
+        return (r.ok && j.transcript) ? j.transcript : '';
       }
 
       function cleanupRoom(){
@@ -1819,7 +1849,8 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
   var buffers = {};
   var staged = {}; // id -> [Uint8Array] fed from the app in base64 chunks
   var bCtx=null, bDest=null, bTrack=null, bPub=false;
-  var earsOn=false, capTimer=null, capRec=null, capCtx=null;
+  var earsOn=false, capTimer=null, capRecs=[], capCtx=null, capGen=0;
+  function isDj(id){ return typeof id === 'string' && id.slice(-3) === '-dj'; }
 
   /* ── the tape deck (July 24 — "record this conversation") ──
    * The engine is the one seat that hears EVERYTHING: every remote track
@@ -2095,54 +2126,84 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
 
   function earsStop(){
     earsOn = false;
+    capGen++;
     if(capTimer){ clearTimeout(capTimer); capTimer = null; }
-    if(capRec){ try{ if(capRec.state !== 'inactive'){ capRec.onstop = null; capRec.stop(); } }catch(e){} capRec = null; }
+    capRecs.forEach(function(r){ try{ if(r.state !== 'inactive'){ r.stop(); } }catch(e){} });
+    capRecs = [];
     if(capCtx){ try{ capCtx.close(); }catch(e){} capCtx = null; }
   }
+  /* ears PER SEAT (round 6 — "Do the bots also have speaker diorisation?"):
+   * every person is already their own track, so each seat records
+   * separately and the transcript carries real names — no blending, no
+   * guessing. Silent seats never get sent (pennies saved). The native
+   * user's own mic arrives here as a remote track like everyone else's. */
   function capCycle(){
     if(!earsOn) return;
+    var gen = ++capGen;
     try{
       if(!window.MediaRecorder){ return; }
       capCtx = new AC();
-      var dest = capCtx.createMediaStreamDestination();
-      var n = 0;
+      var mime = '';
+      if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mime = 'audio/webm;codecs=opus';
+      else if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/mp4')) mime = 'audio/mp4';
+      var seats = [];
       room.remoteParticipants.forEach(function(p){
+        if(isDj(p.identity)) return;
         p.audioTrackPublications.forEach(function(pub){
           var nm = pub.trackName || '';
           if(nm === 'music' || nm === 'bot') return;
           if(pub.track && pub.track.mediaStreamTrack){
-            try{ capCtx.createMediaStreamSource(new MediaStream([pub.track.mediaStreamTrack])).connect(dest); n++; }catch(e){}
+            seats.push({ name: (p.name || p.identity || 'Somebody'), mst: pub.track.mediaStreamTrack });
           }
         });
       });
-      if(!n){ if(capCtx){ try{ capCtx.close(); }catch(e){} capCtx = null; } capTimer = setTimeout(capCycle, 15000); return; }
-      var mime = '';
-      if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mime = 'audio/webm;codecs=opus';
-      else if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/mp4')) mime = 'audio/mp4';
-      capRec = new MediaRecorder(dest.stream, mime ? { mimeType: mime } : undefined);
-      var chunks = [];
-      capRec.ondataavailable = function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
-      capRec.onstop = function(){
-        var blob = new Blob(chunks, { type: (capRec && capRec.mimeType) || mime || 'audio/webm' });
+      if(!seats.length){ if(capCtx){ try{ capCtx.close(); }catch(e){} capCtx = null; } capTimer = setTimeout(capCycle, 15000); return; }
+      capRecs = [];
+      var takes = [];
+      seats.forEach(function(seat){
+        try{
+          var dest = capCtx.createMediaStreamDestination();
+          capCtx.createMediaStreamSource(new MediaStream([seat.mst])).connect(dest);
+          var rec = new MediaRecorder(dest.stream, mime ? { mimeType: mime } : undefined);
+          var chunks = [];
+          rec.ondataavailable = function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
+          takes.push(new Promise(function(done){
+            rec.onstop = function(){ done({ name: seat.name, blob: new Blob(chunks, { type: rec.mimeType || mime || 'audio/webm' }) }); };
+            rec.onerror = function(){ done(null); };
+          }));
+          rec.start();
+          capRecs.push(rec);
+        }catch(e){}
+      });
+      if(!capRecs.length){ if(capCtx){ try{ capCtx.close(); }catch(e){} capCtx = null; } capTimer = setTimeout(capCycle, 15000); return; }
+      capTimer = setTimeout(function(){
+        capRecs.forEach(function(r){ try{ if(r.state !== 'inactive') r.stop(); }catch(e){} });
+      }, 15000);
+      Promise.all(takes).then(function(got){
+        if(gen !== capGen) return null;
         if(capCtx){ try{ capCtx.close(); }catch(e){} capCtx = null; }
-        capRec = null;
-        sendChunk(blob);
+        capRecs = [];
+        var talkers = (got || []).filter(function(t){ return t && t.blob && t.blob.size >= 2500; });
+        return Promise.all(talkers.map(function(t){
+          return transcribeBlob(t.blob).then(function(text){
+            return text ? (t.name + ': ' + text) : null;
+          }).catch(function(){ return null; });
+        }));
+      }).then(function(lines){
+        if(gen !== capGen) return;
+        var spoke = (lines || []).filter(Boolean);
+        if(spoke.length){ post({t:'ears', text: spoke.join('\n')}); }
         if(earsOn){ capTimer = setTimeout(capCycle, 250); }
-      };
-      capRec.start();
-      capTimer = setTimeout(function(){ try{ if(capRec && capRec.state !== 'inactive') capRec.stop(); }catch(e){} }, 15000);
+      });
     }catch(e){
       if(capCtx){ try{ capCtx.close(); }catch(e2){} capCtx = null; }
       capTimer = setTimeout(capCycle, 15000);
     }
   }
-  async function sendChunk(blob){
-    if(!blob || blob.size < 2500) return;
-    try{
-      var r = await fetch('/api/kade/transcribe', { method: 'POST', headers: { 'Authorization': 'Bearer ' + API, 'Content-Type': blob.type || 'audio/webm', 'x-kade-club': '1' }, body: blob });
-      var j = await r.json();
-      if(r.ok && j.transcript){ post({t:'ears', text: j.transcript}); }
-    }catch(e){}
+  async function transcribeBlob(blob){
+    var r = await fetch('/api/kade/transcribe', { method: 'POST', headers: { 'Authorization': 'Bearer ' + API, 'Content-Type': blob.type || 'audio/webm', 'x-kade-club': '1' }, body: blob });
+    var j = await r.json();
+    return (r.ok && j.transcript) ? j.transcript : '';
   }
 
   setInterval(function(){ if(mSrc && mId){ post({t:'pos', id: mId, pos: mPos()}); } }, 4000);
