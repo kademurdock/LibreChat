@@ -381,7 +381,36 @@ router.post('/fetch-track', requireJwtAuth, express.json(), async (req, res) => 
     const metaBuf = await ytLadder([...filters, '--print', '%(title)s', '--skip-download', sel], 40000);
     const title = (metaBuf.toString('utf8').trim().split('\n')[0] || '').slice(0, 60);
     if (!title) return res.status(404).json({ error: 'That one is live, longer than 15 minutes, or missing — the jukebox plays songs, not marathons.' });
-    const audio = await ytLadder([...filters, '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]', '--max-filesize', '60m', '-o', '-', sel], 120000);
+    /* HER LIVE CATCH (July 24 night, Amber's link said playing but never
+     * sounded): YouTube's m4a is a FRAGMENTED MP4 (ftyp brand 'dash',
+     * sidx/moof boxes — receipts in PROJECT_STATUS) and decodeAudioData —
+     * the one decoder both DJ engines use — cannot digest fragmented MP4
+     * anywhere (WebKit or Chrome). So the server now REMUXES to a classic
+     * container: ffmpeg (already aboard) copies the AAC into a normal m4a
+     * with the moov up front (faststart) — no re-encode for AAC sources,
+     * a real transcode only when a video has nothing but opus. That needs
+     * a temp file (postprocessors cannot ride a stdout pipe). */
+    const os = require('os');
+    const path = require('path');
+    const fs = require('fs');
+    const tmpBase = path.join(os.tmpdir(), 'kade-trk-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+    let audio;
+    try {
+      await ytLadder([
+        ...filters,
+        '-f', 'bestaudio',
+        '--extract-audio', '--audio-format', 'm4a',
+        '--postprocessor-args', 'ffmpeg:-movflags +faststart',
+        '--max-filesize', '60m',
+        '-o', tmpBase + '.%(ext)s',
+        sel,
+      ], 150000);
+      audio = fs.readFileSync(tmpBase + '.m4a');
+    } finally {
+      for (const ext of ['.m4a', '.m4a.part', '.webm', '.webm.part', '.mp4', '.mp4.part', '.opus']) {
+        try { fs.unlinkSync(tmpBase + ext); } catch (e) { /* not there */ }
+      }
+    }
     if (!audio.length) return res.status(413).json({ error: 'That audio came back empty or over the 60MB cap.' });
     res.set('x-kade-title', encodeURIComponent(title || fallbackTitle));
     res.set('Content-Type', 'audio/mp4');
