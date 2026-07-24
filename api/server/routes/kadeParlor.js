@@ -225,6 +225,11 @@ router.get('/state/:gameId', requireJwtAuth, async (req, res) => {
     if (!doc) return res.status(404).json({ error: 'No such table.' });
     const G = getGame(doc.gameKey);
     if (!G) return res.status(410).json({ error: 'That table is on an unknown game.' });
+    if (doc.state && doc.state.party) {
+      // Host resuming a party table gets the party shape (seat 0) so the
+      // client knows to poll and to route moves through party-move.
+      return res.json({ ...partyPayload(doc, G, 0), historyCursor: (doc.state.history || []).length });
+    }
     return res.json(tablePayload(doc, G));
   } catch (e) {
     logger.error('[parlor/state] error:', e);
