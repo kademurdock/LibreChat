@@ -103,7 +103,12 @@ async function listHotelRooms() {
 
 router.get('/config', requireJwtAuth, async (req, res) => {
   const uid = String(req.user.id);
-  const hotel = (await listHotelRooms()).map((r) => ({ key: r.key, name: r.name, by: r.by, mine: r.createdBy === uid }));
+  // July 24 2026, her call: Hotel rooms are HIDDEN — no public list, ever.
+  // You see only rooms YOU opened (so you can close them); everybody else
+  // checks in blind with the passcode. The code is the key.
+  const hotel = (await listHotelRooms())
+    .filter((r) => r.createdBy === uid)
+    .map((r) => ({ key: r.key, name: r.name, mine: true }));
   if (!loungeConfigured()) {
     return res.json({ ready: false, rooms: ROOMS, hotel });
   }
@@ -127,9 +132,14 @@ router.post('/hotel', requireJwtAuth, express.json(), async (req, res) => {
       const cutoff = new Date(Date.now() - HOTEL_STALE_DAYS * 24 * 60 * 60 * 1000);
       await KadeClubRoom.deleteMany({ lastUsedAt: { $lt: cutoff } });
     } catch (_) {}
-    const count = await KadeClubRoom.countDocuments({});
-    if (count >= HOTEL_MAX_ROOMS) {
+    const existing = await KadeClubRoom.find({}).limit(HOTEL_MAX_ROOMS + 1).lean();
+    if (existing.length >= HOTEL_MAX_ROOMS) {
       return res.status(400).json({ error: 'The Hotel is full — close an old room before opening another.' });
+    }
+    // Rooms are hidden, so the passcode alone finds the room at check-in —
+    // which means codes must be unique across the whole Hotel.
+    if (existing.some((r) => hashCode(r.key, code) === r.codeHash)) {
+      return res.status(400).json({ error: 'That passcode is already keeping another room — pick a different one.' });
     }
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 10) || 'room';
     const key = 'hotel-' + slug + '-' + crypto.randomBytes(2).toString('hex');
@@ -146,6 +156,27 @@ router.post('/hotel', requireJwtAuth, express.json(), async (req, res) => {
   } catch (e) {
     logger.error('[kade/lounge hotel] error:', e);
     return res.status(500).json({ error: 'Could not open that room — try again.' });
+  }
+});
+
+/** Check in: the passcode alone finds its room — rooms are hidden by
+ * design ("They check in with pass codes"), and codes are unique across
+ * the Hotel (enforced at create). The token mint still re-verifies. */
+router.post('/hotel/checkin', requireJwtAuth, express.json(), async (req, res) => {
+  try {
+    const code = normalizeCode(req.body?.code);
+    if (!code) {
+      return res.status(400).json({ error: 'Passcodes are 3 to 16 letters and numbers, no spaces.' });
+    }
+    const rows = await KadeClubRoom.find({}).limit(HOTEL_MAX_ROOMS + 1).lean();
+    const hit = rows.find((r) => hashCode(r.key, code) === r.codeHash);
+    if (!hit) {
+      return res.status(404).json({ error: 'No room answers to that code — double-check it with whoever opened the room.' });
+    }
+    return res.json({ key: hit.key, name: hit.name });
+  } catch (e) {
+    logger.error('[kade/lounge hotel checkin] error:', e);
+    return res.status(500).json({ error: 'The front desk hiccuped — try again.' });
   }
 });
 
@@ -366,13 +397,11 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
 
     <div class="card">
       <h2 style="margin-top:0">The Hotel &mdash; private rooms</h2>
-      <p class="muted">Passcode rooms so groups can group up. Everyone with the code gets in; nobody else does. A Parlor party's table code works as a passcode too &mdash; one code, cards and voices.</p>
-      <div id="hotel-list"><p class="muted" id="hotel-empty">No rooms are open right now.</p></div>
-      <div id="hotel-join-row" hidden>
-        <label class="blk" for="hotel-code" id="hotel-code-label">Passcode</label>
-        <input type="text" id="hotel-code" maxlength="16" autocapitalize="none" autocomplete="off">
-        <p><button type="button" class="rowbtn" id="join-hotel">Join the room</button></p>
-      </div>
+      <p class="muted">Rooms stay off the list on purpose &mdash; the code is the key. Check in with your group's passcode, or open a room of your own and pass the code around. A Parlor party's table code can be a passcode too.</p>
+      <label class="blk" for="hotel-code">Your group's passcode</label>
+      <input type="text" id="hotel-code" maxlength="16" autocapitalize="none" autocomplete="off">
+      <p><button type="button" class="rowbtn" id="hotel-checkin">Check in</button></p>
+      <div id="hotel-mine"></div>
       <h3>Open a room</h3>
       <label class="blk" for="hotel-name">Room name</label>
       <input type="text" id="hotel-name" maxlength="40">
@@ -476,15 +505,11 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       $('room-list').innerHTML = (cfg.rooms||[]).map(function(r){
         return '<button type="button" class="room" data-room="'+r.key+'">'+r.name+' <span class="desc">'+r.blurb+'</span></button>';
       }).join('');
-      let pendingHotel = null;
       function renderHotel(list){
-        if(!list || !list.length){
-          $('hotel-list').innerHTML = '<p class="muted" id="hotel-empty">No rooms are open right now.</p>';
-          return;
-        }
-        $('hotel-list').innerHTML = list.map(function(h){
-          var mine = h.mine ? ' <button type="button" class="rowbtn small red" data-close="'+h.key+'">Close this room</button>' : '';
-          return '<div><button type="button" class="room" data-hotel="'+h.key+'" data-name="'+esc(h.name)+'">'+esc(h.name)+' <span class="desc">Needs the passcode'+(h.by? ' — opened by '+esc(h.by) : '')+'</span></button>'+mine+'</div>';
+        // Only rooms YOU opened ever render — the Hotel keeps no public list.
+        if(!list || !list.length){ $('hotel-mine').innerHTML = ''; return; }
+        $('hotel-mine').innerHTML = '<h3>Rooms you opened</h3>' + list.map(function(h){
+          return '<p>'+esc(h.name)+' <button type="button" class="rowbtn small red" data-close="'+h.key+'">Close this room</button></p>';
         }).join('');
       }
       function esc(s){ var d=document.createElement('div'); d.textContent = s || ''; return d.innerHTML.replace(/"/g,'&quot;'); }
@@ -1167,33 +1192,31 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         const r = (cfg.rooms||[]).find(function(x){ return x.key === b.getAttribute('data-room'); });
         joinRoom(b.getAttribute('data-room'), r ? r.name : b.getAttribute('data-room'));
       });
-      $('hotel-list').addEventListener('click', async function(ev){
+      $('hotel-mine').addEventListener('click', async function(ev){
         const cb = ev.target.closest('button[data-close]');
-        if(cb){
-          if(!confirm('Close this room for good?')) return;
-          try{
-            const r = await fetch('/api/kade/lounge/hotel/' + cb.getAttribute('data-close'), { method:'DELETE', headers:{ 'Authorization':'Bearer '+token } });
-            const j = await r.json();
-            if(!r.ok) throw new Error(j.error || 'Could not close it.');
-            status.textContent = 'Room closed.';
-            const cr = await apiGet('/api/kade/lounge/config', token);
-            cfg = await cr.json();
-            renderHotel(cfg.hotel);
-          }catch(e){ status.className='status err'; status.textContent = e.message; }
-          return;
-        }
-        const b = ev.target.closest('button[data-hotel]'); if(!b) return;
-        pendingHotel = { key: b.getAttribute('data-hotel'), name: b.getAttribute('data-name') || 'that room' };
-        $('hotel-join-row').hidden = false;
-        $('hotel-code-label').textContent = 'Passcode for ' + pendingHotel.name;
-        $('join-hotel').textContent = 'Join ' + pendingHotel.name;
-        $('hotel-code').focus();
+        if(!cb) return;
+        if(!confirm('Close this room for good?')) return;
+        try{
+          const r = await fetch('/api/kade/lounge/hotel/' + cb.getAttribute('data-close'), { method:'DELETE', headers:{ 'Authorization':'Bearer '+token } });
+          const j = await r.json();
+          if(!r.ok) throw new Error(j.error || 'Could not close it.');
+          status.textContent = 'Room closed.';
+          const cr = await apiGet('/api/kade/lounge/config', token);
+          cfg = await cr.json();
+          renderHotel(cfg.hotel);
+        }catch(e){ status.className='status err'; status.textContent = e.message; }
       });
-      $('join-hotel').addEventListener('click', function(){
-        if(!pendingHotel) return;
+      $('hotel-checkin').addEventListener('click', async function(){
         var code = $('hotel-code').value.trim().toLowerCase();
         if(!code){ $('hotel-code').focus(); return; }
-        joinRoom(pendingHotel.key, pendingHotel.name, code);
+        try{
+          const r = await fetch('/api/kade/lounge/hotel/checkin', { method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify({ code: code }) });
+          const j = await r.json();
+          if(!r.ok) throw new Error(j.error || 'No room answered.');
+          status.className = 'status';
+          $('hotel-code').value = '';
+          joinRoom(j.key, j.name, code);
+        }catch(e){ status.className='status err'; status.textContent = e.message; }
       });
       $('hotel-create').addEventListener('click', async function(){
         var name = $('hotel-name').value.trim();
