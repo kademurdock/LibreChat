@@ -327,6 +327,7 @@ const startServer = async () => {
   // the pretty front door; /lounge stays alive forever (native build 154's
   // in-app doorway points at it).
   app.get('/clubhouse', routes.kadeLounge.page);
+  app.get('/clubhouse-engine', routes.kadeLounge.enginePage); // headless publisher for the native app
   app.get('/debate-room', routes.kadeRoom.page);
   app.get('/conversation-hall', routes.kadeRoom.hallPage);
   app.get('/game-room', routes.kade.gameRoomPage);

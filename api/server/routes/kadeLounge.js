@@ -224,7 +224,14 @@ router.post('/token', requireJwtAuth, express.json(), async (req, res) => {
     }
     wakeLoungeServer(); // belt and braces — token mint = a join is seconds away
     const firstName = (req.user.name || 'Someone').trim().split(/\s+/)[0] || 'Someone';
-    const identity = firstName + '-' + String(req.user.id).slice(-4);
+    /* lane 'dj' (July 24 2026, the PURE-NATIVE build): the iPhone app keeps a
+     * hidden headless WebKit "engine" alongside its LiveKit Swift connection,
+     * because iOS's libwebrtc has ONE audio pipeline — a second hi-fi track
+     * (the jukebox's 'music', the guest's 'bot') can only be published from a
+     * web context. The engine joins as "<name>-<id4>-dj" and every roster,
+     * steward, and announcement path filters identities ending in "-dj". */
+    const lane = String(req.body?.lane || '') === 'dj' ? '-dj' : '';
+    const identity = firstName + '-' + String(req.user.id).slice(-4) + lane;
     const now = Math.floor(Date.now() / 1000);
     const token = jwt.sign(
       {
@@ -532,9 +539,11 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
 
       function say(text){ $('rstatus').textContent = text; }
 
+      function isDj(identity){ return typeof identity === 'string' && identity.slice(-3) === '-dj'; }
       function rosterParts(){
         if(!lkRoom) return [];
-        return [lkRoom.localParticipant].concat(Array.from(lkRoom.remoteParticipants.values()));
+        return [lkRoom.localParticipant].concat(Array.from(lkRoom.remoteParticipants.values()))
+          .filter(function(p){ return !isDj(p.identity); });
       }
       function rosterNames(){
         return rosterParts().map(function(p){ return (p.name || p.identity || 'Someone'); });
@@ -923,9 +932,11 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
             handleClubMsg(msg, participant);
           })
           .on(LK.RoomEvent.ParticipantConnected, function(p){
+            if(isDj(p.identity)){ return; } // headless engines are furniture
             renderRoster(); say((p.name||p.identity)+' joined.');
           })
           .on(LK.RoomEvent.ParticipantDisconnected, function(p){
+            if(isDj(p.identity)){ renderRoster(); reconcile(); renderJukebox(); return; }
             if(BOT && BOT.anchor === p.identity){
               var bn = BOT.name; BOT = null;
               say((p.name||p.identity)+' left and took '+bn+' with them.');
@@ -1292,6 +1303,221 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
   </script>
 </body></html>`;
 
+/* ── THE ENGINE (July 24 2026, the pure-native build) ─────────────────────
+ * A HEADLESS page the iPhone app hosts in an invisible WKWebView. Why it
+ * exists: iOS's libwebrtc owns exactly one audio pipeline (the mic), so a
+ * native app cannot publish a second custom track — but WebKit's WebRTC can
+ * publish any WebAudio stream. The app's SwiftUI Clubhouse does everything
+ * else (mic, roster, data channel, state machine, volume); THIS page is its
+ * hands for three jobs only, commanded over evaluateJavaScript (window.KE)
+ * with events back through webkit.messageHandlers.engine:
+ *   1. publish the shared jukebox's hi-fi 'music' track (files arrive from
+ *      the app over a kadefile:// custom scheme, never the network),
+ *   2. publish the bot guest's 'bot' voice track (TTS fetched right here),
+ *   3. the bot's EARS — the same 15s capture->transcribe cycles the web
+ *      anchor runs (the native user's own mic arrives as a remote track,
+ *      since the engine is its own '-dj' participant).
+ * No UI, no mic, nothing audible locally, scrubbed fragment, roster-invisible
+ * (every surface filters '-dj' identities). */
+const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>engine</title></head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+<script>
+(function(){
+  function post(o){ try{ window.webkit.messageHandlers.engine.postMessage(o); }catch(e){} }
+  var params = {};
+  try{
+    (location.hash || '').slice(1).split('&').forEach(function(kv){
+      var i = kv.indexOf('='); if(i < 0) return;
+      params[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1));
+    });
+    history.replaceState(null, '', location.pathname);
+  }catch(e){}
+  var LKTOK = params.lk, WSURL = params.url, API = params.api;
+  if(!LKTOK || !WSURL || typeof LivekitClient === 'undefined'){ post({t:'dead', why:'boot'}); return; }
+  var LK = LivekitClient;
+  var AC = window.AudioContext || window.webkitAudioContext;
+  var room = new LK.Room({ adaptiveStream: false, dynacast: false });
+
+  var mCtx=null, mDest=null, mTrack=null, mPub=false, mSrc=null, mId=null, mStartOff=0, mStartT=0, mStopping=false, mSession=0;
+  var buffers = {};
+  var bCtx=null, bDest=null, bTrack=null, bPub=false;
+  var earsOn=false, capTimer=null, capRec=null, capCtx=null;
+
+  room.on(LK.RoomEvent.TrackSubscribed, function(track){
+    if(track.kind !== 'audio') return;
+    var el = track.attach(); // muted keepalive so capture graphs stay warm
+    el.muted = true; el.volume = 0; el.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(el);
+  });
+  room.on(LK.RoomEvent.TrackUnsubscribed, function(track){
+    try{ track.detach().forEach(function(el){ el.remove(); }); }catch(e){}
+  });
+  room.on(LK.RoomEvent.Disconnected, function(){ post({t:'gone'}); });
+
+  function mPos(){ if(!mCtx || !mSrc) return 0; return mStartOff + (mCtx.currentTime - mStartT); }
+
+  async function ensureMusicPub(){
+    if(!mCtx){ mCtx = new AC(); mDest = mCtx.createMediaStreamDestination(); }
+    if(mCtx.state === 'suspended'){ try{ await mCtx.resume(); }catch(e){} }
+    if(!mPub){
+      mTrack = mDest.stream.getAudioTracks()[0];
+      await room.localParticipant.publishTrack(mTrack, {
+        dtx: false, red: false,
+        audioPreset: LK.AudioPresets.musicHighQualityStereo,
+        source: LK.Track.Source.Unknown,
+        name: 'music',
+      });
+      mPub = true;
+    }
+  }
+
+  window.KE = {
+    loadPlay: async function(id, pos){
+      var session = ++mSession;
+      try{
+        if(!mCtx){ mCtx = new AC(); mDest = mCtx.createMediaStreamDestination(); }
+        if(mCtx.state === 'suspended'){ try{ await mCtx.resume(); }catch(e){} }
+        var buf = buffers[id];
+        if(!buf){
+          var r = await fetch('kadefile://song/' + id);
+          if(!r.ok) throw new Error('file');
+          var ab = await r.arrayBuffer();
+          buf = await mCtx.decodeAudioData(ab);
+          Object.keys(buffers).forEach(function(k){ if(k !== id) delete buffers[k]; });
+          buffers[id] = buf;
+        }
+        if(session !== mSession) return;
+        await ensureMusicPub();
+        if(session !== mSession) return;
+        if(mSrc){ mStopping = true; try{ mSrc.onended = null; mSrc.stop(); }catch(e){} mStopping = false; mSrc = null; }
+        var off = Number(pos) || 0;
+        if(off < 0) off = 0;
+        if(off >= buf.duration - 0.3) off = 0;
+        mSrc = mCtx.createBufferSource();
+        mSrc.buffer = buf;
+        mSrc.connect(mDest);
+        mStartOff = off; mStartT = mCtx.currentTime; mId = id;
+        mSrc.onended = function(){
+          if(mStopping || mId !== id) return;
+          mSrc = null;
+          post({t:'ended', id: id});
+        };
+        mSrc.start(0, off);
+        post({t:'playing', id: id, pos: off});
+      }catch(e){ post({t:'playfail', id: id}); }
+    },
+    silence: function(){
+      mSession++;
+      var id = mId, p = mPos();
+      if(mSrc){ mStopping = true; try{ mSrc.onended = null; mSrc.stop(); }catch(e){} mStopping = false; mSrc = null; }
+      if(mPub && mTrack){ try{ room.localParticipant.unpublishTrack(mTrack, true); }catch(e){} mPub = false; mTrack = null; }
+      mId = null;
+      if(id){ post({t:'pos', id: id, pos: p, silenced: true}); }
+    },
+    botOn: async function(){
+      try{
+        if(!bCtx){ bCtx = new AC(); bDest = bCtx.createMediaStreamDestination(); }
+        if(bCtx.state === 'suspended'){ try{ await bCtx.resume(); }catch(e){} }
+        if(!bPub){
+          bTrack = bDest.stream.getAudioTracks()[0];
+          await room.localParticipant.publishTrack(bTrack, { name: 'bot', source: LK.Track.Source.Unknown });
+          bPub = true;
+        }
+        post({t:'botReady'});
+      }catch(e){ post({t:'botFail', why: 'on'}); }
+    },
+    botSay: async function(text, voice){
+      try{
+        if(!bPub) throw new Error('no chair');
+        var r = await fetch('/api/files/speech/tts/manual', { method: 'POST', headers: { 'Authorization': 'Bearer ' + API, 'Content-Type': 'application/json' }, body: JSON.stringify({ input: text, voice: voice }) });
+        if(!r.ok) throw new Error('tts');
+        var ab = await r.arrayBuffer();
+        var buf = await bCtx.decodeAudioData(ab);
+        var src = bCtx.createBufferSource();
+        src.buffer = buf;
+        src.connect(bDest);
+        src.onended = function(){ post({t:'botDone'}); };
+        src.start();
+      }catch(e){ post({t:'botFail', why: 'say'}); }
+    },
+    botOff: function(){
+      if(bPub && bTrack){ try{ room.localParticipant.unpublishTrack(bTrack, true); }catch(e){} bPub = false; bTrack = null; }
+    },
+    earsOn: function(){ if(earsOn) return; earsOn = true; capCycle(); },
+    earsOff: function(){ earsStop(); }
+  };
+
+  function earsStop(){
+    earsOn = false;
+    if(capTimer){ clearTimeout(capTimer); capTimer = null; }
+    if(capRec){ try{ if(capRec.state !== 'inactive'){ capRec.onstop = null; capRec.stop(); } }catch(e){} capRec = null; }
+    if(capCtx){ try{ capCtx.close(); }catch(e){} capCtx = null; }
+  }
+  function capCycle(){
+    if(!earsOn) return;
+    try{
+      if(!window.MediaRecorder){ return; }
+      capCtx = new AC();
+      var dest = capCtx.createMediaStreamDestination();
+      var n = 0;
+      room.remoteParticipants.forEach(function(p){
+        p.audioTrackPublications.forEach(function(pub){
+          var nm = pub.trackName || '';
+          if(nm === 'music' || nm === 'bot') return;
+          if(pub.track && pub.track.mediaStreamTrack){
+            try{ capCtx.createMediaStreamSource(new MediaStream([pub.track.mediaStreamTrack])).connect(dest); n++; }catch(e){}
+          }
+        });
+      });
+      if(!n){ if(capCtx){ try{ capCtx.close(); }catch(e){} capCtx = null; } capTimer = setTimeout(capCycle, 15000); return; }
+      var mime = '';
+      if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mime = 'audio/webm;codecs=opus';
+      else if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/mp4')) mime = 'audio/mp4';
+      capRec = new MediaRecorder(dest.stream, mime ? { mimeType: mime } : undefined);
+      var chunks = [];
+      capRec.ondataavailable = function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
+      capRec.onstop = function(){
+        var blob = new Blob(chunks, { type: (capRec && capRec.mimeType) || mime || 'audio/webm' });
+        if(capCtx){ try{ capCtx.close(); }catch(e){} capCtx = null; }
+        capRec = null;
+        sendChunk(blob);
+        if(earsOn){ capTimer = setTimeout(capCycle, 250); }
+      };
+      capRec.start();
+      capTimer = setTimeout(function(){ try{ if(capRec && capRec.state !== 'inactive') capRec.stop(); }catch(e){} }, 15000);
+    }catch(e){
+      if(capCtx){ try{ capCtx.close(); }catch(e2){} capCtx = null; }
+      capTimer = setTimeout(capCycle, 15000);
+    }
+  }
+  async function sendChunk(blob){
+    if(!blob || blob.size < 2500) return;
+    try{
+      var r = await fetch('/api/kade/transcribe', { method: 'POST', headers: { 'Authorization': 'Bearer ' + API, 'Content-Type': blob.type || 'audio/webm', 'x-kade-club': '1' }, body: blob });
+      var j = await r.json();
+      if(r.ok && j.transcript){ post({t:'ears', text: j.transcript}); }
+    }catch(e){}
+  }
+
+  setInterval(function(){ if(mSrc && mId){ post({t:'pos', id: mId, pos: mPos()}); } }, 4000);
+
+  (async function connect(){
+    var attempt = 0;
+    while(true){
+      attempt++;
+      try{ await room.connect(WSURL, LKTOK); break; }
+      catch(e){
+        if(attempt >= 8){ post({t:'dead', why: 'connect'}); return; }
+        await new Promise(function(res){ setTimeout(res, 3500); });
+      }
+    }
+    post({t:'ready'});
+  })();
+})();
+</script></body></html>`;
+
 router.page = (_req, res) => res.type('html').send(loungeHtml);
+router.enginePage = (_req, res) => res.type('html').send(engineHtml);
 
 module.exports = router;
