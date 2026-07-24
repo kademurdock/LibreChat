@@ -446,8 +446,13 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         <button type="button" class="rowbtn" id="jb-toggle">Play</button>
         <button type="button" class="rowbtn gray" id="jb-back">Back a song</button>
         <button type="button" class="rowbtn gray" id="jb-skip">Skip ahead</button>
-        <button type="button" class="rowbtn red" id="jb-stop">Stop the music</button>
+        <button type="button" class="rowbtn red" id="jb-clear">Clear the queue</button>
       </p>
+      <div id="jb-seek-row" hidden>
+        <label class="blk" for="jb-seek">Song position</label>
+        <input type="range" id="jb-seek" min="0" max="300" step="1" value="0" aria-label="Song position in seconds">
+        <p class="muted" id="jb-time"></p>
+      </div>
       <h4 style="margin:.8rem 0 .2rem">Up next</h4>
       <ol id="jb-queue" aria-label="The queue"></ol>
       <label class="blk" for="jb-file">Add a song or any audio file</label>
@@ -459,6 +464,14 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       <label class="blk" for="jb-vol">My music volume &mdash; just for my ears</label>
       <input type="range" id="jb-vol" min="0" max="100" step="5" value="25" aria-label="My music volume, percent">
       <p class="muted" style="font-size:.85rem">Music starts low by default so talk rides over it. Voices always come through at full volume.</p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">My mic</h3>
+      <label style="display:flex; gap:.6rem; align-items:flex-start; cursor:pointer">
+        <input type="checkbox" id="mic-clear" style="width:auto; margin-top:.3rem">
+        <span>Headphones clarity mode &mdash; send my mic raw: no echo cancel, no noise trims, full fidelity, and incoming music stops dipping while I talk. <strong>Headphones only</strong> &mdash; on a speaker, the room will hear themselves echo off you.</span>
+      </label>
     </div>
 
     <div class="card" id="bot-card">
@@ -589,6 +602,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       let botBusy = false;
 
       const myFiles = {};   // entry id -> File (only my own adds)
+      const haltCount = {}; // entry id -> early-death count (session grabs)
       const myBuffers = {}; // entry id -> AudioBuffer (my own, decoded)
       const myPos = {};     // entry id -> seconds to resume from (radio fights)
       let jbCtx=null, jbDest=null, jbMonitor=null, jbSrc=null, jbTrack=null;
@@ -676,6 +690,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       function adoptState(msg){
         if(!(msg.v > CLUB.v)) return;
         CLUB.v = msg.v; CLUB.jb = msg.jb || CLUB.jb; CLUB.act = msg.act || ''; CLUB.actn = msg.actn || 0;
+        jbPosStamp = Date.now();
         if(CLUB.actn > lastActn){ lastActn = CLUB.actn; if(CLUB.act) say(CLUB.act); }
         reconcile();
         renderJukebox();
@@ -721,6 +736,19 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
               if(n2){ setCurrentId(n2.id); } else { jb.curId = null; jb.playing = false; }
             }
             setAct(m.auto ? (r.title + ' would not play and came off the list.') : (who + ' took ' + r.title + ' off the list.'));
+          }
+        } else if(m.cmd === 'seek'){
+          var se = entryById(m.id) || curEntry();
+          if(se && se.id === jb.curId){
+            var sp = Math.max(0, Number(m.pos) || 0);
+            jb.pos = sp;
+            jb.seek = { id: se.id, pos: sp, n: ((jb.seek && jb.seek.n) || 0) + 1 };
+            setAct(who + ' moved the song.');
+          }
+        } else if(m.cmd === 'clearq'){
+          if(jb.queue.length){
+            jb.queue = []; jb.curId = null; jb.playing = false; jb.pos = -1; jb.seek = null;
+            setAct(who + ' cleared the queue.');
           }
         } else if(m.cmd === 'ended'){
           var n3 = nextPlayable(i, +1);
@@ -800,11 +828,33 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
           jbSrc.connect(jbDest);
           jbSrc.connect(jbMonitor);
           jbStartOffset = offset; jbStartTime = jbCtx.currentTime;
+          if(!entry.dur){
+            entry.dur = buf.duration;
+            CLUB.v++; broadcastState(); renderJukebox();
+          }
           var thisId = entry.id;
+          var thisDur = buf.duration;
           jbSrc.onended = function(){
             if(jbStopping || playingEntryId !== thisId) return;
-            myPos[thisId] = 0;
+            var played = myCurrentPos();
             playingEntryId = null; jbSrc = null;
+            if(played < thisDur - 2){
+              // died mid-song (audio session interruption) — resume once,
+              // and if it keeps dying, pause honestly. Never eat the queue.
+              myPos[thisId] = played;
+              haltCount[thisId] = (haltCount[thisId] || 0) + 1;
+              if(haltCount[thisId] <= 1){
+                setTimeout(function(){
+                  var c = curEntry();
+                  if(c && c.id === thisId && CLUB.jb.playing && !playingEntryId){ startPlayback(c); }
+                }, 1500);
+              } else {
+                say('The music keeps getting interrupted — press Play when you are ready.');
+                clubCmd('pause');
+              }
+              return;
+            }
+            myPos[thisId] = 0;
             if(iAmAuthority()){ applyCmd({ cmd:'ended', fromName:'' }); }
           };
           jbSrc.start(0, offset);
@@ -829,8 +879,15 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         }
         playingEntryId = null;
       }
+      var mySeekN = 0;
       function reconcile(){
         var cur = curEntry();
+        var sk = CLUB.jb.seek;
+        if(cur && sk && sk.id === cur.id && sk.n !== mySeekN && cur.by === myIdentity){
+          mySeekN = sk.n;
+          myPos[cur.id] = Math.max(0, Number(sk.pos) || 0);
+          if(playingEntryId === cur.id){ playingEntryId = null; } // force restart at the new spot
+        }
         var mine = cur && CLUB.jb.playing && cur.by === myIdentity;
         if(mine){
           if(playingEntryId !== cur.id){ startPlayback(cur); }
@@ -888,7 +945,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         }
         ensureListenCtx();
         try{
-          micTrack = await LK.createLocalAudioTrack({ echoCancellation: true, noiseSuppression: true });
+          micTrack = await LK.createLocalAudioTrack(micConstraints());
           await lkRoom.localParticipant.publishTrack(micTrack);
         }catch(e){
           say('Mic permission was refused — you can listen, but the room cannot hear you.');
@@ -987,6 +1044,8 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         var cur = curEntry();
         if(cur && CLUB.jb.playing && cur.by === myIdentity && playingEntryId === cur.id){
           CLUB.jb.pos = Math.round(myCurrentPos());
+          jbPosStamp = Date.now();
+          haltCount[cur.id] = 0; // four stable seconds = the interruption passed
           CLUB.v++;
           broadcastState();
         }
@@ -1284,6 +1343,71 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         $('jb-cutin').hidden = true;
         $('jb-queue-add').hidden = true;
       }
+      /* headphones clarity mode (July 24, her point: "we might not
+         TECHnically need iphone noise reduction unless they were using the
+         speaker... The idea is audio clarity anyway.") — raw mic on request,
+         speaker-friendly processing stays the default because ONE
+         speakerphone without echo cancel wrecks the room for everybody. */
+      var micClear = false;
+      try{ micClear = localStorage.getItem('kadeClubClearMic') === '1'; }catch(e){}
+      $('mic-clear').checked = micClear;
+      function micConstraints(){
+        return micClear
+          ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+          : { echoCancellation: true, noiseSuppression: true };
+      }
+      $('mic-clear').addEventListener('change', async function(){
+        micClear = $('mic-clear').checked;
+        try{ localStorage.setItem('kadeClubClearMic', micClear ? '1' : '0'); }catch(e){}
+        if(!lkRoom){ return; }
+        try{
+          var old = micTrack; micTrack = null;
+          if(old){ try{ await lkRoom.localParticipant.unpublishTrack(old, true); }catch(e){} }
+          micTrack = await LK.createLocalAudioTrack(micConstraints());
+          await lkRoom.localParticipant.publishTrack(micTrack);
+          if(micMuted){ try{ await lkRoom.localParticipant.setMicrophoneEnabled(false); }catch(e){} }
+          say(micClear ? 'Mic is raw now — full clarity, headphones etiquette.' : 'Mic is speaker-friendly now.');
+        }catch(e){ say('Could not switch the mic mode.'); }
+      });
+
+      $('jb-clear').addEventListener('click', function(){
+        if(!lkRoom || !CLUB.jb.queue.length) return;
+        if(confirm('Clear the whole queue, for everybody?')) clubCmd('clearq');
+      });
+
+      /* the seek lane: display ticks locally each second off the last
+         broadcast position; releasing the slider sends ONE seek command. */
+      var jbPosStamp = Date.now();
+      var seekTouched = 0;
+      function fmtTime(t){
+        t = Math.max(0, Math.round(t));
+        return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
+      }
+      function livePos(){
+        var jb = CLUB.jb;
+        var base = jb.pos >= 0 ? jb.pos : 0;
+        return jb.playing ? base + (Date.now() - jbPosStamp) / 1000 : base;
+      }
+      setInterval(function(){
+        if(!lkRoom) return;
+        var cur = curEntry();
+        var row = $('jb-seek-row');
+        if(!cur){ row.hidden = true; return; }
+        row.hidden = false;
+        var dur = cur.dur ? Math.ceil(cur.dur) : 300;
+        var sl = $('jb-seek');
+        if(String(sl.max) !== String(dur)) sl.max = dur;
+        var p = Math.min(dur, livePos());
+        if(Date.now() - seekTouched > 2500){ sl.value = String(Math.round(p)); }
+        $('jb-time').textContent = fmtTime(p) + ' of ' + (cur.dur ? fmtTime(dur) : 'about ' + fmtTime(dur));
+      }, 1000);
+      $('jb-seek').addEventListener('input', function(){ seekTouched = Date.now(); });
+      $('jb-seek').addEventListener('change', function(){
+        seekTouched = Date.now();
+        if(!CLUB.jb.curId) return;
+        clubCmd('seek', { id: CLUB.jb.curId, pos: Number($('jb-seek').value) || 0 });
+      });
+
       $('jb-cutin').addEventListener('click', function(){ addTrack(true); });
       $('jb-queue-add').addEventListener('click', function(){ addTrack(false); });
       $('jb-toggle').addEventListener('click', function(){
@@ -1292,7 +1416,6 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       });
       $('jb-skip').addEventListener('click', function(){ if(lkRoom) clubCmd('skip'); });
       $('jb-back').addEventListener('click', function(){ if(lkRoom) clubCmd('back'); });
-      $('jb-stop').addEventListener('click', function(){ if(lkRoom) clubCmd('stop'); });
       $('jb-queue').addEventListener('click', function(ev){
         var jb = ev.target.closest('button[data-jump]');
         if(jb){ clubCmd('jump', { id: jb.getAttribute('data-jump') }); return; }
@@ -1360,7 +1483,7 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
 
   async function ensureMusicPub(){
     if(!mCtx){ mCtx = new AC(); mDest = mCtx.createMediaStreamDestination(); }
-    if(mCtx.state === 'suspended'){ try{ await mCtx.resume(); }catch(e){} }
+    if(mCtx.state !== 'running'){ try{ await mCtx.resume(); }catch(e){} }
     if(!mPub){
       mTrack = mDest.stream.getAudioTracks()[0];
       await room.localParticipant.publishTrack(mTrack, {
@@ -1378,7 +1501,7 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
       var session = ++mSession;
       try{
         if(!mCtx){ mCtx = new AC(); mDest = mCtx.createMediaStreamDestination(); }
-        if(mCtx.state === 'suspended'){ try{ await mCtx.resume(); }catch(e){} }
+        if(mCtx.state !== 'running'){ try{ await mCtx.resume(); }catch(e){} }
         var buf = buffers[id];
         if(!buf && !staged[id]){
           // the app has not fed this song's bytes yet — ask and wait
@@ -1415,11 +1538,19 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
         mStartOff = off; mStartT = mCtx.currentTime; mId = id;
         mSrc.onended = function(){
           if(mStopping || mId !== id) return;
+          var played = mPos();
           mSrc = null;
-          post({t:'ended', id: id});
+          if(played < buf.duration - 2){
+            // died mid-song — iOS grabbed the audio session (VoiceOver, a
+            // call, the works). NOT the end of the song. Her live catch:
+            // "when I started talking... it said the queue was finished."
+            post({t:'halted', id: id, pos: played});
+          } else {
+            post({t:'ended', id: id});
+          }
         };
         mSrc.start(0, off);
-        post({t:'playing', id: id, pos: off});
+        post({t:'playing', id: id, pos: off, dur: buf.duration});
       }catch(e){ post({t:'playfail', id: id, why: 'publish'}); }
     },
     feedB64: function(id, b64, last){
@@ -1445,7 +1576,7 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
     botOn: async function(){
       try{
         if(!bCtx){ bCtx = new AC(); bDest = bCtx.createMediaStreamDestination(); }
-        if(bCtx.state === 'suspended'){ try{ await bCtx.resume(); }catch(e){} }
+        if(bCtx.state !== 'running'){ try{ await bCtx.resume(); }catch(e){} }
         if(!bPub){
           bTrack = bDest.stream.getAudioTracks()[0];
           await room.localParticipant.publishTrack(bTrack, { name: 'bot', source: LK.Track.Source.Unknown });
@@ -1457,6 +1588,7 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
     botSay: async function(text, voice){
       try{
         if(!bPub) throw new Error('no chair');
+        if(bCtx.state !== 'running'){ try{ await bCtx.resume(); }catch(e){} }
         var r = await fetch('/api/files/speech/tts/manual', { method: 'POST', headers: { 'Authorization': 'Bearer ' + API, 'Content-Type': 'application/json' }, body: JSON.stringify({ input: text, voice: voice }) });
         if(!r.ok) throw new Error('tts');
         var ab = await r.arrayBuffer();
