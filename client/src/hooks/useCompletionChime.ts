@@ -214,8 +214,10 @@ export default function useCompletionChime(isSubmitting: boolean, index: string 
     try {
       const ctx = audioCtx;
       if (ctx && gain) {
-        // Short fade-out so the loop never clicks off mid-bubble.
+        // Short fade-out so the loop never clicks off mid-bubble. Cancel any
+        // scheduled duck/recover ramps first so a queued rise can't fight it.
         const t = ctx.currentTime;
+        gain.gain.cancelScheduledValues(t);
         gain.gain.setValueAtTime(gain.gain.value, t);
         gain.gain.linearRampToValueAtTime(0.0001, t + 0.18);
         src.stop(t + 0.2);
@@ -224,6 +226,30 @@ export default function useCompletionChime(isSubmitting: boolean, index: string 
       }
     } catch {
       // already stopped
+    }
+  };
+
+  /** July 23 2026 (Kade: the loop riding OVER the Received ding "almost
+   * sounds like 2 received sounds are playing") — duck the bubbles to
+   * near-silence under the ding, then ease back up for the TTS-fetch bridge.
+   * Keeps her July-22 "no dead air before the voice" design AND kills the
+   * doubled-cue overlap. holdSeconds ≈ the received file's real duration. */
+  const duckThinkingLoop = (holdSeconds: number) => {
+    const gain = thinkingGainRef.current;
+    const ctx = audioCtx;
+    if (!gain || !ctx || !thinkingSourceRef.current) {
+      return;
+    }
+    try {
+      const target = SOUND_GAINS.thinking ?? 0.22;
+      const t = ctx.currentTime;
+      gain.gain.cancelScheduledValues(t);
+      gain.gain.setValueAtTime(gain.gain.value, t);
+      gain.gain.linearRampToValueAtTime(0.0001, t + 0.12);
+      gain.gain.setValueAtTime(0.0001, t + 0.12 + holdSeconds);
+      gain.gain.linearRampToValueAtTime(target, t + 0.12 + holdSeconds + 0.35);
+    } catch {
+      // never let a sound effect break the chat
     }
   };
 
@@ -293,14 +319,20 @@ export default function useCompletionChime(isSubmitting: boolean, index: string 
     }
     if (wasSubmitting.current) {
       announcePolite({ message: localize('com_ui_reply_finished'), isStatus: true });
+      const willAwaitVoice = enabled && autoPlayback && !globalPlayingRef.current;
       if (enabled) {
+        if (willAwaitVoice) {
+          // Duck under the ding (see duckThinkingLoop). First-ever received
+          // may not be decoded yet — 1.2s is the file's ballpark length.
+          duckThinkingLoop(soundBuffers.received?.duration ?? 1.2);
+        }
         void playOneShot('received').then((ok) => {
           if (!ok) {
             playChime();
           }
         });
       }
-      if (enabled && autoPlayback && !globalPlayingRef.current) {
+      if (willAwaitVoice) {
         // Voice is (probably) coming: hold the bubbles until it starts.
         awaitingVoiceRef.current = true;
         awaitGraceRef.current = setTimeout(() => {
