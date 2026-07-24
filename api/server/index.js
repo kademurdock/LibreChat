@@ -294,6 +294,7 @@ const startServer = async () => {
   app.use('/api/mcp', routes.mcp);
   app.use('/api/rum', routes.rum);
   app.use('/api/kade/room', routes.kadeRoom);
+  app.use('/api/kade/parlor', routes.kadeParlor);
   app.use('/api/kade/matchmaker', routes.kadeMatchmaker);
   app.use('/api/kade/calls', routes.kadeCalls);
   app.use('/api/kade/web-voice', routes.kadeWebVoice);
@@ -319,6 +320,7 @@ const startServer = async () => {
   app.get('/you', routes.kade.youPage);
   app.get('/pronunciation-dictionary', routes.kade.pronunciationDictionaryPage);
   app.get('/kade-tabbar.js', routes.kade.tabBarAssetPage);
+  app.get('/parlor', routes.kadeParlor.page);
   app.get('/debate-room', routes.kadeRoom.page);
   app.get('/conversation-hall', routes.kadeRoom.hallPage);
   app.get('/game-room', routes.kade.gameRoomPage);

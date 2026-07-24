@@ -739,7 +739,7 @@ const gameRoomHtml = `<!doctype html><html lang="en"><head><title>The Game Room<
 </style>
 </head>
 <body>
-  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/games">How the games work</a></p>
+  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/parlor">Play in the Parlor</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/games">How the games work</a></p>
   <h1>The Game Room</h1>
   <p class="muted">Family bragging rights, straight from the Game Parlor's referee. Every finished game counts — Blackjack, Wild Eights, Go Fish, Pig, Trivia Night, and now Hearts and Five-Card Draw with real characters in the seats. Walking away from a table doesn't count against you — only played-out games land here.</p>
 
@@ -1837,5 +1837,364 @@ const logsHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Logs</titl
   </script>
 </body></html>`;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, tabBarAsset, logsHtml };
+
+/* ── THE PARLOR (July 23 2026 night — Kade's RS-Games-style menu room:
+ * pick a game, seat characters if you want them, play YOUR OWN moves as
+ * buttons, a narrator voice from her clone pool calls the table, table talk
+ * on the side, transcript downloads for bragging rights. No LLM anywhere in
+ * the mechanics — the engine's legal-move tokens ARE the buttons.) ───── */
+const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</title>${SHARED_HEAD}
+<style>
+  .movegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: .55rem; margin-top: .6rem; }
+  button.mv, button.game, button.opt {
+    font: inherit; text-align: left; background: #fff; color: inherit;
+    border: 1px solid #cdd3da; border-radius: 12px; padding: .75rem .9rem; cursor: pointer;
+  }
+  button.mv { border-width: 2px; border-color: #1f7a49; font-weight: 600; }
+  button.mv:focus-visible, button.game:focus-visible, button.opt:focus-visible, .rowbtn:focus-visible { outline: 3px solid #ffbf47; outline-offset: 2px; }
+  @media (prefers-color-scheme: dark) {
+    button.mv, button.game, button.opt { background: #1e2127; border-color: #3a4150; }
+    button.mv { border-color: #2f8f5b; }
+  }
+  .gamelist { display: grid; gap: .55rem; margin-top: .6rem; }
+  button.game .desc { display: block; font-weight: 400; opacity: .8; font-size: .92rem; margin-top: .15rem; }
+  .rowbtn { font: inherit; background: #1f7a49; color: #fff; border: 0; border-radius: 10px; padding: .7rem 1.1rem; font-weight: 600; cursor: pointer; margin: .35rem .4rem .35rem 0; }
+  .rowbtn.gray { background: #5b6270; }
+  .rowbtn.red { background: #a33; }
+  label.blk { display: block; margin: .7rem 0 .25rem; font-weight: 600; }
+  select, input[type="text"], input[type="number"] { font: inherit; padding: .55rem .6rem; border-radius: 9px; border: 1px solid #cdd3da; background: #fff; color: inherit; max-width: 100%; }
+  @media (prefers-color-scheme: dark) { select, input[type="text"], input[type="number"] { background: #1e2127; border-color: #3a4150; } }
+  .seatbox { display: grid; gap: .3rem; margin-top: .35rem; max-height: 14rem; overflow: auto; border: 1px solid #cdd3da; border-radius: 10px; padding: .6rem; }
+  #tlines { white-space: pre-wrap; }
+  #talklog li { margin: .3rem 0; }
+</style>
+</head>
+<body>
+  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/game-room-page">Game Room standings</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/games">How the games work</a></p>
+  <h1>The Parlor</h1>
+  <div id="status" class="status" role="status" aria-live="polite">Warming up the tables&hellip;</div>
+
+  <section id="menu" hidden>
+    <p class="muted">Every game, on a menu. Pick one, set the table your way, and play your own cards &mdash; characters are optional company, never the referee.</p>
+    <div id="resume-card" class="card" hidden>
+      <h2 style="margin-top:0">Your open tables</h2>
+      <div id="resume-list" class="gamelist"></div>
+    </div>
+    <h2>Deal something new</h2>
+    <div id="game-list" class="gamelist" role="list"></div>
+  </section>
+
+  <section id="setup" hidden>
+    <h2 id="setup-title">Set the table</h2>
+    <form id="setup-form">
+      <div id="opt-opponents-wrap" hidden><label class="blk" for="opt-opponents">House players (no personality, quick moves)</label><select id="opt-opponents"></select></div>
+      <div id="opt-seats-wrap" hidden>
+        <label class="blk" id="seats-label">Seat characters (their real personalities play &mdash; up to 3)</label>
+        <input type="text" id="seat-filter" aria-label="Filter the character list" placeholder="Type to filter characters&hellip;">
+        <div class="seatbox" id="seat-list" role="group" aria-labelledby="seats-label"></div>
+      </div>
+      <div id="opt-rounds-wrap" hidden><label class="blk" for="opt-rounds">Length</label><select id="opt-rounds"></select></div>
+      <div id="opt-difficulty-wrap" hidden><label class="blk" for="opt-difficulty">Difficulty</label><select id="opt-difficulty"></select></div>
+      <div id="opt-category-wrap" hidden><label class="blk" for="opt-category">Topic</label><select id="opt-category"></select></div>
+      <div id="opt-bet-wrap" hidden><label class="blk" for="opt-bet">Chip bet</label><input type="number" id="opt-bet" min="1" max="500" value="10"></div>
+      <div id="opt-clean-wrap" hidden><label class="blk"><input type="checkbox" id="opt-clean"> Family-clean deck</label></div>
+
+      <label class="blk" for="opt-narrator">Narrator &mdash; the house voice</label>
+      <select id="opt-narrator">
+        <optgroup label="Kade's voices">
+          <option value="Voice 466" selected>Kade Candid</option>
+          <option value="Voice 464">Kade conversational</option>
+          <option value="Voice 327">Kade calm and casual</option>
+          <option value="Voice 424">Kade's child impression</option>
+        </optgroup>
+        <optgroup label="Miss A's voices">
+          <option value="Voice 385">Miss A Irish</option>
+          <option value="Voice 391">Miss A animated</option>
+          <option value="Voice 393">Miss A pro reading</option>
+          <option value="Voice 463">Miss A casual</option>
+        </optgroup>
+        <option value="__custom">Another voice by number&hellip;</option>
+      </select>
+      <div id="opt-narrator-custom-wrap" hidden><label class="blk" for="opt-narrator-custom">Voice label (like &ldquo;Voice 52&rdquo;)</label><input type="text" id="opt-narrator-custom"></div>
+      <label class="blk" for="opt-narrate-mode">Narrator speaks</label>
+      <select id="opt-narrate-mode">
+        <option value="events" selected>Game events (dealing, plays, wins)</option>
+        <option value="everything">Everything (events + character chatter)</option>
+        <option value="off">Nothing &mdash; my screen reader has it</option>
+      </select>
+
+      <p><button type="submit" class="rowbtn">Deal the table</button>
+      <button type="button" class="rowbtn gray" id="setup-back">Back to the menu</button></p>
+    </form>
+  </section>
+
+  <section id="table" hidden>
+    <h2 id="ttitle"></h2>
+    <div id="tstatus" class="status" role="status" aria-live="polite" tabindex="-1"></div>
+    <div class="card"><h3 style="margin-top:0">The table</h3><div id="tlines"></div></div>
+    <div id="moves-card" class="card"><h3 style="margin-top:0" id="moves-h">Your moves</h3><div id="tmoves" class="movegrid" role="group" aria-labelledby="moves-h"></div></div>
+    <div class="card" id="talk-card" hidden>
+      <h3 style="margin-top:0">Table talk</h3>
+      <ul id="talklog" style="list-style:none; padding:0; margin:0 0 .5rem"></ul>
+      <label class="blk" for="talk-input" id="talk-label">Say something to the table</label>
+      <input type="text" id="talk-input" maxlength="280" style="width:100%">
+      <p><button type="button" class="rowbtn" id="talk-send">Say it</button></p>
+    </div>
+    <p>
+      <button type="button" class="rowbtn gray" id="btn-reread">Read the table again</button>
+      <button type="button" class="rowbtn gray" id="btn-log">Download the transcript</button>
+      <button type="button" class="rowbtn red" id="btn-quit">Quit this table</button>
+      <button type="button" class="rowbtn gray" id="btn-menu">Back to the menu</button>
+    </p>
+  </section>
+
+  <footer class="muted">Same tables as chat and the phone line &mdash; deal here, say &ldquo;deal me in&rdquo; to any companion later, and it picks right up. &mdash; Kade-AI</footer>
+
+  <script>
+    (async function(){
+      const $ = (id) => document.getElementById(id);
+      const status = $('status');
+      let token = null; try { token = await getToken(); } catch(e) {}
+      if(!token){ status.className='status err'; status.textContent='Please sign in at the chat site first, then reload this page.'; return; }
+
+      let games = [];
+      let roster = null;
+      let current = null;   // chosen game meta (menu -> setup)
+      let table = null;     // live table payload
+      let narrator = { voice: 'Voice 466', mode: 'events' };
+
+      /* ── speech: one queue, one audio element, her clone on the mic ── */
+      const speaker = new Audio();
+      let speechQueue = []; let speaking = false;
+      function speak(text){
+        if(narrator.mode === 'off' || !text) return;
+        speechQueue.push(text);
+        if(!speaking) nextSpeech();
+      }
+      async function nextSpeech(){
+        const text = speechQueue.shift();
+        if(text == null){ speaking = false; return; }
+        speaking = true;
+        try{
+          const r = await fetch('/api/files/speech/tts/manual', { method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify({ input: text, voice: narrator.voice }) });
+          if(!r.ok) throw new Error('tts '+r.status);
+          const blob = await r.blob();
+          speaker.src = URL.createObjectURL(blob);
+          speaker.onended = () => { URL.revokeObjectURL(speaker.src); nextSpeech(); };
+          speaker.onerror = () => { nextSpeech(); };
+          await speaker.play();
+        }catch(e){ nextSpeech(); }
+      }
+      function stopSpeech(){ speechQueue = []; try{ speaker.pause(); }catch(e){} speaking = false; }
+
+      /* ── table sounds: the same clips the chat plays ── */
+      function playCues(cues){
+        (cues||[]).slice(0,6).forEach(function(c, i){
+          setTimeout(function(){ try{ new Audio('/assets/sounds/'+c+'.mp3').play().catch(function(){}); }catch(e){} }, i*350);
+        });
+      }
+
+      async function api(method, path, body){
+        const r = await fetch(path, { method: method, headers: { 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, body: body ? JSON.stringify(body) : undefined });
+        const j = await r.json().catch(function(){ return {}; });
+        if(!r.ok){ throw new Error(j.error || ('HTTP '+r.status)); }
+        return j;
+      }
+
+      function show(section){
+        ['menu','setup','table'].forEach(function(id){ $(id).hidden = (id !== section); });
+      }
+      function esc(s){ const d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML; }
+
+      /* ── MENU ── */
+      async function loadMenu(){
+        show('menu'); stopSpeech();
+        status.textContent = 'Pick a game from the menu below.';
+        try{
+          const mt = await api('GET', '/api/kade/my-tables');
+          const open = (mt.active||[]);
+          $('resume-card').hidden = open.length === 0;
+          $('resume-list').innerHTML = open.map(function(t){
+            return '<button type="button" class="game" data-resume="'+esc(t.gameId)+'">Resume '+esc(t.name)+' <span class="desc">table '+esc(t.gameId)+' &middot; '+t.turns+' turns in</span></button>';
+          }).join('');
+        }catch(e){}
+        if(!games.length){
+          const g = await api('GET', '/api/kade/parlor/games');
+          games = g.games || [];
+        }
+        $('game-list').innerHTML = games.map(function(g){
+          return '<button type="button" class="game" role="listitem" data-game="'+esc(g.key)+'">'+esc(g.name)+' <span class="desc">'+esc(g.blurb)+' ('+esc(g.players)+' player'+(g.players==='1'?'':'s')+(g.seatAware?' &middot; characters can sit in':'')+')</span></button>';
+        }).join('');
+      }
+
+      $('game-list').addEventListener('click', function(ev){
+        const b = ev.target.closest('button[data-game]'); if(!b) return;
+        current = games.find(function(g){ return g.key === b.getAttribute('data-game'); });
+        openSetup();
+      });
+      $('resume-list').addEventListener('click', async function(ev){
+        const b = ev.target.closest('button[data-resume]'); if(!b) return;
+        try{
+          const p = await api('GET', '/api/kade/parlor/state/'+b.getAttribute('data-resume'));
+          openTable(p, true);
+        }catch(e){ status.className='status err'; status.textContent = e.message; }
+      });
+
+      /* ── SETUP ── */
+      function fillRange(sel, spec, labelFor){
+        sel.innerHTML='';
+        for(let v=spec[0]; v<=spec[1]; v++){
+          const o=document.createElement('option'); o.value=String(v); o.textContent=labelFor?labelFor(v):String(v);
+          if(v===spec[2]) o.selected=true; sel.appendChild(o);
+        }
+      }
+      async function openSetup(){
+        show('setup');
+        $('setup-title').textContent = 'Set the table — '+current.name;
+        status.textContent = current.name+': '+current.blurb;
+        const o = current.options || {};
+        $('opt-opponents-wrap').hidden = !o.opponents;
+        if(o.opponents) fillRange($('opt-opponents'), o.opponents, function(v){ return v===0?'Just me':String(v); });
+        $('opt-rounds-wrap').hidden = !o.rounds;
+        if(o.rounds) fillRange($('opt-rounds'), o.rounds);
+        $('opt-difficulty-wrap').hidden = !o.difficulty;
+        if(o.difficulty){ $('opt-difficulty').innerHTML='<option value="">Mixed</option>'+o.difficulty.map(function(d){ return '<option>'+d+'</option>'; }).join(''); }
+        $('opt-category-wrap').hidden = !o.category;
+        if(o.category){ $('opt-category').innerHTML='<option value="">Any topic</option>'+o.category.map(function(c){ return '<option value="'+c+'">'+c.replace(/_/g,' ')+'</option>'; }).join(''); }
+        $('opt-bet-wrap').hidden = !o.bet;
+        $('opt-clean-wrap').hidden = !o.clean;
+        $('opt-seats-wrap').hidden = !current.seatAware;
+        if(current.seatAware && !roster){
+          try{
+            const r = await api('GET', '/api/kade/room/agents');
+            roster = r.agents || [];
+          }catch(e){ roster = []; }
+        }
+        if(current.seatAware) renderSeats('');
+      }
+      function renderSeats(filter){
+        const f = filter.toLowerCase();
+        $('seat-list').innerHTML = (roster||[]).filter(function(a){ return !f || a.name.toLowerCase().includes(f); }).slice(0, 60).map(function(a){
+          return '<label><input type="checkbox" name="seat" value="'+esc(a.name)+'"> '+esc(a.name)+'</label>';
+        }).join('') || '<p class="muted">No characters matched.</p>';
+      }
+      $('seat-filter').addEventListener('input', function(){
+        const checked = Array.from(document.querySelectorAll('input[name="seat"]:checked')).map(function(c){ return c.value; });
+        renderSeats($('seat-filter').value);
+        checked.forEach(function(v){ const c = document.querySelector('input[name="seat"][value="'+CSS.escape(v)+'"]'); if(c) c.checked = true; });
+      });
+      $('opt-narrator').addEventListener('change', function(){
+        $('opt-narrator-custom-wrap').hidden = $('opt-narrator').value !== '__custom';
+      });
+      $('setup-back').addEventListener('click', loadMenu);
+
+      $('setup-form').addEventListener('submit', async function(ev){
+        ev.preventDefault();
+        narrator.voice = $('opt-narrator').value === '__custom' ? ($('opt-narrator-custom').value.trim() || 'Voice 466') : $('opt-narrator').value;
+        narrator.mode = $('opt-narrate-mode').value;
+        const seats = Array.from(document.querySelectorAll('input[name="seat"]:checked')).slice(0,3).map(function(c){ return c.value; });
+        const body = { game: current.key };
+        if(seats.length && current.seatAware) body.agent_seats = seats;
+        else if(!$('opt-opponents-wrap').hidden) body.opponents = parseInt($('opt-opponents').value, 10);
+        if(!$('opt-rounds-wrap').hidden) body.rounds = parseInt($('opt-rounds').value, 10);
+        if(!$('opt-difficulty-wrap').hidden && $('opt-difficulty').value) body.difficulty = $('opt-difficulty').value;
+        if(!$('opt-category-wrap').hidden && $('opt-category').value) body.category = $('opt-category').value;
+        if(!$('opt-bet-wrap').hidden) body.bet = parseInt($('opt-bet').value, 10) || 10;
+        if(!$('opt-clean-wrap').hidden) body.clean = $('opt-clean').checked;
+        status.textContent = 'Dealing…';
+        try{
+          const p = await api('POST', '/api/kade/parlor/new', body);
+          speak('New table. '+current.name+'.');
+          openTable(p, false);
+        }catch(e){ status.className='status err'; status.textContent = e.message; }
+      });
+
+      /* ── TABLE ── */
+      function narrate(logLines){
+        if(narrator.mode === 'off') return;
+        (logLines||[]).forEach(function(l){
+          const isChatter = / says: /.test(l);
+          if(isChatter && narrator.mode !== 'everything') return;
+          speak(l.replace(/ says: /, ' says, '));
+        });
+      }
+      function openTable(p, resumed){
+        table = p; show('table');
+        $('ttitle').textContent = p.name + ' — table ' + p.gameId;
+        $('talk-card').hidden = !(p.seatAgents && p.seatAgents.length);
+        renderTable(p, resumed ? ['Back at the table.'] : null);
+        if(resumed) speak('Back at your '+p.name+' table.');
+      }
+      function renderTable(p, extraStatus){
+        table = p;
+        $('tlines').textContent = (p.lines||[]).join('\n');
+        const over = p.over;
+        $('moves-h').textContent = over ? 'This table is finished' : (p.turnSeat === 0 ? 'Your moves' : 'Waiting on ' + (p.names[p.turnSeat]||'the table'));
+        $('tmoves').innerHTML = over
+          ? '<button type="button" class="mv" id="btn-rematch">Deal a rematch</button>'
+          : (p.legal||[]).map(function(m){ return '<button type="button" class="mv" data-move="'+esc(m.token)+'">'+esc(m.label)+'</button>'; }).join('') || '<p class="muted">No moves for you right now.</p>';
+        const news = (extraStatus || p.log || []).join(' ');
+        $('tstatus').textContent = news || (over ? 'Game over.' : 'Your table is ready.');
+        playCues(p.sounds);
+        narrate(p.log);
+        $('tstatus').focus({ preventScroll: false });
+      }
+      $('tmoves').addEventListener('click', async function(ev){
+        const r = ev.target.closest('#btn-rematch');
+        if(r){ openSetup(); return; }
+        const b = ev.target.closest('button[data-move]'); if(!b || !table) return;
+        try{
+          const p = await api('POST', '/api/kade/parlor/move/'+table.gameId, { move: b.getAttribute('data-move') });
+          renderTable(p);
+        }catch(e){
+          $('tstatus').textContent = e.message; speak(e.message);
+          try{ const p = await api('GET', '/api/kade/parlor/state/'+table.gameId); renderTable(p, [e.message]); }catch(e2){}
+        }
+      });
+      $('btn-reread').addEventListener('click', function(){
+        if(!table) return;
+        $('tstatus').textContent = 'Reading the table.';
+        speak((table.lines||[]).join(' '));
+      });
+      $('btn-log').addEventListener('click', async function(){
+        if(!table) return;
+        try{
+          const r = await fetch('/api/kade/parlor/log/'+table.gameId, { headers:{ 'Authorization':'Bearer '+token } });
+          const blob = await r.blob();
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'kade-parlor-'+table.gameKey+'-'+table.gameId+'.txt';
+          document.body.appendChild(a); a.click(); a.remove();
+          $('tstatus').textContent = 'Transcript downloaded.';
+        }catch(e){ $('tstatus').textContent = 'Could not download the transcript.'; }
+      });
+      $('btn-quit').addEventListener('click', async function(){
+        if(!table) return;
+        if(!confirm('Close this table for good?')) return;
+        try{ await api('POST', '/api/kade/parlor/quit/'+table.gameId); }catch(e){}
+        loadMenu();
+      });
+      $('btn-menu').addEventListener('click', loadMenu);
+      $('talk-send').addEventListener('click', sendTalk);
+      $('talk-input').addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); sendTalk(); } });
+      async function sendTalk(){
+        const text = $('talk-input').value.trim(); if(!text || !table) return;
+        $('talk-input').value = '';
+        const li = document.createElement('li'); li.textContent = 'You: '+text; $('talklog').appendChild(li);
+        try{
+          const r = await api('POST', '/api/kade/parlor/talk/'+table.gameId, { text: text });
+          const li2 = document.createElement('li'); li2.textContent = r.name+': '+r.line; $('talklog').appendChild(li2);
+          if(narrator.mode === 'everything') speak(r.name+' says, '+r.line);
+        }catch(e){
+          const li3 = document.createElement('li'); li3.textContent = '(no reply — '+e.message+')'; $('talklog').appendChild(li3);
+        }
+      }
+
+      await loadMenu();
+      status.className = 'status';
+    })();
+  </script>
+</body></html>`;
+
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
 
