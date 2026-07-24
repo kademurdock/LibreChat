@@ -116,6 +116,23 @@ router.post(
       const keyterms = await safeGetDictionaryTerms(req.user && req.user.id);
       const out = await transcribeBuffer(req.body, req.get('content-type') || '', keyterms);
       logger.info(`[kadeTranscribe] ${req.user?.email || req.user?.id}: ${out.seconds}s transcribed`);
+      // KADE July 24 2026 — Clubhouse bot guests listen through this lane in
+      // 15s cycles. Meter those minutes honestly (kadeusage 'clubhouse_ears',
+      // Deepgram nova-3 ~$0.0043/min) so the real cost of a seated guest is
+      // visible on the usage dashboard. Fail-soft: never breaks a transcript.
+      if (req.get('x-kade-club') === '1') {
+        try {
+          const { logKadeUsage } = require('~/models/kadeUsage');
+          logKadeUsage({
+            userId: String(req.user.id),
+            service: 'clubhouse_ears',
+            quantity: out.seconds,
+            unit: 'seconds',
+            costUSD: (out.seconds * 0.0043) / 60,
+            metadata: { kind: 'room_ears' },
+          });
+        } catch (_) {}
+      }
       return res.json(out);
     } catch (e) {
       logger.warn('[kadeTranscribe] failed: ' + (e && e.message));

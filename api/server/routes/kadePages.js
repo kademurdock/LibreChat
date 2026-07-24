@@ -1483,6 +1483,7 @@ const toolsHtml = `<!doctype html><html lang="en"><head><title>Tools — Kade-AI
   <a class="hubitem" href="/transcribe"><span class="hicon" aria-hidden="true">🎙️</span><span><strong>Transcribe &amp; dictate</strong><small>Record or upload audio, get clean text, or organize it into notes</small></span></a>
   <a class="hubitem" href="/describe"><span class="hicon" aria-hidden="true">🖼️</span><span><strong>Describe</strong><small>Have any photo, video, PDF, or document described or read aloud</small></span></a>
   <a class="hubitem" href="/spotter"><span class="hicon" aria-hidden="true">👁️</span><span><strong>Your Spotter</strong><small>Set up your personal live video companion</small></span></a>
+  <a class="hubitem" href="/lounge"><span class="hicon" aria-hidden="true">🎙️</span><span><strong>Kade's Clubhouse</strong><small>Live family voice rooms with a shared jukebox, private Hotel rooms, and companion guests</small></span></a>
   <a class="hubitem" href="/debate-room"><span class="hicon" aria-hidden="true">🗣️</span><span><strong>Debate Room</strong><small>Put characters in a room with a topic and jump in</small></span></a>
   <a class="hubitem" href="/conversation-hall"><span class="hicon" aria-hidden="true">🏛️</span><span><strong>Conversation Hall</strong><small>The greatest hits people have shared from the Debate Room</small></span></a>
   <a class="hubitem" href="/game-room"><span class="hicon" aria-hidden="true">🎲</span><span><strong>Game Room</strong><small>Family standings, records, and the latest game results</small></span></a>

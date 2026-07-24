@@ -323,6 +323,10 @@ const startServer = async () => {
   app.get('/kade-tabbar.js', routes.kade.tabBarAssetPage);
   app.get('/parlor', routes.kadeParlor.page);
   app.get('/lounge', routes.kadeLounge.page);
+  // July 24 2026: the Lounge grew up into KADE'S CLUBHOUSE — /clubhouse is
+  // the pretty front door; /lounge stays alive forever (native build 154's
+  // in-app doorway points at it).
+  app.get('/clubhouse', routes.kadeLounge.page);
   app.get('/debate-room', routes.kadeRoom.page);
   app.get('/conversation-hall', routes.kadeRoom.hallPage);
   app.get('/game-room', routes.kade.gameRoomPage);
