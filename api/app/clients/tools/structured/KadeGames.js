@@ -1,7 +1,9 @@
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
 const { KadeGameState } = require('~/models/kadeGameState');
+const { getChips, settleChips } = require('~/models/kadeGameChips');
 const { getGame, catalog } = require('../kadegames');
+const { personaSeatTurn } = require('../kadegames/agentSeats');
 
 const MAX_ACTIVE = 12;
 
@@ -14,9 +16,9 @@ const kadeGamesJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['list_games', 'new_game', 'state', 'move', 'games', 'quit'],
+      enum: ['list_games', 'new_game', 'state', 'move', 'games', 'quit', 'chips'],
       description:
-        "'list_games' shows what you can play; 'new_game' deals a fresh game; 'state' re-shows the current table; 'move' plays ONE turn; 'games' lists the user's saved tables; 'quit' ends a table.",
+        "'list_games' shows what you can play; 'new_game' deals a fresh game; 'state' re-shows the current table; 'move' plays ONE turn; 'games' lists the user's saved tables; 'quit' ends a table; 'chips' checks the player's fake-chip bank.",
     },
     game: {
       type: 'string',
@@ -64,6 +66,12 @@ const kadeGamesJsonSchema = {
       description:
         'Optional: the short table id (from a prior result) to act on a specific game. Defaults to the most recent active table.',
     },
+    agent_seats: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        "For new_game on hearts or five_card_draw: 1-3 marketplace character NAMES to seat as REAL players — each one's own persona sees only their hand and plays their turns with table talk (e.g. [\"Sterling\", \"Nana Pearl\"]). Different from `names`, which are voiceless house players.",
+    },
   },
   required: ['action'],
 };
@@ -84,7 +92,8 @@ class KadeGames extends Tool {
     this.agentName = fields.agentName || '';
     this.name = 'kade_games';
     this.description =
-      "REAL, server-refereed parlor games, 19 strong — cards (Blackjack, Wild Eights, Uno, War, Go Fish, In-Between), party games (Cards Against Reality — our fill-in-the-blank judge game, Crab Apples — our apples-to-apples, Fill-In Stories, Guess the Sound), dice (Pig, Farkle, Liar's Dice), words (Trivia Night, Hangman, Word Scramble), grids by voice (Battleship, Tic-Tac-Toe), and Rock Paper Scissors — free, no cost, playable entirely by ear. " +
+      "REAL, server-refereed parlor games, 21 strong — cards (Blackjack, Wild Eights, Uno, War, Go Fish, In-Between, HEARTS, FIVE-CARD DRAW poker), party games (Cards Against Reality — our fill-in-the-blank judge game, Crab Apples — our apples-to-apples, Fill-In Stories, Guess the Sound), dice (Pig, Farkle, Liar's Dice), words (Trivia Night, Hangman, Word Scramble), grids by voice (Battleship, Tic-Tac-Toe), and Rock Paper Scissors — free, playable entirely by ear. " +
+      'Hearts and Five-Card Draw support AGENT SEATS: pass agent_seats with 1-3 marketplace character names and their real personas play their own hands and talk at the table. Casino games settle a persistent FAKE-chip bank (never real money) — check it with action=chips. ' +
       'The engine deals and enforces the rules; YOU only relay the table and play the move the human chooses. ' +
       "Flow: action='new_game' to deal, read the LEGAL MOVES to the player in your own voice, then action='move' with the " +
       'EXACT token they pick. NEVER invent cards, totals, or outcomes and never claim a move the engine did not return — ' +
@@ -165,6 +174,11 @@ class KadeGames extends Tool {
         ].join('\n');
       }
 
+      if (action === 'chips') {
+        const chips = await getChips(this.userId);
+        return `Chip bank: ${chips} fake chips (never real money). Casino tables — Blackjack, Five-Card Draw — settle here when they end; the Arcade page has the family standings.`;
+      }
+
       if (action === 'games') {
         const docs = await KadeGameState.find({ user: this.userId, status: 'active' })
           .sort({ updatedAt: -1 })
@@ -204,15 +218,36 @@ class KadeGames extends Tool {
             cleanDeck = true; // can't verify the audience -> stay clean
           }
         }
+        /* Phase 4 (July 23 2026): agent-seated tables. Resolve requested
+         * character names against the SAME roster the Debate Room seats
+         * from — ACL-public agents plus the user's own — so a private
+         * persona can never be summoned to a table by name. */
+        let seatAgents = null;
+        let seatNames = Array.isArray(names) ? names.map((n) => String(n).slice(0, 40)) : [];
+        const seatAsks = Array.isArray(data?.agent_seats)
+          ? data.agent_seats.map((n) => String(n).trim()).filter(Boolean).slice(0, 3)
+          : [];
+        if (seatAsks.length && G.meta.seatAware) {
+          const resolved = await this.resolveSeatAgents(seatAsks);
+          if (resolved.missing.length) {
+            return `I couldn't find ${resolved.missing.join(' or ')} on the character roster — check the names and deal again.`;
+          }
+          seatAgents = resolved.seats; // [{id, name}]
+          seatNames = resolved.seats.map((a) => a.name);
+        }
         const state = await G.newGame({
-          opponents: Number.isFinite(parseInt(opponents, 10)) ? parseInt(opponents, 10) : undefined,
+          opponents: seatAgents ? seatAgents.length : Number.isFinite(parseInt(opponents, 10)) ? parseInt(opponents, 10) : undefined,
           bet: parseInt(bet, 10) || 10,
           rounds,
           difficulty,
           category,
           clean: cleanDeck,
-          names: Array.isArray(names) ? names.map((n) => String(n).slice(0, 40)) : [],
+          names: seatNames,
         });
+        if (seatAgents) {
+          // seat i+1 = seatAgents[i]; stored in state so resumes keep the cast.
+          state.seatAgents = seatAgents;
+        }
         const gameId = shortId();
         const doc = await KadeGameState.create({
           user: this.userId,
@@ -224,7 +259,11 @@ class KadeGames extends Tool {
           turns: 0,
           agentName: this.agentName,
         });
-        return this.render(doc, { sounds: G.meta.dealSounds || ['card_shuffle', 'card_deal'] });
+        const opening = await this.playSeatTurns(doc, G);
+        return this.render(doc, {
+          sounds: [...(G.meta.dealSounds || ['card_shuffle', 'card_deal']), ...opening.sounds],
+          log: opening.log,
+        });
       }
 
       // state / move / quit all act on a specific or the most-recent active table
@@ -256,18 +295,145 @@ class KadeGames extends Tool {
           // Re-show legal moves so the agent can correct itself.
           return `That move didn't work: ${result.error}\n\n${this.render(doc)}`;
         }
-        const v = G.view(doc.state);
         doc.turns += 1;
+        const seatRun = await this.playSeatTurns(doc, G);
+        const v = G.view(doc.state);
         doc.status = v.over ? 'over' : 'active';
         doc.markModified('state');
         await doc.save();
-        return this.render(doc, { log: (result && result.log) || [], sounds: (result && result.sounds) || [] });
+        const chipsNote = await this.maybeSettleChips(doc, G);
+        return this.render(doc, {
+          log: [...((result && result.log) || []), ...seatRun.log, ...chipsNote],
+          sounds: [...((result && result.sounds) || []), ...seatRun.sounds],
+        });
       }
 
-      return "Unknown action. Use list_games, new_game, state, move, games, or quit.";
+      return "Unknown action. Use list_games, new_game, state, move, games, quit, or chips.";
     } catch (err) {
       logger.warn(`[KadeGames] ${action} failed: ${err.message}`);
       return `Game system error: ${err.message}`;
+    }
+  }
+
+  /** Phase 4: name -> agent off the Debate Room's own roster rules
+   * (ACL-public + the user's own agents; private personas stay private). */
+  async resolveSeatAgents(asks) {
+    const { ResourceType, PermissionBits } = require('librechat-data-provider');
+    const { findPubliclyAccessibleResources } = require('~/server/services/PermissionService');
+    const db = require('~/models');
+    const publicIds = await findPubliclyAccessibleResources({
+      resourceType: ResourceType.AGENT,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+    const publicSet = new Set(publicIds.map((oid) => String(oid)));
+    const all = (await db.getAgents({})) || [];
+    const roster = all.filter(
+      (a) => (a._id && publicSet.has(String(a._id))) || String(a.author) === String(this.userId),
+    );
+    const seats = [];
+    const missing = [];
+    for (const ask of asks) {
+      const lq = ask.toLowerCase();
+      const hit =
+        roster.find((a) => (a.name || '').toLowerCase() === lq) ||
+        roster.find((a) => (a.name || '').toLowerCase().includes(lq));
+      if (hit) seats.push({ id: hit.id, name: hit.name });
+      else missing.push(`"${ask}"`);
+    }
+    return { seats, missing };
+  }
+
+  /** Phase 4 heart of it: play external seats (personas or the module's own
+   * botMove fallback) until it's the human's turn or the game ends. Personas
+   * see ONLY their seatView; illegal or unparseable answers fall back to the
+   * heuristic so the table never stalls and never cheats. */
+  async playSeatTurns(doc, G) {
+    const log = [];
+    const sounds = [];
+    if (!G.meta.seatAware || typeof G.seatView !== 'function') return { log, sounds };
+    const state = doc.state;
+    let guard = 0;
+    let costUSD = 0;
+    while (guard++ < 12) {
+      const v = G.view(state);
+      if (v.over || v.turnSeat === 0) break;
+      const seat = v.turnSeat;
+      const seatName = state.names[seat];
+      let token = null;
+      let banter = null;
+      const cast = Array.isArray(state.seatAgents) ? state.seatAgents[seat - 1] : null;
+      if (cast) {
+        try {
+          const db = require('~/models');
+          const agent = await db.getAgent({ id: cast.id });
+          if (agent) {
+            const turn = await personaSeatTurn({
+              agent,
+              seatName,
+              gameName: G.meta.name,
+              seatViewObj: G.seatView(state, seat),
+              humanName: state.names[0] === 'You' ? '' : state.names[0],
+            });
+            token = turn.token;
+            banter = turn.banter;
+            costUSD += turn.costUSD || 0;
+          }
+        } catch (e) {
+          logger.warn(`[KadeGames] seat turn for ${seatName} failed: ${e.message}`);
+        }
+      }
+      if (!token && typeof G.botMove === 'function') token = G.botMove(state);
+      if (!token) break;
+      const r = await G.move(state, token);
+      if (r && r.error) {
+        // Persona picked something stale? One heuristic retry, then stop.
+        const fb = typeof G.botMove === 'function' ? G.botMove(state) : null;
+        const r2 = fb ? await G.move(state, fb) : null;
+        if (!r2 || r2.error) break;
+        if (r2.log) log.push(...r2.log);
+        if (r2.sounds) sounds.push(...r2.sounds);
+      } else {
+        if (r && r.log) log.push(...r.log);
+        if (r && r.sounds) sounds.push(...r.sounds);
+      }
+      if (banter) log.push(`${seatName} says: ${banter}`);
+    }
+    if (costUSD > 0) {
+      try {
+        const { logKadeUsage } = require('~/models/kadeUsage');
+        logKadeUsage({
+          userId: String(this.userId),
+          service: 'game_table',
+          quantity: 1,
+          unit: 'turns',
+          costUSD,
+          metadata: { gameId: doc.gameId, gameKey: doc.gameKey },
+        });
+      } catch (_) {
+        /* usage logging must never break a game */
+      }
+    }
+    return { log, sounds };
+  }
+
+  /** Phase 5: settle the fake-chip bank when a chips game ends. */
+  async maybeSettleChips(doc, G) {
+    try {
+      if (doc.status !== 'over' || !G.meta.usesChips || typeof G.chipsDelta !== 'function') return [];
+      if (doc.state.chipsSettled) return [];
+      const delta = G.chipsDelta(doc.state) || 0;
+      doc.state.chipsSettled = true;
+      doc.markModified('state');
+      await doc.save();
+      const { chips, restaked } = await settleChips(this.userId, delta);
+      const line =
+        delta === 0
+          ? `Chip bank even — balance ${chips}.`
+          : `Chip bank ${delta > 0 ? `+${delta}` : delta} — balance now ${chips} chips.`;
+      return [restaked ? `${line} (Busted! The house fronts you a fresh 100 — never real money, always another hand.)` : line];
+    } catch (e) {
+      logger.warn(`[KadeGames] chip settle failed: ${e.message}`);
+      return [];
     }
   }
 }

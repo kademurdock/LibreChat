@@ -741,9 +741,15 @@ const gameRoomHtml = `<!doctype html><html lang="en"><head><title>The Game Room<
 <body>
   <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/games">How the games work</a></p>
   <h1>The Game Room</h1>
-  <p class="muted">Family bragging rights, straight from the Game Parlor's referee. Every finished game of Blackjack, Wild Eights, Go Fish, Pig, and Trivia Night counts. Walking away from a table doesn't count against you — only played-out games land here.</p>
+  <p class="muted">Family bragging rights, straight from the Game Parlor's referee. Every finished game counts — Blackjack, Wild Eights, Go Fish, Pig, Trivia Night, and now Hearts and Five-Card Draw with real characters in the seats. Walking away from a table doesn't count against you — only played-out games land here.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading the standings…</div>
+
+  <section class="card" aria-labelledby="mine-h" id="mine-card" hidden>
+    <h2 id="mine-h" style="margin-top:0">Your side of the table</h2>
+    <p id="mine-chips"></p>
+    <ul id="mine-tables" style="list-style:none; padding:0; margin:0"></ul>
+  </section>
 
   <main id="content" hidden>
     <section class="card" aria-labelledby="standings-h">
@@ -783,6 +789,21 @@ const gameRoomHtml = `<!doctype html><html lang="en"><head><title>The Game Room<
         status.textContent = 'Please sign in at the chat site first, then reload this page.';
         return;
       }
+      // Phase 5 (July 23 2026): your chip bank + resumable tables, above the standings.
+      try {
+        const mt = await apiGet('/api/kade/my-tables', token);
+        if (mt.ok) {
+          const m = await mt.json();
+          const esc0 = function(s){ const dv=document.createElement('div'); dv.textContent = s==null?'':s; return dv.innerHTML; };
+          document.getElementById('mine-chips').innerHTML =
+            'Chip bank: <strong>' + num(m.chips) + '</strong> fake chips (never real money)' +
+            (m.lifetimeWon || m.lifetimeLost ? ' — lifetime ' + num(m.lifetimeWon) + ' won, ' + num(m.lifetimeLost) + ' lost.' : '.');
+          document.getElementById('mine-tables').innerHTML = (m.active || []).map(function(t){
+            return '<li class="result">Table ' + esc0(t.gameId) + ' — ' + esc0(t.name) + ', ' + num(t.turns) + ' turns in. Say <em>"deal me in"</em> to any companion to resume.</li>';
+          }).join('') || '<li class="result muted">No tables in play right now.</li>';
+          document.getElementById('mine-card').hidden = false;
+        }
+      } catch(e) {}
       const r = await apiGet('/api/kade/game-leaderboard', token);
       if(!r.ok){
         status.className = 'status err';

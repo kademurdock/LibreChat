@@ -588,6 +588,39 @@ router.get('/game-view/:gameId', requireJwtAuth, async (req, res) => {
 });
 
 
+/* ----------------------------------------------------------------------------
+ * MY TABLES (July 23 2026, phase 5): GET /api/kade/my-tables — the signed-in
+ * user's side of the parlor: fake-chip bank + resumable active tables. The
+ * Game Room page shows it above the family standings.
+ * -------------------------------------------------------------------------- */
+router.get('/my-tables', requireJwtAuth, async (req, res) => {
+  try {
+    const { KadeGameChips } = require('~/models/kadeGameChips');
+    const bank = await KadeGameChips.findOne({ user: req.user.id }).lean();
+    const active = await KadeGameState.find({ user: req.user.id, status: 'active' })
+      .sort({ updatedAt: -1 })
+      .limit(12)
+      .lean();
+    return res.json({
+      chips: bank ? bank.chips : 500,
+      lifetimeWon: bank ? bank.lifetimeWon : 0,
+      lifetimeLost: bank ? bank.lifetimeLost : 0,
+      active: active.map((d) => {
+        const G = getParlorGame(d.gameKey);
+        return {
+          gameId: d.gameId,
+          name: G ? G.meta.name : d.gameKey,
+          turns: d.turns,
+          updatedAt: d.updatedAt,
+        };
+      }),
+    });
+  } catch (error) {
+    logger.error('[/api/kade/my-tables] error:', error);
+    return res.status(500).json({ error: 'Failed to load your tables' });
+  }
+});
+
 router.get('/game-leaderboard', requireJwtAuth, async (req, res) => {
   try {
     const docs = await KadeGameState.find({})
@@ -669,6 +702,14 @@ router.get('/game-leaderboard', requireJwtAuth, async (req, res) => {
       } else if (d.gameKey === 'pig') {
         const score = (d.state && d.state.scores && d.state.scores[0]) || 0;
         detail = `finished with ${score} points`;
+      } else if (d.gameKey === 'five_card_draw') {
+        // July 23 2026 (phase 5): poker settles the same fake-chip column.
+        const delta = (typeof G.chipsDelta === 'function' && G.chipsDelta(d.state)) || 0;
+        p.chips += delta;
+        detail = delta > 0 ? `won ${delta} chips` : delta < 0 ? `lost ${Math.abs(delta)} chips` : 'broke even';
+      } else if (d.gameKey === 'hearts') {
+        const sc = (d.state && d.state.scores) || [];
+        detail = sc.length ? `finished with ${sc[0]} points` : '';
       }
 
       if (recent.length < 12) {

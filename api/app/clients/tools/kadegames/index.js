@@ -22,6 +22,9 @@ const inBetween = require('./inBetween');
 const rps = require('./rps');
 const tictactoe = require('./tictactoe');
 const madlibs = require('./madlibs');
+// July 23 2026 — GAMES_PLAN phase 4, the agent-seated tables:
+const hearts = require('./hearts');
+const fiveCardDraw = require('./fiveCardDraw');
 
 const GAMES = {
   blackjack,
@@ -43,6 +46,8 @@ const GAMES = {
   rps,
   tictactoe,
   madlibs,
+  hearts,
+  five_card_draw: fiveCardDraw,
 };
 
 function getGame(key) {
