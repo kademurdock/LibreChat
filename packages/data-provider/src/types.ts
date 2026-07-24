@@ -130,6 +130,10 @@ export type TPayload = Partial<TMessage> &
     manualSkills?: string[];
     /** Browser IANA timezone (e.g. `America/New_York`) used to resolve local-time prompt variables server-side. */
     timezone?: string;
+    /** KADE July 23 2026: opt-in device location ride-along for the
+     * kade_location tool (only attached while the user's "Share my location"
+     * setting is on — see createPayload.getUserLocation). */
+    userLocation?: { lat: number; lon: number; accuracy?: number; at: string };
   };
 
 export type TEditedContent =
