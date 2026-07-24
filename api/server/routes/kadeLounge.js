@@ -510,8 +510,11 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       <h3 style="margin-top:0">Company</h3>
       <p class="muted">Invite a companion to sit in as a guest. They take turns like a polite guest: press their talk button when it's their turn, and they answer out loud in their own voice. Between turns they listen along through a rough transcription. Anyone can ask them to leave.</p>
       <div id="bot-invite-row">
+        <label class="blk" for="bot-filter">Find a companion &mdash; type a few letters to shorten the list</label>
+        <input type="text" id="bot-filter" autocomplete="off" autocapitalize="none">
         <label class="blk" for="bot-pick">Who to invite</label>
         <select id="bot-pick"><option value="">Loading companions&hellip;</option></select>
+        <p class="muted" id="bot-count" aria-live="polite"></p>
         <p><button type="button" class="rowbtn" id="bot-invite">Invite them in</button></p>
       </div>
       <p id="bot-line" aria-live="polite"></p>
@@ -760,8 +763,11 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         try{
           var an = ctx.createAnalyser(); an.fftSize = 64;
           node.connect(an);
-          vizAnalysers.push(an);
+          vizAnalysers.push({ an: an, ctx: ctx });
         }catch(e){}
+      }
+      function vizDropCtx(ctx){
+        vizAnalysers = vizAnalysers.filter(function(v){ return v.ctx !== ctx; });
       }
       function vizLoop(){
         vizRAF = 0;
@@ -771,10 +777,10 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         var W = cv.width = cv.clientWidth || 300, H = cv.height = 44;
         g.clearRect(0,0,W,H);
         var bins = 24, sum = new Array(bins).fill(0);
-        vizAnalysers.forEach(function(an){
+        vizAnalysers.forEach(function(v){
           try{
-            var d = new Uint8Array(an.frequencyBinCount);
-            an.getByteFrequencyData(d);
+            var d = new Uint8Array(v.an.frequencyBinCount);
+            v.an.getByteFrequencyData(d);
             for(var i=0;i<bins;i++){ sum[i] = Math.max(sum[i], d[Math.min(d.length-1, i)] || 0); }
           }catch(e){}
         });
@@ -1086,6 +1092,27 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
             entry.dur = buf.duration;
             CLUB.v++; broadcastState(); renderJukebox();
           }
+          /* WAKE WATCHDOG (July 24, her catch: "once music has been paused a
+           * while it's impossible to start the session back up again even
+           * though it says it is started"): after a long pause iOS can wedge
+           * the AudioContext — resume() claims fine, currentTime freezes,
+           * no audio, no onended, no error. Verify the clock actually RUNS
+           * shortly after start; if it's wedged, tear the whole audio stack
+           * down (a closed context can't be saved) and pause honestly — the
+           * NEXT Play tap rebuilds from scratch inside the tap's user
+           * gesture, which iOS always honors. */
+          (function(sess, sId){
+            setTimeout(function(){
+              if(sess !== jbSession || playingEntryId !== sId || !jbCtx) return;
+              if(jbCtx.state === 'running' && (jbCtx.currentTime - jbStartTime) > 0.15) return;
+              stopPlayback(true);
+              vizDropCtx(jbCtx);
+              try{ jbCtx.close(); }catch(e){}
+              jbCtx = null; jbDest = null; jbMonitor = null;
+              say('iOS dozed off on the speakers — press Play once more.');
+              clubCmd('pause');
+            }, 1200);
+          })(jbSession, entry.id);
           var thisId = entry.id;
           var thisDur = buf.duration;
           jbSrc.onended = function(){
@@ -1340,14 +1367,30 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       function showBotLine(name, line){
         $('bot-line').textContent = name + ': ' + line;
       }
+      /* the full public roster runs 200+ names — scrolling one giant select
+       * is misery (her catch). A filter box narrows it live; the count line
+       * tells a screen reader user how the net came back. */
+      var BOT_ROSTER = [];
+      function renderBotOptions(){
+        var q = ($('bot-filter').value || '').trim().toLowerCase();
+        var keep = $('bot-pick').value;
+        var hits = q ? BOT_ROSTER.filter(function(a){ return a.name.toLowerCase().indexOf(q) >= 0; }) : BOT_ROSTER;
+        var opts = hits.map(function(a){
+          return '<option value="'+esc(a.id)+'" data-name="'+esc(a.name)+'">'+esc(a.name)+'</option>';
+        }).join('');
+        $('bot-pick').innerHTML = '<option value="">Pick a companion…</option>' + opts;
+        if(keep && hits.some(function(a){ return a.id === keep; })){ $('bot-pick').value = keep; }
+        $('bot-count').textContent = q
+          ? ('Showing ' + hits.length + ' of ' + BOT_ROSTER.length + ' companions.')
+          : (BOT_ROSTER.length ? (BOT_ROSTER.length + ' companions — type above to shorten the list.') : '');
+      }
+      $('bot-filter').addEventListener('input', renderBotOptions);
       async function loadBotRoster(){
         try{
           const r = await apiGet('/api/kade/room/agents', token);
           const j = await r.json();
-          var opts = (j.agents||[]).map(function(a){
-            return '<option value="'+esc(a.id)+'" data-name="'+esc(a.name)+'">'+esc(a.name)+'</option>';
-          }).join('');
-          $('bot-pick').innerHTML = '<option value="">Pick a companion…</option>' + opts;
+          BOT_ROSTER = (j.agents||[]).map(function(a){ return { id: a.id, name: a.name }; });
+          renderBotOptions();
         }catch(e){
           $('bot-pick').innerHTML = '<option value="">Could not load companions</option>';
         }
@@ -1787,6 +1830,22 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
 
   function mPos(){ if(!mCtx || !mSrc) return 0; return mStartOff + (mCtx.currentTime - mStartT); }
 
+  /* WAKE WATCHDOG (July 24, her catch: paused a while -> "impossible to
+   * start the session back up again even though it says it is started").
+   * A long-idle AudioContext can come back wedged: resume() claims fine,
+   * currentTime freezes, no audio, no onended, no error. The engine has no
+   * user-gesture rule (the app exempts it), so it can heal itself: tear the
+   * whole audio stack down, mint a fresh context, and retry ONCE from the
+   * same spot. Still wedged after that -> honest playfail (the 'publish'
+   * kind: no queue-eating, the room just hears "try playing it again"). */
+  function hardResetAudio(){
+    if(mSrc){ mStopping = true; try{ mSrc.onended = null; mSrc.stop(); }catch(e){} mStopping = false; mSrc = null; }
+    if(mPub && mTrack){ try{ room.localParticipant.unpublishTrack(mTrack, true); }catch(e){} }
+    mPub = false; mTrack = null;
+    if(mCtx){ try{ mCtx.close(); }catch(e){} }
+    mCtx = null; mDest = null;
+  }
+
   async function ensureMusicPub(){
     if(!mCtx){ mCtx = new AC(); mDest = mCtx.createMediaStreamDestination(); }
     if(mCtx.state !== 'running'){ try{ await mCtx.resume(); }catch(e){} }
@@ -1808,8 +1867,9 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
   }
 
   window.KE = {
-    loadPlay: async function(id, pos){
+    loadPlay: async function(id, pos, attempt){
       var session = ++mSession;
+      attempt = attempt || 0;
       try{
         if(!mCtx){ mCtx = new AC(); mDest = mCtx.createMediaStreamDestination(); }
         if(mCtx.state !== 'running'){ try{ await mCtx.resume(); }catch(e){} }
@@ -1861,6 +1921,16 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
           }
         };
         mSrc.start(0, off);
+        (function(sess, sId, sOff, sAttempt){
+          setTimeout(function(){
+            if(sess !== mSession || mId !== sId || !mCtx || !mSrc) return;
+            if(mCtx.state === 'running' && (mCtx.currentTime - mStartT) > 0.15) return;
+            // the clock never moved — the context came back from its nap dead
+            hardResetAudio();
+            if(sAttempt < 1){ window.KE.loadPlay(sId, sOff, sAttempt + 1); }
+            else { post({t:'playfail', id: sId, why: 'publish'}); }
+          }, 1200);
+        })(session, id, off, attempt);
         post({t:'playing', id: id, pos: off, dur: buf.duration});
       }catch(e){ post({t:'playfail', id: id, why: 'publish'}); }
     },
