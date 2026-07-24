@@ -148,17 +148,44 @@ router.post('/new', requireJwtAuth, async (req, res) => {
       seatNames = resolved.seats.map((a) => a.name);
     }
 
+    /* PHASE 2 (July 24 2026, her word: "You can build that other second
+     * phase too"): party tables. Host asks for N open seats for friends;
+     * those seats deal in like everyone else but the turn loop WAITS on
+     * them (tableRunner.seatKind) until a real person joins by code —
+     * RS-Games style. Agents can share the same table. */
+    const openSeats = Math.max(0, Math.min(3, parseInt(req.body?.party_open_seats, 10) || 0));
+    const isParty = openSeats > 0 && G.meta.seatAware;
     const opponents = parseInt(req.body?.opponents, 10);
+    const totalRivals = isParty
+      ? (seatAgents ? seatAgents.length : 0) + openSeats
+      : (seatAgents ? seatAgents.length : Number.isFinite(opponents) ? opponents : undefined);
+    const openNames = isParty
+      ? Array.from({ length: openSeats }, (_, i) => `Open seat ${i + 1}`)
+      : [];
     const state = await G.newGame({
-      opponents: seatAgents ? seatAgents.length : Number.isFinite(opponents) ? opponents : undefined,
+      opponents: totalRivals,
       bet: parseInt(req.body?.bet, 10) || 10,
       rounds: req.body?.rounds,
       difficulty: req.body?.difficulty,
       category: req.body?.category,
       clean: cleanDeck,
-      names: seatNames,
+      names: [...seatNames, ...openNames],
     });
     if (seatAgents) state.seatAgents = seatAgents;
+    if (isParty) {
+      const code = Math.random().toString(36).replace(/[^a-z0-9]/g, '').slice(0, 4).toUpperCase();
+      const seatsMap = {};
+      const agentCount = seatAgents ? seatAgents.length : 0;
+      for (let i = 1; i < (state.names || []).length; i++) {
+        seatsMap[String(i)] = i <= agentCount ? { kind: 'agent' } : { kind: 'open' };
+      }
+      state.party = {
+        code,
+        hostName: (req.user.name || 'The host').split(/\s+/)[0],
+        seats: seatsMap,
+        memberIds: [],
+      };
+    }
 
     const gameId = shortId();
     const doc = await KadeGameState.create({
@@ -259,6 +286,142 @@ router.post('/quit/:gameId', requireJwtAuth, async (req, res) => {
   }
 });
 
+/* ── PHASE 2: party tables — join by code, per-seat views, your-turn moves ── */
+async function findPartyTable(userId, gameId) {
+  return KadeGameState.findOne({
+    gameId: String(gameId).trim().toLowerCase(),
+    $or: [{ user: userId }, { 'state.party.memberIds': String(userId) }],
+  });
+}
+
+function memberSeat(doc, userId) {
+  if (String(doc.user) === String(userId)) return 0;
+  const seats = doc.state.party?.seats || {};
+  for (const [k, v] of Object.entries(seats)) {
+    if (v && v.kind === 'guest' && String(v.userId) === String(userId)) return Number(k);
+  }
+  return -1;
+}
+
+function partyPayload(doc, G, seat, extra = {}) {
+  const v = G.view(doc.state);
+  const sv = seat === 0 ? null : G.seatView(doc.state, seat);
+  const turnSeat = typeof v.turnSeat === 'number' ? v.turnSeat : 0;
+  const seats = doc.state.party?.seats || {};
+  const legal = v.over
+    ? []
+    : turnSeat === seat
+      ? (seat === 0 ? v.legal || [] : sv?.legal || [])
+      : [];
+  return {
+    gameId: doc.gameId,
+    gameKey: doc.gameKey,
+    name: G.meta.name,
+    over: !!v.over,
+    party: true,
+    code: doc.state.party?.code,
+    seat,
+    turnSeat,
+    turnName: (doc.state.names || [])[turnSeat] || '',
+    yourTurn: !v.over && turnSeat === seat,
+    lines: seat === 0 ? v.lines || [] : sv?.lines || [],
+    legal,
+    names: doc.state.names || [],
+    seatKinds: Object.fromEntries(Object.entries(seats).map(([k, x]) => [k, x.kind])),
+    historyCount: Array.isArray(doc.state.history) ? doc.state.history.length : 0,
+    log: extra.log || [],
+    sounds: extra.sounds || [],
+  };
+}
+
+/** Join a friend's table by its 4-character code. */
+router.post('/join', requireJwtAuth, async (req, res) => {
+  try {
+    const code = String(req.body?.code || '').trim().toUpperCase().slice(0, 8);
+    if (!code) return res.status(400).json({ error: 'Need a join code.' });
+    const doc = await KadeGameState.findOne({ status: 'active', 'state.party.code': code });
+    if (!doc) return res.status(404).json({ error: 'No open table with that code.' });
+    const G = getGame(doc.gameKey);
+    if (!G) return res.status(410).json({ error: 'That table is on an unknown game.' });
+    const userId = String(req.user.id);
+    const already = memberSeat(doc, userId);
+    if (already >= 0) {
+      return res.json(partyPayload(doc, G, already, { log: ['(You were already seated.)'] }));
+    }
+    const seats = doc.state.party.seats || {};
+    const openEntry = Object.entries(seats).find(([, v]) => v && v.kind === 'open');
+    if (!openEntry) return res.status(400).json({ error: 'That table is full.' });
+    const seat = Number(openEntry[0]);
+    const firstName = (req.user.name || 'A friend').trim().split(/\s+/)[0] || 'A friend';
+    seats[openEntry[0]] = { kind: 'guest', userId, name: firstName };
+    doc.state.party.memberIds = [...(doc.state.party.memberIds || []), userId];
+    if (Array.isArray(doc.state.names)) doc.state.names[seat] = firstName;
+    pushHistory(doc.state, [`${firstName} sat down at seat ${seat}.`]);
+    doc.markModified('state');
+    await doc.save();
+    return res.json(partyPayload(doc, G, seat, { log: [`You're seated at ${doc.state.party.hostName || 'the host'}'s ${G.meta.name} table.`] }));
+  } catch (e) {
+    logger.error('[parlor/join] error:', e);
+    return res.status(500).json({ error: 'Could not join that table.' });
+  }
+});
+
+/** Poll the shared table: YOUR view, whose turn, history tail. */
+router.get('/party-state/:gameId', requireJwtAuth, async (req, res) => {
+  try {
+    const doc = await findPartyTable(String(req.user.id), req.params.gameId);
+    if (!doc || !doc.state.party) return res.status(404).json({ error: 'No such party table.' });
+    const G = getGame(doc.gameKey);
+    if (!G) return res.status(410).json({ error: 'Unknown game.' });
+    const seat = memberSeat(doc, String(req.user.id));
+    if (seat < 0) return res.status(403).json({ error: 'You are not seated at this table.' });
+    const since = Math.max(0, parseInt(req.query.since, 10) || 0);
+    const history = (doc.state.history || []).slice(since).map((h) => h.line);
+    return res.json({ ...partyPayload(doc, G, seat, { log: history }), historyCursor: (doc.state.history || []).length });
+  } catch (e) {
+    logger.error('[parlor/party-state] error:', e);
+    return res.status(500).json({ error: 'Could not read the table.' });
+  }
+});
+
+/** Play YOUR seat's move on a shared table. */
+router.post('/party-move/:gameId', requireJwtAuth, async (req, res) => {
+  try {
+    const userId = String(req.user.id);
+    const doc = await findPartyTable(userId, req.params.gameId);
+    if (!doc || !doc.state.party) return res.status(404).json({ error: 'No such party table.' });
+    const G = getGame(doc.gameKey);
+    if (!G) return res.status(410).json({ error: 'Unknown game.' });
+    if (doc.status !== 'active' || G.view(doc.state).over) {
+      return res.status(400).json({ error: 'That table is finished.' });
+    }
+    const seat = memberSeat(doc, userId);
+    if (seat < 0) return res.status(403).json({ error: 'You are not seated at this table.' });
+    const v = G.view(doc.state);
+    if ((typeof v.turnSeat === 'number' ? v.turnSeat : 0) !== seat) {
+      return res.status(409).json({ error: `Hold on — it's ${(doc.state.names || [])[v.turnSeat] || 'someone else'}'s turn.` });
+    }
+    const token = String(req.body?.move || '').trim();
+    if (!token) return res.status(400).json({ error: 'No move given.' });
+    const result = await G.move(doc.state, token);
+    if (result && result.error) return res.status(400).json({ error: result.error });
+    if (result && result.log) pushHistory(doc.state, result.log);
+    doc.turns += 1;
+    const seatRun = await playSeatTurns({ userId: String(doc.user), doc, G, collectHistory: true });
+    const after = G.view(doc.state);
+    doc.status = after.over ? 'over' : 'active';
+    doc.markModified('state');
+    await doc.save();
+    return res.json({ ...partyPayload(doc, G, seat, {
+      log: [...((result && result.log) || []), ...seatRun.log],
+      sounds: [...((result && result.sounds) || []), ...seatRun.sounds],
+    }), historyCursor: (doc.state.history || []).length });
+  } catch (e) {
+    logger.error('[parlor/party-move] error:', e);
+    return res.status(500).json({ error: 'That move did not go through.' });
+  }
+});
+
 /* ── Table talk (July 23 spec: "chat some game talk with the agent") ──── */
 router.post('/talk/:gameId', requireJwtAuth, async (req, res) => {
   try {
@@ -326,7 +489,8 @@ router.post('/talk/:gameId', requireJwtAuth, async (req, res) => {
 /* ── The transcript ("game logues to download for memories sake") ─────── */
 router.get('/log/:gameId', requireJwtAuth, async (req, res) => {
   try {
-    const doc = await findTable(req.user.id, req.params.gameId);
+    // Party guests get the transcript too (findPartyTable covers solo hosts).
+    const doc = await findPartyTable(String(req.user.id), req.params.gameId);
     if (!doc) return res.status(404).json({ error: 'No such table.' });
     const G = getGame(doc.gameKey);
     const lines = (doc.state.history || []).map((h) => {

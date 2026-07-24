@@ -643,6 +643,9 @@ router.get('/game-leaderboard', requireJwtAuth, async (req, res) => {
     for (const d of docs) {
       const G = getParlorGame(d.gameKey);
       if (!G) continue;
+      // Phase 2 (July 24 2026): party tables sit out the solo leaderboard for
+      // now — multi-user results get their own scoring pass in phase 2.1.
+      if (d.state && d.state.party) continue;
       if (d.status === 'active') {
         activeTables += 1;
         continue;

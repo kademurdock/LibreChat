@@ -21,6 +21,20 @@ const { personaSeatTurn } = require('./agentSeats');
 
 const HISTORY_CAP = 600;
 
+/** Who owns a seat? Party tables (phase 2, July 24 2026) carry an explicit
+ * seat map in state.party.seats: {"1": {kind, userId?, name?}} with kinds
+ * host|guest|open|agent|bot. Solo tables have no map: seat 0 is the human,
+ * agent-cast seats are 'agent', everything else 'bot' — exactly the phase-4
+ * behavior. Guests and OPEN seats are humans (present or awaited): the turn
+ * loop STOPS there and the table waits, RS-Games style. */
+function seatKind(state, seat) {
+  if (seat === 0) return 'host';
+  const mapped = state.party && state.party.seats && state.party.seats[String(seat)];
+  if (mapped && mapped.kind) return mapped.kind;
+  if (Array.isArray(state.seatAgents) && state.seatAgents[seat - 1]) return 'agent';
+  return 'bot';
+}
+
 function pushHistory(state, lines) {
   if (!Array.isArray(state.history)) state.history = [];
   const ts = new Date().toISOString();
@@ -75,10 +89,12 @@ async function playSeatTurns({ userId, doc, G, collectHistory = false }) {
     const v = G.view(state);
     if (v.over || v.turnSeat === 0) break;
     const seat = v.turnSeat;
+    const kind = seatKind(state, seat);
+    if (kind === 'guest' || kind === 'open') break; // a human's turn (present or awaited) — the table waits
     const seatName = state.names[seat];
     let token = null;
     let banter = null;
-    const cast = Array.isArray(state.seatAgents) ? state.seatAgents[seat - 1] : null;
+    const cast = kind === 'agent' && Array.isArray(state.seatAgents) ? state.seatAgents[seat - 1] : null;
     if (cast) {
       try {
         const db = require('~/models');
@@ -137,6 +153,7 @@ async function playSeatTurns({ userId, doc, G, collectHistory = false }) {
 /** Settle the fake-chip bank when a chips game ends. Returns log lines. */
 async function maybeSettleChips(userId, doc, G) {
   try {
+    if (doc.state && doc.state.party) return []; // party tables: no solo-bank settle (phase 2.1 decides multi-user chips)
     if (doc.status !== 'over' || !G.meta.usesChips || typeof G.chipsDelta !== 'function') return [];
     if (doc.state.chipsSettled) return [];
     const delta = G.chipsDelta(doc.state) || 0;
@@ -160,4 +177,4 @@ async function maybeSettleChips(userId, doc, G) {
   }
 }
 
-module.exports = { resolveSeatAgents, playSeatTurns, maybeSettleChips, pushHistory };
+module.exports = { resolveSeatAgents, playSeatTurns, maybeSettleChips, pushHistory, seatKind };

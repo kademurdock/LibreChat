@@ -1880,6 +1880,12 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
       <h2 style="margin-top:0">Your open tables</h2>
       <div id="resume-list" class="gamelist"></div>
     </div>
+    <div class="card">
+      <h2 style="margin-top:0">Join a friend's table</h2>
+      <label class="blk" for="join-code">The 4-character code from your host</label>
+      <input type="text" id="join-code" autocapitalize="characters" maxlength="8" style="text-transform:uppercase">
+      <p><button type="button" class="rowbtn" id="join-btn">Take a seat</button></p>
+    </div>
     <h2>Deal something new</h2>
     <div id="game-list" class="gamelist" role="list"></div>
   </section>
@@ -1892,6 +1898,10 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
         <label class="blk" id="seats-label">Seat characters (their real personalities play &mdash; up to 3)</label>
         <input type="text" id="seat-filter" aria-label="Filter the character list" placeholder="Type to filter characters&hellip;">
         <div class="seatbox" id="seat-list" role="group" aria-labelledby="seats-label"></div>
+      </div>
+      <div id="opt-party-wrap" hidden>
+        <label class="blk" for="opt-party">Open seats for friends (they join with a code)</label>
+        <select id="opt-party"><option value="0" selected>None — just my table</option><option value="1">1 friend</option><option value="2">2 friends</option><option value="3">3 friends</option></select>
       </div>
       <div id="opt-rounds-wrap" hidden><label class="blk" for="opt-rounds">Length</label><select id="opt-rounds"></select></div>
       <div id="opt-difficulty-wrap" hidden><label class="blk" for="opt-difficulty">Difficulty</label><select id="opt-difficulty"></select></div>
@@ -2064,6 +2074,7 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
         $('opt-bet-wrap').hidden = !o.bet;
         $('opt-clean-wrap').hidden = !o.clean;
         $('opt-seats-wrap').hidden = !current.seatAware;
+        $('opt-party-wrap').hidden = !current.seatAware;
         if(current.seatAware && !roster){
           try{
             const r = await api('GET', '/api/kade/room/agents');
@@ -2094,6 +2105,10 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
         narrator.mode = $('opt-narrate-mode').value;
         const seats = Array.from(document.querySelectorAll('input[name="seat"]:checked')).slice(0,3).map(function(c){ return c.value; });
         const body = { game: current.key };
+        if(!$('opt-party-wrap').hidden){
+          const po = parseInt($('opt-party').value, 10) || 0;
+          if(po > 0) body.party_open_seats = po;
+        }
         if(seats.length && current.seatAware) body.agent_seats = seats;
         else if(!$('opt-opponents-wrap').hidden) body.opponents = parseInt($('opt-opponents').value, 10);
         if(!$('opt-rounds-wrap').hidden) body.rounds = parseInt($('opt-rounds').value, 10);
@@ -2109,6 +2124,36 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
         }catch(e){ status.className='status err'; status.textContent = e.message; }
       });
 
+      /* ── PARTY (phase 2): join, poll, your-turn gating ── */
+      let partyTimer = null;
+      let historyCursor = 0;
+      $('join-btn').addEventListener('click', async function(){
+        const code = $('join-code').value.trim().toUpperCase();
+        if(!code) return;
+        try{
+          const p = await api('POST', '/api/kade/parlor/join', { code: code });
+          $('join-code').value = '';
+          openTable(p, false);
+        }catch(e){ status.className='status err'; status.textContent = e.message; }
+      });
+      function startPartyPolling(){
+        stopPartyPolling();
+        partyTimer = setInterval(async function(){
+          if(!table || !table.party) return;
+          try{
+            const p = await api('GET', '/api/kade/parlor/party-state/'+table.gameId+'?since='+historyCursor);
+            const fresh = (p.log || []).length > 0;
+            historyCursor = p.historyCursor || historyCursor;
+            if(fresh || p.yourTurn !== table.yourTurn || p.over !== table.over){
+              renderTable(p, fresh ? null : ['']);
+            } else {
+              table = p;
+            }
+          }catch(e){}
+        }, 2500);
+      }
+      function stopPartyPolling(){ if(partyTimer){ clearInterval(partyTimer); partyTimer = null; } }
+
       /* ── TABLE ── */
       function narrate(logLines){
         if(narrator.mode === 'off') return;
@@ -2120,16 +2165,19 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
       }
       function openTable(p, resumed){
         table = p; show('table');
-        $('ttitle').textContent = p.name + ' — table ' + p.gameId;
-        $('talk-card').hidden = !(p.seatAgents && p.seatAgents.length);
+        historyCursor = p.historyCursor || p.historyCount || 0;
+        $('ttitle').textContent = p.name + ' — table ' + p.gameId + (p.party && p.code ? ' — join code ' + p.code : '');
+        $('talk-card').hidden = !((p.seatAgents && p.seatAgents.length) || (p.party && p.seatKinds && Object.values(p.seatKinds).indexOf('agent') !== -1));
         renderTable(p, resumed ? ['Back at the table.'] : null);
+        if(p.party && p.code) speak('Your join code is ' + p.code.split('').join(' ') + '.');
         if(resumed) speak('Back at your '+p.name+' table.');
+        if(p.party) startPartyPolling(); else stopPartyPolling();
       }
       function renderTable(p, extraStatus){
         table = p;
         $('tlines').textContent = (p.lines||[]).join('\n');
         const over = p.over;
-        $('moves-h').textContent = over ? 'This table is finished' : (p.turnSeat === 0 ? 'Your moves' : 'Waiting on ' + (p.names[p.turnSeat]||'the table'));
+        $('moves-h').textContent = over ? 'This table is finished' : (p.party ? (p.yourTurn ? 'Your moves' : 'Waiting on ' + (p.turnName || p.names[p.turnSeat] || 'the table')) : (p.turnSeat === 0 ? 'Your moves' : 'Waiting on ' + (p.names[p.turnSeat]||'the table')));
         $('tmoves').innerHTML = over
           ? '<button type="button" class="mv" id="btn-rematch">Deal a rematch</button>'
           : (p.legal||[]).map(function(m){ return '<button type="button" class="mv" data-move="'+esc(m.token)+'">'+esc(m.label)+'</button>'; }).join('') || '<p class="muted">No moves for you right now.</p>';
@@ -2144,7 +2192,9 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
         if(r){ openSetup(); return; }
         const b = ev.target.closest('button[data-move]'); if(!b || !table) return;
         try{
-          const p = await api('POST', '/api/kade/parlor/move/'+table.gameId, { move: b.getAttribute('data-move') });
+          const path = table.party ? '/api/kade/parlor/party-move/' : '/api/kade/parlor/move/';
+          const p = await api('POST', path+table.gameId, { move: b.getAttribute('data-move') });
+          if(p.historyCursor) historyCursor = p.historyCursor;
           renderTable(p);
         }catch(e){
           $('tstatus').textContent = e.message; speak(e.message);
@@ -2174,7 +2224,7 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
         try{ await api('POST', '/api/kade/parlor/quit/'+table.gameId); }catch(e){}
         loadMenu();
       });
-      $('btn-menu').addEventListener('click', loadMenu);
+      $('btn-menu').addEventListener('click', function(){ stopPartyPolling(); loadMenu(); });
       $('talk-send').addEventListener('click', sendTalk);
       $('talk-input').addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); sendTalk(); } });
       async function sendTalk(){
