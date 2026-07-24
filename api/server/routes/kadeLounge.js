@@ -502,7 +502,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       <h3 style="margin-top:0">My mic</h3>
       <label style="display:flex; gap:.6rem; align-items:flex-start; cursor:pointer">
         <input type="checkbox" id="mic-clear" style="width:auto; margin-top:.3rem">
-        <span>Headphones clarity mode &mdash; send my mic raw: no echo cancel, no noise trims, full fidelity, and incoming music stops dipping while I talk. <strong>Headphones only</strong> &mdash; on a speaker, the room will hear themselves echo off you.</span>
+        <span>Headphones clarity mode &mdash; send my mic raw: no echo cancel, no noise trims, full fidelity, and incoming music stops dipping while I talk. On iPhones this is also the door to <strong>stereo</strong> music &mdash; Apple's echo-cancel engine is mono-only (the same wall TeamTalk hits). <strong>Headphones only</strong> &mdash; on a speaker, the room will hear themselves echo off you.</span>
       </label>
     </div>
 
@@ -606,7 +606,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       var paCache = {}, paCacheKeys = [];
       function paCtxUp(){
         if(!paCtx){
-          try{ paCtx = new AC(); paGain = paCtx.createGain(); paGain.gain.value = paVol; paGain.connect(paCtx.destination); }catch(e){ return null; }
+          try{ paCtx = new AC(); keepWarm(paCtx); paGain = paCtx.createGain(); paGain.gain.value = paVol; paGain.connect(paCtx.destination); }catch(e){ return null; }
         }
         if(paCtx.state === 'suspended'){ try{ paCtx.resume(); }catch(e){} }
         return paCtx;
@@ -864,8 +864,21 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
        * node works everywhere). Voices attach plain at full volume. */
       let listenCtx = null;
       let musicGains = [];
+      /* KEEPALIVE (July 24, round 5 — her catch survived the watchdog):
+       * a long-IDLE AudioContext is what iOS wedges in the first place.
+       * A running constant-silence source keeps the audio unit warm, so
+       * pause-for-twenty-minutes wakes up like pause-for-two-seconds.
+       * Three lines per context, zero audible output, zero bandwidth. */
+      function keepWarm(ctx){
+        try{
+          var k = ctx.createConstantSource();
+          k.offset.value = 0;
+          k.connect(ctx.destination);
+          k.start();
+        }catch(e){}
+      }
       function ensureListenCtx(){
-        if(!listenCtx){ try{ listenCtx = new AC(); }catch(e){ return null; } }
+        if(!listenCtx){ try{ listenCtx = new AC(); keepWarm(listenCtx); }catch(e){ return null; } }
         if(listenCtx.state === 'suspended'){ try{ listenCtx.resume(); }catch(e){} }
         return listenCtx;
       }
@@ -1052,6 +1065,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         try{
           if(!jbCtx){
             jbCtx = new AC();
+            keepWarm(jbCtx);
             jbDest = jbCtx.createMediaStreamDestination();
             jbMonitor = jbCtx.createGain();
             jbMonitor.gain.value = musicVol;
@@ -1074,6 +1088,10 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
             await lkRoom.localParticipant.publishTrack(jbTrack, {
               dtx: false,
               red: false,
+              /* round 5: browsers do not NEGOTIATE stereo opus on their own —
+               * forceStereo writes it into the SDP so the encoder actually
+               * sends two channels (her mono-on-the-receiver catch). */
+              forceStereo: true,
               audioPreset: LK.AudioPresets.musicHighQualityStereo,
               source: LK.Track.Source.Unknown,
               name: 'music',
@@ -1403,6 +1421,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         var nm = sel.options[sel.selectedIndex].getAttribute('data-name') || 'Guest';
         try{
           botCtx = new AC();
+          keepWarm(botCtx);
           if(botCtx.state === 'suspended'){ try{ await botCtx.resume(); }catch(e){} }
           botDest = botCtx.createMediaStreamDestination();
           botTrack = botDest.stream.getAudioTracks()[0];
@@ -1580,6 +1599,13 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
           if(c && c.state === 'suspended'){ try{ c.resume(); }catch(e){} }
         });
       }, true);
+      /* and a quiet heartbeat for contexts iOS dozed mid-session — resume
+       * outside a gesture is a no-op on stubborn days, harmless always. */
+      setInterval(function(){
+        [listenCtx, jbCtx, botCtx, paCtx].forEach(function(c){
+          if(c && c.state !== 'running'){ try{ c.resume(); }catch(e){} }
+        });
+      }, 15000);
 
       /* ── picker wiring ── */
       $('room-list').addEventListener('click', function(ev){
@@ -1846,8 +1872,26 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
     mCtx = null; mDest = null;
   }
 
+  /* KEEPALIVE (round 5): a long-IDLE context is what iOS wedges in the
+   * first place — a running constant-silence source keeps the audio unit
+   * warm through any pause. Plus a 15s resume heartbeat; the engine page
+   * is gesture-exempt, so resume() is always allowed here. */
+  function keepWarm(ctx){
+    try{
+      var k = ctx.createConstantSource();
+      k.offset.value = 0;
+      k.connect(ctx.destination);
+      k.start();
+    }catch(e){}
+  }
+  setInterval(function(){
+    [mCtx, bCtx].forEach(function(c){
+      if(c && c.state !== 'running'){ try{ c.resume(); }catch(e){} }
+    });
+  }, 15000);
+
   async function ensureMusicPub(){
-    if(!mCtx){ mCtx = new AC(); mDest = mCtx.createMediaStreamDestination(); }
+    if(!mCtx){ mCtx = new AC(); keepWarm(mCtx); mDest = mCtx.createMediaStreamDestination(); }
     if(mCtx.state !== 'running'){ try{ await mCtx.resume(); }catch(e){} }
     if(!mPub){
       /* silence() stops the track on unpublish, and a stopped destination
@@ -1858,6 +1902,9 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
       recWire(mDest.stream);
       await room.localParticipant.publishTrack(mTrack, {
         dtx: false, red: false,
+        /* round 5: stereo opus must be NEGOTIATED — forceStereo writes it
+         * into the SDP so the encoder actually sends two channels. */
+        forceStereo: true,
         audioPreset: LK.AudioPresets.musicHighQualityStereo,
         source: LK.Track.Source.Unknown,
         name: 'music',
@@ -1956,7 +2003,7 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
     },
     botOn: async function(){
       try{
-        if(!bCtx){ bCtx = new AC(); }
+        if(!bCtx){ bCtx = new AC(); keepWarm(bCtx); }
         if(bCtx.state !== 'running'){ try{ await bCtx.resume(); }catch(e){} }
         if(!bPub){
           // fresh destination every republish — botOff() stops the old
@@ -2115,7 +2162,10 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
 })();
 </script></body></html>`;
 
-router.page = (_req, res) => res.type('html').send(loungeHtml);
-router.enginePage = (_req, res) => res.type('html').send(engineHtml);
+/* no-store (round 5): a CACHED copy of these pages is a silent killer —
+ * an engine page from three deploys ago replays yesterday's bugs on
+ * today's phones. These pages are tiny; always serve them fresh. */
+router.page = (_req, res) => res.set('Cache-Control', 'no-store').type('html').send(loungeHtml);
+router.enginePage = (_req, res) => res.set('Cache-Control', 'no-store').type('html').send(engineHtml);
 
 module.exports = router;
