@@ -309,18 +309,39 @@ const YT_HOSTS = ['youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be
  * If every rung fails, say so honestly; the next escalation (cookies or
  * a PO-token provider) is a deliberate decision for another session. */
 const YT_LADDER = [
-  [],
-  ['--extractor-args', 'youtube:player_client=tv'],
-  ['--extractor-args', 'youtube:player_client=web_embedded,mweb'],
+  ['--extractor-args', 'youtube:formats=missing_pot'],
+  ['--extractor-args', 'youtube:player_client=tv;formats=missing_pot'],
+  ['--extractor-args', 'youtube:player_client=android_vr;formats=missing_pot'],
+  ['--extractor-args', 'youtube:player_client=web_embedded,mweb;formats=missing_pot'],
 ];
 let ytRung = 0;
 
+/* The cookies hook (dormant until fed): drop a Netscape-format cookies
+ * export into Railway env KADE_YT_COOKIES and every fetch rides it —
+ * the standard escape hatch when Google fully PO-token-walls an IP.
+ * No code change needed later; this just notices the var. */
+let ytCookiesPath = null;
+function ytCookieArgs() {
+  if (ytCookiesPath) return ['--cookies', ytCookiesPath];
+  const raw = process.env.KADE_YT_COOKIES || '';
+  if (!raw.trim()) return [];
+  try {
+    const fs = require('fs');
+    const p = '/tmp/kade-yt-cookies.txt';
+    fs.writeFileSync(p, raw, { mode: 0o600 });
+    ytCookiesPath = p;
+    logger.info('[lounge/fetch-track] YouTube cookies loaded from env');
+    return ['--cookies', p];
+  } catch (e) { return []; }
+}
+
 async function ytLadder(baseArgs, timeoutMs) {
   let lastErr = null;
+  const cookies = ytCookieArgs();
   for (let i = 0; i < YT_LADDER.length; i++) {
     const rung = (ytRung + i) % YT_LADDER.length;
     try {
-      const out = await runYtDlp([...baseArgs, ...YT_LADDER[rung]], timeoutMs);
+      const out = await runYtDlp([...baseArgs, ...cookies, ...YT_LADDER[rung]], timeoutMs);
       ytRung = rung;
       return out;
     } catch (e) {
