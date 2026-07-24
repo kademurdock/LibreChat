@@ -35,6 +35,8 @@ const localStorageAtoms = {
   chimeOnCompletion: atomWithLocalStorage('chimeOnCompletion', true), // July 22 2026: chat sound kit default ON, toggle = opt-out (Kade's call; key name kept so prior opt-outs stick)
   // KADE July 16 2026: low-vision display prefs (classes applied by utils/kadeA11yPrefs.ts)
   kadeA11yHighContrast: atomWithLocalStorage('kadeA11yHighContrast', false),
+  // KADE July 23 2026: opt-in location ride-along (kade_location tool). OFF by default.
+  kadeShareLocation: atomWithLocalStorage('kadeShareLocation', false),
   kadeA11yFont: atomWithLocalStorage<'default' | 'lexend' | 'opendyslexic'>('kadeA11yFont', 'default'),
   kadeA11yLineSpacing: atomWithLocalStorage<'default' | 'relaxed' | 'loose'>('kadeA11yLineSpacing', 'default'),
   newChatSwitchToHistory: atomWithLocalStorage('newChatSwitchToHistory', true),

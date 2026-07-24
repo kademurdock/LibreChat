@@ -4,6 +4,7 @@ import { Dropdown, ThemeContext } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import ToggleSwitch from '../ToggleSwitch';
 import { applyKadeA11yPrefs } from '~/utils/kadeA11yPrefs';
+import { startLocationShare, stopLocationShare } from '~/utils/kadeLocationShare';
 import type { KadeA11yFont, KadeA11ySpacing } from '~/utils/kadeA11yPrefs';
 import store from '~/store';
 
@@ -38,6 +39,30 @@ export function KadeHighContrastToggle() {
       localizationKey="com_nav_kade_high_contrast"
       hoverCardText="com_nav_info_kade_high_contrast"
       switchId="kadeA11yHighContrast"
+      onCheckedChange={onCheckedChange}
+    />
+  );
+}
+
+/** July 23 2026 — opt-in location sharing (see utils/kadeLocationShare.ts).
+ * The toggle starts/stops the geolocation watch IMMEDIATELY (the browser's
+ * own permission prompt appears on first enable); the atom persists the
+ * choice and main.jsx resumes the watch on the next visit. */
+export function KadeShareLocationToggle() {
+  const onCheckedChange = useCallback((value: boolean) => {
+    if (value) {
+      startLocationShare();
+    } else {
+      stopLocationShare();
+    }
+  }, []);
+
+  return (
+    <ToggleSwitch
+      stateAtom={store.kadeShareLocation}
+      localizationKey="com_nav_kade_share_location"
+      hoverCardText="com_nav_info_kade_share_location"
+      switchId="kadeShareLocation"
       onCheckedChange={onCheckedChange}
     />
   );

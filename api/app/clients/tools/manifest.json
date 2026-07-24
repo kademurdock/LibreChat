@@ -67,6 +67,14 @@
     "authConfig": []
   },
   {
+    "name": "Location",
+    "pluginKey": "kade_location",
+    "description": "Real location awareness from your own device, only while \"Share my location\" is on in Settings: where am I, what's around me, and spoken walking directions. Free map data (OpenStreetMap). Try: \"what's around me?\"",
+    "icon": "https://www.openstreetmap.org/favicon.ico",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Wikipedia",
     "pluginKey": "kade_wikipedia",
     "description": "Looks things up on Wikipedia — people, places, history, science — so answers come from the encyclopedia instead of memory. Free. It only knows what Wikipedia knows. Try: \"who was Bass Reeves?\"",

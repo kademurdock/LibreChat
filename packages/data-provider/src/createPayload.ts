@@ -11,6 +11,33 @@ function getUserTimezone(): string | undefined {
   }
 }
 
+/** KADE July 23 2026: opt-in location ride-along. The client's geolocation
+ * watcher (utils/kadeLocationShare.ts) keeps window.__kadeUserLocation fresh
+ * ONLY while the "Share my location" setting is on; here we attach it when
+ * it's present and recent (10 min). The server-side kade_location tool reads
+ * it off the request body. Setting off / stale / non-browser = undefined =
+ * nothing attached, exactly the old payload. */
+function getUserLocation():
+  | { lat: number; lon: number; accuracy?: number; at: string }
+  | undefined {
+  try {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const loc = (window as { __kadeUserLocation?: { lat: number; lon: number; accuracy?: number; at: string } })
+      .__kadeUserLocation;
+    if (!loc || typeof loc.lat !== 'number' || typeof loc.lon !== 'number') {
+      return undefined;
+    }
+    if (Date.now() - new Date(loc.at).getTime() > 10 * 60 * 1000) {
+      return undefined;
+    }
+    return loc;
+  } catch {
+    return undefined;
+  }
+}
+
 export default function createPayload(submission: t.TSubmission) {
   const {
     isEdited,
@@ -52,6 +79,7 @@ export default function createPayload(submission: t.TSubmission) {
     ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
     manualSkills: s.isAssistantsEndpoint(endpoint) ? undefined : manualSkills,
     timezone: getUserTimezone(),
+    userLocation: getUserLocation(),
   };
 
   return { server, payload };

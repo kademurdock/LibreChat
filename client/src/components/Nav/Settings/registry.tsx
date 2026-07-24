@@ -40,6 +40,7 @@ import ApiKeys from '../SettingsTabs/ApiKeys';
 import MemoryToggle from './MemoryToggle';
 import {
   KadeHighContrastToggle,
+  KadeShareLocationToggle,
   KadeFontSelector,
   KadeLineSpacingSelector,
 } from '../SettingsTabs/General/KadeA11y';
@@ -139,6 +140,15 @@ export const registry: SettingEntry[] = [
       localizationKey: 'com_nav_chime_on_completion',
       switchId: 'chimeOnCompletion',
     }),
+  },
+  // KADE July 23 2026: opt-in location sharing for the kade_location tool
+  {
+    id: 'kadeShareLocation',
+    tab: GENERAL,
+    section: 'accessibility',
+    labelKey: 'com_nav_kade_share_location',
+    keywords: ['location', 'gps', 'maps', 'directions', 'where am i', 'privacy'],
+    Component: KadeShareLocationToggle,
   },
   // KADE July 16 2026: low-vision display preferences (research paper Section C)
   {

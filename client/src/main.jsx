@@ -10,11 +10,16 @@ import 'katex/dist/katex.min.css';
 import 'katex/dist/contrib/copy-tex.js';
 import { migrateVoiceNumbering } from './utils/voiceRenumber2026';
 import { applyKadeA11yPrefs } from './utils/kadeA11yPrefs';
+import { initKadeLocationShare } from './utils/kadeLocationShare';
 
 // KADE: rewrite saved voice labels for the 2026-07-01 catalog renumbering.
 // Must run before React mounts (Recoil's localStorage effects read `voice`
 // at atom initialization). One-time, flag-guarded, fail-silent.
 migrateVoiceNumbering();
+
+// KADE July 23 2026: resume the opt-in location watch if the setting was on.
+// Fail-soft inside; no-op (and no permission prompt) when the toggle is off.
+initKadeLocationShare();
 
 // KADE: apply saved low-vision display prefs (contrast/font/spacing) before
 // first paint so there is no flash of default styling. Fail-soft inside.

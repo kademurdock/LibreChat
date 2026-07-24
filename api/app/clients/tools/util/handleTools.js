@@ -31,6 +31,7 @@ const {
   KadeNotify,
   KadeTranscribe,
   KadeWeather,
+  KadeLocation,
   KadeCode,
   KadeWikipedia,
   KadeJoke,
@@ -197,6 +198,7 @@ const loadTools = async ({
     kade_notify: KadeNotify,
     kade_transcribe: KadeTranscribe,
     kade_weather: KadeWeather,
+    kade_location: KadeLocation,
     kade_code: KadeCode,
     kade_wikipedia: KadeWikipedia,
     kade_joke: KadeJoke,
@@ -309,6 +311,11 @@ const loadTools = async ({
     },
     kade_transcribe: {
       userId: kadeActingUserId,
+    },
+    kade_location: {
+      // Coordinates ride the request body (userLocation) only when the
+      // user's "Share my location" setting is on — see KadeLocation.js.
+      req: options.req,
     },
     kade_notify: {
       req: options.req,

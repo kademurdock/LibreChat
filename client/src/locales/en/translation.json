@@ -1983,6 +1983,8 @@
   "com_ui_reply_working": "Generating reply...",
   "com_ui_reply_still_working": "Still generating...",
   "com_ui_reply_finished": "Reply ready",
+  "com_nav_kade_share_location": "Share my location with your companions",
+  "com_nav_info_kade_share_location": "While the app is open, your companions can answer \"where am I\", \"what's around me\", and give walking directions using your phone's location. Off by default; nothing is shared when this is off.",
   "com_nav_kade_high_contrast": "High contrast (true black)",
   "com_nav_info_kade_high_contrast": "Maximum-contrast true-black theme for low vision. Turning this on also switches the theme to dark.",
   "com_nav_kade_easy_font": "Easy-read font",

@@ -8,6 +8,7 @@ const KadePhoneCall = require('./structured/KadePhoneCall');
 const KadeNotify = require('./structured/KadeNotify');
 const KadeTranscribe = require('./structured/KadeTranscribe');
 const KadeWeather = require('./structured/KadeWeather');
+const KadeLocation = require('./structured/KadeLocation');
 const KadeCode = require('./structured/KadeCode');
 const KadeWikipedia = require('./structured/KadeWikipedia');
 const KadeJoke = require('./structured/KadeJoke');
@@ -38,6 +39,7 @@ module.exports = {
   KadeNotify,
   KadeTranscribe,
   KadeWeather,
+  KadeLocation,
   KadeCode,
   KadeWikipedia,
   KadeJoke,
