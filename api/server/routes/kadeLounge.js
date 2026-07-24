@@ -391,12 +391,28 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
   ol#jb-queue li { margin:.45rem 0; }
   input[type="range"] { width: min(100%, 340px); accent-color:#1f7a49; }
   .nowline { font-weight:600; }
+  /* ── decorative layer (July 24): pure eye candy, aria-hidden or CSS-only,
+     zero focus targets, zero live regions — VoiceOver never meets it. ── */
+  #glow { height:6px; border-radius:3px; margin:.2rem 0 .8rem; background:linear-gradient(90deg,#1f7a49,#67c08b,#2b4d8f,#1f7a49); background-size:300% 100%; }
+  #roster li.talking::before { content:""; display:inline-block; width:.6em; height:.6em; border-radius:50%; background:#1f9a55; margin-right:.45em; vertical-align:baseline; }
+  #jb-disc { display:inline-block; width:1.05em; height:1.05em; border-radius:50%; margin-right:.45em; vertical-align:-0.18em; background:radial-gradient(circle at center, #cdd3da 0 12%, #14171c 13% 42%, #3a4150 43% 46%, #14171c 47% 72%, #1f7a49 73% 100%); }
+  #jb-viz { display:block; width:100%; height:44px; margin:.35rem 0 .1rem; border-radius:8px; }
+  @media (prefers-reduced-motion: no-preference) {
+    #glow { animation: kglow 14s linear infinite; }
+    @keyframes kglow { 0%{background-position:0% 0} 100%{background-position:300% 0} }
+    #roster li.talking::before { animation: kpulse 1.1s ease-in-out infinite; }
+    @keyframes kpulse { 0%,100%{transform:scale(.85);opacity:.75} 50%{transform:scale(1.15);opacity:1} }
+    #jb-disc.spin { animation: kspin 3.2s linear infinite; }
+    @keyframes kspin { to{transform:rotate(360deg)} }
+  }
+  .rec-live { background:#a33 !important; }
 </style>
 </head>
 <body>
   <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/parlor">The Parlor</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/whats-new">What's new</a></p>
   <h1>Kade's Clubhouse</h1>
   <div id="status" class="status" role="status" aria-live="polite">Opening the Clubhouse&hellip;</div>
+  <p id="rec-done" hidden></p>
 
   <section id="pick" hidden>
     <p class="muted">Family voice rooms with real stereo sound. Sit and talk, load the shared jukebox, invite a companion to hang out &mdash; or get a private room in the Hotel.</p>
@@ -427,7 +443,10 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
 
   <section id="room" hidden>
     <h2 id="room-title"></h2>
+    <div id="glow" aria-hidden="true"></div>
     <div id="rstatus" class="status" role="status" aria-live="polite" tabindex="-1"></div>
+    <p id="pa-line" class="muted"></p>
+    <p id="rec-others" class="muted" hidden></p>
     <div class="card">
       <h3 style="margin-top:0" id="roster-h">Who's here</h3>
       <ul id="roster" style="list-style:none;padding:0;margin:0" aria-labelledby="roster-h"></ul>
@@ -435,13 +454,15 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
     <p>
       <button type="button" class="rowbtn" id="btn-mic">Mute my mic</button>
       <button type="button" class="rowbtn gray" id="btn-who">Say who's here</button>
+      <button type="button" class="rowbtn gray" id="btn-rec">Record this conversation</button>
       <button type="button" class="rowbtn red" id="btn-leave">Leave the room</button>
     </p>
 
     <div class="card">
       <h3 style="margin-top:0">The jukebox</h3>
       <p class="muted">One player for the whole room &mdash; anybody can play, pause, skip, or jump back. Queue your song politely, or cut in and start a radio fight. House rule: volume is yours alone.</p>
-      <p id="jb-now" class="nowline" aria-live="off">Nothing playing yet.</p>
+      <p class="nowline"><span id="jb-disc" aria-hidden="true" hidden></span><span id="jb-now" aria-live="off">Nothing playing yet.</span></p>
+      <canvas id="jb-viz" aria-hidden="true" hidden></canvas>
       <p>
         <button type="button" class="rowbtn" id="jb-toggle">Play</button>
         <button type="button" class="rowbtn gray" id="jb-back">Back a song</button>
@@ -464,6 +485,17 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       <label class="blk" for="jb-vol">My music volume &mdash; just for my ears</label>
       <input type="range" id="jb-vol" min="0" max="100" step="5" value="25" aria-label="My music volume, percent">
       <p class="muted" style="font-size:.85rem">Music starts low by default so talk rides over it. Voices always come through at full volume.</p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">The house PA</h3>
+      <p class="muted">Two host voices read the room out loud for everybody &mdash; Miss A works the front desk (comings, goings, taping notices) and Kade's calm narrator runs the booth (jukebox news). Real audio, no screen reader needed.</p>
+      <label style="display:flex; gap:.6rem; align-items:flex-start; cursor:pointer">
+        <input type="checkbox" id="pa-on" style="width:auto; margin-top:.3rem">
+        <span>Host voices read the announcements</span>
+      </label>
+      <label class="blk" for="pa-vol">Announcement volume &mdash; just for my ears</label>
+      <input type="range" id="pa-vol" min="0" max="100" step="5" value="90" aria-label="Announcement volume, percent">
     </div>
 
     <div class="card">
@@ -552,6 +584,216 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
 
       function say(text){ $('rstatus').textContent = text; }
 
+      /* ── THE HOUSE PA (July 24, her ask: announcements "like a PA system
+       * and isn't screen reader reliant") ──
+       * Room events get READ OUT LOUD on every member's device by two host
+       * clone voices: Miss A pro reading works the front desk (joins,
+       * leaves, taping notices) and Kade's calm narrator runs the booth
+       * (jukebox news). Everyone hears the same words at the same moment —
+       * each device speaks them locally, so the PA never depends on any one
+       * phone. With the PA on, room events land in a NON-live line (no
+       * VoiceOver double-talk); if a clip cannot fetch or play, the text
+       * falls back to the live region so nothing is ever missed. */
+      var PA_DOORS = 'Voice 393';  // Miss A pro reading — the front desk
+      var PA_BOOTH = 'Voice 327';  // Kade, calm inspirational — the booth
+      var paOn = true, paVol = 0.9;
+      try{ paOn = localStorage.getItem('kadeClubPAOn') !== '0'; }catch(e){}
+      try{ var pv = parseInt(localStorage.getItem('kadeClubPAVol'), 10); if(!isNaN(pv)) paVol = Math.max(0, Math.min(100, pv))/100; }catch(e){}
+      var paCtx = null, paGain = null, paQueue = [], paBusy = false;
+      var paCache = {}, paCacheKeys = [];
+      function paCtxUp(){
+        if(!paCtx){
+          try{ paCtx = new AC(); paGain = paCtx.createGain(); paGain.gain.value = paVol; paGain.connect(paCtx.destination); }catch(e){ return null; }
+        }
+        if(paCtx.state === 'suspended'){ try{ paCtx.resume(); }catch(e){} }
+        return paCtx;
+      }
+      async function paClip(text, voice){
+        var key = voice + '|' + text;
+        if(paCache[key]) return paCache[key];
+        var r = await fetch('/api/files/speech/tts/manual', { method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify({ input: text, voice: voice }) });
+        if(!r.ok) throw new Error('tts');
+        var buf = await paCtx.decodeAudioData(await r.arrayBuffer());
+        paCache[key] = buf; paCacheKeys.push(key);
+        while(paCacheKeys.length > 50){ delete paCache[paCacheKeys.shift()]; }
+        return buf;
+      }
+      function paPump(){
+        if(paBusy || !paQueue.length) return;
+        paBusy = true;
+        var item = paQueue.shift();
+        (async function(){
+          try{
+            if(!paCtxUp()) throw new Error('ctx');
+            var buf = await paClip(item.text, item.voice);
+            await new Promise(function(done){
+              var src = paCtx.createBufferSource();
+              src.buffer = buf; src.connect(paGain);
+              src.onended = done; src.start();
+            });
+          }catch(e){ say(item.text); /* the PA lost power — VoiceOver takes it */ }
+          paBusy = false;
+          paPump();
+        })();
+      }
+      function paSay(text, lane){
+        if(!text) return;
+        if(!paOn || !lkRoom){ say(text); return; }
+        $('pa-line').textContent = text;
+        if(paQueue.length > 6){ paQueue.shift(); } // never let a backlog lecture the room
+        paQueue.push({ text: text, voice: lane === 'booth' ? PA_BOOTH : PA_DOORS });
+        paPump();
+      }
+      $('pa-on').checked = paOn;
+      $('pa-vol').value = String(Math.round(paVol*100));
+      $('pa-on').addEventListener('change', function(){
+        paOn = $('pa-on').checked;
+        try{ localStorage.setItem('kadeClubPAOn', paOn ? '1' : '0'); }catch(e){}
+        say(paOn ? 'Host voices are on.' : 'Host voices are off — announcements go back to the screen reader.');
+      });
+      $('pa-vol').addEventListener('input', function(){
+        paVol = Math.max(0, Math.min(100, parseInt($('pa-vol').value,10)||0))/100;
+        try{ localStorage.setItem('kadeClubPAVol', String(Math.round(paVol*100))); }catch(e){}
+        if(paGain){ try{ paGain.gain.value = paVol; }catch(e){} }
+      });
+
+      /* ── THE TAPE DECK (July 24, her ask: "a record of audio the same way
+       * they do of the game conversations") ──
+       * Anybody can record the room: your mic, every voice, the jukebox,
+       * the bot — mixed into one file on YOUR device, downloadable like a
+       * Parlor transcript. The whole room is TOLD, by the PA, when a tape
+       * starts and stops — no sneaky taping in this house. */
+      var recCtx=null, recDest=null, recorder=null, recWired=null, recTimer=null, recT0=0, recCap=null;
+      var RECORDERS = {};
+      function recWire(stream){
+        if(!recCtx || !recDest || !stream) return;
+        try{
+          var tr = stream.getAudioTracks()[0];
+          if(!tr || recWired.has(tr.id)) return;
+          recWired.add(tr.id);
+          recCtx.createMediaStreamSource(new MediaStream([tr])).connect(recDest);
+        }catch(e){}
+      }
+      function recLabel(){
+        if(!recorder){ $('btn-rec').textContent = 'Record this conversation'; $('btn-rec').classList.remove('rec-live'); return; }
+        var s = Math.floor((Date.now() - recT0)/1000);
+        $('btn-rec').textContent = 'Stop the recording — ' + Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+        $('btn-rec').classList.add('rec-live');
+      }
+      function renderRecOthers(){
+        var names = Object.keys(RECORDERS).filter(function(k){ return k !== myIdentity; }).map(function(k){ return RECORDERS[k]; });
+        $('rec-others').hidden = !names.length;
+        $('rec-others').textContent = names.length ? ('Taping now: ' + names.join(', ') + '.') : '';
+      }
+      function startRec(){
+        if(recorder || !lkRoom) return;
+        if(!window.MediaRecorder){ say('This browser cannot record — try Safari or Chrome.'); return; }
+        try{
+          recCtx = new AC(); recDest = recCtx.createMediaStreamDestination(); recWired = new Set();
+          if(micTrack && micTrack.mediaStreamTrack){ recWire(new MediaStream([micTrack.mediaStreamTrack])); }
+          lkRoom.remoteParticipants.forEach(function(p){
+            (p.audioTrackPublications || new Map()).forEach(function(pub){
+              if(pub.track && pub.track.mediaStreamTrack){ recWire(new MediaStream([pub.track.mediaStreamTrack])); }
+            });
+          });
+          if(jbDest){ recWire(jbDest.stream); }
+          if(botDest){ recWire(botDest.stream); }
+          var mime = '';
+          if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/mp4')) mime = 'audio/mp4';
+          else if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mime = 'audio/webm;codecs=opus';
+          recorder = new MediaRecorder(recDest.stream, mime ? { mimeType: mime } : undefined);
+          var chunks = [];
+          recorder.ondataavailable = function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
+          recorder.onstop = function(){
+            var type = (recorder && recorder.mimeType) || mime || 'audio/webm';
+            var secs = Math.round((Date.now() - recT0)/1000);
+            recorder = null;
+            if(recTimer){ clearInterval(recTimer); recTimer = null; }
+            if(recCap){ clearTimeout(recCap); recCap = null; }
+            if(recCtx){ try{ recCtx.close(); }catch(e){} recCtx = null; recDest = null; recWired = null; }
+            recLabel();
+            delete RECORDERS[myIdentity]; renderRecOthers();
+            var blob = new Blob(chunks, { type: type }); chunks = [];
+            if(!blob.size){ say('The tape came out blank — that one is on the browser.'); return; }
+            var ext = type.indexOf('mp4') >= 0 ? 'm4a' : 'webm';
+            var stamp = new Date().toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }).replace(/[,:]/g,'.').replace(/\\s+/g,' ');
+            var fname = 'Clubhouse - ' + (roomLabel || 'room') + ' - ' + stamp + '.' + ext;
+            var url = URL.createObjectURL(blob);
+            var mb = (blob.size/1048576).toFixed(1);
+            var mins = Math.floor(secs/60) + ':' + String(secs%60).padStart(2,'0');
+            var box = $('rec-done');
+            box.hidden = false;
+            box.innerHTML = '';
+            var a = document.createElement('a');
+            a.href = url; a.download = fname;
+            a.textContent = 'Download the recording — ' + mins + ', ' + mb + ' MB';
+            box.appendChild(a);
+            a.click(); // lands straight in Downloads/Files; the link stays for a re-grab
+            if(lkRoom){ sendData({ t:'rec', on:false, fromName: myName }); }
+            paSay(myName + ' stopped recording. The tape is theirs to keep.', 'doors');
+          };
+          recT0 = Date.now();
+          recorder.start(1000);
+          recCap = setTimeout(function(){ if(recorder){ say('The tape ran out at two hours — saving what we have.'); stopRec(); } }, 7200000);
+          recTimer = setInterval(recLabel, 1000);
+          recLabel();
+          RECORDERS[myIdentity] = myName; renderRecOthers();
+          sendData({ t:'rec', on:true, fromName: myName });
+          paSay(myName + ' is recording this conversation.', 'doors');
+        }catch(e){
+          recorder = null;
+          if(recCtx){ try{ recCtx.close(); }catch(e2){} recCtx = null; recDest = null; recWired = null; }
+          say('The tape deck jammed — try again.');
+        }
+      }
+      function stopRec(){ if(recorder){ try{ recorder.stop(); }catch(e){ recorder = null; recLabel(); } } }
+      $('btn-rec').addEventListener('click', function(){ if(recorder){ stopRec(); } else { startRec(); } });
+
+      /* ── the visual layer: audio-reactive bars + the spinning 45 ──
+       * Decorative only (aria-hidden, no focus, no live regions); sits out
+       * reduced-motion and hidden tabs. */
+      var REDUCED = false;
+      try{ REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
+      var vizAnalysers = [], vizRAF = 0;
+      function vizTap(ctx, node){
+        if(REDUCED) return;
+        try{
+          var an = ctx.createAnalyser(); an.fftSize = 64;
+          node.connect(an);
+          vizAnalysers.push(an);
+        }catch(e){}
+      }
+      function vizLoop(){
+        vizRAF = 0;
+        var cv = $('jb-viz');
+        if(REDUCED || document.hidden || !lkRoom || cv.hidden){ return; }
+        var g = cv.getContext('2d');
+        var W = cv.width = cv.clientWidth || 300, H = cv.height = 44;
+        g.clearRect(0,0,W,H);
+        var bins = 24, sum = new Array(bins).fill(0);
+        vizAnalysers.forEach(function(an){
+          try{
+            var d = new Uint8Array(an.frequencyBinCount);
+            an.getByteFrequencyData(d);
+            for(var i=0;i<bins;i++){ sum[i] = Math.max(sum[i], d[Math.min(d.length-1, i)] || 0); }
+          }catch(e){}
+        });
+        var bw = W/bins;
+        for(var i=0;i<bins;i++){
+          var h = Math.max(2, (sum[i]/255) * (H-4));
+          g.fillStyle = 'rgba(31,122,73,' + (0.35 + 0.65*(sum[i]/255)).toFixed(2) + ')';
+          g.fillRect(i*bw + 1, H - h, bw - 2, h);
+        }
+        vizRAF = requestAnimationFrame(vizLoop);
+      }
+      function vizKick(){
+        var cv = $('jb-viz');
+        var on = !REDUCED && lkRoom && CLUB.jb.playing;
+        cv.hidden = !on;
+        if(on && !vizRAF){ vizRAF = requestAnimationFrame(vizLoop); }
+      }
+      document.addEventListener('visibilitychange', function(){ if(!document.hidden){ vizKick(); } });
+
       function isDj(identity){ return typeof identity === 'string' && identity.slice(-3) === '-dj'; }
       function rosterParts(){
         if(!lkRoom) return [];
@@ -627,6 +869,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
           var src = ctx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
           var g = ctx.createGain(); g.gain.value = musicVol;
           src.connect(g); g.connect(ctx.destination);
+          vizTap(ctx, g);
           musicGains.push({ track: track, src: src, gain: g });
           return true;
         }catch(e){ return false; }
@@ -683,7 +926,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       function bumpBroadcast(){
         CLUB.v++;
         broadcastState();
-        if(CLUB.actn > lastActn){ lastActn = CLUB.actn; if(CLUB.act) say(CLUB.act); }
+        if(CLUB.actn > lastActn){ lastActn = CLUB.actn; if(CLUB.act) paSay(CLUB.act, 'booth'); }
         reconcile();
         renderJukebox();
       }
@@ -691,7 +934,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         if(!(msg.v > CLUB.v)) return;
         CLUB.v = msg.v; CLUB.jb = msg.jb || CLUB.jb; CLUB.act = msg.act || ''; CLUB.actn = msg.actn || 0;
         jbPosStamp = Date.now();
-        if(CLUB.actn > lastActn){ lastActn = CLUB.actn; if(CLUB.act) say(CLUB.act); }
+        if(CLUB.actn > lastActn){ lastActn = CLUB.actn; if(CLUB.act) paSay(CLUB.act, 'booth'); }
         reconcile();
         renderJukebox();
       }
@@ -712,7 +955,9 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
           if(!jb.curId){ var f = nextPlayable(-1, +1); if(f) setCurrentId(f.id); }
           if(jb.curId){ jb.playing = true; setAct(who + ' pressed play.'); }
         } else if(m.cmd === 'pause'){
-          if(jb.playing){ jb.playing = false; jb.pos = -1; setAct(who + ' paused the music.'); }
+          /* keep the position on pause (was -1) so the seek slider shows the
+           * real spot instead of 0:00; resume still rides the owner's myPos. */
+          if(jb.playing){ var pp = Math.max(0, Math.round(livePos())); jb.playing = false; jb.pos = pp; setAct(who + ' paused the music.'); }
         } else if(m.cmd === 'stop'){
           if(jb.curId){ jb.playing = false; jb.pos = 0; setAct(who + ' stopped the music.'); }
         } else if(m.cmd === 'skip'){
@@ -805,12 +1050,21 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
             jbMonitor = jbCtx.createGain();
             jbMonitor.gain.value = musicVol;
             jbMonitor.connect(jbCtx.destination);
+            vizTap(jbCtx, jbMonitor);
           }
           if(jbCtx.state === 'suspended'){ try{ await jbCtx.resume(); }catch(e){} }
           var buf = await getBuffer(entry.id);
           if(session !== jbSession) return;
           if(!jbTrack){
+            /* HER BUG (July 24, "it said it was playing that other song, but
+             * it never really did"): unpublishTrack(track, true) STOPS the
+             * destination's MediaStreamTrack, and a stopped track is dead
+             * forever — republishing it ships silence while the state says
+             * playing. A fresh destination node every republish = a live
+             * track every time. */
+            jbDest = jbCtx.createMediaStreamDestination();
             jbTrack = jbDest.stream.getAudioTracks()[0];
+            recWire(jbDest.stream);
             await lkRoom.localParticipant.publishTrack(jbTrack, {
               dtx: false,
               red: false,
@@ -901,6 +1155,9 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         $('jb-now').textContent = cur
           ? ((jb.playing ? 'Now playing: ' : 'Paused: ') + cur.title + ' — brought by ' + cur.byName)
           : 'Nothing playing yet.';
+        $('jb-disc').hidden = !cur;
+        $('jb-disc').className = (cur && jb.playing) ? 'spin' : '';
+        vizKick();
         $('jb-toggle').textContent = jb.playing ? 'Pause the music' : 'Play';
         $('jb-queue').innerHTML = jb.queue.map(function(e2){
           var here = present(e2.by);
@@ -957,6 +1214,8 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         $('btn-mic').textContent = 'Mute my mic';
         CLUB = { v:0, actn:0, act:'', jb:{ queue:[], curId:null, playing:false, pos:-1 } };
         lastActn = 0; BOT = null; botBusy = false;
+        RECORDERS = {}; renderRecOthers();
+        $('pa-line').textContent = '';
         renderRoster(); renderJukebox();
         loadBotRoster();
         say('You are in ' + label + ' with ' + Math.max(0, rosterNames().length - 1) + ' other' + (rosterNames().length === 2 ? '' : 's') + '. Your mic is live.');
@@ -977,6 +1236,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
               if(!wireMusicGain(track)){ el.muted = false; try{ el.volume = musicVol; }catch(e){} }
             }
             document.body.appendChild(el);
+            if(track.mediaStreamTrack){ recWire(new MediaStream([track.mediaStreamTrack])); }
           })
           .on(LK.RoomEvent.TrackUnsubscribed, function(track){
             unwireMusicGain(track);
@@ -990,15 +1250,16 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
           })
           .on(LK.RoomEvent.ParticipantConnected, function(p){
             if(isDj(p.identity)){ return; } // headless engines are furniture
-            renderRoster(); say((p.name||p.identity)+' joined.');
+            renderRoster(); paSay((p.name||p.identity)+' just walked in.', 'doors');
           })
           .on(LK.RoomEvent.ParticipantDisconnected, function(p){
             if(isDj(p.identity)){ renderRoster(); reconcile(); renderJukebox(); return; }
+            if(RECORDERS[p.identity]){ delete RECORDERS[p.identity]; renderRecOthers(); }
             if(BOT && BOT.anchor === p.identity){
               var bn = BOT.name; BOT = null;
-              say((p.name||p.identity)+' left and took '+bn+' with them.');
+              paSay((p.name||p.identity)+' left and took '+bn+' with them.', 'doors');
             } else {
-              say((p.name||p.identity)+' left.');
+              paSay((p.name||p.identity)+' headed out.', 'doors');
             }
             renderRoster();
             if(iAmAuthority()){
@@ -1021,6 +1282,22 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         if(msg.t === 'hello'){
           if(iAmAuthority()){ broadcastState(); }
           if(BOT && BOT.anchor === myIdentity){ sendBotState(); }
+          if(recorder){ sendData({ t:'rec', on:true, fromName: myName, again:true }); }
+          return;
+        }
+        if(msg.t === 'rec'){
+          var rn = msg.fromName || 'Somebody';
+          if(msg.on){
+            var knew = fromId && RECORDERS[fromId];
+            if(fromId){ RECORDERS[fromId] = rn; }
+            renderRecOthers();
+            if(!knew && !msg.again){ paSay(rn + ' is recording this conversation.', 'doors'); }
+            else if(!knew){ $('rec-others').hidden = false; } // late joiner: shown, not barked
+          } else {
+            if(fromId){ delete RECORDERS[fromId]; }
+            renderRecOthers();
+            paSay(rn + ' stopped recording. The tape is theirs to keep.', 'doors');
+          }
           return;
         }
         if(msg.t === 'cmd'){ if(iAmAuthority()) applyCmd(msg); return; }
@@ -1232,6 +1509,11 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       }
 
       function cleanupRoom(){
+        stopRec();
+        RECORDERS = {}; renderRecOthers();
+        $('pa-line').textContent = '';
+        paQueue = [];
+        vizAnalysers = [];
         stopCapture();
         if(BOT && BOT.anchor === myIdentity){ botTeardownLocal(); }
         BOT = null; botBusy = false; TRANS = '';
@@ -1251,7 +1533,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
 
       /* iOS autoplay policy: any tap re-arms suspended audio engines. */
       document.addEventListener('click', function(){
-        [listenCtx, jbCtx, botCtx].forEach(function(c){
+        [listenCtx, jbCtx, botCtx, paCtx, recCtx].forEach(function(c){
           if(c && c.state === 'suspended'){ try{ c.resume(); }catch(e){} }
         });
       }, true);
@@ -1333,6 +1615,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       function addTrack(interrupt){
         var f = $('jb-file').files[0];
         if(!f || !lkRoom) return;
+        if(f.size > 60000000){ say('That file is too big — keep songs under about sixty megabytes.'); return; }
         var id = 'e' + Math.random().toString(36).slice(2, 9);
         var title = (f.name || 'a song').replace(/\.[a-z0-9]{2,5}$/i, '').slice(0, 60);
         var entry = { id: id, title: title, by: myIdentity, byName: myName };
@@ -1365,6 +1648,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
           if(old){ try{ await lkRoom.localParticipant.unpublishTrack(old, true); }catch(e){} }
           micTrack = await LK.createLocalAudioTrack(micConstraints());
           await lkRoom.localParticipant.publishTrack(micTrack);
+          if(micTrack.mediaStreamTrack){ recWire(new MediaStream([micTrack.mediaStreamTrack])); }
           if(micMuted){ try{ await lkRoom.localParticipant.setMicrophoneEnabled(false); }catch(e){} }
           say(micClear ? 'Mic is raw now — full clarity, headphones etiquette.' : 'Mic is speaker-friendly now.');
         }catch(e){ say('Could not switch the mic mode.'); }
@@ -1468,11 +1752,33 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
   var bCtx=null, bDest=null, bTrack=null, bPub=false;
   var earsOn=false, capTimer=null, capRec=null, capCtx=null;
 
+  /* ── the tape deck (July 24 — "record this conversation") ──
+   * The engine is the one seat that hears EVERYTHING: every remote track
+   * (voices, other jukeboxes, bots — the app's own mic arrives as a remote
+   * track too, since the engine is its own participant) plus its own local
+   * music and bot output. Mix them into one MediaRecorder; hand the file
+   * back to the app as chunked base64 when the tape stops. */
+  var recCtx=null, recDest=null, recorder=null, recWired=null, recCap=null, recT0=0;
+  function recWire(stream){
+    if(!recCtx || !recDest || !stream) return;
+    try{
+      var tr = stream.getAudioTracks()[0];
+      if(!tr || recWired.has(tr.id)) return;
+      recWired.add(tr.id);
+      recCtx.createMediaStreamSource(new MediaStream([tr])).connect(recDest);
+    }catch(e){}
+  }
+  function recFinish(){
+    if(recCap){ clearTimeout(recCap); recCap = null; }
+    if(recorder){ try{ if(recorder.state !== 'inactive'){ recorder.stop(); } }catch(e){ post({t:'recfail'}); } }
+  }
+
   room.on(LK.RoomEvent.TrackSubscribed, function(track){
     if(track.kind !== 'audio') return;
     var el = track.attach(); // muted keepalive so capture graphs stay warm
     el.muted = true; el.volume = 0; el.setAttribute('aria-hidden', 'true');
     document.body.appendChild(el);
+    if(track.mediaStreamTrack){ recWire(new MediaStream([track.mediaStreamTrack])); }
   });
   room.on(LK.RoomEvent.TrackUnsubscribed, function(track){
     try{ track.detach().forEach(function(el){ el.remove(); }); }catch(e){}
@@ -1485,7 +1791,12 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
     if(!mCtx){ mCtx = new AC(); mDest = mCtx.createMediaStreamDestination(); }
     if(mCtx.state !== 'running'){ try{ await mCtx.resume(); }catch(e){} }
     if(!mPub){
+      /* silence() stops the track on unpublish, and a stopped destination
+       * track is dead forever — republishing it is silent "playing". Fresh
+       * destination node every republish (her pause-then-cut-in catch). */
+      mDest = mCtx.createMediaStreamDestination();
       mTrack = mDest.stream.getAudioTracks()[0];
+      recWire(mDest.stream);
       await room.localParticipant.publishTrack(mTrack, {
         dtx: false, red: false,
         audioPreset: LK.AudioPresets.musicHighQualityStereo,
@@ -1575,10 +1886,14 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
     },
     botOn: async function(){
       try{
-        if(!bCtx){ bCtx = new AC(); bDest = bCtx.createMediaStreamDestination(); }
+        if(!bCtx){ bCtx = new AC(); }
         if(bCtx.state !== 'running'){ try{ await bCtx.resume(); }catch(e){} }
         if(!bPub){
+          // fresh destination every republish — botOff() stops the old
+          // track for good (same dead-track family as the jukebox fix).
+          bDest = bCtx.createMediaStreamDestination();
           bTrack = bDest.stream.getAudioTracks()[0];
+          recWire(bDest.stream);
           await room.localParticipant.publishTrack(bTrack, { name: 'bot', source: LK.Track.Source.Unknown });
           bPub = true;
         }
@@ -1604,7 +1919,61 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
       if(bPub && bTrack){ try{ room.localParticipant.unpublishTrack(bTrack, true); }catch(e){} bPub = false; bTrack = null; }
     },
     earsOn: function(){ if(earsOn) return; earsOn = true; capCycle(); },
-    earsOff: function(){ earsStop(); }
+    earsOff: function(){ earsStop(); },
+    recOn: function(){
+      if(recorder) return;
+      try{
+        if(!window.MediaRecorder){ post({t:'recfail'}); return; }
+        recCtx = new AC();
+        recDest = recCtx.createMediaStreamDestination();
+        recWired = new Set();
+        room.remoteParticipants.forEach(function(p){
+          p.audioTrackPublications.forEach(function(pub){
+            if(pub.track && pub.track.mediaStreamTrack){ recWire(new MediaStream([pub.track.mediaStreamTrack])); }
+          });
+        });
+        if(mDest){ recWire(mDest.stream); }
+        if(bDest){ recWire(bDest.stream); }
+        var mime = '';
+        if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/mp4')) mime = 'audio/mp4';
+        else if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mime = 'audio/webm;codecs=opus';
+        recorder = new MediaRecorder(recDest.stream, mime ? { mimeType: mime } : undefined);
+        var chunks = [];
+        recorder.ondataavailable = function(ev){ if(ev.data && ev.data.size) chunks.push(ev.data); };
+        recorder.onstop = function(){
+          var type = (recorder && recorder.mimeType) || mime || 'audio/webm';
+          var secs = (Date.now() - recT0) / 1000;
+          recorder = null;
+          if(recCtx){ try{ recCtx.close(); }catch(e){} recCtx = null; recDest = null; recWired = null; }
+          var blob = new Blob(chunks, { type: type });
+          chunks = [];
+          if(!blob.size){ post({t:'recfail'}); return; }
+          var fr = new FileReader();
+          fr.onerror = function(){ post({t:'recfail'}); };
+          fr.onload = function(){
+            try{
+              var b64 = String(fr.result).split(',')[1] || '';
+              var STEP = 1500000;
+              for(var i = 0; i < b64.length; i += STEP){
+                post({t:'recb', b64: b64.slice(i, i + STEP)});
+              }
+              post({t:'recdone', mime: type, secs: secs});
+            }catch(e){ post({t:'recfail'}); }
+          };
+          fr.readAsDataURL(blob);
+        };
+        recT0 = Date.now();
+        recorder.start(1000);
+        // the tape runs out at two hours — memory honesty, announced app-side
+        recCap = setTimeout(recFinish, 7200000);
+        post({t:'recon'});
+      }catch(e){
+        recorder = null;
+        if(recCtx){ try{ recCtx.close(); }catch(e2){} recCtx = null; recDest = null; recWired = null; }
+        post({t:'recfail'});
+      }
+    },
+    recOff: function(){ recFinish(); }
   };
 
   function earsStop(){
