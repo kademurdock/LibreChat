@@ -381,7 +381,18 @@ router.post('/fetch-track', requireJwtAuth, express.json(), async (req, res) => 
       fallbackTitle = spTitle.slice(0, 60);
       sel = 'ytsearch1:' + spTitle + ' audio';
     } else {
-      return res.status(400).json({ error: 'YouTube first, then Spotify — other links some other day.' });
+      /* THE WIDE LANE (July 24 night, her go: "Yes on link widening"):
+       * the extractor speaks ~1,800 sites that never wall anybody —
+       * SoundCloud, Bandcamp, Mixcloud, archive.org, podcast feeds,
+       * plain MP3/M4A links. Let it try anything public and fail with
+       * honest words. Private/internal surfaces stay off-limits. */
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+        return res.status(400).json({ error: 'Only web links work here.' });
+      }
+      if (host === 'localhost' || /\.(internal|local)$/i.test(host) || /^[0-9.:\[\]]+$/.test(u.hostname)) {
+        return res.status(400).json({ error: 'That link points somewhere private.' });
+      }
+      sel = raw;
     }
     const filters = ['--no-warnings', '--no-playlist', '--match-filters', '!is_live & duration<905'];
     const metaBuf = await ytLadder([...filters, '--print', '%(title)s', '--skip-download', sel], 40000);
@@ -423,10 +434,13 @@ router.post('/fetch-track', requireJwtAuth, express.json(), async (req, res) => 
     return res.send(audio);
   } catch (e) {
     logger.error('[lounge/fetch-track] ' + (e.message || e));
-    const stonewalled = /bot|sign in|cookies/i.test(String(e.message || ''));
+    // walled:true tells the client this is the flickering YouTube gate —
+    // worth quietly knocking again later — vs. a plain bad/unsupported link.
+    const stonewalled = /bot|sign in|cookies|No video formats/i.test(String(e.message || ''));
     return res.status(502).json({ error: stonewalled
       ? 'YouTube is stonewalling the server right now — try again in a minute, it usually relents.'
-      : 'That link would not fetch — YouTube song links work best.' });
+      : 'That link would not fetch — a song page or a direct audio link works best.',
+      walled: stonewalled });
   }
 });
 
@@ -646,13 +660,14 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         <button type="button" class="rowbtn" id="jb-cutin" hidden>Cut in and play it now</button>
         <button type="button" class="rowbtn gray" id="jb-queue-add" hidden>Add it to the queue</button>
       </p>
-      <label class="blk" for="jb-link">Or paste a link &mdash; YouTube first, Spotify too</label>
+      <label class="blk" for="jb-link">Or paste a link &mdash; YouTube, Spotify, SoundCloud, Bandcamp, a direct MP3, most anything with sound</label>
       <input type="text" id="jb-link" inputmode="url" autocapitalize="none" autocomplete="off">
       <p>
         <button type="button" class="rowbtn" id="jb-link-cutin">Fetch and play it now</button>
         <button type="button" class="rowbtn gray" id="jb-link-queue">Fetch and queue it</button>
+        <button type="button" class="rowbtn red small" id="jb-knock-cancel" hidden>Stop knocking</button>
       </p>
-      <p class="muted" style="font-size:.85rem">Spotify songs arrive by name-match (Spotify keeps its audio locked), so the take may differ. Songs cap at 15 minutes.</p>
+      <p class="muted" style="font-size:.85rem">Spotify songs arrive by name-match (Spotify keeps its audio locked), so the take may differ. Songs cap at 15 minutes. If YouTube's gate is closed, I keep knocking every few minutes and holler when it opens.</p>
       <label class="blk" for="jb-vol">My music volume &mdash; just for my ears</label>
       <input type="range" id="jb-vol" min="0" max="100" step="5" value="25" aria-label="My music volume, percent">
       <p class="muted" style="font-size:.85rem">Music starts low by default so talk rides over it. Voices always come through at full volume.</p>
@@ -1772,6 +1787,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       }
 
       function cleanupRoom(){
+        knockStop(true);
         stopRec();
         RECORDERS = {}; renderRecOthers();
         $('pa-line').textContent = '';
@@ -1965,20 +1981,51 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
       $('jb-cutin').addEventListener('click', function(){ addTrack(true); });
       $('jb-queue-add').addEventListener('click', function(){ addTrack(false); });
 
-      /* the link lane: a pasted YouTube/Spotify link becomes ordinary
-       * jukebox bytes (the server does the pulling) — after that it's a
-       * normal entry: queue it, cut in, radio-fight over it. */
+      /* the link lane: a pasted link becomes ordinary jukebox bytes (the
+       * server does the pulling) — after that it's a normal entry: queue
+       * it, cut in, radio-fight over it. When YouTube's flickering gate is
+       * closed (walled:true from the server), the KNOCKER takes the link:
+       * quiet retries every 3 minutes for up to an hour, a holler when it
+       * finally lands, a Stop-knocking button for changed minds. */
       var linkBusy = false;
-      async function addLink(interrupt){
-        if(linkBusy || !lkRoom) return;
-        var url = ($('jb-link').value || '').trim();
-        if(!url){ $('jb-link').focus(); return; }
+      var KNOCK = null; // {url, interrupt, tries, timer}
+      function knockStop(quiet){
+        if(!KNOCK) return;
+        if(KNOCK.timer){ clearTimeout(KNOCK.timer); }
+        KNOCK = null;
+        $('jb-knock-cancel').hidden = true;
+        if(!quiet){ say('Stopped knocking for that link.'); }
+      }
+      function knockLater(){
+        if(!KNOCK) return;
+        $('jb-knock-cancel').hidden = false;
+        KNOCK.timer = setTimeout(function(){
+          if(!KNOCK || !lkRoom) return;
+          KNOCK.tries++;
+          fetchLink(KNOCK.url, KNOCK.interrupt, true);
+        }, 180000);
+      }
+      async function fetchLink(url, interrupt, fromKnock){
+        if(linkBusy){ return; }
         linkBusy = true;
-        say('Fetching that link — give it a few seconds…');
+        if(!fromKnock){ say('Fetching that link — give it a few seconds…'); }
         try{
           const r = await fetch('/api/kade/lounge/fetch-track', { method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify({ url: url }) });
           if(!r.ok){
             var j = null; try{ j = await r.json(); }catch(e){}
+            if(j && j.walled && lkRoom){
+              if(!KNOCK){ KNOCK = { url: url, interrupt: interrupt, tries: 0, timer: null }; }
+              if(KNOCK.tries >= 20){
+                knockStop(true);
+                say("YouTube never opened up for that one — try it fresh later.");
+              } else {
+                if(!fromKnock){ say("YouTube's gate is closed — I'll keep knocking every few minutes and holler when it opens."); }
+                else { say('Still closed — knock ' + KNOCK.tries + '. I keep trying.'); }
+                knockLater();
+              }
+              linkBusy = false;
+              return;
+            }
             throw new Error((j && j.error) || 'That link would not fetch.');
           }
           var title = 'a song';
@@ -1991,12 +2038,22 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
           var entry = { id: id, title: title.slice(0, 60), by: myIdentity, byName: myName };
           if(iAmAuthority()){ applyAdd(entry, interrupt, myName); }
           else { sendData({ t:'add', entry: entry, interrupt: interrupt, fromName: myName }); }
-          $('jb-link').value = '';
+          if(fromKnock){ paSay('That link finally cleared the gate — ' + entry.title + ' just landed.', 'booth'); }
+          knockStop(true);
         }catch(e){ say(e.message || 'That link would not fetch.'); }
         linkBusy = false;
       }
+      function addLink(interrupt){
+        if(!lkRoom) return;
+        var url = ($('jb-link').value || '').trim();
+        if(!url){ $('jb-link').focus(); return; }
+        knockStop(true); // a fresh paste replaces any old knock
+        $('jb-link').value = '';
+        fetchLink(url, interrupt, false);
+      }
       $('jb-link-cutin').addEventListener('click', function(){ addLink(true); });
       $('jb-link-queue').addEventListener('click', function(){ addLink(false); });
+      $('jb-knock-cancel').addEventListener('click', function(){ knockStop(false); });
       $('jb-toggle').addEventListener('click', function(){
         if(!lkRoom) return;
         clubCmd(CLUB.jb.playing ? 'pause' : 'play');
