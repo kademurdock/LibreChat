@@ -40,10 +40,27 @@ function loungeConfigured() {
   return !!(process.env.LIVEKIT_URL && process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET);
 }
 
+/** July 24 2026 (Kade's first live tap: three connect tries all landed inside
+ * the slept server's wake window): fire-and-forget WAKE PING at the LiveKit
+ * HTTP root. Called when the page LOADS (/config) and again at token mint —
+ * the room starts spinning up a good half-minute before anyone's connect
+ * attempt, so the cold start happens while she's still picking a room. */
+function wakeLoungeServer() {
+  try {
+    if (!process.env.LIVEKIT_URL) return;
+    const httpUrl = process.env.LIVEKIT_URL.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+    const axios = require('axios');
+    axios.get(httpUrl, { timeout: 25000 }).catch(() => {});
+  } catch (_) {
+    /* waking is best-effort, never in the request path */
+  }
+}
+
 router.get('/config', requireJwtAuth, (_req, res) => {
   if (!loungeConfigured()) {
     return res.json({ ready: false, rooms: ROOMS });
   }
+  wakeLoungeServer(); // page just opened — start the room spinning now
   return res.json({ ready: true, url: process.env.LIVEKIT_URL, rooms: ROOMS });
 });
 
@@ -62,6 +79,7 @@ router.post('/token', requireJwtAuth, (req, res) => {
     if (/^[a-z0-9]{4}$/.test(room) && !ROOMS.some((r) => r.key === room)) {
       room = `table-${room}`;
     }
+    wakeLoungeServer(); // belt and braces — token mint = a join is seconds away
     const firstName = (req.user.name || 'Someone').trim().split(/\s+/)[0] || 'Someone';
     const identity = `${firstName}-${String(req.user.id).slice(-4)}`;
     const now = Math.floor(Date.now() / 1000);
@@ -234,16 +252,22 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>The Lounge</titl
         wireRoomEvents();
         // Waking-the-room retry: a sleeping self-hosted server can bounce the
         // first knock while it spins up. Say the wait out loud, try again.
+        // July 24 2026 (Kade's first live tap): a slept Railway service can
+        // take 10-25s to wake — three quick tries weren't enough. Eight
+        // patient tries (~30s total), progress SAID each round, and the
+        // server-side wake ping has usually finished the job before try 3.
         let attempt = 0;
         while(true){
           attempt++;
           try{
-            status.textContent = attempt === 1 ? 'Connecting…' : 'Waking the room up — give it a breath…';
+            status.textContent = attempt === 1
+              ? 'Connecting…'
+              : 'Waking the room up — still warming, try ' + attempt + ' of 8…';
             await lkRoom.connect(mint.url, mint.token);
             break;
           }catch(e){
-            if(attempt >= 3){ status.className='status err'; status.textContent='Could not reach the room server. Try again in a minute.'; return; }
-            await new Promise(function(res){ setTimeout(res, 2500); });
+            if(attempt >= 8){ status.className='status err'; status.textContent='The room server never answered — it may need a look. Try once more in a minute.'; return; }
+            await new Promise(function(res){ setTimeout(res, 3500); });
           }
         }
         try{
