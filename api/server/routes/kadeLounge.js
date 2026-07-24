@@ -300,6 +300,36 @@ function runYtDlp(args, timeoutMs) {
 
 const YT_HOSTS = ['youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'];
 
+/* YouTube stonewalls datacenter IPs ("confirm you're not a bot" — caught
+ * live on the first deploy). yt-dlp's alternate innertube clients dodge
+ * the wall without cookies, but WHICH one works shifts as Google patches.
+ * So: a LADDER — try the default client, then the tv client, then the
+ * embedded/mobile-web pair — and REMEMBER the first rung that worked so
+ * later fetches start there (resets on restart, self-heals either way).
+ * If every rung fails, say so honestly; the next escalation (cookies or
+ * a PO-token provider) is a deliberate decision for another session. */
+const YT_LADDER = [
+  [],
+  ['--extractor-args', 'youtube:player_client=tv'],
+  ['--extractor-args', 'youtube:player_client=web_embedded,mweb'],
+];
+let ytRung = 0;
+
+async function ytLadder(baseArgs, timeoutMs) {
+  let lastErr = null;
+  for (let i = 0; i < YT_LADDER.length; i++) {
+    const rung = (ytRung + i) % YT_LADDER.length;
+    try {
+      const out = await runYtDlp([...baseArgs, ...YT_LADDER[rung]], timeoutMs);
+      ytRung = rung;
+      return out;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('every client refused');
+}
+
 router.post('/fetch-track', requireJwtAuth, express.json(), async (req, res) => {
   try {
     const raw = String(req.body?.url || '').trim().slice(0, 500);
@@ -320,18 +350,21 @@ router.post('/fetch-track', requireJwtAuth, express.json(), async (req, res) => 
     } else {
       return res.status(400).json({ error: 'YouTube first, then Spotify — other links some other day.' });
     }
-    const filters = ['--no-playlist', '--match-filters', '!is_live & duration<905'];
-    const metaBuf = await runYtDlp([...filters, '--print', '%(title)s', '--skip-download', sel], 30000);
+    const filters = ['--no-warnings', '--no-playlist', '--match-filters', '!is_live & duration<905'];
+    const metaBuf = await ytLadder([...filters, '--print', '%(title)s', '--skip-download', sel], 40000);
     const title = (metaBuf.toString('utf8').trim().split('\n')[0] || '').slice(0, 60);
     if (!title) return res.status(404).json({ error: 'That one is live, longer than 15 minutes, or missing — the jukebox plays songs, not marathons.' });
-    const audio = await runYtDlp([...filters, '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]', '--max-filesize', '60m', '-o', '-', sel], 120000);
+    const audio = await ytLadder([...filters, '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]', '--max-filesize', '60m', '-o', '-', sel], 120000);
     if (!audio.length) return res.status(413).json({ error: 'That audio came back empty or over the 60MB cap.' });
     res.set('x-kade-title', encodeURIComponent(title || fallbackTitle));
     res.set('Content-Type', 'audio/mp4');
     return res.send(audio);
   } catch (e) {
     logger.error('[lounge/fetch-track] ' + (e.message || e));
-    return res.status(502).json({ error: 'That link would not fetch — YouTube song links work best.' });
+    const stonewalled = /bot|sign in|cookies/i.test(String(e.message || ''));
+    return res.status(502).json({ error: stonewalled
+      ? 'YouTube is stonewalling the server right now — try again in a minute, it usually relents.'
+      : 'That link would not fetch — YouTube song links work best.' });
   }
 });
 
