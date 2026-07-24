@@ -215,10 +215,16 @@ router.post('/new', requireJwtAuth, async (req, res) => {
     doc.markModified('state');
     await doc.save();
     const chipsNote = await maybeSettleChips(userId, doc, G);
-    return res.json(tablePayload(doc, G, {
+    const dealExtra = {
       log: [...opening.log, ...chipsNote],
       sounds: [...(G.meta.dealSounds || ['card_shuffle', 'card_deal']), ...opening.sounds],
-    }));
+    };
+    if (isParty) {
+      // Party deals answer in the PARTY shape so the client immediately has
+      // the join code, seat kinds, and the cue to start polling.
+      return res.json({ ...partyPayload(doc, G, 0, dealExtra), historyCursor: (doc.state.history || []).length });
+    }
+    return res.json(tablePayload(doc, G, dealExtra));
   } catch (e) {
     logger.error('[parlor/new] error:', e);
     return res.status(500).json({ error: 'Could not deal that table.' });
