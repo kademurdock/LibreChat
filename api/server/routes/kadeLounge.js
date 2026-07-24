@@ -154,7 +154,19 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>The Lounge</titl
     (async function(){
       const $ = (id) => document.getElementById(id);
       const status = $('status');
-      let token = null; try { token = await getToken(); } catch(e) {}
+      // July 24 2026: the NATIVE app opens this page in an in-app WebKit
+      // screen and hands its own sign-in over in the URL FRAGMENT (never
+      // sent to the server, never logged): /lounge#lktok=<jwt>. Fragment
+      // wins when present; the cookie-refresh path stays for browsers.
+      let token = null;
+      try {
+        const m = /[#&]lktok=([^&]+)/.exec(location.hash || '');
+        if (m) {
+          token = decodeURIComponent(m[1]);
+          history.replaceState(null, '', location.pathname); // scrub the hash
+        }
+      } catch(e) {}
+      if (!token) { try { token = await getToken(); } catch(e) {} }
       if(!token){ status.className='status err'; status.textContent='Please sign in at the chat site first, then reload this page.'; return; }
       if(typeof LivekitClient === 'undefined'){
         status.className='status err';
