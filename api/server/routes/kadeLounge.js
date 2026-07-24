@@ -720,7 +720,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
             if(wasCur){
               if(n2){ setCurrentId(n2.id); } else { jb.curId = null; jb.playing = false; }
             }
-            setAct(who + ' took ' + r.title + ' off the list.');
+            setAct(m.auto ? (r.title + ' would not play and came off the list.') : (who + ' took ' + r.title + ' off the list.'));
           }
         } else if(m.cmd === 'ended'){
           var n3 = nextPlayable(i, +1);
@@ -811,7 +811,7 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         }catch(e){
           playingEntryId = null;
           say("That file would not play — try an MP3, M4A, or WAV.");
-          clubCmd('remove', { id: entry.id });
+          clubCmd('remove', { id: entry.id, auto: true });
         }
       }
       function stopPlayback(savePos){
@@ -1341,6 +1341,7 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
 
   var mCtx=null, mDest=null, mTrack=null, mPub=false, mSrc=null, mId=null, mStartOff=0, mStartT=0, mStopping=false, mSession=0;
   var buffers = {};
+  var staged = {}; // id -> [Uint8Array] fed from the app in base64 chunks
   var bCtx=null, bDest=null, bTrack=null, bPub=false;
   var earsOn=false, capTimer=null, capRec=null, capCtx=null;
 
@@ -1379,11 +1380,25 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
         if(!mCtx){ mCtx = new AC(); mDest = mCtx.createMediaStreamDestination(); }
         if(mCtx.state === 'suspended'){ try{ await mCtx.resume(); }catch(e){} }
         var buf = buffers[id];
+        if(!buf && !staged[id]){
+          // the app has not fed this song's bytes yet — ask and wait
+          post({t:'need', id: id});
+          return;
+        }
         if(!buf){
-          var r = await fetch('kadefile://song/' + id);
-          if(!r.ok) throw new Error('file');
-          var ab = await r.arrayBuffer();
-          buf = await mCtx.decodeAudioData(ab);
+          var parts = staged[id];
+          var total = 0;
+          parts.forEach(function(a){ total += a.length; });
+          var whole = new Uint8Array(total);
+          var off = 0;
+          parts.forEach(function(a){ whole.set(a, off); off += a.length; });
+          delete staged[id];
+          try{
+            buf = await mCtx.decodeAudioData(whole.buffer);
+          }catch(decErr){
+            post({t:'playfail', id: id, why: 'decode'});
+            return;
+          }
           Object.keys(buffers).forEach(function(k){ if(k !== id) delete buffers[k]; });
           buffers[id] = buf;
         }
@@ -1405,7 +1420,19 @@ const engineHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><
         };
         mSrc.start(0, off);
         post({t:'playing', id: id, pos: off});
-      }catch(e){ post({t:'playfail', id: id}); }
+      }catch(e){ post({t:'playfail', id: id, why: 'publish'}); }
+    },
+    feedB64: function(id, b64, last){
+      try{
+        var bin = atob(b64);
+        var arr = new Uint8Array(bin.length);
+        for(var i = 0; i < bin.length; i++){ arr[i] = bin.charCodeAt(i); }
+        (staged[id] = staged[id] || []).push(arr);
+        if(last){ post({t:'fed', id: id}); }
+      }catch(e){
+        delete staged[id];
+        post({t:'feedfail', id: id});
+      }
     },
     silence: function(){
       mSession++;
