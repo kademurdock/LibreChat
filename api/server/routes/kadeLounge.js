@@ -266,6 +266,75 @@ router.post('/token', requireJwtAuth, express.json(), async (req, res) => {
  * unified resolver, meters the cost, and hands text + voice back for the
  * anchor to TTS and publish into the room.
  */
+/* ── THE LINK LANE (July 24 round 7, her ask: "add links to the music
+ * player. Youtube first, then followed by spotify.") ──
+ * A pasted link becomes ordinary jukebox bytes: the server pulls the
+ * audio with yt-dlp (in the image since this deploy) and hands the DJ
+ * device an m4a it can decode like any picked file — the rest of the
+ * pipeline (queue, cut-ins, radio fights, the native engine feed) never
+ * knows the difference. YouTube links go straight through; Spotify's
+ * audio is locked (DRM), so a Spotify song link is resolved to its NAME
+ * via Spotify's public oEmbed and matched on YouTube — the family-tool
+ * move, same trick every Discord bot uses. Caps: 15 minutes, 60MB (the
+ * jukebox's own cap), no livestreams. m4a-only keeps Safari decodable. */
+function runYtDlp(args, timeoutMs) {
+  const { spawn } = require('child_process');
+  return new Promise((resolve, reject) => {
+    const p = spawn('yt-dlp', args);
+    const out = [];
+    let err = '';
+    const t = setTimeout(() => {
+      try { p.kill('SIGKILL'); } catch (e) { /* already gone */ }
+      reject(new Error('yt-dlp timeout'));
+    }, timeoutMs);
+    p.stdout.on('data', (d) => out.push(d));
+    p.stderr.on('data', (d) => { err += d; if (err.length > 8000) err = err.slice(-8000); });
+    p.on('error', (e) => { clearTimeout(t); reject(e); });
+    p.on('close', (code) => {
+      clearTimeout(t);
+      if (code === 0) resolve(Buffer.concat(out));
+      else reject(new Error('yt-dlp exit ' + code + ': ' + err.slice(-300)));
+    });
+  });
+}
+
+const YT_HOSTS = ['youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'];
+
+router.post('/fetch-track', requireJwtAuth, express.json(), async (req, res) => {
+  try {
+    const raw = String(req.body?.url || '').trim().slice(0, 500);
+    let u;
+    try { u = new URL(raw); } catch (e) { return res.status(400).json({ error: "That doesn't look like a link." }); }
+    const host = u.hostname.replace(/^www\./, '').toLowerCase();
+    let sel = null;
+    let fallbackTitle = 'a song';
+    if (YT_HOSTS.includes(host)) {
+      sel = raw;
+    } else if (host === 'open.spotify.com') {
+      const axios = require('axios');
+      const oe = await axios.get('https://open.spotify.com/oembed', { params: { url: raw }, timeout: 8000 });
+      const spTitle = String(oe.data?.title || '').trim().slice(0, 120);
+      if (!spTitle) return res.status(404).json({ error: 'Spotify would not say what that song is — paste the YouTube link instead.' });
+      fallbackTitle = spTitle.slice(0, 60);
+      sel = 'ytsearch1:' + spTitle + ' audio';
+    } else {
+      return res.status(400).json({ error: 'YouTube first, then Spotify — other links some other day.' });
+    }
+    const filters = ['--no-playlist', '--match-filters', '!is_live & duration<905'];
+    const metaBuf = await runYtDlp([...filters, '--print', '%(title)s', '--skip-download', sel], 30000);
+    const title = (metaBuf.toString('utf8').trim().split('\n')[0] || '').slice(0, 60);
+    if (!title) return res.status(404).json({ error: 'That one is live, longer than 15 minutes, or missing — the jukebox plays songs, not marathons.' });
+    const audio = await runYtDlp([...filters, '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]', '--max-filesize', '60m', '-o', '-', sel], 120000);
+    if (!audio.length) return res.status(413).json({ error: 'That audio came back empty or over the 60MB cap.' });
+    res.set('x-kade-title', encodeURIComponent(title || fallbackTitle));
+    res.set('Content-Type', 'audio/mp4');
+    return res.send(audio);
+  } catch (e) {
+    logger.error('[lounge/fetch-track] ' + (e.message || e));
+    return res.status(502).json({ error: 'That link would not fetch — YouTube song links work best.' });
+  }
+});
+
 router.post('/bot-turn', requireJwtAuth, express.json({ limit: '64kb' }), async (req, res) => {
   try {
     const userId = String(req.user.id);
@@ -482,6 +551,13 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         <button type="button" class="rowbtn" id="jb-cutin" hidden>Cut in and play it now</button>
         <button type="button" class="rowbtn gray" id="jb-queue-add" hidden>Add it to the queue</button>
       </p>
+      <label class="blk" for="jb-link">Or paste a link &mdash; YouTube first, Spotify too</label>
+      <input type="text" id="jb-link" inputmode="url" autocapitalize="none" autocomplete="off">
+      <p>
+        <button type="button" class="rowbtn" id="jb-link-cutin">Fetch and play it now</button>
+        <button type="button" class="rowbtn gray" id="jb-link-queue">Fetch and queue it</button>
+      </p>
+      <p class="muted" style="font-size:.85rem">Spotify songs arrive by name-match (Spotify keeps its audio locked), so the take may differ. Songs cap at 15 minutes.</p>
       <label class="blk" for="jb-vol">My music volume &mdash; just for my ears</label>
       <input type="range" id="jb-vol" min="0" max="100" step="5" value="25" aria-label="My music volume, percent">
       <p class="muted" style="font-size:.85rem">Music starts low by default so talk rides over it. Voices always come through at full volume.</p>
@@ -1793,6 +1869,39 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
 
       $('jb-cutin').addEventListener('click', function(){ addTrack(true); });
       $('jb-queue-add').addEventListener('click', function(){ addTrack(false); });
+
+      /* the link lane: a pasted YouTube/Spotify link becomes ordinary
+       * jukebox bytes (the server does the pulling) — after that it's a
+       * normal entry: queue it, cut in, radio-fight over it. */
+      var linkBusy = false;
+      async function addLink(interrupt){
+        if(linkBusy || !lkRoom) return;
+        var url = ($('jb-link').value || '').trim();
+        if(!url){ $('jb-link').focus(); return; }
+        linkBusy = true;
+        say('Fetching that link — give it a few seconds…');
+        try{
+          const r = await fetch('/api/kade/lounge/fetch-track', { method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify({ url: url }) });
+          if(!r.ok){
+            var j = null; try{ j = await r.json(); }catch(e){}
+            throw new Error((j && j.error) || 'That link would not fetch.');
+          }
+          var title = 'a song';
+          try{ var th = r.headers.get('x-kade-title'); if(th){ title = decodeURIComponent(th); } }catch(e){}
+          var bytes = await r.arrayBuffer();
+          if(!bytes.byteLength){ throw new Error('That audio came back empty.'); }
+          if(bytes.byteLength > 60000000){ throw new Error('That file is too big — 60MB tops.'); }
+          var id = 'e' + Math.random().toString(36).slice(2, 9);
+          myFiles[id] = new Blob([bytes], { type: 'audio/mp4' });
+          var entry = { id: id, title: title.slice(0, 60), by: myIdentity, byName: myName };
+          if(iAmAuthority()){ applyAdd(entry, interrupt, myName); }
+          else { sendData({ t:'add', entry: entry, interrupt: interrupt, fromName: myName }); }
+          $('jb-link').value = '';
+        }catch(e){ say(e.message || 'That link would not fetch.'); }
+        linkBusy = false;
+      }
+      $('jb-link-cutin').addEventListener('click', function(){ addLink(true); });
+      $('jb-link-queue').addEventListener('click', function(){ addLink(false); });
       $('jb-toggle').addEventListener('click', function(){
         if(!lkRoom) return;
         clubCmd(CLUB.jb.playing ? 'pause' : 'play');

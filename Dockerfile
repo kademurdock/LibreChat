@@ -9,6 +9,9 @@ RUN apk add --no-cache python3 py3-pip uv
 # Kade fork: ffmpeg to auto-trim Seed Audio voice-clone reference clips
 # to the model's 30s max (see FalAI.js trimAudioRefIfLong).
 RUN apk add --no-cache ffmpeg
+# Kade fork: yt-dlp for the Clubhouse jukebox link lane — YouTube (and
+# Spotify-by-title-match) links become room audio (kadeLounge.js /fetch-track).
+RUN pip3 install --no-cache-dir --break-system-packages yt-dlp
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
