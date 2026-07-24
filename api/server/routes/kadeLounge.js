@@ -338,10 +338,16 @@ function ytCookieArgs() {
 async function ytLadder(baseArgs, timeoutMs) {
   let lastErr = null;
   const cookies = ytCookieArgs();
+  // the PO-token sidecar (yt-pot service, private networking): the bgutil
+  // plugin mints the proof-of-origin tokens YouTube demands from
+  // datacenter IPs — set via env, silent when absent.
+  const pot = process.env.KADE_POT_URL
+    ? ['--extractor-args', 'youtubepot-bgutilhttp:base_url=' + process.env.KADE_POT_URL]
+    : [];
   for (let i = 0; i < YT_LADDER.length; i++) {
     const rung = (ytRung + i) % YT_LADDER.length;
     try {
-      const out = await runYtDlp([...baseArgs, ...cookies, ...YT_LADDER[rung]], timeoutMs);
+      const out = await runYtDlp([...baseArgs, ...cookies, ...pot, ...YT_LADDER[rung]], timeoutMs);
       ytRung = rung;
       return out;
     } catch (e) {

@@ -11,7 +11,10 @@ RUN apk add --no-cache python3 py3-pip uv
 RUN apk add --no-cache ffmpeg
 # Kade fork: yt-dlp for the Clubhouse jukebox link lane — YouTube (and
 # Spotify-by-title-match) links become room audio (kadeLounge.js /fetch-track).
-RUN pip3 install --no-cache-dir --break-system-packages yt-dlp
+# The bgutil plugin talks to the yt-pot sidecar service (Railway private
+# networking, env KADE_POT_URL) to mint the proof-of-origin tokens YouTube
+# demands from datacenter IPs — the 2026 self-hosted standard, no cookies.
+RUN pip3 install --no-cache-dir --break-system-packages yt-dlp bgutil-ytdlp-pot-provider
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
