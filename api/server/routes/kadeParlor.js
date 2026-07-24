@@ -171,9 +171,10 @@ router.post('/new', requireJwtAuth, async (req, res) => {
       turns: 0,
       agentName: 'The Parlor',
     });
-    pushHistory(doc.state, [
-      `Table ${gameId} — ${G.meta.name} dealt with ${doc.state.names.join(', ')}.`,
-    ]);
+    const who = Array.isArray(doc.state.names) && doc.state.names.length
+      ? ` with ${doc.state.names.join(', ')}`
+      : '';
+    pushHistory(doc.state, [`Table ${gameId} — ${G.meta.name} dealt${who}.`]);
     const opening = await playSeatTurns({ userId, doc, G, collectHistory: true });
     const v = G.view(doc.state);
     doc.status = v.over ? 'over' : 'active';
