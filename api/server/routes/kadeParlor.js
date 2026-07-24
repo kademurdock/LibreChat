@@ -177,7 +177,14 @@ router.post('/new', requireJwtAuth, async (req, res) => {
       const seatsMap = {};
       const agentCount = seatAgents ? seatAgents.length : 0;
       for (let i = 1; i < (state.names || []).length; i++) {
-        seatsMap[String(i)] = i <= agentCount ? { kind: 'agent' } : { kind: 'open' };
+        // Seats past agents+openSeats are engine auto-fills (hearts always
+        // deals 4) — they play as BOTS, never wait as ghosts.
+        seatsMap[String(i)] =
+          i <= agentCount
+            ? { kind: 'agent' }
+            : i <= agentCount + openSeats
+              ? { kind: 'open' }
+              : { kind: 'bot' };
       }
       state.party = {
         code,
