@@ -731,149 +731,6 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
 /* KADE July 3 2026: /game-room — the Game Parlor leaderboard. Family
  * standings computed live from finished tables. Screen-reader-first:
  * real tables with scoped headers, status region, prose summaries. */
-const gameRoomHtml = `<!doctype html><html lang="en"><head><title>The Game Room</title>${SHARED_HEAD}
-<style>
-  .crown { font-size: .8rem; font-weight: 700; padding: .1rem .55rem; border-radius: 999px; background: #fdf1d7; color: #8a6100; margin-left: .4rem; }
-  @media (prefers-color-scheme: dark) { .crown { background: #5c4300; color: #ffe9b3; } }
-  li.result { margin: .3rem 0; }
-</style>
-</head>
-<body>
-  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/parlor">Play in the Parlor</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/games">How the games work</a></p>
-  <h1>The Game Room</h1>
-  <p class="muted">Family bragging rights, straight from the Game Parlor's referee. Every finished game counts — Blackjack, Wild Eights, Go Fish, Pig, Trivia Night, and now Hearts and Five-Card Draw with real characters in the seats. Walking away from a table doesn't count against you — only played-out games land here.</p>
-
-  <div id="status" class="status" role="status" aria-live="polite">Loading the standings…</div>
-
-  <section class="card" aria-labelledby="mine-h" id="mine-card" hidden>
-    <h2 id="mine-h" style="margin-top:0">Your side of the table</h2>
-    <p id="mine-chips"></p>
-    <ul id="mine-tables" style="list-style:none; padding:0; margin:0"></ul>
-  </section>
-
-  <main id="content" hidden>
-    <section class="card" aria-labelledby="standings-h">
-      <h2 id="standings-h" style="margin-top:0">Family standings</h2>
-      <p id="standings-summary"></p>
-      <table id="standings">
-        <caption class="muted" style="text-align:left; caption-side:top">All games combined, most wins first. Chips are Blackjack's fake chips — never real money.</caption>
-        <thead><tr><th scope="col">Player</th><th scope="col" class="num">Wins</th><th scope="col" class="num">Losses</th><th scope="col" class="num">Draws</th><th scope="col" class="num">Played</th><th scope="col" class="num">Blackjack chips</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </section>
-
-    <section class="card" aria-labelledby="highlights-h" id="highlights-card" hidden>
-      <h2 id="highlights-h" style="margin-top:0">Best of the best</h2>
-      <dl class="kv" id="highlights"></dl>
-    </section>
-
-    <section aria-labelledby="pergame-h">
-      <h2 id="pergame-h">Game by game</h2>
-      <div id="pergame"></div>
-    </section>
-
-    <section class="card" aria-labelledby="recent-h" id="recent-card" hidden>
-      <h2 id="recent-h" style="margin-top:0">Latest results</h2>
-      <ul id="recent" style="list-style:none; padding:0; margin:0"></ul>
-    </section>
-  </main>
-
-  <footer class="muted">Start a game by telling Deuce or Kiana "deal me in" — in chat, in conversation mode, or on a call to +1&nbsp;833&nbsp;530&nbsp;0313. — Kade-AI</footer>
-
-  <script>
-    (async function(){
-      const status = document.getElementById('status');
-      let token = null; try { token = await getToken(); } catch(e) {}
-      if(!token){
-        status.className = 'status err';
-        status.textContent = 'Please sign in at the chat site first, then reload this page.';
-        return;
-      }
-      // Phase 5 (July 23 2026): your chip bank + resumable tables, above the standings.
-      try {
-        const mt = await apiGet('/api/kade/my-tables', token);
-        if (mt.ok) {
-          const m = await mt.json();
-          const esc0 = function(s){ const dv=document.createElement('div'); dv.textContent = s==null?'':s; return dv.innerHTML; };
-          document.getElementById('mine-chips').innerHTML =
-            'Chip bank: <strong>' + num(m.chips) + '</strong> fake chips (never real money)' +
-            (m.lifetimeWon || m.lifetimeLost ? ' — lifetime ' + num(m.lifetimeWon) + ' won, ' + num(m.lifetimeLost) + ' lost.' : '.');
-          document.getElementById('mine-tables').innerHTML = (m.active || []).map(function(t){
-            return '<li class="result">Table ' + esc0(t.gameId) + ' — ' + esc0(t.name) + ', ' + num(t.turns) + ' turns in. Say <em>"deal me in"</em> to any companion to resume.</li>';
-          }).join('') || '<li class="result muted">No tables in play right now.</li>';
-          document.getElementById('mine-card').hidden = false;
-        }
-      } catch(e) {}
-      const r = await apiGet('/api/kade/game-leaderboard', token);
-      if(!r.ok){
-        status.className = 'status err';
-        status.textContent = 'Could not load the standings right now. Try reloading in a moment.';
-        return;
-      }
-      const d = await r.json();
-      function esc(s){ const div=document.createElement('div'); div.textContent = s == null ? '' : s; return div.innerHTML; }
-      function when(iso){
-        try { return new Date(iso).toLocaleString('en-US', { month:'long', day:'numeric' }); }
-        catch(e){ return ''; }
-      }
-      if(!d.finished){
-        status.textContent = 'No finished games yet — the board is wide open. Tell Deuce or Kiana "deal me in" and claim the first win!';
-        return;
-      }
-      status.textContent = d.finished + ' finished game' + (d.finished===1?'':'s') + ' on the books' +
-        (d.activeTables ? ', ' + d.activeTables + ' table' + (d.activeTables===1?'':'s') + ' still in play.' : '.');
-
-      const champ = d.players[0];
-      document.getElementById('standings-summary').innerHTML = champ && champ.wins > 0
-        ? '<strong>' + esc(champ.by) + '</strong> leads the family with ' + champ.wins + ' win' + (champ.wins===1?'':'s') + ' across ' + champ.played + ' game' + (champ.played===1?'':'s') + '.'
-        : 'Nobody has a win on the books yet — first one to finish a game takes the lead.';
-      document.querySelector('#standings tbody').innerHTML = d.players.map(function(p, i){
-        return '<tr><th scope="row">' + esc(p.by) + (i===0 && p.wins>0 ? ' <span class="crown">Champ</span>' : '') + '</th>' +
-          '<td class="num">' + num(p.wins) + '</td><td class="num">' + num(p.losses) + '</td><td class="num">' + num(p.draws) + '</td>' +
-          '<td class="num">' + num(p.played) + '</td><td class="num">' + (p.chips>0?'+':'') + num(p.chips) + '</td></tr>';
-      }).join('');
-
-      const hl = [];
-      if(d.highlights && d.highlights.biggestBlackjack){
-        const b = d.highlights.biggestBlackjack;
-        hl.push('<dt>Biggest Blackjack win</dt><dd>' + esc(b.by) + ' — ' + num(b.chips) + ' chips (' + when(b.when) + ')</dd>');
-      }
-      if(d.highlights && d.highlights.bestTrivia){
-        const t = d.highlights.bestTrivia;
-        hl.push('<dt>Best Trivia Night score</dt><dd>' + esc(t.by) + ' — ' + t.score + ' of ' + t.total + ' (' + when(t.when) + ')</dd>');
-      }
-      if(hl.length){
-        document.getElementById('highlights').innerHTML = hl.join('');
-        document.getElementById('highlights-card').hidden = false;
-      }
-
-      document.getElementById('pergame').innerHTML = (d.games || []).map(function(g){
-        const leader = g.rows[0];
-        /* July 13 2026 VO audit: heading labels the section (no double-read). */
-        return '<section class="card" aria-labelledby="pg-h-' + esc(g.id || g.name).replace(/[^a-zA-Z0-9_-]/g,'') + '">' +
-          '<h3 id="pg-h-' + esc(g.id || g.name).replace(/[^a-zA-Z0-9_-]/g,'') + '" style="margin:0 0 .25rem; font-size:1.05rem">' + esc(g.name) + '</h3>' +
-          '<p class="muted" style="margin:.1rem 0 .4rem">' + num(g.played) + ' game' + (g.played===1?'':'s') + ' played' +
-          (leader && leader.w>0 ? ' &middot; ' + esc(leader.by) + ' leads with ' + leader.w + ' win' + (leader.w===1?'':'s') : '') + '.</p>' +
-          '<table><thead><tr><th scope="col">Player</th><th scope="col" class="num">Wins</th><th scope="col" class="num">Losses</th><th scope="col" class="num">Draws</th><th scope="col" class="num">Played</th></tr></thead><tbody>' +
-          g.rows.map(function(rw){
-            return '<tr><th scope="row">' + esc(rw.by) + '</th><td class="num">' + num(rw.w) + '</td><td class="num">' + num(rw.l) + '</td><td class="num">' + num(rw.d) + '</td><td class="num">' + num(rw.p) + '</td></tr>';
-          }).join('') + '</tbody></table></section>';
-      }).join('');
-
-      if(d.recent && d.recent.length){
-        document.getElementById('recent').innerHTML = d.recent.map(function(x){
-          const verb = x.outcome === 'won' ? 'won at' : x.outcome === 'lost' ? 'lost at' : 'drew at';
-          return '<li class="result">' + esc(x.by) + ' ' + verb + ' ' + esc(x.game) +
-            (x.detail ? ' — ' + esc(x.detail) : '') + ' <span class="muted">(' + when(x.when) + ')</span></li>';
-        }).join('');
-        document.getElementById('recent-card').hidden = false;
-      }
-      document.getElementById('content').hidden = false;
-    })();
-  </script>
-</body></html>`;
-
-
 const feedbackHtml = `<!doctype html><html lang="en"><head><title>Feedback & Bug Reports</title>${SHARED_HEAD}</head>
 <body>
   <a class="back" href="/">&larr; Back to chat</a>
@@ -1486,7 +1343,7 @@ const toolsHtml = `<!doctype html><html lang="en"><head><title>Tools — Kade-AI
   <a class="hubitem" href="/lounge"><span class="hicon" aria-hidden="true">🎙️</span><span><strong>Kade's Clubhouse</strong><small>Live family voice rooms with a shared jukebox, private Hotel rooms, and companion guests</small></span></a>
   <a class="hubitem" href="/debate-room"><span class="hicon" aria-hidden="true">🗣️</span><span><strong>Debate Room</strong><small>Put characters in a room with a topic and jump in</small></span></a>
   <a class="hubitem" href="/conversation-hall"><span class="hicon" aria-hidden="true">🏛️</span><span><strong>Conversation Hall</strong><small>The greatest hits people have shared from the Debate Room</small></span></a>
-  <a class="hubitem" href="/game-room"><span class="hicon" aria-hidden="true">🎲</span><span><strong>Game Room</strong><small>Family standings, records, and the latest game results</small></span></a>
+  <a class="hubitem" href="/parlor"><span class="hicon" aria-hidden="true">🎲</span><span><strong>The Parlor</strong><small>Every game on a menu, party tables with friends, and the family standings</small></span></a>
   <a class="hubitem" href="/matchmaker"><span class="hicon" aria-hidden="true">💘</span><span><strong>Matchmaker</strong><small>Five quick questions to match you with characters</small></span></a>
   <a class="hubitem" href="/wall-of-fame"><span class="hicon" aria-hidden="true">🏆</span><span><strong>Wall of Fame</strong><small>Creations everyone has chosen to share</small></span></a>
   <a class="hubitem" href="/my-creations"><span class="hicon" aria-hidden="true">🎨</span><span><strong>My Creations</strong><small>Every video and image you have made, with downloads</small></span></a>
@@ -1871,7 +1728,7 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
 </style>
 </head>
 <body>
-  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/game-room-page">Game Room standings</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/games">How the games work</a></p>
+  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="#gameroom" id="gr-link">Game Room standings</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/games">How the games work</a></p>
   <h1>The Parlor</h1>
   <div id="status" class="status" role="status" aria-live="polite">Warming up the tables&hellip;</div>
 
@@ -1889,6 +1746,48 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
     </div>
     <h2>Deal something new</h2>
     <div id="game-list" class="gamelist" role="list"></div>
+    <div class="card">
+      <h2 style="margin-top:0">The Game Room</h2>
+      <p class="muted">Family bragging rights, straight from the referee &mdash; standings, highlights, latest results, and your chip bank. It lives here in the Parlor now.</p>
+      <p><button type="button" class="rowbtn" id="gr-open">See the standings</button></p>
+    </div>
+  </section>
+
+  <section id="gameroom" hidden>
+    <style>
+      .crown { font-size: .8rem; font-weight: 700; padding: .1rem .55rem; border-radius: 999px; background: #fdf1d7; color: #8a6100; margin-left: .4rem; }
+      @media (prefers-color-scheme: dark) { .crown { background: #5c4300; color: #ffe9b3; } }
+      li.result { margin: .3rem 0; }
+    </style>
+    <h2 id="gr-h" tabindex="-1" style="margin-top:0">The Game Room</h2>
+    <p class="muted">Every finished game counts &mdash; walking away from a table never does.</p>
+    <p><button type="button" class="rowbtn gray" id="gr-back">Back to the menu</button></p>
+    <div id="gr-status" class="status" role="status" aria-live="polite">Loading the standings&hellip;</div>
+    <section class="card" aria-labelledby="mine-h" id="mine-card" hidden>
+      <h3 id="mine-h" style="margin-top:0">Your side of the table</h3>
+      <p id="mine-chips"></p>
+      <ul id="mine-tables" style="list-style:none; padding:0; margin:0"></ul>
+    </section>
+    <main id="gr-content" hidden>
+      <section class="card" aria-labelledby="standings-h">
+        <h3 id="standings-h" style="margin-top:0">Family standings</h3>
+        <p id="standings-summary"></p>
+        <table id="standings">
+          <caption class="muted" style="text-align:left; caption-side:top">All games combined, most wins first. Chips are fake chips &mdash; never real money.</caption>
+          <thead><tr><th scope="col">Player</th><th scope="col" class="num">Wins</th><th scope="col" class="num">Losses</th><th scope="col" class="num">Draws</th><th scope="col" class="num">Played</th><th scope="col" class="num">Blackjack chips</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+      <section class="card" aria-labelledby="highlights-h" id="highlights-card" hidden>
+        <h3 id="highlights-h" style="margin-top:0">Highlights</h3>
+        <dl class="kv" id="highlights"></dl>
+      </section>
+      <div id="pergame"></div>
+      <section class="card" aria-labelledby="recent-h" id="recent-card" hidden>
+        <h3 id="recent-h" style="margin-top:0">Latest results</h3>
+        <ul id="recent" style="list-style:none; padding:0; margin:0"></ul>
+      </section>
+    </main>
   </section>
 
   <section id="setup" hidden>
@@ -2241,11 +2140,107 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
         }
       }
 
+      /* ── The Game Room, folded into the Parlor (July 24 2026, her call:
+         "the game room seems redundant with the parlor... combining them.") ── */
+      var grLoaded = false;
+      function grEl(id){ return document.getElementById(id); }
+      function grShow(){
+        grEl('menu').hidden = true; grEl('setup').hidden = true; grEl('table').hidden = true;
+        grEl('gameroom').hidden = false;
+        if(!grLoaded){ grLoaded = true; loadGameRoom(); }
+        try{ grEl('gr-h').focus(); }catch(e){}
+      }
+      function grBack(){
+        grEl('gameroom').hidden = true; grEl('menu').hidden = false;
+        try{ grEl('gr-open').focus(); }catch(e){}
+      }
+      async function loadGameRoom(){
+        var st = grEl('gr-status');
+        try {
+          const mt = await apiGet('/api/kade/my-tables', token);
+          if (mt.ok) {
+            const m = await mt.json();
+            const esc0 = function(s){ const dv=document.createElement('div'); dv.textContent = s==null?'':s; return dv.innerHTML; };
+            grEl('mine-chips').innerHTML =
+              'Chip bank: <strong>' + num(m.chips) + '</strong> fake chips (never real money)' +
+              (m.lifetimeWon || m.lifetimeLost ? ' — lifetime ' + num(m.lifetimeWon) + ' won, ' + num(m.lifetimeLost) + ' lost.' : '.');
+            grEl('mine-tables').innerHTML = (m.active || []).map(function(t){
+              return '<li class="result">Table ' + esc0(t.gameId) + ' — ' + esc0(t.name) + ', ' + num(t.turns) + ' turns in. It is on the menu under Your open tables.</li>';
+            }).join('') || '<li class="result muted">No tables in play right now.</li>';
+            grEl('mine-card').hidden = false;
+          }
+        } catch(e) {}
+        var r; try { r = await apiGet('/api/kade/game-leaderboard', token); } catch(e) { r = null; }
+        if(!r || !r.ok){
+          st.className = 'status err';
+          st.textContent = 'Could not load the standings right now. Try again in a moment.';
+          return;
+        }
+        const d = await r.json();
+        function esc(s){ const div=document.createElement('div'); div.textContent = s == null ? '' : s; return div.innerHTML; }
+        function when(iso){
+          try { return new Date(iso).toLocaleString('en-US', { month:'long', day:'numeric' }); }
+          catch(e){ return ''; }
+        }
+        if(!d.finished){
+          st.textContent = 'No finished games yet — the board is wide open. Deal something and claim the first win!';
+          return;
+        }
+        st.textContent = d.finished + ' finished game' + (d.finished===1?'':'s') + ' on the books' +
+          (d.activeTables ? ', ' + d.activeTables + ' table' + (d.activeTables===1?'':'s') + ' still in play.' : '.');
+        const champ = d.players[0];
+        grEl('standings-summary').innerHTML = champ && champ.wins > 0
+          ? '<strong>' + esc(champ.by) + '</strong> leads the family with ' + champ.wins + ' win' + (champ.wins===1?'':'s') + ' across ' + champ.played + ' game' + (champ.played===1?'':'s') + '.'
+          : 'Nobody has a win on the books yet — first one to finish a game takes the lead.';
+        document.querySelector('#standings tbody').innerHTML = d.players.map(function(p, i){
+          return '<tr><th scope="row">' + esc(p.by) + (i===0 && p.wins>0 ? ' <span class="crown">Champ</span>' : '') + '</th>' +
+            '<td class="num">' + num(p.wins) + '</td><td class="num">' + num(p.losses) + '</td><td class="num">' + num(p.draws) + '</td>' +
+            '<td class="num">' + num(p.played) + '</td><td class="num">' + (p.chips>0?'+':'') + num(p.chips) + '</td></tr>';
+        }).join('');
+        const hl = [];
+        if(d.highlights && d.highlights.biggestBlackjack){
+          const b = d.highlights.biggestBlackjack;
+          hl.push('<dt>Biggest Blackjack win</dt><dd>' + esc(b.by) + ' — ' + num(b.chips) + ' chips (' + when(b.when) + ')</dd>');
+        }
+        if(d.highlights && d.highlights.bestTrivia){
+          const t = d.highlights.bestTrivia;
+          hl.push('<dt>Best Trivia Night score</dt><dd>' + esc(t.by) + ' — ' + t.score + ' of ' + t.total + ' (' + when(t.when) + ')</dd>');
+        }
+        if(hl.length){
+          grEl('highlights').innerHTML = hl.join('');
+          grEl('highlights-card').hidden = false;
+        }
+        grEl('pergame').innerHTML = (d.games || []).map(function(g){
+          const leader = g.rows[0];
+          return '<section class="card" aria-labelledby="pg-h-' + esc(g.id || g.name).replace(/[^a-zA-Z0-9_-]/g,'') + '">' +
+            '<h3 id="pg-h-' + esc(g.id || g.name).replace(/[^a-zA-Z0-9_-]/g,'') + '" style="margin:0 0 .25rem; font-size:1.05rem">' + esc(g.name) + '</h3>' +
+            '<p class="muted" style="margin:.1rem 0 .4rem">' + num(g.played) + ' game' + (g.played===1?'':'s') + ' played' +
+            (leader && leader.w>0 ? ' &middot; ' + esc(leader.by) + ' leads with ' + leader.w + ' win' + (leader.w===1?'':'s') : '') + '.</p>' +
+            '<table><thead><tr><th scope="col">Player</th><th scope="col" class="num">Wins</th><th scope="col" class="num">Losses</th><th scope="col" class="num">Draws</th><th scope="col" class="num">Played</th></tr></thead><tbody>' +
+            g.rows.map(function(rw){
+              return '<tr><th scope="row">' + esc(rw.by) + '</th><td class="num">' + num(rw.w) + '</td><td class="num">' + num(rw.l) + '</td><td class="num">' + num(rw.d) + '</td><td class="num">' + num(rw.p) + '</td></tr>';
+            }).join('') + '</tbody></table></section>';
+        }).join('');
+        if(d.recent && d.recent.length){
+          grEl('recent').innerHTML = d.recent.map(function(x){
+            const verb = x.outcome === 'won' ? 'won at' : x.outcome === 'lost' ? 'lost at' : 'drew at';
+            return '<li class="result">' + esc(x.by) + ' ' + verb + ' ' + esc(x.game) +
+              (x.detail ? ' — ' + esc(x.detail) : '') + ' <span class="muted">(' + when(x.when) + ')</span></li>';
+          }).join('');
+          grEl('recent-card').hidden = false;
+        }
+        grEl('gr-content').hidden = false;
+      }
+      grEl('gr-open').addEventListener('click', grShow);
+      grEl('gr-back').addEventListener('click', grBack);
+      grEl('gr-link').addEventListener('click', function(ev){ ev.preventDefault(); grShow(); });
+      if((location.hash || '') === '#gameroom'){ setTimeout(grShow, 400); }
+
       await loadMenu();
       status.className = 'status';
     })();
   </script>
 </body></html>`;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, gameRoomHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
 

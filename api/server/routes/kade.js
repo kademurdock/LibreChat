@@ -1145,7 +1145,7 @@ const DASH_HTML = require('./kadePages').dashboardHtml;
 const LOGS_HTML = require('./kadePages').logsHtml;
 const CREATIONS_HTML = require('./kadePages').creationsHtml;
 const WALL_HTML = require('./kadePages').wallHtml;
-const GAMEROOM_HTML = require('./kadePages').gameRoomHtml;
+// July 24 2026: the Game Room folded into the Parlor (her call — redundant pages).
 const NOTIFICATIONS_HTML = require('./kadePages').notificationsHtml;
 const FEEDBACK_HTML = require('./kadePages').feedbackHtml;
 const TOOLS_HTML = require('./kadePages').toolsHtml;
@@ -1835,7 +1835,7 @@ router.dashboardPage = sendHtml(DASH_HTML);
 router.logsPage = sendHtml(LOGS_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);
 router.wallPage = sendHtml(WALL_HTML);
-router.gameRoomPage = sendHtml(GAMEROOM_HTML);
+router.gameRoomPage = (_req, res) => res.redirect(302, '/parlor#gameroom');
 router.feedbackPage = sendHtml(FEEDBACK_HTML);
 router.notificationsPage = sendHtml(NOTIFICATIONS_HTML);
 router.toolsPage = sendHtml(TOOLS_HTML);
