@@ -316,4 +316,12 @@ function chipsDelta(state) {
   return state.chips[0] - 200;
 }
 
-module.exports = { meta, newGame, view, move, seatView, botMove, chipsDelta };
+/** Phase 2.1 (July 28 2026): ANY seat's net result — every human at a party
+ * table brought the same virtual 200, so guest banks settle exactly like the
+ * host's. */
+function chipsDeltaSeat(state, seat) {
+  if (state.status !== 'over') return 0;
+  return (state.chips[seat] || 0) - 200;
+}
+
+module.exports = { meta, newGame, view, move, seatView, botMove, chipsDelta, chipsDeltaSeat };

@@ -153,7 +153,40 @@ async function playSeatTurns({ userId, doc, G, collectHistory = false }) {
 /** Settle the fake-chip bank when a chips game ends. Returns log lines. */
 async function maybeSettleChips(userId, doc, G) {
   try {
-    if (doc.state && doc.state.party) return []; // party tables: no solo-bank settle (phase 2.1 decides multi-user chips)
+    if (doc.state && doc.state.party) {
+      /* Phase 2.1 (July 28 2026, Kade's go): party tables settle EVERY human
+       * seat's own bank — host at seat 0 plus each guest — from the game's
+       * per-seat delta. Agents and bots have no banks. One settle per table
+       * (chipsSettled guard), and a missing chipsDeltaSeat just means the
+       * game doesn't do chips (hearts, judge games) — no-op, no error. */
+      if (doc.status !== 'over' || !G.meta.usesChips || typeof G.chipsDeltaSeat !== 'function') return [];
+      if (doc.state.chipsSettled) return [];
+      doc.state.chipsSettled = true;
+      doc.markModified('state');
+      await doc.save();
+      const { settleChips } = require('~/models/kadeGameChips');
+      const lines = [];
+      const seats = (doc.state.party && doc.state.party.seats) || {};
+      const humanSeats = [{ seat: 0, uid: String(doc.user), name: (doc.state.names || [])[0] || 'The host' }];
+      for (const [k, s] of Object.entries(seats)) {
+        if (s && s.kind === 'guest' && s.userId) {
+          humanSeats.push({ seat: Number(k), uid: String(s.userId), name: s.name || (doc.state.names || [])[Number(k)] || 'A guest' });
+        }
+      }
+      for (const h of humanSeats) {
+        try {
+          const delta = G.chipsDeltaSeat(doc.state, h.seat) || 0;
+          const { chips, restaked } = await settleChips(h.uid, delta);
+          const base = delta === 0
+            ? `${h.name}: chip bank even — balance ${chips}.`
+            : `${h.name}: chips ${delta > 0 ? `+${delta}` : delta} — balance ${chips}.`;
+          lines.push(restaked ? `${base} (Busted! The house fronts a fresh 100.)` : base);
+        } catch (e) {
+          logger.warn(`[tableRunner] party chip settle for seat ${h.seat} failed: ${e.message}`);
+        }
+      }
+      return lines;
+    }
     if (doc.status !== 'over' || !G.meta.usesChips || typeof G.chipsDelta !== 'function') return [];
     if (doc.state.chipsSettled) return [];
     const delta = G.chipsDelta(doc.state) || 0;

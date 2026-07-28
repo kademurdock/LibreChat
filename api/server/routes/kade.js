@@ -643,9 +643,59 @@ router.get('/game-leaderboard', requireJwtAuth, async (req, res) => {
     for (const d of docs) {
       const G = getParlorGame(d.gameKey);
       if (!G) continue;
-      // Phase 2 (July 24 2026): party tables sit out the solo leaderboard for
-      // now — multi-user results get their own scoring pass in phase 2.1.
-      if (d.state && d.state.party) continue;
+      /* Phase 2.1 (July 28 2026): party tables now COUNT — every human seat
+       * (host + each joined guest) gets its own win/loss/chips row off the
+       * shared result. Contract: every party-capable game stores a numeric
+       * winning seat in state.winner (hearts, five_card_draw, both judge
+       * games — verified). A quit-mid-game party table is skipped exactly
+       * like a solo one. */
+      if (d.state && d.state.party) {
+        if (d.status === 'active') {
+          activeTables += 1;
+          continue;
+        }
+        let pv;
+        try {
+          pv = G.view(d.state);
+        } catch (_e) {
+          continue;
+        }
+        if (!pv || !pv.over || typeof d.state.winner !== 'number') continue;
+        finished += 1;
+        const winnerSeat = d.state.winner;
+        const seatsMap = (d.state.party && d.state.party.seats) || {};
+        const humanSeats = [
+          { seat: 0, uid: String(d.user && d.user._id ? d.user._id : d.user || 'unknown'), name: firstName(d.user) },
+        ];
+        for (const [k, s] of Object.entries(seatsMap)) {
+          if (s && s.kind === 'guest' && s.userId) {
+            humanSeats.push({
+              seat: Number(k),
+              uid: String(s.userId),
+              name: (s.name || (d.state.names || [])[Number(k)] || 'A guest').trim().split(/\s+/)[0],
+            });
+          }
+        }
+        for (const h of humanSeats) {
+          if (!players.has(h.uid)) {
+            players.set(h.uid, { by: h.name, wins: 0, losses: 0, draws: 0, played: 0, chips: 0 });
+          }
+          const row = players.get(h.uid);
+          row.played += 1;
+          if (h.seat === winnerSeat) row.wins += 1;
+          else row.losses += 1;
+          if (G.meta.usesChips && typeof G.chipsDeltaSeat === 'function') {
+            try {
+              row.chips += G.chipsDeltaSeat(d.state, h.seat) || 0;
+            } catch (_e) { /* chips are garnish, never break standings */ }
+          }
+        }
+        if (!perGame.has(d.gameKey)) {
+          perGame.set(d.gameKey, { key: d.gameKey, name: G.meta.name, played: 0, byPlayer: new Map() });
+        }
+        perGame.get(d.gameKey).played += 1;
+        continue;
+      }
       if (d.status === 'active') {
         activeTables += 1;
         continue;

@@ -84,6 +84,12 @@ function makeJudgeGame(config) {
     if (log) {
       log.push(`Round ${state.round} — ${state.names[state.judge]} ${state.judge === 0 ? 'are' : 'is'} the judge.`);
     }
+    if (partyMode(state)) {
+      // Party tables: nobody auto-submits at round start — every seat takes
+      // its own turn (see the party helpers above).
+      state.phase = 'play';
+      return;
+    }
     if (state.judge === 0) {
       // human judges: rivals submit now, anonymized
       for (let i = 1; i < state.hands.length; i++) {
@@ -139,6 +145,54 @@ function makeJudgeGame(config) {
     return prompt.includes('____') ? `"${prompt.replace(/____/g, card.toUpperCase())}"` : `"${prompt}" + "${card}"`;
   }
 
+  /* ── PARTY MODE (July 28 2026, phase 2.1: "judge games in party mode") ──
+   * Solo tables keep the original voice-first flow untouched (human plays,
+   * rivals auto-submit, judge picks instantly — one move, whole round).
+   * A table dealt with state.party (the Parlor's party deal) runs the SAME
+   * round SEQUENTIALLY instead: every non-judge seat — host, guests, cast
+   * characters, bots — submits its own card on its own turn, then the judge
+   * seat (whoever holds it that round) picks. Guests play their real hands,
+   * agent personas genuinely choose their funniest card via seatView, and
+   * the rotating judge can be ANY seat kind. */
+  function partyMode(state) {
+    return !!state.party;
+  }
+  function nextSubmitSeat(state) {
+    for (let i = 0; i < state.hands.length; i++) {
+      if (i === state.judge) continue;
+      if (!state.subs.some((s) => s.seat === i)) return i;
+    }
+    return null;
+  }
+  function turnSeatParty(state) {
+    if (state.status !== 'active') return 0;
+    if (state.phase === 'play') {
+      const s = nextSubmitSeat(state);
+      return s == null ? state.judge : s;
+    }
+    return state.judge;
+  }
+  function legalForSeat(state, seat) {
+    if (state.status !== 'active') return [];
+    if (state.phase === 'play') {
+      if (seat === state.judge) return [];
+      if (state.subs.some((s) => s.seat === seat)) return [];
+      return (state.hands[seat] || []).map((c, i) => ({ token: `play_${i + 1}`, label: `Play: ${c}` }));
+    }
+    if (seat !== state.judge) return [];
+    return state.subs.map((s, i) => ({
+      token: `pick_${LETTERS[i]}`,
+      label: `Pick ${LETTERS[i].toUpperCase()}: "${s.card}"`,
+    }));
+  }
+  function revealSubs(state, log, sounds) {
+    state.subs = shuffle(state.subs);
+    state.phase = 'judge';
+    sounds.push('drumroll_short');
+    log.push(`All cards are in. ${state.names[state.judge]} flips them over:`);
+    state.subs.forEach((s, i) => log.push(`  ${LETTERS[i].toUpperCase()}: ${fillIn(state.prompt, s.card)}`));
+  }
+
   function scoreRound(state, winnerSeat, log, sounds) {
     const sub = state.subs.find((s) => s.seat === winnerSeat);
     state.scores[winnerSeat] += 1;
@@ -179,6 +233,32 @@ function makeJudgeGame(config) {
     if (state.status !== 'active') return { error: 'This game is over. Start a new one to play again.' };
     const log = [];
     const sounds = [];
+
+    if (partyMode(state)) {
+      const seat = turnSeatParty(state);
+      if (state.phase === 'play') {
+        const m = /^play_(\d+)$/.exec(String(token || ''));
+        if (!m) return { error: `Play a card from your hand. Legal: ${legalForSeat(state, seat).map((x) => x.token).join(', ')}.` };
+        const idx = parseInt(m[1], 10) - 1;
+        if (idx < 0 || idx >= (state.hands[seat] || []).length) return { error: 'You are not holding that card.' };
+        const card = state.hands[seat].splice(idx, 1)[0];
+        state.subs.push({ seat, card });
+        log.push(`${state.names[seat]} slides a card in face-down.`);
+        sounds.push('card_slap');
+        if (nextSubmitSeat(state) == null) revealSubs(state, log, sounds);
+        return { log, sounds };
+      }
+      const mj = /^pick_([a-d])$/.exec(String(token || '').toLowerCase());
+      if (!mj) return { error: `The judge picks a card. Legal: ${legalForSeat(state, seat).map((x) => x.token).join(', ')}.` };
+      const jidx = LETTERS.indexOf(mj[1]);
+      if (jidx < 0 || jidx >= state.subs.length) return { error: 'No card under that letter this round.' };
+      const winnerSub = state.subs[jidx];
+      log.push(`${state.names[state.judge]} crowns ${LETTERS[jidx].toUpperCase()}: ${fillIn(state.prompt, winnerSub.card)}.`);
+      state.subs.forEach((s, i) => log.push(`  ${LETTERS[i].toUpperCase()} was ${state.names[s.seat]}.`));
+      sounds.push('drumroll_short');
+      scoreRound(state, winnerSub.seat, log, sounds);
+      return { log, sounds };
+    }
 
     if (state.phase === 'play') {
       const m = /^play_(\d+)$/.exec(String(token || ''));
@@ -227,6 +307,21 @@ function makeJudgeGame(config) {
     const over = state.status === 'over';
     let winner = null;
     const sounds = [];
+    if (partyMode(state) && !over) {
+      const turnSeat = turnSeatParty(state);
+      lines.push(`Round ${state.round} — ${state.names[state.judge]} ${state.judge === 0 ? 'are' : 'is'} the judge. ${promptLine(state)}`);
+      if (state.phase === 'play') {
+        lines.push(`Cards in: ${state.subs.length} of ${state.hands.length - 1}. Waiting on ${state.names[turnSeat]}.`);
+        if (turnSeat === 0) {
+          lines.push('Your hand:');
+          state.hands[0].forEach((c, i) => lines.push(`  ${i + 1}. ${c}`));
+        }
+      } else {
+        lines.push(state.judge === 0 ? 'You are judging — the table played:' : `${state.names[state.judge]} is judging:`);
+        state.subs.forEach((s, i) => lines.push(`  ${LETTERS[i].toUpperCase()}: ${fillIn(state.prompt, s.card)}`));
+      }
+      return { lines, legal: legalForSeat(state, 0), sounds, over, winner, turnSeat };
+    }
     if (over) {
       winner = state.winner === 0 ? 'player' : state.names[state.winner];
       lines.push(state.winner === 0 ? 'You take the crown — funniest one at the table!' : `${state.names[state.winner]} takes the game.`);
@@ -245,6 +340,44 @@ function makeJudgeGame(config) {
     return { lines, legal: legal(state), sounds, over, winner };
   }
 
+  /** A non-host seat's private view (party tables + cast personas). */
+  function seatView(state, seat) {
+    const lines = [];
+    lines.push(`Score — ${state.names.map((nm, i) => `${nm}: ${state.scores[i]}`).join(', ')}. First to ${state.target}.`);
+    if (state.status === 'over') {
+      lines.push(`Game over — ${state.names[state.winner]} takes it.`);
+      return { lines, legal: [] };
+    }
+    lines.push(`Round ${state.round} — ${state.names[state.judge]} is the judge. ${promptLine(state)}`);
+    if (state.phase === 'play') {
+      if (seat === state.judge) {
+        lines.push(`You are judging this round — cards are coming in (${state.subs.length} of ${state.hands.length - 1}).`);
+      } else if (state.subs.some((s) => s.seat === seat)) {
+        lines.push('Your card is in. Waiting on the rest of the table.');
+      } else {
+        lines.push('Your hand — pick the funniest fit:');
+        (state.hands[seat] || []).forEach((c, i) => lines.push(`  ${i + 1}. ${c}`));
+      }
+    } else if (seat === state.judge) {
+      lines.push('You are the judge — the table played:');
+      state.subs.forEach((s, i) => lines.push(`  ${LETTERS[i].toUpperCase()}: ${fillIn(state.prompt, s.card)}`));
+      lines.push('Pick the winner.');
+    } else {
+      lines.push(`${state.names[state.judge]} is judging — fingers crossed.`);
+    }
+    return { lines, legal: legalForSeat(state, seat) };
+  }
+
+  /** Party fallback so a table can never stall: the current seat's random
+   * legal pick (submit a random card / crown a random letter). */
+  function botMove(state) {
+    if (!partyMode(state) || state.status !== 'active') return null;
+    const seat = turnSeatParty(state);
+    const legalNow = legalForSeat(state, seat);
+    if (!legalNow.length) return null;
+    return legalNow[Math.floor(Math.random() * legalNow.length)].token;
+  }
+
   return {
     meta: {
       key,
@@ -255,11 +388,18 @@ function makeJudgeGame(config) {
       dealSounds: ['card_shuffle', 'card_deal'],
       hasSpice: kind !== 'apples',
       party: true,
+      /* July 28 2026 (phase 2.1): judge games seat friends AND characters —
+       * seatView/botMove/party-sequential rounds above. Flag flips the party
+       * controls on BOTH the web Parlor and the native app (each reads it
+       * off GET /parlor/games). */
+      seatAware: true,
     },
     newGame,
     view,
     move,
     legal,
+    seatView,
+    botMove,
   };
 }
 
