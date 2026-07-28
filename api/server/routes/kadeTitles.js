@@ -123,6 +123,19 @@ router.post('/backfill', async (req, res) => {
       if (!hasUserLine) {
         continue;
       }
+      /* GROUNDING CHECK (second dry run's lesson): a hand-renamed or lucky
+       * title shares words with its own conversation; the bug's signature is
+       * a title sharing NOTHING (the model never saw the convo). Only
+       * regenerate ungrounded titles — plus outright chatty ones ("Sure, I
+       * can do that...") which are broken regardless of overlap. */
+      const convoLower = lines.join('\n').toLowerCase();
+      const STOP = new Set(['with', 'about', 'your', 'that', 'this', 'from', 'what', 'have', 'chat', 'conversation', 'question', 'asking', 'first', 'help', 'talk']);
+      const titleWords = (title.toLowerCase().match(/[a-z]{4,}/g) || []).filter((w) => !STOP.has(w));
+      const grounded = titleWords.some((w) => convoLower.includes(w));
+      const chatty = /^(sure|okay|of course|here is|here's|the title)/i.test(title.trim());
+      if (grounded && !chatty) {
+        continue;
+      }
       let fresh = null;
       try {
         fresh = await generateTitle(lines.join('\n'));
