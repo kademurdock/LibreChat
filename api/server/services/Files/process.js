@@ -923,6 +923,32 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     filename = embeddingResult?.filename || filename;
   }
 
+  // KADE July 28 2026 (session 34, live receipts): the S3/B2 storage lane
+  // streams bytes and returns NO image dimensions (the retired local image
+  // lane computed them while resizing) -- so every chat-attached image was
+  // stored height-less, and encodeAndFormat's `if (!file.height)` guard
+  // silently skipped it: NO model ever saw a chat image (native vision and
+  // Companion Sight both gate on those image_urls), web and native alike.
+  // Found live: vischeck seat uploaded a 64x64 orange square, Bandit said
+  // "I don't see any image attached"; the stored doc had width/height null.
+  // Both clients already send the real pixel dimensions in the upload form
+  // (web useFileHandling.ts, native ChatAttachment.swift) -- keep them as
+  // the fallback the storage strategy no longer provides. Fail-soft: bad or
+  // absent numbers leave everything exactly as it was.
+  if (isImageFile && !height && !width) {
+    const metaWidth = Number(metadata.width);
+    const metaHeight = Number(metadata.height);
+    if (
+      Number.isFinite(metaWidth) &&
+      metaWidth > 0 &&
+      Number.isFinite(metaHeight) &&
+      metaHeight > 0
+    ) {
+      width = metaWidth;
+      height = metaHeight;
+    }
+  }
+
   let filepath = _filepath;
   let storageMetadata = getStorageMetadata({
     filepath,
