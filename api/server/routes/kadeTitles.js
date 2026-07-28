@@ -89,7 +89,12 @@ router.post('/backfill', async (req, res) => {
     const limit = Math.min(40, parseInt(b.limit, 10) || 20);
     const since = new Date(b.since || '2026-07-22T00:00:00Z');
     const dryRun = b.dryRun === true;
-    const filter = { updatedAt: { $gte: since } };
+    /* createdAt, NOT updatedAt: a conversation is titled ONCE at birth, so
+     * only convos BORN in the broken window carry poisoned titles. An old
+     * convo with a good title that merely got new messages after July 22
+     * must never be re-titled out from under its owner (first dry run
+     * caught exactly two of those — that's why this line exists). */
+    const filter = { createdAt: { $gte: since } };
     if (b.afterId) {
       filter._id = { $gt: b.afterId };
     }
