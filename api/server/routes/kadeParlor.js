@@ -431,8 +431,18 @@ router.post('/party-move/:gameId', requireJwtAuth, async (req, res) => {
     doc.status = after.over ? 'over' : 'active';
     doc.markModified('state');
     await doc.save();
+    /* Phase 2.1 (July 28 2026): party games END on this route, not /move —
+     * without this line a finished party table never settled a single bank.
+     * Settles every human seat (see tableRunner's party branch); the lines
+     * land in the shared history so every phone hears the payout. */
+    const chipsNote = await maybeSettleChips(String(doc.user), doc, G);
+    if (chipsNote.length) {
+      pushHistory(doc.state, chipsNote);
+      doc.markModified('state');
+      await doc.save();
+    }
     return res.json({ ...partyPayload(doc, G, seat, {
-      log: [...((result && result.log) || []), ...seatRun.log],
+      log: [...((result && result.log) || []), ...seatRun.log, ...chipsNote],
       sounds: [...((result && result.sounds) || []), ...seatRun.sounds],
     }), historyCursor: (doc.state.history || []).length });
   } catch (e) {
