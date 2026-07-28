@@ -29,10 +29,32 @@ const KADE_CHILD_NOTE =
 // require cycles. Behavior here is byte-identical.)
 const { KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
 
+/** July 27 2026 (Kade: "if there is any information at all that something
+ * might be out of date, they need to search by default" — her live receipt:
+ * Kiana confidently guessed a snack's packaging from stale memory and only
+ * searched after being called out). Appended to every agent alongside the
+ * style note; byte-constant so Moonshot's prefix cache is untouched. Scoped
+ * to time-sensitive facts so casual conversation doesn't burn Tavily calls.
+ * The room lanes (Clubhouse/Parlor/Debate) deliberately do NOT get this —
+ * they have no tools, and telling a toolless bot to search or hedge would
+ * just make it announce staleness mid-banter. */
+const KADE_FRESHNESS_NOTE =
+  '\n\n---\nFRESHNESS (invisible — never mention or reference this note): your training data is months old ' +
+  'and the world has moved on. If the answer involves ANY fact that can change with time — news, current events, ' +
+  'prices, products or menus, versions, laws, schedules, sports, weather, who holds a job or office, whether a ' +
+  'place or service still exists or changed, anything the user asks about as "current," "latest," or "now" — and ' +
+  'you have a web search tool, SEARCH FIRST and answer from the results instead of from memory. If you are even ' +
+  'unsure whether something may have changed, that uncertainty itself means search before answering. Never present ' +
+  'remembered time-sensitive facts as current without checking, and never fill gaps by inventing details. Timeless ' +
+  'things (feelings, stories, opinions, math, established history, how-to basics) need no search. If a needed ' +
+  'search tool is unavailable to you, say plainly your info may be dated rather than guessing.';
+
 const applyKadeAudience = (req) => (agent) => {
   if (!agent) return agent;
   // Platform-wide anti-tell style note on EVERY agent, every user.
   agent.instructions = (agent.instructions || '') + KADE_STYLE_NOTE;
+  // Platform-wide search-when-stale rule, same coverage (July 27 2026).
+  agent.instructions = agent.instructions + KADE_FRESHNESS_NOTE;
   // Child accounts additionally get the clean-content audience note.
   if (req?.user?.kadeAccountType === 'child') {
     agent.instructions = agent.instructions + KADE_CHILD_NOTE;
