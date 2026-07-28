@@ -23,6 +23,42 @@ const { logViolation } = require('~/cache');
 const { saveMessage, getMessages, getConvo } = require('~/models');
 const { scrubMessageForTransmit } = require('~/server/utils/stripAiTells');
 
+/**
+ * KADE prepaid Stage B (2026-07-28): translate the balance gate's raw JSON
+ * throw into a warm, hearable line before it reaches the stream. The gate
+ * itself (BaseClient -> checkBalance) has been ARMED since the v0.8.7 rebase
+ * (yaml balance.enabled:true, startBalance seeds missing records lazily);
+ * this only fixes what a blocked turn SAYS. Fail-soft: any parse problem
+ * falls back to the original message untouched.
+ */
+const friendlyTurnError = (message) => {
+  try {
+    if (typeof message === 'string' && message.includes('token_balance')) {
+      let balanceUSD = null;
+      try {
+        const parsed = JSON.parse(message);
+        if (Number.isFinite(Number(parsed && parsed.balance))) {
+          balanceUSD = Number(parsed.balance) / 1e6;
+        }
+      } catch (_e) {
+        /* raw string is fine */
+      }
+      const balLine =
+        balanceUSD != null && balanceUSD > 0.005
+          ? 'You have about $' + balanceUSD.toFixed(2) + ' of credit left, but this turn needed more than that. '
+          : 'Your prepaid credit has run dry, so this turn could not run. ';
+      return (
+        balLine +
+        'Ask Kade to top you up - it takes her ten seconds - and this chat picks ' +
+        'right back up where you left off. Nothing you wrote is lost.'
+      );
+    }
+  } catch (_e) {
+    /* fall through */
+  }
+  return message;
+};
+
 function createCloseHandler(abortController) {
   return function (manual) {
     if (!manual) {
@@ -701,8 +737,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // abortJob already handled emitDone and completeJob
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
-          await GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
-          GenerationJobManager.completeJob(streamId, error.message);
+          await GenerationJobManager.emitError(
+            streamId,
+            friendlyTurnError(error.message) || 'Generation failed',
+          );
+          GenerationJobManager.completeJob(streamId, friendlyTurnError(error.message));
         }
 
         await finishResumableRequest(req, userId);
@@ -728,7 +767,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       logger.error(
         `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
       );
-      GenerationJobManager.completeJob(streamId, err.message);
+      GenerationJobManager.completeJob(streamId, friendlyTurnError(err.message));
       await finishResumableRequest(req, userId);
     });
   } catch (error) {

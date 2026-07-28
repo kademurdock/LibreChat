@@ -1337,6 +1337,25 @@ router.post('/add-credits', requireJwtAuth, requireAdminAccess, async (req, res)
     const Balance = mongoose.models.Balance;
     if (!Balance) return res.status(500).json({ message: 'Balance system unavailable.' });
     const oid = new mongoose.Types.ObjectId(userId);
+    const setUSDRaw = req.body?.setUSD;
+    /** KADE Stage B (2026-07-28): absolute set - for the supervised
+     *  zero-boundary cutoff test and balance corrections. Same admin
+     *  guard as the rest of this route; 0..100 clamp; logged. */
+    if (setUSDRaw !== undefined) {
+      let setUSD = Number(setUSDRaw);
+      if (!Number.isFinite(setUSD) || setUSD < 0) {
+        return res.status(400).json({ message: 'setUSD must be a number >= 0.' });
+      }
+      if (setUSD > 100) setUSD = 100;
+      const doc = await Balance.findOneAndUpdate(
+        { user: oid },
+        { $set: { tokenCredits: Math.round(setUSD * 1e6) } },
+        { new: true, upsert: true, setDefaultsOnInsert: true },
+      ).lean();
+      const balanceUSD = (doc?.tokenCredits || 0) / 1e6;
+      logger.info(`[/api/kade/add-credits] SET $${setUSD} on ${userId} -> $${balanceUSD.toFixed(2)}`);
+      return res.json({ ok: true, userId, setUSD, balanceUSD });
+    }
     const credits = Math.round(amountUSD * 1e6);
     const doc = await Balance.findOneAndUpdate(
       { user: oid },
