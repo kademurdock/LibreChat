@@ -303,6 +303,7 @@ const startServer = async () => {
   app.use('/api/kade/transcribe', routes.kadeTranscribe);
   app.use('/api/kade/describe', routes.kadeDescribe);
   app.use('/api/kade/clock', routes.kadeClock);
+  app.use('/api/kade/titles', routes.kadeTitles);
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);

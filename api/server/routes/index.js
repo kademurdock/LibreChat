@@ -39,6 +39,7 @@ const rum = require('./rum');
 const kade = require('./kade');
 const kadeRoom = require('./kadeRoom');
 const kadeParlor = require('./kadeParlor');
+const kadeTitles = require('./kadeTitles');
 const kadeLounge = require('./kadeLounge');
 const kadeMatchmaker = require('./kadeMatchmaker');
 const kadeCalls = require('./kadeCalls');
@@ -53,6 +54,7 @@ module.exports = {
   kadeClock,
   kadeRoom,
   kadeParlor,
+  kadeTitles,
   kadeLounge,
   kadeMatchmaker,
   kadeCalls,
