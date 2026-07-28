@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { KadeRoom } = require('~/models/kadeRoom');
+const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
 const { KadeUsage, logKadeUsage } = require('~/models/kadeUsage');
 const db = require('~/models');
 const { roomHtml, hallHtml } = require('./kadeRoomPage');
@@ -242,6 +243,9 @@ function buildSystem(room, agentName, instructions, humanName, childMode) {
     'YOUR PERSONA:',
     instructions || '(no special persona — be yourself)',
     '',
+    // July 27 2026: same invisible anti-tell style note the chat lane gets.
+    KADE_STYLE_NOTE.trim(),
+    '',
     '--- LIVE GROUP ROOM ---',
     `You are one voice in a live multi-party conversation room on Kade-AI. Also in the room: ${cast}. Everyone except ${humanName} is another AI character with their own persona.`,
     `TOPIC / SCENE: ${room.topic}`,
@@ -298,7 +302,7 @@ function buildMessages(room, agentId) {
 
 async function callOpenRouter(model, system, msgs, key) {
   const r = await axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
+    process.env.KADE_LLM_GATEWAY_URL || 'https://reframe-proxy-production.up.railway.app/chat/completions',
     {
       model,
       max_tokens: TURN_MAX_TOKENS,
@@ -319,7 +323,7 @@ async function callOpenRouter(model, system, msgs, key) {
 }
 
 function cleanReply(text, agentName) {
-  let t = String(text || '').trim();
+  let t = stripAiTells(String(text || '').trim());
   t = t.replace(/%%%[^%]*%%%/g, ' ')
     /* July 13 2026 scrub audit: Hermes models sometimes type literal escape
      * text ("\u00a0") or citation-shaped anchors in prose — debate turns are
@@ -339,7 +343,8 @@ function cleanReply(text, agentName) {
 /** Generate ONE agent turn (round-robin, or a specific agent via body.agentId). */
 router.post('/:id/next', requireJwtAuth, async (req, res) => {
   try {
-    const key = process.env.OPENROUTER_KEY;
+    /* July 27 2026: reframe gateway bearer — see callOpenRouter's reroute. */
+    const key = process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY;
     if (!key) {
       return res.status(500).json({ message: 'The room is not configured yet (missing model key).' });
     }

@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
+const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
 
 /**
  * Agent-seated tables (July 23 2026 — GAMES_PLAN phase 4: "each agent gets
@@ -29,6 +30,10 @@ function buildSeatSystem({ agentName, instructions, gameName, humanName }) {
     'Your persona:',
     String(instructions || '(no special persona — be yourself)').slice(0, 1600),
     '',
+    // July 27 2026: same invisible anti-tell style note the chat lane gets —
+    // kept ABOVE the reply-format contract so MOVE:/SAY: stays the last word.
+    KADE_STYLE_NOTE.trim(),
+    '',
     'You will be shown YOUR private hand and the LEGAL moves the dealer allows.',
     'Reply with EXACTLY two lines and nothing else:',
     'MOVE: <one token copied exactly from the legal list>',
@@ -42,7 +47,10 @@ function buildSeatSystem({ agentName, instructions, gameName, humanName }) {
  * (unparseable/illegal) and banter may still be worth keeping.
  */
 async function personaSeatTurn({ agent, seatName, gameName, seatViewObj, humanName }) {
-  const key = process.env.OPENROUTER_KEY;
+  /* July 27 2026: reframe gateway, not OpenRouter-direct — see kadeLounge
+   * bot-turn for the why (Kimi fleet + OpenRouter's thin Kimi hosting). */
+  const gatewayUrl = process.env.KADE_LLM_GATEWAY_URL || 'https://reframe-proxy-production.up.railway.app/chat/completions';
+  const key = process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY;
   if (!key || !agent) return { token: null, banter: null, costUSD: 0 };
   const legalTokens = seatViewObj.legal.map((m) => m.token);
   const system = buildSeatSystem({
@@ -62,7 +70,7 @@ async function personaSeatTurn({ agent, seatName, gameName, seatViewObj, humanNa
   let model = agent.model || FALLBACK_MODEL;
   const call = (m) =>
     axios.post(
-      'https://openrouter.ai/api/v1/chat/completions',
+      gatewayUrl,
       {
         model: m,
         max_tokens: SEAT_MAX_TOKENS,
@@ -103,7 +111,7 @@ async function personaSeatTurn({ agent, seatName, gameName, seatViewObj, humanNa
   }
   let banter = sayM ? sayM[1].trim() : null;
   if (banter) {
-    banter = banter
+    banter = stripAiTells(banter)
       .replace(/%%%[^%]*%%%/g, ' ')
       .replace(/["“”*_#]/g, '')
       .replace(/\s{2,}/g, ' ')

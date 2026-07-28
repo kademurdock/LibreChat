@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { KadeGameState } = require('~/models/kadeGameState');
 const { getGame, catalog } = require('~/app/clients/tools/kadegames');
+const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
 const {
   resolveSeatAgents,
   playSeatTurns,
@@ -460,7 +461,10 @@ router.post('/talk/:gameId', requireJwtAuth, async (req, res) => {
     if (!agent) return res.status(410).json({ error: `${pick.name} is not around anymore.` });
 
     const axios = require('axios');
-    const key = process.env.OPENROUTER_KEY;
+    /* July 27 2026: reframe gateway, not OpenRouter-direct — see kadeLounge
+     * bot-turn for the why (Kimi fleet + OpenRouter's thin Kimi hosting). */
+    const gatewayUrl = process.env.KADE_LLM_GATEWAY_URL || 'https://reframe-proxy-production.up.railway.app/chat/completions';
+    const key = process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY;
     if (!key) return res.status(503).json({ error: 'Table talk is resting right now.' });
     const history = (doc.state.history || []).slice(-10).map((h) => h.line);
     const system = [
@@ -469,11 +473,14 @@ router.post('/talk/:gameId', requireJwtAuth, async (req, res) => {
       'Your persona:',
       String(agent.instructions || '(no special persona — be yourself)').slice(0, 1400),
       '',
+      // July 27 2026: same invisible anti-tell style note the chat lane gets.
+      KADE_STYLE_NOTE.trim(),
+      '',
       'The player just said something to you at the table. Reply with ONE short spoken line — under 30 words, no stage directions, no markdown, no card claims beyond what the table log shows.',
     ].join('\n');
     const userMsg = ['Recent table log:', ...history, '', `Player says: ${text}`].join('\n');
     const r = await axios.post(
-      'https://openrouter.ai/api/v1/chat/completions',
+      gatewayUrl,
       {
         model: agent.model || 'google/gemini-3.1-flash-lite',
         // 160 not 80: a reasoning-happy model can think through a tight cap and
@@ -487,7 +494,7 @@ router.post('/talk/:gameId', requireJwtAuth, async (req, res) => {
         timeout: 45000,
       },
     );
-    let line = String(r.data?.choices?.[0]?.message?.content || '').replace(/%%%[^%]*%%%/g, ' ').replace(/["“”*_#]/g, '').replace(/\s{2,}/g, ' ').trim().slice(0, 240);
+    let line = stripAiTells(String(r.data?.choices?.[0]?.message?.content || '')).replace(/%%%[^%]*%%%/g, ' ').replace(/["“”*_#]/g, '').replace(/\s{2,}/g, ' ').trim().slice(0, 240);
     if (!line) return res.status(502).json({ error: `${pick.name} just smiled and said nothing.` });
     pushHistory(doc.state, [`You say: ${text}`, `${pick.name} says: ${line}`]);
     doc.markModified('state');

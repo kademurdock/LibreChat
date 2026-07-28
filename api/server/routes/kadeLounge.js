@@ -5,6 +5,7 @@ const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { KadeClubRoom } = require('~/models/kadeClubRoom');
 const { SHARED_HEAD } = require('./kadePages');
+const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
 
 /**
  * KADE'S CLUBHOUSE (born THE LOUNGE, July 24 2026 — renamed the same night
@@ -474,13 +475,22 @@ router.post('/bot-turn', requireJwtAuth, express.json({ limit: '64kb' }), async 
     }
 
     const axios = require('axios');
-    const key = process.env.OPENROUTER_KEY;
+    /* July 27 2026: this lane used to hit OpenRouter directly — but the fleet
+     * runs Kimi, which is reliable ONLY via the reframe proxy (Moonshot-direct,
+     * pinned params); OpenRouter's Kimi hosting errors/answers empty, silently
+     * dumping every guest onto the flash-lite fallback. Same wire shape. */
+    const gatewayUrl = process.env.KADE_LLM_GATEWAY_URL || 'https://reframe-proxy-production.up.railway.app/chat/completions';
+    const key = process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY;
     if (!key) return res.status(503).json({ error: 'Bot guests are resting right now.' });
     const system = [
       'You are ' + (agent.name || 'a companion') + ', a GUEST sitting in "' + roomLabel + '" — a live family voice room in Kade\'s Clubhouse. Real people are talking out loud around you.',
       '',
       'Your persona:',
       String(agent.instructions || '(no special persona — be yourself)').slice(0, 1400),
+      '',
+      // July 27 2026: same invisible anti-tell style note every CHAT reply gets
+      // (applyKadeAudience) — bot guests were the un-guarded lane.
+      KADE_STYLE_NOTE.trim(),
       '',
       'You have been listening politely. Below is a rough live transcription of what the room has been saying (it is messy, unattributed, and may mishear words — roll with it, never complain about transcription quality).',
       cuedBy + ' just pressed your talk button — it is YOUR turn to speak, out loud, to the whole room.',
@@ -494,7 +504,7 @@ router.post('/bot-turn', requireJwtAuth, express.json({ limit: '64kb' }), async 
      * hit — a live voice room can't afford a silent guest). */
     async function oneTurn(model) {
       const rr = await axios.post(
-        'https://openrouter.ai/api/v1/chat/completions',
+        gatewayUrl,
         {
           model,
           max_tokens: 220,
@@ -506,7 +516,7 @@ router.post('/bot-turn', requireJwtAuth, express.json({ limit: '64kb' }), async 
           timeout: 45000,
         },
       );
-      const text = String(rr.data?.choices?.[0]?.message?.content || '').replace(/%%%[^%]*%%%/g, ' ').replace(/["“”*_#]/g, '').replace(/\s{2,}/g, ' ').trim().slice(0, 480);
+      const text = stripAiTells(String(rr.data?.choices?.[0]?.message?.content || '')).replace(/%%%[^%]*%%%/g, ' ').replace(/["“”*_#]/g, '').replace(/\s{2,}/g, ' ').trim().slice(0, 480);
       return { text, usage: rr.data?.usage };
     }
     const FALLBACK_MODEL = 'google/gemini-3.1-flash-lite';
