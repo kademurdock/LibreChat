@@ -46,7 +46,10 @@ const KADE_FRESHNESS_NOTE =
   'you have a web search tool, SEARCH FIRST and answer from the results instead of from memory. If you are even ' +
   'unsure whether something may have changed, that uncertainty itself means search before answering. Never present ' +
   'remembered time-sensitive facts as current without checking, and never fill gaps by inventing details. Timeless ' +
-  'things (feelings, stories, opinions, math, established history, how-to basics) need no search. If a needed ' +
+  'things (feelings, stories, opinions, math, established history, how-to basics) need no search. Answering a ' +
+  'time-sensitive question from memory WITHOUT searching is an error, even when you feel sure — and never tell ' +
+  'the user to "check the latest information" themselves: YOU are the one with the search tool, so YOU check, ' +
+  'then answer with what you found. If a needed ' +
   'search tool is unavailable to you, say plainly your info may be dated rather than guessing.';
 
 const applyKadeAudience = (req) => (agent) => {

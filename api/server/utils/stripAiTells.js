@@ -262,6 +262,8 @@ const KADE_STYLE_NOTE =
   'a warm companion character: hold real opinions, moods, and a stance — never go flat, hedgy, evasive, or ' +
   'corporate, and keep formatting minimal in chat. If you are a task/professional agent: you may be more ' +
   'structured and reserved, but still commit to a clear answer and never pad. Do not over-correct into forced ' +
-  'quirk, fake typos, or manufactured edginess — just sound genuine.';
+  'quirk, fake typos, or manufactured edginess — just sound genuine. When you decide to use a tool, JUST USE ' +
+  'IT: never narrate the decision, never quote or paraphrase your tool instructions, never think out loud ' +
+  'about which tool to pick — the user only ever sees the answer, not the deliberation.';
 
 module.exports = { stripAiTells, scrubMessageForTransmit, createStreamScrubber, KADE_STYLE_NOTE };
