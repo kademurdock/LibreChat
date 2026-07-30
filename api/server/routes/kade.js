@@ -1170,6 +1170,20 @@ router.get('/admin/logs-messages', requireJwtAuth, requireAdminAccess, async (re
     const conversationId = String(req.query.conversationId || '').trim();
     if (!conversationId) return res.status(400).json({ error: 'conversationId required' });
     const { Message } = logsModels();
+    // KADE July 30 2026 (session 35, Amber's armadillo debug): ?raw=1
+    // returns the messages EXACTLY as GET /api/messages serves them to
+    // the apps (full docs, minus nothing) -- because the session-19
+    // watch-item said "pull raw immediately" and there was no raw lane:
+    // this projection hid `files`/`content` shape bugs that only bite
+    // the native decoder. Admin-only like the rest of this route.
+    const wantRaw = String(req.query.raw || '') === '1';
+    if (wantRaw) {
+      const rawMsgs = await Message.find({ conversationId })
+        .sort({ createdAt: 1 })
+        .limit(2000)
+        .lean();
+      return res.json({ messages: rawMsgs });
+    }
     const msgs = await Message.find(
       { conversationId },
       { sender: 1, text: 1, content: 1, isCreatedByUser: 1, createdAt: 1 },
