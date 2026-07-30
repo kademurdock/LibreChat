@@ -259,11 +259,21 @@ function buildSystem(room, agentName, instructions, humanName, childMode) {
     room.goals ? `GROUND RULES AND GOALS FROM ${humanName}: ${room.goals}` : '',
     '',
     'How to behave in the room:',
-    '- React to what was actually said. Agree, push back, argue, joke, challenge, concede — whatever your persona would honestly do. Disagreement is welcome; do not go along with things just to be polite.',
-    `- Speak ONLY as ${agentName}. Never write lines or actions for anyone else in the room.`,
+    // July 30 2026 (session 35 part 4, the religion-room autopsy): the old
+    // guidance had zero anti-echo discipline and its "address others by
+    // name" line actively fed a "Name, you're right..." opener plague —
+    // 30 of 37 lines opened that way, three speakers called themselves
+    // "bobbleheads on a dashboard" in a row, two passed the same joint
+    // metaphor, and Kiana borrowed Zora's tarot cards. Each agent sees the
+    // others' lines as one merged blob and continues the loudest pattern
+    // in the window unless told, hard, not to. Hence the constitution:
+    '- React to what was ACTUALLY said — then ADD something. Every turn must bring new ground: a fresh argument, a concrete example, a hard question, or a genuine concession. Never restate a point the room has already made, including your own.',
+    `- Speak ONLY as ${agentName}, in ${agentName}'s OWN voice and imagery. The other speakers' metaphors, professions, and catchphrases are THEIRS — never borrow or echo a metaphor, simile, or turn of phrase that has already appeared in the room. Coin your own or use none.`,
+    `- Do NOT open by naming another speaker and telling them they are right ("X, you nailed it", "X, you're right", "X, you just..."). Open with your POINT. Direct address belongs mid-argument; praise is rare and earned. This is a debate, not a support group.`,
+    `- Disagreement is the fuel. If you catch yourself agreeing with the last speaker, find the part you DON'T agree with, or challenge a premise nobody has questioned yet.`,
+    `- Never write lines or actions for anyone else in the room.`,
     '- Do NOT start your reply with your own name or any speaker label — just talk.',
     '- Keep turns short and punchy: about 2-5 sentences, two short paragraphs at the very most.',
-    '- Address the others by name when you are responding to them.',
     '- Plain conversational text only: no headings, no bullet lists, no %%% tags, no markdown tables.',
     childMode ? CHILD_NOTE : null,
   ]
@@ -303,6 +313,17 @@ function buildMessages(room, agentId) {
       content:
         '(No one else has jumped in yet. Briefly sharpen or add to your point, or throw a question at someone in the room.)',
     });
+  }
+  // July 30 2026: the discipline cue rides LAST — recency beats a system
+  // prompt at this distance (same lesson as the chat lane's appended
+  // reminders). Folded into the trailing user message so no provider ever
+  // sees back-to-back same-role messages.
+  const cue = `(Your turn. YOUR own voice and imagery only — bring NEW ground, never repeat a point or a metaphor the room has used, and do not open by praising another speaker.)`;
+  const lastMsg = msgs[msgs.length - 1];
+  if (lastMsg.role === 'user') {
+    lastMsg.content += `\n\n${cue}`;
+  } else {
+    msgs.push({ role: 'user', content: cue });
   }
   return msgs;
 }
@@ -352,6 +373,50 @@ function cleanReply(text, agentName) {
   );
   t = t.replace(prefix, '');
   return t.trim();
+}
+
+/** July 30 2026 (session 35 part 4) — the ECHO GUARD, the deterministic
+ * half of the religion-room fix. The prompt constitution above asks for
+ * discipline; this enforces it: if a fresh turn copies a 5-word run from
+ * the recent transcript (any speaker — that's how "bobbleheads on a
+ * dashboard" spread through THREE mouths), or opens with the same
+ * "Name, you're right..." praise-opener the room is already soaked in,
+ * the turn is re-asked ONCE with a scolding cue. Fail-soft: a second
+ * offense ships anyway (never loops), and any retry error keeps draft one.
+ * Quoting someone to rebut them can trip this; one polite re-ask is an
+ * acceptable price for killing the plague class. */
+function normalizeForEcho(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function echoShingles(s, n = 5) {
+  const words = normalizeForEcho(s).split(' ').filter(Boolean);
+  const out = new Set();
+  for (let i = 0; i + n <= words.length; i++) {
+    out.add(words.slice(i, i + n).join(' '));
+  }
+  return out;
+}
+function echoesRecentLines(text, room) {
+  const mine = echoShingles(text);
+  if (!mine.size) return false;
+  const recent = (room.transcript || []).slice(-12);
+  for (const line of recent) {
+    const theirs = echoShingles(line.text);
+    for (const sh of mine) {
+      if (theirs.has(sh)) return true;
+    }
+  }
+  return false;
+}
+const VALIDATION_OPENER_RE = /^\s*[A-Z][\w .'-]{0,30},\s*(?:you(?:'re| are| just| got| nailed| hit| caught)|honey, you|baby, you|cher, you)/i;
+function opensLikeTheRoom(text, room) {
+  if (!VALIDATION_OPENER_RE.test(text)) return false;
+  const recent = (room.transcript || []).slice(-6).filter((l) => l.speaker !== 'user');
+  return recent.some((l) => VALIDATION_OPENER_RE.test(String(l.text || '')));
 }
 
 /** Generate ONE agent turn (round-robin, or a specific agent via body.agentId). */
@@ -421,9 +486,31 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
       modelUsed = FALLBACK_MODEL;
       data = await callOpenRouter(modelUsed, system, msgs, key, deepThink);
     }
-    const text = cleanReply(data?.choices?.[0]?.message?.content, speaker.name);
+    let text = cleanReply(data?.choices?.[0]?.message?.content, speaker.name);
     if (!text) {
       return res.status(502).json({ message: `${speaker.name} froze up — try that turn again.` });
+    }
+    // Echo guard: one re-ask when the draft copies the room's phrasing or
+    // its praise-opener pattern (metering uses the final call's usage; a
+    // guarded turn under-counts by one draft — logged, accepted).
+    if (echoesRecentLines(text, room) || opensLikeTheRoom(text, room)) {
+      logger.warn(`[kade/room next] echo guard tripped for ${speaker.name} — one retry`);
+      try {
+        const retryMsgs = msgs.concat([
+          {
+            role: 'user',
+            content: `(Stop. Your draft repeated phrasing or the praise-opener the room has already used. Say it again as ${speaker.name} in completely fresh words and imagery, opening with your point — not with anyone's name.)`,
+          },
+        ]);
+        const data2 = await callOpenRouter(modelUsed, system, retryMsgs, key, deepThink);
+        const text2 = cleanReply(data2?.choices?.[0]?.message?.content, speaker.name);
+        if (text2) {
+          text = text2;
+          data = data2;
+        }
+      } catch (retryErr) {
+        logger.warn(`[kade/room next] echo-guard retry failed (${retryErr.message}) — keeping the first draft`);
+      }
     }
 
     const line = { speaker: speaker.agentId, name: speaker.name, text, ts: new Date() };
