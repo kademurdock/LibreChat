@@ -86,7 +86,14 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
       const ts = parseInt(dt[1], 10);
       const now = Date.now();
       if (Number.isFinite(ts) && now - ts <= DEEP_THINK_BUILD_FRESH_MS && ts - now <= 120_000) {
-        model_parameters.reasoning = { effort: 'high', enabled: true, exclude: false };
+        // reasoning_effort, NOT a raw reasoning object: this pipeline's own
+        // translator (applyOpenRouterReasoningConfig, packages/api openai
+        // llm.ts) carries reasoning_effort into the wire's modelKwargs
+        // .reasoning -- the exact lane the agent-level "none" provably rides
+        // (first attempt used a raw object and it silently vanished; the
+        // probe receipts are in PROJECT_STATUS session 35 part 2). Request-
+        // level wins the Object.assign merge over the agent's own "none".
+        model_parameters.reasoning_effort = 'high';
       }
     }
   } catch (_) {
