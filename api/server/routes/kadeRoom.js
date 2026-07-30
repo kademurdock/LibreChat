@@ -10,7 +10,7 @@ const { requireJwtAuth } = require('~/server/middleware');
 // July 30: the naive import is undefined and Express crashes the whole
 // fork at mount. Caught before the deploy landed).
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
-const { SystemCapabilities } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const { KadeRoom } = require('~/models/kadeRoom');
 const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
