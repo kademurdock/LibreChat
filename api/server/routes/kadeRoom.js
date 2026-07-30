@@ -275,6 +275,7 @@ function buildSystem(room, agentName, instructions, humanName, childMode) {
     '- Do NOT start your reply with your own name or any speaker label — just talk.',
     '- Keep turns short and punchy: about 2-5 sentences, two short paragraphs at the very most.',
     '- Plain conversational text only: no headings, no bullet lists, no %%% tags, no markdown tables.',
+    '- You have NO tools, search, or functions in this room. NEVER emit a tool call or stop to look something up — argue from what you know, completely, in plain speech.',
     childMode ? CHILD_NOTE : null,
   ]
     .filter((l) => l !== null && l !== undefined)
@@ -485,6 +486,40 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
       );
       modelUsed = FALLBACK_MODEL;
       data = await callOpenRouter(modelUsed, system, msgs, key, deepThink);
+    }
+    // July 30 2026 (session 35 part 8, Amber's cut-off receipts — five lines
+    // dead mid-sentence at 74-104 chars, no slop-rewrite and no echo-guard
+    // involvement per logs): K3 sometimes decides MID-REPLY to call a tool
+    // that doesn't exist here, and Moonshot returns the half-sentence
+    // preamble as content + tool_calls, finish_reason 'tool_calls'. Taking
+    // that content verbatim saved the fragment. Now: any tool_calls or
+    // non-stop finish gets logged loudly and ONE plain-speech re-ask;
+    // fail-soft keeps whatever we have rather than dying.
+    let roomChoice = data?.choices?.[0] || {};
+    if (
+      (roomChoice.message && Array.isArray(roomChoice.message.tool_calls) && roomChoice.message.tool_calls.length) ||
+      (roomChoice.finish_reason && roomChoice.finish_reason !== 'stop')
+    ) {
+      logger.warn(
+        `[kade/room next] fragment turn for ${speaker.name}: finish=${roomChoice.finish_reason} toolCalls=${(roomChoice.message && roomChoice.message.tool_calls && roomChoice.message.tool_calls.length) || 0} contentLen=${String((roomChoice.message && roomChoice.message.content) || '').length} — one plain-speech retry`,
+      );
+      try {
+        const plainMsgs = msgs.concat([
+          {
+            role: 'user',
+            content: `(You have no tools in this room. Give your COMPLETE spoken turn as ${speaker.name}, plain speech only, start to finish.)`,
+          },
+        ]);
+        const dataP = await callOpenRouter(modelUsed, system, plainMsgs, key, deepThink);
+        const choiceP = dataP?.choices?.[0] || {};
+        const textP = cleanReply(choiceP.message && choiceP.message.content, speaker.name);
+        if (textP && (!roomChoice.message || textP.length > String(roomChoice.message.content || '').length)) {
+          data = dataP;
+          roomChoice = choiceP;
+        }
+      } catch (plainErr) {
+        logger.warn(`[kade/room next] plain-speech retry failed (${plainErr.message}) — keeping what we have`);
+      }
     }
     let text = cleanReply(data?.choices?.[0]?.message?.content, speaker.name);
     if (!text) {
