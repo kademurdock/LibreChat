@@ -452,6 +452,80 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
 });
 
 /** Delete a room. */
+/** Edit the cast mid-room (July 30 2026, session 35 part 3 — her ask: "it
+ * would maybe be nice to be able to add and remove agents"). Additions
+ * snapshot exactly like create; removals keep the room at MIN_AGENTS or
+ * more; every change writes a Narrator line so both the humans AND the
+ * models know who walked in or out (buildMessages renders any non-agent
+ * speaker as a plain named line, so 'narrator' needs no special casing —
+ * verified against that function before this route existed). */
+router.post('/:id/cast', requireJwtAuth, async (req, res) => {
+  try {
+    const room = await KadeRoom.findOne({ _id: req.params.id, user: oidOf(req) });
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found.' });
+    }
+    const add = Array.isArray(req.body?.add) ? [...new Set(req.body.add.map(String))] : [];
+    const remove = Array.isArray(req.body?.remove)
+      ? new Set(req.body.remove.map(String))
+      : new Set();
+    if (!add.length && !remove.size) {
+      return res.status(400).json({ message: 'Nothing to change.' });
+    }
+    const seated = new Set(room.agents.map((a) => a.agentId));
+    const removing = room.agents.filter((a) => remove.has(a.agentId));
+    const keeping = room.agents.filter((a) => !remove.has(a.agentId));
+    const toAdd = add.filter((id) => !seated.has(id));
+    if (keeping.length + toAdd.length < MIN_AGENTS) {
+      return res.status(400).json({ message: `A room needs at least ${MIN_AGENTS} characters.` });
+    }
+    if (keeping.length + toAdd.length > MAX_AGENTS) {
+      return res.status(400).json({ message: `A room fits at most ${MAX_AGENTS} characters.` });
+    }
+    const snaps = [];
+    for (const id of toAdd) {
+      const a = await db.getAgent({ id });
+      if (!a) {
+        return res.status(404).json({ message: `Could not find one of those characters (${id}).` });
+      }
+      snaps.push({
+        agentId: a.id,
+        name: a.name || 'Unnamed agent',
+        avatar: (a.avatar && a.avatar.filepath) || '',
+        voiceId: (a.tts && a.tts.voiceId) || '',
+        rate: (a.tts && Number(a.tts.speakingRate)) || null,
+      });
+    }
+    room.agents = keeping.concat(snaps);
+    room.nextIdx =
+      (((room.nextIdx || 0) % room.agents.length) + room.agents.length) % room.agents.length;
+    const ts = new Date();
+    if (room.transcript.length < MAX_TRANSCRIPT) {
+      for (const gone of removing) {
+        room.transcript.push({
+          speaker: 'narrator',
+          name: 'Narrator',
+          text: `${gone.name} has left the room.`,
+          ts,
+        });
+      }
+      for (const s of snaps) {
+        room.transcript.push({
+          speaker: 'narrator',
+          name: 'Narrator',
+          text: `${s.name} has joined the room.`,
+          ts,
+        });
+      }
+    }
+    await room.save();
+    return res.json({ room: roomView(room) });
+  } catch (err) {
+    logger.error('[kade/room cast] error:', err);
+    return res.status(500).json({ message: 'Could not change the cast.' });
+  }
+});
+
 router.delete('/:id', requireJwtAuth, async (req, res) => {
   try {
     const r = await KadeRoom.deleteOne({ _id: req.params.id, user: oidOf(req) });
