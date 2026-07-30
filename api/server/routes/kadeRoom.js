@@ -4,7 +4,7 @@ const { ResourceType, PermissionBits } = require('librechat-data-provider');
 const { findPubliclyAccessibleResources } = require('~/server/services/PermissionService');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireJwtAuth, requireAdminAccess } = require('~/server/middleware');
 const { KadeRoom } = require('~/models/kadeRoom');
 const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
 const { KadeUsage, logKadeUsage } = require('~/models/kadeUsage');
@@ -563,6 +563,46 @@ router.post('/:id/share', requireJwtAuth, async (req, res) => {
   } catch (err) {
     logger.error('[kade/room share] error:', err);
     return res.status(500).json({ message: 'Could not share that room.' });
+  }
+});
+
+/** Admin debug lanes (July 30 2026, session 35 part 4 — Amber's religion
+ * room went bad and rooms had NO admin read path, same gap logs-messages
+ * had before ?raw=1). Read-only, admin-only, additive. */
+router.get('/admin/list', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const userId = String(req.query.userId || '').trim();
+    if (!userId) return res.status(400).json({ message: 'userId required' });
+    const rooms = await KadeRoom.find({ user: userId })
+      .sort({ updatedAt: -1 })
+      .limit(200)
+      .lean();
+    return res.json({
+      rooms: rooms.map((r) => ({
+        id: String(r._id),
+        topic: r.topic,
+        agents: (r.agents || []).map((a) => a.name),
+        turnCount: r.turnCount || 0,
+        lines: (r.transcript || []).length,
+        updatedAt: r.updatedAt,
+      })),
+    });
+  } catch (err) {
+    logger.error('[kade/room admin list] error:', err);
+    return res.status(500).json({ message: 'Could not list rooms.' });
+  }
+});
+
+router.get('/admin/one', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const id = String(req.query.id || '').trim();
+    if (!id) return res.status(400).json({ message: 'id required' });
+    const room = await KadeRoom.findById(id).lean();
+    if (!room) return res.status(404).json({ message: 'Room not found.' });
+    return res.json({ room });
+  } catch (err) {
+    logger.error('[kade/room admin one] error:', err);
+    return res.status(500).json({ message: 'Could not load the room.' });
   }
 });
 
