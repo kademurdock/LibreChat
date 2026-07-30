@@ -300,7 +300,7 @@ function buildMessages(room, agentId) {
   return msgs;
 }
 
-async function callOpenRouter(model, system, msgs, key) {
+async function callOpenRouter(model, system, msgs, key, deepThink = false) {
   const r = await axios.post(
     process.env.KADE_LLM_GATEWAY_URL || 'https://reframe-proxy-production.up.railway.app/chat/completions',
     {
@@ -308,6 +308,13 @@ async function callOpenRouter(model, system, msgs, key) {
       max_tokens: TURN_MAX_TOKENS,
       messages: [{ role: 'system', content: system }, ...msgs],
       usage: { include: true },
+      // July 30 2026 (session 35 part 3, her add-on ask: "deep think debait
+      // option"): a deep room turn asks for real reasoning. The reframe
+      // gateway translates this for the kimi lane (temp pinned, max_tokens
+      // floored to 8000 so deliberation can't strand the turn wordless --
+      // the same floor the chat lane got today). Cost rides the normal
+      // debate_room metering since usage.cost is real.
+      ...(deepThink ? { reasoning: { effort: 'high', enabled: true } } : {}),
     },
     {
       headers: {
@@ -394,17 +401,18 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
     const system = buildSystem(room, speaker.name, agent.instructions, humanName, isChild(req));
     const msgs = buildMessages(room, speaker.agentId);
 
+    const deepThink = req.body?.deepThink === true;
     let data;
     let modelUsed = agent.model || FALLBACK_MODEL;
     try {
-      data = await callOpenRouter(modelUsed, system, msgs, key);
+      data = await callOpenRouter(modelUsed, system, msgs, key, deepThink);
     } catch (e) {
       // agent's model string may not be a valid OpenRouter slug — retry on the fallback
       logger.warn(
         `[kade/room next] model '${modelUsed}' failed (${e?.response?.status || e.message}); retrying on ${FALLBACK_MODEL}`,
       );
       modelUsed = FALLBACK_MODEL;
-      data = await callOpenRouter(modelUsed, system, msgs, key);
+      data = await callOpenRouter(modelUsed, system, msgs, key, deepThink);
     }
     const text = cleanReply(data?.choices?.[0]?.message?.content, speaker.name);
     if (!text) {
@@ -427,7 +435,7 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
       quantity: 1,
       unit: 'turns',
       costUSD: cost,
-      metadata: { roomId: String(room._id), agentId: speaker.agentId, model: modelUsed },
+      metadata: { roomId: String(room._id), agentId: speaker.agentId, model: modelUsed, deepThink },
     });
 
     return res.json({ message: line, nextIdx: room.nextIdx, turnCount: room.turnCount });
