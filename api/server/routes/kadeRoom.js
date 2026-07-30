@@ -4,7 +4,14 @@ const { ResourceType, PermissionBits } = require('librechat-data-provider');
 const { findPubliclyAccessibleResources } = require('~/server/services/PermissionService');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { requireJwtAuth, requireAdminAccess } = require('~/server/middleware');
+const { requireJwtAuth } = require('~/server/middleware');
+// requireAdminAccess is NOT a middleware export — kade.js builds its own
+// from requireCapability and so do we (learned the hard way at push time,
+// July 30: the naive import is undefined and Express crashes the whole
+// fork at mount. Caught before the deploy landed).
+const { requireCapability } = require('~/server/middleware/roles/capabilities');
+const { SystemCapabilities } = require('librechat-data-provider');
+const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const { KadeRoom } = require('~/models/kadeRoom');
 const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
 const { KadeUsage, logKadeUsage } = require('~/models/kadeUsage');
