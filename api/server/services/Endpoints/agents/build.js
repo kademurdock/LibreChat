@@ -65,8 +65,33 @@ const applyKadeAudience = (req) => (agent) => {
   return agent;
 };
 
+// July 30 2026 (session 35 part 2, the Deep-Think defeat receipts): the
+// per-turn Deep Think decision moves HERE, where `req.body.text` IS the
+// person's real send. It used to live only in the reframe proxy as a
+// newest-user-message scan -- silently defeated once memories/web-context
+// began riding as a TRAILING user-role message (live proof: a freshly
+// marked probe ran effort:none while the gen-title call, which sees the
+// raw convo text, logged the fresh marker). Same marker grammar and
+// freshness window as the proxy (10 min, small future skew); the proxy
+// still strips every marker copy before the model sees it, and its own
+// scan stays as the phone-bridge lane's path.
+const DEEP_THINK_BUILD_RE = /\[DEEP THINK\s+(\d{10,17})\]/i;
+const DEEP_THINK_BUILD_FRESH_MS = 600_000;
+
 const buildOptions = (req, endpoint, parsedBody, endpointType) => {
   const { spec, iconURL, agent_id, chatProjectId, ...model_parameters } = parsedBody;
+  try {
+    const dt = DEEP_THINK_BUILD_RE.exec(String(req?.body?.text || ''));
+    if (dt) {
+      const ts = parseInt(dt[1], 10);
+      const now = Date.now();
+      if (Number.isFinite(ts) && now - ts <= DEEP_THINK_BUILD_FRESH_MS && ts - now <= 120_000) {
+        model_parameters.reasoning = { effort: 'high', enabled: true, exclude: false };
+      }
+    }
+  } catch (_) {
+    /* fail-soft: no marker, no change */
+  }
   const agentPromise = loadAgent({
     req,
     spec,
