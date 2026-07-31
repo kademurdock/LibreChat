@@ -329,7 +329,7 @@ function buildMessages(room, agentId) {
   return msgs;
 }
 
-async function callOpenRouter(model, system, msgs, key, deepThink = false) {
+async function callOpenRouter(model, system, msgs, key, deepThink = false, opts = {}) {
   const r = await axios.post(
     process.env.KADE_LLM_GATEWAY_URL || 'https://reframe-proxy-production.up.railway.app/chat/completions',
     {
@@ -337,6 +337,15 @@ async function callOpenRouter(model, system, msgs, key, deepThink = false) {
       max_tokens: TURN_MAX_TOKENS,
       messages: [{ role: 'system', content: system }, ...msgs],
       usage: { include: true },
+      // July 31 2026 (session 35 part 9 — the REAL cut-off convict, from
+      // the fragment-guard's own logs): the flash-lite FALLBACK is a
+      // thinking model; with default reasoning it burned the 600-token
+      // budget on hidden thought and returned ~100 chars, finish=length.
+      // Every truncated line tonight was a timeout->fallback->reasoning-
+      // starved turn (toolCalls=0 across the board — the tool theory was
+      // wrong, the instrumentation caught it). Fallback calls disable
+      // thinking so all 600 tokens buy WORDS.
+      ...(opts.noThink ? { reasoning: { enabled: false } } : {}),
       // July 30 2026 (session 35 part 3, her add-on ask: "deep think debait
       // option"): a deep room turn asks for real reasoning. The reframe
       // gateway translates this for the kimi lane (temp pinned, max_tokens
@@ -352,7 +361,11 @@ async function callOpenRouter(model, system, msgs, key, deepThink = false) {
         'HTTP-Referer': 'https://kademurdock.com',
         'X-Title': 'Kade-AI Debate Room',
       },
-      timeout: 90000,
+      // 150s, was 90: under Moonshot congestion the gateway's own patient
+      // retries legitimately run past 90 -- the fork was hanging up on
+      // turns that were about to land and burning the fallback instead.
+      // Native waits 240s on this route, so the ladder still fits.
+      timeout: 150000,
     },
   );
   return r.data;
@@ -485,7 +498,7 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
         `[kade/room next] model '${modelUsed}' failed (${e?.response?.status || e.message}); retrying on ${FALLBACK_MODEL}`,
       );
       modelUsed = FALLBACK_MODEL;
-      data = await callOpenRouter(modelUsed, system, msgs, key, deepThink);
+      data = await callOpenRouter(modelUsed, system, msgs, key, deepThink, { noThink: true });
     }
     // July 30 2026 (session 35 part 8, Amber's cut-off receipts — five lines
     // dead mid-sentence at 74-104 chars, no slop-rewrite and no echo-guard
@@ -510,7 +523,9 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
             content: `(You have no tools in this room. Give your COMPLETE spoken turn as ${speaker.name}, plain speech only, start to finish.)`,
           },
         ]);
-        const dataP = await callOpenRouter(modelUsed, system, plainMsgs, key, deepThink);
+        const dataP = await callOpenRouter(modelUsed, system, plainMsgs, key, deepThink, {
+          noThink: modelUsed === FALLBACK_MODEL,
+        });
         const choiceP = dataP?.choices?.[0] || {};
         const textP = cleanReply(choiceP.message && choiceP.message.content, speaker.name);
         if (textP && (!roomChoice.message || textP.length > String(roomChoice.message.content || '').length)) {
