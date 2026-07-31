@@ -44,6 +44,20 @@ const kadeRoomSchema = new mongoose.Schema(
     shared: { type: Boolean, default: false },
     sharedTitle: { type: String, default: '' },
     sharedAt: { type: Date, default: null },
+    /** Party mode (July 31 2026, her "I want both"): join-by-code guests,
+     * Parlor-style — friends debate in the SAME room with the cast. */
+    partyCode: { type: String, default: '', index: true },
+    guests: {
+      type: [
+        {
+          _id: false,
+          userId: String,
+          name: String,
+          joinedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
     /** round-robin pointer into agents[] for whoever speaks next */
     nextIdx: { type: Number, default: 0 },
     /** total agent turns generated in this room */

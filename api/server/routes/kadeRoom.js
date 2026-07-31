@@ -34,6 +34,15 @@ const { roomHtml, hallHtml } = require('./kadeRoomPage');
 
 const router = express.Router();
 
+/** Party access (July 31 2026): a room opens to its owner OR anyone on its
+ * guest list. Owner-only actions (delete/share/cast/party) keep the plain
+ * owner query. */
+function roomAccessQuery(req, id) {
+  const uid = String(req.user.id || req.user._id);
+  return { _id: id, $or: [{ user: oidOf(req) }, { 'guests.userId': uid }] };
+}
+
+
 const MIN_AGENTS = 2;
 const MAX_AGENTS = 6;
 const MAX_TRANSCRIPT = 400; // hard per-room cap
@@ -55,7 +64,7 @@ const CHILD_NOTE =
 const firstName = (req) =>
   String(req.user.name || req.user.username || 'The human').trim().split(/\s+/)[0];
 
-function roomView(doc, { withTranscript = true } = {}) {
+function roomView(doc, { withTranscript = true, forUser = null } = {}) {
   const v = {
     id: String(doc._id),
     topic: doc.topic,
@@ -70,6 +79,11 @@ function roomView(doc, { withTranscript = true } = {}) {
     shared: !!doc.shared,
     sharedTitle: doc.sharedTitle || '',
     nextIdx: doc.nextIdx || 0,
+    // Party (July 31 2026): the client needs to know whose room this is
+    // (host controls: cast/share/delete/party) and who's at the table.
+    mine: forUser ? String(doc.user) === String(forUser) : true,
+    partyCode: doc.partyCode || '',
+    guests: (doc.guests || []).map((g) => ({ name: g.name })),
     turnCount: doc.turnCount || 0,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
@@ -161,7 +175,8 @@ router.post('/', requireJwtAuth, async (req, res) => {
 /** List the user's rooms (no transcripts). */
 router.get('/', requireJwtAuth, async (req, res) => {
   try {
-    const rooms = await KadeRoom.find({ user: oidOf(req) })
+    const uid = String(req.user.id || req.user._id);
+    const rooms = await KadeRoom.find({ $or: [{ user: oidOf(req) }, { 'guests.userId': uid }] })
       .sort({ updatedAt: -1 })
       .limit(50)
       .lean();
@@ -202,11 +217,11 @@ router.get('/hall', requireJwtAuth, async (req, res) => {
 /** Fetch one room in full. */
 router.get('/:id', requireJwtAuth, async (req, res) => {
   try {
-    const room = await KadeRoom.findOne({ _id: req.params.id, user: oidOf(req) }).lean();
+    const room = await KadeRoom.findOne(roomAccessQuery(req, req.params.id)).lean();
     if (!room) {
       return res.status(404).json({ message: 'Room not found.' });
     }
-    return res.json({ room: roomView(room) });
+    return res.json({ room: roomView(room, { forUser: oidOf(req) }) });
   } catch (err) {
     logger.error('[kade/room get] error:', err);
     return res.status(500).json({ message: 'Could not load that room.' });
@@ -220,7 +235,7 @@ router.post('/:id/say', requireJwtAuth, async (req, res) => {
     if (!text) {
       return res.status(400).json({ message: 'Say something first.' });
     }
-    const room = await KadeRoom.findOne({ _id: req.params.id, user: oidOf(req) });
+    const room = await KadeRoom.findOne(roomAccessQuery(req, req.params.id));
     if (!room) {
       return res.status(404).json({ message: 'Room not found.' });
     }
@@ -455,7 +470,7 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
       return res.status(500).json({ message: 'The room is not configured yet (missing model key).' });
     }
     const oid = oidOf(req);
-    const room = await KadeRoom.findOne({ _id: req.params.id, user: oid });
+    const room = await KadeRoom.findOne(roomAccessQuery(req, req.params.id));
     if (!room) {
       return res.status(404).json({ message: 'Room not found.' });
     }
@@ -617,6 +632,70 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
 });
 
 /** Delete a room. */
+/** Party mode (July 31 2026, her "I want both"): the host opens the doors
+ * with a speakable 4-char code (Parlor-style, unambiguous alphabet), and
+ * anyone signed in can join the debate itself — say lines as themselves,
+ * ask for turns, hear it all. Owner-only to open/close. */
+const PARTY_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function mintPartyCode() {
+  let code = '';
+  for (let i = 0; i < 4; i++) code += PARTY_ALPHABET[Math.floor(Math.random() * PARTY_ALPHABET.length)];
+  return code;
+}
+router.post('/:id/party', requireJwtAuth, async (req, res) => {
+  try {
+    const room = await KadeRoom.findOne({ _id: req.params.id, user: oidOf(req) });
+    if (!room) return res.status(404).json({ message: 'Room not found.' });
+    const enable = req.body?.enable !== false;
+    if (!enable) {
+      room.partyCode = '';
+      await room.save();
+      return res.json({ room: roomView(room, { forUser: oidOf(req) }) });
+    }
+    if (!room.partyCode) {
+      for (let tries = 0; tries < 20; tries++) {
+        const code = mintPartyCode();
+        const clash = await KadeRoom.findOne({ partyCode: code }).lean();
+        if (!clash) { room.partyCode = code; break; }
+      }
+      if (!room.partyCode) return res.status(500).json({ message: 'Could not mint a code — try again.' });
+      await room.save();
+    }
+    return res.json({ room: roomView(room, { forUser: oidOf(req) }) });
+  } catch (err) {
+    logger.error('[kade/room party] error:', err);
+    return res.status(500).json({ message: 'Could not change party mode.' });
+  }
+});
+
+router.post('/join-party', requireJwtAuth, async (req, res) => {
+  try {
+    const code = String(req.body?.code || '').trim().toUpperCase();
+    if (code.length !== 4) return res.status(400).json({ message: 'Codes are four characters.' });
+    const room = await KadeRoom.findOne({ partyCode: code });
+    if (!room) return res.status(404).json({ message: 'No open room has that code.' });
+    const uid = String(req.user.id || req.user._id);
+    const isOwner = String(room.user) === String(oidOf(req));
+    const already = (room.guests || []).some((g) => g.userId === uid);
+    if (!isOwner && !already) {
+      room.guests.push({ userId: uid, name: firstName(req) });
+      if (room.transcript.length < MAX_TRANSCRIPT) {
+        room.transcript.push({
+          speaker: 'narrator',
+          name: 'Narrator',
+          text: `${firstName(req)} has joined the room.`,
+          ts: new Date(),
+        });
+      }
+      await room.save();
+    }
+    return res.json({ room: roomView(room, { forUser: oidOf(req) }) });
+  } catch (err) {
+    logger.error('[kade/room join-party] error:', err);
+    return res.status(500).json({ message: 'Could not join that room.' });
+  }
+});
+
 /** Edit the cast mid-room (July 30 2026, session 35 part 3 — her ask: "it
  * would maybe be nice to be able to add and remove agents"). Additions
  * snapshot exactly like create; removals keep the room at MIN_AGENTS or
