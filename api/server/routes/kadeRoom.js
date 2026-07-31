@@ -345,14 +345,23 @@ async function callOpenRouter(model, system, msgs, key, deepThink = false, opts 
       // starved turn (toolCalls=0 across the board — the tool theory was
       // wrong, the instrumentation caught it). Fallback calls disable
       // thinking so all 600 tokens buy WORDS.
-      ...(opts.noThink ? { reasoning: { enabled: false } } : {}),
+      // July 31 2026 (session 35 part 10, Amber's deep rooms still cutting):
+      // ONE expression, no spread-order traps — the first version had the
+      // deepThink spread AFTER the noThink spread, so a deep room's
+      // FALLBACK ran flash-lite with reasoning HIGH on a 600-token budget:
+      // maximum starvation, exactly her report. noThink wins, always.
+      ...(opts.noThink
+        ? { reasoning: { enabled: false } }
+        : deepThink
+          ? { reasoning: { effort: 'high', enabled: true } }
+          : {}),
       // July 30 2026 (session 35 part 3, her add-on ask: "deep think debait
       // option"): a deep room turn asks for real reasoning. The reframe
       // gateway translates this for the kimi lane (temp pinned, max_tokens
       // floored to 8000 so deliberation can't strand the turn wordless --
       // the same floor the chat lane got today). Cost rides the normal
       // debate_room metering since usage.cost is real.
-      ...(deepThink ? { reasoning: { effort: 'high', enabled: true } } : {}),
+
     },
     {
       headers: {
@@ -361,11 +370,15 @@ async function callOpenRouter(model, system, msgs, key, deepThink = false, opts 
         'HTTP-Referer': 'https://kademurdock.com',
         'X-Title': 'Kade-AI Debate Room',
       },
-      // 150s, was 90: under Moonshot congestion the gateway's own patient
-      // retries legitimately run past 90 -- the fork was hanging up on
-      // turns that were about to land and burning the fallback instead.
-      // Native waits 240s on this route, so the ladder still fits.
-      timeout: 150000,
+      // 150s normal / 200s for a DEEP primary call, was 90: deep kimi
+      // turns legitimately run 100-180s (reasoning is the whole point --
+      // her words: "the chars are very 1 dimensional if thinking is off"),
+      // and the gateway's congestion retries stack on top. Hanging up
+      // early was converting the GOOD turns into starved fallbacks.
+      // Native waits 240s on this route; 200 + a ~15s thoughtless
+      // fallback still fits under it. Fallback calls (opts.noThink)
+      // answer fast and keep 150.
+      timeout: deepThink && !opts.noThink ? 200000 : 150000,
     },
   );
   return r.data;
