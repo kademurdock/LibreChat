@@ -393,7 +393,9 @@ async function callOpenRouter(model, system, msgs, key, deepThink = false, opts 
       // Native waits 240s on this route; 200 + a ~15s thoughtless
       // fallback still fits under it. Fallback calls (opts.noThink)
       // answer fast and keep 150.
-      timeout: deepThink && !opts.noThink ? 200000 : 150000,
+      // asyncJob = the start-and-poll lane: nothing waits on this socket,
+      // so a deep turn gets FIVE MINUTES of model time (her philosophy).
+      timeout: opts.asyncJob ? 300000 : deepThink && !opts.noThink ? 200000 : 150000,
     },
   );
   return r.data;
@@ -462,7 +464,24 @@ function opensLikeTheRoom(text, room) {
 }
 
 /** Generate ONE agent turn (round-robin, or a specific agent via body.agentId). */
-router.post('/:id/next', requireJwtAuth, async (req, res) => {
+// ── ASYNC TURNS (July 31 2026, her "I want both", half two) ──────────────────
+// The turn ENGINE: the entire former /next handler body, verbatim, behind a
+// res-shaped shim — every `return res.status(x).json(y)` inside yields
+// {code, json} instead of writing a socket. One engine, two doors: the SYNC
+// route keeps the exact old contract for the web page and builds ≤172, and
+// the ASYNC lane (body.async, native 173+) answers 202 {jobId} immediately,
+// generates in the background with a 300s model window (deep turns can
+// think for five MINUTES — her philosophy — and nothing ever hangs up),
+// and serves the result to GET /:id/next-status polls. In-memory jobs,
+// 10-minute TTL; a redeploy mid-turn loses the job and the poll's 404 says
+// plainly to ask again. One turn per room at a time (busy lock, both doors).
+async function generateRoomTurn(req, opts) {
+  const out = { code: 200, json: null };
+  const res = {
+    status(c) { out.code = c; return this; },
+    json(j) { out.json = j; return out; },
+  };
+
   try {
     /* July 27 2026: reframe gateway bearer — see callOpenRouter's reroute. */
     const key = process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY;
@@ -470,7 +489,7 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
       return res.status(500).json({ message: 'The room is not configured yet (missing model key).' });
     }
     const oid = oidOf(req);
-    const room = await KadeRoom.findOne(roomAccessQuery(req, req.params.id));
+    const room = await KadeRoom.findOne(roomAccessQuery(req, opts.roomId));
     if (!room) {
       return res.status(404).json({ message: 'Room not found.' });
     }
@@ -496,8 +515,8 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
     }
 
     let idx = ((room.nextIdx || 0) % room.agents.length + room.agents.length) % room.agents.length;
-    if (req.body?.agentId) {
-      const forced = room.agents.findIndex((a) => a.agentId === String(req.body.agentId));
+    if (opts.forcedAgentId) {
+      const forced = room.agents.findIndex((a) => a.agentId === String(opts.forcedAgentId));
       if (forced === -1) {
         return res.status(400).json({ message: 'That character is not in this room.' });
       }
@@ -515,18 +534,18 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
     const system = buildSystem(room, speaker.name, agent.instructions, humanName, isChild(req));
     const msgs = buildMessages(room, speaker.agentId);
 
-    const deepThink = req.body?.deepThink === true;
+    const deepThink = opts.deepThink === true;
     let data;
     let modelUsed = agent.model || FALLBACK_MODEL;
     try {
-      data = await callOpenRouter(modelUsed, system, msgs, key, deepThink);
+      data = await callOpenRouter(modelUsed, system, msgs, key, deepThink, { asyncJob: opts.asyncJob });
     } catch (e) {
       // agent's model string may not be a valid OpenRouter slug — retry on the fallback
       logger.warn(
         `[kade/room next] model '${modelUsed}' failed (${e?.response?.status || e.message}); retrying on ${FALLBACK_MODEL}`,
       );
       modelUsed = FALLBACK_MODEL;
-      data = await callOpenRouter(modelUsed, system, msgs, key, deepThink, { noThink: true });
+      data = await callOpenRouter(modelUsed, system, msgs, key, deepThink, { noThink: true, asyncJob: opts.asyncJob });
     }
     // July 30 2026 (session 35 part 8, Amber's cut-off receipts — five lines
     // dead mid-sentence at 74-104 chars, no slop-rewrite and no echo-guard
@@ -553,6 +572,7 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
         ]);
         const dataP = await callOpenRouter(modelUsed, system, plainMsgs, key, deepThink, {
           noThink: modelUsed === FALLBACK_MODEL,
+          asyncJob: opts.asyncJob,
         });
         const choiceP = dataP?.choices?.[0] || {};
         const textP = cleanReply(choiceP.message && choiceP.message.content, speaker.name);
@@ -580,7 +600,7 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
             content: `(Stop. Your draft repeated phrasing or the praise-opener the room has already used. Say it again as ${speaker.name} in completely fresh words and imagery, opening with your point — not with anyone's name.)`,
           },
         ]);
-        const data2 = await callOpenRouter(modelUsed, system, retryMsgs, key, deepThink);
+        const data2 = await callOpenRouter(modelUsed, system, retryMsgs, key, deepThink, { asyncJob: opts.asyncJob });
         const text2 = cleanReply(data2?.choices?.[0]?.message?.content, speaker.name);
         if (text2) {
           text = text2;
@@ -629,7 +649,89 @@ router.post('/:id/next', requireJwtAuth, async (req, res) => {
     }
     return res.status(500).json({ message: 'That turn failed — give it another try.' });
   }
+  return out;
+}
+
+const roomTurnJobs = new Map(); // jobId -> { roomId, status, code, json, at }
+const roomTurnBusy = new Set(); // roomIds mid-generation (both doors)
+function pruneTurnJobs() {
+  const now = Date.now();
+  for (const [id, job] of roomTurnJobs) {
+    if (now - job.at > 10 * 60 * 1000) roomTurnJobs.delete(id);
+  }
+}
+
+router.post('/:id/next', requireJwtAuth, async (req, res) => {
+  const roomId = String(req.params.id);
+  if (roomTurnBusy.has(roomId)) {
+    return res.status(409).json({ message: 'A turn is already brewing in this room — hold on a moment.' });
+  }
+  const opts = {
+    roomId,
+    forcedAgentId: req.body?.agentId ? String(req.body.agentId) : null,
+    deepThink: req.body?.deepThink === true,
+    asyncJob: req.body?.async === true,
+  };
+  if (!opts.asyncJob) {
+    roomTurnBusy.add(roomId);
+    try {
+      const out = await generateRoomTurn(req, opts);
+      return res.status(out.code).json(out.json);
+    } catch (err) {
+      logger.error('[kade/room next sync] engine threw:', err);
+      return res.status(500).json({ message: 'That turn failed — give it another try.' });
+    } finally {
+      roomTurnBusy.delete(roomId);
+    }
+  }
+  pruneTurnJobs();
+  const jobId = cryptoRandomId();
+  roomTurnJobs.set(jobId, { roomId, status: 'running', code: 0, json: null, at: Date.now() });
+  roomTurnBusy.add(roomId);
+  (async () => {
+    try {
+      const out = await generateRoomTurn(req, opts);
+      roomTurnJobs.set(jobId, {
+        roomId,
+        status: out.code === 200 ? 'done' : 'error',
+        code: out.code,
+        json: out.json,
+        at: Date.now(),
+      });
+    } catch (err) {
+      logger.error('[kade/room next async] job failed:', err);
+      roomTurnJobs.set(jobId, {
+        roomId, status: 'error', code: 500,
+        json: { message: 'That turn failed — give it another try.' }, at: Date.now(),
+      });
+    } finally {
+      roomTurnBusy.delete(roomId);
+    }
+  })();
+  return res.status(202).json({ jobId });
 });
+
+function cryptoRandomId() {
+  return require('crypto').randomUUID();
+}
+
+router.get('/:id/next-status', requireJwtAuth, async (req, res) => {
+  try {
+    const jobId = String(req.query.jobId || '');
+    const job = roomTurnJobs.get(jobId);
+    if (!job || job.roomId !== String(req.params.id)) {
+      return res.status(404).json({ message: 'That turn got lost — ask for it again.' });
+    }
+    const room = await KadeRoom.findOne(roomAccessQuery(req, req.params.id)).select('_id').lean();
+    if (!room) return res.status(404).json({ message: 'Room not found.' });
+    if (job.status === 'running') return res.json({ status: 'running' });
+    return res.status(job.code).json({ status: job.status, ...(job.json || {}) });
+  } catch (err) {
+    logger.error('[kade/room next-status] error:', err);
+    return res.status(500).json({ message: 'Could not check on that turn.' });
+  }
+});
+
 
 /** Delete a room. */
 /** Party mode (July 31 2026, her "I want both"): the host opens the doors
