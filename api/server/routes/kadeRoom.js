@@ -600,11 +600,22 @@ async function generateRoomTurn(req, opts) {
             content: `(Stop. Your draft repeated phrasing or the praise-opener the room has already used. Say it again as ${speaker.name} in completely fresh words and imagery, opening with your point — not with anyone's name.)`,
           },
         ]);
-        const data2 = await callOpenRouter(modelUsed, system, retryMsgs, key, deepThink, { asyncJob: opts.asyncJob });
+        const data2 = await callOpenRouter(modelUsed, system, retryMsgs, key, deepThink, {
+          asyncJob: opts.asyncJob,
+          // Aug 1 2026 (Grace's 89-char receipts): the echo retry never got
+          // the noThink threading the fragment retry got -- on a fallback
+          // turn it ran flash-lite with reasoning HIGH on 600 tokens and
+          // returned a fragment. Same rule everywhere now.
+          noThink: modelUsed === FALLBACK_MODEL,
+        });
         const text2 = cleanReply(data2?.choices?.[0]?.message?.content, speaker.name);
-        if (text2) {
+        // A retry may polish, never amputate (the slop-rewriter's own law):
+        // a rewrite shorter than half the draft is a fragment, not a fix.
+        if (text2 && text2.length >= text.length * 0.5) {
           text = text2;
           data = data2;
+        } else if (text2) {
+          logger.warn(`[kade/room next] echo retry came back ${text2.length}/${text.length} chars — fragment, keeping the original draft`);
         }
       } catch (retryErr) {
         logger.warn(`[kade/room next] echo-guard retry failed (${retryErr.message}) — keeping the first draft`);
