@@ -3,6 +3,7 @@ import { Providers, createTokenCounter, projectAgentContextUsage } from '@librec
 import type { TContextProjectionRequest, TContextUsageEvent } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
 import { QUOTE_MAX_COUNT, mergeQuotedText } from '~/utils/quotes';
+import { getModelMaxTokens } from '~/utils/tokens';
 
 const MAX_PROJECTION_MESSAGES = 512;
 const MAX_PROJECTION_BRANCH_MESSAGES = 256;
@@ -60,6 +61,11 @@ export interface ContextProjectionDeps {
     filter: ProjectionMessageFilter,
     options?: ProjectionMessageTextStatsOptions,
   ) => Promise<ProjectionMessageTextStats[]>;
+  /** KADE Aug 4 2026: optional agent lookup so the projection can resolve the
+   * AUTHORITATIVE window (agent's configured maxContextTokens clamped to the
+   * model's real window) instead of trusting whatever constant the client
+   * pinned. Absent → the old client-sent behavior, unchanged. */
+  getAgent?: (filter: { id: string }) => Promise<Record<string, unknown> | null>;
 }
 
 /**
@@ -243,7 +249,39 @@ export async function resolveContextProjection(
     return null;
   }
 
-  const maxContextTokens = params.maxContextTokens;
+  /** KADE Aug 4 2026 (windows fit the model): prefer the server's own
+   * answer -- the agent's configured maxContextTokens clamped to the model's
+   * real window, the same math initializeAgent runs -- over the client-sent
+   * cap, so the gauge reads the window the next call will actually live
+   * under (the iOS meter used to pin 120K while k3 agents really run
+   * 600K-950K effective). Window size is harmless metadata; any failure or
+   * absence falls back to the client-sent value exactly as before. */
+  let maxContextTokens = params.maxContextTokens;
+  let agentModel: string | undefined;
+  if (params.agentId != null && params.agentId !== '' && deps.getAgent != null) {
+    try {
+      const agent = await deps.getAgent({ id: params.agentId });
+      const modelParameters =
+        agent == null
+          ? undefined
+          : (agent['model_parameters'] as Record<string, unknown> | undefined);
+      const configured = Number(modelParameters?.maxContextTokens);
+      const modelValue = agent == null ? undefined : agent['model'];
+      agentModel = typeof modelValue === 'string' ? modelValue : undefined;
+      const modelWindow = agentModel != null ? getModelMaxTokens(agentModel) : undefined;
+      const authoritative =
+        configured > 0 && modelWindow != null && modelWindow > 0
+          ? Math.min(configured, modelWindow)
+          : configured > 0
+            ? configured
+            : modelWindow;
+      if (authoritative != null && authoritative > 0) {
+        maxContextTokens = authoritative;
+      }
+    } catch {
+      /* fall back to the client-sent value */
+    }
+  }
   if (maxContextTokens == null || maxContextTokens <= 0) {
     return null;
   }
@@ -280,7 +318,7 @@ export async function resolveContextProjection(
     return null;
   }
 
-  const model = params.model;
+  const model = params.model ?? agentModel;
   const encoding = (model ?? '').toLowerCase().includes('claude') ? 'claude' : 'o200k_base';
   const tokenCounter = await createTokenCounter(encoding);
 

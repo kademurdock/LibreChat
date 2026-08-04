@@ -22,6 +22,10 @@ async function contextProjectionController(req, res) {
         userId: req.user?.id,
         getMessages: db.getMessages,
         getMessageTextStats: db.getMessageTextStats,
+        /** KADE Aug 4 2026: lets the projection resolve the agent's real
+         *  effective window (configured value clamped to the model's own
+         *  limit) instead of trusting the client-pinned constant. */
+        getAgent: db.getAgent,
       },
       params,
     );

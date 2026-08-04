@@ -187,6 +187,18 @@ const moonshotModels = {
   'moonshot-v1-128k-vision': 131072,
   'moonshot-v1-128k-vision-preview': 131072,
   // kimi series
+  // KADE Aug 4 2026: kimi-k3 launched July 16 2026 with a 1,048,576-token
+  // window (verified against Moonshot's published specs) -- AFTER the
+  // generic 262144 'kimi' prefix below was written, which silently
+  // shrank k3 agents to a quarter of their real window once the model
+  // ceiling became authoritative. k2.5/k2.6/k2.7 stay 262144 (their real
+  // spec), listed explicitly so nobody has to re-derive which prefix wins
+  // (findMatchingPattern picks the LONGEST matching key).
+  'kimi-k2.5': 262144,
+  'kimi-k2.6': 262144,
+  'kimi-k2.7-code': 262144,
+  'kimi-k2.7-code-highspeed': 262144,
+  'kimi-k3': 1048576,
   kimi: 262144,
   'kimi-latest': 128000,
   'kimi-k2-0711': 131072,
