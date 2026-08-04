@@ -1818,6 +1818,48 @@ router.delete('/pronunciation-dictionary/:id', requireJwtAuth, async (req, res) 
 });
 
 /* ----------------------------------------------------------------------------
+ * KEYBOARD QUICK PHRASES (Aug 4 2026): per-user one-tap phrases for the Kade
+ * Keys keyboard — her call: custom per person "instead of canned crap." The
+ * app CRUDs here and mirrors the list into the App Group for the keyboard's
+ * offline read. Same JSON conventions as the pronunciation dictionary above.
+ * -------------------------------------------------------------------------- */
+const {
+  getUserPhrases,
+  addUserPhrase,
+  deleteUserPhrase,
+} = require('~/models/kadeKeyboardPhrase');
+
+router.get('/keyboard-phrases', requireJwtAuth, async (req, res) => {
+  try {
+    return res.json({ phrases: await getUserPhrases(req.user.id) });
+  } catch (e) {
+    logger.error('[kade/keyboard-phrases] get failed:', e);
+    return res.status(500).json({ error: 'Could not load your phrases' });
+  }
+});
+
+router.post('/keyboard-phrases', requireJwtAuth, async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    const phrase = await addUserPhrase(req.user.id, text);
+    return res.json({ phrase });
+  } catch (e) {
+    logger.warn('[kade/keyboard-phrases] add failed:', e && e.message);
+    return res.status(400).json({ error: e.message || 'Could not save that phrase' });
+  }
+});
+
+router.delete('/keyboard-phrases/:id', requireJwtAuth, async (req, res) => {
+  try {
+    await deleteUserPhrase(req.user.id, req.params.id);
+    return res.json({ ok: true });
+  } catch (e) {
+    logger.error('[kade/keyboard-phrases] delete failed:', e);
+    return res.status(500).json({ error: 'Could not remove that phrase' });
+  }
+});
+
+/* ----------------------------------------------------------------------------
  * PHONE-LINE / SPOTTER PRONUNCIATION LOOKUP (July 20 2026): secret-guarded
  * server-to-server read so the BRIDGE can pull a caller's dictionary the same
  * way it already pulls their voice pick -- resolved by userId, email, or the
