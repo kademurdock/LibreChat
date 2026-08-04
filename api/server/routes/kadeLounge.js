@@ -1464,6 +1464,16 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
         setTimeout(function(){ sendData({ t:'hello' }); }, 700);
       }
 
+      // Aug 4 2026 (Kade: "make it play the connect and disconnect chimes when
+      // people enter and leave clubhouse rooms. I still want it to announce, but
+      // I like the chime also."). Brief notification chime alongside the PA line.
+      var _chimeJoin, _chimeLeave;
+      function roomChime(join){
+        try{
+          if(join){ _chimeJoin = _chimeJoin || new Audio('/assets/sounds/call-connected.mp3'); _chimeJoin.currentTime = 0; _chimeJoin.play().catch(function(){}); }
+          else { _chimeLeave = _chimeLeave || new Audio('/assets/sounds/call-disconnected.mp3'); _chimeLeave.currentTime = 0; _chimeLeave.play().catch(function(){}); }
+        }catch(e){}
+      }
       function wireRoomEvents(){
         lkRoom
           .on(LK.RoomEvent.TrackSubscribed, function(track, pub){
@@ -1491,16 +1501,16 @@ const loungeHtml = `<!doctype html><html lang="en"><head><title>Kade's Clubhouse
           })
           .on(LK.RoomEvent.ParticipantConnected, function(p){
             if(isDj(p.identity)){ return; } // headless engines are furniture
-            renderRoster(); paSay((p.name||p.identity)+' just walked in.', 'doors');
+            renderRoster(); roomChime(true); paSay((p.name||p.identity)+' just walked in.', 'doors');
           })
           .on(LK.RoomEvent.ParticipantDisconnected, function(p){
             if(isDj(p.identity)){ renderRoster(); reconcile(); renderJukebox(); return; }
             if(RECORDERS[p.identity]){ delete RECORDERS[p.identity]; renderRecOthers(); }
             if(BOT && BOT.anchor === p.identity){
               var bn = BOT.name; BOT = null;
-              paSay((p.name||p.identity)+' left and took '+bn+' with them.', 'doors');
+              roomChime(false); paSay((p.name||p.identity)+' left and took '+bn+' with them.', 'doors');
             } else {
-              paSay((p.name||p.identity)+' headed out.', 'doors');
+              roomChime(false); paSay((p.name||p.identity)+' headed out.', 'doors');
             }
             renderRoster();
             if(iAmAuthority()){

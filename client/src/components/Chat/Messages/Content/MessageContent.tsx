@@ -1,4 +1,5 @@
 import { memo, Suspense, useMemo } from 'react';
+import ThinkingBubbles from './ThinkingBubbles';
 import { useRecoilValue } from 'recoil';
 import { DelayedRender } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
@@ -189,6 +190,9 @@ const MessageContent = ({
     <>
       {thinkingContent.length > 0 && (
         <Thinking key={`thinking-${messageId}`}>{thinkingContent}</Thinking>
+      )}
+      {showRegularCursor && regularContent.length === 0 && thinkingContent.length === 0 && (
+        <ThinkingBubbles key={`bubbles-${messageId}`} />
       )}
       <DisplayMessage
         key={`display-${messageId}`}
