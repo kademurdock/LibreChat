@@ -545,23 +545,42 @@ class AgentClient extends BaseClient {
       }
     }
 
-    /** Memory context (user preferences/memories) */
+    /** Memory context (user preferences/memories).
+     *
+     * KADE Aug 4 2026 — THE CACHE BREAKER, found by fingerprint diff of two
+     * consecutive live turns: this whole block (memory cards + the dreaming
+     * summary, ~17K chars, hash-STABLE between turns) used to ride
+     * `additional_instructions`, i.e. the SDK's dynamic system tail that gets
+     * re-inserted BEFORE the newest message every turn — which re-orders the
+     * payload each turn and kills Moonshot's automatic prefix cache dead
+     * (production receipts: prompt=19K, cached=0, every single turn, full
+     * price). The SDK's own doc on buildDynamicInstructionsString says it
+     * plainly: keep VOLATILE context there so it can't invalidate the stable
+     * prefix. Memory is not volatile — it changes occasionally, not per turn.
+     * So: STABLE memory (cards + dreaming) now joins the INSTRUCTIONS head
+     * (`stableMemoryContext`, appended to agent.instructions below), where a
+     * change costs ONE full re-read and then re-caches — the same accepted
+     * cost model as conversation compacting. Truly per-turn context (nudges)
+     * stays in the dynamic tail (`volatileTurnContext`), exactly what the
+     * tail is for. */
     const withoutKeys = await this.useMemory();
-    let memoryContext = withoutKeys
+    let stableMemoryContext = withoutKeys
       ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
       : undefined;
+    let volatileTurnContext;
 
     /** KADE NUDGE ENGINE: pending 'chat'-channel nudges ride into this turn's
      * context and get relayed naturally by the character (reminders the user
      * asked for, birthday wishes, etc.). Marked delivered on pickup. Fail-soft:
-     * a nudge-store hiccup must never break a chat turn. */
+     * a nudge-store hiccup must never break a chat turn. One-shot per turn =
+     * genuinely volatile = stays in the dynamic tail. */
     try {
       const { takePendingChatNudges } = require('~/server/services/kadeNudges');
       const pendingNudges = await takePendingChatNudges(this.options.req.user.id);
       if (pendingNudges.length > 0) {
         const nudgeLines = pendingNudges.map((n) => `- ${n.text}`).join('\n');
         const nudgeBlock = `# Waiting nudges for this user\nDeliver these naturally near the START of your reply (in character, briefly — do not read them like a list robot):\n${nudgeLines}`;
-        memoryContext = memoryContext ? `${memoryContext}\n\n${nudgeBlock}` : nudgeBlock;
+        volatileTurnContext = nudgeBlock;
       }
     } catch (nudgeError) {
       logger.warn('[AgentClient] pending-nudge pickup failed (non-fatal):', nudgeError.message);
@@ -570,7 +589,8 @@ class AgentClient extends BaseClient {
     /** KADE DREAMING: rolling per-relationship EPISODIC summary ("what's been
      * going on lately"), injected BESIDE the durable memory cards so fresh chats
      * (and calls) have continuity the cards alone can't give. One short stored
-     * paragraph -> negligible tokens. Fail-soft: never breaks a chat turn. */
+     * paragraph -> negligible tokens. Fail-soft: never breaks a chat turn.
+     * Changes after sweeps, not per turn -> rides the STABLE head. */
     try {
       const { getRelationshipSummaryBlock } = require('~/server/services/kadeMemorySummary');
       const summaryBlock = await getRelationshipSummaryBlock(
@@ -578,7 +598,9 @@ class AgentClient extends BaseClient {
         this.options.agent?.id,
       );
       if (summaryBlock) {
-        memoryContext = memoryContext ? `${memoryContext}\n\n${summaryBlock}` : summaryBlock;
+        stableMemoryContext = stableMemoryContext
+          ? `${stableMemoryContext}\n\n${summaryBlock}`
+          : summaryBlock;
       }
     } catch (summaryError) {
       logger.warn('[AgentClient] episodic-summary inject failed (non-fatal):', summaryError.message);
@@ -633,8 +655,17 @@ class AgentClient extends BaseClient {
     await Promise.all(
       allAgents.map(({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
-        if (memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)) {
-          agentRunContextParts.push(memoryContext);
+        const memoryEligible = agentId === this.options.agent.id || memoryAgentEnabled;
+        if (stableMemoryContext && memoryEligible) {
+          /** KADE Aug 4 2026 (cache breaker fix, see the long note above):
+           * stable memory joins the instructions HEAD — part of the stable,
+           * prefix-cacheable system block instead of the per-turn tail. */
+          agent.instructions = [agent.instructions, stableMemoryContext]
+            .filter(Boolean)
+            .join('\n\n');
+        }
+        if (volatileTurnContext && memoryEligible) {
+          agentRunContextParts.push(volatileTurnContext);
         }
         const scopedContext = agentScopedContext.get(agentId);
         if (scopedContext) {
