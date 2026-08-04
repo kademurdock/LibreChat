@@ -1008,15 +1008,37 @@ export async function initializeAgent(
     llmConfig?.maxTokens as number | undefined,
     0,
   );
-  const agentMaxContextTokens = optionalChainWithEmptyCheck(
+  /** KADE Aug 4 2026 (her ask: "context windows grew or shrank automatically
+   * to fit whatever model it was using"): the model's REAL window from the
+   * token map is now a hard CEILING on any configured maxContextTokens. The
+   * live fleet carried stale 600K-950K values from the 1M-context GLM/DeepSeek
+   * eras on 262K kimi models -- payloads could overflow the provider's true
+   * window, and conversation compacting's 90%-of-window trigger sat
+   * unreachably high (silently dead). A configured value AT OR BELOW the
+   * model's window is respected untouched (deliberate cost caps stay
+   * deliberate); anything above clamps down to reality; agents with no value
+   * keep riding the model map -- so any future model swap re-fits every
+   * window automatically, both directions. */
+  const modelWindowTokens = getModelMaxTokens(
+    tokensModel ?? '',
+    providerEndpointMap[overrideProvider as keyof typeof providerEndpointMap],
+    options.endpointTokenConfig,
+  );
+  let agentMaxContextTokens = optionalChainWithEmptyCheck(
     maxContextTokens,
-    getModelMaxTokens(
-      tokensModel ?? '',
-      providerEndpointMap[overrideProvider as keyof typeof providerEndpointMap],
-      options.endpointTokenConfig,
-    ),
+    modelWindowTokens,
     DEFAULT_MAX_CONTEXT_TOKENS,
   );
+  if (
+    modelWindowTokens != null &&
+    Number(modelWindowTokens) > 0 &&
+    Number(agentMaxContextTokens) > Number(modelWindowTokens)
+  ) {
+    logger.info(
+      `[initializeAgent] maxContextTokens ${agentMaxContextTokens} exceeds the model window for ${tokensModel} -- clamped to ${modelWindowTokens}`,
+    );
+    agentMaxContextTokens = modelWindowTokens;
+  }
 
   if (
     agent.endpoint === EModelEndpoint.azureOpenAI &&
@@ -1301,7 +1323,11 @@ export async function initializeAgent(
     maxToolResultChars: maxToolResultCharsResolved,
     maxContextTokens:
       maxContextTokens != null && maxContextTokens > 0
-        ? maxContextTokens
+        ? /* KADE Aug 4 2026: same clamp as agentMaxContextTokens above --
+           * a configured value can never exceed the model's real window
+           * (baseContextTokens already carries the model ceiling minus
+           * output headroom). */
+          (baseContextTokens > 0 ? Math.min(maxContextTokens, baseContextTokens) : maxContextTokens)
         : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
     primedCodeFiles,
     endpointTokenConfig: options.endpointTokenConfig,
