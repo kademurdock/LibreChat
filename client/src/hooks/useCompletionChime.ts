@@ -95,7 +95,10 @@ const SOUND_GAINS: Record<string, number> = {
   received: 0.8,
   // July 22 2026 night, Kade after living with it: "could go quite a bit down
   // in volume... I just don't need to hear it all that much." 0.55 -> 0.22.
-  thinking: 0.22,
+  // Aug 3 2026 (Kade: bubbles are "quieter than the received sound by quite a
+  // bit... turned up a bit"): 0.22 -> 0.4. Still well under received (0.8), no
+  // longer a whisper beside it.
+  thinking: 0.4,
 };
 
 /** Matches ConversationMode's tuned call-side delay: ordinary fast replies
@@ -187,6 +190,7 @@ export default function useCompletionChime(isSubmitting: boolean, index: string 
   const awaitingVoiceRef = useRef(false);
   const awaitGraceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const awaitCapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastReceivedRef = useRef(0);
 
   const clearAwaitTimers = () => {
     if (awaitGraceRef.current != null) {
@@ -234,20 +238,40 @@ export default function useCompletionChime(isSubmitting: boolean, index: string 
    * near-silence under the ding, then ease back up for the TTS-fetch bridge.
    * Keeps her July-22 "no dead air before the voice" design AND kills the
    * doubled-cue overlap. holdSeconds ≈ the received file's real duration. */
-  const duckThinkingLoop = (holdSeconds: number) => {
+  const duckThinkingLoop = (holdSeconds: number, recover: boolean) => {
     const gain = thinkingGainRef.current;
     const ctx = audioCtx;
-    if (!gain || !ctx || !thinkingSourceRef.current) {
+    const src = thinkingSourceRef.current;
+    if (!gain || !ctx || !src) {
       return;
     }
     try {
-      const target = SOUND_GAINS.thinking ?? 0.22;
+      const target = SOUND_GAINS.thinking ?? 0.4;
       const t = ctx.currentTime;
       gain.gain.cancelScheduledValues(t);
       gain.gain.setValueAtTime(gain.gain.value, t);
-      gain.gain.linearRampToValueAtTime(0.0001, t + 0.12);
-      gain.gain.setValueAtTime(0.0001, t + 0.12 + holdSeconds);
-      gain.gain.linearRampToValueAtTime(target, t + 0.12 + holdSeconds + 0.35);
+      // Aug 3 2026 (Kade: "received sound plays double or something on web"):
+      // the doubled cue was the bubble loop still audible UNDER the received
+      // ding. The old 0.12s duck left ~120ms of overlap — nearly inaudible at
+      // the old 0.22 loop gain, obvious once it's turned up to 0.4. Duck to
+      // silence in 0.03s so the ding always lands clean and alone.
+      gain.gain.linearRampToValueAtTime(0.0001, t + 0.03);
+      if (recover) {
+        // Voice is coming: stay silent under the ding, then ease back up for
+        // the TTS-fetch bridge (Kade's "no dead air before the voice" design).
+        gain.gain.setValueAtTime(0.0001, t + 0.03 + holdSeconds);
+        gain.gain.linearRampToValueAtTime(target, t + 0.03 + holdSeconds + 0.35);
+      } else {
+        // No voice coming: stay silent and stop the loop for good just after
+        // the ding, so nothing bubbles over it or trails behind it.
+        try {
+          src.stop(t + 0.03 + Math.min(holdSeconds, 0.3));
+        } catch {
+          /* already stopped */
+        }
+        thinkingSourceRef.current = null;
+        thinkingGainRef.current = null;
+      }
     } catch {
       // never let a sound effect break the chat
     }
@@ -321,16 +345,24 @@ export default function useCompletionChime(isSubmitting: boolean, index: string 
       announcePolite({ message: localize('com_ui_reply_finished'), isStatus: true });
       const willAwaitVoice = enabled && autoPlayback && !globalPlayingRef.current;
       if (enabled) {
-        if (willAwaitVoice) {
-          // Duck under the ding (see duckThinkingLoop). First-ever received
-          // may not be decoded yet — 1.2s is the file's ballpark length.
-          duckThinkingLoop(soundBuffers.received?.duration ?? 1.2);
+        // Aug 3 2026 (Kade: "received sound plays double on web"): guard against
+        // a second ding if isSubmitting briefly toggles inside one turn (a tool
+        // or reasoning phase can blip it false->true->false). At most one
+        // received per 1.5s — two real replies are always farther apart.
+        const now = Date.now();
+        const doubleFire = now - lastReceivedRef.current < 1500;
+        // Silence the bubble loop the instant the ding lands (BOTH paths) so it
+        // never rides under received: recover afterward only if voice is
+        // coming, otherwise stop it for good.
+        duckThinkingLoop(soundBuffers.received?.duration ?? 1.4, willAwaitVoice);
+        if (!doubleFire) {
+          lastReceivedRef.current = now;
+          void playOneShot('received').then((ok) => {
+            if (!ok) {
+              playChime();
+            }
+          });
         }
-        void playOneShot('received').then((ok) => {
-          if (!ok) {
-            playChime();
-          }
-        });
       }
       if (willAwaitVoice) {
         // Voice is (probably) coming: hold the bubbles until it starts.
@@ -341,9 +373,8 @@ export default function useCompletionChime(isSubmitting: boolean, index: string 
           }
         }, 2500);
         awaitCapRef.current = setTimeout(endAwaitingVoice, 15000);
-      } else {
-        stopThinkingLoop();
       }
+      // no-voice path: duckThinkingLoop(recover=false) already stopped the loop.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSubmitting]);
