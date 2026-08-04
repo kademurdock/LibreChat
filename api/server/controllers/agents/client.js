@@ -82,6 +82,7 @@ const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
+const { KADE_PLATFORM_NOTE } = require('~/server/utils/kadePlatformNote');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
@@ -656,14 +657,35 @@ class AgentClient extends BaseClient {
       allAgents.map(({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
         const memoryEligible = agentId === this.options.agent.id || memoryAgentEnabled;
+        /** KADE Aug 4 2026 — THE SHARED PLATFORM LAYER (her green light; plan doc
+         * PLATFORM_PROMPT_LAYER_PLAN_2026-08-04 in her folder): ONE fork-side
+         * constant carries the platform-wide mechanics every persona used to
+         * duplicate — steering-tag house style (her taste is the spec), generic
+         * tool norms, spoken-word + accessibility rules, the standard hard-line
+         * and call-greeting blocks, memory norms. Injected HERE because this map
+         * is the one seam that touches EVERY agent in a run (multi-agent seats
+         * included). Edit kadePlatformNote.js once → the whole fleet is current
+         * on the next turn; staleness inside personas becomes structurally
+         * impossible. Head order: persona (with build.js's audience notes
+         * already appended) → platform note → stable memory. Every part is
+         * byte-stable per user, so the whole head keeps riding Moonshot's
+         * prefix cache (the Part-11 fix; a platform-note edit invalidates once,
+         * then re-caches — same accepted cost as a memory change). The
+         * tool-deliberation narration ban is deliberately NOT in the note:
+         * KADE_STYLE_NOTE already carries it (same do-not-double rule as
+         * KADE_FRESHNESS_NOTE). The includes-guard is paranoia against any
+         * lane appending twice. */
+        const headParts = [agent.instructions];
+        if (!String(agent.instructions || '').includes('PLATFORM (invisible')) {
+          headParts.push(KADE_PLATFORM_NOTE);
+        }
         if (stableMemoryContext && memoryEligible) {
           /** KADE Aug 4 2026 (cache breaker fix, see the long note above):
            * stable memory joins the instructions HEAD — part of the stable,
            * prefix-cacheable system block instead of the per-turn tail. */
-          agent.instructions = [agent.instructions, stableMemoryContext]
-            .filter(Boolean)
-            .join('\n\n');
+          headParts.push(stableMemoryContext);
         }
+        agent.instructions = headParts.filter(Boolean).join('\n\n');
         if (volatileTurnContext && memoryEligible) {
           agentRunContextParts.push(volatileTurnContext);
         }
