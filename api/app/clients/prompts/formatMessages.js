@@ -248,7 +248,29 @@ const formatAgentMessages = (payload) => {
     }
 
     if (currentContent.length > 0) {
-      messages.push(new AIMessage({ content: currentContent }));
+      /** KADE Aug 5 2026 — THE ARRAY-ASSISTANT BUG (cache-nibbler hunt, receipts
+       * in PROJECT_STATUS): a plain assistant reply used to reach the wire as a
+       * CONTENT-PARTS ARRAY (this push), while the think/tool branches above
+       * emit plain strings. Two proven harms on the kimi lane: (1) Moonshot's
+       * chat template effectively does not read array-shaped assistant turns —
+       * live byte-proof: with the prior reply as an array, a soft follow-up
+       * ("he also confiscated the stapler") got the PREVIOUS reply repeated
+       * BYTE-IDENTICAL (1344ch, completion=342 twice); strong prompts still
+       * landed, soft continuations looped. (2) The JSON scaffold (~90ch of
+       * brackets/escapes) is byte-noise that re-shapes history between turns
+       * and breaks the prefix cache mid-payload. Fix: all-text assistant
+       * content flattens to one plain string — the exact form the reasoning
+       * and tool branches already produce. Mixed/non-text parts (images) keep
+       * the array untouched. */
+      const allText = currentContent.every((part) => part && part.type === ContentTypes.TEXT);
+      if (allText) {
+        const flattened = currentContent
+          .reduce((acc, curr) => `${acc}${curr[ContentTypes.TEXT] ?? ''}\n`, '')
+          .trim();
+        messages.push(new AIMessage({ content: flattened }));
+      } else {
+        messages.push(new AIMessage({ content: currentContent }));
+      }
     }
 
     /**
