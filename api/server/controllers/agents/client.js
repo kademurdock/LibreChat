@@ -1397,9 +1397,12 @@ class AgentClient extends BaseClient {
        * or non-text parts (images) stay arrays. In-place content change
        * only: no insert/remove, so `indexTokenCountMap` positions and the
        * skill-prime splice below are untouched. */
+      let kadeFlattenedCount = 0;
       for (const formattedMsg of initialMessages) {
+        const msgType =
+          formattedMsg?._getType?.() ?? formattedMsg?.getType?.() ?? formattedMsg?.role;
         if (
-          formattedMsg?._getType?.() === 'ai' &&
+          (msgType === 'ai' || msgType === 'assistant') &&
           Array.isArray(formattedMsg.content) &&
           formattedMsg.content.length > 0 &&
           formattedMsg.content.every(
@@ -1409,6 +1412,23 @@ class AgentClient extends BaseClient {
           formattedMsg.content = formattedMsg.content
             .reduce((acc, part) => `${acc}${part.text}\n`, '')
             .trim();
+          kadeFlattenedCount += 1;
+        }
+      }
+      if (kadeFlattenedCount > 0) {
+        logger.info(`[AgentClient] kade array-assistant flatten: ${kadeFlattenedCount} message(s)`);
+      } else {
+        /** Receipt when the guard no-ops but arrays exist — names the actual
+         * runtime shape so the next fix aims at the real object, not a guess. */
+        const arrayContent = initialMessages.filter((m) => Array.isArray(m?.content));
+        if (arrayContent.length > 0) {
+          const shapes = arrayContent
+            .map(
+              (m) =>
+                `${m?._getType?.() ?? m?.constructor?.name ?? typeof m}[${(m.content[0] && Object.keys(m.content[0]).join('.')) || ''}]`,
+            )
+            .join(',');
+          logger.info(`[AgentClient] kade flatten NO-OP; array-content shapes: ${shapes}`);
         }
       }
 
