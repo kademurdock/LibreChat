@@ -1379,6 +1379,39 @@ class AgentClient extends BaseClient {
         );
       }
 
+      /** KADE Aug 5 2026 — THE ARRAY-ASSISTANT BUG, fixed at the real seam.
+       * `formatAgentMessages` here is @librechat/agents' (the package), NOT
+       * api/app/clients/prompts — the first fix landed in that parallel copy
+       * and the wire receipts (msg-fingerprints with shapes) proved it never
+       * ran for this lane: prior replies still hit Moonshot as content-parts
+       * ARRAYS (`assistant:a[text]`). Two proven harms on kimi: (1) the chat
+       * template effectively skips array-shaped assistant turns — live
+       * byte-proof: with the prior reply an array, a soft follow-up got the
+       * PREVIOUS reply repeated BYTE-IDENTICAL (1344ch + completion=342,
+       * twice in a row; reproduced across two convos); strong prompts still
+       * landed, soft continuations looped. (2) The ~90ch JSON scaffold is
+       * per-turn byte-noise that re-shapes history and breaks the prefix
+       * cache mid-payload. Fix: post-format, any AI message whose content is
+       * an all-text parts array flattens to one plain string — exactly the
+       * form the package's own reasoning/tool branches already emit. Mixed
+       * or non-text parts (images) stay arrays. In-place content change
+       * only: no insert/remove, so `indexTokenCountMap` positions and the
+       * skill-prime splice below are untouched. */
+      for (const formattedMsg of initialMessages) {
+        if (
+          formattedMsg?._getType?.() === 'ai' &&
+          Array.isArray(formattedMsg.content) &&
+          formattedMsg.content.length > 0 &&
+          formattedMsg.content.every(
+            (part) => part && part.type === 'text' && typeof part.text === 'string',
+          )
+        ) {
+          formattedMsg.content = formattedMsg.content
+            .reduce((acc, part) => `${acc}${part.text}\n`, '')
+            .trim();
+        }
+      }
+
       /**
        * Skill priming — both manual ($ popover) and always-apply (frontmatter).
        *
