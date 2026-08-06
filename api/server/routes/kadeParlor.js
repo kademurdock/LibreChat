@@ -119,6 +119,18 @@ router.post('/new', requireJwtAuth, async (req, res) => {
     const key = String(req.body?.game || '').trim().toLowerCase().replace(/\s+/g, '_');
     const G = getGame(key);
     if (!G) return res.status(400).json({ error: `Unknown game "${key}".` });
+    /* Daily Word (Aug 6 2026): one per user per Central day, same as the
+     * chat lane — the parlor page can't be the streak's side door. */
+    if (G.meta.daily) {
+      const { dailyGate } = require('~/app/clients/tools/kadegames/dailyWord');
+      const gate = await dailyGate(userId, KadeGameState);
+      if (gate.blocked && !(gate.doc && gate.doc.status === 'active')) {
+        return res.status(409).json({ error: gate.message });
+      }
+      if (gate.blocked) {
+        return res.status(409).json({ error: gate.message, gameId: gate.doc.gameId });
+      }
+    }
     const active = await KadeGameState.countDocuments({ user: userId, status: 'active' });
     if (active >= MAX_ACTIVE) {
       return res.status(400).json({ error: `You have ${active} tables going (max ${MAX_ACTIVE}) — quit one first.` });

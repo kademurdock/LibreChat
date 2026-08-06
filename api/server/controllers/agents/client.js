@@ -83,6 +83,7 @@ const { resolveConfigServers } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { KADE_PLATFORM_NOTE } = require('~/server/utils/kadePlatformNote');
+const { getWorldBlock, KADE_WHISPER_LINE } = require('~/server/utils/kadeWorldPulse');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
@@ -654,7 +655,7 @@ class AgentClient extends BaseClient {
     const configServers = await resolveConfigServers(this.options.req);
 
     await Promise.all(
-      allAgents.map(({ agent, agentId }) => {
+      allAgents.map(async ({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
         const memoryEligible = agentId === this.options.agent.id || memoryAgentEnabled;
         /** KADE Aug 4 2026 — THE SHARED PLATFORM LAYER (her green light; plan doc
@@ -678,6 +679,25 @@ class AgentClient extends BaseClient {
         const headParts = [agent.instructions];
         if (!String(agent.instructions || '').includes('PLATFORM (invisible')) {
           headParts.push(KADE_PLATFORM_NOTE);
+        }
+        /** KADE Aug 6 2026 — LIVING WORLD LAYER (ideas 25+26, her pick):
+         * daily seed + family board, byte-stable per (agent, Central day) so
+         * the head re-caches ONCE a day — see utils/kadeWorldPulse.js for the
+         * cache math and the kill switch (KADE_WORLD_PULSE=0). Fail-soft: an
+         * empty string pushes nothing. */
+        try {
+          const worldBlock = await getWorldBlock(agentId);
+          if (worldBlock) {
+            headParts.push(worldBlock);
+          }
+        } catch (_e) {
+          /* a worldless turn beats a broken one */
+        }
+        /** KADE Aug 6 2026 — WHISPER MODE (idea 13): night-quiet delivery,
+         * a user toggle riding the request body (createPayload, same pattern
+         * as userLocation). Line is byte-stable while the toggle is on. */
+        if (this.options.req?.body?.kadeWhisper === true) {
+          headParts.push(KADE_WHISPER_LINE);
         }
         if (stableMemoryContext && memoryEligible) {
           /** KADE Aug 4 2026 (cache breaker fix, see the long note above):

@@ -639,6 +639,11 @@ router.get('/game-leaderboard', requireJwtAuth, async (req, res) => {
     let finished = 0;
     let biggestBlackjack = null;
     let bestTrivia = null;
+    /* Daily Word streaks (Aug 6 2026, idea 49): day results per player off
+     * the same doc scan — docs arrive updatedAt-desc, so the FIRST doc seen
+     * for a (player, dateKey) is the one that counts. */
+    const { computeStreak: dwComputeStreak, centralDateKey: dwToday } = require('~/app/clients/tools/kadegames/dailyWord');
+    const dailyDays = new Map(); // uid -> { by, days: Map(dateKey -> won) }
 
     for (const d of docs) {
       const G = getParlorGame(d.gameKey);
@@ -763,6 +768,16 @@ router.get('/game-leaderboard', requireJwtAuth, async (req, res) => {
       } else if (d.gameKey === 'hearts') {
         const sc = (d.state && d.state.scores) || [];
         detail = sc.length ? `finished with ${sc[0]} points` : '';
+      } else if (d.gameKey === 'daily_word') {
+        const n = (d.state && d.state.guesses && d.state.guesses.length) || 0;
+        const won = v.winner === 'player';
+        detail = won ? `solved in ${n}` : 'the word got away';
+        const dk = d.state && d.state.dateKey;
+        if (dk) {
+          if (!dailyDays.has(uid)) dailyDays.set(uid, { by, days: new Map() });
+          const rec = dailyDays.get(uid);
+          if (!rec.days.has(dk)) rec.days.set(dk, won);
+        }
       }
 
       if (recent.length < 12) {
@@ -779,12 +794,23 @@ router.get('/game-leaderboard', requireJwtAuth, async (req, res) => {
       });
     if (bestTrivia) delete bestTrivia.pct;
 
+    /* Daily Word family board: current streaks first — the bragging number. */
+    const todayKey = dwToday();
+    const dailyWord = [...dailyDays.values()]
+      .map((rec) => {
+        const { current, best } = dwComputeStreak(rec.days, todayKey);
+        const wins = [...rec.days.values()].filter(Boolean).length;
+        return { by: rec.by, streak: current, best, wins, played: rec.days.size, playedToday: rec.days.has(todayKey) };
+      })
+      .sort((a, b) => b.streak - a.streak || b.best - a.best || b.wins - a.wins);
+
     return res.json({
       finished,
       activeTables,
       players: playerRows,
       games,
       highlights: { biggestBlackjack, bestTrivia },
+      dailyWord,
       recent,
     });
   } catch (error) {

@@ -1996,5 +1996,7 @@
   "com_nav_kade_spacing_relaxed": "Relaxed (1.65×)",
   "com_nav_kade_spacing_loose": "Loose (2×)",
   "com_ui_kade_reading_view": "Reading view (full screen)",
-  "com_ui_kade_reading_view_close": "Close reading view"
+  "com_ui_kade_reading_view_close": "Close reading view",
+  "com_nav_kade_whisper_mode": "Whisper mode (night-quiet voices)",
+  "com_nav_info_kade_whisper_mode": "While this is on, your companions deliver every voice reply hushed, slow, and gentle — same words, night-quiet delivery. Perfect for late listening; flip it off and they go back to full life."
 }

@@ -37,6 +37,8 @@ const localStorageAtoms = {
   kadeA11yHighContrast: atomWithLocalStorage('kadeA11yHighContrast', false),
   // KADE July 23 2026: opt-in location ride-along (kade_location tool). OFF by default.
   kadeShareLocation: atomWithLocalStorage('kadeShareLocation', false),
+  // KADE Aug 6 2026: whisper mode — night-quiet voice delivery (idea 13).
+  kadeWhisperMode: atomWithLocalStorage('kadeWhisperMode', false),
   kadeA11yFont: atomWithLocalStorage<'default' | 'lexend' | 'opendyslexic'>('kadeA11yFont', 'default'),
   kadeA11yLineSpacing: atomWithLocalStorage<'default' | 'relaxed' | 'loose'>('kadeA11yLineSpacing', 'default'),
   newChatSwitchToHistory: atomWithLocalStorage('newChatSwitchToHistory', true),

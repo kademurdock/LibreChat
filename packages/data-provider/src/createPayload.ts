@@ -38,6 +38,21 @@ function getUserLocation():
   }
 }
 
+/** KADE Aug 6 2026: whisper mode ride-along. Reads the persisted Recoil
+ * atom (localStorage key 'kadeWhisperMode') directly — same do-no-harm
+ * shape as getUserLocation: off/missing/non-browser = undefined = payload
+ * unchanged. */
+function getKadeWhisper(): boolean | undefined {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return undefined;
+    }
+    return window.localStorage.getItem('kadeWhisperMode') === 'true' ? true : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export default function createPayload(submission: t.TSubmission) {
   const {
     isEdited,
@@ -80,6 +95,7 @@ export default function createPayload(submission: t.TSubmission) {
     manualSkills: s.isAssistantsEndpoint(endpoint) ? undefined : manualSkills,
     timezone: getUserTimezone(),
     userLocation: getUserLocation(),
+    kadeWhisper: getKadeWhisper(),
   };
 
   return { server, payload };

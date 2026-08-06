@@ -134,6 +134,10 @@ export type TPayload = Partial<TMessage> &
      * kade_location tool (only attached while the user's "Share my location"
      * setting is on — see createPayload.getUserLocation). */
     userLocation?: { lat: number; lon: number; accuracy?: number; at: string };
+    /** KADE Aug 6 2026: whisper mode (night-quiet delivery) ride-along —
+     * true only while the user's toggle is on; the agents controller appends
+     * the whisper head line when it sees it. */
+    kadeWhisper?: boolean;
   };
 
 export type TEditedContent =

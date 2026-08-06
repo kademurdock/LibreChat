@@ -25,6 +25,8 @@ const madlibs = require('./madlibs');
 // July 23 2026 — GAMES_PLAN phase 4, the agent-seated tables:
 const hearts = require('./hearts');
 const fiveCardDraw = require('./fiveCardDraw');
+// Aug 6 2026 — idea 49: the daily retention puzzle (one word/day, streaks):
+const dailyWord = require('./dailyWord');
 
 const GAMES = {
   blackjack,
@@ -48,6 +50,7 @@ const GAMES = {
   madlibs,
   hearts,
   five_card_draw: fiveCardDraw,
+  daily_word: dailyWord,
 };
 
 function getGame(key) {

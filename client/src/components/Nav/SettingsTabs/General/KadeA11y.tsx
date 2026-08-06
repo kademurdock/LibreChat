@@ -68,6 +68,21 @@ export function KadeShareLocationToggle() {
   );
 }
 
+/** Aug 6 2026 — whisper mode (idea 13): night-quiet delivery. The atom
+ * persists to localStorage; createPayload reads it on every send, and the
+ * server appends the whisper head line while it's true. No side effects
+ * needed here — the next message simply goes out quiet. */
+export function KadeWhisperModeToggle() {
+  return (
+    <ToggleSwitch
+      stateAtom={store.kadeWhisperMode}
+      localizationKey="com_nav_kade_whisper_mode"
+      hoverCardText="com_nav_info_kade_whisper_mode"
+      switchId="kadeWhisperMode"
+    />
+  );
+}
+
 export function KadeFontSelector() {
   const localize = useLocalize();
   const [font, setFont] = useRecoilState(store.kadeA11yFont);

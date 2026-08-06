@@ -17,11 +17,13 @@ const notifyJsonSchema = {
         'set_reminder',
         'list_reminders',
         'cancel_reminder',
+        'platform_status',
       ],
       description:
         "What to do. 'send' (default) pushes a notification to the user's phone RIGHT NOW -- use it for an immediate ping, OR to report that a long job you were just running has finished. " +
         "'schedule_checkin' / 'list_checkins' / 'pause_checkin' / 'cancel_checkin' / 'test_checkin' manage a RECURRING check-in where YOU reach out with fresh, improvised wording on a repeating daily/weekly schedule (needs time). " +
-        "'set_reminder' / 'list_reminders' / 'cancel_reminder' manage a ONE-OFF reminder for a single future moment, delivered with the EXACT text you give it (not improvised again later) -- use this for 'remind me to X at/in Y', not schedule_checkin. Only set up a check-in or reminder when the user actually asks for one.",
+        "'set_reminder' / 'list_reminders' / 'cancel_reminder' manage a ONE-OFF reminder for a single future moment, delivered with the EXACT text you give it (not improvised again later) -- use this for 'remind me to X at/in Y', not schedule_checkin. Only set up a check-in or reminder when the user actually asks for one. " +
+        "'platform_status' answers 'is the platform up?' / 'how's the system doing?' with a REAL health check of the site, voices, and phone bridge, plus the asker's own memory-system health — relay it honestly in your own voice (never invent status).",
     },
     body: {
       type: 'string',
@@ -126,7 +128,66 @@ class KadeNotify extends Tool {
     if (REMIND.includes(action)) {
       return await this._reminder(action, data || {});
     }
+    if (action === 'platform_status') {
+      return await this._platformStatus();
+    }
     return `Unknown action "${action}". Use 'send', a check-in action, or a reminder action.`;
+  }
+
+  /** Aug 6 2026 — ideas 62 + 34 + 42 (her ops heartbeat pack): honest spoken
+   * status. Service health + spend ride the bridge's /platform-status
+   * aggregate (spend lines are ADMIN-ONLY — the family can ask if the lights
+   * are on without reading the bills); memory health is computed right here
+   * for the ASKING user only (their cards, their dreaming summaries). Every
+   * piece fails soft to a plain sentence — a broken check must never take
+   * down the answer about whether things are broken. */
+  async _platformStatus() {
+    const parts = [];
+    try {
+      const r = await axios.get(`${this.bridgeUrl}/platform-status`, { headers: this._hdrs(), timeout: 20000 });
+      const d = r.data || {};
+      if (d.spokenSummary) {
+        let summary = d.spokenSummary;
+        if (!this.isAdmin) {
+          // Family seats hear health, not the bills.
+          summary = summary.split(' Spend:')[0];
+        }
+        parts.push(summary);
+      }
+      if (this.isAdmin && Array.isArray(d.hotFlags) && d.hotFlags.length) {
+        parts.push(`Flag: ${d.hotFlags.join(' and ')} running hot against the 30-day average.`);
+      }
+    } catch (e) {
+      parts.push(`The status service itself did not answer (${e.message}) — the site may still be fine; this reply proves the chat lane works.`);
+    }
+    try {
+      const mongoose = require('mongoose');
+      const MemoryEntry = mongoose.models.MemoryEntry;
+      let cardLine = null;
+      if (MemoryEntry && this.userId) {
+        const cards = await MemoryEntry.find({ userId: this.userId }).sort({ updatedAt: -1 }).limit(500).lean();
+        if (cards.length) {
+          const newest = cards[0].updatedAt ? new Date(cards[0].updatedAt) : null;
+          const days = newest ? Math.floor((Date.now() - newest.getTime()) / 86400000) : null;
+          cardLine = `Memory: ${cards.length} card${cards.length === 1 ? '' : 's'} on file` +
+            (days != null ? `, newest updated ${days === 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago'}` : '') + '.';
+        } else {
+          cardLine = 'Memory: no cards on file yet for this account.';
+        }
+      }
+      const { KadeMemorySummary } = require('~/models/kadeMemorySummary');
+      if (KadeMemorySummary && this.userId) {
+        const sums = await KadeMemorySummary.find({ userId: String(this.userId) }).sort({ refreshedAt: -1 }).limit(3).lean();
+        if (sums.length && sums[0].refreshedAt) {
+          const days = Math.floor((Date.now() - new Date(sums[0].refreshedAt).getTime()) / 86400000);
+          cardLine = (cardLine || 'Memory:') + ` Dreaming last ran ${days === 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago'}${days > 3 ? ' — that is stale, worth mentioning to Kade' : ''}.`;
+        }
+      }
+      if (cardLine) parts.push(cardLine);
+    } catch (e) {
+      parts.push('Memory health could not be read this turn.');
+    }
+    return parts.join(' ') || 'No status available.';
   }
 
   async _send(data) {

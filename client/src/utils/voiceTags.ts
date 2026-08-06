@@ -34,8 +34,34 @@ const VOICE_TAG_RE = /%%%([\s\S]*?)%%%/g;
  */
 const SLOPPY_VOICE_TAG_RE = /%{2,4}([a-zA-Z][a-zA-Z ’',!-]{0,60}?)%{2,4}/g;
 
+/**
+ * Aug 6 2026 — multi-speaker voice SCENES (ideas 16+52). A saved message can
+ * carry double-bracket speaker tags — "[[Deuce]] line" / "[[Voice 214]] line"
+ * — which the TTS proxy performs as a true multi-voice scene. On every READ
+ * surface (bubble, captions, screen reader, copy, export) the tag renders as
+ * a clean screenplay cue: "Deuce: line". Double brackets only — single
+ * [bracket] spans (fish cues, sound tokens) are other machinery and are
+ * handled elsewhere. Applied inside stripVoiceTags so all seven existing
+ * call sites get it with zero call-site changes.
+ */
+const SCENE_TAG_DISPLAY_RE = /\[\[([^\[\]\n]{1,60})\]\]\s*/g;
+
+function sceneTagsToScript(text: string): string {
+  if (!text || text.indexOf('[[') === -1) {
+    return text;
+  }
+  return text.replace(SCENE_TAG_DISPLAY_RE, (_m, inner: string) => {
+    const name = String(inner).trim().replace(/[:\s]+$/, '');
+    return name ? `${name}: ` : '';
+  });
+}
+
 export function stripVoiceTags(text: string): string {
-  if (!text || text.indexOf('%%') === -1) {
+  if (!text) {
+    return text;
+  }
+  text = sceneTagsToScript(text);
+  if (text.indexOf('%%') === -1) {
     return text;
   }
   return text

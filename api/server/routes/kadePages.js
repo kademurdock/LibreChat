@@ -1778,6 +1778,14 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
           <tbody></tbody>
         </table>
       </section>
+      <section class="card" aria-labelledby="dailyword-h" id="dailyword-card" hidden>
+        <h3 id="dailyword-h" style="margin-top:0">Daily Word streaks</h3>
+        <p class="muted" style="margin:.1rem 0 .4rem">One secret five-letter word a day, same word for everybody. Say &ldquo;play daily word&rdquo; to any companion.</p>
+        <table id="dailyword">
+          <thead><tr><th scope="col">Player</th><th scope="col" class="num">Streak</th><th scope="col" class="num">Best</th><th scope="col" class="num">Solved</th><th scope="col" class="num">Played</th><th scope="col">Today</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
       <section class="card" aria-labelledby="highlights-h" id="highlights-card" hidden>
         <h3 id="highlights-h" style="margin-top:0">Highlights</h3>
         <dl class="kv" id="highlights"></dl>
@@ -2197,6 +2205,15 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
             '<td class="num">' + num(p.wins) + '</td><td class="num">' + num(p.losses) + '</td><td class="num">' + num(p.draws) + '</td>' +
             '<td class="num">' + num(p.played) + '</td><td class="num">' + (p.chips>0?'+':'') + num(p.chips) + '</td></tr>';
         }).join('');
+        if(d.dailyWord && d.dailyWord.length){
+          document.querySelector('#dailyword tbody').innerHTML = d.dailyWord.map(function(w){
+            return '<tr><th scope="row">' + esc(w.by) + (w.streak>0 && w.streak>=(d.dailyWord[0].streak||0) && w.streak>0 ? ' <span class="crown">Hot</span>' : '') + '</th>' +
+              '<td class="num">' + num(w.streak) + '</td><td class="num">' + num(w.best) + '</td>' +
+              '<td class="num">' + num(w.wins) + '</td><td class="num">' + num(w.played) + '</td>' +
+              '<td>' + (w.playedToday ? 'Played' : 'Not yet') + '</td></tr>';
+          }).join('');
+          grEl('dailyword-card').hidden = false;
+        }
         const hl = [];
         if(d.highlights && d.highlights.biggestBlackjack){
           const b = d.highlights.biggestBlackjack;

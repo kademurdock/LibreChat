@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { KadeGameState } = require('~/models/kadeGameState');
 const { getChips } = require('~/models/kadeGameChips');
 const { getGame, catalog } = require('../kadegames');
+const { dailyGate, computeStreak, centralDateKey } = require('../kadegames/dailyWord');
 const { resolveSeatAgents, playSeatTurns, maybeSettleChips } = require('../kadegames/tableRunner');
 
 const MAX_ACTIVE = 12;
@@ -23,7 +24,7 @@ const kadeGamesJsonSchema = {
     game: {
       type: 'string',
       description:
-        "For new_game: cards — 'blackjack', 'wild_eights', 'uno', 'go_fish', 'war', 'in_between'; party — 'cards_against_reality' (our fill-in-the-blank judge game), 'crab_apples' (our apples-style judge game), 'madlibs' (fill-in stories), 'sound_guess' (name that sound); dice — 'pig', 'farkle', 'liars_dice'; words — 'trivia', 'hangman', 'scramble'; grids by voice — 'battleship', 'tictactoe'; quick — 'rps'. Use list_games if unsure.",
+        "For new_game: cards — 'blackjack', 'wild_eights', 'uno', 'go_fish', 'war', 'in_between'; party — 'cards_against_reality' (our fill-in-the-blank judge game), 'crab_apples' (our apples-style judge game), 'madlibs' (fill-in stories), 'sound_guess' (name that sound); dice — 'pig', 'farkle', 'liars_dice'; words — 'trivia', 'hangman', 'scramble', 'daily_word' (THE daily puzzle — one secret five-letter word a day for the whole family, six guesses, streaks on the family board); grids by voice — 'battleship', 'tictactoe'; quick — 'rps'. Use list_games if unsure.",
     },
     move: {
       type: 'string',
@@ -201,6 +202,17 @@ class KadeGames extends Tool {
         if (!G) {
           return `I don't know "${game}". Available: ${catalog().map((g) => g.name).join(', ')}. Use list_games for the menu.`;
         }
+        /* Daily Word (Aug 6 2026): one puzzle per user per Central day —
+         * the streak only means something if nobody can re-roll it. */
+        if (G.meta.daily) {
+          const gate = await dailyGate(this.userId, KadeGameState);
+          if (gate.blocked) {
+            if (gate.doc && gate.doc.status === 'active') {
+              return `${gate.message}\n\n${this.render(gate.doc)}`;
+            }
+            return `${gate.message}${await this.dailyWordStreakLine()}`;
+          }
+        }
         const active = await KadeGameState.countDocuments({ user: this.userId, status: 'active' });
         if (active >= MAX_ACTIVE) {
           return `You have ${active} tables going (max ${MAX_ACTIVE}). Quit one first (action='quit') — 'games' lists them.`;
@@ -302,8 +314,14 @@ class KadeGames extends Tool {
         doc.markModified('state');
         await doc.save();
         const chipsNote = await this.maybeSettleChips(doc, G);
+        /* Daily Word: the finish line speaks the streak (idea 49). */
+        let streakNote = [];
+        if (doc.gameKey === 'daily_word' && doc.status === 'over') {
+          const line = await this.dailyWordStreakLine();
+          if (line) streakNote = [line.trim()];
+        }
         return this.render(doc, {
-          log: [...((result && result.log) || []), ...seatRun.log, ...chipsNote],
+          log: [...((result && result.log) || []), ...seatRun.log, ...chipsNote, ...streakNote],
           sounds: [...((result && result.sounds) || []), ...seatRun.sounds],
         });
       }
@@ -330,6 +348,28 @@ class KadeGames extends Tool {
   /** Phase 5 — shared with the Parlor routes (tableRunner.js). */
   async maybeSettleChips(doc, G) {
     return maybeSettleChips(this.userId, doc, G);
+  }
+
+  /** Daily Word streak sentence for this user, from finished daily tables.
+   * Fail-soft: any error returns '' — a streak line is garnish, never a 500. */
+  async dailyWordStreakLine() {
+    try {
+      const docs = await KadeGameState.find({ user: this.userId, gameKey: 'daily_word', status: 'over' })
+        .sort({ updatedAt: -1 })
+        .limit(400)
+        .lean();
+      const byDay = new Map();
+      for (const d of docs) {
+        const dk = d.state && d.state.dateKey;
+        if (!dk || byDay.has(dk)) continue;
+        byDay.set(dk, d.state.winner === 'player');
+      }
+      if (!byDay.size) return '';
+      const { current, best } = computeStreak(byDay, centralDateKey());
+      return ` Streak: ${current} day${current === 1 ? '' : 's'} running${best > current ? ` (best ${best})` : current > 1 ? ' — a new best!' : ''}.`;
+    } catch (_e) {
+      return '';
+    }
   }
 }
 

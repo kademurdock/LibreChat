@@ -41,6 +41,7 @@ import MemoryToggle from './MemoryToggle';
 import {
   KadeHighContrastToggle,
   KadeShareLocationToggle,
+  KadeWhisperModeToggle,
   KadeFontSelector,
   KadeLineSpacingSelector,
 } from '../SettingsTabs/General/KadeA11y';
@@ -149,6 +150,15 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_nav_kade_share_location',
     keywords: ['location', 'gps', 'maps', 'directions', 'where am i', 'privacy'],
     Component: KadeShareLocationToggle,
+  },
+  // KADE Aug 6 2026: whisper mode — night-quiet voice delivery (idea 13)
+  {
+    id: 'kadeWhisperMode',
+    tab: GENERAL,
+    section: 'accessibility',
+    labelKey: 'com_nav_kade_whisper_mode',
+    keywords: ['whisper', 'quiet', 'night', 'soft', 'voice', 'volume', 'sleep', 'hushed'],
+    Component: KadeWhisperModeToggle,
   },
   // KADE July 16 2026: low-vision display preferences (research paper Section C)
   {
