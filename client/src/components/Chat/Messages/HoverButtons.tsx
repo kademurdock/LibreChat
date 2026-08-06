@@ -41,33 +41,22 @@ type HoverButtonProps = {
   dataTestId?: string;
 };
 
+/** Aug 6 2026 — HER REPORT: "on web, thoughts are reading out with the tts
+ * voice message" (native was fine). This extractor fed the voice-message
+ * download/share synthesis and hand-rolled its own part walk that INCLUDED
+ * think parts as bare text — no <think> tags, so the TTS proxy's
+ * stripThinkingBlock had nothing to strip and the thoughts got performed.
+ * Every other lane (auto-play stream, read-aloud hook, native displayText)
+ * already skips reasoning. Now this one uses the same house tool:
+ * parseTextParts with skipReasoning=true. Her rule stands platform-wide:
+ * thoughts NEVER reach TTS. */
 const extractMessageContent = (message: TMessage): string => {
   if (typeof message.content === 'string') {
     return message.content;
   }
 
   if (Array.isArray(message.content)) {
-    return message.content
-      .map((part) => {
-        if (part == null) {
-          return '';
-        }
-        if (typeof part === 'string') {
-          return part;
-        }
-        if ('text' in part) {
-          return part.text || '';
-        }
-        if ('think' in part) {
-          const think = part.think;
-          if (typeof think === 'string') {
-            return think;
-          }
-          return think && 'text' in think ? think.text || '' : '';
-        }
-        return '';
-      })
-      .join('');
+    return parseTextParts(message.content, true);
   }
 
   return message.text || '';
