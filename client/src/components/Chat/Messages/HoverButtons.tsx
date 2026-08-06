@@ -1,4 +1,5 @@
 import React, { useState, useMemo, memo } from 'react';
+import { parseTextParts } from 'librechat-data-provider';
 import { useRecoilState } from 'recoil';
 import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@librechat/client';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
