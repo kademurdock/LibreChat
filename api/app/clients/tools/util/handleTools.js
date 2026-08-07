@@ -29,6 +29,7 @@ const {
   FalAI,
   KadePhoneCall,
   KadeNotify,
+  KadeMemorySearch,
   KadeTranscribe,
   KadeWeather,
   KadeLocation,
@@ -196,6 +197,7 @@ const loadTools = async ({
     fal_studio: FalAI,
     kade_phone_call: KadePhoneCall,
     kade_notify: KadeNotify,
+    kade_memory_search: KadeMemorySearch,
     kade_transcribe: KadeTranscribe,
     kade_weather: KadeWeather,
     kade_location: KadeLocation,
@@ -323,6 +325,12 @@ const loadTools = async ({
       userName: kadeActingUserName,
       agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,
+    },
+    /** KADE LIVING DIARY (Aug 7 2026): explicit archive search. Scope =
+     * shared + THIS agent only — enforced server-side in searchDiary. */
+    kade_memory_search: {
+      userId: kadeActingUserId,
+      agentId: agent?.id || agent?.agent_id,
     },
     kade_adventure: {
       agentName: agent?.name,

@@ -6,6 +6,7 @@ const FluxAPI = require('./structured/FluxAPI');
 const FalAI = require('./structured/FalAI');
 const KadePhoneCall = require('./structured/KadePhoneCall');
 const KadeNotify = require('./structured/KadeNotify');
+const KadeMemorySearch = require('./structured/KadeMemorySearch');
 const KadeTranscribe = require('./structured/KadeTranscribe');
 const KadeWeather = require('./structured/KadeWeather');
 const KadeLocation = require('./structured/KadeLocation');
@@ -37,6 +38,7 @@ module.exports = {
   FalAI,
   KadePhoneCall,
   KadeNotify,
+  KadeMemorySearch,
   KadeTranscribe,
   KadeWeather,
   KadeLocation,

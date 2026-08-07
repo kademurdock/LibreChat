@@ -16,6 +16,14 @@
     "authConfig": []
   },
   {
+    "name": "Diary Memory Search",
+    "pluginKey": "kade_memory_search",
+    "description": "Lets this character search your private dated diary — the long-term archive of day-to-day life it quietly keeps beside its memory cards. Ask things like \"what was I up to last week?\" or \"have I mentioned that show before?\" and it looks up the real entries instead of guessing. Each character can only see its own diary plus shared notes.",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Voice Memo Transcriber",
     "pluginKey": "kade_transcribe",
     "description": "Turns an uploaded voice memo or audio recording into clean, formatted text. Attach the audio to the chat, then ask the agent to transcribe or summarize it. Free to use. There's also a standalone page at /transcribe.",

@@ -421,6 +421,54 @@ const createDeleteMemoryTool = ({
     },
   );
 };
+
+/**
+ * KADE LIVING DIARY (Aug 7 2026) — the write half of Tier 2. The api layer
+ * passes a `logDiary` function down (keeps this package free of server model
+ * imports, exactly like setMemory/deleteMemory); when present, the keeper
+ * gains a third tool: `log_diary`, for dated episodic entries that belong in
+ * the unbounded archive instead of the 8K always-injected hot core.
+ */
+export type DiaryLogFn = (params: {
+  text: string;
+  scope?: 'agent' | 'shared';
+}) => Promise<{ ok: boolean; date?: string; error?: string }>;
+
+const createDiaryTool = ({ logDiary }: { logDiary: DiaryLogFn }): DynamicStructuredTool => {
+  return tool(
+    async ({ text, scope }) => {
+      try {
+        const result = await logDiary({ text, scope });
+        if (result.ok) {
+          return `Diary entry logged for ${result.date ?? 'today'}.`;
+        }
+        return `Could not log diary entry: ${result.error ?? 'unknown error'}`;
+      } catch (error) {
+        logger.error('Memory Agent failed to log diary entry', error);
+        return 'Error logging diary entry';
+      }
+    },
+    {
+      name: 'log_diary',
+      description:
+        "Logs one dated entry to the user's private diary — the archive for day-to-day LIFE (what happened, what they did, how today went), as opposed to set_memory's durable identity cards. The diary is unlimited and costs nothing per-turn; entries resurface later only when relevant. Write one or two plain sentences capturing the moment like a thoughtful friend's journal would.",
+      schema: z.object({
+        text: z
+          .string()
+          .describe(
+            'The diary line itself: one or two plain sentences about what happened or how things are going, written in third person about the user ("Spent the afternoon re-watching VHS commercial tapes and loved it"). No dates inside the text — the entry is dated automatically.',
+          ),
+        scope: z
+          .enum(['agent', 'shared'])
+          .optional()
+          .describe(
+            'Who may recall this later. "agent" (default): only the character who was told — the right choice for almost everything, same privacy rule as cards. "shared" only for things every character would need.',
+          ),
+      }),
+    },
+  );
+};
+
 export class BasicToolEndHandler implements EventHandler {
   private callback?: ToolEndCallback;
   constructor(callback?: ToolEndCallback) {
@@ -463,6 +511,7 @@ export async function processMemory({
   streamId = null,
   user,
   forceAgentScope = false,
+  logDiary,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -483,6 +532,8 @@ export async function processMemory({
   user?: IUser;
   /** When true, every write/delete is pinned to `agentId`'s bucket (used by agent-bucket consolidation). */
   forceAgentScope?: boolean;
+  /** KADE diary (Aug 7 2026): when provided, the keeper also gets `log_diary` for episodic archive entries. */
+  logDiary?: DiaryLogFn;
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -641,7 +692,7 @@ ${memory ?? 'No existing memories'}`;
       graphConfig: {
         type: 'standard',
         llmConfig: finalLLMConfig,
-        tools: [memoryTool, deleteMemoryTool],
+        tools: logDiary ? [memoryTool, deleteMemoryTool, createDiaryTool({ logDiary })] : [memoryTool, deleteMemoryTool],
         instructions: graphInstructions,
         additional_instructions: graphAdditionalInstructions,
         toolEnd: true,
@@ -695,6 +746,7 @@ export async function createMemoryProcessor({
   config = {},
   streamId = null,
   user,
+  logDiary,
 }: {
   res: ServerResponse;
   messageId: string;
@@ -706,6 +758,8 @@ export async function createMemoryProcessor({
   config?: MemoryConfig;
   streamId?: string | null;
   user?: IUser;
+  /** KADE diary (Aug 7 2026): api-layer write function; presence turns the diary lane on for this run. */
+  logDiary?: DiaryLogFn;
 }): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
 
@@ -725,8 +779,17 @@ export async function createMemoryProcessor({
     agentId && validKeys && validKeys.length > 0
       ? [...validKeys, AGENT_SCOPED_MEMORY_KEY]
       : validKeys;
-  const finalInstructions =
+  let finalInstructions =
     instructions || getDefaultInstructions(effectiveValidKeys, tokenLimit, Boolean(agentId));
+  /** KADE diary (Aug 7 2026): teach the keeper the card/diary split. Appended in
+   * CODE (not librechat.yaml) so the rule ships atomically with the tool that
+   * needs it — a keeper can never see this text without log_diary existing, or
+   * the tool without the text. Her four design answers are recorded in
+   * MEMORY_TIERED_DIARY_DESIGN_2026-08-07.md. */
+  if (logDiary) {
+    finalInstructions +=
+      '\n\nTHE DIARY (log_diary): beside the cards there is a dated diary — the unlimited archive for day-to-day LIFE. The split: CARDS answer "who is this person" (identity, people and pets, tastes, health, running projects — durable facts worth carrying into every future conversation). The DIARY answers "what happened" (what they did today, how it went, a moment, a mood, a small win or gripe — real but episodic). When the user shares a genuine moment of their day, log ONE diary line: one or two plain sentences, gist not transcript, written like a caring friend\'s journal. Never file the same thing as both a card and a diary line — pick by durability. The "most turns save NOTHING" rule still governs CARDS; a diary line is lighter-weight, but still only for real moments actually shared, never for questions, task chatter, or assistant work. Diary entries default to your own scope (private to this character), like cards. "Remember X" still means a CARD; things like "log this," "note in my diary," or plain day-sharing lean DIARY.';
+  }
 
   const { withKeys, withoutKeys, totalTokens } = await memoryMethods.getFormattedMemories({
     userId,
@@ -754,6 +817,7 @@ export async function createMemoryProcessor({
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
           user,
+          logDiary,
         });
       } catch (error) {
         logger.error('Memory Agent failed to process memory', error);

@@ -589,6 +589,38 @@ class AgentClient extends BaseClient {
       logger.warn('[AgentClient] pending-nudge pickup failed (non-fatal):', nudgeError.message);
     }
 
+    /** KADE LIVING DIARY, retrieval half (Aug 7 2026 — her four design answers
+     * locked in MEMORY_TIERED_DIARY_DESIGN_2026-08-07.md): semantic lookup of
+     * the Tier-2 archive against what the user just said, top-3, similarity-
+     * gated, ~1.2K chars max. Retrieved entries CHANGE per turn = volatile =
+     * they ride the TAIL beside nudges, never the stable head — the prefix
+     * cache stays intact (Part 14 religion). Empty archive short-circuits
+     * before any network call; the whole lookup races a 2.5s timeout.
+     * Kill switch: KADE_DIARY=0. Fail-soft: a diary-less turn beats a broken
+     * or slow one. */
+    /* Gate: useMemory() returns undefined when the user's personalization
+     * toggle or access says no — then the diary stays closed too, read side
+     * included. */
+    if (withoutKeys !== undefined) {
+      try {
+        const { getDiaryTailBlock } = require('~/server/services/kadeDiary');
+        const latestUserText =
+          orderedMessages.length > 0 ? orderedMessages[orderedMessages.length - 1].text : '';
+        const diaryBlock = await getDiaryTailBlock(
+          this.options.req.user.id,
+          this.options.agent?.id,
+          latestUserText || this.options.req?.body?.text || '',
+        );
+        if (diaryBlock) {
+          volatileTurnContext = volatileTurnContext
+            ? `${volatileTurnContext}\n\n${diaryBlock}`
+            : diaryBlock;
+        }
+      } catch (diaryError) {
+        logger.warn('[AgentClient] diary retrieval failed (non-fatal):', diaryError.message);
+      }
+    }
+
     /** KADE DREAMING: rolling per-relationship EPISODIC summary ("what's been
      * going on lately"), injected BESIDE the durable memory cards so fresh chats
      * (and calls) have continuity the cards alone can't give. One short stored
@@ -938,6 +970,15 @@ class AgentClient extends BaseClient {
       },
       res: this.options.res,
       user: createSafeUser(this.options.req.user),
+      /** KADE LIVING DIARY, write half (Aug 7 2026): the keeper's log_diary
+       * lands here — episodic entries go to the unbounded archive
+       * (api/models/kadeDiary.js), scoped to the active persona by default,
+       * NEVER into the 8K hot core. Kill switch KADE_DIARY=0 makes this a
+       * quiet no-op inside logDiaryEntry. */
+      logDiary: async ({ text, scope }) => {
+        const { logDiaryEntry } = require('~/models/kadeDiary');
+        return logDiaryEntry({ userId, agentId: activeAgentId, text, scope });
+      },
     });
 
     this.processMemory = processMemory;
