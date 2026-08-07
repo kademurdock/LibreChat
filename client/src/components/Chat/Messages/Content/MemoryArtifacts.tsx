@@ -1,9 +1,47 @@
 import { Tools } from 'librechat-data-provider';
 import { useState, useRef, useMemo, useLayoutEffect, useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import type { MemoryArtifact, TAttachment } from 'librechat-data-provider';
 import MemoryInfo from './MemoryInfo';
+import { useLiveAnnouncer } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
+
+/** Aug 7 2026 (Kade: "I don't even know if you can tell when memories are
+ * made") — the MEMORY-SAVED CUE. When memory artifacts arrive on a LIVE
+ * reply (they appear mid-render; historical messages mount with theirs
+ * already attached, so those stay silent), play two soft high notes and
+ * politely announce what happened. Rides the same chimeOnCompletion switch
+ * as the rest of the chat sound kit; the announcement always fires (it is
+ * the screen-reader lane, not decoration). */
+function playMemoryChime() {
+  try {
+    const Ctor =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) {
+      return;
+    }
+    const ctx = new Ctor();
+    const now = ctx.currentTime;
+    [880, 1174.7].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now + i * 0.11);
+      gain.gain.linearRampToValueAtTime(0.055, now + i * 0.11 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.11 + 0.22);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + i * 0.11);
+      osc.stop(now + i * 0.11 + 0.24);
+    });
+    setTimeout(() => void ctx.close(), 800);
+  } catch {
+    /* sound is garnish — never break the message for it */
+  }
+}
 
 export default function MemoryArtifacts({ attachments }: { attachments?: TAttachment[] }) {
   const localize = useLocalize();
@@ -33,6 +71,39 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
 
     return { hasErrors, memoryArtifacts: result };
   }, [attachments]);
+
+  const { announcePolite } = useLiveAnnouncer();
+  const chimeEnabled = useRecoilValue(store.chimeOnCompletion);
+  const sawEmptyRef = useRef(false);
+  const cuedRef = useRef(false);
+  useEffect(() => {
+    if (memoryArtifacts.length === 0) {
+      sawEmptyRef.current = true; // mounted before artifacts existed = live reply
+      return;
+    }
+    if (!sawEmptyRef.current || cuedRef.current) {
+      return; // historical mount (born with artifacts) or already cued
+    }
+    cuedRef.current = true;
+    const kinds = memoryArtifacts.map((a) => a.type);
+    const deleted = kinds.filter((k) => k === 'delete').length;
+    const errored = kinds.filter((k) => k === 'error').length;
+    const saved = memoryArtifacts.length - deleted - errored;
+    const parts: string[] = [];
+    if (saved > 0) {
+      parts.push(saved === 1 ? 'Memory saved' : `${saved} memories saved`);
+    }
+    if (deleted > 0) {
+      parts.push(deleted === 1 ? 'a memory was forgotten' : `${deleted} memories forgotten`);
+    }
+    if (parts.length === 0) {
+      return; // errors alone stay quiet here — the visual row carries them
+    }
+    if (chimeEnabled) {
+      playMemoryChime();
+    }
+    announcePolite({ message: parts.join(', ') + '.' });
+  }, [memoryArtifacts, chimeEnabled, announcePolite]);
 
   useLayoutEffect(() => {
     if (showInfo !== prevShowInfoRef.current) {

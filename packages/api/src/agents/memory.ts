@@ -1103,6 +1103,14 @@ function getTargetIntEnv(
 export function getMemoryConsolidationTargetUtcDay(
   raw: string | undefined = process.env.MEMORY_CONSOLIDATION_SWEEP_DAY,
 ): number {
+  /* Aug 7 2026 (Kade's pick: nightly consolidation): 'daily' / '*' means the
+   * sweep fires EVERY day at the target hour — returned as -1, which
+   * isMemoryConsolidationSweepDue treats as any-day. Pair with a
+   * MEMORY_CONSOLIDATION_SWEEP_MIN_GAP_MS shorter than 24h (Railway var,
+   * e.g. 72000000 = 20h) or the 6-day default gap will still gate it weekly. */
+  if (raw != null && ['daily', '*', 'everyday', 'every-day'].includes(raw.trim().toLowerCase())) {
+    return -1;
+  }
   return getTargetIntEnv(raw, DEFAULT_MEMORY_CONSOLIDATION_TARGET_UTC_DAY, 0, 6);
 }
 
@@ -1132,7 +1140,8 @@ export function isMemoryConsolidationSweepDue({
   targetUtcHour?: number;
   minGapMs?: number;
 }): boolean {
-  if (now.getUTCDay() !== targetUtcDay || now.getUTCHours() !== targetUtcHour) {
+  /* targetUtcDay -1 = every day (the 'daily' setting above). */
+  if ((targetUtcDay !== -1 && now.getUTCDay() !== targetUtcDay) || now.getUTCHours() !== targetUtcHour) {
     return false;
   }
   if (lastRunAt && now.getTime() - lastRunAt.getTime() < minGapMs) {

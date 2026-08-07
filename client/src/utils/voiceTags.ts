@@ -56,6 +56,43 @@ function sceneTagsToScript(text: string): string {
   });
 }
 
+/**
+ * Aug 7 2026 (Kade: "If I say copy text, it should be exactly that, well
+ * formatted text" — her pick: clean prose). Copied/exported text loses
+ * markdown SCAFFOLDING but keeps its structure: ## headers lose the hashes,
+ * **bold**/__underline__/~~strike~~ keep their words, [text](url) keeps the
+ * text, code ticks drop, and list lines are normalized to a simple "- " dash
+ * (her explicit call — structure survives pasting, weird symbols don't).
+ * Display surfaces don't use this (web renders markdown; native strips it
+ * its own way) — this is the CLIPBOARD contract only.
+ */
+export function markdownToCleanProse(text: string): string {
+  if (!text) {
+    return text;
+  }
+  if (
+    !text.includes('#') &&
+    !text.includes('**') &&
+    !text.includes('__') &&
+    !text.includes('~~') &&
+    !text.includes('](') &&
+    !text.includes('`')
+  ) {
+    return text;
+  }
+  return text
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/\[([^\]]+)\]\(([^)]*)\)/g, '$1')
+    .replace(/`{1,3}([^`]*)`{1,3}/g, '$1')
+    .replace(/^(\s*)[*\u2022]\s+/gm, '$1- ')
+    .replace(/#{2,}/g, '')
+    .replace(/\*{2,}/g, '')
+    .replace(/[ \t]{2,}/g, ' ');
+}
+
 export function stripVoiceTags(text: string): string {
   if (!text) {
     return text;

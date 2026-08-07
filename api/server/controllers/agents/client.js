@@ -84,6 +84,7 @@ const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { KADE_PLATFORM_NOTE } = require('~/server/utils/kadePlatformNote');
 const { getWorldBlock, KADE_WHISPER_LINE } = require('~/server/utils/kadeWorldPulse');
+const { getAnniversaryLine } = require('~/server/utils/kadeAnniversaries');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
@@ -704,6 +705,17 @@ class AgentClient extends BaseClient {
            * stable memory joins the instructions HEAD — part of the stable,
            * prefix-cacheable system block instead of the per-turn tail. */
           headParts.push(stableMemoryContext);
+          /** KADE Aug 7 2026 — anniversary surfacing (idea 33, her pick):
+           * one scope-respecting, day-stable line when a memory card turns
+           * exactly N months old today. See utils/kadeAnniversaries.js. */
+          try {
+            const anniversaryLine = await getAnniversaryLine(this.options.req.user.id, agentId);
+            if (anniversaryLine) {
+              headParts.push(anniversaryLine);
+            }
+          } catch (_e) {
+            /* an anniversary is garnish — never break the turn */
+          }
         }
         agent.instructions = headParts.filter(Boolean).join('\n\n');
         if (volatileTurnContext && memoryEligible) {

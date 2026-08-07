@@ -11,7 +11,7 @@ import {
   INVALID_CITATION_REGEX,
   BARE_CITATION_REGEX,
 } from '~/utils/citations';
-import { stripVoiceTags } from '~/utils/voiceTags';
+import { stripVoiceTags, markdownToCleanProse } from '~/utils/voiceTags';
 import { stripGameSoundTags } from '~/utils/gameSounds';
 
 type Source = {
@@ -67,8 +67,10 @@ export default function useCopyToClipboard({
         }, '');
       }
       // Strip invisible TTS-2 voice performance tags before anything ever
-      // reaches the clipboard -- see utils/voiceTags.ts.
-      messageText = stripGameSoundTags(stripVoiceTags(messageText)).replace(
+      // reaches the clipboard -- see utils/voiceTags.ts. Aug 7 2026: plus the
+      // clean-prose pass (her copy contract — markdown scaffolding gone,
+      // dash bullets kept).
+      messageText = markdownToCleanProse(stripGameSoundTags(stripVoiceTags(messageText))).replace(
         /* July 13 2026 scrub audit: saved text can carry a :::thinking:::
          * reasoning block (reframe embeds it for the bubble) — never copy it. */
         /:::thinking[\s\S]*?:::\n?/g,
