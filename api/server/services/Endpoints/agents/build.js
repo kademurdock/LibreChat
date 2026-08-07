@@ -55,6 +55,12 @@ const KADE_FRESHNESS_NOTE =
 const applyKadeAudience = (req) => (agent) => {
   if (!agent) return agent;
   // Platform-wide anti-tell style note on EVERY agent, every user.
+  /* Aug 7 2026 — BARE PROBE agents (see client.js's matching seam): the
+   * canary skips the style/freshness wardrobe too; a health probe needs
+   * the road, not the manners. */
+  if (String(agent.instructions || '').includes('KADE BARE PROBE')) {
+    return agent;
+  }
   agent.instructions = (agent.instructions || '') + KADE_STYLE_NOTE;
   // Platform-wide search-when-stale rule, same coverage (July 27 2026).
   agent.instructions = agent.instructions + KADE_FRESHNESS_NOTE;
