@@ -366,6 +366,31 @@ export const kadePhoneCallSchema: ExtendedJsonSchema = {
   required: [],
 };
 
+export const kadeMemorySearchSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      description:
+        "What to look for, in plain words (e.g. 'her dog's vet visits', 'that show she was watching'). Meaning-based — related wording still matches. Omit to flip through recent entries by date.",
+    },
+    date_from: {
+      type: 'string',
+      description:
+        "Optional start date YYYY-MM-DD (US Central). Use with date_to for ranges like 'last week' — work the real dates out from today's date.",
+    },
+    date_to: {
+      type: 'string',
+      description: 'Optional end date YYYY-MM-DD (US Central), inclusive.',
+    },
+    limit: {
+      type: 'integer',
+      description: 'Max entries to return (1-12). Default 5.',
+    },
+  },
+  required: [],
+};
+
 export const kadeNotifySchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -844,6 +869,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       "Send a push notification to the user's OWN phone (their Kade-AI app) — for reminders they asked for, or to tell them a background job finished. It lands on their lock screen. The server enforces quiet hours (9pm to 8am), a cooldown, and daily caps, so keep notifications meaningful, not chatter. NEVER claim you notified them unless the tool confirms it sent; if it reports blocked or that no phone is registered, say so plainly. Do not duplicate what you just said in chat unless the user asked to be pinged on their phone. Also sets up RECURRING check-ins (action='schedule_checkin' with a time; list/pause/cancel/test actions manage them) where you reach out to the user on a schedule — only when they ask.",
     schema: kadeNotifySchema,
+    toolType: 'builtin',
+  },
+  kade_memory_search: {
+    name: 'kade_memory_search',
+    description:
+      "Search the user's private dated diary — the long-term archive of their day-to-day life beyond your always-visible memory cards. Use when the user asks what they've told you before ('have I mentioned…', 'what was I up to last week'), when they ask you to check your notes, or when a specific past detail would genuinely help and isn't in your cards. Search by meaning (query), by date range, or both — compute real YYYY-MM-DD dates from today's date. Weave findings in naturally like a friend recalling; never read entries as a list unless asked, never invent entries, and if nothing comes back say your notes don't show it. If an entry contradicts what the user says live, believe the user.",
+    schema: kadeMemorySearchSchema,
     toolType: 'builtin',
   },
   kade_weather: {
