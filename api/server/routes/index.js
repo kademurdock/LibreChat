@@ -11,6 +11,7 @@ const adminUsers = require('./admin/users');
 const adminAuditLog = require('./admin/audit');
 const adminConvos = require('./admin/convos');
 const adminMemories = require('./admin/memories');
+const adminDiary = require('./admin/diary');
 const endpoints = require('./endpoints');
 const staticRoute = require('./static');
 const messages = require('./messages');
@@ -77,6 +78,7 @@ module.exports = {
   adminAuditLog,
   adminConvos,
   adminMemories,
+  adminDiary,
   keys,
   apiKeys,
   user,
