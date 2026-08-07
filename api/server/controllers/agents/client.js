@@ -678,7 +678,16 @@ class AgentClient extends BaseClient {
          * KADE_FRESHNESS_NOTE). The includes-guard is paranoia against any
          * lane appending twice. */
         const headParts = [agent.instructions];
-        if (!String(agent.instructions || '').includes('PLATFORM (invisible')) {
+        /** KADE Aug 7 2026 — BARE PROBE agents (her cost-teeth round): an
+         * agent whose instructions carry the marker "KADE BARE PROBE" (the
+         * Canary today) skips the platform note, world block, memory, and
+         * anniversaries entirely — a health probe needs the ROAD, not the
+         * wardrobe. Receipts: the canary's hourly checks ran 4.4K prompt
+         * tokens of mostly-note on a one-sentence answer (~$9.5/mo at
+         * cache-missing hourly cadence); bare ≈ 500-700 tokens (~$1.2/mo),
+         * same model, same lane, same honest test. */
+        const isBareProbe = String(agent.instructions || '').includes('KADE BARE PROBE');
+        if (!isBareProbe && !String(agent.instructions || '').includes('PLATFORM (invisible')) {
           headParts.push(KADE_PLATFORM_NOTE);
         }
         /** KADE Aug 6 2026 — LIVING WORLD LAYER (ideas 25+26, her pick):
@@ -687,7 +696,7 @@ class AgentClient extends BaseClient {
          * cache math and the kill switch (KADE_WORLD_PULSE=0). Fail-soft: an
          * empty string pushes nothing. */
         try {
-          const worldBlock = await getWorldBlock(agentId);
+          const worldBlock = isBareProbe ? '' : await getWorldBlock(agentId);
           if (worldBlock) {
             headParts.push(worldBlock);
           }
@@ -700,7 +709,7 @@ class AgentClient extends BaseClient {
         if (this.options.req?.body?.kadeWhisper === true) {
           headParts.push(KADE_WHISPER_LINE);
         }
-        if (stableMemoryContext && memoryEligible) {
+        if (stableMemoryContext && memoryEligible && !isBareProbe) {
           /** KADE Aug 4 2026 (cache breaker fix, see the long note above):
            * stable memory joins the instructions HEAD — part of the stable,
            * prefix-cacheable system block instead of the per-turn tail. */
