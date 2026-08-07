@@ -1655,6 +1655,32 @@ router.post('/wellness', requireJwtAuth, async (req, res) => {
  * Kade's builder voices are suggestions; each person's pick follows them
  * across devices + surfaces (read-aloud, web calls; phone pending registry map).
  * -------------------------------------------------------------------------- */
+/* ----------------------------------------------------------------------------
+ * DEFAULT AGENT (Aug 6 2026, her ask: "pin the person's default agent at the
+ * top, so they don't have to sort through alphabetical agents" — her pick:
+ * most-talked-to). GET /api/kade/agent-default: this user's top companions by
+ * conversation count, computed straight off their own conversations. Zero
+ * setup, per-person by construction: Skylee's top pick is Skylee's. Fail-soft
+ * to an empty list — pickers fall back to alphabetical, never an error.
+ * -------------------------------------------------------------------------- */
+router.get('/agent-default', requireJwtAuth, async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const Conversation = mongoose.models.Conversation;
+    if (!Conversation) return res.json({ top: [] });
+    const rows = await Conversation.aggregate([
+      { $match: { user: String(req.user.id), agent_id: { $exists: true, $nin: [null, ''] } } },
+      { $group: { _id: '$agent_id', count: { $sum: 1 }, last: { $max: '$updatedAt' } } },
+      { $sort: { count: -1, last: -1 } },
+      { $limit: 3 },
+    ]);
+    return res.json({ top: rows.map((r) => ({ agentId: r._id, count: r.count })) });
+  } catch (e) {
+    logger.warn('[kade/agent-default] failed:', e.message);
+    return res.json({ top: [] });
+  }
+});
+
 const { getUserVoicePrefs, setUserVoicePref } = require('~/models/kadeVoicePref');
 
 router.get('/voice-prefs', requireJwtAuth, async (req, res) => {
