@@ -18,12 +18,13 @@ const notifyJsonSchema = {
         'list_reminders',
         'cancel_reminder',
         'platform_status',
+        'broadcast_whats_new',
       ],
       description:
         "What to do. 'send' (default) pushes a notification to the user's phone RIGHT NOW -- use it for an immediate ping, OR to report that a long job you were just running has finished. " +
         "'schedule_checkin' / 'list_checkins' / 'pause_checkin' / 'cancel_checkin' / 'test_checkin' manage a RECURRING check-in where YOU reach out with fresh, improvised wording on a repeating daily/weekly schedule (needs time). " +
         "'set_reminder' / 'list_reminders' / 'cancel_reminder' manage a ONE-OFF reminder for a single future moment, delivered with the EXACT text you give it (not improvised again later) -- use this for 'remind me to X at/in Y', not schedule_checkin. Only set up a check-in or reminder when the user actually asks for one. " +
-        "'platform_status' answers 'is the platform up?' / 'how's the system doing?' with a REAL health check of the site, voices, and phone bridge, plus the asker's own memory-system health — relay it honestly in your own voice (never invent status).",
+        "'platform_status' answers 'is the platform up?' / 'how's the system doing?' with a REAL health check of the site, voices, and phone bridge, plus the asker's own memory-system health — relay it honestly in your own voice (never invent status). 'broadcast_whats_new' (OWNER ONLY) pushes ONE announcement to EVERY registered family phone at once -- use it solely when the owner explicitly asks for a platform-wide announcement, like a what's-new digest.",
     },
     body: {
       type: 'string',
@@ -102,7 +103,8 @@ class KadeNotify extends Tool {
       " For 'send', write the 'body' in your own voice, short and plain (under ~200 chars). The tool tells you whether it ACTUALLY sent: if it reports blocked (quiet hours, cooldown, cap) or that no phone is registered, say so plainly and do NOT claim you notified them. NEVER claim you sent, scheduled, or reminded anything unless the tool confirms it. " +
       "For a ONE-OFF reminder, use action='set_reminder' with 'body' (the exact text to deliver later) and either 'in_minutes' or both 'fire_date' (YYYY-MM-DD, work out the real date from today's date) and 'fire_time' (HH:mm Central); confirm the wording and timing with the user first, then offer list_reminders/cancel_reminder if they want to check or change it. " +
       "For a recurring check-in, use action='schedule_checkin' with a 'time' (and optional 'days'/'topic'); confirm the time with the user first. Offer a 'test_checkin' so they can hear one. Only set urgent:true for truly time-critical send/schedule_checkin alerts. " +
-      "If the user asks for something that will take a while and might step away, tell them plainly you'll ping their phone when it's done, then actually call action='send' with a short done message once you finish -- before your final reply, not instead of it.";
+      "If the user asks for something that will take a while and might step away, tell them plainly you'll ping their phone when it's done, then actually call action='send' with a short done message once you finish -- before your final reply, not instead of it. " +
+      "For a platform-wide what's-new announcement, use action='broadcast_whats_new' (OWNER ONLY -- it refuses anyone but the owner account): compose a short punchy digest in your own voice (under 300 characters, lock-screen friendly, no markdown), broadcast it, then suggest folks check Help for the details.";
     this.schema = notifyJsonSchema;
     this.bridgeUrl = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
     this.notifySecret = process.env.NOTIFY_AGENT_SECRET || process.env.BRIDGE_SECRET || '';
@@ -130,6 +132,9 @@ class KadeNotify extends Tool {
     }
     if (action === 'platform_status') {
       return await this._platformStatus();
+    }
+    if (action === 'broadcast_whats_new') {
+      return await this._broadcast(data || {});
     }
     return `Unknown action "${action}". Use 'send', a check-in action, or a reminder action.`;
   }
@@ -219,6 +224,51 @@ class KadeNotify extends Tool {
       const msg = err?.response?.data?.error || err.message;
       logger.warn(`[KadeNotify] send failed: ${msg}`);
       return `Could not send the notification: ${msg}. Do not claim it was sent.`;
+    }
+  }
+
+  /** Aug 7 2026 — the owner's "what's new" broadcast. Chain of custody: this
+   * action answers only to the ADMIN account; it authenticates with the scoped
+   * NOTIFY_BROADCAST_SECRET (never the admin BRIDGE_SECRET), which the bridge
+   * accepts solely for broadcast:true on /notify. The bridge's guardrails
+   * (quiet hours unless urgent, cooldown, daily caps, global mute) still
+   * apply — a broadcast spends the same budget as any other push. */
+  async _broadcast(data) {
+    if (!this.isAdmin) {
+      return "Platform-wide broadcasts are owner-only. I can send a notification to YOUR phone instead (action 'send'), if you'd like.";
+    }
+    const broadcastSecret = process.env.NOTIFY_BROADCAST_SECRET || '';
+    if (!broadcastSecret) {
+      return 'Broadcasts are not configured on this server (missing NOTIFY_BROADCAST_SECRET).';
+    }
+    const body = String(data.body || '').trim();
+    if (!body) {
+      return "I need the announcement text (the 'body') to broadcast.";
+    }
+    const title = String(data.title || "What's new").slice(0, 40);
+    const urgent = Boolean(data.urgent);
+    try {
+      const r = await axios.post(
+        `${this.bridgeUrl}/notify`,
+        { secret: broadcastSecret, agentId: this.agentId || 'unknown', agentName: this.agentName, title, body: body.slice(0, 300), urgent, broadcast: true },
+        { timeout: 15000, headers: { 'User-Agent': 'Mozilla/5.0' } },
+      );
+      const d = r.data || {};
+      if (d.ok && d.sent > 0) {
+        return `Announcement delivered to ${d.sent} family device${d.sent === 1 ? '' : 's'}.`;
+      }
+      if (d.blocked) {
+        const tip = /quiet/.test(String(d.blocked)) ? ' You can retry after 8am Central, or set urgent:true only if it truly cannot wait.' : '';
+        return `Not sent — ${d.blocked}. Say so plainly and do NOT claim it went out.${tip}`;
+      }
+      if (d.ok && d.sent === 0) {
+        return 'No devices are registered for notifications right now, so nobody received it.';
+      }
+      return `Broadcast result unclear: ${JSON.stringify(d).slice(0, 200)}. Do not claim it was sent.`;
+    } catch (err) {
+      const msg = err?.response?.data?.error || err.message;
+      logger.warn(`[KadeNotify] broadcast failed: ${msg}`);
+      return `Could not send the broadcast: ${msg}. Do not claim it was sent.`;
     }
   }
 
