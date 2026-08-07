@@ -60,8 +60,9 @@ function sceneTagsToScript(text: string): string {
  * Aug 7 2026 (Kade: "If I say copy text, it should be exactly that, well
  * formatted text" — her pick: clean prose). Copied/exported text loses
  * markdown SCAFFOLDING but keeps its structure: ## headers lose the hashes,
- * **bold**/__underline__/~~strike~~ keep their words, [text](url) keeps the
- * text, code ticks drop, and list lines are normalized to a simple "- " dash
+ * double-star bold, underscore underline, and tilde strike keep their words,
+ * bracket-paren links keep the text, code ticks drop, and list lines are
+ * normalized to a simple "- " dash
  * (her explicit call — structure survives pasting, weird symbols don't).
  * Display surfaces don't use this (web renders markdown; native strips it
  * its own way) — this is the CLIPBOARD contract only.
