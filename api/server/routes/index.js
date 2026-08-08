@@ -14,6 +14,7 @@ const adminMemories = require('./admin/memories');
 const adminDiary = require('./admin/diary');
 const adminMining = require('./admin/mining');
 const diary = require('./diary');
+const world = require('./world');
 const endpoints = require('./endpoints');
 const staticRoute = require('./static');
 const messages = require('./messages');
@@ -83,6 +84,7 @@ module.exports = {
   adminDiary,
   adminMining,
   diary,
+  world,
   keys,
   apiKeys,
   user,

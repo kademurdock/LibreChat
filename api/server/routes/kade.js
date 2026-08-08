@@ -1248,6 +1248,7 @@ const TABBAR_JS = require('./kadePages').tabBarAsset;
 // down in this file.
 const PRONUNCIATION_DICTIONARY_HTML = require('./kadePages').pronunciationDictionaryHtml;
 const DIARY_HTML = require('./kadePages').diaryHtml;
+const WORLD_HTML = require('./kadePages').worldHtml;
 const sendHtml = (html) => (req, res) => res.type('html').send(html);
 
 // ---------------------------------------------------------------------------
@@ -2020,6 +2021,7 @@ router.toolsPage = sendHtml(TOOLS_HTML);
 router.youPage = sendHtml(YOU_HTML);
 router.pronunciationDictionaryPage = sendHtml(PRONUNCIATION_DICTIONARY_HTML);
 router.diaryPage = sendHtml(DIARY_HTML);
+router.worldPage = sendHtml(WORLD_HTML);
 router.tabBarAssetPage = (req, res) => res.type('application/javascript').send(TABBAR_JS);
 // Also reachable under the API namespace:
 router.get('/feed', router.feedPage);

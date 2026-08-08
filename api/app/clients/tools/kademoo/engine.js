@@ -135,7 +135,8 @@ async function collectMeanwhile(ch) {
   const top = await MooEvent.findOne({}).sort({ seq: -1 }).select('seq').lean();
   ch.lastSeenSeq = top ? top.seq : ch.lastSeenSeq;
   await MooChar.updateOne({ userId: ch.userId }, { $set: { lastSeenSeq: ch.lastSeenSeq, lastActiveAt: new Date() } });
-  return events.map((e) => e.text);
+  /* structured for sound-driving clients; text-consumers join .text */
+  return events.map((e) => ({ kind: e.kind, text: e.text }));
 }
 
 async function describeRoom(ch) {
@@ -167,8 +168,9 @@ async function runCommand({ userId, displayName, command }) {
   const cmd = normalize(command);
   const lower = cmd.toLowerCase();
   const lines = [];
+  const kinds = meanwhile.map((m) => m.kind);
   if (meanwhile.length) {
-    lines.push('MEANWHILE (since your last turn): ' + meanwhile.join(' | '));
+    lines.push('MEANWHILE (since your last turn): ' + meanwhile.map((m) => m.text).join(' | '));
   }
 
   const [verbRaw, ...restArr] = lower.split(' ');
@@ -193,7 +195,7 @@ async function runCommand({ userId, displayName, command }) {
       return { ok: true, lines };
     }
     const room = await describeRoom(ch);
-    return { ok: true, lines, room };
+    return { ok: true, lines, room, kinds: [...kinds, 'look'], district: room.district };
   }
 
   if (verb === 'go') {
@@ -211,7 +213,7 @@ async function runCommand({ userId, displayName, command }) {
     await emit(dest, ch.userId, ch.name, 'enter', `${ch.name} arrives.`);
     const roomView = await describeRoom(ch);
     lines.push(`You go ${DIR_WORDS[dirKey] || dirKey}.`);
-    return { ok: true, lines, room: roomView };
+    return { ok: true, lines, room: roomView, kinds: [...kinds, 'move'], district: roomView.district };
   }
 
   if (verb === 'take' || verb === 'get' || verb === 'grab') {
@@ -227,7 +229,7 @@ async function runCommand({ userId, displayName, command }) {
     }
     await emit(ch.roomId, ch.userId, ch.name, 'take', `${ch.name} picks up ${item.name}.`);
     lines.push(`You take ${item.name}.`);
-    return { ok: true, lines };
+    return { ok: true, lines, kinds: [...kinds, 'take'] };
   }
 
   if (verb === 'drop') {
@@ -243,7 +245,7 @@ async function runCommand({ userId, displayName, command }) {
     }
     await emit(ch.roomId, ch.userId, ch.name, 'drop', `${ch.name} sets down ${item.name}.`);
     lines.push(`You drop ${item.name}.`);
-    return { ok: true, lines };
+    return { ok: true, lines, kinds: [...kinds, 'drop'] };
   }
 
   if (verb === 'inventory' || verb === 'inv' || verb === 'i') {
@@ -260,7 +262,7 @@ async function runCommand({ userId, displayName, command }) {
     }
     await emit(ch.roomId, ch.userId, ch.name, 'say', `${ch.name} says: "${text}"`);
     lines.push(`You say: "${text}"`);
-    return { ok: true, lines };
+    return { ok: true, lines, kinds: [...kinds, 'say'] };
   }
 
   if (verb === 'emote' || verb === 'me') {
@@ -271,7 +273,7 @@ async function runCommand({ userId, displayName, command }) {
     }
     await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} ${text}`);
     lines.push(`${ch.name} ${text}`);
-    return { ok: true, lines };
+    return { ok: true, lines, kinds: [...kinds, 'emote'] };
   }
 
   if (verb === 'who') {

@@ -2414,5 +2414,176 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
 </script>
 </body></html>`;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, diaryHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
+/* KADE Aug 8 2026 — THE WORLD CLIENT (her correction made real): a direct,
+ * no-LLM surface for the city. Type n/e/w/s at telnet speed; every engine
+ * event carries a KIND, and kinds drive SOUND — the BASSLINE law, her own:
+ * "the screen reader announces but doesn't play; earcons carry the gameplay."
+ * Synth earcon defaults ship tonight so the world already talks in sound;
+ * every one of them is overridable by HER designed audio via SOUND_URLS —
+ * hand Kade a file per kind and it replaces the synth voice of the world.
+ * Deliberately its OWN surface — not an agent chat, not the platform's face:
+ * a doorway page. Ambience per district, off by default, remembered. */
+const worldHtml = `<!doctype html><html lang="en"><head><title>The World — beyond the Threshold Gate</title>${SHARED_HEAD}
+<style>
+  #log { min-height: 40vh; max-height: 58vh; overflow-y: auto; padding: .8rem 1rem; border-radius: 14px;
+         background: #101216; color: #d6e2d6; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+         font-size: .98rem; line-height: 1.55; border: 1px solid #22262e; }
+  @media (prefers-color-scheme: light){ #log { background:#14161a; } }
+  #log p { margin: .35rem 0; }
+  #log p.you { color: #9ecbff; }
+  #log p.world { color: #d6e2d6; }
+  #log p.meanwhile { color: #c9b47a; font-style: italic; }
+  #log p.err { color: #ff9d8f; }
+  form.cmd { display: flex; gap: .5rem; margin-top: .7rem; }
+  form.cmd input { flex: 1; font-size: 1.05rem; padding: .75rem .9rem; border-radius: 12px; border: 1px solid #b9bfc9;
+                   background: #fff; color: #16181d; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  @media (prefers-color-scheme: dark){ form.cmd input { background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
+  form.cmd input:focus-visible { outline: 4px solid #ffbf47; outline-offset: 2px; }
+  form.cmd button { font-size: 1.05rem; font-weight: 700; padding: .75rem 1.2rem; border-radius: 12px; border: 0;
+                    background: #1f7a49; color: #fff; cursor: pointer; }
+  form.cmd button:focus-visible { outline: 4px solid #ffbf47; outline-offset: 3px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .6rem; }
+  .toolbar button { font-size: .92rem; padding: .5rem .8rem; border-radius: 10px; border: 1px solid #b9bfc9;
+                    background: transparent; color: inherit; cursor: pointer; }
+  .toolbar button:focus-visible { outline: 4px solid #ffbf47; outline-offset: 2px; }
+  .toolbar button[aria-pressed="true"] { background: #1f7a49; color: #fff; border-color: #1f7a49; }
+</style>
+</head><body>
+<a class="back" href="/you">&larr; Back</a>
+<h1>The World</h1>
+<p class="muted">The city beyond the Threshold Gate. Type commands — <strong>n s e w</strong>, <strong>look</strong>, <strong>take lantern</strong>, <strong>say hello</strong>, <strong>who</strong> — or dictate them. No narrator between you and the ground; this is the direct line. Sounds mark what happens (toggle below). Your character and everything you do here are the same ones the city's keepers see.</p>
+<div id="log" role="log" aria-live="polite" aria-label="World output"></div>
+<form class="cmd" id="cmdForm">
+  <label for="cmdInput" style="position:absolute;left:-9999px;">Command</label>
+  <input id="cmdInput" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="look" />
+  <button type="submit">Do</button>
+</form>
+<div class="toolbar" role="group" aria-label="Quick commands and sound">
+  <button type="button" data-cmd="look">Look</button>
+  <button type="button" data-cmd="n">North</button>
+  <button type="button" data-cmd="s">South</button>
+  <button type="button" data-cmd="e">East</button>
+  <button type="button" data-cmd="w">West</button>
+  <button type="button" data-cmd="inventory">Inventory</button>
+  <button type="button" data-cmd="who">Who</button>
+  <button type="button" id="sfxToggle" aria-pressed="true">Sounds: on</button>
+  <button type="button" id="ambToggle" aria-pressed="false">Ambience: off</button>
+</div>
+<footer class="muted">&mdash; a door, not a chat</footer>
+<script>
+(function(){
+  var TOKEN=null, hist=[], histIx=-1;
+  var logEl=document.getElementById('log');
+  var input=document.getElementById('cmdInput');
+
+  /* ── SOUND ─────────────────────────────────────────────────────────────
+   * Every engine event kind gets a voice. SOUND_URLS is HER override lane:
+   * set a URL per kind (her designed audio) and it replaces the synth. */
+  var SOUND_URLS = { move:null, look:null, take:null, drop:null, say:null, emote:null, enter:null, leave:null, err:null };
+  var AC=null; function ac(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return AC; }
+  var sfxOn=true, ambOn=false, ambNodes=null;
+  try{ sfxOn = localStorage.getItem('world_sfx')!=='0'; ambOn = localStorage.getItem('world_amb')==='1'; }catch(e){}
+
+  function tone(freq,dur,delay,type,gain){
+    var ctx=ac(); if(!ctx) return;
+    var o=ctx.createOscillator(), g=ctx.createGain();
+    o.type=type||'sine'; o.frequency.value=freq;
+    g.gain.setValueAtTime(0.0001, ctx.currentTime+delay);
+    g.gain.exponentialRampToValueAtTime(gain||0.12, ctx.currentTime+delay+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+delay+dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(ctx.currentTime+delay); o.stop(ctx.currentTime+delay+dur+0.05);
+  }
+  var SYNTH={
+    move:  function(){ tone(150,.05,0,'square',.09); tone(130,.05,.09,'square',.08); },
+    look:  function(){ tone(520,.07,0,'sine',.07); },
+    take:  function(){ tone(330,.05,0,'triangle',.1); tone(540,.06,.05,'triangle',.1); },
+    drop:  function(){ tone(220,.05,0,'triangle',.1); tone(110,.09,.05,'triangle',.1); },
+    say:   function(){ tone(660,.06,0,'sine',.08); tone(880,.08,.07,'sine',.07); },
+    emote: function(){ tone(440,.09,0,'sine',.08); },
+    enter: function(){ tone(392,.06,0,'sine',.07); tone(494,.06,.06,'sine',.07); tone(587,.08,.12,'sine',.07); },
+    leave: function(){ tone(587,.06,0,'sine',.07); tone(494,.06,.06,'sine',.07); tone(392,.08,.12,'sine',.06); },
+    err:   function(){ tone(110,.16,0,'sawtooth',.06); }
+  };
+  function playKind(k){
+    if(!sfxOn) return;
+    if(SOUND_URLS[k]){ try{ new Audio(SOUND_URLS[k]).play(); return; }catch(e){} }
+    (SYNTH[k]||function(){})();
+  }
+  function ambience(on, district){
+    if(ambNodes){ try{ ambNodes.g.gain.linearRampToValueAtTime(0.0001, ac().currentTime+0.4); ambNodes.o1.stop(ac().currentTime+0.6); ambNodes.o2.stop(ac().currentTime+0.6); }catch(e){} ambNodes=null; }
+    if(!on) return;
+    var ctx=ac(); if(!ctx) return;
+    var o1=ctx.createOscillator(), o2=ctx.createOscillator(), g=ctx.createGain(), f=ctx.createBiquadFilter();
+    o1.frequency.value=55; o2.frequency.value=57.3; o1.type='sine'; o2.type='sine';
+    f.type='lowpass'; f.frequency.value=160;
+    g.gain.value=0.0001;
+    o1.connect(f); o2.connect(f); f.connect(g); g.connect(ctx.destination);
+    o1.start(); o2.start();
+    g.gain.linearRampToValueAtTime(0.028, ctx.currentTime+1.2);
+    ambNodes={o1:o1,o2:o2,g:g};
+  }
+
+  /* ── LOG ── */
+  function addLine(text, cls){
+    var p=document.createElement('p'); p.className=cls||'world'; p.textContent=text;
+    logEl.appendChild(p); logEl.scrollTop=logEl.scrollHeight;
+    while(logEl.children.length>250){ logEl.removeChild(logEl.firstChild); }
+  }
+
+  async function getToken(){ try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include'}); if(!r.ok) return null; var j=await r.json(); return j&&j.token||null; }catch(e){ return null; } }
+
+  async function send(cmd){
+    cmd=(cmd||'').trim(); if(!cmd) return;
+    addLine('> '+cmd, 'you');
+    hist.push(cmd); histIx=hist.length;
+    try{
+      var r=await fetch('/api/world/command',{method:'POST',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
+      if(!r.ok){ addLine('The world flickered ('+r.status+'). Try again.', 'err'); playKind('err'); return; }
+      var d=await r.json();
+      (d.lines||[]).forEach(function(line){
+        addLine(line, /^MEANWHILE/.test(line)?'meanwhile':'world');
+      });
+      if(d.room){
+        addLine(d.room.name+'. '+d.room.desc, 'world');
+        addLine('Exits: '+(d.room.exits.join(', ')||'none')
+          + (d.room.items && d.room.items.length ? '. Here: '+d.room.items.join(', ') : '')
+          + (d.room.people && d.room.people.length ? '. Present: '+d.room.people.join(', ') : '. No one else here.'), 'world');
+      }
+      var kinds = d.kinds||[];
+      if(!d.ok && (!kinds.length)) { playKind('err'); }
+      kinds.forEach(function(k,i){ setTimeout(function(){ playKind(k); }, i*140); });
+      if(ambOn && d.district){ ambience(true, d.district); }
+    }catch(e){ addLine('No road to the city just now — check your connection.', 'err'); playKind('err'); }
+  }
+
+  document.getElementById('cmdForm').addEventListener('submit', function(ev){
+    ev.preventDefault(); var c=input.value; input.value=''; send(c); input.focus();
+  });
+  input.addEventListener('keydown', function(ev){
+    if(ev.key==='ArrowUp'){ ev.preventDefault(); if(histIx>0){ histIx--; input.value=hist[histIx]||''; } }
+    if(ev.key==='ArrowDown'){ ev.preventDefault(); if(histIx<hist.length){ histIx++; input.value=hist[histIx]||''; } }
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.toolbar button[data-cmd]'), function(b){
+    b.addEventListener('click', function(){ send(b.getAttribute('data-cmd')); input.focus(); });
+  });
+  var sfxBtn=document.getElementById('sfxToggle');
+  function renderSfx(){ sfxBtn.textContent='Sounds: '+(sfxOn?'on':'off'); sfxBtn.setAttribute('aria-pressed', String(sfxOn)); }
+  sfxBtn.addEventListener('click', function(){ sfxOn=!sfxOn; try{ localStorage.setItem('world_sfx', sfxOn?'1':'0'); }catch(e){} renderSfx(); if(sfxOn){ playKind('say'); } });
+  var ambBtn=document.getElementById('ambToggle');
+  function renderAmb(){ ambBtn.textContent='Ambience: '+(ambOn?'on':'off'); ambBtn.setAttribute('aria-pressed', String(ambOn)); }
+  ambBtn.addEventListener('click', function(){ ambOn=!ambOn; try{ localStorage.setItem('world_amb', ambOn?'1':'0'); }catch(e){} renderAmb(); ambience(ambOn); });
+  renderSfx(); renderAmb();
+
+  (async function init(){
+    TOKEN=await getToken();
+    if(!TOKEN){ addLine('Sign in on the main site first, then come back to the gate.', 'err'); return; }
+    addLine('The gate knows you. Type look, or just press Look.', 'world');
+    send('look');
+  })();
+})();
+</script>
+</body></html>`;
+
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, diaryHtml, worldHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
 
