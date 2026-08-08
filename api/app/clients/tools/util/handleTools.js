@@ -30,6 +30,7 @@ const {
   KadePhoneCall,
   KadeNotify,
   KadeMemorySearch,
+  KadeWorld,
   KadeTranscribe,
   KadeWeather,
   KadeLocation,
@@ -198,6 +199,7 @@ const loadTools = async ({
     kade_phone_call: KadePhoneCall,
     kade_notify: KadeNotify,
     kade_memory_search: KadeMemorySearch,
+    kade_world: KadeWorld,
     kade_transcribe: KadeTranscribe,
     kade_weather: KadeWeather,
     kade_location: KadeLocation,
@@ -331,6 +333,11 @@ const loadTools = async ({
     kade_memory_search: {
       userId: kadeActingUserId,
       agentId: agent?.id || agent?.agent_id,
+    },
+    /** KADE MOO (Aug 8 2026): the world acts AS the real person on the line. */
+    kade_world: {
+      userId: kadeActingUserId,
+      userName: kadeActingUserName,
     },
     kade_adventure: {
       agentName: agent?.name,

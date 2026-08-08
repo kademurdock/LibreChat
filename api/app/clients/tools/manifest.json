@@ -24,6 +24,14 @@
     "authConfig": []
   },
   {
+    "name": "The World",
+    "pluginKey": "kade_world",
+    "description": "Lets this character walk you through the persistent city beyond the Threshold Gate — a shared text world where your actions are real and remembered. Move, look, pick things up, talk to whoever's in the room; speak naturally or use classic commands. The world keeps its own chronicle.",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Voice Memo Transcriber",
     "pluginKey": "kade_transcribe",
     "description": "Turns an uploaded voice memo or audio recording into clean, formatted text. Attach the audio to the chat, then ask the agent to transcribe or summarize it. Free to use. There's also a standalone page at /transcribe.",

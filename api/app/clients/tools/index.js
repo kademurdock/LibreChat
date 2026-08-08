@@ -7,6 +7,7 @@ const FalAI = require('./structured/FalAI');
 const KadePhoneCall = require('./structured/KadePhoneCall');
 const KadeNotify = require('./structured/KadeNotify');
 const KadeMemorySearch = require('./structured/KadeMemorySearch');
+const KadeWorld = require('./structured/KadeWorld');
 const KadeTranscribe = require('./structured/KadeTranscribe');
 const KadeWeather = require('./structured/KadeWeather');
 const KadeLocation = require('./structured/KadeLocation');
@@ -39,6 +40,7 @@ module.exports = {
   KadePhoneCall,
   KadeNotify,
   KadeMemorySearch,
+  KadeWorld,
   KadeTranscribe,
   KadeWeather,
   KadeLocation,

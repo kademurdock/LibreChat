@@ -366,6 +366,18 @@ export const kadePhoneCallSchema: ExtendedJsonSchema = {
   required: [],
 };
 
+export const kadeWorldSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    command: {
+      type: 'string',
+      description:
+        "ONE engine command: look | look <thing> | go <exit or direction> | take <item> | drop <item> | inventory | say <words> | emote <action> | who. Directions: n s e w ne nw se sw up down (or full words). Translate the player's natural speech into the closest single command first ('head through the gate' -> 'go gate'); pass terse commands through untouched. One action per call — chain calls for multi-step intents.",
+    },
+  },
+  required: ['command'],
+};
+
 export const kadeMemorySearchSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -869,6 +881,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       "Send a push notification to the user's OWN phone (their Kade-AI app) — for reminders they asked for, or to tell them a background job finished. It lands on their lock screen. The server enforces quiet hours (9pm to 8am), a cooldown, and daily caps, so keep notifications meaningful, not chatter. NEVER claim you notified them unless the tool confirms it sent; if it reports blocked or that no phone is registered, say so plainly. Do not duplicate what you just said in chat unless the user asked to be pinged on their phone. Also sets up RECURRING check-ins (action='schedule_checkin' with a time; list/pause/cancel/test actions manage them) where you reach out to the user on a schedule — only when they ask.",
     schema: kadeNotifySchema,
+    toolType: 'builtin',
+  },
+  kade_world: {
+    name: 'kade_world',
+    description:
+      "Perform ONE action in the persistent shared world (the city beyond the Threshold Gate) as the player's character, and receive back the FACTS: what they see, who is present, what changed, and what happened around them since their last turn. You are the natural-language layer over a deterministic engine — translate the player's intent into single engine commands, one call per action, chaining for multi-step intents; then NARRATE only the returned facts, atmospherically, in character, never inventing or contradicting a single one. MEANWHILE lines are events that happened while the player was away — weave them in. If a command is unknown or impossible, tell the player their real options honestly. The world persists forever and is shared with other players and citizens; treat it like a real place.",
+    schema: kadeWorldSchema,
     toolType: 'builtin',
   },
   kade_memory_search: {
