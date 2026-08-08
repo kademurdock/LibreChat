@@ -2480,6 +2480,12 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>The World — bey
    * Every engine event kind gets a voice. SOUND_URLS is HER override lane:
    * set a URL per kind (her designed audio) and it replaces the synth. */
   var SOUND_URLS = { move:null, look:null, take:null, drop:null, say:null, emote:null, enter:null, leave:null, err:null };
+  var ROOM_SOUNDS = {}, DISTRICT_SOUNDS = {}, ambAudio = null;
+  fetch('/api/world/sounds').then(function(r){ return r.ok ? r.json() : null; }).then(function(m){
+    if(!m) return;
+    Object.keys(m.event||{}).forEach(function(k){ SOUND_URLS[k]=m.event[k]; });
+    ROOM_SOUNDS=m.room||{}; DISTRICT_SOUNDS=m.district||{};
+  }).catch(function(){});
   var AC=null; function ac(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return AC; }
   var sfxOn=true, ambOn=false, ambNodes=null;
   try{ sfxOn = localStorage.getItem('world_sfx')!=='0'; ambOn = localStorage.getItem('world_amb')==='1'; }catch(e){}
@@ -2553,7 +2559,17 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>The World — bey
       var kinds = d.kinds||[];
       if(!d.ok && (!kinds.length)) { playKind('err'); }
       kinds.forEach(function(k,i){ setTimeout(function(){ playKind(k); }, i*140); });
-      if(ambOn && d.district){ ambience(true, d.district); }
+      if(ambOn){
+        var ambUrl = (d.room && ROOM_SOUNDS[d.room.name]) || (d.district && DISTRICT_SOUNDS[d.district]);
+        if(ambUrl){
+          if(!ambAudio || ambAudio.src!==ambUrl){
+            if(ambAudio){ try{ ambAudio.pause(); }catch(e){} }
+            ambAudio=new Audio(ambUrl); ambAudio.loop=true; ambAudio.volume=0.25;
+            ambAudio.play().catch(function(){});
+            ambience(false);
+          }
+        } else if(d.district){ if(ambAudio){ try{ ambAudio.pause(); }catch(e){} ambAudio=null; } ambience(true, d.district); }
+      }
     }catch(e){ addLine('No road to the city just now — check your connection.', 'err'); playKind('err'); }
   }
 
@@ -2572,7 +2588,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>The World — bey
   sfxBtn.addEventListener('click', function(){ sfxOn=!sfxOn; try{ localStorage.setItem('world_sfx', sfxOn?'1':'0'); }catch(e){} renderSfx(); if(sfxOn){ playKind('say'); } });
   var ambBtn=document.getElementById('ambToggle');
   function renderAmb(){ ambBtn.textContent='Ambience: '+(ambOn?'on':'off'); ambBtn.setAttribute('aria-pressed', String(ambOn)); }
-  ambBtn.addEventListener('click', function(){ ambOn=!ambOn; try{ localStorage.setItem('world_amb', ambOn?'1':'0'); }catch(e){} renderAmb(); ambience(ambOn); });
+  ambBtn.addEventListener('click', function(){ ambOn=!ambOn; try{ localStorage.setItem('world_amb', ambOn?'1':'0'); }catch(e){} renderAmb(); if(!ambOn && ambAudio){ try{ ambAudio.pause(); }catch(e){} ambAudio=null; } ambience(ambOn); });
   renderSfx(); renderAmb();
 
   (async function init(){

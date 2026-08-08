@@ -33,4 +33,23 @@ router.post('/command', async (req, res) => {
   }
 });
 
+/** The sound manifest — her designed audio as data. Clients merge this over
+ *  their synth defaults; installing a sound in-world (@sound) needs no deploy. */
+router.get('/sounds', async (_req, res) => {
+  try {
+    const { MooSound } = require('~/models/kadeMoo');
+    const rows = await MooSound.find({}).lean();
+    const manifest = { event: {}, room: {}, district: {} };
+    for (const r of rows) {
+      if (manifest[r.scopeType]) {
+        manifest[r.scopeType][r.scopeId] = r.url;
+      }
+    }
+    res.json(manifest);
+  } catch (e) {
+    logger.error('[world] sounds manifest failed:', e.message);
+    res.status(500).json({ error: 'no sounds today' });
+  }
+});
+
 module.exports = router;

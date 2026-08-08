@@ -45,7 +45,7 @@ const MooItemSchema = new mongoose.Schema(
     itemId: { type: String, required: true, unique: true },
     name: { type: String, required: true },
     desc: { type: String, default: '' },
-    /** { type: 'room'|'char', id: roomId|userId } */
+    /** { type: 'room'|'char'|'item', id: roomId|userId|itemId } — 'item' = inside a container */
     location: { type: mongoose.Schema.Types.Mixed, required: true },
     portable: { type: Boolean, default: true },
     props: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -74,6 +74,34 @@ const MooCounterSchema = new mongoose.Schema({
   n: { type: Number, default: 0 },
 });
 
+/** KadeCore (Aug 8 2026): DISTRICTS as data — the bible's per-district law
+ *  tables land here (props carries law/tone/anything; the engine never
+ *  hardcodes a district). */
+const MooDistrictSchema = new mongoose.Schema(
+  {
+    districtId: { type: String, required: true, unique: true },
+    name: { type: String, required: true },
+    desc: { type: String, default: '' },
+    props: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { timestamps: true },
+);
+
+/** KadeCore: the SOUND REGISTRY — her designed audio as data. scopeType:
+ *  'event' (kind: move/take/...), 'room' (roomId), 'district' (districtId).
+ *  Clients fetch the manifest and play; no deploy ever needed for a sound. */
+const MooSoundSchema = new mongoose.Schema(
+  {
+    scopeType: { type: String, required: true }, // event | room | district
+    scopeId: { type: String, required: true },
+    url: { type: String, required: true },
+    label: { type: String, default: '' },
+    addedBy: { type: String, default: '' },
+  },
+  { timestamps: true },
+);
+MooSoundSchema.index({ scopeType: 1, scopeId: 1 }, { unique: true });
+
 const MooRoom = mongoose.models.MooRoom || mongoose.model('MooRoom', MooRoomSchema, 'kademoorooms');
 MooCharSchema.index({ userId: 1, name: 1 }, { unique: true });
 
@@ -85,6 +113,10 @@ const MooItem = mongoose.models.MooItem || mongoose.model('MooItem', MooItemSche
 const MooEvent = mongoose.models.MooEvent || mongoose.model('MooEvent', MooEventSchema, 'kademooevents');
 const MooCounter =
   mongoose.models.MooCounter || mongoose.model('MooCounter', MooCounterSchema, 'kademoocounters');
+const MooDistrict =
+  mongoose.models.MooDistrict || mongoose.model('MooDistrict', MooDistrictSchema, 'kademoodistricts');
+const MooSound =
+  mongoose.models.MooSound || mongoose.model('MooSound', MooSoundSchema, 'kademoosounds');
 
 async function nextSeq() {
   const doc = await MooCounter.findOneAndUpdate(
@@ -95,4 +127,4 @@ async function nextSeq() {
   return doc.n;
 }
 
-module.exports = { MooRoom, MooChar, MooItem, MooEvent, nextSeq };
+module.exports = { MooRoom, MooChar, MooItem, MooEvent, MooDistrict, MooSound, nextSeq };

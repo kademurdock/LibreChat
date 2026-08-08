@@ -372,7 +372,7 @@ export const kadeWorldSchema: ExtendedJsonSchema = {
     command: {
       type: 'string',
       description:
-        "ONE engine command: look | look <thing> | go <exit or direction> | take <item> | drop <item> | inventory | say <words> | emote <action> | who. Directions: n s e w ne nw se sw up down (or full words). Translate the player's natural speech into the closest single command first ('head through the gate' -> 'go gate'); pass terse commands through untouched. One action per call — chain calls for multi-step intents.",
+        "ONE engine command: look | look <thing> | look in <box> | go <exit> | take/drop | put <item> in <box> | get <item> from <box> | give <item> to <person> | inventory | say/emote | whisper <name> <words> | page <name> <words> | describe me as <text> | unlock <dir> | where | time | coins | who | chars | newchar <name> | switch <name>. Builder/wizard @verbs exist for the Founder's tier (@dig, @desc, @create, @set, @sound and kin) — pass them through verbatim when the player uses them. Translate natural speech to the closest single command first; chain calls for multi-step intents.",
     },
   },
   required: ['command'],
