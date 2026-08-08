@@ -170,7 +170,7 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
    * borderline entry politely refused. Keeper-sourced writes only — a human
    * typing on the Diary page is never second-guessed. */
   if (
-    source === 'keeper' &&
+    (source === 'keeper' || source === 'mined') &&
     /\basked|\brequested|\bran\b|\bwants? (?:me|a)\b/i.test(cleanText) &&
     /\b(?:diary|logbook|memory|memories|notes?)\b/i.test(cleanText) &&
     /\b(?:search|check|look(?:ed)?\s?up|read back|record)/i.test(cleanText)
