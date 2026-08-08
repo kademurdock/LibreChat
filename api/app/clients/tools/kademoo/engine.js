@@ -276,7 +276,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     return { ok: true, lines, room: roomView, kinds: [...kinds, 'move'], district: roomView.district };
   }
 
-  if (verb === 'take' || verb === 'get' || verb === 'grab') {
+  if ((verb === 'take' || verb === 'get' || verb === 'grab') && !/ from /i.test(rest)) {
     const pat = new RegExp(arg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     const item = await MooItem.findOneAndUpdate(
       { 'location.type': 'room', 'location.id': ch.roomId, portable: true, name: pat },
@@ -369,7 +369,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     lines.push(`You put ${item.name} in ${box.name}.`);
     return { ok: true, lines, kinds: [...kinds, 'drop'] };
   }
-  if (verb === 'get' && / from /i.test(rest)) {
+  if ((verb === 'get' || verb === 'take' || verb === 'grab') && / from /i.test(rest)) {
     const m = rest.match(/^(.+?)\s+from\s+(.+)$/i);
     const box = await findItem(m[2].trim(), [{ type: 'room', id: ch.roomId }, { type: 'char', id: ch.userId }]);
     if (!box) {
