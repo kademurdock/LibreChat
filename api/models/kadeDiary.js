@@ -163,6 +163,24 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
     return { ok: false, error: 'missing userId or text' };
   }
   const cleanText = String(text).trim().slice(0, 2000);
+  /* Meta-guard (Aug 7 2026, caught twice in live tests): the keeper kept
+   * logging the ACT of being asked to search the diary — once even writing
+   * "not a genuine moment to record" while recording it. Narrow pattern on
+   * the observed failure shape only; a rare false positive just means one
+   * borderline entry politely refused. Keeper-sourced writes only — a human
+   * typing on the Diary page is never second-guessed. */
+  if (
+    source === 'keeper' &&
+    /\basked|\brequested|\bran\b|\bwants? (?:me|a)\b/i.test(cleanText) &&
+    /\b(?:diary|memory|memories|notes?)\b/i.test(cleanText) &&
+    /\b(?:search|check|look(?:ed)?\s?up|read back|record)/i.test(cleanText)
+  ) {
+    return {
+      ok: false,
+      error:
+        'That describes the diary mechanism itself, not a life moment — log nothing for this turn.',
+    };
+  }
   const effectiveAgentId = scope === 'shared' ? null : agentId || null;
   const entryDate = centralDateString();
   const embedding = await embedText(cleanText);
