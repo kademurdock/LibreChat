@@ -1247,6 +1247,7 @@ const TABBAR_JS = require('./kadePages').tabBarAsset;
 // the exact same /pronunciation-dictionary JSON API a few hundred lines
 // down in this file.
 const PRONUNCIATION_DICTIONARY_HTML = require('./kadePages').pronunciationDictionaryHtml;
+const DIARY_HTML = require('./kadePages').diaryHtml;
 const sendHtml = (html) => (req, res) => res.type('html').send(html);
 
 // ---------------------------------------------------------------------------
@@ -2018,6 +2019,7 @@ router.notificationsPage = sendHtml(NOTIFICATIONS_HTML);
 router.toolsPage = sendHtml(TOOLS_HTML);
 router.youPage = sendHtml(YOU_HTML);
 router.pronunciationDictionaryPage = sendHtml(PRONUNCIATION_DICTIONARY_HTML);
+router.diaryPage = sendHtml(DIARY_HTML);
 router.tabBarAssetPage = (req, res) => res.type('application/javascript').send(TABBAR_JS);
 // Also reachable under the API namespace:
 router.get('/feed', router.feedPage);

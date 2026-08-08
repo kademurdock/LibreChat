@@ -266,6 +266,7 @@ const startServer = async () => {
   app.use('/api/admin/convos', routes.adminConvos);
   app.use('/api/admin/memories', routes.adminMemories);
   app.use('/api/admin/diary', routes.adminDiary);
+  app.use('/api/diary', routes.diary);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/api-keys', routes.apiKeys);
@@ -324,6 +325,7 @@ const startServer = async () => {
   app.get('/tools', routes.kade.toolsPage);
   app.get('/you', routes.kade.youPage);
   app.get('/pronunciation-dictionary', routes.kade.pronunciationDictionaryPage);
+  app.get('/diary', routes.kade.diaryPage);
   app.get('/kade-tabbar.js', routes.kade.tabBarAssetPage);
   app.get('/parlor', routes.kadeParlor.page);
   app.get('/lounge', routes.kadeLounge.page);

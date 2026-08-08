@@ -116,8 +116,14 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
     );
     const toolless = NO_TOOLS_MODELS.has(String(model || '').toLowerCase());
     /* KADE 2026-07-13: kade_message (family message-taking) rides the same
-     * auto-injection — every agent can take "tell Skylee..." messages. */
-    const autoTools = ['kade_feedback', 'kade_message'];
+     * auto-injection — every agent can take "tell Skylee..." messages.
+     * KADE 2026-08-07: kade_memory_search joins on her fleet-roll word — the
+     * Living Diary's explicit lookup for every character, current AND future
+     * agents, no per-agent data mutations (the kade_notify-era PATCH loop is
+     * retired for this; auto-injection IS the house fleet-roll pattern). The
+     * tool self-guards: server-side scope = shared + own agent only, and the
+     * diary respects the user's memory toggle + KADE_DIARY kill switch. */
+    const autoTools = ['kade_feedback', 'kade_message', 'kade_memory_search'];
     const withFeedback = toolless
       ? []
       : [..._tools, ...autoTools.filter((t) => !_tools.includes(t))];

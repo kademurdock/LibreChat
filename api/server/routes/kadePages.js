@@ -1360,6 +1360,7 @@ const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</ti
   <a class="hubitem" href="/feed-the-server"><span class="hicon" aria-hidden="true">💳</span><span><strong>Donate &mdash; Feed the Server</strong><small>See your usage and balance, and chip in to keep this running</small></span></a>
   <a class="hubitem" href="/notifications"><span class="hicon" aria-hidden="true">🔔</span><span><strong>Notifications &amp; Reminders</strong><small>Birthday nudges and reminders — in chat, push, or by phone</small></span></a>
   <a class="hubitem" href="/pronunciation-dictionary"><span class="hicon" aria-hidden="true">🗣️</span><span><strong>Pronunciation Dictionary</strong><small>Teach Kade-AI how to say names or words you use</small></span></a>
+  <a class="hubitem" href="/diary"><span class="hicon" aria-hidden="true">📔</span><span><strong>Your Diary</strong><small>The dated record your companions keep of your days &mdash; browse, add, or forget entries</small></span></a>
   <a class="hubitem" href="/help"><span class="hicon" aria-hidden="true">❓</span><span><strong>Help &amp; FAQ</strong><small>How everything works</small></span></a>
 </nav>
 <p class="muted" style="margin-top:1.25rem">Settings, your files, and signing out live in the account menu — tap your picture at the top of the chat screen.</p>
@@ -2259,5 +2260,159 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
   </script>
 </body></html>`;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
+/* KADE Aug 7 2026 — THE DIARY PAGE (Living Diary Phase 4, her word same day).
+ * The browsable surface over /api/diary: her day-to-day entries grouped by
+ * date, newest first, each showing which companion holds it; forget any entry;
+ * add a line by hand (manual adds are shared — written in HER diary, not told
+ * to one character, so any companion may recall them; the page says so).
+ * Screen-reader-first per the house standard: one polite live region carries
+ * every state change, headings are the calendar, focus returns to the list
+ * heading after a forget so VoiceOver never lands in a void. Static HTML,
+ * client-side token via /api/auth/refresh — the exact pronunciation-dictionary
+ * pattern. */
+const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Diary — Kade-AI</title>${SHARED_HEAD}
+<style>
+  .entry-row { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; padding:.7rem 0; border-bottom:1px solid #e3e6ea; }
+  .entry-row:last-child { border-bottom:0; }
+  @media (prefers-color-scheme: dark){ .entry-row{ border-color:#2c2f37; } }
+  .entry-text { font-size:1.02rem; }
+  .entry-meta { font-size:.85rem; opacity:.75; margin-top:.15rem; }
+  button.small { font-size:.9rem; padding:.45rem .8rem; border-radius:9px; border:1px solid #b9bfc9; background:transparent; color:inherit; cursor:pointer; white-space:nowrap; }
+  button.small:focus-visible { outline:4px solid #ffbf47; outline-offset:2px; }
+  button.danger { border-color:#c0392b; color:#c0392b; }
+  @media (prefers-color-scheme: dark){ button.danger{ color:#ff8f80; border-color:#7a2c22; } }
+  form.addform label { display:block; font-weight:600; margin:.6rem 0 .3rem; }
+  form.addform textarea { width:100%; font-size:1rem; padding:.6rem .7rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; min-height:5.5rem; }
+  @media (prefers-color-scheme: dark){ form.addform textarea{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
+  form.addform textarea:focus-visible { outline:4px solid #ffbf47; outline-offset:2px; }
+  .pickbtn { display:inline-block; font-size:1.1rem; font-weight:700; padding:.9rem 1.6rem; border-radius:12px; border:0; background:#1f7a49; color:#fff; cursor:pointer; }
+  .pickbtn:focus-visible { outline:4px solid #ffbf47; outline-offset:3px; }
+  h2.datehead { font-size:1.05rem; margin:1.4rem 0 .2rem; }
+</style>
+</head><body>
+<a class="back" href="/you">&larr; Back</a>
+<h1>Your Diary</h1>
+<p class="muted">The dated record your companions quietly keep as you share your days — plus anything you write in yourself. Each entry stays with the companion you told it to; entries you add here can be recalled by any of them. Forgetting an entry removes it for good.</p>
+<div id="status" class="status" role="status" aria-live="polite">Loading your diary&hellip;</div>
+<section id="listSec" aria-label="Diary entries" style="display:none;">
+  <h2 id="listTop" tabindex="-1" style="position:absolute;left:-9999px;">Diary entries</h2>
+  <div id="list"></div>
+</section>
+<section class="card" aria-label="Add an entry">
+  <h2>Add an entry yourself</h2>
+  <p class="muted" style="margin-top:0;">Dated today, in your own words. Any of your companions can recall entries you add here.</p>
+  <form class="addform" id="addForm">
+    <label for="entryText">What happened, or how the day went</label>
+    <textarea id="entryText" name="entryText" required maxlength="2000"></textarea>
+    <div style="margin-top:1rem;">
+      <button class="pickbtn" type="submit" id="saveBtn">Save to diary</button>
+    </div>
+  </form>
+</section>
+<footer class="muted">&mdash; Kade-AI</footer>
+<script>
+(function(){
+  var TOKEN=null, entries=[];
+  var statusEl=document.getElementById('status');
+  function setStatus(t,isErr){ statusEl.textContent=t; statusEl.className='status'+(isErr?' err':''); }
+  async function getToken(){ try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include'}); if(!r.ok) return null; var j=await r.json(); return j&&j.token||null; }catch(e){ return null; } }
+  async function apiGet(p){ var r=await fetch(p,{headers:{Authorization:'Bearer '+TOKEN}}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+  async function apiPost(p,body){ var r=await fetch(p,{method:'POST',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify(body||{})}); if(!r.ok){ var t=await r.text(); var msg=t; try{ msg=JSON.parse(t).error||t; }catch(e){} throw new Error(msg); } return r.json(); }
+  async function apiDelete(p){ var r=await fetch(p,{method:'DELETE',headers:{Authorization:'Bearer '+TOKEN}}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+
+  function prettyDate(ymd){
+    try{
+      var parts=ymd.split('-');
+      var d=new Date(Number(parts[0]), Number(parts[1])-1, Number(parts[2]));
+      return d.toLocaleDateString('en-US',{ weekday:'long', year:'numeric', month:'long', day:'numeric' });
+    }catch(e){ return ymd; }
+  }
+
+  function metaLine(e){
+    if(e.source==='manual'){ return 'Added by you'; }
+    if(e.agentName){ return 'With '+e.agentName; }
+    if(e.agentId){ return 'With one of your companions'; }
+    return 'Shared — every companion may recall this';
+  }
+
+  function renderList(){
+    var listSec=document.getElementById('listSec'), list=document.getElementById('list');
+    list.innerHTML='';
+    if(!entries.length){
+      listSec.style.display='none';
+      setStatus('Nothing here yet. Your diary fills up as you share your days with your companions — or add a line yourself below.');
+      return;
+    }
+    listSec.style.display='';
+    var byDate={}; var order=[];
+    entries.forEach(function(e){ if(!byDate[e.date]){ byDate[e.date]=[]; order.push(e.date); } byDate[e.date].push(e); });
+    order.forEach(function(date){
+      var h=document.createElement('h2'); h.className='datehead'; h.textContent=prettyDate(date);
+      list.appendChild(h);
+      var card=document.createElement('div'); card.className='card'; card.style.marginTop='.3rem';
+      byDate[date].forEach(function(e){
+        var row=document.createElement('div'); row.className='entry-row';
+        var left=document.createElement('div');
+        var txt=document.createElement('div'); txt.className='entry-text'; txt.textContent=e.text;
+        var meta=document.createElement('div'); meta.className='entry-meta'; meta.textContent=metaLine(e);
+        left.appendChild(txt); left.appendChild(meta);
+        var btn=document.createElement('button'); btn.type='button'; btn.className='small danger'; btn.textContent='Forget';
+        btn.setAttribute('aria-label','Forget the entry from '+prettyDate(e.date)+': '+e.text.slice(0,60));
+        btn.addEventListener('click', function(){ forgetEntry(e, btn); });
+        row.appendChild(left); row.appendChild(btn);
+        card.appendChild(row);
+      });
+      list.appendChild(card);
+    });
+  }
+
+  async function forgetEntry(e, btn){
+    if(!window.confirm('Forget this entry for good?\\n\\n'+e.text)){ return; }
+    btn.disabled=true;
+    try{
+      await apiDelete('/api/diary/'+encodeURIComponent(e.id));
+      entries=entries.filter(function(x){ return x.id!==e.id; });
+      renderList();
+      setStatus('Entry forgotten.');
+      var top=document.getElementById('listTop'); if(top){ top.focus(); }
+    }catch(err){ btn.disabled=false; setStatus('Could not forget that entry: '+err.message, true); }
+  }
+
+  document.getElementById('addForm').addEventListener('submit', async function(ev){
+    ev.preventDefault();
+    var ta=document.getElementById('entryText'); var text=(ta.value||'').trim();
+    if(!text){ setStatus('Write a line first.', true); ta.focus(); return; }
+    var saveBtn=document.getElementById('saveBtn'); saveBtn.disabled=true;
+    try{
+      await apiPost('/api/diary',{ text:text });
+      ta.value='';
+      setStatus('Saved to your diary.');
+      await loadList();
+    }catch(err){ setStatus('Could not save: '+err.message, true); }
+    saveBtn.disabled=false;
+  });
+
+  async function loadList(){
+    var data=await apiGet('/api/diary');
+    entries=data.entries||[];
+    renderList();
+    if(entries.length){
+      var n=entries.length;
+      setStatus(String(n)+(n===1?' entry':' entries')+' in your diary, newest first.'+(data.enabled===false?' The diary is currently paused — nothing new is being written.':''));
+    } else if(data.enabled===false){
+      setStatus('The diary is currently paused.');
+    }
+  }
+
+  (async function init(){
+    TOKEN=await getToken();
+    if(!TOKEN){ setStatus('Please sign in on the main site first, then come back to this page.', true); return; }
+    try{ await loadList(); }
+    catch(e){ setStatus('Could not load your diary just now. Pull to refresh or try again in a moment.', true); }
+  })();
+})();
+</script>
+</body></html>`;
+
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, diaryHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
 
