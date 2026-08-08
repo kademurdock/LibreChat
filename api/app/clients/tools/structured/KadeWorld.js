@@ -30,6 +30,7 @@ class KadeWorld extends Tool {
     super();
     this.userId = fields.userId;
     this.userName = fields.userName;
+    this.isWizard = fields.isWizard === true;
     this.name = 'kade_world';
     this.description =
       'Perform ONE action in the persistent world (the city beyond the Threshold Gate) as the player’s character, and receive back the FACTS of what happened: what they see, who is present, what changed, and anything that happened around them since their last turn. The world is real and shared — state persists forever, other players and citizens act in it, and everything you narrate MUST come from what this tool returns. NEVER invent rooms, exits, items, people, or events the tool did not report.';
@@ -53,6 +54,7 @@ class KadeWorld extends Tool {
         userId: this.userId,
         displayName: this.userName,
         command: String(command).slice(0, 400),
+        isWizard: this.isWizard,
       });
       const out = [];
       for (const line of result.lines || []) {

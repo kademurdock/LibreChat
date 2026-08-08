@@ -22,6 +22,9 @@ router.post('/command', async (req, res) => {
       userId: req.user.id,
       displayName: req.user.name || req.user.username,
       command,
+      /* Wizard tier = platform admins (the Founder and deputies) — the #2
+       * workflow: walk with NVDA, build as you go. */
+      isWizard: req.user.role === 'ADMIN',
     });
     res.json(result);
   } catch (e) {

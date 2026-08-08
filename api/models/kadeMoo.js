@@ -24,8 +24,12 @@ const MooRoomSchema = new mongoose.Schema(
 
 const MooCharSchema = new mongoose.Schema(
   {
-    userId: { type: String, required: true, unique: true },
+    /* Aug 8 2026 (her RS Games note): MULTIPLE playable characters per user —
+     * userId is no longer unique; (userId, name) is, and `active` marks which
+     * one commands drive. The old unique index gets dropped fail-soft below. */
+    userId: { type: String, required: true, index: true },
     name: { type: String, required: true },
+    active: { type: Boolean, default: true },
     roomId: { type: String, required: true, index: true },
     /** the bible's future lives here: alive, scars, standing, record… */
     attrs: { type: mongoose.Schema.Types.Mixed, default: { alive: true } },
@@ -71,7 +75,12 @@ const MooCounterSchema = new mongoose.Schema({
 });
 
 const MooRoom = mongoose.models.MooRoom || mongoose.model('MooRoom', MooRoomSchema, 'kademoorooms');
+MooCharSchema.index({ userId: 1, name: 1 }, { unique: true });
+
 const MooChar = mongoose.models.MooChar || mongoose.model('MooChar', MooCharSchema, 'kademoochars');
+/* Drop the phase-one unique userId index so second characters can exist.
+ * Fail-soft: absent index or race just logs. */
+MooChar.collection.dropIndex('userId_1').catch(() => {});
 const MooItem = mongoose.models.MooItem || mongoose.model('MooItem', MooItemSchema, 'kademooitems');
 const MooEvent = mongoose.models.MooEvent || mongoose.model('MooEvent', MooEventSchema, 'kademooevents');
 const MooCounter =

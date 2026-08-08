@@ -112,13 +112,23 @@ async function emit(roomId, actorUserId, actorName, kind, text) {
 
 async function getOrCreateChar(userId, displayName) {
   await ensureSeed();
-  let ch = await MooChar.findOne({ userId: String(userId) });
+  let ch = await MooChar.findOne({ userId: String(userId), active: true });
+  if (!ch) {
+    ch = await MooChar.findOne({ userId: String(userId) });
+    if (ch) {
+      await MooChar.updateOne({ _id: ch._id }, { $set: { active: true } });
+    }
+  }
   if (!ch) {
     const name = String(displayName || 'a newcomer').slice(0, 40);
-    ch = await MooChar.create({ userId: String(userId), name, roomId: 'city_gate' });
+    ch = await MooChar.create({ userId: String(userId), name, roomId: 'city_gate', active: true });
     await emit('city_gate', String(userId), name, 'enter', `${name} steps through the Threshold Gate for the first time.`);
   }
   return ch;
+}
+
+function slugify(s) {
+  return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
 }
 
 /** Everything that happened in the char's room since their cursor — the
@@ -162,7 +172,7 @@ function normalize(cmdRaw) {
 }
 
 /** The one entry point. Returns { lines: [...facts...], room?: {...} }. */
-async function runCommand({ userId, displayName, command }) {
+async function runCommand({ userId, displayName, command, isWizard = false }) {
   const ch = await getOrCreateChar(userId, displayName);
   const meanwhile = await collectMeanwhile(ch);
   const cmd = normalize(command);
@@ -286,11 +296,143 @@ async function runCommand({ userId, displayName, command }) {
     return { ok: true, lines };
   }
 
+  /* ── CHARACTERS (her RS Games shape: several playable characters, one active) ── */
+  if (verb === 'chars' || verb === 'characters') {
+    const all = await MooChar.find({ userId: ch.userId }).select('name roomId active').lean();
+    lines.push('Your characters: ' + all.map((c) => `${c.name}${c.active ? ' (active)' : ''}`).join(', ') + '.');
+    return { ok: true, lines };
+  }
+  if (verb === 'newchar') {
+    const name = cmd.slice(cmd.toLowerCase().indexOf('newchar') + 8).trim().slice(0, 40);
+    if (!name) {
+      lines.push('Name the character: newchar <name>.');
+      return { ok: false, lines };
+    }
+    const exists = await MooChar.findOne({ userId: ch.userId, name: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') }).lean();
+    if (exists) {
+      lines.push(`You already have a character named ${exists.name}.`);
+      return { ok: false, lines };
+    }
+    await MooChar.updateMany({ userId: ch.userId }, { $set: { active: false } });
+    await MooChar.create({ userId: ch.userId, name, roomId: 'city_gate', active: true });
+    await emit('city_gate', ch.userId, name, 'enter', `${name} steps through the Threshold Gate for the first time.`);
+    lines.push(`${name} is born at the Threshold Gate, and you are now playing them. (Switch back anytime: switch <name>.)`);
+    return { ok: true, lines, kinds: [...kinds, 'enter'] };
+  }
+  if (verb === 'switch') {
+    const name = rest.trim();
+    if (!name) {
+      lines.push('Switch to whom? Try: chars');
+      return { ok: false, lines };
+    }
+    const target = await MooChar.findOne({ userId: ch.userId, name: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') });
+    if (!target) {
+      lines.push(`No character of yours named "${name}". Try: chars`);
+      return { ok: false, lines };
+    }
+    await MooChar.updateMany({ userId: ch.userId }, { $set: { active: false } });
+    await MooChar.updateOne({ _id: target._id }, { $set: { active: true } });
+    lines.push(`You are now ${target.name}.`);
+    return { ok: true, lines };
+  }
+
+  /* ── WIZARDRY (owner/admin only — the #2 workflow: walk and build) ─────────
+   * The LambdaMOO law wearing this house's clothes: wizards shape the world
+   * through VERBS, never through the model's imagination. Every act of
+   * creation is chronicled — the world FEELS the god working. */
+  if (verbRaw.startsWith('@')) {
+    if (!isWizard) {
+      lines.push('The air ignores you. (Builder commands belong to the Founder and her deputies.)');
+      return { ok: false, lines };
+    }
+    const wverb = verbRaw.slice(1);
+    if (wverb === 'dig') {
+      // @dig <dir> <Room Name...>
+      const parts = rest.split(' ');
+      const dirKey = DIR_ALIASES[(parts[0] || '').toLowerCase()];
+      const roomName = parts.slice(1).join(' ').trim();
+      if (!dirKey || !roomName) {
+        lines.push('Usage: @dig <direction> <Room Name> — carves a new room that way, doors linked both ways.');
+        return { ok: false, lines };
+      }
+      const newId = slugify(roomName) || 'room_' + Date.now();
+      const clash = await MooRoom.findOne({ roomId: newId }).lean();
+      if (clash) {
+        lines.push(`A room with the id "${newId}" already exists (${clash.name}).`);
+        return { ok: false, lines };
+      }
+      const here = await MooRoom.findOne({ roomId: ch.roomId }).lean();
+      const OPP = { n: 's', s: 'n', e: 'w', w: 'e', ne: 'sw', sw: 'ne', nw: 'se', se: 'nw', u: 'd', d: 'u' };
+      const back = OPP[dirKey] || 'back';
+      await MooRoom.create({
+        roomId: newId,
+        name: roomName,
+        district: here?.district || 'gate',
+        desc: 'Freshly carved from nothing, still smelling faintly of possibility. (@desc it when the words come.)',
+        exits: { [back]: ch.roomId },
+        props: {},
+        createdBy: ch.userId,
+      });
+      await MooRoom.updateOne({ roomId: ch.roomId }, { $set: { [`exits.${dirKey}`]: newId } });
+      await emit(ch.roomId, ch.userId, ch.name, 'system', `Reality shivers: a way ${DIR_WORDS[dirKey]} opens where there was none.`);
+      lines.push(`Dug: ${roomName} (${newId}) to the ${DIR_WORDS[dirKey]}, linked both ways.`);
+      return { ok: true, lines, kinds: [...kinds, 'enter'] };
+    }
+    if (wverb === 'desc') {
+      const text = rest.trim();
+      if (!text) {
+        lines.push('Usage: @desc <text> — rewrites this room\'s description.');
+        return { ok: false, lines };
+      }
+      await MooRoom.updateOne({ roomId: ch.roomId }, { $set: { desc: text.slice(0, 2000) } });
+      await emit(ch.roomId, ch.userId, ch.name, 'system', 'The room seems to remember itself differently now.');
+      lines.push('Description set.');
+      return { ok: true, lines };
+    }
+    if (wverb === 'create') {
+      // @create <name> ; <desc>
+      const [namePart, ...descParts] = rest.split(';');
+      const iname = (namePart || '').trim();
+      const idesc = descParts.join(';').trim() || 'It resists description, for now.';
+      if (!iname) {
+        lines.push('Usage: @create <item name> ; <description> — conjures a portable item here.');
+        return { ok: false, lines };
+      }
+      const itemId = slugify(iname) + '_' + Date.now().toString(36);
+      await MooItem.create({ itemId, name: iname, desc: idesc.slice(0, 1000), location: { type: 'room', id: ch.roomId }, portable: true, props: {} });
+      await emit(ch.roomId, ch.userId, ch.name, 'system', `${iname} simply exists now, as if it always had.`);
+      lines.push(`Created: ${iname}.`);
+      return { ok: true, lines, kinds: [...kinds, 'take'] };
+    }
+    if (wverb === 'tp' || wverb === 'teleport') {
+      const dest = slugify(rest);
+      const room = await MooRoom.findOne({ roomId: dest }).lean();
+      if (!room) {
+        lines.push(`No room with id "${dest}". Try @rooms.`);
+        return { ok: false, lines };
+      }
+      await emit(ch.roomId, ch.userId, ch.name, 'leave', `${ch.name} vanishes.`);
+      ch.roomId = dest;
+      await MooChar.updateOne({ _id: ch._id }, { $set: { roomId: dest } });
+      await emit(dest, ch.userId, ch.name, 'enter', `${ch.name} appears from nowhere.`);
+      const roomView = await describeRoom(ch);
+      lines.push(`You are elsewhere.`);
+      return { ok: true, lines, room: roomView, kinds: [...kinds, 'move'], district: roomView.district };
+    }
+    if (wverb === 'rooms') {
+      const rooms = await MooRoom.find({}).select('roomId name district').sort({ roomId: 1 }).limit(100).lean();
+      lines.push('Rooms: ' + rooms.map((r) => `${r.roomId} (${r.name})`).join(', ') + '.');
+      return { ok: true, lines };
+    }
+    lines.push(`Unknown wizardry "@${wverb}". Known: @dig <dir> <name>, @desc <text>, @create <name> ; <desc>, @tp <roomId>, @rooms.`);
+    return { ok: false, lines };
+  }
+
   return {
     ok: false,
     unknown: true,
     lines: [
-      `The world does not know the command "${cmd}". Known verbs: look, go <exit>, take <item>, drop <item>, inventory, say <words>, emote <action>, who.`,
+      `The world does not know the command "${cmd}". Known verbs: look, go <exit>, take <item>, drop <item>, inventory, say <words>, emote <action>, who, chars, newchar <name>, switch <name>.`,
     ],
   };
 }

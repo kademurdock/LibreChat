@@ -338,6 +338,7 @@ const loadTools = async ({
     kade_world: {
       userId: kadeActingUserId,
       userName: kadeActingUserName,
+      isWizard: options.req?.user?.role === 'ADMIN',
     },
     kade_adventure: {
       agentName: agent?.name,
