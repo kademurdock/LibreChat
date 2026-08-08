@@ -81,6 +81,30 @@ router.get('/', async (req, res) => {
   }
 });
 
+/** POST / — BACKFILL lane (supervised card sort, history mining): body
+ *  { userId, text, agentId?, scope?, entryDate? (YYYY-MM-DD), source? }.
+ *  Embeds like any write; source defaults 'backfill'; keeper meta-guard does
+ *  not apply to backfill (admin-driven, deliberate). */
+router.post('/', async (req, res) => {
+  try {
+    const { userId, text, agentId = null, scope = 'agent', entryDate = null, source = 'backfill' } = req.body || {};
+    if (!userId || !text) {
+      return res.status(400).json({ error: 'userId and text are required' });
+    }
+    const { logDiaryEntry } = require('~/models/kadeDiary');
+    const result = await logDiaryEntry({ userId, agentId, text, scope, source, entryDate });
+    if (!result.ok) {
+      return res.status(500).json({ error: result.error || 'write failed' });
+    }
+    logger.info(`[admin-diary] backfill entry | admin: ${req.user.id} | user: ${userId} | date: ${result.date} | ${String(text).slice(0, 60)}`);
+    auditFailSoft(req, 'admin_diary_backfill', userId, result.date, { source });
+    res.json({ ok: true, date: result.date });
+  } catch (error) {
+    logger.error('[admin-diary] backfill failed', error);
+    res.status(500).json({ error: 'Failed to write entry' });
+  }
+});
+
 /** DELETE /:entryId?userId=<id> — delete one entry; the removed entry rides the
  *  response so the caller can archive it first. */
 router.delete('/:entryId', async (req, res) => {

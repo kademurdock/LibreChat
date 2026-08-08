@@ -451,7 +451,7 @@ const createDiaryTool = ({ logDiary }: { logDiary: DiaryLogFn }): DynamicStructu
     {
       name: 'log_diary',
       description:
-        "Logs one dated entry to the user's private diary — the archive for day-to-day LIFE (what happened, what they did, how today went), as opposed to set_memory's durable identity cards. The diary is unlimited and costs nothing per-turn; entries resurface later only when relevant. Write one or two plain sentences capturing the moment like a thoughtful friend's journal would.",
+        "Logs one dated entry to the user's private LOGBOOK — the archive for day-to-day LIFE (what happened, what they did, how today went), as opposed to set_memory's durable identity cards. The logbook is unlimited and costs nothing per-turn; entries resurface later only when relevant. Write one or two plain sentences capturing the moment like a thoughtful friend's journal would.",
       schema: z.object({
         text: z
           .string()
@@ -788,7 +788,9 @@ export async function createMemoryProcessor({
    * MEMORY_TIERED_DIARY_DESIGN_2026-08-07.md. */
   if (logDiary) {
     finalInstructions +=
-      '\n\nTHE DIARY (log_diary): beside the cards there is a dated diary — the unlimited archive for day-to-day LIFE. The split: CARDS answer "who is this person" (identity, people and pets, tastes, health, running projects — durable facts worth carrying into every future conversation). The DIARY answers "what happened" (what they did today, how it went, a moment, a mood, a small win or gripe — real but episodic). When the user shares a genuine moment of their day, log ONE diary line: one or two plain sentences, gist not transcript, written like a caring friend\'s journal. Never file the same thing as both a card and a diary line — pick by durability. The "most turns save NOTHING" rule still governs CARDS; a diary line is lighter-weight, but still only for real moments actually shared, never for questions, task chatter, or assistant work. Asking you to CHECK, search, or read back memory or the diary is task chatter — never log the asking; the diary records their LIFE, not their use of you. The tell: if the entry you are about to write mentions the diary, memory, searching, or whether something is worth recording, STOP — that is the mechanism describing itself, and the correct move is NO tool call at all. An empty turn is success. Diary entries default to your own scope (private to this character), like cards. "Remember X" still means a CARD; things like "log this," "note in my diary," or plain day-sharing lean DIARY.';
+      '\n\nTHE LOGBOOK (log_diary): beside the cards there is a dated logbook — the unlimited archive for day-to-day LIFE. The split: CARDS answer "who is this person" (identity, people and pets, tastes, health, running projects — durable facts worth carrying into every future conversation). The LOGBOOK answers "what happened" (what they did today, how it went, a moment, a mood, a small win or gripe — real but episodic). When the user shares a genuine moment of their day, log ONE entry: one or two plain sentences, gist not transcript, written like a caring friend\'s journal. Never file the same thing as both a card and a logbook entry — pick by durability. The "most turns save NOTHING" rule still governs CARDS; a logbook line is lighter-weight, but still only for real moments actually shared, never for questions, task chatter, or assistant work. Asking you to CHECK, search, or read back memory or the logbook is task chatter — never log the asking; the logbook records their LIFE, not their use of you. The tell: if the entry you are about to write mentions the logbook, diary, memory, searching, or whether something is worth recording, STOP — that is the mechanism describing itself, and the correct move is NO tool call at all. An empty turn is success. Logbook entries default to your own scope (private to this character), like cards. "Remember X" still means a CARD; things like "log this," "note that down," or plain day-sharing lean LOGBOOK.' +
+      '\n\nPROMISES: when the CHARACTER makes a concrete commitment to the user ("I\'ll have the second verse tomorrow," "remind me to ask how the appointment went"), file an agent-scoped card under a key starting promise_ with what was promised and when it\'s due. When a promise is delivered or clearly dead, delete its card. Promises are the character\'s own word — keeping them is what makes the character real.' +
+      '\n\nOFF THE RECORD: if the user has said "off the record" in the visible conversation and has not since said they\'re back on the record, save NOTHING from that span — no cards, no logbook entries, no exceptions. When they say "back on the record" (or similar), normal listening resumes from that point. If they ask you to forget an off-record slip you already saved, delete it.';
   }
 
   const { withKeys, withoutKeys, totalTokens } = await memoryMethods.getFormattedMemories({
@@ -848,6 +850,7 @@ export async function consolidateMemoryBucket({
   llmConfig,
   tokenLimit,
   user,
+  logDiary,
 }: {
   res?: ServerResponse;
   userId: string | ObjectId;
@@ -859,6 +862,8 @@ export async function consolidateMemoryBucket({
   llmConfig?: Partial<LLMConfig>;
   tokenLimit?: number;
   user?: IUser;
+  /** KADE Aug 8 2026: when provided, consolidation may DEMOTE episodic cards into dated logbook entries (job 5). */
+  logDiary?: DiaryLogFn;
 }): Promise<{ ran: boolean; attachments?: (TAttachment | null)[] }> {
   const resolvedAgentId = agentId ?? undefined;
   const { withKeys, totalTokens } = await memoryMethods.getFormattedMemories({
@@ -881,7 +886,8 @@ Below is everything currently active in the "${scopeLabel}" memory bucket. The t
 1. SPLIT: if an entry lumps several unrelated topics together, break it into separate cards -- \`set_memory\` each new topic under its own new key, then \`set_memory\` the original key down to just its remaining topic (or \`delete_memory\` it if nothing is left).
 2. MERGE: if entries are near-duplicates or say overlapping things about the same topic, combine them into ONE card and \`delete_memory\` the leftovers.
 3. TIGHTEN: rewrite verbose, repetitive, or stale-phrased cards more concisely with \`set_memory\` on the same key. Keep the human substance -- what matters and why -- not a log of how it came up.
-4. PRUNE: \`delete_memory\` cards that are obsolete, contradicted by a newer card, or were never really durable (one-off task chatter, moment-only details).
+4. PRUNE: \`delete_memory\` cards that are obsolete, contradicted by a newer card, or were never really durable (one-off task chatter, moment-only details).${logDiary ? `
+5. DEMOTE: if a card is EPISODIC — a dated status update, a story beat, a completed piece of work, a "what happened" rather than a "who they are" — move it to the LOGBOOK instead of keeping it as a card: call \`log_diary\` with one or two plain sentences that INCLUDE the original timeframe in the words ("Back in mid-July, ..."), then \`delete_memory\` the card. Durable facts, standing rules, live reminders, and active-project current-state cards STAY cards; only the story moves.` : ''}
 
 HARD RULE — cards marked [\"reminder\": …] are LIVE SCHEDULED ALARMS: never merge them into other cards, never fold other cards into them, never delete them, and never change their key. At most, tighten their value wording with \`set_memory\` on the SAME key — the schedule survives a value rewrite.
 
@@ -900,6 +906,7 @@ Emit ALL of your set_memory/delete_memory calls together in a single response. D
     deleteMemory: memoryMethods.deleteMemory,
     messages: [consolidationRequest],
     memory: withKeys,
+    logDiary,
     messageId: `consolidation-${Date.now()}`,
     conversationId: `consolidation-${userId}-${resolvedAgentId ?? 'shared'}`,
     /** Free-form keys in BOTH buckets (memory-cards mode); forceAgentScope pins agent-bucket writes in-bucket so card splits can't leak into shared. */
@@ -1033,10 +1040,13 @@ export async function sweepMemoryConsolidation(
     memoryMethods,
     db,
     logger: sweepLogger,
+    createLogDiary,
   }: {
     memoryMethods: MemoryConsolidationMethods;
     db: EndpointDbMethods;
     logger: MemoryConsolidationSweepLogger;
+    /** KADE Aug 8 2026: api-layer factory binding a logbook writer to (userId, bucketAgentId) — presence enables sweep demotion. */
+    createLogDiary?: (userId: string, agentId?: string | null) => DiaryLogFn;
   },
 ): Promise<MemoryConsolidationSweepResult> {
   const { appConfig: initialAppConfig, loadAppConfig } = options;
@@ -1098,6 +1108,8 @@ export async function sweepMemoryConsolidation(
         memoryMethods,
         llmConfig,
         tokenLimit: memoryConfig.tokenLimit,
+        /** KADE Aug 8 2026: sweep-driven demotion — episodic cards become dated logbook entries. */
+        logDiary: createLogDiary ? createLogDiary(String(userId), agentId ?? null) : undefined,
       });
 
       if (ran) {
@@ -1233,6 +1245,7 @@ export function startMemoryConsolidationSweep(
     setLastSweepRunAt,
     runAsSystem,
     logger: sweepLogger,
+    createLogDiary,
   }: {
     memoryMethods: MemoryConsolidationMethods;
     db: EndpointDbMethods;
@@ -1240,6 +1253,7 @@ export function startMemoryConsolidationSweep(
     setLastSweepRunAt: (date: Date) => Promise<void>;
     runAsSystem: <T>(fn: () => Promise<T>) => Promise<T>;
     logger: MemoryConsolidationSweepLogger;
+    createLogDiary?: (userId: string, agentId?: string | null) => DiaryLogFn;
   },
 ): NodeJS.Timeout | null {
   const intervalMs = getMemoryConsolidationCheckInterval();
@@ -1272,7 +1286,7 @@ export function startMemoryConsolidationSweep(
       );
       await runAsSystem(() => setLastSweepRunAt(now));
       await runAsSystem(() =>
-        sweepMemoryConsolidation(options, { memoryMethods, db, logger: sweepLogger }),
+        sweepMemoryConsolidation(options, { memoryMethods, db, logger: sweepLogger, createLogDiary }),
       );
     } catch (error) {
       sweepLogger.error('[sweepMemoryConsolidation] Background sweep failed:', error);

@@ -325,7 +325,8 @@ const startServer = async () => {
   app.get('/tools', routes.kade.toolsPage);
   app.get('/you', routes.kade.youPage);
   app.get('/pronunciation-dictionary', routes.kade.pronunciationDictionaryPage);
-  app.get('/diary', routes.kade.diaryPage);
+  app.get('/logbook', routes.kade.diaryPage);
+  app.get('/diary', (_req, res) => res.redirect(302, '/logbook'));
   app.get('/kade-tabbar.js', routes.kade.tabBarAssetPage);
   app.get('/parlor', routes.kadeParlor.page);
   app.get('/lounge', routes.kadeLounge.page);

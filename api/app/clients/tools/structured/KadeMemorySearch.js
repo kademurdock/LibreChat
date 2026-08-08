@@ -10,11 +10,11 @@ const { logger } = require('@librechat/data-schemas');
  * related entries. THIS tool is the deliberate reach — "let me think, what did
  * you tell me about that…" — for when the user plainly asks what they've said
  * before, what they were up to on some date, or when the character chooses to
- * check its notes. Searches the DIARY archive only; memory cards already ride
+ * check its notes. Searches the LOGBOOK archive only; memory cards already ride
  * the character's own head and never need a tool to see.
  *
  * PRIVACY: the search is server-side scoped to shared entries + THIS agent's
- * own — another character's diary is structurally unreachable, same rule as
+ * own — another character's logbook is structurally unreachable, same rule as
  * cards. Kill switch KADE_DIARY=0 empties every search.
  */
 
@@ -50,7 +50,7 @@ class KadeMemorySearch extends Tool {
     this.agentId = fields.agentId;
     this.name = 'kade_memory_search';
     this.description =
-      "Search the user's private dated diary — the long-term archive of their day-to-day life beyond your always-visible memory cards. " +
+      "Search the user's private dated logbook — the long-term archive of their day-to-day life beyond your always-visible memory cards. " +
       "Use it when the user asks what they've told you before ('have I mentioned…', 'what was I up to last week', 'when did I…'), when they ask you to check your notes, or when a specific past detail would genuinely help and isn't in your cards. " +
       'Search by meaning (query), by date range, or both.';
     this.description_for_model =
@@ -74,7 +74,7 @@ class KadeMemorySearch extends Tool {
     try {
       const { searchDiary, diaryEnabled } = require('~/models/kadeDiary');
       if (!diaryEnabled()) {
-        return 'The diary is currently turned off.';
+        return 'The logbook is currently turned off.';
       }
       const hits = await searchDiary({
         userId: this.userId,
@@ -86,17 +86,17 @@ class KadeMemorySearch extends Tool {
       });
       if (!hits || hits.length === 0) {
         return query
-          ? `No diary entries match "${query}"${date_from || date_to ? ' in that date range' : ''}. The diary only holds day-to-day entries logged since it began — do not guess; say your notes don't show it.`
-          : 'No diary entries in that date range.';
+          ? `No logbook entries match "${query}"${date_from || date_to ? ' in that date range' : ''}. The logbook only holds day-to-day entries logged since it began — do not guess; say your notes don't show it.`
+          : 'No logbook entries in that date range.';
       }
       const lines = hits.map((h) => `[${h.date}] ${h.text}`);
       return (
-        `${hits.length} diary ${hits.length === 1 ? 'entry' : 'entries'} found (newest relevance first). Weave in naturally — never recite as a list unless asked:\n` +
+        `${hits.length} logbook ${hits.length === 1 ? 'entry' : 'entries'} found (newest relevance first). Weave in naturally — never recite as a list unless asked:\n` +
         lines.join('\n')
       );
     } catch (e) {
       logger.error('[KadeMemorySearch] search failed:', e.message);
-      return 'The diary search hit an error just now — let the user know you could not check your notes.';
+      return 'The logbook search hit an error just now — let the user know you could not check your notes.';
     }
   }
 }

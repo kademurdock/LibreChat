@@ -54,9 +54,9 @@ async function getDiaryTailBlock(userId, agentId, userText) {
         return null;
       }
       let block =
-        '# Diary recall (auto-surfaced for THIS turn only)\n' +
-        'A few dated entries from your private diary about this person, pulled because they seem related to what was just said. ' +
-        'Wear them lightly: weave one in only if it truly fits, as a friend naturally would. Never recite, never list, never mention the diary mechanism. ' +
+        '# Logbook recall (auto-surfaced for THIS turn only)\n' +
+        'A few dated entries from your private logbook about this person, pulled because they seem related to what was just said. ' +
+        'Wear them lightly: weave one in only if it truly fits, as a friend naturally would. Never recite, never list, never mention the logbook mechanism. ' +
         "If an entry contradicts what the person is saying right now, believe the person — their live word always beats an old note.\n";
       for (const h of hits) {
         const line = `- [${h.date}] ${h.text}\n`;

@@ -155,7 +155,7 @@ function cosine(a, b) {
  * Write one diary entry. scope 'shared' → agentId null; anything else → the
  * given agentId (privacy default). Saves even when embedding fails.
  */
-async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', source = 'keeper' }) {
+async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', source = 'keeper', entryDate = null }) {
   if (!diaryEnabled()) {
     return { ok: false, error: 'diary disabled' };
   }
@@ -172,7 +172,7 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
   if (
     source === 'keeper' &&
     /\basked|\brequested|\bran\b|\bwants? (?:me|a)\b/i.test(cleanText) &&
-    /\b(?:diary|memory|memories|notes?)\b/i.test(cleanText) &&
+    /\b(?:diary|logbook|memory|memories|notes?)\b/i.test(cleanText) &&
     /\b(?:search|check|look(?:ed)?\s?up|read back|record)/i.test(cleanText)
   ) {
     return {
@@ -182,19 +182,22 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
     };
   }
   const effectiveAgentId = scope === 'shared' ? null : agentId || null;
-  const entryDate = centralDateString();
+  /* entryDate override is for BACKFILL lanes only (supervised card sort,
+   * history mining) — live keeper writes always stamp today. */
+  const effectiveDate =
+    entryDate && /^\d{4}-\d{2}-\d{2}$/.test(String(entryDate)) ? String(entryDate) : centralDateString();
   const embedding = await embedText(cleanText);
   try {
     await KadeDiaryEntry.create({
       userId: String(userId),
       agentId: effectiveAgentId,
       text: cleanText,
-      entryDate,
+      entryDate: effectiveDate,
       embedding,
       embedModel: embedding ? currentEmbedModel() : null,
       source,
     });
-    return { ok: true, date: entryDate };
+    return { ok: true, date: effectiveDate };
   } catch (e) {
     logger.error('[kadeDiary] failed to save entry:', e.message);
     return { ok: false, error: e.message };

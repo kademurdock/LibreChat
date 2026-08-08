@@ -1360,7 +1360,7 @@ const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</ti
   <a class="hubitem" href="/feed-the-server"><span class="hicon" aria-hidden="true">💳</span><span><strong>Donate &mdash; Feed the Server</strong><small>See your usage and balance, and chip in to keep this running</small></span></a>
   <a class="hubitem" href="/notifications"><span class="hicon" aria-hidden="true">🔔</span><span><strong>Notifications &amp; Reminders</strong><small>Birthday nudges and reminders — in chat, push, or by phone</small></span></a>
   <a class="hubitem" href="/pronunciation-dictionary"><span class="hicon" aria-hidden="true">🗣️</span><span><strong>Pronunciation Dictionary</strong><small>Teach Kade-AI how to say names or words you use</small></span></a>
-  <a class="hubitem" href="/diary"><span class="hicon" aria-hidden="true">📔</span><span><strong>Your Diary</strong><small>The dated record your companions keep of your days &mdash; browse, add, or forget entries</small></span></a>
+  <a class="hubitem" href="/logbook"><span class="hicon" aria-hidden="true">📔</span><span><strong>Your Logbook</strong><small>The dated record your companions keep of your days &mdash; browse, add, or forget entries</small></span></a>
   <a class="hubitem" href="/help"><span class="hicon" aria-hidden="true">❓</span><span><strong>Help &amp; FAQ</strong><small>How everything works</small></span></a>
 </nav>
 <p class="muted" style="margin-top:1.25rem">Settings, your files, and signing out live in the account menu — tap your picture at the top of the chat screen.</p>
@@ -2270,7 +2270,7 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
  * heading after a forget so VoiceOver never lands in a void. Static HTML,
  * client-side token via /api/auth/refresh — the exact pronunciation-dictionary
  * pattern. */
-const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Diary — Kade-AI</title>${SHARED_HEAD}
+const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — Kade-AI</title>${SHARED_HEAD}
 <style>
   .entry-row { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; padding:.7rem 0; border-bottom:1px solid #e3e6ea; }
   .entry-row:last-child { border-bottom:0; }
@@ -2291,11 +2291,11 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Diary — Ka
 </style>
 </head><body>
 <a class="back" href="/you">&larr; Back</a>
-<h1>Your Diary</h1>
+<h1>Your Logbook</h1>
 <p class="muted">The dated record your companions quietly keep as you share your days — plus anything you write in yourself. Each entry stays with the companion you told it to; entries you add here can be recalled by any of them. Forgetting an entry removes it for good.</p>
-<div id="status" class="status" role="status" aria-live="polite">Loading your diary&hellip;</div>
-<section id="listSec" aria-label="Diary entries" style="display:none;">
-  <h2 id="listTop" tabindex="-1" style="position:absolute;left:-9999px;">Diary entries</h2>
+<div id="status" class="status" role="status" aria-live="polite">Loading your logbook&hellip;</div>
+<section id="listSec" aria-label="Logbook entries" style="display:none;">
+  <h2 id="listTop" tabindex="-1" style="position:absolute;left:-9999px;">Logbook entries</h2>
   <div id="list"></div>
 </section>
 <section class="card" aria-label="Add an entry">
@@ -2305,7 +2305,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Diary — Ka
     <label for="entryText">What happened, or how the day went</label>
     <textarea id="entryText" name="entryText" required maxlength="2000"></textarea>
     <div style="margin-top:1rem;">
-      <button class="pickbtn" type="submit" id="saveBtn">Save to diary</button>
+      <button class="pickbtn" type="submit" id="saveBtn">Save to logbook</button>
     </div>
   </form>
 </section>
@@ -2340,7 +2340,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Diary — Ka
     list.innerHTML='';
     if(!entries.length){
       listSec.style.display='none';
-      setStatus('Nothing here yet. Your diary fills up as you share your days with your companions — or add a line yourself below.');
+      setStatus('Nothing here yet. Your logbook fills up as you share your days with your companions — or add a line yourself below.');
       return;
     }
     listSec.style.display='';
@@ -2386,7 +2386,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Diary — Ka
     try{
       await apiPost('/api/diary',{ text:text });
       ta.value='';
-      setStatus('Saved to your diary.');
+      setStatus('Saved to your logbook.');
       await loadList();
     }catch(err){ setStatus('Could not save: '+err.message, true); }
     saveBtn.disabled=false;
@@ -2398,9 +2398,9 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Diary — Ka
     renderList();
     if(entries.length){
       var n=entries.length;
-      setStatus(String(n)+(n===1?' entry':' entries')+' in your diary, newest first.'+(data.enabled===false?' The diary is currently paused — nothing new is being written.':''));
+      setStatus(String(n)+(n===1?' entry':' entries')+' in your logbook, newest first.'+(data.enabled===false?' The logbook is currently paused — nothing new is being written.':''));
     } else if(data.enabled===false){
-      setStatus('The diary is currently paused.');
+      setStatus('The logbook is currently paused.');
     }
   }
 
@@ -2408,7 +2408,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Diary — Ka
     TOKEN=await getToken();
     if(!TOKEN){ setStatus('Please sign in on the main site first, then come back to this page.', true); return; }
     try{ await loadList(); }
-    catch(e){ setStatus('Could not load your diary just now. Pull to refresh or try again in a moment.', true); }
+    catch(e){ setStatus('Could not load your logbook just now. Pull to refresh or try again in a moment.', true); }
   })();
 })();
 </script>

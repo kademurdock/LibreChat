@@ -20,6 +20,15 @@ const { getLastSweepRunAt, setLastSweepRunAt } = require('~/models/memoryConsoli
  * @param {import('@librechat/data-schemas').AppConfig} [options.appConfig]
  * @param {() => Promise<import('@librechat/data-schemas').AppConfig>} [options.loadAppConfig]
  */
+/** KADE Aug 8 2026: logbook demotion — the sweep can move episodic cards into
+ * dated entries. Bound per bucket so scope can never leak across characters. */
+function createLogDiary(userId, agentId) {
+  return async ({ text, scope }) => {
+    const { logDiaryEntry } = require('~/models/kadeDiary');
+    return logDiaryEntry({ userId, agentId: agentId || null, text, scope, source: 'keeper' });
+  };
+}
+
 async function sweepMemoryConsolidation(options = {}) {
   return sweepMemoryConsolidationWithDeps(options, {
     memoryMethods: {
@@ -30,6 +39,7 @@ async function sweepMemoryConsolidation(options = {}) {
     },
     db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
     logger,
+    createLogDiary,
   });
 }
 
@@ -46,6 +56,7 @@ function startMemoryConsolidationSweep(options = {}) {
     setLastSweepRunAt,
     runAsSystem,
     logger,
+    createLogDiary,
   });
 }
 

@@ -73,7 +73,7 @@ router.get('/', async (req, res) => {
     });
   } catch (error) {
     logger.error('[diary] list failed', error);
-    res.status(500).json({ error: 'Failed to load your diary' });
+    res.status(500).json({ error: 'Failed to load your logbook' });
   }
 });
 
@@ -96,7 +96,7 @@ router.post('/', async (req, res) => {
     });
     if (!result.ok) {
       return res.status(result.error === 'diary disabled' ? 503 : 500).json({
-        error: result.error === 'diary disabled' ? 'The diary is currently paused' : 'Failed to save the entry',
+        error: result.error === 'diary disabled' ? 'The logbook is currently paused' : 'Failed to save the entry',
       });
     }
     res.json({ ok: true, date: result.date });
@@ -114,7 +114,7 @@ router.delete('/:entryId', async (req, res) => {
       .select('-embedding')
       .lean();
     if (!entry) {
-      return res.status(404).json({ error: 'That entry was not found in your diary' });
+      return res.status(404).json({ error: 'That entry was not found in your logbook' });
     }
     await KadeDiaryEntry.deleteOne({ _id: entryId, userId: String(req.user.id) });
     logger.info(
