@@ -1361,6 +1361,7 @@ const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</ti
   <a class="hubitem" href="/notifications"><span class="hicon" aria-hidden="true">🔔</span><span><strong>Notifications &amp; Reminders</strong><small>Birthday nudges and reminders — in chat, push, or by phone</small></span></a>
   <a class="hubitem" href="/pronunciation-dictionary"><span class="hicon" aria-hidden="true">🗣️</span><span><strong>Pronunciation Dictionary</strong><small>Teach Kade-AI how to say names or words you use</small></span></a>
   <a class="hubitem" href="/logbook"><span class="hicon" aria-hidden="true">📔</span><span><strong>Your Logbook</strong><small>The dated record your companions keep of your days &mdash; browse, add, or forget entries</small></span></a>
+  <a class="hubitem" href="/brief"><span class="hicon" aria-hidden="true">🌅</span><span><strong>Morning Brief</strong><small>One push a day from your companion &mdash; your weather, a headline, your day ahead. Turn it on, pick your time</small></span></a>
   <a class="hubitem" href="/help"><span class="hicon" aria-hidden="true">❓</span><span><strong>Help &amp; FAQ</strong><small>How everything works</small></span></a>
 </nav>
 <p class="muted" style="margin-top:1.25rem">Settings, your files, and signing out live in the account menu — tap your picture at the top of the chat screen.</p>
@@ -2453,6 +2454,146 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
 </script>
 </body></html>`;
 
+/* KADE Aug 9 2026 — MORNING BRIEF SETTINGS (her spec, same evening she gave
+ * it): per-account, plain and listenable. Runs on /api/brief (JWT), which
+ * proxies the bridge server-side — the page never sees a secret. Listen
+ * plays today's brief through the site's own TTS lane (same-origin), so
+ * ears-first users get the brief the way they get everything else. */
+const briefHtml = `<!doctype html><html lang="en"><head><title>Morning Brief — Kade-AI</title>${SHARED_HEAD}
+<style>
+  form.prefs label.row { display:flex; align-items:center; gap:.6rem; margin:.55rem 0; font-size:1.02rem; }
+  form.prefs input[type=checkbox] { width:1.35rem; height:1.35rem; }
+  form.prefs input[type=time], form.prefs input[type=text] { font-size:1rem; padding:.5rem .6rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; }
+  @media (prefers-color-scheme: dark){ form.prefs input[type=time], form.prefs input[type=text]{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
+  .pickbtn { display:inline-block; font-size:1.05rem; font-weight:700; padding:.8rem 1.4rem; border-radius:12px; border:0; background:#1f7a49; color:#fff; cursor:pointer; }
+  .pickbtn:focus-visible, button.small:focus-visible { outline:4px solid #ffbf47; outline-offset:3px; }
+  button.small { font-size:.95rem; padding:.5rem .9rem; border-radius:9px; border:1px solid #b9bfc9; background:transparent; color:inherit; cursor:pointer; }
+  .brieftext { font-size:1.05rem; line-height:1.5; }
+</style>
+</head><body>
+<a class="back" href="/you">&larr; Back</a>
+<h1>Morning Brief</h1>
+<p class="muted">One short push a day, written fresh by your companion: your town's weather, one worthwhile headline, and a nod to your day ahead. It goes only to your own phone, and only if you turn it on.</p>
+<div id="status" class="status" role="status" aria-live="polite">Loading your settings&hellip;</div>
+
+<section class="card" id="todaySec" style="display:none;" aria-label="Today's brief">
+  <h2>Today's brief</h2>
+  <p class="brieftext" id="todayText"></p>
+  <div style="display:flex; gap:.8rem; margin-top:.6rem;">
+    <button class="small" type="button" id="listenBtn">Listen</button>
+  </div>
+</section>
+
+<section class="card" aria-label="Brief settings">
+  <h2>Your settings</h2>
+  <div id="linkNote" class="muted" style="display:none;">To actually receive the push, open the Kade-AI app on your phone once while signed in &mdash; that links your phone. Your settings save fine either way.</div>
+  <form class="prefs" id="prefsForm">
+    <label class="row"><input type="checkbox" id="enabled"> <span>Send me a morning brief</span></label>
+    <label class="row" for="time"><span>At what time (Central)</span> <input type="time" id="time" value="09:00"></label>
+    <fieldset style="border:0; padding:0; margin:.6rem 0;">
+      <legend style="font-weight:600; margin-bottom:.2rem;">What goes in it</legend>
+      <label class="row"><input type="checkbox" id="itemWeather" checked> <span>My weather</span></label>
+      <label class="row"><input type="checkbox" id="itemNews" checked> <span>One good headline</span></label>
+      <label class="row"><input type="checkbox" id="itemDayAhead" checked> <span>My day ahead (from what my companion knows)</span></label>
+    </fieldset>
+    <label class="row" for="location" style="align-items:flex-start; flex-direction:column; gap:.3rem;"><span>My town (for the weather)</span> <input type="text" id="location" placeholder="Highlandville, Missouri" maxlength="80" style="width:100%;"></label>
+    <div style="display:flex; gap:.8rem; margin-top:1rem; flex-wrap:wrap;">
+      <button class="pickbtn" type="submit" id="saveBtn">Save</button>
+      <button class="small" type="button" id="testBtn">Send me one now</button>
+    </div>
+  </form>
+</section>
+<footer class="muted">&mdash; Kade-AI</footer>
+<script>
+(function(){
+  var TOKEN=null, today=null, audio=null;
+  var statusEl=document.getElementById('status');
+  function setStatus(t,isErr){ statusEl.textContent=t; statusEl.className='status'+(isErr?' err':''); }
+  async function getToken(){ try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include'}); if(!r.ok) return null; var j=await r.json(); return j&&j.token||null; }catch(e){ return null; } }
+  async function api(method, path, body){ var r=await fetch(path,{method:method,headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}); if(!r.ok){ var t=await r.text(); var msg=t; try{ msg=JSON.parse(t).error||t; }catch(e){} throw new Error(msg); } return r.json(); }
+
+  function fillForm(d){
+    var p=d.prefs||{};
+    document.getElementById('enabled').checked = !!p.enabled;
+    if(p.time) document.getElementById('time').value = p.time;
+    var it=p.items||{};
+    document.getElementById('itemWeather').checked = it.weather!==false;
+    document.getElementById('itemNews').checked = it.news!==false;
+    document.getElementById('itemDayAhead').checked = it.dayAhead!==false;
+    document.getElementById('location').value = p.location||'';
+    document.getElementById('linkNote').style.display = d.linked ? 'none' : '';
+    today = d.lastBrief||null;
+    if(today && today.text){
+      document.getElementById('todayText').textContent = today.text;
+      document.getElementById('todaySec').style.display='';
+    }
+  }
+
+  function collect(){
+    return {
+      enabled: document.getElementById('enabled').checked,
+      time: document.getElementById('time').value || '09:00',
+      items: {
+        weather: document.getElementById('itemWeather').checked,
+        news: document.getElementById('itemNews').checked,
+        dayAhead: document.getElementById('itemDayAhead').checked
+      },
+      location: (document.getElementById('location').value||'').trim()
+    };
+  }
+
+  document.getElementById('prefsForm').addEventListener('submit', async function(ev){
+    ev.preventDefault();
+    var btn=document.getElementById('saveBtn'); btn.disabled=true;
+    try{ var d=await api('POST','/api/brief',collect()); fillForm({prefs:d.prefs,linked:d.linked,lastBrief:today}); setStatus(d.prefs.enabled ? 'Saved. Your brief arrives daily at '+d.prefs.time+' Central.' : 'Saved. The brief is off.'); }
+    catch(e){ setStatus('Could not save: '+e.message, true); }
+    btn.disabled=false;
+  });
+
+  document.getElementById('testBtn').addEventListener('click', async function(){
+    var btn=this; btn.disabled=true;
+    setStatus('Writing your brief now — this takes a few seconds…');
+    try{
+      var d=await api('POST','/api/brief/fire');
+      if(d.ok){
+        today={text:d.generated};
+        document.getElementById('todayText').textContent=d.generated;
+        document.getElementById('todaySec').style.display='';
+        var sent=d.delivery&&d.delivery.sent;
+        setStatus(sent ? 'Sent to your phone — and it’s below to read or listen.' : 'Written (below) — but no linked phone to push it to yet. Open the app on your phone once to link.');
+      } else { setStatus('Could not send: '+(d.error||'unknown'), true); }
+    }catch(e){ setStatus('Could not send: '+e.message, true); }
+    btn.disabled=false;
+  });
+
+  document.getElementById('listenBtn').addEventListener('click', async function(){
+    if(!today || !today.text){ setStatus('Nothing to listen to yet today.', true); return; }
+    var btn=this;
+    if(audio){ audio.pause(); audio=null; btn.textContent='Listen'; setStatus('Stopped.'); return; }
+    btn.disabled=true; setStatus('Fetching the voice…');
+    try{
+      var r=await fetch('/api/files/speech/tts',{method:'POST',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({input:today.text,voice:'Voice 68'})});
+      if(!r.ok) throw new Error('voice service answered '+r.status);
+      var blob=await r.blob();
+      audio=new Audio(URL.createObjectURL(blob));
+      audio.addEventListener('ended', function(){ audio=null; btn.textContent='Listen'; setStatus('Done.'); });
+      await audio.play();
+      btn.textContent='Stop';
+      setStatus('Playing.');
+    }catch(e){ setStatus('Could not play it: '+e.message, true); }
+    btn.disabled=false;
+  });
+
+  (async function init(){
+    TOKEN=await getToken();
+    if(!TOKEN){ setStatus('Please sign in on the main site first, then come back to this page.', true); return; }
+    try{ fillForm(await api('GET','/api/brief')); setStatus('Ready.'); }
+    catch(e){ setStatus('Could not load your settings just now: '+e.message, true); }
+  })();
+})();
+</script>
+</body></html>`;
+
 /* KADE Aug 8 2026 — THE WORLD CLIENT (her correction made real): a direct,
  * no-LLM surface for the city. Type n/e/w/s at telnet speed; every engine
  * event carries a KIND, and kinds drive SOUND — the BASSLINE law, her own:
@@ -2640,5 +2781,5 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>The World — bey
 </script>
 </body></html>`;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, diaryHtml, worldHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, diaryHtml, briefHtml, worldHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
 
