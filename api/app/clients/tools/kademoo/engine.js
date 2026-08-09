@@ -243,7 +243,8 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
       if (person) {
         const pdesc = person.attrs?.desc || `${person.name} keeps their look to themselves, so far.`;
         const marks = Array.isArray(person.attrs?.marks) && person.attrs.marks.length ? ` Marks: ${person.attrs.marks.join(', ')}.` : '';
-        lines.push(`${person.name}: ${pdesc}${marks}`);
+        const posture = person.attrs?.posture && person.attrs.posture !== 'standing' ? ` They are ${person.attrs.posture}.` : '';
+        lines.push(`${person.name}: ${pdesc}${marks}${posture}`);
         return { ok: true, lines };
       }
       lines.push(`There is no "${arg}" here to look at.`);
@@ -337,10 +338,10 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
   }
 
   if (verb === 'who') {
-    const here = await MooChar.find({ roomId: ch.roomId, userId: { $ne: ch.userId } }).select('name').lean();
+    const here = await MooChar.find({ roomId: ch.roomId, userId: { $ne: ch.userId } }).select('name attrs.posture').lean();
     const total = await MooChar.countDocuments({});
     lines.push(
-      (here.length ? `Here with you: ${here.map((p) => p.name).join(', ')}.` : 'You are alone here.') +
+      (here.length ? `Here with you: ${here.map((p) => p.name + (p.attrs?.posture && p.attrs.posture !== 'standing' ? ' (' + p.attrs.posture + ')' : '')).join(', ')}.` : 'You are alone here.') +
         ` The city has ${total} soul${total === 1 ? '' : 's'} on the ledger.`,
     );
     return { ok: true, lines };
@@ -496,6 +497,49 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     const ex = Object.keys(room?.exits || {}).map((k) => DIR_WORDS[k] || k);
     lines.push('Exits: ' + (ex.join(', ') || 'none') + '.');
     return { ok: true, lines };
+  }
+
+  /* ── SOCIALS (her ask: sitting, standing, laughing — presence with a body) ── */
+  if (verb === 'sit' || verb === 'stand' || verb === 'lie') {
+    const posture = verb === 'lie' ? 'lying down' : verb === 'sit' ? 'sitting' : 'standing';
+    await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.posture': posture } });
+    if (verb !== 'stand') {
+      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} ${verb === 'sit' ? 'sits down' : 'lies down'}.`);
+    } else {
+      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} stands up.`);
+    }
+    lines.push(verb === 'sit' ? 'You sit down.' : verb === 'lie' ? 'You lie down.' : 'You stand up.');
+    return { ok: true, lines, kinds: [...kinds, 'emote'] };
+  }
+  const SOCIALS = {
+    laugh: ['You laugh.', 'laughs.'],
+    giggle: ['You giggle.', 'giggles.'],
+    smile: ['You smile.', 'smiles.'],
+    grin: ['You grin.', 'grins.'],
+    nod: ['You nod.', 'nods.'],
+    wave: ['You wave.', 'waves.'],
+    sigh: ['You sigh.', 'sighs.'],
+    shrug: ['You shrug.', 'shrugs.'],
+    clap: ['You clap.', 'claps.'],
+    dance: ['You bust a little move.', 'busts a little move.'],
+    yawn: ['You yawn.', 'yawns.'],
+    hum: ['You hum a few bars of something.', 'hums a few bars of something.'],
+  };
+  if (SOCIALS[verb] && !rest) {
+    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} ${SOCIALS[verb][1]}`);
+    lines.push(SOCIALS[verb][0]);
+    return { ok: true, lines, kinds: [...kinds, 'emote'] };
+  }
+  if (SOCIALS[verb] && rest.startsWith('at ')) {
+    const targetName = rest.slice(3).trim();
+    const target = await MooChar.findOne({ roomId: ch.roomId, name: new RegExp('^' + escapeRe(targetName) + '$', 'i') }).lean();
+    if (target) {
+      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} ${SOCIALS[verb][1].replace('.', '')} at ${target.name}.`);
+      lines.push(`${SOCIALS[verb][0].replace('.', '')} at ${target.name}.`);
+      return { ok: true, lines, kinds: [...kinds, 'emote'] };
+    }
+    lines.push(`No \"${targetName}\" here.`);
+    return { ok: false, lines };
   }
 
   /* ── CHARACTERS (her RS Games shape: several playable characters, one active) ── */
