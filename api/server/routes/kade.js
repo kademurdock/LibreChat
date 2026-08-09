@@ -1249,6 +1249,8 @@ const TABBAR_JS = require('./kadePages').tabBarAsset;
 const PRONUNCIATION_DICTIONARY_HTML = require('./kadePages').pronunciationDictionaryHtml;
 const DIARY_HTML = require('./kadePages').diaryHtml;
 const BRIEF_HTML = require('./kadePages').briefHtml;
+const REQUEST_ACCESS_HTML = require('./kadePages').requestAccessHtml;
+const ACCESS_REQUESTS_HTML = require('./kadePages').accessRequestsHtml;
 const WORLD_HTML = require('./kadePages').worldHtml;
 const sendHtml = (html) => (req, res) => res.type('html').send(html);
 
@@ -2023,6 +2025,8 @@ router.youPage = sendHtml(YOU_HTML);
 router.pronunciationDictionaryPage = sendHtml(PRONUNCIATION_DICTIONARY_HTML);
 router.diaryPage = sendHtml(DIARY_HTML);
 router.briefPage = sendHtml(BRIEF_HTML);
+router.requestAccessPage = sendHtml(REQUEST_ACCESS_HTML);
+router.accessRequestsPage = sendHtml(ACCESS_REQUESTS_HTML);
 router.worldPage = sendHtml(WORLD_HTML);
 router.tabBarAssetPage = (req, res) => res.type('application/javascript').send(TABBAR_JS);
 // Also reachable under the API namespace:

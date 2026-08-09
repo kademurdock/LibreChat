@@ -1362,6 +1362,10 @@ const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</ti
   <a class="hubitem" href="/pronunciation-dictionary"><span class="hicon" aria-hidden="true">🗣️</span><span><strong>Pronunciation Dictionary</strong><small>Teach Kade-AI how to say names or words you use</small></span></a>
   <a class="hubitem" href="/logbook"><span class="hicon" aria-hidden="true">📔</span><span><strong>Your Logbook</strong><small>The dated record your companions keep of your days &mdash; browse, add, or forget entries</small></span></a>
   <a class="hubitem" href="/brief"><span class="hicon" aria-hidden="true">🌅</span><span><strong>Morning Brief</strong><small>One push a day from your companion &mdash; your weather, a headline, your day ahead. Turn it on, pick your time</small></span></a>
+  <a class="hubitem" href="#" id="exportLink"><span class="hicon" aria-hidden="true">📦</span><span><strong>Download Your Data</strong><small>Everything that's yours &mdash; memories, logbook, every conversation &mdash; as one zip you keep forever</small></span></a>
+  <script>(function(){ var el=document.getElementById('exportLink'); el.addEventListener('click', async function(ev){ ev.preventDefault(); var small=el.querySelector('small'); var orig=small.textContent; small.textContent='Packing your zip — a few seconds…'; try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include'}); var j=await r.json(); var t=j&&j.token; var resp=await fetch('/api/export/mine',{headers:{Authorization:'Bearer '+t}}); if(!resp.ok) throw new Error('export answered '+resp.status); var blob=await resp.blob(); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='kade-ai-export.zip'; document.body.appendChild(a); a.click(); a.remove(); small.textContent='Done — check your downloads. '+orig; }catch(e){ small.textContent='Could not pack it just now — try again in a minute.'; } }); })();</script>
+  <a class="hubitem" id="accessReqLink" href="/access-requests" style="display:none;"><span class="hicon" aria-hidden="true">🚪</span><span><strong>Access Requests</strong><small>People asking to join &mdash; approve or deny, the blessing text writes itself</small></span></a>
+  <script>(async function(){ try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include'}); if(!r.ok) return; var j=await r.json(); var t=j&&j.token; if(!t) return; var a=await fetch('/api/admin/access-requests?status=pending',{headers:{Authorization:'Bearer '+t}}); if(a.ok){ document.getElementById('accessReqLink').style.display=''; var d=await a.json(); var n=(d.requests||[]).length; if(n>0){ var small=document.querySelector('#accessReqLink small'); small.textContent = n+(n===1?' person is':' people are')+' waiting at the door right now'; } } }catch(e){} })();</script>
   <a class="hubitem" href="/help"><span class="hicon" aria-hidden="true">❓</span><span><strong>Help &amp; FAQ</strong><small>How everything works</small></span></a>
 </nav>
 <p class="muted" style="margin-top:1.25rem">Settings, your files, and signing out live in the account menu — tap your picture at the top of the chat screen.</p>
@@ -2454,6 +2458,146 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
 </script>
 </body></html>`;
 
+/* KADE Aug 9 2026 — THE FRONT DOOR (her registration overhaul): a public
+ * ask-in page. No account needed — that's the point. Honeypot + server-side
+ * rate limit carry the abuse load; the submit rings her phone. */
+const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Ask to Join — Kade-AI</title>${SHARED_HEAD}
+<style>
+  form label { display:block; font-weight:600; margin:.9rem 0 .3rem; }
+  form input[type=text], form textarea { width:100%; font-size:1rem; padding:.6rem .7rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; }
+  form textarea { min-height:5rem; }
+  @media (prefers-color-scheme: dark){ form input[type=text], form textarea{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
+  .pickbtn { display:inline-block; font-size:1.1rem; font-weight:700; padding:.9rem 1.6rem; border-radius:12px; border:0; background:#1f7a49; color:#fff; cursor:pointer; margin-top:1rem; }
+  .pickbtn:focus-visible { outline:4px solid #ffbf47; outline-offset:3px; }
+  .hp { position:absolute; left:-9999px; height:1px; overflow:hidden; }
+</style>
+</head><body>
+<a class="back" href="/login">&larr; Back to sign in</a>
+<h1>Ask to Join</h1>
+<p class="muted">Kade-AI is a private corner of the internet — family and friends of Kade's world. If that's you and nobody's handed you a code yet, knock here: tell her who you are, and the request goes straight to her phone. If she knows you, you'll hear back with your way in.</p>
+<div id="status" class="status" role="status" aria-live="polite"></div>
+<form id="askForm">
+  <label for="name">What do people call you?</label>
+  <input type="text" id="name" required maxlength="80" autocomplete="name">
+  <label for="contact">How can Kade reach you? (phone or email)</label>
+  <input type="text" id="contact" required maxlength="160" autocomplete="tel">
+  <label for="who">Who are you — how do you know Kade or the family?</label>
+  <textarea id="who" required maxlength="1200"></textarea>
+  <label for="why">What brings you here? (optional)</label>
+  <textarea id="why" maxlength="1200"></textarea>
+  <div class="hp" aria-hidden="true"><label for="website">Website</label><input type="text" id="website" tabindex="-1" autocomplete="off"></div>
+  <button class="pickbtn" type="submit" id="sendBtn">Send my request</button>
+</form>
+<footer class="muted">&mdash; Kade-AI</footer>
+<script>
+(function(){
+  var statusEl=document.getElementById('status');
+  function setStatus(t,isErr){ statusEl.textContent=t; statusEl.className='status'+(isErr?' err':''); }
+  document.getElementById('askForm').addEventListener('submit', async function(ev){
+    ev.preventDefault();
+    var btn=document.getElementById('sendBtn'); btn.disabled=true;
+    setStatus('Sending…');
+    try{
+      var r=await fetch('/api/access-request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        name:document.getElementById('name').value,
+        contact:document.getElementById('contact').value,
+        whoYouAre:document.getElementById('who').value,
+        whyHere:document.getElementById('why').value,
+        website:document.getElementById('website').value
+      })});
+      var d=await r.json();
+      if(r.ok && d.ok){ setStatus(d.message||'Request sent.'); document.getElementById('askForm').style.display='none'; }
+      else setStatus(d.error||'Something hiccuped — try again.', true);
+    }catch(e){ setStatus('Could not send just now — try again in a minute.', true); }
+    btn.disabled=false;
+  });
+})();
+</script>
+</body></html>`;
+
+/* Admin review page — the other side of the door. */
+const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access Requests — Kade-AI</title>${SHARED_HEAD}
+<style>
+  .req { border-bottom:1px solid #e3e6ea; padding:1rem 0; }
+  @media (prefers-color-scheme: dark){ .req{ border-color:#2c2f37; } }
+  .req h3 { margin:.1rem 0 .3rem; }
+  .req .meta { font-size:.9rem; opacity:.75; }
+  .req p { margin:.4rem 0; }
+  .actions { display:flex; gap:.6rem; flex-wrap:wrap; margin-top:.6rem; }
+  button.small { font-size:.95rem; padding:.5rem .9rem; border-radius:9px; border:1px solid #b9bfc9; background:transparent; color:inherit; cursor:pointer; }
+  button.approve { border-color:#1f7a49; color:#1f7a49; font-weight:700; }
+  button.deny { border-color:#c0392b; color:#c0392b; }
+  @media (prefers-color-scheme: dark){ button.approve{ color:#7fd4a5; border-color:#2c5c42; } button.deny{ color:#ff8f80; border-color:#7a2c22; } }
+  .blessing { background:rgba(31,122,73,.08); border-radius:10px; padding:.7rem .8rem; margin-top:.5rem; }
+</style>
+</head><body>
+<a class="back" href="/you">&larr; Back</a>
+<h1>Access Requests</h1>
+<p class="muted">People knocking at the door. Approve as adult or kid and the blessing text writes itself &mdash; copy it and send it to them yourself; the code rides inside.</p>
+<div id="status" class="status" role="status" aria-live="polite">Loading&hellip;</div>
+<div id="list"></div>
+<footer class="muted">&mdash; Kade-AI</footer>
+<script>
+(function(){
+  var TOKEN=null;
+  var statusEl=document.getElementById('status');
+  function setStatus(t,isErr){ statusEl.textContent=t; statusEl.className='status'+(isErr?' err':''); }
+  async function getToken(){ try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include'}); if(!r.ok) return null; var j=await r.json(); return j&&j.token||null; }catch(e){ return null; } }
+  async function api(method, path, body){ var r=await fetch(path,{method:method,headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}); if(!r.ok){ var t=await r.text(); var m=t; try{ m=JSON.parse(t).error||t; }catch(e){} throw new Error(m); } return r.json(); }
+  function prettyWhen(iso){ try{ return new Date(iso).toLocaleString('en-US',{month:'long',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){ return iso; } }
+
+  function render(reqs){
+    var list=document.getElementById('list'); list.innerHTML='';
+    if(!reqs.length){ setStatus('Nobody at the door right now.'); return; }
+    setStatus(reqs.length+(reqs.length===1?' person':' people')+' waiting.');
+    reqs.forEach(function(rq){
+      var d=document.createElement('div'); d.className='req';
+      var h=document.createElement('h3'); h.textContent=rq.name; d.appendChild(h);
+      var meta=document.createElement('div'); meta.className='meta'; meta.textContent='Asked '+prettyWhen(rq.createdAt)+' · reach them at: '+rq.contact; d.appendChild(meta);
+      var who=document.createElement('p'); who.textContent='Who: '+rq.whoYouAre; d.appendChild(who);
+      if(rq.whyHere){ var why=document.createElement('p'); why.textContent='Why: '+rq.whyHere; d.appendChild(why); }
+      var acts=document.createElement('div'); acts.className='actions';
+      var ok=document.createElement('button'); ok.type='button'; ok.className='small approve'; ok.textContent='Approve (adult)';
+      var okC=document.createElement('button'); okC.type='button'; okC.className='small approve'; okC.textContent='Approve (kid)';
+      var no=document.createElement('button'); no.type='button'; no.className='small deny'; no.textContent='Deny';
+      ok.addEventListener('click', function(){ decide(rq,'approve','adult',d); });
+      okC.addEventListener('click', function(){ decide(rq,'approve','child',d); });
+      no.addEventListener('click', function(){ decide(rq,'deny',null,d); });
+      acts.appendChild(ok); acts.appendChild(okC); acts.appendChild(no); d.appendChild(acts);
+      list.appendChild(d);
+    });
+  }
+
+  async function decide(rq, action, audience, card){
+    try{
+      var d=await api('POST','/api/admin/access-requests/'+rq.id+'/'+action, audience?{audience:audience}:{});
+      if(action==='approve'){
+        var b=document.createElement('div'); b.className='blessing';
+        var p=document.createElement('p'); p.textContent=d.readyMessage; b.appendChild(p);
+        var cp=document.createElement('button'); cp.type='button'; cp.className='small'; cp.textContent='Copy the blessing';
+        cp.addEventListener('click', async function(){ try{ await navigator.clipboard.writeText(d.readyMessage); setStatus('Copied — send it to '+rq.contact); }catch(e){ setStatus('Select and copy the text above.', true); } });
+        b.appendChild(cp);
+        card.appendChild(b);
+        card.querySelectorAll('.actions button').forEach(function(x){ x.disabled=true; });
+        setStatus('Approved '+rq.name+' — the blessing text is ready below their card.');
+      } else {
+        card.style.opacity=.45;
+        card.querySelectorAll('.actions button').forEach(function(x){ x.disabled=true; });
+        setStatus('Denied. Nothing was sent to them.');
+      }
+    }catch(e){ setStatus('That did not go through: '+e.message, true); }
+  }
+
+  (async function init(){
+    TOKEN=await getToken();
+    if(!TOKEN){ setStatus('Sign in on the main site first, then come back.', true); return; }
+    try{ var d=await api('GET','/api/admin/access-requests?status=pending'); render(d.requests||[]); }
+    catch(e){ setStatus('Could not load (admin only): '+e.message, true); }
+  })();
+})();
+</script>
+</body></html>`;
+
 /* KADE Aug 9 2026 — MORNING BRIEF SETTINGS (her spec, same evening she gave
  * it): per-account, plain and listenable. Runs on /api/brief (JWT), which
  * proxies the bridge server-side — the page never sees a secret. Listen
@@ -2781,5 +2925,5 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>The World — bey
 </script>
 </body></html>`;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, diaryHtml, briefHtml, worldHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
+module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, diaryHtml, briefHtml, requestAccessHtml, accessRequestsHtml, worldHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
 

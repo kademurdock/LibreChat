@@ -121,6 +121,16 @@ function Login() {
           </a>
         </p>
       )}
+      {/* KADE Aug 9 2026 — the front-door doorbell: no code, no problem — ask in. */}
+      <p className="mb-6 text-center text-sm font-light text-gray-700 dark:text-white">
+        New here without a code?{' '}
+        <a
+          href="/request-access"
+          className="inline-flex p-1 text-sm font-medium text-green-600 underline decoration-transparent transition-all duration-200 hover:text-green-700 hover:decoration-green-700 focus:text-green-700 focus:decoration-green-700 dark:text-green-500 dark:hover:text-green-400 dark:hover:decoration-green-400 dark:focus:text-green-400 dark:focus:decoration-green-400"
+        >
+          Ask to join
+        </a>
+      </p>
     </>
   );
 }

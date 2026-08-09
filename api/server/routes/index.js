@@ -15,6 +15,9 @@ const adminDiary = require('./admin/diary');
 const adminMining = require('./admin/mining');
 const diary = require('./diary');
 const brief = require('./brief');
+const accessRequest = require('./accessRequest');
+const adminAccessRequests = require('./admin/accessRequests');
+const exportData = require('./export');
 const world = require('./world');
 const endpoints = require('./endpoints');
 const staticRoute = require('./static');
@@ -86,6 +89,9 @@ module.exports = {
   adminMining,
   diary,
   brief,
+  accessRequest,
+  adminAccessRequests,
+  exportData,
   world,
   keys,
   apiKeys,
