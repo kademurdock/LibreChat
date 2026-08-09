@@ -23,9 +23,9 @@ const { getLastSweepRunAt, setLastSweepRunAt } = require('~/models/memoryConsoli
 /** KADE Aug 8 2026: logbook demotion — the sweep can move episodic cards into
  * dated entries. Bound per bucket so scope can never leak across characters. */
 function createLogDiary(userId, agentId) {
-  return async ({ text, scope }) => {
+  return async ({ text, scope, salience }) => {
     const { logDiaryEntry } = require('~/models/kadeDiary');
-    return logDiaryEntry({ userId, agentId: agentId || null, text, scope, source: 'keeper' });
+    return logDiaryEntry({ userId, agentId: agentId || null, text, scope, salience, source: 'keeper' });
   };
 }
 
