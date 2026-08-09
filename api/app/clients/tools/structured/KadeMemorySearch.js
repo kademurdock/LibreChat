@@ -55,7 +55,7 @@ class KadeMemorySearch extends Tool {
       'Search by meaning (query), by date range, or both.';
     this.description_for_model =
       this.description +
-      ' Weave whatever you find in naturally, like a friend recalling — mention the day in passing if it helps ("back at the start of the month you said…"). Never read entries out as a list unless the user asks for exactly that, never invent entries, and if the tool returns nothing say honestly that your notes don\'t show it. If an entry contradicts what the user is telling you right now, believe the user. For date ranges, compute real YYYY-MM-DD dates from today\'s date first.';
+      ' Weave whatever you find in naturally, like a friend recalling — mention the day in passing if it helps ("back at the start of the month you said…"). Never read entries out as a list unless the user asks for exactly that, never invent entries, and if the tool returns nothing say honestly that your notes don\'t show it. If an entry contradicts what the user is telling you right now, believe the user. For date ranges, compute real YYYY-MM-DD dates from today\'s date first. WHEN-shaped questions (\'when did I\u2026\', \'how long ago\u2026\', \'when did X change\') are temporal: every entry returns dated, so answer from the DATES \u2014 name the day or the distance plainly (\'that was July 12th, about a month back\'), and if the story changed over time, tell it in date order using a wider limit.';
     this.schema = memorySearchJsonSchema;
   }
 

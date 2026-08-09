@@ -70,6 +70,7 @@ router.get('/', async (req, res) => {
         text: e.text,
         agentId: e.agentId || null,
         source: e.source || null,
+        salience: e.salience || 1,
         embedded: Boolean(e.embedModel),
         createdAt: e.createdAt,
       })),
@@ -87,12 +88,12 @@ router.get('/', async (req, res) => {
  *  not apply to backfill (admin-driven, deliberate). */
 router.post('/', async (req, res) => {
   try {
-    const { userId, text, agentId = null, scope = 'agent', entryDate = null, source = 'backfill' } = req.body || {};
+    const { userId, text, agentId = null, scope = 'agent', entryDate = null, source = 'backfill', salience = 1 } = req.body || {};
     if (!userId || !text) {
       return res.status(400).json({ error: 'userId and text are required' });
     }
     const { logDiaryEntry } = require('~/models/kadeDiary');
-    const result = await logDiaryEntry({ userId, agentId, text, scope, source, entryDate });
+    const result = await logDiaryEntry({ userId, agentId, text, scope, source, entryDate, salience });
     if (!result.ok) {
       return res.status(500).json({ error: result.error || 'write failed' });
     }
@@ -102,6 +103,47 @@ router.post('/', async (req, res) => {
   } catch (error) {
     logger.error('[admin-diary] backfill failed', error);
     res.status(500).json({ error: 'Failed to write entry' });
+  }
+});
+
+/** PATCH /:entryId?userId=<id> — rewrite one entry in place (MEMORY QUALITY
+ *  PACK, Aug 9 2026, built FOR the supervised corpus sweep): body
+ *  { text?, salience? }. The id, date, scope, and source survive — a rewrite
+ *  is a better sentence, not a new memory. Text changes re-embed. */
+router.patch('/:entryId', async (req, res) => {
+  try {
+    const userId = String(req.query.userId || '').trim();
+    const { entryId } = req.params;
+    if (!userId) {
+      return res.status(400).json({ error: 'userId query parameter is required' });
+    }
+    const text = req.body?.text !== undefined ? String(req.body.text) : null;
+    const salience = req.body?.salience !== undefined ? req.body.salience : null;
+    const { editDiaryEntry } = require('~/models/kadeDiary');
+    const result = await editDiaryEntry({ _id: entryId, userId }, { text, salience });
+    if (!result.ok) {
+      return res
+        .status(result.error === 'not found' ? 404 : result.error === 'nothing to change' || result.error === 'empty text' ? 400 : 500)
+        .json({ error: result.error });
+    }
+    logger.info(
+      `[admin-diary] entry edited | admin: ${req.user.id} | user: ${userId} | date: ${result.entry.entryDate} | ${String(result.entry.text).slice(0, 80)}`,
+    );
+    auditFailSoft(req, 'admin_diary_edit', userId, entryId, { date: result.entry.entryDate });
+    res.json({
+      ok: true,
+      entry: {
+        id: String(result.entry._id),
+        date: result.entry.entryDate,
+        text: result.entry.text,
+        agentId: result.entry.agentId || null,
+        source: result.entry.source || null,
+        salience: result.entry.salience || 1,
+      },
+    });
+  } catch (error) {
+    logger.error('[admin-diary] edit failed', error);
+    res.status(500).json({ error: 'Failed to edit diary entry' });
   }
 });
 

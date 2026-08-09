@@ -59,6 +59,11 @@ const kadeDiarySchema = new mongoose.Schema(
     embedModel: { type: String, default: null },
     /** 'keeper' (memory agent) | 'manual' (future diary surface) | 'backfill' */
     source: { type: String, default: 'keeper' },
+    /** MEMORY QUALITY PACK (Aug 9 2026): how much this entry matters. 1 = ordinary
+     * note, 2 = notable day, 3 = big one (loss, family news, milestone, health
+     * scare). Set by the keeper at write time; big things outrank product notes
+     * in retrieval STRUCTURALLY (searchDiary weights by it), not by luck. */
+    salience: { type: Number, default: 1, min: 1, max: 3 },
   },
   { timestamps: true },
 );
@@ -155,7 +160,7 @@ function cosine(a, b) {
  * Write one diary entry. scope 'shared' → agentId null; anything else → the
  * given agentId (privacy default). Saves even when embedding fails.
  */
-async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', source = 'keeper', entryDate = null }) {
+async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', source = 'keeper', entryDate = null, salience = 1 }) {
   if (!diaryEnabled()) {
     return { ok: false, error: 'diary disabled' };
   }
@@ -188,6 +193,7 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
     entryDate && /^\d{4}-\d{2}-\d{2}$/.test(String(entryDate)) ? String(entryDate) : centralDateString();
   const embedding = await embedText(cleanText);
   try {
+    const cleanSalience = Math.min(Math.max(parseInt(salience, 10) || 1, 1), 3);
     await KadeDiaryEntry.create({
       userId: String(userId),
       agentId: effectiveAgentId,
@@ -196,6 +202,7 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
       embedding,
       embedModel: embedding ? currentEmbedModel() : null,
       source,
+      salience: cleanSalience,
     });
     return { ok: true, date: effectiveDate };
   } catch (e) {
@@ -283,10 +290,18 @@ async function searchDiary({
     const rows = await KadeDiaryEntry.find(filter)
       .sort({ createdAt: -1 })
       .limit(3000)
-      .select('text entryDate agentId embedding embedModel')
+      .select('text entryDate agentId embedding embedModel salience')
       .lean();
     const scored = [];
     const activeModel = currentEmbedModel();
+    /* TIME-AWARE RECALL (Aug 9 2026, Zep's lesson from the northstar pass):
+     * relevance gates (raw cosine >= minScore), but the RANKING blends in
+     * recency and salience. A fresh entry gets up to +0.05; the boost halves
+     * every ~42 days and is gone by a season — old entries still win when
+     * they're plainly more relevant. Salience multiplies AFTER the gate:
+     * ordinary 1.0x, notable 1.12x, big 1.24x — a salience-3 day (a loss, a
+     * milestone) structurally outranks a same-relevance product note. */
+    const todayMs = Date.now();
     for (const r of rows) {
       if (!Array.isArray(r.embedding) || r.embedding.length === 0) {
         continue;
@@ -297,19 +312,68 @@ async function searchDiary({
       }
       const score = cosine(qVec, r.embedding);
       if (score >= minScore) {
+        let ageDays = 0;
+        const t = Date.parse(`${r.entryDate}T12:00:00-06:00`);
+        if (Number.isFinite(t)) {
+          ageDays = Math.max(0, (todayMs - t) / 86400000);
+        }
+        const salienceMult = 1 + 0.12 * (Math.min(Math.max(r.salience || 1, 1), 3) - 1);
+        const recencyBonus = 0.05 * Math.exp(-ageDays / 60);
+        const ranked = score * salienceMult + recencyBonus;
         scored.push({
           date: r.entryDate,
           text: r.text,
           agentScoped: Boolean(r.agentId),
           score,
+          ranked,
+          salience: Math.min(Math.max(r.salience || 1, 1), 3),
         });
       }
     }
-    scored.sort((a, b) => b.score - a.score);
+    scored.sort((a, b) => b.ranked - a.ranked);
     return scored.slice(0, cap);
   } catch (e) {
     logger.warn('[kadeDiary] search failed (returning empty, never breaking a turn):', e.message);
     return [];
+  }
+}
+
+/**
+ * Edit one entry's text (and optionally salience) in place — id, date, scope,
+ * and source all survive; the embedding is recomputed so search keeps working
+ * on the new words (fail-soft: a failed re-embed leaves the entry searchable
+ * by date, same rule as writes). `filter` must already carry the ownership
+ * constraint (userId at minimum) — routes decide who may touch what.
+ */
+async function editDiaryEntry(filter, { text = null, salience = null } = {}) {
+  const update = {};
+  if (text !== null) {
+    const cleanText = String(text).trim().slice(0, 2000);
+    if (!cleanText) {
+      return { ok: false, error: 'empty text' };
+    }
+    update.text = cleanText;
+    const embedding = await embedText(cleanText);
+    update.embedding = embedding;
+    update.embedModel = embedding ? currentEmbedModel() : null;
+  }
+  if (salience !== null) {
+    update.salience = Math.min(Math.max(parseInt(salience, 10) || 1, 1), 3);
+  }
+  if (Object.keys(update).length === 0) {
+    return { ok: false, error: 'nothing to change' };
+  }
+  try {
+    const row = await KadeDiaryEntry.findOneAndUpdate(filter, { $set: update }, { new: true })
+      .select('-embedding')
+      .lean();
+    if (!row) {
+      return { ok: false, error: 'not found' };
+    }
+    return { ok: true, entry: row };
+  } catch (e) {
+    logger.error('[kadeDiary] edit failed:', e.message);
+    return { ok: false, error: e.message };
   }
 }
 
@@ -320,6 +384,7 @@ module.exports = {
   embedText,
   currentEmbedModel,
   logDiaryEntry,
+  editDiaryEntry,
   searchDiary,
   countEntries,
 };

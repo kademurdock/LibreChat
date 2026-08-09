@@ -432,13 +432,15 @@ const createDeleteMemoryTool = ({
 export type DiaryLogFn = (params: {
   text: string;
   scope?: 'agent' | 'shared';
+  /** MEMORY QUALITY PACK (Aug 9 2026): 1 ordinary / 2 notable / 3 big — retrieval weights by it. */
+  salience?: number;
 }) => Promise<{ ok: boolean; date?: string; error?: string }>;
 
 const createDiaryTool = ({ logDiary }: { logDiary: DiaryLogFn }): DynamicStructuredTool => {
   return tool(
-    async ({ text, scope }) => {
+    async ({ text, scope, salience }) => {
       try {
-        const result = await logDiary({ text, scope });
+        const result = await logDiary({ text, scope, salience });
         if (result.ok) {
           return `Diary entry logged for ${result.date ?? 'today'}.`;
         }
@@ -463,6 +465,15 @@ const createDiaryTool = ({ logDiary }: { logDiary: DiaryLogFn }): DynamicStructu
           .optional()
           .describe(
             'Who may recall this later. "agent" (default): only the character who was told — the right choice for almost everything, same privacy rule as cards. "shared" only for things every character would need.',
+          ),
+        salience: z
+          .number()
+          .int()
+          .min(1)
+          .max(3)
+          .optional()
+          .describe(
+            'How much this day matters: 1 (default) ordinary note, 2 a notable day, 3 a big one — a loss, family news, a health scare, a real milestone, a day they will remember in a year. Most entries are 1; be honest, not generous.',
           ),
       }),
     },
@@ -789,6 +800,8 @@ export async function createMemoryProcessor({
   if (logDiary) {
     finalInstructions +=
       '\n\nTHE LOGBOOK (log_diary): beside the cards there is a dated logbook — the unlimited archive for day-to-day LIFE. The split: CARDS answer "who is this person" (identity, people and pets, tastes, health, running projects — durable facts worth carrying into every future conversation). The LOGBOOK answers "what happened" (what they did today, how it went, a moment, a mood, a small win or gripe — real but episodic). When the user shares a genuine moment of their day, log ONE entry: one or two plain sentences, gist not transcript, written like a caring friend\'s journal. Never file the same thing as both a card and a logbook entry — pick by durability. The "most turns save NOTHING" rule still governs CARDS; a logbook line is lighter-weight, but still only for real moments actually shared, never for questions, task chatter, or assistant work. Asking you to CHECK, search, or read back memory or the logbook is task chatter — never log the asking; the logbook records their LIFE, not their use of you. The tell: if the entry you are about to write mentions the logbook, diary, memory, searching, or whether something is worth recording, STOP — that is the mechanism describing itself, and the correct move is NO tool call at all. An empty turn is success. Logbook entries default to your own scope (private to this character), like cards. "Remember X" still means a CARD; things like "log this," "note that down," or plain day-sharing lean LOGBOOK. CURIOSITY IS A STORY TOO (her own rule, Aug 8): when the user goes down a real rabbit hole with you — asks, digs, reacts, clearly enjoys it — that day deserves ONE light logbook line naming what caught them and the gem that landed ("Got curious about South Park\'s business side — turns out Trey Parker\'s legal name is Randolph Severn Parker III"). The subject of a question is STILL never a card and never an interest; but the going-down-the-rabbit-hole is a moment of their life, and the logbook is where days like that live. A passing one-line question is not a rabbit hole — log the dig, not the drive-by. IN-WORLD PLAY IS FICTION (the Barnaby lesson, extended): when the conversation is a game session — the city beyond the Threshold Gate, a card table, a text adventure, any roleplay world — the events INSIDE it are not the user\'s real life and are NEVER logged as such (the game worlds keep their own chronicles). The real-life moment, if any, is that they played: at most one line like "spent the evening exploring the city with Porter," and only when the session was clearly a real chunk of their day. No in-world deaths, purchases, crimes, or dramas ever become logbook entries or cards.' +
+      '\n\nHOW AN ENTRY SHOULD READ (the taste rules, Aug 9 2026 — she read the logbook and it read like a standup log; that is the failure mode): write every entry like a close friend keeping a journal, never a court reporter. "Has anxiety about calling the SSA" is a case file; "The SSA phone line stresses her out — honestly, fair" is a friend. Keep the fact exact, add the small human touch, and never use clinical framings ("exhibits", "reports that", "is experiencing"). WORK EARNS ALMOST NOTHING: when the day with you was a work or build session — coding, debugging, testing, directing tasks — that whole session earns AT MOST one line, and only if something actually landed that a friend would hear about ("finally shipped the World screen and was proud of it"); "spent the afternoon debugging" is not an entry, and forty of them is the standup log nobody wants. Life said mid-work (the dog, the family, how they feel) still counts normally. WEIGH THE DAY: log_diary takes a salience — 1 ordinary (the default and the usual truth), 2 a notable day, 3 a big one (a loss, family news, a health scare, a real milestone). Set it honestly; the platform makes big days outrank product notes when memories resurface.' +
+      '\n\nCORRECTIONS LAND IMMEDIATELY: when the user corrects a fact you hold ("no, the surgery moved to Friday", "we renamed the dog"), fix it in the same breath — set_memory on the SAME key with the corrected whole truth (or the corrected logbook line) — and never argue with them about what the old note said. The person is always righter than the card.' +
       '\n\nPROMISES: when the CHARACTER makes a concrete commitment to the user ("I\'ll have the second verse tomorrow," "remind me to ask how the appointment went"), file an agent-scoped card under a key starting promise_ with what was promised and when it\'s due. When a promise is delivered or clearly dead, delete its card. Promises are the character\'s own word — keeping them is what makes the character real.' +
       '\n\nOFF THE RECORD: if the user has said "off the record" in the visible conversation and has not since said they\'re back on the record, save NOTHING from that span — no cards, no logbook entries, no exceptions. When they say "back on the record" (or similar), normal listening resumes from that point. If they ask you to forget an off-record slip you already saved, delete it.';
   }
@@ -885,9 +898,9 @@ export async function consolidateMemoryBucket({
 Below is everything currently active in the "${scopeLabel}" memory bucket. The target shape is MEMORY CARDS: each entry covers exactly ONE topic, in one or two plain sentences (aim under ~60 tokens), under a short descriptive snake_case key that names the topic (e.g. "dad_health", "concert_crew", "cat_kasper"). Your jobs, in priority order:
 1. SPLIT: if an entry lumps several unrelated topics together, break it into separate cards -- \`set_memory\` each new topic under its own new key, then \`set_memory\` the original key down to just its remaining topic (or \`delete_memory\` it if nothing is left).
 2. MERGE: if entries are near-duplicates or say overlapping things about the same topic, combine them into ONE card and \`delete_memory\` the leftovers.
-3. TIGHTEN: rewrite verbose, repetitive, or stale-phrased cards more concisely with \`set_memory\` on the same key. Keep the human substance -- what matters and why -- not a log of how it came up.
+3. TIGHTEN: rewrite verbose, repetitive, or stale-phrased cards more concisely with \`set_memory\` on the same key. Keep the human substance -- what matters and why -- not a log of how it came up. When you rewrite, write like a close friend's journal, never a case file: no "exhibits", "reports", "has anxiety about" -- keep the fact exact and the wording human.
 4. PRUNE: \`delete_memory\` cards that are obsolete, contradicted by a newer card, or were never really durable (one-off task chatter, moment-only details).${logDiary ? `
-5. DEMOTE: if a card is EPISODIC — a dated status update, a story beat, a completed piece of work, a "what happened" rather than a "who they are" — move it to the LOGBOOK instead of keeping it as a card: call \`log_diary\` with one or two plain sentences that INCLUDE the original timeframe in the words ("Back in mid-July, ..."), then \`delete_memory\` the card. Durable facts, standing rules, live reminders, and active-project current-state cards STAY cards; only the story moves.` : ''}
+5. DEMOTE: if a card is EPISODIC — a dated status update, a story beat, a completed piece of work, a "what happened" rather than a "who they are" — move it to the LOGBOOK instead of keeping it as a card: call \`log_diary\` with one or two plain sentences that INCLUDE the original timeframe in the words ("Back in mid-July, ..."), then \`delete_memory\` the card, setting salience honestly (1 ordinary, 2 notable, 3 big). Durable facts, standing rules, live reminders, and active-project current-state cards STAY cards; only the story moves.` : ''}
 
 HARD RULE — cards marked [\"reminder\": …] are LIVE SCHEDULED ALARMS: never merge them into other cards, never fold other cards into them, never delete them, and never change their key. At most, tighten their value wording with \`set_memory\` on the SAME key — the schedule survives a value rewrite.
 

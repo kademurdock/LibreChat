@@ -1,7 +1,7 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
-const { KadeDiaryEntry, logDiaryEntry, diaryEnabled } = require('~/models/kadeDiary');
+const { KadeDiaryEntry, logDiaryEntry, editDiaryEntry, diaryEnabled } = require('~/models/kadeDiary');
 const db = require('~/models');
 
 const router = express.Router();
@@ -68,6 +68,7 @@ router.get('/', async (req, res) => {
         agentId: e.agentId || null,
         agentName: e.agentId ? agentNames[e.agentId] || null : null,
         source: e.source || 'keeper',
+        salience: e.salience || 1,
         createdAt: e.createdAt,
       })),
     });
@@ -103,6 +104,44 @@ router.post('/', async (req, res) => {
   } catch (error) {
     logger.error('[diary] manual add failed', error);
     res.status(500).json({ error: 'Failed to save the entry' });
+  }
+});
+
+/** PATCH /:entryId — fix the wording of one of the caller's own entries
+ * (MEMORY QUALITY PACK, Aug 9 2026: her ask — the logbook is HERS, and a
+ * mis-worded entry shouldn't need a delete-and-retype round trip). Text is
+ * re-embedded so search keeps working on the new words; date, scope, and
+ * source stay exactly as they were. The KADE_DIARY kill switch pauses edits
+ * like any other write. */
+router.patch('/:entryId', async (req, res) => {
+  try {
+    if (!diaryEnabled()) {
+      return res.status(503).json({ error: 'The logbook is currently paused' });
+    }
+    const { entryId } = req.params;
+    const text = String(req.body?.text || '').trim();
+    if (!text) {
+      return res.status(400).json({ error: 'The entry text is empty' });
+    }
+    if (text.length > 2000) {
+      return res.status(400).json({ error: 'Keep an entry under 2,000 characters' });
+    }
+    const result = await editDiaryEntry({ _id: entryId, userId: String(req.user.id) }, { text });
+    if (!result.ok) {
+      return res
+        .status(result.error === 'not found' ? 404 : 500)
+        .json({ error: result.error === 'not found' ? 'That entry was not found in your logbook' : 'Failed to update the entry' });
+    }
+    logger.info(
+      `[diary] user edited an entry | user: ${req.user.id} | date: ${result.entry.entryDate} | new text: ${String(result.entry.text).slice(0, 60)}`,
+    );
+    res.json({
+      ok: true,
+      entry: { id: String(result.entry._id), date: result.entry.entryDate, text: result.entry.text },
+    });
+  } catch (error) {
+    logger.error('[diary] edit failed', error);
+    res.status(500).json({ error: 'Failed to update the entry' });
   }
 });
 

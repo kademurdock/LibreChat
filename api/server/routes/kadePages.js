@@ -2292,7 +2292,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
 </head><body>
 <a class="back" href="/you">&larr; Back</a>
 <h1>Your Logbook</h1>
-<p class="muted">The dated record your companions quietly keep as you share your days — plus anything you write in yourself. Each entry stays with the companion you told it to; entries you add here can be recalled by any of them. Forgetting an entry removes it for good.</p>
+<p class="muted">The dated record your companions quietly keep as you share your days — plus anything you write in yourself. Each entry stays with the companion you told it to; entries you add here can be recalled by any of them. Edit fixes an entry's wording in place; Forget removes it for good.</p>
 <div id="status" class="status" role="status" aria-live="polite">Loading your logbook&hellip;</div>
 <section id="listSec" aria-label="Logbook entries" style="display:none;">
   <h2 id="listTop" tabindex="-1" style="position:absolute;left:-9999px;">Logbook entries</h2>
@@ -2319,6 +2319,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
   async function apiGet(p){ var r=await fetch(p,{headers:{Authorization:'Bearer '+TOKEN}}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
   async function apiPost(p,body){ var r=await fetch(p,{method:'POST',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify(body||{})}); if(!r.ok){ var t=await r.text(); var msg=t; try{ msg=JSON.parse(t).error||t; }catch(e){} throw new Error(msg); } return r.json(); }
   async function apiDelete(p){ var r=await fetch(p,{method:'DELETE',headers:{Authorization:'Bearer '+TOKEN}}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+  async function apiPatch(p,body){ var r=await fetch(p,{method:'PATCH',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify(body||{})}); if(!r.ok){ var t=await r.text(); var msg=t; try{ msg=JSON.parse(t).error||t; }catch(e){} throw new Error(msg); } return r.json(); }
 
   function prettyDate(ymd){
     try{
@@ -2356,14 +2357,52 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
         var txt=document.createElement('div'); txt.className='entry-text'; txt.textContent=e.text;
         var meta=document.createElement('div'); meta.className='entry-meta'; meta.textContent=metaLine(e);
         left.appendChild(txt); left.appendChild(meta);
+        var btns=document.createElement('div'); btns.style.display='flex'; btns.style.flexDirection='column'; btns.style.gap='.4rem';
+        var editBtn=document.createElement('button'); editBtn.type='button'; editBtn.className='small'; editBtn.textContent='Edit';
+        editBtn.setAttribute('aria-label','Edit the entry from '+prettyDate(e.date)+': '+e.text.slice(0,60));
+        editBtn.addEventListener('click', function(){ editEntry(e, row, left, btns); });
         var btn=document.createElement('button'); btn.type='button'; btn.className='small danger'; btn.textContent='Forget';
         btn.setAttribute('aria-label','Forget the entry from '+prettyDate(e.date)+': '+e.text.slice(0,60));
         btn.addEventListener('click', function(){ forgetEntry(e, btn); });
-        row.appendChild(left); row.appendChild(btn);
+        btns.appendChild(editBtn); btns.appendChild(btn);
+        row.appendChild(left); row.appendChild(btns);
         card.appendChild(row);
       });
       list.appendChild(card);
     });
+  }
+
+  function editEntry(e, row, left, btns){
+    /* Inline editor: the row's text becomes a textarea with Save/Cancel.
+     * Focus lands in the textarea; Escape cancels; the status line announces
+     * the outcome for screen readers. Wording is the only thing that changes
+     * — the entry keeps its date and who-knows-it scope. */
+    btns.style.display='none';
+    var oldHtml=left.innerHTML; left.innerHTML='';
+    var lbl=document.createElement('label'); lbl.textContent='Edit the entry from '+prettyDate(e.date); lbl.style.fontWeight='600'; lbl.style.display='block'; lbl.style.marginBottom='.3rem';
+    var taId='edit_'+e.id; lbl.setAttribute('for',taId);
+    var ta=document.createElement('textarea'); ta.id=taId; ta.value=e.text; ta.maxLength=2000;
+    ta.style.width='100%'; ta.style.minHeight='5rem'; ta.style.fontSize='1rem'; ta.style.padding='.5rem .6rem'; ta.style.borderRadius='10px';
+    var actions=document.createElement('div'); actions.style.marginTop='.5rem'; actions.style.display='flex'; actions.style.gap='.6rem';
+    var save=document.createElement('button'); save.type='button'; save.className='small'; save.textContent='Save';
+    var cancel=document.createElement('button'); cancel.type='button'; cancel.className='small'; cancel.textContent='Cancel';
+    function restore(){ left.innerHTML=oldHtml; btns.style.display=''; }
+    cancel.addEventListener('click', function(){ restore(); setStatus('Edit cancelled.'); });
+    ta.addEventListener('keydown', function(ev){ if(ev.key==='Escape'){ restore(); setStatus('Edit cancelled.'); } });
+    save.addEventListener('click', async function(){
+      var text=(ta.value||'').trim();
+      if(!text){ setStatus('Write something first, or use Forget to remove the entry.', true); ta.focus(); return; }
+      save.disabled=true; cancel.disabled=true;
+      try{
+        await apiPatch('/api/diary/'+encodeURIComponent(e.id),{ text:text });
+        e.text=text;
+        renderList();
+        setStatus('Entry updated.');
+      }catch(err){ save.disabled=false; cancel.disabled=false; setStatus('Could not save the edit: '+err.message, true); }
+    });
+    actions.appendChild(save); actions.appendChild(cancel);
+    left.appendChild(lbl); left.appendChild(ta); left.appendChild(actions);
+    ta.focus();
   }
 
   async function forgetEntry(e, btn){

@@ -975,9 +975,9 @@ class AgentClient extends BaseClient {
        * (api/models/kadeDiary.js), scoped to the active persona by default,
        * NEVER into the 8K hot core. Kill switch KADE_DIARY=0 makes this a
        * quiet no-op inside logDiaryEntry. */
-      logDiary: async ({ text, scope }) => {
+      logDiary: async ({ text, scope, salience }) => {
         const { logDiaryEntry } = require('~/models/kadeDiary');
-        return logDiaryEntry({ userId, agentId: activeAgentId, text, scope });
+        return logDiaryEntry({ userId, agentId: activeAgentId, text, scope, salience });
       },
     });
 
