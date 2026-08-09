@@ -26,7 +26,9 @@ router.post('/command', async (req, res) => {
      * word the parser will shrug at. */
     const angelAsk = /^angel[,:]?\s+(.+)$/is.exec(command);
     if (angelAsk && req.user.role === 'ADMIN') {
-      const out = await angelBuild(angelAsk[1].trim());
+      /* "angel preview: ..." shows the plan without executing it. */
+      const preview = /^preview[,:]?\s+(.+)$/is.exec(angelAsk[1].trim());
+      const out = await angelBuild((preview ? preview[1] : angelAsk[1]).trim(), { dryRun: !!preview });
       return res.json({ ok: true, lines: angelLines(out) });
     }
     const result = await runCommand({
@@ -58,8 +60,9 @@ router.post('/angel', async (req, res) => {
     if (!instruction.trim()) {
       return res.status(400).json({ error: 'tell the angel what to build' });
     }
-    const out = await angelBuild(instruction.trim());
-    res.json({ ok: true, note: out.note, results: out.results, lines: angelLines(out) });
+    const dryRun = req.body?.dryRun === true;
+    const out = await angelBuild(instruction.trim(), { dryRun });
+    res.json({ ok: true, dryRun: dryRun || undefined, note: out.note, results: out.results, lines: angelLines(out) });
   } catch (e) {
     logger.error('[world] angel failed:', e.message);
     res.status(500).json({ error: 'the angel lost the thread — try again' });

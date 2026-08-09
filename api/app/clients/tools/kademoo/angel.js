@@ -121,8 +121,13 @@ async function translate(instruction) {
 /** Plain English in → the city changed → a chronicle of what happened out.
  *  Every command runs AS the Angel through the same engine as everyone —
  *  chronicled wizardry, wizard tier, nothing bespoke. */
-async function angelBuild(instruction) {
+async function angelBuild(instruction, { dryRun = false } = {}) {
   const { note, commands } = await translate(instruction);
+  if (dryRun) {
+    /* "Show me what you'd do" — the full translation chain, zero world
+     * mutation. Also how the lane gets live-tested without digging. */
+    return { note, dryRun: true, results: commands.map((command) => ({ command, ok: true, lines: ['(dry run — not executed)'] })) };
+  }
   const results = [];
   for (const command of commands) {
     try {
@@ -145,9 +150,10 @@ async function angelBuild(instruction) {
 /** Flatten an angel run into speakable lines for the existing world clients
  *  (web /world page, the native World screen) — they render {lines} and
  *  nothing else, and a screen reader hears them in order. */
-function angelLines({ note, results }) {
+function angelLines({ note, results, dryRun }) {
   const lines = [];
   lines.push(note ? `The Angel: ${note}` : 'The Angel sets to work.');
+  if (dryRun) lines.push('(Dry run — the city is untouched. Ask again without "preview" to make it real.)');
   if (!results.length) return lines;
   for (const r of results) {
     const first = (r.lines && r.lines[0]) || (r.ok ? 'Done.' : 'Refused.');
