@@ -8,6 +8,7 @@ const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { runCommand } = require('~/app/clients/tools/kademoo/engine');
+const { angelBuild, angelLines } = require('~/app/clients/tools/kademoo/angel');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -17,6 +18,16 @@ router.post('/command', async (req, res) => {
     const command = String(req.body?.command || '').slice(0, 400);
     if (!command.trim()) {
       return res.status(400).json({ error: 'empty command' });
+    }
+    /* THE ANGEL PREFIX (Aug 9 2026): "angel: carve a bakery north of the
+     * gate" typed into ANY existing world client — the web page, the native
+     * World screen behind the admin door — wakes the Angel Lane with zero
+     * client changes. Wizards only; everyone else's "angel..." is just a
+     * word the parser will shrug at. */
+    const angelAsk = /^angel[,:]?\s+(.+)$/is.exec(command);
+    if (angelAsk && req.user.role === 'ADMIN') {
+      const out = await angelBuild(angelAsk[1].trim());
+      return res.json({ ok: true, lines: angelLines(out) });
     }
     const result = await runCommand({
       userId: req.user.id,
@@ -30,6 +41,28 @@ router.post('/command', async (req, res) => {
   } catch (e) {
     logger.error('[world] direct command failed:', e.message);
     res.status(500).json({ error: 'the world flickered — try again' });
+  }
+});
+
+/* THE ANGEL LANE, direct (Aug 9 2026 — last session's designed opener,
+ * built): plain English in, the city changed, a chronicle out. Admin-only —
+ * the Angel answers the Founder. One K3 call per ask, zero idle cost; the
+ * execution half is the same chronicled runCommand as every traveler.
+ * Body: { instruction } (or { command } — the native box sends that). */
+router.post('/angel', async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'the angel answers only the Founder' });
+    }
+    const instruction = String(req.body?.instruction || req.body?.command || '').slice(0, 2000);
+    if (!instruction.trim()) {
+      return res.status(400).json({ error: 'tell the angel what to build' });
+    }
+    const out = await angelBuild(instruction.trim());
+    res.json({ ok: true, note: out.note, results: out.results, lines: angelLines(out) });
+  } catch (e) {
+    logger.error('[world] angel failed:', e.message);
+    res.status(500).json({ error: 'the angel lost the thread — try again' });
   }
 });
 
