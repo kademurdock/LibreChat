@@ -100,6 +100,17 @@ class KadeGames extends Tool {
       'EXACT token they pick. NEVER invent cards, totals, or outcomes and never claim a move the engine did not return — ' +
       "the tool result is the truth. Use action='list_games' to see the menu, 'games' to find a table to resume, 'state' to " +
       "re-read the current table, 'quit' to end one. Games save per user, so a table can be resumed in any later conversation.";
+    /* Aug 9 2026: everything the model must KNOW (as opposed to everything
+     * the player should SEE) lives here — description_for_model is private
+     * scaffolding LibreChat never renders, unlike tool results, which it
+     * does. Moved out of render() after Kade read the coaching on screen. */
+    this.description_for_model =
+      this.description +
+      ' HOW TO READ A RESULT: the lines are the table as it truly is — never invent a card, total, or outcome, and never claim a move the engine did not return.' +
+      ' LEGAL MOVES are exact tokens; offer them to the player in your own voice (never read raw tokens aloud), then send the one they pick.' +
+      ' The final CUES line is machine decoration: copy each token into your reply exactly once, placed where that beat happens in your telling ([table:…] draws the live table for sighted players, [sound:…] plays real table sounds).' +
+      ' Cue tokens are invisible to every reader and stripped from speech — never mention them, never describe them, never read them out.' +
+      ' On GAME OVER, relay the result warmly and offer a rematch or another game.';
     this.schema = kadeGamesJsonSchema;
   }
 
@@ -117,22 +128,21 @@ class KadeGames extends Tool {
     // Same carry pattern as the sound cues; invisible in every text surface,
     // stripped from TTS/phone/SMS, and the widget is aria-hidden so screen
     // readers never notice it. Include it ONCE per reply.
-    out.unshift(
-      `TABLE PICTURE — copy this token into your reply exactly ONCE (ideally at the start): [table:${doc.gameId}] — it draws the live table on screen for sighted players and is invisible to everyone else. Never mention it.`,
-      '',
-    );
+    /* Aug 9 2026 (her report: "some code showing up… like coaching
+     * instructions for itself… the game parlor and the world need to have
+     * that stuff cleaned up"). ROOT CAUSE: the standing how-to-use-tokens
+     * lecture was prepended to every TOOL RESULT — and tool results are
+     * rendered on screen, so she read the engine coaching the model.
+     * Instructions belong in description_for_model (private, sent once);
+     * the result carries FACTS plus one terse cue line the model knows how
+     * to read. Same tokens, same behavior, none of the lecture. */
     const cues = [...new Set([...(extra.sounds || []), ...(v.sounds || [])])];
-    if (cues.length) {
-      out.unshift(
-        `SOUND CUES — copy each token below into your reply EXACTLY as written, placed where that action happens in your telling. They are invisible to the reader and play as real table sounds, so never mention them: ${cues.map((c) => `[sound:${c}]`).join(' ')}`,
-        '',
-      );
-    }
+    const cueTokens = [`[table:${doc.gameId}]`, ...cues.map((c) => `[sound:${c}]`)];
     if (extra.log && extra.log.length) {
       out.push('', 'What just happened:', ...extra.log.map((l) => `· ${l}`));
     }
     if (v.over) {
-      out.push('', 'GAME OVER. Relay the result warmly, then offer a rematch (new_game) or a different game.');
+      out.push('', 'GAME OVER.');
     } else {
       const MAX_SHOWN = 14;
       const legalLines =
@@ -142,14 +152,9 @@ class KadeGames extends Tool {
               `- …plus ${v.legal.length - 8} more — ${v.legalHint}`,
             ]
           : v.legal.map((m) => `- ${m.token}  →  ${m.label}`);
-      out.push(
-        '',
-        'LEGAL MOVES — you may ONLY use one of these exact tokens; the engine rejects anything else:',
-        ...legalLines,
-        '',
-        "Tell the player their options in your own voice (don't read the raw tokens aloud). When they choose, call kade_games action='move' with the matching token.",
-      );
+      out.push('', 'LEGAL MOVES:', ...legalLines);
     }
+    out.push('', `CUES: ${cueTokens.join(' ')}`);
     return out.join('\n');
   }
 
@@ -170,8 +175,6 @@ class KadeGames extends Tool {
         return [
           'Games you can play right now (all by voice, all free):',
           ...games.map((g) => `- ${g.name} (say "play ${g.name.toLowerCase()}") — ${g.blurb}`),
-          '',
-          'More games are coming. Ask the player what they feel like, then new_game it.',
         ].join('\n');
       }
 
