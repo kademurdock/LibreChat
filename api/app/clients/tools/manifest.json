@@ -115,6 +115,14 @@
     "authConfig": []
   },
   {
+    "name": "Deep research",
+    "pluginKey": "kade_research",
+    "description": "Real background research: many searches, many sources read and cross-checked, then a clear spoken report with numbered citations. Takes a few minutes and taps your phone when it's ready. Try: \"really dig into which hearing aid brands are worth it.\"",
+    "icon": "https://www.tavily.com/favicon.ico",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Read a webpage",
     "pluginKey": "kade_read_page",
     "description": "You share a link, it reads the page and returns just the article text — no ads, menus, or clutter. Great for having a webpage read aloud. It can't log into sites or fill out forms, and some paywalled pages won't open. Try: \"read me this article\" with a link pasted in.",

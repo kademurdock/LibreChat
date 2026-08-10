@@ -38,6 +38,7 @@ const {
   KadeWikipedia,
   KadeJoke,
   KadeNews,
+  KadeResearch,
   KadeReadPage,
   KadeAdventure,
   KadeGames,
@@ -207,6 +208,7 @@ const loadTools = async ({
     kade_wikipedia: KadeWikipedia,
     kade_joke: KadeJoke,
     kade_news: KadeNews,
+    kade_research: KadeResearch,
     kade_read_page: KadeReadPage,
     kade_adventure: KadeAdventure,
     kade_games: KadeGames,
@@ -325,6 +327,13 @@ const loadTools = async ({
       req: options.req,
       userId: kadeActingUserId,
       userName: kadeActingUserName,
+      agentId: agent?.id || agent?.agent_id,
+      agentName: agent?.name,
+    },
+    /** DEEP RESEARCH (Aug 10 2026): background multi-source research via the
+     * bridge. userId scopes jobs + reports; agent name rides the done-push. */
+    kade_research: {
+      userId: kadeActingUserId,
       agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,
     },
