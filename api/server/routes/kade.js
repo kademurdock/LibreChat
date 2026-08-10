@@ -1169,8 +1169,16 @@ router.get('/admin/logs-convos', requireJwtAuth, requireAdminAccess, async (req,
     const userId = String(req.query.userId || '').trim();
     if (!userId) return res.status(400).json({ error: 'userId required' });
     const { Conversation } = logsModels();
+    /* Aug 9 2026 (her bloat report, root-caused): this raw find() showed
+     * every isTemporary scratch turn — 24 canary probes a day, phone-turn
+     * shadows — burying her real audit trail in lab noise. The convo LIST
+     * respects the retention filter; this admin drill-down now does the
+     * moral equivalent. ?temp=1 shows the scratch layer when an audit
+     * genuinely wants it. */
+    const includeTemp = String(req.query.temp || '') === '1';
+    const filter = includeTemp ? { user: userId } : { user: userId, isTemporary: { $ne: true } };
     const convos = await Conversation.find(
-      { user: userId },
+      filter,
       { conversationId: 1, title: 1, updatedAt: 1, endpoint: 1 },
     )
       .sort({ updatedAt: -1 })
