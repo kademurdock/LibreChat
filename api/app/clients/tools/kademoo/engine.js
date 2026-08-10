@@ -1024,7 +1024,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     return { ok: true, lines };
   }
   if ((verbRaw === '@answered' || verbRaw === '@granted') && isWizard) {
-    const target = await MooChar.findOne({ name: new RegExp('^' + escapeRe(rest.trim()) + '$', 'i') });
+    const target = await MooChar.findOne({ name: new RegExp('^' + escapeRe(rest.trim().replace(/_/g, ' ')) + '$', 'i') });
     if (!target) { lines.push(`No character "${rest.trim()}".`); return { ok: false, lines }; }
     const field = verbRaw === '@answered' ? 'attrs.openPetition' : 'attrs.openWish';
     await MooChar.updateOne({ _id: target._id }, { $unset: { [field]: '' } });
@@ -1174,12 +1174,14 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
       return { ok: true, lines };
     }
     if (wverb === 'set') {
-      const m = rest.match(/^(\S+)\s+(\S+)\s+([\s\S]+)$/);
+      /* Names come in parts (Aug 10 2026): quote a spaced name — @set "Ruby
+       * Boggs" standing 5 — or use underscores: @set Ruby_Boggs standing 5. */
+      const m = rest.match(/^"([^"]+)"\s+(\S+)\s+([\s\S]+)$/) || rest.match(/^(\S+)\s+(\S+)\s+([\s\S]+)$/);
       if (!m) {
-        lines.push('Usage: @set me|here|<player>|item:<name> <path> <value>. Value parses as JSON when it can, else string. Example: @set me standing 5');
+        lines.push('Usage: @set me|here|"<player name>"|item:<name> <path> <value>. Value parses as JSON when it can, else string. Example: @set me standing 5');
         return { ok: false, lines };
       }
-      const targetRaw = m[1];
+      const targetRaw = m[1].replace(/_/g, ' ');
       const path = m[2];
       const valueRaw = m[3];
       let value;
@@ -1236,7 +1238,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
       return { ok: Boolean(target), lines };
     }
     if (wverb === 'deputize' || wverb === 'undeputize') {
-      const target = await MooChar.findOne({ name: new RegExp('^' + escapeRe(rest.trim()) + '$', 'i') });
+      const target = await MooChar.findOne({ name: new RegExp('^' + escapeRe(rest.trim().replace(/_/g, ' ')) + '$', 'i') });
       if (!target) {
         lines.push(`No character "${rest.trim()}".`);
         return { ok: false, lines };
@@ -1286,10 +1288,10 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
       return { ok: true, lines };
     }
     if (wverb === 'coin') {
-      const m = rest.match(/^(\S+)\s+(-?\d+)$/);
-      const target = m ? await MooChar.findOne({ name: new RegExp('^' + escapeRe(m[1]) + '$', 'i') }) : null;
+      const m = rest.match(/^(.+?)\s+(-?\d+)$/);
+      const target = m ? await MooChar.findOne({ name: new RegExp('^' + escapeRe(m[1].replace(/_/g, ' ')) + '$', 'i') }) : null;
       if (!target) {
-        lines.push('Usage: @coin <player> <amount> — grants (negative removes) coin.');
+        lines.push('Usage: @coin <player> <amount> — grants (negative removes) coin. Spaced names work plain: @coin Ruby Boggs 10.');
         return { ok: false, lines };
       }
       const amt = parseInt(m[2], 10);

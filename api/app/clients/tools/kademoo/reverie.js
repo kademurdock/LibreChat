@@ -14,7 +14,7 @@
 const { MooRoom, MooChar, MooItem, MooDistrict, MooEvent, nextSeq } = require('~/models/kadeMoo');
 const { logger } = require('@librechat/data-schemas');
 
-const REVERIE_SEED_VERSION = 2;
+const REVERIE_SEED_VERSION = 3;
 
 /* ── THE WARDS ─────────────────────────────────────────────────────────────
  * District props carry the law tables (bible design: the engine never
@@ -899,6 +899,13 @@ async function carveReverie() {
       { upsert: true },
     );
   }
+  /* Grandfather clause (seed v3): characters born before the comfort attrs
+   * arrive Fed, Rested, and with the same pocket money newcomers get. The
+   * Founder does not walk her own city broke. */
+  const nowMs = Date.now();
+  await MooChar.updateMany({ 'attrs.coin': { $exists: false } }, { $set: { 'attrs.coin': 20 } });
+  await MooChar.updateMany({ 'attrs.lastMeal': { $exists: false } }, { $set: { 'attrs.lastMeal': nowMs } });
+  await MooChar.updateMany({ 'attrs.lastSleep': { $exists: false } }, { $set: { 'attrs.lastSleep': nowMs } });
   await MooDistrict.updateOne(
     { districtId: 'reverie_meta' },
     { $set: { name: 'reverie meta', 'props.seedVersion': REVERIE_SEED_VERSION, 'props.carvedAt': new Date().toISOString() } },
