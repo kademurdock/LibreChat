@@ -15,6 +15,14 @@ router.use(requireJwtAuth);
 
 router.post('/command', async (req, res) => {
   try {
+    /* HER CALL (Aug 10 2026): Reverie stays behind the admin gate for now —
+     * "hidden behind the admin gate but eventually moved more public." The
+     * hatch is one env var: REVERIE_PUBLIC=1 opens the city to every account,
+     * no code change. Family who wander onto /world early hear a closed gate,
+     * kindly. */
+    if (req.user.role !== 'ADMIN' && process.env.REVERIE_PUBLIC !== '1') {
+      return res.json({ ok: false, lines: ['The Threshold Gate is closed. Beyond it, a city is being built — you can hear faint hammering and, once, a bell ringing the wrong hour. It will open when the Founder says it opens.'] });
+    }
     const command = String(req.body?.command || '').slice(0, 400);
     if (!command.trim()) {
       return res.status(400).json({ error: 'empty command' });
