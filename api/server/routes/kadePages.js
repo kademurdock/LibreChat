@@ -2869,7 +2869,18 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>The World — bey
     hist.push(cmd); histIx=hist.length;
     try{
       var r=await fetch('/api/world/command',{method:'POST',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
-      if(!r.ok){ addLine('The world flickered ('+r.status+'). Try again.', 'err'); playKind('err'); return; }
+      /* Aug 10 2026 (her session-close report: a command "trashed the whole
+       * page — transmission error"): the token was fetched ONCE at page
+       * load, so a tab left open past token expiry got a 401 on every
+       * command forever — "try again" was a lie until a full reload. Now a
+       * 401 quietly re-fetches the token and retries the command once;
+       * only a genuinely dead session asks her to sign back in. */
+      if(r.status===401){
+        TOKEN=await getToken();
+        if(TOKEN){ r=await fetch('/api/world/command',{method:'POST',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({command:cmd})}); }
+        if(!TOKEN || r.status===401){ addLine('The gate lost track of you — sign in on the main site, then come back.', 'err'); playKind('err'); return; }
+      }
+      if(!r.ok){ addLine('The world flickered ('+r.status+') — that one did not land. Try it again in a moment.', 'err'); playKind('err'); return; }
       var d=await r.json();
       (d.lines||[]).forEach(function(line){
         addLine(line, /^MEANWHILE/.test(line)?'meanwhile':'world');
