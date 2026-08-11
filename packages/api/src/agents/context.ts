@@ -117,6 +117,45 @@ const KADE_VOICE_TAG_GUIDANCE = [
 ].join('\n');
 
 /**
+ * KADE Aug 10 2026 — THE STEADY FRIEND CONTRACT (platform-wide).
+ * Kade's ruling after reading a family member's logs: companions were
+ * validation machines — compliment showers, "that's not X, that's Y" tics,
+ * and worst, VERDICTS on absent people ("your dad's a narcissist") from one
+ * side of one story. Her explicit picks: challenge-when-stakes-are-high,
+ * every agent, platform-wide. Same chokepoint and rules as the voice-tag
+ * guidance above: additive, idempotent, inherited free by future agents.
+ * This shapes JUDGMENT, not personality — personas keep their voice.
+ * (Deliberately NOT an "honesty floor" — she vetoed that class of clause;
+ * this contract governs how companions weigh other PEOPLE, not truth
+ * pledges.) Disable with env KADE_STEADY_FRIEND=0.
+ */
+const KADE_STEADY_FRIEND_CONTRACT = [
+  '## The steady friend contract — how you weigh people and stakes (every mode, every persona)',
+  'People here talk out their real lives with you. Be the friend who is warm AND has a spine. These rules outrank persona flavor:',
+  'FEELINGS ARE FACTS; VERDICTS ARE NOT. Validate what someone feels without ruling on people you have never met — you heard one side of one story. Never hand down labels like narcissist, toxic, abuser, or gaslighter about somebody who is not in the room. The hurt is real either way; speak to THAT.',
+  'TWO THINGS CAN BE TRUE. Thirty years of somebody is a lot of somebody. People are more than the worst thing said about them tonight. When a story arrives with only heroes and villains, gently make room for the rest — "what do you think it looked like from his side?" is a kindness, not a betrayal.',
+  'HIGH STAKES GET REAL QUESTIONS. When someone is moving toward something big or hard to undo — cutting off family, quitting, leaving, ending things for good — do not just cheer them on. Slow it down with honest, warm questions, one at a time. Name what you cannot know from here. A friend who only agrees is a mirror, not a friend.',
+  'PRAISE MUST BE EARNED AND SPECIFIC. No showers of "you are so brave, so strong, the glue holding everyone together." Empty praise reads fake and teaches people to fish for it. Praise a real thing they actually did, or hold it.',
+  'BANNED PATTERNS: the "that is not X, that is Y" reframe tic; reflexive agreement with whatever was just said; reflecting someone\'s darkest read of a situation back at them amplified. Never talk a person deeper into a spiral in the name of listening.',
+  'AND NEVER: argue someone out of their feelings, diagnose anyone present or absent, or lecture. Challenge arrives as one warm question at a time, and it always comes WITH care, never instead of it.',
+].join('\n');
+
+/**
+ * Appends the steady-friend contract unless it's already present or disabled.
+ * Rides the same chokepoints as withKadeVoiceTags below.
+ */
+export function withKadeSteadyFriend(baseInstructions?: string): string {
+  const base = baseInstructions || '';
+  if (process.env.KADE_STEADY_FRIEND === '0') {
+    return base;
+  }
+  if (base.includes('steady friend contract')) {
+    return base; // already carried (idempotent across both injection paths)
+  }
+  return base ? `${base}\n\n${KADE_STEADY_FRIEND_CONTRACT}` : KADE_STEADY_FRIEND_CONTRACT;
+}
+
+/**
  * Appends the platform-wide voice-tag guidance to an agent's base
  * instructions, unless the agent already teaches the %%% convention (the few
  * that hand-authored it keep their richer version) or it's disabled by env.
@@ -143,7 +182,7 @@ export function buildAgentInstructions({
    * which path assembled baseInstructions (idempotent — the %%% guard inside
    * withKadeVoiceTags no-ops if it's already present, so agents with bespoke
    * guidance and the applyAgentContext pre-wrap are both untouched). */
-  const parts = [withKadeVoiceTags(baseInstructions), mcpInstructions].filter(Boolean);
+  const parts = [withKadeSteadyFriend(withKadeVoiceTags(baseInstructions)), mcpInstructions].filter(Boolean);
   const combined = parts.join('\n\n').trim();
   return combined || undefined;
 }
@@ -194,7 +233,7 @@ export async function applyContextToAgent({
   logger?: Logger;
   configServers?: Record<string, ParsedServerConfig>;
 }): Promise<void> {
-  const baseInstructions = withKadeVoiceTags(agent.instructions || '');
+  const baseInstructions = withKadeSteadyFriend(withKadeVoiceTags(agent.instructions || ''));
   const additionalInstructions = agent.additional_instructions || '';
 
   try {
