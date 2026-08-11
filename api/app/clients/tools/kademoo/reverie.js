@@ -782,9 +782,11 @@ const CENSUS = [
 
 const CENSUS_BY_ID = Object.fromEntries(CENSUS.map((c) => ['npc:' + c.id, c]));
 
-/* ── WEATHER (deterministic, Missouri-flavored) ────────────────────────────
+/* ── WEATHER (deterministic, hill-country-flavored) ────────────────────
  * Pure function of the real calendar: same hour, same sky, every process.
- * Occasionally dramatic for no reason, per the design doc and per Missouri. */
+ * The FEEL is hills-and-hollers, because that is what the Founder folded in.
+ * The NAME of a real place stays out of every string a player can read.
+ * Occasionally dramatic for no reason — hills against a sea will do that. */
 function hashStr(s) {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }

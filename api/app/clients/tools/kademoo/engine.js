@@ -151,7 +151,9 @@ function escapeRe(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** World time = Missouri time, honestly. Buckets for flavor + future
+/** World time rides Central so the city's clock matches the Founder's own.
+ *  That is an IMPLEMENTATION fact and must never surface in-world: nothing
+ *  a player reads may name a real place. Buckets for flavor + future
  *  room.props.nightDesc hooks. */
 function worldTime() {
   const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false });
@@ -714,7 +716,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
   /* WEATHER — one sky, eight wards' worth of sound. */
   if (verb === 'weather' || verb === 'sky') {
     const w = reverie.weatherNow();
-    lines.push(w.line + ' (Missouri weather. It is occasionally dramatic for no reason.)');
+    lines.push(w.line + ' (Reverie weather. The Founder folded hill country in against a sea that should not be there, and the sky has been dramatic for no reason ever since.)');
     return { ok: true, lines };
   }
 
