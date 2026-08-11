@@ -78,15 +78,34 @@ router.post('/angel', async (req, res) => {
 });
 
 /** The sound manifest — her designed audio as data. Clients merge this over
- *  their synth defaults; installing a sound in-world (@sound) needs no deploy. */
+ *  their synth defaults; installing a sound in-world (@sound) needs no deploy.
+ *
+ *  KADE 2026-08-11: sounds live in the PRIVATE Backblaze bucket, so a stored
+ *  s3 URL 401s on her phone. Presign at SERVE time (not install time) — the
+ *  manifest is re-fetched on every world page load and every native World
+ *  screen open, so each fetch hands the client URLs that are valid right now
+ *  and a stored link can never go stale. Same helper the gallery uses.
+ *  Non-S3 URLs (fal.media, anything public) pass through untouched. */
 router.get('/sounds', async (_req, res) => {
   try {
     const { MooSound } = require('~/models/kadeMoo');
+    const { needsRefresh, getNewS3URL } = require('@librechat/api');
     const rows = await MooSound.find({}).lean();
+    const fresh = async (url) => {
+      const u = String(url || '');
+      try {
+        if (/[?&]X-Amz-/.test(u) && typeof needsRefresh === 'function' && needsRefresh(u, 3600)) {
+          return await getNewS3URL(u);
+        }
+      } catch (e) {
+        logger.warn('[world] sound URL re-sign failed (serving stored):', e.message);
+      }
+      return u;
+    };
     const manifest = { event: {}, room: {}, district: {} };
     for (const r of rows) {
       if (manifest[r.scopeType]) {
-        manifest[r.scopeType][r.scopeId] = r.url;
+        manifest[r.scopeType][r.scopeId] = await fresh(r.url);
       }
     }
     res.json(manifest);
