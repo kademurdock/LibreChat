@@ -234,6 +234,15 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
 
   const [verbRaw, ...restArr] = lower.split(' ');
   const rest = restArr.join(' ');
+  /* KADE 2026-08-11: `rest` comes off the LOWERCASED command, which is right
+   * for syntax (directions, verbs, ids) and wrong for CONTENT. Every builder
+   * verb was writing lowercase into the world: room descriptions, item names,
+   * item prose, attribute values -- and, the bug that surfaced it, @sound URLs
+   * (an S3 presigned signature is case-sensitive, so a lowercased URL 401s on
+   * her phone). `restRaw` is the same text with its case intact. Rule: parse
+   * with `rest`, STORE from `restRaw`. The say/emote/speak/newchar verbs
+   * already did this by hand via cmd.slice(); this generalises it. */
+  const restRaw = cmd.slice(verbRaw.length).trim();
   const verb = DIR_ALIASES[verbRaw] && !rest ? 'go' : verbRaw;
   const arg = DIR_ALIASES[verbRaw] && !rest ? verbRaw : rest;
 
@@ -1051,7 +1060,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
       // @dig <dir> <Room Name...>
       const parts = rest.split(' ');
       const dirKey = DIR_ALIASES[(parts[0] || '').toLowerCase()];
-      const roomName = parts.slice(1).join(' ').trim();
+      const roomName = restRaw.split(' ').slice(1).join(' ').trim();
       if (!dirKey || !roomName) {
         lines.push('Usage: @dig <direction> <Room Name> — carves a new room that way, doors linked both ways.');
         return { ok: false, lines };
@@ -1080,7 +1089,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
       return { ok: true, lines, kinds: [...kinds, 'enter'] };
     }
     if (wverb === 'desc') {
-      const text = rest.trim();
+      const text = restRaw.trim();
       if (!text) {
         lines.push('Usage: @desc <text> — rewrites this room\'s description.');
         return { ok: false, lines };
@@ -1092,7 +1101,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     }
     if (wverb === 'create') {
       // @create <name> ; <desc>
-      const [namePart, ...descParts] = rest.split(';');
+      const [namePart, ...descParts] = restRaw.split(';');
       const iname = (namePart || '').trim();
       const idesc = descParts.join(';').trim() || 'It resists description, for now.';
       if (!iname) {
@@ -1126,7 +1135,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
       return { ok: true, lines };
     }
     if (wverb === 'itemdesc') {
-      const [namePart, ...descParts] = rest.split(';');
+      const [namePart, ...descParts] = restRaw.split(';');
       const iname = (namePart || '').trim();
       const idesc = descParts.join(';').trim();
       if (!iname || !idesc) {
@@ -1301,6 +1310,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     }
     if (wverb === 'sound') {
       const parts = rest.split(' ');
+      const rawParts = restRaw.split(' ');
       const scopeType = (parts[0] || '').toLowerCase();
       if (scopeType === 'clear') {
         await MooSound.deleteOne({ scopeType: (parts[1] || '').toLowerCase(), scopeId: parts[2] === 'here' ? ch.roomId : (parts[2] || '') });
@@ -1308,7 +1318,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
         return { ok: true, lines };
       }
       const scopeId = parts[1] === 'here' ? ch.roomId : (parts[1] || '');
-      const url = parts.slice(2).join(' ').trim();
+      const url = rawParts.slice(2).join(' ').trim(); // case-sensitive: signed URLs
       if (!['event', 'room', 'district'].includes(scopeType) || !scopeId || !/^https?:\/\//.test(url)) {
         lines.push('Usage: @sound event <kind> <url> · @sound room here <url> · @sound district <id> <url> · @sound clear <type> <id>. Kinds: move, look, take, drop, say, emote, enter, leave, err.');
         return { ok: false, lines };
