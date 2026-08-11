@@ -122,8 +122,18 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
      * agents, no per-agent data mutations (the kade_notify-era PATCH loop is
      * retired for this; auto-injection IS the house fleet-roll pattern). The
      * tool self-guards: server-side scope = shared + own agent only, and the
-     * diary respects the user's memory toggle + KADE_DIARY kill switch. */
-    const autoTools = ['kade_feedback', 'kade_message', 'kade_memory_search'];
+     * diary respects the user's memory toggle + KADE_DIARY kill switch.
+     * KADE 2026-08-11: kade_research joins on her word ("kade_research to
+     * everyone"). It was wired to Kiana + Forge only since Aug 10. Rails are
+     * unchanged and all server-side: RESEARCH_ENABLED=0 kill switch on the
+     * bridge, 8 runs/user/day, queue cap 4, 12-minute hard timeout, and every
+     * run writes a dollar receipt to research-receipts.jsonl. $0 when idle. */
+    const autoTools = [
+      'kade_feedback',
+      'kade_message',
+      'kade_memory_search',
+      'kade_research',
+    ];
     const withFeedback = toolless
       ? []
       : [..._tools, ...autoTools.filter((t) => !_tools.includes(t))];
