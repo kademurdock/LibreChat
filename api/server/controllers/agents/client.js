@@ -1110,7 +1110,24 @@ class AgentClient extends BaseClient {
       abortController: opts.abortController,
     });
 
-    const completion = filterMalformedContentParts(this.contentParts);
+    let completion = filterMalformedContentParts(this.contentParts);
+    /* KADE 2026-08-11 — THE PROMISE GUARD (see utils/kadePromiseGuard.js).
+     * A character said "done and done" about a reminder it never set, and a
+     * real appointment nearly went unremembered. This is the last place in a
+     * turn where the reply text and the turn's tool calls are both in hand,
+     * so it is the only place that can tell a kept promise from a claimed
+     * one. Never rewrites what was said -- appends one honest correction.
+     * Fail-soft: a guard that throws must never cost someone their reply. */
+    try {
+      const { applyReminderPromiseGuard } = require('~/server/utils/kadePromiseGuard');
+      completion = applyReminderPromiseGuard(completion, {
+        agentTools: this.options?.agent?.tools,
+        agentId: this.options?.agent?.id,
+        logger,
+      });
+    } catch (e) {
+      logger.warn('[kade/promise-guard] skipped:', e.message);
+    }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };
   }

@@ -101,6 +101,15 @@ class KadeNotify extends Tool {
     this.description_for_model =
       this.description +
       " For 'send', write the 'body' in your own voice, short and plain (under ~200 chars). The tool tells you whether it ACTUALLY sent: if it reports blocked (quiet hours, cooldown, cap) or that no phone is registered, say so plainly and do NOT claim you notified them. NEVER claim you sent, scheduled, or reminded anything unless the tool confirms it. " +
+      /* KADE 2026-08-11: this rule was already here and was broken anyway --
+       * Kiana told Amber "Done and done, I'll ping your phone Wednesday at
+       * 3:30" about her mother's dentist appointment and never called the
+       * tool at all. So the rule is now stated as a sequence rather than a
+       * principle, because "call the tool BEFORE you say the words" is
+       * checkable and "never claim" is a vibe. A server-side guard now
+       * catches it too (utils/kadePromiseGuard.js) -- this wording is the
+       * first line, not the only one. */
+      "THE ORDER MATTERS, AND IT IS NOT OPTIONAL: call set_reminder FIRST, read what it returns, and only THEN write the sentence that tells them it is set. Never the other way round. If you have not seen the tool answer 'Reminder set (id ...)' in this very turn, then no reminder exists, and words like 'done', 'all set', 'locked in', or \"I'll ping you Wednesday at 3:30\" are false -- someone is going to plan their day around a phone that will never buzz. A real person missed a real medical appointment reminder this exact way. If you cannot set it, say plainly that you could not and why. An honest 'I can't' costs nothing; a cheerful 'done' that isn't true costs them the appointment. " +
       "For a ONE-OFF reminder, use action='set_reminder' with 'body' (the exact text to deliver later) and either 'in_minutes' or both 'fire_date' (YYYY-MM-DD, work out the real date from today's date) and 'fire_time' (HH:mm Central); confirm the wording and timing with the user first, then offer list_reminders/cancel_reminder if they want to check or change it. " +
       "For a recurring check-in, use action='schedule_checkin' with a 'time' (and optional 'days'/'topic'); confirm the time with the user first. Offer a 'test_checkin' so they can hear one. Only set urgent:true for truly time-critical send/schedule_checkin alerts. " +
       "If the user asks for something that will take a while and might step away, tell them plainly you'll ping their phone when it's done, then actually call action='send' with a short done message once you finish -- before your final reply, not instead of it. " +
