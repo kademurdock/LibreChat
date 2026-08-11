@@ -2033,6 +2033,85 @@ router.youPage = sendHtml(YOU_HTML);
 router.pronunciationDictionaryPage = sendHtml(PRONUNCIATION_DICTIONARY_HTML);
 router.diaryPage = sendHtml(DIARY_HTML);
 router.briefPage = sendHtml(BRIEF_HTML);
+/* ----------------------------------------------------------------------------
+ * BUILD 197 (Aug 11 2026): TWO ADMIN PEEPHOLES ONTO THE BRIDGE.
+ *
+ * The bridge guards /front-desk and /diagnostics with BRIDGE_SECRET. A phone
+ * app cannot hold that secret -- anything shipped in a binary is extractable,
+ * and this one unlocks the whole phone lane. So the fork proxies: the app
+ * sends its ordinary admin JWT, this server holds the secret, the bridge never
+ * hears from the phone directly. Same shape as /admin/phone-register (July 21)
+ * and the wellness proxies.
+ *
+ * These are READ-ONLY on purpose. Nothing here can change the world; the worst
+ * a bug can do is show Kade a stale list.
+ * -------------------------------------------------------------------------- */
+
+/** Messages the front desk took from callers the registry doesn't know. */
+router.get('/admin/front-desk', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    if (!bridgeSecretOk(res)) return;
+    const r = await fetch(`${BRIDGE_URL}/front-desk?secret=${encodeURIComponent(process.env.BRIDGE_SECRET)}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+    const j = await r.json();
+    return res.status(r.status).json(j);
+  } catch (e) {
+    logger.error('[kade/admin/front-desk] failed:', e);
+    return res.status(502).json({ error: 'Could not reach the phone bridge.' });
+  }
+});
+
+/** The crash ring -- what the app told on itself about, newest last.
+ *  Named /app-crashes rather than /diagnostics because "diagnostics" on this
+ *  side would read like the SITE's diagnostics; these are the phone's. */
+router.get('/admin/app-crashes', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    if (!bridgeSecretOk(res)) return;
+    const r = await fetch(`${BRIDGE_URL}/diagnostics?secret=${encodeURIComponent(process.env.BRIDGE_SECRET)}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+    const j = await r.json();
+    /* The ring stores { at, build, device, kind, payload, breadcrumbs } and the
+     * payload is a whole MetricKit dump -- hundreds of KB of stack that no
+     * phone screen can use and no phone should download. Read live before
+     * mapping: `signature` is NOT a stored field, the bridge parses it at
+     * POST time for its log line only, and `breadcrumbs` is a newline STRING,
+     * not an array. So parse the same signature here and hand the app a
+     * readable card; the monsters stay on the bridge for a session that
+     * actually needs a stack. */
+    const entries = Array.isArray(j && j.entries) ? j.entries : [];
+    const signatureOf = (payload) => {
+      try {
+        const p = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        const meta = p && p.crashDiagnostics && p.crashDiagnostics[0] && p.crashDiagnostics[0].diagnosticMetaData;
+        if (!meta) return null;
+        const reason = String(meta.terminationReason || '').slice(0, 140);
+        return [
+          meta.exceptionType != null ? `type ${meta.exceptionType}` : null,
+          meta.exceptionCode != null ? `code ${meta.exceptionCode}` : null,
+          meta.signal != null ? `signal ${meta.signal}` : null,
+          reason || null,
+        ].filter(Boolean).join(' · ') || null;
+      } catch (_e) {
+        return null;
+      }
+    };
+    const slim = entries.slice().reverse().map((e) => ({
+      at: e.at || null,
+      kind: e.kind || null,
+      build: e.build || null,
+      device: e.device || null,
+      signature: signatureOf(e.payload),
+      breadcrumbs: String(e.breadcrumbs || '').split('\n').filter(Boolean).slice(-12),
+    }));
+    return res.json({ count: (j && j.count) || entries.length, entries: slim });
+  } catch (e) {
+    logger.error('[kade/admin/app-crashes] failed:', e);
+    return res.status(502).json({ error: 'Could not reach the phone bridge.' });
+  }
+});
+
 router.requestAccessPage = sendHtml(REQUEST_ACCESS_HTML);
 router.accessRequestsPage = sendHtml(ACCESS_REQUESTS_HTML);
 router.worldPage = sendHtml(WORLD_HTML);

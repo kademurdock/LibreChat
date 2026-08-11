@@ -193,13 +193,20 @@ async function collectMeanwhile(ch) {
 
 async function describeRoom(ch) {
   const room = await MooRoom.findOne({ roomId: ch.roomId }).lean();
-  if (!room) return { name: 'Nowhere', desc: 'You are somewhere the world forgot to build. Say "go gate" to be rescued.', exits: [], items: [], people: [] };
+  if (!room) return { roomId: null, name: 'Nowhere', desc: 'You are somewhere the world forgot to build. Say "go gate" to be rescued.', exits: [], items: [], people: [] };
   const items = await MooItem.find({ 'location.type': 'room', 'location.id': room.roomId }).lean();
   const people = await MooChar.find({ roomId: room.roomId, userId: { $ne: ch.userId } })
     .select('name userId attrs.posture lastActiveAt')
     .lean();
   const exits = Object.keys(room.exits || {}).map((k) => DIR_WORDS[k] || k);
   return {
+    /* KADE 2026-08-11 (build 197): roomId travels with the room. The sound
+     * manifest has THREE scopes -- event, room, district -- and until now a
+     * client was handed `district` but never the room's own id, so the whole
+     * `room` scope was data nothing could ever reach. This one field completes
+     * 16.1's three-layer sound design: ward bed (district) under room tone
+     * (roomId) under the weather. Additive; every existing client ignores it. */
+    roomId: room.roomId,
     name: room.name,
     district: room.district,
     desc: room.props?.outdoor ? `${room.desc} ${reverie.weatherNow().line}` : room.desc,
