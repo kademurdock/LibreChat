@@ -188,7 +188,11 @@ async function collectMeanwhile(ch) {
   ch.lastSeenSeq = top ? top.seq : ch.lastSeenSeq;
   await MooChar.updateOne({ userId: ch.userId }, { $set: { lastSeenSeq: ch.lastSeenSeq, lastActiveAt: new Date() } });
   /* structured for sound-driving clients; text-consumers join .text */
-  return events.map((e) => ({ kind: e.kind, text: e.text }));
+  /* KADE 2026-08-12: `sound` rides along beside `kind`. Additive, same shape
+   * as the build-197 roomId addition -- a client that does not know the field
+   * ignores it, and one that does plays the named file instead of the generic
+   * earcon for the event's kind. */
+  return events.map((e) => ({ kind: e.kind, text: e.text, sound: e.sound || null }));
 }
 
 async function describeRoom(ch) {

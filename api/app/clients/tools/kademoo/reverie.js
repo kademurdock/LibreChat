@@ -966,14 +966,38 @@ async function tickWorld() {
         await MooEvent.create({ seq, roomId: r.roomId, actorUserId: null, actorName: 'the sky', kind: 'system', text: `The weather turns. ${w.line}`, at: new Date() });
       }
     }
-    /* 3 — the night freight, once a night, heard everywhere someone is. */
+    /* 3 — the night freight, once a night, heard everywhere someone is.
+     *
+     * KADE 2026-08-12 (the physics pass): the text has always said "every ward
+     * hears it at a different distance." As of tonight that is true in the
+     * EARS too, not just on the page. Three wards carry the line — Long Acre's
+     * fields, Millrace's yards, the Hook where it ends at the water — and they
+     * get the near horn. Everywhere else gets the far one: no sharp edge left,
+     * mostly reflection off rooftops, smeared long. Indoors gets the version
+     * that came through a shut door, which is a different recording again.
+     *
+     * Sound is slow — half a mile is real seconds — so nobody is pretending
+     * this is one sound played louder. They are three separate takes, and the
+     * blind ear told them apart cold before any of them shipped. */
     const t = centralNow();
     const today = `${t.y}-${t.mo}-${t.d}`;
     if (t.h === 23 && t.mi >= 35 && lastHornDate !== today) {
       lastHornDate = today;
+      const HORN_NEAR = 'transit.train.horn.night';
+      const HORN_FAR = 'transit.train.horn.night.far';
+      const HORN_THRU = 'transit.train.horn.night.thru';
+      const ON_THE_LINE = new Set(['longacre', 'millrace', 'hook']);
+      const where = await MooRoom.find({ roomId: { $in: rooms } })
+        .select('roomId district props.outdoor')
+        .lean();
+      const byRoom = Object.fromEntries(where.map((r) => [r.roomId, r]));
       for (const roomId of rooms) {
+        const r = byRoom[roomId];
+        const sound = !r || !r.props?.outdoor
+          ? HORN_THRU
+          : ON_THE_LINE.has(r.district) ? HORN_NEAR : HORN_FAR;
         const seq = await nextSeq();
-        await MooEvent.create({ seq, roomId, actorUserId: null, actorName: 'the night freight', kind: 'system', text: 'Far off, the night freight sounds its horn — long vowels rolling over the roofs. Every ward hears it at a different distance. Old-timers claim they can tell the load. They cannot. They will not stop.', at: new Date() });
+        await MooEvent.create({ seq, roomId, actorUserId: null, actorName: 'the night freight', kind: 'system', sound, text: 'Far off, the night freight sounds its horn — long vowels rolling over the roofs. Every ward hears it at a different distance. Old-timers claim they can tell the load. They cannot. They will not stop.', at: new Date() });
       }
     }
     /* 4 — one ambient breath of the census, sometimes. */

@@ -64,6 +64,16 @@ const MooEventSchema = new mongoose.Schema(
     actorName: { type: String, default: 'the world' },
     kind: { type: String, required: true }, // say|emote|enter|leave|take|drop|system
     text: { type: String, required: true },
+    /* KADE 2026-08-12 (the physics pass): an event may NAME its own sound.
+     * Until now a client only ever saw `kind`, and the whole world emits
+     * kind:'system' for the night freight, every weather turn and every
+     * ambient census breath -- so a horn installed under 'system' would play
+     * when the sky changed. This field carries the wishlist id (e.g.
+     * 'transit.train.horn.night.far'), looked up in the same manifest the
+     * three scopes already use. Optional, null everywhere it is not set, so
+     * every existing event and every existing client behave exactly as before.
+     * It is what lets ONE event reach nine wards at nine different distances. */
+    sound: { type: String, default: null },
     at: { type: Date, default: Date.now },
   },
   { timestamps: false },
