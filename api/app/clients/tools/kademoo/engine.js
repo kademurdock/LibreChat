@@ -390,6 +390,43 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     return { ok: true, lines, room: roomView, kinds: [...kinds, 'move'], district: roomView.district };
   }
 
+  /* ORDERING NOTE (Aug 12 2026, found by losing a fish to it): this block sits
+   * ABOVE the item verbs on purpose. `give` is how you ease line to a running
+   * fish, and the generic `give <item> to <person>` handler was swallowing the
+   * bare word before the fight ever saw it — the first live catch snapped off
+   * mid-fight answering "Usage: give <item> to <person>." The guards below are
+   * tight: every fishing verb except `cast` requires an active line, so nothing
+   * here can shadow an ordinary command for a player who is not fishing. */
+  /* ── THE BITE (Aug 12 2026) — fishing as a real-time listening test.
+   * Her line: "a bite is a sound, not a text line." The nibble and the take are
+   * two different files, built to be told apart in half a second, and every
+   * verb below hands the client a sound id to play. No model in the loop and no
+   * server timers: the state lives on the character, and the clock that matters
+   * is the player's own. */
+  const onTheLine = !!ch.attrs?.fishing;
+  if (verb === 'cast'
+      || (onTheLine && ['wait', 'listen', 'set', 'strike', 'hold', 'land', 'release'].includes(verb))
+      || (onTheLine && verb === 'give' && !rest)
+      || (onTheLine && verb === 'reel' && /^in\b/.test(rest))
+      || (verb === 'sell' && !rest)) {
+    const froom = await MooRoom.findOne({ roomId: ch.roomId }).lean();
+    let out = null;
+    if (verb === 'cast') out = await fishing.cast(ch, froom);
+    else if (verb === 'wait' || verb === 'listen') out = await fishing.waitOn(ch);
+    else if (verb === 'set' || verb === 'strike') out = await fishing.setHook(ch);
+    else if (verb === 'hold') out = await fishing.fight(ch, 'hold');
+    else if (verb === 'give') out = await fishing.fight(ch, 'give');
+    else if (verb === 'land') out = await fishing.land(ch);
+    else if (verb === 'release') out = await fishing.release(ch);
+    else if (verb === 'reel') out = await fishing.reelIn(ch);
+    else if (verb === 'sell') out = await fishing.sellCatch(ch, froom);
+    if (out) {
+      for (const l of out.lines) lines.push(l);
+      if (out.busy) await setBusy(out.busy, out.doing || 'fishing');
+      return { ok: out.ok, lines, kinds: [...kinds], sounds: out.sounds || [] };
+    }
+  }
+
   if ((verb === 'take' || verb === 'get' || verb === 'grab') && !/ from /i.test(rest)) {
     const pat = new RegExp(arg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     const item = await MooItem.findOneAndUpdate(
@@ -916,33 +953,6 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} sets a penny on the rail and stands well back. The rumble builds from far off, arrives like weather, and is gone.`);
     lines.push('You set the penny on the rail and stand WELL back, like you were raised to. The rumble builds from far off — you hear it before you feel it, feel it before you see it. Then the freight is past, and the penny is thin as a leaf and warm as a pocket. You take your flattened penny.');
     return { ok: true, lines, kinds: [...kinds, 'take'] };
-  }
-
-  /* ── THE BITE (Aug 12 2026) — fishing as a real-time listening test.
-   * Her line: "a bite is a sound, not a text line." The nibble and the take are
-   * two different files, built to be told apart in half a second, and every
-   * verb below hands the client a sound id to play. No model in the loop and no
-   * server timers: the state lives on the character, and the clock that matters
-   * is the player's own. */
-  if (['cast', 'wait', 'listen', 'set', 'strike', 'hold', 'land', 'release', 'sell'].includes(verb)
-      || (verb === 'give' && !rest)
-      || (verb === 'reel' && /^in\b/.test(rest))) {
-    const froom = await MooRoom.findOne({ roomId: ch.roomId }).lean();
-    let out = null;
-    if (verb === 'cast') out = await fishing.cast(ch, froom);
-    else if (verb === 'wait' || verb === 'listen') out = await fishing.waitOn(ch);
-    else if (verb === 'set' || verb === 'strike') out = await fishing.setHook(ch);
-    else if (verb === 'hold') out = await fishing.fight(ch, 'hold');
-    else if (verb === 'give') out = await fishing.fight(ch, 'give');
-    else if (verb === 'land') out = await fishing.land(ch);
-    else if (verb === 'release') out = await fishing.release(ch);
-    else if (verb === 'reel') out = await fishing.reelIn(ch);
-    else if (verb === 'sell') out = await fishing.sellCatch(ch, froom);
-    if (out) {
-      for (const l of out.lines) lines.push(l);
-      if (out.busy) await setBusy(out.busy, out.doing || 'fishing');
-      return { ok: out.ok, lines, kinds: [...kinds], sounds: out.sounds || [] };
-    }
   }
 
   /* THE SHACK'S SHELVES — a rod and a tub of bait, which is the whole barrier
