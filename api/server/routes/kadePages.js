@@ -2894,8 +2894,15 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>The World — bey
       var kinds = d.kinds||[];
       if(!d.ok && (!kinds.length)) { playKind('err'); }
       kinds.forEach(function(k,i){ setTimeout(function(){ playKind(k); }, i*140); });
+      /* KADE 2026-08-12: a command may hand back SPECIFIC sound ids — the Bite's
+         nibble and take, the scale settling. They queue after the kinds so a
+         move-then-cast still reads left to right. */
+      (d.sounds||[]).forEach(function(s,i){ setTimeout(function(){ playKind(s); }, (kinds.length+i)*140); });
       if(ambOn){
-        var ambUrl = (d.room && ROOM_SOUNDS[d.room.name]) || (d.district && DISTRICT_SOUNDS[d.district]);
+        /* KADE 2026-08-12 FIX: room beds are keyed by roomId, not by display
+           name — build 197 added roomId to the room view for exactly this and
+           the lookup was never moved over, so no room bed has ever played. */
+        var ambUrl = (d.room && (ROOM_SOUNDS[d.room.roomId] || ROOM_SOUNDS[d.room.name])) || (d.district && DISTRICT_SOUNDS[d.district]);
         if(ambUrl){
           if(!ambAudio || ambAudio.src!==ambUrl){
             if(ambAudio){ try{ ambAudio.pause(); }catch(e){} }

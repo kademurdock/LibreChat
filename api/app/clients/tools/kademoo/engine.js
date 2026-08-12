@@ -11,6 +11,7 @@ const axios = require('axios');
 /* REVERIE (Aug 10 2026): the carved city, the census, weather, and the tick —
  * all deterministic, all in reverie.js. The engine stays the referee. */
 const reverie = require('./reverie');
+const fishing = require('./fishing');
 
 const DIR_ALIASES = {
   north: 'n', south: 's', east: 'e', west: 'w',
@@ -237,7 +238,11 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
   const cmd = normalize(command);
   const lower = cmd.toLowerCase();
   const lines = [];
-  const kinds = meanwhile.map((m) => m.kind);
+  /* KADE 2026-08-12: an event that NAMED a sound plays that file; everything
+   * else falls back to its kind, exactly as before. The client already merges
+   * every installed id into its sound map, so a wishlist id is simply a more
+   * specific kind and no client change is needed for the meanwhile lane. */
+  const kinds = meanwhile.map((m) => m.sound || m.kind);
   if (meanwhile.length) {
     const recapText = meanwhile.map((m) => m.text).join(' | ').slice(0, 1500);
     lines.push('MEANWHILE (since your last turn): ' + recapText);
@@ -261,7 +266,10 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
 
   /* ROUNDTIME (Part 4): doing a thing takes seconds, and the world says so.
    * Senses stay free — only hands and feet wait. */
-  const FREE_VERBS = new Set(['look', 'l', 'recap', 'status', 'me', 'time', 'weather', 'exits', 'where', 'who', 'inventory', 'inv', 'i', 'coins', 'money', 'help', 'chars', 'map', 'dir', 'watch']);
+  /* KADE 2026-08-12: `wait` and `listen` join the free list on purpose. The
+   * Bite's reaction window starts the moment the bite reaches the player, and a
+   * player holding the line and listening must never be told to hold on. */
+  const FREE_VERBS = new Set(['look', 'l', 'recap', 'status', 'me', 'time', 'weather', 'exits', 'where', 'who', 'inventory', 'inv', 'i', 'coins', 'money', 'help', 'chars', 'map', 'dir', 'watch', 'wait', 'listen']);
   const busyUntil = ch.attrs?.busyUntil || 0;
   if (busyUntil > Date.now() && !FREE_VERBS.has(verb) && !verbRaw.startsWith('@')) {
     const secs = Math.ceil((busyUntil - Date.now()) / 1000);
@@ -910,6 +918,66 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     return { ok: true, lines, kinds: [...kinds, 'take'] };
   }
 
+  /* ── THE BITE (Aug 12 2026) — fishing as a real-time listening test.
+   * Her line: "a bite is a sound, not a text line." The nibble and the take are
+   * two different files, built to be told apart in half a second, and every
+   * verb below hands the client a sound id to play. No model in the loop and no
+   * server timers: the state lives on the character, and the clock that matters
+   * is the player's own. */
+  if (['cast', 'wait', 'listen', 'set', 'strike', 'hold', 'land', 'release', 'sell'].includes(verb)
+      || (verb === 'give' && !rest)
+      || (verb === 'reel' && /^in\b/.test(rest))) {
+    const froom = await MooRoom.findOne({ roomId: ch.roomId }).lean();
+    let out = null;
+    if (verb === 'cast') out = await fishing.cast(ch, froom);
+    else if (verb === 'wait' || verb === 'listen') out = await fishing.waitOn(ch);
+    else if (verb === 'set' || verb === 'strike') out = await fishing.setHook(ch);
+    else if (verb === 'hold') out = await fishing.fight(ch, 'hold');
+    else if (verb === 'give') out = await fishing.fight(ch, 'give');
+    else if (verb === 'land') out = await fishing.land(ch);
+    else if (verb === 'release') out = await fishing.release(ch);
+    else if (verb === 'reel') out = await fishing.reelIn(ch);
+    else if (verb === 'sell') out = await fishing.sellCatch(ch, froom);
+    if (out) {
+      for (const l of out.lines) lines.push(l);
+      if (out.busy) await setBusy(out.busy, out.doing || 'fishing');
+      return { ok: out.ok, lines, kinds: [...kinds], sounds: out.sounds || [] };
+    }
+  }
+
+  /* THE SHACK'S SHELVES — a rod and a tub of bait, which is the whole barrier
+   * to entry for the one job in Reverie with no boss and no shift. Kept cheap
+   * on purpose: a brand-new character with twenty credits can fish the river
+   * her first hour and eat that night (round 7, Part 19.5). */
+  if (verb === 'buy' && /\b(rod|pole|bait|worms?|liver)\b/i.test(rest)) {
+    if (ch.roomId !== 'the_shack') {
+      lines.push('That is Shack business. Marva keeps the rods and the bait cooler, east off the Docks.');
+      return { ok: false, lines };
+    }
+    const coin = ch.attrs?.coin || 0;
+    if (/\b(rod|pole)\b/i.test(rest)) {
+      const owns = await MooItem.findOne({ 'location.type': 'char', 'location.id': ch.userId, 'props.rod': true }).lean();
+      if (owns) { lines.push('You have a rod. Marva looks at it, then at you, and does not sell you a second one.'); return { ok: false, lines }; }
+      if (coin < 6) { lines.push('A cane pole runs 6 coin. Marva waits. She is good at waiting.'); return { ok: false, lines }; }
+      await MooChar.updateOne({ _id: ch._id }, { $inc: { 'attrs.coin': -6 } });
+      ch.attrs = { ...(ch.attrs || {}), coin: coin - 6 };
+      await MooItem.create({
+        itemId: 'rod_' + Date.now().toString(36),
+        name: `${ch.name}'s cane pole`,
+        desc: 'A cane pole, plain as a fence post, with line wrapped at the tip and a cork bobber gone soft with use. It will catch anything the river has and most of what the harbour does. Marva sold it to you without a word about which one you should want.',
+        location: { type: 'char', id: ch.userId }, portable: true, props: { rod: true },
+      });
+      lines.push('Six coin. Marva hands you a cane pole off the wall rack — not the one you were looking at, the one you needed. She does not explain.');
+      return { ok: true, lines, kinds: [...kinds, 'take'] };
+    }
+    const n = 5;
+    if (coin < 2) { lines.push('Bait is 2 coin for a tub. That is about as cheap as this city gets.'); return { ok: false, lines }; }
+    await MooChar.updateOne({ _id: ch._id }, { $inc: { 'attrs.coin': -2, 'attrs.bait': n } });
+    ch.attrs = { ...(ch.attrs || {}), coin: coin - 2, bait: (ch.attrs?.bait || 0) + n };
+    lines.push(`Two coin, and a paper tub of nightcrawlers in damp soil. Five casts' worth. You now carry ${(ch.attrs.bait)} bait.`);
+    return { ok: true, lines, kinds: [...kinds, 'take'] };
+  }
+
   /* BUY BRICK — everyone's pocket phone (Part 5), corner store issue. */
   if (verb === 'buy' && /brick/i.test(rest)) {
     const room = await MooRoom.findOne({ roomId: ch.roomId }).lean();
@@ -1348,7 +1416,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     ok: false,
     unknown: true,
     lines: [
-      `The world does not know the command "${cmd}". Moving: go <exit>, go to <place>, tram, ferry, home, back, map, dir. Senses: look, look <thing>, exits, where, time, weather, who, status, recap. Hands: take, drop, put, get, give, inventory, coins, eat, sleep, work, flatten penny, buy brick. Voice: say (the Quiet), speak (aloud), emote, whisper <name> <words>, page <name> <words>, talk to <citizen>, petition <words>, wish <words>. Selves: describe me as <text>, chars, newchar <First Last>, switch <name>.`,
+      `The world does not know the command "${cmd}". Moving: go <exit>, go to <place>, tram, ferry, home, back, map, dir. Senses: look, look <thing>, exits, where, time, weather, who, status, recap. Hands: take, drop, put, get, give, inventory, coins, eat, sleep, work, flatten penny, buy brick. Fishing: cast, wait, set, hold, give, land, release, reel in, sell. Voice: say (the Quiet), speak (aloud), emote, whisper <name> <words>, page <name> <words>, talk to <citizen>, petition <words>, wish <words>. Selves: describe me as <text>, chars, newchar <First Last>, switch <name>.`,
     ],
   };
 }
