@@ -23,7 +23,16 @@ router.post('/command', async (req, res) => {
     if (req.user.role !== 'ADMIN' && process.env.REVERIE_PUBLIC !== '1') {
       return res.json({ ok: false, lines: ['The Threshold Gate is closed. Beyond it, a city is being built — you can hear faint hammering and, once, a bell ringing the wrong hour. It will open when the Founder says it opens.'] });
     }
-    const command = String(req.body?.command || '').slice(0, 400);
+    /* KADE 2026-08-12: this cap used to be 400 and it was SILENTLY EATING
+     * wizardry. A presigned Backblaze URL is ~370 characters, so
+     * "@sound event transit.train.horn.night <url>" came to 400 exactly and
+     * the signature lost its last few bytes — the install reported success,
+     * the manifest served the truncated link, and the sound 403'd forever
+     * with nothing anywhere saying why. Measured: every broken row was
+     * precisely (400 - prefix) characters long. The same trap was waiting for
+     * any @desc longer than a paragraph. The angel lane next door has always
+     * taken 2000; there is no reason a wizard's line should take less. */
+    const command = String(req.body?.command || '').slice(0, 2000);
     if (!command.trim()) {
       return res.status(400).json({ error: 'empty command' });
     }
