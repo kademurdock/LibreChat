@@ -97,8 +97,18 @@ const WATERS = {
  * not wait around. Steady Hands widens it a little, and only a little: the
  * quality should feel earned, not like a cheat. */
 function windowFor(fish, steady) {
-  const base = 3000 - fish.fight * 300;
-  return Math.max(1200, base + (steady ? 400 : 0));
+  /* WIDENED after the first live run, Aug 12 2026. The original 3000 ms base
+   * minus 300 per fight point left about two seconds for a good fish, and two
+   * seconds is not a reaction test — it is a latency test. A blind player has
+   * to HEAR the take, let her screen reader get out of the way, and then move
+   * her hands, and none of that is free. Network adds its own tax on top.
+   *
+   * 4500 ms base with a gentler penalty leaves roughly three and a half
+   * seconds for the hardest fish. Still tight enough that a distracted player
+   * loses it. Never so tight that the game is really measuring somebody's
+   * connection, which would be the exact opposite of the point. */
+  const base = 4500 - fish.fight * 220;
+  return Math.max(2600, base + (steady ? 500 : 0));
 }
 
 function pick(list) {
