@@ -9,9 +9,14 @@ const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { runCommand } = require('~/app/clients/tools/kademoo/engine');
 const { angelBuild, angelLines } = require('~/app/clients/tools/kademoo/angel');
+const { seedSounds } = require('~/app/clients/tools/kademoo/seedSounds');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+
+/* One-time sound seed — installs any B2 sounds missing from the manifest.
+ * Runs once, non-blocking, non-fatal. */
+seedSounds();
 
 router.post('/command', async (req, res) => {
   try {
@@ -56,6 +61,14 @@ router.post('/command', async (req, res) => {
        * workflow: walk with NVDA, build as you go. */
       isWizard: req.user.role === 'ADMIN',
     });
+    /* Merge `sounds` into `kinds` so every client (web and native) plays the
+     * specific sound id through the same channel it already reads. The native
+     * WorldResult struct only decodes `kinds`; keeping one channel means the
+     * phone never needs rebuilding when new sound ids ship. */
+    if (result.sounds && result.sounds.length) {
+      result.kinds = [...(result.kinds || []), ...result.sounds];
+      delete result.sounds;
+    }
     res.json(result);
   } catch (e) {
     logger.error('[world] direct command failed:', e.message);
