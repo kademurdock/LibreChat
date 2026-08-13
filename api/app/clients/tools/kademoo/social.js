@@ -125,22 +125,26 @@ function sanitizePose(raw) {
  * What it buys: the ENTER and LEAVE lines other people read. In a world where
  * you meet most people by hearing them arrive, HOW somebody arrives is
  * characterisation at the price of one attribute and zero model calls. */
+/* THREE forms, not two. The first version stored only the third-person stems
+ * the room reads, and then used them in the second-person confirmation the
+ * player reads: "From here on you STALKS out of rooms." Caught by walking the
+ * live world rather than by any test, which is the argument for walking it. */
 const WALK_STYLES = {
-  walk: { leave: 'walks', enter: 'walks in' },
-  amble: { leave: 'ambles', enter: 'ambles in' },
-  stride: { leave: 'strides', enter: 'strides in' },
-  stroll: { leave: 'strolls', enter: 'strolls in' },
-  shuffle: { leave: 'shuffles', enter: 'shuffles in' },
-  limp: { leave: 'limps', enter: 'limps in' },
-  march: { leave: 'marches', enter: 'marches in' },
-  slip: { leave: 'slips', enter: 'slips in quietly' },
-  stalk: { leave: 'stalks', enter: 'stalks in' },
-  hurry: { leave: 'hurries', enter: 'hurries in' },
-  wander: { leave: 'wanders', enter: 'wanders in' },
-  trudge: { leave: 'trudges', enter: 'trudges in' },
-  saunter: { leave: 'saunters', enter: 'saunters in' },
-  pad: { leave: 'pads', enter: 'pads in' },
-  bustle: { leave: 'bustles', enter: 'bustles in' },
+  walk: { leave: 'walks', enter: 'walks in', you: 'walk', youIn: 'walk in' },
+  amble: { leave: 'ambles', enter: 'ambles in', you: 'amble', youIn: 'amble in' },
+  stride: { leave: 'strides', enter: 'strides in', you: 'stride', youIn: 'stride in' },
+  stroll: { leave: 'strolls', enter: 'strolls in', you: 'stroll', youIn: 'stroll in' },
+  shuffle: { leave: 'shuffles', enter: 'shuffles in', you: 'shuffle', youIn: 'shuffle in' },
+  limp: { leave: 'limps', enter: 'limps in', you: 'limp', youIn: 'limp in' },
+  march: { leave: 'marches', enter: 'marches in', you: 'march', youIn: 'march in' },
+  slip: { leave: 'slips', enter: 'slips in quietly', you: 'slip', youIn: 'slip in quietly' },
+  stalk: { leave: 'stalks', enter: 'stalks in', you: 'stalk', youIn: 'stalk in' },
+  hurry: { leave: 'hurries', enter: 'hurries in', you: 'hurry', youIn: 'hurry in' },
+  wander: { leave: 'wanders', enter: 'wanders in', you: 'wander', youIn: 'wander in' },
+  trudge: { leave: 'trudges', enter: 'trudges in', you: 'trudge', youIn: 'trudge in' },
+  saunter: { leave: 'saunters', enter: 'saunters in', you: 'saunter', youIn: 'saunter in' },
+  pad: { leave: 'pads', enter: 'pads in', you: 'pad', youIn: 'pad in' },
+  bustle: { leave: 'bustles', enter: 'bustles in', you: 'bustle', youIn: 'bustle in' },
 };
 function walkStyleOf(charLike) {
   const k = charLike && charLike.attrs && charLike.attrs.walkStyle;

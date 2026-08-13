@@ -1159,7 +1159,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
       return { ok: !rest, lines };
     }
     await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.walkStyle': key } });
-    lines.push(`From here on you ${social.WALK_STYLES[key].leave} out of rooms, and ${social.WALK_STYLES[key].enter}.`);
+    lines.push(`From here on you ${social.WALK_STYLES[key].you} out of rooms, and you ${social.WALK_STYLES[key].youIn}.`);
     return { ok: true, lines };
   }
 
