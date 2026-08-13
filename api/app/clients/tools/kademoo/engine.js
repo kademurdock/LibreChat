@@ -8,10 +8,21 @@
  * OUT from a standing gate rather than into a void. */
 const { MooRoom, MooChar, MooItem, MooEvent, MooDistrict, MooSound, nextSeq } = require('~/models/kadeMoo');
 const axios = require('axios');
+/* KADE 2026-08-13 (round 9): `logger` was used in this file and never
+ * imported. The ledger caught it once already — a catch block whose logger
+ * does not exist means the error HANDLING is the thing that throws, so a
+ * non-fatal failure becomes a fatal one at exactly the moment you least want
+ * it. It was reintroduced the first time this session too, by the overhearing
+ * catch block, and caught by eslint no-undef rather than by anybody being
+ * careful. Run the linter. */
+const { logger } = require('@librechat/data-schemas');
 /* REVERIE (Aug 10 2026): the carved city, the census, weather, and the tick —
  * all deterministic, all in reverie.js. The engine stays the referee. */
 const reverie = require('./reverie');
 const fishing = require('./fishing');
+const social = require('./social');
+const strays = require('./strays');
+const overhear = require('./overhear');
 
 const DIR_ALIASES = {
   north: 'n', south: 's', east: 'e', west: 'w',
@@ -203,7 +214,7 @@ async function describeRoom(ch) {
   if (!room) return { roomId: null, name: 'Nowhere', desc: 'You are somewhere the world forgot to build. Say "go gate" to be rescued.', exits: [], items: [], people: [] };
   const items = await MooItem.find({ 'location.type': 'room', 'location.id': room.roomId }).lean();
   const people = await MooChar.find({ roomId: room.roomId, userId: { $ne: ch.userId } })
-    .select('name userId attrs.posture lastActiveAt')
+    .select('name userId attrs.posture attrs.pose attrs.stray attrs.trust lastActiveAt')
     .lean();
   const exits = Object.keys(room.exits || {}).map((k) => DIR_WORDS[k] || k);
   return {
@@ -219,7 +230,23 @@ async function describeRoom(ch) {
     desc: room.props?.outdoor ? `${room.desc} ${reverie.weatherNow().line}` : room.desc,
     exits,
     items: items.map((i) => i.name),
+    /* WHO IS HERE, AND WHAT THEY ARE DOING (round 9). This list used to be
+     * names, which is a chat window's user list. Order of precedence, most
+     * specific first:
+     *   1. a PLAYER'S OWN POSE — they said what they are doing, so say it
+     *   2. an NPC's schedule — the census is always mid-something
+     *   3. a stray's mood toward THIS reader — trust is per-person, so the
+     *      same cat reads differently to two people standing side by side
+     *   4. posture, then the bare name
+     * This is the highest-leverage line in the file for a blind player:
+     * `look` is the whole visual field, and this is the half of it that
+     * moves. */
     people: people.map((p) => {
+      if (p.attrs && p.attrs.pose) return `${p.name} ${p.attrs.pose}`;
+      if (p.attrs && p.attrs.stray) {
+        const t = (p.attrs.trust || {})[ch.userId] || 0;
+        return `${p.name} (${strays.rungOf(t)})`;
+      }
       const doing = p.userId && p.userId.startsWith('npc:') ? reverie.npcDoingNow(p.userId) : null;
       if (doing && doing.doing) return `${p.name} (${doing.doing})`;
       if (p.attrs?.posture && p.attrs.posture !== 'standing') return `${p.name} (${p.attrs.posture})`;
@@ -278,9 +305,51 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     lines.push(`You are mid-${ch.attrs?.busyDoing || 'something'} — about ${secs} second${secs === 1 ? '' : 's'} left. (Senses are free: look, recap, status.)`);
     return { ok: false, lines };
   }
+  /* How this character moves, read once per turn. null = the plain verbs. */
+  const ws = social.walkStyleOf(ch);
+
   async function setBusy(seconds, doing) {
     const until = Date.now() + seconds * 1000;
     await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.busyUntil': until, 'attrs.busyDoing': doing } });
+  }
+
+  /* ── OVERHEARING (round 9) ───────────────────────────────────────────────
+   * The room hears you. This is called by `say` and `speak`, and it is the
+   * difference between a place and a chat window: before it, a citizen could
+   * not hear an open remark AT ALL, and a room that does not answer you is
+   * furniture — which is exactly how a player works out which chars are
+   * synths. `talk to <citizen>` is a menu; this is a room.
+   *
+   * The four rules live in overhear.js. What lives HERE is rule 2 — one voice
+   * at a time — because only the engine knows who is standing in the room.
+   *
+   * Returns the responder's line, or null for silence, which is a legitimate
+   * answer and happens on purpose. Zero model calls. */
+  async function roomAnswers(text) {
+    try {
+      const here = await MooChar.find({ roomId: ch.roomId, userId: /^npc:/ }).select('name userId').lean();
+      if (!here.length) return null;
+      const cands = here.map((n) => ({ id: n.userId.replace(/^npc:/, ''), name: n.name, userId: n.userId }));
+      const who = overhear.chooseResponder(cands, text);
+      if (!who) return null;
+      const heardAll = (ch.attrs && ch.attrs.heard) || {};
+      const heard = heardAll[who.userId] || [];
+      const reply = overhear.overhearReply(who, text, { heard });
+      if (!reply) return null;
+      /* Rule 4 is per (player, npc) and it has to survive the turn, so it is
+       * written before the line is spoken, not after. */
+      const nextHeard = overhear.rememberLine(heard, reply.hash);
+      await MooChar.updateOne({ _id: ch._id }, { $set: { [`attrs.heard.${who.userId}`]: nextHeard } });
+      ch.attrs = { ...(ch.attrs || {}), heard: { ...heardAll, [who.userId]: nextHeard } };
+      /* A line that already names the speaker (an action beat like "Pat lifts
+       * the spatula") must not be prefixed again. */
+      const spoken = reply.line.startsWith(who.name) ? reply.line : `${who.name}: ${reply.line}`;
+      await emit(ch.roomId, who.userId, who.name, 'say', spoken);
+      return spoken;
+    } catch (err) {
+      logger.error('[reverie] overhear failed (non-fatal):', err.message);
+      return null;
+    }
   }
 
   if (!lower || verb === 'look' || verb === 'l') {
@@ -356,11 +425,11 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     let steps = 0;
     for (let cur = target.roomId; prev[cur]; cur = prev[cur]) steps++;
     const origin = ch.roomId;
-    await emit(origin, ch.userId, ch.name, 'leave', `${ch.name} sets off toward ${target.name}.`);
+    await emit(origin, ch.userId, ch.name, 'leave', `${ch.name} ${ws ? ws.leave : 'sets'} off toward ${target.name}.`);
     ch.roomId = target.roomId;
-    await MooChar.updateOne({ userId: ch.userId, active: true }, { $set: { roomId: target.roomId, 'attrs.prevRoom': origin } });
+    await MooChar.updateOne({ userId: ch.userId, active: true }, { $set: { roomId: target.roomId, 'attrs.prevRoom': origin, 'attrs.pose': null } });
     ch.attrs = { ...(ch.attrs || {}), prevRoom: origin };
-    await emit(target.roomId, ch.userId, ch.name, 'enter', `${ch.name} arrives from the streets.`);
+    await emit(target.roomId, ch.userId, ch.name, 'enter', ws ? `${ch.name} ${ws.enter} off the street.` : `${ch.name} arrives from the streets.`);
     await setBusy(Math.min(3 + steps * 2, 18), 'walking');
     const roomView = await describeRoom(ch);
     lines.push(`You walk to ${target.name} — ${steps} street${steps === 1 ? '' : 's'} over.`);
@@ -381,12 +450,12 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
       lines.push(`No way "${arg}" from here. Exits: ${Object.keys(exits).map((k) => DIR_WORDS[k] || k).join(', ') || 'none'}.`);
       return { ok: false, lines };
     }
-    await emit(ch.roomId, ch.userId, ch.name, 'leave', `${ch.name} heads ${DIR_WORDS[dirKey] || 'through ' + dirKey}.`);
+    await emit(ch.roomId, ch.userId, ch.name, 'leave', `${ch.name} ${ws ? ws.leave : 'heads'} ${DIR_WORDS[dirKey] || 'through ' + dirKey}.`);
     const originRoom = ch.roomId;
     ch.roomId = dest;
-    await MooChar.updateOne({ userId: ch.userId, active: true }, { $set: { roomId: dest, 'attrs.prevRoom': originRoom } });
+    await MooChar.updateOne({ userId: ch.userId, active: true }, { $set: { roomId: dest, 'attrs.prevRoom': originRoom, 'attrs.pose': null } });
     ch.attrs = { ...(ch.attrs || {}), prevRoom: originRoom };
-    await emit(dest, ch.userId, ch.name, 'enter', `${ch.name} arrives.`);
+    await emit(dest, ch.userId, ch.name, 'enter', ws ? `${ch.name} ${ws.enter}.` : `${ch.name} arrives.`);
     const roomView = await describeRoom(ch);
     lines.push(`You go ${DIR_WORDS[dirKey] || dirKey}.`);
     return { ok: true, lines, room: roomView, kinds: [...kinds, 'move'], district: roomView.district };
@@ -534,17 +603,34 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     }
     await emit(ch.roomId, ch.userId, ch.name, 'say', `${ch.name} says: "${text}"`);
     lines.push(`You say: "${text}"`);
+    const answer = await roomAnswers(text);
+    if (answer) lines.push(answer);
     return { ok: true, lines, kinds: [...kinds, 'say'] };
   }
 
-  if (verb === 'emote' || (verb === 'me' && rest)) {
+  /* ── EXTENDED EMOTES (round 9, Miriani's E2, the parts worth having) ──────
+   * A plain `emote nods` behaves exactly as it always did. On top of that:
+   *   *  your name (*1 first, *2 last)   -name  somebody or something here
+   *   %he %him %his %himself             %{a,b,c}  pick one at random
+   * Full grammar in social.js. What it unlocks is players writing scenes that
+   * include other people correctly — the thing a soul table can never do,
+   * because a soul table only knows the gestures somebody thought of first. */
+  if (verb === 'emote' || (verb === 'me' && rest) || verbRaw === ':') {
     const text = cmd.slice(cmd.toLowerCase().indexOf(verbRaw) + verbRaw.length).trim();
     if (!text) {
-      lines.push('Emote what?');
+      lines.push('Emote what? (`emote leans on the counter`, or point at somebody: `emote hands -merle the crate`.)');
       return { ok: false, lines };
     }
-    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} ${text}`);
-    lines.push(`${ch.name} ${text}`);
+    const here = await MooChar.find({ roomId: ch.roomId, userId: { $ne: ch.userId } }).select('name attrs.pronouns').lean();
+    const things = await MooItem.find({ 'location.type': 'room', 'location.id': ch.roomId }).select('name').lean();
+    const pool = [
+      ...here.map((c) => ({ name: c.name, kind: 'char', attrs: c.attrs || {} })),
+      ...things.map((i) => ({ name: i.name, kind: 'item', attrs: {} })),
+    ];
+    const r = social.renderEmote(text, { name: ch.name, attrs: ch.attrs || {} }, pool);
+    if (r.error) { lines.push(r.error); return { ok: false, lines }; }
+    await emit(ch.roomId, ch.userId, ch.name, 'emote', r.text);
+    lines.push(r.text);
     return { ok: true, lines, kinds: [...kinds, 'emote'] };
   }
 
@@ -556,6 +642,219 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
         ` The city has ${total} soul${total === 1 ? '' : 's'} on the ledger.`,
     );
     return { ok: true, lines };
+  }
+
+  /* ══ THE STRAYS (round 9) ═══════════════════════════════════════════════
+   *
+   * VERB ORDERING — this block respects both bugs this project has already
+   * paid for, and it is placed here on purpose:
+   *   · BELOW the Bite, so bare `release` still eases line on a running fish
+   *     (Aug 12: `give` was swallowed by `give <item> to <person>` and it cost
+   *     a fish and an afternoon).
+   *   · ABOVE the item verbs, so `carry` and `offer` reach an animal instead
+   *     of being eaten by the container grammar.
+   * Every verb below except `strays` is guarded on an animal actually being
+   * matched, so nothing here shadows an ordinary command.
+   *
+   * Trust is per-person, lives on the ANIMAL as attrs.trust[userId], and is
+   * never shown as a number to anybody, ever. */
+  const STRAY_VERBS = new Set(['approach', 'pet', 'coax', 'offer', 'carry', 'adopt', 'surrender', 'call', 'strays']);
+  if (STRAY_VERBS.has(verb) && !ch.attrs?.fishing) {
+    /* `strays` — what you know about, and what it costs. Discoverability
+     * again: a mechanic a blind player cannot find is a mechanic that does
+     * not exist. */
+    if (verb === 'strays') {
+      const known = (ch.attrs && ch.attrs.strayLog) || {};
+      const seen = Object.keys(known);
+      lines.push(seen.length
+        ? `You have met: ${seen.map((k) => (strays.STRAY_BY_ID['stray:' + k] || {}).short || k).join(', ')}.`
+        : 'You have not gotten close to any of the city\'s animals yet. They are out there. approach one, slowly.');
+      lines.push('approach / pet / coax to build trust · offer <food> to <animal> is faster · carry one when it lets you · adopt (15 coin) or surrender it at the Bureau of Small Complaints.');
+      return { ok: true, lines };
+    }
+
+    /* Anything you are carrying comes first — `pet` with a cat in your arms
+     * means the cat in your arms, not one across the room. */
+    const carriedId = ch.attrs && ch.attrs.carrying;
+    let animal = null;
+    let wanted = rest;
+
+    if (verb === 'offer') {
+      const m = rest.match(/^(.+?)\s+to\s+(.+)$/i);
+      if (!m) { lines.push('Offer what, to which animal? (offer bluegill to gray cat)'); return { ok: false, lines }; }
+      wanted = m[2].trim();
+    } else if (verb === 'call') {
+      const m = rest.match(/^(.+?)\s+(.+)$/);
+      if (!m) { lines.push('Usage: call <animal> <name> — and you only get to do it once.'); return { ok: false, lines }; }
+      wanted = m[1].trim();
+    }
+
+    const inRoom = await MooChar.find({ roomId: ch.roomId, userId: /^stray:/ }).lean();
+    const pool = carriedId ? [...inRoom, await MooChar.findOne({ userId: carriedId }).lean()].filter(Boolean) : inRoom;
+    if (wanted) {
+      const w = wanted.toLowerCase();
+      animal = pool.find((a) => {
+        const def = strays.STRAY_BY_ID[a.userId];
+        return a.name.toLowerCase().includes(w)
+          || (def && (def.short.includes(w) || w.includes(def.species)))
+          || (a.attrs && a.attrs.givenName && a.attrs.givenName.toLowerCase().startsWith(w));
+      });
+    } else if (pool.length === 1) {
+      animal = pool[0];
+    }
+
+    if (!animal) {
+      if (verb === 'carry' || verb === 'adopt' || verb === 'surrender' || verb === 'call') {
+        /* These four are stray-only words. Say so rather than falling through
+         * into a confusing item error. */
+        lines.push(pool.length ? `Which one? ${pool.map((a) => a.name).join(', ')}.` : 'No animal here.');
+        return { ok: false, lines };
+      }
+      /* approach / pet / coax / offer might have meant something else
+       * entirely — fall through to the rest of the parser. */
+      if (pool.length === 0) { /* fall through below */ } else {
+        lines.push(`Which one? ${pool.map((a) => a.name).join(', ')}.`);
+        return { ok: false, lines };
+      }
+    }
+
+    if (animal) {
+      const def = strays.STRAY_BY_ID[animal.userId] || { species: 'dog', temper: 'wary', short: 'animal' };
+      const trustAll = animal.attrs?.trust || {};
+      const before = trustAll[ch.userId] || 0;
+      const lastAll = animal.attrs?.lastSeen || {};
+      const sinceLastMs = Date.now() - (lastAll[ch.userId] || 0);
+      const isMine = animal.attrs?.owner === ch.userId;
+
+      /* Log that you have met it — this is what `strays` reads. */
+      const shortId = animal.userId.replace(/^stray:/, '');
+      if (!(ch.attrs?.strayLog || {})[shortId]) {
+        await MooChar.updateOne({ _id: ch._id }, { $set: { [`attrs.strayLog.${shortId}`]: true } });
+        ch.attrs = { ...(ch.attrs || {}), strayLog: { ...(ch.attrs?.strayLog || {}), [shortId]: true } };
+      }
+
+      /* ── CARRY ── */
+      if (verb === 'carry') {
+        if (carriedId === animal.userId) { lines.push(`You are already carrying ${animal.name}.`); return { ok: false, lines }; }
+        if (carriedId) { lines.push('Your arms are full. release first.'); return { ok: false, lines }; }
+        if (before < strays.CARRY_AT) {
+          lines.push(strays.moodLine(def.species, before));
+          lines.push('It is not going to let you pick it up. Not yet.');
+          return { ok: false, lines, kinds: [...kinds, 'emote'], sounds: [strays.moodSound(def.species, before, false)].filter(Boolean) };
+        }
+        await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.carrying': animal.userId } });
+        await MooChar.updateOne({ userId: animal.userId }, { $set: { roomId: ch.roomId, 'attrs.heldBy': ch.userId } });
+        await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} picks up ${animal.name}, and it lets them.`, strays.moodSound(def.species, before, false));
+        lines.push(`You pick ${animal.name} up. It weighs almost nothing and it does not struggle.`);
+        lines.push(strays.SHELTER_ROOM === ch.roomId ? 'Opal looks up. She does not say anything yet.' : `You could carry it to the Bureau of Small Complaints, or you could keep it. Nobody is going to tell you which.`);
+        return { ok: true, lines, kinds: [...kinds, 'emote'] };
+      }
+
+      /* ── SURRENDER ── the fork, and neither side of it is the answer. */
+      if (verb === 'surrender') {
+        if (carriedId !== animal.userId) { lines.push(`You would have to be carrying ${animal.name}.`); return { ok: false, lines }; }
+        if (ch.roomId !== strays.SHELTER_ROOM) { lines.push('Not here. Opal\'s desk, at the Bureau of Small Complaints.'); return { ok: false, lines }; }
+        await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.carrying': null }, $inc: { 'attrs.coin': strays.SURRENDER_PAYS, 'attrs.kindness': 1 } });
+        await MooChar.updateOne({ userId: animal.userId }, { $set: { 'attrs.heldBy': null } });
+        lines.push('Opal takes it without a speech. "Lost dog, found dog, same drawer."');
+        lines.push(`She counts ${strays.SURRENDER_PAYS} coin into your hand and does not call it a reward, and you understand that it would be rude to argue.`);
+        return { ok: true, lines, kinds: [...kinds, 'take'], sounds: ['obj.coins.drop'] };
+      }
+
+      /* ── ADOPT ── */
+      if (verb === 'adopt') {
+        if (isMine) { lines.push(`${animal.name} is already yours. call it something.`); return { ok: false, lines }; }
+        if (before < strays.CARRY_AT) { lines.push('It has to trust you first. That is the whole cost, and it is not payable in coin.'); return { ok: false, lines }; }
+        if ((ch.attrs?.coin || 0) < strays.ADOPT_COSTS) { lines.push(`Adoption is ${strays.ADOPT_COSTS} coin at Opal's desk. You have ${ch.attrs?.coin || 0}.`); return { ok: false, lines }; }
+        await MooChar.updateOne({ _id: ch._id }, { $inc: { 'attrs.coin': -strays.ADOPT_COSTS } });
+        await MooChar.updateOne({ userId: animal.userId }, { $set: { 'attrs.owner': ch.userId } });
+        lines.push(`Fifteen coin, and a line in a book, and that is the whole ceremony.`);
+        lines.push(`${animal.name} is yours. It still has no name. That part costs one of yours — call ${def.short} <name>.`);
+        return { ok: true, lines, kinds: [...kinds, 'take'] };
+      }
+
+      /* ── CALL (naming) ── the only thing in this game that spends a name. */
+      if (verb === 'call') {
+        if (!isMine) { lines.push('You do not name an animal you have not taken responsibility for.'); return { ok: false, lines }; }
+        if (animal.attrs?.givenName) { lines.push(`It already has a name. It is ${animal.attrs.givenName}, and that was the point.`); return { ok: false, lines }; }
+        const m = restRaw.match(/^\S+\s+(.+)$/);
+        const given = (m ? m[1] : '').trim().slice(0, 40);
+        if (!given) { lines.push('Call it what?'); return { ok: false, lines }; }
+        await MooChar.updateOne({ userId: animal.userId }, { $set: { 'attrs.givenName': given, name: given } });
+        await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} names ${animal.name} ${given}.`);
+        lines.push(`${given}. It does not react, because it is an animal and it has no idea. You will both get used to it.`);
+        return { ok: true, lines, kinds: [...kinds, 'emote'] };
+      }
+
+      /* ── APPROACH / PET / COAX / OFFER ── the actual relationship ── */
+      let withFood = false;
+      let foodName = null;
+      if (verb === 'offer') {
+        const m = rest.match(/^(.+?)\s+to\s+/i);
+        foodName = m ? m[1].trim() : '';
+        const inv = (ch.attrs && ch.attrs.inventory) || [];
+        const held = await MooItem.find({ 'location.type': 'char', 'location.id': ch.userId }).select('name').lean();
+        const names = [...inv.map((i) => (typeof i === 'string' ? i : i.name)), ...held.map((h) => h.name)].filter(Boolean);
+        const match = names.find((n) => String(n).toLowerCase().includes(foodName.toLowerCase()));
+        if (!match) { lines.push(`You are not carrying any "${foodName}".`); return { ok: false, lines }; }
+        if (!strays.willEat(def.species, match)) {
+          lines.push(`${animal.name} looks at the ${match}, then at you, and the look is not flattering.`);
+          return { ok: false, lines, kinds: [...kinds, 'emote'] };
+        }
+        withFood = true;
+        foodName = match;
+      }
+
+      const r = strays.trustGain(def.temper, { withFood, sinceLastMs });
+      const after = Math.min(strays.CARRY_AT, before + r.gain);
+      await MooChar.updateOne({ userId: animal.userId }, {
+        $set: { [`attrs.trust.${ch.userId}`]: after, [`attrs.lastSeen.${ch.userId}`]: Date.now() },
+      });
+
+      if (r.bolted) {
+        const away = strays.driftTo(def, ch.roomId, () => 0.01) || def.territory[0];
+        await MooChar.updateOne({ userId: animal.userId }, { $set: { roomId: away } });
+        await emit(ch.roomId, ch.userId, ch.name, 'emote', `${animal.name} bolts.`, 'life.stray.bolt');
+        lines.push('You moved too fast and it was gone before you finished moving.');
+        lines.push('It does not hold it against you. It will be somewhere else in its patch, and it will have forgotten by the time you find it. You have not lost anything but the walk.');
+        return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: ['life.stray.bolt'] };
+      }
+
+      if (withFood) {
+        const inv = ((ch.attrs && ch.attrs.inventory) || []).filter((i) => (typeof i === 'string' ? i : i.name) !== foodName);
+        await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.inventory': inv } });
+        await MooItem.deleteOne({ 'location.type': 'char', 'location.id': ch.userId, name: foodName });
+        lines.push(`You put the ${foodName} down within reach and step back, which is the whole trick and nobody ever tells you.`);
+      }
+
+      const snd = strays.moodSound(def.species, after, false);
+      lines.push(strays.moodLine(def.species, after));
+      if (strays.rungOf(before) !== strays.rungOf(after) && strays.rungOf(after) === 'yours') {
+        lines.push('You could pick this animal up.');
+      }
+      if (!r.patient && !withFood) {
+        lines.push('You went at it quicker than it wanted. It cost you, and it cost you time, not affection.');
+      }
+      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} ${verb === 'pet' ? 'reaches for' : verb === 'offer' ? 'offers something to' : 'moves slowly toward'} ${animal.name}.`, snd);
+      return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: snd ? [snd] : [] };
+    }
+  }
+
+  /* `release` with an animal in your arms. Guarded on actually carrying one,
+   * and it sits BELOW the Bite block above, so a bare `release` mid-fight
+   * still means the fish. Both meanings of the word survive because only one
+   * of them can ever be true at a time. */
+  if (verb === 'release' && ch.attrs?.carrying) {
+    const held = await MooChar.findOne({ userId: ch.attrs.carrying }).lean();
+    await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.carrying': null } });
+    if (held) {
+      await MooChar.updateOne({ userId: held.userId }, { $set: { roomId: ch.roomId, 'attrs.heldBy': null } });
+      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} sets ${held.name} down.`);
+      lines.push(`You set ${held.name} down. It stays where you put it, which is its own kind of answer.`);
+    } else {
+      lines.push('You set it down.');
+    }
+    return { ok: true, lines, kinds: [...kinds, 'emote'] };
   }
 
   /* ── OBJECT DEPTH (KadeCore): containers, giving, keys ─────────────────── */
@@ -722,49 +1021,146 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     lines.push(verb === 'sit' ? 'You sit down.' : verb === 'lie' ? 'You lie down.' : 'You stand up.');
     return { ok: true, lines, kinds: [...kinds, 'emote'] };
   }
-  /* SOCIALS — Round 7, Part 21: emotes make sound, and they are heard by the
-   * room and nothing else. Voiced emotes (laugh, sigh, hum) will render in the
-   * character's voice family once we have those; body emotes (clap, snap) are
-   * universal foley. Sound ids from the wishlist; null = no sound yet. */
-  const SOCIALS = {
-    laugh:     ['You laugh.', 'laughs.', 'social.laugh'],
-    giggle:    ['You giggle.', 'giggles.', 'social.laugh'],
-    smile:     ['You smile.', 'smiles.', null],
-    grin:      ['You grin.', 'grins.', null],
-    nod:       ['You nod.', 'nods.', null],
-    wave:      ['You wave.', 'waves.', null],
-    sigh:      ['You sigh.', 'sighs.', 'social.sigh'],
-    shrug:     ['You shrug.', 'shrugs.', null],
-    clap:      ['You clap.', 'claps.', 'social.clap'],
-    snap:      ['You snap your fingers.', 'snaps.', 'social.snap'],
-    dance:     ['You bust a little move.', 'busts a little move.', null],
-    yawn:      ['You yawn.', 'yawns.', null],
-    hum:       ['You hum a few bars of something.', 'hums a few bars of something.', 'social.hum'],
-    whistle:   ['You whistle.', 'whistles.', 'social.whistle'],
-    cough:     ['You cough.', 'coughs.', 'social.cough'],
-    stretch:   ['You stretch.', 'stretches.', null],
-    pace:      ['You pace.', 'paces.', null],
-    lean:      ['You lean against something solid.', 'leans against something solid.', null],
-    wince:     ['You wince.', 'winces.', null],
-    cry:       ['You cry.', 'cries.', 'social.cry'],
-  };
-  if (SOCIALS[verb] && !rest) {
-    const snd = SOCIALS[verb][2];
-    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} ${SOCIALS[verb][1]}`, snd);
-    lines.push(SOCIALS[verb][0]);
-    return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: snd ? [snd] : [] };
-  }
-  if (SOCIALS[verb] && rest.startsWith('at ')) {
-    const targetName = rest.slice(3).trim();
-    const target = await MooChar.findOne({ roomId: ch.roomId, name: new RegExp('^' + escapeRe(targetName) + '$', 'i') }).lean();
-    if (target) {
-      const snd = SOCIALS[verb][2];
-      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} ${SOCIALS[verb][1].replace('.', '')} at ${target.name}.`, snd);
-      lines.push(`${SOCIALS[verb][0].replace('.', '')} at ${target.name}.`);
-      return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: snd ? [snd] : [] };
+  /* ── THE SOUL (round 9 — rebuilt on the MOO grammar) ─────────────────────
+   * Round 7 shipped 20 gestures with a bare verb form and `<verb> at <name>`.
+   * What every MOO soul has that we did not: an ADVERB SLOT. Tale runs 2200
+   * adverbs against 250 emotes and prefix-matches them, and that one slot is
+   * the difference between two people typing `nod` at each other and two
+   * people having a conversation. It is also free — no content, no model call,
+   * no new sound.
+   *
+   * Grammar, in any order that reads:  <verb> [adverb] [at|to|for <name>]
+   *   nod                     smile warmly
+   *   nod slowly              wave to Merle
+   *   smile at Ruth-Ann       clap for Levi
+   *   nod thou                -> nod thoughtfully   (prefix match)
+   *
+   * The preposition is chosen per gesture (you wave TO somebody, you clap FOR
+   * them, you smirk AT them) because reading `waves at you` where `waves to
+   * you` belongs is the kind of small wrongness that adds up to a world that
+   * feels written by a machine. */
+  if (social.SOCIALS[verb]) {
+    let adverb = null;
+    let targetName = null;
+    let leftover = rest;
+
+    const at = leftover.match(/\b(?:at|to|for|with|toward|towards)\s+(.+)$/i);
+    if (at) {
+      targetName = at[1].trim();
+      leftover = leftover.slice(0, at.index).trim();
     }
-    lines.push(`No "${targetName}" here.`);
-    return { ok: false, lines };
+    if (leftover) {
+      const adv = social.matchAdverb(leftover.split(/\s+/)[0]);
+      if (adv) adverb = adv;
+      else if (!targetName) {
+        /* Not an adverb and not a target — most likely somebody meant a
+         * person and forgot the preposition. Try it as a name before giving
+         * up, because `smile ruth` is what people actually type. */
+        targetName = leftover;
+      } else {
+        lines.push(`"${leftover.split(/\s+/)[0]}" isn't an adverb I know. Try \`adverbs\` for the list.`);
+        return { ok: false, lines };
+      }
+    }
+
+    let target = null;
+    if (targetName) {
+      target = await MooChar.findOne({
+        roomId: ch.roomId,
+        userId: { $ne: ch.userId },
+        name: new RegExp('^' + escapeRe(targetName), 'i'),
+      }).lean();
+      if (!target) {
+        lines.push(`No "${targetName}" here.`);
+        return { ok: false, lines };
+      }
+    }
+
+    const r = social.renderSocial(verb, { adverb, targetName: target ? target.name : null, selfName: ch.name });
+    await emit(ch.roomId, ch.userId, ch.name, 'emote', r.third, r.sound);
+    lines.push(r.first);
+    return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: r.sound ? [r.sound] : [] };
+  }
+
+  /* `socials` and `adverbs` — DISCOVERABILITY, and it ships in the same block
+   * as the feature on purpose. A sighted player finds a gesture list on a
+   * wiki. A blind player finds it here or does not find it. */
+  if (verb === 'socials' || verb === 'gestures' || verb === 'emotes' || verb === 'feelings') {
+    social.listSocials(rest || null).forEach((l) => lines.push(l));
+    return { ok: true, lines };
+  }
+  if (verb === 'adverbs') {
+    lines.push(`${social.ADVERBS.length} adverbs, and any prefix that isn't ambiguous will do: ${social.ADVERBS.join(', ')}.`);
+    return { ok: true, lines };
+  }
+
+  /* ── ROOM POSE (round 9) ─────────────────────────────────────────────────
+   * Miriani's room poses, and the single biggest change to `look` this world
+   * has had. A pose is a fragment that continues your name, so the room reads
+   * "Ruby is leaning on the counter" instead of "Ruby".
+   *
+   * It clears when you leave the room — see the movement handlers. Miriani
+   * keeps a pose until you clear it, which is fine there; here, "leaning
+   * against the counter" following you onto the pier is a lie inside a room
+   * description, and the room description IS the picture in this game. */
+  if (verb === 'pose') {
+    if (!restRaw || /^(clear|off|none|stop)$/i.test(rest)) {
+      await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.pose': null } });
+      lines.push('You go back to just standing there.');
+      return { ok: true, lines };
+    }
+    const r = social.sanitizePose(restRaw);
+    if (r.error) { lines.push(r.error); return { ok: false, lines }; }
+    await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.pose': r.pose } });
+    lines.push(`The room now sees: ${ch.name} ${r.pose}.`);
+    return { ok: true, lines };
+  }
+
+  /* ── PRONOUNS (round 9) ──────────────────────────────────────────────────
+   * Extended emotes need them and the world had none. Sets, not genders — the
+   * engine never asks what somebody is, only what words to use about them,
+   * which is the only thing a sentence needs. Default they/them, which is
+   * also the right default for a stranger, so the grammar and the manners
+   * agree for once. */
+  if (verb === 'pronouns' || verb === 'pronoun') {
+    if (!rest) {
+      const cur = (ch.attrs && ch.attrs.pronouns) || 'they';
+      const set = social.PRONOUN_SETS[cur];
+      lines.push(`The city speaks of you as ${set.sub}/${set.obj}/${set.pos}. Change it: pronouns she, pronouns he, pronouns they, pronouns it.`);
+      return { ok: true, lines };
+    }
+    const key = social.PRONOUN_ALIASES[rest.trim().toLowerCase()];
+    if (!key) {
+      lines.push('Pick one: she/her, he/him, they/them, it/its.');
+      return { ok: false, lines };
+    }
+    await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.pronouns': key } });
+    const set = social.PRONOUN_SETS[key];
+    lines.push(`Noted. ${set.sub.charAt(0).toUpperCase() + set.sub.slice(1)}/${set.obj}/${set.pos}, from here on.`);
+    return { ok: true, lines };
+  }
+
+  /* ── WALK STYLE (round 9) ────────────────────────────────────────────────
+   * Miriani binds each style to its own movement verb. We keep `go` — our
+   * movement grammar is already crowded and a blind player's muscle memory
+   * should not have to fork — and make the style a setting. What it buys is
+   * the ENTER and LEAVE lines other people read, which in a world where you
+   * meet most people by hearing them arrive is characterisation for the price
+   * of one attribute. */
+  if (verb === 'walk-style' || verb === 'walkstyle' || (verb === 'walk' && rest)) {
+    const key = rest.trim().toLowerCase();
+    if (key === 'clear' || key === 'none' || key === 'normal') {
+      await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.walkStyle': null } });
+      lines.push('You go back to walking like everybody else.');
+      return { ok: true, lines };
+    }
+    if (!social.WALK_STYLES[key]) {
+      lines.push(`Styles: ${Object.keys(social.WALK_STYLES).join(', ')}. (walk-style clear to stop.)`);
+      return { ok: !rest, lines };
+    }
+    await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.walkStyle': key } });
+    lines.push(`From here on you ${social.WALK_STYLES[key].leave} out of rooms, and ${social.WALK_STYLES[key].enter}.`);
+    return { ok: true, lines };
   }
 
   /* ── TOUCH-AS-OFFER (Round 7, Part 21) ──────────────────────────────────
@@ -991,7 +1387,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     const origin = ch.roomId;
     await emit(origin, ch.userId, ch.name, 'leave', `${ch.name} heads home.`);
     ch.roomId = homeId;
-    await MooChar.updateOne({ userId: ch.userId, active: true }, { $set: { roomId: homeId, 'attrs.prevRoom': origin } });
+    await MooChar.updateOne({ userId: ch.userId, active: true }, { $set: { roomId: homeId, 'attrs.prevRoom': origin, 'attrs.pose': null } });
     ch.attrs = { ...(ch.attrs || {}), prevRoom: origin };
     await emit(homeId, ch.userId, ch.name, 'enter', `${ch.name} comes in like they live here.`);
     await setBusy(4, 'walking home');
@@ -1007,7 +1403,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     const origin = ch.roomId;
     await emit(origin, ch.userId, ch.name, 'leave', `${ch.name} doubles back.`);
     ch.roomId = prevId;
-    await MooChar.updateOne({ userId: ch.userId, active: true }, { $set: { roomId: prevId, 'attrs.prevRoom': origin } });
+    await MooChar.updateOne({ userId: ch.userId, active: true }, { $set: { roomId: prevId, 'attrs.prevRoom': origin, 'attrs.pose': null } });
     ch.attrs = { ...(ch.attrs || {}), prevRoom: origin };
     await emit(prevId, ch.userId, ch.name, 'enter', `${ch.name} comes back.`);
     const roomView = await describeRoom(ch);
@@ -1050,6 +1446,11 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     if (!text) { lines.push('Speak what, aloud? (Ordinary say is the Quiet — mind-speech. Speaking aloud carries weight: songs, toasts, testimony, proposals.)'); return { ok: false, lines }; }
     await emit(ch.roomId, ch.userId, ch.name, 'say', `${ch.name} speaks ALOUD, fitted voice carrying: "${text}"`);
     lines.push(`You speak aloud, and the room feels the difference: "${text}"`);
+    /* Speaking aloud is a chosen act and it lands harder, so the room is more
+     * likely to answer it. Two rolls, best of — never a guarantee, because a
+     * room that always answers is as much a tell as one that never does. */
+    const heardIt = (await roomAnswers(text)) || (await roomAnswers(text));
+    if (heardIt) lines.push(heardIt);
     return { ok: true, lines, kinds: [...kinds, 'say'] };
   }
 
@@ -1063,6 +1464,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     const def = reverie.CENSUS_BY_ID[target.userId];
     /* Pass game state so the NPC's response varies by time, weather,
      * crowd size — combinatorial, never the same canned rotation. */
+    const heardAll = (ch.attrs && ch.attrs.heard) || {};
     const talkCtx = {
       hour: new Date().getHours(),
       weather: (reverie.weatherNow() || {}).kind || 'clear',
@@ -1070,11 +1472,20 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
       roomId: ch.roomId,
       peopleCount: (await MooChar.countDocuments({ roomId: ch.roomId })),
       outdoor: !!(await MooRoom.findOne({ roomId: ch.roomId }).lean())?.props?.outdoor,
+      /* Rule 4 shares its memory with the overhearing lane on purpose: asking
+       * Pat twice and overhearing Pat twice are the same social event to the
+       * person on the receiving end, so they draw from one pool. */
+      heard: heardAll[target.userId] || [],
     };
-    const line = def ? reverie.npcTalkLine(def, talkCtx) : `${target.name} nods at you, friendly enough.`;
+    const spoke = def ? reverie.npcTalkLine(def, talkCtx) : { line: `${target.name} nods at you, friendly enough.`, hash: null };
+    if (spoke.hash) {
+      const nextHeard = overhear.rememberLine(talkCtx.heard, spoke.hash);
+      await MooChar.updateOne({ _id: ch._id }, { $set: { [`attrs.heard.${target.userId}`]: nextHeard } });
+      ch.attrs = { ...(ch.attrs || {}), heard: { ...heardAll, [target.userId]: nextHeard } };
+    }
     await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} stops to talk with ${target.name}.`);
-    await emit(ch.roomId, target.userId, target.name, 'say', `${target.name}: ${line}`);
-    lines.push(`${target.name}: ${line}`);
+    await emit(ch.roomId, target.userId, target.name, 'say', `${target.name}: ${spoke.line}`);
+    lines.push(`${target.name}: ${spoke.line}`);
     return { ok: true, lines, kinds: [...kinds, 'say'] };
   }
 
@@ -1396,7 +1807,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     const origin = ch.roomId;
     await emit(origin, ch.userId, ch.name, 'leave', `${ch.name} boards the tram.`);
     ch.roomId = dest.roomId;
-    await MooChar.updateOne({ userId: ch.userId, active: true }, { $set: { roomId: dest.roomId, 'attrs.prevRoom': origin }, $inc: { 'attrs.coin': -1 } });
+    await MooChar.updateOne({ userId: ch.userId, active: true }, { $set: { roomId: dest.roomId, 'attrs.prevRoom': origin, 'attrs.pose': null }, $inc: { 'attrs.coin': -1 } });
     ch.attrs = { ...(ch.attrs || {}), prevRoom: origin, coin: coin - 1 };
     await emit(dest.roomId, ch.userId, ch.name, 'enter', `${ch.name} steps off the tram.`);
     await setBusy(8, 'riding the tram');
@@ -1415,7 +1826,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     const origin = ch.roomId;
     await emit(origin, ch.userId, ch.name, 'leave', `${ch.name} steps aboard the ferry.`);
     ch.roomId = dest.roomId;
-    await MooChar.updateOne({ userId: ch.userId, active: true }, { $set: { roomId: dest.roomId, 'attrs.prevRoom': origin }, $inc: { 'attrs.coin': -1 } });
+    await MooChar.updateOne({ userId: ch.userId, active: true }, { $set: { roomId: dest.roomId, 'attrs.prevRoom': origin, 'attrs.pose': null }, $inc: { 'attrs.coin': -1 } });
     ch.attrs = { ...(ch.attrs || {}), prevRoom: origin, coin: coin - 1 };
     await emit(dest.roomId, ch.userId, ch.name, 'enter', `${ch.name} comes off the ferry.`);
     await setBusy(10, 'crossing the river');
@@ -1696,7 +2107,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
       }
       await emit(ch.roomId, ch.userId, ch.name, 'leave', `${ch.name} vanishes.`);
       ch.roomId = dest;
-      await MooChar.updateOne({ _id: ch._id }, { $set: { roomId: dest } });
+      await MooChar.updateOne({ _id: ch._id }, { $set: { roomId: dest, 'attrs.pose': null } });
       await emit(dest, ch.userId, ch.name, 'enter', `${ch.name} appears from nowhere.`);
       const roomView = await describeRoom(ch);
       lines.push(`You are elsewhere.`);
@@ -1909,7 +2320,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
   }
 
   if (verb === 'help') {
-    lines.push('Moving: go <exit>, go to <place>, tram, ferry, home, back, map, dir. Senses: look, look <thing>, exits, where, time, weather, who, status, recap, chord, sniff. Hands: take, drop, put, get, give, inventory, coins, eat, sleep, work, flatten penny, buy brick. Fishing: cast, wait, set, hold, give, land, release, reel in, sell. Growing: forage, almanac, plant <crop>, water, weed, check, pick, pull. Social: laugh, sigh, hum, clap, snap, whistle, cry, wave, dance, stretch, lean, pace, wince (also: <emote> at <name>). Touch: handshake, hug, highfive, fistbump, pat <name> — they accept or let it pass. give <n> coin to <name>. Voice: say (the Quiet), speak (aloud), emote, whisper <name> <words>, page <name> <words>, talk to <citizen>, petition <words>, wish <words>. Selves: describe me as <text>, chars, newchar <First Last>, switch <name>.');
+    lines.push('Moving: go <exit>, go to <place>, tram, ferry, home, back, map, dir. Senses: look, look <thing>, exits, where, time, weather, who, status, recap, chord, sniff. Hands: take, drop, put, get, give, inventory, coins, eat, sleep, work, flatten penny, buy brick. Fishing: cast, wait, set, hold, give, land, release, reel in, sell. Growing: forage, almanac, plant <crop>, water, weed, check, pick, pull. Social: 36 gestures (type socials) — each takes an adverb and a target: nod slowly, smile warmly at Ruth-Ann, wave to Merle. adverbs lists them. pose <what you are doing> shows in the room. emote with * for your name, -name to point at somebody, %he/%his for pronouns. pronouns <she|he|they|it>. walk-style <how you move>. Touch: handshake, hug, highfive, fistbump, pat <name> — they accept or let it pass. Animals: strays, approach, pet, coax, offer <food> to <animal>, carry, release, adopt, surrender, call <animal> <name>. give <n> coin to <name>. Voice: say (the Quiet), speak (aloud), emote, whisper <name> <words>, page <name> <words>, talk to <citizen>, petition <words>, wish <words>. Selves: describe me as <text>, chars, newchar <First Last>, switch <name>.');
     return { ok: true, lines };
   }
 

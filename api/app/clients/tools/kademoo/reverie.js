@@ -13,8 +13,11 @@
  */
 const { MooRoom, MooChar, MooItem, MooDistrict, MooEvent, nextSeq } = require('~/models/kadeMoo');
 const { logger } = require('@librechat/data-schemas');
+const overhear = require('./overhear');
+const { STRAYS } = require('./strays');
+const { driftTo: strayDrift } = require('./strays');
 
-const REVERIE_SEED_VERSION = 3;
+const REVERIE_SEED_VERSION = 4;
 
 /* ── THE WARDS ─────────────────────────────────────────────────────────────
  * District props carry the law tables (bible design: the engine never
@@ -421,6 +424,79 @@ const CITY_ROOMS = [
     exits: { e: 'gravewalk_lanterns' },
     props: { smell: 'Warm brass and old cloth and the ozone-that-is-not of connections being made.', seance: true, doings: 'Watch the operators work the lines between the wards and here. The 13 bus stops outside on no schedule at all.' , listenLine: 'The board humming a song it is trying to remember. Cords being patched.'},
   },
+
+  /* ── THE FISHING WING ────────────────────────────────────────────────────
+   * Carved live with @dig on Aug 12, which means it existed only in Mongo.
+   * The ledger already records what that costs: @dig does not move you into
+   * the room it makes, an @desc overwrote the Docks, and it was restored "from
+   * the carve source — next time there may be no source to restore from."
+   * This is that source. $setOnInsert means these four are no-ops against the
+   * live rooms that already exist; from here on they are recoverable. */
+  {
+    roomId: 'the_shack', name: 'the Shack', district: 'hook',
+    desc: 'CUTLER & SON MARINE SUPPLY, says the sign, and the son has not been through that door in nine years. Cane poles in a barrel by the till. Bait in a cooler that hums. A counter worn pale where forty years of elbows have leaned on it while somebody decided whether they could afford the good line.',
+    exits: { w: 'the_docks' },
+    props: { smell: 'Cut bait, two-stroke oil, and the particular cold of a cooler that has never once been fully emptied.', fishhouse: true, indoor: true, merchant: true, doings: 'Buy a pole (6 coin) or bait (5 casts, 2 coin). Sell what you caught. Marva will tell you where they are biting if she likes you.', listenLine: 'The bait cooler cycling on, then off. A cane pole knocking the barrel when the door moves the air.' },
+  },
+  {
+    roomId: 'pier_seven', name: 'Pier Seven', district: 'hook',
+    desc: 'The working pier the working boats stopped using. Seven planks in from the end, somebody has worn a pale patch standing in the same spot for years. Harbor water slaps the pilings in no rhythm you can hold onto.',
+    exits: { s: 'the_docks', e: 'the_breakwater' },
+    props: { smell: 'Salt, creosote, and fish that were here yesterday.', outdoor: true, water: 'harbor', sound: 'amb.water.pier.dawn', doings: 'Fish the harbor. Watch the ferry go. Stand in the pale spot.', listenLine: 'Water slapping pilings out of time with itself. A loose board answering the swell.' },
+  },
+  {
+    roomId: 'the_breakwater', name: 'the Breakwater', district: 'hook',
+    desc: 'A quarter mile of stacked stone holding the harbor shut against the deep. Past the last block the water changes color and stops explaining itself. People fish here for things that are not in the harbor.',
+    exits: { w: 'pier_seven' },
+    props: { smell: 'Open water. Colder than the harbor and it smells it.', outdoor: true, water: 'deep', doings: 'Deep water. Take a real pole or take a real disappointment.', listenLine: 'Swell breaking on stone with a long gap between. Wind with nothing to catch on.' },
+  },
+  {
+    roomId: 'the_ferry_pilings', name: 'the Ferry Pilings', district: 'hook',
+    desc: 'Under the ferry dock, where the river shoulders into the harbor and neither wins. Barnacled uprights, green light off the water on the underside of the planks, and the ferry landing overhead like weather.',
+    exits: { up: 'ferry_dock_hook' },
+    props: { smell: 'River silt meeting salt. Wet rope. Something older underneath.', outdoor: true, water: 'river', doings: 'River fishing, out of the wind, under everybody\'s feet.', listenLine: 'The ferry landing above you, felt more than heard. Water working around the pilings.' },
+  },
+
+  /* ── THE ORCHARD AND THE GREENHOUSE (round 9, Part 20 built) ──────────────
+   * Forage and garden plots shipped in round 7 with nowhere to belong to.
+   * These are the places those verbs have been pointing at. */
+  {
+    roomId: 'tandy_orchard', name: 'Tandy Orchard', district: 'longacre',
+    desc: 'Eleven rows of apple, four of pear, and one pawpaw at the end that Birdie planted out of spite and will not discuss. The grass between rows is mowed to the exact width of a flatbed. In September this place has a sound you can find from the ring road.',
+    exits: { s: 'long_acre_fields', e: 'tandy_stand', w: 'the_cider_press' },
+    props: { smell: 'Windfall apples going soft in the grass — sweet and just past sweet, all season long.', outdoor: true, forage: true, doings: 'Pick in season. Birdie is somewhere in the rows and will find you before you find her.', listenLine: 'Leaves moving in eleven rows at slightly different times. Something dropping every so often, and hitting grass.' },
+  },
+  {
+    roomId: 'tandy_stand', name: 'the Tandy Fruit Stand', district: 'longacre',
+    desc: 'A roadside table under a tin roof, an honor box with a slot worn shiny, and a hand-lettered sign that has said TAKE WHAT YOU NEED, PAY WHAT YOU CAN for longer than anybody can account for. The box is never empty and never full.',
+    exits: { w: 'tandy_orchard', s: 'ring_road' },
+    props: { smell: 'Cut apples and warm tin.', outdoor: true, merchant: true, doings: 'Buy fruit. Pay the honor box, or do not, and live with it.', listenLine: 'Tin roof ticking as it warms. Coins going into a wooden box, occasionally.' },
+  },
+  {
+    roomId: 'the_cider_press', name: 'the Cider Press', district: 'longacre',
+    desc: 'A barn with one enormous job. The press is older than the barn and was here first — they built around it because moving it was never seriously proposed. Every surface within eight feet is dark and sticky and will be forever.',
+    exits: { e: 'tandy_orchard' },
+    props: { smell: 'Fermenting apple, deep in the wood. The barn will smell like this in a hundred years with nothing in it.', indoor: true, doings: 'Press in season. Emmett runs it and lets you help if you do not talk while he is counting.', job: { name: 'the press', wage: 7, line: 'You feed apples and turn the screw and your arms learn something your head does not.', refusal: 'Emmett shakes his head. "Press is cold. Come back when there is fruit."' }, listenLine: 'The screw taking up under load, a long complaint in oak. Juice running into the trough.' },
+  },
+  {
+    roomId: 'the_greenhouse', name: 'the Greenhouse', district: 'sweetwater',
+    desc: 'Glass on a cast-iron frame, half the panes original and the wrong green. Warm and wet and twenty degrees away from whatever is happening outside. Seedlings in flats down both benches, labeled in four handwritings.',
+    exits: { s: 'garden_plots' },
+    props: { smell: 'Wet earth and growing things and the particular hot-glass smell of a greenhouse in the afternoon.', indoor: true, doings: 'Start seedlings out of season. The flats are communal and the labels are load-bearing.', listenLine: 'Condensation finding its way down glass. A vent motor deciding, then deciding again.' },
+  },
+  {
+    roomId: 'the_tool_shed', name: 'the Tool Shed', district: 'sweetwater',
+    desc: 'The shed that leans agreeably at the edge of the plots. Everything inside belongs to everybody and everything has been mended at least once. There is a coffee can of bent nails that nobody will throw out.',
+    exits: { n: 'garden_plots' },
+    props: { smell: 'Oiled steel, old twine, and last summer\'s dust.', indoor: true, doings: 'Borrow what you need. Bring it back or hear about it.', listenLine: 'Tools shifting against each other when the door moves the air. A loose pane somewhere.' },
+  },
+  {
+    roomId: 'the_lake_dock', name: 'the Lake Dock', district: 'longacre',
+    desc: 'Six boards out into flat brown water at the far edge of the fields. A rowboat chained to a post, upside down, since before anybody asked. The lake does not have a current and it does not have a name and neither has ever come up.',
+    exits: { w: 'long_acre_fields' },
+    props: { smell: 'Warm shallow water and cattails going over.', outdoor: true, water: 'lake', doings: 'Lake fishing. Nothing here is in a hurry and it is contagious.', listenLine: 'Cattails against each other. Water under the boards with nowhere to be.' },
+  },
+
 ];
 
 /* ── ITEMS worth touching ── */
@@ -778,6 +854,145 @@ const CENSUS = [
     ],
     ambient: ['Dr. Chike checks a chart, then checks the person, in the right order.', 'Dr. Chike steals ten seconds of window light like medicine.', 'Dr. Chike reads a chart at the speed of someone who writes better ones.', 'Chike adjusts something in the ward. The beeping continues, reassured.'],
   },
+  /* ── THE CUTLERS AND THE TANDYS (round 9) ────────────────────────────────
+   * Named in design since round 7 and never built, which meant the Shack had
+   * a sign reading CUTLER & SON and nobody behind the counter, and the orchard
+   * had a name and no one in the rows.
+   *
+   * THE RULE FROM THE INDEX, honoured here: a citizen needs a full name, a
+   * family, a home with an address, a schedule, a want, a fear, and AT LEAST
+   * TWO LINKS into the existing web. A citizen without links is set dressing,
+   * and this world does not do set dressing. Every one of these five is
+   * wired to somebody who was already here. */
+  {
+    id: 'marva', name: 'Marva Cutler', aka: 'Marva',
+    desc: 'Behind the counter at the Shack the way a piling is in the water — installed, load-bearing, unbothered. Reading glasses on a cord she has never once used to find them. She will tell you where they are biting and she will not tell you how she knows.',
+    home: 'the_shack', family: ['royce'],
+    wants: ['her son to walk through that door without a reason', 'one season where the bait cooler does not die in August'],
+    fears: ['that nine years is the number it stops being fixable at'],
+    links: ['merle brings her the harbor talk', 'marsh charters out of her dock'],
+    schedule: [
+      { from: 5, to: 19, room: 'the_shack', doing: 'behind the counter' },
+      { from: 19, to: 21, room: 'pats_diner', doing: 'the same booth' },
+      { from: 21, to: 5, room: 'the_shack', doing: 'upstairs, light on' },
+    ],
+    talk: [
+      '"Pole\'s six coin. Bait\'s two and gets you five casts. A bare hook still fishes. It fishes badly, but it fishes."',
+      '"Sign says AND SON. I painted it in \'ninety-one and I am not painting over it."',
+      '"Breakwater on the falling tide. That is the whole secret and everybody ignores it."',
+      '"Marsh takes people out deep. She is worth what she charges, which is a thing I do not say twice."',
+    ],
+    ambient: [
+      'Marva turns a page of something she is not reading.',
+      'Marva thumps the bait cooler once with the side of her fist. It settles.',
+      'Marva looks at the door when it moves the air, then back down.',
+      'Marva counts the pole barrel without touching it. She always gets the same number.',
+    ],
+  },
+  {
+    id: 'royce', name: 'Royce Cutler', aka: 'Royce',
+    desc: 'Outboard motors, in a garage bay in the Millrace that smells like every two-stroke ever made. Forearms scarred the way a man\'s are when he has reached past a hot thing for twenty years. Nine years of not going to the Hook, and he could tell you the number without counting.',
+    home: 'the_garages', family: ['marva'],
+    wants: ['to be the one who fixes the thing nobody else can', 'to not be asked about it'],
+    fears: ['that the door gets harder to walk through every year, and that this is true'],
+    links: ['marva is his mother', 'boone sends him rail-yard work when the river is slow'],
+    schedule: [
+      { from: 7, to: 18, room: 'the_garages', doing: 'up to the elbow in a lower unit' },
+      { from: 18, to: 22, room: 'dezs_bar', doing: 'one, at the end of the bar' },
+      { from: 22, to: 7, room: 'the_garages', doing: 'the cot in the back' },
+    ],
+    talk: [
+      '"Bring it in, I\'ll look at it. Don\'t bring it in and tell me what\'s wrong with it."',
+      '"Everything that comes off that lake has water where it shouldn\'t. Every single one."',
+      '"The Shack sells parts. I fit them. Different trade." He does not look up when he says it.',
+      '"Nine years is not a thing that happened. It\'s a thing that kept not happening."',
+    ],
+    ambient: [
+      'Royce sets a socket down in exactly the place his hand will next expect it.',
+      'Royce wipes his hands on a rag that has not made anything cleaner in years.',
+      'Royce holds a part up to the light and does not like what he sees.',
+      'Royce says a number under his breath and writes it on the bench in pencil.',
+    ],
+  },
+  {
+    id: 'birdie', name: 'Beatrice Tandy', aka: 'Birdie',
+    desc: 'Somewhere in eleven rows, and she will find you before you find her. Straw hat gone soft, secateurs on a lanyard, and an opinion about every tree by name. Planted a pawpaw at the end of the run out of spite and will not discuss it.',
+    home: 'tandy_orchard', family: ['emmett', 'junie'],
+    wants: ['the pawpaw to outlive the argument', 'a hard frost late enough to do the apples a favor'],
+    fears: ['the year nobody comes out to pick'],
+    links: ['ruthann trades her poke rules for cider', 'reed sends the Children\'s Office kids out in September'],
+    schedule: [
+      { from: 6, to: 12, room: 'tandy_orchard', doing: 'somewhere in the rows' },
+      { from: 12, to: 15, room: 'tandy_stand', doing: 'minding the honor box, badly' },
+      { from: 15, to: 19, room: 'tandy_orchard', doing: 'somewhere in the rows' },
+      { from: 19, to: 6, room: 'tandy_orchard', doing: 'the porch, lights off' },
+    ],
+    talk: [
+      '"Take what you need, pay what you can. It has been on that sign longer than you have been alive and the box has never been empty."',
+      '"Windfall is not waste. Windfall is cider. Everything here has a second job."',
+      '"That pawpaw is none of your business and I will tell you all about it."',
+      '"September, this place makes a sound. You will hear it from the ring road and you will come find out what it is."',
+    ],
+    ambient: [
+      'Birdie snaps the secateurs closed on nothing, out of habit.',
+      'Birdie puts her hand flat on a trunk for a second, the way you would check a forehead.',
+      'Birdie kicks a windfall out of the mower line without breaking stride.',
+      'Birdie names a tree out loud to nobody. It has a name.',
+    ],
+  },
+  {
+    id: 'emmett', name: 'Emmett Tandy', aka: 'Emmett',
+    desc: 'Birdie\'s son, and the flatbed is his. Runs the press in season and the deliveries out of it. Counts under his breath and will not answer you while he is doing it, which people take personally exactly once.',
+    home: 'the_cider_press', family: ['birdie', 'junie'],
+    wants: ['Junie to want this, and to never once be told to'],
+    fears: ['that wanting it for her is the same as telling her'],
+    links: ['birdie is his mother', 'dez takes the whole cider run every October'],
+    schedule: [
+      { from: 6, to: 9, room: 'tandy_orchard', doing: 'loading the flatbed' },
+      { from: 9, to: 16, room: 'the_cider_press', doing: 'at the screw' },
+      { from: 16, to: 19, room: 'ring_road', doing: 'the delivery run' },
+      { from: 19, to: 6, room: 'the_cider_press', doing: 'closing the barn up' },
+    ],
+    talk: [
+      '"Give me a second." He is counting. He will give you the second.',
+      '"Press wants apples and patience. It has got the apples."',
+      '"Dez takes the October run entire. Every barrel. Has for years and has never once haggled."',
+      '"You can help. Don\'t talk while I\'m counting and you can help."',
+    ],
+    ambient: [
+      'Emmett turns the screw a quarter and listens to what the oak says about it.',
+      'Emmett counts under his breath, and the number is not for you.',
+      'Emmett moves a crate six inches for a reason that will become obvious later.',
+      'Emmett wipes the trough edge with his thumb and tastes it, and adjusts nothing.',
+    ],
+  },
+  {
+    id: 'junie', name: 'Junie Tandy', aka: 'Junie',
+    desc: 'Eleven, and the fastest picker in the orchard by a margin nobody has told her about. Knows which tree is which by the bark. Has strong opinions on the pawpaw and refuses to take a side in front of witnesses.',
+    home: 'tandy_orchard', family: ['birdie', 'emmett'],
+    wants: ['to drive the flatbed', 'to be allowed to say what she thinks about the pawpaw'],
+    fears: ['being told she is too young for the answer'],
+    links: ['emmett is her father', 'reed knows her by name from the September picking'],
+    schedule: [
+      { from: 8, to: 15, room: 'sweetwater_park', doing: 'school, allegedly' },
+      { from: 15, to: 19, room: 'tandy_orchard', doing: 'up a tree' },
+      { from: 19, to: 21, room: 'tandy_stand', doing: 'counting the honor box' },
+      { from: 21, to: 8, room: 'tandy_orchard', doing: 'asleep, probably' },
+    ],
+    talk: [
+      '"I can get up any of them. Grandma says row four but row four is easy."',
+      '"You want a good one you go high. Everybody picks what they can reach and then says it was a bad year."',
+      '"I know what everybody thinks about the pawpaw and I am not saying in front of you."',
+      '"Dad says when I am fourteen. I have done the math on that and it is not soon."',
+    ],
+    ambient: [
+      'Junie drops out of a tree from higher than she should and lands fine.',
+      'Junie sorts the crate by size without being asked, fast.',
+      'Junie puts a hand on the bark of a tree and says its number.',
+      'Junie eats one and does not put it in the count, and this is the arrangement.',
+    ],
+  },
+
 ];
 
 const CENSUS_BY_ID = Object.fromEntries(CENSUS.map((c) => ['npc:' + c.id, c]));
@@ -834,48 +1049,53 @@ function npcDoingNow(userId) {
 }
 
 function npcTalkLine(def, context) {
-  /* COMBINATORIAL TALK — the Veil demands it. A rotating array of canned
-   * lines outs the synth after five conversations. Instead: pick from the
-   * pool BUT fold in game state so the same NPC never says the same thing
-   * at different times of day, in different weather, or to different people.
+  /* WHAT THIS USED TO DO, AND WHY IT WAS WRONG (retracted in the ledger,
+   * 2026-08-13). The pick was hash(npc_id + hour + weather). Weather only
+   * rolls every three hours and every suffix keyed off the same seed, so a
+   * citizen returned the byte-identical sentence — flourishes and all — to
+   * every ask inside one clock hour. Talk to Pat at 2:05, 2:11 and 2:38 and
+   * you got the same words three times. That is WORSE than the random
+   * rotation it replaced, for the single most common play pattern there is:
+   * talking to somebody twice in one sitting. It shipped with a code comment
+   * calling the flaw intentional ("consistent, like a real person
+   * mid-thought" — people do not do that).
    *
-   * The pool is still the source — the model inhabits them fully later
-   * through the narrator lane. This is the $0 warmth layer, but it now
-   * varies by context so it FEELS responsive without burning compute.
+   * WHAT IT DOES NOW. The hash sets REGISTER — the mood, the time colour, the
+   * weather note. That part genuinely should hold steady across an hour,
+   * because a person's mood does. WHICH LINE COMES OUT is drawn from what
+   * they have not said to YOU lately, per (player, npc). Two players can hear
+   * the same good line; one player never hears it twice running.
    *
-   * context: { hour, weather, playerName, roomId, peopleCount } */
+   * context: { hour, weather, playerName, roomId, peopleCount, outdoor,
+   *            heard: [line hashes this player has had from this npc] } */
   const ctx = context || {};
-  const hour = ctx.hour ?? new Date().getHours();
+  const hour = ctx.hour === undefined ? new Date().getHours() : ctx.hour;
   const wx = ctx.weather || 'clear';
   const ppl = ctx.peopleCount || 1;
+  const heard = ctx.heard || [];
 
-  /* STEP 1: pick a base line using a hash of (npc + hour + weather) so
-   * the same NPC says different things at different times, but the SAME
-   * thing if you ask twice in the same hour with the same weather —
-   * consistent, like a real person mid-thought. */
-  const seed = (def.id + ':' + hour + ':' + wx).split('').reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0);
-  const idx = Math.abs(seed) % def.talk.length;
-  let line = def.talk[idx];
+  /* REGISTER — stable inside the hour, on purpose. */
+  const seed = hashStr(def.id + ':' + hour + ':' + wx);
 
-  /* STEP 2: time-of-day color. NPCs acknowledge the time without being
-   * asked, like people do. Short prefix, not always. */
+  /* THE LINE — freshest first. Same rule the overhearing lane uses, and the
+   * same helper, so there is exactly one implementation of "don't repeat
+   * yourself to this person" in the codebase. */
+  const line = overhear.pickUnheard(def.talk, heard) || def.talk[seed % def.talk.length];
+
+  /* Time-of-day colour. People acknowledge the hour without being asked. */
   const timeColor = hour < 6 ? [' *yawns*', '', ''] :
-    hour < 12 ? ['', '', ''] :
-    hour >= 22 ? [' *stifles a yawn*', '', ''] :
-    hour >= 18 ? ['', '', ''] : ['', '', ''];
-  const tc = timeColor[Math.abs(seed >> 3) % timeColor.length];
+    hour >= 22 ? [' *stifles a yawn*', '', ''] : ['', '', ''];
+  const tc = timeColor[(seed >> 3) % timeColor.length];
 
-  /* STEP 3: crowd awareness. If the room is busy, NPCs sometimes glance
-   * around or lower their voice. Zero compute — just a check. */
+  /* Crowd awareness. */
   const crowdNote = ppl > 4 ? [' They lean in a little, voice under the noise.', '', ''] :
     ppl === 1 ? [' The room is just the two of you, and they talk like it.', '', '', ''] :
     ['', '', ''];
-  const cn = crowdNote[Math.abs(seed >> 5) % crowdNote.length];
+  const cn = crowdNote[(seed >> 5) % crowdNote.length];
 
-  /* STEP 4: weather awareness for outdoor NPCs */
-  const isOutdoor = ctx.outdoor || false;
+  /* Weather awareness, outdoors only. */
   let wxNote = '';
-  if (isOutdoor && Math.abs(seed >> 7) % 3 === 0) {
+  if (ctx.outdoor && (seed >> 7) % 3 === 0) {
     const WX_NOTES = {
       rain: ' They talk over the rain without minding it.',
       storm: ' They pause when the thunder rolls, then pick up where they left off.',
@@ -886,7 +1106,7 @@ function npcTalkLine(def, context) {
     wxNote = WX_NOTES[wx] || '';
   }
 
-  return line + tc + cn + wxNote;
+  return { line: line + tc + cn + wxNote, hash: overhear.hashLine(line) };
 }
 
 /* ── THE CARVE (idempotent, insert-if-absent — never clobbers her hands) ── */
@@ -920,9 +1140,30 @@ async function carveReverie() {
   }
   /* Connectors into the standing gate rooms — each patched ONLY if that
    * direction is still free (the Angel may have used it since). */
+  /* CONNECTORS — the way back OUT of a new room, patched into a room that
+   * already exists. `$setOnInsert` above will never touch a carved room's
+   * exits, and that is correct (her hands and the Angel's have been in there),
+   * so every new wing needs its return trip stated here, and each one is
+   * applied ONLY if that direction is still free.
+   *
+   * Every direction below was checked against the live exit tables first —
+   * garden_plots' `w` is already Sweetwater Park and ring_road's `s` is
+   * already the Grade Crossing, which is why the Greenhouse hangs north and
+   * the fruit stand hangs north rather than the tidier compass answer. */
   const connectors = [
     { roomId: 'founders_square', dir: 'n', dest: 'bell_court_street' },
     { roomId: 'coldpipe_alley', dir: 'w', dest: 'the_stairs' },
+    /* the fishing wing (carved live Aug 12, now in source) */
+    { roomId: 'the_docks', dir: 'e', dest: 'the_shack' },
+    { roomId: 'the_docks', dir: 'n', dest: 'pier_seven' },
+    { roomId: 'ferry_dock_hook', dir: 'down', dest: 'the_ferry_pilings' },
+    /* the orchard */
+    { roomId: 'long_acre_fields', dir: 'n', dest: 'tandy_orchard' },
+    { roomId: 'long_acre_fields', dir: 'e', dest: 'the_lake_dock' },
+    { roomId: 'ring_road', dir: 'n', dest: 'tandy_stand' },
+    /* the growing wing */
+    { roomId: 'garden_plots', dir: 'n', dest: 'the_greenhouse' },
+    { roomId: 'garden_plots', dir: 's', dest: 'the_tool_shed' },
   ];
   for (const c of connectors) {
     const room = await MooRoom.findOne({ roomId: c.roomId }).lean();
@@ -949,6 +1190,27 @@ async function carveReverie() {
       { $setOnInsert: {
           name: c.name, active: true, roomId: at.room, lastSeenSeq: 0,
           attrs: { npc: true, alive: true, desc: c.desc, aka: c.aka, home: c.home, family: c.family, wants: c.wants, coin: 20 },
+        } },
+      { upsert: true },
+    );
+  }
+  /* THE STRAYS take their patches (round 9). They are MooChars, not items —
+   * her ruling, and it is the right one: "a player char is a player char
+   * whether you're controlling it or I am." Because they live in this table,
+   * `look`, `who`, the room chord and the overhearing lane all understood
+   * animals the moment they existed, and none of those systems had to be told
+   * anything.
+   *
+   * `attrs.stray` is the flag everything keys off. `attrs.trust` is a map of
+   * userId -> 0..100 and is never rendered as a number anywhere. */
+  for (const a of STRAYS) {
+    await MooChar.updateOne(
+      { userId: 'stray:' + a.id },
+      { $setOnInsert: {
+          name: a.name, active: true, roomId: a.territory[0], lastSeenSeq: 0,
+          attrs: { stray: true, alive: true, npc: true, species: a.species, temper: a.temper,
+            desc: a.desc, aka: a.short, territory: a.territory, trust: {}, lastSeen: {},
+            owner: null, givenName: null, coin: 0 },
         } },
       { upsert: true },
     );
@@ -1006,6 +1268,27 @@ async function tickWorld() {
       const seqB = await nextSeq();
       await MooEvent.create({ seq: seqB, roomId: slot.room, actorUserId: npc.userId, actorName: npc.name, kind: 'enter', text: `${npc.name} arrives — ${slot.doing}.`, at: new Date() });
     }
+    /* 1b — THE STRAYS DRIFT (round 9). An animal moves inside its patch on
+     * its own clock; it does not run a route, because a stray with a schedule
+     * is a very small employee. The clock is deliberately slow (22% a tick,
+     * ~45s apart) so that "go find the gray one" stays a thing a person can
+     * decide to do and succeed at. An animal in somebody's ARMS does not
+     * drift, for reasons that should not need writing down but do. */
+    const roaming = await MooChar.find({ userId: /^stray:/, 'attrs.heldBy': null }).select('userId name roomId attrs.territory').lean();
+    for (const a of roaming) {
+      const def = STRAYS.find((d) => 'stray:' + d.id === a.userId);
+      if (!def) continue;
+      const dest = strayDrift(def, a.roomId);
+      if (!dest) continue;
+      const destExists = await MooRoom.findOne({ roomId: dest }).select('roomId').lean();
+      if (!destExists) continue;
+      await MooChar.updateOne({ userId: a.userId }, { $set: { roomId: dest } });
+      const s1 = await nextSeq();
+      await MooEvent.create({ seq: s1, roomId: a.roomId, actorUserId: a.userId, actorName: a.name, kind: 'leave', text: `${a.name} moves off.`, at: new Date() });
+      const s2 = await nextSeq();
+      await MooEvent.create({ seq: s2, roomId: dest, actorUserId: a.userId, actorName: a.name, kind: 'enter', text: `${a.name} comes through, in no hurry about it.`, at: new Date() });
+    }
+
     const rooms = await activePlayerRooms();
     if (!rooms.length) return;
     /* 2 — weather turns, where sky can be felt. */

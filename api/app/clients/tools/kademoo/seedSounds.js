@@ -6,6 +6,7 @@
  * Runs once at startup (called from world.js route init).
  *
  * Aug 13 2026 — session 2 sounds: chords, socials, forage, garden, coins.
+ * Aug 13 2026 — round 9: the strays' voices, the rest of the soul, garden.pick.
  */
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -21,6 +22,32 @@ const SOUNDS_TO_SEED = [
   'obj.coins.drop',
   // Forage & garden
   'forage.pick', 'garden.plant', 'garden.water',
+  /* Round 9 (Aug 13 2026, evening) — the strays and the rest of the soul.
+   * All ten uploaded to B2, presigned, and FETCHED BACK before this list was
+   * touched, per the standing rule that an install reporting success is not
+   * an install that works.
+   *
+   * NOT IN THIS LIST ON PURPOSE — three ids the engine emits and B2 does not
+   * hold, because Seed Audio could not make them and a wrong sound is worse
+   * than none:
+   *   life.cat.hiss    best of three takes reads as an aerosol can
+   *   life.dog.whine   best of three reads as a rubber squeaky toy
+   *   life.stray.bolt  all three read as machinery (drill / shutter / can)
+   * Each is a sustained or fine-grained animal sound with no scene around it,
+   * which is the same failure family as the close train horn. The next attempt
+   * should CUT rather than BUILD: generate a dense take (a cat crossing a
+   * porch a dozen times) and slice on measured attacks. The engine already
+   * falls back to silence for an id with no file, so nothing is broken while
+   * they are missing.
+   *
+   * The four VOICED socials — social.laugh, social.sigh, social.hum,
+   * social.cry — are deliberately absent too, and not because they failed.
+   * They belong to the voice lane, not to foley: one generic laugh playing for
+   * every character in the city is a Veil break by construction, and the
+   * engine comment beside SOCIALS has said so since round 7. */
+  'life.cat.meow', 'life.cat.purr', 'life.dog.bark', 'life.dog.growl', 'life.dog.pant',
+  'social.cough', 'social.whistle', 'social.hug', 'social.fistbump',
+  'garden.pick',
 ];
 
 let _seeded = false;
