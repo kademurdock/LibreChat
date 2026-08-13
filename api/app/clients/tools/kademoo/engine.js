@@ -112,9 +112,11 @@ async function ensureSeed() {
   seedChecked = true;
 }
 
-async function emit(roomId, actorUserId, actorName, kind, text) {
+async function emit(roomId, actorUserId, actorName, kind, text, sound) {
   const seq = await nextSeq();
-  await MooEvent.create({ seq, roomId, actorUserId, actorName, kind, text, at: new Date() });
+  const doc = { seq, roomId, actorUserId, actorName, kind, text, at: new Date() };
+  if (sound) doc.sound = sound;
+  await MooEvent.create(doc);
   return seq;
 }
 
@@ -461,8 +463,67 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
 
   if (verb === 'inventory' || verb === 'inv' || verb === 'i') {
     const items = await MooItem.find({ 'location.type': 'char', 'location.id': ch.userId }).lean();
-    lines.push(items.length ? `You carry: ${items.map((i) => i.name).join(', ')}.` : 'You carry nothing.');
+    const attrInv = ch.attrs?.inventory || [];
+    const all = [...items.map(i => i.name), ...attrInv.map(i => i.name)];
+    lines.push(all.length ? `You carry: ${all.join(', ')}.` : 'You carry nothing.');
     return { ok: true, lines };
+  }
+
+  /* SELL <item> — sell a foraged or grown item at any merchant room */
+  if (verb === 'sell' && rest) {
+    const room = await MooRoom.findOne({ roomId: ch.roomId }).lean();
+    const hasMerchant = room?.props?.shop || room?.props?.job || ['the_salvage_yard', 'the_market', 'pats_diner', 'the_kettle', 'ruth_anns_stoop'].includes(ch.roomId);
+    if (!hasMerchant) {
+      lines.push('Nobody here to sell to. Try a shop, the market, the salvage yard, or anywhere food moves.');
+      return { ok: false, lines };
+    }
+    const inv = ch.attrs?.inventory || [];
+    const idx = inv.findIndex(i => i.name.toLowerCase() === rest.toLowerCase());
+    if (idx === -1) {
+      lines.push(`You don't have "${rest}" to sell. Check: inventory.`);
+      return { ok: false, lines };
+    }
+    const item = inv[idx];
+    const value = item.foraged ? 3 : item.grown ? 6 : 2;
+    inv.splice(idx, 1);
+    await MooChar.updateOne({ _id: ch._id }, {
+      $set: { 'attrs.inventory': inv },
+      $inc: { 'attrs.coin': value },
+    });
+    lines.push(`You sell ${item.name} for ${value} coin.`);
+    return { ok: true, lines, sounds: ['obj.coins.drop'] };
+  }
+
+  /* GIVE <item> TO <name> — hand a foraged/grown item to another player.
+   * Falls through to the MooItem give handler if item not in attrs.inventory. */
+  if (verb === 'give' && rest && !/^\d+\s+coins?/i.test(rest)) {
+    const gm = rest.match(/^(.+?)\s+to\s+(.+)$/i);
+    if (gm) {
+      const itemName = gm[1].trim();
+      const recipName = gm[2].trim();
+      const inv = ch.attrs?.inventory || [];
+      const idx = inv.findIndex(i => i.name.toLowerCase() === itemName.toLowerCase());
+      if (idx !== -1) {
+        const recipient = await MooChar.findOne({
+          roomId: ch.roomId,
+          name: new RegExp('^' + escapeRe(recipName) + '$', 'i'),
+          _id: { $ne: ch._id },
+        }).lean();
+        if (!recipient) {
+          lines.push(`No "${recipName}" here.`);
+          return { ok: false, lines };
+        }
+        const item = inv.splice(idx, 1)[0];
+        const recipInv = recipient.attrs?.inventory || [];
+        recipInv.push(item);
+        await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.inventory': inv } });
+        await MooChar.updateOne({ _id: recipient._id }, { $set: { 'attrs.inventory': recipInv } });
+        await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} hands ${item.name} to ${recipient.name}.`);
+        lines.push(`You give ${item.name} to ${recipient.name}.`);
+        return { ok: true, lines, kinds: [...kinds, 'emote'] };
+      }
+      /* Not in attrs.inventory — fall through to MooItem give handler */
+    }
   }
 
   if (verb === 'say') {
@@ -476,7 +537,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     return { ok: true, lines, kinds: [...kinds, 'say'] };
   }
 
-  if (verb === 'emote' || verb === 'me') {
+  if (verb === 'emote' || (verb === 'me' && rest)) {
     const text = cmd.slice(cmd.toLowerCase().indexOf(verbRaw) + verbRaw.length).trim();
     if (!text) {
       lines.push('Emote what?');
@@ -498,8 +559,8 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
   }
 
   /* ── OBJECT DEPTH (KadeCore): containers, giving, keys ─────────────────── */
-  if (verb === 'put') {
-    // put <item> in <container>
+  if (verb === 'put' && !/penny.*rail/i.test(rest)) {
+    // put <item> in <container> (penny-on-rail falls through to flatten handler)
     const m = rest.match(/^(.+?)\s+in(?:to)?\s+(.+)$/i);
     if (!m) {
       lines.push('Usage: put <item> in <container>.');
@@ -541,11 +602,11 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     lines.push(`You take ${item.name} from ${box.name}.`);
     return { ok: true, lines, kinds: [...kinds, 'take'] };
   }
-  if (verb === 'give') {
-    // give <item> to <player>
+  if (verb === 'give' && rest && !/^\d+\s+coins?\s+to\s+/i.test(rest)) {
+    // give <item> to <player> — MooItem system
     const m = rest.match(/^(.+?)\s+to\s+(.+)$/i);
     if (!m) {
-      lines.push('Usage: give <item> to <person>.');
+      lines.push('Usage: give <item> to <person>, or give <n> coin to <person>.');
       return { ok: false, lines };
     }
     const target = await MooChar.findOne({ roomId: ch.roomId, name: new RegExp('^' + escapeRe(m[2].trim()) + '$', 'i') });
@@ -661,35 +722,152 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     lines.push(verb === 'sit' ? 'You sit down.' : verb === 'lie' ? 'You lie down.' : 'You stand up.');
     return { ok: true, lines, kinds: [...kinds, 'emote'] };
   }
+  /* SOCIALS — Round 7, Part 21: emotes make sound, and they are heard by the
+   * room and nothing else. Voiced emotes (laugh, sigh, hum) will render in the
+   * character's voice family once we have those; body emotes (clap, snap) are
+   * universal foley. Sound ids from the wishlist; null = no sound yet. */
   const SOCIALS = {
-    laugh: ['You laugh.', 'laughs.'],
-    giggle: ['You giggle.', 'giggles.'],
-    smile: ['You smile.', 'smiles.'],
-    grin: ['You grin.', 'grins.'],
-    nod: ['You nod.', 'nods.'],
-    wave: ['You wave.', 'waves.'],
-    sigh: ['You sigh.', 'sighs.'],
-    shrug: ['You shrug.', 'shrugs.'],
-    clap: ['You clap.', 'claps.'],
-    dance: ['You bust a little move.', 'busts a little move.'],
-    yawn: ['You yawn.', 'yawns.'],
-    hum: ['You hum a few bars of something.', 'hums a few bars of something.'],
+    laugh:     ['You laugh.', 'laughs.', 'social.laugh'],
+    giggle:    ['You giggle.', 'giggles.', 'social.laugh'],
+    smile:     ['You smile.', 'smiles.', null],
+    grin:      ['You grin.', 'grins.', null],
+    nod:       ['You nod.', 'nods.', null],
+    wave:      ['You wave.', 'waves.', null],
+    sigh:      ['You sigh.', 'sighs.', 'social.sigh'],
+    shrug:     ['You shrug.', 'shrugs.', null],
+    clap:      ['You clap.', 'claps.', 'social.clap'],
+    snap:      ['You snap your fingers.', 'snaps.', 'social.snap'],
+    dance:     ['You bust a little move.', 'busts a little move.', null],
+    yawn:      ['You yawn.', 'yawns.', null],
+    hum:       ['You hum a few bars of something.', 'hums a few bars of something.', 'social.hum'],
+    whistle:   ['You whistle.', 'whistles.', 'social.whistle'],
+    cough:     ['You cough.', 'coughs.', 'social.cough'],
+    stretch:   ['You stretch.', 'stretches.', null],
+    pace:      ['You pace.', 'paces.', null],
+    lean:      ['You lean against something solid.', 'leans against something solid.', null],
+    wince:     ['You wince.', 'winces.', null],
+    cry:       ['You cry.', 'cries.', 'social.cry'],
   };
   if (SOCIALS[verb] && !rest) {
-    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} ${SOCIALS[verb][1]}`);
+    const snd = SOCIALS[verb][2];
+    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} ${SOCIALS[verb][1]}`, snd);
     lines.push(SOCIALS[verb][0]);
-    return { ok: true, lines, kinds: [...kinds, 'emote'] };
+    return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: snd ? [snd] : [] };
   }
   if (SOCIALS[verb] && rest.startsWith('at ')) {
     const targetName = rest.slice(3).trim();
     const target = await MooChar.findOne({ roomId: ch.roomId, name: new RegExp('^' + escapeRe(targetName) + '$', 'i') }).lean();
     if (target) {
-      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} ${SOCIALS[verb][1].replace('.', '')} at ${target.name}.`);
+      const snd = SOCIALS[verb][2];
+      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} ${SOCIALS[verb][1].replace('.', '')} at ${target.name}.`, snd);
       lines.push(`${SOCIALS[verb][0].replace('.', '')} at ${target.name}.`);
-      return { ok: true, lines, kinds: [...kinds, 'emote'] };
+      return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: snd ? [snd] : [] };
     }
-    lines.push(`No \"${targetName}\" here.`);
+    lines.push(`No "${targetName}" here.`);
     return { ok: false, lines };
+  }
+
+  /* ── TOUCH-AS-OFFER (Round 7, Part 21) ──────────────────────────────────
+   * Touch lands as an offer. The other person takes it or lets it pass,
+   * and letting it pass produces no message and no refusal. Nobody gets
+   * rejected out loud. The offer lives on the target character for 60s. */
+  if (['handshake', 'hug', 'highfive', 'fistbump', 'pat'].includes(verb) || (verb === 'high' && rest.startsWith('five'))) {
+    const gesture = verb === 'high' ? 'highfive' : verb;
+    const targetName = (verb === 'high' ? rest.slice(4) : rest).trim();
+    if (!targetName) {
+      lines.push(`${gesture} whom?`);
+      return { ok: false, lines };
+    }
+    const target = await MooChar.findOne({ roomId: ch.roomId, name: new RegExp('^' + escapeRe(targetName) + '$', 'i') }).lean();
+    if (!target) {
+      lines.push(`No "${targetName}" here.`);
+      return { ok: false, lines };
+    }
+    const GESTURE_LINES = {
+      handshake: ['extends a hand toward', 'You extend a hand toward'],
+      hug:       ['opens their arms toward', 'You open your arms toward'],
+      highfive:  ['raises a hand toward', 'You raise a hand toward'],
+      fistbump:  ['holds out a fist toward', 'You hold out a fist toward'],
+      pat:       ['reaches toward', 'You reach toward'],
+    };
+    const gl = GESTURE_LINES[gesture] || GESTURE_LINES.handshake;
+    await MooChar.updateOne(
+      { _id: target._id },
+      { $set: { 'attrs.touchOffer': { from: ch.name, gesture, at: Date.now() } } },
+    );
+    lines.push(`${gl[1]} ${target.name}. If they take it, you will both know.`);
+    return { ok: true, lines };
+  }
+  if (verb === 'accept') {
+    const offer = ch.attrs?.touchOffer;
+    if (!offer || (Date.now() - offer.at) > 60000) {
+      if (offer) await MooChar.updateOne({ _id: ch._id }, { $unset: { 'attrs.touchOffer': '' } });
+      lines.push('Nothing offered right now.');
+      return { ok: false, lines };
+    }
+    const ACCEPT_LINES = {
+      handshake: ['shake hands', 'social.handshake'],
+      hug:       ['share a hug', 'social.hug'],
+      highfive:  ['slap a clean high five', 'social.clap'],
+      fistbump:  ['bump fists', 'social.fistbump'],
+      pat:       ['a pat', null],
+    };
+    const al = ACCEPT_LINES[offer.gesture] || ACCEPT_LINES.handshake;
+    const roomMsg = al[0] === 'a pat'
+      ? `${offer.from} gives ${ch.name} ${al[0]}.`
+      : `${ch.name} and ${offer.from} ${al[0]}.`;
+    const selfMsg = al[0] === 'a pat'
+      ? `${offer.from} gives you ${al[0]}.`
+      : `You and ${offer.from} ${al[0]}.`;
+    await emit(ch.roomId, ch.userId, ch.name, 'emote', roomMsg, al[1]);
+    await MooChar.updateOne({ _id: ch._id }, { $unset: { 'attrs.touchOffer': '' } });
+    lines.push(selfMsg);
+    return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: al[1] ? [al[1]] : [] };
+  }
+
+  /* ── GIVE COIN ─────────────────────────────────────────────────────────
+   * The economy flows between players. Coin changes hands in the same room. */
+  if (verb === 'give' && /^\d+\s+coins?\s+to\s+/i.test(rest)) {
+    const gm = rest.match(/^(\d+)\s+coins?\s+to\s+(.+)$/i);
+    if (gm) {
+      const amount = parseInt(gm[1], 10);
+      const recipientName = gm[2].trim();
+      if (amount <= 0) { lines.push('That is not an amount.'); return { ok: false, lines }; }
+      if ((ch.attrs?.coin || 0) < amount) {
+        lines.push(`You have ${ch.attrs?.coin || 0} coin. Not enough.`);
+        return { ok: false, lines };
+      }
+      const recipient = await MooChar.findOne({
+        roomId: ch.roomId,
+        name: new RegExp('^' + escapeRe(recipientName) + '$', 'i'),
+        _id: { $ne: ch._id },
+      }).lean();
+      if (!recipient) {
+        lines.push(`No "${recipientName}" here to give coin to.`);
+        return { ok: false, lines };
+      }
+      await MooChar.updateOne({ _id: ch._id }, { $inc: { 'attrs.coin': -amount } });
+      await MooChar.updateOne({ _id: recipient._id }, { $inc: { 'attrs.coin': amount } });
+      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} counts out ${amount} coin and hands it to ${recipient.name}.`, 'obj.coins.drop');
+      lines.push(`You hand ${amount} coin to ${recipient.name}.`);
+      return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: ['obj.coins.drop'] };
+    }
+  }
+
+  /* ── ROOM CHORD (Round 7, Part 21) ─────────────────────────────────────
+   * One tone per person present, bound to a musical key. A sonic census.
+   * The chord tells a blind player who is nearby without the room having
+   * to read a list. Sound IDs are chord.1 through chord.8 for up to 8
+   * concurrent presences; more than that is rare. */
+  if (verb === 'chord' || verb === 'listen') {
+    const present = await MooChar.find({ roomId: ch.roomId }).select('name').lean();
+    const count = Math.min(present.length, 8);
+    const names = present.map(p => p.name).join(', ');
+    const chordSound = count > 0 ? `chord.${count}` : null;
+    lines.push(count === 1
+      ? 'Just you. One low tone, no harmony to build from yet.'
+      : `${count} souls here: ${names}. The chord sounds ${count} notes.`);
+    return { ok: true, lines, sounds: chordSound ? [chordSound] : [] };
   }
 
   /* ── CHARACTERS (her RS Games shape: several playable characters, one active) ── */
@@ -726,7 +904,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
       return { ok: false, lines };
     }
     await MooChar.updateMany({ userId: ch.userId }, { $set: { active: false } });
-    await MooChar.create({ userId: ch.userId, name, roomId: 'city_gate', active: true });
+    await MooChar.create({ userId: ch.userId, name, roomId: 'city_gate', active: true, attrs: { alive: true, coin: 20, lastMeal: Date.now(), lastSleep: Date.now() } });
     await emit('city_gate', ch.userId, name, 'enter', `${name} steps through the Threshold Gate for the first time.`);
     lines.push(`${name} is born at the Threshold Gate, and you are now playing them. (Switch back anytime: switch <name>.)`);
     return { ok: true, lines, kinds: [...kinds, 'enter'] };
@@ -883,6 +1061,294 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     lines.push(`${target.name}: ${line}`);
     return { ok: true, lines, kinds: [...kinds, 'say'] };
   }
+
+  /* ════ FORAGE SYSTEM (Round 7, Part 20.2) ═══════════════════════════════
+   * Wild food on the real calendar. A map of times, not places.
+   * The almanac fills in as you find things — a veteran's filled
+   * almanac is one of the best gifts in the game. */
+
+  /* THE ALMANAC — what's in season RIGHT NOW, keyed to real month/day.
+   * Each entry: { what, where (roomId array), monthStart, dayStart, monthEnd, dayEnd, desc, smell, catch } */
+  const GARDEN_ROOMS = ['garden_plots']; /* expand later to the_patch */
+
+  const FORAGE_CALENDAR = [
+    { what: 'wild onion',   where: ['the_spring', 'sweetwater_park', 'the_ditches'], monthStart: 3, dayStart: 1, monthEnd: 5, dayEnd: 15,
+      desc: 'A clump of wild onion, thin-stemmed and sharp.', smell: 'The air has that green-sharp bite — wild onion, close.', catch: null },
+    { what: 'dandelion greens', where: ['sweetwater_park', 'the_ditches', 'long_acre_fields'], monthStart: 3, dayStart: 15, monthEnd: 5, dayEnd: 31,
+      desc: 'Dandelion greens, young enough to eat without bitterness.', smell: 'Dandelions crowd the edges of everything here, this time of year.', catch: null },
+    { what: 'watercress',   where: ['the_spring', 'sweetwater_creek'], monthStart: 3, dayStart: 1, monthEnd: 5, dayEnd: 31,
+      desc: 'Watercress, peppery and dripping.', smell: 'The water smells green and peppery — watercress.', catch: null },
+    { what: 'sassafras root', where: ['sweetwater_park', 'long_acre_fields'], monthStart: 3, dayStart: 1, monthEnd: 4, dayEnd: 30,
+      desc: 'A sassafras root, thin as your finger, smelling like root beer.', smell: 'Something in the turned dirt smells like root beer. Sassafras.', catch: null },
+    { what: 'poke',         where: ['the_patch', 'millrace_yard', 'long_acre_fields'], monthStart: 3, dayStart: 15, monthEnd: 4, dayEnd: 30,
+      desc: 'Young poke shoots, barely a hand tall. Must be boiled three times.', smell: 'The fence line is thick with poke shoots, young and dangerous if you don\'t know the rule.', catch: 'Must be boiled three times. The world will tell you. Ruth-Ann will tell you. Do it.' },
+    { what: 'morel',        where: ['long_acre_fields', 'the_timber'], monthStart: 4, dayStart: 5, monthEnd: 4, dayEnd: 25,
+      desc: 'A morel mushroom, honeycombed and perfect.', smell: 'The loam smells like rain-on-warm-dirt, that particular morel weather.', catch: 'Cannot be farmed, cannot be predicted. The whole city loses its mind for about ten days.' },
+    { what: 'mulberry',     where: ['the_stairs', 'fairlawn_walk'], monthStart: 6, dayStart: 10, monthEnd: 6, dayEnd: 28,
+      desc: 'A handful of mulberries, fat and dark as bruises.', smell: 'The air is sweet and heavy — the mulberry tree is dropping.', catch: 'Stains everything you own. The Stairs get slick. Fairlawn files a complaint every year.' },
+    { what: 'blackberry',   where: ['millrace_yard', 'long_acre_fields', 'the_rail_spur'], monthStart: 7, dayStart: 1, monthEnd: 7, dayEnd: 28,
+      desc: 'Blackberries, warm from the sun and full of seeds.', smell: 'That particular July sweetness — blackberries ripening along the rail line.', catch: 'Thorns, chiggers, and Boone Tally knows where the good canes are if you ask him right.' },
+    { what: 'pawpaw',       where: ['sweetwater_creek', 'the_bottoms'], monthStart: 9, dayStart: 5, monthEnd: 9, dayEnd: 20,
+      desc: 'A pawpaw, custardy and tropical and completely wrong for this latitude.', smell: 'Something tropical and wrong for this latitude drifts up from the bottoms. Pawpaw.', catch: 'People who know the patch do not tell you where the patch is. This is the only secret in Reverie that people actually keep.' },
+    { what: 'persimmon',    where: ['the_gravewalk', 'grave_hill'], monthStart: 11, dayStart: 1, monthEnd: 12, dayEnd: 15,
+      desc: 'A persimmon, soft and yielding — it waited for the frost.', smell: 'Persimmon on the ground, split and sweet. The frost did its work.', catch: 'Eat one before frost and your whole face will regret it. You make that mistake once.' },
+    { what: 'black walnut',  where: ['sweetwater_park', 'the_patch'], monthStart: 10, dayStart: 1, monthEnd: 10, dayEnd: 31,
+      desc: 'Black walnuts in their husks, green-black and pungent.', smell: 'That sharp, almost chemical smell — black walnuts underfoot.', catch: 'Your hands are stained for a week. Millrace has a hulling machine and a man who charges to run it.' },
+  ];
+
+  function getForageInSeason(roomId) {
+    const now = new Date();
+    const m = now.getMonth() + 1; // 1-12
+    const d = now.getDate();
+    return FORAGE_CALENDAR.filter(f => {
+      if (!f.where.includes(roomId)) return false;
+      if (f.monthStart === f.monthEnd) return m === f.monthStart && d >= f.dayStart && d <= f.dayEnd;
+      if (m === f.monthStart) return d >= f.dayStart;
+      if (m === f.monthEnd) return d <= f.dayEnd;
+      return m > f.monthStart && m < f.monthEnd;
+    });
+  }
+
+  if (verb === 'forage' || verb === 'gather' || verb === 'harvest' || (verb === 'pick' && !GARDEN_ROOMS.includes(ch.roomId))) {
+    const inSeason = getForageInSeason(ch.roomId);
+    if (inSeason.length === 0) {
+      const room = await MooRoom.findOne({ roomId: ch.roomId }).select('name').lean();
+      lines.push(`Nothing wild to gather in ${room?.name || 'this place'} right now. The calendar and the land decide — not you. Walk the wards in their seasons and the air will tell you what's ready.`);
+      return { ok: false, lines };
+    }
+    /* Pick a random item from what's available — foraging is discovery */
+    const pick = inSeason[Math.floor(Math.random() * inSeason.length)];
+    /* Cooldown: one forage per room per 30 minutes per character */
+    const lastForage = ch.attrs?.lastForage || {};
+    const lastHere = lastForage[ch.roomId] || 0;
+    if (Date.now() - lastHere < 30 * 60 * 1000) {
+      const mins = Math.ceil((30 * 60 * 1000 - (Date.now() - lastHere)) / 60000);
+      lines.push(`You already picked through here recently. Give it ${mins} more minute${mins === 1 ? '' : 's'} — the land needs a rest, and so do your knees.`);
+      return { ok: false, lines };
+    }
+    /* Update cooldown and inventory */
+    const invKey = `inventory`;
+    const inv = ch.attrs?.inventory || [];
+    inv.push({ name: pick.what, foraged: true, at: Date.now() });
+    const newLastForage = { ...lastForage, [ch.roomId]: Date.now() };
+    await MooChar.updateOne({ _id: ch._id }, {
+      $set: { 'attrs.lastForage': newLastForage, 'attrs.inventory': inv },
+    });
+    /* Update almanac — character's personal record of what they've found */
+    const almanac = ch.attrs?.almanac || [];
+    const alreadyKnown = almanac.some(a => a.what === pick.what);
+    if (!alreadyKnown) {
+      almanac.push({ what: pick.what, firstFound: Date.now(), where: ch.roomId });
+      await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.almanac': almanac } });
+    }
+    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} forages and comes up with something.`, 'forage.pick');
+    let msg = pick.desc;
+    if (pick.catch) msg += ` (${pick.catch})`;
+    if (!alreadyKnown) msg += ' — New entry in your almanac.';
+    lines.push(msg);
+    return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: ['forage.pick'] };
+  }
+
+  /* ALMANAC — check what you've found so far */
+  if (verb === 'almanac') {
+    const almanac = ch.attrs?.almanac || [];
+    if (almanac.length === 0) {
+      lines.push('Your almanac is blank. Forage in the wild places — the spring, the park, the fields, the creek — and it fills in. A map of times, not places.');
+      return { ok: true, lines };
+    }
+    const entries = almanac.map(a => {
+      const cal = FORAGE_CALENDAR.find(f => f.what === a.what);
+      const months = cal ? `(${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][cal.monthStart-1]}–${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][cal.monthEnd-1]})` : '';
+      return `${a.what} ${months}`;
+    });
+    lines.push(`Your almanac, ${almanac.length} entries: ${entries.join(', ')}. The rest is still blank. Walk the wards in their seasons.`);
+    return { ok: true, lines };
+  }
+
+  /* SNIFF / SMELL — nose-first design, the forage system's scout verb */
+  if (verb === 'sniff' || verb === 'smell') {
+    const inSeason = getForageInSeason(ch.roomId);
+    if (inSeason.length > 0) {
+      const smells = inSeason.map(f => f.smell);
+      lines.push(smells[Math.floor(Math.random() * smells.length)]);
+      return { ok: true, lines };
+    }
+    const room = await MooRoom.findOne({ roomId: ch.roomId }).lean();
+    /* Fall back to room-level smell if defined */
+    if (room?.props?.smell) {
+      lines.push(room.props.smell);
+    } else {
+      lines.push('The air is what it is. Nothing particular on the wind right now.');
+    }
+    return { ok: true, lines };
+  }
+
+
+  /* ════ GARDEN PLOTS (Round 7, Part 20.3) ════════════════════════════════
+   * Rented plots, real days, real seasons. Plant, water, wait, weed, pick.
+   * Days, not minutes. Law 3 pace. Nothing dies while you're gone.
+   * THE NOTE IS THE FEATURE — come back and find your plot was tended
+   * and a note left on a stake. */
+
+  const PLANTABLE = {
+    tomato:    { grow: 5, desc: 'fat red tomatoes, warm from the vine', price: 0, sell: 8 },
+    pepper:    { grow: 5, desc: 'peppers in a heap of color', price: 0, sell: 7 },
+    greens:    { grow: 3, desc: 'a mess of greens, tender and dark', price: 0, sell: 5 },
+    beans:     { grow: 4, desc: 'green beans, snapping crisp', price: 0, sell: 6 },
+    corn:      { grow: 7, desc: 'ears of sweet corn, silk drying gold', price: 0, sell: 10 },
+    herbs:     { grow: 2, desc: 'a bundle of herbs — basil, thyme, a sprig of something that smells like licorice', price: 0, sell: 4 },
+    sunflower: { grow: 6, desc: 'sunflowers, tall and rattling, grown for nothing but the look of them', price: 0, sell: 3 },
+  };
+
+
+
+  if (verb === 'plant' && GARDEN_ROOMS.includes(ch.roomId)) {
+    const what = rest.replace(/\s*(seeds?|seedling)\s*/i, '').trim().toLowerCase();
+    if (!what) {
+      lines.push(`Plant what? Options: ${Object.keys(PLANTABLE).join(', ')}. All free to start — seeds are in the shed.`);
+      return { ok: false, lines };
+    }
+    if (!PLANTABLE[what]) {
+      lines.push(`The shed doesn't have ${what} seeds. What's available: ${Object.keys(PLANTABLE).join(', ')}.`);
+      return { ok: false, lines };
+    }
+    /* Check if character already has a plot going */
+    if (ch.attrs?.gardenPlot) {
+      const p = ch.attrs.gardenPlot;
+      lines.push(`You already have ${p.crop} planted — ${p.stage === 'ready' ? 'ready to pick' : 'still growing'}. One plot at a time. Pick or pull it first.`);
+      return { ok: false, lines };
+    }
+    /* Real-season check: planting season is April–August */
+    const mo = new Date().getMonth() + 1;
+    if (mo < 4 || mo > 8) {
+      lines.push('Nothing goes in the ground this time of year. Planting runs April through August — the rest is frost, or too close to it.');
+      return { ok: false, lines };
+    }
+    const plot = {
+      crop: what,
+      plantedAt: Date.now(),
+      daysToGrow: PLANTABLE[what].grow,
+      stage: 'growing', /* growing → ready */
+      watered: Date.now(),
+      weeded: Date.now(),
+      notes: [],
+    };
+    await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.gardenPlot': plot } });
+    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} kneels in the dirt and plants ${what} seeds.`, 'garden.plant');
+    lines.push(`You plant ${what}. ${PLANTABLE[what].grow} real days to harvest — the calendar decides, not you. Water it. Weed it. Come back when it's ready.`);
+    return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: ['garden.plant'] };
+  }
+
+  if (verb === 'water' && GARDEN_ROOMS.includes(ch.roomId)) {
+    const plot = ch.attrs?.gardenPlot;
+    if (!plot) {
+      /* Can water someone else's plot — the NOTE feature */
+      const targetName = rest.trim();
+      if (targetName) {
+        const target = await MooChar.findOne({
+          'attrs.gardenPlot': { $exists: true },
+          name: new RegExp('^' + escapeRe(targetName) + '$', 'i'),
+        });
+        if (target && target.attrs?.gardenPlot) {
+          const note = `Yours were dry. Watered them. — ${ch.name}`;
+          await MooChar.updateOne({ _id: target._id }, {
+            $set: { 'attrs.gardenPlot.watered': Date.now() },
+            $push: { 'attrs.gardenPlot.notes': { from: ch.name, text: note, at: Date.now() } },
+          });
+          await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} waters ${target.name}'s plot and leaves a note on the stake.`, 'garden.water');
+          lines.push(`You water ${target.name}'s plot and leave a note: "${note}"`);
+          return { ok: true, lines, sounds: ['garden.water'] };
+        }
+      }
+      lines.push('You have no plot planted here. Try: plant <crop>. Or water <name> to tend someone else\'s.');
+      return { ok: false, lines };
+    }
+    const hoursSince = (Date.now() - (plot.watered || 0)) / (1000 * 60 * 60);
+    if (hoursSince < 12) {
+      lines.push('Already watered recently. The soil is still dark. Come back tomorrow.');
+      return { ok: false, lines };
+    }
+    await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.gardenPlot.watered': Date.now() } });
+    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} waters their plot. The spigot squeaks.`, 'garden.water');
+    lines.push('You water your plot. The spigot squeaks in that way you know from two rows over.');
+    return { ok: true, lines, sounds: ['garden.water'] };
+  }
+
+  if (verb === 'weed' && GARDEN_ROOMS.includes(ch.roomId)) {
+    const plot = ch.attrs?.gardenPlot;
+    if (!plot) { lines.push('No plot to weed. Plant something first.'); return { ok: false, lines }; }
+    const hoursSince = (Date.now() - (plot.weeded || 0)) / (1000 * 60 * 60);
+    if (hoursSince < 12) {
+      lines.push('Already weeded recently. The rows are clean.');
+      return { ok: false, lines };
+    }
+    await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.gardenPlot.weeded': Date.now() } });
+    lines.push('You pull weeds until your knees ache and the rows look intentional again.');
+    return { ok: true, lines };
+  }
+
+  if ((verb === 'check' || verb === 'tend' || verb === 'plot') && GARDEN_ROOMS.includes(ch.roomId)) {
+    const plot = ch.attrs?.gardenPlot;
+    if (!plot) { lines.push('No plot here. Try: plant <crop>. Options: ' + Object.keys(PLANTABLE).join(', ') + '.'); return { ok: false, lines }; }
+    const daysPassed = (Date.now() - plot.plantedAt) / (1000 * 60 * 60 * 24);
+    const daysLeft = Math.max(0, Math.ceil(plot.daysToGrow - daysPassed));
+    /* Auto-advance stage */
+    if (daysLeft === 0 && plot.stage === 'growing') {
+      await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.gardenPlot.stage': 'ready' } });
+      plot.stage = 'ready';
+    }
+    const wateredAgo = Math.round((Date.now() - (plot.watered || plot.plantedAt)) / (1000 * 60 * 60));
+    const weededAgo = Math.round((Date.now() - (plot.weeded || plot.plantedAt)) / (1000 * 60 * 60));
+    let status = `Your plot: ${plot.crop}. `;
+    if (plot.stage === 'ready') {
+      status += `Ready to pick — ${PLANTABLE[plot.crop]?.desc || plot.crop}. Use: pick.`;
+    } else {
+      status += `${daysLeft} day${daysLeft === 1 ? '' : 's'} to go. `;
+      status += wateredAgo > 18 ? 'Needs water. ' : 'Watered. ';
+      status += weededAgo > 18 ? 'Getting weedy.' : 'Rows are clean.';
+    }
+    /* Show notes left by others */
+    if (plot.notes && plot.notes.length > 0) {
+      const recent = plot.notes.slice(-3);
+      status += ' Notes on the stake: ' + recent.map(n => `"${n.text}"`).join(' ');
+      /* Clear notes after reading */
+      await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.gardenPlot.notes': [] } });
+    }
+    lines.push(status);
+    return { ok: true, lines };
+  }
+
+  if (verb === 'pick' && GARDEN_ROOMS.includes(ch.roomId) && !rest) {
+    const plot = ch.attrs?.gardenPlot;
+    if (!plot) { lines.push('No plot planted here.'); return { ok: false, lines }; }
+    const daysPassed = (Date.now() - plot.plantedAt) / (1000 * 60 * 60 * 24);
+    if (daysPassed < plot.daysToGrow) {
+      const daysLeft = Math.ceil(plot.daysToGrow - daysPassed);
+      lines.push(`Not ready yet. ${daysLeft} more day${daysLeft === 1 ? '' : 's'}. The calendar decides.`);
+      return { ok: false, lines };
+    }
+    const crop = PLANTABLE[plot.crop];
+    const inv = ch.attrs?.inventory || [];
+    inv.push({ name: plot.crop, grown: true, at: Date.now() });
+    const sellValue = crop?.sell || 5;
+    await MooChar.updateOne({ _id: ch._id }, {
+      $unset: { 'attrs.gardenPlot': '' },
+      $set: { 'attrs.inventory': inv },
+      $inc: { 'attrs.coin': sellValue },
+    });
+    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} picks ${crop?.desc || plot.crop} from their plot.`, 'garden.pick');
+    lines.push(`You pick: ${crop?.desc || plot.crop}. The garden club nods. ${sellValue} coin for the harvest. Plot's clear — plant again whenever.`);
+    return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: ['garden.pick'] };
+  }
+
+  if (verb === 'pull' && GARDEN_ROOMS.includes(ch.roomId)) {
+    const plot = ch.attrs?.gardenPlot;
+    if (!plot) { lines.push('No plot to pull.'); return { ok: false, lines }; }
+    await MooChar.updateOne({ _id: ch._id }, { $unset: { 'attrs.gardenPlot': '' } });
+    lines.push(`You pull up your ${plot.crop}. The plot's clear now.`);
+    return { ok: true, lines };
+  }
+
 
   /* WORK — six shifts a day, then the world is sick of you (Part 7). */
   if (verb === 'work') {
@@ -1276,14 +1742,18 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     if (wverb === 'set') {
       /* Names come in parts (Aug 10 2026): quote a spaced name — @set "Ruby
        * Boggs" standing 5 — or use underscores: @set Ruby_Boggs standing 5. */
+      /* Match structure from rest (lowercase), but pull VALUE from restRaw
+       * so stored text keeps its original case. (The @set lowercase bug, Aug 13.) */
       const m = rest.match(/^"([^"]+)"\s+(\S+)\s+([\s\S]+)$/) || rest.match(/^(\S+)\s+(\S+)\s+([\s\S]+)$/);
+      /* Re-extract value from restRaw at the same offset to preserve case. */
+      const mRaw = restRaw.match(/^"([^"]+)"\s+(\S+)\s+([\s\S]+)$/) || restRaw.match(/^(\S+)\s+(\S+)\s+([\s\S]+)$/);
       if (!m) {
         lines.push('Usage: @set me|here|"<player name>"|item:<name> <path> <value>. Value parses as JSON when it can, else string. Example: @set me standing 5');
         return { ok: false, lines };
       }
       const targetRaw = m[1].replace(/_/g, ' ');
       const path = m[2];
-      const valueRaw = m[3];
+      const valueRaw = (mRaw || m)[3];
       let value;
       try { value = JSON.parse(valueRaw); } catch (e) { value = valueRaw.trim(); }
       const safePath = path.replace(/[^a-zA-Z0-9_.]/g, '').slice(0, 80);
@@ -1422,11 +1892,16 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     return { ok: false, lines };
   }
 
+  if (verb === 'help') {
+    lines.push('Moving: go <exit>, go to <place>, tram, ferry, home, back, map, dir. Senses: look, look <thing>, exits, where, time, weather, who, status, recap, chord, sniff. Hands: take, drop, put, get, give, inventory, coins, eat, sleep, work, flatten penny, buy brick. Fishing: cast, wait, set, hold, give, land, release, reel in, sell. Growing: forage, almanac, plant <crop>, water, weed, check, pick, pull. Social: laugh, sigh, hum, clap, snap, whistle, cry, wave, dance, stretch, lean, pace, wince (also: <emote> at <name>). Touch: handshake, hug, highfive, fistbump, pat <name> — they accept or let it pass. give <n> coin to <name>. Voice: say (the Quiet), speak (aloud), emote, whisper <name> <words>, page <name> <words>, talk to <citizen>, petition <words>, wish <words>. Selves: describe me as <text>, chars, newchar <First Last>, switch <name>.');
+    return { ok: true, lines };
+  }
+
   return {
     ok: false,
     unknown: true,
     lines: [
-      `The world does not know the command "${cmd}". Moving: go <exit>, go to <place>, tram, ferry, home, back, map, dir. Senses: look, look <thing>, exits, where, time, weather, who, status, recap. Hands: take, drop, put, get, give, inventory, coins, eat, sleep, work, flatten penny, buy brick. Fishing: cast, wait, set, hold, give, land, release, reel in, sell. Voice: say (the Quiet), speak (aloud), emote, whisper <name> <words>, page <name> <words>, talk to <citizen>, petition <words>, wish <words>. Selves: describe me as <text>, chars, newchar <First Last>, switch <name>.`,
+      `The world does not know the command "${cmd}". Try: help`,
     ],
   };
 }

@@ -132,7 +132,7 @@ const CITY_ROOMS = [
   {
     roomId: 'the_bank', name: 'the First Bell Bank', district: 'bellward',
     desc: 'Marble that makes every footstep sound like an announcement. Pens on chains, a clock that is — unlike the bell — exactly right, and Constance behind the last window with the ledgers squared. The vault door is mostly for show. Mostly.',
-    exits: { d: 'bell_court_street' },
+    exits: { d: 'bell_court_street', e: 'the_courthouse' },
     props: { doings: 'Check your coin. Talk terms with Constance. Admire a correct clock in a ward famous for a wrong bell.' },
   },
   {
@@ -144,7 +144,7 @@ const CITY_ROOMS = [
   {
     roomId: 'the_courthouse', name: 'the Courthouse', district: 'bellward',
     desc: 'Wide steps, tall doors, and inside, wood that creaks with opinions about your posture. Days, it runs the ordinary docket. Late nights it becomes the night court, and Honorable Pham sentences with flair — forty hours reshelving at the Archive, poetry section, that class of thing. The public benches fill for the good ones.',
-    exits: { w: 'bell_court_street' },
+    exits: { w: 'the_bank' },
     props: { doings: 'Watch the docket from the public benches. Court days ring the bell — the wrong bell, at the wrong time, which is how you know it counts.' },
   },
   {
@@ -183,7 +183,7 @@ const CITY_ROOMS = [
     roomId: 'pats_diner', name: 'Pat’s', district: 'hook',
     desc: 'Bacon, burnt coffee, and the flat-top’s steady hiss. A counter with stools worn to fit, booths with sugar shakers that stick, and Pat behind the grill at any hour you have ever checked. The coffee is bad and nobody minds. The pie rotates. The 3 a.m. crowd and the 6 a.m. crowd pretend not to know each other.',
     exits: { e: 'hook_front_street' },
-    props: { sleepable: false, food: { menu: 'eggs any way, hash, the pie of the day, and coffee that is honestly bad', price: 2 }, doings: 'Order food — eat here does it. Hold a stool. Hear the harbor’s news secondhand while Pat scrapes the flat-top.', job: { name: 'the sink at Pat’s', wage: 5, line: 'You wash dishes until the steam claims your sleeves. Pat slides you a plate at the end without being asked.', refusal: 'Pat points the spatula at a stool. "Sit. Eat. The sink will still be there tomorrow." ' } },
+    props: { smell: 'Grease, coffee, and whatever Pat has on the flat-top — today it smells like sausage and onions and not caring about anything else.',  sleepable: false, food: { menu: 'eggs any way, hash, the pie of the day, and coffee that is honestly bad', price: 2 }, doings: 'Order food — eat here does it. Hold a stool. Hear the harbor’s news secondhand while Pat scrapes the flat-top.', job: { name: 'the sink at Pat’s', wage: 5, line: 'You wash dishes until the steam claims your sleeves. Pat slides you a plate at the end without being asked.', refusal: 'Pat points the spatula at a stool. "Sit. Eat. The sink will still be there tomorrow." ' } },
   },
   {
     roomId: 'fish_market', name: 'the Fish Market', district: 'hook',
@@ -291,7 +291,7 @@ const CITY_ROOMS = [
     roomId: 'salvage_yard', name: 'the Salvage Yard', district: 'millrace',
     desc: 'Rust in ranks. The yard buys by weight and by interest, and the scale groans either way. Most hauls are junk. Some junk is interesting junk, and interesting junk starts threads. The freight line runs along the back fence, close enough to rattle the loose stuff when the night train passes.',
     exits: { s: 'millrace_channel' },
-    props: { outdoor: true, doings: 'Work a salvage shift. Poke the piles for interesting junk. Hear the fence rattle when the freight goes by.', job: { name: 'the salvage scale', wage: 8, line: 'You sort scrap by weight and by interest. Your hands come away the color of the work.', refusal: 'The scalewoman shakes her head. "Yard’s picked over and so are you. Tomorrow."' } },
+    props: { smell: 'Rust and old oil and the sun on metal. The salvage yard smells like everything it used to be.',  outdoor: true, doings: 'Work a salvage shift. Poke the piles for interesting junk. Hear the fence rattle when the freight goes by.', job: { name: 'the salvage scale', wage: 8, line: 'You sort scrap by weight and by interest. Your hands come away the color of the work.', refusal: 'The scalewoman shakes her head. "Yard’s picked over and so are you. Tomorrow."' } },
   },
   {
     roomId: 'the_garages', name: 'the Garages', district: 'millrace',
@@ -380,7 +380,7 @@ const CITY_ROOMS = [
   {
     roomId: 'long_acre_fields', name: 'the Fields', district: 'longacre',
     desc: 'Crop rows to the horizon, insect hum, a windbreak of old trees leaning east together like they voted on it. The dirt smells like work that matters. Harvest turns this whole ward into one long shared shift, and the pie afterward is the wage that counts.',
-    exits: { sw: 'ring_road' },
+    exits: { sw: 'ring_road', ne: 'the_airfield' },
     props: { outdoor: true, doings: 'Work the fields in season. Learn what the Long Acre families know and do not write down.', job: { name: 'field work', wage: 7, line: 'You pick, haul, and learn the difference between tired and field-tired. The rows do not lie about your progress.', refusal: 'The row boss tips her hat back. "Fields need a day off you. Water yourself. Tomorrow."' } },
   },
   {
@@ -993,11 +993,19 @@ async function tickWorld() {
       const byRoom = Object.fromEntries(where.map((r) => [r.roomId, r]));
       for (const roomId of rooms) {
         const r = byRoom[roomId];
-        const sound = !r || !r.props?.outdoor
-          ? HORN_THRU
-          : ON_THE_LINE.has(r.district) ? HORN_NEAR : HORN_FAR;
+        let sound, text;
+        if (!r || !r.props?.outdoor) {
+          sound = HORN_THRU;
+          text = 'Through the walls, the freight horn reaches you — muffled, low, more feeling than sound. The building hums with it for a moment and then the moment is gone.';
+        } else if (ON_THE_LINE.has(r.district)) {
+          sound = HORN_NEAR;
+          text = 'The night freight announces itself close enough to feel — the horn fills the street, the rails sing, and for forty seconds the whole ward belongs to something passing through. The crossing bell answers late and keeps answering after the last car is past.';
+        } else {
+          sound = HORN_FAR;
+          text = 'Far off, the night freight sounds its horn — long vowels rolling over the roofs. Every ward hears it at a different distance. Old-timers claim they can tell the load. They cannot. They will not stop.';
+        }
         const seq = await nextSeq();
-        await MooEvent.create({ seq, roomId, actorUserId: null, actorName: 'the night freight', kind: 'system', sound, text: 'Far off, the night freight sounds its horn — long vowels rolling over the roofs. Every ward hears it at a different distance. Old-timers claim they can tell the load. They cannot. They will not stop.', at: new Date() });
+        await MooEvent.create({ seq, roomId, actorUserId: null, actorName: 'the night freight', kind: 'system', sound, text, at: new Date() });
       }
     }
     /* 4 — one ambient breath of the census, sometimes. */
