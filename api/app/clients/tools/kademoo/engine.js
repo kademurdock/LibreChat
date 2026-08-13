@@ -704,15 +704,23 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     }
 
     if (!animal) {
-      if (verb === 'carry' || verb === 'adopt' || verb === 'surrender' || verb === 'call') {
-        /* These four are stray-only words. Say so rather than falling through
-         * into a confusing item error. */
-        lines.push(pool.length ? `Which one? ${pool.map((a) => a.name).join(', ')}.` : 'No animal here.');
+      /* `approach`, `pet`, `coax`, `carry`, `adopt`, `surrender` and `call` are
+       * stray words and nothing else, so say what's actually wrong. Only
+       * `offer` falls through, because it is the one word here that will
+       * plausibly mean something else one day (offer a price, offer a hand).
+       *
+       * The first cut let approach/pet/coax fall through too, and the live
+       * world answered `approach cat` in a room with no cat with "the world
+       * does not know the command approach cat" — which is a lie about a verb
+       * that exists, and the most discouraging thing a parser can say to
+       * somebody still learning what the game accepts. */
+      if (verb !== 'offer') {
+        lines.push(pool.length
+          ? `Which one? ${pool.map((a) => a.name).join(', ')}.`
+          : 'No animal here. They keep to their own patches of the city — try the alleys off Front Street, Gully Road, Line Street, the Millrace, Sweetwater park, the Long Acre fields, or the Gravewalk lanterns.');
         return { ok: false, lines };
       }
-      /* approach / pet / coax / offer might have meant something else
-       * entirely — fall through to the rest of the parser. */
-      if (pool.length === 0) { /* fall through below */ } else {
+      if (pool.length) {
         lines.push(`Which one? ${pool.map((a) => a.name).join(', ')}.`);
         return { ok: false, lines };
       }
