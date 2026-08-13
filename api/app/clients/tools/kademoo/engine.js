@@ -245,7 +245,7 @@ async function describeRoom(ch) {
       if (p.attrs && p.attrs.pose) return `${p.name} ${p.attrs.pose}`;
       if (p.attrs && p.attrs.stray) {
         const t = (p.attrs.trust || {})[ch.userId] || 0;
-        return `${p.name} (${strays.rungOf(t)})`;
+        return `${p.name}, ${strays.roomTag(t)}`;
       }
       const doing = p.userId && p.userId.startsWith('npc:') ? reverie.npcDoingNow(p.userId) : null;
       if (doing && doing.doing) return `${p.name} (${doing.doing})`;

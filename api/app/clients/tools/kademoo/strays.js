@@ -207,6 +207,25 @@ const MOOD_LINES = {
     yours: 'It sits on your foot. Not near your foot. On it.',
   },
 };
+/* THE ROOM TAG — what `look` prints beside the animal, and it is NOT the rung
+ * key. The live world printed "a large orange tomcat (gone)" for a cat that
+ * was standing four feet away, because the internal key leaked straight into
+ * prose. `gone` means "gone if you move at it," which is a sentence, not a
+ * label. These are per-reader: the same cat reads differently to two people
+ * standing side by side, which is the entire point of per-person trust and
+ * the one place a player can actually SEE it without being shown a number. */
+const ROOM_TAG = {
+  gone: 'keeping well clear of you',
+  watching: 'watching you',
+  tolerating: 'letting you be',
+  curious: 'half-interested in you',
+  close: 'near enough to touch',
+  yours: 'at your feet',
+};
+function roomTag(trust) {
+  return ROOM_TAG[rungOf(trust)];
+}
+
 function moodLine(species, trust) {
   return (MOOD_LINES[species] || MOOD_LINES.dog)[rungOf(trust)];
 }
@@ -293,5 +312,5 @@ function verifyTuning(runs = 800) {
 module.exports = {
   STRAYS, STRAY_BY_ID, SHELTER_ROOM, SURRENDER_PAYS, ADOPT_COSTS,
   CARRY_AT, TARGETS, GAIN, PATIENCE_MS, BOLT_CHANCE,
-  trustGain, rungOf, moodLine, moodSound, willEat, driftTo, verifyTuning,
+  trustGain, rungOf, roomTag, ROOM_TAG, moodLine, moodSound, willEat, driftTo, verifyTuning,
 };
