@@ -103,61 +103,61 @@ const CITY_ROOMS = [
     roomId: 'bell_court_street', name: 'Court Street', district: 'bellward',
     desc: 'The Archive bell rings the hour somewhere overhead, late as always, and pigeons argue about it. Brick underfoot, bookshop dust and tea on the air. The Archive stands north, Mercy glows east at the street’s end, the bank and the Mark Exchange face off midblock, and the courthouse keeps its wide steps swept. The tram stops here.',
     exits: { s: 'founders_square', n: 'the_archive', e: 'mercy_hospital', w: 'hook_front_street', ne: 'fairlawn_ave', nw: 'sweetwater_park', se: 'tanglefoot_line_street', sw: 'millrace_channel', u: 'the_bank', d: 'mark_exchange' },
-    props: { outdoor: true, tram: true, doings: 'Ride the tram. Step into the Archive, the bank, the Mark Exchange, Mercy, or the courthouse. Listen for the bell being wrong.' },
+    props: { smell: 'Bookshop dust and brick warmed by ten o clock. When the wind shifts: somebody s tea.', outdoor: true, tram: true, doings: 'Ride the tram. Step into the Archive, the bank, the Mark Exchange, Mercy, or the courthouse. Listen for the bell being wrong.' , listenLine: 'The bell rings somewhere overhead, late as always. Pigeons take issue. The tram hums south.'},
   },
   {
     roomId: 'the_archive', name: 'the Archive', district: 'bellward',
     desc: 'Paper, wax, and quiet — the loud kind of quiet a big reading room makes. Long tables, a row of terminals, shelves that go back further than the light does. The bell tower stairs are roped off with a sign that says SOON. The records office keeps a window at the back, and a narrow stair climbs to the Founder’s Office.',
     exits: { s: 'bell_court_street', n: 'records_office', u: 'founders_office', e: 'childrens_office', w: 'bureau_small_complaints' },
-    props: { doings: 'Read at the long tables. Search the chronicle at a terminal. Ask Ines almost anything. The records office window is north; the Founder’s Office is up.', job: { name: 'the Archive desk', wage: 6, line: 'You shelve returns and square the card drawers while Ines hums off-key on purpose.', refusal: 'Ines slides the cart away from you. "The books need to miss you a little. Come back tomorrow."' } },
+    props: { smell: 'Old paper and binding glue -- the smell of things waiting to be right about something.', doings: 'Read at the long tables. Search the chronicle at a terminal. Ask Ines almost anything. The records office window is north; the Founder’s Office is up.', job: { name: 'the Archive desk', wage: 6, line: 'You shelve returns and square the card drawers while Ines hums off-key on purpose.', refusal: 'Ines slides the cart away from you. "The books need to miss you a little. Come back tomorrow."' , listenLine: 'Paper turning, a chair creak, and the specific quiet of people trying to be quieter than each other.'} },
   },
   {
     roomId: 'records_office', name: 'the Records Office', district: 'bellward',
     desc: 'A window, a counter worn smooth by elbows, and one clerk’s eyebrow that does most of the talking. Ink and old paper. Names get made official here — first and last, like everyone on the ledger — and the fee jar takes what it takes. The old names never leave the book; that is the point of the book.',
     exits: { s: 'the_archive' },
-    props: { doings: 'Register a name, change a name (the old one stays on your record forever), or ask what the ledger remembers.' },
+    props: { smell: 'Ink that has dried with opinions, and the faintest cedar from the drawer that will not shut.', doings: 'Register a name, change a name (the old one stays on your record forever), or ask what the ledger remembers.' , listenLine: 'A pen scratch, a drawer that catches, and Wendell north talking to paper.'},
   },
   {
     roomId: 'founders_office', name: 'the Founder’s Office, Waiting Room', district: 'bellward',
     desc: 'A small room that smells faintly of lemon polish and patience. Six chairs, a low table of magazines from years that have not happened, and a door whose sign has said BACK IN FIVE MINUTES since the city opened. Set into the door is a brass slot. When it takes a petition, it makes a sound like a throat clearing politely.',
     exits: { d: 'the_archive' },
-    props: { doings: 'Wait, if you like waiting. Read a magazine from a year that has not happened. Slip a petition through the slot — petition <your words> works here best of anywhere, though she hears you from anywhere.' },
+    props: { smell: 'Lemon polish and patience. The magazines add something from a year that has not happened.', doings: 'Wait, if you like waiting. Read a magazine from a year that has not happened. Slip a petition through the slot — petition <your words> works here best of anywhere, though she hears you from anywhere.' , listenLine: 'The petition slot clears its throat. A clock ticks politely. The magazines do not help.'},
   },
   {
     roomId: 'mercy_hospital', name: 'Mercy', district: 'bellward',
     desc: 'Doors that open before you touch them, and behind them the small beeps of machines minding their own business. Clean linen and coffee gone stale on a warmer. Mercy does not close. It never has. The waiting chairs hold whoever the night brought in, and the nurses call everyone hon regardless of paperwork.',
     exits: { w: 'bell_court_street' },
-    props: { sleepable: true, doings: 'Get patched up. Sit with somebody. Sleep in a waiting chair — nobody minds here.' },
+    props: { smell: 'Clean linen and coffee gone stale on a warmer. Under both, the antiseptic that means somebody is trying.', sleepable: true, doings: 'Get patched up. Sit with somebody. Sleep in a waiting chair — nobody minds here.' , listenLine: 'Soft beeps minding their own business, rubber soles on clean floor, a coffee warmer clicking.'},
   },
   {
     roomId: 'the_bank', name: 'the First Bell Bank', district: 'bellward',
     desc: 'Marble that makes every footstep sound like an announcement. Pens on chains, a clock that is — unlike the bell — exactly right, and Constance behind the last window with the ledgers squared. The vault door is mostly for show. Mostly.',
     exits: { d: 'bell_court_street', e: 'the_courthouse' },
-    props: { doings: 'Check your coin. Talk terms with Constance. Admire a correct clock in a ward famous for a wrong bell.' },
+    props: { smell: 'Marble dust and money -- the second one might be the first one, honestly.', doings: 'Check your coin. Talk terms with Constance. Admire a correct clock in a ward famous for a wrong bell.' , listenLine: 'Marble gives every footstep a formal introduction. The clock ticks exactly right.'},
   },
   {
     roomId: 'mark_exchange', name: 'the Mark Exchange', district: 'bellward',
     desc: 'A shopfront with a counter, a wall of small wonders people paid real support for, and in the middle of the floor: the drum. Brass, waist-high, turned once a week with a crank that needs oil and never gets it — the squeak is tradition now. Wishes go in written small. A few come true every week, and the town crier lane of the Feed says whose.',
     exits: { u: 'bell_court_street' },
-    props: { doings: 'Make your one open wish for a thing you cannot afford: wish <what you want, in your own words>. Ask Oleander how the Drawing works. Read the Book of Patrons.' },
+    props: { smell: 'Brass polish from the drum and a faint sweetness from the drawing slips -- all that paper hope in a barrel.', doings: 'Make your one open wish for a thing you cannot afford: wish <what you want, in your own words>. Ask Oleander how the Drawing works. Read the Book of Patrons.' , listenLine: 'The drum squeaks on a slow turn. Coins clink in the patrons jar.'},
   },
   {
     roomId: 'the_courthouse', name: 'the Courthouse', district: 'bellward',
     desc: 'Wide steps, tall doors, and inside, wood that creaks with opinions about your posture. Days, it runs the ordinary docket. Late nights it becomes the night court, and Honorable Pham sentences with flair — forty hours reshelving at the Archive, poetry section, that class of thing. The public benches fill for the good ones.',
     exits: { w: 'the_bank' },
-    props: { doings: 'Watch the docket from the public benches. Court days ring the bell — the wrong bell, at the wrong time, which is how you know it counts.' },
+    props: { smell: 'Old wood, floor wax, and whatever conviction smells like. The benches have absorbed a century of nerves.', doings: 'Watch the docket from the public benches. Court days ring the bell — the wrong bell, at the wrong time, which is how you know it counts.' , listenLine: 'Wood creaks underfoot with opinions about your posture. A gavel somewhere, or memory of one.'},
   },
   {
     roomId: 'bureau_small_complaints', name: 'the Bureau of Small Complaints', district: 'bellward',
     desc: 'One desk, one drawer that will not quite shut for the paper in it, one man — Wendell — who takes every complaint in the city with total seriousness. Wind chimes, tram smells, autumn arriving late. Most of it goes in the drawer. Once in a while something gets fixed, and nobody has ever worked out the pattern.',
     exits: { e: 'the_archive' },
-    props: { doings: 'File a complaint about anything. Anything. Wendell will write it down like it matters, because to him it does.' },
+    props: { smell: 'Paper that has been handled too many times and window air from the one Wendell keeps cracked.', doings: 'File a complaint about anything. Anything. Wendell will write it down like it matters, because to him it does.' , listenLine: 'Wind chimes from the cracked window. Pen on paper. The drawer not shutting.'},
   },
   {
     roomId: 'childrens_office', name: 'the Children’s Office', district: 'bellward',
     desc: 'Warm light, low chairs, a desk with a drawer of butterscotch that is somehow never empty. Crayon drawings taped at kid height. Miss Ottoline Reed runs this room unfailingly calm, and the whole ward is a little more careful because she does.',
     exits: { w: 'the_archive' },
-    props: { doings: 'Talk to Miss Reed. Anyone can tell her anything about any kid in the city, and she listens all the way to the end.' },
+    props: { smell: 'Butterscotch from the drawer and crayon wax. Warm, the way rooms get when somebody cares about them.', doings: 'Talk to Miss Reed. Anyone can tell her anything about any kid in the city, and she listens all the way to the end.' , listenLine: 'Crayon on paper, quiet breathing, and the butterscotch drawer opening.'},
   },
 
   /* ── THE HOOK ── */
@@ -165,43 +165,43 @@ const CITY_ROOMS = [
     roomId: 'hook_front_street', name: 'Front Street', district: 'hook',
     desc: 'Gulls first, then chain, then the low diesel of something big idling out of sight. Front Street faces the water like it is keeping an eye on it. Salt and fish and rope. The docks rattle north, Pat’s diner steams at the water end, the fish market crowds the morning side, and the Stairs drop south toward the Patch. The tram turns around here like it is glad to.',
     exits: { e: 'bell_court_street', n: 'the_docks', w: 'pats_diner', s: 'the_stairs', ne: 'union_hall', nw: 'fish_market', sw: 'ferry_dock_hook' },
-    props: { outdoor: true, tram: true, doings: 'Work the docks. Eat at Pat’s. Catch the ferry. Take the Stairs down to the Patch. Watch the water do what water does.' },
+    props: { smell: 'Salt and fish and rope. Diesel floats over it when the wind quits.', outdoor: true, tram: true, doings: 'Work the docks. Eat at Pat’s. Catch the ferry. Take the Stairs down to the Patch. Watch the water do what water does.' , listenLine: 'Gulls first, then chain, then the low diesel of something big idling out of sight.'},
   },
   {
     roomId: 'the_docks', name: 'the Docks', district: 'hook',
     desc: 'Crane cable sings when the wind leans on it. The planks are wet even when nothing else is. Crates stacked in walls, chalk marks nobody explains, and the freight line ending at the water the way it has since before the name. Dockhands move like they know exactly how heavy everything is, because they do.',
     exits: { s: 'hook_front_street' },
-    props: { outdoor: true, doings: 'Work a dock shift — honest money, heavy verbs. Ask Merle what came in last night. Do not ask about certain crates.', job: { name: 'dock crew', wage: 9, line: 'You haul, stack, and sign nothing. Your shoulders file a complaint with the Bureau.', refusal: 'The foreman waves you off. "Dock’s sick of you today. Come back tomorrow — the crates ain’t going anywhere."' } },
+    props: { smell: 'Creosote, wet rope, and the sharp cold smell of whatever came off the boat before you got here.', outdoor: true, doings: 'Work a dock shift — honest money, heavy verbs. Ask Merle what came in last night. Do not ask about certain crates.', job: { name: 'dock crew', wage: 9, line: 'You haul, stack, and sign nothing. Your shoulders file a complaint with the Bureau.', refusal: 'The foreman waves you off. "Dock’s sick of you today. Come back tomorrow — the crates ain’t going anywhere."' , listenLine: 'Crane cable sings in the wind. Planks creak. Chalk marks get argued over.'} },
   },
   {
     roomId: 'union_hall', name: 'the Union Hall Steps', district: 'hook',
     desc: 'Cigarette smoke and strong opinions, both secondhand. The hall’s doors stand open for meetings and stay shut for everything else, so the real business happens out here on the steps, at volume. A most-of-a-banner over the door reads LOCAL 1 — the number is a joke and a boast at the same time.',
     exits: { sw: 'hook_front_street' },
-    props: { outdoor: true, opinion: true, doings: 'Sit on the steps and hear what the harbor thinks of the chronicle. Dues get argued here. Strikes get born here.' },
+    props: { smell: 'Cigarette smoke -- secondhand, like the opinions. Concrete steps and the metal smell of a door that stays shut.', outdoor: true, opinion: true, doings: 'Sit on the steps and hear what the harbor thinks of the chronicle. Dues get argued here. Strikes get born here.' , listenLine: 'Strong opinions at volume, mostly secondhand. The door stays shut; the steps don\'t.'},
   },
   {
     roomId: 'pats_diner', name: 'Pat’s', district: 'hook',
     desc: 'Bacon, burnt coffee, and the flat-top’s steady hiss. A counter with stools worn to fit, booths with sugar shakers that stick, and Pat behind the grill at any hour you have ever checked. The coffee is bad and nobody minds. The pie rotates. The 3 a.m. crowd and the 6 a.m. crowd pretend not to know each other.',
     exits: { e: 'hook_front_street' },
-    props: { smell: 'Grease, coffee, and whatever Pat has on the flat-top — today it smells like sausage and onions and not caring about anything else.',  sleepable: false, food: { menu: 'eggs any way, hash, the pie of the day, and coffee that is honestly bad', price: 2 }, doings: 'Order food — eat here does it. Hold a stool. Hear the harbor’s news secondhand while Pat scrapes the flat-top.', job: { name: 'the sink at Pat’s', wage: 5, line: 'You wash dishes until the steam claims your sleeves. Pat slides you a plate at the end without being asked.', refusal: 'Pat points the spatula at a stool. "Sit. Eat. The sink will still be there tomorrow." ' } },
+    props: { smell: 'Grease, coffee, and whatever Pat has on the flat-top — today it smells like sausage and onions and not caring about anything else.',  sleepable: false, food: { menu: 'eggs any way, hash, the pie of the day, and coffee that is honestly bad', price: 2 , listenLine: 'The flat-top hisses steady. A cup slides. Bacon crackles at any hour you check.'}, doings: 'Order food — eat here does it. Hold a stool. Hear the harbor’s news secondhand while Pat scrapes the flat-top.', job: { name: 'the sink at Pat’s', wage: 5, line: 'You wash dishes until the steam claims your sleeves. Pat slides you a plate at the end without being asked.', refusal: 'Pat points the spatula at a stool. "Sit. Eat. The sink will still be there tomorrow." ' } },
   },
   {
     roomId: 'fish_market', name: 'the Fish Market', district: 'hook',
     desc: 'Ice being shoveled, scales being argued with, and the smell that tells you everything is fresh because nothing has had time not to be. Stalls open before light and quit by noon. Gulls run the place from above and know it.',
     exits: { se: 'hook_front_street' },
-    props: { outdoor: true, food: { menu: 'smoked fish on bread, eaten standing up like a professional', price: 1 }, doings: 'Buy the morning catch. Eat standing up. Learn which gull is the boss gull. Mornings only, really.' },
+    props: { smell: 'Everything is fresh because nothing has had time not to be. Ice and salt and the clean smell of cold work.', outdoor: true, food: { menu: 'smoked fish on bread, eaten standing up like a professional', price: 1 , listenLine: 'Ice being shoveled. Scales being argued with. Gulls running things from above.'}, doings: 'Buy the morning catch. Eat standing up. Learn which gull is the boss gull. Mornings only, really.' },
   },
   {
     roomId: 'the_stairs', name: 'the Stairs', district: 'hook',
     desc: 'A street that is, in fact, stairs. One hundred and some steps of worn stone between the Hook above and the Patch below, with a landing halfway where everybody stops and pretends they were going to stop anyway. Everybody hates the Stairs. Everybody uses the Stairs. Coldpipe Alley leaks in from the east at the landing.',
     exits: { u: 'hook_front_street', d: 'patch_gully_road', e: 'coldpipe_alley' },
-    props: { outdoor: true, doings: 'Climb, descend, or stand on the landing catching your breath with the rest of the city.' },
+    props: { smell: 'Wet stone and whatever is cooking in the Patch below -- today it is climbing the stairs before you do.', outdoor: true, doings: 'Climb, descend, or stand on the landing catching your breath with the rest of the city.' , listenLine: 'Your own breathing, and somebody else\'s a landing below. Or above. Both lying about it.'},
   },
   {
     roomId: 'ferry_dock_hook', name: 'the Ferry Dock', district: 'hook',
     desc: 'Rope creak and water slap. A pole board lists the crossings in chalk, corrected hourly by weather and mood. The ferry to Sweetwater is slow on purpose — Captain Marsh calls the speed conversational. Bikes lean where their owners trusted them to stay.',
     exits: { ne: 'hook_front_street' },
-    props: { outdoor: true, ferry: true, ferryTo: 'the_pier', doings: 'Ride the ferry to Sweetwater: ferry does it. Slow and social — that is the point.' },
+    props: { smell: 'River water and diesel and the tarred rope that ties everything to everything.', outdoor: true, ferry: true, ferryTo: 'the_pier', doings: 'Ride the ferry to Sweetwater: ferry does it. Slow and social — that is the point.' , listenLine: 'Rope creak and water slap. The chalk board gets corrected. A bike leans.'},
   },
 
   /* ── TANGLEFOOT ── */
@@ -209,37 +209,37 @@ const CITY_ROOMS = [
     roomId: 'tanglefoot_line_street', name: 'Line Street', district: 'tanglefoot',
     desc: 'Bass through brick before you see a single door. Line Street kept the streetcar rails in the cobbles and the streetcar is long gone — bikes hit them wrong and everybody hears it. Smoke, fryer oil, somebody tuning a guitar somewhere upstairs. Dez’s bar leaks music north, the Band broadcasts from over Hock’s pawn, the Game Parlor’s door never quite shuts, and the taco window feeds the line at the alley end. A sign buzzes pink. The tram stops, reluctantly.',
     exits: { nw: 'bell_court_street', n: 'dezs_bar', e: 'pawn_hocks', s: 'game_parlor', se: 'taco_window' },
-    props: { outdoor: true, tram: true, doings: 'Follow the music to Dez’s. Pawn something at Hock’s. Play cards at the Parlor. Eat at the window. Tanglefoot starts when the light quits.' },
+    props: { smell: 'Smoke, fryer oil, and something sweet leaking from a door that has not decided if it is open.', outdoor: true, tram: true, doings: 'Follow the music to Dez’s. Pawn something at Hock’s. Play cards at the Parlor. Eat at the window. Tanglefoot starts when the light quits.' , listenLine: 'Bass through brick. A bike hitting the old streetcar rails wrong. Somebody tuning a guitar upstairs.'},
   },
   {
     roomId: 'dezs_bar', name: 'Dez’s', district: 'tanglefoot',
     desc: 'The door opens and the room arrives all at once: warm noise, spilled beer gone sticky, a stage the size of a rug and a crowd that treats it like an arena. Dez runs the bar unbothered by anything, including fires, heartbreak, and requests. The good stool is the third one. Everyone knows. Nobody says.',
     exits: { s: 'tanglefoot_line_street' },
-    props: { food: { menu: 'whatever Dez pours and a bowl of something salted', price: 2 }, doings: 'Hold the third stool if you dare. Hear live music most nights. Work a bar shift if Dez nods at you.', opinion: true, job: { name: 'a bar shift at Dez’s', wage: 7, line: 'You run glasses and learn six regulars’ pours by ear. Dez nods once, which is a parade, from Dez.', refusal: 'Dez points at the stage side of the bar. "You’re off. Sit down, be somebody’s audience."' } },
+    props: { smell: 'Spilled beer gone sticky, sweat from the stage, and whatever Dez is burning in the kitchen -- intentionally.', food: { menu: 'whatever Dez pours and a bowl of something salted', price: 2 , listenLine: 'The stage, the crowd, and between songs the specific silence of people deciding what to feel about it.'}, doings: 'Hold the third stool if you dare. Hear live music most nights. Work a bar shift if Dez nods at you.', opinion: true, job: { name: 'a bar shift at Dez’s', wage: 7, line: 'You run glasses and learn six regulars’ pours by ear. Dez nods once, which is a parade, from Dez.', refusal: 'Dez points at the stage side of the bar. "You’re off. Sit down, be somebody’s audience."' } },
   },
   {
     roomId: 'the_band_station', name: 'the Band', district: 'tanglefoot',
     desc: 'One room, one desk, one microphone with a sock on it, and the whole city on the other side. The Band is Reverie’s only station, and it sounds like it: music blocks, the weather, a call-in hour where anybody’s voice can end up on everybody’s radio. The ON AIR bulb is honest. The board op’s coffee is not.',
     exits: { d: 'pawn_hocks' },
-    props: { doings: 'Watch a broadcast go out. The call-in hour takes callers from any brick in the city. The Founder can commandeer this desk, and everyone here knows it.' },
+    props: { smell: 'Hot electronics and the board op coffee, which has given up pretending to be fresh.', doings: 'Watch a broadcast go out. The call-in hour takes callers from any brick in the city. The Founder can commandeer this desk, and everyone here knows it.' , listenLine: 'The ON AIR bulb hums. Static resolves into someone talking. The board op drinks loudly.'},
   },
   {
     roomId: 'pawn_hocks', name: 'Hock’s Pawn', district: 'tanglefoot',
     desc: 'Dust, oiled metal, and forty years of other people’s decisions on shelves. Every item in here kept its history — buy the guitar and you get its owners’ story with it, whether you asked or not. Hock knows the provenance of everything and the price of most things. The stairs behind the counter go up to the Band. The back door is a different business.',
     exits: { w: 'tanglefoot_line_street', u: 'the_band_station' },
-    props: { doings: 'Browse things with pasts. Ask Hock what something has seen. Sell, if you can stand his first offer.' },
+    props: { smell: 'Dust, oiled metal, and the particular smell of forty years of someone else decisions.', doings: 'Browse things with pasts. Ask Hock what something has seen. Sell, if you can stand his first offer.' , listenLine: 'A clock that keeps its own time. Metal on a shelf settling. Hock breathing price.'},
   },
   {
     roomId: 'game_parlor', name: 'the Game Parlor', district: 'tanglefoot',
     desc: 'Card shuffle and table talk in a long low room that smells like felt and old luck. Twenty-one tables, each mid-something: Hearts, Spades, dice, dominoes. Walk in, sit down, play with whoever is there. The house keeps no book — the games referee themselves, which everyone finds either comforting or suspicious depending on their week.',
     exits: { n: 'tanglefoot_line_street' },
-    props: { doings: 'Sit at a table and play — the Parlor’s twenty-one games run day and night at kademurdock.com/parlor, same tables, same city.' },
+    props: { smell: 'Felt, old luck, and the peppermint somebody always brings and nobody claims.', doings: 'Sit at a table and play — the Parlor’s twenty-one games run day and night at kademurdock.com/parlor, same tables, same city.' , listenLine: 'Card shuffle and table talk. Dice hitting felt. Someone saying oh come ON.'},
   },
   {
     roomId: 'taco_window', name: 'the Taco Window', district: 'tanglefoot',
     desc: 'A sliding window in an alley wall, a griddle you hear before you smell and smell before you see, and a line that self-organizes at 2 a.m. like it rehearsed. The menu is a card taped inside the glass. The card is a lie; you order by pointing at what the person ahead of you got.',
     exits: { nw: 'tanglefoot_line_street' },
-    props: { outdoor: true, food: { menu: 'three tacos, no substitutions, and whatever is in the orange cooler', price: 1 }, doings: 'Eat in the alley with the night crowd. The line is the social club.' },
+    props: { smell: 'Cumin and hot grease and the particular midnight air that makes standing in an alley feel like a plan.', outdoor: true, food: { menu: 'three tacos, no substitutions, and whatever is in the orange cooler', price: 1 , listenLine: 'Griddle sizzle, the cooler door, and the line talking to itself at 2 a.m.'}, doings: 'Eat in the alley with the night crowd. The line is the social club.' },
   },
 
   /* ── THE PATCH ── */
@@ -247,37 +247,37 @@ const CITY_ROOMS = [
     roomId: 'patch_gully_road', name: 'Gully Road', district: 'patch',
     desc: 'Somebody’s frying onions and it is not even noon. Row houses lean shoulder to shoulder, laundry lines cross overhead like bunting, and every stoop holds either a person, a plant, or a story waiting for one. The Stairs climb north to the Hook. Levi’s pole spins at the corner, Ruth-Ann’s stoop is the green one, Doc’s clinic keeps its light on, and the corner store rings its little bell all day. The tram stops where the paint says it does.',
     exits: { u: 'the_stairs', w: 'levis_chairs', n: 'ruth_anns_stoop', s: 'corner_store', se: 'the_clinic', sw: 'patch_payphone', e: 'millrace_channel' },
-    props: { outdoor: true, tram: true, doings: 'Sit for a cut at Levi’s. Check Ruth-Ann’s tomatoes. Hit the corner store. See Doc about anything. The Patch talks — mostly to you.' },
+    props: { smell: 'Somebody is frying onions and it is not even noon. Under that: warm brick and laundry soap from the lines.', outdoor: true, tram: true, doings: 'Sit for a cut at Levi’s. Check Ruth-Ann’s tomatoes. Hit the corner store. See Doc about anything. The Patch talks — mostly to you.' , listenLine: 'Laundry lines creaking, a screen door, the corner store bell, and three conversations at stoop volume.'},
   },
   {
     roomId: 'levis_chairs', name: 'Levi’s Chairs', district: 'patch',
     desc: 'Clippers, laughter, and the chronicle read aloud with corrections. Three chairs, one Levi, infinite opinions. The mirror wall doubles the room and the volume. Sitting for a cut means hearing the city’s real news filtered through the loudest men alive, and coming out sharper two ways.',
     exits: { e: 'patch_gully_road' },
-    props: { opinion: true, doings: 'Sit for a cut. Get pulled into the argument whether you sit or not. The wall outside is curated by consensus.' },
+    props: { smell: 'Aftershave, clippers oil, and the newspaper Levi reads out loud -- the ink kind, not the screen kind.', opinion: true, doings: 'Sit for a cut. Get pulled into the argument whether you sit or not. The wall outside is curated by consensus.' , listenLine: 'Clippers buzz, the chronicle gets read with corrections, and three voices argue one opinion.'},
   },
   {
     roomId: 'ruth_anns_stoop', name: 'Ruth-Ann’s Stoop', district: 'patch',
     desc: 'A green-painted stoop, tomato plants in buckets doing better than anything in Fairlawn, and Ruth-Ann herself most hours, shelling something into a bowl. She has opinions about your posture, your coat, and your love life, and she will feed you without asking because asking wastes soup time.',
     exits: { s: 'patch_gully_road' },
-    props: { outdoor: true, food: { menu: 'whatever Ruth-Ann made, and you will eat it', price: 0 }, doings: 'Eat — free, argued over, unforgettable. Water her tomatoes if she is not out. She will know either way.' },
+    props: { smell: 'Tomato leaf when you brush the buckets, and whatever is in the bowl Ruth-Ann is shelling.', outdoor: true, food: { menu: 'whatever Ruth-Ann made, and you will eat it', price: 0 , listenLine: 'Something being shelled into a bowl, and Ruth-Ann with an opinion about your shoes.'}, doings: 'Eat — free, argued over, unforgettable. Water her tomatoes if she is not out. She will know either way.' },
   },
   {
     roomId: 'corner_store', name: 'the Corner Store', district: 'patch',
     desc: 'A bell over the door that has announced three generations. Shelf-crowded, everything findable only by asking. The counter sells bricks — the pocket kind, calls and the Feed included — takes bottle deposits in nickels from kids running their first economy, and posts the numbers nobody officially plays.',
     exits: { n: 'patch_gully_road' },
-    props: { food: { menu: 'a cold sandwich, chips, and a drink from the case', price: 1 }, doings: 'Buy a brick — buy brick, if you have the coin. Redeem bottles. Read the notices taped to the glass.' },
+    props: { smell: 'Cardboard and cold cases and the particular smell of a register that has counted nickels all day.', food: { menu: 'a cold sandwich, chips, and a drink from the case', price: 1 , listenLine: 'The door bell, the register, and the steady rhythm of bottles being sorted by nickels.'}, doings: 'Buy a brick — buy brick, if you have the coin. Redeem bottles. Read the notices taped to the glass.' },
   },
   {
     roomId: 'the_clinic', name: 'the Clinic', district: 'patch',
     desc: 'A storefront with a hand-lettered sign and a waiting row of folding chairs. Rubbing alcohol and coffee. Doc treats everything, asks nothing, and keeps a jar of lollipops that is somehow never empty. Nobody knows where the funding comes from. The jar knows. The jar says nothing. Tuesdays, the folding chairs make a circle.',
     exits: { nw: 'patch_gully_road' },
-    props: { sleepable: true, doings: 'See Doc about anything, no questions. Tuesdays the Returned meet here — coffee, folding chairs, the most human room in the city.' },
+    props: { smell: 'Rubbing alcohol and coffee. Under both, the clean smell of somebody keeping a promise about the lights.', sleepable: true, doings: 'See Doc about anything, no questions. Tuesdays the Returned meet here — coffee, folding chairs, the most human room in the city.' , listenLine: 'Folding chairs, quiet talk, and the clean sound of Doc being unhurried about everything.'},
   },
   {
     roomId: 'patch_payphone', name: 'the Payphone', district: 'patch',
     desc: 'A payphone, upright and inexplicable, decades past its species going extinct. Kids dare each other to stand near it. It has a dial tone. Nobody pays for a dial tone. Some nights — never the same nights — it rings, and the Patch pretends very hard not to count who answers.',
     exits: { ne: 'patch_gully_road' },
-    props: { outdoor: true, seance: true, doings: 'Stand near it. Wait. Answer it, if it rings and you are the kind of person who answers.' },
+    props: { smell: 'Rain-washed metal and the faint ozone smell of a dial tone that should not exist.', outdoor: true, seance: true, doings: 'Stand near it. Wait. Answer it, if it rings and you are the kind of person who answers.' , listenLine: 'Dial tone. Wind. The specific quiet of a neighborhood pretending not to watch.'},
   },
 
   /* ── MILLRACE ── */
@@ -285,25 +285,25 @@ const CITY_ROOMS = [
     roomId: 'millrace_channel', name: 'the Millrace', district: 'millrace',
     desc: 'Water still runs the old channel out of habit, thin and quick over green stone. Grinders somewhere, a radio somewhere else, and the particular clang of somebody hitting a thing that deserved it. The mills the race fed are garages and shops now. Kids fly drones down the channel slot on race nights and the garden club has filed about it, twice.',
     exits: { ne: 'bell_court_street', w: 'patch_gully_road', n: 'salvage_yard', e: 'the_garages', s: 'bowling_lanes' },
-    props: { outdoor: true, tram: true, doings: 'Watch a drone run the channel. Follow the clang to the garages. Saturdays the junk market swallows the street.' },
+    props: { smell: 'Wet stone and green water and the radio-and-grinder mix that is the Millrace whole perfume.', outdoor: true, tram: true, doings: 'Watch a drone run the channel. Follow the clang to the garages. Saturdays the junk market swallows the street.' , listenLine: 'Water over green stone, a radio somewhere, and somebody hitting something metal far away.'},
   },
   {
     roomId: 'salvage_yard', name: 'the Salvage Yard', district: 'millrace',
     desc: 'Rust in ranks. The yard buys by weight and by interest, and the scale groans either way. Most hauls are junk. Some junk is interesting junk, and interesting junk starts threads. The freight line runs along the back fence, close enough to rattle the loose stuff when the night train passes.',
     exits: { s: 'millrace_channel' },
-    props: { smell: 'Rust and old oil and the sun on metal. The salvage yard smells like everything it used to be.',  outdoor: true, doings: 'Work a salvage shift. Poke the piles for interesting junk. Hear the fence rattle when the freight goes by.', job: { name: 'the salvage scale', wage: 8, line: 'You sort scrap by weight and by interest. Your hands come away the color of the work.', refusal: 'The scalewoman shakes her head. "Yard’s picked over and so are you. Tomorrow."' } },
+    props: { smell: 'Rust and old oil and the sun on metal. The salvage yard smells like everything it used to be.',  outdoor: true, doings: 'Work a salvage shift. Poke the piles for interesting junk. Hear the fence rattle when the freight goes by.', job: { name: 'the salvage scale', wage: 8, line: 'You sort scrap by weight and by interest. Your hands come away the color of the work.', refusal: 'The scalewoman shakes her head. "Yard’s picked over and so are you. Tomorrow."' , listenLine: 'The scale groans. The freight fence rattles. Rust flakes off under somebody\'s sorting.'} },
   },
   {
     roomId: 'the_garages', name: 'the Garages', district: 'millrace',
     desc: 'Engine oil, weld smoke, and the tick of hot metal cooling. Roll-up doors in a row, each with a different radio and a different philosophy of glue. If it is broken, somebody in here can fix it. If it is not broken, give them an hour.',
     exits: { w: 'millrace_channel' },
-    props: { doings: 'Bring something broken. Leave with it fixed and a lecture. Burn scars optional but traditional.' },
+    props: { smell: 'Engine oil, weld smoke, and the tick of hot metal cooling. Every garage adds its own note.', doings: 'Bring something broken. Leave with it fixed and a lecture. Burn scars optional but traditional.' , listenLine: 'A different radio in every bay. Wrenches. The tick of hot metal cooling.'},
   },
   {
     roomId: 'bowling_lanes', name: 'the Millrace Lanes', district: 'millrace',
     desc: 'Pin crash and rental-shoe spray. Eight lanes, a scoreboard with one dead bulb the league refuses to fix for luck, and a trophy case whose centerpiece is famous for being stolen — the stealing is the tradition now, and the case door is left unlocked accordingly.',
     exits: { n: 'millrace_channel' },
-    props: { food: { menu: 'lane pizza and a pitcher of whatever is cold', price: 2 }, doings: 'Bowl a frame. Join league night by showing up three times. Do not be the one who breaks the trophy tradition by keeping it.' },
+    props: { smell: 'Rental-shoe spray and lane pizza and the specific wax that makes the approach slick.', food: { menu: 'lane pizza and a pitcher of whatever is cold', price: 2 , listenLine: 'Pin crash, the ball return rumbling, and the scoreboard buzzing one dead bulb.'}, doings: 'Bowl a frame. Join league night by showing up three times. Do not be the one who breaks the trophy tradition by keeping it.' },
   },
 
   /* ── SWEETWATER ── */
@@ -311,37 +311,37 @@ const CITY_ROOMS = [
     roomId: 'sweetwater_park', name: 'Sweetwater Park', district: 'sweetwater',
     desc: 'Wind through leaves, then water, then ducks announcing your arrival to no one. Grass mowed by somebody who loves it, paths that curve for no reason a straight line would understand. The garden plots run east, the bandshell holds the lawn’s far side, the fountain glitters mid-park, and the pier noses into the river past Treehouse Row. Morning people own this place until nine.',
     exits: { s: 'bell_court_street', e: 'garden_plots', w: 'the_bandshell', n: 'wishing_fountain', ne: 'the_pier', nw: 'treehouse_row' },
-    props: { outdoor: true, tram: true, doings: 'Walk it slow. Feed the ducks and be judged by them. Everything green in the city starts here.' },
+    props: { smell: 'Cut grass and river air. Morning dew if you are here early enough to deserve it.', outdoor: true, tram: true, doings: 'Walk it slow. Feed the ducks and be judged by them. Everything green in the city starts here.' , listenLine: 'Wind through leaves, then water, then ducks who have something to announce.'},
   },
   {
     roomId: 'garden_plots', name: 'the Garden Plots', district: 'sweetwater',
     desc: 'Turned earth and tomato-leaf sharpness. Ranked little kingdoms, each marked with string and pride: peppers, sweet corn, herbs, sunflowers grown for nothing but the look of them. A shared shed leans agreeably. Somebody is always watering somebody else’s plot and leaving a note about it.',
     exits: { w: 'sweetwater_park' },
-    props: { outdoor: true, doings: 'Tend a plot when planting opens. Real seasons, real waiting — days, not minutes. The notes are the feature.', job: { name: 'grounds work', wage: 6, line: 'You weed, water, and stake what the wind bullied. The garden club rates your rows quietly, and you feel it.', refusal: 'The club president materializes. "The beds need rest. So do you. That is not a suggestion."' } },
+    props: { smell: 'Turned earth and tomato-leaf sharpness. After rain: the whole plot grid smells like a promise.', outdoor: true, doings: 'Tend a plot when planting opens. Real seasons, real waiting — days, not minutes. The notes are the feature.', job: { name: 'grounds work', wage: 6, line: 'You weed, water, and stake what the wind bullied. The garden club rates your rows quietly, and you feel it.', refusal: 'The club president materializes. "The beds need rest. So do you. That is not a suggestion."' , listenLine: 'A spade turning earth. String humming on the stakes. A watering can finishing.'} },
   },
   {
     roomId: 'the_pier', name: 'the Pier', district: 'sweetwater',
     desc: 'Old boards giving each footstep its own note. River smell, rope, a bench at the far end polished by every kind of weather and every kind of mood. The ferry ties up here when Marsh brings her over. The bench asks nothing. That is its whole job, and it is excellent at it.',
     exits: { sw: 'sweetwater_park' },
-    props: { outdoor: true, ferry: true, ferryTo: 'ferry_dock_hook', sleepable: false, doings: 'Sit the bench. Ride the ferry to the Hook. Lantern Night, the paper lanterns launch from here.' },
+    props: { smell: 'River water and sun-warmed wood. The rope adds something tarry when it is hot.', outdoor: true, ferry: true, ferryTo: 'ferry_dock_hook', sleepable: false, doings: 'Sit the bench. Ride the ferry to the Hook. Lantern Night, the paper lanterns launch from here.' , listenLine: 'Old boards giving each footstep its own note. Water. Rope creak.'},
   },
   {
     roomId: 'the_bandshell', name: 'the Bandshell', district: 'sweetwater',
     desc: 'A white shell that throws sound clear across the lawn — clap once and it claps back a half-beat later. Folding chairs stacked like they are waiting for a reason, and they usually get one by Friday. The choir practices here when the weather allows, and sounds better than it should.',
     exits: { e: 'sweetwater_park' },
-    props: { outdoor: true, doings: 'Catch a show when the bell rings one in. Try the echo. Everyone tries the echo.' },
+    props: { smell: 'Cut grass and the ghost of last Friday show -- somebody perfume still in the folding chairs.', outdoor: true, doings: 'Catch a show when the bell rings one in. Try the echo. Everyone tries the echo.' , listenLine: 'Clap once and it comes back a half-beat later. The lawn hears everything.'},
   },
   {
     roomId: 'wishing_fountain', name: 'the Wishing Fountain', district: 'sweetwater',
     desc: 'Water over stone, coins under water, and the specific hush people make just before they want something. Throw a credit, speak a wish. The fountain files it privately and promises nothing. Every so often one comes true with no announcement at all, and the hit rate is a myth people chart anyway.',
     exits: { s: 'sweetwater_park' },
-    props: { outdoor: true, doings: 'Throw a coin and speak a wish to the water — quiet, private, logged where only the world can read it.' },
+    props: { smell: 'Wet stone and copper pennies. The mist carries both if you stand close.', outdoor: true, doings: 'Throw a coin and speak a wish to the water — quiet, private, logged where only the world can read it.' , listenLine: 'Water over stone and the hush people make just before wanting something.'},
   },
   {
     roomId: 'treehouse_row', name: 'Treehouse Row', district: 'sweetwater',
     desc: 'Ladder rungs nailed to three big oaks, rope-and-pulley lines strung between the platforms, and a message bucket squeaking its way across on the pulley — objectively worse than the Feed and infinitely cooler. Kid laws apply here, which are stricter than Fairlawn’s and fairer.',
     exits: { se: 'sweetwater_park' },
-    props: { outdoor: true, doings: 'Send something across by bucket. Climb if a kid vouches for you. The creek dam project is that way somewhere, doomed and glorious.' },
+    props: { smell: 'Bark and rope and the green smell of leaves that have been climbed through.', outdoor: true, doings: 'Send something across by bucket. Climb if a kid vouches for you. The creek dam project is that way somewhere, doomed and glorious.' , listenLine: 'The message bucket squeaking on the pulley line. Kid laws enforced at volume.'},
   },
 
   /* ── FAIRLAWN ── */
@@ -349,25 +349,25 @@ const CITY_ROOMS = [
     roomId: 'fairlawn_ave', name: 'Fairlawn Avenue', district: 'fairlawn',
     desc: 'Sprinklers, and under them, nothing — Fairlawn’s whole sound signature. Lawns cut to the same inch by ordinance and enthusiasm. A camera on a pole turns to watch you at walking speed, polite about it. The salon glows east, the homeowners’ hall squats civic and beige, and the gates north smile with security guards who say lovely evening like a checkpoint question. The tram stops exactly where the sign says. Of course it does.',
     exits: { sw: 'bell_court_street', e: 'the_salon', s: 'hoa_hall', n: 'fairlawn_gates', se: 'ring_road' },
-    props: { outdoor: true, tram: true, doings: 'Walk the avenue and be observed. Everything here is working exactly as designed, which is the funny part.' },
+    props: { smell: 'Fresh-cut grass -- by ordinance, the same grass, at the same height. Sprinkler water and warm asphalt.', outdoor: true, tram: true, doings: 'Walk the avenue and be observed. Everything here is working exactly as designed, which is the funny part.' , listenLine: 'Sprinklers, and under them, nothing. A camera turning. The tram arriving on time.'},
   },
   {
     roomId: 'the_salon', name: 'the Salon', district: 'fairlawn',
     desc: 'Lavender, peroxide, and conversation with its nails done. Chairs recline, voices do not. The polite knives come out here — reputations get trimmed a quarter inch at a time, and everyone leaves saying how lovely everyone is.',
     exits: { w: 'fairlawn_ave' },
-    props: { opinion: true, doings: 'Sit for a wash and hear Fairlawn’s version of the chronicle, edited for sharpness.' },
+    props: { smell: 'Lavender and peroxide, in that order and at that volume.', opinion: true, doings: 'Sit for a wash and hear Fairlawn’s version of the chronicle, edited for sharpness.' , listenLine: 'Scissors, running water, and voices that do not recline even when the chairs do.'},
   },
   {
     roomId: 'hoa_hall', name: 'the Homeowners’ Hall', district: 'fairlawn',
     desc: 'Folding tables, name placards, a gavel that gets used recreationally. The council meets over mailbox regulations, hedge heights, and one unresolved rooster complaint that is technically outside their jurisdiction and spiritually their white whale. Minutes are kept. Grudges are kept better.',
     exits: { n: 'fairlawn_ave' },
-    props: { doings: 'Attend a council meeting if your constitution allows. The complaint forms are pre-sorted by hedge type.' },
+    props: { smell: 'Paper agendas and institutional coffee and the particular air of a room that takes hedges seriously.', doings: 'Attend a council meeting if your constitution allows. The complaint forms are pre-sorted by hedge type.' , listenLine: 'A gavel, recreational. Pages turning. Someone clearing their throat about hedges.'},
   },
   {
     roomId: 'fairlawn_gates', name: 'the Gates', district: 'fairlawn',
     desc: 'Wrought iron that has never once been closed, flanked by security in jackets that match. They know your name before you say it and say lovely evening in a tone that files a report. Beyond, the private drives curl out of sight under old trees.',
     exits: { s: 'fairlawn_ave' },
-    props: { outdoor: true, doings: 'Pass through and be pleasantly logged. The drives beyond are invitation business.' },
+    props: { smell: 'Old iron and the guards aftershave, which is chosen for professionalism.', outdoor: true, doings: 'Pass through and be pleasantly logged. The drives beyond are invitation business.' , listenLine: 'The gate never closes. The guards say lovely evening. It files a report.'},
   },
 
   /* ── LONG ACRE ── */
@@ -375,31 +375,31 @@ const CITY_ROOMS = [
     roomId: 'ring_road', name: 'the Ring Road', district: 'longacre',
     desc: 'The city ends mid-sentence and the fields pick it up. Two lanes of good blacktop looping the whole town, wind in the crops on one side, town hum fading on the other. Driving your own hands down this road at night with the windows open is one of the world’s designed pleasures, when you have earned the license. The truck stop shines east. The rails cross at the marked grade south.',
     exits: { nw: 'fairlawn_ave', e: 'the_truck_stop', s: 'the_rails', ne: 'long_acre_fields' },
-    props: { outdoor: true, doings: 'Walk the shoulder. Someday: drive it, hands on the wheel, windows down. The manual license is pure status and worth it.' },
+    props: { smell: 'Blacktop and crop dust and the clean nothing of open air. At night: field dew and headlights.', outdoor: true, doings: 'Walk the shoulder. Someday: drive it, hands on the wheel, windows down. The manual license is pure status and worth it.' , listenLine: 'Wind in the crops on one side. Town hum fading on the other. Tires on good blacktop.'},
   },
   {
     roomId: 'long_acre_fields', name: 'the Fields', district: 'longacre',
     desc: 'Crop rows to the horizon, insect hum, a windbreak of old trees leaning east together like they voted on it. The dirt smells like work that matters. Harvest turns this whole ward into one long shared shift, and the pie afterward is the wage that counts.',
     exits: { sw: 'ring_road', ne: 'the_airfield' },
-    props: { outdoor: true, doings: 'Work the fields in season. Learn what the Long Acre families know and do not write down.', job: { name: 'field work', wage: 7, line: 'You pick, haul, and learn the difference between tired and field-tired. The rows do not lie about your progress.', refusal: 'The row boss tips her hat back. "Fields need a day off you. Water yourself. Tomorrow."' } },
+    props: { smell: 'Dirt that smells like work that matters. Turned soil in spring, dry stubble in fall.', outdoor: true, doings: 'Work the fields in season. Learn what the Long Acre families know and do not write down.', job: { name: 'field work', wage: 7, line: 'You pick, haul, and learn the difference between tired and field-tired. The rows do not lie about your progress.', refusal: 'The row boss tips her hat back. "Fields need a day off you. Water yourself. Tomorrow."' , listenLine: 'Insect hum and the windbreak leaning. Dirt does not make sound but you hear it anyway.'} },
   },
   {
     roomId: 'the_truck_stop', name: 'the Truck Stop', district: 'longacre',
     desc: 'Fryer hiss and a radio on the Band, half static and staying that way. Vinyl booths, a counter that has heard everything twice, a pie case turning slow under warm light. The highway out front goes somewhere and mostly does not come back, and the coffee is better than Pat’s, which nobody in the Hook will ever hear said aloud.',
     exits: { w: 'ring_road' },
-    props: { sleepable: true, food: { menu: 'chicken-fried anything, pie from the case, and coffee that is — quietly — the best in the world', price: 2 }, doings: 'Eat. Watch the highway. Ask a driver where the road goes and get a different answer every time.' },
+    props: { smell: 'Fryer grease and coffee better than Pat s -- nobody in the Hook will ever hear this said.', sleepable: true, food: { menu: 'chicken-fried anything, pie from the case, and coffee that is — quietly — the best in the world', price: 2 , listenLine: 'Fryer hiss and a radio on the Band, half static. The highway out front.'}, doings: 'Eat. Watch the highway. Ask a driver where the road goes and get a different answer every time.' },
   },
   {
     roomId: 'the_rails', name: 'the Grade Crossing', district: 'longacre',
     desc: 'Two rails running silver out of one horizon and into the other, crossties breathing creosote in the sun. The crossing bell hangs quiet until it is not. The night freight comes through around 11:40 with its long-voweled horn, and the whole city hears it at a different distance. The rails are the one place out here that means it: trains do not stop. Every kid in the city has been told.',
     exits: { n: 'ring_road' },
-    props: { outdoor: true, rails: true, doings: 'Put a penny on the rail and wait for the freight — flatten penny starts it. Wave at Boone in the engine. Stand well back like you were raised to.' },
+    props: { smell: 'Creosote baking in the sun. When the freight has passed: hot steel and diesel hanging in the air.', outdoor: true, rails: true, doings: 'Put a penny on the rail and wait for the freight — flatten penny starts it. Wave at Boone in the engine. Stand well back like you were raised to.' , listenLine: 'The crossing bell hangs quiet. When the freight comes: a horn the whole city hears.'},
   },
   {
     roomId: 'the_airfield', name: 'the Airfield', district: 'longacre',
     desc: 'A grass strip mowed shorter than the field around it, a wind sock you hear working before you find it, and a hangar holding a crop duster that flies and a jump plane that mostly tells stories. Cass Delaney failed retirement in four months and teaches out of a folding chair by the fuel drum.',
     exits: { se: 'long_acre_fields' },
-    props: { outdoor: true, doings: 'Ask Cass about flying lessons — local hops, the lake circuit, the night flight over the city. The edge of the world is the view.' },
+    props: { smell: 'Avgas and mowed grass and the particular sun-on-metal smell of a plane that mostly tells stories.', outdoor: true, doings: 'Ask Cass about flying lessons — local hops, the lake circuit, the night flight over the city. The edge of the world is the view.' , listenLine: 'The wind sock luffing. A prop engine coughing alive, or remembering how.'},
   },
 
   /* ── THE GRAVEWALK (no doors in — the living are reached for) ── */
@@ -407,19 +407,19 @@ const CITY_ROOMS = [
     roomId: 'gravewalk_lanterns', name: 'the Lantern Rows', district: 'gravewalk',
     desc: 'Lanterns in long rows under a sky the color of held breath. Your footsteps arrive a half-second late, like the ground is double-checking. The dead walk here thinned-out and unhurried, and the light does not flicker so much as think.',
     exits: { e: 'gravewalk_teahouse', w: 'gravewalk_switchboard' },
-    props: { doings: 'Walk the rows. Read the lanterns. Time is politer here and less convincing.' },
+    props: { smell: 'Lantern oil -- the old kind, with a wick -- and something like cold tea that is probably just the air here.', doings: 'Walk the rows. Read the lanterns. Time is politer here and less convincing.' , listenLine: 'Your footsteps, arriving a half-second late. The lanterns thinking about flickering.'},
   },
   {
     roomId: 'gravewalk_teahouse', name: 'the Tea House', district: 'gravewalk',
     desc: 'Steam that rises slower than steam should. The tea is memory-flavored — nobody can explain it better than that, and the regulars have stopped trying. Cups click softly. Conversations here have no skin left in the game, which makes them the best conversations anywhere.',
     exits: { w: 'gravewalk_lanterns' },
-    props: { food: { menu: 'tea that tastes like a day you had once', price: 0 }, doings: 'Drink the tea. Hear the Gravewalk’s take on ward politics — informed, petty, and free.' },
+    props: { smell: 'Steam that carries something you remember but cannot name. The regulars say it changes per cup.', food: { menu: 'tea that tastes like a day you had once', price: 0 , listenLine: 'Cups clicking softly. Conversations with nothing left to lose.'}, doings: 'Drink the tea. Hear the Gravewalk’s take on ward politics — informed, petty, and free.' },
   },
   {
     roomId: 'gravewalk_switchboard', name: 'the Seance Switchboard', district: 'gravewalk',
     desc: 'A wall of brass jacks and cloth cords, patched and re-patched by ghost operators working in fingerless gloves out of tradition, not cold. Each cord is a thread to somewhere a living person is listening — a bench, a river, a payphone that should not ring. The board hums like it is remembering a song.',
     exits: { e: 'gravewalk_lanterns' },
-    props: { seance: true, doings: 'Watch the operators work the lines between the wards and here. The 13 bus stops outside on no schedule at all.' },
+    props: { smell: 'Warm brass and old cloth and the ozone-that-is-not of connections being made.', seance: true, doings: 'Watch the operators work the lines between the wards and here. The 13 bus stops outside on no schedule at all.' , listenLine: 'The board humming a song it is trying to remember. Cords being patched.'},
   },
 ];
 
@@ -462,7 +462,7 @@ const CENSUS = [
       '"Heard it at the counter this morning, so it’s either true or it will be by Friday."',
       'Pat nods at the window. "Harbor’s loud today. Means money or trouble. Same sound."',
     ],
-    ambient: ['Pat scrapes the flat-top like it owes an apology.', 'Pat slides a plate down the counter without looking. It stops exactly where it should.'],
+    ambient: ['Pat scrapes the flat-top like it owes an apology.', 'Pat slides a plate down the counter without looking. It stops exactly where it should.', 'Pat wipes the counter in a circle that has worn the pattern off.', 'Pat flips something on the grill without looking. It sizzles agreement.'],
   },
   {
     id: 'merle', name: 'Merle Boggs', aka: 'Merle',
@@ -480,7 +480,7 @@ const CENSUS = [
       '"Crate come in last night with no manifest. So officially, no crate come in last night."',
       '"You eat? You look like you didn’t eat. Pat’s. Go. Tell her Merle sent you, she’ll charge you the same."',
     ],
-    ambient: ['Merle unwraps something and eats it in two bites, thoughtful.', 'Merle waves at somebody on the water. The water waves back, in its way.'],
+    ambient: ['Merle unwraps something and eats it in two bites, thoughtful.', 'Merle waves at somebody on the water. The water waves back, in its way.', 'Merle checks a rope knot and nods like it passed an interview.', 'Merle counts crates under his breath, loses count, starts over unbothered.'],
   },
   {
     id: 'ines', name: 'Ines Beaumont', aka: 'Ines',
@@ -497,7 +497,7 @@ const CENSUS = [
       '"The bell has never once been on time. The year it is, I will personally reshelve the sky."',
       '"Quiz night is Wednesday. The Archive team always wins. Everyone is sick of us. It’s wonderful."',
     ],
-    ambient: ['Ines reshelves one book with the finality of a judge.', 'Ines hums three notes, off-key, clearly on purpose.'],
+    ambient: ['Ines reshelves one book with the finality of a judge.', 'Ines hums three notes, off-key, clearly on purpose.', 'Ines adjusts her cardigan sleeves like the stacks might require sudden action.', 'Ines files something behind her eyes. Alphabetically.'],
   },
   {
     id: 'dez', name: 'Desmond Okafor', aka: 'Dez',
@@ -513,7 +513,7 @@ const CENSUS = [
       '"Stage is open. Nobody’s stopping you but the crowd, and they only bite Fridays."',
       '"Pat’s my cousin. The coffee thing stays in this room."',
     ],
-    ambient: ['Dez dries a glass and watches the room like weather.', 'Dez turns the house music down one notch. The bar gets louder to fix it.'],
+    ambient: ['Dez dries a glass and watches the room like weather.', 'Dez turns the house music down one notch. The bar gets louder to fix it.', 'Dez polishes a glass that was already clean, watching the stage.', 'Dez nods at a regular. The regular nods back. The entire conversation.'],
   },
   {
     id: 'ruthann', name: 'Ruth-Ann Purvis', aka: 'Ruth-Ann',
@@ -529,7 +529,7 @@ const CENSUS = [
       '"That rooster got past three complaints and a professional. I don’t hold with lawbreaking. Still — you almost got to respect it."',
       '"Little Ray’s a good boy in a bad line of work. You be decent to him and careful near him, both."',
     ],
-    ambient: ['Ruth-Ann snaps beans in a rhythm you could set a watch by.', 'Ruth-Ann tells a passing kid to walk, not run. The kid runs. She lets it go, this once.'],
+    ambient: ['Ruth-Ann snaps beans in a rhythm you could set a watch by.', 'Ruth-Ann tells a passing kid to walk, not run. The kid runs. She lets it go, this once.', 'Ruth-Ann looks at the sky and adjusts a tomato stake, trusting neither.', 'Ruth-Ann hands somebody a bowl. The hand that gives it back empty gets a nod.'],
   },
   {
     id: 'levi', name: 'Levi Fontaine', aka: 'Levi',
@@ -545,7 +545,7 @@ const CENSUS = [
       '"Chronicle says one thing, chair says another, and the chair’s got witnesses."',
       '"I don’t gossip. I curate."',
     ],
-    ambient: ['Levi snaps a cape like a flag being planted.', 'Levi reads a chronicle line aloud and the whole shop objects at once.'],
+    ambient: ['Levi snaps a cape like a flag being planted.', 'Levi reads a chronicle line aloud and the whole shop objects at once.', 'Levi reads the chronicle headline aloud with three corrections and a verdict.', 'Levi spins a chair around. It means sit down. Everybody knows.'],
   },
   {
     id: 'doc', name: 'Doc', aka: 'Doc',
@@ -558,7 +558,7 @@ const CENSUS = [
       '"The jar? No idea. It was half-empty Friday. It’s full now. I’ve stopped asking questions I like the mystery of."',
       '"Tuesdays we put the chairs in a circle. Coffee’s on. Anybody’s welcome who’s been through it — and everybody’s been through something."',
     ],
-    ambient: ['Doc washes her hands out of habit, talking over her shoulder.', 'Doc restocks the lollipop jar zone with plausible deniability.'],
+    ambient: ['Doc washes her hands out of habit, talking over her shoulder.', 'Doc restocks the lollipop jar zone with plausible deniability.', 'Doc checks a cabinet, finds what he needed, and does not hurry about it.', 'Doc refills the lollipop jar when nobody is watching. Nobody is ever watching.'],
   },
   {
     id: 'hock', name: 'Aurelio Hock', aka: 'Hock',
@@ -574,7 +574,7 @@ const CENSUS = [
       '"That guitar’s been owned by four people and loved by two. You’d be the fifth and we’d see."',
       '"Back door’s for deliveries." He does not elaborate. The shop gets quieter around the sentence.',
     ],
-    ambient: ['Hock polishes something small and does not say what it is.', 'Hock writes in a ledger with a pencil worn to a thumbnail.'],
+    ambient: ['Hock polishes something small and does not say what it is.', 'Hock writes in a ledger with a pencil worn to a thumbnail.', 'Hock picks up an object, turns it over twice, and names a price to the air.', 'Hock rearranges the window display. The guitar moves to the front again.'],
   },
   {
     id: 'boone', name: 'Boone Tally', aka: 'Boone',
@@ -592,7 +592,7 @@ const CENSUS = [
       '"Penny on the rail, stand WELL back, wait. You’ll hear it before you feel it and feel it before you see it. That order matters."',
       '"I take one student a year. The picking’s in the fall. Show up before that and you’re just help."',
     ],
-    ambient: ['Boone kneels and lays two fingers on the rail like taking a pulse.', 'Boone checks a pocket watch older than the ward and nods at it.'],
+    ambient: ['Boone kneels and lays two fingers on the rail like taking a pulse.', 'Boone checks a pocket watch older than the ward and nods at it.', 'Boone checks his watch against the schedule. The watch wins, barely.', 'Boone waves at the crossing. It might be at you. It might be at the horizon.'],
   },
   {
     id: 'marsh', name: 'Ilse Marsh', aka: 'Captain Marsh',
@@ -611,7 +611,7 @@ const CENSUS = [
       '"Seen everything twice. Third time I start charging it rent."',
       '"Water tells you the weather a day early if you speak the language. First word’s free: chop."',
     ],
-    ambient: ['Captain Marsh corrects the chalk board by one crossing and dares it to object.', 'Captain Marsh coils rope in a figure-eight, automatic as breath.'],
+    ambient: ['Captain Marsh corrects the chalk board by one crossing and dares it to object.', 'Captain Marsh coils rope in a figure-eight, automatic as breath.', 'Marsh checks the wind by feel and adjusts nothing. The ferry agrees.', 'Marsh chalks a new crossing time. The old one was wrong by mood, not math.'],
   },
   {
     id: 'reed', name: 'Ottoline Reed', aka: 'Miss Reed',
@@ -628,7 +628,7 @@ const CENSUS = [
       '"You can tell me anything about any child in this city, and I will listen to the end of it. That’s the whole job. The rest is paperwork."',
       '"Two, in my whole career. I think about both. That’s not a burden — that’s the job working."',
     ],
-    ambient: ['Miss Reed straightens a crayon drawing on the wall by one degree.', 'Miss Reed watches the street a moment longer than a calm person would.'],
+    ambient: ['Miss Reed straightens a crayon drawing on the wall by one degree.', 'Miss Reed watches the street a moment longer than a calm person would.', 'Miss Reed opens the butterscotch drawer. It is, impossibly, still not empty.', 'Miss Reed listens to somebody finish a sentence. All the way to the end.'],
   },
   {
     id: 'odessa', name: 'Odessa Vann', aka: 'Sergeant Vann',
@@ -647,7 +647,7 @@ const CENSUS = [
       '"Merle’s family. That buys him a warning and costs him two."',
       '"You hear a shot in this ward, the whole ward heard it. Remember that before you get ideas."',
     ],
-    ambient: ['Sergeant Vann reads a docket page, sighs, and folds it into a pocket with the others.', 'Sergeant Vann nods at a passing dockhand by name.'],
+    ambient: ['Sergeant Vann reads a docket page, sighs, and folds it into a pocket with the others.', 'Sergeant Vann nods at a passing dockhand by name.', 'Sergeant Vann writes something in a book she keeps in an inside pocket.', 'Vann walks the perimeter once. Everything is exactly as quiet as she left it.'],
   },
   {
     id: 'wendell', name: 'Wendell Frist', aka: 'Wendell',
@@ -663,7 +663,7 @@ const CENSUS = [
       '"Everything gets read. Most things get filed. Some things get fixed. The pattern is not mine to explain."',
       '"Autumn came late last year and someone filed about it. I found the filing... reasonable."',
     ],
-    ambient: ['Wendell stamps a form with the exact firmness the form deserves.', 'Wendell tries the drawer. The drawer holds its ground. He notes it.'],
+    ambient: ['Wendell stamps a form with the exact firmness the form deserves.', 'Wendell tries the drawer. The drawer holds its ground. He notes it.', 'Wendell opens the drawer, adds a complaint, and shuts it. It does not shut.', 'Wendell reads a complaint with total seriousness and writes follow-up in the margin.'],
   },
   {
     id: 'opal', name: 'Opal Marchetti', aka: 'Opal',
@@ -679,7 +679,7 @@ const CENSUS = [
       '"Unclaimed goes to auction once a season. Your lost bike could come back as somebody’s lawful bike. I don’t make the poetry, I just enforce it."',
       '"Nine years I’ve held one left glove. Somewhere out there is a right. I am a patient woman."',
     ],
-    ambient: ['Opal tags a small item and shelves it with funeral dignity.', 'Opal cross-examines a claimant about a scarf. The scarf is present. It says nothing.'],
+    ambient: ['Opal tags a small item and shelves it with funeral dignity.', 'Opal cross-examines a claimant about a scarf. The scarf is present. It says nothing.', 'Opal adjusts a camera angle by one degree. The whole frame changes meaning.', 'Opal reviews footage of nothing happening and takes notes about the nothing.'],
   },
   {
     id: 'constance', name: 'Constance Ledger-Pryce', aka: 'Constance',
@@ -696,7 +696,7 @@ const CENSUS = [
       '"The name? Coincidence." A pause with interest accruing on it. "Next question."',
       '"The bell is wrong and my clock is right. Between those two facts you may set your entire life."',
     ],
-    ambient: ['Constance squares a stack of paper that was already square.', 'Constance winds the correct clock with visible satisfaction.'],
+    ambient: ['Constance squares a stack of paper that was already square.', 'Constance winds the correct clock with visible satisfaction.', 'Constance squares the ledger with the edge of the desk. Precision is the point.', 'Constance counts something silently. The total satisfies her. She moves on.'],
   },
   {
     id: 'oleander', name: 'Oleander Fitch', aka: 'Oleander',
@@ -712,7 +712,7 @@ const CENSUS = [
       '"Luck draws, but the thumb’s on the scale for folks who give back. The engine knows. I just crank."',
       '"The squeak? Tradition. Oil it and the wishes stop believing."',
     ],
-    ambient: ['Oleander gives the drum a single ceremonial turn. It squeaks its blessing.', 'Oleander dusts the Book of Patrons with his sleeve, tenderly.'],
+    ambient: ['Oleander gives the drum a single ceremonial turn. It squeaks its blessing.', 'Oleander dusts the Book of Patrons with his sleeve, tenderly.', 'Oleander cranks the drum one slow turn. It squeaks. Tradition holds.', 'Oleander reads a wish slip and places it back without expression. Filed.'],
   },
   {
     id: 'pham', name: 'Honorable Pham', aka: 'Judge Pham',
@@ -728,7 +728,7 @@ const CENSUS = [
       '"The rooster is outside my jurisdiction. Stop bringing me the rooster."',
       '"Night court runs on two fuels: honesty and brevity. Bring either. Bringing both is showing off."',
     ],
-    ambient: ['Judge Pham’s gavel taps once — punctuation, not thunder.', 'Judge Pham reads a docket line and permits herself one entire sigh.'],
+    ambient: ['Judge Pham’s gavel taps once — punctuation, not thunder.', 'Judge Pham reads a docket line and permits herself one entire sigh.', 'Judge Pham adjusts reading glasses and a sentence at the same time.', 'Pham taps the gavel once, lightly. A warning, or a warm-up. Hard to say.'],
   },
   {
     id: 'littleray', name: 'Raymond Purvis', aka: 'Little Ray',
@@ -744,7 +744,7 @@ const CENSUS = [
       '"You didn’t see the grocery thing. And if you tell my aunt, we got a different kind of problem." He is not convincing.',
       '"One bad month. That’s all it takes out here. I count good months like other folks count coin."',
     ],
-    ambient: ['Little Ray straightens an old man’s dropped bag and mutters a threat about gratitude.', 'Little Ray checks the corner twice, out of craft, not fear. Mostly.'],
+    ambient: ['Little Ray straightens an old man’s dropped bag and mutters a threat about gratitude.', 'Little Ray checks the corner twice, out of craft, not fear. Mostly.', 'Little Ray runs past carrying something important. He is always carrying something important.', 'Little Ray counts bottles into the deposit bin. His economy is thriving.'],
   },
   {
     id: 'cass', name: 'Cass Delaney', aka: 'Cass',
@@ -760,7 +760,7 @@ const CENSUS = [
       '"Lessons start on the ground: wind sock, then weather, then wings. Skip a step and the step won’t skip you."',
       '"The night flight over the city — every ward below you, sound and light. There’s no describing it, so I’ll be describing it the whole way."',
     ],
-    ambient: ['Cass squints at the wind sock and adjusts the day’s plan by a notch.', 'Cass pats the crop duster like a good horse.'],
+    ambient: ['Cass squints at the wind sock and adjusts the day’s plan by a notch.', 'Cass pats the crop duster like a good horse.', 'Cass looks at the sky the way retired people look at the sky -- like a colleague.', 'Cass taps the fuel drum with a knuckle. Checks the gauge. Nods at both.'],
   },
   {
     id: 'chike', name: 'Amara Chike', aka: 'Dr. Chike',
@@ -776,7 +776,7 @@ const CENSUS = [
       '"Mercy doesn’t close. Never has. The doors got tired of the argument and gave up their locks."',
       '"Night shift is Pruitt. His jokes are worse. His hands are just as good. You’re fine either way."',
     ],
-    ambient: ['Dr. Chike checks a chart, then checks the person, in the right order.', 'Dr. Chike steals ten seconds of window light like medicine.'],
+    ambient: ['Dr. Chike checks a chart, then checks the person, in the right order.', 'Dr. Chike steals ten seconds of window light like medicine.', 'Dr. Chike reads a chart at the speed of someone who writes better ones.', 'Chike adjusts something in the ward. The beeping continues, reassured.'],
   },
 ];
 
@@ -833,8 +833,60 @@ function npcDoingNow(userId) {
   return { room: def.home, doing: 'about' };
 }
 
-function npcTalkLine(def) {
-  return def.talk[Math.floor(Math.random() * def.talk.length)];
+function npcTalkLine(def, context) {
+  /* COMBINATORIAL TALK — the Veil demands it. A rotating array of canned
+   * lines outs the synth after five conversations. Instead: pick from the
+   * pool BUT fold in game state so the same NPC never says the same thing
+   * at different times of day, in different weather, or to different people.
+   *
+   * The pool is still the source — the model inhabits them fully later
+   * through the narrator lane. This is the $0 warmth layer, but it now
+   * varies by context so it FEELS responsive without burning compute.
+   *
+   * context: { hour, weather, playerName, roomId, peopleCount } */
+  const ctx = context || {};
+  const hour = ctx.hour ?? new Date().getHours();
+  const wx = ctx.weather || 'clear';
+  const ppl = ctx.peopleCount || 1;
+
+  /* STEP 1: pick a base line using a hash of (npc + hour + weather) so
+   * the same NPC says different things at different times, but the SAME
+   * thing if you ask twice in the same hour with the same weather —
+   * consistent, like a real person mid-thought. */
+  const seed = (def.id + ':' + hour + ':' + wx).split('').reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0);
+  const idx = Math.abs(seed) % def.talk.length;
+  let line = def.talk[idx];
+
+  /* STEP 2: time-of-day color. NPCs acknowledge the time without being
+   * asked, like people do. Short prefix, not always. */
+  const timeColor = hour < 6 ? [' *yawns*', '', ''] :
+    hour < 12 ? ['', '', ''] :
+    hour >= 22 ? [' *stifles a yawn*', '', ''] :
+    hour >= 18 ? ['', '', ''] : ['', '', ''];
+  const tc = timeColor[Math.abs(seed >> 3) % timeColor.length];
+
+  /* STEP 3: crowd awareness. If the room is busy, NPCs sometimes glance
+   * around or lower their voice. Zero compute — just a check. */
+  const crowdNote = ppl > 4 ? [' They lean in a little, voice under the noise.', '', ''] :
+    ppl === 1 ? [' The room is just the two of you, and they talk like it.', '', '', ''] :
+    ['', '', ''];
+  const cn = crowdNote[Math.abs(seed >> 5) % crowdNote.length];
+
+  /* STEP 4: weather awareness for outdoor NPCs */
+  const isOutdoor = ctx.outdoor || false;
+  let wxNote = '';
+  if (isOutdoor && Math.abs(seed >> 7) % 3 === 0) {
+    const WX_NOTES = {
+      rain: ' They talk over the rain without minding it.',
+      storm: ' They pause when the thunder rolls, then pick up where they left off.',
+      fog: ' Their voice carries strangely in the fog.',
+      snow: ' Snow on their shoulders. They do not brush it off.',
+      heat: '',
+    };
+    wxNote = WX_NOTES[wx] || '';
+  }
+
+  return line + tc + cn + wxNote;
 }
 
 /* ── THE CARVE (idempotent, insert-if-absent — never clobbers her hands) ── */
@@ -926,6 +978,7 @@ let lastTickAt = 0;
 let lastWeatherKind = null;
 let lastHornDate = null;
 let ambientCursor = 0;
+const _lastAmbient = {};  /* Veil dedup: last ambient line per NPC */
 
 async function activePlayerRooms() {
   const cutoff = new Date(Date.now() - 15 * 60 * 1000);
@@ -1008,14 +1061,20 @@ async function tickWorld() {
         await MooEvent.create({ seq, roomId, actorUserId: null, actorName: 'the night freight', kind: 'system', sound, text, at: new Date() });
       }
     }
-    /* 4 — one ambient breath of the census, sometimes. */
+    /* 4 — one ambient breath of the census, sometimes.
+     * VEIL RULE: never repeat the same ambient line back-to-back for an NPC.
+     * Four lines per NPC + dedup = a player never notices the pool is finite. */
     if (Math.random() < 0.35) {
       const hereNpcs = await MooChar.find({ userId: /^npc:/, roomId: { $in: rooms } }).select('userId name roomId').lean();
       if (hereNpcs.length) {
         const npc = hereNpcs[ambientCursor++ % hereNpcs.length];
         const def = CENSUS_BY_ID[npc.userId];
         if (def && def.ambient && def.ambient.length) {
-          const line = def.ambient[Math.floor(Math.random() * def.ambient.length)];
+          /* Pick a line that isn't the same as last time */
+          const last = _lastAmbient[npc.userId];
+          const pool = def.ambient.filter(l => l !== last);
+          const line = (pool.length ? pool : def.ambient)[Math.floor(Math.random() * (pool.length || def.ambient.length))];
+          _lastAmbient[npc.userId] = line;
           const seq = await nextSeq();
           await MooEvent.create({ seq, roomId: npc.roomId, actorUserId: npc.userId, actorName: npc.name, kind: 'emote', text: line, at: new Date() });
         }

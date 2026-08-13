@@ -860,6 +860,12 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
    * to read a list. Sound IDs are chord.1 through chord.8 for up to 8
    * concurrent presences; more than that is rare. */
   if (verb === 'chord' || verb === 'listen') {
+    /* Listen: room ear-signature first, then the chord (people count).
+     * listenLine is pure data on the room — zero compute. */
+    const listenRoom = await MooRoom.findOne({ roomId: ch.roomId }).lean();
+    if (listenRoom?.props?.listenLine) {
+      lines.push(listenRoom.props.listenLine);
+    }
     const present = await MooChar.find({ roomId: ch.roomId }).select('name').lean();
     const count = Math.min(present.length, 8);
     const names = present.map(p => p.name).join(', ');
@@ -1055,7 +1061,17 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
     const target = folks.find((f) => f.name.toLowerCase().includes(who.toLowerCase()) || (f.attrs?.aka || '').toLowerCase() === who.toLowerCase());
     if (!target) { lines.push(`Nobody called "${who}" here to talk to.`); return { ok: false, lines }; }
     const def = reverie.CENSUS_BY_ID[target.userId];
-    const line = def ? reverie.npcTalkLine(def) : `${target.name} nods at you, friendly enough.`;
+    /* Pass game state so the NPC's response varies by time, weather,
+     * crowd size — combinatorial, never the same canned rotation. */
+    const talkCtx = {
+      hour: new Date().getHours(),
+      weather: (reverie.weatherNow() || {}).kind || 'clear',
+      playerName: ch.name,
+      roomId: ch.roomId,
+      peopleCount: (await MooChar.countDocuments({ roomId: ch.roomId })),
+      outdoor: !!(await MooRoom.findOne({ roomId: ch.roomId }).lean())?.props?.outdoor,
+    };
+    const line = def ? reverie.npcTalkLine(def, talkCtx) : `${target.name} nods at you, friendly enough.`;
     await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} stops to talk with ${target.name}.`);
     await emit(ch.roomId, target.userId, target.name, 'say', `${target.name}: ${line}`);
     lines.push(`${target.name}: ${line}`);
