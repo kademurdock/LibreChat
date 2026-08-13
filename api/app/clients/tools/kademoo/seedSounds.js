@@ -50,11 +50,14 @@ const SOUNDS_TO_SEED = [
   'garden.pick',
 ];
 
+/* NOT latched on entry any more. The old version set `_seeded = true` as its
+ * first statement, so a failure — and every single boot WAS a failure, see the
+ * note in world.js — permanently disabled the seeder for that process. It is
+ * set on SUCCESS now, which is the only event that should stop it trying. */
 let _seeded = false;
 
 async function seedSounds() {
   if (_seeded) return;
-  _seeded = true;
 
   try {
     const { MooSound } = require('~/models/kadeMoo');
@@ -64,6 +67,7 @@ async function seedSounds() {
 
     const needed = SOUNDS_TO_SEED.filter((id) => !existingIds.has(id));
     if (!needed.length) {
+      _seeded = true;
       logger.info(`[seed] all ${SOUNDS_TO_SEED.length} sounds already installed`);
       return;
     }
@@ -96,9 +100,13 @@ async function seedSounds() {
       installed++;
     }
 
+    _seeded = true;
     logger.info(`[seed] installed ${installed} new sounds (${existingIds.size} already existed)`);
   } catch (e) {
-    logger.error('[seed] sound seed failed (non-fatal):', e.message);
+    /* Log the WHOLE error. The previous version logged `e.message` and printed
+     * an empty string every boot for a day, which is how a broken seeder hid
+     * in plain sight in a log everybody could read. */
+    logger.error('[seed] sound seed failed (will retry on next /sounds):', e && (e.stack || e.message || String(e)));
   }
 }
 

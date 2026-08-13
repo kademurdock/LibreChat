@@ -14,9 +14,37 @@ const { seedSounds } = require('~/app/clients/tools/kademoo/seedSounds');
 const router = express.Router();
 router.use(requireJwtAuth);
 
-/* One-time sound seed — installs any B2 sounds missing from the manifest.
- * Runs once, non-blocking, non-fatal. */
-seedSounds();
+/* SOUND SEED — 2026-08-13 (round 9). This used to be a bare `seedSounds()`
+ * right here, at module load, and it has NEVER ONCE WORKED. The logs say
+ * exactly one thing about it, on every boot since it was written:
+ *
+ *     error: [seed] sound seed failed (non-fatal):
+ *
+ * — with an empty message, because the catch logged `e.message` on something
+ * that did not have one. It is called during route registration, which is
+ * before Mongo is connected, so the very first thing it does is a query
+ * against a model that has no connection behind it yet.
+ *
+ * The cost of that: the round-8 entry recorded "manifest count 31 -> 46" and
+ * the index published 46 for a day. The live manifest served 41 the whole
+ * time. Nobody fetched a URL, so nobody found out — which is precisely what
+ * the standing rule three files away exists to prevent, and it was written
+ * INTO the file that broke it.
+ *
+ * Now: lazy, awaited from the /sounds route where a live connection is
+ * guaranteed, retried on failure rather than latched off, and it logs the
+ * whole error instead of a field that may not exist. */
+let _seedTried = false;
+async function seedOnce() {
+  if (_seedTried) return;
+  _seedTried = true;
+  try {
+    await seedSounds();
+  } catch (e) {
+    _seedTried = false; /* let the next request try again */
+    logger.error('[world] sound seed threw:', e && (e.stack || e.message || e));
+  }
+}
 
 router.post('/command', async (req, res) => {
   try {
@@ -110,6 +138,7 @@ router.post('/angel', async (req, res) => {
  *  Non-S3 URLs (fal.media, anything public) pass through untouched. */
 router.get('/sounds', async (_req, res) => {
   try {
+    await seedOnce();
     const { MooSound } = require('~/models/kadeMoo');
     const { needsRefresh, getNewS3URL } = require('@librechat/api');
     const rows = await MooSound.find({}).lean();
