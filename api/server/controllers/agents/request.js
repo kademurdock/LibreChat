@@ -661,8 +661,41 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             conversationId: conversation?.conversationId,
           });
 
+          /* Aug 13 2026 — THE LONG-TASK PING (her ask: the thing Claude does
+           * when it's been thinking a while). Read the subscriber count
+           * BEFORE completeJob, which tears the transport down: zero
+           * subscribers here means the user walked away and nobody is looking
+           * at this reply. `job.emitter.listenerCount()` is the facade's own
+           * accessor over eventTransport.getSubscriberCount — deliberately
+           * used instead of adding a public method to GenerationJobManager,
+           * because that lives in packages/api where the Docker build runs
+           * REAL TypeScript and every change there is a build risk for no
+           * gain. Everything else (the 30-second floor, the per-user opt-in,
+           * the cooldown) is inside the service. Fire-and-forget: a
+           * notification must never delay or fail a completed generation. */
+          const wasWatched = (() => {
+            try {
+              return job.emitter.listenerCount() > 0;
+            } catch (_) {
+              return true; // unknown = assume watched = stay quiet
+            }
+          })();
+
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId);
+
+          try {
+            const { pingIfLongAndUnwatched } = require('~/server/services/kadeLongTaskPing');
+            pingIfLongAndUnwatched({
+              userId,
+              agentName: response?.sender,
+              startedAtMs: jobCreatedAt,
+              stillWatching: wasWatched,
+            });
+          } catch (pingErr) {
+            logger.warn(`[ResumableAgentController] long-task ping skipped: ${pingErr.message}`);
+          }
+
           await finishResumableRequest(req, userId);
         } else {
           const finalEvent = {

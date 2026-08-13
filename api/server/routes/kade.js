@@ -1446,7 +1446,9 @@ router.get('/nudges/prefs', requireJwtAuth, async (req, res) => {
       KadePendingNudge.find({ userId: req.user.id }).sort({ createdAt: -1 }).limit(15).lean(),
     ]);
     res.json({
-      prefs: prefs || { reminders: 'chat', birthday: 'off', birthdayDate: '', phone: '' },
+      prefs: prefs || {
+        reminders: 'chat', birthday: 'off', birthdayDate: '', phone: '', longTaskPing: false,
+      },
       pushSubscriptions: subCount,
       recent,
     });
@@ -1457,8 +1459,16 @@ router.get('/nudges/prefs', requireJwtAuth, async (req, res) => {
 
 router.post('/nudges/prefs', requireJwtAuth, async (req, res) => {
   try {
-    const { reminders, birthday, birthdayDate, phone } = req.body || {};
+    const { reminders, birthday, birthdayDate, phone, longTaskPing } = req.body || {};
     const update = {};
+    // Aug 13 2026 — the long-task ping opt-in. Strict boolean check on
+    // purpose: an absent field must leave the existing choice alone, so the
+    // older callers of this route (kadePages' notifications page, which knows
+    // nothing about this field) can keep POSTing their four keys without
+    // silently switching it off for whoever saved settings there last.
+    if (typeof longTaskPing === 'boolean') {
+      update.longTaskPing = longTaskPing;
+    }
     if (CHANNELS.includes(reminders)) {
       update.reminders = reminders;
     }

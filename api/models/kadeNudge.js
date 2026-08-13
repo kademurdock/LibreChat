@@ -40,6 +40,21 @@ const nudgePrefSchema = new mongoose.Schema(
     phone: { type: String, default: '' },
     /** July 12 2026: the once-ever "add your number" chat nudge fired */
     promptedPhone: { type: Boolean, default: false },
+    /**
+     * Aug 13 2026 — LONG-TASK PING (her ask: "you know how claude sends you a
+     * notification when it's been thinking a long time"). OPT-IN, per person,
+     * DEFAULT OFF: a notification nobody asked for is spam, and this fires on
+     * ordinary conversation rather than on something the user scheduled.
+     *
+     * Deliberately NOT a channel enum like the fields above. Those pick HOW a
+     * scheduled nudge reaches you; this is a yes/no on one mechanical event,
+     * and it only has one sensible delivery (a push — a chat-queued "your
+     * reply is ready" would be read at the exact moment it stopped being
+     * true).
+     */
+    longTaskPing: { type: Boolean, default: false },
+    /** Last long-task ping delivered — the per-user cooldown's memory. */
+    longTaskPingAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
