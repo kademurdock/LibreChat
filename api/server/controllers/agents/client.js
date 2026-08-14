@@ -1119,9 +1119,16 @@ class AgentClient extends BaseClient {
      * one. Never rewrites what was said -- appends one honest correction.
      * Fail-soft: a guard that throws must never cost someone their reply. */
     try {
-      const { applyReminderPromiseGuard } = require('~/server/utils/kadePromiseGuard');
+      const { applyReminderPromiseGuard, applyOpsPromiseGuard } = require('~/server/utils/kadePromiseGuard');
       completion = applyReminderPromiseGuard(completion, {
         agentTools: this.options?.agent?.tools,
+        agentId: this.options?.agent?.id,
+        logger,
+      });
+      /* Aug 14 2026: same guarantee, Forge's trade — claims of deploys and
+       * pushes need a tool receipt in the turn (see the ops guard's header
+       * for why confirmation = any call at all). Gated to Forge by env. */
+      completion = applyOpsPromiseGuard(completion, {
         agentId: this.options?.agent?.id,
         logger,
       });

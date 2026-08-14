@@ -51,7 +51,13 @@ const REMINDER_WORD = /\bremind(?:er|ers)?\b/i;
 
 /** The character is already being honest about a failure — leave it alone. */
 const HONEST_PATTERNS = [
-  /\b(?:can(?:no|')?t|could\s?n[o']?t|unable\s+to|wasn['’]?t\s+able\s+to|didn['’]?t|failed\s+to)\s+(?:set|schedule|create)\b/i,
+  // Aug 14 2026: the can't/couldn't alternatives now accept the CURLY
+  // apostrophe (U+2019 — what iOS keyboards and most models emit). The old
+  // straight-quote-only version let "couldn’t set that reminder" fail the
+  // honesty check while "set that reminder" still matched a claim — an
+  // honest reply could draw an unearned correction. Found by the standalone
+  // extraction's test port, approved by Kade same night.
+  /\b(?:can(?:no|'|’)?t|could\s?n[o'’]?t|unable\s+to|wasn['’]?t\s+able\s+to|didn['’]?t|failed\s+to)\s+(?:set|schedule|create)\b/i,
   /\bno\s+reminder\s+(?:was\s+)?(?:set|created|scheduled)\b/i,
   /\breminder\s+did\s?n[o']?t\s+(?:get\s+)?set\b/i,
   /\bnot\s+actually\s+set\b/i,
@@ -142,8 +148,96 @@ function applyReminderPromiseGuard(contentParts, ctx = {}) {
   return next;
 }
 
+/* --------------------------------------------------------------------
+ * THE OPS GUARD (Aug 14 2026, her word: "expand to forge"). Forge claims
+ * deploys, pushes, commits, env changes. The reminder guard's core insight
+ * applies unchanged: a claim of completed work with no tool receipt in the
+ * same turn is a false claim. Mechanics differ in two honest ways:
+ * (a) CONFIRMATION = any tool call at all this turn. Forge's real work
+ *     always leaves a receipt part; matching per-action output markers
+ *     across Railway/GitHub/LibreChat lanes would be brittle, and the case
+ *     that bites is the same one that bit Amber — a confident claim with
+ *     ZERO calls behind it.
+ * (b) The correction is HEDGED, because Forge legitimately recaps past
+ *     turns' work ("yes, I deployed that yesterday"). Admin-only lane, so
+ *     the hedge reads as the honesty reflex it is, not a character break.
+ * Gated hard: only agents named in KADE_OPS_GUARD_AGENTS (default Forge)
+ * ever see this. Kill switch: KADE_OPS_GUARD=0. */
+
+const OPS_GUARD_AGENTS = () =>
+  String(process.env.KADE_OPS_GUARD_AGENTS || 'agent_FFecOqZ6hHCVpY507-VAD')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+/** Past/perfect "the work happened" shapes only — future tense never trips. */
+const OPS_CLAIM_PATTERNS = [
+  /\b(?:I|i)['’]?ve\s+(?:just\s+)?(?:pushed|deployed|committed|merged|redeployed|patched)\b/,
+  /\b(?:I|i)\s+(?:just\s+)?(?:pushed|deployed|committed|merged|redeployed)\s+(?:the|that|this|it|your)\b/,
+  /\bdeploy(?:ment)?\s+(?:is\s+|went\s+|came\s+back\s+)?(?:done|complete|completed|succeeded|successful|green|live)\b/i,
+  /\b(?:it|build|change|fix)['’]?s?\s+(?:now\s+)?(?:live|deployed)\s+(?:on|to|at)\b/i,
+  /\b(?:env|environment|variable|secret|var)\s+(?:is\s+|has\s+been\s+)?(?:set|updated|upserted|added)\b/i,
+];
+
+const OPS_HONEST_PATTERNS = [
+  /\b(?:can(?:no|'|’)?t|could\s?n[o'’]?t|didn['’]?t|failed\s+to|unable\s+to|was\s?n[o'’]?t\s+able\s+to)\s+(?:push|deploy|commit|merge|patch|update|set)\b/i,
+  /\b(?:deploy(?:ment)?|push|commit|build)\s+(?:failed|errored|did\s?n[o'’]?t\s+(?:go|land|finish))\b/i,
+  /\bnot\s+(?:yet\s+)?(?:pushed|deployed|live|committed|merged)\b/i,
+];
+
+const OPS_CORRECTION =
+  '\n\n— Honesty check from the platform: no tool ran during this turn, so if that action was ' +
+  'supposed to happen just now, it has not. If I did it in an earlier turn, ignore me — ' +
+  'otherwise say the word and I will actually run it.';
+
+function applyOpsPromiseGuard(contentParts, ctx = {}) {
+  if (process.env.KADE_OPS_GUARD === '0') return contentParts;
+  if (!Array.isArray(contentParts) || contentParts.length === 0) return contentParts;
+  if (!ctx.agentId || !OPS_GUARD_AGENTS().includes(String(ctx.agentId))) return contentParts;
+
+  let claimed = false;
+  let honest = false;
+  let anyToolRan = false;
+  let lastTextIndex = -1;
+
+  for (let i = 0; i < contentParts.length; i++) {
+    const part = contentParts[i];
+    if (!part || typeof part !== 'object') continue;
+    if (part.type === 'text') {
+      const t = textOf(part);
+      if (t) {
+        lastTextIndex = i;
+        if (!claimed && OPS_CLAIM_PATTERNS.some((re) => re.test(t))) claimed = true;
+        if (!honest && OPS_HONEST_PATTERNS.some((re) => re.test(t))) honest = true;
+      }
+      continue;
+    }
+    if (part.type === 'tool_call') {
+      const call = part.tool_call || {};
+      if (call.name) anyToolRan = true;
+    }
+  }
+
+  if (!claimed || honest || anyToolRan || lastTextIndex < 0) return contentParts;
+
+  ctx.logger?.warn?.(
+    `[kade/ops-guard] CAUGHT an ops claim with zero tool calls from agent ${ctx.agentId} — appended the honesty check.`,
+  );
+
+  const next = contentParts.slice();
+  const part = next[lastTextIndex];
+  const existing = textOf(part);
+  if (typeof part.text === 'string') {
+    next[lastTextIndex] = { ...part, text: existing + OPS_CORRECTION };
+  } else if (part.text && typeof part.text.value === 'string') {
+    next[lastTextIndex] = { ...part, text: { ...part.text, value: existing + OPS_CORRECTION } };
+  }
+  return next;
+}
+
 module.exports = {
   applyReminderPromiseGuard,
+  applyOpsPromiseGuard,
   PROMISE_PATTERNS,
   DELIVERY_CLAIM,
   REMINDER_WORD,
