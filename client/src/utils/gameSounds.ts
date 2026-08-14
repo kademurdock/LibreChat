@@ -56,11 +56,21 @@ const VARIANTS: Record<string, number> = {
  *  It must vanish from every read surface, exactly like sound cues. */
 export const DEEP_THINK_RE = /\[DEEP THINK(?:\s+\d{10,17})?\]/gi;
 
+/** Build 204's mirror twin (Aug 14 2026): the native thinking picker's
+ *  Instant mode and its "Answer now instead" button stamp "[INSTANT
+ *  <epoch-ms>]" for reframe-proxy's forced fast lane. Same vanishing act on
+ *  every read surface. */
+export const INSTANT_RE = /\[INSTANT(?:\s+\d{10,17})?\]/gi;
+
 export function stripDeepThinkTag(text: string): string {
-  if (!text || text.indexOf('[DEEP THINK') === -1) {
+  if (!text || (text.indexOf('[DEEP THINK') === -1 && text.indexOf('[INSTANT') === -1)) {
     return text;
   }
-  return text.replace(DEEP_THINK_RE, '').replace(/[ \t]{2,}/g, ' ').replace(/\s+$/, '');
+  return text
+    .replace(DEEP_THINK_RE, '')
+    .replace(INSTANT_RE, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+$/, '');
 }
 
 export function stripGameSoundTags(text: string): string {
@@ -68,7 +78,8 @@ export function stripGameSoundTags(text: string): string {
     !text ||
     (text.indexOf('[sound:') === -1 &&
       text.indexOf('[table:') === -1 &&
-      text.indexOf('[DEEP THINK') === -1)
+      text.indexOf('[DEEP THINK') === -1 &&
+      text.indexOf('[INSTANT') === -1)
   ) {
     return text;
   }
@@ -76,6 +87,7 @@ export function stripGameSoundTags(text: string): string {
     .replace(GAME_SOUND_RE, '')
     .replace(GAME_TABLE_RE, '')
     .replace(DEEP_THINK_RE, '')
+    .replace(INSTANT_RE, '')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/^\s+/, '');
 }
