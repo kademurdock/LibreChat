@@ -520,6 +520,35 @@ export const kadeAdventureSchema: ExtendedJsonSchema = {
   required: ['action'],
 };
 
+export const kadeLivingMemorySchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['list', 'read', 'search'],
+      description:
+        "list = the shelf (doc paths + sizes). read = one doc's text (path required; big docs return their head first). search = line search across the shelf (query required, 3+ chars).",
+    },
+    path: {
+      type: 'string',
+      description: "read only. The doc path exactly as list shows it.",
+    },
+    query: {
+      type: 'string',
+      description: 'search only. At least 3 characters.',
+    },
+    head: {
+      type: 'integer',
+      description: 'read only, optional. First N characters.',
+    },
+    tail: {
+      type: 'integer',
+      description: 'read only, optional. Last N characters.',
+    },
+  },
+  required: ['action'],
+};
+
 export const kadeDrivePcSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -1003,6 +1032,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Take a message for another person on this site ("tell Skylee...", "let Kade know...") — the site holds it and delivers it the next time they open a chat, by their own notification choice, or on their next phone call with a character. Free, instant. Deliver messages FAITHFULLY in the sender\'s words. If the recipient can\'t be found, ask for their email.',
     schema: kadeMessageSchema,
+    toolType: 'builtin',
+  },
+  kade_living_memory: {
+    name: 'kade_living_memory',
+    description:
+      "READ-ONLY project knowledge shelf for platform questions (features, how-tos, what changed, history). The visible shelf is decided by the SEAT, never the conversation: Kade's own seat reads the full project memory; every other turn reads only the published family docs — off-shelf docs read as not-found, so answer 'I don't have that' rather than speculating. Inform yourself, answer in your own voice, never paste raw internals to anyone but Kade.",
+    schema: kadeLivingMemorySchema,
     toolType: 'builtin',
   },
   kade_drive_pc: {

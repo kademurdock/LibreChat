@@ -40,6 +40,7 @@ const {
   KadeNews,
   KadeResearch,
   KadeDrivePc,
+  KadeLivingMemory,
   KadeReadPage,
   KadeAdventure,
   KadeGames,
@@ -211,6 +212,7 @@ const loadTools = async ({
     kade_news: KadeNews,
     kade_research: KadeResearch,
     kade_drive_pc: KadeDrivePc,
+    kade_living_memory: KadeLivingMemory,
     kade_read_page: KadeReadPage,
     kade_adventure: KadeAdventure,
     kade_games: KadeGames,
@@ -344,6 +346,15 @@ const loadTools = async ({
      * acting identity (kadeOnBehalfOf), so family phone turns that ride the
      * service seat are refused. req carries all three. */
     kade_drive_pc: {
+      req: options.req,
+      userId: kadeActingUserId,
+      agentName: agent?.name,
+    },
+    /** LIVING MEMORY (Aug 14 2026, Part 64): the knowledge shelf. The tool
+     * picks its SCOPE off the seat (owner -> full, anyone else -> family
+     * shelf) — same req threading as drive_pc; the bridge's scope=family
+     * filter is the server-side floor under the choice. */
+    kade_living_memory: {
       req: options.req,
       userId: kadeActingUserId,
       agentName: agent?.name,

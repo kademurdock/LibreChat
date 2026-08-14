@@ -17,6 +17,7 @@ const KadeJoke = require('./structured/KadeJoke');
 const KadeNews = require('./structured/KadeNews');
 const KadeResearch = require('./structured/KadeResearch');
 const KadeDrivePc = require('./structured/KadeDrivePc');
+const KadeLivingMemory = require('./structured/KadeLivingMemory');
 const KadeReadPage = require('./structured/KadeReadPage');
 const KadeAdventure = require('./structured/KadeAdventure');
 const KadeGames = require('./structured/KadeGames');
@@ -52,6 +53,7 @@ module.exports = {
   KadeNews,
   KadeResearch,
   KadeDrivePc,
+  KadeLivingMemory,
   KadeReadPage,
   KadeAdventure,
   KadeGames,
