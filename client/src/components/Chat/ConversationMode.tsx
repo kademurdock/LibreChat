@@ -89,7 +89,16 @@ const TTS_CHUNK_TARGET = 320;
 // needs, while costing only a fraction of a second of extra initial latency.
 // End-of-stream still force-flushes (streamer.end() then flushChunk()), so a
 // genuinely short one-line reply is never held back waiting to reach this.
-const TTS_FIRST_CHUNK_MIN = 100;
+// Aug 14 2026, her ask ("you did shorten that pause... I wonder if we could
+// get away with something minor like that again"): 100 -> 70. History: the
+// original fast-start shipped the first sentence ALONE and a short opener
+// ("That's an excellent question.") left a long unnatural seam while chunk 2
+// synthesized -- the 100-char glue was the cure, at the cost of a slower
+// first word. Chunk 2's synth has been concurrent-with-playback for a while
+// and the seam machinery got tightened since, so 70 (~4s of spoken cover
+// instead of ~6s) buys the first word back ~1.5-2s on short openers. If the
+// mid-reply pause ever creeps back, this one number is the whole revert.
+const TTS_FIRST_CHUNK_MIN = 70;
 
 // -- SentenceStreamer ----------------------------------------------------------
 // Port of the phase4 POC sentence splitter. Buffers streaming tokens and emits
