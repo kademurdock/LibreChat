@@ -153,7 +153,7 @@ class FluxAPI extends Tool {
     // 3. DEFAULT to endpoint '/v1/flux-2-pro-preview' (FLUX.2) unless the user asks for a specific older model or a finetune.\n    // Use action: 'list_finetunes' to see available custom models. When using finetunes, use endpoint: '/v1/flux-pro-finetuned' (default) or '/v1/flux-pro-1.1-ultra-finetuned' for higher quality and aspect ratio.`;
 
     // Add base URL from environment variable with fallback
-    this.baseUrl = process.env.FLUX_API_BASE_URL || 'https://api.us1.bfl.ai';
+    this.baseUrl = process.env.FLUX_API_BASE_URL || 'https://api.bfl.ai';
 
     this.schema = fluxApiJsonSchema;
   }
@@ -265,7 +265,7 @@ class FluxAPI extends Tool {
     let payload = {
       prompt: imageData.prompt,
       prompt_upsampling: imageData.prompt_upsampling || false,
-      safety_tolerance: imageData.safety_tolerance || 6,
+      safety_tolerance: Math.min(imageData.safety_tolerance || 5, 5),
       output_format: imageData.output_format || 'png',
     };
 
@@ -526,7 +526,7 @@ class FluxAPI extends Tool {
     let payload = {
       prompt: imageData.prompt,
       prompt_upsampling: imageData.prompt_upsampling || false,
-      safety_tolerance: imageData.safety_tolerance || 6,
+      safety_tolerance: Math.min(imageData.safety_tolerance || 5, 5),
       output_format: imageData.output_format || 'png',
       finetune_id: imageData.finetune_id,
       finetune_strength: imageData.finetune_strength || 1.0,

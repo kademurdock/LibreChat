@@ -270,6 +270,12 @@ const startServer = async () => {
   app.use('/api/diary', routes.diary);
   app.use('/api/brief', routes.brief);
   app.use('/api/access-request', routes.accessRequest);
+  /* Aug 14 2026 — the Create-a-Character brain + page (PART 52). One module:
+   * quiz, composer, plain-language model menu, wallet-charged portrait
+   * generation, and the screen-reader-first guided page. Native build 202
+   * consumes the same routes. */
+  app.use('/api/kade/builder', routes.kadeCreateCharacter.router);
+  app.get('/create-a-character', routes.kadeCreateCharacter.createCharacterPage);
   app.use('/api/admin/access-requests', routes.adminAccessRequests);
   app.use('/api/export', routes.exportData);
   app.use('/api/world', routes.world);

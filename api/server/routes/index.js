@@ -16,6 +16,7 @@ const adminMining = require('./admin/mining');
 const diary = require('./diary');
 const brief = require('./brief');
 const accessRequest = require('./accessRequest');
+const kadeCreateCharacter = require('./kadeCreateCharacter');
 const adminAccessRequests = require('./admin/accessRequests');
 const exportData = require('./export');
 const world = require('./world');
@@ -90,6 +91,7 @@ module.exports = {
   diary,
   brief,
   accessRequest,
+  kadeCreateCharacter,
   adminAccessRequests,
   exportData,
   world,
