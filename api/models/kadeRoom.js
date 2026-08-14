@@ -14,6 +14,10 @@ const kadeRoomSchema = new mongoose.Schema(
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
     topic: { type: String, default: '' },
     goals: { type: String, default: '' },
+    /** Porch mode (Aug 14 2026, idea 29): 'debate' (default) or 'porch' —
+     * the same round-robin machine with the competition removed. Existing
+     * rooms carry no mode and read as 'debate' everywhere. */
+    mode: { type: String, default: 'debate' },
     agents: {
       type: [
         {

@@ -68,6 +68,7 @@ function roomView(doc, { withTranscript = true, forUser = null } = {}) {
   const v = {
     id: String(doc._id),
     topic: doc.topic,
+    mode: doc.mode === 'porch' ? 'porch' : 'debate',
     goals: doc.goals,
     agents: (doc.agents || []).map((a) => ({
       agentId: a.agentId,
@@ -139,12 +140,16 @@ router.post('/', requireJwtAuth, async (req, res) => {
   try {
     const topic = String(req.body?.topic || '').trim().slice(0, 2000);
     const goals = String(req.body?.goals || '').trim().slice(0, 4000);
+    /* Porch mode (Aug 14 2026): whitelist, never trust a free string. */
+    const mode = req.body?.mode === 'porch' ? 'porch' : 'debate';
     const agentIds = Array.isArray(req.body?.agentIds)
       ? [...new Set(req.body.agentIds.map(String))]
       : [];
-    if (!topic) {
+    if (!topic && mode !== 'porch') {
       return res.status(400).json({ message: 'Give the room a topic or scene first.' });
     }
+    /* A porch needs no topic — the setting IS the topic. */
+    const finalTopic = topic || 'The front porch, toward evening. Nothing that needs solving.';
     if (agentIds.length < MIN_AGENTS || agentIds.length > MAX_AGENTS) {
       return res
         .status(400)
@@ -164,7 +169,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
         rate: (a.tts && Number(a.tts.speakingRate)) || null,
       });
     }
-    const room = await KadeRoom.create({ user: oidOf(req), topic, goals, agents: snaps });
+    const room = await KadeRoom.create({ user: oidOf(req), topic: finalTopic, mode, goals, agents: snaps });
     return res.json({ room: roomView(room) });
   } catch (err) {
     logger.error('[kade/room create] error:', err);
@@ -268,6 +273,25 @@ function buildSystem(room, agentName, instructions, humanName, childMode) {
     // July 27 2026: same invisible anti-tell style note the chat lane gets.
     KADE_STYLE_NOTE.trim(),
     '',
+    ...(room.mode === 'porch'
+      ? [
+          '--- THE FRONT PORCH ---',
+          `You are settled in on the front porch at Kade-AI with: ${cast}. Easy company on a good evening — everyone except ${humanName} is another AI character with their own persona.`,
+          `THE SETTING: ${room.topic}`,
+          room.goals ? `HOUSE NOTES FROM ${humanName}: ${room.goals}` : '',
+          '',
+          'Porch rules (Aug 14 2026 — the debate constitution with the combat removed; the anti-echo discipline stays because an agreeable room echoes WORSE):',
+          `- This is company, not a contest. Nobody is debating anybody and nothing needs solving. Swap stories, tease gently, notice small things, ask after people — especially ${humanName}.`,
+          '- React to what was ACTUALLY said, then add a little something of YOUR OWN: a story, a memory, an observation, or an easy question. Never restate what the porch has already heard, including your own lines.',
+          `- Speak ONLY as ${agentName}, in ${agentName}'s OWN voice and imagery. The other speakers' metaphors, professions, and catchphrases are THEIRS — never borrow or echo a metaphor, simile, or turn of phrase that has already appeared. Coin your own or use none.`,
+          '- Do NOT open by naming another speaker and praising them ("X, you said it best...", "X, so true..."). Just talk. Direct address belongs in the middle of a thought.',
+          '- Never write lines or actions for anyone else on the porch.',
+          '- Do NOT start your reply with your own name or any speaker label — just talk.',
+          '- Porch talk runs SHORT: one to three sentences. A single good line is a fine turn. No speeches.',
+          '- Plain conversational text only: no headings, no bullet lists, no %%% tags, no markdown tables.',
+          '- You have NO tools, search, or functions on the porch. NEVER emit a tool call or stop to look something up — talk from what you know, in plain speech.',
+        ]
+      : [
     '--- LIVE GROUP ROOM ---',
     `You are one voice in a live multi-party conversation room on Kade-AI. Also in the room: ${cast}. Everyone except ${humanName} is another AI character with their own persona.`,
     `TOPIC / SCENE: ${room.topic}`,
@@ -291,6 +315,7 @@ function buildSystem(room, agentName, instructions, humanName, childMode) {
     '- Keep turns short and punchy: about 2-5 sentences, two short paragraphs at the very most.',
     '- Plain conversational text only: no headings, no bullet lists, no %%% tags, no markdown tables.',
     '- You have NO tools, search, or functions in this room. NEVER emit a tool call or stop to look something up — argue from what you know, completely, in plain speech.',
+        ]),
     childMode ? CHILD_NOTE : null,
   ]
     .filter((l) => l !== null && l !== undefined)
@@ -298,6 +323,7 @@ function buildSystem(room, agentName, instructions, humanName, childMode) {
 }
 
 function buildMessages(room, agentId) {
+  const porch = room.mode === 'porch';
   const window = (room.transcript || []).slice(-HISTORY_WINDOW);
   const raw = window.map((t) =>
     t.speaker === agentId
@@ -317,8 +343,9 @@ function buildMessages(room, agentId) {
   if (msgs.length === 0) {
     msgs.push({
       role: 'user',
-      content:
-        '(The room just opened and you are up first. Kick things off on the topic, fully in character.)',
+      content: porch
+        ? '(Folks are just settling onto the porch and you are up first. Open it easy — a greeting, a stretch, a first small story — fully in character.)'
+        : '(The room just opened and you are up first. Kick things off on the topic, fully in character.)',
     });
   } else if (msgs[0].role === 'assistant') {
     msgs.unshift({ role: 'user', content: '(The room just opened.)' });
@@ -326,15 +353,18 @@ function buildMessages(room, agentId) {
   if (msgs[msgs.length - 1].role === 'assistant') {
     msgs.push({
       role: 'user',
-      content:
-        '(No one else has jumped in yet. Briefly sharpen or add to your point, or throw a question at someone in the room.)',
+      content: porch
+        ? '(Nobody has chimed in yet. Toss out a small story, or ask somebody something easy.)'
+        : '(No one else has jumped in yet. Briefly sharpen or add to your point, or throw a question at someone in the room.)',
     });
   }
   // July 30 2026: the discipline cue rides LAST — recency beats a system
   // prompt at this distance (same lesson as the chat lane's appended
   // reminders). Folded into the trailing user message so no provider ever
   // sees back-to-back same-role messages.
-  const cue = `(Your turn. YOUR own voice and imagery only — bring NEW ground, never repeat a point or a metaphor the room has used, and do not open by praising another speaker.)`;
+  const cue = porch
+    ? `(Your turn. Easy porch talk in YOUR own voice, one to three sentences — bring a little something new, never repeat a line or borrow anybody's imagery, and no praise-openers.)`
+    : `(Your turn. YOUR own voice and imagery only — bring NEW ground, never repeat a point or a metaphor the room has used, and do not open by praising another speaker.)`;
   const lastMsg = msgs[msgs.length - 1];
   if (lastMsg.role === 'user') {
     lastMsg.content += `\n\n${cue}`;

@@ -73,14 +73,19 @@ const roomHtml = `<!doctype html>
 <body>
   <a class="back" href="/">&larr; Back to chat</a>
   <h1>Debate &amp; Roleplay Room</h1>
-  <p class="muted">Drop two or more characters into a room, hand them a topic or a scene, and jump in whenever you feel like it. They will argue, agree, and everything in between.</p>
+  <p class="muted">Drop two or more characters into a room, hand them a topic or a scene, and jump in whenever you feel like it. They will argue, agree, and everything in between. Or pick the front porch instead: no topic, no contest, just good company hanging out with you.</p>
 
   <div id="status" class="status" role="status" hidden></div>
 
   <main id="lobby" hidden>
     <section class="card" aria-labelledby="newroom-h">
       <h2 id="newroom-h" style="margin-top:0">Start a new room</h2>
-      <label for="topic">Topic or scene (required)</label>
+      <label for="mode">Room style</label>
+      <select id="mode">
+        <option value="debate" selected>Debate &amp; roleplay &mdash; give them a topic to chew on</option>
+        <option value="porch">Front porch &mdash; no topic needed, just company</option>
+      </select>
+      <label for="topic">Topic or scene (required for debates; optional on the porch)</label>
       <textarea id="topic" rows="2" placeholder="e.g. Pineapple belongs on pizza — settle it."></textarea>
       <label for="goals">Ground rules, goals, or roleplay setup (optional)</label>
       <textarea id="goals" rows="3" placeholder="e.g. Nova argues FOR and cites history. Doug argues AGAINST and takes it way too personally. Keep it PG."></textarea>
@@ -183,7 +188,7 @@ const roomHtml = `<!doctype html>
     ul.innerHTML = list.map(function(r){
       var cast = r.agents.map(function(a){ return a.name; }).join(', ');
       return '<li>' +
-        '<span class="info"><span class="topic">'+esc(r.topic)+'</span><br>' +
+        '<span class="info"><span class="topic">'+(r.mode==='porch' ? 'Porch &mdash; ' : '')+esc(r.topic)+'</span><br>' +
         '<span class="muted">'+esc(cast)+' &middot; '+r.lines+' lines</span></span>' +
         '<button type="button" data-open="'+esc(r.id)+'">Open</button>' +
         '<button type="button" class="danger" data-del="'+esc(r.id)+'" aria-label="Delete room: '+esc(r.topic)+'">Delete</button>' +
@@ -320,12 +325,13 @@ const roomHtml = `<!doctype html>
   /* ---------- wiring ---------- */
   $('create').addEventListener('click', async function(){
     var topic = $('topic').value.trim();
+    var mode = $('mode') ? $('mode').value : 'debate';
     var checked = Array.prototype.slice.call(document.querySelectorAll('#cast input:checked')).map(function(c){return c.value;});
-    if(!topic){ setStatus('Give the room a topic or scene first.', true); $('topic').focus(); return; }
+    if(!topic && mode !== 'porch'){ setStatus('Give the room a topic or scene first.', true); $('topic').focus(); return; }
     if(checked.length < 2 || checked.length > 6){ setStatus('Pick between 2 and 6 characters.', true); return; }
     setBusy(true); setStatus('Creating room…');
     try{
-      var j = await api('', {method:'POST', body:{topic:topic, goals:$('goals').value.trim(), agentIds:checked}});
+      var j = await api('', {method:'POST', body:{topic:topic, mode:mode, goals:$('goals').value.trim(), agentIds:checked}});
       setBusy(false);
       showRoom(j.room);
     }catch(e){ setBusy(false); setStatus(e.message, true); }
