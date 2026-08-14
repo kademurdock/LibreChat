@@ -2,7 +2,7 @@
   {
     "name": "Phone Call",
     "pluginKey": "kade_phone_call",
-    "description": "Lets this agent place a real phone call for you — it dials out from the Kade-AI phone line, talks, and saves a transcript in Calls & Conversations. Calls are capped and recorded, and each one costs a little real money on the phone bill. It can't receive calls, only place them. Try: \"call my pharmacy and ask if my refill is ready.\"",
+    "description": "Lets this agent place a real phone call for you \u2014 it dials out from the Kade-AI phone line, talks, and saves a transcript in Calls & Conversations. Calls are capped and recorded, and each one costs a little real money on the phone bill. It can't receive calls, only place them. Try: \"call my pharmacy and ask if my refill is ready.\"",
     "icon": "assets/phone-call.svg",
     "isAuthRequired": "false",
     "authConfig": []
@@ -10,7 +10,7 @@
   {
     "name": "Push Notification",
     "pluginKey": "kade_notify",
-    "description": "Lets this agent ping your phone's lock screen — reminders, check-ins, and \"your long task is done\" notes. It has built-in manners: quiet hours at night, cooldowns, and daily caps it cannot break. It can't text other people, only notify YOUR phone. Try: \"remind me at 4 to take the bread out.\"",
+    "description": "Lets this agent ping your phone's lock screen \u2014 reminders, check-ins, and \"your long task is done\" notes. It has built-in manners: quiet hours at night, cooldowns, and daily caps it cannot break. It can't text other people, only notify YOUR phone. Try: \"remind me at 4 to take the bread out.\"",
     "icon": "assets/phone-call.svg",
     "isAuthRequired": "false",
     "authConfig": []
@@ -18,7 +18,7 @@
   {
     "name": "Diary Memory Search",
     "pluginKey": "kade_memory_search",
-    "description": "Lets this character search your private dated diary — the long-term archive of day-to-day life it quietly keeps beside its memory cards. Ask things like \"what was I up to last week?\" or \"have I mentioned that show before?\" and it looks up the real entries instead of guessing. Each character can only see its own diary plus shared notes.",
+    "description": "Lets this character search your private dated diary \u2014 the long-term archive of day-to-day life it quietly keeps beside its memory cards. Ask things like \"what was I up to last week?\" or \"have I mentioned that show before?\" and it looks up the real entries instead of guessing. Each character can only see its own diary plus shared notes.",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
@@ -26,7 +26,7 @@
   {
     "name": "The World",
     "pluginKey": "kade_world",
-    "description": "Lets this character walk you through the persistent city beyond the Threshold Gate — a shared text world where your actions are real and remembered. Move, look, pick things up, talk to whoever's in the room; speak naturally or use classic commands. The world keeps its own chronicle.",
+    "description": "Lets this character walk you through the persistent city beyond the Threshold Gate \u2014 a shared text world where your actions are real and remembered. Move, look, pick things up, talk to whoever's in the room; speak naturally or use classic commands. The world keeps its own chronicle.",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
@@ -42,7 +42,7 @@
   {
     "name": "Fal Studio (Video + Design)",
     "pluginKey": "fal_studio",
-    "description": "Makes short AI video clips and polished design images (posters, cards, logos — the kind where the text comes out spelled right). Each video costs real money (roughly 50 cents to a dollar per short clip), design images a few cents. It can't edit videos you upload. Try: \"make a 5-second video of a corgi surfing.\"",
+    "description": "Makes short AI video clips and polished design images (posters, cards, logos \u2014 the kind where the text comes out spelled right). Each video costs real money (roughly 50 cents to a dollar per short clip), design images a few cents. It can't edit videos you upload. Try: \"make a 5-second video of a corgi surfing.\"",
     "icon": "assets/fal-ai.svg",
     "isAuthRequired": "true",
     "authConfig": [
@@ -56,14 +56,14 @@
   {
     "name": "Calculator",
     "pluginKey": "calculator",
-    "description": "Does exact math — arithmetic, percentages, conversions — so numbers are computed, not guessed. It can't graph or solve word problems by itself; it just crunches what the agent feeds it. Try: \"what's 15% of 1,240?\"",
+    "description": "Does exact math \u2014 arithmetic, percentages, conversions \u2014 so numbers are computed, not guessed. It can't graph or solve word problems by itself; it just crunches what the agent feeds it. Try: \"what's 15% of 1,240?\"",
     "icon": "assets/calculator.svg",
     "authConfig": []
   },
   {
     "name": "Flux",
     "pluginKey": "flux",
-    "description": "Draws brand-new pictures from a description, using the site's shared image credits. It can't edit or look at photos you upload — it only creates new ones. Try: \"paint me a cozy cabin in the Ozarks at sunset.\"",
+    "description": "Draws brand-new pictures from a description, using the site's shared image credits. It can't edit or look at photos you upload \u2014 it only creates new ones. Try: \"paint me a cozy cabin in the Ozarks at sunset.\"",
     "icon": "assets/bfl-ai.svg",
     "isAuthRequired": "true",
     "authConfig": [
@@ -77,7 +77,7 @@
   {
     "name": "Weather",
     "pluginKey": "kade_weather",
-    "description": "Looks up real, current weather and forecasts for any city — free and instant. It can't do past weather history. Try: \"what's the weather in Springfield this weekend?\"",
+    "description": "Looks up real, current weather and forecasts for any city \u2014 free and instant. It can't do past weather history. Try: \"what's the weather in Springfield this weekend?\"",
     "icon": "https://open-meteo.com/favicon.ico",
     "isAuthRequired": "false",
     "authConfig": []
@@ -93,7 +93,7 @@
   {
     "name": "Wikipedia",
     "pluginKey": "kade_wikipedia",
-    "description": "Looks things up on Wikipedia — people, places, history, science — so answers come from the encyclopedia instead of memory. Free. It only knows what Wikipedia knows. Try: \"who was Bass Reeves?\"",
+    "description": "Looks things up on Wikipedia \u2014 people, places, history, science \u2014 so answers come from the encyclopedia instead of memory. Free. It only knows what Wikipedia knows. Try: \"who was Bass Reeves?\"",
     "icon": "https://en.wikipedia.org/static/favicon/wikipedia.ico",
     "isAuthRequired": "false",
     "authConfig": []
@@ -101,7 +101,7 @@
   {
     "name": "Jokes",
     "pluginKey": "kade_joke",
-    "description": "Pulls fresh jokes from a live joke database — clean by default, uncensored only for adult personas. Try: \"tell me a dad joke.\"",
+    "description": "Pulls fresh jokes from a live joke database \u2014 clean by default, uncensored only for adult personas. Try: \"tell me a dad joke.\"",
     "icon": "https://v2.jokeapi.dev/favicon.png",
     "isAuthRequired": "false",
     "authConfig": []
@@ -109,7 +109,7 @@
   {
     "name": "News briefing",
     "pluginKey": "kade_news",
-    "description": "Reads real, current headlines from free news feeds — national, world, Springfield/Ozarks local, tech, entertainment, music, sports. It gets headlines and summaries, not full articles. Try: \"what's happening in the news this morning?\"",
+    "description": "Reads real, current headlines from free news feeds \u2014 national, world, Springfield/Ozarks local, tech, entertainment, music, sports. It gets headlines and summaries, not full articles. Try: \"what's happening in the news this morning?\"",
     "icon": "https://media.npr.org/chrome/favicon/favicon-32x32.png",
     "isAuthRequired": "false",
     "authConfig": []
@@ -123,9 +123,17 @@
     "authConfig": []
   },
   {
+    "name": "Drive my PC",
+    "pluginKey": "kade_drive_pc",
+    "description": "The platform's hands on Kade's own computer, through her screen reader \u2014 read the screen, talk in her ear, press keys, run whole errands with permission gates. Owner-only: this tool answers to Kade's own account and refuses everyone else, so adding it to another agent just gets polite no's.",
+    "icon": "assets/phone-call.svg",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Read a webpage",
     "pluginKey": "kade_read_page",
-    "description": "You share a link, it reads the page and returns just the article text — no ads, menus, or clutter. Great for having a webpage read aloud. It can't log into sites or fill out forms, and some paywalled pages won't open. Try: \"read me this article\" with a link pasted in.",
+    "description": "You share a link, it reads the page and returns just the article text \u2014 no ads, menus, or clutter. Great for having a webpage read aloud. It can't log into sites or fill out forms, and some paywalled pages won't open. Try: \"read me this article\" with a link pasted in.",
     "icon": "https://jina.ai/favicon.ico",
     "isAuthRequired": "false",
     "authConfig": []
@@ -133,7 +141,7 @@
   {
     "name": "Adventure save files",
     "pluginKey": "kade_adventure",
-    "description": "Gives story games a save file — so a text adventure or RPG can save, load, and pick up where you left off days later, even in a new conversation. Only useful for games. Try: \"continue my dungeon adventure from last time.\"",
+    "description": "Gives story games a save file \u2014 so a text adventure or RPG can save, load, and pick up where you left off days later, even in a new conversation. Only useful for games. Try: \"continue my dungeon adventure from last time.\"",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
@@ -141,7 +149,7 @@
   {
     "name": "Game Parlor",
     "pluginKey": "kade_games",
-    "description": "The Game Parlor: 19 voice-friendly games with a real referee keeping score — Blackjack, Uno, War, Go Fish, Farkle, Battleship, trivia, and more. The server tracks cards and dice, so the agent can't cheat or lose count. Try: \"deal me some blackjack.\"",
+    "description": "The Game Parlor: 19 voice-friendly games with a real referee keeping score \u2014 Blackjack, Uno, War, Go Fish, Farkle, Battleship, trivia, and more. The server tracks cards and dice, so the agent can't cheat or lose count. Try: \"deal me some blackjack.\"",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
@@ -157,7 +165,7 @@
   {
     "name": "Family Messages",
     "pluginKey": "kade_message",
-    "description": "Takes a message for another person on this site — it's held and delivered next time they open a chat. It can't reach people outside Kade-AI (no texts or emails). Try: \"tell Skylee I said happy birthday.\"",
+    "description": "Takes a message for another person on this site \u2014 it's held and delivered next time they open a chat. It can't reach people outside Kade-AI (no texts or emails). Try: \"tell Skylee I said happy birthday.\"",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
@@ -165,7 +173,7 @@
   {
     "name": "Code Runner",
     "pluginKey": "kade_code",
-    "description": "Runs a small computer program (Python, Bash, or Node) in a safe sandbox and reports what it prints — handy for exact calculations, date math, or quick data crunching. It can't reach the internet or your files. Try: \"figure out how many days until Christmas.\"",
+    "description": "Runs a small computer program (Python, Bash, or Node) in a safe sandbox and reports what it prints \u2014 handy for exact calculations, date math, or quick data crunching. It can't reach the internet or your files. Try: \"figure out how many days until Christmas.\"",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []

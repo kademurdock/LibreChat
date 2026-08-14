@@ -39,6 +39,7 @@ const {
   KadeJoke,
   KadeNews,
   KadeResearch,
+  KadeDrivePc,
   KadeReadPage,
   KadeAdventure,
   KadeGames,
@@ -209,6 +210,7 @@ const loadTools = async ({
     kade_joke: KadeJoke,
     kade_news: KadeNews,
     kade_research: KadeResearch,
+    kade_drive_pc: KadeDrivePc,
     kade_read_page: KadeReadPage,
     kade_adventure: KadeAdventure,
     kade_games: KadeGames,
@@ -335,6 +337,15 @@ const loadTools = async ({
     kade_research: {
       userId: kadeActingUserId,
       agentId: agent?.id || agent?.agent_id,
+      agentName: agent?.name,
+    },
+    /** DRIVE-PC (Aug 14 2026): the NVDA agent lane, owner-gated INSIDE the
+     * tool — it checks the authenticated seat, the ADMIN role, AND the
+     * acting identity (kadeOnBehalfOf), so family phone turns that ride the
+     * service seat are refused. req carries all three. */
+    kade_drive_pc: {
+      req: options.req,
+      userId: kadeActingUserId,
       agentName: agent?.name,
     },
     /** KADE LIVING DIARY (Aug 7 2026): explicit archive search. Scope =

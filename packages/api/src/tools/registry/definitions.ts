@@ -520,6 +520,44 @@ export const kadeAdventureSchema: ExtendedJsonSchema = {
   required: ['action'],
 };
 
+export const kadeDrivePcSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['start', 'status', 'read_screen', 'say', 'press', 'type', 'confirm', 'transcript', 'stop'],
+      description:
+        "start = begin a run (listen first; drive only at her word). status = where things stand (no run id needed). read_screen = the current page as text from her screen reader. say = speak in her ear. press = key chords. type = text at the focus. confirm = answer the driver's permission question. transcript = the run receipt. stop = end now.",
+    },
+    mode: {
+      type: 'string',
+      enum: ['listen', 'drive'],
+      description: 'start only. listen (default) = hear and read the screen, send nothing. drive = the driver runs the errand, confirm-gated.',
+    },
+    goal: {
+      type: 'string',
+      description: 'start with mode=drive: the errand, fully stated.',
+    },
+    text: {
+      type: 'string',
+      description: 'For say: the line to speak. For type: the exact text to type.',
+    },
+    keys: {
+      type: 'string',
+      description: "press only. Chords separated by spaces, e.g. 'control+home' or 'h h enter' or 'nvda+f7'.",
+    },
+    approve: {
+      type: 'boolean',
+      description: 'confirm only. true = allow the pending step; false = refuse it.',
+    },
+    run_id: {
+      type: 'string',
+      description: 'Run id from start. confirm/transcript/stop need it; status finds the active run without it.',
+    },
+  },
+  required: ['action'],
+};
+
 export const kadeGamesSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -965,6 +1003,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Take a message for another person on this site ("tell Skylee...", "let Kade know...") — the site holds it and delivers it the next time they open a chat, by their own notification choice, or on their next phone call with a character. Free, instant. Deliver messages FAITHFULLY in the sender\'s words. If the recipient can\'t be found, ask for their email.',
     schema: kadeMessageSchema,
+    toolType: 'builtin',
+  },
+  kade_drive_pc: {
+    name: 'kade_drive_pc',
+    description:
+      "OWNER-ONLY: drive or co-listen to Kade's own Windows PC through her NVDA screen reader — read her real screen, speak in her ear, press keys, run confirm-gated errands. Answers only when the person on this turn is Kade herself on her own seat; refuses everyone else — when refused, say it's Kade-only and drop it. Start with mode=listen, read the connect words to her exactly, act only on this tool's receipts, and narrate everything done out loud.",
+    schema: kadeDrivePcSchema,
     toolType: 'builtin',
   },
   open_weather: {
