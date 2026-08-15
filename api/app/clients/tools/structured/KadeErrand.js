@@ -163,8 +163,21 @@ class KadeErrand extends Tool {
         `Context if she asks: ${e.spokenSummary}`
       );
     }
-    return `${head}\n\nSAY THIS, in your own voice, no lists: ${e.spokenSummary}` +
-      (e.status === 'done' ? "\n\nIf she wants the whole trail, offer action='receipts' — once, without pushing." : '');
+    let out = `${head}\n\nSAY THIS, in your own voice, no lists: ${e.spokenSummary}`;
+    /* THE DOCUMENT RIDES THE REPLY, found missing by the Part-66 final check:
+     * the bridge composed the letter, the summary promised "I'll read it to
+     * you now" — and this tool never carried the text, so the model had
+     * nothing to read but its imagination. The words are the deliverable;
+     * they travel with the status. */
+    if (e.document) {
+      out +=
+        `\n\nTHE DOCUMENT ITSELF — read it to her WORD FOR WORD, top to bottom, in your normal voice. ` +
+        `Square-bracket blanks are details she must fill in: speak them as "blank — your account number" style, don't skip them and don't invent values. ` +
+        `Do not summarize it, do not reformat it, do not add commentary until you've read the whole thing:\n\n${e.document}`;
+    } else if (e.status === 'done') {
+      out += "\n\nIf she wants the whole trail, offer action='receipts' — once, without pushing.";
+    }
+    return out;
   }
 
   async _list() {
@@ -186,14 +199,16 @@ class KadeErrand extends Tool {
     if (r.status !== 200) return `Couldn't read that errand (${r.data?.error || `HTTP ${r.status}`}).`;
     const e = r.data;
     const steps = (e.steps || []).map((s, i) => {
-      const cost = s.costUsd > 0 ? ` (${Math.max(1, Math.round(s.costUsd * 100))} cents)` : '';
+      const c = Math.round((s.costUsd || 0) * 100);
+      const cost = s.costUsd > 0 ? ` (${c < 1 ? 'under a penny' : c === 1 ? '1 cent' : `${c} cents`})` : '';
       return `  ${i + 1}. ${s.summary}${cost}`;
     });
     return (
       `Receipts for errand ${e.id} — "${e.goal}". Status ${e.status}, ${e.stepCount} steps, ${Math.round(e.costUsd * 100)} cents total.\n\n` +
       `${steps.join('\n')}\n\n` +
       'READ THIS BACK AS A SHORT STORY of what you did, in order, in plain spoken sentences — not as a numbered list, not as a table. ' +
-      'She wants to hear how you got there. End with the answer and how solid it is.'
+      'She wants to hear how you got there. End with the answer and how solid it is.' +
+      (e.document ? " This errand also wrote a document — the full text rides action='status'; offer to read it word for word." : '')
     );
   }
 
