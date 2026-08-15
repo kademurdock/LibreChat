@@ -64,6 +64,12 @@ const kadeDiarySchema = new mongoose.Schema(
      * scare). Set by the keeper at write time; big things outrank product notes
      * in retrieval STRUCTURALLY (searchDiary weights by it), not by luck. */
     salience: { type: Number, default: 1, min: 1, max: 3 },
+    /** DIARY VOICE REPAIR (Aug 15 2026, Part 70): the one-time retrofit pass.
+     * voiceRepairedAt set = this entry was reviewed (rewritten or vetted);
+     * preRepairText holds the ORIGINAL wording verbatim when it was rewritten
+     * — never silent loss, same law as the card ledger. */
+    preRepairText: { type: String, default: null },
+    voiceRepairedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

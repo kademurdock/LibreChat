@@ -583,6 +583,36 @@ router.post('/rag-sync', requireAdminAccess, async (req, res) => {
   }
 });
 
+/**
+ * POST /memories/diary-voice-repair
+ * ADMIN-ONLY (Part 70). One-time retrofit: rewrites pre-taste-rules logbook
+ * entries (default cutoff Aug 10 2026 UTC) into the friend voice — facts kept
+ * exact, original text preserved on-doc in preRepairText, fresh embedding per
+ * rewrite, idempotent via voiceRepairedAt. Body: { dryRun?: boolean (default
+ * TRUE — census only), before?: ISO date, limit?: number }. Runs behind the
+ * response when the census is big? No — it awaits: 219 entries ≈ a couple of
+ * minutes; call with a patient client. Costs pennies on the memory-writer
+ * model; the census costs nothing.
+ */
+router.post('/diary-voice-repair', requireAdminAccess, async (req, res) => {
+  try {
+    const { repairDiaryVoice } = require('~/server/services/Memory/diaryVoiceRepair');
+    const { dryRun, before, limit } = req.body || {};
+    const result = await runAsSystem(() =>
+      repairDiaryVoice({
+        dryRun: dryRun !== false,
+        before: typeof before === 'string' && before.trim() ? before.trim() : undefined,
+        limit: Number.isInteger(limit) && limit > 0 ? limit : 0,
+        ownerUserId: req.user.id + '',
+      }),
+    );
+    res.json(result);
+  } catch (error) {
+    logger.error('[POST /memories/diary-voice-repair] failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post('/consolidate-all', requireAdminAccess, async (req, res) => {
   try {
     const result = await runAsSystem(() =>
