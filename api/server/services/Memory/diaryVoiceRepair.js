@@ -220,11 +220,38 @@ async function repairDiaryVoice({ dryRun = true, before = DEFAULT_BEFORE, limit 
         out.failedBatches += 1;
         continue;
       }
-      const changes = parseModelJson(reply);
+      let changes = parseModelJson(reply);
       if (changes == null) {
-        logger.warn('[diaryVoiceRepair] unparseable reply, batch left unmarked for retry');
-        out.failedBatches += 1;
-        continue;
+        /* Diagnose out loud, then self-heal: re-ask ONE ENTRY AT A TIME —
+         * whatever confused the model (a refusal, prose, an empty reply)
+         * usually isolates to one entry; the rest of the batch shouldn't
+         * stay hostage to it. A single entry that still won't parse gets
+         * vetted-as-is (voice repair is cosmetic; facts already stand). */
+        logger.warn(
+          `[diaryVoiceRepair] unparseable reply (head: ${JSON.stringify(String(reply || '').slice(0, 200))}) — retrying entry-by-entry`,
+        );
+        changes = [];
+        for (let sIdx = 0; sIdx < batch.length; sIdx += 1) {
+          try {
+            const singleReply = await askWriter(
+              finalLLMConfig,
+              llmConfig && llmConfig.provider,
+              uid,
+              `Entries:\n\n1. [${batch[sIdx].entryDate}] ${batch[sIdx].text}\n\nReview them per your instructions.`,
+            );
+            const single = parseModelJson(singleReply);
+            if (single == null) {
+              logger.warn(
+                `[diaryVoiceRepair] single entry still unparseable (head: ${JSON.stringify(String(singleReply || '').slice(0, 120))}) — vetting as-is`,
+              );
+            } else if (single.length > 0 && single[0] && typeof single[0].text === 'string') {
+              changes.push({ i: sIdx + 1, text: single[0].text });
+            }
+          } catch (e) {
+            logger.warn('[diaryVoiceRepair] single-entry retry call failed — vetting as-is:', e.message);
+          }
+          await new Promise((ok) => setTimeout(ok, 400));
+        }
       }
       const changed = new Map();
       for (const c of changes) {
