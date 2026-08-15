@@ -42,6 +42,7 @@ const {
   KadeDrivePc,
   KadeLivingMemory,
   KadeErrand,
+  KadeCouncil,
   KadeReadPage,
   KadeAdventure,
   KadeGames,
@@ -215,6 +216,7 @@ const loadTools = async ({
     kade_drive_pc: KadeDrivePc,
     kade_living_memory: KadeLivingMemory,
     kade_errand: KadeErrand,
+    kade_council: KadeCouncil,
     kade_read_page: KadeReadPage,
     kade_adventure: KadeAdventure,
     kade_games: KadeGames,
@@ -367,6 +369,17 @@ const loadTools = async ({
      * on-behalf-of), because an errand spends money and, from rung 2, places
      * real phone calls. The bridge re-checks the user id server-side. */
     kade_errand: {
+      req: options.req,
+      userId: kadeActingUserId,
+      agentId: agent?.id || agent?.agent_id,
+      agentName: agent?.name,
+    },
+    /** THE COUNCIL (Aug 15 2026, Part 68): Kade's five-seat advisory —
+     * Aria, Prism, Sentinel, Vault, Pilgrim. OWNER-ONLY, same four-way gate
+     * as kade_errand (`req` threaded: authed seat + ADMIN + acting identity
+     * + no on-behalf-of). Advisors never deciders; the bridge re-checks the
+     * user id AND holds the daily budget cap server-side. */
+    kade_council: {
       req: options.req,
       userId: kadeActingUserId,
       agentId: agent?.id || agent?.agent_id,

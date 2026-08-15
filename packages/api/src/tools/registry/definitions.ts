@@ -614,6 +614,28 @@ export const kadeErrandSchema: ExtendedJsonSchema = {
   required: ['action'],
 };
 
+export const kadeCouncilSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['pitch', 'minutes', 'last'],
+      description:
+        'pitch = put an idea in front of all five advisor seats and get back one composed spoken verdict. minutes = read back the last few council sessions from the ledger. last = just the most recent one.',
+    },
+    pitch: {
+      type: 'string',
+      description:
+        "pitch only. The idea stated fully, the way she said it, with enough meat for five advisors to chew on \u2014 what it is, who it's for, roughly how it would work. If her idea is a fragment, ask one clarifying question BEFORE pitching rather than padding it with guesses.",
+    },
+    n: {
+      type: 'string',
+      description: 'minutes only. How many recent sessions to read back, 1 to 20. Default 3.',
+    },
+  },
+  required: ['action'],
+};
+
 export const kadeGamesSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -1073,6 +1095,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       "OWNER-ONLY: run a real multi-step errand in the background \u2014 look things up across the web, keep a step-by-step ledger, come back with the answer AND how you know it. Answers only when the person on this turn is Kade herself on her own seat; refuses everyone else \u2014 when refused, say errands are Kade-only and drop it. Every reply carries a spoken summary written for the EAR: say it, do not reformat it into lists and do not paste links. Errands take minutes and tap her phone when done. If one stops to ask a yes/no question, read it to her exactly and send back her real answer. Never claim a finding without this tool's receipt for it; if an errand failed, came up empty, or hit its spending limit, say exactly that.",
     schema: kadeErrandSchema,
+    toolType: 'builtin',
+  },
+  kade_council: {
+    name: 'kade_council',
+    description:
+      "OWNER-ONLY: pitch an idea to Kade's five-seat AI advisory council \u2014 Aria (screen-reader flow), Prism (visual design), Sentinel (compliance), Vault (cost and cruft), Pilgrim (a normal user's eye) \u2014 or read back its minutes. Answers only when the person on this turn is Kade herself on her own seat; refuses everyone else \u2014 when refused, say the council is Kade-only and drop it, never roleplay a verdict. ADVISORS NEVER DECIDERS: they inform, she decides; never present a council take as a ruling. The reply carries ONE spoken summary composed for the ear with disagreements kept visible \u2014 say it as given, no lists, no smoothing into consensus. If the tool errored or the daily budget cap stopped it, say exactly that.",
+    schema: kadeCouncilSchema,
     toolType: 'builtin',
   },
   kade_drive_pc: {
