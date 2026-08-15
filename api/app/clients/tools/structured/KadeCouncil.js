@@ -35,9 +35,9 @@ const councilSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['pitch', 'minutes', 'last'],
+      enum: ['pitch', 'minutes', 'last', 'findings', 'decide'],
       description:
-        "pitch = put an idea in front of all five advisor seats and get back one composed spoken verdict. minutes = read back the last few council sessions from the ledger. last = just the most recent one.",
+        "pitch = put an idea in front of all five advisor seats and get back one composed spoken verdict. minutes = read back the last few council sessions from the ledger. last = just the most recent one. findings = read the findings board (what's new, known, parked, fixed). decide = record HER verdict on a finding: park it (council goes quiet unless it worsens), unpark it, or attach her note.",
     },
     pitch: {
       type: 'string',
@@ -47,6 +47,19 @@ const councilSchema = {
     n: {
       type: 'string',
       description: "minutes only. How many recent sessions to read back, 1 to 20. Default 3.",
+    },
+    id: {
+      type: 'string',
+      description: "decide only. The finding id from the findings board or the minutes (looks like 'axe:page name:rule').",
+    },
+    verdict: {
+      type: 'string',
+      enum: ['park', 'unpark', 'note'],
+      description: "decide only. park = she wants it left alone (council stays quiet unless it worsens). unpark = it counts as open again. note = attach her words to the finding. Send only what SHE actually said — never park anything on your own judgment.",
+    },
+    word: {
+      type: 'string',
+      description: "decide only, optional. Her actual words about the finding, kept on the ledger.",
     },
   },
   required: ['action'],
@@ -98,7 +111,9 @@ class KadeCouncil extends Tool {
       if (action === 'pitch') return await this._pitch(data || {});
       if (action === 'minutes') return await this._minutes(data || {});
       if (action === 'last') return await this._last();
-      return `Unknown action "${action}". Use pitch, minutes, or last.`;
+      if (action === 'findings') return await this._findings();
+      if (action === 'decide') return await this._decide(data || {});
+      return `Unknown action "${action}". Use pitch, minutes, last, findings, or decide.`;
     } catch (err) {
       const msg = err.response?.data?.error || err.message;
       logger.error('[KadeCouncil] error:', msg);
@@ -132,6 +147,27 @@ class KadeCouncil extends Tool {
     });
     if (r.status !== 200) return `Couldn't read the minutes (${r.data?.error || `HTTP ${r.status}`}).`;
     return `SAY THIS, in your own voice, as flowing speech: ${r.data.spokenSummary}`;
+  }
+
+  async _findings() {
+    const r = await axios.get(`${this.bridgeUrl}/council/findings`, {
+      params: { secret: this.secret, userId: this.userId },
+      headers: this._hdrs(), timeout: 20000, validateStatus: () => true,
+    });
+    if (r.status !== 200) return `Couldn't read the findings board (${r.data?.error || `HTTP ${r.status}`}).`;
+    return `SAY THIS, in your own voice, as flowing speech — never as a printed list: ${r.data.spokenSummary}`;
+  }
+
+  async _decide({ id, verdict, word }) {
+    if (!id || !verdict) return "Recording her verdict needs the finding id and her verdict (park, unpark, or note). Read her the findings board first if she hasn't heard it.";
+    const r = await axios.post(
+      `${this.bridgeUrl}/council/decision`,
+      { secret: this.secret, userId: this.userId, id, verdict, word },
+      { headers: this._hdrs(), timeout: 20000, validateStatus: () => true },
+    );
+    if (r.status === 404) return 'No finding on the ledger by that id — read the findings board to get the exact id.';
+    if (r.status !== 200) return `Couldn't record that (${r.data?.error || `HTTP ${r.status}`}).`;
+    return `SAY THIS: ${r.data.spokenSummary}`;
   }
 
   async _last() {

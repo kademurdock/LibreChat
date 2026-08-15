@@ -619,9 +619,9 @@ export const kadeCouncilSchema: ExtendedJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['pitch', 'minutes', 'last'],
+      enum: ['pitch', 'minutes', 'last', 'findings', 'decide'],
       description:
-        'pitch = put an idea in front of all five advisor seats and get back one composed spoken verdict. minutes = read back the last few council sessions from the ledger. last = just the most recent one.',
+        "pitch = put an idea in front of all five advisor seats and get back one composed spoken verdict. minutes = read back the last few council sessions from the ledger. last = just the most recent one. findings = the findings board (new, known, parked, fixed). decide = record HER verdict on a finding: park, unpark, or note \u2014 only ever what she actually said.",
     },
     pitch: {
       type: 'string',
@@ -631,6 +631,19 @@ export const kadeCouncilSchema: ExtendedJsonSchema = {
     n: {
       type: 'string',
       description: 'minutes only. How many recent sessions to read back, 1 to 20. Default 3.',
+    },
+    id: {
+      type: 'string',
+      description: "decide only. The finding id from the findings board (looks like 'axe:page name:rule').",
+    },
+    verdict: {
+      type: 'string',
+      enum: ['park', 'unpark', 'note'],
+      description: 'decide only. park = council goes quiet about it unless it worsens; unpark = open again; note = attach her words.',
+    },
+    word: {
+      type: 'string',
+      description: 'decide only, optional. Her actual words, kept on the ledger.',
     },
   },
   required: ['action'],
