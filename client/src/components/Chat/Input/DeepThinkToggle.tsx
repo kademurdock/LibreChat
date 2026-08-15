@@ -1,52 +1,79 @@
 import { memo } from 'react';
-import { Brain } from 'lucide-react';
+import { Brain, Zap } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import { useLocalize } from '~/hooks';
 import { useLiveAnnouncer } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
+import type { TThinkMode } from '~/store/families';
 
 /**
- * Sticky "Deep think" toggle (July 4 2026; made sticky July 2026).
+ * Thinking-mode picker (Aug 14 2026 — web parity with native build 204).
+ * Grew out of the July "Deep think" toggle: one button that CYCLES
+ * Automatic → Deep → Instant → Automatic.
  *
- * Toggling it ON keeps deep thinking on across turns until you turn it OFF:
- * while on, useSubmitMessage appends an invisible fresh timestamped
- * [DEEP THINK <ms>] marker to every message, and reframe-proxy runs those turns
- * at reasoning effort high (overriding the agent's Answer-speed setting). With
- * it OFF, messages use the agent's own Answer-speed (Instant by default, so no
- * reasoning). Fully screen-reader first: aria-pressed state plus a polite live
- * announcement on every toggle, since the visual state change is silent.
+ * - Automatic (default): the reframe-proxy router decides per turn — small
+ *   talk answers instantly, think-shaped questions get real thought.
+ * - Deep: every send carries a fresh [DEEP THINK <ms>] marker (always thinks).
+ * - Instant: every send carries a fresh [INSTANT <ms>] marker (never waits).
+ *
+ * Screen-reader first: the button's label always names the CURRENT mode, and
+ * every cycle fires a polite live announcement naming the NEW mode — the
+ * visual state change is silent and the visuals are secondary on purpose.
+ * Instant persists across reloads; Deep resets to Automatic (store handles it).
  */
+const MODE_ORDER: TThinkMode[] = ['auto', 'deep', 'instant'];
+
 const DeepThinkToggle = memo(function DeepThinkToggle({ disabled }: { disabled?: boolean }) {
   const localize = useLocalize();
   const { announcePolite } = useLiveAnnouncer();
-  const [armed, setArmed] = useRecoilState(store.deepThinkArmedState);
+  const [mode, setMode] = useRecoilState(store.thinkModeState);
 
-  const toggle = () => {
-    const next = !armed;
-    setArmed(next);
+  const cycle = () => {
+    const next = MODE_ORDER[(MODE_ORDER.indexOf(mode) + 1) % MODE_ORDER.length];
+    setMode(next);
     announcePolite({
-      message: localize(next ? 'com_ui_deep_think_on' : 'com_ui_deep_think_off'),
+      message: localize(
+        next === 'deep'
+          ? 'com_ui_think_mode_deep_announce'
+          : next === 'instant'
+            ? 'com_ui_think_mode_instant_announce'
+            : 'com_ui_think_mode_auto_announce',
+      ),
       isStatus: true,
     });
   };
 
+  const modeName = localize(
+    mode === 'deep'
+      ? 'com_ui_think_mode_deep'
+      : mode === 'instant'
+        ? 'com_ui_think_mode_instant'
+        : 'com_ui_think_mode_auto',
+  );
+  const label = `${localize('com_ui_think_mode_label')}: ${modeName}`;
+
   return (
     <button
       type="button"
-      onClick={toggle}
+      onClick={cycle}
       disabled={disabled}
-      aria-pressed={armed}
-      aria-label={localize('com_ui_deep_think_label')}
-      title={localize('com_ui_deep_think_label')}
+      aria-label={label}
+      title={label}
       className={cn(
         'flex size-9 items-center justify-center rounded-full border transition-colors disabled:opacity-50',
-        armed
+        mode === 'deep'
           ? 'border-blue-500 bg-blue-500/15 text-blue-500'
-          : 'border-border-medium text-text-secondary hover:bg-surface-hover',
+          : mode === 'instant'
+            ? 'border-amber-500 bg-amber-500/15 text-amber-500'
+            : 'border-border-medium text-text-secondary hover:bg-surface-hover',
       )}
     >
-      <Brain className="icon-md" aria-hidden="true" />
+      {mode === 'instant' ? (
+        <Zap className="icon-md" aria-hidden="true" />
+      ) : (
+        <Brain className="icon-md" aria-hidden="true" />
+      )}
     </button>
   );
 });

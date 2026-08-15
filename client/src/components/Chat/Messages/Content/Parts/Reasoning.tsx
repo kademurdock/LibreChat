@@ -5,7 +5,8 @@ import type { MouseEvent, FocusEvent } from 'react';
 import { ThinkingContent, ThinkingButton, FloatingThinkingBar } from './Thinking';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
-import { useMessageContext } from '~/Providers';
+import { useMessageContext, useChatContext, useLiveAnnouncer } from '~/Providers';
+import { stripDeepThinkTag } from '~/utils/gameSounds';
 import { cn } from '~/utils';
 
 type ReasoningProps = {
@@ -128,6 +129,42 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
 
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
+  /** "Answer now instead" (Aug 14 2026 — web parity with native build 204's
+   * escape hatch, her spec verbatim). Shown only under the LIVE thinking
+   * bubble: stops the run with the web's own proven stop path, waits 800ms
+   * for the abort to land, then re-asks the same question as a SIBLING send
+   * stamped [INSTANT <ms>] so reframe-proxy takes the forced fast lane.
+   * The marker is stripped from every read surface (gameSounds REs), so the
+   * person only ever sees their question asked once more, answered fast. */
+  const { ask, stopGenerating, getMessages } = useChatContext();
+  const { announcePolite } = useLiveAnnouncer();
+  const answerNowFiredRef = useRef(false);
+  const handleAnswerNow = useCallback(() => {
+    if (answerNowFiredRef.current) {
+      return;
+    }
+    const messages = getMessages() ?? [];
+    const assistantMsg = messages.find((m) => m.messageId === messageId);
+    const userMsg =
+      (assistantMsg && messages.find((m) => m.messageId === assistantMsg.parentMessageId)) ||
+      [...messages].reverse().find((m) => m.isCreatedByUser);
+    const rawText = userMsg?.text ?? '';
+    if (!rawText) {
+      return;
+    }
+    answerNowFiredRef.current = true;
+    announcePolite({ message: localize('com_ui_answer_now_announce'), isStatus: true });
+    stopGenerating();
+    const parentId = userMsg?.parentMessageId ?? null;
+    setTimeout(() => {
+      ask({
+        text: `${stripDeepThinkTag(rawText)} [INSTANT ${Date.now()}]`,
+        parentMessageId: parentId,
+      });
+      answerNowFiredRef.current = false;
+    }, 800);
+  }, [getMessages, messageId, stopGenerating, ask, announcePolite, localize]);
+
   const label = useMemo(
     () =>
       effectiveIsSubmitting && isLast ? localize('com_ui_thinking') : localize('com_ui_thoughts'),
@@ -176,6 +213,17 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
             />
           </div>
         </div>
+        {effectiveIsSubmitting && isLast && (
+          <div className="mb-2 mt-1">
+            <button
+              type="button"
+              onClick={handleAnswerNow}
+              className="rounded-lg border border-border-medium px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+            >
+              {localize('com_ui_answer_now')}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

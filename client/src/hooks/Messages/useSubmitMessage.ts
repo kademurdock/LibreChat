@@ -15,7 +15,7 @@ export default function useSubmitMessage() {
   const latestMessage = useLatestMessage(index);
 
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
-  const deepThinkArmed = useRecoilValue(store.deepThinkArmedState);
+  const thinkMode = useRecoilValue(store.thinkModeState);
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
 
   const submitMessage = useCallback(
@@ -31,10 +31,16 @@ export default function useSubmitMessage() {
         setMessages([...(rootMessages || []), latestMessage]);
       }
 
-      // Deep Think toggle is sticky: while it's on, stamp EVERY message with a
-      // fresh timestamped marker. reframe-proxy honors only a fresh timestamp,
-      // so old markers replayed from history can't re-trigger deep reasoning.
-      const text = deepThinkArmed ? `${data.text} [DEEP THINK ${Date.now()}]` : data.text;
+      // Thinking mode is sticky: while Deep or Instant is picked, stamp EVERY
+      // message with a fresh timestamped marker (reframe-proxy honors only a
+      // fresh timestamp, so old markers replayed from history are inert).
+      // Auto sends the text bare and the proxy router decides per turn.
+      const text =
+        thinkMode === 'deep'
+          ? `${data.text} [DEEP THINK ${Date.now()}]`
+          : thinkMode === 'instant'
+            ? `${data.text} [INSTANT ${Date.now()}]`
+            : data.text;
 
       const submitted = ask(
         {
@@ -47,8 +53,7 @@ export default function useSubmitMessage() {
       if (submitted === false) {
         return false;
       }
-      // Sticky Deep Think: intentionally do NOT disarm after send — the toggle
-      // stays on across turns until the user turns it off.
+      // Sticky by design: the picked mode stays across turns until changed.
       methods.reset();
     },
     [
@@ -58,7 +63,7 @@ export default function useSubmitMessage() {
       setMessages,
       getMessages,
       latestMessage,
-      deepThinkArmed,
+      thinkMode,
     ],
   );
 

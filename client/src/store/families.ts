@@ -335,14 +335,41 @@ const voiceCallActiveState = atom<boolean>({
   default: false,
 });
 
-/** Per-MESSAGE deep-think arm (July 4 2026). When true, the next message the
- * user sends gets a "[DEEP THINK <epoch-ms>]" marker appended; reframe-proxy
- * sees a FRESH marker and runs that one turn at reasoning effort high (beats
- * the agent's Answer-speed setting and the phone effort:none override).
- * Auto-resets after the send — per-message by design, per Kade. */
-const deepThinkArmedState = atom<boolean>({
-  key: 'deepThinkArmed',
-  default: false,
+/** Thinking mode (Aug 14 2026 — web parity with native build 204's three-mode
+ * picker; supersedes the two-state deepThinkArmedState). Her design, Part 61:
+ * "Everything on everybody should be auto by default, with choices for instant
+ * and deep if desired."
+ * - 'auto': no marker; the reframe-proxy router decides per turn (chitchat
+ *   never waits, think-shaped turns get real thought).
+ * - 'deep': every send stamped with a fresh [DEEP THINK <epoch-ms>] marker.
+ * - 'instant': every send stamped with a fresh [INSTANT <epoch-ms>] marker.
+ * Persistence matches native exactly: Instant survives a reload; Deep resets
+ * to auto on launch (Session-23's "why is she slow today" rule). */
+export type TThinkMode = 'auto' | 'deep' | 'instant';
+const THINK_MODE_STORAGE_KEY = 'kadeThinkMode';
+const thinkModeState = atom<TThinkMode>({
+  key: 'thinkMode',
+  default: (() => {
+    try {
+      return localStorage.getItem(THINK_MODE_STORAGE_KEY) === 'instant' ? 'instant' : 'auto';
+    } catch {
+      return 'auto';
+    }
+  })() as TThinkMode,
+  effects: [
+    ({ onSet }) =>
+      onSet((value) => {
+        try {
+          if (value === 'instant') {
+            localStorage.setItem(THINK_MODE_STORAGE_KEY, 'instant');
+          } else {
+            localStorage.removeItem(THINK_MODE_STORAGE_KEY);
+          }
+        } catch {
+          /* storage unavailable — mode simply won't persist */
+        }
+      }),
+  ],
 });
 
 const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
@@ -478,7 +505,7 @@ export default {
   activeRunFamily,
   audioRunFamily,
   voiceCallActiveState,
-  deepThinkArmedState,
+  thinkModeState,
   globalAudioPlayingFamily,
   globalAudioFetchingFamily,
   showPlusPopoverFamily,
