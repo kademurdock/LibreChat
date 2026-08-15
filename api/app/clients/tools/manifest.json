@@ -139,6 +139,14 @@
     "authConfig": []
   },
   {
+    "name": "Errands",
+    "pluginKey": "kade_errand",
+    "description": "Send your character off to run a real errand in the background — look things up, cross-check them, keep a step-by-step record — then come back with the answer AND how it knows. Kade's own seat only. Try: \"run me an errand: find the cheapest chest freezer in Springfield.\"",
+    "icon": "assets/phone-call.svg",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Read a webpage",
     "pluginKey": "kade_read_page",
     "description": "You share a link, it reads the page and returns just the article text — no ads, menus, or clutter. Great for having a webpage read aloud. It can't log into sites or fill out forms, and some paywalled pages won't open. Try: \"read me this article\" with a link pasted in.",

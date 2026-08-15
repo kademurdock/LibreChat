@@ -41,6 +41,7 @@ const {
   KadeResearch,
   KadeDrivePc,
   KadeLivingMemory,
+  KadeErrand,
   KadeReadPage,
   KadeAdventure,
   KadeGames,
@@ -213,6 +214,7 @@ const loadTools = async ({
     kade_research: KadeResearch,
     kade_drive_pc: KadeDrivePc,
     kade_living_memory: KadeLivingMemory,
+    kade_errand: KadeErrand,
     kade_read_page: KadeReadPage,
     kade_adventure: KadeAdventure,
     kade_games: KadeGames,
@@ -357,6 +359,17 @@ const loadTools = async ({
     kade_living_memory: {
       req: options.req,
       userId: kadeActingUserId,
+      agentName: agent?.name,
+    },
+    /** ERRANDS (Aug 15 2026, Part 66): tracked multi-step jobs whose ledger
+     * is the product. OWNER-ONLY — `req` is threaded for the same four-way
+     * gate drive_pc uses (authed seat + ADMIN + acting identity + no
+     * on-behalf-of), because an errand spends money and, from rung 2, places
+     * real phone calls. The bridge re-checks the user id server-side. */
+    kade_errand: {
+      req: options.req,
+      userId: kadeActingUserId,
+      agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,
     },
     /** KADE LIVING DIARY (Aug 7 2026): explicit archive search. Scope =

@@ -587,6 +587,33 @@ export const kadeDrivePcSchema: ExtendedJsonSchema = {
   required: ['action'],
 };
 
+export const kadeErrandSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['start', 'status', 'list', 'receipts', 'confirm', 'cancel'],
+      description:
+        'start = send an errand off to run in the background. status = where one stands, with its spoken summary. list = the whole board. receipts = the full step-by-step ledger of one errand, every step and what it cost. confirm = answer the yes/no question an errand stopped to ask. cancel = call one off.',
+    },
+    goal: {
+      type: 'string',
+      description:
+        "start only. The errand stated fully and concretely, the way she said it, with the details that decide the answer baked in \u2014 place, budget, timeframe, what 'best' means to her. If a deciding detail is missing, ask her for it BEFORE starting; a guessed errand spends real money on the wrong question.",
+    },
+    id: {
+      type: 'string',
+      description:
+        'The errand id from start. Needed for receipts, confirm and cancel; status without an id reports on the most recent errand.',
+    },
+    answer: {
+      type: 'string',
+      description: "confirm only. Her actual answer, 'yes' or 'no', in her words. Never assume a yes on her behalf.",
+    },
+  },
+  required: ['action'],
+};
+
 export const kadeGamesSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -1039,6 +1066,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       "READ-ONLY project knowledge shelf for platform questions (features, how-tos, what changed, history). The visible shelf is decided by the SEAT, never the conversation: Kade's own seat reads the full project memory; every other turn reads only the published family docs — off-shelf docs read as not-found, so answer 'I don't have that' rather than speculating. Inform yourself, answer in your own voice, never paste raw internals to anyone but Kade.",
     schema: kadeLivingMemorySchema,
+    toolType: 'builtin',
+  },
+  kade_errand: {
+    name: 'kade_errand',
+    description:
+      "OWNER-ONLY: run a real multi-step errand in the background \u2014 look things up across the web, keep a step-by-step ledger, come back with the answer AND how you know it. Answers only when the person on this turn is Kade herself on her own seat; refuses everyone else \u2014 when refused, say errands are Kade-only and drop it. Every reply carries a spoken summary written for the EAR: say it, do not reformat it into lists and do not paste links. Errands take minutes and tap her phone when done. If one stops to ask a yes/no question, read it to her exactly and send back her real answer. Never claim a finding without this tool's receipt for it; if an errand failed, came up empty, or hit its spending limit, say exactly that.",
+    schema: kadeErrandSchema,
     toolType: 'builtin',
   },
   kade_drive_pc: {
