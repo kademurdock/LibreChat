@@ -567,9 +567,35 @@ class AgentClient extends BaseClient {
      * stays in the dynamic tail (`volatileTurnContext`), exactly what the
      * tail is for. */
     const withoutKeys = await this.useMemory();
-    let stableMemoryContext = withoutKeys
-      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
-      : undefined;
+    /** KADE Aug 15 2026 (Part 69, rung 1 — RELEVANT RECALL): when card recall
+     * is live for this character, the head carries only the PINNED CORE
+     * (shared cards + reminders + identity-critical keys — the facts that must
+     * never miss); everything else surfaces per-turn by meaning in the tail
+     * block below, beside the diary. Kill switch KADE_MEMORY_RAG: off means
+     * cardSplit stays null and this block behaves byte-identically to before.
+     * The pinned block is byte-stable between turns — cache religion holds. */
+    let cardSplit = null;
+    if (withoutKeys !== undefined) {
+      try {
+        const { cardRagActive, getMemorySplit } = require('~/server/services/kadeCardRecall');
+        if (cardRagActive(this.options.agent?.id)) {
+          cardSplit = await getMemorySplit(
+            this.options.req.user.id + '',
+            this.options.agent?.id && !isEphemeralAgentId(this.options.agent.id)
+              ? this.options.agent.id
+              : undefined,
+          );
+        }
+      } catch (splitError) {
+        logger.warn('[AgentClient] card split failed (full head rides):', splitError.message);
+        cardSplit = null;
+      }
+    }
+    let stableMemoryContext = cardSplit
+      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${cardSplit.pinnedBlock}`
+      : withoutKeys
+        ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
+        : undefined;
     let volatileTurnContext;
 
     /** KADE NUDGE ENGINE: pending 'chat'-channel nudges ride into this turn's
@@ -603,21 +629,25 @@ class AgentClient extends BaseClient {
      * included. */
     if (withoutKeys !== undefined) {
       try {
-        const { getDiaryTailBlock } = require('~/server/services/kadeDiary');
+        /** Part 69: ONE lookup builds the whole recall tail — memory cards
+         * (when rung 1 is on for this agent) AND diary entries share a single
+         * query embed. With KADE_MEMORY_RAG off this is exactly the old
+         * diary-only behavior, same budgets, same block text. */
+        const { getRecallTailBlock } = require('~/server/services/kadeCardRecall');
         const latestUserText =
           orderedMessages.length > 0 ? orderedMessages[orderedMessages.length - 1].text : '';
-        const diaryBlock = await getDiaryTailBlock(
-          this.options.req.user.id,
-          this.options.agent?.id,
-          latestUserText || this.options.req?.body?.text || '',
-        );
-        if (diaryBlock) {
+        const { block: recallBlock } = await getRecallTailBlock({
+          userId: this.options.req.user.id,
+          agentId: this.options.agent?.id,
+          userText: latestUserText || this.options.req?.body?.text || '',
+        });
+        if (recallBlock) {
           volatileTurnContext = volatileTurnContext
-            ? `${volatileTurnContext}\n\n${diaryBlock}`
-            : diaryBlock;
+            ? `${volatileTurnContext}\n\n${recallBlock}`
+            : recallBlock;
         }
       } catch (diaryError) {
-        logger.warn('[AgentClient] diary retrieval failed (non-fatal):', diaryError.message);
+        logger.warn('[AgentClient] recall tail failed (non-fatal):', diaryError.message);
       }
     }
 

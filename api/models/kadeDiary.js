@@ -237,6 +237,9 @@ async function searchDiary({
   userId,
   agentId = null,
   query = null,
+  /** Precomputed embedding of `query` (Part 69 card-recall shares ONE embed per
+   * turn across cards + diary). When provided, no embed call happens here. */
+  queryVector = null,
   dateFrom = null,
   dateTo = null,
   limit = 5,
@@ -272,7 +275,10 @@ async function searchDiary({
         score: null,
       }));
     }
-    const qVec = await embedText(String(query));
+    const qVec =
+      Array.isArray(queryVector) && queryVector.length > 0
+        ? queryVector
+        : await embedText(String(query));
     if (!qVec) {
       /* embedding down → degrade to recency within the same filter */
       const rows = await KadeDiaryEntry.find(filter)

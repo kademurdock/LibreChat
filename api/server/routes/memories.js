@@ -469,6 +469,49 @@ router.post('/consolidate', checkMemoryUpdate, configMiddleware, async (req, res
  * persisted lastRunAt marker -- this is a separate, unscheduled path, so running
  * it manually can never disturb (delay or double-fire) the automatic cadence.
  */
+/**
+ * POST /memories/rag-sync
+ * ADMIN-ONLY (Part 69, rung 1). One-shot embed backfill for CARD RECALL:
+ * walks every user's active cards (shared bucket + each agent bucket) and
+ * brings kadecardvectors in line — embeds missing/stale, deletes orphans.
+ * Paced lightly; the per-call embed cap is high because this is the deliberate
+ * catch-up lane (per-turn sync caps itself at a handful). Idempotent: a second
+ * run finds nothing to do. Cost: ~$0.15/M embed tokens — the whole platform's
+ * card corpus is well under a dime.
+ */
+router.post('/rag-sync', requireAdminAccess, async (req, res) => {
+  try {
+    const { getAllUserMemories } = require('~/models');
+    const { syncBucketVectors } = require('~/models/kadeCardVector');
+    const mongoose = require('mongoose');
+    const MemoryEntry = mongoose.models.MemoryEntry;
+    const result = await runAsSystem(async () => {
+      /* Distinct (userId, agentId) bucket pairs across ACTIVE cards. */
+      const pairs = await MemoryEntry.aggregate([
+        { $match: { status: { $ne: 'superseded' } } },
+        { $group: { _id: { userId: '$userId', agentId: '$agentId' } } },
+      ]);
+      const out = { buckets: 0, embedded: 0, deleted: 0, pending: 0 };
+      for (const p of pairs) {
+        const uid = String(p._id.userId);
+        const aid = p._id.agentId == null ? null : String(p._id.agentId);
+        const entries = await getAllUserMemories(uid, { agentId: aid });
+        const r = await syncBucketVectors(uid, aid, entries, { maxEmbeds: 300 });
+        out.buckets += 1;
+        out.embedded += r.embedded;
+        out.deleted += r.deleted;
+        out.pending += r.pending;
+        await new Promise((ok) => setTimeout(ok, 250));
+      }
+      return out;
+    });
+    res.json(result);
+  } catch (error) {
+    logger.error('[POST /memories/rag-sync] failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post('/consolidate-all', requireAdminAccess, async (req, res) => {
   try {
     const result = await runAsSystem(() =>
