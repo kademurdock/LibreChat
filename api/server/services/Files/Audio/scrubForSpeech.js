@@ -47,6 +47,10 @@ const THINK_TAG_RE = /<think>[\s\S]*?<\/think>/gi;
 const THINK_BLOCK_RE = /:::thinking[\s\S]*?:::\n?/gi;
 const PUA_REASON_RE = /\uF001[\s\S]*?\uF002/g;
 const DEEP_THINK_MARKER_RE = /\[DEEP THINK(?:\s+\d{10,17})?\]/gi;
+/* KADE Aug 14 2026: [INSTANT <ms>] is DEEP THINK's twin — the thinking
+ * picker's Instant mode and the "Answer now instead" button stamp it on the
+ * OUTGOING user message. Read-aloud must never voice it, same as its twin. */
+const INSTANT_MARKER_RE = /\[INSTANT(?:\s+\d{10,17})?\]/gi;
 
 function scrubForSpeech(text) {
   if (!text || typeof text !== 'string') {
@@ -57,6 +61,7 @@ function scrubForSpeech(text) {
     .replace(THINK_BLOCK_RE, '')
     .replace(PUA_REASON_RE, '')
     .replace(DEEP_THINK_MARKER_RE, '')
+    .replace(INSTANT_MARKER_RE, '')
     .replace(TRAILING_SOURCES_RE, '')
     .replace(MD_IMAGE_RE, '$1')
     .replace(MD_LINK_RE, '$1')

@@ -102,6 +102,38 @@ async function mintConversationFromTranscript(doc, opts = {}) {
     const when = doc.startedAt || doc.createdAt || new Date();
     const surfaceWord = doc.surface === 'phone' ? 'Phone call' : 'Voice chat';
 
+    /* KADE Aug 14 2026 (her ask, call continuity part 2): "the model being let
+     * know that she is on the phone for the portion she is on the phone."
+     * When we APPEND into a conversation she was already typing in, the spoken
+     * turns used to land as ordinary messages — indistinguishable from typed
+     * ones to the model reading history later. Two plain divider lines fix
+     * that, and they read well aloud too (a screen reader hears exactly where
+     * the call began and ended when scrolling back). Deliberately NOT a
+     * bracket-marker: markers in message text are the leak class we keep
+     * having to strip out of speech and display. Fresh mints don't need this —
+     * their whole title already says it was a call. */
+    if (appendTarget) {
+      const openerId = uuidv4();
+      await saveMessage(
+        { userId },
+        {
+          messageId: openerId,
+          conversationId,
+          parentMessageId: parent,
+          sender: surfaceWord,
+          text: `— ${surfaceWord} with ${agentName} started ${fmtWhen(when)}. Everything below was spoken out loud, not typed. —`,
+          isCreatedByUser: false,
+          user: userId,
+          unfinished: false,
+          error: false,
+          createdAt: when,
+          updatedAt: when,
+        },
+        { context: 'kadeCallMerge' },
+      );
+      parent = openerId;
+    }
+
     for (const t of turns) {
       const messageId = uuidv4();
       const isUser = t.role === 'user';
@@ -128,6 +160,29 @@ async function mintConversationFromTranscript(doc, opts = {}) {
         { context: 'kadeCallMerge' },
       );
       parent = messageId;
+    }
+
+    if (appendTarget) {
+      const closerId = uuidv4();
+      const endedAt = new Date(doc.endedAt || when);
+      await saveMessage(
+        { userId },
+        {
+          messageId: closerId,
+          conversationId,
+          parentMessageId: parent,
+          sender: surfaceWord,
+          text: `— ${surfaceWord} ended. Back to typing. —`,
+          isCreatedByUser: false,
+          user: userId,
+          unfinished: false,
+          error: false,
+          createdAt: endedAt,
+          updatedAt: endedAt,
+        },
+        { context: 'kadeCallMerge' },
+      );
+      parent = closerId;
     }
 
     const convoFields = appendTarget

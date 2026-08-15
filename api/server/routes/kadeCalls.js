@@ -196,6 +196,7 @@ const CTX_SCRUB = (text) => {
     .replace(/\[(?:sound:[a-z0-9_]+|table:[a-z0-9]{1,12})\]/gi, '')
     .replace(/\[END CALL\]/gi, '')
     .replace(/\[DEEP THINK \d+\]/gi, '')
+    .replace(/\[INSTANT(?:\s+\d{10,17})?\]/gi, '')
     .replace(/[\uE200-\uE20F]turn\d+[a-z]+\d+/gi, '')
     .replace(/[\uE000-\uF8FF]/g, '')
     .replace(/turn\d+(?:search|image|news|video|ref|file)\d+/g, '')

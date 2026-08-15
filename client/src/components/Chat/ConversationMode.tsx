@@ -286,6 +286,13 @@ const KADE_LA_STATUS: Record<string, string> = {
 
 export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const agentId = useRecoilValue(store.conversationAgentIdByIndex(index));
+  /* KADE Aug 14 2026 (call continuity, her ask): the conversation this call is
+   * being placed FROM. Calling out of an open text thread should CONTINUE that
+   * thread — the bridge seeds the agent's history from it and appends the call
+   * transcript back into it — so a person can switch between talking and typing
+   * without the character losing the thread. 'new'/absent = a fresh call, which
+   * is the old behavior and still how you deliberately start clean. */
+  const chatConversation = useRecoilValue(store.conversationByIndex(index));
   const voice   = useRecoilValue(store.voice);
   const voiceSpeed = useRecoilValue(store.voiceSpeed); // Kade D2d: agent's speaking rate
   const setVoiceCallActive = useSetRecoilState(store.voiceCallActiveState);
@@ -637,10 +644,18 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     }
   }, [liveNotice]);
   const conversationIdRef  = useRef<string | null>(null);
+  /* Call continuity: the OPEN text conversation, mirrored into a ref because
+   * the call-start callback's dep array doesn't track it (a direct read would
+   * go stale the moment she switches threads). Updated every render below. */
+  const openConvoIdRef     = useRef<string | null>(null);
   const callTurnsRef       = useRef<Array<{ role: string; text: string }>>([]);
   const callStartedRef     = useRef<string | null>(null);
   const parentMessageIdRef = useRef<string>(NO_PARENT);
   const statusRef          = useRef<CallStatus>('idle');
+  useEffect(() => {
+    const id = chatConversation?.conversationId;
+    openConvoIdRef.current = id && id !== NEW_CONVO && id !== NO_PARENT ? String(id) : null;
+  }, [chatConversation?.conversationId]);
   // Stable cross-call refs (break circular useCallback deps)
   const startListeningRef  = useRef<() => void>(() => {});
   const stopRecordingRef   = useRef<() => void>(() => {});
@@ -1354,7 +1369,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     getAudioCtx();               // iOS: unlock AudioContext on user gesture (now safe — queue is empty)
     void playPickupSound();       // soft "receiver lift" cue -- fires immediately, before the call connects
     abortRef.current = false;
-    conversationIdRef.current = null;
+    /* Call continuity: start the call INSIDE the open conversation when there
+     * is one. (This line used to hard-null, which is exactly why every call
+     * started amnesiac and minted its own conversation — the July 22 bridge
+     * seeding had nothing to seed from.) */
+    conversationIdRef.current = openConvoIdRef.current;
     parentMessageIdRef.current = NO_PARENT;
     playQueueRef.current = Promise.resolve();
     setError('');
@@ -1406,6 +1425,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           ctx: getAudioCtx(),
           analyser: outputAnalyserRef.current,
           token,
+          /* Call continuity (Aug 14 2026): hand the bridge the conversation
+           * this call is being placed from, so it seeds history from it and
+           * appends the transcript back into it instead of minting a new one. */
+          conversationId: conversationIdRef.current,
           handlers: {
             onStatus: (st) => {
               if (!abortRef.current) setStatus(st);

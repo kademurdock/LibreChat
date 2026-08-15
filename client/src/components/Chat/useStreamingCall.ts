@@ -45,6 +45,14 @@ export interface StreamingStartArgs {
   /** Existing output analyser (drives the orb pulse); already wired to destination. */
   analyser: AnalyserNode | null;
   token?: string | null;
+  /** KADE Aug 14 2026 (call continuity, finishing the July 22 wiring): the id
+   *  of the conversation the call is being placed FROM. The bridge seeds the
+   *  agent's history with that conversation's tail and appends the call
+   *  transcript back into it, so calling and typing stay one thread. The
+   *  bridge already read `msg.conversationId` off the hello since July 22 —
+   *  this client just never sent it, so every call started amnesiac and
+   *  minted a fresh conversation. Null/absent = fresh call, old behavior. */
+  conversationId?: string | null;
   handlers: StreamingHandlers;
 }
 
@@ -261,7 +269,7 @@ export default function useStreamingCall() {
     }
   }, [flushPlayback]);
 
-  const start = useCallback(async ({ agentId, spotterDirect, ctx, analyser, token, handlers }: StreamingStartArgs) => {
+  const start = useCallback(async ({ agentId, spotterDirect, ctx, analyser, token, conversationId, handlers }: StreamingStartArgs) => {
     if (activeRef.current) return;
     activeRef.current = true;
     endedFiredRef.current = false;
@@ -316,7 +324,14 @@ export default function useStreamingCall() {
       wsRef.current = ws;
       ws.binaryType = 'arraybuffer';
       ws.onopen = () => {
-        try { ws.send(JSON.stringify({ type: 'hello', ticket, spotterDirect: spotterDirect === true })); } catch { /* ignore */ }
+        try {
+          ws.send(JSON.stringify({
+            type: 'hello',
+            ticket,
+            spotterDirect: spotterDirect === true,
+            ...(conversationId ? { conversationId } : {}),
+          }));
+        } catch { /* ignore */ }
       };
       ws.onmessage = (ev: MessageEvent) => {
         if (ev.data instanceof ArrayBuffer) {
