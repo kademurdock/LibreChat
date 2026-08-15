@@ -39,6 +39,17 @@ const memorySearchJsonSchema = {
       type: 'integer',
       description: 'Max entries to return (1-12). Default 5.',
     },
+    scope: {
+      type: 'string',
+      enum: ['all', 'cards', 'logbook'],
+      description:
+        "Where to look. 'all' (default) searches your memory CARDS and the dated logbook together — right for 'what do you actually remember about X'. 'cards' = durable facts only; 'logbook' = day-to-day dated entries only.",
+    },
+    changes: {
+      type: 'boolean',
+      description:
+        "Set true when the user asks what has CHANGED in your memory lately ('what did the cleanup do', 'what changed in your notes') — returns the recent memory-edit trail (what was rewritten, merged, or removed, with before/after) instead of a search.",
+    },
   },
   required: [],
 };
@@ -50,8 +61,8 @@ class KadeMemorySearch extends Tool {
     this.agentId = fields.agentId;
     this.name = 'kade_memory_search';
     this.description =
-      "Search the user's private dated logbook — the long-term archive of their day-to-day life beyond your always-visible memory cards. " +
-      "Use it when the user asks what they've told you before ('have I mentioned…', 'what was I up to last week', 'when did I…'), when they ask you to check your notes, or when a specific past detail would genuinely help and isn't in your cards. " +
+      "Search the user's private long-term memory — BOTH the durable memory cards and the dated day-to-day logbook. " +
+      "Use it when the user asks what you actually remember or know about something ('what do you remember about my family?'), what they've told you before ('have I mentioned…', 'what was I up to last week', 'when did I…'), when they ask you to check your notes, when a past detail would genuinely help and isn't in view, or — with changes=true — when they ask what has CHANGED in your memory lately. " +
       'Search by meaning (query), by date range, or both.';
     this.description_for_model =
       this.description +
@@ -60,9 +71,41 @@ class KadeMemorySearch extends Tool {
   }
 
   async _call(data) {
-    const { query, date_from, date_to, limit } = data || {};
+    const { query, date_from, date_to, limit, scope, changes } = data || {};
     if (!this.userId) {
       return 'Memory search is unavailable right now (no user context).';
+    }
+    /* Part 69 rung 3 — the spoken trail: "what changed in your memory?" */
+    if (changes === true) {
+      try {
+        const { readLedger } = require('~/models/kadeMemoryLedger');
+        const rows = await readLedger({
+          userId: this.userId,
+          agentId: this.agentId,
+          limit: limit || 10,
+        });
+        if (!rows || rows.length === 0) {
+          return 'No recent memory edits on record — nothing has been rewritten, merged, or removed lately.';
+        }
+        const spoken = rows.map((r) => {
+          if (r.action === 'delete') {
+            return `[${r.when}] removed a note that said: "${r.before}"`;
+          }
+          if (r.action === 'refused') {
+            return `[${r.when}] an automatic edit to "${r.key.replace(/_/g, ' ')}" was blocked by a safety rule (${r.note}).`;
+          }
+          return r.before
+            ? `[${r.when}] reworded "${r.key.replace(/_/g, ' ')}" — it used to say: "${r.before}" and now says: "${r.after}"`
+            : `[${r.when}] added a new note, "${r.key.replace(/_/g, ' ')}": "${r.after}"`;
+        });
+        return (
+          `${rows.length} recent memory ${rows.length === 1 ? 'edit' : 'edits'} (newest first). Tell the user plainly what changed — this is their memory and they have every right to hear it:\n` +
+          spoken.join('\n')
+        );
+      } catch (e) {
+        logger.error('[KadeMemorySearch] changes read failed:', e.message);
+        return 'The memory-change trail hit an error just now.';
+      }
     }
     if (!query && !date_from && !date_to) {
       return "Give me a query (what to look for) and/or a date range (date_from/date_to). Example: query='her garden project' or date_from=2026-08-01, date_to=2026-08-07 for that week.";
@@ -76,24 +119,94 @@ class KadeMemorySearch extends Tool {
       if (!diaryEnabled()) {
         return 'The logbook is currently turned off.';
       }
-      const hits = await searchDiary({
-        userId: this.userId,
-        agentId: this.agentId,
-        query: query || null,
-        dateFrom: date_from || null,
-        dateTo: date_to || null,
-        limit: limit || 5,
-      });
-      if (!hits || hits.length === 0) {
+      /* Part 69: cards + logbook answer together; ONE embed serves both. */
+      const { embedText } = require('~/models/kadeDiary');
+      const wantCards = Boolean(query) && scope !== 'logbook';
+      const wantDiary = scope !== 'cards';
+      const qv = query ? await embedText(String(query).slice(0, 1500)) : null;
+
+      const cardLines = [];
+      if (wantCards) {
+        try {
+          const { searchCardVectors } = require('~/models/kadeCardVector');
+          const { getAllUserMemories } = require('~/models');
+          const [shared, own] = await Promise.all([
+            getAllUserMemories(this.userId, { agentId: null }),
+            this.agentId
+              ? getAllUserMemories(this.userId, { agentId: this.agentId })
+              : Promise.resolve([]),
+          ]);
+          const all = [...shared, ...own];
+          const byKey = new Map(
+            all.map((m) => [(m.agentId == null ? '' : String(m.agentId)) + '::' + m.key, m]),
+          );
+          const seen = new Set();
+          if (qv) {
+            const cardHits = await searchCardVectors(this.userId, this.agentId, qv, {
+              limit: Math.min(Math.max(parseInt(limit, 10) || 6, 1), 12),
+              minScore: 0.24,
+            });
+            for (const h of cardHits) {
+              const m = byKey.get((h.agentId == null ? '' : String(h.agentId)) + '::' + h.key);
+              if (m && !seen.has(m.key)) {
+                seen.add(m.key);
+                cardLines.push(`(${String(m.key).replace(/_/g, ' ')}) ${m.value}`);
+              }
+            }
+          }
+          /* Substring fallback catches exact names a fresh index hasn't met. */
+          const q = String(query).toLowerCase();
+          for (const m of all) {
+            if (seen.size >= 12) {
+              break;
+            }
+            if (seen.has(m.key)) {
+              continue;
+            }
+            if (
+              String(m.key).toLowerCase().includes(q.replace(/\s+/g, '_')) ||
+              String(m.value).toLowerCase().includes(q)
+            ) {
+              seen.add(m.key);
+              cardLines.push(`(${String(m.key).replace(/_/g, ' ')}) ${m.value}`);
+            }
+          }
+        } catch (cardErr) {
+          logger.warn('[KadeMemorySearch] card half failed (logbook still answers):', cardErr.message);
+        }
+      }
+
+      const hits = wantDiary
+        ? await searchDiary({
+            userId: this.userId,
+            agentId: this.agentId,
+            query: query || null,
+            queryVector: qv || undefined,
+            dateFrom: date_from || null,
+            dateTo: date_to || null,
+            limit: limit || 5,
+          })
+        : [];
+      if ((!hits || hits.length === 0) && cardLines.length === 0) {
         return query
-          ? `No logbook entries match "${query}"${date_from || date_to ? ' in that date range' : ''}. The logbook only holds day-to-day entries logged since it began — do not guess; say your notes don't show it.`
+          ? `Nothing in your memory cards or logbook matches "${query}"${date_from || date_to ? ' in that date range' : ''}. Do not guess; say your notes don't show it.`
           : 'No logbook entries in that date range.';
       }
-      const lines = hits.map((h) => `[${h.date}] ${h.text}`);
-      return (
-        `${hits.length} logbook ${hits.length === 1 ? 'entry' : 'entries'} found (newest relevance first). Weave in naturally — never recite as a list unless asked:\n` +
-        lines.join('\n')
-      );
+      const parts = [];
+      if (cardLines.length > 0) {
+        parts.push(
+          `${cardLines.length} memory ${cardLines.length === 1 ? 'card' : 'cards'} (durable facts):\n` +
+            cardLines.join('\n'),
+        );
+      }
+      if (hits && hits.length > 0) {
+        const lines = hits.map((h) => `[${h.date}] ${h.text}`);
+        parts.push(
+          `${hits.length} logbook ${hits.length === 1 ? 'entry' : 'entries'} (dated, newest relevance first):\n` +
+            lines.join('\n'),
+        );
+      }
+      return 'Weave in naturally — never recite as a list unless asked:\n' + parts.join('\n\n');
     } catch (e) {
       logger.error('[KadeMemorySearch] search failed:', e.message);
       return 'The logbook search hit an error just now — let the user know you could not check your notes.';

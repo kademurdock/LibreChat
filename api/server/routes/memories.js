@@ -470,6 +470,77 @@ router.post('/consolidate', checkMemoryUpdate, configMiddleware, async (req, res
  * it manually can never disturb (delay or double-fire) the automatic cadence.
  */
 /**
+ * POST /memories/consolidate-v2  { agentId? }
+ * Part 69 rung 2 — the CONNECTION pass over the caller's own bucket (shared
+ * when no agentId; that agent's own bucket otherwise, shared riding read-only).
+ * AUTO-APPLY + LEDGER mode (her call, Aug 15): edits land, every one trailed
+ * in kadememoryledgers, spoken back by the memory tool's `changes` lane.
+ */
+router.post('/consolidate-v2', checkMemoryUpdate, configMiddleware, async (req, res) => {
+  try {
+    const { consolidateBucketV2 } = require('~/server/services/Memory/consolidateV2');
+    const { agentId } = req.body || {};
+    const targetAgentId = typeof agentId === 'string' && agentId.trim() ? agentId.trim() : null;
+    const result = await consolidateBucketV2({
+      userId: req.user.id + '',
+      agentId: targetAgentId,
+      appConfig: req.config,
+    });
+    res.json(result);
+  } catch (error) {
+    logger.error('[POST /memories/consolidate-v2] failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /memories/consolidate-v2-all — ADMIN-ONLY. The backfill lane (her
+ * "all seats quietly", Aug 15): kicks the connection pass across EVERY active
+ * bucket on the platform, paced, and returns immediately; poll the status
+ * route for progress. Not on any schedule — on-demand only.
+ */
+router.post('/consolidate-v2-all', requireAdminAccess, async (req, res) => {
+  try {
+    const { consolidateV2AllBuckets } = require('~/server/services/Memory/consolidateV2');
+    res.json(await consolidateV2AllBuckets());
+  } catch (error) {
+    logger.error('[POST /memories/consolidate-v2-all] failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/** GET /memories/consolidate-v2-status — ADMIN-ONLY progress read. */
+router.get('/consolidate-v2-status', requireAdminAccess, async (req, res) => {
+  try {
+    const { v2AllStatus } = require('~/server/services/Memory/consolidateV2');
+    res.json(v2AllStatus());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /memories/ledger?agentId=&limit=&sinceDays=
+ * The caller's own consolidation trail (shared + optionally one agent bucket),
+ * newest first — the readable half of "never silent loss."
+ */
+router.get('/ledger', async (req, res) => {
+  try {
+    const { readLedger } = require('~/models/kadeMemoryLedger');
+    const { agentId, limit, sinceDays } = req.query || {};
+    const rows = await readLedger({
+      userId: req.user.id + '',
+      agentId: typeof agentId === 'string' && agentId.trim() ? agentId.trim() : null,
+      limit: limit || 12,
+      sinceDays: sinceDays || null,
+    });
+    res.json({ count: rows.length, changes: rows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * POST /memories/rag-sync
  * ADMIN-ONLY (Part 69, rung 1). One-shot embed backfill for CARD RECALL:
  * walks every user's active cards (shared bucket + each agent bucket) and

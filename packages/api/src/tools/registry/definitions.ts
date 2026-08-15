@@ -399,6 +399,17 @@ export const kadeMemorySearchSchema: ExtendedJsonSchema = {
       type: 'integer',
       description: 'Max entries to return (1-12). Default 5.',
     },
+    scope: {
+      type: 'string',
+      enum: ['all', 'cards', 'logbook'],
+      description:
+        "Where to look. 'all' (default) searches memory CARDS and the dated logbook together — right for 'what do you actually remember about X'. 'cards' = durable facts only; 'logbook' = dated day-to-day entries only.",
+    },
+    changes: {
+      type: 'boolean',
+      description:
+        "Set true when the user asks what has CHANGED in your memory lately — returns the recent memory-edit trail (rewrites, merges, removals, with before/after) instead of a search.",
+    },
   },
   required: [],
 };
@@ -1022,7 +1033,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_memory_search: {
     name: 'kade_memory_search',
     description:
-      "Search the user's private dated diary — the long-term archive of their day-to-day life beyond your always-visible memory cards. Use when the user asks what they've told you before ('have I mentioned…', 'what was I up to last week'), when they ask you to check your notes, or when a specific past detail would genuinely help and isn't in your cards. Search by meaning (query), by date range, or both — compute real YYYY-MM-DD dates from today's date. Weave findings in naturally like a friend recalling; never read entries as a list unless asked, never invent entries, and if nothing comes back say your notes don't show it. If an entry contradicts what the user says live, believe the user.",
+      "Search the user's private long-term memory — BOTH durable memory cards and the dated day-to-day logbook. Use when the user asks what you actually remember about something ('what do you remember about my family?'), what they've told you before ('have I mentioned…', 'what was I up to last week'), when they ask you to check your notes, when a past detail would genuinely help and isn't in view, or — changes=true — when they ask what has CHANGED in your memory lately. Search by meaning (query), by date range, or both — compute real YYYY-MM-DD dates from today's date. Weave findings in naturally like a friend recalling; never read entries as a list unless asked, never invent entries, and if nothing comes back say your notes don't show it. If an entry contradicts what the user says live, believe the user.",
     schema: kadeMemorySearchSchema,
     toolType: 'builtin',
   },
