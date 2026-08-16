@@ -93,7 +93,11 @@ router.post('/consolidation', async (req, res) => {
 router.post('/files', async (req, res) => {
   if (!authed(req, res)) return;
   try {
-    const result = await sweepExpiredFiles();
+    /* KADE Aug 16 2026 (Part 71): same class as the consolidation fix above --
+     * bare call had no app config, so any expired file needing the storage
+     * strategy (this platform's files live on S3/B2) would fail its delete.
+     * Mirror index.js's in-process wiring exactly. */
+    const result = await sweepExpiredFiles({ loadAppConfig: getAppConfig });
     res.json({ ok: true, result: result || null });
   } catch (e) {
     logger.error('[kadeClock] files job failed:', e);
