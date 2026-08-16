@@ -59,15 +59,21 @@ function AuthLayout({
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
-      <BlinkAnimation active={isFetching}>
-        <div className="mt-6 h-10 w-full bg-cover">
-          <img
-            src="assets/logo.svg"
-            className="h-full w-full object-contain"
-            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
-          />
-        </div>
-      </BlinkAnimation>
+      {/* Part 70.7 (Aug 16 2026, the council's login-page axe finding): the
+          logo lived outside every landmark region. A header (banner) is the
+          honest home for it — screen readers gain a named region, sighted
+          eyes see the identical page. */}
+      <header>
+        <BlinkAnimation active={isFetching}>
+          <div className="mt-6 h-10 w-full bg-cover">
+            <img
+              src="assets/logo.svg"
+              className="h-full w-full object-contain"
+              alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
+            />
+          </div>
+        </BlinkAnimation>
+      </header>
       <DisplayError />
       <div className="absolute bottom-0 left-0 md:m-4">
         <ThemeSelector />

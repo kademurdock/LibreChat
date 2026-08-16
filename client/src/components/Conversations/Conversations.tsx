@@ -1,4 +1,4 @@
-import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
+import { useMemo, memo, type FC, type ComponentProps, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
@@ -469,6 +469,16 @@ const Conversations: FC<ConversationsProps> = ({
             style={{ outline: 'none' }}
             role="presentation"
             containerRole="presentation"
+            /* Part 70.7 (Aug 16 2026, the council's critical+serious axe pair):
+               react-virtualized's defaultProps inject aria-label="grid" and
+               aria-readonly onto the SAME div the lines above deliberately
+               made presentational — and a presentation role prohibits both
+               (aria-prohibited-attr critical, aria-allowed-attr serious).
+               null — not undefined — beats defaultProps, and React omits
+               null-valued aria attributes entirely. */
+            {...({ 'aria-label': null, 'aria-readonly': null } as unknown as Partial<
+              ComponentProps<typeof List>
+            >)}
           />
         </div>
       )}

@@ -1333,6 +1333,7 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
 
 const toolsHtml = `<!doctype html><html lang="en"><head><title>Tools — Kade-AI</title>${SHARED_HEAD}</head>
 <body>
+<main>
 <a class="back" href="/">&larr; Back to chat</a>
 <h1>Tools</h1>
 <p class="muted">Everything Kade-AI can do, in one place. Tap any one.</p>
@@ -1348,11 +1349,13 @@ const toolsHtml = `<!doctype html><html lang="en"><head><title>Tools — Kade-AI
   <a class="hubitem" href="/wall-of-fame"><span class="hicon" aria-hidden="true">🏆</span><span><strong>Wall of Fame</strong><small>Creations everyone has chosen to share</small></span></a>
   <a class="hubitem" href="/my-creations"><span class="hicon" aria-hidden="true">🎨</span><span><strong>My Creations</strong><small>Every video and image you have made, with downloads</small></span></a>
 </nav>
+</main>
 <footer class="muted">— Kade-AI</footer>
 </body></html>`;
 
 const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</title>${SHARED_HEAD}</head>
 <body>
+<main>
 <a class="back" href="/">&larr; Back to chat</a>
 <h1>You</h1>
 <p class="muted">Your account and settings.</p>
@@ -1369,6 +1372,7 @@ const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</ti
   <a class="hubitem" href="/help"><span class="hicon" aria-hidden="true">❓</span><span><strong>Help &amp; FAQ</strong><small>How everything works</small></span></a>
 </nav>
 <p class="muted" style="margin-top:1.25rem">Settings, your files, and signing out live in the account menu — tap your picture at the top of the chat screen.</p>
+</main>
 <footer class="muted">— Kade-AI</footer>
 </body></html>`;
 
