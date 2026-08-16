@@ -25,7 +25,8 @@ const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { runNudgeSweepOnce, computeNextDueAt } = require('~/server/services/kadeNudges');
 const { runSummarySweep } = require('~/server/services/kadeMemorySummarySweep');
-const { sweepMemoryConsolidation } = require('~/server/services/Memory/consolidationSweep');
+const { runScheduledConsolidation } = require('~/server/services/Memory/consolidationSweep');
+const { getAppConfig } = require('~/server/services/Config');
 const { sweepExpiredFiles } = require('~/server/services/Files/process');
 
 const router = express.Router();
@@ -77,7 +78,11 @@ router.post('/summary', async (req, res) => {
 router.post('/consolidation', async (req, res) => {
   if (!authed(req, res)) return;
   try {
-    const result = await sweepMemoryConsolidation();
+    /* KADE Aug 16 2026 (Part 71): run through the SAME engine chooser the
+     * in-process scheduler uses (v2 connection pass by default, env-reverting
+     * to v1) and hand it the app config -- the bare v1 call this replaced had
+     * neither, so every bridge-clock fire skipped on "No app config". */
+    const result = await runScheduledConsolidation({ loadAppConfig: getAppConfig });
     res.json({ ok: true, result: result || null });
   } catch (e) {
     logger.error('[kadeClock] consolidation job failed:', e);

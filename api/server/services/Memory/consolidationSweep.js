@@ -134,6 +134,39 @@ function v2Due(now, lastRunAt) {
   return true;
 }
 
+/** KADE Aug 16 2026 (Part 71): ONE runner for a scheduled consolidation pass,
+ * used by BOTH fire paths -- the in-process v2 scheduler below and the bridge
+ * clock's POST /api/kade/clock/consolidation (routes/kadeClock.js). Exists
+ * because the clock route was still calling the bare v1 run function with no
+ * app config: with KADE_CLOCK_EXTERNAL=1 the in-process scheduler (where Part
+ * 70 wired the engine chooser) never runs, so every external fire hit the v1
+ * engine, warned "No app config available -- skipping this run." and did
+ * NOTHING -- caught live on the first watched v2 window, Aug 16 09:00 UTC.
+ * Engine choice mirrors startMemoryConsolidationSweep exactly; the persisted
+ * marker is advanced first (same order as the schedulers) so the two fire
+ * paths can never double-run a window. */
+async function runScheduledConsolidation(options = {}) {
+  const engine = (process.env.KADE_SWEEP_ENGINE || 'v2').trim().toLowerCase();
+  await runAsSystem(() => setLastSweepRunAt(new Date()));
+  if (engine === 'v1') {
+    logger.info('[sweepMemoryConsolidation] engine=v1 (KADE_SWEEP_ENGINE) — running TS housekeeping sweep.');
+    return runAsSystem(() => sweepMemoryConsolidation(options));
+  }
+  const { consolidateV2AllBuckets } = require('~/server/services/Memory/consolidateV2');
+  if (process.env.KADE_CONSOLIDATE_V2 === '0') {
+    logger.info(
+      '[sweepMemoryConsolidation] engine=v2 window reached but KADE_CONSOLIDATE_V2=0 — falling back to a v1 sweep.',
+    );
+    return runAsSystem(() => sweepMemoryConsolidation(options));
+  }
+  logger.info(
+    '[sweepMemoryConsolidation] engine=v2 window reached — starting platform-wide CONNECTION pass (consolidate-v2, all buckets, ledgered).',
+  );
+  const r = await runAsSystem(() => consolidateV2AllBuckets());
+  logger.info(`[sweepMemoryConsolidation] engine=v2 kick: ${JSON.stringify(r)}`);
+  return r;
+}
+
 function startV2Scheduler(options = {}) {
   const intervalMs = v2CheckIntervalMs();
   if (intervalMs === 0) {
@@ -153,20 +186,7 @@ function startV2Scheduler(options = {}) {
       if (!v2Due(now, lastRunAt)) {
         return;
       }
-      await runAsSystem(() => setLastSweepRunAt(now));
-      const { consolidateV2AllBuckets } = require('~/server/services/Memory/consolidateV2');
-      if (process.env.KADE_CONSOLIDATE_V2 === '0') {
-        logger.info(
-          '[sweepMemoryConsolidation] engine=v2 window reached but KADE_CONSOLIDATE_V2=0 — falling back to a v1 sweep.',
-        );
-        await runAsSystem(() => sweepMemoryConsolidation(options));
-        return;
-      }
-      logger.info(
-        '[sweepMemoryConsolidation] engine=v2 window reached — starting platform-wide CONNECTION pass (consolidate-v2, all buckets, ledgered).',
-      );
-      const r = await runAsSystem(() => consolidateV2AllBuckets());
-      logger.info(`[sweepMemoryConsolidation] engine=v2 kick: ${JSON.stringify(r)}`);
+      await runScheduledConsolidation(options);
     } catch (error) {
       logger.error('[sweepMemoryConsolidation] engine=v2 background sweep failed:', error);
     } finally {
@@ -191,4 +211,4 @@ function startMemoryConsolidationSweep(options = {}) {
   return startV2Scheduler(options);
 }
 
-module.exports = { sweepMemoryConsolidation, startMemoryConsolidationSweep };
+module.exports = { sweepMemoryConsolidation, startMemoryConsolidationSweep, runScheduledConsolidation };
