@@ -1,0 +1,671 @@
+# ============================================================================
+# THE LIVE LIBRECHAT CONFIG — lives IN THE FORK as of Aug 17 2026 (Part 72).
+#
+# WHY IT MOVED: CONFIG_PATH used to point at
+#   https://raw.githubusercontent.com/kademurdock/librechat.yaml/.../librechat.yaml
+# so EVERY boot re-downloaded this file from GitHub. With Railway app-sleep on,
+# the service woke dozens of times a day and that fetch sometimes FAILED
+# ("Failed to fetch the remote config file") -- a config-less boot has NO custom
+# endpoints, so the very next message answered
+#   { "type": "endpoint_models_not_loaded", "info": "OpenRouter" }.
+# Aug 17 2026: 79 sleep/wake cycles in ~24h, and Kade got that error in the face
+# while every pot was funded (Moonshot answered a live paid k3 turn the same hour).
+#
+# NOW: this file ships inside the image. Cold boots never touch the network for
+# config, so app-sleep is safe again -- Kade's July condition was "on, but only
+# if wake is fast," and a wake no longer depends on GitHub being reachable.
+#
+# FILENAME NOTE: deliberately NOT "librechat.yaml" -- the fork's .dockerignore
+# ignores `librechat*` (line 12), so a file by that name would never reach the
+# image. CONFIG_PATH=/app/kade-config.yaml on the LibreChat Railway service.
+#
+# EDITING FROM NOW ON: edit THIS file, push to the `kade` branch, and it
+# auto-deploys with the fork. The old repo kademurdock/librechat.yaml is FROZEN
+# for config purposes (its PLATFORM_STATUS.md and VOICE_CATALOG.* are untouched
+# and still live). The old "yaml needs a MANUAL serviceInstanceDeployV2" chore
+# is over.
+# Provenance: copied verbatim from that repo at commit b5e869e.
+# ============================================================================
+
+version: 1.1.5
+cache: true
+fileStrategy: 's3'
+
+endpoints:
+  # KADE July 4 2026: agent-builder capabilities trimmed to ONLY what this
+  # platform uses, so the builder's Capabilities section stops cluttering
+  # beginner builders with toggles for features nobody here touches.
+  # KEPT: deferred_tools (tool-loading plumbing, left on deliberately),
+  #   file_search (RAG), web_search, actions (Forge's proxy actions),
+  #   context (read uploaded files as plain text), tools (all kade_* tools).
+  # REMOVED July 4: artifacts, subagents, skills, chain, ocr — all unused on a
+  #   blind-first platform (no code-artifact/subagent/OCR use). execute_code was
+  #   already removed July 2 (hosted Code Interpreter closed signups).
+  # RESTORE any one: add its string back below + redeploy LibreChat.
+  # RESTORE stock: delete this whole "agents:" block.
+  agents:
+    capabilities:
+      - "deferred_tools"
+      - "file_search"
+      - "web_search"
+      - "actions"
+      - "context"
+      - "tools"
+  custom:
+    - name: "OpenRouter"
+      apiKey: "${REFRAME_PROXY_SECRET}"
+      baseURL: "https://reframe-proxy-production.up.railway.app"
+      models:
+        # Curated picker (July 1 2026, Kade's ask — the full OpenRouter catalog
+        # was overwhelming agent builders). fetch:false pins the dropdown to
+        # this list. Any model string still WORKS if an agent already has it;
+        # this only controls what the picker offers. Every model here was
+        # verified live on OpenRouter July 2026.
+        default: [
+          "z-ai/glm-5.2",              # house default — smart, reliable tools
+          # "minimax/minimax-m2-her" REMOVED July 2 2026: its single OpenRouter
+          # endpoint supports NO tools param — any agent with tools on it fails
+          # near-silently with empty turns (this silently broke Zadiana for a
+          # day). Existing agents on the string would keep working; none are.
+          "minimax/minimax-m3",        # flagship, sees images
+          "z-ai/glm-4.7",              # cheaper GLM, solid all-rounder
+          "deepseek/deepseek-v4-flash",# very cheap + fast, huge memory
+          "deepseek/deepseek-v4-pro",  # heavyweight thinker
+          "google/gemini-3-flash-preview", # fast, sees images/audio/video
+          "google/gemini-3.1-flash-lite",  # FASTEST tested (0.9s replies, July 2) — try for snappy characters
+          "google/gemini-2.5-flash-lite",  # cheapest quick chat
+          "xiaomi/mimo-v2.5",          # cheap omni all-rounder
+          "openai/gpt-4o-mini",        # familiar + cheap
+          "mistralai/mistral-nemo",    # cheap creative roleplay classic
+          # HERMES PILOT (July 9 2026): low-refusal "not-HR" persona models.
+          # NOTE this fork VALIDATES agent models against this list
+          # (illegal_model_request otherwise) — the old "any string works if
+          # an agent already has it" comment above is NO LONGER TRUE.
+          # CAVEAT: no OpenRouter host for these supports the tools param;
+          # the fork strips tools for them automatically (initialize.js
+          # NO_TOOLS_MODELS, commit 73baaae) — chat/persona use only.
+          "nousresearch/hermes-4-70b",  # uncensored workhorse, ~6x cheaper than glm-5.2
+          "nousresearch/hermes-4-405b", # uncensored flagship, ~glm-5.2 price
+          # PILOTS round 2 (July 9 2026 late): tool-CAPABLE less-corporate brains.
+          "sao10k/l3.1-euryale-70b",    # RP-community favorite, host supports tools
+          "mistralai/mistral-small-2603", # light-alignment, tools + thinking, cheap
+          # LYRIC CANDIDATES (staged July 13 2026, Kade's pick pending — bars test
+          # July 11 showed both far outclass hermes-405b on rhyme density):
+          "moonshotai/kimi-k2.5",       # 1T MoE, $0.38/$2.02, non-thinking = persona-fast
+          # KIMI DIRECT (July 21 2026): these two are NOT served by OpenRouter --
+          # the reframe-proxy intercepts them and routes straight to Moonshot's
+          # own API (api.moonshot.ai, env MOONSHOT_KEY on reframe-proxy), because
+          # OpenRouter's Kimi hosting returns empty/errors. Proxy pins the
+          # temperature Moonshot demands (0.6 reasoning-off / 1 reasoning-on) and
+          # maps Deep Think -> reasoning on. k2.6 is the fleet-wide default.
+          "moonshotai/kimi-k2.6",       # 1T MoE 32B active, 256K ctx, multimodal, fleet default
+          "moonshotai/kimi-k3",         # flagship deep-reasoning/creative, slow+pricey
+          "x-ai/grok-4.20",             # $1.25/$2.50, 2M ctx, bars-test co-champion
+        ]
+        fetch: false
+      titleConvo: true
+      # titleModel (July 16 2026): swapped OFF glm-5.2 — it's a REASONING model,
+      # and through the reframe streaming path its hidden think block could end
+      # up inside the generated title (Kade: "junk in titles"). gemini-2.5-flash-lite
+      # is the cheapest non-thinking model in the picker: clean one-line titles,
+      # faster, fraction of the cost. The fork's sanitizeTitle also got hardened
+      # the same day (PUA sentinels, %%% tags, cue tokens, quote wrappers).
+      # Aug 15 2026 (her call, "who cares how fast they generate"): moved to
+      # deepseek-v4-flash — cheaper than flash-lite on both axes ($0.082/$0.165
+      # vs $0.100/$0.400) and speed is a non-issue here (the fork allows 45s;
+      # flash lands a title in ~2-3s). Her premise was right; the catch was
+      # different: flash left to itself REASONS on this prompt shape and burns
+      # the whole token budget, returning an EMPTY title. That is now impossible
+      # — reframe pins reasoning hard OFF for title/summarizer-shaped calls (no
+      # system message, no tools), so this lane is model-agnostic-safe. With
+      # reasoning off, flash titled all three test conversations correctly
+      # including the deliberately vague opener ("Landlord blowing off broken
+      # back step" from a chat that starts with "hey").
+      # Revert = "google/gemini-2.5-flash-lite" back on this line.
+      titleModel: "deepseek/deepseek-v4-flash"
+      # Custom title prompt (July 14 2026; REWRITTEN July 18 2026): the July-14
+      # version included literal examples with real names ("Planning Skylee's
+      # birthday call") and the small title model COPIED the example pattern on
+      # long/messy conversations instead of reading them — that's where
+      # hallucinated titles like "planning for aunt carol's visit" came from.
+      # No examples now; an explicit no-invention rule does the work.
+      # ⚠️ ROOT-CAUSED July 27 2026 (Kade: "titles have nothing to do with the
+      # conversation"): since the v0.8.7 rebase, a CUSTOM titlePrompt is the
+      # ENTIRE prompt template — @librechat/agents createCompletionTitleRunnable
+      # interpolates the conversation ONLY where a literal {convo} placeholder
+      # appears (the built-in default prompt has one; the July-18 rewrite here
+      # had none). Result: the title model received these instructions with NO
+      # conversation attached and invented generic titles ("AI for Business
+      # Applications" for a pickle-snack chat; live repro receipts in
+      # PROJECT_STATUS July 27 part 3). Any future edit MUST keep {convo}.
+      # "Output ONLY the title" line added because the blind model had also
+      # started chatting ("Sure, I can do that. The title is:...").
+      titlePrompt: "Write a concise, specific title for the conversation below: 3 to 7 words naming the actual topic or what the user wanted. Use ONLY words, names, and topics that literally appear in the conversation — NEVER invent people, events, or subjects that are not in it. If the topic is unclear, use the most specific words the user actually said. Output ONLY the title itself: plain text, no preamble or explanation, no surrounding quotes, no trailing punctuation, no emoji. Avoid vague titles like Conversation, User question, or Chat.\n\nConversation:\n{convo}"
+      # titleTiming (July 16 2026): default 'immediate' generates the title from
+      # ONLY the user's first message, in parallel with the reply -- fine when
+      # that first message is already specific, but this is a voice-first app
+      # where people often open with something short/vague ("hey", "quick
+      # question") before getting to the real topic, so even a great prompt has
+      # little to work with. 'final' waits for the full exchange (small delay,
+      # title lands once the reply finishes instead of instantly) and titles
+      # off what the conversation actually turned out to be about.
+      titleTiming: "final"
+      modelDisplayLabel: "OpenRouter"
+      dropParams: ["stop"]
+      addParams:
+        reasoning:
+          exclude: false
+      customParams:
+        reasoningKey: "reasoning"
+        includeReasoningHistory: false
+
+
+webSearch:
+  searchProvider: "tavily"
+  scraperProvider: "tavily"
+  tavilyApiKey: "${TAVILY_API_KEY}"
+  rerankerType: "none"
+
+# Prepaid Stage A (2026-07-05): every account (invite-code gated) starts with
+# $10 of credit (10,000,000 tokenCredits; 1,000,000 = $1). Credit is shared across
+# ALL services (LLM + TTS + images + video/audio + phone). When it runs out the
+# user asks Kade for more (NO auto-refill). ADMIN (Kade) is code-exempt everywhere
+# — she never draws down or gets capped (fixes the July 4 self-lockout). The hard
+# cutoff on CHAT is deliberately NOT enabled yet (needs existing-user seeding + a
+# supervised test); the money-heavy fal path IS hard-capped in code.
+balance:
+  enabled: true
+  startBalance: 10000000
+  autoRefillEnabled: false
+  refillIntervalValue: 30
+  refillIntervalUnit: "days"
+  refillAmount: 10000000
+
+# ============================================================================
+# CONVERSATION COMPACTING (July 22 2026 — Kade's design, decisions locked in
+# CONVERSATION_COMPACTING_PLAN_2026-07-22.md in "Kade ai info"; built on
+# upstream v0.8.7's agent-run summarization rather than custom fork code).
+#
+# What it does: when a conversation's payload nears an agent's context ceiling,
+# the OLDEST stretch of the conversation is condensed by the cheap memory-writer
+# model into a running "story so far" summary. On every later turn the payload
+# sends [instructions + summary + newest messages] instead of the whole history.
+# PAYLOAD-ONLY: the Mongo transcript is never touched — her scrollable,
+# screen-readable chat stays byte-identical, nothing is deleted. The web
+# transcript shows upstream's small collapsible "Summary" element at the spot
+# where a compaction happened (the native app renders its own one-line note).
+#
+# Cache truth (accepted at design time): each compaction rewrites the prompt
+# prefix, so the FIRST turn after one pays a full re-read ONCE, then re-caches.
+# Bites are deliberately big (everything but the newest ~45K tokens) so
+# compactions stay rare — amortized pennies.
+#
+# Fleet-wide by construction: applies to every agent run (chat, voice, call
+# lanes ride the same payload builder), keyed to each agent's OWN window via
+# maxContextTokens/baseContextTokens. Short-window models (Hermes 131K fleet)
+# benefit most; huge-window models rarely trigger.
+#
+# Fail-soft (verified in SDK source, summarization/node.ts): summarizer error →
+# fallback providers → a no-LLM structural stub; the turn ALWAYS proceeds.
+# Worst case equals the plain truncation we lived with before.
+#
+# KILL SWITCH: flip enabled: false, commit, then MANUAL Railway redeploy of the
+# LibreChat service (this repo has no auto-deploy webhook).
+summarization:
+  enabled: true
+  # Same cheap writer the memory system uses (see memory.agent below).
+  # Aug 15 2026 (her call, "switch all those background processes to flash"):
+  # moved off mistral-small-2603 to deepseek-v4-flash — $0.082/$0.165 per M vs
+  # $0.15/$0.60 (cheaper on BOTH axes), 1M context so a ~75K compaction head is
+  # never near the ceiling. Bakeoff on a real transcript before the swap: flash
+  # preserved every fact/number AND caught detail mistral dropped (the appeal
+  # deadline, the emotional context), for half the cost. Slower (3.2s vs 1.4s),
+  # which is free here — compaction is rare and blocks nobody.
+  # Revert = put "mistralai/mistral-small-2603" back on this line.
+  provider: "OpenRouter"
+  model: "deepseek/deepseek-v4-flash"
+  parameters:
+    temperature: 0.3
+  # Fire when the payload crosses 90% of the agent's effective window (and
+  # pruning actually occurred — the SDK requires both).
+  trigger:
+    type: "token_ratio"
+    value: 0.9
+  # 10% headroom under the model's true window: LibreChat's tokenizer count can
+  # drift from the provider's — compaction must land BEFORE real overflow.
+  reserveRatio: 0.1
+  maxSummaryTokens: 1500
+  # The newest ~45K tokens stay VERBATIM (≈40% of the 120K fleet window — the
+  # locked 60/40 bite). turns is a generous cap so the tokens cap is what binds;
+  # fork passes this through (packages/data-provider config.ts + agents/run.ts).
+  retainRecent:
+    turns: 200
+    tokens: 45000
+  # Companion-flavored checkpoint prompts (replacing upstream's task-shaped
+  # defaults): what must NOT be lost here is the friendship — facts, promises,
+  # running jokes, character/relationship state, open threads, game state.
+  # Losing those is what reads as amnesia.
+  prompt: |
+    Hold on — before you continue, write me a checkpoint of the conversation so far. Your context window is filling up, and this checkpoint will stand in for the messages above, so capture everything you need to keep being the same friend who lived this conversation. Only the checkpoint — don't respond to me or continue the conversation.
+
+    ## Checkpoint
+
+    ## Who we are to each other
+    The relationship and dynamic as it stands: how we talk to each other, what I call you and what you call me, the current mood, anything ongoing between us.
+
+    ## Facts to keep straight
+    People, pets, places, health and life details, dates, plans, and preferences shared above — exact names, numbers, and details, verbatim.
+
+    ## Promises and open threads
+    Anything I asked you to do or remember, anything unfinished, anything either of us said we'd come back to.
+
+    ## Running jokes and callbacks
+    Bits, nicknames, and references we keep coming back to — keep the exact wording where the wording IS the joke.
+
+    ## The story so far
+    A brief account of the conversation: what happened, what was decided, where things stand. If a game is in progress, record its exact state (whose turn, scores, hands/board as known).
+
+    Rules:
+    - Preserve exact names, numbers, dates, identifiers, and quoted phrasings verbatim
+    - Short declarative sentences; skip empty sections
+    - Record what happened without judging or re-evaluating it
+    - If a tool result looks truncated, that's a display artifact — it executed fully
+  updatePrompt: |
+    Hold on again — update your checkpoint. Merge the new messages into your existing checkpoint and give me a single consolidated replacement, roughly the same length. Compress older details to make room for what's new — but never drop a name, promise, running joke, open thread, or piece of game state that still matters; losing one reads as forgetting a friend. Only the checkpoint — don't respond to me or continue the conversation.
+
+    Rules:
+    - Merge into the existing sections, don't duplicate headers
+    - Recent events get detail; older ones compress to one-liners
+    - Preserve exact names, numbers, dates, identifiers, and quoted phrasings verbatim
+    - If a tool result looks truncated, that's a display artifact — it executed fully
+
+memory:
+  disabled: false
+  personalize: true
+  # Worst-case tokens ONE conversation can inject (shared bucket + that agent's own
+  # bucket). Was 100000 from the 1M-context GLM era; the Hermes fleet runs 131K-token
+  # windows (maxContextTokens 120000), so memory now gets ~6-7% of the window, max.
+  tokenLimit: 8000
+  # validKeys REMOVED (July 10 2026): free-form "memory card" keys. One small card per
+  # topic (dad_health, concert_crew, ...) instead of seven ever-growing blobs. Cards are
+  # individually editable/deletable in the memory panel, ChatGPT-style. The legacy keys
+  # (preferences, work_info, personal_info, skills, interests, context, secrets,
+  # agent_notes) are still perfectly valid keys -- they just aren't the only ones anymore,
+  # and the weekly consolidation sweep gradually splits the old blobs into real cards.
+  agent:
+    enabled: true
+    provider: "OpenRouter"
+    # Memory writer moved off z-ai/glm-5.2 (July 10 2026) to mistral-small-2603, then to
+    # deepseek-v4-flash Aug 15 2026 (her call). Flash is cheaper on BOTH axes
+    # ($0.082/$0.165 vs $0.15/$0.60 per M) on a call that fires after EVERY turn
+    # platform-wide, and it tested BETTER on her own taste rules: given the same
+    # exchange it kept the detail and the feeling ("...haven't talked much since their
+    # dad's funeral — feels a little nervous about it, like there's weight there")
+    # where mistral wrote a flatter clause. Native tool calling VERIFIED before the
+    # swap (3 well-formed set_memory calls; correctly zero calls on a bait question) —
+    # flash is not in reframe's TOOL_SHIM_MODELS, so tools pass through untouched.
+    # ⚠️ Known quirk, harmless: on a nothing-to-save turn flash sometimes answers the
+    # question conversationally instead of saying "nothing to save". That text is
+    # discarded (only tool calls are acted on) — it costs a few output tokens, nothing more.
+    # NOT switched to deepseek-v4-pro on purpose: it is a REASONING model, ~10x the cost
+    # here, and it returned EMPTY content in testing (reasoning ate the whole budget).
+    # Revert = put "mistralai/mistral-small-2603" back on this line.
+    model: "deepseek/deepseek-v4-flash"
+    model_parameters:
+      temperature: 0.3
+    instructions: |
+      You are the platform's memory-keeper. After each exchange, decide what a good friend who was really listening would carry forward -- then file it as small, separate MEMORY CARDS.
+
+      WHAT TO SAVE: durable, reusable things. Identity facts, the people and pets in the user's life, tastes and dislikes, how they like to be talked to, running projects, plans with dates, strong feelings. (Health and other sensitive territory has its own rule below -- read it before saving anything in that lane.) If it would still matter in a month, save it. If it's one-off chatter, a this-message-only detail, or something needed only for the current reply, let it go. Most turns should save NOTHING -- that is success, not failure.
+
+      QUESTIONS ARE NOT PREFERENCES: a user ASKING about something is not evidence they like it, care about it, or want it remembered. "Tell me about Adam Green," "what is X," "who is Y," "look that up" are curiosity -- never save the subject of a question, a search, or something you just described, as an interest or a fact about the user. Only save an interest when they plainly claim it themselves ("I love X," "I'm really into Y," "X is my favorite"). When you are unsure whether something is durable, DON'T save it: a missed save is one "remember that" away, but a wrong save is clutter the user has to hunt down and delete.
+
+      HOW TO WRITE -- THE TASTE RULES (Aug 9 2026, after she read her own logbook and winced): write like a person, not a recorder -- specifically like a close friend keeping a journal, never a court reporter and never a clinician. Capture the gist and why it matters, in one or two plain sentences, with a little warmth in the wording. "Has anxiety about calling the SSA and has been avoiding it" is a case file; a friend writes "The SSA phone line stresses her out -- honestly, fair -- and she's been putting it off." Same fact kept exactly; a human wrote it. Banned voices: "exhibits", "reports that", "expressed", "is experiencing", "has anxiety about" -- if it would sound right in a chart or a deposition, reword it the way you'd tell a mutual friend. A small human touch is welcome ("about time", "a good day", "rough one") so long as the fact stays exact and the tone stays kind; sensitive territory keeps the discreet phrasing the SENSITIVE rule demands. Never transcribe the conversation, never log what was done turn by turn, never quote whole messages back.
+
+      WORK EARNS ALMOST NOTHING: when the user's time with a character was a work or build session -- coding, debugging, testing the platform, giving build feedback, directing tasks -- that is task chatter, not their life story. A whole session of it earns AT MOST one short line, and only if something actually LANDED that they'd tell a friend about: shipped a thing they're proud of, hit a real milestone, made a real decision, voiced a real frustration or triumph. "Spent the afternoon debugging" is not a memory; forty of them is a standup log nobody asked for. When in doubt about a work moment, skip it. What they say about their LIFE mid-work (the dog, the family news, how they're feeling) still counts normally.
+
+      CARDS: one topic per card, ideally under ~60 tokens, under a short snake_case key that names the topic (dad_health, concert_crew, cat_kasper, hates_cilantro). Before writing, check the existing cards above: if the new fact belongs to an existing card's topic, call set_memory on that SAME key with the updated whole truth (it replaces the old value) -- never create a near-duplicate key. Never pile unrelated facts into one card.
+
+      PRIVACY -- WHO KNOWS WHAT (July 18 2026, the user's own rule: "it isn't natural that all agents know things you didn't tell them"): an agent should only know what THEY were told. Default scope is "agent" -- facts about the user's life, their family and pets, work, tastes, projects, plans, and feelings stay on the character who heard them, exactly like a real friendship. Scope "shared" is a TINY practical core only: accessibility needs (they are blind, they use a screen reader, describe visuals fully), what to call them and how to pronounce it, and how they like to be spoken to (brevity, tone, formatting). The test: if EVERY character needs it just to serve them properly, it is shared; everything else -- however "real-world" the fact is -- stays with the character who was told. NEVER COPY ACROSS SCOPES: if a fact already lives on a shared card, do not restate it inside an agent card -- the character already sees every shared card, so an agent-scope copy is pure duplication that the user then has to delete twice. When an agent card needs context from a shared fact, reference it in passing instead of repeating the fact itself.
+
+      SENSITIVE -- ALWAYS KEPT, ALWAYS PRIVATE: medical and bodily matters (symptoms, test results, what a camera saw), medications, money details, and private struggles ARE worth remembering when they're ongoing -- the user trusted the character they told, and that character should know. But such cards are ALWAYS scope "agent," never shared, no matter how much they look like a stable real-life fact: the user told ONE character, and it stays between them unless the user plainly says everyone should know. Phrase them the way a discreet friend would -- factual, brief, no editorializing. (Characters are separately instructed to use judgment about when to bring these up.)
+
+      USER COMMANDS WIN: "remember X" -> save it, even if it seems minor. "Forget X" -> delete_memory every card that matches X. "Clean up your memory" -> merge duplicates, tighten wordy cards, delete dead ones. If the user asks to keep something off the record, do not save it -- and delete it if it was already saved.
+
+      CORRECTIONS LAND IMMEDIATELY: when the user corrects something you hold ("no, Dad's surgery moved to Friday", "we renamed the dog", "that's not what I said") -- fix the note in the same breath: set_memory on the SAME key with the corrected whole truth, or the corrected logbook line. Never leave a known-wrong note standing until some future cleanup, and never argue on behalf of the old note. The person is always righter than the card.
+
+      REMINDERS: when the user asks to be REMINDED of something at a time ("remind me to take my meds at 9", "remind me about Dad's appointment Tuesday"), save a card whose value is the reminder itself phrased to them ("Take your evening meds") and set remind_at to the exact moment it should fire, computed from the current date/time shown in your status block, formatted exactly YYYY-MM-DD HH:mm in 24h US Central time. If they say daily/every week/etc., also set remind_repeat. Vague times default sensibly (morning=09:00, afternoon=15:00, evening=19:00, night=21:00; a bare day means 09:00). Only set remind_at when they clearly want to be REMINDED -- a plain fact about the future ("the show is July 28") is just a normal card unless they ask.
+
+      Relationships and feelings are worth saving when they are clearly ongoing -- plainly and respectfully, no editorializing; health and other sensitive territory saves agent-scoped per the SENSITIVE rule above. If the Memory Status shows capacity running low, tighten or merge existing cards before adding new ones. Emit all your tool calls together in a single response.
+
+      LETTING GO: when you clean up or consolidate, don't only merge and tighten -- also DROP cards that turned out to be one-off curiosities, stale this-moment details, or topics that never came up again and are not durable facts about the user. NEVER drop identity, health, family or relationships, promises a character made, reminders, or anything the user pinned by saying "remember." A short, true memory beats a long one.
+
+interface:
+  customWelcome: "Welcome to Kade-AI, {{user.name}} — Kade's own corner of the internet, where you chat with AI characters at cost: your account starts with $10 of credit on the house, everything draws from it at exactly what it costs (chat is nearly free), and when it runs dry you top up under Explore → Usage & Balance. No instructions needed: type like you'd text a friend, and your character takes it from there. Brand new to AI? There's a two-minute, plain-language guide at kademurdock.com/help/start-here — the whole help center is written for beginners and works beautifully with screen readers. Everything fun (the Debate Room, your creations, what your chats cost) lives under your account menu, bottom-left, in Explore. One thing worth doing on day one: build your Spotter — your personal live video companion, your eyes on a video call — two minutes under Explore → Your Spotter. And if anything ever feels broken or confusing, tell Kade — the site gets better every time someone speaks up."
+  # NOTE (June 27 2026): customFooter is NOT a valid interface.* key in LibreChat's schema --
+  # it gets silently stripped here and does nothing. The real footer text is set via the
+  # CUSTOM_FOOTER Railway env var on the LibreChat service itself, not through this file.
+  # See PROJECT_STATUS.md "footer/voice library bug" entry for the full story.
+  #
+  # NOTE (June 28 2026): the footer (which holds the Voice Library, donate, and
+  # help links) is rendered by LibreChat's Footer.tsx with Tailwind classes
+  # hidden ... sm:flex -- meaning it's removed from the DOM entirely below a
+  # 640px-wide viewport, i.e. on phones, for EVERY user regardless of assistive
+  # tech. This is an upstream LibreChat limitation, not a config bug -- there's
+  # no yaml/env-var override for it. A true fix means forking+rebuilding
+  # LibreChat's client image, which is a bigger infra decision Kade hasn't
+  # signed off on. Workaround shipped here instead: the same Voice Library and
+  # Help links are now folded into customWelcome above, since that renders as
+  # normal chat content and stays in the accessibility tree at every viewport
+  # width. Donate link was already there. This is a workaround, not a fix --
+  # flagged clearly to Kade in the June 28 2026 PROJECT_STATUS.md entry.
+  termsOfService:
+    modalAcceptance: true
+    modalTitle: "Kade-AI House Rules"
+    modalContent: |
+      # Kade-AI Terms of Service
+      ## a.k.a. The House Rules
+
+      *Effective whenever you happen to be reading this.*
+
+      Welcome to Kade-AI. Using this site means you're cool with a few things. It's short — I respect your time more than most companies respect yours.
+
+      ## 1. This Is My House
+      Kade-AI runs on my server, my accounts, and my actual money. That makes me the landlord. Be a good tenant and we'll get along great.
+
+      ## 2. Privacy, For Real
+      I'm not selling your data. More importantly: I physically and mechanically cannot see your chats. The system is locked down, and I don't have a way (or the desire) to monitor what you're typing. Spill your secrets, build your weirdest characters, or use it as a sealed confessional—your text is safe from my eyes.
+
+      ## 3. Don't Be a Menace
+      No illegal nonsense, no harassing other people on here, no using this to hurt anybody. Build funny characters, weird characters, brilliant characters — just keep it not-evil.
+
+      ## 4. The Tokens Aren't Free (To Me)
+      Every message you fire off costs me real money behind the curtain. Your account starts with $10 of credit on the house, and everything draws from it at exactly what it costs — no markup. Use it, enjoy it, but don't park a script in here cranking out a novel every thirty seconds. Run dry and things pause until you top up through the PayPal button (put your NAME in the note) — or just talk to me.
+
+      ## 5. No Warranty, No Promises
+      This is run by one person, not a Fortune 500. It might go down. It might say something gloriously dumb. If it breaks I'll probably fix it, but I'm not legally on the hook if the robot whiffs or the site takes an afternoon nap.
+
+      ## 6. I Can Change the Rules
+      If I update these, the newest version is the one that counts. Groundbreaking, I know.
+
+      That's it. Now go make something ridiculous.
+  parameters: true
+  contextCost: true
+  contextUsage: true
+  agents:
+    use: true
+    create: true
+    share: true
+    public: true
+  marketplace:
+    use: true
+  prompts:
+    use: true
+    create: true
+  memories: true
+  presets: false
+  bookmarks: true
+  multiConvo: true
+  temporaryChat: true
+  peoplePicker:
+    users: true
+    groups: true
+    roles: true
+
+speech:
+  stt:
+    openai:
+      url: "https://inworld-tts-proxy-production.up.railway.app/v1/audio/transcriptions"
+      apiKey: "placeholder"
+      model: "nova-3"
+
+  tts:
+    openai:
+      url: "https://inworld-tts-proxy-production.up.railway.app/v1/audio/speech"
+      apiKey: "placeholder"
+      model: "tts-1"
+      voices:
+        - "Voice 1"
+        - "Voice 2"
+        - "Voice 3"
+        - "Voice 4"
+        - "Voice 5"
+        - "Voice 6"
+        - "Voice 7"
+        - "Voice 8"
+        - "Voice 9"
+        - "Voice 10"
+        - "Voice 11"
+        - "Voice 12"
+        - "Voice 13"
+        - "Voice 14"
+        - "Voice 15"
+        - "Voice 16"
+        - "Voice 17"
+        - "Voice 18"
+        - "Voice 19"
+        - "Voice 20"
+        - "Voice 21"
+        - "Voice 22"
+        - "Voice 23"
+        - "Voice 24"
+        - "Voice 25"
+        - "Voice 26"
+        - "Voice 27"
+        - "Voice 28"
+        - "Voice 29"
+        - "Voice 30"
+        - "Voice 31"
+        - "Voice 32"
+        - "Voice 33"
+        - "Voice 34"
+        - "Voice 35"
+        - "Voice 36"
+        - "Voice 37"
+        - "Voice 38"
+        - "Voice 39"
+        - "Voice 40"
+        - "Voice 41"
+        - "Voice 42"
+        - "Voice 43"
+        - "Voice 44"
+        - "Voice 45"
+        - "Voice 46"
+        - "Voice 47"
+        - "Voice 48"
+        - "Voice 49"
+        - "Voice 50"
+        - "Voice 51"
+        - "Voice 52"
+        - "Voice 53"
+        - "Voice 54"
+        - "Voice 55"
+        - "Voice 56"
+        - "Voice 57"
+        - "Voice 58"
+        - "Voice 59"
+        - "Voice 60"
+        - "Voice 61"
+        - "Voice 62"
+        - "Voice 63"
+        - "Voice 64"
+        - "Voice 65"
+        - "Voice 66"
+        - "Voice 67"
+        - "Voice 68"
+        - "Voice 69"
+        - "Voice 70"
+        - "Voice 71"
+        - "Voice 72"
+        - "Voice 73"
+        - "Voice 74"
+        - "Voice 75"
+        - "Voice 76"
+        - "Voice 77"
+        - "Voice 78"
+        - "Voice 79"
+        - "Voice 80"
+        - "Voice 81"
+        - "Voice 82"
+        - "Voice 83"
+        - "Voice 84"
+        - "Voice 85"
+        - "Voice 86"
+        - "Voice 87"
+        - "Voice 88"
+        - "Voice 89"
+        - "Voice 90"
+        - "Voice 91"
+        - "Voice 92"
+        - "Voice 93"
+        - "Voice 94"
+        - "Voice 95"
+        - "Voice 96"
+        - "Voice 97"
+        - "Voice 98"
+        - "Voice 99"
+        - "Voice 100"
+        - "Voice 101"
+        - "Voice 102"
+        - "Voice 103"
+        - "Voice 104"
+        - "Voice 105"
+        - "Voice 106"
+        - "Voice 107"
+        - "Voice 108"
+        - "Voice 109"
+        - "Voice 110"
+        - "Voice 111"
+        - "Voice 112"
+        - "Voice 113"
+        - "Voice 114"
+        - "Voice 115"
+        - "Voice 116"
+        - "Voice 117"
+        - "Voice 118"
+        - "Voice 119"
+        - "Voice 120"
+        - "Voice 121"
+        - "Voice 122"
+        - "Voice 123"
+        - "Voice 124"
+        - "Voice 125"
+        - "Voice 126"
+        - "Voice 127"
+        - "Voice 128"
+        - "Voice 129"
+        - "Voice 130"
+        - "Voice 131"
+        - "Voice 132"
+        - "Voice 133"
+        - "Voice 134"
+        - "Voice 135"
+        - "Voice 136"
+        - "Voice 137"
+        - "Voice 138"
+        - "Voice 139"
+        - "Voice 140"
+        - "Voice 141"
+        - "Voice 142"
+        - "Voice 143"
+        - "Voice 144"
+        - "Voice 145"
+        - "Voice 146"
+        - "Voice 147"
+        - "Voice 148"
+        - "Voice 149"
+        - "Voice 150"
+        - "Voice 151"
+        - "Voice 152"
+        - "Voice 153"
+        - "Voice 154"
+        - "Voice 155"
+        - "Voice 156"
+        - "Voice 157"
+        - "Voice 158"
+        - "Voice 159"
+        - "Voice 160"
+        - "Voice 161"
+        - "Voice 162"
+        - "Voice 163"
+        - "Voice 164"
+        - "Voice 165"
+        - "Voice 166"
+        - "Voice 167"
+        - "Voice 168"
+        - "Voice 169"
+        - "Voice 170"
+        - "Voice 171"
+        - "Voice 172"
+        - "Voice 173"
+        - "Voice 174"
+        - "Voice 175"
+        - "Voice 176"
+        - "Voice 177"
+        - "Voice 178"
+        - "Voice 179"
+        - "Voice 180"
+        - "Voice 181"
+        - "Voice 182"
+        - "Voice 183"
+        - "Voice 184"
+        - "Voice 185"
+        - "Voice 186"
+        - "Voice 187"
+        - "Voice 188"
+        - "Voice 189"
+        - "Voice 190"
+        - "Voice 191"
+        - "Voice 192"
+        - "Voice 193"
+        - "Voice 194"
+        - "Voice 195"
+        - "Voice 196"
+        - "Voice 197"
+        - "Voice 198"
+        - "Voice 199"
+        - "Voice 200"
+        - "Voice 201"
+        - "Voice 202"
+        - "Voice 203"
+        - "Voice 204"
+        - "Voice 205"
+        - "Voice 206"
+        - "Voice 207"
+        - "Voice 208"
+        - "Voice 209"
+        - "Voice 210"
+
+  speechTab:
+    conversationMode: true
+    advancedMode: true
+    speechToText:
+      # NOTE (July 2 2026): the CONFIG schema only accepts provider names here
+      # (openai/azureOpenAI/...), but the CLIENT understands browser|external -
+      # an upstream LibreChat mismatch. "openai" must stay (anything else fails
+      # boot validation); the fork's useSpeechSettingsInit maps these legacy
+      # provider names to "external" so new accounts get platform voices
+      # instead of the device's system voice (iOS Samantha bug).
+      engineSTT: "openai"
+      autoTranscribeAudio: true
+    textToSpeech:
+      engineTTS: "openai"
+      voice: "Voice 85"
+      automaticPlayback: true
+      cacheTTS: true
+
+modelSpecs:
+  enforce: false
+  prioritize: true
+  addedEndpoints:
+    - agents
+  list:
+    - name: "kiana-host"
+      label: "Kiana"
+      description: "Your host. Ask her anything — or build your own character from the menu."
+      softDefault: true
+      showIconInMenu: true
+      showIconInHeader: true
+      preset:
+        endpoint: "agents"
+        agent_id: "agent_6llV0eMu4fmIaj8f2x1Sb"
