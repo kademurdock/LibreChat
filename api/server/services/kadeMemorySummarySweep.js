@@ -56,6 +56,44 @@ async function agentNameLookup(cache, agentId) {
  * One pass: refresh recently-active relationships, then decay quiet ones.
  * Returns a small stats object. Never throws.
  */
+/* ⭐⭐⭐ READ THE REPLY WHEREVER IT ACTUALLY LIVES (Aug 19 2026).
+ *
+ * THE BUG: this sweep filtered turns with `typeof m.text === 'string' &&
+ * m.text.trim()`. Modern LibreChat assistant replies do NOT populate `text` --
+ * the reply lives in `content[]` blocks. Measured on Kade's live database:
+ * across EVERY recently-active agent conversation, assistant messages with a
+ * non-empty `.text` numbered ZERO. Not few. Zero.
+ *
+ * So the nightly "KADE DREAMING" relationship summary -- the thing that gives
+ * a fresh conversation continuity, the running story of what has been going on
+ * between a person and a character -- was being written from ONLY THE USER'S
+ * HALF of the transcript. Nothing the character ever said reached it. And any
+ * conversation short enough that the user's messages alone fell under the
+ * two-turn floor was skipped outright, which is why the Aug 19 08:00 run
+ * reported `refreshed: 0, skipped: 2` while several relationship summaries sat
+ * frozen since Aug 16 and the diary and memory cards updated by the minute.
+ *
+ * The correct extractor already existed one file over, in kadeHistoryMiner's
+ * `textOf()` -- which is exactly why the DIARY stayed healthy while the
+ * summaries quietly starved. This is that same helper, applied here. Keep the
+ * two in step. */
+function summaryTextOf(m) {
+  if (!m) {
+    return '';
+  }
+  if (typeof m.text === 'string' && m.text.trim()) {
+    return m.text.trim();
+  }
+  if (Array.isArray(m.content)) {
+    return m.content
+      .filter((p) => p && p.type === 'text')
+      .map((p) => (typeof p.text === 'string' ? p.text : p.text && p.text.value) || '')
+      .join('\n')
+      .trim();
+  }
+  return '';
+}
+
 async function runSummarySweep() {
   if (!enabled()) {
     return { ran: false, reason: 'disabled' };
@@ -106,9 +144,9 @@ async function runSummarySweep() {
         const agentId = String(c.agent_id);
         const msgs = await db.getMessages({ conversationId: c.conversationId, user: userId });
         const turns = (msgs || [])
-          .filter((m) => m && typeof m.text === 'string' && m.text.trim())
-          .slice(-maxMsgs)
-          .map((m) => ({ role: m.isCreatedByUser ? 'user' : 'assistant', text: m.text }));
+          .map((m) => ({ role: m.isCreatedByUser ? 'user' : 'assistant', text: summaryTextOf(m) }))
+          .filter((t) => t.text)
+          .slice(-maxMsgs);
         if (turns.length < 2) {
           skipped += 1;
           continue;
