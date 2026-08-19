@@ -92,6 +92,17 @@ const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMC
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
+/**
+ * The voice/phone lane's replayed-transcript envelope, as written by
+ * inworld-tts-proxy's `composeTextWithHistory`. Matched by its own opening and
+ * closing sentences so ordinary prose that happens to mention the phrase is
+ * left alone. See `AgentClient.stripContextReplay` for why this exists; the
+ * twin of this pattern lives in reframe-proxy (CONTEXT_REPLAY_RE) where it
+ * keeps the auto-think classifier from grading replayed text.
+ */
+const CONTEXT_REPLAY_RE =
+  /\[EARLIER IN THIS CONVERSATION[\s\S]*?Reply ONLY to what follows\.\]\s*/gi;
+
 class AgentClient extends BaseClient {
   constructor(options = {}) {
     super(null, options);
@@ -1049,6 +1060,82 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * ⭐ Aug 19 2026 — THE PHONE LANE WAS TEACHING MEMORY THINGS SHE NEVER SAID.
+   *
+   * The voice/phone lane holds no conversation of its own, so the proxy's
+   * `composeTextWithHistory` folds up to 24 prior turns into the TEXT of each
+   * request, wrapped in an explicit envelope:
+   *
+   *   [EARLIER IN THIS CONVERSATION — context only, already handled, do not
+   *    re-answer: THEM: … YOU: … — end of earlier context. Reply ONLY to what
+   *    follows.]
+   *
+   *   <what she actually just said>
+   *
+   * That envelope is prompt construction, not speech. But it arrives as the
+   * user message, so memory extraction has been reading a REPLAYED TRANSCRIPT
+   * as her words on every phone turn — re-ingesting the same exchanges again
+   * and again, and crowding the five-message window with text she never
+   * uttered. Two stored user rows of 20,511 and 20,452 characters, fourteen
+   * seconds apart on 2026-07-25, are this envelope kept verbatim.
+   *
+   * This is the same disease the skill-prime filter in `runMemory` was written
+   * for — "synthetic instruction content the user never typed" — so it gets
+   * the same medicine one line later. reframe-proxy already strips this exact
+   * shape before the auto-think classifier sees it (Part 66, its
+   * CONTEXT_REPLAY_RE); this is that fix's missing other half. The strip fixed
+   * what the router THOUGHT she said; memory kept believing the envelope.
+   *
+   * Deliberately narrow: the envelope's own opening and closing sentences are
+   * the delimiters, so prose that merely mentions the phrase is untouched, and
+   * her real words — which sit AFTER the envelope — are preserved exactly.
+   *
+   * @param {BaseMessage} message
+   * @returns {BaseMessage} a new message with any replay envelope removed
+   */
+  stripContextReplay(message) {
+    const strip = (text) =>
+      typeof text === 'string' ? text.replace(CONTEXT_REPLAY_RE, '') : text;
+
+    if (typeof message.content === 'string') {
+      const stripped = strip(message.content);
+      if (stripped === message.content) {
+        return message;
+      }
+      const MessageClass = message.constructor;
+      return new MessageClass({
+        content: stripped,
+        additional_kwargs: message.additional_kwargs,
+      });
+    }
+
+    if (Array.isArray(message.content)) {
+      let changed = false;
+      const content = message.content.map((part) => {
+        if (part?.type !== ContentTypes.TEXT || typeof part.text !== 'string') {
+          return part;
+        }
+        const stripped = strip(part.text);
+        if (stripped === part.text) {
+          return part;
+        }
+        changed = true;
+        return { ...part, text: stripped };
+      });
+      if (!changed) {
+        return message;
+      }
+      const MessageClass = message.constructor;
+      return new MessageClass({
+        content,
+        additional_kwargs: message.additional_kwargs,
+      });
+    }
+
+    return message;
+  }
+
+  /**
    * @param {BaseMessage[]} messages
    * @returns {Promise<void | (TAttachment | null)[]>}
    */
@@ -1085,7 +1172,9 @@ class AgentClient extends BaseClient {
         }
       }
 
-      const filteredMessages = messagesToProcess.map((msg) => this.filterImageUrls(msg));
+      const filteredMessages = messagesToProcess.map((msg) =>
+        this.stripContextReplay(this.filterImageUrls(msg)),
+      );
       const bufferString = getBufferString(filteredMessages);
       const configuredMaxInputTokens = Number.isFinite(memoryConfig?.maxInputTokens)
         ? Math.floor(memoryConfig.maxInputTokens)
