@@ -84,6 +84,52 @@ function pinPatterns() {
     .filter(Boolean);
 }
 
+/* ⭐⭐⭐ THE SHARED-BUCKET CEILING (Aug 20 2026 — Kade: "we need the fix, and we
+ * need to clean Amber A and everyone else to compliment that fix. Whoever they
+ * choose as default agent is gonna retrieve most memories anyway.")
+ *
+ * THE BUG THIS CLOSES: shared-bucket cards pinned UNCONDITIONALLY — no size
+ * cap, no relevance test, forever. That was safe while the shared bucket held
+ * identity ("preferences", "personal_basics"), and it silently stopped being
+ * safe as the memory writer filed episodic material there. Measured on one
+ * real tester: 1,147 tokens of shared bucket riding EVERY turn of EVERY agent,
+ * almost all of it medical-trauma narrative — a hospital betrayal, a stroke, a
+ * heart attack — so even "hey what's up" was answered by a model primed on the
+ * worst week of somebody's life. The token cost was trivial. The ATTENTION
+ * cost was not, and it is a plausible driver of the dramatic register she has
+ * been complaining about for weeks.
+ *
+ * THE RULE: the shared bucket may spend at most KADE_SHARED_PIN_MAX_TOKENS on
+ * the head. Everything over the line becomes RETRIEVABLE — not deleted, not
+ * moved, still shared, still visible to every agent, just surfaced when it is
+ * relevant instead of always. Reminders survive first, then identity/safety
+ * keys, then smallest-first.
+ *
+ * WHY THERE IS A SEPARATE, WIDER PATTERN LIST HERE: this ranking list is used
+ * ONLY to decide what survives the ceiling. It is deliberately NOT added to
+ * pinPatterns(), because measuring showed that widening the real pin list grew
+ * agent-bucket heads by 83-176 tokens per user — words like "meds" and
+ * "safety" match a lot of episodic cards. Widening it here costs nothing (it
+ * only re-orders inside a fixed budget) and fixes a real ranking flaw: with
+ * the narrow list, a 250-token budget dropped Kade's own "preferences" card
+ * (125 tok) while keeping trivia, because the tiebreak was smallest-first.
+ *
+ * Kill switch: KADE_SHARED_PIN_MAX_TOKENS=0 restores the old
+ * pin-everything-shared behaviour exactly. */
+function sharedPinBudget() {
+  const n = parseInt(process.env.KADE_SHARED_PIN_MAX_TOKENS, 10);
+  return Number.isFinite(n) && n >= 0 ? n : 250;
+}
+const SHARED_RANK_EXTRA = [
+  'preference', 'basics', 'safety', 'trigger', 'vision', 'allerg', 'pronoun', 'how_i', 'code_word',
+];
+function cardTokens(m) {
+  if (Number.isFinite(m && m.tokenCount) && m.tokenCount > 0) {
+    return m.tokenCount;
+  }
+  return Math.ceil((String((m && m.value) || '').length + String((m && m.key) || '').length) / 4);
+}
+
 function minRagTokens() {
   const n = parseInt(process.env.KADE_MEMORY_RAG_MIN_TOKENS, 10);
   return Number.isFinite(n) && n >= 0 ? n : 1200;
@@ -176,6 +222,45 @@ async function getMemorySplit(userId, agentId) {
     }
     for (const m of own) {
       (isPinned(m, false) ? pinned : retrievable).push(m);
+    }
+    /* Shared-bucket ceiling — see sharedPinBudget() above. Trims the SHARED
+     * side of `pinned` only; agent-bucket pinning is untouched. */
+    const budget = sharedPinBudget();
+    if (budget > 0) {
+      const sharedPinned = pinned.filter((m) => m.agentId == null);
+      const sharedTotal = sharedPinned.reduce((sum, m) => sum + cardTokens(m), 0);
+      if (sharedTotal > budget) {
+        const rankPats = pats.concat(SHARED_RANK_EXTRA);
+        const rankOf = (m) => {
+          if (m.type === 'reminder') {
+            return 0;
+          }
+          const k = String(m.key || '').toLowerCase();
+          return rankPats.some((p) => k.includes(p)) ? 1 : 2;
+        };
+        const ordered = sharedPinned
+          .slice()
+          .sort((a, b) => rankOf(a) - rankOf(b) || cardTokens(a) - cardTokens(b));
+        const keep = new Set();
+        let used = 0;
+        for (const m of ordered) {
+          const t = cardTokens(m);
+          if (used + t <= budget) {
+            keep.add(String(m._id));
+            used += t;
+          }
+        }
+        for (let i = pinned.length - 1; i >= 0; i--) {
+          const m = pinned[i];
+          if (m.agentId == null && !keep.has(String(m._id))) {
+            pinned.splice(i, 1);
+            retrievable.push(m);
+          }
+        }
+        logger.info(
+          `[kadeCardRecall] shared pin ceiling: ${sharedTotal} tok over budget ${budget} — kept ${keep.size}/${sharedPinned.length} card(s) (${used} tok), rest moved to retrieval`,
+        );
+      }
     }
     if (retrievable.length === 0) {
       return null; /* nothing would move — keep today's exact shape */
