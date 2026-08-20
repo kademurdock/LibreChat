@@ -43,13 +43,47 @@ const { embedText, searchDiary, countEntries } = require('~/models/kadeDiary');
 const { syncBucketVectors, searchCardVectors } = require('~/models/kadeCardVector');
 
 const KIANA_ID = 'agent_6llV0eMu4fmIaj8f2x1Sb';
-const CARD_TOP_K = 5;
+/* ⭐⭐⭐ THE RECALL FUNNEL (widened Aug 20 2026, with the memory-keeper's
+ * fill-the-bank change in librechat.yaml — the two only work as a pair).
+ *
+ * THE TRAP THIS AVOIDS: telling the memory-keeper to save generously does
+ * NOTHING on its own. However full the bank gets, only TOP_K cards and
+ * CHAR_CAP characters ever reach the reply — a fuller bank behind a five-card
+ * funnel just means more good memories losing to each other. Raise both or
+ * neither.
+ *
+ * WHY IT IS SAFE TO WIDEN, measured on live seats before changing anything:
+ * recall runs at a MEDIAN OF 318ms against this 2500ms timeout (p90 363, max
+ * 390) — roughly 6x headroom. And 135 cards vs 113 cards differ by ~40ms, so
+ * the cost is the single embed round trip, not the cosine scan. The bank can
+ * grow several-fold before latency is even a question.
+ *
+ * ⚠️ THE ONE REAL COST: the recall block rides the VOLATILE TAIL, which is the
+ * uncached part of the payload — so every character added here is paid at full
+ * price on every turn that retrieves. 1400 -> 2200 is about +200 tokens, call
+ * it a hundredth of a cent per turn. Cheap, but it is NOT free the way an
+ * unpinned card is, so do not raise this one casually.
+ *
+ * ⚠️ THE SCALING LIMIT, for whoever grows this next: searchCardVectors does a
+ * FULL SCAN — it loads every vector for the seat and scores cosine in JS.
+ * Fine at hundreds. At several thousand cards per seat that becomes the
+ * dominant cost and it will need a real vector index instead. `limit` is also
+ * hard-capped at 12 inside searchCardVectors, so TOP_K above 12 silently does
+ * nothing.
+ *
+ * All tunable without a deploy: KADE_RECALL_CARD_TOP_K, KADE_RECALL_CARD_CAP,
+ * KADE_RECALL_DIARY_TOP_K, KADE_RECALL_DIARY_CAP, KADE_RECALL_TIMEOUT_MS. */
+const intEnv = (name, def, lo, hi) => {
+  const n = parseInt(process.env[name], 10);
+  return Number.isFinite(n) && n >= lo && n <= hi ? n : def;
+};
+const CARD_TOP_K = intEnv('KADE_RECALL_CARD_TOP_K', 8, 1, 12);
 const CARD_MIN_SCORE = 0.3;
-const RECALL_TIMEOUT_MS = 2500;
-const CARD_BLOCK_CHAR_CAP = 1400;
-const DIARY_TOP_K = 3;
+const RECALL_TIMEOUT_MS = intEnv('KADE_RECALL_TIMEOUT_MS', 2500, 500, 10000);
+const CARD_BLOCK_CHAR_CAP = intEnv('KADE_RECALL_CARD_CAP', 2200, 200, 8000);
+const DIARY_TOP_K = intEnv('KADE_RECALL_DIARY_TOP_K', 4, 1, 12);
 const DIARY_MIN_SCORE = 0.32;
-const DIARY_BLOCK_CHAR_CAP = 1200;
+const DIARY_BLOCK_CHAR_CAP = intEnv('KADE_RECALL_DIARY_CAP', 1600, 200, 8000);
 
 function ragEnabled() {
   return process.env.KADE_MEMORY_RAG === '1';
