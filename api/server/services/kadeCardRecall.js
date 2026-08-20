@@ -77,7 +77,12 @@ function cardRagActive(agentId) {
 function pinPatterns() {
   const raw =
     process.env.KADE_MEMORY_PIN_PATTERNS ||
-    'family,accessib,blind,screen_reader,pronounc,identity,call_me,name';
+    /* Aug 20 2026: `access` added so the `access_*` cards the memory-keeper
+     * now writes (see librechat.yaml's ACCESS NEEDS rule) ride the head every
+     * turn. Verified before adding: the prefix matches nothing episodic in any
+     * live bucket, so no head grew by a single token. `accessib` alone did NOT
+     * match `access_blind_screen_reader`, which is exactly the trap this closes. */
+    'family,accessib,access,blind,screen_reader,pronounc,identity,call_me,name';
   return raw
     .split(',')
     .map((s) => s.trim().toLowerCase())
