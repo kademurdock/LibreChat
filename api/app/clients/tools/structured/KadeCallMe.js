@@ -151,7 +151,35 @@ class KadeCallMe extends Tool {
         return out;
       }
       if (action === 'test_call') {
-        if (!data.plan_id) return 'test_call needs plan_id (from list_calls or schedule_call).';
+        /* Part 83 addendum (Kade's own first test, 19:55Z Aug 21: "call me
+         * right now" — the model reached for test_call, got this refusal,
+         * pivoted to schedule_call, and the run died on the round-2 graph
+         * bug; nothing rang). A plan-less test_call is the OBVIOUS meaning
+         * of "ring me right now to test it" — so it now creates a one-shot
+         * test plan due immediately and fires it, one round, no pivot. */
+        if (!data.plan_id) {
+          const mk = await axios.post(
+            `${this.bridgeUrl}/call-plans`,
+            {
+              userId: uid,
+              userName: this.userName,
+              agentId: this.agentId,
+              agentName: this.agentName,
+              purpose: String(data.purpose || 'Test call — just making sure the line rings and you can answer.').slice(0, 300),
+              in_minutes: 1,
+              ringtone: data.ringtone || undefined,
+            },
+            { timeout: 15000, headers: this._hdrs() },
+          );
+          const made = (mk.data || {}).plan;
+          if (!made) return `Couldn't set up the test ring: ${JSON.stringify(mk.data || {}).slice(0, 160)}. Do not claim it rang.`;
+          const fr = await axios.post(`${this.bridgeUrl}/call-plans/fire`, { id: String(made.id) }, { timeout: 30000, headers: this._hdrs() });
+          const fd = fr.data || {};
+          if (fd.ok && fd.sent > 0) return `Their phone is ringing right now (${fd.ringtone || made.ringtone || 'their app default'}). When they tap Answer they'll land in a live call with you.`;
+          if (fd.blocked) return `The test ring was blocked — ${fd.blocked}. Say so plainly.`;
+          if (fd.ok && fd.sent === 0) return 'No phone is linked for calls yet — ask them to open the Kade-AI app once (a recent version) so it can register, then try again.';
+          return `Test result unclear: ${JSON.stringify(fd).slice(0, 160)}. Do not claim it rang.`;
+        }
         const r = await axios.post(`${this.bridgeUrl}/call-plans/fire`, { id: String(data.plan_id) }, { timeout: 30000, headers: this._hdrs() });
         const d = r.data || {};
         if (d.ok && d.sent > 0) return `Their phone is ringing right now (${d.ringtone}). When they tap Answer they'll land in a live call with you.`;
