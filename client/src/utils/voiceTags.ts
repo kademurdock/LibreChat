@@ -32,7 +32,11 @@ const VOICE_TAG_RE = /%%%([\s\S]*?)%%%/g;
  * prose that legitimately contains doubled percent signs (e.g. printf-style
  * "%%d" in code discussions) is left alone as much as possible.
  */
-const SLOPPY_VOICE_TAG_RE = /%{2,4}([a-zA-Z][a-zA-Z ’',!-]{0,60}?)%{2,4}/g;
+// Aug 21 2026 (the length-cap sweep, after the admin scrub's 81-char cap bit
+// live): v130+ personas teach LAYERED directions that outgrow every old cap,
+// and the old charset refused digits and periods -- the same two gaps the TTS
+// normalizer fixed July 27. Widened to match: anything but % or newline, 160.
+const SLOPPY_VOICE_TAG_RE = /%{2,4}([a-zA-Z][^%\n]{0,160}?)%{2,4}/g;
 
 /**
  * Aug 6 2026 — multi-speaker voice SCENES (ideas 16+52). A saved message can

@@ -1127,7 +1127,7 @@ const logsScrub = (text) => {
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/(^|[^*\w])\*(\S(?:[^*\n]{0,58}\S)?)\*(?!\*)/g, '$1$2')
     .replace(/\*{2,}/g, '')
-    .replace(/%{2,4}[a-zA-Z][^%\n]{0,80}%{2,4}/g, '')
+    .replace(/%{2,4}[a-zA-Z][^%\n]{0,160}%{2,4}/g, '')
     .replace(/%{2,}/g, '')
     .replace(/\[(?:sound:[a-z0-9_]+|table:[a-z0-9]{1,12})\]/gi, '')
     .replace(/\[END CALL\]/gi, '')
