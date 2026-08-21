@@ -102,6 +102,8 @@ async function alertOwnerNewFeedback(doc, knownReporterName) {
             body: `${who}${via}${subject}`.slice(0, 300),
             userId: owner,
             adminAlert: true,
+            /* Part 83: land the tap on the bug window, not the launch chat. */
+            route: 'feedback',
           }),
         });
         const out = await r.json().catch(() => ({}));
