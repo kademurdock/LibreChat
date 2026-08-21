@@ -313,6 +313,23 @@ router.get('/voice-report', async (req, res) => {
         /\b(?:that|it|this)[’']?s not (?:just |only )?[^.!?\n]{2,60}?[—,;.-]+\s*(?:that|it|this)[’']?s\b|\b(?:isn|aren)[’']?t (?:just |only |really )?(?:about )?[^.!?\n]{2,50}?[,.;—]+\s*(?:it|that|this|they)[’']?(?:s|re)\b|\byou (?:didn[’']?t|weren[’']?t|aren[’']?t) (?:just |only )?[^.!?\n]{2,50}?[,.;—]+\s*you\b/i,
       heresThe: /\bhere[’']?s the thing\b/i,
       gush: /\b(?:i (?:wanna|want to|need to) know everything|tell me everything|every single (?:detail|thing)|i want (?:all|every bit) of it)\b/i,
+      // Part 81 (her verbatim: nominalism / "that part" / meme-fight) —
+      // calibrated shapes, mirrored from the reframe detectors:
+      nominal: /\b(?:that|it|this)[’']?s the [a-z]+ing\s*(?=[.,!?;—-])|\bthe being [a-z]+/i,
+      thatPart: /(?:^|[.!?]\s+)That part[.!](?:\s|$)/m,
+      memeCombat: /\bi (?:will|[’']ll|would|[’']d) fight (?:you|anyone|somebody)\b|\bdie on th(?:is|at) hill\b|\bfight me on this\b|\bthrow hands\b/i,
+    };
+    // Parallel/restatement radar — MEASURE ONLY (never enforced: the overlap
+    // net also catches stepwise directions, which must never be rewritten).
+    const STOPW = new Set('i you it that this a an the and or but so to of in on for is am are was were be been do does did not no yes just really very my your me we if then than as at by with about like got get gonna wanna'.split(' '));
+    const cwords = (s) => (String(s).toLowerCase().match(/[a-z']+/g) || []).filter((w) => !STOPW.has(w));
+    const pairOverlap = (a, b) => {
+      const A = new Set(cwords(a));
+      const B = new Set(cwords(b));
+      if (A.size < 4 || B.size < 4) return 0;
+      let k = 0;
+      for (const w of A) if (B.has(w)) k++;
+      return k / Math.max(A.size, B.size);
     };
     let n = 0;
     let chars = 0;
@@ -322,13 +339,29 @@ router.get('/voice-report', async (req, res) => {
     let reframes = 0;
     let heres = 0;
     let gush = 0;
+    let nominal = 0;
+    let thatPart = 0;
+    let memeCombat = 0;
+    let parallelPairs = 0;
+    let tagsTotal = 0;
+    let commaTags = 0;
+    const tagPhrases = {};
     const firstWords = {};
     const closers = {};
+    const TAGS_RE = /%%%([^%\n]{1,160})%%%/g;
     for (const m of rows) {
       const raw = getText(m).trim();
       if (!raw || raw.length < 40) continue;
       n++;
       if (raw.startsWith('%%%')) tagOpened++;
+      let tm;
+      TAGS_RE.lastIndex = 0;
+      while ((tm = TAGS_RE.exec(raw)) !== null) {
+        tagsTotal++;
+        if (/[,;.]/.test(tm[1])) commaTags++;
+        const key = tm[1].toLowerCase().trim();
+        tagPhrases[key] = (tagPhrases[key] || 0) + 1;
+      }
       const t = stripTags(raw).trim();
       chars += t.length;
       words += t.split(/\s+/).length;
@@ -336,9 +369,22 @@ router.get('/voice-report', async (req, res) => {
       if (RE.reframe.test(t)) reframes++;
       if (RE.heresThe.test(t)) heres++;
       if (RE.gush.test(t)) gush++;
+      if (RE.nominal.test(t)) nominal++;
+      if (RE.thatPart.test(t)) thatPart++;
+      if (RE.memeCombat.test(t)) memeCombat++;
       const fw = ((t.match(/^[A-Za-z']+/) || [''])[0] || '').toLowerCase();
       if (fw) firstWords[fw] = (firstWords[fw] || 0) + 1;
       const sentences = t.split(/(?<=[.!?])\s+/).filter(Boolean);
+      for (let si = 1; si < sentences.length; si++) {
+        if (
+          sentences[si - 1].split(/\s+/).length >= 8 &&
+          sentences[si].split(/\s+/).length >= 8 &&
+          pairOverlap(sentences[si - 1], sentences[si]) >= 0.5
+        ) {
+          parallelPairs++;
+          break;
+        }
+      }
       const last = (sentences[sentences.length - 1] || '').toLowerCase().replace(/[^a-z ?]/g, '').trim();
       if (last.length >= 12) closers[last] = (closers[last] || 0) + 1;
     }
@@ -360,6 +406,17 @@ router.get('/voice-report', async (req, res) => {
       reframePivots: reframes,
       heresTheThing: heres,
       everythingGush: gush,
+      nominalizations: nominal,
+      thatPartMeme: thatPart,
+      memeCombat,
+      parallelPairs,
+      tagsTotal,
+      commaTags,
+      avgTagsPerReply: n ? Math.round((tagsTotal / n) * 10) / 10 : 0,
+      topTagPhrase: (() => {
+        const top = Object.entries(tagPhrases).sort((a, b) => b[1] - a[1])[0];
+        return top && top[1] >= 4 ? { text: top[0].slice(0, 60), count: top[1] } : null;
+      })(),
       topFirstWords: topFirst,
       repeatedCloser:
         topCloser && topCloser[1] >= 3
