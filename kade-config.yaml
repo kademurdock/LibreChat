@@ -62,7 +62,9 @@ endpoints:
         # this only controls what the picker offers. Every model here was
         # verified live on OpenRouter July 2026.
         default: [
-          "z-ai/glm-5.2",              # house default — smart, reliable tools
+          "z-ai/glm-5.3",              # house default since Aug 21 2026 (Part 75): same
+                                       # price as 5.2 on the DIRECT Z.ai pot, newest GLM
+          "z-ai/glm-5.2",              # prior default — smart, reliable tools
           # "minimax/minimax-m2-her" REMOVED July 2 2026: its single OpenRouter
           # endpoint supports NO tools param — any agent with tools on it fails
           # near-silently with empty turns (this silently broke Zadiana for a
@@ -122,7 +124,15 @@ endpoints:
       # including the deliberately vague opener ("Landlord blowing off broken
       # back step" from a chat that starts with "hey").
       # Revert = "google/gemini-2.5-flash-lite" back on this line.
-      titleModel: "deepseek/deepseek-v4-flash"
+      # Aug 21 2026 (Part 75, her word "everything in the glm pot"): titles move to
+      # GLM-4.7-FlashX on the DIRECT Z.ai pot ($0.07/M in, $0.40/M out, cache $0.01).
+      # Output is pricier than v4-flash's $0.165 but titles are ~10 tokens — noise.
+      # What this actually buys: off the UNPINNED OpenRouter flash pool (18-30 hosts
+      # incl. the banned Sail Research — the roulette class that produced the Sail
+      # salad). The July-16 think-leak regression is IMPOSSIBLE here: reframe's
+      # adaptForZai forces thinking:{disabled} for the 4.7 utility tier.
+      # Revert = put "deepseek/deepseek-v4-flash" back on this line.
+      titleModel: "z-ai/glm-4.7-flashx"
       # Custom title prompt (July 14 2026; REWRITTEN July 18 2026): the July-14
       # version included literal examples with real names ("Planning Skylee's
       # birthday call") and the small title model COPIED the example pattern on
@@ -223,7 +233,12 @@ summarization:
   # which is free here — compaction is rare and blocks nobody.
   # Revert = put "mistralai/mistral-small-2603" back on this line.
   provider: "OpenRouter"
-  model: "deepseek/deepseek-v4-flash"
+  # Aug 21 2026 (Part 75): compaction joins the Z.ai pot — GLM-4.5-Air ($0.20/$1.10,
+  # cache $0.03), thinking forced off proxy-side. Auditioned live before the swap:
+  # 5/5 facts + the emotional line preserved on a real-shaped transcript in 2.45s.
+  # (FlashX auditioned FIRST and flunked the sibling memory test — 43.9s, zero tool
+  # calls — so the cheap tier stays on titles only.) Revert = "deepseek/deepseek-v4-flash".
+  model: "z-ai/glm-4.5-air"
   parameters:
     temperature: 0.3
   # Fire when the payload crosses 90% of the agent's effective window (and
@@ -310,7 +325,17 @@ memory:
     # NOT switched to deepseek-v4-pro on purpose: it is a REASONING model, ~10x the cost
     # here, and it returned EMPTY content in testing (reasoning ate the whole budget).
     # Revert = put "mistralai/mistral-small-2603" back on this line.
-    model: "deepseek/deepseek-v4-flash"
+    # Aug 21 2026 (Part 75, her word "everything in the glm pot"): memory writer
+    # joins the DIRECT Z.ai pot — GLM-4.5-Air ($0.20/$1.10, cache $0.03), native tool
+    # calling (glm is NOT in reframe's TOOL_SHIM_MODELS), thinking forced off proxy-
+    # side. AUDITIONED BEFORE THE SWAP, her Aug-15 taste rules as the bar: set_memory
+    # fired in 2.39s and the card KEPT THE FEELING ("She was relieved and cried on
+    # the phone"); bait question correctly saved nothing. FlashX auditioned first and
+    # FLUNKED (43.9s, zero tool calls on a clearly memorable fact) — disqualified.
+    # ⚠️ Taste watch stands: read the first day of Air cards; if they flatten, bump
+    # to "z-ai/glm-4.7" (same pot). Revert to v4-flash = the OR roulette (Sail on
+    # the roster) — prefer the 4.7 bump.
+    model: "z-ai/glm-4.5-air"
     model_parameters:
       temperature: 0.3
     instructions: |
