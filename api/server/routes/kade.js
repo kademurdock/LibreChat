@@ -1120,6 +1120,13 @@ const logsScrub = (text) => {
     // 2-4-percent pass stays for typo'd tags, and a residual sweep eats any
     // orphaned %%-runs (a swallowed delimiter always beats a shown one).
     .replace(/%%%[\s\S]*?%%%/g, '')
+    // Aug 21 2026 (Kade, same admin-log read-through: "I saw stars * on the
+    // logs output"): markdown emphasis markers, same rules as the native
+    // sanitizer -- markers vanish, words survive. Span must start/end on
+    // non-space so "2 * 3 * 4" keeps its operators.
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/(^|[^*\w])\*(\S(?:[^*\n]{0,58}\S)?)\*(?!\*)/g, '$1$2')
+    .replace(/\*{2,}/g, '')
     .replace(/%{2,4}[a-zA-Z][^%\n]{0,80}%{2,4}/g, '')
     .replace(/%{2,}/g, '')
     .replace(/\[(?:sound:[a-z0-9_]+|table:[a-z0-9]{1,12})\]/gi, '')

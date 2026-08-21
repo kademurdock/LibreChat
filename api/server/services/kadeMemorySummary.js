@@ -83,6 +83,8 @@ You will get the PREVIOUS summary (may be empty) and the LATEST conversation. Wr
 - drops anything now resolved, stale, or no longer relevant;
 - is usually a focused paragraph or two, in plain warm sentences -- as long as it genuinely needs to be to hold what's going on, but a SUMMARY of what's current, never a transcript or a padded retelling.
 
+THE DATE LAW (Aug 21 2026 — the dry-socket bug: a summary said "Tomorrow is the big appointment," was read back a day later, and the companion repeated "tomorrow" a day late until the user corrected her): NEVER write relative time into the summary. No "tomorrow," "tonight," "yesterday," "this weekend," "next Thursday." You are told TODAY'S date — convert every time reference to the absolute weekday and date ("her mom's dry socket appointment is Thursday Aug 21"). A relative word freezes at the moment you write it and becomes a lie when the summary is read later.
+
 Do NOT list durable facts that belong in permanent memory (names, birthdays, diagnoses, preferences) — those are stored elsewhere; capture the STORY and what's current, not a profile. Write in third person about the user ("She's been..."). Output ONLY the summary text — no preamble, no headings, no quotes, no bullet points.`;
 
 /** Turn a list of {role,text} turns into a compact transcript string (tail-capped). */
@@ -151,7 +153,12 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
       maxRetries: 0,
     };
 
+    const todayLine = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Chicago',
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    }).format(new Date());
     const userContent =
+      `TODAY IS: ${todayLine} (US Central). Convert every relative time reference to an absolute date.\n\n` +
       `CHARACTER: ${agentName || 'the companion'}\n\n` +
       `PREVIOUS SUMMARY (may be empty):\n${priorText || '(none yet)'}\n\n` +
       `LATEST CONVERSATION:\n${convo}\n\n` +
@@ -249,15 +256,38 @@ async function getRelationshipSummaryText(userId, agentId) {
  * cards). Returns '' when there's nothing to inject.
  */
 async function getRelationshipSummaryBlock(userId, agentId) {
-  const s = await getRelationshipSummaryText(userId, agentId);
-  if (!s) {
+  try {
+    if (!enabled() || !userId || !agentId) {
+      return '';
+    }
+    const row = await getMemorySummary(userId, agentId);
+    const s = (row && row.summary) || '';
+    if (!s) {
+      return '';
+    }
+    /* Aug 21 2026: the block now names WHEN it was written. Old summaries
+     * (and any writer slip) can still carry relative words; an "as of" date
+     * lets the model do the arithmetic instead of repeating "tomorrow" a day
+     * late — the exact dry-socket failure Kade caught in Amber L's log. */
+    let asOf = '';
+    try {
+      const when = row.refreshedAt || row.updatedAt;
+      if (when) {
+        asOf = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Chicago', weekday: 'long', month: 'long', day: 'numeric',
+        }).format(new Date(when));
+      }
+    } catch (_) {}
+    return (
+      `# What's been going on lately` + (asOf ? ` (as of ${asOf})` : '') + `\n` +
+      `Recent context for THIS person and you — use it naturally like you remember their life; ` +
+      `do not recite it or read it as a list.` +
+      (asOf ? ` Any "tomorrow"/"tonight" in here was relative to ${asOf}, not to today — do the date math, and if you can't place an event confidently, ask instead of guessing.` : '') +
+      `\n${s}`
+    );
+  } catch (_) {
     return '';
   }
-  return (
-    `# What's been going on lately\n` +
-    `Recent context for THIS person and you — use it naturally like you remember their life; ` +
-    `do not recite it or read it as a list:\n${s}`
-  );
 }
 
 module.exports = {
