@@ -117,4 +117,147 @@ router.post('/restart', (req, res) => {
   setTimeout(() => process.exit(1), 1500);
 });
 
+
+/* ── KADE Aug 21 2026 (Part 76) — MEMORY HEALTH, read-only ────────────────────
+ * Forge's report, item 9: "memory failures are silent by nature; make them
+ * loud." The Part-71 lesson earns it: the consolidation sweep once no-opped
+ * for a MONTH while returning ok:true to the bridge. This endpoint gives that
+ * silence a number. The bridge folds it into /platform-status (same
+ * BRIDGE_SECRET the clock pokes already ride).
+ *
+ * COUNTS AND AGES ONLY by default — no card/diary text leaves this route
+ * unless KADE_MEMORY_HEALTH_ECHO_PREVIEW=1 (her flip; payload is admin-gated
+ * either way; previews are clipped to 80 chars).
+ *
+ * ECHOES = Forge's anniversary item, DETECTION ONLY: diary entries and active
+ * cards whose month-day matches today (US Central), at least ~28 days back.
+ * The platform is ~2 months old, so these speak in months; year phrasing
+ * comes free with age (monthsAgo % 12). NOTHING is injected into any
+ * conversation from here — surfacing echoes as companion openers stays
+ * parked for her word (and for after the Aug-27 drift re-measure, so the
+ * measurement window stays clean).
+ *
+ * Kill switch: KADE_MEMORY_HEALTH=0 (route answers {disabled:true}).
+ * All reads are tiny (hundreds of rows, count + single-doc sorts + one
+ * $dateToString aggregate capped at 20). */
+router.get('/memory-health', async (req, res) => {
+  if (!authed(req, res)) return;
+  if (process.env.KADE_MEMORY_HEALTH === '0') {
+    return res.json({ ok: false, disabled: true });
+  }
+  try {
+    const mongoose = require('mongoose');
+    const { getLastSweepRunAt } = require('~/models/memoryConsolidationSweepState');
+    const db = mongoose.connection.db;
+    const now = Date.now();
+    const DAY = 864e5;
+    const hoursAgo = (t) => (t ? Math.round(((now - new Date(t).getTime()) / 36e5) * 10) / 10 : null);
+    const daysAgo = (t) => (t ? Math.round((now - new Date(t).getTime()) / DAY) : null);
+    const centralParts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date());
+    const cp = (t) => centralParts.find((p) => p.type === t).value;
+    const todayKey = `${cp('year')}-${cp('month')}-${cp('day')}`;
+    const previewOn = process.env.KADE_MEMORY_HEALTH_ECHO_PREVIEW === '1';
+    const clip = (s) => (typeof s === 'string' && s.length > 80 ? `${s.slice(0, 77)}...` : s);
+    const monthsBetween = (thenMs) => Math.max(1, Math.round((now - thenMs) / (30.44 * DAY)));
+
+    const mem = db.collection('memoryentries');
+    const diary = db.collection('kadediaryentries');
+    const summaries = db.collection('kadememorysummaries');
+
+    const [cardsActive, cardsSuperseded, cardsWrote24h] = await Promise.all([
+      mem.countDocuments({ status: 'active' }),
+      mem.countDocuments({ status: 'superseded' }),
+      mem.countDocuments({ updated_at: { $gte: new Date(now - DAY) } }),
+    ]);
+    const [newestCard] = await mem.find({}, { projection: { updated_at: 1 } })
+      .sort({ updated_at: -1 }).limit(1).toArray();
+    const [stalestCard] = await mem.find({ status: 'active' }, { projection: { updated_at: 1, key: 1 } })
+      .sort({ updated_at: 1 }).limit(1).toArray();
+
+    const [diaryTotal, diaryWrote24h] = await Promise.all([
+      diary.countDocuments({}),
+      diary.countDocuments({ createdAt: { $gte: new Date(now - DAY) } }),
+    ]);
+    const [newestDiary] = await diary.find({}, { projection: { createdAt: 1 } })
+      .sort({ createdAt: -1 }).limit(1).toArray();
+
+    const summariesTotal = await summaries.countDocuments({});
+    const [newestSummary] = await summaries.find({}, { projection: { updatedAt: 1 } })
+      .sort({ updatedAt: -1 }).limit(1).toArray();
+
+    let consolidationLastRunAt = null;
+    try { consolidationLastRunAt = await getLastSweepRunAt(); } catch { /* best-effort */ }
+
+    /* Echoes match on DAY-OF-MONTH, not month-day: the platform is ~2 months
+     * old, so a strict "same date last year" check would stay silent until
+     * June 2027. Day-of-month marks ("a month ago today", "three months ago
+     * today") fire on the history the family actually has; when the estate is
+     * old enough, monthsAgo % 12 === 0 phrases them as years for free. Both
+     * lanes exclude the young (< ~28 days) so yesterday's card is not an
+     * "anniversary", return the OLDEST first (the deepest echoes are the
+     * point), and cap at 8 each. */
+    const dd = cp('day');
+    const cutoffKey = new Date(now - 28 * DAY).toISOString().slice(0, 10);
+    const diaryEchoRows = await diary.find(
+      { entryDate: { $regex: `-${dd}$`, $lte: cutoffKey, $ne: todayKey } },
+      { projection: { entryDate: 1, userId: 1, agentId: 1, text: 1 } },
+    ).sort({ entryDate: 1 }).limit(8).toArray();
+    const cardEchoRows = await mem.aggregate([
+      { $match: { status: 'active', updated_at: { $lte: new Date(now - 28 * DAY) } } },
+      { $addFields: { dom: { $dateToString: { format: '%d', date: '$updated_at', timezone: 'America/Chicago' } } } },
+      { $match: { dom: dd } },
+      { $sort: { updated_at: 1 } },
+      { $project: { key: 1, updated_at: 1, userId: 1, agentId: 1, value: 1 } },
+      { $limit: 8 },
+    ]).toArray();
+    const echoes = [
+      ...diaryEchoRows.map((r) => ({
+        kind: 'diary', when: r.entryDate, monthsAgo: monthsBetween(Date.parse(`${r.entryDate}T12:00:00Z`)),
+        userId: String(r.userId || '').slice(-6), agentId: r.agentId || null,
+        ...(previewOn ? { preview: clip(r.text) } : {}),
+      })),
+      ...cardEchoRows.map((r) => ({
+        kind: 'card', when: new Date(r.updated_at).toISOString().slice(0, 10),
+        monthsAgo: monthsBetween(new Date(r.updated_at).getTime()),
+        userId: String(r.userId || '').slice(-6), agentId: r.agentId || null, key: r.key,
+        ...(previewOn ? { preview: clip(r.value) } : {}),
+      })),
+    ];
+
+    res.json({
+      ok: true,
+      todayCentral: todayKey,
+      cards: {
+        active: cardsActive,
+        superseded: cardsSuperseded,
+        wrote24h: cardsWrote24h,
+        newestAgeHours: hoursAgo(newestCard && newestCard.updated_at),
+        stalestActiveAgeDays: daysAgo(stalestCard && stalestCard.updated_at),
+        stalestActiveKey: stalestCard ? stalestCard.key : null,
+      },
+      diary: {
+        entries: diaryTotal,
+        wrote24h: diaryWrote24h,
+        newestAgeHours: hoursAgo(newestDiary && newestDiary.createdAt),
+      },
+      summaries: {
+        rows: summariesTotal,
+        newestRefreshAgeHours: hoursAgo(newestSummary && newestSummary.updatedAt),
+      },
+      consolidation: {
+        lastRunAt: consolidationLastRunAt,
+        ageHours: hoursAgo(consolidationLastRunAt),
+        engine: (process.env.KADE_SWEEP_ENGINE || 'v2').trim().toLowerCase(),
+      },
+      echoes,
+      echoPreviews: previewOn,
+    });
+  } catch (e) {
+    logger.error('[kadeClock] memory-health failed:', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 module.exports = router;
