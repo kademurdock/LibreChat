@@ -260,9 +260,29 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'glm-4': { prompt: 0.1, completion: 0.1 },
     'glm-4-32b': { prompt: 0.1, completion: 0.1 },
     'glm-4.5': { prompt: 0.35, completion: 1.55 },
-    'glm-4.5-air': { prompt: 0.14, completion: 0.86 },
+    'glm-4.5-air': { prompt: 0.2, completion: 1.1 }, // KADE Aug 21 2026: current Z.ai sticker (was stale 0.14/0.86); runs memory+compaction now
     'glm-4.5v': { prompt: 0.6, completion: 1.8 },
     'glm-4.6': { prompt: 0.5, completion: 1.75 },
+    /* KADE Aug 21 2026 (Part 75) — THE $6/M DEFAULT-RATE HOLE, plugged. The
+     * fleet moved to z-ai/glm-5.2 Aug 17 with NO key below matching it, so
+     * findMatchingPattern missed, getValueKey returned undefined, and EVERY
+     * chat turn billed families at defaultRate 6 both directions — 4.3x the
+     * real sticker on prompt, and ~12x the cache-effective rate. Receipts:
+     * Amber Lacey $12.07 internal in 3 days against roughly $2-3 of real
+     * spend; fleet window $32.12 internal vs ~$2.60 actual on the pot.
+     * Prices below are Z.ai's own stickers (docs.z.ai pricing, checked
+     * 2026-08-21). Prompt cache discounts are NOT modeled by this meter, so
+     * sticker billing still runs above true effective cost — revisit with a
+     * week of Z.ai traffic if the family should ride closer to effective. */
+    'glm-5.3': { prompt: 1.4, completion: 4.4 },
+    'glm-5.2': { prompt: 1.4, completion: 4.4 },
+    'glm-5.1': { prompt: 1.4, completion: 4.4 },
+    'glm-5-turbo': { prompt: 1.2, completion: 4.0 },
+    'glm-5': { prompt: 1.4, completion: 4.4 },
+    'glm-4.7-flashx': { prompt: 0.07, completion: 0.4 },
+    'glm-4.7': { prompt: 0.6, completion: 2.2 },
+    'deepseek-v4-flash': { prompt: 0.07, completion: 0.17 },
+    'gemini-3.1-flash-lite': { prompt: 0.25, completion: 1.5 },
     qwen: { prompt: 0.08, completion: 0.33 },
     'qwen2.5': { prompt: 0.08, completion: 0.33 },
     'qwen-turbo': { prompt: 0.05, completion: 0.2 },
