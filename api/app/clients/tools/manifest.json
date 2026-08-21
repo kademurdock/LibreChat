@@ -99,6 +99,14 @@
     "authConfig": []
   },
   {
+    "name": "Song Lyrics",
+    "pluginKey": "kade_lyrics",
+    "description": "Looks up song lyrics by artist and title from open lyric services (LRCLIB) — built for the job, so lyric-site bot walls can't block it. Free. Try: \"pull up the lyrics to Gethsemane by Sleep Token.\"",
+    "icon": "https://lrclib.net/favicon.ico",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Wikipedia",
     "pluginKey": "kade_wikipedia",
     "description": "Looks things up on Wikipedia — people, places, history, science — so answers come from the encyclopedia instead of memory. Free. It only knows what Wikipedia knows. Try: \"who was Bass Reeves?\"",

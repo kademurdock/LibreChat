@@ -246,6 +246,21 @@ export const kadeWikipediaSchema: ExtendedJsonSchema = {
   required: ['query'],
 };
 
+export const kadeLyricsSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    artist: {
+      type: 'string',
+      description: "Artist name, e.g. 'Sleep Token'.",
+    },
+    title: {
+      type: 'string',
+      description: "Song title, e.g. 'Gethsemane'.",
+    },
+  },
+  required: ['artist', 'title'],
+};
+
 export const kadeFeedbackSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -1133,6 +1148,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Look up a topic on Wikipedia — free, instant, no cost. Best for stable encyclopedic facts (people, places, history, science). For breaking news or local/current info use web_search instead. NEVER invent article content; only report what this tool returns.',
     schema: kadeWikipediaSchema,
+    toolType: 'builtin',
+  },
+  kade_lyrics: {
+    name: 'kade_lyrics',
+    description:
+      "Look up the lyrics of a song by artist and title — free, instant, no cost. Built for lyric lookups: use THIS (never web_search or kade_read_page — lyric sites block page readers) whenever someone asks about a song's words, quotes a lyric, or wants a verse checked. Quote what it returns faithfully and NEVER invent lines it did not return; if it misses, ask the person to paste the part they mean.",
+    schema: kadeLyricsSchema,
     toolType: 'builtin',
   },
   kade_feedback: {

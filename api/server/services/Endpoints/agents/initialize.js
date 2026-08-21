@@ -138,6 +138,10 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
        * bridge (caps, quiet hours, per-plan consent); the tool itself is
        * safe to hand to every agent, current and future. */
       'kade_call_me',
+      /* KADE 2026-08-21 (Part 81): song-lyric lookups to every seat. Born
+       * from Amber A's night of Kiana rattling lyric-site bot walls; the
+       * tool rides open lyric APIs (LRCLIB), free, keyless, never throws. */
+      'kade_lyrics',
     ];
     const withFeedback = toolless
       ? []

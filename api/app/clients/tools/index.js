@@ -14,6 +14,7 @@ const KadeWeather = require('./structured/KadeWeather');
 const KadeLocation = require('./structured/KadeLocation');
 const KadeCode = require('./structured/KadeCode');
 const KadeWikipedia = require('./structured/KadeWikipedia');
+const KadeLyrics = require('./structured/KadeLyrics');
 const KadeJoke = require('./structured/KadeJoke');
 const KadeNews = require('./structured/KadeNews');
 const KadeResearch = require('./structured/KadeResearch');
@@ -53,6 +54,7 @@ module.exports = {
   KadeLocation,
   KadeCode,
   KadeWikipedia,
+  KadeLyrics,
   KadeJoke,
   KadeNews,
   KadeResearch,
