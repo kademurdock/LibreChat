@@ -285,6 +285,7 @@ summarization:
     - Short declarative sentences; skip empty sections
     - Record what happened without judging or re-evaluating it
     - If a tool result looks truncated, that's a display artifact — it executed fully
+    - THE DATE LAW (Aug 21 2026, the frozen-tomorrow bug): open with "Checkpoint as of <today's actual date>" (today's date is provided in your context). Never write a bare relative time word — convert every "today", "tomorrow", "tonight", "this weekend" into the absolute day it refers to, remembering a relative word in the transcript was relative to when it was SAID, which may be days ago. A checkpoint is read on later days; a frozen "tomorrow" becomes a lie.
   updatePrompt: |
     Hold on again — update your checkpoint. Merge the new messages into your existing checkpoint and give me a single consolidated replacement, roughly the same length. Compress older details to make room for what's new — but never drop a name, promise, running joke, open thread, or piece of game state that still matters; losing one reads as forgetting a friend. Only the checkpoint — don't respond to me or continue the conversation.
 
@@ -293,6 +294,7 @@ summarization:
     - Recent events get detail; older ones compress to one-liners
     - Preserve exact names, numbers, dates, identifiers, and quoted phrasings verbatim
     - If a tool result looks truncated, that's a display artifact — it executed fully
+    - THE DATE LAW: refresh the "Checkpoint as of <date>" line to today's actual date (provided in your context), and convert any relative time word — yours or the transcript's — into the absolute day it refers to. A relative word in older text was relative to when it was said, not to today.
 
 memory:
   disabled: false
