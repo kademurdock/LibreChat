@@ -260,4 +260,116 @@ router.get('/memory-health', async (req, res) => {
   }
 });
 
+/* ── VOICE REPORT (Part 80, Aug 21 2026) — Kade's ear, automated. ───────────
+ *
+ * Her words: "This tuning by ear is really all I can do, look at people's
+ * chats and flag stuff I notice." This endpoint does the flagging every day:
+ * compact style stats over the last 24h of Kiana's replies, counts only —
+ * NO user content, and the only text that leaves is Kiana-authored (a
+ * repeated closer clipped to 80 chars). The bridge folds a spoken line into
+ * /platform-status, so the morning report reads her voice's vitals daily.
+ *
+ * The tell-set mirrors the reframe proxy's detector families in compact
+ * form (the proxy owns enforcement; this owns MEASUREMENT — if the two
+ * drift, the proxy is the truth for what trips, this is the truth for
+ * trendlines):
+ *   - reframe pivots ("that's not X, that's Y" and kin)
+ *   - tag-opened share (the 99% metronome, measured Aug 21)
+ *   - question closers · avg length · "here's the thing" · everything-gush
+ *   - top first words + most-repeated closer (lock-in radar)
+ * Kill: KADE_VOICE_REPORT=0. Reads one indexed 24h window, capped. */
+router.get('/voice-report', async (req, res) => {
+  if (!authed(req, res)) return;
+  if (process.env.KADE_VOICE_REPORT === '0') {
+    return res.json({ ok: false, disabled: true });
+  }
+  try {
+    const mongoose = require('mongoose');
+    const db = mongoose.connection.db;
+    const KIANA = process.env.KADE_VOICE_REPORT_AGENT || 'agent_6llV0eMu4fmIaj8f2x1Sb';
+    const since = new Date(Date.now() - 24 * 36e5);
+    const rows = await db
+      .collection('messages')
+      .find(
+        { model: KIANA, isCreatedByUser: false, createdAt: { $gte: since } },
+        { projection: { text: 1, content: 1, createdAt: 1 } },
+      )
+      .sort({ createdAt: -1 })
+      .limit(600)
+      .toArray();
+    const getText = (m) => {
+      let t = String(m.text || '');
+      if (!t && Array.isArray(m.content)) {
+        t = m.content
+          .filter((p) => p && p.type === 'text')
+          .map((p) => (p.text && p.text.value) || p.text || '')
+          .join(' ');
+      }
+      return t;
+    };
+    const stripTags = (t) => String(t).replace(/%%%[^%]*%%%/g, ' ');
+    const RE = {
+      reframe:
+        /\b(?:that|it|this)[’']?s not (?:just |only )?[^.!?\n]{2,60}?[—,;.-]+\s*(?:that|it|this)[’']?s\b|\b(?:isn|aren)[’']?t (?:just |only |really )?(?:about )?[^.!?\n]{2,50}?[,.;—]+\s*(?:it|that|this|they)[’']?(?:s|re)\b|\byou (?:didn[’']?t|weren[’']?t|aren[’']?t) (?:just |only )?[^.!?\n]{2,50}?[,.;—]+\s*you\b/i,
+      heresThe: /\bhere[’']?s the thing\b/i,
+      gush: /\b(?:i (?:wanna|want to|need to) know everything|tell me everything|every single (?:detail|thing)|i want (?:all|every bit) of it)\b/i,
+    };
+    let n = 0;
+    let chars = 0;
+    let words = 0;
+    let tagOpened = 0;
+    let qClose = 0;
+    let reframes = 0;
+    let heres = 0;
+    let gush = 0;
+    const firstWords = {};
+    const closers = {};
+    for (const m of rows) {
+      const raw = getText(m).trim();
+      if (!raw || raw.length < 40) continue;
+      n++;
+      if (raw.startsWith('%%%')) tagOpened++;
+      const t = stripTags(raw).trim();
+      chars += t.length;
+      words += t.split(/\s+/).length;
+      if (/[?]\s*$/.test(t)) qClose++;
+      if (RE.reframe.test(t)) reframes++;
+      if (RE.heresThe.test(t)) heres++;
+      if (RE.gush.test(t)) gush++;
+      const fw = ((t.match(/^[A-Za-z']+/) || [''])[0] || '').toLowerCase();
+      if (fw) firstWords[fw] = (firstWords[fw] || 0) + 1;
+      const sentences = t.split(/(?<=[.!?])\s+/).filter(Boolean);
+      const last = (sentences[sentences.length - 1] || '').toLowerCase().replace(/[^a-z ?]/g, '').trim();
+      if (last.length >= 12) closers[last] = (closers[last] || 0) + 1;
+    }
+    const pct = (x) => (n ? Math.round((100 * x) / n) : 0);
+    const topFirst = Object.entries(firstWords)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([w, c]) => ({ word: w, count: c, pct: pct(c) }));
+    const topCloser = Object.entries(closers).sort((a, b) => b[1] - a[1])[0] || null;
+    res.json({
+      ok: true,
+      windowHours: 24,
+      agentId: KIANA,
+      replies: n,
+      avgChars: n ? Math.round(chars / n) : 0,
+      avgWords: n ? Math.round(words / n) : 0,
+      tagOpenedPct: pct(tagOpened),
+      questionCloserPct: pct(qClose),
+      reframePivots: reframes,
+      heresTheThing: heres,
+      everythingGush: gush,
+      topFirstWords: topFirst,
+      repeatedCloser:
+        topCloser && topCloser[1] >= 3
+          ? { text: topCloser[0].slice(0, 80), count: topCloser[1] }
+          : null,
+    });
+  } catch (e) {
+    logger.error('[kadeClock] voice-report failed:', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 module.exports = router;
