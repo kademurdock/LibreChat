@@ -1112,7 +1112,16 @@ const logsScrub = (text) => {
   return String(text)
     .replace(/:::thinking[\s\S]*?:::\n?/g, '')
     .replace(/<think>[\s\S]*?<\/think>\n?/g, '')
+    // Aug 21 2026 (Kade, reading Amber L's log: "I see some tags"): the old
+    // single pass capped tag content at 81 chars, and the v130+ personas
+    // teach LAYERED directions that run longer -- the live survivor was an
+    // 89-char tag. Canonical pass is now UNBOUNDED (same as the native
+    // sanitizer and the TTS converter, which never had this cap), the sloppy
+    // 2-4-percent pass stays for typo'd tags, and a residual sweep eats any
+    // orphaned %%-runs (a swallowed delimiter always beats a shown one).
+    .replace(/%%%[\s\S]*?%%%/g, '')
     .replace(/%{2,4}[a-zA-Z][^%\n]{0,80}%{2,4}/g, '')
+    .replace(/%{2,}/g, '')
     .replace(/\[(?:sound:[a-z0-9_]+|table:[a-z0-9]{1,12})\]/gi, '')
     .replace(/\[END CALL\]/gi, '')
     .replace(/[\uE200-\uE20F]turn\d+[a-z]+\d+/gi, '')

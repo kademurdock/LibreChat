@@ -107,7 +107,19 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
     if (!enabled() || !userId || !agentId) {
       return null;
     }
-    const convo = String(conversationText || '').trim();
+    /* Aug 21 2026 (found while chasing Kade's "I see some tags" report):
+     * %%% delivery tags rode conversationText straight into the summarizer,
+     * and the model quoted them into STORED summaries -- "%%%playful%%%" and
+     * "%%%warm chuckle%%%" sat on two of the seventeen live rows. The tags
+     * are performance metadata, not conversation. Strip before the model
+     * ever sees them (also saves the tokens), and once more on the way out
+     * in case it invents its own. */
+    const stripPerformanceTags = (s) =>
+      String(s)
+        .replace(/%%%[\s\S]*?%%%/g, ' ')
+        .replace(/%{2,}/g, '')
+        .replace(/[ \t]{2,}/g, ' ');
+    const convo = stripPerformanceTags(String(conversationText || '')).trim();
     if (convo.length < 40) {
       return null; // nothing meaningful to summarize
     }
@@ -177,6 +189,7 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
     if (!text) {
       return null; // couldn't parse a summary; leave the prior one untouched
     }
+    text = stripPerformanceTags(text).trim();
     if (text.length > MAX_SUMMARY_CHARS) {
       text = text.slice(0, MAX_SUMMARY_CHARS);
     }
