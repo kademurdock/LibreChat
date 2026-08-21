@@ -414,6 +414,41 @@ export const kadeMemorySearchSchema: ExtendedJsonSchema = {
   required: [],
 };
 
+export const kadeCallMeSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['schedule_call', 'list_calls', 'cancel_call', 'pause_call', 'test_call'],
+      description:
+        "What to do. 'schedule_call' sets up a future RING on the user's phone that answers into a live voice call with you (one-off via in_minutes or fire_date+fire_time, or recurring via recurring_time). 'list_calls' / 'cancel_call' / 'pause_call' manage them. 'test_call' rings right now so the user can hear the ringtone and practice answering.",
+    },
+    purpose: {
+      type: 'string',
+      description:
+        "REQUIRED for schedule_call: WHY you are calling, in plain words — announced in the ring, and you open the call knowing it. Under ~200 characters.",
+    },
+    in_minutes: { type: 'number', description: 'One-off: ring this many minutes from now. Use this OR fire_date+fire_time.' },
+    fire_date: {
+      type: 'string',
+      description: "One-off (with fire_time): 'YYYY-MM-DD' US Central. Compute the REAL date from today — never pass relative words like 'tomorrow'.",
+    },
+    fire_time: { type: 'string', description: "One-off (with fire_date): 'HH:mm' 24-hour US Central." },
+    recurring_time: { type: 'string', description: "Recurring: the time to ring, 'HH:mm' 24-hour US Central." },
+    recurring_days: { type: 'string', description: "Recurring: 'daily' (default) or comma-separated day names like 'mon,wed,fri'." },
+    ringtone: {
+      type: 'string',
+      enum: ['ring_classic', 'ring_marimba', 'ring_chimes', 'ring_pulse', 'ring_harp'],
+      description: 'Optional ringtone for this plan; omit to use their app-Settings default.',
+    },
+    override_quiet_hours: {
+      type: 'boolean',
+      description: 'true ONLY after the user explicitly agrees to ring during quiet hours (9pm-8am Central), e.g. a wake-up call. Never assume.',
+    },
+    plan_id: { type: 'string', description: 'For cancel_call / pause_call / test_call: the id from list_calls or schedule_call.' },
+  },
+};
+
 export const kadeNotifySchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -1021,6 +1056,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       "Send a push notification to the user's OWN phone (their Kade-AI app) — for reminders they asked for, or to tell them a background job finished. It lands on their lock screen. The server enforces quiet hours (9pm to 8am), a cooldown, and daily caps, so keep notifications meaningful, not chatter. NEVER claim you notified them unless the tool confirms it sent; if it reports blocked or that no phone is registered, say so plainly. Do not duplicate what you just said in chat unless the user asked to be pinged on their phone. Also sets up RECURRING check-ins (action='schedule_checkin' with a time; list/pause/cancel/test actions manage them) where you reach out to the user on a schedule — only when they ask.",
     schema: kadeNotifySchema,
+    toolType: 'builtin',
+  },
+  kade_call_me: {
+    name: 'kade_call_me',
+    description:
+      "Schedule a real CALL from you to the user: at the planned moment their phone RINGS with a chosen ringtone, and answering drops them into a live voice call with you — you open already knowing why you called. For wake-up calls, spoken reminders, and scheduled voice check-ins the user asked for. Server-side per-user daily caps and quiet hours apply (per-plan override only with the user's explicit yes). THE DATE LAW: store absolute datetimes — compute real dates from today, never 'tomorrow'. Call the tool FIRST and only claim a call is set after it confirms; read back who/when/why/ringtone. Different from kade_notify (a silent text): this one rings and becomes a conversation.",
+    schema: kadeCallMeSchema,
     toolType: 'builtin',
   },
   kade_world: {

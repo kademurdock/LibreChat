@@ -29,6 +29,7 @@ const {
   FalAI,
   KadePhoneCall,
   KadeNotify,
+  KadeCallMe,
   KadeMemorySearch,
   KadeWorld,
   KadeTranscribe,
@@ -203,6 +204,7 @@ const loadTools = async ({
     fal_studio: FalAI,
     kade_phone_call: KadePhoneCall,
     kade_notify: KadeNotify,
+    kade_call_me: KadeCallMe,
     kade_memory_search: KadeMemorySearch,
     kade_world: KadeWorld,
     kade_transcribe: KadeTranscribe,
@@ -332,6 +334,17 @@ const loadTools = async ({
       req: options.req,
     },
     kade_notify: {
+      req: options.req,
+      userId: kadeActingUserId,
+      userName: kadeActingUserName,
+      agentId: agent?.id || agent?.agent_id,
+      agentName: agent?.name,
+    },
+    /** AGENT CALLS (Part 75 §2, Aug 21 2026): scheduled rings that answer into
+     * the streaming call. Same identity threading as kade_notify — the acting
+     * user (kadeOnBehalfOf on phone turns) owns the plan, so family seats
+     * schedule their own calls, never each other's. */
+    kade_call_me: {
       req: options.req,
       userId: kadeActingUserId,
       userName: kadeActingUserName,

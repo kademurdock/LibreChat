@@ -133,6 +133,11 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
       'kade_message',
       'kade_memory_search',
       'kade_research',
+      /* KADE 2026-08-21 (Part 75 §2): agent calls to every seat at her word
+       * ("me + family right away"). Guardrails live server-side on the
+       * bridge (caps, quiet hours, per-plan consent); the tool itself is
+       * safe to hand to every agent, current and future. */
+      'kade_call_me',
     ];
     const withFeedback = toolless
       ? []

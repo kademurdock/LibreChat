@@ -16,6 +16,14 @@
     "authConfig": []
   },
   {
+    "name": "Agent Calls",
+    "pluginKey": "kade_call_me",
+    "description": "Lets this agent actually CALL you — at the time you set, your phone rings with a real ringtone you pick, and answering drops you straight into a live voice call where it already knows why it called. Wake-up calls, spoken reminders, scheduled catch-ups. Quiet hours and daily caps are built in, and ringing through quiet hours only happens if you say so. Try: \"call me tomorrow at 8 about my meds.\"",
+    "icon": "assets/phone-call.svg",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Diary Memory Search",
     "pluginKey": "kade_memory_search",
     "description": "Lets this character search your private dated diary — the long-term archive of day-to-day life it quietly keeps beside its memory cards. Ask things like \"what was I up to last week?\" or \"have I mentioned that show before?\" and it looks up the real entries instead of guessing. Each character can only see its own diary plus shared notes.",
