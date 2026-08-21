@@ -99,6 +99,14 @@
     "authConfig": []
   },
   {
+    "name": "Media Ears & Eyes",
+    "pluginKey": "kade_media",
+    "description": "Send a YouTube link or an audio/video file and the character actually takes it in — then describes what happens on screen and how the music is built: instruments, arrangement, vocals, section by section. Try: \"describe this video\" with a link.",
+    "icon": "https://www.youtube.com/favicon.ico",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Song Lyrics",
     "pluginKey": "kade_lyrics",
     "description": "Looks up song lyrics by artist and title from open lyric services (LRCLIB) — built for the job, so lyric-site bot walls can't block it. Free. Try: \"pull up the lyrics to Gethsemane by Sleep Token.\"",

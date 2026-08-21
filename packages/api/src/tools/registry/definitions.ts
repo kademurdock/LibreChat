@@ -246,6 +246,21 @@ export const kadeWikipediaSchema: ExtendedJsonSchema = {
   required: ['query'],
 };
 
+export const kadeMediaSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    url: {
+      type: 'string',
+      description: 'YouTube URL or direct audio/video file link to watch or listen to.',
+    },
+    focus: {
+      type: 'string',
+      description: "Optional: what the person especially wants to know (e.g. 'the instrumentation').",
+    },
+  },
+  required: ['url'],
+};
+
 export const kadeLyricsSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -1148,6 +1163,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Look up a topic on Wikipedia — free, instant, no cost. Best for stable encyclopedic facts (people, places, history, science). For breaking news or local/current info use web_search instead. NEVER invent article content; only report what this tool returns.',
     schema: kadeWikipediaSchema,
+    toolType: 'builtin',
+  },
+  kade_media: {
+    name: 'kade_media',
+    description:
+      "WATCH or LISTEN to linked media — a YouTube video or direct audio/video file — and get an accurate description of the visuals and the music's construction (instruments, arrangement, vocals, section by section). Use when someone shares a song/video link. Covers ~the first ten minutes of long videos. Report faithfully; NEVER invent sights or sounds; never claim to have watched without calling this.",
+    schema: kadeMediaSchema,
     toolType: 'builtin',
   },
   kade_lyrics: {

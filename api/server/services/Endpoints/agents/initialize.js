@@ -142,6 +142,10 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
        * from Amber A's night of Kiana rattling lyric-site bot walls; the
        * tool rides open lyric APIs (LRCLIB), free, keyless, never throws. */
       'kade_lyrics',
+      /* KADE 2026-08-21 (Part 82): media ears/eyes to every seat — YouTube
+       * or direct-file describe via the bridge's Gemini lane. Caps live
+       * server-side (MEDIA_DAILY_CAP per user, 10-min window). */
+      'kade_media',
     ];
     const withFeedback = toolless
       ? []

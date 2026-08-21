@@ -38,6 +38,7 @@ const {
   KadeCode,
   KadeWikipedia,
   KadeLyrics,
+  KadeMedia,
   KadeJoke,
   KadeNews,
   KadeResearch,
@@ -214,6 +215,7 @@ const loadTools = async ({
     kade_code: KadeCode,
     kade_wikipedia: KadeWikipedia,
     kade_lyrics: KadeLyrics,
+    kade_media: KadeMedia,
     kade_joke: KadeJoke,
     kade_news: KadeNews,
     kade_research: KadeResearch,
@@ -421,6 +423,9 @@ const loadTools = async ({
     kade_feedback: {
       userId: kadeActingUserId,
       agentName: agent?.name,
+    },
+    kade_media: {
+      userId: kadeActingUserId,
     },
     kade_message: {
       userId: kadeActingUserId,
