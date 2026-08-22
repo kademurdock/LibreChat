@@ -449,7 +449,7 @@ export const kadeCallMeSchema: ExtendedJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['schedule_call', 'list_calls', 'cancel_call', 'pause_call', 'test_call'],
+      enum: ['schedule_call', 'list_calls', 'cancel_call', 'pause_call', 'test_call', 'list_ringtones'],
       description:
         "What to do. 'schedule_call' sets up a future RING on the user's phone that answers into a live voice call with you (one-off via in_minutes or fire_date+fire_time, or recurring via recurring_time). 'list_calls' / 'cancel_call' / 'pause_call' manage them. 'test_call' rings right now so the user can hear the ringtone and practice answering.",
     },
@@ -468,8 +468,8 @@ export const kadeCallMeSchema: ExtendedJsonSchema = {
     recurring_days: { type: 'string', description: "Recurring: 'daily' (default) or comma-separated day names like 'mon,wed,fri'." },
     ringtone: {
       type: 'string',
-      enum: ['ring_classic', 'ring_marimba', 'ring_chimes', 'ring_pulse', 'ring_harp'],
-      description: 'Optional ringtone for this plan; omit to use their app-Settings default.',
+      description:
+        "Optional tone id, e.g. 'ring_warm_coffee'. 72 named tones exist — use list_ringtones for the catalog; omit for their Settings default.",
     },
     override_quiet_hours: {
       type: 'boolean',

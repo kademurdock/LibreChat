@@ -7,10 +7,10 @@ const callMeJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['schedule_call', 'list_calls', 'cancel_call', 'pause_call', 'test_call'],
+      enum: ['schedule_call', 'list_calls', 'cancel_call', 'pause_call', 'test_call', 'list_ringtones'],
       description:
         "What to do. 'schedule_call' sets up a future RING on the user's phone that answers straight into a live voice call with YOU — one-off (in_minutes, or fire_date+fire_time) or recurring (recurring_time, optional recurring_days). " +
-        "'list_calls' shows their scheduled calls. 'cancel_call' removes one. 'pause_call' pauses/resumes one. 'test_call' rings their phone RIGHT NOW with an existing plan so they can hear the ringtone and try answering — offer it after a first setup.",
+        "'list_calls' shows their scheduled calls. 'cancel_call' removes one. 'pause_call' pauses/resumes one. 'test_call' rings their phone RIGHT NOW with an existing plan so they can hear the ringtone and try answering — offer it after a first setup. 'list_ringtones' returns the full named tone catalog (72 homemade tones with vibe notes) — use it to match a requested feel ('something calm with flute') to a real tone id, or when they ask what ringtones exist.",
     },
     purpose: {
       type: 'string',
@@ -40,9 +40,8 @@ const callMeJsonSchema = {
     },
     ringtone: {
       type: 'string',
-      enum: ['ring_classic', 'ring_marimba', 'ring_chimes', 'ring_pulse', 'ring_harp'],
       description:
-        "Optional ringtone for THIS call plan: ring_classic (a classic telephone bell), ring_marimba (warm wooden notes), ring_chimes (bright bells), ring_pulse (a soft modern pulse), ring_harp (a gentle rising sweep). Omit it to use the default from their app Settings.",
+        "Optional tone id for THIS call plan, e.g. 'ring_warm_coffee', 'ring_street_sonata', 'ring_marimba'. 72 named homemade tones exist — call list_ringtones for the catalog with vibe notes and pass the id that fits. Omit to use the default from their app Settings.",
     },
     override_quiet_hours: {
       type: 'boolean',
@@ -149,6 +148,14 @@ class KadeCallMe extends Tool {
         if (d.quietWarning) out += ` ⚠ ${d.quietWarning}`;
         else out += ' Offer a test_call so they can hear the ring and practice answering, especially on a first setup.';
         return out;
+      }
+      if (action === 'list_ringtones') {
+        const r = await axios.get(`${this.bridgeUrl}/call-ringtones`, { timeout: 15000, headers: this._hdrs() });
+        const rows = (r.data && r.data.ringtones) || [];
+        if (!rows.length) return 'The ringtone catalog came back empty — tell Kade.';
+        return rows
+          .map((x) => `${x.id} — "${x.name}"${x.group ? ` (${x.group})` : ''}${x.vibe ? `: ${x.vibe}` : ''}`)
+          .join('\n');
       }
       if (action === 'test_call') {
         /* Part 83 addendum (Kade's own first test, 19:55Z Aug 21: "call me
