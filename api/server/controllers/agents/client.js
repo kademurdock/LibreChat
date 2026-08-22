@@ -1793,6 +1793,27 @@ class AgentClient extends BaseClient {
           },
         });
 
+        /* KADE Part 84.3 — THE ROUND-2 DEAD-AIR SCALPEL. Four theories
+         * executed (chunk parse, eager execution, invokedToolIds, streaming
+         * flag); what remains is the graph's END decision itself. This logs
+         * exactly what toolsCondition saw when the run ended: the final
+         * state messages' shapes and the dedup set's size. The next dead-air
+         * turn names its own killer. Cheap (one line per run), remove when
+         * the bug is buried. */
+        try {
+          const g = run.Graph ?? run.graph;
+          const finalMsgs = g?.getRunMessages?.() ?? [];
+          const tail = finalMsgs.slice(-4).map((m) => {
+            const type = m?.constructor?.name ?? typeof m;
+            const tc = Array.isArray(m?.tool_calls) ? m.tool_calls.length : 0;
+            const len = typeof m?.content === 'string' ? m.content.length : Array.isArray(m?.content) ? m.content.length : 0;
+            return `${type}(tc=${tc},len=${len})`;
+          });
+          logger.warn(`[kade-graph-debug] run end: tail=[${tail.join(' -> ')}] invokedToolIds=${g?.invokedToolIds?.size ?? 'nil'} runId=${this.responseMessageId}`);
+        } catch (dbgErr) {
+          logger.warn(`[kade-graph-debug] failed: ${dbgErr.message}`);
+        }
+
         config.signal = null;
       };
 
