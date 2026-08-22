@@ -319,8 +319,14 @@ router.get('/voice-report', async (req, res) => {
         /\b(?:that|it|this)[’']?s the [a-z]+ing\s*(?=[.,!?;—-])|\bthe being [a-z]+|\bthe (?:wanting|knowing|longing|yearning|aching|becoming|belonging|choosing)\b(?=\s*(?:[.,!?;:—–-]|is\b|was\b|were\b|itself\b|of\b|and\b|that\b|already\b|still\b))|\bthe [a-z]+ing and the (?:wanting|knowing|longing|yearning|aching|becoming|belonging|choosing)\b/i,
       // Part 85 mirrors (reframe 689b98b): the sit-with register and the
       // unprompted reassurance verdict. Counts only, like everything here.
-      sitWith: /\b(?:sit|sitting) with (?:that|this|it)\b|\bwan(?:na|t to) sit with\b/i,
+      sitWith:
+        /\b(?:sit|sitting) with (?:that|this|it)\b|\bwan(?:na|t to) sit with\b|\b(?:sit|sitting) with (?:the|your|his|her) (?:fact|possibilit|idea|feeling|discomfort|reality|truth|weight|uncertainty|thought|grief|anger|fear|question|image|decision)/i,
       reassure: /\byou(?:'re| are)(?:n't| not) (?:crazy|broken|weak|a burden|too much|the problem|being dramatic|dramatic|overreacting)\b|\byou weren't (?:crazy|broken|the problem|being dramatic|too much)\b/i,
+      // Part 85.5 mirrors (reframe 47066ac): Amber A's gas-up, the
+      // that's-the-part grading beat, and the And-honestly opener.
+      honestly: /(?:^|[.!?]\s+|%{3}\s*)(?:and |but )?honestly[,?]|\bif i['’]?m being honest\b|\blet['’]?s be honest\b/im,
+      partGrading: /\b(?:that|this|it)['’]?s the part (?:that|where|when)\b|\bthe part that (?:gets|kills|breaks|hurts|scares|worries|matters|sticks|stays|lands)\b|\bthe part where you\b/i,
+      gasUp: /\bmost people (?:would(?:n['’]t| not)?|could(?:n['’]t| not)?|do(?:n['’]t| not)|never|can['’]t)[^.!?\n]{0,70}[.!?]\s*(?:and |but )?you\b|\bthat tells me you\b|\bthat['’]?s (?:real |genuine |rare )?self-awareness\b|\bgive yourself (?:some |more |a little )?credit\b/i,
       thatPart: /(?:^|[.!?]\s+)That part[.!](?:\s|$)/m,
       memeCombat: /\bi (?:will|[’']ll|would|[’']d) fight (?:you|anyone|somebody)\b|\bdie on th(?:is|at) hill\b|\bfight me on this\b|\bthrow hands\b/i,
     };
@@ -349,6 +355,9 @@ router.get('/voice-report', async (req, res) => {
     let memeCombat = 0;
     let sitWith = 0;
     let reassure = 0;
+    let honestlyC = 0;
+    let partGrading = 0;
+    let gasUp = 0;
     let parallelPairs = 0;
     let tagsTotal = 0;
     let commaTags = 0;
@@ -381,6 +390,9 @@ router.get('/voice-report', async (req, res) => {
       if (RE.memeCombat.test(t)) memeCombat++;
       if (RE.sitWith.test(t)) sitWith++;
       if (RE.reassure.test(t)) reassure++;
+      if (RE.honestly.test(t)) honestlyC++;
+      if (RE.partGrading.test(t)) partGrading++;
+      if (RE.gasUp.test(t)) gasUp++;
       const fw = ((t.match(/^[A-Za-z']+/) || [''])[0] || '').toLowerCase();
       if (fw) firstWords[fw] = (firstWords[fw] || 0) + 1;
       const sentences = t.split(/(?<=[.!?])\s+/).filter(Boolean);
@@ -420,6 +432,9 @@ router.get('/voice-report', async (req, res) => {
       memeCombat,
       sitWith,
       reassuranceVerdicts: reassure,
+      honestlyMarkers: honestlyC,
+      partGrading,
+      gasUp,
       parallelPairs,
       tagsTotal,
       commaTags,
