@@ -895,7 +895,17 @@ export async function createRun({
   calibrationRatio,
   appConfig,
   subagentUsageSink,
-  streaming = true,
+  /* KADE Part 84.3 — THE ROUND-2 DEAD-AIR BUG, CONVICTED BY SPLIT TEST:
+   * streaming runs lose round-2+ tool calls from the aggregated state
+   * message (steps save to Mongo, the graph routes END, the user gets dead
+   * air after the narration line); the IDENTICAL run non-streaming executes
+   * every round and answers grounded (receipts: Forge's freshness ritual,
+   * 2-for-2 dead streamed at 01:13/01:16, complete at 01:29 non-streamed).
+   * Until the SDK aggregation is fixed upstream, the fleet runs
+   * non-streaming: replies arrive whole after a beat instead of word by
+   * word — the June-era Kiana mode, proxy heartbeats keep the wire alive.
+   * KADE_STREAMING=1 restores streaming to reproduce for upstream. */
+  streaming = process.env.KADE_STREAMING !== '0',
   streamUsage = true,
 }: {
   agents: RunAgent[];
