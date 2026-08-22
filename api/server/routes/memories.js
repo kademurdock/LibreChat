@@ -644,6 +644,36 @@ router.post('/admin-set', requireAdminAccess, async (req, res) => {
   }
 });
 
+/* Part 85.5 companion — ADMIN RETIRE: mark every non-superseded row of one
+ * key in ONE bucket as superseded, creating nothing. Born for the five
+ * cross-scope duplicates found live (the writer copied agent-bucket cards
+ * into SHARED against its own NEVER-COPY-ACROSS-SCOPES rule — two of them
+ * sensitive). Supersede-not-delete: history stays, injection stops. */
+router.post('/admin-retire', requireAdminAccess, async (req, res) => {
+  const { userId, key, agentId } = req.body || {};
+  if (typeof userId !== 'string' || !userId.trim() || typeof key !== 'string' || !key.trim()) {
+    return res.status(400).json({ error: 'userId and key are required' });
+  }
+  try {
+    const MemoryEntry = require('mongoose').models.MemoryEntry;
+    const filter = {
+      userId: userId.trim(),
+      key: key.trim(),
+      status: { $ne: 'superseded' },
+      agentId: typeof agentId === 'string' && agentId.trim() ? agentId.trim() : { $in: [null, undefined] },
+    };
+    const rows = await MemoryEntry.find(filter);
+    for (const row of rows) {
+      row.status = 'superseded';
+      await row.save();
+    }
+    res.json({ ok: true, retired: rows.length, key: key.trim(), bucket: agentId || 'shared' });
+  } catch (err) {
+    logger.error(`[memories/admin-retire] failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/consolidate-all', requireAdminAccess, async (req, res) => {
   try {
     const result = await runAsSystem(() =>
