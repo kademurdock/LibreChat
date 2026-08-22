@@ -315,7 +315,12 @@ router.get('/voice-report', async (req, res) => {
       gush: /\b(?:i (?:wanna|want to|need to) know everything|tell me everything|every single (?:detail|thing)|i want (?:all|every bit) of it)\b/i,
       // Part 81 (her verbatim: nominalism / "that part" / meme-fight) —
       // calibrated shapes, mirrored from the reframe detectors:
-      nominal: /\b(?:that|it|this)[’']?s the [a-z]+ing\s*(?=[.,!?;—-])|\bthe being [a-z]+/i,
+      nominal:
+        /\b(?:that|it|this)[’']?s the [a-z]+ing\s*(?=[.,!?;—-])|\bthe being [a-z]+|\bthe (?:wanting|knowing|longing|yearning|aching|becoming|belonging|choosing)\b(?=\s*(?:[.,!?;:—–-]|is\b|was\b|were\b|itself\b|of\b|and\b|that\b|already\b|still\b))|\bthe [a-z]+ing and the (?:wanting|knowing|longing|yearning|aching|becoming|belonging|choosing)\b/i,
+      // Part 85 mirrors (reframe 689b98b): the sit-with register and the
+      // unprompted reassurance verdict. Counts only, like everything here.
+      sitWith: /\b(?:sit|sitting) with (?:that|this|it)\b|\bwan(?:na|t to) sit with\b/i,
+      reassure: /\byou(?:'re| are)(?:n't| not) (?:crazy|broken|weak|a burden|too much|the problem|being dramatic|dramatic|overreacting)\b|\byou weren't (?:crazy|broken|the problem|being dramatic|too much)\b/i,
       thatPart: /(?:^|[.!?]\s+)That part[.!](?:\s|$)/m,
       memeCombat: /\bi (?:will|[’']ll|would|[’']d) fight (?:you|anyone|somebody)\b|\bdie on th(?:is|at) hill\b|\bfight me on this\b|\bthrow hands\b/i,
     };
@@ -342,6 +347,8 @@ router.get('/voice-report', async (req, res) => {
     let nominal = 0;
     let thatPart = 0;
     let memeCombat = 0;
+    let sitWith = 0;
+    let reassure = 0;
     let parallelPairs = 0;
     let tagsTotal = 0;
     let commaTags = 0;
@@ -372,6 +379,8 @@ router.get('/voice-report', async (req, res) => {
       if (RE.nominal.test(t)) nominal++;
       if (RE.thatPart.test(t)) thatPart++;
       if (RE.memeCombat.test(t)) memeCombat++;
+      if (RE.sitWith.test(t)) sitWith++;
+      if (RE.reassure.test(t)) reassure++;
       const fw = ((t.match(/^[A-Za-z']+/) || [''])[0] || '').toLowerCase();
       if (fw) firstWords[fw] = (firstWords[fw] || 0) + 1;
       const sentences = t.split(/(?<=[.!?])\s+/).filter(Boolean);
@@ -409,6 +418,8 @@ router.get('/voice-report', async (req, res) => {
       nominalizations: nominal,
       thatPartMeme: thatPart,
       memeCombat,
+      sitWith,
+      reassuranceVerdicts: reassure,
       parallelPairs,
       tagsTotal,
       commaTags,
