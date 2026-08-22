@@ -613,6 +613,37 @@ router.post('/diary-voice-repair', requireAdminAccess, async (req, res) => {
   }
 });
 
+/* Part 85.5 (Aug 22 2026) — ADMIN SEED/REPAIR: write one card into ANY seat's
+ * bucket. Born to seed Amber A's `how_we_talk` contract from her own words
+ * (the writer only sees turns going forward; her ask was already on the wire)
+ * and to retire the duplicate-active rows found on Amber L's bucket. Same
+ * retrofit pattern as diary-voice-repair: admin-only, additive, setMemory
+ * semantics (supersede-not-delete, full history kept). Body:
+ * { userId, key, value, agentId? }. */
+router.post('/admin-set', requireAdminAccess, async (req, res) => {
+  const { userId, key, value, agentId } = req.body || {};
+  if (typeof userId !== 'string' || !userId.trim()) {
+    return res.status(400).json({ error: 'userId is required' });
+  }
+  if (typeof key !== 'string' || !key.trim() || typeof value !== 'string' || !value.trim()) {
+    return res.status(400).json({ error: 'key and value (non-empty strings) are required' });
+  }
+  try {
+    const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
+    const result = await setMemory({
+      userId: userId.trim(),
+      agentId: typeof agentId === 'string' && agentId.trim() ? agentId.trim() : undefined,
+      key: key.trim(),
+      value: value.trim(),
+      tokenCount,
+    });
+    res.json({ ok: !!result.ok, unchanged: !!result.unchanged, key: key.trim() });
+  } catch (err) {
+    logger.error(`[memories/admin-set] failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/consolidate-all', requireAdminAccess, async (req, res) => {
   try {
     const result = await runAsSystem(() =>
