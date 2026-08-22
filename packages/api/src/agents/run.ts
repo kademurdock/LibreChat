@@ -1163,7 +1163,18 @@ export async function createRun({
     calibrationRatio,
     indexTokenCountMap,
     subagentUsageSink,
-    eagerEventToolExecution: { enabled: true },
+    /* KADE Part 84.3 (Aug 22 2026) — THE ROUND-2 DEAD-AIR BUG, boxed: every
+     * multi-round tool chain since the 5.3 era could die after round 1 —
+     * round 2's tool call PARSED (saved in the message content), the graph
+     * saw it, and no ON_TOOL_EXECUTE ever fired; the run emitted FINAL and
+     * the user got dead air. Bit Kade twice tonight on Forge's own freshness
+     * ritual (snapshot then PROJECT_STATUS — the second read never ran),
+     * bit Amber A at 18:50, bit the 19:55 call test. The failure lives in
+     * the SDK's eager event-driven tool execution; with it off, tools ride
+     * the classic ToolNode path (they start after the model round completes
+     * instead of mid-stream — a beat slower, infinitely more alive).
+     * Re-enable to reproduce for upstream: KADE_EAGER_TOOLS=1. */
+    eagerEventToolExecution: { enabled: process.env.KADE_EAGER_TOOLS === '1' },
     // Derive the Langfuse trace id deterministically from runId so message
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
