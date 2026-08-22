@@ -116,7 +116,11 @@ function pinPatterns() {
      * turn. Verified before adding: the prefix matches nothing episodic in any
      * live bucket, so no head grew by a single token. `accessib` alone did NOT
      * match `access_blind_screen_reader`, which is exactly the trap this closes. */
-    'family,accessib,access,blind,screen_reader,pronounc,identity,call_me,name';
+    /* Aug 22 2026 (Part 85.5, the relationship ledger): `how_we_talk` pinned so
+     * the standing contract of each relationship — their stated preferences AND
+     * the character's own commitments — rides the head EVERY turn. A contract
+     * that only sometimes surfaces is not a contract. */
+    'family,accessib,access,blind,screen_reader,pronounc,identity,call_me,name,how_we_talk';
   return raw
     .split(',')
     .map((s) => s.trim().toLowerCase())

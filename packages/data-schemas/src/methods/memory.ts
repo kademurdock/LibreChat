@@ -118,12 +118,19 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
 
       const MemoryEntry = mongoose.models.MemoryEntry;
       const scopedAgentId = toAgentFilterValue(agentId);
-      const existing = await MemoryEntry.findOne({
+      /** Aug 22 2026 (Part 85.5): fetch ALL non-superseded rows for this key,
+       * not one. Two ACTIVE rows with the same key were found live (Amber L's
+       * bucket held duplicate ptsd_triggers + marionville cards) — a race or a
+       * failed save had left a sibling behind, and findOne() then superseded
+       * only whichever it happened to grab, making the duplicate permanent.
+       * Newest row stays the inherit source; every older sibling is retired. */
+      const existingRows = await MemoryEntry.find({
         userId,
         agentId: scopedAgentId,
         key,
         status: { $ne: 'superseded' },
-      });
+      }).sort({ updated_at: -1 });
+      const existing = existingRows[0];
 
       if (existing && existing.value.trim() === value.trim()) {
         existing.updated_at = new Date();
@@ -137,9 +144,9 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         return { ok: true, unchanged: true };
       }
 
-      if (existing) {
-        existing.status = 'superseded';
-        await existing.save();
+      for (const row of existingRows) {
+        row.status = 'superseded';
+        await row.save();
       }
 
       /** KADE July 13 2026 — WIPE-BUG GUARD: rewriting a card's text must never
