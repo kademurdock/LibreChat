@@ -973,7 +973,17 @@ export async function createRun({
       { user, requestBody },
     );
 
-    const modelParameters = normalizeAgentModelParameters(agent.model_parameters);
+    let modelParameters = normalizeAgentModelParameters(agent.model_parameters);
+    /* KADE Part 84.3 — the round-2 dead-air conviction (split test on
+     * record): CONSTRUCTOR-level `streaming: false` is the path that
+     * verifiably reaches the wire (agent-param test, 01:28Z receipts); the
+     * createRun `streaming` default alone did not (post-deploy turns still
+     * streamed). With KADE_STREAMING=0, every agent model runs
+     * non-streaming unless the agent record explicitly sets its own
+     * streaming value. Remove the env (or set 1) to restore streaming. */
+    if (process.env.KADE_STREAMING === '0' && (modelParameters as Record<string, unknown> | undefined)?.streaming == null) {
+      modelParameters = { ...(modelParameters ?? {}), streaming: false } as typeof modelParameters;
+    }
     const hasExplicitStreamUsage = Object.prototype.hasOwnProperty.call(
       modelParameters ?? {},
       'streamUsage',
