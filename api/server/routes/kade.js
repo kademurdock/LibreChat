@@ -356,6 +356,12 @@ async function assetView(d, { withOwner = false } = {}) {
     costUSD: d.costUSD || 0,
     createdAt: d.createdAt,
   };
+  /* Part 91.7 — a document's face is its generation-time spoken summary
+   * (kade_make_file writes it into metadata.spoken). Exposed as one flat
+   * field rather than the whole metadata blob: the blob is internal. */
+  if (d.kind === 'document' && d.metadata && d.metadata.spoken) {
+    view.spoken = String(d.metadata.spoken).slice(0, 1200);
+  }
   if (withOwner) {
     const name = (d.user && (d.user.name || d.user.username)) || 'Someone';
     view.by = String(name).split(' ')[0];

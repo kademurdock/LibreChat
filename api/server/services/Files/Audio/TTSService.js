@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { genAzureEndpoint, logAxiosError, applyAxiosProxyConfig } = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
+const { scrubForSpeech } = require('./scrubForSpeech');
 const { fetchLiveVoices, getCachedLiveVoices, getCachedLiveHidden } = require('./voiceCatalog');
 
 /** Kade D2d: parse+clamp an optional TTS speaking rate (Inworld range 0.5-1.5).
@@ -361,12 +362,26 @@ class TTSService {
     if (!rawInput) {
       return res.status(400).send('Missing text in request body');
     }
-    // Kade July 20 2026: respell before anything else touches `input` so
-    // BOTH branches below (short direct call, long chunked loop) already
-    // get the speakable version -- see kadePronunciation.js for why this is
-    // a text substitution rather than a provider-side phoneme hint.
+    /* PART 91.7 (Fable review) — THE MANUAL LANE NEVER SCRUBBED, AND THE
+     * MANUAL LANE IS THE NATIVE APP'S ONLY VOICE PATH. scrubForSpeech has
+     * existed since July 13 and was wired into streamAudio (the web UI's
+     * auto-play) the same day — so the WEB stopped voicing citation anchors,
+     * sources blocks and raw URLs a month ago, while every reply the iPhone
+     * app has ever spoken went to the synthesizer unscrubbed. Same for the
+     * Debate Room, the Lounge narrator and every kadePages caller: they all
+     * come through here. One chokepoint, every caller fixed at once.
+     *
+     * Scrub FIRST, then respell: the dictionary should work on the text that
+     * will actually be spoken. scrubForSpeech deliberately leaves %%%steering
+     * tags%%% alone — the inworld proxy consumes those downstream. And if
+     * scrubbing empties the input (a pure-URL "reply"), saying nothing is
+     * correct: the alternative was reading a URL aloud. */
     const dictionary = await safeGetDictionary(req.user && req.user.id);
-    const input = applyPronunciationRespellings(rawInput, dictionary);
+    const scrubbed = scrubForSpeech(rawInput) || '';
+    if (!scrubbed.trim()) {
+      return res.status(422).send('Nothing speakable after scrubbing');
+    }
+    const input = applyPronunciationRespellings(scrubbed, dictionary);
 
     // [KadeUsage] log TTS characters (best-effort, never throws)
     logKadeUsage({

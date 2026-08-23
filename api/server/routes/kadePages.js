@@ -570,15 +570,16 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
       }
       const vids = d.assets.filter(function(a){ return a.kind === 'video'; }).length;
       const auds = d.assets.filter(function(a){ return a.kind === 'audio'; }).length;
-      const imgs = d.assets.length - vids - auds;
-      status.textContent = 'You have ' + d.assets.length + ' creation' + (d.assets.length===1?'':'s') + ': ' + vids + ' video' + (vids===1?'':'s') + ', ' + imgs + ' image' + (imgs===1?'':'s') + ', and ' + auds + ' audio clip' + (auds===1?'':'s') + '.';
+      const docs = d.assets.filter(function(a){ return a.kind === 'document'; }).length;
+      const imgs = d.assets.length - vids - auds - docs;
+      status.textContent = 'You have ' + d.assets.length + ' creation' + (d.assets.length===1?'':'s') + ': ' + vids + ' video' + (vids===1?'':'s') + ', ' + imgs + ' image' + (imgs===1?'':'s') + ', ' + auds + ' audio clip' + (auds===1?'':'s') + (docs ? ', and ' + docs + ' document' + (docs===1?'':'s') : '') + '.';
       function esc(s){ const div=document.createElement('div'); div.textContent = s || ''; return div.innerHTML; }
       function when(iso){
         try { return new Date(iso).toLocaleString('en-US', { month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }); }
         catch(e){ return ''; }
       }
       main.innerHTML = d.assets.map(function(a, i){
-        const kindLabel = a.kind === 'video' ? 'Video' : a.kind === 'audio' ? 'Audio' : 'Image';
+        const kindLabel = a.kind === 'video' ? 'Video' : a.kind === 'audio' ? 'Audio' : a.kind === 'document' ? 'Document' : 'Image';
         const title = kindLabel + ' — ' + when(a.createdAt);
         const desc = a.description || a.prompt || ('Generated ' + a.kind);
         let media;
@@ -592,6 +593,15 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
                   (a.backupUrl ? '<source src="' + esc(a.backupUrl) + '">' : '') + '</audio>' +
                   '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open or download this audio clip in a new tab">Open or download this audio</a>' +
                   (a.backupUrl ? ' &middot; <a href="' + esc(a.backupUrl) + '" target="_blank" rel="noreferrer" aria-label="Open the backup copy of this audio">backup copy</a>' : '');
+        } else if(a.kind === 'document'){
+          /* Part 91.7 (Fable review): kade_make_file lands documents here, and
+           * the else-branch below would render an .xlsx URL inside an <img>
+           * tag — a broken picture standing where a spreadsheet should be. A
+           * document's face is its SPOKEN SUMMARY, written at generation
+           * time; the Download button below already streams it with the right
+           * type and filename. */
+          media = '<p class="desc">' + esc(a.spoken || ('A ' + ((a.model || 'text').toUpperCase()) + ' file.')) + '</p>' +
+                  '<p class="meta">File type: ' + esc((a.model || 'document').toUpperCase()) + '. Use the Download button below to save and open it.</p>';
         } else {
           media = '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open full-size image in a new tab"><img loading="lazy" src="' + esc(a.url) + '" alt="' + esc(desc) + '"></a>';
         }
@@ -602,7 +612,7 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
           '<h2 id="asset-h-' + esc(a.id) + '" style="margin:0 0 .5rem;font-size:1.05rem">' + esc(title) + '</h2>' +
           media +
           '<p class="meta"><span class="pill">' + esc(a.kind) + '</span>' + esc(a.model || a.service) + (a.costUSD ? ' &middot; ' + money(a.costUSD) : '') + '</p>' +
-          (a.description ? '<p class="desc"><strong>' + (a.kind === 'audio' ? 'What you will hear:' : 'What it looks like:') + '</strong> ' + esc(a.description) + '</p>' : '') +
+          (a.description && a.kind !== 'document' ? '<p class="desc"><strong>' + (a.kind === 'audio' ? 'What you will hear:' : 'What it looks like:') + '</strong> ' + esc(a.description) + '</p>' : '') +
           (a.prompt ? '<p class="prompt"><strong>Prompt:</strong> ' + esc(a.prompt) + '</p>' : '') +
           '<button type="button" class="dl" data-id="' + esc(a.id) + '" data-kind="' + esc(a.kind) + '" aria-label="Download this ' + esc(a.kind) + ' to your device">Download</button>' +
           '<button type="button" class="share" data-id="' + esc(a.id) + '" aria-pressed="' + (a.shared ? 'true' : 'false') + '">' +
@@ -690,7 +700,7 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
         catch(e){ return ''; }
       }
       main.innerHTML = d.assets.map(function(a){
-        const kindLabel = a.kind === 'video' ? 'Video' : a.kind === 'audio' ? 'Audio' : 'Image';
+        const kindLabel = a.kind === 'video' ? 'Video' : a.kind === 'audio' ? 'Audio' : a.kind === 'document' ? 'Document' : 'Image';
         const title = kindLabel + ' by ' + (a.by || 'Someone') + ' — ' + when(a.createdAt);
         const desc = a.description || a.prompt || ('Shared ' + a.kind);
         let media;
@@ -702,6 +712,11 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
           media = '<audio controls preload="metadata" aria-label="' + esc(desc) + '"><source src="' + esc(a.url) + '">' +
                   (a.backupUrl ? '<source src="' + esc(a.backupUrl) + '">' : '') + '</audio>' +
                   '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open or download this audio clip in a new tab">Open or download this audio</a>';
+        } else if(a.kind === 'document'){
+          /* Part 91.7 — a shared document's face is its spoken summary, not a
+           * broken <img>. Same reasoning as the My Creations branch. */
+          media = '<p class="desc">' + esc(a.spoken || a.description || 'A shared document.') + '</p>' +
+                  '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open or download this document in a new tab">Open or download this document</a>';
         } else {
           media = '<a href="' + esc(a.url) + '" target="_blank" rel="noreferrer" aria-label="Open full-size image in a new tab"><img loading="lazy" src="' + esc(a.url) + '" alt="' + esc(desc) + '"></a>';
         }
@@ -712,7 +727,7 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
           '<h2 id="asset-h-' + esc(a.id) + '" style="margin:0 0 .5rem;font-size:1.05rem">' + esc(title) + '</h2>' +
           media +
           '<p class="meta"><span class="pill">' + esc(a.by || 'Someone') + '</span>' + esc(a.kind) + (a.model ? ' &middot; ' + esc(a.model) : '') + '</p>' +
-          (a.description ? '<p class="desc"><strong>' + (a.kind === 'audio' ? 'What you will hear:' : 'What it looks like:') + '</strong> ' + esc(a.description) + '</p>' : '') +
+          (a.description && a.kind !== 'document' ? '<p class="desc"><strong>' + (a.kind === 'audio' ? 'What you will hear:' : 'What it looks like:') + '</strong> ' + esc(a.description) + '</p>' : '') +
           (a.prompt ? '<p class="prompt"><strong>Prompt:</strong> ' + esc(a.prompt) + '</p>' : '') +
           '<button type="button" class="dl" data-id="' + esc(a.id) + '" data-kind="' + esc(a.kind) + '" aria-label="Download this ' + esc(a.kind) + ' by ' + esc(a.by || 'Someone') + '">Download</button>' +
         '</section>';
