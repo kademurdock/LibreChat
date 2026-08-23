@@ -36,6 +36,7 @@ const {
   KadeWeather,
   KadeLocation,
   KadeCode,
+  KadeMakeFile,
   KadeWikipedia,
   KadeLyrics,
   KadeMedia,
@@ -213,6 +214,7 @@ const loadTools = async ({
     kade_weather: KadeWeather,
     kade_location: KadeLocation,
     kade_code: KadeCode,
+    kade_make_file: KadeMakeFile,
     kade_wikipedia: KadeWikipedia,
     kade_lyrics: KadeLyrics,
     kade_media: KadeMedia,
@@ -435,6 +437,16 @@ const loadTools = async ({
     kade_code: {
       userId: user,
       agentName: agent?.name,
+    },
+    /* Part 91.4 — needs req for the tenant id and fileStrategy for storage,
+     * exactly like the image tools two lines down. Without fileStrategy it
+     * would have no way to save and would refuse honestly, which is a worse
+     * outcome than wiring it correctly. */
+    kade_make_file: {
+      userId: user,
+      agentName: agent?.name,
+      req: options?.req,
+      fileStrategy,
     },
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,

@@ -434,9 +434,23 @@ router.get('/asset-download/:id', requireJwtAuth, async (req, res) => {
     if (!upstream) {
       return res.status(502).json({ error: 'Could not fetch the media from its source' });
     }
+    /* Part 91.4 — documents (kade_make_file) carry their real extension in
+     * `model`, because a .xlsx served as image/png downloads as a file Excel
+     * refuses to open. */
+    const docExt = d.kind === 'document' ? String(d.model || 'md').replace(/[^a-z0-9]/gi, '').slice(0, 5) : null;
+    const docCt =
+      { xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', csv: 'text/csv', md: 'text/markdown' }[docExt] ||
+      'application/octet-stream';
     const kindDefaultCt =
-      d.kind === 'video' ? 'video/mp4' : d.kind === 'audio' ? 'audio/mpeg' : 'image/png';
-    const kindDefaultExt = d.kind === 'video' ? 'mp4' : d.kind === 'audio' ? 'mp3' : 'png';
+      d.kind === 'video' ? 'video/mp4'
+        : d.kind === 'audio' ? 'audio/mpeg'
+          : d.kind === 'document' ? docCt
+            : 'image/png';
+    const kindDefaultExt =
+      d.kind === 'video' ? 'mp4'
+        : d.kind === 'audio' ? 'mp3'
+          : d.kind === 'document' ? (docExt || 'md')
+            : 'png';
     const ct = String(upstream.headers['content-type'] || kindDefaultCt);
     const ext =
       {
@@ -444,6 +458,8 @@ router.get('/asset-download/:id', requireJwtAuth, async (req, res) => {
         'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp',
         'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav',
         'audio/ogg': 'ogg', 'audio/webm': 'weba',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+        'text/csv': 'csv', 'text/markdown': 'md',
       }[ct.split(';')[0].trim()] || kindDefaultExt;
     const stamp = new Date(d.createdAt || Date.now()).toISOString().slice(0, 10);
     res.setHeader('Content-Type', ct);

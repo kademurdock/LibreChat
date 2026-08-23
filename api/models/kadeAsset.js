@@ -7,7 +7,7 @@ const { logger } = require('@librechat/data-schemas');
  * permanent "My Creations" gallery (route: /my-creations, api: /api/kade/my-assets).
  *
  * One document per asset:
- *   - kind        : 'video' | 'image'
+ *   - kind        : 'video' | 'image' | 'audio' | 'document'
  *   - service     : 'fal_video' | 'fal_image' | 'flux'
  *   - url         : where the media lives. fal.media URLs are durable CDN links;
  *                   flux assets are saved via the file pipeline (S3-signed or local path).
@@ -26,7 +26,9 @@ const { logger } = require('@librechat/data-schemas');
 const kadeAssetSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
-    kind: { type: String, enum: ['video', 'image', 'audio'], index: true },
+    // 'document' added Part 91.4 — spreadsheets, CSVs and text documents made
+    // by kade_make_file live in the same gallery as every picture and song.
+    kind: { type: String, enum: ['video', 'image', 'audio', 'document'], index: true },
     service: { type: String },
     url: { type: String },
     prompt: { type: String },

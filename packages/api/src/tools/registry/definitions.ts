@@ -231,6 +231,39 @@ export const kadeCodeSchema: ExtendedJsonSchema = {
   required: ['code'],
 };
 
+export const kadeMakeFileSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    kind: {
+      type: 'string',
+      enum: ['spreadsheet', 'document', 'csv'],
+      description:
+        "spreadsheet = a real .xlsx anyone can open in Excel, Numbers or Google Sheets. document = a .md text document with real headings, which every screen reader navigates by heading. csv = the plainest table there is.",
+    },
+    title: {
+      type: 'string',
+      description:
+        "What to call it, in plain words ('August budget', 'Braille display comparison'). Becomes the filename.",
+    },
+    rows: {
+      type: 'array',
+      description:
+        'spreadsheet and csv ONLY. An array of rows, each row an array of cells. THE FIRST ROW IS THE HEADER — always give real column names; the header is what the spoken summary reads out and what a screen reader announces per cell.',
+      items: { type: 'array', items: {} },
+    },
+    text: {
+      type: 'string',
+      description:
+        'document ONLY. Markdown. USE REAL HEADINGS (# and ##) — screen readers navigate by heading and a wall of paragraphs is a wall.',
+    },
+    sheet_name: {
+      type: 'string',
+      description: 'spreadsheet only, optional. The tab name. Defaults to the title.',
+    },
+  },
+  required: ['kind', 'title'],
+};
+
 export const kadeWikipediaSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -1121,6 +1154,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Run a small Python/Bash/Node program in a safe isolated sandbox and get back what it prints — free, no cost, CPU only. Use for real math, data crunching, text processing, or building small things instead of guessing. ~20s limit; NO access to the site, its data, or any secrets. Make the code PRINT its result, then present the output to the user in plain, screen-reader-friendly words — never a raw dump.',
     schema: kadeCodeSchema,
+    toolType: 'builtin',
+  },
+  kade_make_file: {
+    name: 'kade_make_file',
+    description:
+      "Make a real, downloadable file — a spreadsheet (.xlsx), a CSV, or a document (.md) — and save it to the person's My Creations, where every picture and song they have made already lives. Free. Use it whenever somebody wants something OUT of the chat and into a file: a budget, a comparison table, a letter, notes, a list they want to keep. Pairs naturally with kade_research — do the digging, then make the file from what you found. FOR TABLES THE FIRST ROW MUST BE REAL COLUMN HEADERS, and for documents use real markdown headings, because that is how a screen reader navigates. ⚠️ THE ANSWER CONTAINS A SPOKEN SUMMARY OF WHAT IS ACTUALLY IN THE FILE — rows, columns, totals. SAY IT ALOUD: several people here are blind, and 'I made you a spreadsheet' with no description is worthless to them. Never invent data to pad a file.",
+    schema: kadeMakeFileSchema,
     toolType: 'builtin',
   },
   kade_joke: {

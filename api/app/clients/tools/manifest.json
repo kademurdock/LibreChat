@@ -225,5 +225,13 @@
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []
+  },
+  {
+    "name": "Make a File",
+    "pluginKey": "kade_make_file",
+    "description": "Makes a real spreadsheet, CSV or document you can open and keep, and saves it to your My Creations — with a spoken description of what's inside, because a file you can't see is only useful if somebody tells you what's in it. Try: \"make me a spreadsheet of this month's bills.\"",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
   }
 ]
