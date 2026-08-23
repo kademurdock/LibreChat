@@ -451,7 +451,16 @@ router.get('/asset-download/:id', requireJwtAuth, async (req, res) => {
         : d.kind === 'audio' ? 'mp3'
           : d.kind === 'document' ? (docExt || 'md')
             : 'png';
-    const ct = String(upstream.headers['content-type'] || kindDefaultCt);
+    /* Part 91.5 — for a DOCUMENT, our own known type beats the storage
+     * bucket's guess. Backblaze hands back application/octet-stream for an
+     * .xlsx, and a browser told "octet-stream" is a browser that may not know
+     * to open it in a spreadsheet app. We generated the file, so we know
+     * exactly what it is; only fall back to upstream when we do not. */
+    const upstreamCt = String(upstream.headers['content-type'] || '');
+    const ct =
+      d.kind === 'document' && (!upstreamCt || /octet-stream/i.test(upstreamCt))
+        ? kindDefaultCt
+        : String(upstreamCt || kindDefaultCt);
     const ext =
       {
         'video/mp4': 'mp4', 'video/webm': 'webm',
