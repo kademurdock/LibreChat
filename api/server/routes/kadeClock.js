@@ -494,4 +494,115 @@ router.get('/voice-report', async (req, res) => {
   }
 });
 
+/* ── /voice-bank — Part 88.1 (Fable), the POSITIVE-LABEL LANE ────────────────
+ * The voice work is blocked on one thing: replies Kade actually LIKED. Every
+ * threshold that catches the essays also flags 44% of the bank she approved,
+ * so a corrective cannot ship without a positive control — and a FABRICATED
+ * control would calibrate the detector to its author's writing instead of her
+ * taste, which is worse than no control (she offered, half joking; the answer
+ * is no, on the record).
+ *
+ * Two real sources, both zero-effort for her:
+ *   1. THUMBS-UP messages on Kiana replies — the rating widget already exists
+ *      and writes messages.feedback.rating.
+ *   2. VOICE-BANK KEEPs in the feedback pile — Kiana's persona now files a
+ *      kade_feedback report with subject "VOICE-BANK KEEP" carrying the reply
+ *      verbatim whenever Kade says a reply sounded right. No new plumbing:
+ *      the tool, the collection, and this read all predate tonight.
+ *
+ * This route reads both, computes the same three numbers the voice-report
+ * speaks (loosePer1k / fragRate / avgChars) on the KEPT set, and says plainly
+ * how many labels exist — because the moment that count is ~10+, a threshold
+ * can be FOUND instead of chosen. Until then it reports "not enough yet". */
+router.get('/voice-bank', async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const mongoose = require('mongoose');
+    const db = mongoose.connection.db;
+    const KIANA = process.env.KADE_VOICE_REPORT_AGENT || 'agent_6llV0eMu4fmIaj8f2x1Sb';
+
+    const thumbs = await db
+      .collection('messages')
+      .find(
+        { model: KIANA, isCreatedByUser: false, 'feedback.rating': 'thumbsUp' },
+        { projection: { text: 1, content: 1, createdAt: 1 } },
+      )
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .toArray();
+
+    const keeps = await db
+      .collection('kadefeedback')
+      .find(
+        { subject: /^VOICE-BANK/i },
+        { projection: { detail: 1, createdAt: 1 } },
+      )
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .toArray();
+
+    const texts = [];
+    const seen = new Set();
+    const push = (t) => {
+      const clean = String(t || '').replace(/%%%[^%]*%%%/g, ' ').trim();
+      if (clean.length < 40) return;
+      const key = clean.slice(0, 120);
+      if (seen.has(key)) return;
+      seen.add(key);
+      texts.push(clean);
+    };
+    for (const m of thumbs) {
+      let t = String(m.text || '');
+      if (!t && Array.isArray(m.content)) {
+        t = m.content
+          .filter((p) => p && p.type === 'text')
+          .map((p) => (p.text && p.text.value) || p.text || '')
+          .join(' ');
+      }
+      push(t);
+    }
+    for (const k of keeps) push(k.detail);
+
+    // Same instruments as voice-report, so the numbers are comparable.
+    const LOOSE = /\b(?:ain['’]?t|gonna|gotta|wanna|tryna|y['’]?all|kinda|sorta|lemme|gimme|finna|nah|yep|yup|nope|yo|man|damn|hell|shoot|bruh|lowkey|for real|deadass|straight up|hold up|say less|that['’]?s what['’]?s up|that['’]?s how it be)\b/gi;
+    let words = 0;
+    let chars = 0;
+    let looseHits = 0;
+    let fragSents = 0;
+    let allSents = 0;
+    for (const t of texts) {
+      chars += t.length;
+      words += t.split(/\s+/).length;
+      looseHits += (t.match(LOOSE) || []).length;
+      const ss = t.split(/(?<=[.!?])\s+/).filter((x) => x.trim());
+      allSents += ss.length;
+      fragSents += ss.filter((x) => x.trim().split(/\s+/).filter(Boolean).length <= 4).length;
+    }
+    const nLabels = texts.length;
+    res.json({
+      ok: true,
+      labels: nLabels,
+      fromThumbs: thumbs.length,
+      fromKeeps: keeps.length,
+      enough: nLabels >= 10,
+      loosePer1k: words ? Math.round((1000 * looseHits) / words * 10) / 10 : null,
+      fragRate: allSents ? Math.round((fragSents / allSents) * 100) / 100 : null,
+      avgChars: nLabels ? Math.round(chars / nLabels) : null,
+      spoken:
+        nLabels === 0
+          ? 'No liked replies are on record yet. A thumbs up on any Kiana reply, or telling Kiana a reply sounded right, adds one — about ten unlocks the calibration.'
+          : nLabels < 10
+            ? `${nLabels} liked repl${nLabels === 1 ? 'y is' : 'ies are'} on record — about ${10 - nLabels} more unlock the calibration.`
+            : `${nLabels} liked replies on record: her kept voice runs ${
+              words ? Math.round((1000 * looseHits) / words * 10) / 10 : 0
+            } speech markers per thousand words with a fragment rate of ${
+              allSents ? Math.round((fragSents / allSents) * 100) / 100 : 0
+            }. Calibrate against these, not the authored bank.`,
+    });
+  } catch (e) {
+    logger.error('[kadeClock] voice-bank failed:', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 module.exports = router;
