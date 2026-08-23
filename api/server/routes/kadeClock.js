@@ -327,6 +327,13 @@ router.get('/voice-report', async (req, res) => {
       honestly: /(?:^|[.!?]\s+|%{3}\s*)(?:and |but )?honestly[,?]|\bif i['’]?m being honest\b|\blet['’]?s be honest\b/im,
       partGrading: /\b(?:that|this|it)['’]?s the part (?:that|where|when)\b|\bthe part that (?:gets|kills|breaks|hurts|scares|worries|matters|sticks|stays|lands)\b|\bthe part where you\b/i,
       gasUp: /\bmost people (?:would(?:n['’]t| not)?|could(?:n['’]t| not)?|do(?:n['’]t| not)|never|can['’]t)[^.!?\n]{0,70}[.!?]\s*(?:and |but )?you\b|\bthat tells me you\b|\bthat['’]?s (?:real |genuine |rare )?self-awareness\b|\bgive yourself (?:some |more |a little )?credit\b/i,
+      /* Speech markers, Part 87.1. Deliberately the SMALL words -- the ones
+       * that carry timing and doubt and a shrug -- never the loud ones. A
+       * word list that reached for identity-signalling slang would measure
+       * performance instead of speech, which is the exact failure Kade named
+       * ("not fo shizzle mah nizzle"). */
+      loose: /\b(?:ain['’]?t|gonna|gotta|wanna|tryna|y['’]?all|kinda|sorta|lemme|gimme|finna|nah|yep|yup|nope|yo|man|damn|hell|shoot|bruh|lowkey|for real|deadass|straight up|hold up|say less|that['’]?s what['’]?s up|that['’]?s how it be)\b/gi,
+      bossy: /\b(?:you should|you need to|you have to|try to|make sure (?:you|to)|start by|remember to|it['’]?s important to|the key is|have you considered|it sounds like|what i['’]?m hearing|it['’]?s okay to|give yourself|be (?:kind|gentle) (?:to|with) yourself|hold space|perhaps|in some ways|to some extent|it['’]?s worth noting)\b/gi,
       thatPart: /(?:^|[.!?]\s+)That part[.!](?:\s|$)/m,
       memeCombat: /\bi (?:will|[’']ll|would|[’']d) fight (?:you|anyone|somebody)\b|\bdie on th(?:is|at) hill\b|\bfight me on this\b|\bthrow hands\b/i,
     };
@@ -359,6 +366,25 @@ router.get('/voice-report', async (req, res) => {
     let partGrading = 0;
     let gasUp = 0;
     let parallelPairs = 0;
+    /* ── REAL-TALK TEXTURE (Part 87.1, Aug 22 2026) ──────────────────────
+     * Kade, after the named tics were measured dead: "she's just not
+     * creative... freaking looooosen up... I just want her to talk like a
+     * gen-x millennial black girl would talk."
+     *
+     * Measured before shipping these, on 62 real replies against the voice
+     * bank she personally approved, and the result overturned the obvious
+     * theory. She is NOT preachy: advice-giving, therapist framing and
+     * hedging together landed SEVEN times in sixty-two replies. She is
+     * STIFF. Two rates carry it, and both are length-independent, which the
+     * character count is not:
+     *   speech markers   live 3.0 per 1k words   approved bank 12.1
+     *   fragment rate    live 0.08               approved bank 0.29
+     * bossy is counted too, so it can be watched STAYING near zero instead
+     * of being assumed. */
+    let looseHits = 0;
+    let bossyHits = 0;
+    let fragSents = 0;
+    let allSents = 0;
     let tagsTotal = 0;
     let commaTags = 0;
     const tagPhrases = {};
@@ -393,6 +419,13 @@ router.get('/voice-report', async (req, res) => {
       if (RE.honestly.test(t)) honestlyC++;
       if (RE.partGrading.test(t)) partGrading++;
       if (RE.gasUp.test(t)) gasUp++;
+      looseHits += (t.match(RE.loose) || []).length;
+      bossyHits += (t.match(RE.bossy) || []).length;
+      {
+        const ss = t.split(/(?<=[.!?])\s+/).filter((x) => x.trim());
+        allSents += ss.length;
+        fragSents += ss.filter((x) => x.trim().split(/\s+/).filter(Boolean).length <= 4).length;
+      }
       const fw = ((t.match(/^[A-Za-z']+/) || [''])[0] || '').toLowerCase();
       if (fw) firstWords[fw] = (firstWords[fw] || 0) + 1;
       const sentences = t.split(/(?<=[.!?])\s+/).filter(Boolean);
@@ -435,6 +468,12 @@ router.get('/voice-report', async (req, res) => {
       honestlyMarkers: honestlyC,
       partGrading,
       gasUp,
+      /* The two that answer "did she loosen up." Targets from the bank she
+       * approved: loosePer1k 12.1, fragRate 0.29. Baseline the night this
+       * shipped: 3.0 and 0.08. */
+      loosePer1k: words ? Math.round((1000 * looseHits) / words * 10) / 10 : 0,
+      fragRate: allSents ? Math.round((fragSents / allSents) * 100) / 100 : 0,
+      bossyPer1k: words ? Math.round((1000 * bossyHits) / words * 10) / 10 : 0,
       parallelPairs,
       tagsTotal,
       commaTags,
