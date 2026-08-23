@@ -84,7 +84,14 @@ const Registration: React.FC = () => {
           {type === 'password' ? (
             <SecretInput
               id={id}
-              autoComplete={id}
+              /* Part 89.1 — the page checker's first real find. autoComplete={id}
+               * handed the browser "password" and "confirm_password", neither of
+               * which is a real autocomplete token (axe: autocomplete-valid,
+               * serious, both password fields). Password managers and autofill
+               * misread the form. Registration mints a NEW credential, so both
+               * fields say so. The plain-input branch below keeps {id}: name,
+               * username and email are already valid tokens. */
+              autoComplete="new-password"
               aria-label={fieldLabel}
               {...field}
               aria-invalid={!!errors[id]}
