@@ -79,11 +79,15 @@ class KadeErrand extends Tool {
       authedRole === 'ADMIN' &&
       (!actingId || actingId === ownerId) &&
       (!onBehalf || onBehalf === ownerId);
+    // Kept for the adults-only path in _call (Part 91.2): the gate there needs
+    // the raw identities, not just the owner verdict.
+    this._authedId = authedId;
+    this._onBehalf = onBehalf;
 
     this.description =
-      "Run a real errand in the background — look things up across the web, keep a step-by-step record, and come back with the answer AND how you know it. Owner-only: answers to Kade's own account and nobody else's.";
+      "Run a real errand in the background — look things up across the web, keep a step-by-step record, and come back with the answer AND how you know it. For adult accounts, signed in on their own seat.";
     this.description_for_model =
-      "OWNER-ONLY TOOL — it answers ONLY when the person on this very turn is Kade herself on her own seat. For anyone else it refuses; when it refuses, say plainly that errands are Kade-only and DROP it — never retry, never roleplay success. " +
+      "ADULTS-ONLY TOOL (Kade's word, Aug 23 2026 — was owner-only before). It answers when the person on this very turn is a signed-in ADULT on their own seat: Kade, or an adult family member. It refuses child accounts and the phone lane. When it refuses, keep it light and move on — offer to look the thing up together right now instead. NEVER retry a refusal, never roleplay success, and never frame the refusal as the person being restricted. " +
       "WHAT AN ERRAND IS: a job you go do while she gets on with her day. She states a goal, you start it, and the desk works through it step by step — looking things up, cross-checking, keeping a receipt for every step. It taps her phone when it's done. Minutes, not seconds. " +
       "THE ONE RULE THAT MATTERS: every reply from this tool carries a spoken summary written for the EAR. SAY IT. Do not turn it into a bulleted list, do not paste links, do not add headings — she is blind and a list of URLs is worthless to her. Put it in your own voice if you like, but keep the shape: the answer first, then what you did, then what it cost. " +
       "THE FLOW: (1) action='start' with her goal stated fully — if a detail that changes the answer is missing, ask her for it first, because a guessed errand spends real money on the wrong question. Tell her the errand id in plain digits and that you'll ping her. (2) She can ask how it's going any time: action='status'. Relay it conversationally; never invent progress the tool didn't report. (3) If an errand stops to ask something, it comes back as awaiting a yes or no — read her the question EXACTLY as the tool words it, wait for her real answer, and send it with action='confirm'. Never assume a yes on her behalf. (4) action='receipts' when she wants the whole trail — read it as a short story of what happened, in order, not as a table. Offer it once when you deliver a finished errand; don't force it on her. (5) action='cancel' the moment she says stop. " +
@@ -99,9 +103,36 @@ class KadeErrand extends Tool {
 
   async _call(data) {
     const action = (data && data.action) || 'status';
+    /* ADULTS-ONLY (Part 91.2, her pick from three options: "Adults only").
+     * The owner path is unchanged. For everyone else, the turn must be a REAL
+     * signed-in seat acting as itself (no kadeOnBehalfOf — the phone lane
+     * stays owner-only, because we cannot check the caller's account type
+     * from here), and the account must not be a child. The child check uses
+     * the same lane KadeJoke and KadeGames use, and the same manners: the
+     * refusal never tells a child they are restricted — that is Kade's
+     * standing rule, and a kid asking for an errand just hears that this is
+     * something to do together instead. The bridge re-checks the userId
+     * against its own allowlist server-side, so this gate is the polite door,
+     * not the only lock. */
     if (!this.ownerOk) {
-      logger.warn(`[KadeErrand] refused: non-owner turn (agent ${this.agentName || '?'})`);
-      return "This tool is locked to Kade's own seat and this turn isn't hers. Tell the person plainly that errands are Kade-only, and let it go — do not retry or pretend.";
+      const authedId = String(this._authedId || '');
+      const onBehalf = this._onBehalf;
+      const actingId = String(this.userId || '');
+      if (!authedId || onBehalf || (actingId && actingId !== authedId)) {
+        logger.warn(`[KadeErrand] refused: not a self-acting seat (agent ${this.agentName || '?'})`);
+        return 'Errands need the person signed in on their own seat — this turn is not that. Offer to look it up together right now instead, and let the errand idea go.';
+      }
+      try {
+        const { getUserById } = require('~/models');
+        const u = await getUserById(actingId || authedId, 'kadeAccountType');
+        if (u && u.kadeAccountType === 'child') {
+          logger.info('[KadeErrand] child seat — soft refusal, per the standing rule');
+          return "Errands aren't something you can send off from this account — but offer to dig into the question together right now, which is honestly just as good.";
+        }
+      } catch (e) {
+        logger.warn(`[KadeErrand] account-type lookup failed (${e.message}) — refusing rather than guessing`);
+        return 'The errand desk could not confirm this account just now. Try again in a minute, or look it up together instead.';
+      }
     }
     if (!this.secret) return 'The errand desk is not configured on this server (missing ERRAND_TOOL_SECRET).';
     if (!this.userId) return 'Errands are unavailable right now (no user context).';
@@ -129,7 +160,7 @@ class KadeErrand extends Tool {
       { secret: this.secret, userId: this.userId, agentId: this.agentId, agentName: this.agentName, goal: String(goal).trim() },
       { headers: this._hdrs(), timeout: 20000, validateStatus: () => true },
     );
-    if (r.status === 403) return "The errand desk refused this turn — errands are Kade's own seat only. Say so plainly and drop it.";
+    if (r.status === 403) return 'The errand desk refused this account — it is not on the errand list yet. That is Kade\'s switch to flip; offer to look the thing up together right now instead.';
     if (r.status === 429) return `${r.data?.error || 'The errand desk is full.'} Tell her that in plain words and offer to try later.`;
     if (r.status !== 200 || !r.data?.ok) return `The errand couldn't start (${r.data?.error || `HTTP ${r.status}`}). Say so honestly.`;
     return (
