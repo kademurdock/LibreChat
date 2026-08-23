@@ -595,8 +595,28 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         // Check if our job was replaced by a new request before emitting
         // This prevents stale requests from emitting events to newer jobs
+        //
+        // ⚠️ Aug 23 2026 — AMBER LACEY'S SILENT TURN. `!currentJob` is NOT a
+        // replacement and must never be treated as one. A job is deleted by its
+        // OWN abort (abortJob → deleteJob) and by its own completion cleanup, so
+        // "absent" means nobody owns this stream — not that somebody newer does.
+        // Reading absent as replaced made an aborted-but-completed turn return
+        // here and emit NOTHING: the finished reply was written to the database
+        // (the save above runs first) while the client, still painting tool
+        // activity, was never told the turn had ended. Her seat sat in silence
+        // for ninety seconds with a good 1,359-character reply it could not
+        // reach, and she is blind — silence is the whole failure, not a cosmetic
+        // one. The live log named it exactly: `currentCreatedAt: undefined`,
+        // where a genuine replacement would carry a newer number.
+        //
+        // A real replacement still has to stay quiet, so the newer-job case is
+        // unchanged. Absent falls through to the emit paths below, where an
+        // aborted turn emits its ABORTED FINAL event. That is safe by
+        // construction: eventTransport is deliberately NOT torn down on abort
+        // ("let the abort event fully transmit first"), emitDone/completeJob
+        // both guard on missing runtime, and updateJob no-ops on a missing job.
         const currentJob = await GenerationJobManager.getJob(streamId);
-        const jobWasReplaced = !currentJob || currentJob.createdAt !== jobCreatedAt;
+        const jobWasReplaced = !!currentJob && currentJob.createdAt !== jobCreatedAt;
 
         if (jobWasReplaced) {
           logger.debug(`[ResumableAgentController] Skipping FINAL emit - job was replaced`, {
