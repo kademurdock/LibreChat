@@ -349,6 +349,9 @@ router.get('/voice-report', async (req, res) => {
       for (const w of A) if (B.has(w)) k++;
       return k / Math.max(A.size, B.size);
     };
+    /* Part 92.7 — the concentrated-care texts ride along. Reporting only; the
+     * detector counts and shows and never blocks. Kill: KADE_CARE_DETECTOR=0. */
+    const careTexts = [];
     let n = 0;
     let chars = 0;
     let words = 0;
@@ -405,6 +408,7 @@ router.get('/voice-report', async (req, res) => {
         tagPhrases[key] = (tagPhrases[key] || 0) + 1;
       }
       const t = stripTags(raw).trim();
+      careTexts.push(t);
       chars += t.length;
       words += t.split(/\s+/).length;
       if (/[?]\s*$/.test(t)) qClose++;
@@ -474,6 +478,26 @@ router.get('/voice-report', async (req, res) => {
       loosePer1k: words ? Math.round((1000 * looseHits) / words * 10) / 10 : 0,
       fragRate: allSents ? Math.round((fragSents / allSents) * 100) / 100 : 0,
       bossyPer1k: words ? Math.round((1000 * bossyHits) / words * 10) / 10 : 0,
+      /* ── concentrated care (Part 92.7) ────────────────────────────────────
+       * Per REPLY, not per thousand words, because the tic is a handful of
+       * turns and a rate across every seat cannot see it. `coda` is the number
+       * that matters — a phrase in mid-flow is conversation; the same phrase
+       * bolted onto the end after the answer was finished is the caretaker
+       * register. Calibrated on 354 real replies: 3 (0.8%). Samples are the
+       * TAIL of the reply only, and this whole route is admin-authed.
+       * ⚠️ A MEASUREMENT, NOT A VERDICT — one of those three reads as good, and
+       * the positive control (approved replies) does not exist yet. */
+      concentratedCare:
+        process.env.KADE_CARE_DETECTOR === '0'
+          ? null
+          : (() => {
+              try {
+                return require('./kadeCare').careReport(careTexts, { samples: 5 });
+              } catch (e) {
+                logger.error('[kadeClock] concentrated-care detector failed:', e);
+                return { error: 'detector failed' };
+              }
+            })(),
       parallelPairs,
       tagsTotal,
       commaTags,
