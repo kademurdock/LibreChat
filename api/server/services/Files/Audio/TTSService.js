@@ -326,13 +326,34 @@ class TTSService {
    * @returns {Promise<Object>} The axios response object.
    * @throws {Error} If the provider is invalid or the request fails.
    */
-  async ttsRequest(provider, ttsSchema, { input, voice, stream = true, speed }) {
+  async ttsRequest(provider, ttsSchema, { input, voice, stream = true, speed, sessionKey }) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
     }
 
     const [url, data, headers] = strategy.call(this, ttsSchema, input, voice, stream, speed);
+
+    /* PART 92.16 (Aug 24 2026) — SAY WHO IS SPEAKING, SO THE PROXY CAN GIVE THE
+     * NEXT SENTENCE CONTEXT.
+     *
+     * Kade's report, on the streamed voice: "the previous clip sounds like it
+     * has no context to the next one." Inworld's fix is
+     * `synthesisContext.previousRequests`, and she A/B'd the two takes by ear
+     * and picked the one with context. 92.15 shipped it for chunks WITHIN one
+     * request — but the native app's streaming speech sends ONE SENTENCE PER
+     * HTTP CALL, so the proxy had no way to know what the previous call said.
+     * That is the lane she actually listens to.
+     *
+     * This header is the whole missing piece: an opaque per-seat key that lets
+     * the proxy hold a short, expiring ring of what this seat just spoke. It is
+     * the user id, which the proxy already sees on other lanes — no new
+     * identity, no new secret, and it is omitted entirely when absent rather
+     * than sending an empty string that would pool every anonymous caller into
+     * one shared context bucket. */
+    if (sessionKey) {
+      headers['x-kade-tts-session'] = String(sessionKey);
+    }
 
     [data, headers].forEach(this.removeUndefined.bind(this));
 
@@ -406,7 +427,12 @@ class TTSService {
       const voice = await this.getVoice(ttsSchema, requestVoice, provider);
 
       if (input.length < 32768) {
-        const response = await this.ttsRequest(provider, ttsSchema, { input, voice, speed });
+        const response = await this.ttsRequest(provider, ttsSchema, {
+          input,
+          voice,
+          speed,
+          sessionKey: req.user && req.user.id,
+        });
         response.data.pipe(res);
         return;
       }
@@ -420,6 +446,7 @@ class TTSService {
             input: chunk.text,
             stream: true,
             speed,
+            sessionKey: req.user && req.user.id,
           });
 
           logger.debug(`[textToSpeech] user: ${req?.user?.id} | writing audio stream`);
