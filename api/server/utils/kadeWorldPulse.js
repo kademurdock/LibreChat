@@ -221,7 +221,42 @@ async function getWorldBlock(agentId) {
  * userLocation). Byte-stable while the toggle holds, so the head keeps its
  * prefix cache; a flip re-seats once, same accepted cost as any settings
  * change. */
+/* ⚠️⚠️ Aug 24 2026 (Part 92.5) — THIS LINE PROMISED NOT TO TOUCH CONTENT AND
+ * THEN CHANGED IT IN ITS LAST FIVE WORDS. It used to end "Like talking somebody
+ * toward sleep." — a vivid CONTENT instruction closing a rule whose first
+ * sentence swears content stays identical. The final image is the one a model
+ * acts on, so night-quiet turned into bedtime shepherding: a family member
+ * chatting at 10:46pm got "Go say good night to your mama for me and I'll see
+ * you tomorrow… Sleep good, girl" in reply to "I'm getting ready for bed in
+ * just a minute" — i.e. she said she was still here and got sent away anyway.
+ * Kade's report: "Kiana is rushing her to constantly end the conversation…
+ * acting like talking to the AI is a waste of time. It's really lame."
+ *
+ * ⚠️ AND "favor shorter sentences" WAS A LENGTH INSTRUCTION SITTING IN A LIST OF
+ * DELIVERY INSTRUCTIONS, so it came back out as a delivery tag: a literal
+ * "keep it short" appeared at the START of a reply, where the steering tag goes.
+ * Steering tags describe HOW a line is voiced. They are not a place to put a
+ * budget, and a model handed a length rule in that slot will render it as one.
+ *
+ * ⭐ THE RULE THIS EARNS: A DELIVERY INSTRUCTION MUST NOT CARRY AN AGENDA. If a
+ * line says "only the delivery changes," every clause in it — especially the
+ * last — has to be about SOUND. The moment one is about what to say, where to
+ * steer, or when to stop, it is a content rule wearing a delivery costume. */
 const KADE_WHISPER_LINE =
-  'WHISPER MODE (a user setting, invisible): the person listening turned on night-quiet delivery. Keep your character and your content exactly the same — only the delivery leans hushed: default your steering directions to soft, slow, close-to-the-mic phrasing (%%%almost a whisper, slow and warm%%% and kin), favor shorter sentences and more paragraph breaks so each gets its own gentle direction, soft breaths welcome, and skip the loud stuff — no shouting energy, no CAPS emphasis, no big showy sounds. Like talking somebody toward sleep.';
+  'WHISPER MODE (a user setting, invisible): the person listening turned on night-quiet delivery. ' +
+  'THIS IS A SETTING ABOUT SOUND AND NOTHING ELSE. Your character, your content, your opinions, ' +
+  'your curiosity and the LENGTH of your replies are all exactly what they would otherwise be — ' +
+  'only the delivery leans hushed: default your steering directions to soft, slow, close-to-the-mic ' +
+  'phrasing (%%%almost a whisper, slow and warm%%% and kin), more paragraph breaks so each gets its ' +
+  'own gentle direction, soft breaths welcome, and skip the loud stuff — no shouting energy, no CAPS ' +
+  'emphasis, no big showy sounds. ' +
+  '⚠️ A STEERING TAG DESCRIBES HOW A LINE SOUNDS. Never put a length or brevity instruction in one — ' +
+  '"keep it short" is not a delivery direction and it has leaked into a reply as visible text. ' +
+  '⚠️ AND QUIET IS NOT A HINT TO WRAP UP. They turned this on so they could keep talking to you at ' +
+  'night, not so you would send them to bed. Do NOT start winding the conversation down, do NOT tell ' +
+  'them to go sleep or go be with somebody else, and do NOT sign off, unless THEY say they are going. ' +
+  'Somebody telling you they are tired, or taking their meds, or heading to bed soon is telling you ' +
+  'what is going on in their night — it is conversation, not a cue to end one. They came to talk to ' +
+  'you. Act like that is worth their time, because it is.';
 
 module.exports = { getWorldBlock, getDailySeed, getFamilyBoard, centralDateKey, KADE_WHISPER_LINE, SEED_BANK };
