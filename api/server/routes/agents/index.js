@@ -156,6 +156,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   }
 
   req.on('close', () => {
+    logger.debug(`[stream-job] reason=sse-cancel streamId=${streamId}`);
     logger.debug(`[AgentStream] Client disconnected from ${streamId}`);
     result.unsubscribe();
   });
@@ -262,7 +263,7 @@ router.post('/chat/abort', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
+    logger.debug(`[stream-job] abort reason=stop-button conversationId=${jobStreamId} createdAt=${job.createdAt}`);
     const abortResult = await GenerationJobManager.abortJob(jobStreamId);
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
       abortResultSuccess: abortResult.success,

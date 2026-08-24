@@ -75,7 +75,8 @@ jest.mock('./abortRun', () => ({
 
 const { logger } = require('@librechat/data-schemas');
 const { sendError } = require('~/server/middleware/error');
-const { handleAbortError, spendCollectedUsage } = require('./abortMiddleware');
+const { GenerationJobManager } = require('@librechat/api');
+const { handleAbort, handleAbortError, spendCollectedUsage } = require('./abortMiddleware');
 
 const buildAbortRequest = () => ({
   body: {
@@ -308,5 +309,112 @@ describe('abortMiddleware - handleAbortError', () => {
     );
     expect(logger.debug).not.toHaveBeenCalled();
     expect(sendError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('abortMiddleware - Abort-Reason Telemetry', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('handleAbort (legacy stop button)', () => {
+    it('logs the stop-button reason tag before aborting', async () => {
+      const { spawnCollectedUsage } = require('@librechat/api');
+      jest.mock('@librechat/api', () => ({
+        ...jest.requireActual('@librechat/api'),
+        isEnabled: jest.fn().mockReturnValue(false),
+        GenerationJobManager,
+        spawnCollectedUsage,
+      }));
+
+      GenerationJobManager.abortJob.mockResolvedValue({
+        success: true,
+        jobData: {
+          userMessage: { messageId: 'user-msg-123' },
+          responseMessageId: 'response-msg-456',
+          conversationId: 'evt-convo-123',
+          sender: 'AI',
+          endpoint: 'agents',
+          iconURL: 'https://example.com/icon.png',
+          model: 'gpt-4',
+          promptTokens: 10,
+        },
+        content: [{ type: 'text', text: 'Partial response!' }],
+        text: 'Partial response!',
+        collectedUsage: [],
+      });
+
+      const req = {
+        body: {
+          abortKey: 'convo-123:msg-123',
+          isTemporary: false,
+        },
+        user: { id: 'user-123', email: 'user@example.com' },
+        config: { interfaceConfig: {} },
+      };
+      const res = {
+        headersSent: false,
+        setHeader: jest.fn(),
+        send: jest.fn(),
+      };
+
+      const handler = handleAbort();
+      await handler(req, res);
+
+      expect(logger.debug).toHaveBeenCalledWith(
+        '[stream-job] abort reason=stop-button conversationId=convo-123',
+      );
+    });
+  });
+
+  describe('handleAbortError (error path)', () => {
+    it('logs the error-path reason tag when aborting partial text', async () => {
+      GenerationJobManager.abortJob.mockResolvedValue({
+        success: true,
+        jobData: {
+          userMessage: { messageId: 'user-msg-123' },
+          responseMessageId: 'response-msg-456',
+          conversationId: 'convo-123',
+          sender: 'AI',
+          endpoint: 'agents',
+          iconURL: 'https://example.com/icon.png',
+          model: 'gpt-4',
+          promptTokens: 10,
+        },
+        content: [{ type: 'text', text: 'Partial response content' }],
+        text: 'Partial response content',
+        collectedUsage: [],
+      });
+
+      const partialText = 'This is a partial text response that the user saw.';
+      const req = {
+        body: {
+          endpointOption: {},
+          model: 'gpt-4',
+          agent_id: null,
+          isTemporary: false,
+        },
+        user: { id: 'user-123', email: 'user@example.com' },
+        config: { interfaceConfig: {} },
+      };
+      const res = {
+        headersSent: false,
+        setHeader: jest.fn(),
+        send: jest.fn(),
+      };
+
+      await handleAbortError(res, req, new Error('An error occurred'), {
+        sender: 'AI',
+        conversationId: 'convo-123',
+        messageId: 'message-123',
+        parentMessageId: 'parent-123',
+        userMessageId: 'user-message-123',
+        partialText,
+      });
+
+      expect(logger.debug).toHaveBeenCalledWith(
+        '[stream-job] abort reason=error-path conversationId=convo-123',
+      );
+    });
   });
 });

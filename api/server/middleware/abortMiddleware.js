@@ -215,9 +215,11 @@ const handleAbort = function () {
       if (isEnabled(process.env.LIMIT_CONCURRENT_MESSAGES)) {
         await clearPendingReq({ userId: req.user.id });
       }
+      const conversationId = req.body.abortKey?.split(':')?.[0] ?? req.user.id;
+      logger.debug(`[stream-job] abort reason=stop-button conversationId=${conversationId}`);
       return await abortMessage(req, res);
     } catch (err) {
-      logger.error('[abortMessage] handleAbort error', err);
+      logger.error('[handleAbort]', err);
     }
   };
 };
@@ -306,6 +308,7 @@ const handleAbortError = async (res, req, error, data) => {
 
   if (partialText && partialText.length > 5) {
     try {
+      logger.debug(`[stream-job] abort reason=error-path conversationId=${conversationId}`);
       return await abortMessage(req, res);
     } catch (err) {
       logger.error('[handleAbortError] error while trying to abort message', err);

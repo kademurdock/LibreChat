@@ -1,4 +1,5 @@
 import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import { EventEmitter } from 'events';
 import {
   Constants,
   UsageEvents,
@@ -424,206 +425,284 @@ class GenerationJobManagerClass {
    * If we used subscribe() for internal handlers, those handlers would count
    * as subscribers. When the real SSE client connects, isFirstSubscriber()
    * would return false (because internal handler was "first"), and readyPromise
-   * would never resolve - causing a 5-second timeout delay before generation starts.
-   *
-   * Instead, allSubscribersLeft handlers are stored in runtime.allSubscribersLeftHandlers
-   * and called directly from the onAllSubscribersLeft callback in createJob().
-   *
-   * @param streamId - The stream identifier
-   * @param jobData - Serializable job metadata from job store
-   * @param runtime - Non-serializable runtime state (abort controller, promises, etc.)
-   * @returns A GenerationJob facade object
    */
   private buildJobFacade(
     streamId: string,
     jobData: SerializableJobData,
     runtime: RuntimeJobState,
   ): t.GenerationJob {
-    /**
-     * Proxy emitter that delegates to eventTransport for most operations.
-     * Exception: allSubscribersLeft handlers are stored separately to avoid
-     * incrementing subscriber count (see class JSDoc above).
-     */
-    const emitterProxy = {
-      on: (event: string, handler: (...args: unknown[]) => void) => {
-        if (event === 'allSubscribersLeft') {
-          // Store handler for internal callback - don't use subscribe() to avoid counting as a subscriber
-          if (!runtime.allSubscribersLeftHandlers) {
-            runtime.allSubscribersLeftHandlers = [];
-          }
-          runtime.allSubscribersLeftHandlers.push(handler);
+    const emitter = new EventEmitter();
+    const emitterProxy = new Proxy(emitter, {
+      get(target, prop, receiver) {
+        if (prop === 'on') {
+          return (event: string, handler: (...args: unknown[]) => void) => {
+            if (event === 'allSubscribersLeft') {
+              // Store handler separately - don't register on EventEmitter
+              const currentRuntime = runtime;
+              if (!currentRuntime.allSubscribersLeftHandlers) {
+                currentRuntime.allSubscribersLeftHandlers = [];
+              }
+              currentRuntime.allSubscribersLeftHandlers.push(handler);
+              return target;
+            }
+            return Reflect.get(target, prop, receiver).apply(target, [event, handler]);
+          };
         }
+        return Reflect.get(target, prop, receiver);
       },
-      emit: () => {
-        /* handled via eventTransport */
-      },
-      listenerCount: () => this.eventTransport.getSubscriberCount(streamId),
-      setMaxListeners: () => {
-        /* no-op for proxy */
-      },
-      removeAllListeners: () => this.eventTransport.cleanup(streamId),
-      off: () => {
-        /* handled via unsubscribe */
-      },
-    };
+    });
 
     return {
-      streamId,
-      emitter: emitterProxy as unknown as t.GenerationJob['emitter'],
-      status: jobData.status as t.GenerationJobStatus,
       createdAt: jobData.createdAt,
-      completedAt: jobData.completedAt,
+      emitter: emitterProxy,
       abortController: runtime.abortController,
-      error: jobData.error,
-      metadata: {
-        userId: jobData.userId,
-        tenantId: jobData.tenantId,
-        conversationId: jobData.conversationId,
-        userMessage: jobData.userMessage,
-        responseMessageId: jobData.responseMessageId,
-        sender: jobData.sender,
-        endpoint: jobData.endpoint,
-        iconURL: jobData.iconURL,
-        model: jobData.model,
-        promptTokens: jobData.promptTokens,
-      },
       readyPromise: runtime.readyPromise,
-      resolveReady: runtime.resolveReady,
-      finalEvent: runtime.finalEvent,
-      syncSent: runtime.syncSent,
+      watcherCount: 0,
     };
   }
 
   /**
-   * Get or create runtime state for a job.
-   *
-   * This enables cross-replica support in Redis mode:
-   * - If runtime exists locally (same replica), return it
-   * - If job exists in Redis but not locally (cross-replica), create minimal runtime
-   *
-   * The lazily-created runtime state is sufficient for:
-   * - Subscribing to events (via Redis pub/sub)
-   * - Getting resume state
-   * - Handling reconnections
-   * - Receiving cross-replica abort signals (via Redis pub/sub)
-   *
-   * @param streamId - The stream identifier
-   * @returns Runtime state or null if job doesn't exist anywhere
+   * Subscribe to a stream's events.
+   * Returns a subscription object with an unsubscribe method.
    */
-  private async getOrCreateRuntimeState(streamId: string): Promise<RuntimeJobState | null> {
-    const existingRuntime = this.runtimeState.get(streamId);
-    if (existingRuntime) {
-      return existingRuntime;
-    }
-
-    // Job doesn't exist locally - check Redis
-    const jobData = await this.jobStore.getJob(streamId);
-    if (!jobData) {
-      return null;
-    }
-
-    // Cross-replica scenario: job exists in Redis but not locally
-    // Create minimal runtime state for handling reconnection/subscription
-    logger.debug(`[GenerationJobManager] Creating cross-replica runtime for ${streamId}`);
-
-    let resolveReady: () => void;
-    const readyPromise = new Promise<void>((resolve) => {
-      resolveReady = resolve;
-    });
-
-    // For jobs created on other replicas, readyPromise should be pre-resolved
-    // since generation has already started
-    resolveReady!();
-
-    // Parse finalEvent from Redis if available
-    let finalEvent: t.ServerSentEvent | undefined;
-    if (jobData.finalEvent) {
-      try {
-        finalEvent = JSON.parse(jobData.finalEvent) as t.ServerSentEvent;
-      } catch {
-        // Ignore parse errors
+  async subscribe(
+    streamId: string,
+    onChunk: t.ChunkHandler,
+    onDone?: t.DoneHandler,
+    onError?: t.ErrorHandler,
+    options?: t.SubscribeOptions,
+  ): Promise<{ unsubscribe: t.UnsubscribeFn } | null> {
+    // Ensure runtime state exists (lazy creation for cross-replica jobs)
+    let runtime = this.runtimeState.get(streamId);
+    if (!runtime) {
+      const jobData = await this.jobStore.getJob(streamId);
+      if (!jobData) {
+        return null;
       }
-    }
-
-    const runtime: RuntimeJobState = {
-      abortController: new AbortController(),
-      readyPromise,
-      resolveReady: resolveReady!,
-      syncSent: jobData.syncSent ?? false,
-      earlyEventBuffer: [],
-      hasSubscriber: false,
-      finalEvent,
-      errorEvent: jobData.error,
-    };
-
-    this.runtimeState.set(streamId, runtime);
-
-    // Set up all-subscribers-left callback for this replica
-    this.eventTransport.onAllSubscribersLeft(streamId, () => {
-      const currentRuntime = this.runtimeState.get(streamId);
-      if (currentRuntime) {
-        currentRuntime.syncSent = false;
-        currentRuntime.hasSubscriber = false;
-        // Persist syncSent=false to Redis
-        this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
-          logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
-        });
-        // Call registered handlers
-        if (currentRuntime.allSubscribersLeftHandlers) {
-          this.jobStore
-            .getContentParts(streamId)
-            .then((result) => {
-              const parts = result?.content ?? [];
-              for (const handler of currentRuntime.allSubscribersLeftHandlers ?? []) {
-                try {
-                  handler(parts);
-                } catch (err) {
-                  logger.error(`[GenerationJobManager] Error in allSubscribersLeft handler:`, err);
-                }
-              }
-            })
-            .catch((err) => {
-              logger.error(
-                `[GenerationJobManager] Failed to get content parts for allSubscribersLeft handlers:`,
-                err,
-              );
-            });
-        }
-      }
-    });
-
-    // Set up cross-replica abort listener (Redis mode only)
-    // This ensures lazily-initialized jobs can receive abort signals
-    if (this.eventTransport.onAbort) {
-      this.eventTransport.onAbort(streamId, () => {
-        const currentRuntime = this.runtimeState.get(streamId);
-        if (currentRuntime && !currentRuntime.abortController.signal.aborted) {
-          logger.debug(
-            `[GenerationJobManager] Received cross-replica abort for lazily-init job ${streamId}`,
-          );
-          currentRuntime.abortController.abort();
-        }
+      // Lazy-create runtime state from persisted job data
+      let resolveReady: () => void;
+      const readyPromise = new Promise<void>((resolve) => {
+        resolveReady = resolve;
       });
+      runtime = {
+        abortController: new AbortController(),
+        readyPromise,
+        resolveReady: resolveReady!,
+        syncSent: jobData.syncSent,
+        earlyEventBuffer: [],
+        hasSubscriber: false,
+      };
+      this.runtimeState.set(streamId, runtime);
+      resolveReady!();
     }
 
-    return runtime;
+    // If job has an error, send it immediately to the onError callback
+    if (runtime.errorEvent && onError) {
+      setImmediate(() => {
+        onError(runtime.errorEvent!);
+      });
+      return { unsubscribe: () => {} };
+    }
+
+    // If job has a final event and no error, send it via onDone
+    if (runtime.finalEvent && onDone) {
+      setImmediate(() => {
+        onDone(runtime.finalEvent!);
+      });
+      return { unsubscribe: () => {} };
+    }
+
+    const skipBufferReplay = options?.skipBufferReplay ?? false;
+
+    // Subscribe to event transport
+    const result = this.eventTransport.subscribe(streamId, {
+      onChunk,
+      onDone: onDone ? (event) => onDone(event) : undefined,
+      onError: onError ? (error) => onError(error) : undefined,
+    });
+
+    // Replay early event buffer
+    if (!skipBufferReplay && runtime.earlyEventBuffer.length > 0) {
+      const buffer = [...runtime.earlyEventBuffer];
+      for (const event of buffer) {
+        setImmediate(() => {
+          onChunk(event);
+        });
+      }
+    }
+
+    runtime.hasSubscriber = true;
+
+    // Clear buffer after replay or skip
+    if (skipBufferReplay) {
+      runtime.earlyEventBuffer = [];
+    }
+
+    logger.debug(
+      `[GenerationJobManager] subscribe ${streamId}: skipBufferReplay=${skipBufferReplay} bufferSize=${runtime.earlyEventBuffer.length}`,
+    );
+
+    recordGenerationStreamSubscription(this.storeLabel);
+
+    return result;
+  }
+
+  /**
+   * Atomic subscribe-and-resume for reconnecting clients.
+   * Returns resume state, pending events, and a subscription in one async call.
+   */
+  async subscribeWithResume(
+    streamId: string,
+    onChunk: t.ChunkHandler,
+    onDone?: t.DoneHandler,
+    onError?: t.ErrorHandler,
+  ): Promise<t.SubscribeWithResumeResult> {
+    // Get resume state before subscribing
+    const resumeState = await this.getResumeState(streamId);
+
+    // Subscribe to events
+    const subscription = await this.subscribe(streamId, onChunk, onDone, onError, {
+      skipBufferReplay: true,
+    });
+
+    // For in-memory mode, drain earlyEventBuffer as pendingEvents
+    let pendingEvents: t.ServerSentEvent[] = [];
+    if (!this._isRedis) {
+      const runtime = this.runtimeState.get(streamId);
+      if (runtime) {
+        pendingEvents = [...runtime.earlyEventBuffer];
+        runtime.earlyEventBuffer = [];
+      }
+    }
+
+    recordGenerationStreamResumePendingEvents(this.storeLabel, pendingEvents.length);
+
+    return { subscription, resumeState, pendingEvents };
+  }
+
+  /**
+   * Emit a chunk event to all subscribers.
+   */
+  async emitChunk(streamId: string, event: t.ServerSentEvent): Promise<void> {
+    const runtime = this.runtimeState.get(streamId);
+
+    // Buffer events if no subscriber yet
+    if (runtime && !runtime.hasSubscriber) {
+      runtime.earlyEventBuffer.push(event);
+    }
+
+    // Emit via event transport
+    this.eventTransport.emitChunk(streamId, event);
+
+    // Track title event
+    if (event.event === 'title') {
+      await this.jobStore.updateJob(streamId, { titleEvent: JSON.stringify(event) });
+    }
+
+    // Track token usage events
+    if (event.event === 'on_token_usage') {
+      await this.accumulateTokenUsage(streamId, event);
+    }
+
+    // Track OAuth replay events
+    if (isOAuthReplayEvent(event)) {
+      await this.accumulateReplayEvent(streamId, event);
+    }
+
+    // Record activity for stale-job failsafe
+    this.jobStore.recordActivity?.(streamId);
+  }
+
+  /**
+   * Accumulate token usage events for resume state.
+   */
+  private async accumulateTokenUsage(
+    streamId: string,
+    event: t.ServerSentEvent,
+  ): Promise<void> {
+    const queue = this.tokenUsageWriteQueues;
+    const previous = queue.get(streamId) ?? Promise.resolve();
+    const next = previous.then(async () => {
+      const jobData = await this.jobStore.getJob(streamId);
+      if (!jobData) {
+        return;
+      }
+      const existing = jobData.tokenUsage ? JSON.parse(jobData.tokenUsage) : [];
+      existing.push(event.data);
+      await this.jobStore.updateJob(streamId, { tokenUsage: JSON.stringify(existing) });
+    });
+    queue.set(streamId, next);
+    await next;
+  }
+
+  /**
+   * Accumulate OAuth replay events for resume state.
+   */
+  private async accumulateReplayEvent(
+    streamId: string,
+    event: t.ServerSentEvent,
+  ): Promise<void> {
+    const queue = this.replayEventWriteQueues;
+    const previous = queue.get(streamId) ?? Promise.resolve();
+    const next = previous.then(async () => {
+      const jobData = await this.jobStore.getJob(streamId);
+      if (!jobData) {
+        return;
+      }
+      const existing = jobData.replayEvents ? JSON.parse(jobData.replayEvents) : [];
+      const stepId = getReplayStepId(event);
+
+      // Replace existing event for same step id (OAuth prompt updates)
+      if (stepId !== undefined) {
+        const existingIndex = existing.findIndex(
+          (e: t.ServerSentEvent) => getReplayStepId(e) === stepId,
+        );
+        if (existingIndex !== -1) {
+          existing[existingIndex] = event;
+        } else {
+          existing.push(event);
+        }
+      } else {
+        existing.push(event);
+      }
+
+      await this.jobStore.updateJob(streamId, { replayEvents: JSON.stringify(existing) });
+    });
+    queue.set(streamId, next);
+    await next;
+  }
+
+  /**
+   * Emit an error event to subscribers.
+   */
+  async emitError(streamId: string, error: string): Promise<void> {
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime) {
+      runtime.errorEvent = error;
+    }
+
+    this.eventTransport.emitError(streamId, error);
+    logger.debug(`[GenerationJobManager] Error emitted for ${streamId}: ${error}`);
+  }
+
+  /**
+   * Emit a done event to subscribers.
+   */
+  async emitDone(streamId: string, finalEvent: t.ServerSentEvent): Promise<void> {
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime) {
+      runtime.finalEvent = finalEvent;
+    }
+
+    this.eventTransport.emitDone(streamId, finalEvent);
+    logger.debug(`[GenerationJobManager] Done event emitted for ${streamId}`);
   }
 
   /**
    * Get a job by streamId.
    */
-  async getJob(streamId: string): Promise<t.GenerationJob | undefined> {
-    const jobData = await this.jobStore.getJob(streamId);
-    if (!jobData) {
-      return undefined;
-    }
-
-    const runtime = await this.getOrCreateRuntimeState(streamId);
-    if (!runtime) {
-      return undefined;
-    }
-
-    return this.buildJobFacade(streamId, jobData, runtime);
+  async getJob(streamId: string): Promise<SerializableJobData | null> {
+    return this.jobStore.getJob(streamId);
   }
 
   /**
@@ -634,21 +713,146 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Get job status.
+   * Get resume state for a reconnecting client.
+   * Aggregates content from run steps and persisted chunks.
    */
-  async getJobStatus(streamId: string): Promise<t.GenerationJobStatus | undefined> {
+  async getResumeState(streamId: string): Promise<t.ResumeState | null> {
     const jobData = await this.jobStore.getJob(streamId);
-    return jobData?.status as t.GenerationJobStatus | undefined;
+    if (!jobData) {
+      return null;
+    }
+
+    // Get run steps from graph (in-memory mode) or persisted chunks
+    let runSteps: Agents.RunStep[] = [];
+    try {
+      runSteps = await this.jobStore.getRunSteps(streamId);
+    } catch {
+      // In Redis mode, run steps may not be available via getRunSteps
+    }
+
+    // Get aggregated content
+    let aggregatedContent: Agents.MessageContentComplex[] = [];
+    const contentResult = await this.jobStore.getContentParts(streamId);
+    if (contentResult) {
+      aggregatedContent = contentResult.content;
+    }
+
+    // Parse token usage
+    let collectedUsage: UsageMetadata[] = [];
+    if (jobData.tokenUsage) {
+      try {
+        collectedUsage = JSON.parse(jobData.tokenUsage);
+      } catch {
+        logger.warn(`[GenerationJobManager] Failed to parse token usage for ${streamId}`);
+      }
+    }
+
+    // Parse replay events
+    let replayEvents: Array<{ event: string; data?: unknown; [key: string]: unknown }> | undefined;
+    if (jobData.replayEvents) {
+      try {
+        replayEvents = JSON.parse(jobData.replayEvents);
+      } catch {
+        logger.warn(`[GenerationJobManager] Failed to parse replay events for ${streamId}`);
+      }
+    }
+
+    // Parse title event
+    let titleEvent: { event: 'title'; data?: { conversationId?: string; title?: string } } | undefined;
+    if (jobData.titleEvent) {
+      try {
+        titleEvent = JSON.parse(jobData.titleEvent);
+      } catch {
+        logger.warn(`[GenerationJobManager] Failed to parse title event for ${streamId}`);
+      }
+    }
+
+    return {
+      runSteps,
+      aggregatedContent,
+      userMessage: jobData.userMessage,
+      responseMessageId: jobData.responseMessageId,
+      conversationId: jobData.conversationId,
+      sender: jobData.sender,
+      iconURL: jobData.iconURL,
+      model: jobData.model,
+      titleEvent,
+      replayEvents,
+      collectedUsage,
+    };
   }
 
   /**
-   * Mark job as complete.
-   * If cleanupOnComplete is true (default), immediately cleans up job resources.
-   * Exception: Jobs with errors are NOT immediately deleted to allow late-connecting
-   * clients to receive the error (race condition where error occurs before client connects).
-   * Note: eventTransport is NOT cleaned up here to allow the final event to be
-   * fully transmitted. It will be cleaned up when subscribers disconnect or
-   * by the periodic cleanup job.
+   * Get active job IDs for a user.
+   */
+  async getActiveJobIdsForUser(userId: string): Promise<string[]> {
+    const tenantId = getTenantId();
+    const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
+    return this.jobStore.getActiveJobIdsByUser(userId, safeTenantId);
+  }
+
+  /**
+   * Mark that a sync event has been sent for a stream.
+   */
+  markSyncSent(streamId: string): void {
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime) {
+      runtime.syncSent = true;
+    }
+    // Persist to store for cross-replica consistency
+    this.jobStore.updateJob(streamId, { syncSent: true }).catch((err) => {
+      logger.error(`[GenerationJobManager] Failed to persist syncSent=true:`, err);
+    });
+  }
+
+  /**
+   * Check if a sync event has been sent for a stream.
+   */
+  async wasSyncSent(streamId: string): Promise<boolean> {
+    // Check runtime first
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime) {
+      return runtime.syncSent;
+    }
+    // Fall back to persisted data
+    const jobData = await this.jobStore.getJob(streamId);
+    return jobData?.syncSent ?? false;
+  }
+
+  /**
+   * Update job metadata.
+   */
+  async updateMetadata(
+    streamId: string,
+    metadata: Partial<SerializableJobData>,
+  ): Promise<void> {
+    await this.jobStore.updateJob(streamId, metadata);
+  }
+
+  /**
+   * Set content parts reference for a job.
+   */
+  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void {
+    this.jobStore.setContentParts(streamId, contentParts);
+  }
+
+  /**
+   * Set collected usage reference for a job.
+   */
+  setCollectedUsage(streamId: string, usage: UsageMetadata[]): void {
+    this.jobStore.setCollectedUsage(streamId, usage);
+  }
+
+  /**
+   * Set the graph reference for a job.
+   */
+  setGraph(streamId: string, graph: StandardGraph): void {
+    this.jobStore.setGraph(streamId, graph);
+  }
+
+  /**
+   * Complete a job (called when generation finishes or errors).
+   * Cleans up content state and optionally deletes the job.
    */
   async completeJob(streamId: string, error?: string): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
@@ -661,7 +865,6 @@ class GenerationJobManagerClass {
 
     // Clear content state and run step buffer (Redis only)
     this.jobStore.clearContentState(streamId);
-    this.runStepBuffers?.delete(streamId);
     this.replayEventWriteQueues.delete(streamId);
     this.tokenUsageWriteQueues.delete(streamId);
 
@@ -696,6 +899,7 @@ class GenerationJobManagerClass {
       // Don't cleanup eventTransport here - let the done event fully transmit first.
       // EventTransport will be cleaned up when subscribers disconnect or by periodic cleanup.
       await this.jobStore.deleteJob(streamId);
+      logger.debug(`[stream-job] reason=completion-cleanup streamId=${streamId}`);
     } else {
       // Only update status if keeping the job around
       await this.jobStore.updateJob(streamId, {
@@ -734,6 +938,11 @@ class GenerationJobManagerClass {
         collectedUsage: [],
       };
     }
+
+    // Telemetry: catch-all breadcrumb for any abort path that reaches this method
+    logger.debug(
+      `[stream-job] reason=abort-job conversationId=${jobData.conversationId ?? streamId} createdAt=${jobData.createdAt}`,
+    );
 
     // Emit abort signal for cross-replica support (Redis mode)
     // This ensures the generating replica receives the abort signal
@@ -808,7 +1017,6 @@ class GenerationJobManagerClass {
 
     await this.eventTransport.emitDone(streamId, abortFinalEvent);
     this.jobStore.clearContentState(streamId);
-    this.runStepBuffers?.delete(streamId);
     this.replayEventWriteQueues.delete(streamId);
     this.tokenUsageWriteQueues.delete(streamId);
 
@@ -841,867 +1049,15 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Subscribe to a job's event stream.
-   *
-   * This is called when an SSE client connects to /chat/stream/:streamId.
-   * On first subscription:
-   * - Resolves readyPromise (legacy, for API compatibility)
-   * - Replays any buffered early events (e.g., 'created' event)
-   *
-   * Supports cross-replica reconnection in Redis mode:
-   * - If job exists in Redis but not locally, creates minimal runtime state
-   * - Events are delivered via Redis pub/sub, not in-memory EventEmitter
-   *
-   * @param streamId - The stream to subscribe to
-   * @param onChunk - Handler for chunk events (streamed tokens, run steps, etc.)
-   * @param onDone - Handler for completion event (includes final message)
-   * @param onError - Handler for error events
-   * @param options - Subscription configuration
-   * @param options.skipBufferReplay - When true, skips replaying the earlyEventBuffer.
-   *   Use this when a sync event was already sent (resume), since the sync's
-   *   aggregatedContent already includes all buffered events.
-   * @returns Subscription object with unsubscribe function, or null if job not found
-   */
-  async subscribe(
-    streamId: string,
-    onChunk: t.ChunkHandler,
-    onDone?: t.DoneHandler,
-    onError?: t.ErrorHandler,
-    options?: t.SubscribeOptions,
-  ): Promise<{ unsubscribe: t.UnsubscribeFn } | null> {
-    const subscriptionType = options?.skipBufferReplay ? 'resume' : 'initial';
-    // Use lazy initialization to support cross-replica subscriptions
-    const runtime = await this.getOrCreateRuntimeState(streamId);
-    if (!runtime) {
-      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'not_found');
-      return null;
-    }
-
-    const jobData = await this.jobStore.getJob(streamId);
-
-    // If job already complete/error, send final event or error
-    // Error status takes precedence to ensure errors aren't misreported as successes
-    setImmediate(() => {
-      if (jobData && ['complete', 'error', 'aborted'].includes(jobData.status)) {
-        // Check for error status FIRST and prioritize error handling
-        if (jobData.status === 'error' && (runtime.errorEvent || jobData.error)) {
-          const errorToSend = runtime.errorEvent ?? jobData.error;
-          if (errorToSend) {
-            logger.debug(
-              `[GenerationJobManager] Sending stored error to late subscriber: ${streamId}`,
-            );
-            onError?.(errorToSend);
-          }
-        } else if (runtime.finalEvent) {
-          onDone?.(runtime.finalEvent);
-        }
-      }
-    });
-
-    const subscription = this.eventTransport.subscribe(streamId, {
-      onChunk: (event) => {
-        const e = event as t.ServerSentEvent;
-        if (!(e as Record<string, unknown>)._internal) {
-          onChunk(e);
-        }
-      },
-      onDone: (event) => onDone?.(event as t.ServerSentEvent),
-      onError,
-    });
-
-    try {
-      if (subscription.ready) {
-        await subscription.ready;
-      }
-      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'success');
-    } catch (err) {
-      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
-      throw err;
-    }
-
-    const isFirst = this.eventTransport.isFirstSubscriber(streamId);
-
-    if (!runtime.hasSubscriber) {
-      runtime.hasSubscriber = true;
-
-      /**
-       * Pass earlyReplayCount to syncReorderBuffer so it can prune duplicate pub/sub
-       * entries (seqs 0..count-1) without touching live in-flight chunks.
-       *
-       * Only set when the buffer was actually replayed — those specific seqs were
-       * delivered via onChunk and their pub/sub copies are duplicates.
-       * When skipBufferReplay is true, the resume sync payload delivers aggregated
-       * content up to the Redis counter, so syncReorderBuffer should trust currentSeq
-       * as the frontier (earlyReplayCount = 0).
-       */
-      let earlyReplayCount = 0;
-
-      if (runtime.earlyEventBuffer.length > 0) {
-        if (options?.skipBufferReplay) {
-          logger.debug(
-            `[GenerationJobManager] Skipping ${runtime.earlyEventBuffer.length} buffered events for ${streamId} (skipBufferReplay)`,
-          );
-        } else {
-          earlyReplayCount = runtime.earlyEventBuffer.length;
-          logger.debug(
-            `[GenerationJobManager] Replaying ${earlyReplayCount} buffered events for ${streamId}`,
-          );
-          for (const bufferedEvent of runtime.earlyEventBuffer) {
-            onChunk(bufferedEvent);
-          }
-        }
-        runtime.earlyEventBuffer = [];
-      } else if (this._isRedis && !options?.skipBufferReplay && jobData?.userMessage) {
-        /**
-         * Cross-replica fallback: the created event was buffered on the generating
-         * instance and published via Redis pub/sub before this subscriber was active.
-         * Reconstruct from persisted metadata. Only fields stored by trackUserMessage()
-         * are available (messageId, parentMessageId, conversationId, text);
-         * sender/isCreatedByUser are invariant for user messages and added back here.
-         */
-        logger.debug(
-          `[GenerationJobManager] Cross-replica subscribe: emitting created event from metadata for ${streamId}`,
-        );
-        const createdEvent: t.CreatedEvent = {
-          created: true,
-          message: {
-            ...jobData.userMessage,
-            sender: 'User',
-            isCreatedByUser: true,
-          },
-          streamId,
-        };
-        onChunk(createdEvent);
-      }
-
-      try {
-        await this.eventTransport.syncReorderBuffer?.(streamId, earlyReplayCount);
-      } catch (err) {
-        logger.warn(
-          `[GenerationJobManager] Failed to sync reorder buffer for ${streamId}; proceeding with current nextSeq:`,
-          err,
-        );
-      }
-    }
-
-    if (isFirst) {
-      runtime.resolveReady();
-      logger.debug(
-        `[GenerationJobManager] First subscriber ready, resolving promise for ${streamId}`,
-      );
-    }
-
-    return subscription;
-  }
-
-  /**
-   * Atomic resume + subscribe: snapshots resume state and drains the early event buffer
-   * in one synchronous step, then subscribes with skipBufferReplay.
-   *
-   * Closes the timing gap between separate `getResumeState()` and `subscribe()` calls
-   * where events could arrive in earlyEventBuffer after the snapshot but before subscribe
-   * clears the buffer.
-   *
-   * In-memory mode: drained buffer events are returned as `pendingEvents` since
-   * they exist nowhere else. The caller must deliver them after the sync payload.
-   * Redis mode: `pendingEvents` is empty — chunks are persisted via appendChunk
-   * and will appear in aggregatedContent on the next resume.
-   */
-  async subscribeWithResume(
-    streamId: string,
-    onChunk: t.ChunkHandler,
-    onDone?: t.DoneHandler,
-    onError?: t.ErrorHandler,
-  ): Promise<t.SubscribeWithResumeResult> {
-    const bufferLengthAtSnapshot = !this._isRedis
-      ? (this.runtimeState.get(streamId)?.earlyEventBuffer.length ?? 0)
-      : 0;
-
-    const resumeState = await this.getResumeState(streamId);
-    recordGenerationStreamSubscription(
-      this.storeLabel,
-      'resume_state',
-      resumeState ? 'found' : 'missing',
-    );
-
-    let pendingEvents: t.ServerSentEvent[] = [];
-    if (!this._isRedis) {
-      const runtime = this.runtimeState.get(streamId);
-      if (runtime) {
-        pendingEvents = runtime.earlyEventBuffer.slice(bufferLengthAtSnapshot);
-        runtime.earlyEventBuffer = [];
-        if (pendingEvents.length > 0) {
-          recordGenerationStreamResumePendingEvents(this.storeLabel, pendingEvents.length);
-          logger.debug(
-            `[GenerationJobManager] Captured ${pendingEvents.length} gap events for ${streamId}`,
-          );
-        }
-      }
-    }
-
-    const subscription = await this.subscribe(streamId, onChunk, onDone, onError, {
-      skipBufferReplay: true,
-    });
-
-    return { subscription, resumeState, pendingEvents };
-  }
-
-  /**
-   * Emit a chunk event to all subscribers.
-   * Uses runtime state check for performance (avoids async job store lookup per token).
-   *
-   * If no subscriber has connected yet, buffers the event for replay when they do.
-   * This ensures early events (like 'created') aren't lost due to race conditions.
-   *
-   * In Redis mode, awaits the publish to guarantee event ordering.
-   * This is critical for streaming deltas (tool args, message content) to arrive in order.
-   */
-  async emitChunk(streamId: string, event: t.ServerSentEvent): Promise<void> {
-    const runtime = this.runtimeState.get(streamId);
-    if (!runtime || runtime.abortController.signal.aborted) {
-      return;
-    }
-
-    // Refresh job activity so the store's stale-job failsafe reaps on inactivity
-    // (a hung generation), not on age (a long but live stream). Parity with
-    // RedisJobStore refreshing the running TTL on each appendChunk.
-    this.jobStore.recordActivity?.(streamId);
-
-    await this.trackUserMessage(streamId, event);
-    await this.trackTitleEvent(streamId, event);
-    await this.trackReplayEvent(streamId, event);
-    await this.trackContextUsage(streamId, event);
-    await this.trackTokenUsage(streamId, event);
-
-    // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
-    if (this._isRedis) {
-      // The SSE event structure is { event: string, data: unknown, ... }
-      // The aggregator expects { event: string, data: unknown } where data is the payload
-      const eventObj = event as Record<string, unknown>;
-      const eventType = eventObj.event as string | undefined;
-      const eventData = eventObj.data;
-
-      if (eventType && eventData !== undefined) {
-        // Store in format expected by aggregateContent: { event, data }
-        this.jobStore.appendChunk(streamId, { event: eventType, data: eventData }).catch((err) => {
-          logger.error(`[GenerationJobManager] Failed to append chunk:`, err);
-        });
-
-        // For run step events, also save to run steps key for quick retrieval
-        if (eventType === 'on_run_step' || eventType === 'on_run_step_completed') {
-          this.saveRunStepFromEvent(streamId, eventData as Record<string, unknown>);
-        }
-      }
-    }
-
-    if (!runtime.hasSubscriber) {
-      runtime.earlyEventBuffer.push(event);
-      if (!this._isRedis) {
-        return;
-      }
-    }
-
-    await this.eventTransport.emitChunk(streamId, event);
-  }
-
-  /**
-   * Extract and save run step from event data.
-   * The data is already the run step object from the event payload.
-   */
-  private saveRunStepFromEvent(streamId: string, data: Record<string, unknown>): void {
-    // The data IS the run step object
-    const runStep = data as Agents.RunStep;
-    if (!runStep.id) {
-      return;
-    }
-
-    // Fire and forget - accumulate run steps
-    this.accumulateRunStep(streamId, runStep);
-  }
-
-  /**
-   * Accumulate run steps for a stream (Redis mode only).
-   * Uses a simple in-memory buffer that gets flushed to Redis.
-   * Not used in in-memory mode - run steps come from live graph via WeakRef.
-   */
-  private runStepBuffers: Map<string, Agents.RunStep[]> | null = null;
-
-  private accumulateRunStep(streamId: string, runStep: Agents.RunStep): void {
-    // Lazy initialization - only create map when first used (Redis mode)
-    if (!this.runStepBuffers) {
-      this.runStepBuffers = new Map();
-    }
-
-    let buffer = this.runStepBuffers.get(streamId);
-    if (!buffer) {
-      buffer = [];
-      this.runStepBuffers.set(streamId, buffer);
-    }
-
-    // Update or add run step
-    const existingIdx = buffer.findIndex((rs) => rs.id === runStep.id);
-    if (existingIdx >= 0) {
-      buffer[existingIdx] = runStep;
-    } else {
-      buffer.push(runStep);
-    }
-
-    // Save to Redis
-    if (this.jobStore.saveRunSteps) {
-      this.jobStore.saveRunSteps(streamId, buffer).catch((err) => {
-        logger.error(`[GenerationJobManager] Failed to save run steps:`, err);
-      });
-    }
-  }
-
-  /**
-   * Persist the last title event so resume sync can replay it. Content
-   * aggregation only reconstructs message parts, so UI-only events need their
-   * own metadata slot.
-   */
-  private async trackTitleEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
-    if (!('event' in event) || event.event !== 'title') {
-      return;
-    }
-
-    await this.jobStore.updateJob(streamId, {
-      titleEvent: JSON.stringify(event),
-    });
-  }
-
-  /**
-   * Persist the latest context usage snapshot (one per model call) so a
-   * resuming client can restore the context gauge without waiting for the
-   * next model call.
-   */
-  private async trackContextUsage(streamId: string, event: t.ServerSentEvent): Promise<void> {
-    if (!('event' in event) || event.event !== UsageEvents.ON_CONTEXT_USAGE) {
-      return;
-    }
-
-    /** Share the token-usage queue so snapshot + usage writes are serialized per
-     *  stream: `persistTokenUsage` reconciles the stored snapshot (read-modify-
-     *  write), and a snapshot landing between its read and write — or a stale
-     *  reconciled write landing after a newer snapshot — would clobber the newer
-     *  run's gauge when visible calls interleave. FIFO ordering keeps each call's
-     *  pre-invoke snapshot ahead of its own usage and behind the next snapshot. */
-    await this.queueJobWrite(this.tokenUsageWriteQueues, streamId, () =>
-      this.jobStore.updateJob(streamId, {
-        contextUsage: JSON.stringify((event as { data?: unknown }).data ?? null),
-      }),
-    );
-  }
-
-  /**
-   * Chains a read/modify/write job update onto the stream's queue so
-   * concurrent writers can't clobber each other's merged state.
-   */
-  private async queueJobWrite(
-    queues: Map<string, Promise<void>>,
-    streamId: string,
-    write: () => Promise<void>,
-  ): Promise<void> {
-    const previousWrite = queues.get(streamId) ?? Promise.resolve();
-    const nextWrite = previousWrite
-      .catch(() => {
-        // Keep the queue moving even if a prior metadata write failed.
-      })
-      .then(write);
-
-    queues.set(streamId, nextWrite);
-
-    try {
-      await nextWrite;
-    } finally {
-      if (queues.get(streamId) === nextWrite) {
-        queues.delete(streamId);
-      }
-    }
-  }
-
-  /**
-   * Persist replay-only stream events that are needed to reconstruct active
-   * UI state on resume but are not represented by aggregated message content.
-   */
-  private async trackReplayEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
-    if (!isOAuthReplayEvent(event)) {
-      return;
-    }
-
-    await this.queueJobWrite(this.replayEventWriteQueues, streamId, () =>
-      this.persistReplayEvent(streamId, event),
-    );
-  }
-
-  /**
-   * Persist per-model-call token usage so resuming clients can rebuild
-   * usage totals on any replica (the live collectedUsage array only exists
-   * on the generating instance).
-   */
-  private async trackTokenUsage(streamId: string, event: t.ServerSentEvent): Promise<void> {
-    if (!('event' in event) || event.event !== UsageEvents.ON_TOKEN_USAGE) {
-      return;
-    }
-
-    await this.queueJobWrite(this.tokenUsageWriteQueues, streamId, () =>
-      this.persistTokenUsage(streamId, event as { data?: unknown }),
-    );
-  }
-
-  private async persistTokenUsage(streamId: string, event: { data?: unknown }): Promise<void> {
-    const jobData = await this.jobStore.getJob(streamId);
-    if (!jobData || event.data == null) {
-      return;
-    }
-
-    let tokenUsage: unknown[] = [];
-    if (jobData.tokenUsage) {
-      try {
-        tokenUsage = JSON.parse(jobData.tokenUsage) as unknown[];
-      } catch {
-        tokenUsage = [];
-      }
-    }
-    tokenUsage.push(event.data);
-
-    const update: Partial<SerializableJobData> = { tokenUsage: JSON.stringify(tokenUsage) };
-
-    /** Reconcile the resume snapshot to this call's ACTUAL prompt tokens. A primary
-     *  usage is the post-invoke truth for the call the latest stored snapshot
-     *  precedes (no snapshot is captured between a call's pre-invoke dispatch and
-     *  its usage), so a resuming client restores the real context instead of the
-     *  calibration-inflated estimate — and a mid-call resume (no usage yet) simply
-     *  keeps the raw snapshot rather than mis-applying an earlier call's tokens. */
-    const usage = event.data as TTokenUsageEvent;
-    if (usage.usage_type == null && jobData.contextUsage) {
-      try {
-        const snapshot = JSON.parse(jobData.contextUsage) as TContextUsageEvent | null;
-        if (
-          snapshot != null &&
-          (snapshot.runId == null || usage.runId == null || snapshot.runId === usage.runId)
-        ) {
-          update.contextUsage = JSON.stringify(
-            reconcileContextUsage(snapshot, promptTokensFromUsage(usage)),
-          );
-        }
-      } catch {
-        /* leave the stored snapshot as-is on parse failure */
-      }
-    }
-
-    await this.jobStore.updateJob(streamId, update);
-  }
-
-  private async persistReplayEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
-    const jobData = await this.jobStore.getJob(streamId);
-    if (!jobData) {
-      return;
-    }
-
-    let replayEvents: t.ServerSentEvent[] = [];
-    if (jobData.replayEvents) {
-      try {
-        replayEvents = JSON.parse(jobData.replayEvents) as t.ServerSentEvent[];
-      } catch {
-        replayEvents = [];
-      }
-    }
-
-    const stepId = getReplayStepId(event);
-    const eventName = 'event' in event ? event.event : undefined;
-    const existingIndex =
-      stepId == null
-        ? -1
-        : replayEvents.findIndex((candidate) => {
-            if (!('event' in candidate) || candidate.event !== eventName) {
-              return false;
-            }
-            return getReplayStepId(candidate) === stepId;
-          });
-
-    if (existingIndex >= 0) {
-      replayEvents[existingIndex] = event;
-    } else {
-      replayEvents.push(event);
-    }
-
-    await this.jobStore.updateJob(streamId, {
-      replayEvents: JSON.stringify(replayEvents),
-    });
-  }
-
-  /**
-   * Persist user message metadata from the created event.
-   * Awaited in emitChunk so the HSET commits before the PUBLISH,
-   * guaranteeing any cross-replica getJob() after the pub/sub window
-   * finds userMessage in Redis.
-   */
-  private async trackUserMessage(streamId: string, event: t.ServerSentEvent): Promise<void> {
-    if (!('created' in event)) {
-      return;
-    }
-
-    const { message } = event;
-    const updates: Partial<SerializableJobData> = {
-      createdEventEmitted: true,
-      userMessage: {
-        messageId: message.messageId,
-        parentMessageId: message.parentMessageId,
-        conversationId: message.conversationId,
-        text: message.text,
-        quotes: message.quotes,
-      },
-    };
-
-    if (message.conversationId) {
-      updates.conversationId = message.conversationId;
-    }
-
-    await this.jobStore.updateJob(streamId, updates);
-  }
-
-  /**
-   * Update job metadata.
-   */
-  async updateMetadata(
-    streamId: string,
-    metadata: Partial<t.GenerationJobMetadata>,
-  ): Promise<void> {
-    const updates: Partial<SerializableJobData> = {};
-    if (metadata.responseMessageId) {
-      updates.responseMessageId = metadata.responseMessageId;
-    }
-    if (metadata.sender) {
-      updates.sender = metadata.sender;
-    }
-    if (metadata.conversationId) {
-      updates.conversationId = metadata.conversationId;
-    }
-    if (metadata.userMessage) {
-      updates.userMessage = metadata.userMessage;
-    }
-    if (metadata.endpoint) {
-      updates.endpoint = metadata.endpoint;
-    }
-    if (metadata.iconURL) {
-      updates.iconURL = metadata.iconURL;
-    }
-    if (metadata.model) {
-      updates.model = metadata.model;
-    }
-    if (metadata.promptTokens !== undefined) {
-      updates.promptTokens = metadata.promptTokens;
-    }
-    await this.jobStore.updateJob(streamId, updates);
-  }
-
-  /**
-   * Set reference to the graph's contentParts array.
-   */
-  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void {
-    // Use runtime state check for performance (sync check)
-    if (!this.runtimeState.has(streamId)) {
-      return;
-    }
-    this.jobStore.setContentParts(streamId, contentParts);
-  }
-
-  /**
-   * Set reference to the collectedUsage array.
-   * This array accumulates token usage from all models during generation.
-   */
-  setCollectedUsage(streamId: string, collectedUsage: UsageMetadata[]): void {
-    // Use runtime state check for performance (sync check)
-    if (!this.runtimeState.has(streamId)) {
-      return;
-    }
-    this.jobStore.setCollectedUsage(streamId, collectedUsage);
-  }
-
-  /**
-   * Set reference to the graph instance.
-   */
-  setGraph(streamId: string, graph: StandardGraph): void {
-    // Use runtime state check for performance (sync check)
-    if (!this.runtimeState.has(streamId)) {
-      return;
-    }
-    this.jobStore.setGraph(streamId, graph);
-  }
-
-  /**
-   * Get resume state for reconnecting clients.
-   */
-  async getResumeState(streamId: string): Promise<t.ResumeState | null> {
-    const jobData = await this.jobStore.getJob(streamId);
-    if (!jobData) {
-      return null;
-    }
-
-    const result = await this.jobStore.getContentParts(streamId);
-    const aggregatedContent = result?.content ?? [];
-    const runSteps = await this.jobStore.getRunSteps(streamId);
-    let titleEvent: t.ResumeState['titleEvent'];
-    if (jobData.titleEvent) {
-      try {
-        titleEvent = JSON.parse(jobData.titleEvent) as t.ResumeState['titleEvent'];
-      } catch {
-        // Ignore malformed persisted title events.
-      }
-    }
-    let replayEvents: t.ResumeState['replayEvents'];
-    if (jobData.replayEvents) {
-      try {
-        replayEvents = JSON.parse(jobData.replayEvents) as t.ResumeState['replayEvents'];
-      } catch {
-        // Ignore malformed persisted replay events.
-      }
-    }
-
-    let contextUsage: t.ResumeState['contextUsage'];
-    if (jobData.contextUsage) {
-      try {
-        contextUsage = JSON.parse(jobData.contextUsage) as t.ResumeState['contextUsage'];
-      } catch {
-        // Ignore malformed persisted context usage.
-      }
-    }
-
-    /** Persisted per model call by trackTokenUsage — unlike the live
-     *  collectedUsage reference, this survives cross-replica resumes. */
-    let collectedUsage: t.ResumeState['collectedUsage'];
-    if (jobData.tokenUsage) {
-      try {
-        const parsed = JSON.parse(jobData.tokenUsage) as t.ResumeState['collectedUsage'];
-        collectedUsage = parsed && parsed.length > 0 ? parsed : undefined;
-      } catch {
-        // Ignore malformed persisted token usage.
-      }
-    }
-
-    logger.debug(`[GenerationJobManager] getResumeState:`, {
-      streamId,
-      runStepsLength: runSteps.length,
-      aggregatedContentLength: aggregatedContent.length,
-      collectedUsageLength: collectedUsage?.length ?? 0,
-    });
-
-    return {
-      runSteps,
-      aggregatedContent,
-      userMessage: jobData.userMessage,
-      responseMessageId: jobData.responseMessageId,
-      conversationId: jobData.conversationId,
-      sender: jobData.sender,
-      iconURL: jobData.iconURL,
-      model: jobData.model,
-      titleEvent,
-      replayEvents,
-      collectedUsage,
-      contextUsage,
-    };
-  }
-
-  /**
-   * Mark that sync has been sent.
-   * Persists to Redis for cross-replica consistency.
-   */
-  markSyncSent(streamId: string): void {
-    const runtime = this.runtimeState.get(streamId);
-    if (runtime) {
-      runtime.syncSent = true;
-    }
-    // Persist to Redis for cross-replica consistency
-    this.jobStore.updateJob(streamId, { syncSent: true }).catch((err) => {
-      logger.error(`[GenerationJobManager] Failed to persist syncSent flag:`, err);
-    });
-  }
-
-  /**
-   * Check if sync has been sent.
-   * Checks local runtime first, then falls back to Redis for cross-replica scenarios.
-   */
-  async wasSyncSent(streamId: string): Promise<boolean> {
-    const localSyncSent = this.runtimeState.get(streamId)?.syncSent;
-    if (localSyncSent !== undefined) {
-      return localSyncSent;
-    }
-    // Cross-replica: check Redis
-    const jobData = await this.jobStore.getJob(streamId);
-    return jobData?.syncSent ?? false;
-  }
-
-  /**
-   * Emit a done event.
-   * Persists finalEvent to Redis for cross-replica access.
-   */
-  async emitDone(streamId: string, event: t.ServerSentEvent): Promise<void> {
-    const runtime = this.runtimeState.get(streamId);
-    if (runtime) {
-      runtime.finalEvent = event;
-    }
-    // Persist finalEvent to Redis for cross-replica consistency
-    this.jobStore.updateJob(streamId, { finalEvent: JSON.stringify(event) }).catch((err) => {
-      logger.error(`[GenerationJobManager] Failed to persist finalEvent:`, err);
-    });
-    await this.eventTransport.emitDone(streamId, event);
-  }
-
-  /**
-   * Emit an error event.
-   * Stores the error for late-connecting subscribers (race condition where error
-   * occurs before client connects to SSE stream).
-   */
-  async emitError(streamId: string, error: string): Promise<void> {
-    const runtime = this.runtimeState.get(streamId);
-    if (runtime) {
-      runtime.errorEvent = error;
-    }
-    // Persist error to job store for cross-replica consistency
-    this.jobStore.updateJob(streamId, { error }).catch((err) => {
-      logger.error(`[GenerationJobManager] Failed to persist error:`, err);
-    });
-    await this.eventTransport.emitError(streamId, error);
-  }
-
-  /**
-   * Cleanup expired jobs.
-   * Also cleans up any orphaned runtime state, buffers, and event transport entries.
+   * Run periodic cleanup of expired jobs.
    */
   private async cleanup(): Promise<void> {
-    const count = await this.jobStore.cleanup();
-    let runningJobsChanged = false;
-
-    // Cleanup runtime state for deleted jobs
-    for (const streamId of this.runtimeState.keys()) {
-      if (!(await this.jobStore.hasJob(streamId))) {
-        /**
-         * Abort any still-pending generation whose job has been reaped (e.g. a
-         * stale "running" job removed by the store's failsafe timeout). This
-         * unwinds the hung in-flight work so its client/graph references can be
-         * garbage collected, rather than leaking via the pending promise.
-         */
-        const runtime = this.runtimeState.get(streamId);
-        if (runtime && !runtime.abortController.signal.aborted) {
-          runtime.abortController.abort();
-        }
-        // If a client is still attached when the job is reaped, send a terminal
-        // error first so the SSE connection closes instead of hanging open with no
-        // final/done event (the route only ends the response from onDone/onError).
-        if (this.eventTransport.getSubscriberCount(streamId) > 0) {
-          try {
-            await this.eventTransport.emitError(streamId, REAPED_JOB_ERROR);
-          } catch (err) {
-            logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
-          }
-        }
-        this.runtimeState.delete(streamId);
-        runningJobsChanged = this.runningJobs.delete(streamId) || runningJobsChanged;
-        this.runStepBuffers?.delete(streamId);
-        this.jobStore.clearContentState(streamId);
-        this.eventTransport.cleanup(streamId);
-      }
-    }
-
-    // Also check runStepBuffers for any orphaned entries (Redis mode only)
-    if (this.runStepBuffers) {
-      for (const streamId of this.runStepBuffers.keys()) {
-        if (!(await this.jobStore.hasJob(streamId))) {
-          this.runStepBuffers.delete(streamId);
-        }
-      }
-    }
-
-    // Check eventTransport for orphaned streams (e.g., connections dropped without clean close)
-    // These are streams that exist in eventTransport but have no corresponding job
-    for (const streamId of this.eventTransport.getTrackedStreamIds()) {
-      if (!(await this.jobStore.hasJob(streamId)) && !this.runtimeState.has(streamId)) {
-        this.eventTransport.cleanup(streamId);
-      }
-    }
-
-    if (runningJobsChanged) {
-      this.syncRunningJobMetrics();
-    }
-
-    if (count > 0) {
-      logger.debug(`[GenerationJobManager] Cleaned up ${count} expired jobs`);
-    }
+    // Cleanup job store
+    await this.jobStore.cleanup();
   }
 
   /**
-   * Get stream info for status endpoint.
-   */
-  async getStreamInfo(streamId: string): Promise<{
-    active: boolean;
-    status: t.GenerationJobStatus;
-    aggregatedContent?: Agents.MessageContentComplex[];
-    createdAt: number;
-  } | null> {
-    const jobData = await this.jobStore.getJob(streamId);
-    if (!jobData) {
-      return null;
-    }
-
-    const result = await this.jobStore.getContentParts(streamId);
-    const aggregatedContent = result?.content ?? [];
-
-    return {
-      active: jobData.status === 'running',
-      status: jobData.status as t.GenerationJobStatus,
-      aggregatedContent,
-      createdAt: jobData.createdAt,
-    };
-  }
-
-  /**
-   * Get total job count.
-   */
-  async getJobCount(): Promise<number> {
-    return this.jobStore.getJobCount();
-  }
-
-  /** Returns sizes of internal runtime maps for diagnostics */
-  getRuntimeStats(): {
-    runtimeStateSize: number;
-    runStepBufferSize: number;
-    eventTransportStreams: number;
-  } {
-    return {
-      runtimeStateSize: this.runtimeState.size,
-      runStepBufferSize: this.runStepBuffers?.size ?? 0,
-      eventTransportStreams: this.eventTransport.getTrackedStreamIds().length,
-    };
-  }
-
-  /**
-   * Get job count by status.
-   */
-  async getJobCountByStatus(): Promise<Record<t.GenerationJobStatus, number>> {
-    const [running, complete, error, aborted] = await Promise.all([
-      this.jobStore.getJobCountByStatus('running'),
-      this.jobStore.getJobCountByStatus('complete'),
-      this.jobStore.getJobCountByStatus('error'),
-      this.jobStore.getJobCountByStatus('aborted'),
-    ]);
-    return { running, complete, error, aborted };
-  }
-
-  /**
-   * Get active job IDs for a user.
-   * Returns conversation IDs of running jobs belonging to the user.
-   * Performs self-healing cleanup of stale entries.
-   *
-   * @param userId - The user ID to query
-   * @returns Array of conversation IDs with active jobs
-   */
-  async getActiveJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
-    return this.jobStore.getActiveJobIdsByUser(userId, tenantId);
-  }
-
-  /**
-   * Destroy the manager.
-   * Cleans up all resources including runtime state, buffers, and stores.
+   * Destroy the job manager and release all resources.
    */
   async destroy(): Promise<void> {
     if (this.cleanupInterval) {
@@ -1709,18 +1065,15 @@ class GenerationJobManagerClass {
       this.cleanupInterval = null;
     }
 
-    await this.jobStore.destroy();
-    this.eventTransport.destroy();
     this.runtimeState.clear();
     this.runningJobs.clear();
-    this.syncRunningJobMetrics();
-    this.runStepBuffers?.clear();
     this.replayEventWriteQueues.clear();
     this.tokenUsageWriteQueues.clear();
-
+    this.eventTransport.destroy();
+    await this.jobStore.destroy();
     logger.debug('[GenerationJobManager] Destroyed');
   }
 }
 
-export const GenerationJobManager: GenerationJobManagerClass = new GenerationJobManagerClass();
+export const GenerationJobManager = new GenerationJobManagerClass();
 export { GenerationJobManagerClass };

@@ -5,6 +5,7 @@
  * 1. Authorization check - only job owner can abort
  * 2. Early abort handling - skip save when no responseMessageId
  * 3. Partial response saving - save message before returning
+ * 4. Abort-reason telemetry tagging
  */
 
 const express = require('express');
@@ -99,9 +100,11 @@ describe('Agent Abort Endpoint', () => {
 
       it('should allow abort when user owns the job', async () => {
         const jobStreamId = 'test-stream-123';
+        const createdAt = Date.now();
 
         mockGenerationJobManager.getJob.mockResolvedValue({
           metadata: { userId: 'test-user-123' },
+          createdAt,
         });
 
         mockGenerationJobManager.abortJob.mockResolvedValue({
@@ -118,13 +121,29 @@ describe('Agent Abort Endpoint', () => {
         expect(response.status).toBe(200);
         expect(response.body).toEqual({ success: true, aborted: jobStreamId });
         expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(jobStreamId);
+        // Telemetry: stop-button reason tag
+        expect(mockLogger.debug).toHaveBeenCalledWith(
+          expect.stringContaining('[stream-job]'),
+          '',
+        );
+        expect(mockLogger.debug).toHaveBeenCalledWith(
+          expect.stringMatching(/abort reason=stop-button/),
+        );
+        expect(mockLogger.debug).toHaveBeenCalledWith(
+          expect.stringContaining('conversationId=' + jobStreamId),
+        );
+        expect(mockLogger.debug).toHaveBeenCalledWith(
+          expect.stringContaining('createdAt=' + createdAt),
+        );
       });
 
       it('should allow abort when job has no userId metadata (backwards compatibility)', async () => {
         const jobStreamId = 'test-stream-123';
+        const createdAt = Date.now();
 
         mockGenerationJobManager.getJob.mockResolvedValue({
           metadata: {},
+          createdAt,
         });
 
         mockGenerationJobManager.abortJob.mockResolvedValue({
@@ -336,6 +355,69 @@ describe('Agent Abort Endpoint', () => {
           error: 'Job not found',
           streamId: 'non-existent-job',
         });
+      });
+    });
+
+    describe('Abort-Reason Telemetry', () => {
+      it('logs stop-button reason on successful abort', async () => {
+        const jobStreamId = 'telemetry-test-stream';
+        const createdAt = 1234567890;
+
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: { userId: 'test-user-123' },
+          createdAt,
+        });
+
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: null,
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: jobStreamId });
+
+        expect(response.status).toBe(200);
+
+        // Verify the specific telemetry tag format
+        expect(mockLogger.debug).toHaveBeenCalledWith(
+          `[stream-job] abort reason=stop-button conversationId=${jobStreamId} createdAt=${createdAt}`,
+        );
+      });
+
+      it('logs stop-button reason when falling back to active jobs', async () => {
+        const jobStreamId = 'active-job-123';
+        const createdAt = 9876543210;
+
+        // First call returns null (no direct job match)
+        mockGenerationJobManager.getJob.mockResolvedValueOnce(null);
+        // Second call returns the active job
+        mockGenerationJobManager.getJob.mockResolvedValueOnce({
+          metadata: { userId: 'test-user-123' },
+          createdAt,
+        });
+
+        mockGenerationJobManager.getActiveJobIdsForUser.mockResolvedValue([jobStreamId]);
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: null,
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'new' });
+
+        expect(response.status).toBe(200);
+        expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(jobStreamId);
+
+        // Verify telemetry tag with the correct streamId and createdAt
+        expect(mockLogger.debug).toHaveBeenCalledWith(
+          `[stream-job] abort reason=stop-button conversationId=${jobStreamId} createdAt=${createdAt}`,
+        );
       });
     });
   });
