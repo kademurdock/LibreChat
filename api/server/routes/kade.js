@@ -1419,6 +1419,90 @@ router.post('/account-type', requireJwtAuth, requireAdminAccess, async (req, res
 });
 
 /* ----------------------------------------------------------------------------
+ * ADMIN: POST /api/kade/admin/set-password { email, password }
+ * Aug 24 2026 (Part 92.10) — THE MISSING PIECE, and it was missing in BOTH
+ * directions, which is why an empty account nearly got deleted to solve it.
+ *
+ * A friend forgot her password. What existed:
+ *   · `passwordResetEnabled: false` on the live config — the reset code ships
+ *     with LibreChat and the switch is OFF.
+ *   · `emailEnabled: false` — nothing can mail a reset link anyway.
+ *   · `DELETE /api/user/delete` is SELF-SERVICE: it needs the account's own
+ *     login. Somebody locked out cannot use it, and no admin route could do it
+ *     for them. So "just delete it and re-register" was not actually available.
+ * The only remaining path was deleting a person's account over a forgotten
+ * password. This route exists so that is never the answer again.
+ *
+ * ⚠️⚠️ AND THE TRAP WE ARE STEPPING AROUND, WRITTEN DOWN SO NOBODY "FIXES" THE
+ * PROBLEM BY FLIPPING THE OBVIOUS SWITCH: DO NOT SET `ALLOW_PASSWORD_RESET=true`
+ * WHILE EMAIL IS UNCONFIGURED. `requestPasswordReset` in AuthService returns
+ * `{ link }` IN THE HTTP RESPONSE BODY when `checkEmailConfig()` is false, and
+ * that route is PUBLIC AND UNAUTHENTICATED. Anyone who knows a family member's
+ * email address could POST it and be handed a working reset link. That is
+ * account takeover for every seat on the platform, one environment variable
+ * away. Configure SMTP first; then the switch is safe and this route becomes a
+ * convenience instead of the only way in.
+ *
+ * Deliberate choices:
+ *   · `requireJwtAuth` + `requireAdminAccess` — the STRONGEST gate available
+ *     here, Kade's actual logged-in admin session, not a shared header secret.
+ *     A route that sets arbitrary passwords should not be reachable by anything
+ *     that leaks as easily as a secret in a config file.
+ *   · Sessions are killed after the change (`deleteAllUserSessions`), matching
+ *     what the real reset flow does — otherwise an old session outlives the new
+ *     password, which is the opposite of what "reset my password" means.
+ *   · The password is NEVER logged, NEVER echoed back, and never stored in
+ *     plaintext: bcrypt hashSync(…, 10), identical to registration and reset.
+ *     ⚠️ The bridge already keeps `lcPass` in the clear for two seats and that
+ *     is a known open item — this route does not add a third.
+ *   · WHO did it and TO WHOM is logged, because an admin power that can open
+ *     anyone's account should leave a trail even when the admin is the owner.
+ * -------------------------------------------------------------------------- */
+router.post('/admin/set-password', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const bcrypt = require('bcryptjs');
+    const { findUser, updateUser, deleteAllUserSessions } = require('~/models');
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Need an email and a password.' });
+    }
+    /* Same floor the registration schema enforces. A route that bypasses the
+     * normal flow must not also bypass its rules. */
+    if (password.length < 8 || password.length > 128) {
+      return res.status(400).json({ message: 'Password must be 8 to 128 characters.' });
+    }
+    const user = await findUser({ email }, 'email name _id');
+    if (!user) {
+      return res.status(404).json({ message: 'No account with that email.' });
+    }
+    await updateUser(user._id, { password: bcrypt.hashSync(password, 10) });
+    /* Best-effort: a failure here must not report the password change as failed
+     * when it already landed. Say so instead of lying in either direction. */
+    let sessionsCleared = true;
+    try {
+      await deleteAllUserSessions({ userId: user._id });
+    } catch (e) {
+      sessionsCleared = false;
+      logger.error('[/api/kade/admin/set-password] session clear failed:', e);
+    }
+    logger.info(
+      `[/api/kade/admin/set-password] ${req.user.email} set the password for ${user.email}`,
+    );
+    return res.json({
+      ok: true,
+      email: user.email,
+      name: user.name,
+      sessionsCleared,
+      note: 'Tell them to sign in with this password and change it in Settings.',
+    });
+  } catch (error) {
+    logger.error('[/api/kade/admin/set-password] error:', error);
+    return res.status(500).json({ message: 'Could not set the password.' });
+  }
+});
+
+/* ----------------------------------------------------------------------------
  * ADMIN: POST /api/kade/add-credits { userId, amountUSD? }
  * Instant prepaid top-up — adds credit to a user's shared wallet (1,000,000 = $1).
  * Default $5 per click, $100 ceiling. Upserts the Balance record so it works even
