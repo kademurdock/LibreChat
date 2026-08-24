@@ -86,6 +86,25 @@ const GROUPS = {
   /* Body instructions. Imperative frames only — a bare `breathe` was the whole
    * false-positive problem. */
   body: [
+    /* Added Aug 24 2026 after the detector MISSED a live one on the day it
+     * shipped. Her build-241 reply, on her own seat at 3am, closed with "Go to
+     * bed when the episode's over, though — the moon'll still be there tomorrow
+     * and so will I." Textbook coda; zero hits from the shipped list, because
+     * "get some rest" was in it and "go to bed" was not.
+     * CALIBRATED BEFORE ADDING, as always: `go to bed` is 3 for 3 on the real
+     * corpus and every one sits at 91-95% of its reply. The sleep variants are
+     * clean (no hits, no risk).
+     * ⚠️ AND ONE WAS REJECTED, which is the more useful half: /(will|'ll) still
+     * be (there|here)/ — the phrase that JUMPED OUT of her report — takes 4
+     * hits and they are ordinary reassurance about real objects ("the movie
+     * will still be there", "it'll still be there, you're not locking yourself
+     * out of it"). The most distinctive-sounding phrase was the wolf-crier. */
+    /\bgo to bed\b/i,
+    /\bget to bed\b/i,
+    /\bget some sleep\b/i,
+    /\bgo to sleep\b/i,
+    /\bcall it a night\b/i,
+    /\bput (?:the|your) phone down\b/i,
     /\btake a breath\b/i,
     /\bbreathe through\b/i,
     /\bjust breathe\b/i,
