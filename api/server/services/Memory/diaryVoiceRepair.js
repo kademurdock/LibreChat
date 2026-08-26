@@ -123,13 +123,22 @@ async function askWriter(finalLLMConfig, provider, userId, batchText) {
  * @param {number}  [p.limit=0]      cap on entries processed this run (0 = all)
  * @param {string}  [p.ownerUserId]  verbatim before/after samples allowed for THIS user only (privacy doctrine)
  */
-async function repairDiaryVoice({ dryRun = true, before = DEFAULT_BEFORE, limit = 0, ownerUserId = null } = {}) {
+async function repairDiaryVoice({ dryRun = true, before = DEFAULT_BEFORE, limit = 0, ownerUserId = null, source = null } = {}) {
   const t0 = Date.now();
   const beforeDate = new Date(before);
   if (Number.isNaN(beforeDate.getTime())) {
     return { ok: false, error: `bad before date: ${before}` };
   }
   const filter = { voiceRepairedAt: null, createdAt: { $lt: beforeDate } };
+  /* Aug 26 2026 — TARGETABLE BY SOURCE. The census on the night the backfill
+   * ran matched 316 entries: 87 freshly `mined` (written by a keeper model that
+   * writes flatter than the one that wrote the summer's) and 229 `keeper` ones
+   * that mostly read fine already. Repairing all of them would have been churn
+   * across data nobody complained about, at 7am, unattended. A pass that can
+   * only run on EVERYTHING is a pass you hesitate to run. */
+  if (source) {
+    filter.source = String(source);
+  }
 
   const docs = await KadeDiaryEntry.find(filter)
     .select('_id userId agentId text entryDate source createdAt')

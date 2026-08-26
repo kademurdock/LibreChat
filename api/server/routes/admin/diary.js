@@ -63,12 +63,13 @@ function auditFailSoft(req, action, targetUserId, entryId, detail) {
 router.post('/voice-repair', async (req, res) => {
   try {
     const { repairDiaryVoice } = require('~/server/services/Memory/diaryVoiceRepair');
-    const { dryRun = true, before, limit = 0, ownerUserId = null } = req.body || {};
+    const { dryRun = true, before, limit = 0, ownerUserId = null, source = null } = req.body || {};
     const result = await repairDiaryVoice({
       dryRun: dryRun !== false,
       ...(before ? { before } : {}),
       limit: parseInt(limit, 10) || 0,
       ownerUserId,
+      source,
     });
     res.json(result);
   } catch (e) {
