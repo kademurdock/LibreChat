@@ -173,7 +173,40 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
   if (!userId || !text || !String(text).trim()) {
     return { ok: false, error: 'missing userId or text' };
   }
-  const cleanText = String(text).trim().slice(0, 2000);
+  /* ── DATE-PREFIX STRIP (Aug 26 2026) ──────────────────────────────────────
+   * Every entry already carries its day in `entryDate`, and the reader shows
+   * it. A date repeated inside the text is heard TWICE by a screen reader,
+   * which is the whole audience.
+   *
+   * Found the hard way: the Aug-26 backfill wrote 44 entries opening
+   * "[2026-08-24] User had..." or "On August 25, we talked about...". The
+   * writer's own rule already says "No dates inside the text — the entry is
+   * dated automatically", and both the miner and the voice-repair pass walked
+   * straight past it. A rule stated once in a prompt is a hope; a strip at the
+   * write door is a guarantee.
+   *
+   * Only a LEADING machine-looking stamp is removed. A date the person
+   * actually said mid-sentence ("she's had that limp since 2018") is content
+   * and is never touched. This is the MACHINE write path only — editDiaryEntry
+   * below is a human typing and is not second-guessed.
+   * KADE_DIARY_DATE_STRIP=0. */
+  let cleanText = String(text).trim().slice(0, 2000);
+  if (process.env.KADE_DIARY_DATE_STRIP !== '0') {
+    const beforeStrip = cleanText;
+    cleanText = cleanText
+      .replace(/^\s*\[\d{4}-\d{2}-\d{2}\]\s*/, '')
+      .replace(
+        /^\s*(?:On|Back on)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?\s*[,:\u2014-]?\s*/i,
+        '',
+      )
+      .replace(/^\s*\d{4}-\d{2}-\d{2}\s*[,:\u2014-]\s*/, '')
+      .trim();
+    if (!cleanText) {
+      cleanText = beforeStrip; /* never let the strip eat a whole entry */
+    } else if (cleanText !== beforeStrip) {
+      cleanText = cleanText.charAt(0).toUpperCase() + cleanText.slice(1);
+    }
+  }
   /* Meta-guard (Aug 7 2026, caught twice in live tests): the keeper kept
    * logging the ACT of being asked to search the diary — once even writing
    * "not a genuine moment to record" while recording it. Narrow pattern on
