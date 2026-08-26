@@ -236,6 +236,85 @@ async function startMining({ scope = 'all', maxPerRun = 150 } = {}) {
   return { ok: true, started: true, scope, maxPerRun };
 }
 
+/**
+ * RE-MINE A WINDOW (Aug 26 2026, her ask: "even if you need to rerun every
+ * conversation from every user through these systems again… I don't want anyone
+ * to have anything missing from the logs and memories just because of our screw
+ * up").
+ *
+ * WHY IT EXISTS. The logbook went silent: ~45 entries a day on Aug 17-19, then
+ * 17, 7, 3, 2, and ZERO from Aug 24 on. The cause was salience, not capability —
+ * the same keeper model that logged a rabbit hole 1 time in 3 under the live
+ * instructions logged it 3 times in 3 under the miner's. So those days ARE
+ * recoverable, but only if the miner is allowed to walk them again, and its
+ * run-once claim is what stops it.
+ *
+ * ⚠️ THIS DELETES CLAIM ROWS AND NOTHING ELSE. It never touches a diary entry, a
+ * card, or a message. The worst case is that a conversation gets read a second
+ * time — which is now safe, because logDiaryEntry dedups within a day. Ship
+ * order matters and it was: dedup FIRST, then this.
+ *
+ * ⚠️ A WINDOW IS REQUIRED. There is no "reset everything" — an unbounded reset
+ * would re-walk 522 conversations and cost real money for no reason. Both dates
+ * are YYYY-MM-DD and match the conversation's CREATION day, because that is the
+ * day the miner stamps its entries with (`convoDate` above).
+ *
+ * @param {object} p
+ * @param {string} p.from  YYYY-MM-DD, inclusive
+ * @param {string} p.to    YYYY-MM-DD, inclusive
+ * @param {string} [p.scope]  a userId, or 'all'
+ * @param {boolean} [p.dry]   count only, delete nothing
+ */
+async function resetMining({ from, to, scope = 'all', dry = false } = {}) {
+  const DATE = /^\d{4}-\d{2}-\d{2}$/;
+  if (!DATE.test(String(from || '')) || !DATE.test(String(to || ''))) {
+    return { ok: false, error: 'from and to are required, formatted YYYY-MM-DD' };
+  }
+  if (String(from) > String(to)) {
+    return { ok: false, error: 'from is after to' };
+  }
+  if (control.running) {
+    return { ok: false, error: 'a mining run is in progress — stop it first' };
+  }
+  try {
+    const start = new Date(`${from}T00:00:00.000Z`);
+    const end = new Date(`${to}T23:59:59.999Z`);
+    const convoFilter = {
+      agent_id: { $exists: true, $ne: null },
+      createdAt: { $gte: start, $lte: end },
+    };
+    if (scope !== 'all') {
+      convoFilter.user = scope;
+    }
+    const convos = await mongoose.models.Conversation.find(convoFilter)
+      .select('conversationId')
+      .lean();
+    const ids = convos.map((c) => String(c.conversationId));
+    if (!ids.length) {
+      return { ok: true, window: { from, to }, scope, conversations: 0, cleared: 0, dry: Boolean(dry) };
+    }
+    const claimed = await KadeMiningState.countDocuments({ conversationId: { $in: ids } });
+    if (dry) {
+      return { ok: true, window: { from, to }, scope, conversations: ids.length, wouldClear: claimed, dry: true };
+    }
+    const r = await KadeMiningState.deleteMany({ conversationId: { $in: ids } });
+    logger.info(
+      `[historyMiner] RESET window ${from}..${to} scope=${scope}: cleared ${r.deletedCount} claim(s) over ${ids.length} conversation(s) — the next kick will re-walk them.`,
+    );
+    return {
+      ok: true,
+      window: { from, to },
+      scope,
+      conversations: ids.length,
+      cleared: r.deletedCount,
+      next: 'POST /api/admin/mining/start to re-walk them',
+    };
+  } catch (e) {
+    logger.error('[historyMiner] reset failed:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
 function stopMining() {
   control.stopRequested = true;
   return { ok: true, stopping: control.running };
@@ -268,4 +347,4 @@ async function minerStatus() {
   };
 }
 
-module.exports = { startMining, stopMining, minerStatus };
+module.exports = { startMining, stopMining, minerStatus, resetMining };

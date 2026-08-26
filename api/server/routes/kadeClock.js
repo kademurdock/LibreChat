@@ -253,6 +253,49 @@ router.get('/memory-health', async (req, res) => {
       },
       echoes,
       echoPreviews: previewOn,
+      /* ── WARNINGS (Aug 26 2026) ────────────────────────────────────────────
+       * Her line, and it is the reason this block exists: "something needs to
+       * read/monitor it."
+       *
+       * THE FAILURE THIS CLOSES. The logbook stopped writing on Aug 24 and
+       * nobody noticed for three days — while THIS ENDPOINT was already
+       * reporting diary.wrote24h: 0 the entire time. The number was correct,
+       * published, and read by nothing. A NUMBER NOTHING LOOKS AT IS NOT A
+       * MONITOR. So the endpoint now states the VERDICT, not just the counts —
+       * a consumer that renders `warnings` cannot fail to notice, and one that
+       * ignores them was never going to read the numbers either.
+       *
+       * Thresholds are deliberately loose: this should speak when a lane has
+       * plainly STOPPED, not whenever a quiet day happens. A quiet Sunday must
+       * not cry wolf, or the next real outage gets ignored. */
+      warnings: (() => {
+        const w = [];
+        const diaryAge = hoursAgo(newestDiary && newestDiary.createdAt);
+        const cardAge = hoursAgo(newestCard && newestCard.updated_at);
+        const consAge = hoursAgo(consolidationLastRunAt);
+        /* 48h, not 24: a genuinely quiet day is normal and common. Two days
+         * with nothing across EVERY seat on the platform is not. */
+        if (diaryAge != null && diaryAge > 48) {
+          w.push({
+            lane: 'diary',
+            severity: diaryAge > 96 ? 'red' : 'amber',
+            detail: `the logbook has not been written in ${diaryAge}h (platform-wide). It went silent Aug 20-26 2026 and nothing said so for three days.`,
+          });
+        }
+        if (cardAge != null && cardAge > 48) {
+          w.push({ lane: 'cards', severity: cardAge > 96 ? 'red' : 'amber', detail: `no memory card written in ${cardAge}h (platform-wide).` });
+        }
+        /* The sweep is configured daily; 36h means a window was missed. */
+        if (consAge == null || consAge > 36) {
+          w.push({ lane: 'consolidation', severity: consAge == null || consAge > 72 ? 'red' : 'amber', detail: consAge == null ? 'the consolidation sweep has never recorded a run.' : `the consolidation sweep last ran ${consAge}h ago; it is configured to run daily.` });
+        }
+        /* Diary + cards both dead is a different animal from either alone: it
+         * points at the keeper lane itself rather than one rule inside it. */
+        if (diaryAge != null && cardAge != null && diaryAge > 48 && cardAge > 48) {
+          w.push({ lane: 'keeper', severity: 'red', detail: 'BOTH the logbook and the cards have stopped — that is the memory writer itself, not one rule inside it.' });
+        }
+        return w;
+      })(),
     });
   } catch (e) {
     logger.error('[kadeClock] memory-health failed:', e);

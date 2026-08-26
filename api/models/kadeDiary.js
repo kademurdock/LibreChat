@@ -198,6 +198,55 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
   const effectiveDate =
     entryDate && /^\d{4}-\d{2}-\d{2}$/.test(String(entryDate)) ? String(entryDate) : centralDateString();
   const embedding = await embedText(cleanText);
+
+  /* ── RE-MINE GUARD (Aug 26 2026) ──────────────────────────────────────────
+   * There was no dedup here at all: logDiaryEntry only ever created. That was
+   * safe while every conversation was mined exactly once, and it stops being
+   * safe the moment a re-mine exists — which it now does, because the logbook
+   * went silent Aug 20-26 and those days have to be walked again.
+   *
+   * Cheapest correct check: entries are already scoped by day, so only the
+   * SAME (user, bucket, date) can collide. Exact text is caught by string
+   * compare; a reworded second pass at the same moment is caught with the
+   * embedding THIS CALL ALREADY COMPUTED, so the guard costs one small indexed
+   * find and no extra model call.
+   *
+   * ⚠️ Deliberately NOT global: the same sentence on two different days is two
+   * real days, and refusing that would eat a genuine repeat. Kill switch:
+   * KADE_DIARY_DEDUP=0. */
+  if (process.env.KADE_DIARY_DEDUP !== '0') {
+    try {
+      const sameDay = await KadeDiaryEntry.find({
+        userId: String(userId),
+        agentId: effectiveAgentId,
+        entryDate: effectiveDate,
+      })
+        .select('text embedding')
+        .limit(40)
+        .lean();
+      const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      const mine = norm(cleanText);
+      const threshold = (() => {
+        const v = parseFloat(process.env.KADE_DIARY_DEDUP_SIM);
+        return Number.isFinite(v) && v > 0.5 && v <= 1 ? v : 0.93;
+      })();
+      for (const row of sameDay) {
+        if (norm(row.text) === mine) {
+          return { ok: false, error: 'duplicate: an identical entry already exists for that day', duplicate: true };
+        }
+        if (embedding && Array.isArray(row.embedding) && row.embedding.length) {
+          if (cosine(embedding, row.embedding) >= threshold) {
+            return { ok: false, error: 'duplicate: a near-identical entry already exists for that day', duplicate: true };
+          }
+        }
+      }
+    } catch (e) {
+      /* A dedup hiccup must never block a real entry — the gap this guard
+       * exists for is worse than an occasional double. */
+      logger.warn('[kadeDiary] dedup check skipped:', e.message);
+    }
+  }
+
   try {
     const cleanSalience = Math.min(Math.max(parseInt(salience, 10) || 1, 1), 3);
     await KadeDiaryEntry.create({
