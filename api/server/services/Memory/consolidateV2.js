@@ -28,9 +28,26 @@
  *
  * RAILS, in code not prompt: reminder cards can be tightened but never
  * deleted; deletes of unknown keys are refused; every refusal is itself
- * ledgered. Kill switch: KADE_CONSOLIDATE_V2=0. NOT wired into the weekly
- * sweep — on-demand only until its receipts have aged (the sweep fires
- * tomorrow morning; it keeps running v1 untouched).
+ * ledgered. Kill switch: KADE_CONSOLIDATE_V2=0.
+ *
+ * ⚠️⚠️ THIS HEADER USED TO END "NOT wired into the weekly sweep — on-demand
+ * only until its receipts have aged." THAT WAS TRUE FOR EXACTLY ONE DAY and
+ * has been WRONG SINCE AUG 16 2026. Part 70 wired v2 INTO the scheduled sweep
+ * the very next morning (see consolidationSweep.js: `runScheduledConsolidation`
+ * defaults to engine v2, KADE_SWEEP_ENGINE=v1 restores the old one).
+ *
+ * IT RUNS DAILY, unattended, at 09:00 UTC — MEMORY_CONSOLIDATION_SWEEP_DAY is
+ * set to `daily` on the LibreChat service, and /api/kade/clock/memory-health
+ * reports the real last-run time and engine. Verified live Aug 26 2026:
+ * lastRunAt 2026-08-25T09:00:35Z, engine v2.
+ *
+ * ⭐ THE REASON THIS CORRECTION IS WORTH ITS LENGTH: on Aug 26 a capable agent
+ * read this header, believed it, and proposed "scheduled consolidation — it
+ * exists but is on-demand only and nobody demands it" as a piece of work to do.
+ * The code had been running itself every morning for eleven days. A STALE
+ * COMMENT IS NOT A HARMLESS COMMENT — it is a confident wrong answer sitting
+ * exactly where the next person will look, and it costs somebody a day.
+ * If the wiring changes again, change this paragraph in the same commit.
  */
 const { HumanMessage } = require('@librechat/agents/langchain/messages');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
