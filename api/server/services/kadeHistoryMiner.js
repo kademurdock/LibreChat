@@ -327,10 +327,50 @@ async function minerStatus() {
     KadeMiningState.countDocuments({ status: 'claimed' }),
   ]);
   const skipped = await KadeMiningState.countDocuments({ status: { $regex: '^skipped' } });
-  const totalConvos = await mongoose.models.Conversation.countDocuments({
+  const liveFilter = {
     agent_id: { $exists: true, $ne: null },
     $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
-  });
+  };
+  const totalConvos = await mongoose.models.Conversation.countDocuments(liveFilter);
+
+  /* ⚠️ AUG 26 2026 — `remaining` USED TO BE A FALSE ALL-CLEAR, and it is the
+   * same disease as everything else found this week: a number that looks
+   * healthy and is not.
+   *
+   * It was `totalConvos - done - skipped - errors`, which subtracts STATE ROWS
+   * from LIVE CONVERSATIONS — two different populations. A state row survives
+   * its conversation, so after 229 conversations were deleted on Aug 26 the
+   * sum read 413 - 522 - 14 = negative, clamped to 0, and the endpoint
+   * cheerfully reported "remaining: 0, nothing left to mine" while 150 real
+   * conversations had never been walked at all.
+   *
+   * Now it asks the only question that matters — HOW MANY LIVE CONVERSATIONS
+   * HAVE NO CLAIM ROW — by intersecting the two id sets. At this scale (low
+   * hundreds) that is one cheap projection each; the cap keeps it honest if
+   * the platform ever grows, and says so rather than guessing. */
+  let remaining = null;
+  let remainingExact = true;
+  try {
+    const CAP = Math.max(1000, parseInt(process.env.KADE_MINER_STATUS_CAP, 10) || 5000);
+    const liveIds = await mongoose.models.Conversation.find(liveFilter)
+      .select('conversationId')
+      .limit(CAP + 1)
+      .lean();
+    remainingExact = liveIds.length <= CAP;
+    const ids = liveIds.slice(0, CAP).map((c) => String(c.conversationId));
+    const claimedRows = await KadeMiningState.find({ conversationId: { $in: ids } })
+      .select('conversationId')
+      .lean();
+    const claimedSet = new Set(claimedRows.map((r) => String(r.conversationId)));
+    remaining = ids.reduce((n, id) => n + (claimedSet.has(id) ? 0 : 1), 0);
+  } catch (e) {
+    logger.warn('[historyMiner] exact remaining failed, falling back to the old estimate:', e.message);
+    remaining = Math.max(0, totalConvos - done - skipped - errors);
+    remainingExact = false;
+  }
+  /* Claim rows whose conversation is gone — deleted chats, mostly. Harmless,
+   * but they are why the old arithmetic went negative, so they are named. */
+  const orphanClaims = Math.max(0, done + skipped + errors - (totalConvos - remaining));
   return {
     running: control.running,
     scope: control.scope,
@@ -341,8 +381,9 @@ async function minerStatus() {
       errors: control.errors,
       lastConvoId: control.lastConvoId,
     },
-    allTime: { done, skipped, errors, stuckClaims: claimed - (control.running ? 1 : 0) },
-    remaining: Math.max(0, totalConvos - done - skipped - errors),
+    allTime: { done, skipped, errors, stuckClaims: claimed - (control.running ? 1 : 0), orphanClaims },
+    remaining,
+    remainingExact,
     totalConvos,
   };
 }
