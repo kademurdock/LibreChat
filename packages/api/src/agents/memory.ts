@@ -193,7 +193,7 @@ export const createMemoryTool = ({
   const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
 
   return tool(
-    async ({ key, value, scope, remind_at, remind_repeat }) => {
+    async ({ key, value, scope, remind_at, remind_repeat, stale_after, subject }) => {
       try {
         if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
           logger.warn(
@@ -261,6 +261,15 @@ export const createMemoryTool = ({
             : undefined;
         /** Reminder cards (Kade nudge engine): a parseable remind_at upgrades this card to type:'reminder' with a real dueAt the server sweep will fire. */
         const dueAt = remind_at ? parseCentralReminderTime(remind_at) : null;
+        /** KADE OPEN LOOPS (Aug 26 2026): a plain YYYY-MM-DD, anchored at UTC
+         * noon so no timezone can shift it across a day boundary. Anything
+         * unparseable is dropped rather than guessed — a wrong stale date is
+         * worse than none. */
+        const staleAfter = (() => {
+          if (!stale_after || !/^\d{4}-\d{2}-\d{2}$/.test(String(stale_after).trim())) return null;
+          const d = new Date(`${String(stale_after).trim()}T12:00:00.000Z`);
+          return isNaN(d.getTime()) ? null : d;
+        })();
         if (remind_at && !dueAt) {
           return [
             `Could not parse remind_at "${remind_at}" — use 24h US Central time formatted exactly as YYYY-MM-DD HH:mm. Memory NOT saved; retry with a valid time.`,
@@ -285,6 +294,10 @@ export const createMemoryTool = ({
           value,
           tokenCount,
           ...reminderFields,
+          /* Omitted (undefined) INHERITS from the superseded row — the July 13
+           * wipe guard. Only an explicit value here changes anything. */
+          ...(staleAfter ? { staleAfter } : {}),
+          ...(subject ? { subject: String(subject).trim().slice(0, 64) } : {}),
         });
         if (result.ok && result.unchanged) {
           /* July 13 2026: identical re-save — no artifact, so the chat UI shows
@@ -341,6 +354,18 @@ export const createMemoryTool = ({
           .enum(['none', 'daily', 'weekly', 'monthly', 'yearly'])
           .optional()
           .describe('How the reminder repeats after it fires. Omit or "none" for one-shot.'),
+        stale_after: z
+          .string()
+          .optional()
+          .describe(
+            'ONLY when this card states a PLAN rather than a RECORD — something scheduled that will be over on a known day ("surgery is Thursday August 27, 2026", "flight lands March 3, 2027"). Give that day as "YYYY-MM-DD". After it passes, the card is shown as unconfirmed until somebody says what happened. Do NOT set this on things that already happened ("got certified July 22", "saw the show July 28") — those stay true forever and are not plans.',
+          ),
+        subject: z
+          .string()
+          .optional()
+          .describe(
+            'The real-world THING this card is about, as a short snake_case name ("mom_foot_surgery", "the_nashville_trip"). Use the SAME subject on every card touching that one thing, so it can be updated as a whole later. Only for situations that genuinely span several cards — most cards need no subject.',
+          ),
       }),
     },
   );
@@ -802,6 +827,9 @@ export async function createMemoryProcessor({
       '\n\nTHE LOGBOOK (log_diary): beside the cards there is a dated logbook — the unlimited archive for day-to-day LIFE. The split: CARDS answer "who is this person" (identity, people and pets, tastes, health, running projects — durable facts worth carrying into every future conversation). The LOGBOOK answers "what happened" (what they did today, how it went, a moment, a mood, a small win or gripe — real but episodic). When the user shares a genuine moment of their day, log ONE entry: one or two plain sentences, gist not transcript, written like a caring friend\'s journal. Never file the same thing as both a card and a logbook entry — pick by durability. The "most turns save NOTHING" rule still governs CARDS; a logbook line is lighter-weight, but still only for real moments actually shared, never for questions, task chatter, or assistant work. Asking you to CHECK, search, or read back memory or the logbook is task chatter — never log the asking; the logbook records their LIFE, not their use of you. The tell: if the entry you are about to write mentions the logbook, diary, memory, searching, or whether something is worth recording, STOP — that is the mechanism describing itself, and the correct move is NO tool call at all. An empty turn is success. Logbook entries default to your own scope (private to this character), like cards. "Remember X" still means a CARD; things like "log this," "note that down," or plain day-sharing lean LOGBOOK. CURIOSITY IS A STORY TOO (her own rule, Aug 8): when the user goes down a real rabbit hole with you — asks, digs, reacts, clearly enjoys it — that day deserves ONE light logbook line naming what caught them and the gem that landed ("Got curious about South Park\'s business side — turns out Trey Parker\'s legal name is Randolph Severn Parker III"). The subject of a question is STILL never a card and never an interest; but the going-down-the-rabbit-hole is a moment of their life, and the logbook is where days like that live. A passing one-line question is not a rabbit hole — log the dig, not the drive-by. IN-WORLD PLAY IS FICTION (the Barnaby lesson, extended): when the conversation is a game session — the city beyond the Threshold Gate, a card table, a text adventure, any roleplay world — the events INSIDE it are not the user\'s real life and are NEVER logged as such (the game worlds keep their own chronicles). The real-life moment, if any, is that they played: at most one line like "spent the evening exploring the city with Porter," and only when the session was clearly a real chunk of their day. No in-world deaths, purchases, crimes, or dramas ever become logbook entries or cards.' +
       '\n\nHOW AN ENTRY SHOULD READ (the taste rules, Aug 9 2026 — she read the logbook and it read like a standup log; that is the failure mode): write every entry like a close friend keeping a journal, never a court reporter. "Has anxiety about calling the SSA" is a case file; "The SSA phone line stresses her out — honestly, fair" is a friend. Keep the fact exact, add the small human touch, and never use clinical framings ("exhibits", "reports that", "is experiencing"). WORK EARNS ALMOST NOTHING: when the day with you was a work or build session — coding, debugging, testing, directing tasks — that whole session earns AT MOST one line, and only if something actually landed that a friend would hear about ("finally shipped the World screen and was proud of it"); "spent the afternoon debugging" is not an entry, and forty of them is the standup log nobody wants. Life said mid-work (the dog, the family, how they feel) still counts normally. WEIGH THE DAY: log_diary takes a salience — 1 ordinary (the default and the usual truth), 2 a notable day, 3 a big one (a loss, family news, a health scare, a real milestone). Set it honestly; the platform makes big days outrank product notes when memories resurface.' +
       '\n\nCORRECTIONS LAND IMMEDIATELY: when the user corrects a fact you hold ("no, the surgery moved to Friday", "we renamed the dog"), fix it in the same breath — set_memory on the SAME key with the corrected whole truth (or the corrected logbook line) — and never argue with them about what the old note said. The person is always righter than the card.' +
+      '\n\n⚠️ AND A CANCELLATION IS A FACT — THIS IS THE ONE THAT GOT MISSED, AND IT HAS A RECEIPT. On Aug 26 2026 a family member said in the morning that her mother\'s surgery had been called off. Nothing was filed. Her cards still held SEVEN separate notes saying that surgery was happening — the date, the pre-op, the anaesthesia plan, the recovery window, the surgical detail, the calendar, an aside about her aunt — and not one saying it was cancelled, so hours later the surgery got named back to her as if it were still on. FILE THE ENDINGS: cancellations, postponements, break-ups, quittings, deaths, "we\'re not doing that any more", "she\'s not coming after all". A thing that STOPS happening is far easier to forget to write down than a thing that starts, and it does more damage, because the old plan is still sitting in the record looking current.' +
+      '\n\nONE THING, MANY CARDS — USE `subject`. That surgery was spread over seven keys, so "update the SAME key" had no correct answer and a perfectly obedient fix would still have left six cards stale. When several cards are about ONE real-world situation, give them all the SAME short `subject` ("mom_foot_surgery"). Then an update can reach the whole thing instead of one seventh of it. Most cards need no subject — this is for situations that genuinely sprawl. When you correct something that has a subject, fix EVERY card carrying it that is now wrong, not just the one that came to mind.' +
+      '\n\nPLANS GO STALE, RECORDS DO NOT — USE `stale_after`. A card is not always a fact. "Her favourite Grey\'s character is Bailey" is true forever. "Mom\'s foot surgery is Thursday August 27, 2026" is a CLAIM ABOUT THE FUTURE that goes false on a known day. When you file a plan — an appointment, a trip, a procedure, a deadline, a visit — set `stale_after` to the day it will be over, as YYYY-MM-DD. After that day the card is shown to you as unconfirmed, so you ask instead of announce. ⚠️ DO NOT set it on things that already happened: "got CPR certified July 22", "saw Shinedown July 28", "the dog died in 2025" are RECORDS and stay true forever. The test is the tense, never the presence of a date.' +
       '\n\nPROMISES: when the CHARACTER makes a concrete commitment to the user ("I\'ll have the second verse tomorrow," "remind me to ask how the appointment went"), file an agent-scoped card under a key starting promise_ with what was promised and when it\'s due. When a promise is delivered or clearly dead, delete its card. Promises are the character\'s own word — keeping them is what makes the character real.' +
       '\n\nOFF THE RECORD: if the user has said "off the record" in the visible conversation and has not since said they\'re back on the record, save NOTHING from that span — no cards, no logbook entries, no exceptions. When they say "back on the record" (or similar), normal listening resumes from that point. If they ask you to forget an off-record slip you already saved, delete it.';
   }

@@ -61,6 +61,10 @@ Your jobs, in priority order:
 
 5. HOUSEKEEPING while you're in there: merge near-duplicates onto one key (\`set_memory\` the survivor, \`delete_memory\` the leftovers), split multi-topic cards, tighten rambling ones. One topic per card, ideally under ~60 tokens, short snake_case keys.${hasReadOnlyShared ? '' : ''}
 
+6. CLOSE OPEN LOOPS, HONESTLY. A card that states a PLAN whose day has already passed — an appointment, a procedure, a trip, a deadline — is an OPEN LOOP, and you can see it because the card is shown to you carrying a warning that its date has gone by unconfirmed. **You do not know what happened, and you must not guess.** Do NOT delete it and do NOT decide it went ahead. Rewrite it with \`set_memory\` on the SAME key so it says what it actually is: "as of Aug 21 the surgery was set for Aug 27 — not confirmed since." That keeps every fact and removes the false certainty, and the next conversation can simply ask. ⚠️ A card about something that ALREADY HAPPENED is not an open loop and must be left alone — "got certified in July", "the dog died in 2025", "saw the show on the 28th" are records, and records stay true.
+
+7. GROUP WHAT BELONGS TOGETHER. When several cards are plainly about ONE real-world situation (a surgery, a trip, a move, a court case), give them all the same short \`subject\` — pass it on \`set_memory\` alongside the value you are already keeping. Do NOT merge them: they are different true facts and merging destroys detail. The subject is a handle, not a merge, and it is what lets a future correction reach all of them instead of one. Leave the subject off cards that stand alone.
+
 HARD RULES:
 - Cards marked ["reminder": ...] are LIVE SCHEDULED ALARMS: never delete them, never merge them away, never change their key. At most tighten the value wording with \`set_memory\` on the SAME key.
 - Do NOT invent facts with no basis in the cards below. An inference must trace to specific cards and wear inference words.

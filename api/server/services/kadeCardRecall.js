@@ -41,6 +41,7 @@ const { logger } = require('@librechat/data-schemas');
 const { getAllUserMemories } = require('~/models');
 const { embedText, searchDiary, countEntries } = require('~/models/kadeDiary');
 const { syncBucketVectors, searchCardVectors } = require('~/models/kadeCardVector');
+const { describeStale } = require('~/server/services/kadeOpenLoops');
 
 const KIANA_ID = 'agent_6llV0eMu4fmIaj8f2x1Sb';
 /* ⭐⭐⭐ THE RECALL FUNNEL (widened Aug 20 2026, with the memory-keeper's
@@ -210,14 +211,63 @@ function describeReminderCompact(m) {
   }
 }
 
+/* KADE Aug 26 2026 — SUBJECT GROUPING. Seven cards about one surgery arrived as
+ * seven unrelated facts that happened to agree, and agreeing is exactly what made
+ * them look healthy. Cards sharing a `subject` are now emitted together under one
+ * heading with their dates, so the model meets ONE SITUATION WITH SEVEN NOTES,
+ * newest four days old — which reads as a thing to ask about rather than announce.
+ * Kill switch: KADE_CARD_SUBJECTS=0 restores the flat list byte-for-byte. */
+function subjectsEnabled() {
+  return process.env.KADE_CARD_SUBJECTS !== '0';
+}
+
+function renderCard(m, n) {
+  return (
+    n + '. [' + fmtDate(m.updated_at) + ']. ' + m.value + describeReminderCompact(m) + describeStale(m)
+  );
+}
+
 function formatList(list) {
-  return list
-    .slice()
-    .sort((a, b) => new Date(a.updated_at || 0) - new Date(b.updated_at || 0))
-    .map(
-      (m, i) => i + 1 + '. [' + fmtDate(m.updated_at) + ']. ' + m.value + describeReminderCompact(m),
-    )
-    .join('\n\n');
+  const byDate = (a, b) => new Date(a.updated_at || 0) - new Date(b.updated_at || 0);
+  const cards = list.slice().sort(byDate);
+  if (!subjectsEnabled()) {
+    return cards.map((m, i) => renderCard(m, i + 1)).join('\n\n');
+  }
+
+  /* A subject only earns a heading when it actually groups something — a lone
+   * card with a subject is just a card, and a heading over it is noise. */
+  const counts = new Map();
+  for (const m of cards) {
+    const sub = m.subject ? String(m.subject).trim() : '';
+    if (sub) counts.set(sub, (counts.get(sub) || 0) + 1);
+  }
+  const grouped = new Set([...counts.entries()].filter(([, n]) => n > 1).map(([k]) => k));
+  if (!grouped.size) {
+    return cards.map((m, i) => renderCard(m, i + 1)).join('\n\n');
+  }
+
+  const out = [];
+  const emitted = new Set();
+  let n = 0;
+  for (const m of cards) {
+    const sub = m.subject ? String(m.subject).trim() : '';
+    if (sub && grouped.has(sub)) {
+      if (emitted.has(sub)) continue;
+      emitted.add(sub);
+      const members = cards.filter((x) => String(x.subject || '').trim() === sub);
+      const newest = members.reduce((a, b) => (byDate(a, b) > 0 ? a : b));
+      const lines = members.map((x) => '   - [' + fmtDate(x.updated_at) + ']. ' + x.value + describeReminderCompact(x) + describeStale(x));
+      n += 1;
+      out.push(
+        n + '. ABOUT "' + sub + '" — ' + members.length + ' notes, nothing newer than ' +
+          fmtDate(newest.updated_at) + ':\n' + lines.join('\n'),
+      );
+      continue;
+    }
+    n += 1;
+    out.push(renderCard(m, n));
+  }
+  return out.join('\n\n');
 }
 
 /**

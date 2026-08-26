@@ -80,6 +80,39 @@ const MemoryEntrySchema: Schema<IMemoryEntry> = new Schema({
     type: Boolean,
     required: false,
   },
+  /**
+   * KADE OPEN LOOPS (Aug 26 2026). The date this card's claim GOES STALE on.
+   * Set by the memory writer when — and only when — it files a forward-looking
+   * commitment ("surgery is Thursday August 27"). Absent on every ordinary fact,
+   * which is almost all of them.
+   *
+   * ⚠️ WHY THE WRITER SETS THIS AND NOT A PARSER: version one of the recall flag
+   * inferred the loop from card text and was run over 192 real cards. It fired
+   * 15 times and was right ONCE — it flagged a dead parrot, a dead dog, a CPR
+   * certificate and a Shinedown concert. A DATE IS NOT A TENSE. Only the writer,
+   * holding the conversation, knows whether it is filing a plan or a record.
+   */
+  staleAfter: {
+    type: Date,
+    required: false,
+  },
+  /**
+   * KADE SUBJECT GROUPING (Aug 26 2026). The real-world thing this card is about
+   * ("mom_foot_surgery"). Optional and free-form, shaped like a key.
+   *
+   * THE BUG IT EXISTS FOR: one surgery lived across SEVEN cards under seven keys
+   * — date, pre-op, anaesthesia, recovery, surgical detail, calendar, and a
+   * family aside. The correction rule says to update "the SAME key", which has no
+   * answer at seven, so a perfectly obedient update left six stale. Consolidation
+   * was right not to merge them (they are seven different true facts, not
+   * duplicates). A subject is the missing handle: it makes "update the surgery"
+   * addressable without destroying any of the seven.
+   */
+  subject: {
+    type: String,
+    required: false,
+    index: true,
+  },
   updated_at: {
     type: Date,
     default: Date.now,
@@ -94,5 +127,9 @@ const MemoryEntrySchema: Schema<IMemoryEntry> = new Schema({
 MemoryEntrySchema.index({ userId: 1, agentId: 1, key: 1 });
 /** Supports the future reminder-agent query: `{ type: 'reminder', dueAt: { $lte: now }, completed: false }`. */
 MemoryEntrySchema.index({ userId: 1, type: 1, dueAt: 1, completed: 1 });
+/** Supports the open-loop sweep: which declared loops have come due for this user. */
+MemoryEntrySchema.index({ userId: 1, staleAfter: 1 });
+/** Supports "every card about this thing" — the handle the correction rule needs. */
+MemoryEntrySchema.index({ userId: 1, agentId: 1, subject: 1 });
 
 export default MemoryEntrySchema;

@@ -16,6 +16,10 @@ export interface IMemoryEntry extends Document {
   dueAt?: Date;
   recurrence?: string;
   completed?: boolean;
+  /** KADE Aug 26 2026 — writer-declared: when this card's claim goes stale. */
+  staleAfter?: Date;
+  /** KADE Aug 26 2026 — the real-world thing this card is about. */
+  subject?: string;
   updated_at?: Date;
   tenantId?: string;
 }
@@ -33,6 +37,10 @@ export interface IMemoryEntryLean {
   dueAt?: Date;
   recurrence?: string;
   completed?: boolean;
+  /** KADE Aug 26 2026 — writer-declared: when this card's claim goes stale. */
+  staleAfter?: Date;
+  /** KADE Aug 26 2026 — the real-world thing this card is about. */
+  subject?: string;
   updated_at?: Date;
   tenantId?: string;
   __v?: number;
@@ -54,6 +62,9 @@ export interface SetMemoryParams {
   dueAt?: Date | null;
   recurrence?: string | null;
   completed?: boolean;
+  /** KADE Aug 26 2026 — same inherit rule as dueAt: omitted inherits, null clears. */
+  staleAfter?: Date | null;
+  subject?: string | null;
 }
 
 export interface DeleteMemoryParams {

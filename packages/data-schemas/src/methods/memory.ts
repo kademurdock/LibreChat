@@ -110,6 +110,8 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     dueAt,
     recurrence,
     completed,
+    staleAfter,
+    subject,
   }: t.SetMemoryParams): Promise<t.MemoryResult> {
     try {
       if (key?.toLowerCase() === 'nothing') {
@@ -157,6 +159,11 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
        * dueAt is setting a fresh schedule: completed resets to false unless
        * stated, and recurrence: null explicitly clears an inherited repeat. */
       const explicitDueAt = dueAt !== undefined;
+      /* KADE Aug 26 2026 — staleAfter and subject ride the SAME wipe guard as
+       * dueAt: a value-only rewrite (panel edit, writer tighten, consolidation
+       * pass) must never silently strip a declared open loop or its subject. */
+      const explicitStale = staleAfter !== undefined;
+      const explicitSubject = subject !== undefined;
       await MemoryEntry.create({
         userId,
         agentId: agentId ?? undefined,
@@ -169,6 +176,8 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         recurrence: recurrence !== undefined ? (recurrence ?? undefined) : existing?.recurrence,
         completed:
           completed !== undefined ? completed : explicitDueAt ? false : existing?.completed,
+        staleAfter: explicitStale ? (staleAfter ?? undefined) : existing?.staleAfter,
+        subject: explicitSubject ? (subject ?? undefined) : existing?.subject,
         supersedes: existing ? existing._id : undefined,
         updated_at: new Date(),
       });
