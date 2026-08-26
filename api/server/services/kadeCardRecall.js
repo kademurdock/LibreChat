@@ -403,6 +403,23 @@ async function getMemorySplit(userId, agentId) {
  * @param {object|null} p.cardSplit  result of getMemorySplit (null = cards stay head-side; diary may still fire)
  */
 async function getRecallTailBlock({ userId, agentId, userText }) {
+  /* ── RECALL AUDIT (Aug 26 2026) ──────────────────────────────────────────
+   * Forge's ask, and tonight is the argument for it: SEVEN cards about one
+   * surgery surfaced CORRECTLY and the reply still went wrong, and there was
+   * no way to see that from outside. Recall logged a hit and a duration and
+   * nothing about WHAT it handed over.
+   *
+   * This logs the KEYS (never the values — card text is the person's life and
+   * does not belong in a log line) plus the logbook dates. Enough to answer
+   * "what did she have in front of her when she said that" from Railway logs
+   * alone, which is the question nobody could answer tonight.
+   *
+   * ⚠️ NOT PERSISTED, deliberately. Forge's own rule for this lane is measure
+   * before changing retrieval — a log line costs nothing and is greppable; a
+   * write on every turn is a decision that needs her word and a corpus pass
+   * first. Kill switch: KADE_RECALL_AUDIT=0. */
+  const surfacedCards = [];
+  const surfacedDiary = [];
   const t0 = Date.now();
   const empty = { block: null, ms: 0 };
   if (!userId) {
@@ -460,12 +477,14 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
             if (pinnedNow) {
               continue;
             }
-            const line = '- [' + fmtDate(m.updated_at) + '] ' + m.value + '\n';
+            const line =
+              '- [' + fmtDate(m.updated_at) + '] ' + m.value + describeStale(m) + '\n';
             if (block.length + line.length > CARD_BLOCK_CHAR_CAP) {
               break;
             }
             block += line;
             added += 1;
+            surfacedCards.push(String(m.key));
           }
           if (added > 0) {
             parts.push(block.trimEnd());
@@ -505,6 +524,7 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
             'Wear them lightly: weave one in only if it truly fits, as a friend naturally would. Never recite, never list, never mention the logbook mechanism. ' +
             "If an entry contradicts what the person is saying right now, believe the person — their live word always beats an old note.\n";
           for (const h of hits) {
+            surfacedDiary.push(String(h.date));
             const line = '- [' + h.date + '] ' + h.text + '\n';
             if (block.length + line.length > DIARY_BLOCK_CHAR_CAP) {
               break;
@@ -528,7 +548,14 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
           ' hit=' +
           (block ? 'yes' : 'no') +
           ' ms=' +
-          ms,
+          ms +
+          (process.env.KADE_RECALL_AUDIT === '0'
+            ? ''
+            : ' cards=[' +
+              surfacedCards.join(',') +
+              '] logbook=[' +
+              surfacedDiary.join(',') +
+              ']'),
       );
     }
     return { block, ms };

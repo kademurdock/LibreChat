@@ -47,6 +47,35 @@ function auditFailSoft(req, action, targetUserId, entryId, detail) {
 
 /** GET /?userId=<id>[&agentId=<id>][&limit=200] — one user's diary, newest first.
  *  Embeddings never ride the response (bulk floats, nothing a human reads). */
+/* Aug 26 2026 — ROUTE THE VOICE REPAIR. `diaryVoiceRepair.js` has existed
+ * since Aug 15 (Part 70) and had NO HTTP door, which meant the one-time
+ * retrofit it was built for could only ever be run by editing code. Tonight's
+ * backfill recovered 86 entries through a keeper model that writes flatter
+ * than the one that wrote the summer's — "User discussed cat food choices for
+ * Kasper…" is exactly the case-file register the taste rules ban — so the
+ * repair is needed again and needs to be callable.
+ *
+ * dryRun defaults TRUE: a census, zero writes, zero model calls. The pass is
+ * idempotent (repaired entries are marked and skipped on re-run) and never
+ * silent — the original text is kept verbatim on the doc in `preRepairText`.
+ * FACTS ARE SACRED: its instructions forbid changing any fact, name, date or
+ * number. Phrasing only. */
+router.post('/voice-repair', async (req, res) => {
+  try {
+    const { repairDiaryVoice } = require('~/server/services/Memory/diaryVoiceRepair');
+    const { dryRun = true, before, limit = 0, ownerUserId = null } = req.body || {};
+    const result = await repairDiaryVoice({
+      dryRun: dryRun !== false,
+      ...(before ? { before } : {}),
+      limit: parseInt(limit, 10) || 0,
+      ownerUserId,
+    });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const userId = String(req.query.userId || '').trim();

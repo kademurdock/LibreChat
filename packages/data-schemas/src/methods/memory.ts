@@ -146,6 +146,53 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         return { ok: true, unchanged: true };
       }
 
+      /* ── OVERWRITE WATCH (Aug 26 2026) ────────────────────────────────────
+       * Forge asked for a "contradiction guard on writes". ⚠️ THIS IS NOT ONE,
+       * AND THE DIFFERENCE MATTERS ENOUGH TO SAY IN CODE: deciding that a new
+       * value CONTRADICTS an old one is a semantic judgement, and doing it
+       * properly costs a model call on the write path of every turn. Doing it
+       * with a word list is how the last five detectors on this platform died.
+       *
+       * What IS cheap and honest is noticing the SHAPE of a dangerous write: a
+       * substantial card being replaced by something that shares almost nothing
+       * with it. That is what an overwrite-by-confabulation looks like from the
+       * outside, and it is exactly the Amber A case — a card reading "has an
+       * associate's degree and has never had a job" being displaced by nursing
+       * school.
+       *
+       * It BLOCKS NOTHING. The old value is already kept (status: superseded),
+       * so nothing is ever lost; this only makes the event visible in the logs
+       * instead of silent. Turning it into a real gate needs her word and a
+       * corpus pass first. KADE_OVERWRITE_WATCH=0 silences it. */
+      if (existing && process.env.KADE_OVERWRITE_WATCH !== '0') {
+        try {
+          const words = (t: string) =>
+            new Set(
+              String(t || '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, ' ')
+                .split(' ')
+                .filter((w) => w.length > 3),
+            );
+          const before = words(existing.value);
+          const after = words(value);
+          if (before.size >= 8) {
+            let shared = 0;
+            for (const w of before) {
+              if (after.has(w)) shared += 1;
+            }
+            const survived = shared / before.size;
+            if (survived < 0.34) {
+              logger.warn(
+                `[memory] LARGE OVERWRITE key="${key}" user=${String(userId).slice(-6)} — only ${Math.round(survived * 100)}% of the old card survived (${existing.value.length} chars -> ${String(value).length}). Old value kept as superseded. This is the shape a confabulated overwrite makes.`,
+              );
+            }
+          }
+        } catch (_e) {
+          /* a watch must never block a write */
+        }
+      }
+
       for (const row of existingRows) {
         row.status = 'superseded';
         await row.save();

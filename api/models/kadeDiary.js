@@ -179,12 +179,23 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
    * "not a genuine moment to record" while recording it. Narrow pattern on
    * the observed failure shape only; a rare false positive just means one
    * borderline entry politely refused. Keeper-sourced writes only — a human
-   * typing on the Diary page is never second-guessed. */
+   * typing on the Diary page is never second-guessed.
+   *
+   * ⚠️ AUG 26 2026 — WIDENED, BECAUSE THE CONSOLIDATION PASS WAS WALKING
+   * STRAIGHT THROUGH IT. Real entries found in her logbook: "Checked through
+   * shared memory at 4 AM — everything's clean, no merges or repairs needed"
+   * and "Did a memory housekeeping pass — nothing needed changing." Both name
+   * the mechanism, which is the whole thing this guard is for, and both got in
+   * because the first clause demanded one of asked/requested/ran/wants and
+   * neither sentence contains any of them. The pass describes itself in the
+   * PAST tense — checked, swept, passed — so those are in the net now, along
+   * with housekeeping and consolidat*. The logbook is her life, not the
+   * machine's chores. */
   if (
     (source === 'keeper' || source === 'mined') &&
-    /\basked|\brequested|\bran\b|\bwants? (?:me|a)\b/i.test(cleanText) &&
+    /\basked|\brequested|\bran\b|\bwants? (?:me|a)\b|\bchecked\b|\bswept?\b|\bpass(?:ed)?\b|\bhousekeeping\b|\bconsolidat/i.test(cleanText) &&
     /\b(?:diary|logbook|memory|memories|notes?)\b/i.test(cleanText) &&
-    /\b(?:search|check|look(?:ed)?\s?up|read back|record)/i.test(cleanText)
+    /\b(?:search|check|look(?:ed)?\s?up|read back|record|housekeeping|consolidat|merge|repair|sweep|consolidation pass|nothing needed changing)/i.test(cleanText)
   ) {
     return {
       ok: false,
