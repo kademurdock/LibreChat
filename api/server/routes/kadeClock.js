@@ -357,6 +357,65 @@ router.get('/memory-health', async (req, res) => {
   }
 });
 
+/* ── RECALL AUDIT + MEMORY EVENTS, READABLE (Aug 28 2026) ───────────────────
+ * The stored halves of two witnesses that used to live only in rotating
+ * deployment logs. Same auth as memory-health; keys and dates only — the
+ * rows never held values to begin with. */
+router.get('/recall-audit', async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const { readRecallAudits } = require('~/models/kadeRecallAudit');
+    const rows = await readRecallAudits({
+      userId: req.query.userId ? String(req.query.userId) : null,
+      limit: req.query.limit,
+    });
+    res.json({
+      count: rows.length,
+      audits: rows.map((r) => ({
+        at: r.createdAt,
+        userId: String(r.userId || '').slice(-6),
+        agentId: r.agentId ? String(r.agentId).slice(-6) : null,
+        cards: r.cards,
+        logbook: r.logbook,
+        hit: r.hit,
+        ms: r.ms,
+      })),
+    });
+  } catch (e) {
+    logger.error('[kadeClock] recall-audit read failed:', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.get('/memory-events', async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const mongoose = require('mongoose');
+    const cap = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+    const rows = await mongoose.connection.db
+      .collection('kadememoryevents')
+      .find({})
+      .sort({ createdAt: -1 })
+      .limit(cap)
+      .toArray();
+    res.json({
+      count: rows.length,
+      events: rows.map((r) => ({
+        at: r.createdAt,
+        kind: r.kind,
+        userId: String(r.userId || '').slice(-6),
+        key: r.key,
+        survivedPct: r.survivedPct,
+        beforeChars: r.beforeChars,
+        afterChars: r.afterChars,
+      })),
+    });
+  } catch (e) {
+    logger.error('[kadeClock] memory-events read failed:', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 /* ── VOICE REPORT (Part 80, Aug 21 2026) — Kade's ear, automated. ───────────
  *
  * Her words: "This tuning by ear is really all I can do, look at people's

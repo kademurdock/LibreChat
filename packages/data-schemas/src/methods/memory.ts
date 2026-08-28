@@ -2,6 +2,9 @@ import { Types } from 'mongoose';
 import type * as t from '~/types';
 import logger from '~/config/winston';
 
+/* Once-per-process TTL-index ensure for the overwrite-watch receipts. */
+let memoryEventsIndexEnsured = false;
+
 /**
  * Formats a date in YYYY-MM-DD format
  */
@@ -186,6 +189,51 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
               logger.warn(
                 `[memory] LARGE OVERWRITE key="${key}" user=${String(userId).slice(-6)} — only ${Math.round(survived * 100)}% of the old card survived (${existing.value.length} chars -> ${String(value).length}). Old value kept as superseded. This is the shape a confabulated overwrite makes.`,
               );
+              /* ⭐ AUG 28 2026 — THE WATCH'S EVIDENCE NOW OUTLIVES THE LOGS.
+               *
+               * The contradiction guard Forge asked for is gated on "read the
+               * overwrite-watch hits first — they're free evidence." Two days
+               * after the watch shipped, the honest count of its hits was
+               * UNKNOWABLE: it warned into deployment logs, the fork deploys
+               * several times a day, and every rotation took the evidence
+               * with it. "Zero hits on the current deployment" is not zero
+               * hits — it is the mining gauge's arithmetic in new clothes,
+               * a number that reads as an answer and measures only the
+               * window.
+               *
+               * Same privacy rule as the recall audit: key, sizes and the
+               * survival ratio — NEVER either value. The superseded row
+               * already keeps the old text for anyone with admin rights; the
+               * event row only has to prove the event happened. TTL 60 days
+               * via the index below. Fail-soft: a watch must never block a
+               * write, and neither may its receipt. */
+              try {
+                const eventsDb = mongoose.connection.db;
+                if (!eventsDb) {
+                  throw new Error('no db handle');
+                }
+                const eventsCol = eventsDb.collection('kadememoryevents');
+                if (!memoryEventsIndexEnsured) {
+                  memoryEventsIndexEnsured = true;
+                  eventsCol
+                    .createIndex({ createdAt: 1 }, { expireAfterSeconds: 60 * 86400 })
+                    .catch(() => {});
+                }
+                eventsCol
+                  .insertOne({
+                    kind: 'large_overwrite',
+                    userId: String(userId),
+                    agentId: scopedAgentId == null ? null : String(scopedAgentId),
+                    key: String(key).slice(0, 120),
+                    survivedPct: Math.round(survived * 100),
+                    beforeChars: existing.value.length,
+                    afterChars: String(value).length,
+                    createdAt: new Date(),
+                  })
+                  .catch(() => {});
+              } catch (_e) {
+                /* receipt lost, write unharmed */
+              }
             }
           }
         } catch (_e) {

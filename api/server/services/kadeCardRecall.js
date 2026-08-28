@@ -604,6 +604,23 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
     const timeout = new Promise((resolve) => setTimeout(() => resolve(null), RECALL_TIMEOUT_MS));
     const block = await Promise.race([work, timeout]);
     const ms = Date.now() - t0;
+    /* Persist the same audit the log line carries — keys and dates, never
+     * values — so "what did she have in front of her Tuesday" survives the
+     * next redeploy's log rotation. Fire-and-forget; see kadeRecallAudit. */
+    if (cardRagActive(agentId) || surfacedDiary.length > 0) {
+      try {
+        require('~/models/kadeRecallAudit').storeRecallAudit({
+          userId,
+          agentId: agentId || null,
+          cards: surfacedCards,
+          logbook: surfacedDiary,
+          hit: Boolean(block),
+          ms,
+        });
+      } catch (_e) {
+        /* never let the witness take down the turn */
+      }
+    }
     if (cardRagActive(agentId)) {
       logger.info(
         '[kadeCardRecall] user=' +

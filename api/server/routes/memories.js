@@ -550,6 +550,80 @@ router.get('/ledger', async (req, res) => {
  * run finds nothing to do. Cost: ~$0.15/M embed tokens — the whole platform's
  * card corpus is well under a dime.
  */
+/**
+ * POST /memories/diary-embed-backfill
+ * ADMIN-ONLY (Aug 28 2026). Re-embeds logbook entries whose embedding is
+ * missing or written under a different model — the diary sibling of
+ * /rag-sync, and the lane searchDiary's own comment has promised since Aug 9
+ * ("skip until a backfill re-embeds") without anything existing to do it.
+ *
+ * WHY IT EXISTS, with the count that forced it: when the embedding provider
+ * ran out of prepaid credit (Aug 28), logDiaryEntry kept writing entries with
+ * `embedding: null` — fail-soft, correctly, the entry beats no entry — and
+ * searchDiary skips null embeddings, so every one of those entries became
+ * INVISIBLE to semantic recall forever. Census at build time: 92 entries
+ * across six seats, and some dated Aug 13-15 — meaning the lane had died
+ * quietly before and nobody ever noticed that either. A fail-soft write with
+ * no backfill is not fail-soft; it is fail-silent-forever.
+ *
+ * Non-destructive by construction: touches ONLY embedding + embedModel,
+ * never text, never dates, never salience. Idempotent: a second run finds
+ * nothing. `dry: true` gives the census without a single embed call.
+ */
+router.post('/diary-embed-backfill', requireAdminAccess, async (req, res) => {
+  try {
+    const { KadeDiaryEntry, embedText, currentEmbedModel } = require('~/models/kadeDiary');
+    const model = currentEmbedModel();
+    if (!model) {
+      return res.status(400).json({
+        error: 'no embedding lane is configured — set KADE_EMBED_GEMINI_KEY or KADE_EMBED_OPENAI_KEY first',
+      });
+    }
+    const dry = req.body?.dry === true;
+    const cap = Math.min(Math.max(parseInt(req.body?.limit, 10) || 300, 1), 1000);
+    const filter = {
+      $or: [
+        { embedding: null },
+        { embedding: { $size: 0 } },
+        { embedModel: { $ne: model } },
+      ],
+    };
+    const total = await KadeDiaryEntry.countDocuments(filter);
+    if (dry) {
+      return res.json({ dry: true, needing: total, model });
+    }
+    const rows = await KadeDiaryEntry.find(filter)
+      .select('_id text')
+      .limit(cap)
+      .lean();
+    let embedded = 0;
+    let failed = 0;
+    for (const r of rows) {
+      const vec = await embedText(String(r.text || '').slice(0, 4000));
+      if (vec) {
+        await KadeDiaryEntry.updateOne(
+          { _id: r._id },
+          { $set: { embedding: vec, embedModel: model } },
+        );
+        embedded += 1;
+      } else {
+        failed += 1;
+        /* Provider still failing? Stop after three straight so a dead lane
+         * costs three calls, not a thousand. */
+        if (failed >= 3 && embedded === 0) {
+          break;
+        }
+      }
+      await new Promise((ok) => setTimeout(ok, 150));
+    }
+    const remaining = await KadeDiaryEntry.countDocuments(filter);
+    res.json({ scanned: rows.length, embedded, failed, remaining, model });
+  } catch (error) {
+    logger.error('[POST /memories/diary-embed-backfill] failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post('/rag-sync', requireAdminAccess, async (req, res) => {
   try {
     const { getAllUserMemories } = require('~/models');
