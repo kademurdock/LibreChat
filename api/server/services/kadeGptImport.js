@@ -325,13 +325,20 @@ async function importMemoriesText({ userId, text }) {
 
 /* ── Lane 2: mine stored conversations into the logbook ────────────────── */
 function importMiningInstructions(convoDate, title) {
-  return `You are reading ONE OLD conversation from ${convoDate} that the user had with ChatGPT — a different assistant, before they joined this platform. Their logbook here should remember their life from back then. This is archaeology, not live listening.
+  /* ⭐ The imperative goes FIRST — the Aug-26 hoist lesson (285b104), measured:
+   * the same keeper model called log_diary 1/3 with the do-rules buried and
+   * 3/3 with them hoisted. This lane's first live test reproduced exactly
+   * that failure (2 conversations, garlic patch and all, ZERO tool calls,
+   * polite prose instead), so the do-rule leads here too. */
+  return `⭐ YOUR JOB IS TO CALL TOOLS, NOT TO ANSWER IN PROSE. You are a memory writer. For a conversation holding any real life-moment, plan, mood, or genuine rabbit hole, CALL log_diary with the entry. A text reply with no tool call is the failure mode. ONLY pure task chatter — quick lookups, unit conversions, formatting help — earns silence, and silence still means no prose.
+
+You are reading ONE OLD conversation from ${convoDate} that the user had with ChatGPT — a different assistant, before they joined this platform. Their logbook here should remember their life from back then. This is archaeology, not live listening.
 
 WHAT TO WRITE — logbook entries via log_diary (dated to that old day automatically):
 - Real life-moments the user shared: things that happened, plans, moods that defined the day.
 - Rabbit holes they genuinely dug into with curiosity — ONE light line naming what caught them.
 - Story beats of ongoing sagas or projects as they stood THAT day.
-Write each entry as one or two plain past-tense sentences, like a friend's journal. No dates inside the text. Most conversations deserve 0 to 2 entries; task chatter and quick lookups deserve NONE. Zero is a correct and common answer.
+Write each entry as one or two plain past-tense sentences, like a friend's journal. No dates inside the text. Most conversations deserve 1 or 2 entries; pure task chatter deserves NONE.
 
 CARDS (set_memory) — RARE: only a durable, clearly STILL-TRUE fact about the user not already in their existing memory, that could not have changed since. Unsure? Logbook entry, not card. Never rewrite or touch an existing card.
 
