@@ -110,6 +110,40 @@ function embedLane() {
   return null;
 }
 
+/* ⭐ AUG 28 2026 — THE STRIP BECOMES A FUNCTION, BECAUSE THERE WERE TWO DOORS.
+ *
+ * Aug 26 put this regex "at the write door" — logDiaryEntry — after three
+ * prompts saying "no dates inside the text" failed to hold. TODAY THE VOICE
+ * REPAIR REINTRODUCED A STAMP THROUGH ITS OWN DOOR: diaryVoiceRepair writes
+ * via updateOne, never through logDiaryEntry, and its rewrite model added
+ * "[2026-08-20] Got curious about Don Wildman…" back to an entry the Aug-26
+ * cleanup had verified clean. One regex at the door is only a guarantee if
+ * every machine door is the same door. Both machine writers now call THIS.
+ * editDiaryEntry stays un-second-guessed — a human typing is not a machine.
+ * KADE_DIARY_DATE_STRIP=0 disables, both doors at once. */
+function stripLeadingDateStamp(raw) {
+  let cleanText = String(raw == null ? '' : raw).trim();
+  if (process.env.KADE_DIARY_DATE_STRIP === '0') {
+    return cleanText;
+  }
+  const beforeStrip = cleanText;
+  cleanText = cleanText
+    .replace(/^\s*\[\d{4}-\d{2}-\d{2}\]\s*/, '')
+    .replace(
+      /^\s*(?:On|Back on)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?\s*[,:\u2014-]?\s*/i,
+      '',
+    )
+    .replace(/^\s*\d{4}-\d{2}-\d{2}\s*[,:\u2014-]\s*/, '')
+    .trim();
+  if (!cleanText) {
+    return beforeStrip; /* never let the strip eat a whole entry */
+  }
+  if (cleanText !== beforeStrip) {
+    cleanText = cleanText.charAt(0).toUpperCase() + cleanText.slice(1);
+  }
+  return cleanText;
+}
+
 /** The model name entries are being written with right now (drives the match guard). */
 function currentEmbedModel() {
   const lane = embedLane();
@@ -266,23 +300,7 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
    * and is never touched. This is the MACHINE write path only — editDiaryEntry
    * below is a human typing and is not second-guessed.
    * KADE_DIARY_DATE_STRIP=0. */
-  let cleanText = String(text).trim().slice(0, 2000);
-  if (process.env.KADE_DIARY_DATE_STRIP !== '0') {
-    const beforeStrip = cleanText;
-    cleanText = cleanText
-      .replace(/^\s*\[\d{4}-\d{2}-\d{2}\]\s*/, '')
-      .replace(
-        /^\s*(?:On|Back on)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?\s*[,:\u2014-]?\s*/i,
-        '',
-      )
-      .replace(/^\s*\d{4}-\d{2}-\d{2}\s*[,:\u2014-]\s*/, '')
-      .trim();
-    if (!cleanText) {
-      cleanText = beforeStrip; /* never let the strip eat a whole entry */
-    } else if (cleanText !== beforeStrip) {
-      cleanText = cleanText.charAt(0).toUpperCase() + cleanText.slice(1);
-    }
-  }
+  let cleanText = stripLeadingDateStamp(String(text).trim().slice(0, 2000));
   /* Meta-guard (Aug 7 2026, caught twice in live tests): the keeper kept
    * logging the ACT of being asked to search the diary — once even writing
    * "not a genuine moment to record" while recording it. Narrow pattern on
@@ -565,6 +583,7 @@ module.exports = {
   embedText,
   currentEmbedModel,
   readEmbedHealth,
+  stripLeadingDateStamp,
   logDiaryEntry,
   editDiaryEntry,
   searchDiary,

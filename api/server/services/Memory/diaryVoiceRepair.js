@@ -28,7 +28,7 @@ const { logger } = require('@librechat/data-schemas');
 const { Run } = require('@librechat/agents');
 const { HumanMessage } = require('@librechat/agents/langchain/messages');
 const { resolveMemoryAgentLLMConfig } = require('@librechat/api');
-const { KadeDiaryEntry, embedText, currentEmbedModel } = require('~/models/kadeDiary');
+const { KadeDiaryEntry, embedText, currentEmbedModel, stripLeadingDateStamp } = require('~/models/kadeDiary');
 const { getUserKey, getUserKeyValues } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 
@@ -274,7 +274,10 @@ async function repairDiaryVoice({ dryRun = true, before = DEFAULT_BEFORE, limit 
       for (let bIdx = 0; bIdx < batch.length; bIdx += 1) {
         const doc = batch[bIdx];
         out.scanned += 1;
-        const newText = changed.get(bIdx);
+        /* The rewrite model reintroduced a leading date stamp on Aug 28 —
+         * this pass is a machine door and gets the same strip logDiaryEntry
+         * has had since Aug 26. One rule, every machine door. */
+        const newText = stripLeadingDateStamp(changed.get(bIdx));
         try {
           if (newText && newText !== doc.text) {
             const embedding = await embedText(newText);
