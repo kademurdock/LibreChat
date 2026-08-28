@@ -25,6 +25,11 @@ const VISION_MODEL = process.env.KADE_VISION_MODEL || 'google/gemini-3.1-flash-l
 const NATIVE_VISION_HINTS = [
   'minimax', 'gemini', 'grok-4', 'gpt-4o', 'gpt-5', 'claude', 'mimo', 'pixtral',
   'llava', 'qwen2.5-vl', 'qwen3-vl', 'gpt-4.1', 'o4', 'vl-', 'vision',
+  // KADE Aug 28 2026: Kiana's glm-5.3-flash SEES natively (proven on the Z.AI
+  // direct pot) — the describe-note must not fire for her, or she narrates
+  // being described-to instead of just looking. Bare 'glm' stays OUT: full
+  // glm-5.3 and the utility 4.x tier are text-only and still need sight.
+  'glm-5.3-flash', 'glm-5v', 'glm-4.6v', 'glm-4.5v',
 ];
 
 function modelHasNativeVision(model) {

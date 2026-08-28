@@ -2066,6 +2066,16 @@ export const visionModels = [
   'claude-opus-4',
   'claude-sonnet-4',
   'claude-haiku-4',
+  /* KADE Aug 28 2026 (Part 93): the GLM eyes. glm-5.3-flash is Kiana's model
+   * and takes image+video natively (proven on BOTH OpenRouter and the Z.AI
+   * direct pot the reframe proxy actually routes to). The v-models ride
+   * along. Substring match, so 'z-ai/glm-5.3-flash' and bare 'glm-5.3-flash'
+   * both validate — the reframe adapter strips the prefix mid-flight and
+   * whichever spelling reaches a check must read as sighted. */
+  'glm-5.3-flash',
+  'glm-5v',
+  'glm-4.6v',
+  'glm-4.5v',
 ];
 export enum VisionModes {
   generative = 'generative',
