@@ -63,6 +63,10 @@ endpoints:
         # verified live on OpenRouter July 2026.
         default: [
           "z-ai/glm-5.3",              # house default since Aug 21 2026 (Part 75): same
+          "z-ai/glm-5.3-flash",        # Kiana's model Aug 28 2026 (Part 93): SEES images+video,
+                                        # ~18x cheaper ($0.075/$0.25 per M). Missing from this
+                                        # list = illegal_model_request on EVERY turn at
+                                        # generation time — the Aug-28 error-sound outage.
                                        # price as 5.2 on the DIRECT Z.ai pot, newest GLM
           "z-ai/glm-5.2",              # prior default — smart, reliable tools
           # "minimax/minimax-m2-her" REMOVED July 2 2026: its single OpenRouter
