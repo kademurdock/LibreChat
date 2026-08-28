@@ -318,6 +318,7 @@ const startServer = async () => {
   app.use('/api/kade/spotter', routes.kadeSpotter);
   app.use('/api/kade/transcribe', routes.kadeTranscribe);
   app.use('/api/kade/describe', routes.kadeDescribe);
+  app.use('/api/kade/gpt-import', routes.kadeGptImport);
   app.use('/api/kade/clock', routes.kadeClock);
   app.use('/api/kade/titles', routes.kadeTitles);
   app.use('/api/kade', routes.kade);
@@ -331,6 +332,7 @@ const startServer = async () => {
   app.get('/feedback-dashboard', routes.kade.feedbackPage);
   app.get('/notifications', routes.kade.notificationsPage);
   app.get('/describe', routes.kadeDescribe.page);
+  app.get('/import', routes.kadeGptImport.importPage);
   app.get('/feed-the-server', routes.kade.feedPage);
   app.get('/my-creations', routes.kade.creationsPage);
   app.get('/wall-of-fame', routes.kade.wallPage);

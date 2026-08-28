@@ -59,10 +59,12 @@ const kadeSpotter = require('./kadeSpotter');
 const kadeTranscribe = require('./kadeTranscribe');
 const kadeDescribe = require('./kadeDescribe');
 const kadeClock = require('./kadeClock');
+const kadeGptImport = require('./kadeGptImport');
 
 module.exports = {
   kade,
   kadeClock,
+  kadeGptImport,
   kadeRoom,
   kadeParlor,
   kadeTitles,
