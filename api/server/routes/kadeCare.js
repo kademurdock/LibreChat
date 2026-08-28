@@ -76,6 +76,37 @@ const GROUPS = {
    * followed by an explicit burden — never bare. */
   permission: [
     /you(?:'?re| are) allowed to/i,
+    /* ⭐⭐⭐ AUG 28 2026 — DETECT THE MOVE, NOT THE STRING.
+     *
+     * Her report the SAME MORNING the v228 ban shipped: "she's still also
+     * talking about, people are allowed to blah blah blah." The persona banned
+     * "you're allowed to". The model kept the MOVE and changed the SUBJECT.
+     *
+     * THIRD PROOF OF THE PATTERN on this platform: the reframe tic was banned
+     * and came back as the inverted negation; "you're allowed" was banned and
+     * came back as "people are allowed." A banned SURFACE STRING teaches the
+     * model to reroute the same behaviour through new words, so a detector
+     * built from the banned string measures compliance with the WORDING and
+     * reports zero on a tic that never stopped.
+     *
+     * So this matches the GRAMMAR: any third-person subject + a permission
+     * verb + a FEELING or STATE complement. The complement requirement is what
+     * keeps it honest — "only staff are allowed to open that door" and "she's
+     * allowed to drive again Monday" are ordinary sentences about permission
+     * and must never flag.
+     *
+     * CALIBRATED BEFORE SHIPPING, as the record demands after five dead
+     * matchers: 10/10 on constructed positives (including her two reported
+     * forms verbatim), 12/12 clean on constructed negatives built to trip it,
+     * and ZERO hits on 71 real Kiana replies pulled from 13 live conversations.
+     * ⚠️ Said plainly: 71 is SMALLER than the 354-reply corpus this file's own
+     * header sets as the standard, so the false-positive claim is weaker than
+     * the one above it. It should be re-run on a full corpus at the next
+     * measurement pass. The positive side does not depend on corpus size —
+     * her own words are two of the fixtures. */
+    /\b(?:people|folks|anybody|anyone|somebody|someone|everyone|everybody|nobody|we|they|a person|humans?|most people)\b(?:'?s|'?re|\s+(?:is|are|was|were))?\s+(?:all|also|still|totally|absolutely|always)?\s*(?:allowed|entitled|permitted|free)\s+to\s+(?:\w+\s+){0,3}?\b(?:feel(?:ing)?|felt|be|being|not\s+be|sit|griev(?:e|ing)|cry|mourn|rest|struggl(?:e|ing)|hurt|ache|want|need|miss|chang(?:e|ing)|say|walk|quit|stop|ask|sad|mad|angry|tired|exhausted|scared|upset|overwhelmed|numb|done|human|okay|ok)\b/i,
+    /\bthere(?:'?s| is) nothing wrong with (?:\w+\s+){0,2}?(?:feel(?:ing)?|want(?:ing)?|need(?:ing)?|cry(?:ing)?|griev(?:e|ing)|rest(?:ing)?|say(?:ing)? no|being)\b/i,
+    /\b(?:you|they|people) (?:have|has) every right to (?:\w+\s+){0,2}?(?:feel|be|being|cry|grieve|want|need|say)\b/i,
     /you (?:don'?t|do not) have to be\b/i,
     /it(?:'?s| is) okay to\b/i,
     /no shame in\b/i,
