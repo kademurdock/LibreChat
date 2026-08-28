@@ -270,6 +270,98 @@ function formatList(list) {
   return out.join('\n\n');
 }
 
+/* ⭐⭐⭐ THE SHARED CEILING, EXTRACTED (Aug 28 2026) — ONE HOME, TWO READERS.
+ *
+ * THE BUG THIS CLOSES, and it is a hole between two correct halves. The
+ * Aug-20 ceiling trims the shared bucket to a token budget and moves the
+ * losers to retrieval; its own log line says so out loud ("rest moved to
+ * retrieval"). But `getRecallTailBlock` — the retrieval half — decided what
+ * was already pinned with
+ *
+ *     const pinnedNow = m.agentId == null || ...
+ *
+ * i.e. "every shared card rides the head, don't spend tail on it." That was
+ * exactly true BEFORE the ceiling existed and has been false for every
+ * evicted card since. On one live seat that is 6 of 10 shared cards falling
+ * between the two lanes every single turn: dropped from the head for being
+ * over budget, then dropped from retrieval for supposedly being in the head.
+ *
+ * Two functions disagreeing about the same word is the shape that keeps
+ * costing here — the Aug-26 announcement priority (two handlers eight lines
+ * apart, opposite manners), the retry ladders in the TTS proxy. So the
+ * decision now lives in ONE function that both halves call, and the tail
+ * asks it by key instead of re-deriving it from a rule that drifted.
+ *
+ * Mutates `pinned` in place (removing evicted shared cards) and returns both
+ * the surviving key set and the evicted cards. `log:false` lets the tail ask
+ * the same question without doubling the log line every turn. */
+function applySharedCeiling(pinned, pats, opts = {}) {
+  const evicted = [];
+  const budget = sharedPinBudget();
+  const keySet = () =>
+    new Set(pinned.filter((m) => m.agentId == null).map((m) => String(m.key)));
+  if (budget <= 0) {
+    return { evicted, pinnedSharedKeys: keySet() };
+  }
+  const sharedPinned = pinned.filter((m) => m.agentId == null);
+  const sharedTotal = sharedPinned.reduce((sum, m) => sum + cardTokens(m), 0);
+  if (sharedTotal <= budget) {
+    return { evicted, pinnedSharedKeys: keySet() };
+  }
+  const rankPats = pats.concat(SHARED_RANK_EXTRA);
+  const rankOf = (m) => {
+    if (m.type === 'reminder') {
+      return 0;
+    }
+    const k = String(m.key || '').toLowerCase();
+    return rankPats.some((p) => k.includes(p)) ? 1 : 2;
+  };
+  const ordered = sharedPinned
+    .slice()
+    .sort((a, b) => rankOf(a) - rankOf(b) || cardTokens(a) - cardTokens(b));
+  const keep = new Set();
+  let used = 0;
+  for (const m of ordered) {
+    const t = cardTokens(m);
+    if (used + t <= budget) {
+      keep.add(String(m._id));
+      used += t;
+    }
+  }
+  for (let i = pinned.length - 1; i >= 0; i--) {
+    const m = pinned[i];
+    if (m.agentId == null && !keep.has(String(m._id))) {
+      pinned.splice(i, 1);
+      evicted.push(m);
+    }
+  }
+  if (opts.log) {
+    logger.info(
+      `[kadeCardRecall] shared pin ceiling: ${sharedTotal} tok over budget ${budget} — kept ${keep.size}/${sharedPinned.length} card(s) (${used} tok), rest moved to retrieval`,
+    );
+  }
+  return { evicted, pinnedSharedKeys: keySet() };
+}
+
+/**
+ * The shared-bucket keys that ACTUALLY ride the head this turn, ceiling and
+ * all. The tail calls this so it can stop guessing.
+ */
+function pinnedSharedKeysFor(shared, own) {
+  const pats = pinPatterns();
+  const pinned = [];
+  for (const m of shared) {
+    pinned.push(m);
+  }
+  for (const m of own) {
+    const k = String(m.key || '').toLowerCase();
+    if (m.type === 'reminder' || pats.some((p) => k.includes(p))) {
+      pinned.push(m);
+    }
+  }
+  return applySharedCeiling(pinned, pats, { log: false }).pinnedSharedKeys;
+}
+
 /**
  * Read one user's shared + active-agent cards and split them pinned vs
  * retrievable. Returns null on any failure or when the split would change
@@ -318,42 +410,9 @@ async function getMemorySplit(userId, agentId) {
     }
     /* Shared-bucket ceiling — see sharedPinBudget() above. Trims the SHARED
      * side of `pinned` only; agent-bucket pinning is untouched. */
-    const budget = sharedPinBudget();
-    if (budget > 0) {
-      const sharedPinned = pinned.filter((m) => m.agentId == null);
-      const sharedTotal = sharedPinned.reduce((sum, m) => sum + cardTokens(m), 0);
-      if (sharedTotal > budget) {
-        const rankPats = pats.concat(SHARED_RANK_EXTRA);
-        const rankOf = (m) => {
-          if (m.type === 'reminder') {
-            return 0;
-          }
-          const k = String(m.key || '').toLowerCase();
-          return rankPats.some((p) => k.includes(p)) ? 1 : 2;
-        };
-        const ordered = sharedPinned
-          .slice()
-          .sort((a, b) => rankOf(a) - rankOf(b) || cardTokens(a) - cardTokens(b));
-        const keep = new Set();
-        let used = 0;
-        for (const m of ordered) {
-          const t = cardTokens(m);
-          if (used + t <= budget) {
-            keep.add(String(m._id));
-            used += t;
-          }
-        }
-        for (let i = pinned.length - 1; i >= 0; i--) {
-          const m = pinned[i];
-          if (m.agentId == null && !keep.has(String(m._id))) {
-            pinned.splice(i, 1);
-            retrievable.push(m);
-          }
-        }
-        logger.info(
-          `[kadeCardRecall] shared pin ceiling: ${sharedTotal} tok over budget ${budget} — kept ${keep.size}/${sharedPinned.length} card(s) (${used} tok), rest moved to retrieval`,
-        );
-      }
+    const ceiling = applySharedCeiling(pinned, pats, { log: true });
+    for (const m of ceiling.evicted) {
+      retrievable.push(m);
     }
     if (retrievable.length === 0) {
       return null; /* nothing would move — keep today's exact shape */
@@ -458,6 +517,10 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
             liveByKey.set((m.agentId == null ? '' : String(m.agentId)) + '::' + m.key, m);
           }
           const pats = pinPatterns();
+          /* Which shared cards are ACTUALLY in the head this turn — ceiling
+           * included. Anything the ceiling evicted is retrieval's job now,
+           * which is the whole point of evicting it. */
+          const headSharedKeys = pinnedSharedKeysFor(shared, own);
           let block =
             '# Memory recall (auto-surfaced for THIS turn only)\n' +
             'Private memories of yours about this person, pulled up because they relate to what was just said. ' +
@@ -473,7 +536,9 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
             /* Pinned cards already ride the head — don't spend tail on them. */
             const k = String(m.key || '').toLowerCase();
             const pinnedNow =
-              m.agentId == null || m.type === 'reminder' || pats.some((p) => k.includes(p));
+              m.agentId == null
+                ? headSharedKeys.has(String(m.key))
+                : m.type === 'reminder' || pats.some((p) => k.includes(p));
             if (pinnedNow) {
               continue;
             }

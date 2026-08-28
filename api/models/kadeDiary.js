@@ -116,6 +116,60 @@ function currentEmbedModel() {
   return lane ? lane.model : null;
 }
 
+/* ⭐⭐⭐ AUG 28 2026 — THE EMBEDDING LANE CAN DIE SILENTLY, AND IT DID.
+ *
+ * Her Aug-28 report was "she had no idea I went to a Shinedown concert." The
+ * card said `Saw Shinedown on July 28, 2026` the whole time. So did three
+ * logbook entries. Nothing was missing and nothing was mis-written.
+ *
+ * WHAT WAS ACTUALLY HAPPENING: every query embedding on the platform was
+ * failing with a 429 — the Gemini prepay credits ran dry — and this function
+ * returns null on failure by design. `getRecallTailBlock` reads
+ *
+ *     const qv = await embedText(text);
+ *     const cardHits = qv ? await searchCardVectors(...) : [];
+ *
+ * so a null query vector means card recall is skipped ENTIRELY and the
+ * logbook falls back to its non-vector path, which returns the same handful
+ * of recent entries no matter what was asked. The recall audit showed it
+ * plainly once somebody looked: `cards=[]` and the identical four logbook
+ * dates on EVERY turn, including one that asked "what was the last concert I
+ * went to" and one that asked for her cats' names.
+ *
+ * ⚠️ AND THE LOG LINE THAT SHOULD HAVE CAUGHT IT PRINTED NOTHING. It logged
+ * `e.message`, and an axios HTTP error carries the provider's explanation in
+ * `e.response.data`, not in `message` — so the warning read
+ * "[kadeDiary] embedding call failed (entry still usable):" with an empty
+ * space where the reason belonged, dozens of times a day, for days. A
+ * diagnostic that prints nothing is worse than no diagnostic: it looks like
+ * it is doing its job. Same family as the Aug-26 stale comment and the
+ * lying mining gauge.
+ *
+ * TWO CHANGES: say the actual status and provider message, and COUNT, so
+ * memory-health can state the verdict instead of leaving it in a log nobody
+ * greps. Fail-soft stays — a dead embed lane must never take a turn down. */
+const embedHealth = { ok: 0, failed: 0, lastError: null, lastErrorAt: null, lastOkAt: null };
+function readEmbedHealth() {
+  const lane = embedLane();
+  return {
+    ...embedHealth,
+    provider: lane ? lane.provider : null,
+    model: lane ? lane.model : null,
+    configured: Boolean(lane),
+  };
+}
+/** The provider's own words, wherever the HTTP client happened to put them. */
+function embedErrorText(e) {
+  const status = e?.response?.status;
+  const data = e?.response?.data;
+  const providerMsg =
+    (data && data.error && data.error.message) ||
+    (typeof data === 'string' ? data.slice(0, 300) : null) ||
+    e?.message ||
+    'no detail from the provider';
+  return status ? `HTTP ${status}: ${providerMsg}` : String(providerMsg);
+}
+
 /** Embed one string. Returns float array or null (never throws). */
 async function embedText(text) {
   const lane = embedLane();
@@ -134,7 +188,15 @@ async function embedText(text) {
         { headers: { 'Content-Type': 'application/json' }, timeout: EMBED_TIMEOUT_MS },
       );
       const vec = resp.data?.embedding?.values;
-      return Array.isArray(vec) && vec.length > 0 ? vec : null;
+      if (Array.isArray(vec) && vec.length > 0) {
+        embedHealth.ok += 1;
+        embedHealth.lastOkAt = new Date().toISOString();
+        return vec;
+      }
+      embedHealth.failed += 1;
+      embedHealth.lastError = 'the provider answered 200 with no vector in it';
+      embedHealth.lastErrorAt = new Date().toISOString();
+      return null;
     }
     const resp = await axios.post(
       'https://api.openai.com/v1/embeddings',
@@ -142,9 +204,23 @@ async function embedText(text) {
       { headers: { Authorization: `Bearer ${lane.key}` }, timeout: EMBED_TIMEOUT_MS },
     );
     const vec = resp.data?.data?.[0]?.embedding;
-    return Array.isArray(vec) && vec.length > 0 ? vec : null;
+    if (Array.isArray(vec) && vec.length > 0) {
+      embedHealth.ok += 1;
+      embedHealth.lastOkAt = new Date().toISOString();
+      return vec;
+    }
+    embedHealth.failed += 1;
+    embedHealth.lastError = 'the provider answered 200 with no vector in it';
+    embedHealth.lastErrorAt = new Date().toISOString();
+    return null;
   } catch (e) {
-    logger.warn('[kadeDiary] embedding call failed (entry still usable):', e.message);
+    const detail = embedErrorText(e);
+    embedHealth.failed += 1;
+    embedHealth.lastError = detail;
+    embedHealth.lastErrorAt = new Date().toISOString();
+    logger.warn(
+      `[kadeDiary] embedding call FAILED -- semantic recall is blind for this turn (${lane.provider}/${lane.model}): ${detail}`,
+    );
     return null;
   }
 }
@@ -488,6 +564,7 @@ module.exports = {
   centralDateString,
   embedText,
   currentEmbedModel,
+  readEmbedHealth,
   logDiaryEntry,
   editDiaryEntry,
   searchDiary,

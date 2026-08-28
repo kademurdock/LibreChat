@@ -268,6 +268,14 @@ router.get('/memory-health', async (req, res) => {
        * Thresholds are deliberately loose: this should speak when a lane has
        * plainly STOPPED, not whenever a quiet day happens. A quiet Sunday must
        * not cry wolf, or the next real outage gets ignored. */
+      embedding: (() => {
+        try {
+          const { readEmbedHealth } = require('~/models/kadeDiary');
+          return readEmbedHealth();
+        } catch (_e) {
+          return { configured: false, ok: 0, failed: 0, lastError: 'health unreadable' };
+        }
+      })(),
       warnings: (() => {
         const w = [];
         const diaryAge = hoursAgo(newestDiary && newestDiary.createdAt);
@@ -293,6 +301,52 @@ router.get('/memory-health', async (req, res) => {
          * points at the keeper lane itself rather than one rule inside it. */
         if (diaryAge != null && cardAge != null && diaryAge > 48 && cardAge > 48) {
           w.push({ lane: 'keeper', severity: 'red', detail: 'BOTH the logbook and the cards have stopped — that is the memory writer itself, not one rule inside it.' });
+        }
+        /* ⭐⭐⭐ THE EMBEDDING LANE (Aug 28 2026 — the Shinedown outage).
+         *
+         * EVERY WARNING ABOVE WATCHES THE WRITE SIDE. All of them were green
+         * on Aug 28 while semantic RECALL was completely dark: the Gemini
+         * prepay credits ran dry, every query embedding 429'd, and because
+         * embedText fails soft, card recall was skipped on every turn and the
+         * logbook fell back to returning the same recent entries no matter
+         * what was said. Cards were being written perfectly and read never.
+         *
+         * That is the same shape as the Aug-26 lesson in new clothes — "cards
+         * look fine is NOT evidence the memory system is fine, the two halves
+         * fail separately" — except this is a THIRD half nobody was watching.
+         * A memory monitor that only watches writing is half a monitor.
+         *
+         * Counters are per-process and reset on redeploy, which is why the
+         * test is a RATIO with a floor and not an absolute count: a fresh
+         * process with three failures and no successes is already broken. */
+        try {
+          const eh = require('~/models/kadeDiary').readEmbedHealth();
+          if (!eh.configured) {
+            w.push({
+              lane: 'embedding',
+              severity: 'red',
+              detail:
+                'no embedding lane is configured at all — card recall and logbook recall cannot match anything to what is said. Set KADE_EMBED_GEMINI_KEY or KADE_EMBED_OPENAI_KEY.',
+            });
+          } else if (eh.failed >= 3 && eh.ok === 0) {
+            w.push({
+              lane: 'embedding',
+              severity: 'red',
+              detail:
+                `the embedding provider (${eh.provider}/${eh.model}) has failed ${eh.failed} times and succeeded ZERO since this process started — semantic recall is BLIND. ` +
+                'Cards are still being written and still ride the pinned head, but nothing is being MATCHED to what the person just said. ' +
+                `Last error: ${eh.lastError || 'unknown'}`,
+            });
+          } else if (eh.failed > 0 && eh.ok > 0 && eh.failed / (eh.ok + eh.failed) > 0.25) {
+            w.push({
+              lane: 'embedding',
+              severity: 'amber',
+              detail:
+                `${eh.failed} of ${eh.ok + eh.failed} embedding calls have failed (${eh.provider}/${eh.model}) — recall is intermittently blind. Last error: ${eh.lastError || 'unknown'}`,
+            });
+          }
+        } catch (_e) {
+          /* fail-soft: a broken health read must never break the monitor */
         }
         return w;
       })(),
