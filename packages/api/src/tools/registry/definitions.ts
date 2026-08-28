@@ -517,9 +517,13 @@ export const kadeNotifySchema: ExtendedJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['send', 'schedule_checkin', 'list_checkins', 'pause_checkin', 'cancel_checkin', 'test_checkin'],
+      // Aug 28 2026: brought back in sync with KadeNotify.js's own schema — this
+      // copy had frozen at the original six while reminders, platform_status,
+      // broadcast and now the friend-text switches shipped. A stale enum here is
+      // a confident wrong answer sitting where the next reader looks.
+      enum: ['send', 'schedule_checkin', 'list_checkins', 'pause_checkin', 'cancel_checkin', 'test_checkin', 'set_reminder', 'list_reminders', 'cancel_reminder', 'platform_status', 'broadcast_whats_new', 'spontaneous_on', 'spontaneous_off'],
       description:
-        "What to do. 'send' (default) pushes a notification to the user's phone now. The others manage recurring check-ins where you reach out on a schedule: 'schedule_checkin' (needs time), 'list_checkins', 'pause_checkin', 'cancel_checkin', 'test_checkin'. Only set up a check-in when the user asks.",
+        "What to do. 'send' (default) pushes a notification to the user's phone now. Check-in actions manage recurring reach-outs ('schedule_checkin' needs time). Reminder actions manage one-off exact-text reminders. 'platform_status' runs a real health check. 'broadcast_whats_new' is OWNER ONLY. 'spontaneous_on'/'spontaneous_off' flip whether you may text this user first after quiet days. Only set up check-ins or reminders when the user asks.",
     },
     body: {
       type: 'string',

@@ -672,4 +672,42 @@ router.get('/voice-bank', async (req, res) => {
   }
 });
 
+/* ── KADE Aug 28 2026 (Part 93) — WHO'S BEEN QUIET, for the friend-text lane.
+ * The bridge's spontaneous-text tick asks this once a day: every real user's
+ * last message time, so "hasn't engaged in a while" is measured, never
+ * guessed. COUNTS AND STAMPS ONLY — no message text, no titles, nothing a
+ * transcript holds. Same BRIDGE_SECRET door as the clock pokes above. */
+router.get('/last-activity', async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const mongoose = require('mongoose');
+    const db = mongoose.connection.db;
+    const rows = await db.collection('messages').aggregate([
+      { $match: { isCreatedByUser: true } },
+      { $group: { _id: '$user', lastMessageAt: { $max: '$createdAt' } } },
+    ]).toArray();
+    const ids = rows.map((r) => {
+      try { return new mongoose.Types.ObjectId(String(r._id)); } catch (_) { return null; }
+    }).filter(Boolean);
+    const users = await db.collection('users')
+      .find({ _id: { $in: ids } })
+      .project({ email: 1, name: 1 })
+      .toArray();
+    const byId = new Map(users.map((u) => [String(u._id), u]));
+    res.json({
+      ok: true,
+      users: rows.map((r) => ({
+        userId: String(r._id),
+        lastMessageAt: r.lastMessageAt || null,
+        email: (byId.get(String(r._id)) || {}).email || null,
+        name: (byId.get(String(r._id)) || {}).name || null,
+      })),
+    });
+  } catch (e) {
+    logger.error('[kadeClock] last-activity failed:', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 module.exports = router;
+

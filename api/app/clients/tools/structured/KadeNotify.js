@@ -19,12 +19,14 @@ const notifyJsonSchema = {
         'cancel_reminder',
         'platform_status',
         'broadcast_whats_new',
+        'spontaneous_on',
+        'spontaneous_off',
       ],
       description:
         "What to do. 'send' (default) pushes a notification to the user's phone RIGHT NOW -- use it for an immediate ping, OR to report that a long job you were just running has finished. " +
         "'schedule_checkin' / 'list_checkins' / 'pause_checkin' / 'cancel_checkin' / 'test_checkin' manage a RECURRING check-in where YOU reach out with fresh, improvised wording on a repeating daily/weekly schedule (needs time). " +
         "'set_reminder' / 'list_reminders' / 'cancel_reminder' manage a ONE-OFF reminder for a single future moment, delivered with the EXACT text you give it (not improvised again later) -- use this for 'remind me to X at/in Y', not schedule_checkin. Only set up a check-in or reminder when the user actually asks for one. " +
-        "'platform_status' answers 'is the platform up?' / 'how's the system doing?' with a REAL health check of the site, voices, and phone bridge, plus the asker's own memory-system health — relay it honestly in your own voice (never invent status). 'broadcast_whats_new' (OWNER ONLY) pushes ONE announcement to EVERY registered family phone at once -- use it solely when the owner explicitly asks for a platform-wide announcement, like a what's-new digest.",
+        "'platform_status' answers 'is the platform up?' / 'how's the system doing?' with a REAL health check of the site, voices, and phone bridge, plus the asker's own memory-system health — relay it honestly in your own voice (never invent status). 'broadcast_whats_new' (OWNER ONLY) pushes ONE announcement to EVERY registered family phone at once -- use it solely when the owner explicitly asks for a platform-wide announcement, like a what's-new digest. 'spontaneous_on' / 'spontaneous_off' flip the friend-texts feature for THIS user: when it's on, you may text them first after a few quiet days, grounded in your real memory of them. Use these when they say things like 'stop texting me first' or 'you can text me out of the blue again' — confirm the flip in one plain sentence.",
     },
     body: {
       type: 'string',
@@ -131,7 +133,7 @@ class KadeNotify extends Tool {
     if (action === 'send') {
       return await this._send(data || {});
     }
-    const SCHED = ['schedule_checkin', 'list_checkins', 'pause_checkin', 'cancel_checkin', 'test_checkin'];
+    const SCHED = ['schedule_checkin', 'list_checkins', 'pause_checkin', 'cancel_checkin', 'test_checkin', 'spontaneous_on', 'spontaneous_off'];
     if (SCHED.includes(action)) {
       return await this._schedule(action, data || {});
     }
@@ -329,6 +331,20 @@ class KadeNotify extends Tool {
         const r = await axios.post(`${this.bridgeUrl}/outreach/toggle`, { id: schedule_id }, { timeout: 15000, headers: this._hdrs() });
         const o = r.data && r.data.schedule;
         return `Schedule ${schedule_id} is now ${o && o.enabled ? 'ACTIVE again' : 'PAUSED (no check-ins until resumed — run pause_checkin again to resume)'}.`;
+      }
+      if (action === 'spontaneous_on' || action === 'spontaneous_off') {
+        /* Part 93 (Aug 28 2026) — the person's OWN switch for Kiana-texts-first.
+         * The bridge stores the flag; the tick honors it before composing a
+         * word. userId comes from the authed tool context, never the model. */
+        const wantOn = action === 'spontaneous_on';
+        await axios.post(
+          `${this.bridgeUrl}/spontaneous/user`,
+          { secret: this.notifySecret, userId: String(this.userId || ''), enabled: wantOn },
+          { timeout: 15000, headers: this._hdrs() },
+        );
+        return wantOn
+          ? 'Friend-texts are ON: after a few quiet days I might text you first about something real from our conversations. Say the word and I turn it back off.'
+          : "Friend-texts are OFF: I won't message you first anymore. You can turn it back on any time.";
       }
       if (action === 'cancel_checkin') {
         if (!schedule_id) return 'cancel_checkin needs schedule_id (from list_checkins).';
