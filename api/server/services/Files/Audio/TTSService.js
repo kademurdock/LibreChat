@@ -326,7 +326,7 @@ class TTSService {
    * @returns {Promise<Object>} The axios response object.
    * @throws {Error} If the provider is invalid or the request fails.
    */
-  async ttsRequest(provider, ttsSchema, { input, voice, stream = true, speed, sessionKey }) {
+  async ttsRequest(provider, ttsSchema, { input, voice, stream = true, speed, sessionKey, kadeStream }) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
@@ -355,6 +355,18 @@ class TTSService {
       headers['x-kade-tts-session'] = String(sessionKey);
     }
 
+    /* Part 98 (Aug 29 2026) — THE STREAM FLAG RIDES THROUGH. The native app's
+     * streaming player asks for audio-as-it-arrives by sending stream=1 on
+     * the manual TTS call; this header tells the inworld proxy to use its
+     * streamed lane (which measured 0.25-0.7s to first byte against 2.15s
+     * buffered). This response was ALREADY piped to the client chunk-by-chunk
+     * (response.data.pipe(res) below, axios responseType stream) — the fork
+     * hop never buffered, so this one header is the entire fork-side change.
+     * Callers that don't send the flag get byte-identical behavior. */
+    if (kadeStream) {
+      headers['x-kade-tts-stream'] = '1';
+    }
+
     [data, headers].forEach(this.removeUndefined.bind(this));
 
     const options = { headers, responseType: stream ? 'stream' : 'arraybuffer' };
@@ -378,6 +390,8 @@ class TTSService {
    */
   async processTextToSpeech(req, res) {
     const { input: rawInput, voice: requestVoice } = req.body;
+    // Part 98: the native streaming player sends stream=1; everyone else omits it.
+    const kadeStream = req.body.stream === '1' || req.body.stream === true;
     const speed = parseKadeTtsSpeed(req.body.speed); // Kade D2d
 
     if (!rawInput) {
@@ -432,6 +446,7 @@ class TTSService {
           voice,
           speed,
           sessionKey: req.user && req.user.id,
+          kadeStream,
         });
         response.data.pipe(res);
         return;
