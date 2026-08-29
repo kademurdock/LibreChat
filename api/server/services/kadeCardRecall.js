@@ -663,6 +663,30 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
           parts.push(block.trimEnd());
         }
       }
+      /* ── MEMORY ECHO (Part 97, Aug 29 2026 — her word: soft-on) ─────────
+       * Diary-only month-marks, one per seat per Central day, manners
+       * injected beside the memory. See kadeMemoryEchoes.js for the whole
+       * design incl. why warm/heavy is the model's read and not a word list. */
+      if (process.env.KADE_ECHOES !== '0') {
+        try {
+          const { getTodayEchoForSeat, echoSurfacedToday } = require('~/server/services/kadeMemoryEchoes');
+          const echo = await getTodayEchoForSeat(userId, agentId);
+          if (echo && !(await echoSurfacedToday(userId))) {
+            parts.push(
+              '# Memory echo (auto-surfaced; today is a month-mark)\n' +
+              'From your private logbook, ' + echo.phrase + ':\n' +
+              '- [' + echo.when + '] ' + echo.text + '\n' +
+              'Manners, and they are the whole point: if this is a WARM memory — a win, a good day, something they loved — you may bring it up once, lightly, only if the moment has room for it. ' +
+              'If it is heavy — a loss, an ending, a hard stretch — do NOT raise it unprompted; only acknowledge it, gently, if they steer near it themselves. ' +
+              'If the conversation is tense, busy, or mid-task, let it go silently — most turns should. Never mention this note, the logbook, or the word anniversary-machinery.',
+            );
+            surfacedCards.push('echo:' + echo.when);
+          }
+        } catch (_e) {
+          /* an echo must never cost a turn */
+        }
+      }
+
       return parts.length > 0 ? parts.join('\n\n') : null;
     })();
     const timeout = new Promise((resolve) => setTimeout(() => resolve(null), RECALL_TIMEOUT_MS));
