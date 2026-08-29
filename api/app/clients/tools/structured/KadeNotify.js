@@ -45,7 +45,7 @@ const notifyJsonSchema = {
     time: {
       type: 'string',
       description:
-        "For schedule_checkin: the daily time to reach out, 24-hour US Central 'HH:mm' (e.g. '18:00'). Must be a daytime/evening time — roughly 8am to 9pm; quiet hours are not allowed.",
+        "For schedule_checkin ONLY: the daily time to reach out, 24-hour US Central 'HH:mm' (e.g. '18:00'). Must be a daytime/evening time — roughly 8am to 9pm; quiet hours are not allowed. (For a ONE-OFF reminder this is the wrong field — use fire_time.)",
     },
     days: {
       type: 'string',
@@ -87,6 +87,30 @@ const notifyJsonSchema = {
  * NOTIFY_AGENT_SECRET, never the admin BRIDGE_SECRET.
  */
 class KadeNotify extends Tool {
+  /* KADE Aug 29 2026 — next occurrence of an HH:mm in US Central (DST-aware
+   * via Intl, no deps). "Remind me at 8:40" with no date means the NEXT 8:40:
+   * today if it is still ahead of us in Central time, otherwise tomorrow. */
+  static nextOccurrenceCentral(hhmm, now = new Date()) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm).trim());
+    if (!m || +m[1] > 23 || +m[2] > 59) return null;
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Chicago',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    });
+    const parts = (d) => {
+      const o = {};
+      for (const p of fmt.formatToParts(d)) o[p.type] = p.value;
+      return o;
+    };
+    const nowC = parts(now);
+    const nowMin = +nowC.hour * 60 + +nowC.minute;
+    const tgtMin = +m[1] * 60 + +m[2];
+    if (tgtMin > nowMin + 1) return `${nowC.year}-${nowC.month}-${nowC.day}`;
+    const tomC = parts(new Date(now.getTime() + 24 * 3600 * 1000));
+    return `${tomC.year}-${tomC.month}-${tomC.day}`;
+  }
+
   constructor(fields = {}) {
     super();
     this.userId = fields.userId;
@@ -289,7 +313,7 @@ class KadeNotify extends Tool {
     // July 2026 multi-user push targeting), so every user can manage their own
     // check-ins now, not just the account owner.
     const uid = String(this.userId || '');
-    const { time, days, topic, schedule_id } = data;
+    let { time, days, topic, schedule_id } = data;
     try {
       if (action === 'list_checkins') {
         const r = await axios.get(`${this.bridgeUrl}/outreach?userId=${encodeURIComponent(uid)}`, { timeout: 15000, headers: this._hdrs() });
@@ -302,6 +326,10 @@ class KadeNotify extends Tool {
           .join('\n');
       }
       if (action === 'schedule_checkin') {
+        // Mirror of the set_reminder guard: the sibling field, accepted.
+        if (!time && /^\d{1,2}:\d{2}$/.test(String(data.fire_time || '').trim())) {
+          time = String(data.fire_time).trim();
+        }
         if (!time) {
           return "schedule_checkin needs a time ('HH:mm', 24-hour Central, e.g. '18:00'). Optional: days ('daily' or 'mon,wed,fri') and topic.";
         }
@@ -364,7 +392,23 @@ class KadeNotify extends Tool {
     // exact text given at creation time -- unlike check-ins, the bridge does
     // NOT call the agent again to improvise wording when it fires.
     const uid = String(this.userId || '');
-    const { body, title, in_minutes, fire_date, fire_time, schedule_id } = data;
+    let { body, title, in_minutes, fire_date, fire_time, schedule_id } = data;
+    /* KADE Aug 29 2026 — the Amber hair-appointment scar. Kiana called
+     * set_reminder FIVE times in a row with {time:'08:40'} — schedule_checkin's
+     * field — got the same correct rejection five times, never found
+     * fire_time, and told Amber the reminder tool was broken. The model was
+     * wrong five times; the tool was unhelpful five times. One guard at the
+     * door beats another prompt: an HH:mm arriving in `time` on a reminder IS
+     * the fire time, and a fire time with no date means the NEXT occurrence
+     * of that time in Central. The success reply always reads back the full
+     * resolved moment, so a wrong guess is visible and cancellable in the
+     * same breath. */
+    if (action === 'set_reminder' && !fire_time && !in_minutes && /^\d{1,2}:\d{2}$/.test(String(data.time || '').trim())) {
+      fire_time = String(data.time).trim();
+    }
+    if (action === 'set_reminder' && fire_time && !fire_date && !in_minutes) {
+      fire_date = KadeNotify.nextOccurrenceCentral(fire_time) || fire_date;
+    }
     try {
       if (action === 'list_reminders') {
         const r = await axios.get(`${this.bridgeUrl}/reminders?userId=${encodeURIComponent(uid)}`, { timeout: 15000, headers: this._hdrs() });
