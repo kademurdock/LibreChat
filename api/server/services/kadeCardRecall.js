@@ -41,7 +41,7 @@ const { logger } = require('@librechat/data-schemas');
 const { getAllUserMemories } = require('~/models');
 const { embedText, searchDiary, countEntries } = require('~/models/kadeDiary');
 const { syncBucketVectors, searchCardVectors } = require('~/models/kadeCardVector');
-const { describeStale } = require('~/server/services/kadeOpenLoops');
+const { describeStale, isExpired, cardDate } = require('~/server/services/kadeOpenLoops');
 
 const KIANA_ID = 'agent_6llV0eMu4fmIaj8f2x1Sb';
 /* ⭐⭐⭐ THE RECALL FUNNEL (widened Aug 20 2026, with the memory-keeper's
@@ -375,6 +375,36 @@ function pinnedSharedKeysFor(shared, own) {
  *   pinnedTokens: number, retrievableCount: number, retrievableTokens: number,
  * }>}
  */
+/* ── OPEN-LOOP NUDGE selection (Part 97, Aug 29 2026) — pure, so it can be
+ * tested bare. The staleAfter machinery makes an expired plan HONEST when it
+ * surfaces — but only the pinned head surfaces unconditionally. A ceiling-
+ * evicted shared card or an agent-bucket card only returns on a topical
+ * match, and "how did the surgery go" is exactly the turn where nobody typed
+ * the word surgery. So for KADE_LOOP_NUDGE_DAYS after a DECLARED date passes,
+ * the loop rides the tail regardless of topic — capped, newest expiry first,
+ * skipped when it is already in front of the model (pinned head or this
+ * turn's topical hits). She gets to be the friend who asks how it went
+ * unprompted. Kill switch: KADE_LOOP_NUDGE=0. */
+function selectLoopNudges({ shared, own, surfacedKeys, headSharedKeys, pats, now = Date.now(), days = 7, max = 2 }) {
+  const surfaced = new Set(surfacedKeys || []);
+  return [...(shared || []), ...(own || [])]
+    .filter((m) => isExpired(m, new Date(now)))
+    .filter((m) => {
+      const d = cardDate(m);
+      return d && now - d.getTime() <= days * 86400000;
+    })
+    .filter((m) => !surfaced.has(String(m.key)))
+    .filter((m) => {
+      const k = String(m.key || '').toLowerCase();
+      const pinnedNow = m.agentId == null
+        ? headSharedKeys.has(String(m.key))
+        : m.type === 'reminder' || pats.some((p) => k.includes(p));
+      return !pinnedNow; /* the head already flags these every turn */
+    })
+    .sort((a, b) => cardDate(b) - cardDate(a))
+    .slice(0, max);
+}
+
 async function getMemorySplit(userId, agentId) {
   try {
     const [shared, own] = await Promise.all([
@@ -573,6 +603,40 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
         })();
       }
 
+      if (cardsOn && process.env.KADE_LOOP_NUDGE !== '0') {
+        /* See selectLoopNudges above. The extra card fetch is a lean indexed
+         * read this path already does twice; a turn is never risked for it. */
+        try {
+          const nudgeDays = Math.max(1, parseInt(process.env.KADE_LOOP_NUDGE_DAYS || '7', 10));
+          const nudgeMax = Math.max(1, parseInt(process.env.KADE_LOOP_NUDGE_MAX || '2', 10));
+          const [shared2, own2] = await Promise.all([
+            getAllUserMemories(userId, { agentId: null }),
+            agentId ? getAllUserMemories(userId, { agentId }) : Promise.resolve([]),
+          ]);
+          const loops = selectLoopNudges({
+            shared: shared2,
+            own: own2,
+            surfacedKeys: surfacedCards,
+            headSharedKeys: pinnedSharedKeysFor(shared2, own2),
+            pats: pinPatterns(),
+            days: nudgeDays,
+            max: nudgeMax,
+          });
+          if (loops.length > 0) {
+            let block =
+              '# Open loop (auto-surfaced)\n' +
+              'A dated plan in your notes has passed and nobody has said how it went. If the moment fits, ask — naturally, the way a friend who remembered would. Never announce the old plan as if it is current, and never mention this note.\n';
+            for (const m of loops) {
+              block += '- [' + fmtDate(m.updated_at) + '] ' + m.value + describeStale(m) + '\n';
+              surfacedCards.push(String(m.key));
+            }
+            parts.push(block.trimEnd());
+          }
+        } catch (_e) {
+          /* the nudge must never cost a turn */
+        }
+      }
+
       if (diaryN > 0) {
         const hits = await searchDiary({
           userId,
@@ -651,6 +715,7 @@ module.exports = {
   cardRagActive,
   getMemorySplit,
   getRecallTailBlock,
+  selectLoopNudges,
   CARD_TOP_K,
   CARD_MIN_SCORE,
 };

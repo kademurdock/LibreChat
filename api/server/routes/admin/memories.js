@@ -70,6 +70,12 @@ router.get('/', async (req, res) => {
         agentId: m.agentId || null,
         tokenCount: m.tokenCount || null,
         updated_at: m.updated_at,
+        /* Part 97: the open-loop fields, visible to the operator. Until these
+         * rode the projection there was no way to check whether the keeper
+         * actually sets them in the wild. */
+        subject: m.subject || null,
+        staleAfter: m.staleAfter || null,
+        type: m.type || null,
       })),
       count: sorted.length,
     });

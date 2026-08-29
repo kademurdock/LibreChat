@@ -54,7 +54,6 @@ const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { processMemory, resolveMemoryAgentLLMConfig } = require('@librechat/api');
 const db = require('~/models');
 const { addLedger } = require('~/models/kadeMemoryLedger');
-const { logDiaryEntry } = require('~/models/kadeDiary');
 const { syncBucketVectors } = require('~/models/kadeCardVector');
 const { getAppConfig } = require('~/server/services/Config');
 
@@ -197,8 +196,15 @@ async function consolidateBucketV2({ userId, agentId = null, appConfig = null })
       }
       return result;
     };
-    const logDiary = async ({ text, scope, salience }) =>
-      logDiaryEntry({ userId: uid, agentId: aid, text, scope, salience, source: 'keeper' });
+    /* Part 97 (Aug 29 2026): THE DIARY PEN IS WITHHELD ON PURPOSE. Both memory
+     * audits caught the same thing: the consolidation pass writing "checked
+     * through shared memory at 4 AM, everything is clean" into her LIFE
+     * JOURNAL. The writer's own rules ban the mechanism describing itself,
+     * but a rule for a model is a mitigation; the door is the fix. logDiary
+     * is optional in processMemory (memory.ts:731): omitted here, the
+     * log_diary tool simply does not exist during consolidation, and the
+     * instructions block never mentions it. Consolidation's receipts belong
+     * in the ledger it already writes, not in anybody's diary. */
 
     const llmConfig = await resolveMemoryAgentLLMConfig({
       appConfig: config,
@@ -220,7 +226,6 @@ async function consolidateBucketV2({ userId, agentId = null, appConfig = null })
       deleteMemory: guardedDelete,
       messages: [request],
       memory: editableWithKeys,
-      logDiary,
       messageId: `consolidate-v2-${Date.now()}`,
       conversationId: `consolidate-v2-${uid}-${aid ?? 'shared'}`,
       validKeys: undefined,
