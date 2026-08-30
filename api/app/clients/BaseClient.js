@@ -1364,6 +1364,7 @@ class BaseClient {
     };
 
     const allFiles = [];
+    const uncategorizedAttachments = [];
 
     const provider = this.options.agent?.provider ?? this.options.endpoint;
     const isBedrock = provider === EModelEndpoint.bedrock;
@@ -1416,6 +1417,14 @@ class BaseClient {
       ) {
         categorizedAttachments.documents.push(file);
         allFiles.push(file);
+      } else {
+        /* KADE Aug 30 2026 (Part 100, Amber's intruder drill): a file that
+         * matches NO category used to vanish here without a trace — stored,
+         * linked to the message, rendered on the user's screen, and never
+         * mentioned to the model. The model then honestly denied any file
+         * arrived. Track it so the notice block below can announce it. */
+        uncategorizedAttachments.push(file);
+        allFiles.push(file);
       }
     }
 
@@ -1435,6 +1444,36 @@ class BaseClient {
     ]);
 
     allFiles.push(...imageFiles);
+
+    /* KADE Aug 30 2026 (Part 100): announce attachments the model cannot
+     * perceive. Audio/video are downloaded and then dropped for providers
+     * without media input (see packages/api/src/files/encode/audio.ts —
+     * OpenRouter ships nothing unless KADE_OPENROUTER_AUDIO_INPUT=1), and
+     * uncategorized types never entered the payload at all. The user watched
+     * the file attach; the model saw nothing and said "no file arrived" —
+     * five times, to the same person, in one night. The fix is a plain-text
+     * notice in fileContext so the model KNOWS the file exists and exactly
+     * what it cannot do with it. Fail-soft: notice only, payload unchanged. */
+    const unperceived = [];
+    if (categorizedAttachments.audios.length > 0 && !message.audios) {
+      unperceived.push(...categorizedAttachments.audios.map((f) => ({ f, kind: 'audio' })));
+    }
+    if (categorizedAttachments.videos.length > 0 && !message.videos) {
+      unperceived.push(...categorizedAttachments.videos.map((f) => ({ f, kind: 'video' })));
+    }
+    if (categorizedAttachments.documents.length > 0 && !message.documents) {
+      unperceived.push(...categorizedAttachments.documents.map((f) => ({ f, kind: 'document' })));
+    }
+    unperceived.push(...uncategorizedAttachments.map((f) => ({ f, kind: 'file' })));
+    if (unperceived.length > 0) {
+      const mb = (n) => (Number.isFinite(n) && n > 0 ? `${(n / (1024 * 1024)).toFixed(1)} MB` : 'size unknown');
+      const lines = unperceived
+        .map(({ f, kind }) => `- "${f.filename || 'unnamed file'}" (${kind}, ${f.type || 'unknown type'}, ${mb(f.bytes)})`)
+        .join('\n');
+      const notice =
+        `[Attachment notice] The user attached the following file(s) to this message. They uploaded successfully and the user can see them, but YOU cannot open, listen to, watch, or read them — their content is not available to you:\n${lines}\nAcknowledge that the file arrived. Be honest that you cannot access its contents — unless one of your actual tools can process this exact file type, and then say you are using the tool. Never guess or invent anything about what is inside it, never promise to listen to or review it later, and never claim the file failed to send.`;
+      message.fileContext = message.fileContext ? `${message.fileContext}\n\n${notice}` : notice;
+    }
 
     const seenFileIds = new Set();
     const uniqueFiles = [];
