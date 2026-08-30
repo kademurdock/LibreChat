@@ -718,6 +718,65 @@ router.post('/admin-set', requireAdminAccess, async (req, res) => {
   }
 });
 
+/* Part 99.3 (Aug 30 2026) — ADMIN LIST: THE DOOR THAT WAS NEVER CUT.
+ *
+ * `/admin-set` (Part 85.5) can write a card into any seat's bucket and
+ * `/admin-retire` can supersede one, and for eight days there has been NO WAY
+ * TO READ ONE BACK. Every other lane on this platform is verifiable — the
+ * agent record, the deploy hash, the recall audit, the chunk counter — and the
+ * one place a session can silently write into a family member's private
+ * memory has been write-only. That is how Amber A's seat accumulated 65 cards
+ * of mood with no record of the event they were all about, unnoticed: nothing
+ * could look.
+ *
+ * It also blocks the thing Kade asked for in her own words ("I haven't gone
+ * through all of them on my seat either"), and it blocks proving that any
+ * repair landed — which by this record's own standing rule is the difference
+ * between a fix and a claim.
+ *
+ * READ-ONLY BY CONSTRUCTION. Admin-guarded like its two siblings. Returns the
+ * fields that decide behaviour — key, bucket, type, staleAfter, subject,
+ * updated_at, tokenCount — plus the value, because a census that cannot see
+ * what a card SAYS can only count rows. `?includeSuperseded=1` opens the
+ * history for a supersession audit; the default is the live set an agent
+ * actually sees, filtered `{ $ne: 'superseded' }` exactly as every other read
+ * here does, so the legacy rows written before `status` existed still appear.
+ */
+router.get('/admin-list', requireAdminAccess, async (req, res) => {
+  const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required (get it from /api/kade/admin/logs-users)' });
+  }
+  try {
+    const MemoryEntry = require('mongoose').models.MemoryEntry;
+    const filter = { userId };
+    if (String(req.query.includeSuperseded || '') !== '1') {
+      filter.status = { $ne: 'superseded' };
+    }
+    const rows = await MemoryEntry.find(filter).sort({ updated_at: -1 }).lean();
+    res.json({
+      userId,
+      count: rows.length,
+      includesSuperseded: String(req.query.includeSuperseded || '') === '1',
+      memories: rows.map((r) => ({
+        key: r.key,
+        value: r.value,
+        agentId: r.agentId || null,
+        bucket: r.agentId ? 'agent' : 'shared',
+        type: r.type || 'fact',
+        status: r.status || 'active',
+        staleAfter: r.staleAfter || null,
+        subject: r.subject || null,
+        tokenCount: r.tokenCount || 0,
+        updated_at: r.updated_at,
+      })),
+    });
+  } catch (err) {
+    logger.error(`[memories/admin-list] failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* Part 85.5 companion — ADMIN RETIRE: mark every non-superseded row of one
  * key in ONE bucket as superseded, creating nothing. Born for the five
  * cross-scope duplicates found live (the writer copied agent-bucket cards
