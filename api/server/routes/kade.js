@@ -1026,7 +1026,17 @@ router.post('/feedback/:id/status', requireJwtAuth, requireAdminAccess, async (r
     if (!prev) {
       return res.status(404).json({ error: 'Report not found.' });
     }
-    const doc = await KadeFeedback.findByIdAndUpdate(req.params.id, { status }, { new: true }).lean();
+    /* Part 100: an optional note travels with the status flip — the
+     * auto-resolve rule is that a report is only ever closed WITH a receipt
+     * (the commit/build that shipped the fix), never on a guess. The note is
+     * appended to the detail so the receipt lives on the row itself. */
+    const update = { status };
+    const noteText = String((req.body || {}).note || '').trim().slice(0, 2000);
+    if (noteText) {
+      const stamp = new Date().toISOString().slice(0, 10);
+      update.detail = `${prev.detail || ''}\n\n[${stamp} → ${status}] ${noteText}`.slice(0, 8000);
+    }
+    const doc = await KadeFeedback.findByIdAndUpdate(req.params.id, update, { new: true }).lean();
     let relayed = null;
     if (status === 'resolved' && prev.status !== 'resolved' && doc.user) {
       try {
