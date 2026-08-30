@@ -43,3 +43,42 @@ export function quantizeTimeAnchor(input?: string | number | Date): Date | undef
   const quantumMs = quantumMin * 60_000;
   return new Date(Math.floor(base.getTime() / quantumMs) * quantumMs);
 }
+
+/* KADE Aug 30 2026 (Part 99.2) — THE HOUSE CLOCK, BECAUSE THE PROMPT HAS BEEN
+ * CARRYING TWO OF THEM.
+ *
+ * Kiana's persona holds exactly one time line, `Current date: {{current_date}}`,
+ * and replaceSpecialVars renders it against `req.body?.timezone`. Only ONE
+ * caller ever sends that field: the web client, via createPayload's
+ * `getUserTimezone()`. The iOS app, the phone/call lane and every headless ask
+ * (the inworld proxy's lcAsk, spontaneous texts, check-ins, reminders) build
+ * their own bodies and send nothing — and there is no TZ variable on the
+ * LibreChat service, so those lanes fell through to the container default,
+ * which on Railway is UTC.
+ *
+ * Meanwhile kadeWorldPulse's getWorldBlock injects `Today is <Central date>`
+ * on EVERY turn. So after 7 PM Central the same prompt told the model it was
+ * both Saturday and Sunday, and a model reconciling two contradictory dates
+ * lands somewhere between them — which is what the family reported as "she
+ * gets the time wrong," on the app, in the evening, and never on the website.
+ *
+ * Every other clock in this fork already hardcodes America/Chicago (~24 sites:
+ * the reminder resolver, the diary, card recall, echoes, nudges, the daily
+ * word, the clock routes, consolidation). This makes the prompt agree with
+ * them. A REAL browser timezone still wins — a family member travelling keeps
+ * their own wall clock; this only fills the hole where nothing was sent.
+ *
+ * LC_DEFAULT_TIMEZONE overrides; LC_DEFAULT_TIMEZONE='' restores the old
+ * UTC-fallback behaviour exactly. */
+export const HOUSE_TIMEZONE = 'America/Chicago';
+
+export function resolveTimezone(supplied?: string): string | undefined {
+  if (typeof supplied === 'string' && supplied.trim() !== '') {
+    return supplied.trim();
+  }
+  const fallback = process.env.LC_DEFAULT_TIMEZONE;
+  if (fallback === '') {
+    return undefined;
+  }
+  return fallback != null && fallback.trim() !== '' ? fallback.trim() : HOUSE_TIMEZONE;
+}
