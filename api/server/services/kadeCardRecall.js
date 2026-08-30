@@ -164,6 +164,14 @@ function sharedPinBudget() {
   const n = parseInt(process.env.KADE_SHARED_PIN_MAX_TOKENS, 10);
   return Number.isFinite(n) && n >= 0 ? n : 250;
 }
+/* Part 99.4 — 'size' restores the pre-Aug-30 smallest-first tie-break.
+ * A named helper rather than an inline process.env read for the same reason
+ * sharedPinBudget is one: the ceiling test extracts applySharedCeiling into a
+ * vm sandbox that has no `process`, and a direct read there is a crash the
+ * suite reports as a broken function. */
+function sharedPinOrder() {
+  return String(process.env.KADE_SHARED_PIN_ORDER || '') === 'size' ? 'size' : 'recent';
+}
 const SHARED_RANK_EXTRA = [
   'preference', 'basics', 'safety', 'trigger', 'vision', 'allerg', 'pronoun', 'how_i', 'code_word',
 ];
@@ -316,9 +324,51 @@ function applySharedCeiling(pinned, pats, opts = {}) {
     const k = String(m.key || '').toLowerCase();
     return rankPats.some((p) => k.includes(p)) ? 1 : 2;
   };
+  /* ⭐⭐⭐ Aug 30 2026 (Part 99.4) — THE TIE-BREAK WAS SMALLEST-FIRST, AND THAT
+   * IS A PACKING HEURISTIC WEARING AN IMPORTANCE HAT.
+   *
+   * Sorting the over-budget remainder by token count ascending maximises the
+   * NUMBER of cards kept, which was never the objective. It systematically
+   * evicts the LONGEST cards, and the longest card is the one about the
+   * complicated thing — because complicated things take more words to write
+   * down. Measured on the live corpus the day this was found:
+   *
+   *   Amber A, 720 tok of shared cards against a 250 ceiling. Kept on the
+   *   head: that she likes two Sleep Token songs (25 tok). Evicted:
+   *   `relationship_unconventional_breakup_arrangement` (70 tok) — the card
+   *   saying she and her partner had broken up, written that same evening.
+   *   The recall audit confirms it: across 30 audited turns that card reached
+   *   the model ZERO times — not on the head (evicted), not through retrieval
+   *   (never scored high enough). Forty minutes after the writer filed it,
+   *   Kiana told her to her face that the breakup "hasn't happened yet",
+   *   because the only relationship cards that could reach her were older
+   *   ones describing a stalemate. THE FACT WAS IN THE DATABASE THE WHOLE
+   *   TIME AND THE PLUMBING NEVER LET IT THROUGH.
+   *
+   * Newest-first is not a perfect importance signal, but it is a real one and
+   * smallness is an anti-signal. Re-run against the live corpus: Amber A's
+   * head gains the breakup card and the corrected relationship timeline;
+   * Kade's seat keeps exactly the same cards (order only). Token count stays
+   * as the FINAL tie-break so the ordering is deterministic.
+   *
+   * CACHE RELIGION IS UNHARMED (see the note at the top of this file): both
+   * the set and the order still change only when a pinned card is written,
+   * which is the same accepted cost as any memory edit today.
+   *
+   * KADE_SHARED_PIN_ORDER=size restores the old smallest-first behaviour. */
+  const bySize = sharedPinOrder() === 'size';
+  const touchedAt = (m) => {
+    const t = new Date(m && m.updated_at).getTime();
+    return Number.isFinite(t) ? t : 0;
+  };
   const ordered = sharedPinned
     .slice()
-    .sort((a, b) => rankOf(a) - rankOf(b) || cardTokens(a) - cardTokens(b));
+    .sort(
+      (a, b) =>
+        rankOf(a) - rankOf(b) ||
+        (bySize ? 0 : touchedAt(b) - touchedAt(a)) ||
+        cardTokens(a) - cardTokens(b),
+    );
   const keep = new Set();
   let used = 0;
   for (const m of ordered) {
