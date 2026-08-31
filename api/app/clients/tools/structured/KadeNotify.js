@@ -139,7 +139,7 @@ class KadeNotify extends Tool {
       "For a ONE-OFF reminder, use action='set_reminder' with 'body' (the exact text to deliver later) and either 'in_minutes' or both 'fire_date' (YYYY-MM-DD, work out the real date from today's date) and 'fire_time' (HH:mm Central); confirm the wording and timing with the user first, then offer list_reminders/cancel_reminder if they want to check or change it. " +
       "For a recurring check-in, use action='schedule_checkin' with a 'time' (and optional 'days'/'topic'); confirm the time with the user first. Offer a 'test_checkin' so they can hear one. Only set urgent:true for truly time-critical send/schedule_checkin alerts. " +
       "If the user asks for something that will take a while and might step away, tell them plainly you'll ping their phone when it's done, then actually call action='send' with a short done message once you finish -- before your final reply, not instead of it. " +
-      "For a platform-wide what's-new announcement, use action='broadcast_whats_new' (OWNER ONLY -- it refuses anyone but the owner account): compose a short punchy digest in your own voice (under 300 characters, lock-screen friendly, no markdown), broadcast it, then suggest folks check Help for the details.";
+      "For a platform-wide what's-new announcement, use action='broadcast_whats_new' (OWNER ONLY -- it refuses anyone but the owner account): compose a punchy digest in your own voice (up to 1000 characters -- iOS shows the first lines and expands on press, and VoiceOver reads the whole thing, so say what actually shipped instead of teasing it; no markdown), broadcast it, then suggest folks check Help for the details.";
     this.schema = notifyJsonSchema;
     this.bridgeUrl = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
     this.notifySecret = process.env.NOTIFY_AGENT_SECRET || process.env.BRIDGE_SECRET || '';
@@ -285,7 +285,16 @@ class KadeNotify extends Tool {
     try {
       const r = await axios.post(
         `${this.bridgeUrl}/notify`,
-        { secret: broadcastSecret, agentId: this.agentId || 'unknown', agentName: this.agentName, title, body: body.slice(0, 300), urgent, broadcast: true },
+        /* ⚠️ 1000, NOT 300 (Aug 31 2026, Part 111). Her Part-83 word was
+         * "up the cap to a thousand chars or so on the notification", and the
+         * BRIDGE was raised that day: runNotify slices broadcasts at 1000 and
+         * keeps 300 only for per-user lock-screen pushes. This line was never
+         * touched, so every what's-new digest since has been chopped to 300
+         * BEFORE the bridge ever saw it — a cap raised on one side of a
+         * two-layer lane does nothing, which is the same shape as the temp=1
+         * and raw=1 gaps on the admin routes. The per-user 'send' path above
+         * deliberately stays at 300. */
+        { secret: broadcastSecret, agentId: this.agentId || 'unknown', agentName: this.agentName, title, body: body.slice(0, 1000), urgent, broadcast: true },
         { timeout: 15000, headers: { 'User-Agent': 'Mozilla/5.0' } },
       );
       const d = r.data || {};
