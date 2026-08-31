@@ -183,6 +183,41 @@ router.get('/memory-health', async (req, res) => {
     const [newestDiary] = await diary.find({}, { projection: { createdAt: 1 } })
       .sort({ createdAt: -1 }).limit(1).toArray();
 
+    /* ⭐⭐ KADE Aug 31 2026 (Part 111) — SPLIT THE LOGBOOK COUNT BY SOURCE,
+     * because the unsplit one has misled five sessions in a row.
+     *
+     * `diaryWrote24h` above counts EVERY write in the window regardless of who
+     * made it: the live keeper, the history-mining lane, an admin backfill, a
+     * manual entry she typed herself. Those are not the same event and they do
+     * not fail together. On Aug 26 2026 the mining lane wrote 44 entries into
+     * ONE seat's logbook in a single evening while the live keeper wrote
+     * nothing at all that day — and this number reported a banner day.
+     *
+     * That is the whole reason "26/day against a 43-47 baseline" could never be
+     * settled: the baseline was probably a mining batch, and every argument
+     * about it was conducted on a total that cannot tell a backfill from a
+     * living lane. HOW_TO_VERIFY law 2 — a count can only show you what it can
+     * see. So show the parts.
+     *
+     * The keeper's OWN age is the number that answers "is the writer alive",
+     * and it is the one the Aug-24 outage would have tripped on day one.
+     * Sources are open-ended by design (a future lane adds its own name and
+     * appears here without a code change), so nothing below enumerates them. */
+    const diarySource24hRows = await diary.aggregate([
+      { $match: { createdAt: { $gte: new Date(now - DAY) } } },
+      { $group: { _id: { $ifNull: ['$source', 'keeper'] }, n: { $sum: 1 } } },
+      { $sort: { n: -1 } },
+    ]).toArray();
+    const diaryWrote24hBySource = {};
+    for (const r of diarySource24hRows) {
+      diaryWrote24hBySource[String(r._id)] = r.n;
+    }
+    /* A doc with no `source` predates the field and was a keeper write. */
+    const [newestKeeperDiary] = await diary
+      .find({ $or: [{ source: 'keeper' }, { source: { $exists: false } }, { source: null }] },
+        { projection: { createdAt: 1 } })
+      .sort({ createdAt: -1 }).limit(1).toArray();
+
     const summariesTotal = await summaries.countDocuments({});
     const [newestSummary] = await summaries.find({}, { projection: { updatedAt: 1 } })
       .sort({ updatedAt: -1 }).limit(1).toArray();
@@ -241,6 +276,11 @@ router.get('/memory-health', async (req, res) => {
         entries: diaryTotal,
         wrote24h: diaryWrote24h,
         newestAgeHours: hoursAgo(newestDiary && newestDiary.createdAt),
+        /* See the comment at the aggregate: the total above mixes the live
+         * keeper with mining/backfill, and they fail separately. */
+        wrote24hBySource: diaryWrote24hBySource,
+        keeperWrote24h: diaryWrote24hBySource.keeper || 0,
+        keeperNewestAgeHours: hoursAgo(newestKeeperDiary && newestKeeperDiary.createdAt),
       },
       summaries: {
         rows: summariesTotal,
@@ -296,6 +336,23 @@ router.get('/memory-health', async (req, res) => {
         /* The sweep is configured daily; 36h means a window was missed. */
         if (consAge == null || consAge > 36) {
           w.push({ lane: 'consolidation', severity: consAge == null || consAge > 72 ? 'red' : 'amber', detail: consAge == null ? 'the consolidation sweep has never recorded a run.' : `the consolidation sweep last ran ${consAge}h ago; it is configured to run daily.` });
+        }
+        /* ⭐ THE MASKED OUTAGE (Aug 31 2026, Part 111). Every warning above
+         * reads the logbook as one lane. It is two: a live keeper writing as
+         * the day happens, and backfill lanes (mining, admin) writing about
+         * days already gone. A mining batch makes `diary.newestAgeHours` young
+         * and this whole block green while the live writer is stone dead —
+         * which is the Aug-24 shape wearing a disguise. So the keeper's own
+         * age gets its own verdict, and it only speaks when the plain diary
+         * warning above has NOT already fired (otherwise it is just noise
+         * repeating a louder alarm). */
+        const keeperDiaryAge = hoursAgo(newestKeeperDiary && newestKeeperDiary.createdAt);
+        if (keeperDiaryAge != null && keeperDiaryAge > 48 && diaryAge != null && diaryAge <= 48) {
+          w.push({
+            lane: 'diary-keeper',
+            severity: keeperDiaryAge > 96 ? 'red' : 'amber',
+            detail: `the LIVE keeper has not written a logbook entry in ${keeperDiaryAge}h — recent entries are backfill (${Object.keys(diaryWrote24hBySource).join(', ') || 'none'}), which reads as a healthy lane and is not one.`,
+          });
         }
         /* Diary + cards both dead is a different animal from either alone: it
          * points at the keeper lane itself rather than one rule inside it. */
