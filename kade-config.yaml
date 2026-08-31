@@ -341,7 +341,32 @@ memory:
     # ⚠️ Taste watch stands: read the first day of Air cards; if they flatten, bump
     # to "z-ai/glm-4.7" (same pot). Revert to v4-flash = the OR roulette (Sail on
     # the roster) — prefer the 4.7 bump.
-    model: "z-ai/glm-4.5-air"
+    # ⭐ Aug 31 2026 (PART 107, her ask "get memory on 5.3 flash"): the keeper moves
+    # to GLM-5.3-FLASH — and this line is the SECOND half of that fix, not the first.
+    # The real cause of the Aug-24 logbook outage was reframe appending the full
+    # Kiana style reminder to the keeper's request (reframe `653cc81`, keeper.js).
+    # Measured through the LIVE proxy after that fix, 6 scenarios x n=12 against
+    # the real tool schemas and these exact instructions:
+    #   glm-5.3-flash 69/72 = 95.8%  |  deepseek-v4-flash 62/72  |  4.5-air 58/72
+    #   |  glm-4.7 32/72 = 44.4% (the escalation this comment used to name — DEAD)
+    # The decider is the NEGATIVE control: on a pure task-chatter turn 4.5-air fired
+    # a logbook entry 12 times out of 12, and one of them read "Checked memory for
+    # mom's appointment details and searched the logbook" — the mechanism describing
+    # itself, which these instructions explicitly forbid. 5.3-flash stayed silent
+    # 12/12. It is also CHEAPER on both axes ($0.075/$0.25 vs $0.13/$0.85 per M).
+    # ⚠️ It always thinks (GLM-5.3+ cannot disable it) — reframe's modelbudget floors
+    # max_tokens at 16000 for it, and measured reasoning was 40-360 chars, ~8.3s
+    # median vs Air's 1.7s. Free here: the keeper runs after the reply, blocking
+    # nobody. ⚠️ Known cost, watch it: 5.3-flash files a card AND a logbook line on
+    # the same card-shaped turn (durable fact 12/12, cancellation 8/12) where Air
+    # never did. That is the over-eager direction on a logbook that has been EMPTY
+    # for a week; if it reads as double-filing in her logbook, tighten the "never
+    # file the same thing as both" clause rather than moving the model again.
+    # ⚠️ NOT MOVED, deliberately: the titler (glm-4.7-flashx) and compaction
+    # (glm-4.5-air, line ~245) are untested against 5.3-flash, and the auto-think
+    # classifier is a max_tokens:4 call that an always-thinking model would wreck.
+    # Test first, the way this line was. Revert = "z-ai/glm-4.5-air" back here.
+    model: "z-ai/glm-5.3-flash"
     model_parameters:
       temperature: 0.3
     instructions: |
