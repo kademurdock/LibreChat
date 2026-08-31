@@ -136,7 +136,25 @@ endpoints:
       # salad). The July-16 think-leak regression is IMPOSSIBLE here: reframe's
       # adaptForZai forces thinking:{disabled} for the 4.7 utility tier.
       # Revert = put "deepseek/deepseek-v4-flash" back on this line.
-      titleModel: "z-ai/glm-4.7-flashx"
+      # ⭐⭐ AUG 31 2026 (Part 111, HER CALL) — REVERTED, AND THE REASON IS
+      # LATENCY, NOT QUALITY. Her report: "the title maker sometimes just calls
+      # the chats new chat, and sometimes has a good title." The fork's
+      # addTitle() gives a title call 45 SECONDS and then aborts it
+      # (services/Endpoints/agents/title.js). GLM-4.7-FlashX on this lane is
+      # BIMODAL: ~0.7s when Z.AI is warm, 16-23s when it is not (n=9 measured
+      # through the live proxy, cold and cached arms both). It crosses the 45s
+      # cliff often enough that the fork's own logs carry five
+      # "Title generation timeout" aborts across Aug 30-31, on three different
+      # seats, against eight successful saves. deepseek-v4-flash measured
+      # 0.7-2.9s across nine calls with no outlier and no empty.
+      # ⚠️ WHAT THIS GIVES BACK, stated plainly because it was HER Part-75
+      # decision and it was a good one: titles return to the UNPINNED
+      # OpenRouter flash pool, the roulette class that produced the Sail salad.
+      # The trade she chose: a title that lands beats a title from a pinned pot
+      # that never arrives. Titles are ~10 output tokens, so the money is noise
+      # on either side.
+      # Revert to the glm pot = "z-ai/glm-4.7-flashx" back on this line.
+      titleModel: "deepseek/deepseek-v4-flash"
       # Custom title prompt (July 14 2026; REWRITTEN July 18 2026): the July-14
       # version included literal examples with real names ("Planning Skylee's
       # birthday call") and the small title model COPIED the example pattern on
