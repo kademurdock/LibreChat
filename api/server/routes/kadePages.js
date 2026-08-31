@@ -899,6 +899,12 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
   </div>
 
   <div class="card">
+    <h2>What's New announcements</h2>
+    <p class="muted">Platform news sent to the whole family. The push notification is just the headline &mdash; the full text lives here (and in Help, under What's New).</p>
+    <div id="announcements" aria-live="polite"><p class="muted">Nothing yet.</p></div>
+  </div>
+
+  <div class="card">
     <h2>Recent nudges</h2>
     <div id="recent" aria-live="polite"><p class="muted">Nothing yet.</p></div>
   </div>
@@ -988,6 +994,24 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
       });
     }catch(e){ /* non-fatal */ }
   }
+
+  /* ---- What's New announcements (Part 112) ---- */
+  async function loadAnnouncements(){
+    try{
+      var d=await apiGet('/api/kade/announcements');
+      var wrap=document.getElementById('announcements');
+      var rows=(d&&d.broadcasts)||[];
+      if(!rows.length){ wrap.innerHTML='<p class="muted">Nothing yet.</p>'; return; }
+      wrap.innerHTML='';
+      rows.forEach(function(a){
+        var p=document.createElement('p');
+        var when=a.ts?new Date(a.ts).toLocaleString('en-US'):'';
+        p.innerHTML='<strong>'+esc(a.title||'Kade-AI')+'</strong> <span class="muted">('+esc(when)+')</span><br>'+esc(a.body||'');
+        wrap.appendChild(p);
+      });
+    }catch(e){ /* non-fatal */ }
+  }
+  loadAnnouncements();
 
   /* ---- Family check-in calls (July 11 2026) ---- */
   var DAYNAMES=['mon','tue','wed','thu','fri','sat','sun'];

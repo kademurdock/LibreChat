@@ -1717,6 +1717,26 @@ function bridgeSecretOk(res) {
   return true;
 }
 
+/* Part 112 (Aug 31 2026): ANNOUNCEMENTS — the family's read of the bridge's
+ * broadcast history. Any signed-in seat may read it: a What's New digest is
+ * addressed to everyone by definition, so there is nothing per-user to scope.
+ * The bridge stores the last 50 broadcasts; the native Announcements screen
+ * (build 258+) and the web /notifications page both read THIS route. */
+router.get('/announcements', requireJwtAuth, async (req, res) => {
+  try {
+    if (!bridgeSecretOk(res)) return;
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const r = await fetch(`${BRIDGE_URL}/broadcasts?secret=${encodeURIComponent(process.env.BRIDGE_SECRET)}&limit=${limit}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+    const j = await r.json();
+    return res.status(r.status).json(j);
+  } catch (e) {
+    logger.error('[kade/announcements] failed:', e);
+    return res.status(502).json({ error: 'Could not reach the phone bridge.' });
+  }
+});
+
 router.get('/wellness', requireJwtAuth, async (req, res) => {
   try {
     if (!bridgeSecretOk(res)) return;
