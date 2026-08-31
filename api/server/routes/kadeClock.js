@@ -225,6 +225,30 @@ router.get('/memory-health', async (req, res) => {
     let consolidationLastRunAt = null;
     try { consolidationLastRunAt = await getLastSweepRunAt(); } catch { /* best-effort */ }
 
+    /* ⭐ Part 112 (Aug 31 2026) — CARDS GET THE SAME HONESTY THE LOGBOOK GOT
+     * IN PART 111. `cardsWrote24h` counts every row whose `updated_at` moved,
+     * and the daily 09:00 UTC consolidation sweep moves rows it did not
+     * author — on Aug 31, 12 of the 16 "cards written today" were the sweep
+     * touching rows inside 09:01–09:05Z. A consolidation run reads as a busy
+     * memory day, on the number the whole estate reads first.
+     *
+     * Cards carry no `source` field, so the split is by WINDOW, not by
+     * author: the sweep advances its persisted marker FIRST and then writes
+     * for a few minutes (consolidationSweep.js, runScheduledConsolidation),
+     * so rows stamped within [lastRunAt, lastRunAt + 20min] are attributed
+     * to the sweep. Approximate on purpose and says so — a live write landing
+     * inside those twenty minutes miscounts as housekeeping, which is rarer
+     * and cheaper than housekeeping counting as life every single morning. */
+    let cardsSweepTouched24h = 0;
+    if (consolidationLastRunAt) {
+      const sweepStart = new Date(consolidationLastRunAt).getTime();
+      if (sweepStart >= now - DAY) {
+        cardsSweepTouched24h = await mem.countDocuments({
+          updated_at: { $gte: new Date(sweepStart), $lte: new Date(sweepStart + 20 * 60 * 1000) },
+        });
+      }
+    }
+
     /* Echoes match on DAY-OF-MONTH, not month-day: the platform is ~2 months
      * old, so a strict "same date last year" check would stay silent until
      * June 2027. Day-of-month marks ("a month ago today", "three months ago
@@ -268,6 +292,10 @@ router.get('/memory-health', async (req, res) => {
         active: cardsActive,
         superseded: cardsSuperseded,
         wrote24h: cardsWrote24h,
+        /* Window-attributed (see the Part 112 comment above): rows the daily
+         * consolidation sweep touched vs. writes with a person behind them. */
+        sweepTouched24h: cardsSweepTouched24h,
+        wroteLive24h: Math.max(0, cardsWrote24h - cardsSweepTouched24h),
         newestAgeHours: hoursAgo(newestCard && newestCard.updated_at),
         stalestActiveAgeDays: daysAgo(stalestCard && stalestCard.updated_at),
         stalestActiveKey: stalestCard ? stalestCard.key : null,

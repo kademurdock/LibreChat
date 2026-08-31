@@ -1018,7 +1018,10 @@ class AgentClient extends BaseClient {
        * quiet no-op inside logDiaryEntry. */
       logDiary: async ({ text, scope, salience }) => {
         const { logDiaryEntry } = require('~/models/kadeDiary');
-        return logDiaryEntry({ userId, agentId: activeAgentId, text, scope, salience });
+        /* Part 112: the conversation rides along so the diary can keep ONE
+         * entry per episode (her key choice) — injected here, never decided
+         * by the keeper. See kadeDiary.js's episode block. */
+        return logDiaryEntry({ userId, agentId: activeAgentId, text, scope, salience, conversationId });
       },
     });
 

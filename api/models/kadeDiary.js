@@ -59,6 +59,28 @@ const kadeDiarySchema = new mongoose.Schema(
     embedModel: { type: String, default: null },
     /** 'keeper' (memory agent) | 'manual' (future diary surface) | 'backfill' */
     source: { type: String, default: 'keeper' },
+    /* ⭐ ONE ENTRY PER EPISODE (Part 112, Aug 31 2026 — her call, made on the
+     * read of her own Aug-31 logbook: ten entries covering three episodes,
+     * Kid Tunes alone filed five times in 23 minutes. Her choice of key, put
+     * to her explicitly: ONE CONVERSATION = ONE ENTRY, amended as it goes.
+     * A live keeper write that lands in a conversation which already has an
+     * entry TODAY extends that entry instead of stacking a sibling.
+     *
+     * Stated loudly, because it was decided before code was written:
+     * - The key is (userId, agentId, conversationId, entryDate). An episode
+     *   that crosses midnight Central is TWO dates and becomes two entries —
+     *   entryDate stays the spine of the diary, exactly as designed.
+     * - A topic returned to across two chats is two entries. Phone and app
+     *   calls are each their own temporary conversation, so each call is its
+     *   own entry. She knows; she chose this key anyway.
+     * - Null for every pre-Part-112 row and for lanes that pass no
+     *   conversation (mining, imports, manual page) — those behave exactly
+     *   as before. */
+    conversationId: { type: String, default: null, index: true },
+    /* The amend trail: every pre-amend wording, verbatim, oldest first —
+     * the preRepairText principle (an update must never lose the earlier
+     * wording) applied to a lane that can now update. */
+    priorTexts: { type: [String], default: [] },
     /** MEMORY QUALITY PACK (Aug 9 2026): how much this entry matters. 1 = ordinary
      * note, 2 = notable day, 3 = big one (loss, family news, milestone, health
      * scare). Set by the keeper at write time; big things outrank product notes
@@ -276,7 +298,7 @@ function cosine(a, b) {
  * Write one diary entry. scope 'shared' → agentId null; anything else → the
  * given agentId (privacy default). Saves even when embedding fails.
  */
-async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', source = 'keeper', entryDate = null, salience = 1 }) {
+async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', source = 'keeper', entryDate = null, salience = 1, conversationId = null }) {
   if (!diaryEnabled()) {
     return { ok: false, error: 'diary disabled' };
   }
@@ -385,8 +407,49 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
     }
   }
 
+  const cleanSalience = Math.min(Math.max(parseInt(salience, 10) || 1, 1), 3);
+
+  /* ── ONE ENTRY PER EPISODE (Part 112) ─────────────────────────────────────
+   * Runs AFTER the dedup guard on purpose: a near-identical re-file of the
+   * same moment ("went down the rabbit hole" for the fifth time) is still
+   * refused outright; only a genuinely NEW development reaches this point and
+   * extends the episode's entry. The keeper was told nothing about any of
+   * this — machine lanes get less instruction, not more (law 19); the key
+   * decides, not the model.
+   *
+   * The amend APPENDS rather than replaces, so the earlier wording stays in
+   * the searchable text itself, and the full pre-amend text is additionally
+   * kept verbatim in priorTexts. Re-embeds the combined text; if the embed
+   * lane is down (the Aug-28 shape) the old embedding is KEPT rather than
+   * nulled — close is better than absent, and the backfill pass can redo it. */
+  if (conversationId && process.env.KADE_DIARY_EPISODE !== '0') {
+    try {
+      const existing = await KadeDiaryEntry.findOne({
+        userId: String(userId),
+        agentId: effectiveAgentId,
+        conversationId: String(conversationId),
+        entryDate: effectiveDate,
+      });
+      if (existing) {
+        const combined = `${existing.text.replace(/\s+$/, '')} ${cleanText}`.slice(0, 2000);
+        const newEmbedding = await embedText(combined);
+        existing.priorTexts = [...(existing.priorTexts || []), existing.text];
+        existing.text = combined;
+        if (newEmbedding) {
+          existing.embedding = newEmbedding;
+          existing.embedModel = currentEmbedModel();
+        }
+        existing.salience = Math.max(existing.salience || 1, cleanSalience);
+        await existing.save();
+        return { ok: true, date: effectiveDate, amended: true };
+      }
+    } catch (e) {
+      /* An amend hiccup must never eat the moment — fall through and create. */
+      logger.warn('[kadeDiary] episode amend skipped:', e.message);
+    }
+  }
+
   try {
-    const cleanSalience = Math.min(Math.max(parseInt(salience, 10) || 1, 1), 3);
     await KadeDiaryEntry.create({
       userId: String(userId),
       agentId: effectiveAgentId,
@@ -396,6 +459,7 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
       embedModel: embedding ? currentEmbedModel() : null,
       source,
       salience: cleanSalience,
+      conversationId: conversationId ? String(conversationId) : null,
     });
     return { ok: true, date: effectiveDate };
   } catch (e) {
