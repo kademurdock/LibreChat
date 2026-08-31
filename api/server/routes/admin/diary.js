@@ -212,4 +212,41 @@ router.delete('/:entryId', async (req, res) => {
   }
 });
 
+/* ⭐ PART 112 (Aug 31 2026) — THE CONSOLIDATION LEDGER, READABLE ACROSS SEATS.
+ *
+ * Bought with a wrong claim that stood for about an hour. Part 112 read
+ * `GET /api/memories/ledger`, saw zero rows since Aug 19, and wrote into
+ * PROJECT_STATUS that "the consolidation sweep has been no-op-saving for 12
+ * days." That route is `requireJwtAuth` and `readLedger` filters on
+ * `userId` — and the proxy's `lc()` authenticates as KADE. **It was her seat
+ * only, the entire time.** Amber Lacey's 115 cards and Amber A's 101 could
+ * have been consolidating happily all month and no session could have seen it.
+ *
+ * HOW_TO_VERIFY law 2, exactly: a log can only show you what it can see, and
+ * the thing this one structurally could not see was everybody else. Same
+ * shape as the diary gap this file's sibling routes closed in Part 111 —
+ * a platform-wide lane with a per-user read is a lane nobody can audit.
+ *
+ * Read-only, admin-gated by the router's own `requireJwtAuth +
+ * ACCESS_ADMIN + READ_USERS` above. No write half, because there is nothing
+ * to write: the ledger is an audit trail and correcting it would defeat it.
+ */
+router.get('/ledger', async (req, res) => {
+  try {
+    const userId = String(req.query.userId || '').trim();
+    if (!userId) {
+      return res.status(400).json({ error: 'userId query parameter is required' });
+    }
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+    const sinceDays = req.query.sinceDays ? parseInt(req.query.sinceDays, 10) : null;
+    const { readLedger } = require('~/models/kadeMemoryLedger');
+    const agentId = req.query.agentId !== undefined ? String(req.query.agentId) || null : null;
+    const rows = await readLedger({ userId, agentId, limit, sinceDays });
+    res.json({ userId, count: Array.isArray(rows) ? rows.length : 0, changes: rows });
+  } catch (error) {
+    logger.error('[admin-diary] ledger read failed', error);
+    res.status(500).json({ error: 'Failed to read the consolidation ledger' });
+  }
+});
+
 module.exports = router;
