@@ -30,10 +30,16 @@
 
 const express = require('express');
 const https = require('https');
+const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
-const { logKadeUsage, deductKadeCredits, fluxCost } = require('~/models/kadeUsage');
+const { logKadeUsage, fluxCost } = require('~/models/kadeUsage');
 const { SHARED_HEAD } = require('./kadePages');
+const {
+  PERSONA_CRAFT,
+  personaUserContent,
+  parsePersonaOutput,
+} = require('~/server/services/kadePersonaWriter');
 
 /* ────────────────────────────────────────────────────────────────────────────
  * THE MODEL MENU — models as choices a person can hear and pick between.
@@ -440,7 +446,12 @@ router.post('/avatar', express.json({ limit: '32kb' }), async (req, res) => {
         }
         genCounts.set(req.user.id, used + 1);
         const cost = fluxCost(FLUX_ENDPOINT, 1);
-        deductKadeCredits(req.user.id, cost).catch(() => {});
+        /* Part 113: the explicit deductKadeCredits that used to sit here was a
+         * DOUBLE CHARGE -- logKadeUsage deducts the same cost itself (see
+         * api/models/kadeUsage.js), so every 3-cent portrait took 6 cents out
+         * of the prepaid wallet. Found by reading the money path while adding
+         * the persona writer below, which is why that one logs and does not
+         * deduct separately. */
         logKadeUsage({ userId: req.user.id, service: 'flux', quantity: 1, unit: 'image', costUSD: cost, metadata: { via: 'character-builder' } }).catch(() => {});
         return res.json({ ok: true, image_b64: img.buf.toString('base64'), remainingToday: GEN_DAILY_CAP - used - 1 });
       }
@@ -452,6 +463,173 @@ router.post('/avatar', express.json({ limit: '32kb' }), async (req, res) => {
   } catch (e) {
     logger.error(`[kadeBuilder] avatar gen failed: ${e.message}`);
     res.status(502).json({ error: 'The picture engine is unreachable right now.' });
+  }
+});
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * THE DESCRIPTION BOX — "describe the character you want, get a real prompt"
+ * (Part 113, Sep 1 2026). HER BRIEF, verbatim, and it is the whole design:
+ *
+ *   "I would kind of like a box maybe where you describe what you want in an
+ *    agent or character, and the ai generates a robust system prompt like
+ *    Kiana's. So people who can't find the words can get them eventually."
+ *
+ * ⭐ READ "EVENTUALLY" AS A REQUIREMENT, NOT A HEDGE. The person who needs
+ * this most cannot describe what they want on the first try — that is
+ * precisely why they need it. So this is a LOOP, not a text-to-text button:
+ * it drafts, then asks the two or three questions whose answers would most
+ * improve the draft, and deepens on each pass. One-shot generation serves the
+ * articulate person who needed the least help.
+ *
+ * TWO DOORS, ONE ROUTE: "write me one from this description" and "improve the
+ * one I have" (Amber A's real need — she knows what ACT is; she needs help
+ * expressing it, not inventing it).
+ *
+ * ⚠️ CARVED OUT OF reframe's appendReminder ON THE DAY IT SHIPPED (law 19 —
+ * machines.js `PERSONA_TAIL_RE`/`PERSONA_BLOCK_RE`, with tests). A persona
+ * writer that RECEIVED the style reminder would write the style reminder into
+ * the persona, and every character made here would arrive carrying a copy of
+ * the platform's anti-slop text as its personality — fighting the real copy
+ * that already arrives globally on every turn. Which is also why the craft
+ * brief below tells the writer, in as many words, not to write anti-slop rules.
+ *
+ * MODEL: pinned in env, default `z-ai/glm-5.3-flash` — KADE'S CALL, Sep 1
+ * ("I want 5.3 flash on the agent building stuff"), overriding the plan's
+ * suggestion of the full 5.3. At $0.075/M in and $0.25/M out a full round
+ * costs about a fifth of a cent, so the button says a penny and means it.
+ * Move it with KADE_PERSONA_MODEL without a code change.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+const PERSONA_MODEL = process.env.KADE_PERSONA_MODEL || 'z-ai/glm-5.3-flash';
+const PERSONA_DAILY_CAP = Number(process.env.KADE_PERSONA_DAILY_CAP || 12);
+const PERSONA_MAX_TOKENS = Number(process.env.KADE_PERSONA_MAX_TOKENS || 6000);
+/* OpenRouter's published price for the default model, per MILLION tokens.
+ * Used only to print an honest number; the wallet is charged the measured
+ * amount, not an estimate. */
+const PERSONA_PRICE_IN = Number(process.env.KADE_PERSONA_PRICE_IN || 0.075);
+const PERSONA_PRICE_OUT = Number(process.env.KADE_PERSONA_PRICE_OUT || 0.25);
+
+let personaDayStamp = '';
+const personaCounts = new Map();
+
+/* ⭐ THE CRAFT BRIEF. Without this the generator produces exactly the
+ * six-paragraph mush the templates already produce — "write a detailed system
+ * prompt" reproduces NONE of the reasons Kiana's ~40,000-character persona
+ * works. Every property below was extracted from this estate's own live
+ * personas and workups (KIANA_PERSONALITY_WORKUP_2026-08-21,
+ * FREE_THINKER_PERSONA_CRAFT, CHARISMA_RESEARCH_FOR_PERSONA,
+ * PERSONA_SECTIONS_DRAFTS) — a year of hard-won craft, spent here. */
+router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res) => {
+  try {
+    const gatewayUrl =
+      process.env.KADE_LLM_GATEWAY_URL ||
+      'https://reframe-proxy-production.up.railway.app/chat/completions';
+    const key = process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY;
+    if (!key) {
+      return res.status(503).json({ error: 'Prompt writing is not configured right now.' });
+    }
+    const b = req.body || {};
+    const description = String(b.description || '').trim().slice(0, 6000);
+    const existingInstructions = String(b.existingInstructions || '').trim().slice(0, 60000);
+    const name = String(b.name || '').trim().slice(0, 80);
+    const round = Math.min(6, Math.max(1, parseInt(b.round, 10) || 1));
+    const answers = Array.isArray(b.answers)
+      ? b.answers
+          .filter((a) => a && String(a.a || '').trim())
+          .slice(0, 3)
+          .map((a) => ({ q: String(a.q || '').slice(0, 400), a: String(a.a || '').slice(0, 2000) }))
+      : [];
+    if (description.length < 8 && !existingInstructions) {
+      return res
+        .status(400)
+        .json({ error: 'Tell me a little about them first — even one sentence is enough to start.' });
+    }
+
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+    if (personaDayStamp !== today) {
+      personaDayStamp = today;
+      personaCounts.clear();
+    }
+    const used = personaCounts.get(req.user.id) || 0;
+    if (used >= PERSONA_DAILY_CAP) {
+      return res
+        .status(429)
+        .json({ error: `That's ${PERSONA_DAILY_CAP} drafts today — the writing desk reopens tomorrow.` });
+    }
+
+    const userContent = personaUserContent({ description, existingInstructions, answers, round, name });
+    const started = Date.now();
+    const r = await axios.post(
+      gatewayUrl,
+      {
+        model: PERSONA_MODEL,
+        max_tokens: PERSONA_MAX_TOKENS,
+        temperature: 0.8,
+        messages: [
+          { role: 'system', content: PERSONA_CRAFT },
+          { role: 'user', content: userContent },
+        ],
+      },
+      {
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        timeout: 180000,
+      },
+    );
+    const raw = r.data && r.data.choices && r.data.choices[0] && r.data.choices[0].message
+      ? r.data.choices[0].message.content
+      : '';
+    const parsed = parsePersonaOutput(raw);
+    if (!parsed.instructions || parsed.instructions.length < 200) {
+      logger.warn(`[kadeBuilder] write-persona returned ${parsed.instructions.length} chars`);
+      return res
+        .status(502)
+        .json({ error: 'The writer came back empty-handed. Try again — nothing was charged.' });
+    }
+
+    /* MEASURE the cost, do not estimate it. The daily-consolidation decision
+     * printed 26 cents a month before it flipped; this prints the real number
+     * the same way. Usage is what the gateway reports; if it reports nothing,
+     * the fallback is a character-count estimate and it says so in the log. */
+    const usage = (r.data && r.data.usage) || {};
+    const inTok = Number(usage.prompt_tokens || 0);
+    const outTok = Number(usage.completion_tokens || 0);
+    const measured = inTok > 0 || outTok > 0;
+    const costUSD = measured
+      ? (inTok * PERSONA_PRICE_IN + outTok * PERSONA_PRICE_OUT) / 1e6
+      : ((userContent.length + PERSONA_CRAFT.length) / 4 * PERSONA_PRICE_IN +
+          (raw.length / 4) * PERSONA_PRICE_OUT) / 1e6;
+
+    personaCounts.set(req.user.id, used + 1);
+    logKadeUsage({
+      userId: req.user.id,
+      service: 'openrouter',
+      quantity: 1,
+      unit: 'persona-draft',
+      costUSD,
+      metadata: { via: 'character-builder', model: PERSONA_MODEL, round, inTok, outTok, measured },
+    }).catch(() => {});
+    logger.info(
+      `[kadeBuilder] write-persona round=${round} model=${PERSONA_MODEL} in=${inTok} out=${outTok} cost=$${costUSD.toFixed(5)}${measured ? '' : ' (ESTIMATED — gateway reported no usage)'} ${Date.now() - started}ms ${parsed.instructions.length}ch`,
+    );
+
+    res.json({
+      ok: true,
+      round,
+      instructions: parsed.instructions,
+      questions: parsed.questions,
+      notes: parsed.notes,
+      costUSD: Number(costUSD.toFixed(5)),
+      costMeasured: measured,
+      remainingToday: PERSONA_DAILY_CAP - used - 1,
+      model: PERSONA_MODEL,
+    });
+  } catch (e) {
+    const status = e && e.response && e.response.status;
+    logger.error(`[kadeBuilder] write-persona failed${status ? ` (${status})` : ''}: ${e.message}`);
+    res
+      .status(502)
+      .json({ error: 'The writing desk is having a moment. Try again in a minute — nothing was charged.' });
   }
 });
 
@@ -481,16 +659,104 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
   .show-expert .expert { display: block; }
 </style></head><body><main>
 <h1>Create a Character</h1>
-<p class="help">Eight quick questions, no wrong answers, and a finished character at the end — picture and all. Nothing here needs you to know anything about AI.</p>
+<p class="help">Two ways in: describe who you want in your own words and have their personality written for you, or answer eight quick questions. No wrong answers either way, and you can edit every word before anybody comes to life.</p>
 <div id="live" aria-live="polite"></div>
-<div id="app"><p>Waking the quiz up…</p></div>
+<div id="app"><p>Waking the character builder up…</p></div>
 </main><script>
 (function(){
   var TOKEN=null, QUIZ=[], MENU=[], step=0, answers={}, draft=null, portraitB64=null, pickedName=null;
+  var describeText='', describeName='', personaRound=0, personaQs=[], personaNotes='';
   var app=document.getElementById('app'), live=document.getElementById('live');
   function say(t){ live.textContent=''; setTimeout(function(){ live.textContent=t; }, 60); }
   async function getToken(){ try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}); if(!r.ok) return null; var j=await r.json(); return j&&j.token?j.token:null; }catch(e){ return null; } }
   async function api(path,opts){ opts=opts||{}; opts.headers=Object.assign({'Authorization':'Bearer '+TOKEN},opts.headers||{}); var r=await fetch(path,opts); if(!r.ok){ var t=await r.text(); throw new Error(t.slice(0,200)); } return r.json(); }
+
+
+  /* ── THE DESCRIPTION BOX (Part 113) ───────────────────────────────────────
+   * Her brief: "a box where you describe what you want in an agent or
+   * character, and the ai generates a robust system prompt like Kiana's. So
+   * people who can't find the words can get them eventually."
+   * "Eventually" is the requirement: this LOOPS. It drafts, asks the two or
+   * three questions whose answers would most improve the draft, and deepens
+   * on each pass. One pass would serve the articulate person who needed the
+   * least help. */
+  function renderDoor(){
+    app.innerHTML='<h2>How would you like to start?</h2>'
+      +'<div class="row"><button type="button" id="doorDescribe" class="primary">Describe them in your own words</button>'
+      +'<button type="button" id="doorQuiz">Answer eight quick questions</button></div>'
+      +'<p class="help">The first one writes a full, detailed personality for you from a description — it costs about a penny of credit. The questions are free and build a shorter starter personality you can grow later.</p>';
+    say('How would you like to start? Describe them in your own words, or answer eight quick questions.');
+    document.getElementById('doorDescribe').onclick=function(){ renderDescribe(); };
+    document.getElementById('doorQuiz').onclick=function(){ step=0; answers={}; renderStep(); };
+  }
+
+  function renderDescribe(){
+    app.innerHTML='<form id="df"><fieldset><legend>Describe the character or agent you want</legend>'
+      +'<p class="help">Say it however it comes out — who they are, what they are for, how they should feel to talk to. A sentence is enough to start with, and you will get to answer follow-up questions afterwards. There is no wrong way to write this.</p>'
+      +'<label for="dtext">Your description</label>'
+      +'<textarea id="dtext" rows="7" placeholder="An acceptance-and-commitment therapist who also borrows from other approaches when it fits."></textarea>'
+      +'<label class="opt">Their name, if you have one (you can leave this blank) <input type="text" id="dname" autocomplete="off"></label>'
+      +'</fieldset><div class="row"><button type="button" id="dback">Back</button>'
+      +'<button class="primary" type="submit">Write their personality (about 1¢)</button></div></form><p id="dstatus" role="status"></p>';
+    var t=document.getElementById('dtext'); if(describeText) t.value=describeText;
+    var n=document.getElementById('dname'); if(describeName) n.value=describeName;
+    say('Describe the character or agent you want. A sentence is enough to start.');
+    document.getElementById('dback').onclick=renderDoor;
+    document.getElementById('df').onsubmit=function(ev){ ev.preventDefault(); describeText=t.value.trim(); describeName=n.value.trim();
+      if(describeText.length<8){ say('Tell me a little more about them first — even one sentence is enough.'); return; }
+      writePersona({description:describeText,name:describeName,round:1}); };
+  }
+
+  async function writePersona(payload){
+    var st=document.getElementById('dstatus')||document.getElementById('pstatus');
+    if(st){ st.textContent='Writing their personality… this takes up to a minute.'; }
+    say('Writing their personality. This takes up to a minute.');
+    try{
+      var out=await api('/api/kade/builder/write-persona',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      personaRound=out.round; personaQs=out.questions||[]; personaNotes=out.notes||'';
+      if(!draft){ draft=await composeFallbackDraft(); }
+      draft.instructions=out.instructions;
+      if(describeName) draft.names=[describeName].concat(draft.names.filter(function(x){return x!==describeName;}));
+      renderPersona(out);
+    }catch(e){
+      if(st){ st.textContent=(e.message||'That did not work.')+' Nothing was charged; try again.'; }
+      say('That did not work. Nothing was charged. You can try again.');
+    }
+  }
+
+  /* Door A never took the quiz, so it has no draft to hang a name, a model
+   * and a portrait prompt on. Borrow the quiz brain's own defaults for those
+   * — same one brain, so the two doors cannot drift apart. */
+  async function composeFallbackDraft(){
+    var out=await api('/api/kade/builder/quiz/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({answers:{}})});
+    var d=out.draft; d.description=(describeText||'').split(/[.!?]/)[0].slice(0,140); return d;
+  }
+
+  function renderPersona(out){
+    var h='<h2>Here is their personality</h2>';
+    h+='<p class="help">'+(out.instructions.length)+' characters, written from your description. Edit any word of it — it is yours.</p>';
+    if(personaNotes){ h+='<p class="help">What the writer says: '+esc(personaNotes)+'</p>'; }
+    h+='<fieldset><legend>Their personality (edit anything)</legend><textarea id="pinst" rows="16">'+esc(out.instructions)+'</textarea></fieldset>';
+    if(personaQs.length){
+      h+='<form id="qf"><fieldset><legend>Answer any of these and it gets deeper</legend>'
+        +'<p class="help">These are the questions the writer says would most improve the next draft. Answer one, two, all three, or none — skipping is fine and you can always come back and edit by hand.</p>';
+      personaQs.forEach(function(q,i){ h+='<label class="opt">'+esc(q)+'<textarea id="pq'+i+'" rows="2"></textarea></label>'; });
+      h+='</fieldset><div class="row"><button class="primary" type="submit">Deepen it with my answers (about 1¢)</button></div></form>';
+    }
+    h+='<div class="row"><button type="button" id="pback">Start the description over</button>'
+      +'<button type="button" id="puse" class="primary">Use this personality</button></div><p id="pstatus" role="status"></p>';
+    app.innerHTML=h;
+    say('Their personality is written, '+out.instructions.length+' characters. '+(personaQs.length?('There are '+personaQs.length+' follow-up questions that would make it deeper, and a button to use it as it stands.'):'You can edit it or use it as it stands.'));
+    document.getElementById('pback').onclick=renderDescribe;
+    document.getElementById('puse').onclick=function(){ draft.instructions=document.getElementById('pinst').value.trim(); renderReview(); };
+    var qf=document.getElementById('qf');
+    if(qf){ qf.onsubmit=function(ev){ ev.preventDefault();
+      var ans=personaQs.map(function(q,i){ return {q:q,a:(document.getElementById('pq'+i).value||'').trim()}; }).filter(function(a){return a.a;});
+      if(!ans.length){ say('Answer at least one question, or use the personality as it stands.'); return; }
+      writePersona({description:describeText,name:describeName,existingInstructions:document.getElementById('pinst').value.trim(),answers:ans,round:personaRound+1}); }; }
+  }
+
+  function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
   function renderStep(){
     var q=QUIZ[step];
@@ -529,7 +795,9 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
     draft.names.forEach(function(n,i){ h+='<label class="opt"><input type="radio" name="nm" value="'+n+'"'+(i===0?' checked':'')+'>'+n+'</label>'; });
     h+='<label class="opt">Or type another: <input type="text" id="customName"></label></fieldset>';
     h+='<fieldset><legend>One-line description</legend><textarea id="desc" rows="2">'+draft.description+'</textarea></fieldset>';
-    h+='<fieldset><legend>Their personality (edit anything)</legend><textarea id="inst" rows="10">'+draft.instructions+'</textarea></fieldset>';
+    h+='<fieldset><legend>Their personality (edit anything)</legend><textarea id="inst" rows="10">'+esc(draft.instructions)+'</textarea>'
+      +'<div class="row"><button type="button" id="improve">Have it written out properly (about 1¢)</button></div>'
+      +'<p class="help">That takes what is in the box and rewrites it as a full, detailed personality, then asks you a couple of questions to make it deeper. Nothing changes until you look at it.</p></fieldset>';
     h+='<fieldset id="menuBox"><legend>Their engine</legend><p class="help">This is the machinery that does their thinking. Plain choices — the technical names are behind the toggle for anyone who wants them.</p>';
     MENU.forEach(function(m){ h+='<label class="opt modelcard"><input type="radio" name="mm" value="'+m.key+'"'+(m.key===draft.modelKey?' checked':'')+'><strong>'+m.plainName+'</strong> — '+m.blurb+' <em>Good for: '+m.goodFor+'.</em><span class="expert">'+m.provider+' / '+m.model+'</span></label>'; });
     h+='<button type="button" id="expertBtn" aria-pressed="false">Show technical names</button></fieldset>';
@@ -538,10 +806,15 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
     h+='<div class="row"><button type="button" id="back2">Back to questions</button><button type="button" id="create" class="primary">Bring them to life</button></div><p id="status" role="status"></p>';
     app.innerHTML=h;
     say('The character is drafted. Review the name, the personality, the engine, and the picture, then bring them to life.');
-    document.getElementById('back2').onclick=function(){ step=QUIZ.length-1; renderStep(); };
+    document.getElementById('back2').onclick=function(){ if(describeText){ renderDescribe(); } else { step=QUIZ.length-1; renderStep(); } };
     document.getElementById('expertBtn').onclick=function(){ var b=document.getElementById('menuBox'); var on=b.classList.toggle('show-expert'); this.setAttribute('aria-pressed',String(on)); this.textContent=on?'Hide technical names':'Show technical names'; };
     document.getElementById('paint').onclick=paint;
     document.getElementById('create').onclick=create;
+    document.getElementById('improve').onclick=function(){
+      describeText=describeText||document.getElementById('desc').value.trim()||'a character';
+      describeName=currentName();
+      writePersona({description:describeText,name:describeName,existingInstructions:document.getElementById('inst').value.trim(),round:1});
+    };
   }
 
   async function paint(){
@@ -575,7 +848,7 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
       }
       app.innerHTML='<h2>'+body.name+' is alive.</h2><p>They are yours now — you will find them with your characters on the main site and in the app, and you can fine-tune anything about them in the regular builder any time.</p><div class="row"><a href="/" ><button class="primary" type="button">Go say hello</button></a><button type="button" id="again">Make another</button></div>';
       say(body.name+' is alive. Go say hello.');
-      document.getElementById('again').onclick=function(){ step=0; answers={}; draft=null; portraitB64=null; renderStep(); };
+      document.getElementById('again').onclick=function(){ step=0; answers={}; draft=null; portraitB64=null; describeText=''; describeName=''; personaQs=[]; personaNotes=''; renderDoor(); };
     }catch(e){ st.textContent='That did not take: '+(e.message||'unknown error')+' — nothing was lost; try again.'; }
   }
 
@@ -585,7 +858,7 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
     try{
       var q=await api('/api/kade/builder/quiz'); QUIZ=q.quiz;
       var m=await api('/api/kade/builder/model-menu'); MENU=m.menu;
-      renderStep();
+      renderDoor();
     }catch(e){ app.innerHTML='<p>The quiz could not load. Try again in a minute.</p>'; }
   })();
 })();
