@@ -573,7 +573,7 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
       },
       {
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-        timeout: 180000,
+        timeout: 300000, // PART 115: round 5 of a real persona ran 131 s against 180; drafts grow every round (reframe deep lane allows 420 s)
       },
     );
     const raw = r.data && r.data.choices && r.data.choices[0] && r.data.choices[0].message
