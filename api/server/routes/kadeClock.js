@@ -528,11 +528,18 @@ router.get('/voice-report', async (req, res) => {
     const mongoose = require('mongoose');
     const db = mongoose.connection.db;
     const KIANA = process.env.KADE_VOICE_REPORT_AGENT || 'agent_6llV0eMu4fmIaj8f2x1Sb';
-    const since = new Date(Date.now() - 24 * 36e5);
+    /* Part 116 (Sep 1 2026): ?hours=N&until=<iso> let a session baseline a
+     * window that is not "the last day" -- v260 shipped Sep 1 ~21:00Z and the
+     * plan says compare the day BEFORE it to the days after. Capped at a week
+     * and 600 rows either way, same as before. */
+    const hoursQ = Math.min(168, Math.max(1, parseInt(req.query.hours, 10) || 24));
+    const untilQ = req.query.until ? new Date(String(req.query.until)) : null;
+    const until = untilQ && !isNaN(untilQ.getTime()) ? untilQ : new Date();
+    const since = new Date(until.getTime() - hoursQ * 36e5);
     const rows = await db
       .collection('messages')
       .find(
-        { model: KIANA, isCreatedByUser: false, createdAt: { $gte: since } },
+        { model: KIANA, isCreatedByUser: false, createdAt: { $gte: since, $lte: until } },
         { projection: { text: 1, content: 1, createdAt: 1 } },
       )
       .sort({ createdAt: -1 })
@@ -629,6 +636,24 @@ router.get('/voice-report', async (req, res) => {
     let bossyHits = 0;
     let fragSents = 0;
     let allSents = 0;
+    /* ── READING LEVEL (Part 116, Sep 1 2026 -- her "high school education"
+     * point, v260 §3 "say scared, not anxious"). Every number above measures
+     * sentence SHAPE; none measures VOCABULARY, so "she talks too big" had no
+     * instrument. Flesch-Kincaid grade over the day's replies plus the share
+     * of 3+-syllable words (the half FK cannot hide behind short sentences).
+     * Same heuristic as register_check.py in the folder so the two agree.
+     * Conversation between adults sits about grade 5-7. */
+    let sylTotal = 0;
+    let wordTok = 0;
+    let bigWords = 0;
+    const syllables = (word) => {
+      let w = word.toLowerCase().replace(/[^a-z]/g, '');
+      if (!w) return 0;
+      if (w.length <= 3) return 1;
+      w = w.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '').replace(/^y/, '');
+      const g = w.match(/[aeiouy]{1,2}/g);
+      return Math.max(1, g ? g.length : 0);
+    };
     let tagsTotal = 0;
     let commaTags = 0;
     const tagPhrases = {};
@@ -671,6 +696,16 @@ router.get('/voice-report', async (req, res) => {
         allSents += ss.length;
         fragSents += ss.filter((x) => x.trim().split(/\s+/).filter(Boolean).length <= 4).length;
       }
+      {
+        const toks = t.match(/[A-Za-z][A-Za-z'\u2019-]*/g) || [];
+        for (const tok of toks) {
+          const sy = syllables(tok);
+          sylTotal += sy;
+          wordTok++;
+          // a capitalised 3+-syllable word mid-sentence is usually a name
+          if (sy >= 3 && !(tok[0] === tok[0].toUpperCase() && tok[0] !== tok[0].toLowerCase())) bigWords++;
+        }
+      }
       const fw = ((t.match(/^[A-Za-z']+/) || [''])[0] || '').toLowerCase();
       if (fw) firstWords[fw] = (firstWords[fw] || 0) + 1;
       const sentences = t.split(/(?<=[.!?])\s+/).filter(Boolean);
@@ -695,7 +730,7 @@ router.get('/voice-report', async (req, res) => {
     const topCloser = Object.entries(closers).sort((a, b) => b[1] - a[1])[0] || null;
     res.json({
       ok: true,
-      windowHours: 24,
+      windowHours: hoursQ,
       agentId: KIANA,
       replies: n,
       avgChars: n ? Math.round(chars / n) : 0,
@@ -717,6 +752,14 @@ router.get('/voice-report', async (req, res) => {
        * approved: loosePer1k 12.1, fragRate 0.29. Baseline the night this
        * shipped: 3.0 and 0.08. */
       loosePer1k: words ? Math.round((1000 * looseHits) / words * 10) / 10 : 0,
+      // Part 116 -- reading level. fkGrade is Flesch-Kincaid over the window.
+      fkGrade:
+        wordTok && allSents
+          ? Math.round(Math.max(0, 0.39 * (wordTok / allSents) + 11.8 * (sylTotal / wordTok) - 15.59) * 10) / 10
+          : null,
+      bigWordPct: wordTok ? Math.round((1000 * bigWords) / wordTok) / 10 : null,
+      windowSince: since.toISOString(),
+      windowUntil: until.toISOString(),
       fragRate: allSents ? Math.round((fragSents / allSents) * 100) / 100 : 0,
       bossyPer1k: words ? Math.round((1000 * bossyHits) / words * 10) / 10 : 0,
       /* ── concentrated care (Part 92.7) ────────────────────────────────────

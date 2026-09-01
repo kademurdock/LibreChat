@@ -28,7 +28,7 @@
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { embedText, currentEmbedModel } = require('~/models/kadeDiary');
+const { embedText, currentEmbedModel, readEmbedHealth } = require('~/models/kadeDiary');
 
 const kadeCardVectorSchema = new mongoose.Schema(
   {
@@ -82,7 +82,19 @@ function cosine(a, b) {
  */
 async function syncBucketVectors(userId, agentId, entries, opts = {}) {
   const maxEmbeds = Number.isFinite(opts.maxEmbeds) ? opts.maxEmbeds : 6;
-  const out = { embedded: 0, deleted: 0, pending: 0 };
+  /* Part 116 (Sep 1 2026): the 12:00Z consolidation sweep walks every bucket
+   * and calls this with maxEmbeds 40 back to back -- on Sep 1 that burst
+   * Gemini's free-tier per-minute embed quota (7 x HTTP 429 at 12:05Z) and
+   * seven cards went into the store with embedding:null. Those rows ARE
+   * retried -- `!row.embedding` puts them back in `work` on the next sync --
+   * but the next sync is the next conversation turn, so recall was blind on
+   * them until somebody talked. Two things now: an optional gap between
+   * embeds (the sweep passes ~1.1 s; per-turn callers pass nothing and stay
+   * as fast as before), and one in-place retry after a 429 with a longer
+   * wait, so a throttle answers itself instead of waiting for a human. */
+  const gapMs = Number.isFinite(opts.gapMs) ? opts.gapMs : 0;
+  const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  const out = { embedded: 0, deleted: 0, pending: 0, retried: 0 };
   try {
     const uid = String(userId);
     const aid = agentId == null ? null : String(agentId);
@@ -120,7 +132,12 @@ async function syncBucketVectors(userId, agentId, entries, opts = {}) {
     for (const w of work.slice(0, maxEmbeds)) {
       /* Embed key + value together — the key names the topic (dad_health) and
        * often carries the retrieval signal the prose omits. */
-      const vec = await embedText(w.key.replace(/_/g, ' ') + ': ' + w.value);
+      let vec = await embedText(w.key.replace(/_/g, ' ') + ': ' + w.value);
+      if (!vec && gapMs > 0 && /HTTP 429/.test(String(readEmbedHealth().lastError || ''))) {
+        out.retried += 1;
+        await sleep(Math.max(15000, gapMs * 10));
+        vec = await embedText(w.key.replace(/_/g, ' ') + ': ' + w.value);
+      }
       await KadeCardVector.updateOne(
         { userId: uid, agentId: aid, key: w.key },
         {
@@ -134,6 +151,9 @@ async function syncBucketVectors(userId, agentId, entries, opts = {}) {
       );
       if (vec) {
         out.embedded += 1;
+      }
+      if (gapMs > 0) {
+        await sleep(gapMs);
       }
     }
     return out;

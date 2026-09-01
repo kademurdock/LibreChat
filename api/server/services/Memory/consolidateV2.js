@@ -251,7 +251,13 @@ async function consolidateBucketV2({ userId, agentId = null, appConfig = null })
     /* Freshen the recall vectors for whatever changed — same lane, capped. */
     try {
       const after = await db.getAllUserMemories(uid, { agentId: aid });
-      await syncBucketVectors(uid, aid, after, { maxEmbeds: 40 });
+      // Part 116: paced -- the sweep walks every bucket back to back and burst
+      // Gemini's per-minute embed quota on Sep 1 (7 x 429 at 12:05Z).
+      // KADE_EMBED_GAP_MS=0 restores the old burst.
+      const gapMs = Number.isFinite(parseInt(process.env.KADE_EMBED_GAP_MS, 10))
+        ? parseInt(process.env.KADE_EMBED_GAP_MS, 10)
+        : 1100;
+      await syncBucketVectors(uid, aid, after, { maxEmbeds: 40, gapMs });
     } catch (_e) {
       /* next per-turn sync catches up */
     }
