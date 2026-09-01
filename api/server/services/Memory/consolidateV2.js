@@ -132,12 +132,24 @@ async function consolidateBucketV2({ userId, agentId = null, appConfig = null })
     const editableKeys = new Set(editableEntries.map((m) => String(m.key)));
     const byKey = new Map(editableEntries.map((m) => [String(m.key), m]));
 
-    const counters = { edits: 0, refused: 0 };
+    const counters = { edits: 0, refused: 0, skippedIdentical: 0 };
 
     /* LEDGERED WRAPPERS — the mode she chose: auto-apply, everything trailed. */
     const guardedSet = async (params) => {
       const key = String(params.key || '');
       const before = byKey.get(key);
+      /* PART 115 (Sep 1 2026) — SKIP IDENTICAL WRITES. db.setMemory treats an
+       * unchanged value as a "re-affirmation" and bumps updated_at in place —
+       * right for the live keeper (a person repeating a fact is news), wrong
+       * for a sweep that merely declined to change a card. Those no-op saves
+       * were the whole reason cards.wrote24h lied (Part 112: 33 rows touched,
+       * 0 ledger rows) and why sweepTouched24h had to be built to see past
+       * them. A sweep that changes nothing now touches nothing. */
+      if (before && typeof before.value === 'string' && typeof params.value === 'string'
+          && before.value.trim() === params.value.trim()) {
+        counters.skippedIdentical = (counters.skippedIdentical || 0) + 1;
+        return { ok: true, unchanged: true, skipped: true };
+      }
       const result = await db.setMemory(params);
       if (result?.ok && !result?.unchanged) {
         counters.edits += 1;
@@ -245,7 +257,7 @@ async function consolidateBucketV2({ userId, agentId = null, appConfig = null })
     }
 
     logger.info(
-      `[consolidateV2] user=${uid.slice(-6)} bucket=${aid ? aid.slice(-6) : 'shared'} edits=${counters.edits} refused=${counters.refused}`,
+      `[consolidateV2] user=${uid.slice(-6)} bucket=${aid ? aid.slice(-6) : 'shared'} edits=${counters.edits} refused=${counters.refused} skippedIdentical=${counters.skippedIdentical}`,
     );
     return { ran: true, ...counters };
   } catch (e) {
