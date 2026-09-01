@@ -31,7 +31,7 @@ import Action from '~/components/SidePanel/Builder/Action';
 import { Panel, isEphemeralAgent } from '~/common';
 import { icons } from '~/hooks/Endpoint/Icons';
 import { VoicePreviewButton } from '~/components/Audio/Voices';
-import AgentVoicePicker from './AgentVoicePicker';
+import AgentVoicePicker, { extractAgentLines } from './AgentVoicePicker';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
@@ -84,6 +84,14 @@ export default function AgentConfig() {
   const model = useWatch({ control, name: 'model' });
   /** D2d: the agent's configured speaking rate — auditions and previews use it live. */
   const watchedSpeakingRate = useWatch({ control, name: 'tts.speakingRate' });
+  /* Part 116 — the voice picker auditions with the character's OWN lines,
+   * read live off the form so a persona pasted a second ago already speaks. */
+  const watchedInstructions = useWatch({ control, name: 'instructions' });
+  const watchedDescription = useWatch({ control, name: 'description' });
+  const agentLines = useMemo(
+    () => extractAgentLines(watchedInstructions as string, watchedDescription as string),
+    [watchedInstructions, watchedDescription],
+  );
   const speakingRate = typeof watchedSpeakingRate === 'number' ? watchedSpeakingRate : undefined;
   const agent = useWatch({ control, name: 'agent' });
   const tools = useWatch({ control, name: 'tools' });
@@ -362,6 +370,7 @@ export default function AgentConfig() {
                     onChange={(v) => field.onChange(v ?? undefined)}
                     speed={speakingRate}
                     agentId={agent_id}
+                    agentLines={agentLines}
                   />
                   <p className="text-xs text-text-secondary">
                     {localize('com_agents_default_voice_help')}

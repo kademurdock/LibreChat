@@ -71,12 +71,84 @@ function auditionLine(voice: string, template?: string) {
 }
 
 /**
+ * ♿ Part 116 (Sep 1 2026, proposal 6) — THE AGENT'S OWN LINES.
+ *
+ * Her words: the long script "is not the best way to showcase what the voice
+ * would sound like as 'your agent's voice.'" So inside the builder the
+ * audition reads something the character would actually say. Pulled from what
+ * the editor already has in the form — quoted lines in the persona first
+ * (example exchanges are almost always in quotes), then sentences from the
+ * description — and a DIFFERENT one on each play, because she likes that the
+ * character never says it the same way twice. No server change: the same
+ * /tts/manual call, different text. When the persona has nothing quotable the
+ * pooled script plays exactly as before.
+ *
+ * Mirrored line-for-line in kade-ai-native (VoicePickerView.agentLines) so
+ * both surfaces pick the same kinds of lines.
+ */
+export function extractAgentLines(instructions?: string | null, description?: string | null): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (raw: string) => {
+    const t = raw.replace(/\s+/g, ' ').trim();
+    if (t.length < 25 || t.length > 220) {
+      return;
+    }
+    if (/\{|\}|<|>|https?:\/\//.test(t)) {
+      return; // templates, tags, links — not speech
+    }
+    const k = t.toLowerCase();
+    if (!seen.has(k)) {
+      seen.add(k);
+      out.push(t);
+    }
+  };
+  const text = String(instructions ?? '');
+  const quoted = text.match(/["“]([^"“”\n]{25,220})["”]/g) ?? [];
+  for (const q of quoted) {
+    push(q.slice(1, -1));
+  }
+  if (out.length === 0 && description) {
+    for (const sentence of String(description).split(/(?<=[.!?])\s+/)) {
+      push(sentence);
+    }
+  }
+  return out.slice(0, 40);
+}
+
+function pickAgentLine(lines: string[], last: string | null): string | null {
+  if (lines.length === 0) {
+    return null;
+  }
+  if (lines.length === 1) {
+    return lines[0];
+  }
+  let pick = lines[Math.floor(Math.random() * lines.length)];
+  if (pick === last) {
+    pick = lines[(lines.indexOf(pick) + 1) % lines.length];
+  }
+  return pick;
+}
+
+/**
  * D2d: auditions speak the SAME expressive monologue the /voices library page
  * performs (fetched once via useVoiceSampleText), at the agent's configured
  * speaking rate when one is set — so what you audition is what you'll get.
  */
-function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate?: string; speed?: number }) {
+function useVoiceAudition({
+  auditionTemplate,
+  speed,
+  agentLines,
+}: {
+  auditionTemplate?: string;
+  speed?: number;
+  /** Part 116: the character's own quotable lines; when non-empty the
+   * audition reads one of these (a different one each play) instead of the
+   * generic script. */
+  agentLines?: string[];
+}) {
   const { token } = useAuthContext();
+  const lastLineRef = useRef<string | null>(null);
   /** ONE AudioContext, unlocked inside the tap that opens the list. Web Audio is
    * the reliable iOS path here: once a context is resumed by a real gesture,
    * buffer sources can start on later FOCUS events (VoiceOver swipes) without
@@ -148,11 +220,19 @@ function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate?: stri
       try {
         // Cache key covers the text variant AND the rate — a sample recorded
         // at 1.0 must not be replayed when the agent's rate is now 1.3.
-        const cacheKey = `${voice}|${auditionTemplate ? 's' : 'f'}|${speed ?? ''}`;
+        const agentLine = pickAgentLine(agentLines ?? [], lastLineRef.current);
+        if (agentLine != null) {
+          lastLineRef.current = agentLine;
+        }
+        // An agent line varies per play on purpose, so it is keyed by its own
+        // text — the same line for the same voice still replays from cache.
+        const cacheKey = agentLine != null
+          ? `${voice}|a:${agentLine}|${speed ?? ''}`
+          : `${voice}|${auditionTemplate ? 's' : 'f'}|${speed ?? ''}`;
         let buffer = cacheRef.current.get(cacheKey);
         if (buffer == null) {
           const fd = new FormData();
-          fd.append('input', auditionLine(voice, auditionTemplate));
+          fd.append('input', agentLine ?? auditionLine(voice, auditionTemplate));
           fd.append('voice', voice);
           if (typeof speed === 'number') {
             fd.append('speed', String(speed));
@@ -205,7 +285,7 @@ function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate?: stri
         }
       }
     },
-    [token, auditionTemplate, speed, stopSource],
+    [token, auditionTemplate, speed, agentLines, stopSource],
   );
 
   /** Debounced audition — call on option focus/hover. Rapid movement through
@@ -251,6 +331,7 @@ export default function AgentVoicePicker({
   onChange,
   speed,
   agentId,
+  agentLines,
 }: {
   value?: string | null;
   onChange: (voice?: string) => void;
@@ -259,6 +340,9 @@ export default function AgentVoicePicker({
   /** ♿ July 17 2026 (proposal B): lets the picker warn the EDITOR when their
    * own personal pick is shadowing the builder voice they're setting here. */
   agentId?: string | null;
+  /** Part 116: the character's own lines (see extractAgentLines); when
+   * present the audition reads one of them instead of the generic script. */
+  agentLines?: string[];
 }) {
   const localize = useLocalize();
   /* Voice-source transparency (blind-first): if the editing user has a
@@ -294,7 +378,11 @@ export default function AgentVoicePicker({
   const { audition: auditionTemplate, categories } = useVoiceCatalogTexts();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
-  const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({ auditionTemplate, speed });
+  const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({
+    auditionTemplate,
+    speed,
+    agentLines,
+  });
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLButtonElement>(null);
