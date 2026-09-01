@@ -1220,6 +1220,39 @@ router.get('/admin/logs-users', requireJwtAuth, requireAdminAccess, async (req, 
   }
 });
 
+/* PART 115 (Sep 1 2026) — WHO OWNS WHICH AGENT, admin-only, projection only.
+ * Kade asked to publish Amber A's agent to the marketplace from the proxy, and
+ * there was no way to even FIND it: /api/agents is ACL-scoped to the caller's
+ * own view, so another person's private agent is invisible to the admin seat,
+ * and the proxy's list projection drops `author`. This returns id, mongo _id,
+ * name, author, version, isPublic — never instructions, never the persona.
+ * ?author=<userId> filters to one person. */
+router.get('/admin/agents', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  try {
+    const Agent = mongoose.models.Agent || mongoose.model('Agent');
+    const q = {};
+    if (req.query.author) q.author = req.query.author;
+    const rows = await Agent.find(q, { id: 1, name: 1, author: 1, version: 1, isPublic: 1, updatedAt: 1, createdAt: 1 })
+      .sort({ updatedAt: -1 })
+      .lean();
+    res.json({
+      agents: rows.map((a) => ({
+        id: a.id,
+        _id: String(a._id),
+        name: a.name || '',
+        author: a.author ? String(a.author) : null,
+        version: a.version,
+        isPublic: Boolean(a.isPublic),
+        updatedAt: a.updatedAt,
+        createdAt: a.createdAt,
+      })),
+    });
+  } catch (e) {
+    logger.error('[kade/admin/agents]', e);
+    res.status(500).json({ error: 'Could not list agents' });
+  }
+});
+
 // One user's conversations, newest first (same order they see them).
 router.get('/admin/logs-convos', requireJwtAuth, requireAdminAccess, async (req, res) => {
   try {
