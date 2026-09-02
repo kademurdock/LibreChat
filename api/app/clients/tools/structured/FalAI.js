@@ -62,7 +62,7 @@ const falJsonSchema = {
         "'generate_image' = Seedream 4.5 design/photo image (fast, ~$0.04). 'generate_video' = text-to-video clip. " +
         "'animate_image' = bring a still image to LIFE as a video (Kling image-to-video) — e.g. make a dog photo wag its tail. " +
         "'check_video' = poll a video that wasn't finished when generate_video/animate_image returned. " +
-        "'generate_audio' = Seed Audio 1.0 CINEMATIC AUDIO: multi-character dialogue, sound effects, music and ambience in ONE clip (up to ~2 min), plus text-to-speech, voice cloning, and editing existing audio (extend / inpaint / stitch / swap a line) via audio_urls. Returns fast and synchronously with a real audio URL. ~$0.075/minute. " +
+        "'generate_audio' = Seed Audio 1.0 CINEMATIC AUDIO: multi-character dialogue, sound effects, music and ambience in ONE clip (up to ~2 min), plus text-to-speech, voice cloning, and editing existing audio (extend / inpaint / stitch / swap a line) via audio_urls. Returns fast and synchronously with a real audio URL. ~$0.19/minute. " +
         "'generate_song' = full MUSIC with SUNG vocals from a style brief + lyrics. engine 'lyria3_pro' (default) = Google Lyria 3 Pro, up to ~3-min songs; engine 'minimax' = MiniMax Music 2.6. Put the STYLE in prompt, the words to sing in lyrics, things to avoid in negative_prompt, and set instrumental:true for a backing track. Queue job, ~1-2 min. ~$0.08-0.15/song.",
     },
     prompt: {
@@ -182,7 +182,7 @@ class FalAI extends Tool {
     this.name = 'fal_studio';
     this.description =
       'Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium), ANIMATE still images into video (image-to-video), make best-in-class design IMAGES with legible text (Seedream 4.5), and generate CINEMATIC AUDIO — dialogue, sound effects, music and voice cloning (Seed Audio 1.0) — via fal.ai. ' +
-      'Video costs real money per second (~$0.42-1.30 per clip) and takes 1-4 minutes to render; images cost ~$0.04 and audio ~$0.075/minute, both fast. ' +
+      'Video costs real money per second (~$0.42-1.30 per clip) and takes 1-4 minutes to render; images cost ~$0.04 and audio ~$0.19/minute, both fast. ' +
       `Each user has a ~$${MONTHLY_CAP_USD}/month fal budget; the tool enforces it and says so politely if they've hit it.`;
     this.description_for_model =
       this.description +
@@ -190,7 +190,7 @@ class FalAI extends Tool {
       "animate_image with no image_url automatically animates the photo the user uploaded (last 24 hours), or else their most recent generated image — perfect for 'here's my dog, make him wag' or 'now make it move'. Its reply names WHICH image it used: repeat that to the user so nothing gets animated by surprise. animate_image always renders on Kling standard — never promise premium/Veo for an animation. " +
       "Before any video, if the user hasn't specified, ask ONCE whether they want sound (recommended here — blind users experience video through audio; standard 5s: ~$0.63 with sound vs ~$0.42 silent) and only use premium quality when the user picks it. " +
       'Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url), audio as [Play the audio](url). Enhance thin prompts into rich visual descriptions first. ' +
-      "AUDIO (generate_audio, Seed Audio 1.0): cinematic scenes with dialogue + sound effects + music + ambience in one ~2-min pass, plus TTS, voice cloning, and editing existing clips (extend / inpaint / stitch / swap a line). It returns FAST and synchronously with a real audio URL — there is NO request_id and NO check step, so never promise to follow up. Return it as [Play the audio](url) so it plays inline; it is auto-saved to the gallery with a blind-friendly description of what the listener will hear. It is cheap (~$0.075/min, about 15 cents for a full 2 minutes) and rides the same monthly fal budget — mention the small cost but there is no need to pre-ask for a normal clip. For voice cloning or editing, pass reference clips in audio_urls (or set use_recent_audio:true for 'my last clip'). English and Chinese only; keep prompts under 2,048 characters. " +
+      "AUDIO (generate_audio, Seed Audio 1.0): cinematic scenes with dialogue + sound effects + music + ambience in one ~2-min pass, plus TTS, voice cloning, and editing existing clips (extend / inpaint / stitch / swap a line). It returns FAST and synchronously with a real audio URL — there is NO request_id and NO check step, so never promise to follow up. Return it as [Play the audio](url) so it plays inline; it is auto-saved to the gallery with a blind-friendly description of what the listener will hear. It costs ~$0.19/min (about 19 cents a minute, 38 cents for a full 2 minutes) and rides the same monthly fal budget — mention the cost but there is no need to pre-ask for a normal clip. For voice cloning or editing, pass reference clips in audio_urls (or set use_recent_audio:true for 'my last clip'). English and Chinese only; keep prompts under 2,048 characters. " +
       /* ── KADE 2026-08-11: WHAT WE LEARNED MAKING ~90 REAL SOUNDS ──────────
        * Her ask was "agents that use seedaudio and informing them," rolled
        * fleet-wide. This lives in the TOOL description rather than in 223
@@ -338,8 +338,10 @@ class FalAI extends Tool {
   }
 
   audioCost(seconds) {
-    // $0.075 per minute of generated audio, kept to 3 decimals.
-    return Math.round((Number(seconds) / 60) * 0.075 * 1000) / 1000;
+    // $0.1875 per minute of generated audio (fal's listed price, read Sep 2 2026 —
+    // it was $0.075 when this shipped in July; Part 119.2 found every fal_audio row
+    // under-counting 2.5x), kept to 3 decimals.
+    return Math.round((Number(seconds) / 60) * 0.1875 * 1000) / 1000;
   }
 
   /** Absolutize a site-relative URL and re-sign it if it is a stale S3 link. */
@@ -566,7 +568,7 @@ class FalAI extends Tool {
         'because it uses reference audio/image. Shorten it to one ~2-minute piece, or drop the references.'
       );
     }
-    const blocked = await this.checkBudget(0.15);
+    const blocked = await this.checkBudget(0.375); // worst case: 2 min at $0.1875/min
     if (blocked) return blocked;
     const res = await this._genOneAudio(fullPrompt, data, refUrls);
     if (!res) return 'Seed Audio returned no clip. Try rewording the prompt.';
