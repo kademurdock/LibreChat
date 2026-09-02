@@ -839,8 +839,21 @@ const openAI: SettingsConfiguration = [
   librechat.fileTokenLimit,
 ];
 
+/* KADE Part 116.2 (Sep 2 2026): "Use Responses API" is an OpenAI/Azure-only
+ * protocol. Every model door on this platform is an OpenAI-COMPATIBLE custom
+ * endpoint (OpenRouter through the reframe proxy), which speaks
+ * /chat/completions and nothing else -- so on those panels the switch could
+ * only ever break the agent (Della, Sep 2: every reply a 404 page). The
+ * server already discards the flag for OpenRouter (fork 4de9895); this takes
+ * the switch off the custom and OpenRouter panels so nobody is offered a
+ * button whose only effect is silence. openAI/azure keep it. */
+const noResponsesApi = (defs: SettingsConfiguration): SettingsConfiguration =>
+  defs.filter((d) => d.key !== 'useResponsesApi');
+
+const customEndpoint: SettingsConfiguration = noResponsesApi(openAI);
+
 const openRouter: SettingsConfiguration = [
-  ...openAI,
+  ...customEndpoint,
   anthropic.promptCache,
   anthropic.promptCacheTtl,
 ];
@@ -1109,7 +1122,7 @@ const bedrockMoonshotCol2: SettingsConfiguration = [
 export const paramSettings: Record<string, SettingsConfiguration | undefined> = {
   [EModelEndpoint.openAI]: openAI,
   [EModelEndpoint.azureOpenAI]: openAI,
-  [EModelEndpoint.custom]: openAI,
+  [EModelEndpoint.custom]: customEndpoint,
   [Providers.OPENROUTER]: openRouter,
   [EModelEndpoint.anthropic]: anthropicConfig,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: bedrockAnthropic,
@@ -1146,10 +1159,10 @@ export const presetSettings: Record<
 > = {
   [EModelEndpoint.openAI]: openAIColumns,
   [EModelEndpoint.azureOpenAI]: openAIColumns,
-  [EModelEndpoint.custom]: openAIColumns,
+  [EModelEndpoint.custom]: { col1: openAICol1, col2: noResponsesApi(openAICol2) },
   [Providers.OPENROUTER]: {
     col1: openAICol1,
-    col2: [...openAICol2, anthropic.promptCache, anthropic.promptCacheTtl],
+    col2: [...noResponsesApi(openAICol2), anthropic.promptCache, anthropic.promptCacheTtl],
   },
   [EModelEndpoint.anthropic]: {
     col1: anthropicCol1,
