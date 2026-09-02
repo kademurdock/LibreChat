@@ -69,12 +69,12 @@ const TOOLS = [
     hint: 'Live family voice rooms with a shared jukebox anyone can drive, private Hotel rooms with passcodes, and companion guests you can invite in.' },
   { id: 'debate', href: '/debate-room', title: 'Debate Room', spoken: 'Debate Room', icon: '🗣️',
     hint: 'Set a topic, cast 2 to 6 companions, and let them go back and forth. Also reaches the Conversation Hall.' },
-  { id: 'builder', href: '/agents', title: 'Agent Builder', spoken: 'Agent Builder', icon: '🛠️',
-    hint: 'Create or edit your own companions. On the web this opens the Marketplace; the Create button there opens the builder in the side panel.' },
+  { id: 'builder', href: '/agent-builder', title: 'Agent Builder', spoken: 'Agent Builder', icon: '🛠️',
+    hint: 'Create or edit your own companions.' },
   { id: 'marketplace', href: '/agents', title: 'Marketplace', spoken: 'The Marketplace', icon: '🏪',
     hint: "Browse every published character by category, hear who's who, start talking to anyone — and publish your own creations." },
-  { id: 'bookmarks', href: '/c/new#bookmarks', title: 'Bookmarks', spoken: 'Bookmarks', icon: '🔖',
-    hint: 'Your tagged conversations, gathered by bookmark. On the web they live in the left menu of the chat screen, under Bookmarks.' },
+  { id: 'bookmarks', href: '/bookmarks', title: 'Bookmarks', spoken: 'Bookmarks', icon: '🔖',
+    hint: 'Your tagged conversations, gathered by bookmark — tag any conversation from the conversation list.' },
   { id: 'prompts', href: '/prompts/new', title: 'Prompts', spoken: 'The Prompt Library', icon: '⭐',
     hint: 'Saved prompts you can drop into a fresh chat pre-typed, plus a form to save new ones.' },
   { id: 'creations', href: '/my-creations', title: 'My Creations', spoken: 'My Creations', icon: '🎨',
@@ -84,12 +84,39 @@ const TOOLS = [
 ];
 
 const SETTINGS = [
-  { id: 'settings', href: '/you', title: 'Settings', spoken: 'Settings', icon: '⚙️',
-    hint: 'Speech, accessibility, and pronunciation dictionary settings. Notifications, your logbook, your data, and your morning brief live here on the web; voice and speech speed are in the account menu on the chat screen.' },
+  { id: 'settings', href: '/settings', title: 'Settings', spoken: 'Settings', icon: '⚙️',
+    hint: 'Speech, accessibility, and pronunciation dictionary settings.' },
   { id: 'help', href: '/help', title: 'Help', spoken: 'Help', icon: '❓',
     hint: 'How everything in the app works, section by section.' },
   { id: 'app', href: 'https://testflight.apple.com', title: 'Get the iPhone app', spoken: 'Get the iPhone app', icon: '📱',
     hint: 'The native Kade-AI app is the main way to use all of this. Ask Kade for a TestFlight invite if you do not have one.' },
+];
+
+/* Her call (Sep 2 2026): mirror native EXACTLY, and where the web has
+ * something native lacks, put it on a "Web only" shelf at the bottom so the
+ * gap is visible instead of hidden. Everything here is a candidate for a
+ * native port; when one ships, its tile moves up into the native order. */
+const WEB_ONLY = [
+  { id: 'you', href: '/you', title: 'You', spoken: 'You: notifications, logbook, morning brief, your data', icon: '👤',
+    hint: 'Notifications and reminders, your logbook, the morning brief, the pronunciation dictionary, and a download of everything that is yours.' },
+  { id: 'memories', href: '/memories', title: 'Memories', spoken: 'Memories', icon: '🧠',
+    hint: 'The cards your companions keep about you. Read, edit, or delete any of them.' },
+  { id: 'files', href: '/files', title: 'Files', spoken: 'Files', icon: '📎',
+    hint: 'Everything you have uploaded, and what each companion can read.' },
+  { id: 'hall', href: '/conversation-hall', title: 'Conversation Hall', spoken: 'Conversation Hall', icon: '🏛️',
+    hint: 'The greatest hits people have shared from the Debate Room.' },
+  { id: 'gameroom', href: '/game-room', title: 'Game Room', spoken: 'Game Room', icon: '🎮',
+    hint: 'The older game room, kept for the trivia nights that started here.' },
+  { id: 'calls', href: '/calls', title: 'Calls', spoken: 'Calls', icon: '📞',
+    hint: 'Your phone-call history with your companions, and the numbers registered to call in.' },
+  { id: 'spottersetup', href: '/spotter', title: 'Set up your Spotter', spoken: 'Set up your Spotter', icon: '👁️',
+    hint: 'Name your live visual companion, pick their voice, and give them a personality.' },
+  { id: 'skills', href: '/skills', title: 'Skills', spoken: 'Skills', icon: '📜',
+    hint: 'Reusable instructions your companions can be handed. Power-user feature.' },
+  { id: 'projects', href: '/projects', title: 'Projects', spoken: 'Projects', icon: '🗃️',
+    hint: 'Group conversations and files around one piece of work. Power-user feature.' },
+  { id: 'feed', href: '/feed-the-server', title: 'Feed the Server', spoken: 'Feed the Server', icon: '💳',
+    hint: 'See your usage and balance, and chip in to keep this running.' },
 ];
 
 const ADMIN = [
@@ -125,6 +152,9 @@ ${section('Talk', TALK.map(tile))}
 ${section('Tools', TOOLS.map(tile))}
 
 ${section('Settings and help', SETTINGS.map(tile))}
+
+${section('Web only', WEB_ONLY.map(tile))}
+<p class="muted" style="margin-top:-.25rem;font-size:.9rem">These are on the website and not in the iPhone app yet. When one comes to the app, it moves up into the list above.</p>
 
 <h2 id="adminSec">Admin</h2>
 <nav class="hublist" id="adminNav" aria-labelledby="adminSec">

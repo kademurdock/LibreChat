@@ -336,9 +336,21 @@ const startServer = async () => {
   app.get('/feed-the-server', routes.kade.feedPage);
   app.get('/my-creations', routes.kade.creationsPage);
   app.get('/wall-of-fame', routes.kade.wallPage);
-  app.get('/tools', routes.kade.toolsPage);
+  // Part 116.4: /tools folded into Home (her word: "it all looks good"); the
+  // old hub stays reachable at /tools-legacy for one release in case a
+  // bookmark points at it.
+  app.get('/tools', (_req, res) => res.redirect(302, '/home'));
+  app.get('/tools-legacy', routes.kade.toolsPage);
   // Part 116.3 — Kade Home layer (mirrors the native home screen).
   app.get('/home', routes.kade.homePage);
+  // Part 116.4 — real addresses for what used to be "wherever the side panel
+  // happened to be": the React shell reads ?panel= / ?open= (UnifiedSidebar,
+  // Root) and opens the right thing, then strips the param.
+  app.get('/agent-builder', (_req, res) => res.redirect(302, '/c/new?panel=agents'));
+  app.get('/bookmarks', (_req, res) => res.redirect(302, '/c/new?panel=bookmarks'));
+  app.get('/memories', (_req, res) => res.redirect(302, '/c/new?panel=memories'));
+  app.get('/files', (_req, res) => res.redirect(302, '/c/new?panel=files'));
+  app.get('/settings', (_req, res) => res.redirect(302, '/c/new?open=settings'));
   app.get('/conversations', routes.kade.conversationsPage);
   app.get('/announcements', routes.kade.announcementsPage);
   app.get('/you', routes.kade.youPage);

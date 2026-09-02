@@ -39,10 +39,50 @@ function SidebarChatProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/* KADE Part 116.4 (Sep 2 2026) — STABLE URLS FOR THE SIDE PANELS.
+ * Her complaint: "different stuff on the page depending on where the sidebar
+ * is flipped… it's hard to find things." The Agent Builder, Bookmarks,
+ * Memories and Files had no address — they were whatever the panel happened
+ * to be showing. Now `/c/new?panel=agents` (and bookmarks, memories, files,
+ * prompts, skills, parameters, mcp-builder) opens the sidebar ON that panel,
+ * and the server gives each one a pretty redirect (/agent-builder,
+ * /bookmarks, /memories, /files) so the Home page can link to them like the
+ * iPhone app links to its screens. The panel id is written to the same
+ * localStorage key ActivePanelProvider reads (`side:active-panel`) BEFORE the
+ * provider mounts — this hook runs in the parent — so no provider change was
+ * needed. The param is stripped from the URL afterwards. */
+const PANEL_IDS = new Set(['conversations', 'agents', 'skills', 'prompts', 'memories', 'bookmarks', 'files', 'parameters', 'mcp-builder']);
+function readPanelDeepLink(): string | null {
+  try {
+    const p = new URLSearchParams(window.location.search).get('panel');
+    if (p && PANEL_IDS.has(p)) {
+      localStorage.setItem('side:active-panel', p);
+      return p;
+    }
+  } catch {
+    /* no window / no storage: nothing to do */
+  }
+  return null;
+}
+
 function UnifiedSidebar() {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [expanded, setExpanded] = useRecoilState(store.sidebarExpanded);
+  const [deepLinkedPanel] = useState<string | null>(readPanelDeepLink);
+  useEffect(() => {
+    if (!deepLinkedPanel) {
+      return;
+    }
+    setExpanded(true);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('panel');
+      window.history.replaceState(window.history.state, '', url.toString());
+    } catch {
+      /* cosmetic */
+    }
+  }, [deepLinkedPanel, setExpanded]);
   const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
   const [isResizing, setIsResizing] = useState(false);
   const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);

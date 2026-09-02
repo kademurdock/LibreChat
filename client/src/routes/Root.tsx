@@ -17,6 +17,7 @@ import {
   useFileMap,
 } from '~/hooks';
 import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
+import Settings from '~/components/Nav/Settings';
 import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
@@ -168,8 +169,31 @@ export default function Root() {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   const { isAuthenticated, logout, user } = useAuthContext();
-  // Part 116.3: the home layer, admin-only while she tests it live.
-  const homeLayerOn = user?.role === 'ADMIN';
+  // Part 116.3: the home layer. Admin-only for one hour on Sep 2 2026; her
+  // word after walking it live: "It all looks good to me." On for everyone.
+  const homeLayerOn = isAuthenticated;
+  /* Part 116.4: /settings is a real address. The server 302s it to
+   * /c/new?open=settings and this opens the same Settings dialog the account
+   * menu opens; closing it strips the param. */
+  const [settingsFromUrl, setSettingsFromUrl] = useState<boolean>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('open') === 'settings';
+    } catch {
+      return false;
+    }
+  });
+  const closeSettingsFromUrl = (open: boolean) => {
+    if (!open) {
+      setSettingsFromUrl(false);
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('open');
+        window.history.replaceState(window.history.state, '', url.toString());
+      } catch {
+        /* cosmetic */
+      }
+    }
+  };
 
   useHealthCheck(isAuthenticated);
 
@@ -227,6 +251,9 @@ export default function Root() {
                 </div>
               </div>
               {isSmallScreen && <KadeTabBar homeLayerOn={homeLayerOn} />}
+              {isAuthenticated && settingsFromUrl && (
+                <Settings open={settingsFromUrl} onOpenChange={closeSettingsFromUrl} />
+              )}
             </PromptGroupsProvider>
           </AgentsMapContext.Provider>
           {config?.interface?.termsOfService?.modalAcceptance === true && (

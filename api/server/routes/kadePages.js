@@ -1413,7 +1413,7 @@ const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</ti
   <script>(async function(){ try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include'}); if(!r.ok) return; var j=await r.json(); var t=j&&j.token; if(!t) return; var a=await fetch('/api/admin/access-requests?status=pending',{headers:{Authorization:'Bearer '+t}}); if(a.ok){ document.getElementById('accessReqLink').style.display=''; var d=await a.json(); var n=(d.requests||[]).length; if(n>0){ var small=document.querySelector('#accessReqLink small'); small.textContent = n+(n===1?' person is':' people are')+' waiting at the door right now'; } } }catch(e){} })();</script>
   <a class="hubitem" href="/help"><span class="hicon" aria-hidden="true">❓</span><span><strong>Help &amp; FAQ</strong><small>How everything works</small></span></a>
 </nav>
-<p class="muted" style="margin-top:1.25rem">Settings, your files, and signing out live in the account menu — tap your picture at the top of the chat screen.</p>
+<p class="muted" style="margin-top:1.25rem"><a href="/settings">Settings</a> (speech, accessibility, appearance) and <a href="/files">your files</a> have their own addresses now. Signing out is on <a href="/home">Home</a>.</p>
 </main>
 <footer class="muted">— Kade-AI</footer>
 </body></html>`;
