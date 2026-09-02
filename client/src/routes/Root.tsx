@@ -50,28 +50,9 @@ function KeyboardShortcutsProvider() {
  * order way onto it from the chat screen on a desktop, where the bottom tab
  * bar does not render. Gated to ADMIN while she tests it live; flipping
  * `homeLayerOn` to everyone is a one-line change. */
-/* Part 116.5 (Sep 2 2026) — THE SIDEBAR CAN GO AWAY. Her word after the
- * addresses shipped: "Still looks like there's an annoying sidebar though."
- * That is LibreChat's own left panel, open by default on a computer. With
- * every destination now at a stable URL off /home it is redundant, so it is
- * HIDDEN by default on desktop and one click brings it back, remembered per
- * browser (localStorage kade:sidebar = 'shown' | 'hidden'). The header's own
- * toggle still works when it is shown. Mobile keeps its off-canvas drawer. */
-const SIDEBAR_PREF_KEY = 'kade:sidebar';
-function readSidebarPref(): 'shown' | 'hidden' {
-  try {
-    // A ?panel= deep link (/agent-builder, /bookmarks, ...) is a request FOR
-    // the panel: show it for this visit without touching the saved choice.
-    if (new URLSearchParams(window.location.search).get('panel')) {
-      return 'shown';
-    }
-    return localStorage.getItem(SIDEBAR_PREF_KEY) === 'shown' ? 'shown' : 'hidden';
-  } catch {
-    return 'hidden';
-  }
-}
-
-function KadeHomeStrip({ sidebarPref, onToggleSidebar }: { sidebarPref: 'shown' | 'hidden'; onToggleSidebar: () => void }) {
+/* Part 116.5 hid LibreChat's drawer behind a toggle; Part 116.6 removed it
+ * (see the note in Root below). The strip is the chat screen's only nav. */
+function KadeHomeStrip() {
   return (
     <div
       role="navigation"
@@ -94,23 +75,24 @@ function KadeHomeStrip({ sidebarPref, onToggleSidebar }: { sidebarPref: 'shown' 
         <span aria-hidden="true">{'\uD83C\uDFE0 '}</span>Kade Home
       </a>
       <span aria-hidden="true">·</span>
+      <a href="/c/new" style={{ color: 'inherit', textDecoration: 'none' }}>
+        New chat
+      </a>
       <a href="/conversations" style={{ color: 'inherit', textDecoration: 'none' }}>
         Your conversations
+      </a>
+      <a href="/agent-builder" style={{ color: 'inherit', textDecoration: 'none' }}>
+        Agent Builder
       </a>
       <a href="/agents" style={{ color: 'inherit', textDecoration: 'none' }}>
         Marketplace
       </a>
+      <a href="/settings" style={{ color: 'inherit', textDecoration: 'none' }}>
+        Settings
+      </a>
       <a href="/help" style={{ color: 'inherit', textDecoration: 'none' }}>
         Help
       </a>
-      <button
-        type="button"
-        onClick={onToggleSidebar}
-        aria-pressed={sidebarPref === 'shown'}
-        style={{ marginLeft: 'auto', font: 'inherit', color: 'inherit', background: 'transparent', border: '1px solid var(--border-medium, #2c2f37)', borderRadius: 8, padding: '2px 10px', cursor: 'pointer' }}
-      >
-        {sidebarPref === 'shown' ? 'Hide side panel' : 'Show side panel'}
-      </button>
     </div>
   );
 }
@@ -164,17 +146,26 @@ function KadeTabBar({ homeLayerOn }: { homeLayerOn: boolean }) {
           <span>Home</span>
         </a>
       )}
-      <button
-        type="button"
-        onClick={() => setSidebarExpanded(true)}
-        aria-label="Chats. Open your conversation list."
-        style={{ ...itemStyle, color: '#6ea8ff' }}
-      >
-        <span aria-hidden="true" style={{ fontSize: '1.4rem', lineHeight: 1 }}>
-          {'\uD83D\uDCAC'}
-        </span>
-        <span>Chats</span>
-      </button>
+      {homeLayerOn ? (
+        <a href="/conversations" aria-label="Chats. Your conversation list." style={{ ...itemStyle, color: '#6ea8ff' }}>
+          <span aria-hidden="true" style={{ fontSize: '1.4rem', lineHeight: 1 }}>
+            {'\uD83D\uDCAC'}
+          </span>
+          <span>Chats</span>
+        </a>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setSidebarExpanded(true)}
+          aria-label="Chats. Open your conversation list."
+          style={{ ...itemStyle, color: '#6ea8ff' }}
+        >
+          <span aria-hidden="true" style={{ fontSize: '1.4rem', lineHeight: 1 }}>
+            {'\uD83D\uDCAC'}
+          </span>
+          <span>Chats</span>
+        </button>
+      )}
       {links.map((t) => (
         <a
           key={t.key}
@@ -201,18 +192,9 @@ export default function Root() {
   // Part 116.3: the home layer. Admin-only for one hour on Sep 2 2026; her
   // word after walking it live: "It all looks good to me." On for everyone.
   const homeLayerOn = isAuthenticated;
-  const [sidebarPref, setSidebarPref] = useState<'shown' | 'hidden'>(readSidebarPref);
-  const toggleSidebarPref = () => {
-    const next = sidebarPref === 'shown' ? 'hidden' : 'shown';
-    try {
-      localStorage.setItem(SIDEBAR_PREF_KEY, next);
-    } catch {
-      /* fine */
-    }
-    setSidebarPref(next);
-  };
-  // desktop only; the mobile drawer is off-canvas and lives behind the Chats tab
-  const sidebarHidden = homeLayerOn && !isSmallScreen && sidebarPref === 'hidden';
+  /* Part 116.6: the drawer is GONE, not hidden. Its widgets are pages now
+   * (/agent-builder, /bookmarks, /memories, /files, /settings) and the
+   * conversation list is /conversations. Nothing here renders UnifiedSidebar. */
   /* Part 116.4: /settings is a real address. The server 302s it to
    * /c/new?open=settings and this opens the same Settings dialog the account
    * menu opens; closing it strips the param. */
@@ -275,19 +257,18 @@ export default function Root() {
           <AgentsMapContext.Provider value={agentsMap}>
             <PromptGroupsProvider>
               <Banner onHeightChange={setBannerHeight} />
-              {homeLayerOn && !isSmallScreen && (
-                <KadeHomeStrip sidebarPref={sidebarPref} onToggleSidebar={toggleSidebarPref} />
-              )}
+              {homeLayerOn && !isSmallScreen && <KadeHomeStrip />}
               <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px${isSmallScreen ? ' - 64px - env(safe-area-inset-bottom, 0px)' : ''}${homeLayerOn && !isSmallScreen ? ' - 32px' : ''})` }}>
                 <div className="relative z-0 flex h-full w-full overflow-hidden">
-                  {!sidebarHidden && <UnifiedSidebar />}
+                  {!homeLayerOn && <UnifiedSidebar />}
                   <div
                     className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden"
                     style={{
                       transform: 'none',
                       transition: 'transform 300ms cubic-bezier(0.2, 0, 0, 1)',
                     }}
-                    inert={isSmallScreen && sidebarExpanded ? '' : undefined}
+                    // with the drawer gone (homeLayerOn) nothing may ever make the page inert
+                    inert={!homeLayerOn && isSmallScreen && sidebarExpanded ? '' : undefined}
                   >
                     <Outlet />
                   </div>

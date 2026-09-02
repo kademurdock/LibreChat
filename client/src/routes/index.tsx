@@ -10,6 +10,7 @@ import {
 } from '~/components/Auth';
 import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
+import { AgentBuilderPage, BookmarksPage, MemoriesPage, FilesPage, SettingsPage } from '~/components/Kade/KadePages';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import WithRum from '~/lib/rum/WithRum';
@@ -134,6 +135,14 @@ export const router = createBrowserRouter(
               path: 'search',
               element: <Search />,
             },
+            /* KADE Part 116.6 — the side panel's widgets as pages (see
+             * components/Kade/KadePage.tsx). The server used to 302 these to
+             * /c/new?panel=…; now they are real routes. */
+            { path: 'agent-builder', element: <AgentBuilderPage /> },
+            { path: 'bookmarks', element: <BookmarksPage /> },
+            { path: 'memories', element: <MemoriesPage /> },
+            { path: 'files', element: <FilesPage /> },
+            { path: 'settings', element: <SettingsPage /> },
             {
               path: 'prompts',
               element: <Navigate to="/prompts/new" replace={true} />,

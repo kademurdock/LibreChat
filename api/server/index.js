@@ -346,11 +346,9 @@ const startServer = async () => {
   // Part 116.4 — real addresses for what used to be "wherever the side panel
   // happened to be": the React shell reads ?panel= / ?open= (UnifiedSidebar,
   // Root) and opens the right thing, then strips the param.
-  app.get('/agent-builder', (_req, res) => res.redirect(302, '/c/new?panel=agents'));
-  app.get('/bookmarks', (_req, res) => res.redirect(302, '/c/new?panel=bookmarks'));
-  app.get('/memories', (_req, res) => res.redirect(302, '/c/new?panel=memories'));
-  app.get('/files', (_req, res) => res.redirect(302, '/c/new?panel=files'));
-  app.get('/settings', (_req, res) => res.redirect(302, '/c/new?open=settings'));
+  // Part 116.6: /agent-builder, /bookmarks, /memories, /files and /settings
+  // are real pages in the React app now (client/src/components/Kade), served
+  // by the SPA fallback below. The 302s that lived here for one hour are gone.
   app.get('/conversations', routes.kade.conversationsPage);
   app.get('/announcements', routes.kade.announcementsPage);
   app.get('/you', routes.kade.youPage);

@@ -16,6 +16,11 @@ export default function OpenSidebar({ className }: { className?: string }) {
   const ariaKey = useShortcutAriaKey('toggleSidebar');
 
   const handleClick = () => {
+    /* KADE Part 116.6: the drawer this button used to open no longer exists on
+     * the chat screen -- the conversation list is a page. Go there. */
+    window.location.assign('/conversations');
+    return;
+    // eslint-disable-next-line no-unreachable
     startTransition(() => {
       setSidebarExpanded(true);
     });
@@ -33,9 +38,7 @@ export default function OpenSidebar({ className }: { className?: string }) {
           size="icon"
           variant="outline"
           data-testid="open-sidebar-button"
-          aria-label={localize('com_nav_open_sidebar')}
-          aria-expanded={false}
-          aria-controls="chat-history-nav"
+          aria-label="Your conversations"
           aria-keyshortcuts={ariaKey}
           className={cn(
             'rounded-xl bg-presentation duration-0 hover:bg-surface-active-alt',
