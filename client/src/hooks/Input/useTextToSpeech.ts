@@ -10,6 +10,7 @@ import useAudioRef from '~/hooks/Audio/useAudioRef';
 import { usePauseGlobalAudio } from '../Audio';
 import { logger } from '~/utils';
 import { normalizeVoiceLabel } from '~/utils/voiceLabels';
+import { useVoiceCatalog } from '~/hooks/Audio/useVoiceCatalog';
 import store from '~/store';
 
 type TUseTextToSpeech = {
@@ -87,6 +88,10 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
     return voiceMap[textToSpeechEndpoint];
   }, [textToSpeechEndpoint, voicesExternal, voicesLocal]);
 
+  // Part 118 (Sep 2 2026): the described catalog's rename map, and a gate so
+  // a missing stored voice is never snapped to voices[0] before the map has
+  // arrived (see useTTSExternal.ts for the same note).
+  const { renames, ready: catalogReady } = useVoiceCatalog();
   useEffect(() => {
     const firstVoice = voices[0];
     if (voices.length && typeof firstVoice === 'object') {
@@ -115,16 +120,20 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
       const graduated = normalizeVoiceLabel(
         typeof voice === 'string' ? voice : undefined,
         voices.map((v) => String(v)),
+        renames,
       );
       if (graduated != null) {
         logger.log('useTextToSpeech.ts - Effect: graduated voice label', { voice, graduated });
         setVoice(graduated);
         return;
       }
+      if (!catalogReady) {
+        return; // rename map still loading — do not snap
+      }
       logger.log('useTextToSpeech.ts - Effect:', { voices, voice: firstVoice });
       setVoice(firstVoice.toString());
     }
-  }, [setVoice, textToSpeechEndpoint, voice, voices]);
+  }, [setVoice, textToSpeechEndpoint, voice, voices, renames, catalogReady]);
 
   const handleMouseDown = () => {
     isMouseDownRef.current = true;

@@ -375,7 +375,7 @@ export default function AgentVoicePicker({
   // July 23 2026: categories = loose picker sections (Kade's ask). The old
   // D2c "grouping removed" note above was about custom-vs-stock BADGES that
   // gave customs away — these sections are sound-based and she asked for them.
-  const { audition: auditionTemplate, categories } = useVoiceCatalogTexts();
+  const { audition: auditionTemplate, categories, renames, describe } = useVoiceCatalogTexts();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
   const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({
@@ -402,17 +402,40 @@ export default function AgentVoicePicker({
     return names.sort(compareVoices);
   }, [voicesData]);
 
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    return q ? voices.filter((v) => v.toLowerCase().includes(q)) : voices;
-  }, [voices, filter]);
-
-
   const rawCurrent = typeof value === 'string' && value !== '' ? value : undefined;
   // Graduated-spelling tolerance (July 23 2026): an agent record still
   // carrying a beta-era label ("Voice 340 (Beta)") selects/checks its clean
   // successor in this list; saving writes the clean label forward.
-  const current = normalizeVoiceLabel(rawCurrent, voices) ?? rawCurrent;
+  // Part 118: and a numbered label ("Voice 69") selects its described one.
+  const current = normalizeVoiceLabel(rawCurrent, voices, renames) ?? rawCurrent;
+
+  /* ♿ Part 118 (Sep 2 2026): category first, then the list for that category
+   * — her ask ("a picker for each category of voices"). Same construction as
+   * ExternalVoiceDropdown in Voices.tsx; see the note there. */
+  const ALL = '__all__';
+  const currentCategory = useMemo(
+    () => categories?.find((c) => current != null && c.voices.includes(current))?.name,
+    [categories, current],
+  );
+  const [category, setCategory] = useState<string | undefined>(undefined);
+  const activeCategory = category ?? currentCategory ?? categories?.[0]?.name ?? ALL;
+  const scoped = useMemo(() => {
+    if (activeCategory === ALL || !categories) {
+      return voices;
+    }
+    const present = new Set(voices);
+    return categories.find((c) => c.name === activeCategory)?.voices.filter((v) => present.has(v)) ?? [];
+  }, [activeCategory, categories, voices]);
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) {
+      return scoped;
+    }
+    const pool = activeCategory === ALL ? voices : scoped;
+    return pool.filter(
+      (v) => v.toLowerCase().includes(q) || (describe?.[v] ?? '').toLowerCase().includes(q),
+    );
+  }, [scoped, voices, filter, describe, activeCategory]);
 
   const close = useCallback(
     (refocusOpener: boolean) => {
@@ -498,6 +521,7 @@ export default function AgentVoicePicker({
         onMouseEnter={() => audition(v)}
         onClick={() => select(v)}
         aria-label={v}
+        title={describe?.[v] || undefined}
         className={cn(
           'flex items-center justify-between rounded-md px-2.5 py-2 text-left text-sm',
           'text-text-primary hover:bg-surface-hover',
@@ -505,7 +529,10 @@ export default function AgentVoicePicker({
           isCurrent && 'bg-surface-tertiary',
         )}
       >
-        <span aria-hidden="true">{v}</span>
+        <span aria-hidden="true" className="flex flex-col">
+          <span>{v}</span>
+          {describe?.[v] && <span className="text-xs text-text-secondary">{describe[v]}</span>}
+        </span>
         <span className="flex items-center gap-1.5" aria-hidden="true">
           {isPlaying && <Volume2 className="h-4 w-4 animate-pulse" />}
           {isCurrent && <Check className="h-4 w-4" />}
@@ -571,6 +598,27 @@ export default function AgentVoicePicker({
           <p className="text-xs text-text-secondary">
             {localize('com_agents_voice_browse_hint')}
           </p>
+          {categories && categories.length > 1 && (
+            <label className="flex flex-col gap-1 text-sm text-text-primary">
+              <span>{localize('com_agents_voice_category')}</span>
+              <select
+                value={activeCategory}
+                onChange={(e) => {
+                  setCategory(e.target.value);
+                  setFilter('');
+                }}
+                className="rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm
+                  text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+              >
+                {categories.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.name} ({c.voices.length})
+                  </option>
+                ))}
+                <option value={ALL}>{localize('com_agents_voice_category_all')}</option>
+              </select>
+            </label>
+          )}
           <input
             type="text"
             value={filter}

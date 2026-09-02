@@ -1,5 +1,4 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Volume2, Square, ChevronDown, Check } from 'lucide-react';
 import { Dropdown } from '@librechat/client';
@@ -31,60 +30,13 @@ const PREVIEW_TEXT =
 export const SILENT_WAV =
   'data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
 
-/** Same proxy base the ConversationMode voice pipeline points at. */
-const TTS_PROXY_BASE = 'https://inworld-tts-proxy-production.up.railway.app';
-
-/**
- * ♿ KADE D2c/D2d: voice-catalog metadata from the TTS proxy (GET /voices.json).
- * `sample` is the expressive audition monologue the /voices library page
- * performs — the in-app pickers use the same text so both surfaces sound
- * identical. (The `custom` list is still served but no longer drives any UI:
- * the 2026-07-01 renumbering made Kade's customs Voice 1–70, so plain numeric
- * order already leads with them, indistinguishably — her call.)
- * Fail-soft: on any fetch error `sample` is undefined and callers fall back
- * to their built-in line.
- */
-/** One picker section: category name + the display labels filed under it.
- * Served by the proxy (/voices.json `categories`, July 23 2026) — presentation
- * only, derived from the voice catalog's descriptions. */
-export type VoiceCategory = { name: string; voices: string[] };
-
-export function useVoiceCatalogTexts(): {
-  sample?: string;
-  audition?: string;
-  categories?: VoiceCategory[];
-} {
-  const { data } = useQuery(
-    ['kade', 'voiceCatalog'],
-    async () => {
-      const res = await fetch(`${TTS_PROXY_BASE}/voices.json`);
-      if (!res.ok) {
-        throw new Error(`voices.json ${res.status}`);
-      }
-      return (await res.json()) as {
-        sample?: string;
-        audition?: string;
-        categories?: VoiceCategory[];
-      };
-    },
-    { staleTime: 5 * 60 * 1000, retry: 1, refetchOnWindowFocus: false },
-  );
-  const categories = Array.isArray(data?.categories)
-    ? data?.categories.filter(
-        (c): c is VoiceCategory =>
-          !!c && typeof c.name === 'string' && Array.isArray((c as VoiceCategory).voices),
-      )
-    : undefined;
-  return {
-    sample: typeof data?.sample === 'string' && data.sample !== '' ? data.sample : undefined,
-    /** Short expressive one-liner for browse-as-you-go auditions; `{voice}`
-     * placeholder is filled by the caller. %%% steering converts to [bracket]
-     * direction on the proxy's synth path. */
-    audition: typeof data?.audition === 'string' && data.audition !== '' ? data.audition : undefined,
-    /** Loose picker sections (Kade, July 23 2026). Absent/empty -> flat list. */
-    categories: categories && categories.length > 0 ? categories : undefined,
-  };
-}
+/** Part 118 (Sep 2 2026): the catalog hook moved to ~/hooks/Audio/useVoiceCatalog
+ * (the TTS hooks need `renames` and importing from this component would be
+ * circular). Re-exported here so existing picker imports keep one site. */
+export { useVoiceCatalog as useVoiceCatalogTexts, TTS_PROXY_BASE } from '~/hooks/Audio/useVoiceCatalog';
+export type { VoiceCategory } from '~/hooks/Audio/useVoiceCatalog';
+import { useVoiceCatalog } from '~/hooks/Audio/useVoiceCatalog';
+import type { VoiceCategory } from '~/hooks/Audio/useVoiceCatalog';
 
 /** Graduated-spelling normalization — real implementation in
  * ~/utils/voiceLabels (the TTS hooks need it too; importing from this
@@ -319,7 +271,7 @@ export function VoicePreviewButton({
   const localize = useLocalize();
   const { isPlaying, togglePreview, error } = useVoicePreview();
   // The same expressive monologue the /voices library page performs.
-  const { sample: sampleText } = useVoiceCatalogTexts();
+  const { sample: sampleText } = useVoiceCatalog();
 
   const label = isPlaying
     ? localize('com_nav_stop_voice_preview') ?? 'Stop voice preview'
@@ -414,7 +366,7 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
   // ♿ 2026-07-05 (Kade): SAME swipe-to-hear the builder has — she picks voices HERE.
   // July 23 2026: + loose category sections for the same list (her ask: "the
   // madness and chaos should have some form and shape").
-  const { audition: auditionTemplate, categories } = useVoiceCatalogTexts();
+  const { audition: auditionTemplate, categories, renames, describe } = useVoiceCatalog();
   const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({ auditionTemplate });
 
   const [open, setOpen] = useState(false);
@@ -426,12 +378,42 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
   const rawCurrent = typeof voice === 'string' && voice !== '' ? voice : undefined;
   // Graduated-spelling tolerance (July 23 2026): a stored beta-era label
   // ("Voice 340 (Beta)") displays/selects as its clean successor.
-  const current = normalizeVoiceLabel(rawCurrent, orderedVoices) ?? rawCurrent;
+  const current = normalizeVoiceLabel(rawCurrent, orderedVoices, renames) ?? rawCurrent;
 
+  /* ♿ Part 118 (Sep 2 2026), her ask: "have the voices in a picker that has
+   * the preview play automatic, then you could have a picker for each
+   * category of voices." So: a Category select first (a native <select>, the
+   * most robust control a screen reader knows), then the list for THAT
+   * category, each row auditioning itself as focus lands on it (that part
+   * already worked). "All voices" stays available at the bottom of the
+   * select for a cross-catalog search. The filter box searches the label
+   * AND the one-sentence description the ear wrote, so "husky", "Southern"
+   * or "storyteller" all find voices. Default category = the one the current
+   * voice lives in, else the first section. */
+  const ALL = '__all__';
+  const currentCategory = useMemo(
+    () => categories?.find((c) => current != null && c.voices.includes(current))?.name,
+    [categories, current],
+  );
+  const [category, setCategory] = useState<string | undefined>(undefined);
+  const activeCategory = category ?? currentCategory ?? categories?.[0]?.name ?? ALL;
+  const scoped = useMemo(() => {
+    if (activeCategory === ALL || !categories) {
+      return orderedVoices;
+    }
+    const present = new Set(orderedVoices);
+    return categories.find((c) => c.name === activeCategory)?.voices.filter((v) => present.has(v)) ?? [];
+  }, [activeCategory, categories, orderedVoices]);
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    return q ? orderedVoices.filter((v) => v.toLowerCase().includes(q)) : orderedVoices;
-  }, [orderedVoices, filter]);
+    if (!q) {
+      return scoped;
+    }
+    const pool = activeCategory === ALL ? orderedVoices : scoped;
+    return pool.filter(
+      (v) => v.toLowerCase().includes(q) || (describe?.[v] ?? '').toLowerCase().includes(q),
+    );
+  }, [scoped, orderedVoices, filter, describe, activeCategory]);
 
   // ♿ DIALOG-FOCUS FIX (the bug that blocked Kade): Settings is a Headless UI v2
   // modal Dialog with an aggressive focus trap. A bespoke disclosure whose list
@@ -631,6 +613,27 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
           className="flex flex-col gap-2 rounded-lg border border-border-medium bg-surface-primary p-2"
         >
           <p className="text-xs text-text-secondary">{localize('com_agents_voice_browse_hint')}</p>
+          {categories && categories.length > 1 && (
+            <label className="flex flex-col gap-1 text-sm text-text-primary">
+              <span>{localize('com_agents_voice_category')}</span>
+              <select
+                value={activeCategory}
+                onChange={(e) => {
+                  setCategory(e.target.value);
+                  setFilter('');
+                }}
+                className="rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm
+                  text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+              >
+                {categories.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.name} ({c.voices.length})
+                  </option>
+                ))}
+                <option value={ALL}>{localize('com_agents_voice_category_all')}</option>
+              </select>
+            </label>
+          )}
           <input
             type="text"
             value={filter}
@@ -691,6 +694,7 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
                       onMouseEnter={() => audition(v)}
                       onClick={() => select(v)}
                       aria-label={v}
+                      title={describe?.[v] || undefined}
                       className={cn(
                         'flex items-center justify-between rounded-md px-2.5 py-2 text-left text-sm',
                         'text-text-primary hover:bg-surface-hover',
@@ -698,7 +702,12 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
                         isCurrent && 'bg-surface-tertiary',
                       )}
                     >
-                      <span aria-hidden="true">{v}</span>
+                      <span aria-hidden="true" className="flex flex-col">
+                        <span>{v}</span>
+                        {describe?.[v] && (
+                          <span className="text-xs text-text-secondary">{describe[v]}</span>
+                        )}
+                      </span>
                       <span className="flex items-center gap-1.5" aria-hidden="true">
                         {isPlaying && <Volume2 className="h-4 w-4 animate-pulse" />}
                         {isCurrent && <Check className="h-4 w-4" />}

@@ -20,12 +20,20 @@
 export function normalizeVoiceLabel(
   stored: string | undefined,
   voices: string[],
+  renames?: Record<string, string>,
 ): string | undefined {
   if (stored == null || stored === '') {
     return undefined;
   }
   if (voices.includes(stored)) {
     return stored;
+  }
+  // Part 118 (Sep 2 2026): the catalog stopped being numbered. "Voice 69",
+  // "Voice 69 Birta", "Birta", "Voice 340 (Beta)" all map through the
+  // proxy's `renames` to the described label that now sits in the list.
+  const renamed = renames?.[stored];
+  if (renamed != null && voices.includes(renamed)) {
+    return renamed;
   }
   const graduated = stored.replace(' (Beta)', '');
   if (graduated !== stored && voices.includes(graduated)) {

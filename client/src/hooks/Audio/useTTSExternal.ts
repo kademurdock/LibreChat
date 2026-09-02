@@ -9,6 +9,7 @@ import usePauseGlobalAudio from '~/hooks/Audio/usePauseGlobalAudio';
 import useAudioRef from '~/hooks/Audio/useAudioRef';
 import { logger } from '~/utils';
 import { normalizeVoiceLabel } from '~/utils/voiceLabels';
+import { useVoiceCatalog } from '~/hooks/Audio/useVoiceCatalog';
 import store from '~/store';
 
 type TUseTextToSpeech = {
@@ -44,6 +45,11 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
     index,
   });
 
+  // Part 118 (Sep 2 2026): the catalog's rename map. A stored "Voice 69"
+  // must become its described label, and the snap-to-voices[0] below must
+  // WAIT for this fetch to settle — the voices list and the catalog are two
+  // requests, and a snap between them rewrites the person's pick for good.
+  const { renames, ready: catalogReady } = useVoiceCatalog();
   useEffect(() => {
     const firstVoice = voices[0];
     if (voices.length) {
@@ -58,16 +64,23 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
       // voiceCatalog.js's staleButGood story), try its graduated spelling.
       // Beta-era labels ("Voice 340 (Beta)") migrate to their clean
       // successors instead of being lost to Voice 1.
-      const graduated = normalizeVoiceLabel(typeof voice === 'string' ? voice : undefined, voices);
+      const graduated = normalizeVoiceLabel(
+        typeof voice === 'string' ? voice : undefined,
+        voices,
+        renames,
+      );
       if (graduated != null) {
         logger.log('useTTSExternal.ts - Effect: graduated voice label', { voice, graduated });
         setVoice(graduated);
         return;
       }
+      if (!catalogReady) {
+        return; // the rename map is still on its way — do not snap yet
+      }
       logger.log('useTextToSpeech.ts - Effect:', { voices, voice: firstVoice });
       setVoice(firstVoice.toString());
     }
-  }, [setVoice, voice, voices]);
+  }, [setVoice, voice, voices, renames, catalogReady]);
 
   const handleMouseDown = () => {
     isMouseDownRef.current = true;
