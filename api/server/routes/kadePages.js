@@ -274,7 +274,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
     </div>
   </main>
 
-  <footer class="muted">Numbers refresh every time you open this page. Thanks for being here. — Kade-AI</footer>
+  <footer class="muted">Numbers refresh every time you open this page. Thanks for being here. &mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 
   <script>
     (async function(){
@@ -400,7 +400,7 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
     <div id="user_cards"></div>
   </main>
 
-  <footer class="muted">Refreshes on every load. — Kade-AI</footer>
+  <footer class="muted">Refreshes on every load. &mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 
   <script>
     function svcQty(u, name){ const s=(u.services||{})[name]; return s? s.quantity.allTime : 0; }
@@ -548,7 +548,7 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
 
   <main id="content" hidden aria-label="Your generated videos, images, and audio"></main>
 
-  <footer class="muted">Fresh every time you open this page. Videos are backed up to Kade's own storage automatically, so they won't vanish — but download anything you want a personal copy of. — Kade-AI</footer>
+  <footer class="muted">Fresh every time you open this page. Videos are backed up to Kade's own storage automatically, so they won't vanish — but download anything you want a personal copy of. &mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 
   <script>
     (async function(){
@@ -673,7 +673,7 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
 
   <main id="content" hidden aria-label="Creations shared by everyone on the site"></main>
 
-  <footer class="muted">Only things people chose to share appear here. — Kade-AI</footer>
+  <footer class="muted">Only things people chose to share appear here. &mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 
   <script>
     (async function(){
@@ -1392,7 +1392,7 @@ const toolsHtml = `<!doctype html><html lang="en"><head><title>Tools — Kade-AI
   <a class="hubitem" href="/my-creations"><span class="hicon" aria-hidden="true">🎨</span><span><strong>My Creations</strong><small>Every video and image you have made, with downloads</small></span></a>
 </nav>
 </main>
-<footer class="muted">— Kade-AI</footer>
+<footer class="muted">&mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 </body></html>`;
 
 const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</title>${SHARED_HEAD}</head>
@@ -1415,7 +1415,7 @@ const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</ti
 </nav>
 <p class="muted" style="margin-top:1.25rem"><a href="/settings">Settings</a> (speech, accessibility, appearance) and <a href="/files">your files</a> have their own addresses now. Signing out is on <a href="/home">Home</a>.</p>
 </main>
-<footer class="muted">— Kade-AI</footer>
+<footer class="muted">&mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 </body></html>`;
 
 
@@ -1461,7 +1461,7 @@ const pronunciationDictionaryHtml = `<!doctype html><html lang="en"><head><title
     </div>
   </form>
 </section>
-<footer class="muted">— Kade-AI</footer>
+<footer class="muted">&mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 <script>
 (function(){
   var TOKEN=null, entries=[], editingId=null;

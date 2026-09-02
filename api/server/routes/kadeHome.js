@@ -164,7 +164,7 @@ ${ADMIN.map(tile).join('\n')}
 <button class="signout" id="signout" aria-describedby="signoutHint">Sign out</button>
 <p class="muted" id="signoutHint" style="font-size:.85rem">Signs you out and clears your saved session on this device.</p>
 </main>
-<footer class="muted">— Kade-AI</footer>
+<footer class="muted">&mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 <script>
 (async function(){
   var t = await getToken();
@@ -207,7 +207,7 @@ const conversationsHtml = `<!doctype html><html lang="en"><head><title>Your conv
 <ul class="convos" id="list" aria-label="Conversations"></ul>
 <button class="more" id="more" style="display:none">Load more</button>
 </main>
-<footer class="muted">— Kade-AI</footer>
+<footer class="muted">&mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 <script>
 (async function(){
   var t = await getToken();
@@ -244,7 +244,7 @@ const announcementsHtml = `<!doctype html><html lang="en"><head><title>Announcem
 <div id="status" class="muted" aria-live="polite">Loading…</div>
 <div id="list"></div>
 </main>
-<footer class="muted">— Kade-AI</footer>
+<footer class="muted">&mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 <script>
 (async function(){
   var t = await getToken(); var status = document.getElementById('status'), list = document.getElementById('list');
