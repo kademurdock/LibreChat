@@ -9,6 +9,16 @@ const { fetchLiveVoices, getCachedLiveVoices, getCachedLiveHidden } = require('.
 /** Kade D2d: parse+clamp an optional TTS speaking rate (Inworld range 0.5-1.5).
  * Multipart form fields arrive as strings; JSON bodies as numbers. Anything
  * unparseable -> undefined -> provider/global default. */
+/* Part 119.3 (Sep 2 2026): per-request delivery for the proxy — STABLE |
+ * BALANCED | CREATIVE (Inworld's tts-2 deliveryMode; fish maps it onto
+ * temperature). The native picker sends it; absent = the proxy's global. */
+function parseKadeTtsDelivery(raw) {
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+  const d = raw.trim().toUpperCase();
+  return d === 'STABLE' || d === 'BALANCED' || d === 'CREATIVE' ? d : undefined;
+}
 function parseKadeTtsSpeed(raw) {
   const n = typeof raw === 'string' ? parseFloat(raw) : raw;
   if (typeof n !== 'number' || !isFinite(n)) {
@@ -326,13 +336,16 @@ class TTSService {
    * @returns {Promise<Object>} The axios response object.
    * @throws {Error} If the provider is invalid or the request fails.
    */
-  async ttsRequest(provider, ttsSchema, { input, voice, stream = true, speed, sessionKey, kadeStream }) {
+  async ttsRequest(provider, ttsSchema, { input, voice, stream = true, speed, sessionKey, kadeStream, delivery }) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
     }
 
     const [url, data, headers] = strategy.call(this, ttsSchema, input, voice, stream, speed);
+    if (delivery && data && typeof data === 'object') {
+      data.delivery = delivery; // Part 119.3 — the proxy reads it; other providers ignore it
+    }
 
     /* PART 92.16 (Aug 24 2026) — SAY WHO IS SPEAKING, SO THE PROXY CAN GIVE THE
      * NEXT SENTENCE CONTEXT.
@@ -393,6 +406,7 @@ class TTSService {
     // Part 98: the native streaming player sends stream=1; everyone else omits it.
     const kadeStream = req.body.stream === '1' || req.body.stream === true;
     const speed = parseKadeTtsSpeed(req.body.speed); // Kade D2d
+    const delivery = parseKadeTtsDelivery(req.body.delivery); // Part 119.3
 
     if (!rawInput) {
       return res.status(400).send('Missing text in request body');
@@ -445,6 +459,7 @@ class TTSService {
           input,
           voice,
           speed,
+          delivery,
           sessionKey: req.user && req.user.id,
           kadeStream,
         });
@@ -461,6 +476,7 @@ class TTSService {
             input: chunk.text,
             stream: true,
             speed,
+            delivery,
             sessionKey: req.user && req.user.id,
           });
 
