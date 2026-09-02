@@ -88,9 +88,18 @@ export default function AgentConfig() {
    * read live off the form so a persona pasted a second ago already speaks. */
   const watchedInstructions = useWatch({ control, name: 'instructions' });
   const watchedDescription = useWatch({ control, name: 'description' });
+  /* Part 116.8 (Sep 2 2026): SWITCHED OFF at her word the same night it
+   * shipped -- "it's saying one single random sentence that looks like
+   * instructions… I like the long paragraph previews." Quoted spans in a
+   * persona are mostly RULES ("say scared, not anxious"), not dialogue, so
+   * the picker read her instructions aloud. The pooled four-paragraph
+   * scripts are back. The extractor stays for a future version that can
+   * tell a line from a rule (e.g. only spans after "You:" / the character's
+   * name). KADE_AGENT_LINE_AUDITIONS flips it back on. */
+  const agentLinesOn = false;
   const agentLines = useMemo(
-    () => extractAgentLines(watchedInstructions as string, watchedDescription as string),
-    [watchedInstructions, watchedDescription],
+    () => (agentLinesOn ? extractAgentLines(watchedInstructions as string, watchedDescription as string) : []),
+    [agentLinesOn, watchedInstructions, watchedDescription],
   );
   const speakingRate = typeof watchedSpeakingRate === 'number' ? watchedSpeakingRate : undefined;
   const agent = useWatch({ control, name: 'agent' });
