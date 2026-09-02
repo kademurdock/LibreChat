@@ -50,7 +50,28 @@ function KeyboardShortcutsProvider() {
  * order way onto it from the chat screen on a desktop, where the bottom tab
  * bar does not render. Gated to ADMIN while she tests it live; flipping
  * `homeLayerOn` to everyone is a one-line change. */
-function KadeHomeStrip() {
+/* Part 116.5 (Sep 2 2026) — THE SIDEBAR CAN GO AWAY. Her word after the
+ * addresses shipped: "Still looks like there's an annoying sidebar though."
+ * That is LibreChat's own left panel, open by default on a computer. With
+ * every destination now at a stable URL off /home it is redundant, so it is
+ * HIDDEN by default on desktop and one click brings it back, remembered per
+ * browser (localStorage kade:sidebar = 'shown' | 'hidden'). The header's own
+ * toggle still works when it is shown. Mobile keeps its off-canvas drawer. */
+const SIDEBAR_PREF_KEY = 'kade:sidebar';
+function readSidebarPref(): 'shown' | 'hidden' {
+  try {
+    // A ?panel= deep link (/agent-builder, /bookmarks, ...) is a request FOR
+    // the panel: show it for this visit without touching the saved choice.
+    if (new URLSearchParams(window.location.search).get('panel')) {
+      return 'shown';
+    }
+    return localStorage.getItem(SIDEBAR_PREF_KEY) === 'shown' ? 'shown' : 'hidden';
+  } catch {
+    return 'hidden';
+  }
+}
+
+function KadeHomeStrip({ sidebarPref, onToggleSidebar }: { sidebarPref: 'shown' | 'hidden'; onToggleSidebar: () => void }) {
   return (
     <div
       role="navigation"
@@ -82,6 +103,14 @@ function KadeHomeStrip() {
       <a href="/help" style={{ color: 'inherit', textDecoration: 'none' }}>
         Help
       </a>
+      <button
+        type="button"
+        onClick={onToggleSidebar}
+        aria-pressed={sidebarPref === 'shown'}
+        style={{ marginLeft: 'auto', font: 'inherit', color: 'inherit', background: 'transparent', border: '1px solid var(--border-medium, #2c2f37)', borderRadius: 8, padding: '2px 10px', cursor: 'pointer' }}
+      >
+        {sidebarPref === 'shown' ? 'Hide side panel' : 'Show side panel'}
+      </button>
     </div>
   );
 }
@@ -172,6 +201,18 @@ export default function Root() {
   // Part 116.3: the home layer. Admin-only for one hour on Sep 2 2026; her
   // word after walking it live: "It all looks good to me." On for everyone.
   const homeLayerOn = isAuthenticated;
+  const [sidebarPref, setSidebarPref] = useState<'shown' | 'hidden'>(readSidebarPref);
+  const toggleSidebarPref = () => {
+    const next = sidebarPref === 'shown' ? 'hidden' : 'shown';
+    try {
+      localStorage.setItem(SIDEBAR_PREF_KEY, next);
+    } catch {
+      /* fine */
+    }
+    setSidebarPref(next);
+  };
+  // desktop only; the mobile drawer is off-canvas and lives behind the Chats tab
+  const sidebarHidden = homeLayerOn && !isSmallScreen && sidebarPref === 'hidden';
   /* Part 116.4: /settings is a real address. The server 302s it to
    * /c/new?open=settings and this opens the same Settings dialog the account
    * menu opens; closing it strips the param. */
@@ -234,10 +275,12 @@ export default function Root() {
           <AgentsMapContext.Provider value={agentsMap}>
             <PromptGroupsProvider>
               <Banner onHeightChange={setBannerHeight} />
-              {homeLayerOn && !isSmallScreen && <KadeHomeStrip />}
+              {homeLayerOn && !isSmallScreen && (
+                <KadeHomeStrip sidebarPref={sidebarPref} onToggleSidebar={toggleSidebarPref} />
+              )}
               <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px${isSmallScreen ? ' - 64px - env(safe-area-inset-bottom, 0px)' : ''}${homeLayerOn && !isSmallScreen ? ' - 32px' : ''})` }}>
                 <div className="relative z-0 flex h-full w-full overflow-hidden">
-                  <UnifiedSidebar />
+                  {!sidebarHidden && <UnifiedSidebar />}
                   <div
                     className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden"
                     style={{
