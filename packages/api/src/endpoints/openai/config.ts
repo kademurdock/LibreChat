@@ -300,6 +300,18 @@ export function getOpenAIConfig(
   };
   if (useOpenRouter) {
     result.provider = Providers.OPENROUTER;
+    /* KADE Part 116.1 (Sep 2 2026): the OpenRouter endpoint here is the
+     * reframe proxy, which speaks /chat/completions only. A family member
+     * flipped "Use Responses API" in the builder's model parameters on her
+     * new agent (Della) and every reply from then on was a 404 HTML page
+     * from Express ("Unhandled error type 404 <!DOCTYPE html>") -- six
+     * failures, a filed bug, and a session's worth of log reading. The flag
+     * is stored on the agent and honoured by the SDK; it can never work on
+     * this endpoint, so it is dropped at config time. Nothing else the
+     * switch does is lost -- it was never doing anything but breaking. */
+    if (llmConfig.useResponsesApi === true) {
+      delete llmConfig.useResponsesApi;
+    }
   }
   return result;
 }
