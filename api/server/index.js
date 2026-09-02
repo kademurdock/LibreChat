@@ -337,6 +337,10 @@ const startServer = async () => {
   app.get('/my-creations', routes.kade.creationsPage);
   app.get('/wall-of-fame', routes.kade.wallPage);
   app.get('/tools', routes.kade.toolsPage);
+  // Part 116.3 — Kade Home layer (mirrors the native home screen).
+  app.get('/home', routes.kade.homePage);
+  app.get('/conversations', routes.kade.conversationsPage);
+  app.get('/announcements', routes.kade.announcementsPage);
   app.get('/you', routes.kade.youPage);
   app.get('/pronunciation-dictionary', routes.kade.pronunciationDictionaryPage);
   app.get('/logbook', routes.kade.diaryPage);

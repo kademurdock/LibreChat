@@ -42,9 +42,53 @@ function KeyboardShortcutsProvider() {
  *  Chats / Tools / Alerts / You, always one tap away. Tools/Alerts/You are the
  *  server-rendered hub pages, reached by full navigation like the account menu's
  *  existing links. Rendered only on small screens; desktop is unchanged. */
-function KadeTabBar() {
+/* KADE Part 116.3 (Sep 2 2026) — the Home strip. Her words: "it's hard to
+ * find things" on the web because the side panels change with context. The
+ * fix is a HOME LAYER that mirrors the iPhone app's map exactly (/home,
+ * server-rendered, kadeHome.js). This strip is the one fixed, first-in-tab-
+ * order way onto it from the chat screen on a desktop, where the bottom tab
+ * bar does not render. Gated to ADMIN while she tests it live; flipping
+ * `homeLayerOn` to everyone is a one-line change. */
+function KadeHomeStrip() {
+  return (
+    <div
+      role="navigation"
+      aria-label="Kade home"
+      style={{
+        height: 32,
+        flex: '0 0 auto',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 16,
+        padding: '0 12px',
+        fontSize: '0.85rem',
+        fontWeight: 600,
+        borderBottom: '1px solid var(--border-medium, #2c2f37)',
+        background: 'var(--surface-primary, #1a1d23)',
+        color: 'var(--text-secondary, #9aa3b5)',
+      }}
+    >
+      <a href="/home" style={{ color: '#6ea8ff', textDecoration: 'none' }}>
+        <span aria-hidden="true">{'\uD83C\uDFE0 '}</span>Kade Home
+      </a>
+      <span aria-hidden="true">·</span>
+      <a href="/conversations" style={{ color: 'inherit', textDecoration: 'none' }}>
+        Your conversations
+      </a>
+      <a href="/agents" style={{ color: 'inherit', textDecoration: 'none' }}>
+        Marketplace
+      </a>
+      <a href="/help" style={{ color: 'inherit', textDecoration: 'none' }}>
+        Help
+      </a>
+    </div>
+  );
+}
+
+function KadeTabBar({ homeLayerOn }: { homeLayerOn: boolean }) {
   // Chats opens the conversation list (full-screen on mobile); the others go to
   // the server-rendered hub pages. Bottom tab bar, small screens only.
+  // Part 116.3: with the home layer on, Home comes first and Tools folds into it.
   const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
   const itemStyle = {
     flex: 1,
@@ -60,11 +104,16 @@ function KadeTabBar() {
     background: 'transparent',
     cursor: 'pointer',
   };
-  const links = [
-    { key: 'tools', href: '/tools', label: 'Tools', icon: '\uD83E\uDDF0' },
-    { key: 'alerts', href: '/notifications', label: 'Alerts', icon: '\uD83D\uDD14' },
-    { key: 'you', href: '/you', label: 'You', icon: '\uD83D\uDC64' },
-  ];
+  const links = homeLayerOn
+    ? [
+        { key: 'alerts', href: '/notifications', label: 'Alerts', icon: '\uD83D\uDD14' },
+        { key: 'you', href: '/you', label: 'You', icon: '\uD83D\uDC64' },
+      ]
+    : [
+        { key: 'tools', href: '/tools', label: 'Tools', icon: '\uD83E\uDDF0' },
+        { key: 'alerts', href: '/notifications', label: 'Alerts', icon: '\uD83D\uDD14' },
+        { key: 'you', href: '/you', label: 'You', icon: '\uD83D\uDC64' },
+      ];
   return (
     <nav
       aria-label="Main navigation"
@@ -77,6 +126,14 @@ function KadeTabBar() {
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}
     >
+      {homeLayerOn && (
+        <a href="/home" style={{ ...itemStyle, color: 'var(--text-secondary, #9aa3b5)' }}>
+          <span aria-hidden="true" style={{ fontSize: '1.4rem', lineHeight: 1 }}>
+            {'\uD83C\uDFE0'}
+          </span>
+          <span>Home</span>
+        </a>
+      )}
       <button
         type="button"
         onClick={() => setSidebarExpanded(true)}
@@ -110,7 +167,9 @@ export default function Root() {
   const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
-  const { isAuthenticated, logout } = useAuthContext();
+  const { isAuthenticated, logout, user } = useAuthContext();
+  // Part 116.3: the home layer, admin-only while she tests it live.
+  const homeLayerOn = user?.role === 'ADMIN';
 
   useHealthCheck(isAuthenticated);
 
@@ -151,7 +210,8 @@ export default function Root() {
           <AgentsMapContext.Provider value={agentsMap}>
             <PromptGroupsProvider>
               <Banner onHeightChange={setBannerHeight} />
-              <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px${isSmallScreen ? ' - 64px - env(safe-area-inset-bottom, 0px)' : ''})` }}>
+              {homeLayerOn && !isSmallScreen && <KadeHomeStrip />}
+              <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px${isSmallScreen ? ' - 64px - env(safe-area-inset-bottom, 0px)' : ''}${homeLayerOn && !isSmallScreen ? ' - 32px' : ''})` }}>
                 <div className="relative z-0 flex h-full w-full overflow-hidden">
                   <UnifiedSidebar />
                   <div
@@ -166,7 +226,7 @@ export default function Root() {
                   </div>
                 </div>
               </div>
-              {isSmallScreen && <KadeTabBar />}
+              {isSmallScreen && <KadeTabBar homeLayerOn={homeLayerOn} />}
             </PromptGroupsProvider>
           </AgentsMapContext.Provider>
           {config?.interface?.termsOfService?.modalAcceptance === true && (

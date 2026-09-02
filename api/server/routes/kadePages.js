@@ -210,7 +210,10 @@ const SHARED_HEAD = `
       else if (toolPages.indexOf(path) !== -1) active = 'tools';
       else if (path === '/') active = 'chats';
       else active = 'tools';
-      var items = [['chats','/','Chats','💬'],['tools','/tools','Tools','🧰'],['alerts','/notifications','Alerts','🔔'],['you','/you','You','👤']];
+      /* Part 116.3: Home first -- it carries the whole map in the iPhone app's order; Tools lives inside it. */
+      if (path === '/home' || path === '/conversations' || path === '/announcements') active = 'home';
+      else if (active === 'tools') active = 'home';
+      var items = [['home','/home','Home','🏠'],['chats','/','Chats','💬'],['alerts','/notifications','Alerts','🔔'],['you','/you','You','👤']];
       var nav = document.createElement('nav');
       nav.className = 'kadetabs';
       nav.setAttribute('aria-label','Main navigation');
@@ -1592,7 +1595,9 @@ const tabBarAsset = `(function(){
     else if (toolPages.indexOf(path) !== -1) active = 'tools';
     else if (path === '/') active = 'chats';
     else active = 'tools';
-    var items = [['chats','/','Chats','💬'],['tools','/tools','Tools','🧰'],['alerts','/notifications','Alerts','🔔'],['you','/you','You','👤']];
+    if (path === '/home' || path === '/conversations' || path === '/announcements') active = 'home';
+    else if (active === 'tools') active = 'home';
+    var items = [['home','/home','Home','🏠'],['chats','/','Chats','💬'],['alerts','/notifications','Alerts','🔔'],['you','/you','You','👤']];
     var nav = document.createElement('nav'); nav.className = 'kadetabs'; nav.setAttribute('aria-label','Main navigation');
     for (var i=0;i<items.length;i++){ var it=items[i]; var a=document.createElement('a'); a.href=it[1]; var ic=document.createElement('span'); ic.className='ic'; ic.setAttribute('aria-hidden','true'); ic.textContent=it[3]; var tx=document.createElement('span'); tx.textContent=it[2]; a.appendChild(ic); a.appendChild(tx); if(it[0]===active) a.setAttribute('aria-current','page'); nav.appendChild(a); }
     document.body.appendChild(nav);

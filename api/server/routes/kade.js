@@ -2233,6 +2233,14 @@ router.gameRoomPage = (_req, res) => res.redirect(302, '/parlor#gameroom');
 router.feedbackPage = sendHtml(FEEDBACK_HTML);
 router.notificationsPage = sendHtml(NOTIFICATIONS_HTML);
 router.toolsPage = sendHtml(TOOLS_HTML);
+/* Part 116.3 (Sep 2 2026) — KADE HOME: the web gets the iPhone app's map.
+ * /home mirrors ContentView.swift's home screen section for section;
+ * /conversations and /announcements are the two native destinations the web
+ * had no flat page for. See kadeHome.js. */
+const KADE_HOME = require('./kadeHome');
+router.homePage = sendHtml(KADE_HOME.homeHtml);
+router.conversationsPage = sendHtml(KADE_HOME.conversationsHtml);
+router.announcementsPage = sendHtml(KADE_HOME.announcementsHtml);
 router.youPage = sendHtml(YOU_HTML);
 router.pronunciationDictionaryPage = sendHtml(PRONUNCIATION_DICTIONARY_HTML);
 router.diaryPage = sendHtml(DIARY_HTML);
