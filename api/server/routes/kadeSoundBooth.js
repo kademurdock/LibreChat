@@ -197,6 +197,7 @@ HOW THIS ENGINE WORKS, so you write for it:
 - Up to three named voices. If reference clips are given they are @Audio1, @Audio2, @Audio3 — tag a clip to a speaker inline: Marcus (warm broadcaster, the actor is @Audio1) says: "...".
 - Optional exact timing: put [start:end] at the front of a line, e.g. "[5.5s:8.0s] Maya! Wait." and that line is fitted to that window.
 - Hard cap: under 1900 characters and about two minutes of audio. Longer pieces are made scene by scene with the same voices.
+- NEVER use %%%…%%% markers. That is a different engine's syntax. A delivery note goes in parentheses after the name, or as the manner before the colon — nowhere else.
 - Output the script and nothing else. No code fence, no preamble.`;
 
 function systemPrompt({ engine, mode }) {
@@ -342,6 +343,25 @@ function sanitizeScenema(script) {
   return { script: s, notes: [...new Set(notes)] };
 }
 
+/* Seed Audio's own delivery notes are parentheticals after the speaker and
+ * the manner before the colon — so a stray %%%note%%% becomes (note) in place,
+ * which Seed reads, instead of being spoken or dropped. Found in the first
+ * Seed smoke (Part 121): the model wrote %%%easygoing morning pace%%% between
+ * "says, warmly:" and the quoted line. */
+function sanitizeSeed(script) {
+  let s = String(script || '');
+  const notes = [];
+  s = s.replace(/%%%\s*([^%]+?)\s*%%%/g, (_m, inner) => {
+    notes.push('turned a %%% tag into a delivery note');
+    return `(${inner.trim()})`;
+  });
+  if (s.includes('%%%')) {
+    s = s.replace(/%%%/g, '');
+    notes.push('removed a stray tag marker');
+  }
+  return { script: s, notes: [...new Set(notes)] };
+}
+
 /** Cheap structural checks so a bad script is refused HERE, in a sentence she
  * can act on, instead of failing on the GPU two minutes and a wake-up later. */
 function checkScenema(script) {
@@ -374,6 +394,9 @@ function checkScenema(script) {
 function checkSeed(script) {
   const s = String(script || '').trim();
   if (!s) return 'There is nothing to render.';
+  if (s.includes('%%%')) {
+    return 'That script still has %%% tag markers in it. Seed Audio does not know them — put delivery notes in parentheses after the name instead.';
+  }
   if (s.length > MAX_SEED_CHARS) {
     return `That script is ${s.length} characters; Seed Audio tops out at ${MAX_SEED_CHARS} (about two minutes). Shorten it, or render it in parts.`;
   }
@@ -709,6 +732,11 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
       return res.status(502).json({ error: 'The script desk came back empty. Try again.' });
     }
     let repairs = [];
+    if (engine === 'seed') {
+      const cleaned = sanitizeSeed(script);
+      script = cleaned.script;
+      repairs = cleaned.notes;
+    }
     if (engine === 'scenema') {
       const cleaned = sanitizeScenema(script);
       script = cleaned.script;
@@ -774,6 +802,8 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
    * converting it can only help; nothing else about her text is touched. */
   if (engine === 'scenema') {
     script = sanitizeScenema(script).script;
+  } else {
+    script = sanitizeSeed(script).script;
   }
   const problem = engine === 'seed' ? checkSeed(script) : checkScenema(script);
   if (problem) return res.status(400).json({ error: problem });
@@ -1250,4 +1280,4 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { checkScenema, checkSeed, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, suggestEngine, GUIDE };
+module.exports._internals = { checkScenema, checkSeed, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, GUIDE };
