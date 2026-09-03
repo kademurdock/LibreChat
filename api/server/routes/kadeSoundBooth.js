@@ -42,10 +42,11 @@
  *   GET  /health                                                      -> what is configured, and the caps
  * -------------------------------------------------------------------------- */
 const axios = require('axios');
+const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3 } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
@@ -893,6 +894,67 @@ router.delete('/projects/:id', requireJwtAuth, async (req, res) => {
   } catch (error) {
     logger.error('[soundbooth/project delete] failed:', error);
     return res.status(500).json({ error: "Couldn't remove that." });
+  }
+});
+
+/* ====================== POST /reference (import a clip) ====================
+ * Her ask, Part 120: "You might put a way to import files in native too."
+ *
+ * The reliable way to get a SPECIFIC voice is a reference clip -- describing a
+ * voice in words missed the age three times out of four when Scenema was
+ * measured (Part 119.10), and the record says so plainly. So the phone needs
+ * to be able to hand over ten to twenty seconds of somebody talking.
+ *
+ * The clip goes to the same S3/Backblaze storage every gallery file uses, and
+ * the render lane is handed the signed URL. It is NOT filed as a gallery asset:
+ * a reference clip is an INPUT, and My Creations is for things she made. It
+ * also never leaves the estate for Scenema (her own GPU pulls it); for Seed
+ * Audio it does, and the screen says so before she picks that engine.
+ * ------------------------------------------------------------------------- */
+const refUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024, files: 1 },
+});
+const REF_TYPES = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/ogg', 'audio/webm', 'audio/flac', 'audio/x-flac'];
+const REF_EXT = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/mp4': 'm4a', 'audio/m4a': 'm4a', 'audio/x-m4a': 'm4a', 'audio/aac': 'aac', 'audio/ogg': 'ogg', 'audio/webm': 'webm', 'audio/flac': 'flac', 'audio/x-flac': 'flac' };
+
+router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, res) => {
+  try {
+    const f = req.file;
+    if (!f || !f.buffer || !f.buffer.length) {
+      return res.status(400).json({ error: 'No clip arrived. Pick an audio file and try again.' });
+    }
+    const mime = String(f.mimetype || '').toLowerCase();
+    if (!REF_TYPES.includes(mime)) {
+      return res
+        .status(400)
+        .json({ error: 'That file is not audio this can read. A voice memo, an MP3, a WAV or an M4A all work.' });
+    }
+    if (typeof saveBufferToS3 !== 'function') {
+      return res.status(503).json({ error: 'File storage is not set up on this server.' });
+    }
+    const ext = REF_EXT[mime] || 'mp3';
+    const fileName = `soundbooth-ref-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const url = await saveBufferToS3({
+      userId: String(req.user.id),
+      buffer: f.buffer,
+      fileName,
+      basePath: 'audios',
+    });
+    if (!url) return res.status(502).json({ error: 'The clip did not save. Try again.' });
+    logger.info(`[soundbooth/reference] user=${req.user.id} ${f.originalname || fileName} ${f.buffer.length}B`);
+    return res.json({
+      ok: true,
+      url,
+      bytes: f.buffer.length,
+      name: String(f.originalname || fileName).slice(0, 120),
+      /* Said out loud on the phone the moment it lands, because a silent
+       * success on an upload is indistinguishable from nothing happening. */
+      spoken: `Clip imported, ${Math.max(1, Math.round(f.buffer.length / 1024))} kilobytes. It will be used as the voice to clone.`,
+    });
+  } catch (error) {
+    logger.error('[soundbooth/reference] failed:', error);
+    return res.status(500).json({ error: 'That clip could not be imported.' });
   }
 });
 
