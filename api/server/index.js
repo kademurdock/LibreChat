@@ -320,6 +320,7 @@ const startServer = async () => {
   app.use('/api/kade/describe', routes.kadeDescribe);
   app.use('/api/kade/gpt-import', routes.kadeGptImport);
   app.use('/api/kade/clock', routes.kadeClock);
+  app.use('/api/kade/sound-booth', routes.kadeSoundBooth);
   app.use('/api/kade/titles', routes.kadeTitles);
   app.use('/api/kade', routes.kade);
 
@@ -335,6 +336,7 @@ const startServer = async () => {
   app.get('/import', routes.kadeGptImport.importPage);
   app.get('/feed-the-server', routes.kade.feedPage);
   app.get('/my-creations', routes.kade.creationsPage);
+  app.get('/sound-booth', routes.kade.soundBoothPage);
   app.get('/wall-of-fame', routes.kade.wallPage);
   // Part 116.4: /tools folded into Home (her word: "it all looks good"); the
   // old hub stays reachable at /tools-legacy for one release in case a

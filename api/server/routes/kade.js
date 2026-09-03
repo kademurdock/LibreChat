@@ -2264,6 +2264,10 @@ router.feedPage = sendHtml(FEED_HTML);
 router.dashboardPage = sendHtml(DASH_HTML);
 router.logsPage = sendHtml(LOGS_HTML);
 router.creationsPage = sendHtml(CREATIONS_HTML);
+/* Part 120 (Sep 3 2026) — THE SOUND BOOTH on the web, the same screen the
+ * phone got, against the same two routes (kadeSoundBooth.js). Her call when
+ * asked phone-first or both: both tonight. */
+router.soundBoothPage = sendHtml(require('./kadeSoundBoothPage').soundBoothHtml);
 router.wallPage = sendHtml(WALL_HTML);
 router.gameRoomPage = (_req, res) => res.redirect(302, '/parlor#gameroom');
 router.feedbackPage = sendHtml(FEEDBACK_HTML);

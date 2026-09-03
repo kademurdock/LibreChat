@@ -77,6 +77,8 @@ const TOOLS = [
     hint: 'Your tagged conversations, gathered by bookmark — tag any conversation from the conversation list.' },
   { id: 'prompts', href: '/prompts/new', title: 'Prompts', spoken: 'The Prompt Library', icon: '⭐',
     hint: 'Saved prompts you can drop into a fresh chat pre-typed, plus a form to save new ones.' },
+  { id: 'soundbooth', href: '/sound-booth', title: 'Sound Booth', spoken: 'The Sound Booth', icon: '🎙️',
+    hint: 'Write something and have it performed. One actor with real acting on Kade\u2019s own machine, or a whole scene with several voices, music and sound effects.' },
   { id: 'creations', href: '/my-creations', title: 'My Creations', spoken: 'My Creations', icon: '🎨',
     hint: "Every picture, video, and song you've made — play them, save them, or put them on the family Wall of Fame." },
   { id: 'wall', href: '/wall-of-fame', title: 'Wall of Fame', spoken: 'Wall of Fame', icon: '🏆',

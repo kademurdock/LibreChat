@@ -274,6 +274,10 @@ async function logKadeAsset({ userId, kind, service, url, prompt, model, costUSD
     setImmediate(() => {
       enrichAsset(doc).catch(() => {});
     });
+    /* Part 120: the created doc is RETURNED now (it was dropped before). The
+     * Sound Booth needs the asset id to hang a finished render on its project
+     * row; every older caller ignores the return value, so this is additive. */
+    return doc;
   } catch (error) {
     logger.warn('[logKadeAsset] failed (non-fatal):', error.message);
   }

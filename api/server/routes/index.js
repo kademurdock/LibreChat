@@ -60,6 +60,7 @@ const kadeTranscribe = require('./kadeTranscribe');
 const kadeDescribe = require('./kadeDescribe');
 const kadeClock = require('./kadeClock');
 const kadeGptImport = require('./kadeGptImport');
+const kadeSoundBooth = require('./kadeSoundBooth');
 
 module.exports = {
   kade,
@@ -75,6 +76,7 @@ module.exports = {
   kadeSpotter,
   kadeTranscribe,
   kadeDescribe,
+  kadeSoundBooth,
   rum,
   mcp,
   auth,
