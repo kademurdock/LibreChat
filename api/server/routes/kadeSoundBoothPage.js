@@ -94,8 +94,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 
     <fieldset>
       <legend>What should it say?</legend>
-      <label class="field" for="text">Your words, or a description of what you want written</label>
-      <p class="hint" id="textHint">Type the words you want performed and press "Turn my words into a script". Or describe a piece &mdash; "a two minute bedtime story about a fox who is scared of the dark" &mdash; and press "Write me one".</p>
+      <p class="hint" id="inputQ"></p>
+      <div class="seg" role="group" aria-label="What are you putting in the box" id="inputModes"></div>
+      <label class="field" for="text" id="textLabel">The words to perform</label>
+      <p class="hint" id="textHint"></p>
       <textarea id="text" aria-describedby="textHint"></textarea>
       <details id="howto"><summary></summary><ul id="howtoList"></ul></details>
 
@@ -106,8 +108,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       <select id="mood"><option value="">No particular mood</option></select>
 
       <div>
-        <button type="button" class="act" id="btnFormat">Turn my words into a script</button>
-        <button type="button" class="act" id="btnWrite">Write me one</button>
+        <button type="button" class="act" id="btnMake">Turn my words into a script</button>
       </div>
     </fieldset>
 
@@ -207,6 +208,31 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     document.getElementById('modeEasy').onclick = function(){ setMode('easy'); };
     document.getElementById('modeAdv').onclick = function(){ setMode('advanced'); };
 
+    /* WHAT IS IN THE BOX — the fix for the real confusion. One button at a
+     * time, and the box says what it wants, so pressing the wrong one is not
+     * something you can do by accident. */
+    state.input = 'words';
+    var inputG = state.guide.input;
+    document.getElementById('inputQ').textContent = inputG.question;
+    var modesBox = document.getElementById('inputModes');
+    inputG.modes.forEach(function(m){
+      var b = document.createElement('button');
+      b.type = 'button'; b.setAttribute('aria-pressed', m.key === state.input); b.textContent = m.label; b.dataset.k = m.key;
+      b.onclick = function(){ setInput(m.key); };
+      modesBox.appendChild(b);
+    });
+    function setInput(k){
+      state.input = k;
+      var m = inputG.modes.filter(function(x){ return x.key === k; })[0];
+      Array.prototype.forEach.call(modesBox.children, function(c){ c.setAttribute('aria-pressed', c.dataset.k === k); });
+      document.getElementById('textLabel').textContent = m.boxLabel;
+      document.getElementById('textHint').textContent = m.boxHint;
+      var btn = document.getElementById('btnMake');
+      btn.textContent = m.button;
+      btn.title = m.buttonHint;
+      say(m.boxLabel + '. ' + m.boxHint);
+    }
+
     /* ---- settings, from the guide: only what THIS engine has ---- */
     var EASY = { scenema:['voice_description','gender','reference_voice_url'], seed:['voice','audio_urls'] };
     function renderSettings(){
@@ -270,23 +296,25 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     async function makeScript(which){
       var b = collect(); b.mode = which;
       if(!b.text || b.text.trim().length < 3){ say(which==='write' ? 'Say what you want made first.' : 'Type the words you want performed first.', true); document.getElementById('text').focus(); return; }
-      document.getElementById('btnFormat').disabled = true; document.getElementById('btnWrite').disabled = true;
+      document.getElementById('btnMake').disabled = true;
       say(which==='write' ? 'Writing it\\u2026' : 'Shaping your words\\u2026');
       var r = await post('/api/kade/sound-booth/script', b);
-      document.getElementById('btnFormat').disabled = false; document.getElementById('btnWrite').disabled = false;
+      document.getElementById('btnMake').disabled = false;
       if(!r.ok){ say(r.data.error || 'The script desk had trouble. Try again.', true); return; }
       document.getElementById('script').value = r.data.script || '';
       document.getElementById('readback').textContent = r.data.readback || '';
       state.estimate = r.data.estimate || null;
       var parts = [];
+      /* The mismatch question comes FIRST: it is the one thing that can make
+       * everything after it wrong. */
+      if(r.data.mismatch) parts.push(r.data.mismatch);
       if(r.data.readback) parts.push(r.data.readback);
       if(r.data.estimate && r.data.estimate.spoken) parts.push(r.data.estimate.spoken);
       if(r.data.problem) parts.push('One thing to fix first: ' + r.data.problem);
       say(parts.join(' ') || 'Script ready.');
       document.getElementById('script').focus();
     }
-    document.getElementById('btnFormat').onclick = function(){ makeScript('format'); };
-    document.getElementById('btnWrite').onclick = function(){ makeScript('write'); };
+    document.getElementById('btnMake').onclick = function(){ makeScript(state.input === 'brief' ? 'write' : 'format'); };
     document.getElementById('script').addEventListener('input', function(){ state.pendingRender=null; document.getElementById('btnRender').textContent='Render'; });
 
     async function doRender(preview){
@@ -390,7 +418,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var listen = ps.filter(function(p){ return p.state === 'queued' || p.state === 'running'; })[0];
       if(listen && listen.jobs && listen.jobs.length && !state.jobId){ state.jobId = listen.jobs[listen.jobs.length-1]; document.getElementById('btnCancel').hidden = false; startPoll(); }
     }
-    setEngine('scenema'); setMode('easy');
+    setEngine('scenema'); setMode('easy'); setInput('words');
     loadLibrary();
     say('Ready. ' + state.guide.chooser.answer);
   })();
