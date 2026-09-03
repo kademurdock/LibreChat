@@ -96,10 +96,19 @@ function escapeXml(s) {
     .replace(/"/g, '&quot;');
 }
 
-/** Spoken words -> rough seconds of audio. 2.6 words/second is the bridge's
- * own constant, kept identical here so the two estimates agree. */
+/** Spoken words -> rough seconds of audio, at 2.6 words a second.
+ *
+ * ⚠️ The first live render caught this being wrong: stripping only the TAGS
+ * left the words INSIDE a direction in the count, so a two-line script with a
+ * long <action> was quoted at 12 seconds and came back 5.3. A direction is
+ * never spoken, so the whole block goes before anything is counted -- same for
+ * a <sound> line and for Seed Audio's [bracketed] cues. The bridge still
+ * counts the old way, which is why the fork's audioSeconds is the one that
+ * reaches her. */
 function spokenSeconds(script) {
   const words = String(script || '')
+    .replace(/<action>[\s\S]*?<\/action>/gi, ' ')
+    .replace(/<sound>[\s\S]*?<\/sound>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/\[[^\]]*\]/g, ' ')
     .split(/\s+/)
@@ -696,9 +705,12 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       await project.save();
       const est = estimateFor('scenema', script);
       const bridgeEst = r.data?.estimate || {};
+      /* audioSeconds comes from HERE (the bridge counts direction words as
+       * spoken); the wait and the money come from the BRIDGE, which is the
+       * only side that knows the measured render rate and the wake charge. */
       const merged = {
         ...est,
-        audioSeconds: bridgeEst.audioSeconds || est.audioSeconds,
+        audioSeconds: est.audioSeconds,
         renderSeconds: bridgeEst.renderSeconds || est.renderSeconds,
         costUSD: typeof bridgeEst.costUSD === 'number' ? bridgeEst.costUSD : est.costUSD,
       };
