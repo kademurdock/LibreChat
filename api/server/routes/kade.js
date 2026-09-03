@@ -932,6 +932,42 @@ router.post('/usage-event', async (req, res) => {
 });
 
 /* ----------------------------------------------------------------------------
+ * SERVICE: POST /api/kade/asset-event — Part 119.9 (Sep 3 2026). The bridge's
+ * Scenema lane finishes a render on RunPod and hands the MP3 here so it lands
+ * in the user's My Creations exactly like a fal clip: logKadeAsset mirrors it
+ * into our own S3 and writes the blind-friendly description. Same trust model
+ * as /usage-event (KADE_USAGE_EVENT_SECRET, both sides).
+ * -------------------------------------------------------------------------- */
+router.post('/asset-event', async (req, res) => {
+  try {
+    const expected = process.env.KADE_USAGE_EVENT_SECRET;
+    if (!expected || (req.body || {}).secret !== expected) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const { userId, kind, service, url, prompt, model, costUSD, metadata } = req.body || {};
+    const allowedKinds = ['video', 'image', 'audio', 'document'];
+    if (!userId || !url || !allowedKinds.includes(String(kind)) || !/^https?:\/\//i.test(String(url))) {
+      return res.status(400).json({ error: 'userId, kind (video|image|audio|document) and an http(s) url are required' });
+    }
+    const { logKadeAsset } = require('~/models/kadeAsset');
+    await logKadeAsset({
+      userId: String(userId),
+      kind: String(kind),
+      service: String(service || 'bridge').slice(0, 32),
+      url: String(url),
+      prompt: prompt ? String(prompt).slice(0, 2000) : undefined,
+      model: model ? String(model).slice(0, 64) : undefined,
+      costUSD: typeof costUSD === 'number' ? costUSD : 0,
+      metadata,
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    logger.error('[/api/kade/asset-event] error:', error);
+    return res.status(500).json({ error: 'Failed to log asset' });
+  }
+});
+
+/* ----------------------------------------------------------------------------
  * HTML pages (no server-side auth; client JS gets a token via /api/auth/refresh
  * exactly like the SPA does, then calls the gated APIs above).
  * -------------------------------------------------------------------------- */
