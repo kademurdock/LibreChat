@@ -51,6 +51,8 @@ const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
+const { splitSpeakScript, saySplit } = require('./kadeSoundBoothSplit');
+const chain = require('./kadeSoundBoothChain');
 
 const router = express.Router();
 
@@ -364,7 +366,7 @@ function sanitizeSeed(script) {
 
 /** Cheap structural checks so a bad script is refused HERE, in a sentence she
  * can act on, instead of failing on the GPU two minutes and a wake-up later. */
-function checkScenema(script) {
+function checkScenema(script, { allowLong = false } = {}) {
   const s = String(script || '').trim();
   if (!/^<speak[\s>]/i.test(s)) return 'A Scenema script has to start with a <speak> tag.';
   if (!/<\/speak>\s*$/i.test(s)) return 'A Scenema script has to end with </speak>.';
@@ -385,8 +387,11 @@ function checkScenema(script) {
     .replace(/<sound>[\s\S]*?<\/sound>/gi, '')
     .trim();
   if (!spoken) return 'There are no spoken words in that script — only directions.';
-  if (s.length > MAX_SCENEMA_CHARS) {
-    return `That script is ${s.length} characters; one render tops out at ${MAX_SCENEMA_CHARS} (about 600 spoken words). Split it into parts.`;
+  /* Part 122: length is only a PROBLEM for a caller that cannot split. /render
+   * can, so it passes allowLong and the splitter handles it; the script desk
+   * still reports it, but as a plan rather than a refusal. */
+  if (!allowLong && s.length > MAX_SCENEMA_CHARS) {
+    return `That script is ${s.length} characters; one render tops out at ${MAX_SCENEMA_CHARS} (about 600 spoken words), so it will be rendered in parts and joined into one recording.`;
   }
   return null;
 }
@@ -881,7 +886,10 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   } else {
     script = sanitizeSeed(script).script;
   }
-  const problem = engine === 'seed' ? checkSeed(script) : checkScenema(script);
+  /* allowLong: a Scenema script over the cap is not refused here any more —
+   * the splitter below turns it into parts. Every other structural problem
+   * still stops the render before it spends. */
+  const problem = engine === 'seed' ? checkSeed(script) : checkScenema(script, { allowLong: true });
   if (problem) return res.status(400).json({ error: problem });
 
   let project = null;
@@ -937,6 +945,40 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     project.options = opts;
     project.lastRenderAt = new Date();
     project.lastError = undefined;
+
+    /* ---- Part 122: TOO LONG IS NO LONGER A REFUSAL ---------------------
+     * This used to hand back "split it into parts" — work given to the person
+     * least able to do it by eye. Now it cuts at sentence boundaries, renders
+     * the parts in order on the same pinned voice, and joins them into one
+     * recording. A preview is exempt: it is one fixed fifteen-second line. */
+    if (engine === 'scenema' && !preview && script.length > MAX_SCENEMA_CHARS) {
+      const secret = process.env.BRIDGE_SECRET;
+      if (!secret) return res.status(503).json({ error: 'The render lane is not configured here.' });
+      const pieces = splitSpeakScript(script, MAX_SCENEMA_CHARS);
+      if (pieces.length > chain.MAX_PARTS) {
+        return res.status(400).json({
+          error: `That script would take ${pieces.length} separate renders, which is past the ${chain.MAX_PARTS}-part limit. Cut it roughly in half and make it as two pieces.`,
+        });
+      }
+      project.parts = pieces.map((sc, i) => ({ index: i, script: sc, state: 'pending' }));
+      project.stitchedAssetId = undefined;
+      project.state = 'queued';
+      await project.save();
+      const step = await chain.advance(project);
+      if (step.state === 'failed') {
+        return res.status(400).json({ error: project.lastError, projectId: String(project._id) });
+      }
+      const est = estimateFor('scenema', script);
+      logger.info(`[soundbooth/render] scenema SPLIT into ${pieces.length} parts project=${project._id} user=${req.user.id}`);
+      return res.json({
+        ok: true,
+        jobId: step.jobId || null,
+        projectId: String(project._id),
+        multipart: { total: pieces.length, index: 0 },
+        estimate: { ...est, spoken: `${saySplit(pieces, 'Scenema')} ${est.spoken}` },
+        spoken: saySplit(pieces, 'Scenema'),
+      });
+    }
 
     if (engine === 'scenema') {
       const secret = process.env.BRIDGE_SECRET;
@@ -1110,6 +1152,30 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   }
 });
 
+/* One push per finished PIECE, not per part — sent after the join, through the
+ * same bridge lane the single-shot renders use. */
+async function notifyReady(userId, seconds) {
+  const secret = process.env.BRIDGE_SECRET;
+  if (!secret) return;
+  const m = Math.floor((seconds || 0) / 60);
+  const sec = Math.round((seconds || 0) % 60);
+  const len = m ? `${m} minute${m === 1 ? '' : 's'} ${sec} seconds` : `${sec} seconds`;
+  await axios.post(
+    `${bridgeBase()}/notify`,
+    {
+      secret,
+      userId: String(userId),
+      agentId: 'soundbooth',
+      agentName: 'Sound Booth',
+      title: 'Your narration is ready',
+      body: `${len} of audio, joined from its parts, is in My Creations.`,
+      urgent: false,
+      category: 'KADE_RESEARCH',
+    },
+    { headers: { 'User-Agent': UA }, timeout: 15000 },
+  );
+}
+
 /* ============================ GET /status/:jobId =========================== */
 /* The phone cannot hold BRIDGE_SECRET, so the fork asks on its behalf -- the
  * same peephole shape build 197 used for the front desk and the crash ring.
@@ -1122,6 +1188,30 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
     const jobId = String(req.params.jobId || '').slice(0, 64);
     const project = await KadeSoundBoothProject.findOne({ user: req.user.id, jobs: jobId });
     if (!project) return res.status(404).json({ error: 'No render by that name on your account.' });
+
+    /* ---- Part 122: a multi-part piece advances HERE ---------------------
+     * There is no worker process in this app, and /status is already polled
+     * every 15 s by both surfaces, so the poll is what walks the chain. Every
+     * step is idempotent because both surfaces may poll the same project at
+     * once. If she closes the app mid-chain it PAUSES rather than breaking —
+     * the parts already paid for keep their audio and the next open resumes. */
+    if ((project.parts || []).length > 1) {
+      const step = await chain.advance(project, {
+        onStitched: async ({ seconds }) => {
+          await notifyReady(String(req.user.id), seconds).catch(() => {});
+        },
+      });
+      const done = (project.parts || []).filter((p) => p.state === 'done').length;
+      const total = project.parts.length;
+      return res.json({
+        jobId,
+        projectId: String(project._id),
+        state: project.state,
+        error: project.state === 'failed' ? project.lastError || null : null,
+        multipart: { total, done, joined: !!project.stitchedAssetId },
+        spoken: step.spoken || chain.sayProgress(project, null),
+      });
+    }
     let r;
     try {
       r = await axios.get(

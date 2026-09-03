@@ -45,6 +45,29 @@ const kadeSoundBoothProjectSchema = new mongoose.Schema(
     options: { type: mongoose.Schema.Types.Mixed, default: {} },
     /** Bridge job ids, newest last. Scenema only. */
     jobs: { type: [String], default: [] },
+    /** Part 122 — a script too long for one render is cut into PARTS, rendered
+     * in order, and joined into one recording. Each part is its own bridge job
+     * and its own charge, so this array is the receipt for a chain that dies
+     * halfway: the finished parts keep their audio and a resume picks up from
+     * the first one that is not done. Empty on a normal single-shot render. */
+    parts: {
+      type: [
+        {
+          index: { type: Number },
+          script: { type: String },
+          jobId: { type: String },
+          url: { type: String },
+          state: { type: String, enum: ['pending', 'queued', 'running', 'done', 'failed'], default: 'pending' },
+          durationS: { type: Number },
+          costUSD: { type: Number },
+          error: { type: String },
+        },
+      ],
+      default: [],
+    },
+    /** Set once the parts are joined and filed, so a re-poll cannot make a
+     * second copy of the same recording. */
+    stitchedAssetId: { type: String },
     /** KadeAsset ids for every finished render of this project. */
     assets: { type: [String], default: [] },
     state: {
