@@ -410,6 +410,29 @@ function checkSeed(script) {
  * it — a wording fix is one deploy, not two builds. Every line is written to
  * be read aloud. Sources: the Scenema README and Seed Audio's own guide. */
 const GUIDE = {
+  /* What the box is holding, and therefore which button exists. The screens
+   * render this ABOVE the text box so there is only ever one button. */
+  input: {
+    question: 'What are you putting in the box?',
+    modes: [
+      {
+        key: 'words',
+        label: 'I am writing the words',
+        boxLabel: 'The words to perform',
+        boxHint: 'Type what you want said, exactly as you want to hear it. Every word here gets spoken.',
+        button: 'Turn my words into a script',
+        buttonHint: 'Keeps every word you wrote, in your order, and only adds the directions around them.',
+      },
+      {
+        key: 'brief',
+        label: 'I am describing what I want',
+        boxLabel: 'Describe what you want made',
+        boxHint: 'Say what the piece is — "a two minute bedtime story about a fox who is scared of the dark". None of this gets spoken; it is the brief.',
+        button: 'Write me one',
+        buttonHint: 'Writes the whole piece from your description, then you can edit it.',
+      },
+    ],
+  },
   chooser: {
     question: 'Which engine should I use?',
     answer:
@@ -478,6 +501,55 @@ const GUIDE = {
     },
   },
 };
+
+/* ---------- "is this the WORDS, or a DESCRIPTION of them?" -------------------
+ * Part 121.1, her question: "do you think users will get confused between
+ * write one for me and turn my words into a script?"
+ *
+ * The buttons are not really the problem. ONE TEXT BOX MEANS TWO DIFFERENT
+ * THINGS depending on which one you press, and the box cannot say which it is
+ * holding. Type "a bedtime story about a fox who is scared of the dark" and
+ * press "Turn my words into a script", and the engine performs those twelve
+ * words, out loud, exactly as typed. It succeeds. It costs money. It is not
+ * remotely what anyone meant — and for someone listening rather than looking,
+ * a plausible script and a plausible read-back come back, so nothing about
+ * the result announces the mistake.
+ *
+ * A silent wrong answer is the failure this platform's record hates most, so:
+ * the screens put the choice ABOVE the box (one button at a time, and the box
+ * says what it wants), and this is the backstop for a wrong pick — asked as a
+ * question, never as a refusal, because the classifier can be wrong and she
+ * is allowed to mean it. */
+function looksLikeDescription(text) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  const lower = t.toLowerCase();
+  const words = t.split(/\s+/).filter(Boolean).length;
+  const reasons = [];
+  let score = 0;
+  if (/^(write|make|generate|create|do|give)\b/.test(lower)) { score += 3; reasons.push('it starts with an instruction'); }
+  if (/\b(write|make|generate|create) me\b/.test(lower)) { score += 3; reasons.push('it asks for something to be made'); }
+  if (/^(a|an|the)\s+[\w\s-]{2,40}\b(story|ad|advert|commercial|scene|poem|song|monologue|letter|speech|intro|trailer|jingle|piece|clip|narration)\b/.test(lower)) {
+    score += 3; reasons.push('it names a kind of piece rather than saying anything');
+  }
+  if (/\b\d+\s*(second|sec|minute|min)\b/.test(lower)) { score += 2; reasons.push('it gives a length'); }
+  if (/\b(about|for|where|in which|that says)\b/.test(lower) && words < 60) { score += 1; }
+  // Signals it IS the words: real sentences, quoted speech, someone addressed.
+  const sentences = (t.match(/[.!?]["')\]]?(\s|$)/g) || []).length;
+  if (sentences >= 2) { score -= 3; reasons.push('it reads as finished sentences'); }
+  if (/["“”]/.test(t)) { score -= 2; }
+  if (/\b(i|you|we|my|your)\b/i.test(lower) && sentences >= 1) score -= 1;
+  if (words > 80) { score -= 2; }
+  if (score < 3) return null;
+  return {
+    /* Said, not shown — and phrased as a question, because being told you
+     * pressed the wrong button is worse than being asked. */
+    question:
+      `That reads like a description of what you want, not the words themselves — ${reasons.slice(0, 2).join(' and ')}. ` +
+      'Pressed this way it will perform that sentence out loud, word for word. Did you mean "Write me one"?',
+    reasons,
+  };
+}
 
 /* A free, instant, explainable answer to "which one?" — read off the text she
  * typed, so the screen can suggest before she spends anything. Not a model
@@ -697,6 +769,9 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
         .json({ error: `That's ${SCRIPT_DAILY_CAP} scripts today — the writing desk reopens tomorrow.` });
     }
 
+    /* The backstop: formatting a brief performs the brief. Ask, do not refuse. */
+    const mismatch = mode === 'format' ? looksLikeDescription(text) : null;
+
     const mood = MOODS[b.mood] || null;
     const lines = [];
     lines.push(mode === 'write' ? `WHAT THEY WANT MADE:\n${text}` : `THEIR WORDS:\n${text}`);
@@ -779,6 +854,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
       estimate,
       problem: problem || null,
       repairs,
+      mismatch: mismatch ? mismatch.question : null,
     });
   } catch (error) {
     const status = error.status || 500;
@@ -1280,4 +1356,4 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { checkScenema, checkSeed, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, GUIDE };
+module.exports._internals = { checkScenema, checkSeed, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, GUIDE };
