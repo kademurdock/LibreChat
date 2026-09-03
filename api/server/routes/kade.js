@@ -1757,9 +1757,33 @@ router.post('/nudges/ingest', async (req, res) => {
     if (!expected || (req.body || {}).secret !== expected) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    const { userId, text, type } = req.body || {};
+    const { userId, text, type, chatOnly } = req.body || {};
     if (!userId || !text) {
       return res.status(400).json({ error: 'userId and text required' });
+    }
+    /* ⭐ chatOnly (Part 121.5) — bypass the user's channel prefs and queue for
+     * the next CONVERSATION, never push, never a phone call.
+     *
+     * Why this exists: some notes are only meaningful when a character says
+     * them, in context, in their own words. The first one was an apology Kiana
+     * owed somebody about something said during her grief. Delivered through
+     * deliverNudge it would have honoured that person's prefs — and if hers
+     * read 'push' it would have arrived as a lock-screen banner, or if 'call',
+     * as an outbound phone call at whatever hour the queue fired. An apology
+     * is not a notification. There was also no way to READ another user's
+     * prefs from here to check first, so the choice was gamble or force it.
+     *
+     * Rule for using it: chatOnly is for things that must be SAID rather than
+     * DELIVERED. A reminder is still a reminder and still rides prefs. */
+    if (chatOnly === true) {
+      const { KadePendingNudge: PendingNudge } = require('~/models/kadeNudge');
+      await PendingNudge.create({
+        userId: String(userId),
+        text: String(text).slice(0, 3000),
+        type: ['reminder', 'birthday', 'wellness'].includes(type) ? type : 'reminder',
+        channel: 'chat',
+      });
+      return res.json({ ok: true, channel: 'chat', forced: true });
     }
     const channel = await deliverKadeNudge(String(userId), String(text).slice(0, 3000), {
       type: ['reminder', 'birthday', 'wellness'].includes(type) ? type : 'reminder',
