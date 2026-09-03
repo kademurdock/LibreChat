@@ -247,8 +247,17 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(s.kind==='toggle') return '<label class="field"><input type="checkbox" id="'+id+'" data-key="'+s.key+'"'+(v?' checked':'')+' aria-describedby="'+id+'_h"> '+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
         if(s.kind==='choice') return head+'<select id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h">'+s.options.map(function(o){ var lab = o===''?'None':o.replace(/_/g,' '); return '<option value="'+esc(o)+'"'+((v!=null?v:s.default)===o?' selected':'')+'>'+esc(lab.charAt(0).toUpperCase()+lab.slice(1))+'</option>'; }).join('')+'</select>';
         if(s.kind==='clip'){
-          var list = state.clips.slice(0, s.max).map(function(c,i){ return '<li>'+(s.max>1?'@Audio'+(i+1)+': ':'')+esc(c.name)+' <button type="button" class="act quiet" data-rmclip="'+i+'">Remove</button></li>'; }).join('');
-          return head+'<input type="file" id="'+id+'" accept="audio/*" aria-describedby="'+id+'_h"'+(state.clips.length>=s.max?' disabled':'')+'><ul class="clips">'+list+'</ul>';
+          /* Explicit extensions, not audio/* — a .ogg is typed video/ogg or
+           * application/ogg as often as audio/ogg, so a wildcard filter can
+           * hide the file she is trying to pick. And each clip gets a PLAYER,
+           * her ask: hearing what is attached is the only way to know. */
+          var accept = state.engine==='seed' ? '.wav,.mp3,.m4a,.ogg,audio/*' : '.wav,.mp3,.m4a,audio/*';
+          var list = state.clips.slice(0, s.max).map(function(c,i){
+            return '<li>'+(s.max>1?'@Audio'+(i+1)+': ':'')+esc(c.name)+
+              '<audio controls preload="none" aria-label="Play the imported clip, '+esc(c.name)+'"><source src="'+esc(c.url)+'"></audio>'+
+              '<button type="button" class="act quiet" data-rmclip="'+i+'">Remove '+esc(c.name)+'</button></li>';
+          }).join('');
+          return head+'<input type="file" id="'+id+'" accept="'+accept+'" aria-describedby="'+id+'_h"'+(state.clips.length>=s.max?' disabled':'')+'><ul class="clips">'+list+'</ul>';
         }
         return '';
       }).join('');
@@ -266,10 +275,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     async function importClip(file){
       if(file.size > 20*1024*1024){ say('That clip is over twenty megabytes. Ten to twenty seconds is all it needs.', true); return; }
       say('Importing ' + file.name + '\\u2026');
-      var fd = new FormData(); fd.append('clip', file, file.name);
+      var fd = new FormData(); fd.append('clip', file, file.name); fd.append('engine', state.engine);
       var r = await fetch('/api/kade/sound-booth/reference', {method:'POST', headers:{'Authorization':'Bearer '+token}, body: fd});
       var j = null; try { j = await r.json(); } catch(e) {}
       if(!r.ok || !j || !j.url){ say((j&&j.error)||'That clip could not be imported.', true); return; }
+      /* A silent success on an upload is indistinguishable from nothing
+       * happening, so this says the file name back and points at the player. */
       state.clips.push({url:j.url, name:j.name||file.name});
       say((j.spoken||'Clip imported.') + (state.engine==='seed' ? ' It is @Audio'+state.clips.length+'.' : ''));
       renderSettings();
@@ -352,7 +363,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         var secs = Math.max(1, Math.round(words/2.6));
         var spoken = est && est.spoken ? est.spoken :
           ('About ' + secs + ' seconds of audio, ' + (state.engine==='seed' ? 'a few seconds to make, about ' + Math.max(1, Math.round(secs/60*18.75)) + ' cents.' : 'a couple of minutes to make, about ' + Math.max(1, Math.round(secs/60*2)+2) + ' cents.'));
-        say(spoken + ' Press Render again to go ahead.');
+        /* ⭐ THE ELEVEN-CENT LESSON (Part 121.3). Her first web render was
+         * quoted, confirmed and paid for with NO clip attached, and she only
+         * learned that by listening to the result. The quote now always says
+         * which it is. */
+        var cloneLine = state.clips.length
+          ? ' Cloning ' + state.clips.map(function(c){ return c.name; }).join(', ') + '.'
+          : ' No clip attached, so the voice comes from your description.';
+        say(spoken + cloneLine + ' Press Render again to go ahead.');
         btnRender.textContent = 'Render \\u2014 confirm';
         return;
       }

@@ -464,7 +464,7 @@ const GUIDE = {
       settings: [
         { key: 'voice_description', label: 'Describe the voice', hint: 'Sex, age, register, accent, texture, manner, one line of character. This is the main control.', kind: 'text' },
         { key: 'gender', label: 'Voice sex', hint: 'Male or female. The engine needs it for the pronouns in its own notes.', kind: 'choice', options: ['female', 'male'], default: 'female' },
-        { key: 'reference_voice_url', label: 'Import a clip to clone', hint: 'Ten to twenty seconds of one person, clean, with some feeling in it — a flat monotone clip clones badly. Compressed, noisy recordings drag the result down.', kind: 'clip', max: 1 },
+        { key: 'reference_voice_url', label: 'Import a clip to clone', hint: 'A WAV, an MP3, or an M4A voice memo — this engine cannot read OGG. Ten to twenty seconds of one person, clean, with some feeling in it; a flat monotone clip clones badly, and a noisy or heavily compressed one drags the whole result down. Play it back before you render.', kind: 'clip', max: 1 },
         { key: 'scene', label: 'Scene', hint: 'Where this happens: "a kitchen at dawn, rain outside". Only heard if Shot is Wide or Scene and Scene sound is on.', kind: 'text' },
         { key: 'shot', label: 'Shot', hint: 'How far away the listener is. Close up is the voice at your ear, environment stripped. Wide puts the voice in a room. Scene turns the room up.', kind: 'choice', options: ['closeup', 'wide', 'scene'], default: 'closeup' },
         { key: 'background_sfx', label: 'Scene sound', hint: 'Keeps the room and weather around the voice instead of a clean voice on its own. Only does anything with Wide or Scene.', kind: 'toggle', default: false },
@@ -491,7 +491,7 @@ const GUIDE = {
       ],
       settings: [
         { key: 'voice', label: 'Preset voice', hint: 'One of the engine’s twenty built-in voices, for a single narrator. Leave it off when your prompt describes the voices, or when clips are imported.', kind: 'choice', options: ['', 'vivi_mixed_en_zh_ja_es_id', 'mindy_en_es_id_pt_zh', 'kian_en_zh', 'cedric_en_zh', 'sophie_en_zh', 'jean_en_zh', 'magnus_en_zh', 'mabel_en_zh', 'nadia_en_zh', 'opal_en_zh', 'pearl_en_zh', 'quentin_en_zh', 'corinne_mixed_en_zh', 'esther_mixed_en_zh', 'lyla_mixed_en_zh', 'tracy_es_zh', 'sandy_es_mixed_en_zh', 'felix_zh', 'celeste_zh', 'monkey_king_zh'], default: '' },
-        { key: 'audio_urls', label: 'Import clips to clone', hint: 'Up to three, each under thirty seconds, clean, one person each. They become @Audio1, @Audio2 and @Audio3 — name them in the script.', kind: 'clip', max: 3 },
+        { key: 'audio_urls', label: 'Import clips to clone', hint: 'WAV, MP3, M4A or OGG. Up to three, each under thirty seconds, clean, one person each. They become @Audio1, @Audio2 and @Audio3 — name them in the script. Play each one back before you render.', kind: 'clip', max: 3 },
         { key: 'speed', label: 'Speed', hint: 'One is normal. Half is half speed, two is double.', kind: 'number', min: 0.5, max: 2, default: 1 },
         { key: 'pitch', label: 'Pitch', hint: 'In semitones. Zero is normal. Minus twelve is an octave down, twelve an octave up.', kind: 'number', min: -12, max: 12, default: 0 },
         { key: 'volume', label: 'Volume', hint: 'One is normal. Half to double.', kind: 'number', min: 0.5, max: 2, default: 1 },
@@ -1291,25 +1291,63 @@ const refUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
 });
-const REF_TYPES = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/ogg', 'audio/webm', 'audio/flac', 'audio/x-flac'];
-const REF_EXT = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/mp4': 'm4a', 'audio/m4a': 'm4a', 'audio/x-m4a': 'm4a', 'audio/aac': 'aac', 'audio/ogg': 'ogg', 'audio/webm': 'webm', 'audio/flac': 'flac', 'audio/x-flac': 'flac' };
+/* ⚠️ Part 121.3 — WHAT EACH ENGINE CAN ACTUALLY READ, from its own docs.
+ * She imported a .ogg for a Scenema clone and got a render with no clone in
+ * it. TWO things were wrong and both were mine: the browser's file picker
+ * very likely filtered the file out before it was ever sent (an .ogg is
+ * typed video/ogg or application/ogg as often as audio/ogg), and Scenema
+ * would not have taken it anyway — its README says reference audio is
+ * **WAV or MP3**. This route was accepting six formats the renderer cannot
+ * use, which is a promise the engine does not keep.
+ *
+ * Scenema:  WAV or MP3 (README, reference_voice_url).
+ * Seed 1.0: wav, mp3, pcm, ogg_opus (fal schema, audio_urls).
+ * m4a is allowed for both and transcoded nowhere — it is the format a
+ * phone voice memo actually produces, both engines' stacks decode it via
+ * ffmpeg, and refusing it would fail the most common real case. If a clone
+ * from an m4a ever comes back wrong, this comment is the first suspect. */
+const REF_EXT = {
+  'audio/mpeg': 'mp3', 'audio/mp3': 'mp3',
+  'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/wave': 'wav',
+  'audio/mp4': 'm4a', 'audio/m4a': 'm4a', 'audio/x-m4a': 'm4a',
+  'audio/ogg': 'ogg', 'application/ogg': 'ogg', 'video/ogg': 'ogg',
+};
+const ENGINE_REF_FORMATS = {
+  scenema: { exts: ['wav', 'mp3', 'm4a'], say: 'a WAV, an MP3, or an M4A voice memo' },
+  seed: { exts: ['wav', 'mp3', 'm4a', 'ogg'], say: 'a WAV, an MP3, an M4A voice memo, or an OGG' },
+};
 
 router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, res) => {
   try {
     const f = req.file;
+    const engine = (req.body || {}).engine === 'seed' ? 'seed' : 'scenema';
+    const allowed = ENGINE_REF_FORMATS[engine];
     if (!f || !f.buffer || !f.buffer.length) {
+      /* Logged, because a REFUSED upload used to leave no trace at all — the
+       * only log line fired on success, so "did she even try?" was
+       * unanswerable from the record. It is answerable now. */
+      logger.warn(`[soundbooth/reference] REFUSED user=${req.user.id}: no file in the request`);
       return res.status(400).json({ error: 'No clip arrived. Pick an audio file and try again.' });
     }
-    const mime = String(f.mimetype || '').toLowerCase();
-    if (!REF_TYPES.includes(mime)) {
-      return res
-        .status(400)
-        .json({ error: 'That file is not audio this can read. A voice memo, an MP3, a WAV or an M4A all work.' });
+    const mime = String(f.mimetype || '').toLowerCase().split(';')[0].trim();
+    const nameExt = String(f.originalname || '').toLowerCase().split('.').pop();
+    /* Trust the EXTENSION as much as the mime type: browsers type .ogg as
+     * video/ogg or application/ogg, and some send an empty type entirely. */
+    const ext = REF_EXT[mime] || (Object.values(REF_EXT).includes(nameExt) ? nameExt : null);
+    if (!ext || !allowed.exts.includes(ext)) {
+      logger.warn(
+        `[soundbooth/reference] REFUSED user=${req.user.id} engine=${engine} name=${String(f.originalname || '?').slice(0, 60)} mime=${mime || '(none)'} ext=${nameExt || '(none)'}`,
+      );
+      return res.status(400).json({
+        error:
+          `${engine === 'seed' ? 'Seed Audio' : 'Scenema'} can't read that kind of file. It needs ${allowed.say}.` +
+          (ext && !allowed.exts.includes(ext) ? ` An ${ext.toUpperCase()} works for the other engine, but not this one.` : ''),
+        accepted: allowed.exts,
+      });
     }
     if (typeof saveBufferToS3 !== 'function') {
       return res.status(503).json({ error: 'File storage is not set up on this server.' });
     }
-    const ext = REF_EXT[mime] || 'mp3';
     const fileName = `soundbooth-ref-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const url = await saveBufferToS3({
       userId: String(req.user.id),
@@ -1326,7 +1364,11 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
       name: String(f.originalname || fileName).slice(0, 120),
       /* Said out loud on the phone the moment it lands, because a silent
        * success on an upload is indistinguishable from nothing happening. */
-      spoken: `Clip imported, ${Math.max(1, Math.round(f.buffer.length / 1024))} kilobytes. It will be used as the voice to clone.`,
+      ext,
+      /* Her ask: "have a play button to check your sample." The URL comes back
+       * so the screen can play the thing that is actually attached — the
+       * difference between believing a clone is set up and hearing that it is. */
+      spoken: `Clip imported, ${Math.max(1, Math.round(f.buffer.length / 1024))} kilobytes. Play it to check it, then it gets cloned.`,
     });
   } catch (error) {
     logger.error('[soundbooth/reference] failed:', error);

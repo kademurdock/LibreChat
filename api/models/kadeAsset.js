@@ -111,7 +111,21 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
     'https://openrouter.ai/api/v1/chat/completions',
     /* July 13 2026 money audit: request usage so gallery descriptions stop
      * being the one billable call that never hit kadeusage. */
-    { model: DESCRIBE_MODEL, max_tokens: maxTokens, messages: [{ role: 'user', content }], usage: { include: true } },
+    /* Part 121.3 — WHY reasoning is switched off and the budget is generous.
+     * A run of gallery descriptions came back truncated at 15-41 characters
+     * ("You will hear a soft-spoken woman in"), and one returned its own
+     * instructions back ('Start with:** "You will hear" ('). max_tokens counts
+     * REASONING plus output on a thinking model, so a reasoning pass ate the
+     * whole budget and left ten tokens of visible text. The description is how
+     * a blind user knows what a clip contains without playing it, so it is not
+     * a place to be stingy. */
+    {
+      model: DESCRIBE_MODEL,
+      max_tokens: maxTokens,
+      reasoning: { enabled: false },
+      messages: [{ role: 'user', content }],
+      usage: { include: true },
+    },
     { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 90000 },
   );
   if (usageOwner) {
@@ -149,11 +163,15 @@ async function describeAudio(doc) {
           type: 'text',
           text:
             `This is an AI-generated AUDIO clip (any mix of dialogue, sound effects, music, and narration) created from this direction: "${String(doc.prompt).slice(0, 1500)}". ` +
-            'In 2-4 sentences, tell a blind listener what they will HEAR: who speaks and their tone/emotion, key sound effects, any music, and the overall atmosphere. ' +
-            'Start straight in with "You will hear" — no other preamble.',
+            'In 2-4 sentences, tell a blind listener what is in it: who speaks and their tone, key sound effects, any music, and the overall atmosphere. ' +
+            /* Part 121.3, her note: "the what you will hear thing is weird as
+             * it is." Every description in the gallery opened with the same
+             * four words because the prompt demanded it — a template tic that
+             * reads as filler by the third clip. Describe the thing instead. */
+            'Write it as plain description, straight into the content. Do not open with a stock phrase like "You will hear" or "This clip features" — just say what is in it.',
         },
       ],
-      220,
+      900,
       doc.user,
     );
     return text ? text.slice(0, 2000) : null;
