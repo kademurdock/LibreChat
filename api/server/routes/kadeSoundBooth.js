@@ -1160,15 +1160,22 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
       url: j.result?.url || null,
       durationS: j.result?.durationS || null,
       costUSD: j.costUSD || null,
-      /* Said, not shown: the app speaks this on every state change. */
+      /* Part 122: the bridge now says WHY an unfinished job is unfinished, how
+       * long it has been that way, and when it will give up. Passed straight
+       * through so the surfaces can speak a changing sentence on every poll
+       * rather than one line and then six minutes of nothing. */
+      wait: j.wait || null,
+      /* Said, not shown. */
       spoken:
         j.state === 'done'
           ? `Ready. ${Math.floor(d / 60) ? `${Math.floor(d / 60)} minute${Math.floor(d / 60) === 1 ? '' : 's'} ` : ''}${d % 60} seconds of audio, in the Sound Booth library and My Creations.`
           : j.state === 'failed'
-            ? `That render did not finish. ${String(j.error || '').slice(0, 120)}`
-            : j.state === 'running'
-              ? 'Rendering now.'
-              : 'Queued. The graphics card may need a minute to wake up.',
+            ? `That render did not finish. ${String(j.error || '').slice(0, 160)}`
+            : j.wait?.spoken
+              ? j.wait.spoken
+              : j.state === 'running'
+                ? 'Rendering now.'
+                : 'Queued, waiting for a graphics card.',
     });
   } catch (error) {
     logger.error('[soundbooth/status] failed:', error);
@@ -1398,4 +1405,4 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { checkScenema, checkSeed, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, GUIDE };
+module.exports._internals = { checkScenema, checkSeed, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE };

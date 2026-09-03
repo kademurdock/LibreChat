@@ -139,7 +139,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     var token = null; try { token = await getToken(); } catch(e) {}
     if(!token){ status.className='status err'; status.textContent='Please sign in at the chat site first, then reload this page.'; return; }
 
-    var state = { engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{} };
+    var state = { engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null };
     function say(msg, isErr){ status.className = 'status' + (isErr ? ' err' : ''); status.textContent = msg; }
     function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML; }
     async function post(path, body){
@@ -379,22 +379,44 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       btnRender.disabled = false;
     };
     document.getElementById('btnPreview').onclick = function(){ doRender(true); };
+    /* Part 122 -- STOP ASKS ONCE while the wait is still earned. Three renders
+     * on Sep 3 were stopped by hand at fifty seconds and at four minutes, both
+     * inside a cold wake that had not finished; the booth had promised three
+     * minutes and then said nothing, so stopping was the reasonable thing to
+     * do. It asks, it does not refuse -- a render she means to kill still dies
+     * on the second press. */
     document.getElementById('btnCancel').onclick = async function(){
       if(!state.jobId) return;
+      var w = state.lastWait;
+      if(state.cancelArmed !== state.jobId && w && w.phase !== 'rendering'){
+        state.cancelArmed = state.jobId;
+        say((w.spoken || 'This one has not started yet.') + ' Nothing has been charged. Press Stop again if you really want it gone.');
+        return;
+      }
       await post('/api/kade/sound-booth/cancel/' + encodeURIComponent(state.jobId), {});
-      stopPoll(); say('Stopped.'); document.getElementById('btnCancel').hidden = true; loadLibrary();
+      stopPoll(); state.lastWait = null; state.cancelArmed = null;
+      say('Stopped. Nothing was charged for a render that never started.');
+      document.getElementById('btnCancel').hidden = true; loadLibrary();
     };
 
     function stopPoll(){ if(state.poll){ clearInterval(state.poll); state.poll = null; } }
+    /* Part 122. This used to speak ONLY when the state word changed, and queued
+     * to running is the only change before done -- so a cold wake (six and a
+     * half minutes, measured) was one sentence and then total silence, which by
+     * ear is a hung app. It is why three of her renders got stopped by hand. It
+     * talks every other poll now, and the line it speaks carries elapsed time
+     * and how long until it gives up, so the wait always sounds alive. */
     function startPoll(){
-      stopPoll(); var last = '';
+      stopPoll(); var last = '', ticks = 0;
       state.poll = setInterval(async function(){
         if(!state.jobId) return;
         var r = await get('/api/kade/sound-booth/status/' + encodeURIComponent(state.jobId));
         if(!r.ok) return;
-        var s = r.data.state;
-        if(s !== last){ last = s; say(r.data.spoken || s); }
-        if(s === 'done' || s === 'failed' || s === 'cancelled'){ stopPoll(); state.jobId = null; document.getElementById('btnCancel').hidden = true; loadLibrary(); }
+        var s = r.data.state; ticks++;
+        state.lastWait = r.data.wait || null;
+        var finished = (s === 'done' || s === 'failed' || s === 'cancelled');
+        if(s !== last || finished || ticks % 2 === 0){ last = s; say(r.data.spoken || s, s === 'failed'); }
+        if(finished){ stopPoll(); state.jobId = null; state.lastWait = null; state.cancelArmed = null; document.getElementById('btnCancel').hidden = true; loadLibrary(); }
       }, 15000);
     }
 
