@@ -57,13 +57,15 @@ const falJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['generate_image', 'generate_video', 'animate_image', 'check_video', 'generate_audio', 'generate_song'],
+      enum: ['generate_image', 'generate_video', 'animate_image', 'check_video', 'generate_audio', 'generate_song', 'generate_narration', 'check_narration'],
       description:
         "'generate_image' = Seedream 4.5 design/photo image (fast, ~$0.04). 'generate_video' = text-to-video clip. " +
         "'animate_image' = bring a still image to LIFE as a video (Kling image-to-video) — e.g. make a dog photo wag its tail. " +
         "'check_video' = poll a video that wasn't finished when generate_video/animate_image returned. " +
         "'generate_audio' = Seed Audio 1.0 CINEMATIC AUDIO: multi-character dialogue, sound effects, music and ambience in ONE clip (up to ~2 min), plus text-to-speech, voice cloning, and editing existing audio (extend / inpaint / stitch / swap a line) via audio_urls. Returns fast and synchronously with a real audio URL. ~$0.19/minute. " +
-        "'generate_song' = full MUSIC with SUNG vocals from a style brief + lyrics. engine 'lyria3_pro' (default) = Google Lyria 3 Pro, up to ~3-min songs; engine 'minimax' = MiniMax Music 2.6. Put the STYLE in prompt, the words to sing in lyrics, things to avoid in negative_prompt, and set instrumental:true for a backing track. Queue job, ~1-2 min. ~$0.08-0.15/song.",
+        "'generate_song' = full MUSIC with SUNG vocals from a style brief + lyrics. engine 'lyria3_pro' (default) = Google Lyria 3 Pro, up to ~3-min songs; engine 'minimax' = MiniMax Music 2.6. Put the STYLE in prompt, the words to sing in lyrics, things to avoid in negative_prompt, and set instrumental:true for a backing track. Queue job, ~1-2 min. ~$0.08-0.15/song. " +
+        "'generate_narration' = SCENEMA AUDIO, our own GPU: ONE actor PERFORMING a script with stage directions — emotion that shifts mid-take, breaths, pauses, a voice designed from words or cloned from one reference clip (audio_urls[0] / use_recent_audio), optional scene sound. Any length (a whole chapter). It is a QUEUED render (~1.4x the audio length, plus a 1-2 minute wake if the GPU was asleep) that lands in My Creations and taps the user's phone; ~2 cents a minute. No music, one voice per request — use generate_audio for scenes with several voices or music. " +
+        "'check_narration' = the state of the user's latest narration (queued / running / done with a playable URL).",
     },
     prompt: {
       type: 'string',
@@ -169,6 +171,33 @@ const falJsonSchema = {
       type: 'string',
       description: "check_video only: the request id returned by generate_video/animate_image.",
     },
+    voice_description: {
+      type: 'string',
+      description:
+        "generate_narration only: the actor, in words, specific and theatrical — 'Woman, late 50s, low and warm, Black American, tired but kind, the voice of someone who has told this story before.' Drives everything: age, texture, accent, delivery. Ignored if prompt already is <speak> XML.",
+    },
+    gender: {
+      type: 'string',
+      enum: ['female', 'male'],
+      description: 'generate_narration only: the speaker. Required unless prompt is <speak> XML.',
+    },
+    scene: {
+      type: 'string',
+      description: "generate_narration only: optional environment for scene sound ('rain on a tin roof, night'). Only audible with shot 'wide' or 'scene'.",
+    },
+    shot: {
+      type: 'string',
+      enum: ['closeup', 'wide', 'scene'],
+      description: "generate_narration only: closeup = voice only (default); wide = voice + environment; scene = environment loud, <sound> cues honoured.",
+    },
+    seed: {
+      type: 'integer',
+      description: 'generate_narration only: fixed seed for a repeatable take.',
+    },
+    job_id: {
+      type: 'string',
+      description: 'check_narration only: a specific narration job id (omit for the latest).',
+    },
   },
   required: ['action'],
 };
@@ -190,6 +219,7 @@ class FalAI extends Tool {
       "animate_image with no image_url automatically animates the photo the user uploaded (last 24 hours), or else their most recent generated image — perfect for 'here's my dog, make him wag' or 'now make it move'. Its reply names WHICH image it used: repeat that to the user so nothing gets animated by surprise. animate_image always renders on Kling standard — never promise premium/Veo for an animation. " +
       "Before any video, if the user hasn't specified, ask ONCE whether they want sound (recommended here — blind users experience video through audio; standard 5s: ~$0.63 with sound vs ~$0.42 silent) and only use premium quality when the user picks it. " +
       'Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url), audio as [Play the audio](url). Enhance thin prompts into rich visual descriptions first. ' +
+      "NARRATION (generate_narration, Scenema Audio on Kade's own GPU — Part 119.9): ONE actor performing a script. Write the script as Scenema XML in prompt: <speak voice=\"DETAILED VOICE\" gender=\"female|male\" scene=\"optional environment\" shot=\"closeup|wide|scene\"> then the words, with <action>stage direction</action> BETWEEN sentences to change the delivery ('Voice tightens. Swallows. Fighting to stay composed.') and <sound>thunder cracks</sound> for scene cues. Directions describe what the speaker is DOING and FEELING, never how the audio should sound; the same feelings you would put in a %%%tag%%% go in <action>. Or pass plain text in prompt plus voice_description + gender and the tool wraps it. To CLONE a voice pass one reference clip in audio_urls (10-20 s with some emotional range) or use_recent_audio:true. It is a QUEUED job: the reply gives a job id and an estimate; you CANNOT follow up on your own — say the phone will buzz when it is ready (they get a tap and it lands in My Creations), and on the user's next message call check_narration FIRST. Any length; ~2 cents a minute of audio; one render per person at a time; a daily and monthly Scenema budget applies and the tool says so if hit. " +
       "AUDIO (generate_audio, Seed Audio 1.0): cinematic scenes with dialogue + sound effects + music + ambience in one ~2-min pass, plus TTS, voice cloning, and editing existing clips (extend / inpaint / stitch / swap a line). It returns FAST and synchronously with a real audio URL — there is NO request_id and NO check step, so never promise to follow up. Return it as [Play the audio](url) so it plays inline; it is auto-saved to the gallery with a blind-friendly description of what the listener will hear. It costs ~$0.19/min (about 19 cents a minute, 38 cents for a full 2 minutes) and rides the same monthly fal budget — mention the cost but there is no need to pre-ask for a normal clip. For voice cloning or editing, pass reference clips in audio_urls (or set use_recent_audio:true for 'my last clip'). English and Chinese only; keep prompts under 2,048 characters. " +
       /* ── KADE 2026-08-11: WHAT WE LEARNED MAKING ~90 REAL SOUNDS ──────────
        * Her ask was "agents that use seedaudio and informing them," rolled
@@ -302,7 +332,9 @@ class FalAI extends Tool {
       if (action === 'check_video') return await this.checkVideo(data);
       if (action === 'generate_audio') return await this.generateAudio(data);
       if (action === 'generate_song') return await this.generateSong(data);
-      return "Unknown action. Use 'generate_image', 'generate_video', 'animate_image', 'check_video', 'generate_audio', or 'generate_song'.";
+      if (action === 'generate_narration') return await this.generateNarration(data);
+      if (action === 'check_narration') return await this.checkNarration(data);
+      return "Unknown action. Use 'generate_image', 'generate_video', 'animate_image', 'check_video', 'generate_audio', 'generate_song', 'generate_narration', or 'check_narration'.";
     } catch (err) {
       const msg = err?.response?.data ? JSON.stringify(err.response.data).slice(0, 300) : err.message;
       logger.error('[FalAI] error:', msg);
@@ -551,6 +583,89 @@ class FalAI extends Tool {
    * One call covers cinematic scenes, TTS, voice cloning, and audio editing;
    * the workflow is chosen by the prompt plus which reference clips ride along.
    */
+  /* ── Part 119.9 (Sep 3 2026): Scenema Audio narration via the bridge's job
+   * lane (/audio/scenema). The bridge owns the caps, the RunPod submit, the
+   * poll, the gallery asset and the phone tap; this tool only builds the
+   * script and hands it over, then reads the state back on request. ── */
+  bridgeBase() {
+    return (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
+  }
+
+  static escapeXml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  buildSpeak(data) {
+    const raw = String(data.prompt || '').trim();
+    if (/<speak[\s>]/i.test(raw)) return raw;
+    const voice = String(data.voice_description || 'Warm, clear adult woman with a natural American accent. Unhurried and kind.').trim();
+    const gender = data.gender === 'male' ? 'male' : 'female';
+    const attrs = [`voice="${FalAI.escapeXml(voice)}"`, `gender="${gender}"`];
+    if (data.scene) attrs.push(`scene="${FalAI.escapeXml(String(data.scene).slice(0, 200))}"`);
+    if (data.shot && ['closeup', 'wide', 'scene'].includes(data.shot)) attrs.push(`shot="${data.shot}"`);
+    return `<speak ${attrs.join(' ')}>\n${FalAI.escapeXml(raw)}\n</speak>`;
+  }
+
+  async generateNarration(data) {
+    if (!data.prompt) return 'prompt is required for generate_narration — the words to perform (plain text, or Scenema <speak> XML).';
+    const secret = process.env.BRIDGE_SECRET;
+    if (!secret) return 'Narration is not configured on this server (BRIDGE_SECRET missing).';
+    const prompt = this.buildSpeak(data);
+    if (prompt.length > 4000) {
+      return `That script is ${prompt.length} characters; the cap per render is 4,000 (about 600 spoken words). Split it into parts and render them one after another.`;
+    }
+    const { urls: refUrls } = await this.resolveAudioRefs(data);
+    const body = {
+      secret,
+      userId: String(this.userId),
+      agentId: this.req?.body?.agent_id || this.req?.body?.agentId || '',
+      agentName: this.req?.body?.agentName || 'Kade-AI',
+      prompt,
+    };
+    if (refUrls[0]) body.reference_voice_url = refUrls[0];
+    if (data.shot === 'wide' || data.shot === 'scene' || /shot="(wide|scene)"/i.test(prompt)) body.background_sfx = true;
+    if (Number.isInteger(data.seed)) body.seed = data.seed;
+    let r;
+    try {
+      r = await axios.post(`${this.bridgeBase()}/audio/scenema/start`, body, { timeout: 20000 });
+    } catch (e) {
+      const msg = e?.response?.data?.error || e.message;
+      return `Could not start the narration: ${msg}`;
+    }
+    const est = r.data?.estimate || {};
+    const secs = est.audioSeconds || 0;
+    const len = secs >= 60 ? `${Math.floor(secs / 60)} min ${secs % 60} s` : `${secs} s`;
+    return (
+      `Narration queued (job ${r.data.jobId}). About ${len} of audio from ${est.words || '?'} words; rendering takes roughly ${Math.round((est.renderSeconds || 120) / 60)} minute(s), longer if the GPU has to wake up. ` +
+      `Estimated cost about $${(est.costUSD || 0).toFixed(2)}. ` +
+      `${refUrls[0] ? 'Cloning the reference clip. ' : ''}` +
+      'The phone will buzz when it is ready and it will be in My Creations; tell the user that, and call check_narration on their next message.'
+    );
+  }
+
+  async checkNarration(data) {
+    const secret = process.env.BRIDGE_SECRET;
+    if (!secret) return 'Narration is not configured on this server (BRIDGE_SECRET missing).';
+    const q = new URLSearchParams({ secret });
+    if (data.job_id) q.set('jobId', String(data.job_id)); else q.set('userId', String(this.userId));
+    let r;
+    try {
+      r = await axios.get(`${this.bridgeBase()}/audio/scenema/status?${q}`, { timeout: 15000 });
+    } catch (e) {
+      if (e?.response?.status === 404) return 'No narration has been started for this user yet.';
+      return `Could not read the narration state: ${e?.response?.data?.error || e.message}`;
+    }
+    const j = r.data || {};
+    if (j.state === 'done' && j.result?.url) {
+      const d = Math.round(j.result.durationS || 0);
+      const mmss = `${Math.floor(d / 60)}:${String(d % 60).padStart(2, '0')}`;
+      return `Narration ${j.id} is ready: ${mmss} of audio, cost $${(j.costUSD || 0).toFixed(2)}. Play it: [Play the audio](${j.result.url}) — it is also saved in My Creations.`;
+    }
+    if (j.state === 'failed') return `Narration ${j.id} failed: ${j.error || 'unknown error'}. Nothing more was charged.`;
+    if (j.state === 'cancelled') return `Narration ${j.id} was cancelled.`;
+    return `Narration ${j.id} is ${j.state} (started ${j.createdAt}). Expected about ${Math.round((j.estimate?.renderSeconds || 120) / 60)} minute(s) of rendering; the phone buzzes when it lands.`;
+  }
+
   async generateAudio(data) {
     if (!data.prompt) return 'prompt is required for generate_audio.';
     const fullPrompt = String(data.prompt);
