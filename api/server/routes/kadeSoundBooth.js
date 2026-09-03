@@ -45,9 +45,10 @@ const axios = require('axios');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
+const { needsRefresh, getNewS3URL } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
-const { logKadeAsset } = require('~/models/kadeAsset');
+const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
 
 const router = express.Router();
@@ -335,7 +336,92 @@ function sayEstimate(audioS, renderS, costUSD, queued) {
   return `About ${len} of audio, ${wait} to make, ${money}.${queued ? ' Longer if the graphics card has to wake up.' : ''}`;
 }
 
-/* ---------- projects ------------------------------------------------------ */
+/* ---------- projects ------------------------------------------------------ *
+ * A project's TAKES are the finished recordings hanging off it. They are read
+ * from the same KadeAsset rows My Creations shows -- not copied -- so a clip
+ * has one home and one description. The URL is re-signed at read time exactly
+ * as /my-assets does it, which is what lets a phone play a stored link that
+ * was signed days ago. */
+async function freshAssetUrl(url) {
+  let u = String(url || '');
+  if (u && !/^https?:\/\//i.test(u) && !u.startsWith('/')) u = '/' + u;
+  try {
+    if (/[?&]X-Amz-/.test(u) && typeof needsRefresh === 'function' && needsRefresh(u, 3600)) {
+      u = await getNewS3URL(u);
+    }
+  } catch (e) {
+    logger.warn('[soundbooth] URL re-sign failed (serving stored URL): ' + e.message);
+  }
+  return u;
+}
+
+/* ---------- linking a Scenema take back to its project ----------------------
+ * A queued render finishes on the BRIDGE, which posts the MP3 to the fork's
+ * /asset-event lane. That lane knows the user and the job, but not the project
+ * -- so the asset arrives with `metadata.jobId` and nothing else to hang it
+ * on. Rather than teach the bridge about projects (a second service that would
+ * then have to be kept in step), the join happens HERE, on read, by job id.
+ * Idempotent: an id already on the row is not added twice. */
+async function linkJobAssets(projects, userId) {
+  const jobIds = [];
+  for (const p of projects) for (const j of p.jobs || []) jobIds.push(j);
+  if (!jobIds.length) return 0;
+  const docs = await KadeAsset.find({ user: userId, 'metadata.jobId': { $in: jobIds } })
+    .select('_id metadata')
+    .lean();
+  if (!docs.length) return 0;
+  const byJob = new Map();
+  for (const d of docs) byJob.set(String(d.metadata.jobId), String(d._id));
+  let linked = 0;
+  for (const p of projects) {
+    const have = new Set((p.assets || []).map(String));
+    const add = [];
+    for (const j of p.jobs || []) {
+      const id = byJob.get(String(j));
+      if (id && !have.has(id)) {
+        add.push(id);
+        have.add(id);
+      }
+    }
+    if (add.length) {
+      p.assets = [...(p.assets || []), ...add];
+      linked += add.length;
+      try {
+        await KadeSoundBoothProject.updateOne({ _id: p._id }, { $set: { assets: p.assets } });
+      } catch (e) {
+        logger.warn('[soundbooth] take link save failed: ' + e.message);
+      }
+    }
+  }
+  return linked;
+}
+
+async function takesFor(projects, userId) {
+  const ids = [];
+  for (const p of projects) for (const a of p.assets || []) ids.push(a);
+  if (!ids.length) return new Map();
+  const valid = ids.filter((i) => mongoose.Types.ObjectId.isValid(String(i)));
+  if (!valid.length) return new Map();
+  const docs = await KadeAsset.find({ _id: { $in: valid }, user: userId })
+    .select('_id kind url backupUrl description createdAt costUSD metadata')
+    .lean();
+  const map = new Map();
+  for (const d of docs) {
+    map.set(String(d._id), {
+      id: String(d._id),
+      url: await freshAssetUrl(d.url),
+      backupUrl: d.backupUrl ? await freshAssetUrl(d.backupUrl) : '',
+      /* The blind-friendly description the gallery writes, when it has landed
+       * yet -- enrichment runs detached, so a brand-new take often has none. */
+      description: d.description || '',
+      seconds: (d.metadata && (d.metadata.seconds || d.metadata.durationS)) || null,
+      costUSD: d.costUSD || 0,
+      createdAt: d.createdAt,
+    });
+  }
+  return map;
+}
+
 function projectView(p) {
   return {
     id: String(p._id),
@@ -678,6 +764,15 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
         project.costUSD = (project.costUSD || 0) + j.costUSD;
       }
       await project.save();
+      if (j.state === 'done') {
+        /* The gallery row may land a beat after the bridge says done -- link
+         * what is there now, and the next /projects read catches the rest. */
+        try {
+          await linkJobAssets([project], req.user.id);
+        } catch (e) {
+          logger.warn('[soundbooth] link on done failed: ' + e.message);
+        }
+      }
     }
     const d = Math.round(j.result?.durationS || 0);
     return res.json({
@@ -733,7 +828,14 @@ router.get('/projects', requireJwtAuth, async (req, res) => {
       .sort({ updatedAt: -1 })
       .limit(50)
       .lean();
-    return res.json({ count: rows.length, projects: rows.map(projectView) });
+    await linkJobAssets(rows, req.user.id);
+    const takes = await takesFor(rows, req.user.id);
+    const projects = rows.map((r) => {
+      const v = projectView(r);
+      v.takes = (r.assets || []).map((id) => takes.get(String(id))).filter(Boolean).reverse();
+      return v;
+    });
+    return res.json({ count: projects.length, projects });
   } catch (error) {
     logger.error('[soundbooth/projects] failed:', error);
     return res.status(500).json({ error: "Couldn't load your Sound Booth." });
@@ -747,7 +849,11 @@ router.get('/projects/:id', requireJwtAuth, async (req, res) => {
     }
     const p = await KadeSoundBoothProject.findOne({ _id: req.params.id, user: req.user.id }).lean();
     if (!p) return res.status(404).json({ error: 'No such project.' });
-    return res.json({ project: projectView(p) });
+    await linkJobAssets([p], req.user.id);
+    const takes = await takesFor([p], req.user.id);
+    const v = projectView(p);
+    v.takes = (p.assets || []).map((id) => takes.get(String(id))).filter(Boolean).reverse();
+    return res.json({ project: v });
   } catch (error) {
     logger.error('[soundbooth/project] failed:', error);
     return res.status(500).json({ error: "Couldn't load that project." });

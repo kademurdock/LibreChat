@@ -327,6 +327,11 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           '<h3>' + esc(p.title) + '</h3>' +
           '<p class="hint">' + engine + ' \\u00b7 ' + esc(stateWord) + ' \\u00b7 ' + esc(when) + (p.costUSD ? ' \\u00b7 about ' + Math.max(1, Math.round(p.costUSD*100)) + ' cents' : '') + '</p>' +
           (p.readback ? '<p>' + esc(p.readback) + '</p>' : '') +
+          (p.takes||[]).map(function(t, n){
+            var lbl = 'Take ' + ((p.takes.length) - n) + (t.seconds ? ', ' + t.seconds + ' seconds' : '') + (t.description ? '. ' + t.description : '');
+            return '<audio controls preload="none" aria-label="' + esc(lbl) + '"><source src="' + esc(t.url) + '">' + (t.backupUrl ? '<source src="' + esc(t.backupUrl) + '">' : '') + '</audio>' +
+                   '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.seconds ? ' \u00b7 ' + t.seconds + ' seconds' : '') + '</p>';
+          }).join('') +
           '<details><summary>Script</summary><pre class="script">' + esc(p.script) + '</pre></details>' +
           '<button type="button" class="act" data-open="' + esc(p.id) + '">Open this in the booth</button>' +
           '</div>';
