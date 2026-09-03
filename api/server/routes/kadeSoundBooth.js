@@ -155,6 +155,8 @@ HARD RULES:
 - One voice only. This engine performs a single speaker. Never write two characters.
 - No music. This engine has no music.
 - The voice= attribute is the primary identity control: age, sex, build, accent, texture, and manner, in one sentence.
+- NEVER use %%%…%%% markers. That is a different engine's syntax; this one would read it out loud. Directions go in <action> tags and nowhere else.
+- Never leave a cue in parentheses or square brackets on its own line. Convert it to an <action>.
 - Output the XML and nothing else. No code fence, no preamble, no explanation.`;
 
 const SEED_GRAMMAR = `SEED AUDIO 1.0 SCRIPT FORMAT (this is the only format you may output):
@@ -260,6 +262,61 @@ function wrapSpeak({ body, voice_description, gender, scene, shot, pace, languag
   return `<speak ${attrs.join(' ')}>\n${raw}\n</speak>`;
 }
 
+/* ---------- the %%% scar ----------------------------------------------------
+ * FOUND IN THE FIRST LIVE SMOKE (Part 120). Asked to format her words, the
+ * model wrote `%%%gentle and low like she is talking to someone half asleep%%%`
+ * between the lines -- Inworld's paragraph-tag syntax, which is all over this
+ * estate's prompts and personas and which the model has plainly learned.
+ *
+ * Scenema has never heard of it. Anything not inside a tag is SPOKEN, so that
+ * line would have been read ALOUD in the finished audio, in the middle of her
+ * sentence, and the only way to find that out is to listen to a render she
+ * paid for. The structural check could not see it either: `%%%` is not an XML
+ * tag, so every bracket balanced and the script "passed".
+ *
+ * So it is converted, not refused: `%%%…%%%` says exactly what an <action>
+ * says, and the model's instinct was right about the CONTENT. Same for a
+ * bare parenthetical or bracketed cue sitting alone on its own line, which is
+ * how a person writes a stage direction when they are not thinking about tags
+ * -- her own probe text had "(softly)" in it.
+ *
+ * Only ever applied to Scenema. Seed Audio's format IS bracketed cues on
+ * their own lines, and rewriting those would break the engine that wants them.
+ */
+function sanitizeScenema(script) {
+  let s = String(script || '');
+  const notes = [];
+  // %%%anything%%% -> <action>anything</action>
+  s = s.replace(/%%%\s*([^%]+?)\s*%%%/g, (_m, inner) => {
+    notes.push('turned a %%% tag into a stage direction');
+    return `<action>${inner.trim()}</action>`;
+  });
+  // A line that is ONLY (a parenthetical) or [a bracket] -> a direction.
+  s = s
+    .split('\n')
+    .map((line) => {
+      const t = line.trim();
+      const paren = t.match(/^\((.+)\)$/);
+      const brack = t.match(/^\[(.+)\]$/);
+      if (paren) {
+        notes.push('turned a written cue into a stage direction');
+        return `<action>${paren[1].trim()}</action>`;
+      }
+      if (brack) {
+        notes.push('turned a written cue into a stage direction');
+        return `<action>${brack[1].trim()}</action>`;
+      }
+      return line;
+    })
+    .join('\n');
+  // Any stray %%% left over (an unpaired one) is deleted rather than spoken.
+  if (s.includes('%%%')) {
+    s = s.replace(/%%%/g, '');
+    notes.push('removed a stray tag marker');
+  }
+  return { script: s, notes: [...new Set(notes)] };
+}
+
 /** Cheap structural checks so a bad script is refused HERE, in a sentence she
  * can act on, instead of failing on the GPU two minutes and a wake-up later. */
 function checkScenema(script) {
@@ -267,6 +324,9 @@ function checkScenema(script) {
   if (!/^<speak[\s>]/i.test(s)) return 'A Scenema script has to start with a <speak> tag.';
   if (!/<\/speak>\s*$/i.test(s)) return 'A Scenema script has to end with </speak>.';
   if (!/voice="/i.test(s)) return 'The <speak> tag needs a voice="..." description.';
+  if (s.includes('%%%')) {
+    return 'That script still has %%% tag markers in it. Scenema would read them out loud — use <action> directions instead.';
+  }
   const opens = (s.match(/<action>/gi) || []).length;
   const closes = (s.match(/<\/action>/gi) || []).length;
   if (opens !== closes) return 'One of the <action> directions is missing its closing tag.';
@@ -503,7 +563,11 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
     if (!script) {
       return res.status(502).json({ error: 'The script desk came back empty. Try again.' });
     }
+    let repairs = [];
     if (engine === 'scenema') {
+      const cleaned = sanitizeScenema(script);
+      script = cleaned.script;
+      repairs = cleaned.notes;
       script = wrapSpeak({
         body: script,
         voice_description: b.voice_description,
@@ -534,7 +598,15 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
     logger.info(
       `[soundbooth/script] ${engine}/${mode} user=${req.user.id} ${script.length}ch ${Date.now() - started}ms${problem ? ' PROBLEM: ' + problem : ''}`,
     );
-    return res.json({ engine, mode, script, readback, estimate, problem: problem || null });
+    return res.json({
+      engine,
+      mode,
+      script,
+      readback,
+      estimate,
+      problem: problem || null,
+      repairs,
+    });
   } catch (error) {
     const status = error.status || 500;
     logger.error('[soundbooth/script] failed:', error);
@@ -548,9 +620,16 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
 router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (req, res) => {
   const b = req.body || {};
   const engine = b.engine === 'seed' ? 'seed' : 'scenema';
-  const script = String(b.script || '').trim();
+  let script = String(b.script || '').trim();
   const mode = b.mode === 'advanced' ? 'advanced' : 'easy';
   if (!script) return res.status(400).json({ error: 'There is nothing to render yet.' });
+  /* The same repair runs on the way to the GPU, because a script can reach
+   * here without passing the script desk at all -- she can type one by hand in
+   * Advanced, or paste one in. A %%% line is never legitimate Scenema, so
+   * converting it can only help; nothing else about her text is touched. */
+  if (engine === 'scenema') {
+    script = sanitizeScenema(script).script;
+  }
   const problem = engine === 'seed' ? checkSeed(script) : checkScenema(script);
   if (problem) return res.status(400).json({ error: problem });
 
