@@ -149,39 +149,55 @@ const MOODS = {
   },
 };
 
-const SCENEMA_GRAMMAR = `SCENEMA AUDIO SCRIPT FORMAT (this is the only format you may output):
+/* ---------- the two grammars, rebuilt from the engines' own documentation ----
+ * Part 121 (Sep 3 2026), her ask: "look up everything you can about prompting
+ * both, make sure the settings align." Scenema: github.com/ScenemaAI/
+ * scenema-audio README. Seed Audio: fal's llms.txt + the Morphic guide (the
+ * SCENE checklist, the `Name (traits) says manner: "line."` shape, spelled-out
+ * sounds, @Audio tagging, [start:end] timestamps). Every rule below is one
+ * the docs state, not one guessed. */
+const SCENEMA_GRAMMAR = `SCENEMA AUDIO SCRIPT FORMAT (the only format you may output):
 
-<speak voice="a sentence describing WHO is speaking" gender="male|female" scene="optional place" shot="closeup|wide|scene" pace="1.0">
-The spoken words go as plain text, one paragraph per beat.
-<action>what the speaker is DOING and FEELING right here</action>
+<speak voice="WHO IS SPEAKING, in one specific theatrical sentence" gender="male|female" scene="optional place" shot="closeup|wide|scene" language="en">
+<action>what the speaker is DOING and FEELING right now</action>
+The spoken words, as natural prose.
+<action>the next shift — a physical cue plus an emotional one</action>
 More spoken words.
-<sound>an environment sound, only if a scene was asked for</sound>
+<sound>an environmental event, only if shot is wide or scene</sound>
 </speak>
 
-HARD RULES:
-- <action> is a note to a human actor. It says what the person is DOING and FEELING ("her voice catches", "he turns away from the window", "she is trying not to laugh"). It NEVER describes the audio ("make it echo", "add reverb", "louder", "speed up") -- that is not what this control is for and it degrades the take.
-- Everything not inside a tag is SPOKEN ALOUD. Never put narration, headings, labels, speaker names, stage notes or markdown outside a tag.
-- One voice only. This engine performs a single speaker. Never write two characters.
-- No music. This engine has no music.
-- The voice= attribute is the primary identity control: age, sex, build, accent, texture, and manner, in one sentence.
-- NEVER use %%%…%%% markers. That is a different engine's syntax; this one would read it out loud. Directions go in <action> tags and nowhere else.
-- Never leave a cue in parentheses or square brackets on its own line. Convert it to an <action>.
-- Output the XML and nothing else. No code fence, no preamble, no explanation.`;
+HOW THIS ENGINE WORKS, so you write for it:
+- ONE speaker. It performs a single voice with real acting — emotion that shifts mid-take, breath, pauses, a voice that cracks on a word. It cannot do two characters or music.
+- The voice= description is the PRIMARY control. Weak: "a man speaking". Strong: "Male, mid 60s. Deep baritone with gravel. Slight Southern American inflection. Worn but warm. Nostalgic, firelight cadence. The voice of someone who has seen too much and chosen kindness anyway." Give sex, age, register, accent, texture, manner, and one line of character.
+- <action> tags are the primary tool for emotional performance. Put them BETWEEN speech segments. Describe what the speaker is DOING and FEELING — "Voice tightens. Swallows. Fighting to stay composed." / "Long pause. Deep breath. When he speaks again, his voice is raw but steady." Combine a physical cue with an emotional one. NEVER describe the audio ("add reverb", "louder", "echo") — that is not what the tag is for and it degrades the take.
+- Nothing outside a tag is a note; it is SPOKEN ALOUD. No headings, labels, speaker names, or markdown outside a tag.
+- <sound> only lands when shot="wide" or shot="scene". With shot="closeup" (the default) the environment is stripped.
+- Each segment is at most about 15 seconds; sentences are split there automatically. Keep sentences a natural length.
+- Difficult proper nouns get garbled; spell a hard word phonetically inside the spoken text if it matters.
+- NEVER use %%%…%%% markers — that is a different engine's syntax and this one would read it out loud. Never leave a cue in parentheses or square brackets on its own line; convert it to an <action>.
+- Output the XML and nothing else. No code fence, no preamble.`;
 
-const SEED_GRAMMAR = `SEED AUDIO 1.0 SCRIPT FORMAT (this is the only format you may output):
+const SEED_GRAMMAR = `SEED AUDIO 1.0 SCRIPT FORMAT (the only format you may output):
 
-[genre / environment / mood — one bracketed line that sets the whole scene]
-[a continuous sound bed, e.g. rain on a tin roof, low room tone]
-Name (voice traits, emotion, pace) says: "the dialogue."
-[a concrete sound effect, e.g. a screen door slaps shut]
-Other Name (voice traits, emotion, pace) says: "the reply."
+[Setting: the place, weather, acoustics, and a continuous sound bed — spelled out, e.g. rain "pat-pat" on a tin roof, distant traffic, room reverb]
+[Music, if any: a MOOD, not a genre label — "soft piano that swells", "low brass and war drums"]
+Name (sex, age, accent, voice texture, personality) says, manner and emotion: "the exact line."
+[A sound effect at this moment — spell it out: a screen door "slap", a zipper "zzzip"]
+Other Name (traits) answers softly, flustered: "the reply."
+[How it ends: footsteps fading, music fading out]
 
-HARD RULES:
-- Every spoken line uses the exact shape: Name (traits, emotion, pace) says: "words."
-- Sound effects, music cues and ambience go in [square brackets] on their own line, described concretely -- a thing that happens, not an adjective.
-- Up to three named voices. Music and effects are allowed and encouraged; this engine mixes a whole scene in one pass.
-- Keep the whole script under 1900 characters. It is a hard engine cap, not a style note.
-- Output the script and nothing else. No code fence, no preamble, no explanation.`;
+HOW THIS ENGINE WORKS, so you write for it:
+- It makes a WHOLE SCENE in one pass: several voices, music, sound effects, and ambience, mixed. Write it like a short scene brief, not a text-to-speech line.
+- The SCENE checklist — include all five: Setting (weather, location, acoustics), Cast (what each person is doing), Effects (music mood + sound effects), Notes on voice (sex, age, accent, emotion, tone, speed), Exact lines in quotes.
+- Every spoken line uses the shape:  Name (traits) says, manner: "words."  The manner goes before the colon — "lowers her voice, flustered:", "coaxes, dragging his words:", "can't help laughing:". Emotion words in parentheses after the name also work: Emma (whispering): "...".
+- Write LONG. Description is not padding: the environment, the score, and each delivery are all things this engine renders. Every sentence you leave out is a decision handed back to the model.
+- SPELL THE SOUNDS OUT. Onomatopoeia is more reliable than naming: a bell "ring-a-ling" fading from near to far; a blade's "whoom, whoom".
+- Music by MOOD, never by music-theory terms.
+- Match the language: write the whole prompt in the language the lines are spoken in.
+- Up to three named voices. If reference clips are given they are @Audio1, @Audio2, @Audio3 — tag a clip to a speaker inline: Marcus (warm broadcaster, the actor is @Audio1) says: "...".
+- Optional exact timing: put [start:end] at the front of a line, e.g. "[5.5s:8.0s] Maya! Wait." and that line is fitted to that window.
+- Hard cap: under 1900 characters and about two minutes of audio. Longer pieces are made scene by scene with the same voices.
+- Output the script and nothing else. No code fence, no preamble.`;
 
 function systemPrompt({ engine, mode }) {
   const grammar = engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
@@ -362,6 +378,117 @@ function checkSeed(script) {
     return `That script is ${s.length} characters; Seed Audio tops out at ${MAX_SEED_CHARS} (about two minutes). Shorten it, or render it in parts.`;
   }
   return null;
+}
+
+/* ---------- THE GUIDE — one explainer, served to both screens -----------------
+ * Her ask (Part 121): "I don't think people will know the difference between
+ * seedaudio and scenema, much less how to use the settings and prompt it."
+ * So the explanation lives HERE, once, and the phone and the web both render
+ * it — a wording fix is one deploy, not two builds. Every line is written to
+ * be read aloud. Sources: the Scenema README and Seed Audio's own guide. */
+const GUIDE = {
+  chooser: {
+    question: 'Which engine should I use?',
+    answer:
+      'Ask yourself one thing: is this ONE PERSON talking, or a SCENE? One person reading a story, a letter, a monologue, a bedtime tale — with real acting — is Scenema. Two people talking, or anything with music, sound effects or a place you can hear, is Seed Audio.',
+    rules: [
+      { pick: 'scenema', when: 'one voice, any length, and the acting matters — the feeling shifts mid-sentence, it breathes, it pauses' },
+      { pick: 'scenema', when: 'you want to clone a specific person from a short clip and keep the audio in the house' },
+      { pick: 'scenema', when: 'it is long — a chapter, a whole story. There is no length limit' },
+      { pick: 'seed', when: 'two or more people talk to each other' },
+      { pick: 'seed', when: 'you want music, sound effects, or a place you can hear around the voices' },
+      { pick: 'seed', when: 'you need it back in seconds, and it is under two minutes' },
+    ],
+  },
+  engines: {
+    scenema: {
+      name: 'Scenema',
+      tagline: 'One actor, really acting.',
+      where: "Runs on Kade's own graphics card. Nothing leaves the house.",
+      cost: 'About two cents a minute of finished audio. Queued: a minute of audio takes about a minute and a half to make, plus a minute or two if the card was asleep.',
+      bestFor: ['one voice reading, telling, confessing, performing', 'a bedtime story, a letter read aloud, a monologue, an audiobook chapter', 'cloning a specific person from ten to twenty seconds of them talking', 'anything long — there is no length limit'],
+      notFor: ['two people talking to each other', 'music', 'a scene you can hear around the voice — it can add some, but that is not its job'],
+      howToWrite: [
+        'Describe WHO is speaking in one specific, theatrical sentence: sex, age, register, accent, texture, manner, and a line of character. "A man speaking" gets you nothing. "Male, mid sixties, deep baritone with gravel, slight Southern inflection, worn but warm" gets you a person.',
+        'Between your sentences, tell the actor what they are DOING and FEELING — "voice tightens, swallows, fighting to stay composed", "long pause, deep breath". Pair a physical cue with a feeling. Never describe the sound you want; describe the person.',
+        'Write natural sentences of normal length. Anything over about fifteen seconds is split automatically.',
+        'Hard names get garbled. Spell a difficult word the way it sounds.',
+        'A clip beats a description for a specific person. The clip gives the identity; your description and directions give the performance. Any voice can perform any emotion, even one the clip never contained.',
+      ],
+      settings: [
+        { key: 'voice_description', label: 'Describe the voice', hint: 'Sex, age, register, accent, texture, manner, one line of character. This is the main control.', kind: 'text' },
+        { key: 'gender', label: 'Voice sex', hint: 'Male or female. The engine needs it for the pronouns in its own notes.', kind: 'choice', options: ['female', 'male'], default: 'female' },
+        { key: 'reference_voice_url', label: 'Import a clip to clone', hint: 'Ten to twenty seconds of one person, clean, with some feeling in it — a flat monotone clip clones badly. Compressed, noisy recordings drag the result down.', kind: 'clip', max: 1 },
+        { key: 'scene', label: 'Scene', hint: 'Where this happens: "a kitchen at dawn, rain outside". Only heard if Shot is Wide or Scene and Scene sound is on.', kind: 'text' },
+        { key: 'shot', label: 'Shot', hint: 'How far away the listener is. Close up is the voice at your ear, environment stripped. Wide puts the voice in a room. Scene turns the room up.', kind: 'choice', options: ['closeup', 'wide', 'scene'], default: 'closeup' },
+        { key: 'background_sfx', label: 'Scene sound', hint: 'Keeps the room and weather around the voice instead of a clean voice on its own. Only does anything with Wide or Scene.', kind: 'toggle', default: false },
+        { key: 'pace', label: 'Pace', hint: 'How much time the actor is given. One point five is the engine’s normal. Higher is slower and more deliberate; lower is faster. Between zero point five and three.', kind: 'number', min: 0.5, max: 3, default: 1.5 },
+        { key: 'seed', label: 'Seed', hint: 'The same seed with the same script gives the same take again. Leave it empty for a new take each time.', kind: 'number', min: 0 },
+        { key: 'keep_wav', label: 'Keep the studio file', hint: 'Also keeps the forty-eight kilohertz stereo WAV master alongside the MP3. Same price, bigger file.', kind: 'toggle', default: false },
+      ],
+    },
+    seed: {
+      name: 'Seed Audio',
+      tagline: 'A whole scene in one pass.',
+      where: "Made on fal's servers, not here. Your words and any clips you import leave the house for this one.",
+      cost: 'About nineteen cents a minute. Back in seconds. Up to two minutes a pass.',
+      bestFor: ['two or three people talking', 'music, sound effects, and a place you can hear', 'a radio play, an ad, a scene from a story with the room around it', 'anything you need back right now'],
+      notFor: ['a long piece — two minutes a pass, made scene by scene after that', 'the finest acting from one voice — Scenema is the stronger instrument for that', 'keeping the audio in the house'],
+      howToWrite: [
+        'Write it like a short scene brief, not a line to read. Five things, every time: the Setting, who is in it and what they are doing, the music and sound effects, notes on each voice, and the exact lines in quotes.',
+        'Every line has the same shape: the name, the voice in parentheses, how they say it, a colon, then the words in quotes. "Emma (teenage, soft, shy) lowers her voice, flustered: “I still haven’t finished.”"',
+        'Write long. The environment, the music and every delivery are things it makes, so every sentence you leave out is a decision handed back to it.',
+        'Spell the sounds out. A door "slap", a zipper "zzzip", a bell "ring-a-ling fading". Spelling a sound is more reliable than naming it.',
+        'Music by mood, not by genre: "soft piano that swells", not "C major ballad".',
+        'Write the prompt in the same language the lines are spoken in.',
+        'Up to three clips can be imported, and each one is tagged to a speaker: "the actor is @Audio1".',
+      ],
+      settings: [
+        { key: 'voice', label: 'Preset voice', hint: 'One of the engine’s twenty built-in voices, for a single narrator. Leave it off when your prompt describes the voices, or when clips are imported.', kind: 'choice', options: ['', 'vivi_mixed_en_zh_ja_es_id', 'mindy_en_es_id_pt_zh', 'kian_en_zh', 'cedric_en_zh', 'sophie_en_zh', 'jean_en_zh', 'magnus_en_zh', 'mabel_en_zh', 'nadia_en_zh', 'opal_en_zh', 'pearl_en_zh', 'quentin_en_zh', 'corinne_mixed_en_zh', 'esther_mixed_en_zh', 'lyla_mixed_en_zh', 'tracy_es_zh', 'sandy_es_mixed_en_zh', 'felix_zh', 'celeste_zh', 'monkey_king_zh'], default: '' },
+        { key: 'audio_urls', label: 'Import clips to clone', hint: 'Up to three, each under thirty seconds, clean, one person each. They become @Audio1, @Audio2 and @Audio3 — name them in the script.', kind: 'clip', max: 3 },
+        { key: 'speed', label: 'Speed', hint: 'One is normal. Half is half speed, two is double.', kind: 'number', min: 0.5, max: 2, default: 1 },
+        { key: 'pitch', label: 'Pitch', hint: 'In semitones. Zero is normal. Minus twelve is an octave down, twelve an octave up.', kind: 'number', min: -12, max: 12, default: 0 },
+        { key: 'volume', label: 'Volume', hint: 'One is normal. Half to double.', kind: 'number', min: 0.5, max: 2, default: 1 },
+        { key: 'multilingual', label: 'Multilingual', hint: 'Turn on for anything not in English, or mixed languages. Twenty languages.', kind: 'toggle', default: false },
+        { key: 'audio_quality', label: 'Studio quality', hint: 'Forty-eight kilohertz WAV instead of the usual MP3. Same price, bigger file.', kind: 'toggle', default: false },
+      ],
+    },
+  },
+};
+
+/* A free, instant, explainable answer to "which one?" — read off the text she
+ * typed, so the screen can suggest before she spends anything. Not a model
+ * call: the reasons have to be sayable, and the same text must always get
+ * the same answer. */
+function suggestEngine(text) {
+  const t = String(text || '');
+  const lower = t.toLowerCase();
+  const reasons = [];
+  let seed = 0;
+  let scenema = 0;
+  const speakerLines = (t.match(/^\s*[A-Z][a-zA-Z' ]{1,30}\s*(\([^)]*\))?\s*:/gm) || []).length;
+  const quotedSpeakers = (t.match(/\b[A-Z][a-z]+ (says|said|asks|asked|replies|replied|answers|whispers|shouts)\b/g) || []).length;
+  if (speakerLines >= 2 || quotedSpeakers >= 2) { seed += 3; reasons.push('more than one person talks'); }
+  if (/\b(music|soundtrack|song|jingle|theme|beat|piano|guitar|drums|orchestra|strings)\b/.test(lower)) { seed += 2; reasons.push('you asked for music'); }
+  if (/\b(sound effects?|sfx|thunder|rain|traffic|crowd|footsteps|door|wind|birds|ambience|ambient|background sounds?)\b/.test(lower)) { seed += 1; reasons.push('there are sounds in it'); }
+  if (/\b(radio play|radio drama|commercial|advert|ad spot|podcast intro|trailer)\b/.test(lower)) { seed += 2; reasons.push('it is a produced scene'); }
+  if (/\b(story|bedtime|chapter|monologue|letter|poem|narrat|read (this|it|me)|audiobook|speech|eulogy|confession|diary)\b/.test(lower)) { scenema += 2; reasons.push('one voice telling or reading'); }
+  if (/\b(clone|sounds? like (my|her|his)|in (my|her|his) voice|my (mom|dad|grandma|grandpa|sister|brother)'?s voice)\b/.test(lower)) { scenema += 2; reasons.push('you want a specific person\'s voice'); }
+  const words = t.split(/\s+/).filter(Boolean).length;
+  if (words > 320) { scenema += 2; reasons.push('it is long — over two minutes'); }
+  if (/\b(whisper|breath|pause|voice (breaks|cracks)|tearful|choking up|trembl)\b/.test(lower)) { scenema += 1; reasons.push('the acting matters'); }
+  if (seed === 0 && scenema === 0) {
+    return { engine: 'scenema', sure: false, reason: 'One voice is the usual case, so Scenema. If two people talk, or you want music or a place you can hear, switch to Seed Audio.' };
+  }
+  const engine = seed > scenema ? 'seed' : 'scenema';
+  const why = reasons.filter((r) => (engine === 'seed'
+    ? /person talks|music|sounds|produced/.test(r)
+    : /telling|specific person|long|acting/.test(r)));
+  return {
+    engine,
+    sure: Math.abs(seed - scenema) >= 2,
+    reason: `${engine === 'seed' ? 'Seed Audio' : 'Scenema'}, because ${why.join(' and ') || reasons.join(' and ')}.`,
+  };
 }
 
 /* ---------- estimates, said out loud before anything is spent ------------- */
@@ -561,6 +688,15 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
     }
     if (b.scene) lines.push(`SCENE: ${String(b.scene).slice(0, 200)}`);
     if (['closeup', 'wide', 'scene'].includes(b.shot)) lines.push(`SHOT: ${b.shot}`);
+    if (engine === 'seed') {
+      const n = Array.isArray(b.audio_urls) ? Math.min(3, b.audio_urls.filter((u) => /^https?:\/\//i.test(String(u))).length) : 0;
+      if (n > 0) {
+        lines.push(`REFERENCE CLIPS IMPORTED: ${n}. Tag them to speakers in the script as @Audio1${n > 1 ? ', @Audio2' : ''}${n > 2 ? ', @Audio3' : ''} ("the actor is @Audio1").`);
+      }
+      if (b.language && b.language !== 'en') lines.push(`LANGUAGE: ${String(b.language).slice(0, 40)} — write the whole prompt in it.`);
+    } else if (b.reference_voice_url) {
+      lines.push('A REFERENCE CLIP WILL BE CLONED: the clip supplies the identity, so spend the voice= description on the CHARACTER and the emotional archetype rather than on physical timbre.');
+    }
 
     const started = Date.now();
     const { text: raw, usage } = await callModel({
@@ -645,16 +781,37 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   let project = null;
   try {
     const opts = {};
-    if (typeof b.reference_voice_url === 'string' && /^https?:\/\/\S+$/i.test(b.reference_voice_url)) {
-      opts.reference_voice_url = b.reference_voice_url.slice(0, 2048);
-    }
+    const isUrl = (u) => typeof u === 'string' && /^https?:\/\/\S+$/i.test(u) && u.length < 2048;
+    if (isUrl(b.reference_voice_url)) opts.reference_voice_url = b.reference_voice_url;
+    /* Seed takes up to three clips (@Audio1–3); Scenema takes one. A single
+     * imported clip is accepted under either name so the two screens can
+     * share one import row. */
+    if (Array.isArray(b.audio_urls)) opts.audio_urls = b.audio_urls.filter(isUrl).slice(0, 3);
+    if (engine === 'seed' && !opts.audio_urls?.length && opts.reference_voice_url) opts.audio_urls = [opts.reference_voice_url];
+    if (engine === 'scenema' && !opts.reference_voice_url && opts.audio_urls?.length) opts.reference_voice_url = opts.audio_urls[0];
     if (b.background_sfx === true) opts.background_sfx = true;
     if (Number.isInteger(b.seed) && b.seed >= 0) opts.seed = b.seed;
+    /* Scenema's pace: 1.5 is the ENGINE'S normal (its README: "accounts for
+     * LTX's naturally slower speaking pace"); higher = slower. The first booth
+     * told her 1.0 was normal — that was wrong, and it is fixed in the guide. */
     if (typeof b.pace === 'number' && b.pace >= 0.5 && b.pace <= 3) opts.pace = b.pace;
     if (b.keep_wav === true) opts.keep_wav = true;
+    if (b.validate === false) opts.validate = false;
     if (b.audio_quality === 'high') opts.audio_quality = 'high';
     if (typeof b.speed === 'number' && b.speed >= 0.5 && b.speed <= 2) opts.speed = b.speed;
+    if (typeof b.volume === 'number' && b.volume >= 0.5 && b.volume <= 2) opts.volume = b.volume;
+    if (Number.isInteger(b.pitch) && b.pitch >= -12 && b.pitch <= 12) opts.pitch = b.pitch;
+    if (b.multilingual === true) opts.multilingual = true;
+    if (typeof b.voice === 'string' && b.voice.trim()) opts.voice = b.voice.trim().slice(0, 64);
     if (b.voice_description) opts.voice_description = String(b.voice_description).slice(0, 600);
+    if (['closeup', 'wide', 'scene'].includes(b.shot)) opts.shot = b.shot;
+    if (b.scene) opts.scene = String(b.scene).slice(0, 200);
+    /* PREVIEW (her "how do I know what I'll get"): Scenema's voice_design mode
+     * renders ONE fifteen-second sample of the voice description — no
+     * chunking, about a penny — so she can hear the actor before spending
+     * on the whole piece. It is a real render on the same lane; it lands in
+     * the library as a take like any other, flagged. */
+    const preview = engine === 'scenema' && b.preview === true;
 
     /* One row per piece of work. Re-rendering an existing project appends to
      * it rather than making a second row -- the Library should show a piece
@@ -680,18 +837,33 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       if (!secret) return res.status(503).json({ error: 'The render lane is not configured here.' });
       let r;
       try {
-        r = await axios.post(
-          `${bridgeBase()}/audio/scenema/start`,
-          {
-            secret,
-            userId: String(req.user.id),
-            agentId: 'soundbooth',
-            agentName: 'Sound Booth',
-            prompt: script,
-            ...opts,
-          },
-          { headers: { 'User-Agent': UA }, timeout: 20000 },
-        );
+        /* A preview performs one fixed sample line in the described voice,
+         * not her whole script — the point is to hear the ACTOR for a penny.
+         * The voice= attribute is lifted off her script so what she previews
+         * is exactly what the full render will use. */
+        let promptToSend = script;
+        if (preview) {
+          const speakTag = (script.match(/<speak[^>]*>/i) || [''])[0];
+          const attrs = speakTag ? speakTag.replace(/^<speak/i, '').replace(/>$/, '') : ` voice="${escapeXml(opts.voice_description || 'A warm, clear adult voice.')}" gender="${b.gender === 'male' ? 'male' : 'female'}"`;
+          promptToSend = `<speak${attrs}>\nHere is how I sound. I can be gentle, I can be sharp, and I can slow all the way down when the moment asks for it.\n</speak>`;
+        }
+        const bridgeBody = {
+          secret,
+          userId: String(req.user.id),
+          agentId: 'soundbooth',
+          agentName: 'Sound Booth',
+          prompt: promptToSend,
+          reference_voice_url: opts.reference_voice_url,
+          background_sfx: opts.background_sfx,
+          seed: opts.seed,
+          pace: opts.pace,
+          keep_wav: opts.keep_wav,
+        };
+        if (preview) bridgeBody.mode = 'voice_design';
+        r = await axios.post(`${bridgeBase()}/audio/scenema/start`, bridgeBody, {
+          headers: { 'User-Agent': UA },
+          timeout: 20000,
+        });
       } catch (e) {
         const msg = e?.response?.data?.error || e.message;
         project.state = 'failed';
@@ -703,8 +875,10 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       project.state = 'queued';
       if (jobId) project.jobs = [...(project.jobs || []), jobId].slice(-20);
       await project.save();
-      const est = estimateFor('scenema', script);
-      const bridgeEst = r.data?.estimate || {};
+      const est = preview
+        ? { engine: 'scenema', words: 0, audioSeconds: 15, renderSeconds: 60, costUSD: 0.01, spoken: 'A fifteen second sample of the voice, about a minute to make, about a penny. Longer if the graphics card has to wake up.' }
+        : estimateFor('scenema', script);
+      const bridgeEst = preview ? {} : (r.data?.estimate || {});
       /* audioSeconds comes from HERE (the bridge counts direction words as
        * spoken); the wait and the money come from the BRIDGE, which is the
        * only side that knows the measured render rate and the wake charge. */
@@ -720,6 +894,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         ok: true,
         engine: 'scenema',
         queued: true,
+        preview,
         jobId,
         projectId: String(project._id),
         estimate: merged,
@@ -739,9 +914,13 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       sample_rate: hq ? 48000 : 24000,
     };
     if (typeof opts.speed === 'number') body.speed = opts.speed;
-    if (typeof b.pitch === 'number' && b.pitch >= -12 && b.pitch <= 12) body.pitch = Math.round(b.pitch);
-    if (opts.reference_voice_url) body.audio_urls = [opts.reference_voice_url];
-    else if (typeof b.voice === 'string' && b.voice.trim()) body.voice = b.voice.trim().slice(0, 64);
+    if (typeof opts.volume === 'number') body.volume = opts.volume;
+    if (Number.isInteger(opts.pitch)) body.pitch = opts.pitch;
+    if (opts.multilingual) body.multilingual = true;
+    /* Clips override a preset: the docs say a reference clip beats a preset
+     * name, and sending both is undefined. */
+    if (opts.audio_urls?.length) body.audio_urls = opts.audio_urls;
+    else if (opts.voice) body.voice = opts.voice;
 
     let r;
     try {
@@ -1050,8 +1229,14 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
 });
 
 /* ============================ GET /health ================================= */
+/* ============================ POST /suggest =============================== */
+router.post('/suggest', requireJwtAuth, express.json({ limit: '64kb' }), (req, res) => {
+  return res.json(suggestEngine((req.body || {}).text));
+});
+
 router.get('/health', requireJwtAuth, async (_req, res) => {
   return res.json({
+    guide: GUIDE,
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, usdPerMin: SCENEMA_USD_PER_MIN },
       seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: SEED_USD_PER_MIN },
@@ -1065,4 +1250,4 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { checkScenema, checkSeed, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema };
+module.exports._internals = { checkScenema, checkSeed, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, suggestEngine, GUIDE };
