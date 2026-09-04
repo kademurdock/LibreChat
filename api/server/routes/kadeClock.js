@@ -1136,9 +1136,10 @@ router.post('/take/clear', express.json({ limit: '8kb' }), async (req, res) => {
  * the dreaming writer so take / thread / learned / verdicts compound from the
  * start. `plan` prices it (nothing written); `start` runs in the background;
  * `status` and `stop` as the history miner. Body: {userId?, agentId?, resetFirst?}. */
-router.get('/dream-mine', (req, res) => {
+router.get('/dream-mine', async (req, res) => {
   if (!authed(req, res)) return;
-  res.json(require('~/server/services/kadeDreamMiner').status());
+  const m = require('~/server/services/kadeDreamMiner');
+  res.json({ ...m.status(), ...(await m.progressSummary()), note: 'a fork deploy kills a running miner (state is in-process); start again with resume (default) and it continues from the stamped relationships' });
 });
 router.post('/dream-mine/plan', express.json({ limit: '8kb' }), async (req, res) => {
   if (!authed(req, res)) return;
@@ -1152,7 +1153,7 @@ router.post('/dream-mine/plan', express.json({ limit: '8kb' }), async (req, res)
 router.post('/dream-mine/start', express.json({ limit: '8kb' }), (req, res) => {
   if (!authed(req, res)) return;
   const b = req.body || {};
-  res.json(require('~/server/services/kadeDreamMiner').start({ userId: b.userId, agentId: b.agentId }, { resetFirst: b.resetFirst !== false }));
+  res.json(require('~/server/services/kadeDreamMiner').start({ userId: b.userId, agentId: b.agentId }, { resetFirst: b.resetFirst !== false, resume: b.resume !== false }));
 });
 router.post('/dream-mine/stop', (req, res) => {
   if (!authed(req, res)) return;

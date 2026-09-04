@@ -23,7 +23,28 @@ const PACE_MS = parseInt(process.env.KADE_DREAM_MINE_PACE_MS || '1500', 10);
 const IN_PER_M = 0.075, OUT_PER_M = 0.25; // glm-5.3-flash, per the config comment
 const OUT_TOKENS_PER_CHUNK = 900; // ~600 written + reasoning
 
-const state = { running: false, stop: false, startedAt: null, finishedAt: null, scope: null, relationships: 0, done: 0, chunks: 0, errors: 0, current: null, lastError: null };
+const state = { running: false, stop: false, startedAt: null, finishedAt: null, scope: null, relationships: 0, done: 0, skipped: 0, chunks: 0, errors: 0, current: null, lastError: null };
+
+/* DURABLE PROGRESS (Part 126, the night it shipped). The first run was killed
+ * at chunk ~26 of 141 by a fork deploy — the state lived in process memory and
+ * a redeploy is a fresh process. Her seat's row was left "as of Aug 21". Now
+ * every finished relationship is stamped in `kadedreammine`, and a run with
+ * `resume:true` (the default) skips the stamped ones; `resetFirst` still
+ * clears a relationship's row before ITS walk, so a half-walked one is redone
+ * whole. `POST /dream-mine/start {"resume":false}` forgets the stamps. */
+function progress() { return mongoose.connection.db.collection('kadedreammine'); }
+async function isDone(rel) {
+  const row = await progress().findOne({ _id: `${rel.userId}::${rel.agentId}` });
+  return !!(row && row.finishedAt);
+}
+async function markDone(rel, chunks) {
+  await progress().updateOne({ _id: `${rel.userId}::${rel.agentId}` }, { $set: { finishedAt: new Date(), chunks } }, { upsert: true });
+}
+async function forgetProgress(scope = {}) {
+  const q = {};
+  if (scope.userId) q._id = { $regex: `^${String(scope.userId)}::` };
+  await progress().deleteMany(q);
+}
 
 function textOf(m) {
   if (!m) return '';
@@ -99,13 +120,15 @@ async function clearRow(userId, agentId) {
   );
 }
 
-async function run(scope = {}, { resetFirst = true } = {}) {
+async function run(scope = {}, { resetFirst = true, resume = true } = {}) {
+  if (!resume) await forgetProgress(scope);
   const rels = await relationships(scope);
-  state.relationships = rels.length; state.done = 0; state.chunks = 0; state.errors = 0; state.lastError = null;
+  state.relationships = rels.length; state.done = 0; state.skipped = 0; state.chunks = 0; state.errors = 0; state.lastError = null;
   const nameCache = new Map();
   for (const rel of rels) {
     if (state.stop) break;
     state.current = `${rel.userId.slice(-6)}::${rel.agentId.slice(-6)}`;
+    if (resume && (await isDone(rel))) { state.skipped++; state.done++; continue; }
     try {
       let agentName = nameCache.get(rel.agentId);
       if (agentName === undefined) {
@@ -125,6 +148,7 @@ async function run(scope = {}, { resetFirst = true } = {}) {
         if (!r) { state.errors++; state.lastError = `empty result for ${state.current}`; }
         await new Promise((ok) => setTimeout(ok, PACE_MS));
       }
+      if (!state.stop) await markDone(rel, cs.length);
       state.done++;
     } catch (e) {
       state.errors++; state.lastError = e.message;
@@ -133,6 +157,12 @@ async function run(scope = {}, { resetFirst = true } = {}) {
   }
 }
 
+async function progressSummary() {
+  try {
+    const n = await progress().countDocuments({});
+    return { finishedRelationships: n };
+  } catch (_) { return { finishedRelationships: null }; }
+}
 function start(scope = {}, opts = {}) {
   if (state.running) return { started: false, reason: 'already running', ...status() };
   state.running = true; state.stop = false; state.startedAt = new Date().toISOString(); state.finishedAt = null; state.scope = scope;
@@ -144,4 +174,4 @@ function start(scope = {}, opts = {}) {
 function stop() { state.stop = true; return status(); }
 function status() { return { ...state }; }
 
-module.exports = { plan, start, stop, status };
+module.exports = { plan, start, stop, status, progressSummary };
