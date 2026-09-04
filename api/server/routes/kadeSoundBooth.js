@@ -1081,7 +1081,12 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
               ` Voice number ${project.voiceSeed} — the full render will use this same voice. About a penny.`,
           }
         : estimateFor('scenema', script);
-      const bridgeEst = preview ? {} : (r.data?.estimate || {});
+      /* Part 123: the bridge's estimate is read for a PREVIEW too. Its
+       * spokenWait now names which case she is in (card awake / waking / none
+       * free), and "about a penny" with no wait attached is exactly the promise
+       * that turned a working preview into "minutes and minutes" by ear. */
+      const bridgeEst = r.data?.estimate || {};
+      if (preview && bridgeEst.spokenWait) est.spoken += ` ${bridgeEst.spokenWait}`;
       /* audioSeconds comes from HERE (the bridge counts direction words as
        * spoken); the wait and the money come from the BRIDGE, which is the
        * only side that knows the measured render rate and the wake charge. */
@@ -1089,13 +1094,20 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         ...est,
         audioSeconds: est.audioSeconds,
         renderSeconds: bridgeEst.renderSeconds || est.renderSeconds,
+        renderSecondsWarm: bridgeEst.renderSecondsWarm,
+        cardAwake: bridgeEst.cardAwake,
         costUSD: typeof bridgeEst.costUSD === 'number' ? bridgeEst.costUSD : est.costUSD,
       };
       /* A preview writes its OWN sentence (what it will perform, and the voice
        * number). sayEstimate would flatten that back into "about N seconds of
        * audio", which is the least useful thing to know about an audition. */
       if (!preview) {
-        merged.spoken = sayEstimate(merged.audioSeconds, merged.renderSeconds, merged.costUSD, true);
+        /* When the bridge has looked at the endpoint, its sentence about the
+         * wait is the true one; sayEstimate's generic "longer if the card has
+         * to wake up" is the fallback for a bridge that did not say. */
+        merged.spoken = bridgeEst.spokenWait
+          ? `${sayEstimate(merged.audioSeconds, merged.renderSecondsWarm || merged.renderSeconds, merged.costUSD, false)} ${bridgeEst.spokenWait}`
+          : sayEstimate(merged.audioSeconds, merged.renderSeconds, merged.costUSD, true);
       }
       logger.info(`[soundbooth/render] scenema queued job=${jobId} project=${project._id} user=${req.user.id}`);
       return res.json({

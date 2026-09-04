@@ -356,6 +356,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(Number.isInteger(r.data.voiceSeed)) state.voiceSeed = r.data.voiceSeed;
       if(r.data.queued){
         state.jobId = r.data.jobId;
+        state.previewJob = !!preview;
         document.getElementById('btnCancel').hidden = false;
         say((preview?'Voice sample queued. ':'Queued. ') + ((r.data.estimate && r.data.estimate.spoken) || '') + ' The page will say when it is ready.');
         startPoll();
@@ -435,7 +436,22 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         state.lastWait = r.data.wait || null;
         var finished = (s === 'done' || s === 'failed' || s === 'cancelled');
         if(s !== last || finished || ticks % 2 === 0){ last = s; say(r.data.spoken || s, s === 'failed'); }
-        if(finished){ stopPoll(); state.jobId = null; state.lastWait = null; state.cancelArmed = null; document.getElementById('btnCancel').hidden = true; loadLibrary(); }
+        if(finished){
+          stopPoll(); state.jobId = null; state.lastWait = null; state.cancelArmed = null; document.getElementById('btnCancel').hidden = true;
+          /* Part 123. "Hear this voice first" means HEAR it: a finished preview
+           * plays itself, instead of landing as one more audio element she has
+           * to find in the library by tab. The library still gets it. */
+          if(s === 'done' && state.previewJob && r.data.url){
+            say('Here is the voice. ' + (r.data.spoken || ''));
+            try {
+              var a = document.getElementById('previewPlayer');
+              if(!a){ a = document.createElement('audio'); a.id = 'previewPlayer'; a.controls = true; a.setAttribute('aria-label', 'Voice sample'); status.parentNode.insertBefore(a, status.nextSibling); }
+              a.src = r.data.url; var pl = a.play(); if(pl && pl.catch) pl.catch(function(){ say('Here is the voice. Press play on the sample player just below this line.'); });
+            } catch(e){}
+          }
+          state.previewJob = false;
+          loadLibrary();
+        }
       }, 15000);
     }
 
