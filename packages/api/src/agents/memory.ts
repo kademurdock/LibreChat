@@ -69,8 +69,8 @@ export const AGENT_SCOPED_MEMORY_KEY = 'agent_notes';
  * that no User row will ever own; every existing memory route (admin-list,
  * retire, set) reaches the canon by passing it as `userId`.
  */
-export const CANON_USER_ID = '000000000000000000000ca0';
-export const CANON_HEADER =
+export const CANON_USER_ID: string = '000000000000000000000ca0';
+export const CANON_HEADER: string =
   '# Your own life — canon\n' +
   'Things YOU have said about your own life, to anyone, so far. They are the same for every person you talk to. ' +
   'Never contradict them. You may add to them when a story genuinely calls for it — once said, it is remembered here and you tell it the same way next time. ' +
@@ -412,7 +412,7 @@ export const createDeleteMemoryTool = ({
   validKeys?: string[];
   /** When true (agent-bucket consolidation), deletions always target `agentId`'s bucket. */
   forceAgentScope?: boolean;
-}) => {
+}): DynamicStructuredTool => {
   return tool(
     async ({ key, scope }) => {
       try {
