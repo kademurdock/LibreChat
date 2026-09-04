@@ -93,10 +93,20 @@ function isValidLabel(label, liveVoices, aliases, hidden) {
   //     it had been live since the fish wave shipped.
   // (2) `hidden` — old spellings the proxy still resolves — validate too, so
   //     stored beta-era picks keep working forever after the rename.
+  // Part 129 (Sep 4 2026, found on the activity logs): since Part 118 the
+  // picker's labels are DESCRIPTIVE ("warm low-ish woman · turnpike") — not
+  // "Voice N", not a legacy name — so they fell into the named branch below,
+  // were never checked against the live list, and every builder voice and
+  // every personal pick has been "invalid" here since Sep 2. The resolver
+  // then fell to name-match ("Kiana (Comedian)"), which the fork's own TTS
+  // lane does not accept, which randomised the voice on every play. A label
+  // the proxy SERVES is valid, whatever shape it has.
+  if (Array.isArray(liveVoices) && liveVoices.includes(l)) return true;
+  if (inHidden) return true;
   if (/^Voice \d+\b/i.test(l)) {
-    return !Array.isArray(liveVoices) || liveVoices.includes(l) || inHidden;
+    return !Array.isArray(liveVoices);
   }
-  return !Array.isArray(aliases) || aliases.includes(l) || inHidden;
+  return !Array.isArray(aliases) || aliases.includes(l);
 }
 
 /**

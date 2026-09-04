@@ -26,7 +26,7 @@
  * list (unchanged behavior for the 1-210 range that yaml still gets right).
  * 5-min cache so every audition/synthesis call doesn't hammer the proxy.
  */
-let _voiceCache = { at: 0, voices: null, hidden: null };
+let _voiceCache = { at: 0, voices: null, hidden: null, aliases: null };
 
 async function fetchLiveVoices(ttsUrl) {
   try {
@@ -55,7 +55,15 @@ async function fetchLiveVoices(ttsUrl) {
       // labels — that the proxy still resolves but no longer lists. Cached
       // alongside so validators can union them with `voices` and stored old
       // picks never get random-substituted or snapped away.
-      _voiceCache = { at: Date.now(), voices, hidden: Array.isArray(d?.hidden) ? d.hidden : null };
+      // Part 129: `aliases` — the proxy's NAMED labels ("Kiana (Comedian)",
+      // "Birta") that resolve at synth forever. The resolver's name-match
+      // step hands these out; the TTS lane must accept them or it randomises.
+      _voiceCache = {
+        at: Date.now(),
+        voices,
+        hidden: Array.isArray(d?.hidden) ? d.hidden : null,
+        aliases: Array.isArray(d?.aliases) ? d.aliases : null,
+      };
       return voices;
     }
     return staleButGood();
@@ -99,5 +107,9 @@ function getCachedLiveVoices() {
 function getCachedLiveHidden() {
   return _voiceCache.hidden;
 }
+/** The proxy's named aliases (Part 129); null until fetched. */
+function getCachedLiveAliases() {
+  return _voiceCache.aliases || null;
+}
 
-module.exports = { fetchLiveVoices, getCachedLiveVoices, getCachedLiveHidden };
+module.exports = { fetchLiveVoices, getCachedLiveVoices, getCachedLiveHidden, getCachedLiveAliases };

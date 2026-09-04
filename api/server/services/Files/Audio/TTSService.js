@@ -4,7 +4,7 @@ const { genAzureEndpoint, logAxiosError, applyAxiosProxyConfig } = require('@lib
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 const { scrubForSpeech } = require('./scrubForSpeech');
-const { fetchLiveVoices, getCachedLiveVoices, getCachedLiveHidden } = require('./voiceCatalog');
+const { fetchLiveVoices, getCachedLiveVoices, getCachedLiveHidden, getCachedLiveAliases } = require('./voiceCatalog');
 
 /** Kade D2d: parse+clamp an optional TTS speaking rate (Inworld range 0.5-1.5).
  * Multipart form fields arrive as strings; JSON bodies as numbers. Anything
@@ -131,10 +131,19 @@ class TTSService {
     // resolves (e.g. the graduated "(Beta)" labels). A stored old pick must
     // keep synthesizing as itself, never fall into the random branch.
     const hidden = provider === TTSProviders.OPENAI ? getCachedLiveHidden() : null;
+    // Part 129: a named alias the proxy resolves ("Kiana (Comedian)" — what
+    // the resolver's name-match step hands the logs page) is known too. Before
+    // this, such a label fell into the random branch: a different voice on
+    // every play of the same line (her report, Sep 4).
+    const aliases = provider === TTSProviders.OPENAI ? getCachedLiveAliases() : null;
     let voice = requestVoice;
     const known =
-      voice && (voices.includes(voice) || (Array.isArray(hidden) && hidden.includes(voice)));
+      voice &&
+      (voices.includes(voice) ||
+        (Array.isArray(hidden) && hidden.includes(voice)) ||
+        (Array.isArray(aliases) && aliases.includes(voice)));
     if (!voice || !known || (voice.toUpperCase() === 'ALL' && voices.length > 1)) {
+      logger.warn(`[TTSService] voice "${voice}" is not a served label, hidden alias or named alias — picking at random`);
       voice = getRandomVoiceId(voices);
     }
     return voice;
@@ -181,12 +190,14 @@ class TTSService {
     // KADE July 23 2026: hidden aliases (graduated beta-era spellings) are
     // valid too — same reasoning as getVoice(), same warm cache.
     const hiddenAliases = getCachedLiveHidden();
+    const namedAliases = getCachedLiveAliases(); // Part 129
 
     if (
       knownVoices &&
       knownVoices.length > 0 &&
       !knownVoices.includes(voice) &&
       !(Array.isArray(hiddenAliases) && hiddenAliases.includes(voice)) &&
+      !(Array.isArray(namedAliases) && namedAliases.includes(voice)) &&
       !knownVoices.includes('ALL')
     ) {
       throw new Error(`Voice ${voice} is not available.`);
