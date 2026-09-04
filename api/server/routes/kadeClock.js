@@ -1153,7 +1153,7 @@ router.post('/dream-mine/plan', express.json({ limit: '8kb' }), async (req, res)
 router.post('/dream-mine/start', express.json({ limit: '8kb' }), (req, res) => {
   if (!authed(req, res)) return;
   const b = req.body || {};
-  res.json(require('~/server/services/kadeDreamMiner').start({ userId: b.userId, agentId: b.agentId }, { resetFirst: b.resetFirst !== false, resume: b.resume !== false }));
+  res.json(require('~/server/services/kadeDreamMiner').start({ userId: b.userId, agentId: b.agentId }, { resetFirst: b.resetFirst !== false, resume: b.resume !== false, force: b.force === true }));
 });
 router.post('/dream-mine/stop', (req, res) => {
   if (!authed(req, res)) return;

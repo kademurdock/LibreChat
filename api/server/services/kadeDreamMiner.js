@@ -19,7 +19,17 @@ const db = require('~/models');
 const { refreshSummaryFromText, turnsToText } = require('~/server/services/kadeMemorySummary');
 
 const CHUNK_CHARS = parseInt(process.env.KADE_DREAM_MINE_CHUNK_CHARS || '60000', 10);
-const PACE_MS = parseInt(process.env.KADE_DREAM_MINE_PACE_MS || '1500', 10);
+const PACE_MS = parseInt(process.env.KADE_DREAM_MINE_PACE_MS || '4000', 10);
+/* Part 127: the first full run made the site slow for two hours (voice lookups
+ * timed out at 07:08Z; the clock's summary call outran its wait). This is a
+ * small-hours job: it starts only between 06:00 and 12:00 UTC (1–7 a.m.
+ * Central) unless `force:true` is passed, and it paces 4 s between chunks. */
+const QUIET_START_UTC = parseInt(process.env.KADE_DREAM_MINE_START_UTC || '6', 10);
+const QUIET_END_UTC = parseInt(process.env.KADE_DREAM_MINE_END_UTC || '12', 10);
+function inQuietWindow(d = new Date()) {
+  const h = d.getUTCHours();
+  return QUIET_START_UTC <= QUIET_END_UTC ? (h >= QUIET_START_UTC && h < QUIET_END_UTC) : (h >= QUIET_START_UTC || h < QUIET_END_UTC);
+}
 const IN_PER_M = 0.075, OUT_PER_M = 0.25; // glm-5.3-flash, per the config comment
 const OUT_TOKENS_PER_CHUNK = 900; // ~600 written + reasoning
 
@@ -165,6 +175,9 @@ async function progressSummary() {
 }
 function start(scope = {}, opts = {}) {
   if (state.running) return { started: false, reason: 'already running', ...status() };
+  if (!opts.force && !inQuietWindow()) {
+    return { started: false, reason: `outside the small-hours window (${QUIET_START_UTC}:00–${QUIET_END_UTC}:00 UTC); pass force:true to run anyway — it slows the site while it walks`, ...status() };
+  }
   state.running = true; state.stop = false; state.startedAt = new Date().toISOString(); state.finishedAt = null; state.scope = scope;
   run(scope, opts)
     .catch((e) => { state.errors++; state.lastError = e.message; logger.error('[kadeDreamMiner] run failed:', e); })
