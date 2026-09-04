@@ -984,6 +984,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       const secret = process.env.BRIDGE_SECRET;
       if (!secret) return res.status(503).json({ error: 'The render lane is not configured here.' });
       let r;
+      let previewInfo = null;
       try {
         /* A preview performs one fixed sample line in the described voice,
          * not her whole script — the point is to hear the ACTOR for a penny.
@@ -991,9 +992,31 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
          * is exactly what the full render will use. */
         let promptToSend = script;
         if (preview) {
+          /* Part 122.1, her report: "that sounded nothing like my description,
+           * and it just said some weird sample sentence." Both true, and both
+           * were mine. The sentence was HARDCODED — nobody's words — so it is
+           * her script's opening now, whole sentences only, same <speak> tag. */
           const speakTag = (script.match(/<speak[^>]*>/i) || [''])[0];
-          const attrs = speakTag ? speakTag.replace(/^<speak/i, '').replace(/>$/, '') : ` voice="${escapeXml(opts.voice_description || 'A warm, clear adult voice.')}" gender="${b.gender === 'male' ? 'male' : 'female'}"`;
-          promptToSend = `<speak${attrs}>\nHere is how I sound. I can be gentle, I can be sharp, and I can slow all the way down when the moment asks for it.\n</speak>`;
+          const base = speakTag
+            ? script
+            : `<speak voice="${escapeXml(opts.voice_description || 'A warm, clear adult voice.')}" gender="${b.gender === 'male' ? 'male' : 'female'}"></speak>`;
+          previewInfo = previewExcerpt(base, { maxWords: 40 });
+          promptToSend = previewInfo.prompt;
+        }
+        /* ⭐ THE SEED IS THE VOICE (Part 122.1). Scenema casts a new random
+         * actor off the description on EVERY render unless a seed is pinned.
+         * Unpinned, the penny she spent on "hear this voice first" auditioned
+         * somebody the real render would never use — the preview was a lottery
+         * ticket, not a preview. Her seat's own jobs that night: 194376,
+         * 959021, 952142, 908614, all different, all random.
+         * One seed per PROJECT now, set by whichever fires first and reused by
+         * every render after, so preview and render and re-render are the same
+         * person. `newVoice: true` rerolls it on purpose. */
+        if (b.newVoice === true) project.voiceSeed = undefined;
+        if (Number.isInteger(opts.seed) && opts.seed >= 0) {
+          project.voiceSeed = opts.seed;
+        } else if (!Number.isInteger(project.voiceSeed)) {
+          project.voiceSeed = Math.floor(Math.random() * 1000000);
         }
         const bridgeBody = {
           secret,
@@ -1003,11 +1026,19 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
           prompt: promptToSend,
           reference_voice_url: opts.reference_voice_url,
           background_sfx: opts.background_sfx,
-          seed: opts.seed,
+          seed: project.voiceSeed,
           pace: opts.pace,
           keep_wav: opts.keep_wav,
         };
-        if (preview) bridgeBody.mode = 'voice_design';
+        /* A clip and a designed voice are two different ways to choose a voice
+         * and this file says so elsewhere: "a reference clip beats a preset
+         * name, and sending both is undefined." Her broken preview ran
+         * mode=voice_design AND has_reference_voice=true at the same time —
+         * the engine was told to invent a voice from words and to sound like a
+         * recording, in the same breath. If a clip is attached the real render
+         * will CLONE it, so the preview must clone it too; voice_design is for
+         * previewing a written description, which is the case with no clip. */
+        if (preview && !opts.reference_voice_url) bridgeBody.mode = 'voice_design';
         r = await axios.post(`${bridgeBase()}/audio/scenema/start`, bridgeBody, {
           headers: { 'User-Agent': UA },
           timeout: 20000,
@@ -1023,8 +1054,25 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       project.state = 'queued';
       if (jobId) project.jobs = [...(project.jobs || []), jobId].slice(-20);
       await project.save();
+      /* The preview says WHAT IT IS ABOUT TO PERFORM before it charges, and
+       * names the voice number, because that number is the only thing that
+       * makes an audition mean anything on the render that follows. */
       const est = preview
-        ? { engine: 'scenema', words: 0, audioSeconds: 15, renderSeconds: 60, costUSD: 0.01, spoken: 'A fifteen second sample of the voice, about a minute to make, about a penny. Longer if the graphics card has to wake up.' }
+        ? {
+            engine: 'scenema',
+            words: previewInfo?.words || 0,
+            audioSeconds: Math.max(5, Math.round((previewInfo?.words || 25) / 2.6)),
+            renderSeconds: 60,
+            costUSD: 0.01,
+            voiceSeed: project.voiceSeed,
+            sampleText: previewInfo?.text || '',
+            fromScript: !!previewInfo?.fromScript,
+            spoken:
+              (previewInfo?.fromScript
+                ? `Reading the opening of your script: "${String(previewInfo.text).slice(0, 160)}"`
+                : `Your script is empty, so it will read a plain line instead: "${String(previewInfo?.text || '').slice(0, 160)}"`) +
+              ` Voice number ${project.voiceSeed} — the full render will use this same voice. About a penny.`,
+          }
         : estimateFor('scenema', script);
       const bridgeEst = preview ? {} : (r.data?.estimate || {});
       /* audioSeconds comes from HERE (the bridge counts direction words as
@@ -1036,7 +1084,12 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         renderSeconds: bridgeEst.renderSeconds || est.renderSeconds,
         costUSD: typeof bridgeEst.costUSD === 'number' ? bridgeEst.costUSD : est.costUSD,
       };
-      merged.spoken = sayEstimate(merged.audioSeconds, merged.renderSeconds, merged.costUSD, true);
+      /* A preview writes its OWN sentence (what it will perform, and the voice
+       * number). sayEstimate would flatten that back into "about N seconds of
+       * audio", which is the least useful thing to know about an audition. */
+      if (!preview) {
+        merged.spoken = sayEstimate(merged.audioSeconds, merged.renderSeconds, merged.costUSD, true);
+      }
       logger.info(`[soundbooth/render] scenema queued job=${jobId} project=${project._id} user=${req.user.id}`);
       return res.json({
         ok: true,
@@ -1045,6 +1098,9 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         preview,
         jobId,
         projectId: String(project._id),
+        /* The page carries this back on the real render so the voice she
+         * auditioned is the voice she gets. */
+        voiceSeed: project.voiceSeed,
         estimate: merged,
       });
     }

@@ -68,6 +68,13 @@ const kadeSoundBoothProjectSchema = new mongoose.Schema(
     /** Set once the parts are joined and filed, so a re-poll cannot make a
      * second copy of the same recording. */
     stitchedAssetId: { type: String },
+    /** ⭐ Part 122.1 — THE SEED IS THE VOICE. Scenema casts a NEW random actor
+     * off the description on every render unless a seed is pinned, so without
+     * this the "hear this voice first" button auditioned somebody the real
+     * render would never use, and a re-render of a saved project came back a
+     * different person. Set on the first preview or render of a project and
+     * reused for every render after; `newVoice: true` rerolls it deliberately. */
+    voiceSeed: { type: Number },
     /** KadeAsset ids for every finished render of this project. */
     assets: { type: [String], default: [] },
     state: {

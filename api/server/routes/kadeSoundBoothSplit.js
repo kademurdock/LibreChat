@@ -103,4 +103,75 @@ function saySplit(parts, engineName) {
   return `That script is longer than ${engineName} can make in one go, so I am rendering it in ${parts.length} parts and joining them into one recording. You will be charged for each part, and you get one file at the end.`;
 }
 
-module.exports = { splitSpeakScript, softSplit, saySplit };
+
+/* ---------- THE PREVIEW EXCERPT (Part 122.1, Sep 4 2026) --------------------
+ * "What voice is it sampling because that sounded nothing like my description,
+ * and it just said some weird sample sentence."
+ *
+ * It said a HARDCODED sentence — "Here is how I sound. I can be gentle, I can
+ * be sharp…" — which is nobody's words and tells her nothing about her own
+ * piece. Her pick: perform the OPENING OF HER SCRIPT instead, so a fifteen
+ * second audition is fifteen seconds of the actual thing.
+ *
+ * Whole sentences only. A preview that stops mid-clause sounds like a fault in
+ * the voice rather than the end of a sample, and she would be judging an actor
+ * on it. Tag blocks that fall inside the excerpt are KEPT — an <action> is a
+ * direction to the performer, so dropping it changes the reading she is
+ * auditioning. The <speak> attributes are carried whole, exactly as the
+ * splitter does, or the sample is a different person than the render.
+ */
+function previewExcerpt(script, { maxWords = 40, fallback = 'This is the voice you described, reading a line or two so you can hear it before you spend anything.' } = {}) {
+  const raw = String(script || '').trim();
+  const open = raw.match(/^<speak\b[^>]*>/i);
+  const openTag = open ? open[0] : '';
+  const body = openTag ? raw.slice(openTag.length).replace(/<\/speak>\s*$/i, '').trim() : raw;
+  const rewrap = (b) => (openTag ? `${openTag}\n${b.trim()}\n</speak>` : b.trim());
+
+  /* Same atomising as the splitter: a tag block is indivisible, prose breaks at
+   * paragraph then sentence. */
+  const atoms = [];
+  const tagBlock = /<(action|sound)\b[^>]*>[\s\S]*?<\/\1>/gi;
+  let cursor = 0;
+  let m;
+  while ((m = tagBlock.exec(body)) !== null) {
+    if (m.index > cursor) atoms.push(...softSplit(body.slice(cursor, m.index)));
+    atoms.push(m[0]);
+    cursor = m.index + m[0].length;
+  }
+  if (cursor < body.length) atoms.push(...softSplit(body.slice(cursor)));
+
+  const spokenWords = (t) =>
+    String(t)
+      .replace(/<action>[\s\S]*?<\/action>/gi, ' ')
+      .replace(/<sound>[\s\S]*?<\/sound>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean).length;
+
+  const taken = [];
+  let words = 0;
+  for (const a of atoms) {
+    const w = spokenWords(a);
+    /* Always take the first spoken atom even if it alone is over budget — a
+     * long opening sentence is still the right thing to audition, and cutting
+     * it would put us back to a fragment. */
+    if (words > 0 && words + w > maxWords) break;
+    taken.push(a);
+    words += w;
+  }
+  const useFallback = !taken.length || words === 0;
+  return {
+    prompt: rewrap(useFallback ? fallback : taken.join('\n')),
+    words: useFallback ? spokenWords(fallback) : words,
+    fromScript: !useFallback,
+    /* Said before it spends, so she is never surprised by what it performs. */
+    text: (useFallback ? fallback : taken.join(' '))
+      .replace(/<action>[\s\S]*?<\/action>/gi, ' ')
+      .replace(/<sound>[\s\S]*?<\/sound>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  };
+}
+
+module.exports = { splitSpeakScript, softSplit, saySplit, previewExcerpt };

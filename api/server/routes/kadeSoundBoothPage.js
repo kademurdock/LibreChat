@@ -120,6 +120,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       <p id="readback" class="hint"></p>
       <div>
         <button type="button" class="act quiet" id="btnPreview" hidden>Hear this voice first (15 seconds, about a penny)</button>
+        <button type="button" class="act quiet" id="btnNewVoice" hidden>Cast a different voice</button>
         <button type="button" class="act primary" id="btnRender">Render</button>
         <button type="button" class="act" id="btnCancel" hidden>Stop this render</button>
       </div>
@@ -139,7 +140,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     var token = null; try { token = await getToken(); } catch(e) {}
     if(!token){ status.className='status err'; status.textContent='Please sign in at the chat site first, then reload this page.'; return; }
 
-    var state = { engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null };
+    var state = { engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null, voiceSeed:null, rerollVoice:false };
     function say(msg, isErr){ status.className = 'status' + (isErr ? ' err' : ''); status.textContent = msg; }
     function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML; }
     async function post(path, body){
@@ -193,6 +194,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.querySelector('#howto summary').textContent = 'How to write for ' + g.name;
       document.getElementById('howtoList').innerHTML = g.howToWrite.map(function(x){ return '<li>'+esc(x)+'</li>'; }).join('');
       document.getElementById('btnPreview').hidden = (e !== 'scenema');
+      document.getElementById('btnNewVoice').hidden = (e !== 'scenema');
       state.pendingRender = null; document.getElementById('btnRender').textContent = 'Render';
       renderSettings();
     }
@@ -333,15 +335,25 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var b = collect();
       if(!script && !preview){ say('There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
       if(preview && !script && !b.voice_description){ say('Describe the voice first, or write a script, so there is a voice to preview.', true); return; }
-      b.script = script || ('<speak voice="'+(b.voice_description||'A warm, clear adult voice.').replace(/"/g,'&quot;')+'" gender="'+(b.gender||'female')+'">Here is how I sound.</speak>');
+      /* Part 122.1: this line used to invent a THIRD sample sentence ("Here is
+       * how I sound."), different again from the two on the server, so what a
+       * preview performed depended on which path fired. The server builds the
+       * sample from her script now; the page sends an empty speak tag carrying
+       * only the voice, and lets it decide. */
+      b.script = script || ('<speak voice="'+(b.voice_description||'A warm, clear adult voice.').replace(/"/g,'&quot;')+'" gender="'+(b.gender||'female')+'"></speak>');
       b.sourceText = document.getElementById('text').value;
       b.readback = document.getElementById('readback').textContent;
       if(preview) b.preview = true;
       if(state.projectId) b.projectId = state.projectId;
+      /* THE SEED IS THE VOICE. Without this the penny she spent auditioning a
+       * voice bought her nothing — the render cast a different actor. */
+      if(!preview && Number.isInteger(state.voiceSeed) && b.seed === undefined) b.seed = state.voiceSeed;
+      if(state.rerollVoice){ b.newVoice = true; state.rerollVoice = false; }
       say('Sending it\\u2026');
       var r = await post('/api/kade/sound-booth/render', b);
       if(!r.ok){ say(r.data.error || 'That render could not start.', true); return; }
       state.projectId = r.data.projectId || state.projectId;
+      if(Number.isInteger(r.data.voiceSeed)) state.voiceSeed = r.data.voiceSeed;
       if(r.data.queued){
         state.jobId = r.data.jobId;
         document.getElementById('btnCancel').hidden = false;
@@ -379,6 +391,13 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       btnRender.disabled = false;
     };
     document.getElementById('btnPreview').onclick = function(){ doRender(true); };
+    /* The seed is pinned per project so a render sounds like its audition. That
+     * is only kind if there is also a way OUT of a voice she does not like —
+     * otherwise a project is stuck with the first actor it was ever cast. */
+    document.getElementById('btnNewVoice').onclick = function(){
+      state.rerollVoice = true; state.voiceSeed = null;
+      say('Next preview or render will cast a different voice from the same description. Press Hear this voice first to audition it before you spend on the whole thing.');
+    };
     /* Part 122 -- STOP ASKS ONCE while the wait is still earned. Three renders
      * on Sep 3 were stopped by hand at fifty seconds and at four minutes, both
      * inside a cold wake that had not finished; the booth had promised three
