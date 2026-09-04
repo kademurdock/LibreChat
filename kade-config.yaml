@@ -444,9 +444,15 @@ memory:
          about an aunt and does not know that aunt when the next person mentions her is a continuity
          bug with feelings attached. The canon block in this request lists what already exists: if the
          story is already there, file nothing; if the character contradicted canon, file nothing and
-         never overwrite canon. Never file anything about the USER with scope "self". Measured the night
-         this shipped: the keeper heard a whole popsicle-heist story about the character's granddaddy
-         and saved nothing — because every rule below is about the USER. This one is about her.
+         never overwrite canon. Never file anything about the USER with scope "self". ⚠️ ONLY FROM WHAT
+         THE CHARACTER ACTUALLY SAID — an assistant turn in the chat above, paraphrased. You run beside
+         the reply and see the chat only up to the user's latest message, so when the user has just
+         ASKED for a story, the character's answer is not in front of you yet: file NOTHING, it will be
+         in the next window. Two receipts from the night this shipped: the keeper heard a whole
+         popsicle-heist story about the character's granddaddy and saved nothing (every rule below is
+         about the USER; this one is about her) — and then, asked only "what was your first concert",
+         it INVENTED a county-fair story and filed it while the character was telling a different one.
+         A self card whose words do not appear in the character's own turns is refused by the tool.
 
       Everything below still governs, unchanged. These four sit up here because they are the ones
       that keep getting dropped.

@@ -76,6 +76,46 @@ export const CANON_HEADER: string =
   'Never contradict them. You may add to them when a story genuinely calls for it — once said, it is remembered here and you tell it the same way next time. ' +
   'They are yours to carry, not to prove: never present them as real-world facts anyone could check, and never turn them into claims about the person you are talking to.';
 
+/**
+ * KADE CANON — THE FABRICATION GUARD (Part 123, the night the lane shipped).
+ * The keeper runs in PARALLEL with the reply and only ever sees the chat up to
+ * the user's latest message. Asked "tell me about your first concert", it
+ * INVENTED a county-fair story and filed it as canon while the character was
+ * telling a completely different one. So a "self" card is only accepted when
+ * its content words actually appear in something the CHARACTER said (the AI
+ * turns of the window). The character's own reply reaches the keeper on the
+ * NEXT turn; that is when it files. Returns the share of content words found.
+ */
+export function canonEvidenceShare(value: string, aiText: string): number {
+  const words = (t: string) =>
+    (t.toLowerCase().match(/[a-z][a-z'’-]{3,}|\d{2,}/g) ?? []).filter(
+      (w) => !CANON_STOPWORDS.has(w.replace(/[’']/g, "'")),
+    );
+  const need = Array.from(new Set(words(value)));
+  if (need.length === 0) return 0;
+  const have = new Set(words(aiText));
+  let hit = 0;
+  for (const w of need) if (have.has(w)) hit++;
+  return hit / need.length;
+}
+const CANON_STOPWORDS: Set<string> = new Set(
+  'that this with from have were they them their there then than when what which about would could should because into over under after before while these those been being does done just like also very really character kiana first still ever never always every some more most much many other another same such only once said says tells told story about'.split(
+    ' ',
+  ),
+);
+export const CANON_EVIDENCE_MIN: number = 0.5;
+/** Pulls the AI side out of a getBufferString() transcript ("Human: ..." / "AI: ..."). */
+export function aiTurnsOf(transcript: string): string {
+  const out: string[] = [];
+  let inAi = false;
+  for (const line of String(transcript || '').split('\n')) {
+    if (/^Human:/.test(line)) { inAi = false; continue; }
+    if (/^AI:/.test(line)) { inAi = true; out.push(line.replace(/^AI:\s*/, '')); continue; }
+    if (inAi) out.push(line);
+  }
+  return out.join('\n');
+}
+
 /** ---- Kade nudge engine: US-Central wall-time helpers (family is all Missouri; DST-safe) ---- */
 function chicagoPartsOf(date: Date): { y: number; m: number; d: number; hh: number; mm: number } {
   const fmt = new Intl.DateTimeFormat('en-US', {
@@ -197,6 +237,7 @@ export const createMemoryTool = ({
   tokenLimit,
   totalTokens = 0,
   forceAgentScope = false,
+  canonEvidence,
 }: {
   userId: string | ObjectId;
   /** The persona currently in the conversation, if any. Writes with `scope: 'agent'` (or the legacy `agent_notes` key) go to this persona's own bucket; everything else stays shared. */
@@ -207,6 +248,8 @@ export const createMemoryTool = ({
   totalTokens?: number;
   /** When true (agent-bucket consolidation), EVERY write is scoped to `agentId` regardless of key/scope -- keeps card splits inside the bucket being consolidated. */
   forceAgentScope?: boolean;
+  /** KADE CANON: what the CHARACTER actually said in the window. A scope:"self" card must be grounded in it. Undefined = no guard (consolidation passes). */
+  canonEvidence?: string;
 }): DynamicStructuredTool => {
   const remainingTokens = tokenLimit ? tokenLimit - totalTokens : Infinity;
   const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
@@ -283,6 +326,18 @@ export const createMemoryTool = ({
          * character is active; with no agentId there is nobody to be canon about. */
         const canon = scope === 'self' && Boolean(agentId) && !forceAgentScope;
         const targetUserId = canon ? CANON_USER_ID : userId;
+        if (canon && typeof canonEvidence === 'string') {
+          const share = canonEvidenceShare(value, canonEvidence);
+          if (share < CANON_EVIDENCE_MIN) {
+            logger.warn(
+              `[MemoryAgent] canon REFUSED for key "${key}": ${(share * 100).toFixed(0)}% of its words appear in anything the character said`,
+            );
+            return [
+              `NOT filed: "${key}" is not something the character actually said in this chat (only ${(share * 100).toFixed(0)}% of its words appear in the character's own turns). Canon is only ever the character's own words, paraphrased, never anticipated or invented. If the character has not answered yet, there is nothing to file — its reply will be in the next window.`,
+              undefined,
+            ];
+          }
+        }
         /** Reminder cards (Kade nudge engine): a parseable remind_at upgrades this card to type:'reminder' with a real dueAt the server sweep will fire. */
         const dueAt = remind_at ? parseCentralReminderTime(remind_at) : null;
         /** KADE OPEN LOOPS (Aug 26 2026): a plain YYYY-MM-DD, anchored at UTC
@@ -606,6 +661,14 @@ export async function processMemory({
       validKeys,
       totalTokens,
       forceAgentScope,
+      /* KADE CANON: the AI side of the window is the only evidence a "self" card may rest on. */
+      canonEvidence: forceAgentScope
+        ? undefined
+        : aiTurnsOf(
+            messages
+              .map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))
+              .join('\n'),
+          ),
     });
     const deleteMemoryTool = createDeleteMemoryTool({
       userId,
@@ -882,7 +945,7 @@ export async function createMemoryProcessor({
       logger.warn('[MemoryAgent] canon read failed (continuing without it)', error);
     }
     finalInstructions +=
-      '\n\nSELF-CANON (scope "self") — THE CHARACTER\'S OWN LIFE: when the CHARACTER (not the user) states a concrete first-person fact about its own life — a relative ("my aunt kept the porch light on"), a hometown, a past job, a pet it had, a thing that happened to it, a standing habit — file it with scope "self" under a snake_case key naming it (aunt_porch_light, hometown), one card per fact, one plain sentence, absolute dates. Once filed it is shown to the character in every conversation with anyone, so the same aunt exists for everybody: that is the whole point. The canon block above lists what already exists — if the claim is already there, file nothing; if the character CONTRADICTED its canon, file nothing and never overwrite canon (canon stands, the slip does not). Never file anything about the USER with scope "self"; never file the character\'s opinions, feelings or promises there (promises have their own rule); only autobiography. A passing figure of speech ("girl, I would have died") is not autobiography.';
+      '\n\nSELF-CANON (scope "self") — THE CHARACTER\'S OWN LIFE: when the CHARACTER (not the user) states a concrete first-person fact about its own life — a relative ("my aunt kept the porch light on"), a hometown, a past job, a pet it had, a thing that happened to it, a standing habit — file it with scope "self" under a snake_case key naming it (aunt_porch_light, hometown), one card per fact, one plain sentence, absolute dates. Once filed it is shown to the character in every conversation with anyone, so the same aunt exists for everybody: that is the whole point. The canon block above lists what already exists — if the claim is already there, file nothing; if the character CONTRADICTED its canon, file nothing and never overwrite canon (canon stands, the slip does not). Never file anything about the USER with scope "self"; never file the character\'s opinions, feelings or promises there (promises have their own rule); only autobiography. A passing figure of speech ("girl, I would have died") is not autobiography. ⚠️ ONLY EVER FROM WHAT THE CHARACTER ACTUALLY SAID in the chat above — an assistant turn, paraphrased. Never anticipate or invent a story from the user\'s question: you see the chat up to the user\'s latest message, so the character\'s answer to it is NOT in front of you yet; it will be next turn, and that is when to file. Receipt: asked only "what was your first concert", a keeper invented a county-fair story and filed it as canon while the character was telling a different one. A self card whose words do not appear in the character\'s own turns is refused.';
   }
 
   return [

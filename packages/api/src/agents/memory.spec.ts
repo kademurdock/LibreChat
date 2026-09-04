@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import { Run, Providers } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
-import { processMemory, createMemoryTool, createDeleteMemoryTool, CANON_USER_ID } from './memory';
+import { processMemory, createMemoryTool, createDeleteMemoryTool, CANON_USER_ID, canonEvidenceShare, aiTurnsOf } from './memory';
 
 jest.mock('~/stream/GenerationJobManager');
 
@@ -607,5 +607,43 @@ describe('Kade canon (scope "self")', () => {
     const args = (deleteMemory as jest.Mock).mock.calls[0][0];
     expect(args.userId).toBe(CANON_USER_ID);
     expect(args.agentId).toBe(agentId);
+  });
+});
+
+
+describe('Kade canon — the fabrication guard', () => {
+  const userId = new Types.ObjectId().toString();
+  const agentId = 'agent_6llV0eMu4fmIaj8f2x1Sb';
+  const transcript =
+    'Human: what was your first concert?\nAI: Oak Ridge Boys, down at the lake. My auntie won tickets off a radio call-in and I was twelve and too cool for it.\nHuman: ha';
+
+  it('pulls only the AI side out of a buffer transcript', () => {
+    const ai = aiTurnsOf(transcript);
+    expect(ai).toMatch(/Oak Ridge Boys/);
+    expect(ai).not.toMatch(/what was your first concert/);
+  });
+
+  it('a card grounded in the character\'s words scores high; an invented one scores low', () => {
+    const ai = aiTurnsOf(transcript);
+    expect(canonEvidenceShare('Her first concert was the Oak Ridge Boys at the lake; her auntie won radio tickets when she was twelve.', ai)).toBeGreaterThanOrEqual(0.5);
+    expect(canonEvidenceShare('Her first concert was a county fair in 2003, a cover band called The Midnight Ramblers, with cousin Dale, in the rain.', ai)).toBeLessThan(0.5);
+  });
+
+  it('refuses to file an invented self card and files a grounded one', async () => {
+    const setMemory = jest.fn(async () => ({ ok: true }));
+    const t = createMemoryTool({ userId, agentId, setMemory: setMemory as never, canonEvidence: aiTurnsOf(transcript) });
+    const refused = await t.invoke({ key: 'first_concert', value: 'Her first concert was a county fair in 2003 with cousin Dale and The Midnight Ramblers.', scope: 'self' });
+    expect(String(refused)).toMatch(/NOT filed/);
+    expect(setMemory).not.toHaveBeenCalled();
+    await t.invoke({ key: 'first_concert', value: 'Her first concert was the Oak Ridge Boys at the lake; her auntie won the tickets on a radio call-in when she was twelve.', scope: 'self' });
+    expect(setMemory).toHaveBeenCalledTimes(1);
+    expect((setMemory as jest.Mock).mock.calls[0][0].userId).toBe(CANON_USER_ID);
+  });
+
+  it('without evidence wired (consolidation passes) the guard is off', async () => {
+    const setMemory = jest.fn(async () => ({ ok: true }));
+    const t = createMemoryTool({ userId, agentId, setMemory: setMemory as never });
+    await t.invoke({ key: 'anything', value: 'Whatever the pass says.', scope: 'self' });
+    expect(setMemory).toHaveBeenCalledTimes(1);
   });
 });
