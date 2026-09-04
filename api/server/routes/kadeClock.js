@@ -1018,4 +1018,26 @@ router.post('/care-note/retire', express.json({ limit: '8kb' }), async (req, res
   }
 });
 
+
+/* ─── HER TAKES (Part 124) ────────────────────────────────────────────────────
+ * Read every character's private first-person read of a relationship, as it
+ * stands after the last dreaming pass. Admin only (header secret). This is
+ * how Kade reads what Kiana actually thinks — and how a bad take gets caught
+ * before it shapes a week of replies. `?userId=` narrows to one seat. */
+router.get('/takes', async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const mongoose = require('mongoose');
+    const q = { take: { $exists: true, $ne: '' } };
+    if (req.query.userId) q.userId = String(req.query.userId);
+    const rows = await mongoose.connection.db.collection('kadememorysummaries')
+      .find(q, { projection: { userId: 1, agentId: 1, agentName: 1, take: 1, refreshedAt: 1, source: 1 } })
+      .sort({ refreshedAt: -1 }).limit(200).toArray();
+    res.json({ count: rows.length, takes: rows });
+  } catch (e) {
+    logger.error('[kadeClock] takes failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
