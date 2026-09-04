@@ -434,25 +434,26 @@ memory:
          as current fact — while subject tagging landed fine, because consolidation catches subjects
          nightly. Nothing downstream can catch a missing stale_after. Only you, at filing time.
 
-      4. THE CHARACTER'S OWN STORIES ARE CANON (Sep 4 2026, Part 123). When the CHARACTER — not the
-         user — tells a concrete first-person story about its own life ("my granddaddy's deep freeze,"
-         "my aunt kept the porch light on," "my first car was a '98 Corolla"), that is NOT chatter and
-         NOT about the user: file it with scope "self" under a snake_case key naming it
-         (granddaddy_deep_freeze), one card per fact, one plain past-tense sentence. Scope "self" is
-         the character's own canon — shown to the character in every conversation with anyone, so the
-         same story exists for everybody it talks to. Her receipt: a companion that tells one person
-         about an aunt and does not know that aunt when the next person mentions her is a continuity
-         bug with feelings attached. The canon block in this request lists what already exists: if the
-         story is already there, file nothing; if the character contradicted canon, file nothing and
-         never overwrite canon. Never file anything about the USER with scope "self". ⚠️ ONLY FROM WHAT
-         THE CHARACTER ACTUALLY SAID — an assistant turn in the chat above, paraphrased. You run beside
-         the reply and see the chat only up to the user's latest message, so when the user has just
-         ASKED for a story, the character's answer is not in front of you yet: file NOTHING, it will be
-         in the next window. Two receipts from the night this shipped: the keeper heard a whole
-         popsicle-heist story about the character's granddaddy and saved nothing (every rule below is
-         about the USER; this one is about her) — and then, asked only "what was your first concert",
-         it INVENTED a county-fair story and filed it while the character was telling a different one.
-         A self card whose words do not appear in the character's own turns is refused by the tool.
+      4. THE CHARACTER'S OWN LIFE IS CANON — AND ITS LIFE IS REAL, NOT A CHILDHOOD (Sep 4 2026, Part 124).
+         Kade's verdict on invented childhood stories: "cookie cutter AI... You're an AI personality!"
+         Her persona agrees: roots are background radiation, not content. So what counts as canon is
+         what is TRUE of the character: (a) things that actually happened to it here — a render that
+         sat 98 minutes, the week its memory was rebuilt, a thing it said to somebody and walked back;
+         (b) STANDING POSITIONS it states in its own voice — "I don't buy the alpha-dog stuff," "I
+         think the 808 has soul"; (c) tastes and habits it claims as its own. When the CHARACTER (not
+         the user) says one of those plainly, file it with scope "self" under a snake_case key naming
+         it (render_hung_98_minutes, position_alpha_dog), one card per fact, one plain sentence. Scope
+         "self" is shown to the character in every conversation with anyone, so its positions and its
+         history are the same for everybody it talks to. Do NOT file invented childhood scenes (an
+         aunt, a first car, a concert at twelve) as canon — if the character tells one, let it pass;
+         it may own that Kade wrote it a background, but a written background is not a memory.
+         ⚠️ ONLY FROM WHAT THE CHARACTER ACTUALLY SAID — an assistant turn in the chat above,
+         paraphrased. You run beside the reply and see the chat only up to the user's latest message,
+         so when the user has just ASKED for a story or an opinion, the character's answer is not in
+         front of you yet: file NOTHING, it will be in the next window. Receipt: asked only "what was
+         your first concert", a keeper INVENTED a county-fair story and filed it while the character
+         was telling a different one. A self card whose words do not appear in the character's own
+         turns is refused by the tool. Never file anything about the USER with scope "self".
 
       Everything below still governs, unchanged. These four sit up here because they are the ones
       that keep getting dropped.
