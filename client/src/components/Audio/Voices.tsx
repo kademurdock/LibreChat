@@ -311,6 +311,81 @@ export function VoicePreviewButton({
   );
 }
 
+/** Part 129 — "Wrong section?" (a friend's report, relayed: some voices are
+ * miscategorised). The catalog's headings came from one machine ear on one
+ * neutral read; a person's ear beats it. One click files the voice, the
+ * heading it sits under and what it actually sounds like on the feedback
+ * board (POST /api/kade/feedback, the same pile Report-a-problem writes), so
+ * the next catalog pass has receipts. Plain buttons, one live region. */
+export function VoiceFlagButton({ voiceId, disabled }: { voiceId: string; disabled?: boolean }) {
+  const { token } = useAuthContext();
+  const { categories, tags } = useVoiceCatalog();
+  const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState<string>('');
+  const [busy, setBusy] = useState(false);
+  const heading = useMemo(
+    () => (categories ?? []).find((c) => (c.voices ?? []).includes(voiceId))?.name ?? '',
+    [categories, voiceId],
+  );
+  const name = (tags && tags[voiceId]) ? tags[voiceId].charAt(0).toUpperCase() + tags[voiceId].slice(1) : voiceId;
+  const choices = ['A woman', 'A man', 'A kid or a teen', 'A character or cartoon', 'An older person', 'A younger person'];
+  const send = async (heard: string) => {
+    if (busy || !voiceId) return;
+    setBusy(true);
+    setStatus('');
+    try {
+      const resp = await fetch('/api/kade/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          category: 'bug',
+          subject: `Voice in the wrong section: ${name}`,
+          detail: `Filed from the voice picker on the web. Voice: ${voiceId}. Filed under "${heading || '(unknown heading)'}" — sounds like: ${heard.toLowerCase()}.`,
+          surface: 'web',
+        }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      setStatus(`Sent. ${name} reported as ${heard.toLowerCase()}. Thank you.`);
+      setOpen(false);
+    } catch {
+      setStatus('Could not send that report. Try again in a moment.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!voiceId) return null;
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        disabled={disabled || busy}
+        aria-expanded={open}
+        aria-label={`Wrong section? Report that ${name} is filed under the wrong heading`}
+        className="rounded-lg px-2.5 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy disabled:opacity-40"
+      >
+        Wrong section?
+      </button>
+      {open && (
+        <div role="group" aria-label={`What does ${name} actually sound like? It is filed under ${heading || 'no heading'} right now.`} className="flex flex-wrap justify-end gap-1">
+          {choices.map((c) => (
+            <button
+              key={c}
+              type="button"
+              disabled={busy}
+              onClick={() => send(c)}
+              className="rounded-md border border-border-medium px-2 py-1 text-xs hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+      <span role="status" aria-live="polite" className="text-xs text-text-secondary">{status}</span>
+    </div>
+  );
+}
+
 export function BrowserVoiceDropdown({ disabled = false }: { disabled?: boolean }) {
   const localize = useLocalize();
   const { voices = [] } = useTTSBrowser();
@@ -742,8 +817,9 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
 
       {/* ♿ C3: long-form Preview button stays — full audition of the selected voice. */}
       {current != null && (
-        <div className="flex justify-end">
+        <div className="flex items-start justify-end gap-2">
           <VoicePreviewButton voiceId={current} disabled={disabled} />
+          <VoiceFlagButton voiceId={current} disabled={disabled} />
         </div>
       )}
     </div>

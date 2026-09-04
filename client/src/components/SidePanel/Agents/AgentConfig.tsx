@@ -30,7 +30,7 @@ import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
 import { Panel, isEphemeralAgent } from '~/common';
 import { icons } from '~/hooks/Endpoint/Icons';
-import { VoicePreviewButton } from '~/components/Audio/Voices';
+import { VoicePreviewButton, VoiceFlagButton } from '~/components/Audio/Voices';
 import AgentVoicePicker, { extractAgentLines } from './AgentVoicePicker';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
@@ -385,8 +385,9 @@ export default function AgentConfig() {
                     {localize('com_agents_default_voice_help')}
                   </p>
                   {current !== '' && (
-                    <div className="flex justify-start">
+                    <div className="flex items-start justify-start gap-2">
                       <VoicePreviewButton voiceId={current} disabled={false} speed={speakingRate} />
+                      <VoiceFlagButton voiceId={current} />
                     </div>
                   )}
                 </div>
