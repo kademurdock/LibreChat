@@ -644,8 +644,12 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
             }
             /* Pinned cards already ride the head — don't spend tail on them. */
             const k = String(m.key || '').toLowerCase();
-            const pinnedNow =
-              m.agentId == null
+            /* A secondhand card never rides the head, so it is never "already
+             * there" — the tail is its only door. (Found live: `probe_bird_name`
+             * matched the `name` pin pattern and was skipped as pinned.) */
+            const pinnedNow = m._secondhand
+              ? false
+              : m.agentId == null
                 ? headSharedKeys.has(String(m.key))
                 : m.type === 'reminder' || pats.some((p) => k.includes(p));
             if (pinnedNow) {
