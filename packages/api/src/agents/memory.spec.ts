@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import { Run, Providers } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
-import { processMemory } from './memory';
+import { processMemory, createMemoryTool, createDeleteMemoryTool, CANON_USER_ID } from './memory';
 
 jest.mock('~/stream/GenerationJobManager');
 
@@ -558,5 +558,54 @@ describe('Memory Agent Header Resolution', () => {
     const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
 
     expect(runConfig.graphConfig.llmConfig.temperature).toBe(0.7);
+  });
+});
+
+
+/* KADE CANON (Part 123, Sep 4 2026). A character's own autobiography files under
+ * the fixed canon owner, scoped to the character, so the same aunt exists for
+ * every seat. These pin the routing, because a "self" card that lands in one
+ * user's bucket is exactly the continuity bug the feature exists to prevent. */
+describe('Kade canon (scope "self")', () => {
+  const userId = new Types.ObjectId().toString();
+  const agentId = 'agent_6llV0eMu4fmIaj8f2x1Sb';
+
+  it('routes a scope:self write to the canon owner, scoped to the character, tagged canon', async () => {
+    const setMemory = jest.fn(async () => ({ ok: true }));
+    const t = createMemoryTool({ userId, agentId, setMemory: setMemory as never });
+    await t.invoke({ key: 'aunt_porch_light', value: 'My aunt kept the porch light on every night.', scope: 'self' });
+    expect(setMemory).toHaveBeenCalledTimes(1);
+    const args = (setMemory as jest.Mock).mock.calls[0][0];
+    expect(args.userId).toBe(CANON_USER_ID);
+    expect(args.agentId).toBe(agentId);
+    expect(args.subject).toBe('canon');
+  });
+
+  it('keeps scope:agent and shared writes on the user, untouched', async () => {
+    const setMemory = jest.fn(async () => ({ ok: true }));
+    const t = createMemoryTool({ userId, agentId, setMemory: setMemory as never });
+    await t.invoke({ key: 'dog_zeus', value: 'Her dog Zeus is deaf.', scope: 'agent' });
+    await t.invoke({ key: 'screen_reader', value: 'Uses a screen reader.' });
+    const calls = (setMemory as jest.Mock).mock.calls;
+    expect(calls[0][0].userId).toBe(userId);
+    expect(calls[0][0].agentId).toBe(agentId);
+    expect(calls[1][0].userId).toBe(userId);
+    expect(calls[1][0].agentId).toBeUndefined();
+  });
+
+  it('with no character active, scope:self falls back to the user (there is nobody to be canon about)', async () => {
+    const setMemory = jest.fn(async () => ({ ok: true }));
+    const t = createMemoryTool({ userId, setMemory: setMemory as never });
+    await t.invoke({ key: 'aunt_porch_light', value: 'My aunt kept the porch light on.', scope: 'self' });
+    expect((setMemory as jest.Mock).mock.calls[0][0].userId).toBe(userId);
+  });
+
+  it('deletes a scope:self card from the canon owner, not the user', async () => {
+    const deleteMemory = jest.fn(async () => ({ ok: true }));
+    const t = createDeleteMemoryTool({ userId, agentId, deleteMemory: deleteMemory as never });
+    await t.invoke({ key: 'aunt_porch_light', scope: 'self' });
+    const args = (deleteMemory as jest.Mock).mock.calls[0][0];
+    expect(args.userId).toBe(CANON_USER_ID);
+    expect(args.agentId).toBe(agentId);
   });
 });

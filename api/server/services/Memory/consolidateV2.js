@@ -51,7 +51,7 @@
  */
 const { HumanMessage } = require('@librechat/agents/langchain/messages');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
-const { processMemory, resolveMemoryAgentLLMConfig } = require('@librechat/api');
+const { processMemory, resolveMemoryAgentLLMConfig, CANON_USER_ID } = require('@librechat/api');
 const db = require('~/models');
 const { addLedger } = require('~/models/kadeMemoryLedger');
 const { syncBucketVectors } = require('~/models/kadeCardVector');
@@ -297,6 +297,13 @@ async function consolidateV2AllBuckets() {
     const summary = { buckets: buckets.length, edits: 0, refused: 0, failed: 0 };
     const appConfig = await getAppConfig();
     for (const b of buckets) {
+      /* KADE CANON (Part 123): a character's own canon is hand-tended, never
+       * machine-consolidated -- an editor that "lets go" of a canon fact makes
+       * the character forget an aunt it already told somebody about. */
+      if (String(b.userId) === String(CANON_USER_ID)) {
+        allState.done += 1;
+        continue;
+      }
       try {
         const r = await runAsSystem(() =>
           consolidateBucketV2({ userId: b.userId, agentId: b.agentId ?? null, appConfig }),

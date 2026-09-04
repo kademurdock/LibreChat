@@ -57,6 +57,25 @@ export interface MemoryConfig {
  */
 export const AGENT_SCOPED_MEMORY_KEY = 'agent_notes';
 
+/**
+ * KADE CANON (Sep 4 2026, Part 123). A character's own life is not about any one
+ * user, so it cannot live in a (userId, agentId) bucket -- that is what the
+ * "agent" bucket is, and it is per PERSON. Her constraint, verbatim: "if she
+ * tells my mom about some auntie, and doesn't know what I'm talking about when
+ * I mention it, see how that becomes a problem." So a self-fact the character
+ * improvises is filed ONCE, under this fixed owner id, scoped to the character
+ * (agentId), and read back into every conversation that character has -- the
+ * same aunt for Amber, for her mom, and for her. The id is a valid ObjectId
+ * that no User row will ever own; every existing memory route (admin-list,
+ * retire, set) reaches the canon by passing it as `userId`.
+ */
+export const CANON_USER_ID = '000000000000000000000ca0';
+export const CANON_HEADER =
+  '# Your own life — canon\n' +
+  'Things YOU have said about your own life, to anyone, so far. They are the same for every person you talk to. ' +
+  'Never contradict them. You may add to them when a story genuinely calls for it — once said, it is remembered here and you tell it the same way next time. ' +
+  'They are yours to carry, not to prove: never present them as real-world facts anyone could check, and never turn them into claims about the person you are talking to.';
+
 /** ---- Kade nudge engine: US-Central wall-time helpers (family is all Missouri; DST-safe) ---- */
 function chicagoPartsOf(date: Date): { y: number; m: number; d: number; hh: number; mm: number } {
   const fmt = new Intl.DateTimeFormat('en-US', {
@@ -256,9 +275,14 @@ export const createMemoryTool = ({
 
         /** Scope resolution: explicit `scope: 'agent'` (or the legacy `agent_notes` key, or a forced consolidation pass) files this card in the current persona's own bucket; everything else stays shared. */
         const targetAgentId =
-          agentId && (forceAgentScope || scope === 'agent' || key === AGENT_SCOPED_MEMORY_KEY)
+          agentId && (forceAgentScope || scope === 'agent' || scope === 'self' || key === AGENT_SCOPED_MEMORY_KEY)
             ? agentId
             : undefined;
+        /** KADE CANON: scope "self" files the CHARACTER's own autobiography under the
+         * fixed canon owner, not under this user -- one fact, every seat. Only when a
+         * character is active; with no agentId there is nobody to be canon about. */
+        const canon = scope === 'self' && Boolean(agentId) && !forceAgentScope;
+        const targetUserId = canon ? CANON_USER_ID : userId;
         /** Reminder cards (Kade nudge engine): a parseable remind_at upgrades this card to type:'reminder' with a real dueAt the server sweep will fire. */
         const dueAt = remind_at ? parseCentralReminderTime(remind_at) : null;
         /** KADE OPEN LOOPS (Aug 26 2026): a plain YYYY-MM-DD, anchored at UTC
@@ -288,11 +312,12 @@ export const createMemoryTool = ({
             }
           : {};
         const result = await setMemory({
-          userId,
+          userId: targetUserId,
           agentId: targetAgentId,
           key,
           value,
           tokenCount,
+          ...(canon ? { subject: 'canon' } : {}),
           ...reminderFields,
           /* Omitted (undefined) INHERITS from the superseded row — the July 13
            * wipe guard. Only an explicit value here changes anything. */
@@ -339,10 +364,10 @@ export const createMemoryTool = ({
             'Value MUST be a complete sentence that fully describes relevant user information.',
           ),
         scope: z
-          .enum(['shared', 'agent'])
+          .enum(['shared', 'agent', 'self'])
           .optional()
           .describe(
-            'Where this card lives: "shared" = visible to every assistant on the platform (default); "agent" = private to you, the current character, only. Ignored when no character is active.',
+            'Where this card lives: "shared" = visible to every assistant on the platform (default); "agent" = private to you, the current character, only; "self" = the CHARACTER\'s own autobiography (a relative, a hometown, a past job, a thing that happened to the character) — filed once and shown to the character in EVERY conversation with anyone, so it never contradicts itself. Never "self" for anything about the user. Ignored when no character is active.',
           ),
         remind_at: z
           .string()
@@ -374,7 +399,7 @@ export const createMemoryTool = ({
 /**
  * Creates a delete memory tool instance with user context
  */
-const createDeleteMemoryTool = ({
+export const createDeleteMemoryTool = ({
   userId,
   agentId,
   deleteMemory,
@@ -408,10 +433,11 @@ const createDeleteMemoryTool = ({
         };
 
         const targetAgentId =
-          agentId && (forceAgentScope || scope === 'agent' || key === AGENT_SCOPED_MEMORY_KEY)
+          agentId && (forceAgentScope || scope === 'agent' || scope === 'self' || key === AGENT_SCOPED_MEMORY_KEY)
             ? agentId
             : undefined;
-        const result = await deleteMemory({ userId, agentId: targetAgentId, key });
+        const canon = scope === 'self' && Boolean(agentId) && !forceAgentScope;
+        const result = await deleteMemory({ userId: canon ? CANON_USER_ID : userId, agentId: targetAgentId, key });
         if (result.ok) {
           logger.debug(`Memory deleted for key "${key}" for user "${userId}"`);
           return [`Memory deleted for key "${key}"`, artifact];
@@ -437,10 +463,10 @@ const createDeleteMemoryTool = ({
               : 'The key identifier of the memory card to delete',
           ),
         scope: z
-          .enum(['shared', 'agent'])
+          .enum(['shared', 'agent', 'self'])
           .optional()
           .describe(
-            'Which bucket the card lives in: "shared" (default) or "agent" (your own private card). Ignored when no character is active.',
+            'Which bucket the card lives in: "shared" (default), "agent" (your own private card about this user), or "self" (the character\'s own canon). Ignored when no character is active.',
           ),
       }),
     },
@@ -839,8 +865,28 @@ export async function createMemoryProcessor({
     agentId,
   });
 
+  /** KADE CANON (Part 123): the character's own life rides every turn it has,
+   * with anyone. Read from the fixed canon owner, scoped to this character.
+   * Empty canon injects nothing -- the block appears the first time she says
+   * something about herself and the keeper files it. */
+  let canonForCharacter = '';
+  let canonForKeeper = '';
+  if (agentId) {
+    try {
+      const canon = await memoryMethods.getFormattedMemories({ userId: CANON_USER_ID, agentId });
+      if (canon.withoutKeys && canon.withoutKeys.trim()) {
+        canonForCharacter = `\n\n${CANON_HEADER}\n${canon.withoutKeys}`;
+        canonForKeeper = `\n\n# The character's own canon (scope "self" — already filed, do not re-file):\n${canon.withKeys}`;
+      }
+    } catch (error) {
+      logger.warn('[MemoryAgent] canon read failed (continuing without it)', error);
+    }
+    finalInstructions +=
+      '\n\nSELF-CANON (scope "self") — THE CHARACTER\'S OWN LIFE: when the CHARACTER (not the user) states a concrete first-person fact about its own life — a relative ("my aunt kept the porch light on"), a hometown, a past job, a pet it had, a thing that happened to it, a standing habit — file it with scope "self" under a snake_case key naming it (aunt_porch_light, hometown), one card per fact, one plain sentence, absolute dates. Once filed it is shown to the character in every conversation with anyone, so the same aunt exists for everybody: that is the whole point. The canon block above lists what already exists — if the claim is already there, file nothing; if the character CONTRADICTED its canon, file nothing and never overwrite canon (canon stands, the slip does not). Never file anything about the USER with scope "self"; never file the character\'s opinions, feelings or promises there (promises have their own rule); only autobiography. A passing figure of speech ("girl, I would have died") is not autobiography.';
+  }
+
   return [
-    withoutKeys,
+    withoutKeys + canonForCharacter,
     async function (messages: BaseMessage[]): Promise<(TAttachment | null)[] | undefined> {
       try {
         return await processMemory({
@@ -854,7 +900,7 @@ export async function createMemoryProcessor({
           tokenLimit,
           streamId,
           conversationId,
-          memory: withKeys,
+          memory: withKeys + canonForKeeper,
           totalTokens: totalTokens || 0,
           instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,
@@ -1130,6 +1176,13 @@ export async function sweepMemoryConsolidation(
     result.scanned++;
     const userId = String(bucket.userId);
     const agentId = bucket.agentId ?? undefined;
+    /** KADE CANON (Part 123): a character's own canon is never consolidated by
+     * the weekly sweep -- its "letting go" and its demotion into the logbook are
+     * written for a PERSON's cards, and a canon fact that gets demoted is an aunt
+     * the character forgets. Canon is small and hand-tended (admin routes). */
+    if (userId === CANON_USER_ID) {
+      continue;
+    }
     const scopeLabel = agentId
       ? `agent ${agentId}'s own (key: ${AGENT_SCOPED_MEMORY_KEY})`
       : 'shared';
