@@ -501,6 +501,8 @@ async function searchDiary({
   dateTo = null,
   limit = 5,
   minScore = 0.18,
+  /** Part 128 (memory share): other companions' entries this seat has opened to this one. */
+  extraAgentIds = [],
 }) {
   if (!diaryEnabled() || !userId) {
     return [];
@@ -508,7 +510,7 @@ async function searchDiary({
   const cap = Math.min(Math.max(parseInt(limit, 10) || 5, 1), 12);
   const filter = {
     userId: String(userId),
-    $or: [{ agentId: null }, ...(agentId ? [{ agentId: String(agentId) }] : [])],
+    $or: [{ agentId: null }, ...(agentId ? [{ agentId: String(agentId) }] : []), ...(Array.isArray(extraAgentIds) ? extraAgentIds.map((a) => ({ agentId: String(a) })) : [])],
   };
   if (dateFrom || dateTo) {
     filter.entryDate = {};
@@ -587,6 +589,7 @@ async function searchDiary({
           date: r.entryDate,
           text: r.text,
           agentScoped: Boolean(r.agentId),
+          agentId: r.agentId ? String(r.agentId) : null,
           score,
           ranked,
           salience: Math.min(Math.max(r.salience || 1, 1), 3),

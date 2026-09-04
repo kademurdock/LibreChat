@@ -1160,4 +1160,26 @@ router.post('/dream-mine/stop', (req, res) => {
   res.json(require('~/server/services/kadeDreamMiner').stop());
 });
 
+
+/* ─── MEMORY SHARE (Part 128) — admin set/read for a seat ────────────────────
+ * Body: {userId, mode:'off'|'all'|'list', agents?:[...]} — the same knob the
+ * memory manager exposes to the person on their own seat (kade.js). */
+router.get('/memory-share', async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const { getShare } = require('~/server/services/kadeMemoryShare');
+    const userId = String(req.query.userId || '');
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    res.json({ userId, ...(await getShare(userId)) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.post('/memory-share', express.json({ limit: '8kb' }), async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const { setShare } = require('~/server/services/kadeMemoryShare');
+    const b = req.body || {};
+    res.json({ ok: true, ...(await setShare(b.userId, { mode: b.mode, agents: b.agents, setBy: b.setBy || 'admin' })) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 module.exports = router;

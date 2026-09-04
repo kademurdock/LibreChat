@@ -516,6 +516,12 @@ async function getMemorySplit(userId, agentId) {
     sections.push(
       'You remember more about this person than what is listed here: further private memories surface automatically in a "Memory recall" note whenever they relate to the moment, and you can search the rest deliberately with your memory search tool any time.',
     );
+    /* Part 128: when this seat shares across companions, say so once. Stable
+     * per seat, so the head still caches. */
+    try {
+      const notice = await require('./kadeMemoryShare').shareNotice(userId, agentId);
+      if (notice) sections.push(notice);
+    } catch (_) { /* own buckets only */ }
     return {
       pinnedBlock: sections.join('\n\n'),
       retrievable,
@@ -579,22 +585,45 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
       const qv = await embedText(text.slice(0, 1500));
       const parts = [];
 
+      /* Part 128 — MEMORY SHARE: the other companions' buckets this seat has
+       * opened to this one. Facts only (cards + logbook); takes stay private. */
+      let extraAgentIds = [];
+      let shareNames = new Map();
+      try {
+        const share = require('./kadeMemoryShare');
+        extraAgentIds = await share.otherBucketsFor(userId, agentId);
+        for (const a of extraAgentIds) shareNames.set(String(a), await share.agentNameOf(a));
+      } catch (e) {
+        logger.warn('[kadeCardRecall] share lookup failed (own buckets only): ' + e.message);
+        extraAgentIds = [];
+      }
       if (cardsOn) {
         const cardHits = qv
           ? await searchCardVectors(userId, agentId, qv, {
               limit: CARD_TOP_K,
               minScore: CARD_MIN_SCORE,
+              extraAgentIds,
             })
           : [];
         if (cardHits.length > 0) {
           /* Join back to LIVE entries — vectors never speak for themselves. */
-          const [shared, own] = await Promise.all([
+          const [shared, own, ...others] = await Promise.all([
             getAllUserMemories(userId, { agentId: null }),
             agentId ? getAllUserMemories(userId, { agentId }) : Promise.resolve([]),
+            ...extraAgentIds.map((a) => getAllUserMemories(userId, { agentId: a })),
           ]);
+          const ownKeys = new Set(own.map((m) => String(m.key)));
           const liveByKey = new Map();
           for (const m of [...shared, ...own]) {
             liveByKey.set((m.agentId == null ? '' : String(m.agentId)) + '::' + m.key, m);
+          }
+          /* Secondhand cards: skip any key this companion already holds itself
+           * (the Part 122 copies), so a shared fact never shows up twice. */
+          for (const list of others) {
+            for (const m of list) {
+              if (ownKeys.has(String(m.key))) continue;
+              liveByKey.set(String(m.agentId) + '::' + m.key, { ...m, _secondhand: shareNames.get(String(m.agentId)) || 'another companion' });
+            }
           }
           const pats = pinPatterns();
           /* Which shared cards are ACTUALLY in the head this turn — ceiling
@@ -623,7 +652,8 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
               continue;
             }
             const line =
-              '- [' + fmtDate(m.updated_at) + '] ' + m.value + describeStale(m) + '\n';
+              '- [' + fmtDate(m.updated_at) + '] ' + m.value + describeStale(m) +
+              (m._secondhand ? ` (secondhand — they told this to ${m._secondhand}, not to you)` : '') + '\n';
             if (block.length + line.length > CARD_BLOCK_CHAR_CAP) {
               break;
             }

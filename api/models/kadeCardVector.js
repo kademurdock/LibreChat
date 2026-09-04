@@ -183,9 +183,12 @@ async function searchCardVectors(userId, agentId, queryVector, opts = {}) {
   }
   try {
     const model = currentEmbedModel();
+    /* Part 128 (memory share): `opts.extraAgentIds` are OTHER companions'
+     * buckets this seat has asked to be shared with the current one. */
+    const extra = Array.isArray(opts.extraAgentIds) ? opts.extraAgentIds.map(String) : [];
     const filter = {
       userId: String(userId),
-      $or: [{ agentId: null }, ...(agentId ? [{ agentId: String(agentId) }] : [])],
+      $or: [{ agentId: null }, ...(agentId ? [{ agentId: String(agentId) }] : []), ...extra.map((a) => ({ agentId: a }))],
       embedding: { $ne: null },
       embedModel: model,
     };

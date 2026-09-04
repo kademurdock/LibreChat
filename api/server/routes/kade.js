@@ -1231,6 +1231,39 @@ const logsMsgText = (m) => {
 };
 
 // Everyone on the instance, with a conversation count, most-active first.
+/* ─── MEMORY SHARE, the person's own knob (Part 128, Sep 4 2026) ────────────
+ * "So she doesn't have to tell either of them something twice." Facts (cards
+ * + logbook) are shared across the companions this seat talks to; opinions
+ * (takes, threads, canon) never are. GET returns the setting and the list of
+ * companions with memory on this seat so a manager screen can offer 'list'. */
+router.get('/memory-share', requireJwtAuth, async (req, res) => {
+  try {
+    const { getShare } = require('~/server/services/kadeMemoryShare');
+    const share = await getShare(req.user.id);
+    const MemoryEntry = mongoose.models.MemoryEntry;
+    const ids = await MemoryEntry.distinct('agentId', { userId: String(req.user.id), agentId: { $ne: null }, status: { $ne: 'superseded' } });
+    const companions = [];
+    for (const id of ids.filter(Boolean)) {
+      let name = String(id).slice(-6);
+      try { const a = await require('~/models').getAgent({ id: String(id) }); if (a && a.name) name = a.name; } catch (_) {}
+      companions.push({ agentId: String(id), name });
+    }
+    res.json({ ...share, companions });
+  } catch (e) {
+    logger.error('[kade/memory-share] read failed:', e);
+    res.status(500).json({ error: 'Could not read your sharing setting.' });
+  }
+});
+router.put('/memory-share', requireJwtAuth, express.json({ limit: '8kb' }), async (req, res) => {
+  try {
+    const { setShare } = require('~/server/services/kadeMemoryShare');
+    const b = req.body || {};
+    res.json({ ok: true, ...(await setShare(req.user.id, { mode: b.mode, agents: b.agents, setBy: 'user' })) });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 router.get('/admin/logs-users', requireJwtAuth, requireAdminAccess, async (req, res) => {
   try {
     const { User, Conversation } = logsModels();

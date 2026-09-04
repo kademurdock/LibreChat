@@ -39,7 +39,15 @@ async function getDiaryTailBlock(userId, agentId, userText) {
   }
   try {
     const work = (async () => {
-      const n = await countEntries(userId, agentId);
+      /* Part 128 — MEMORY SHARE: other companions' logbooks this seat opened. */
+      let extraAgentIds = [];
+      const names = new Map();
+      try {
+        const share = require('./kadeMemoryShare');
+        extraAgentIds = await share.otherBucketsFor(userId, agentId);
+        for (const a of extraAgentIds) names.set(String(a), await share.agentNameOf(a));
+      } catch (_) { extraAgentIds = []; }
+      const n = (await countEntries(userId, agentId)) + (extraAgentIds.length ? 1 : 0);
       if (n === 0) {
         return null;
       }
@@ -49,6 +57,7 @@ async function getDiaryTailBlock(userId, agentId, userText) {
         query: text.slice(0, 1500),
         limit: AUTO_TOP_K,
         minScore: AUTO_MIN_SCORE,
+        extraAgentIds,
       });
       if (!hits || hits.length === 0) {
         return null;
@@ -58,8 +67,17 @@ async function getDiaryTailBlock(userId, agentId, userText) {
         'A few dated entries from your private logbook about this person, pulled because they seem related to what was just said. ' +
         'Wear them lightly: weave one in only if it truly fits, as a friend naturally would. Never recite, never list, never mention the logbook mechanism. ' +
         "If an entry contradicts what the person is saying right now, believe the person — their live word always beats an old note.\n";
+      /* The Part 122 hand-copies carry a "[from her talks with X]" prefix and
+       * live in this companion's own scope; with sharing on, the original would
+       * surface beside its copy. One text, one line. */
+      const seen = new Set();
+      const norm = (t) => String(t || '').replace(/^\[from (?:her|their|his) talks with [^\]]+\]\s*/i, '').trim().toLowerCase();
       for (const h of hits) {
-        const line = `- [${h.date}] ${h.text}\n`;
+        const key = norm(h.text);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const foreign = h.agentId && agentId && String(h.agentId) !== String(agentId) && names.has(String(h.agentId));
+        const line = `- [${h.date}] ${foreign ? `[from their talks with ${names.get(String(h.agentId))}] ` : ''}${h.text}\n`;
         if (block.length + line.length > AUTO_BLOCK_CHAR_CAP) {
           break;
         }
