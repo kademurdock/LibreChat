@@ -160,6 +160,22 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
     } catch (_) {
       compass = '';
     }
+    /* THE OWNER'S STANCE (Part 124, same night): the first live take on a
+     * family seat praised the person for "letting her mom keep the crown on
+     * her own house" — formed from the conversation alone, an hour after the
+     * owner had set a care note asking Kiana to stop applauding exactly that.
+     * A head that carries both is a head arguing with itself. So the care
+     * note rides into the take-writer as part of the compass. It is still
+     * never shown to the person: the take is private to the character, and
+     * the leak scan reads the REPLIES, which are the only thing the person
+     * ever sees. */
+    let stance = '';
+    try {
+      const { getCareNoteBlock } = require('~/models/kadeCareNote');
+      stance = await getCareNoteBlock(String(userId), String(agentId));
+    } catch (_) {
+      stance = '';
+    }
 
     const llmConfig = await resolveMemoryAgentLLMConfig({
       appConfig,
@@ -186,6 +202,7 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
       `PREVIOUS SUMMARY (may be empty):\n${priorText || '(none yet)'}\n\n` +
       `PREVIOUS TAKE (may be empty):\n${priorTake || '(none yet)'}\n\n` +
       (compass ? `THE CHARACTER'S COMPASS (who they are, in their own words — hold the take against this):\n${compass}\n\n` : '') +
+      (stance ? `THE OWNER'S PRIVATE STANCE FOR THIS SEAT (hold MY TAKE against this as well; never quote or paraphrase it; the take must still be the character's own read of what the person actually said):\n${stance}\n\n` : '') +
       `LATEST CONVERSATION:\n${convo}\n\n` +
       `Write the updated running summary, then MY TAKE, in the exact two-section format.`;
 
@@ -227,11 +244,16 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
      * rather than blanked — a missing label is a formatting slip, not a
      * change of mind. */
     let take;
-    const m = text.match(/^\s*SUMMARY:\s*([\s\S]*?)\n\s*MY TAKE:\s*([\s\S]*)$/i);
-    if (m) {
-      text = m[1].trim();
-      take = m[2].trim().replace(/^["'“”]+|["'“”]+$/g, '');
-      if (/^no read yet\.?$/i.test(take)) {
+    /* The writer sometimes labels twice ("MY TAKE:" inside the summary, then
+     * again) — seen on the first live run. Split at the FIRST label for the
+     * summary, and treat everything after it as the take with any repeated
+     * labels stripped; a take that is only "No read yet" clears the field. */
+    const idx = text.search(/\n\s*MY TAKE:\s*/i);
+    if (idx >= 0) {
+      const rawTake = text.slice(idx).replace(/\s*MY TAKE:\s*/gi, '\n').trim();
+      text = text.slice(0, idx).replace(/^\s*SUMMARY:\s*/i, '').trim();
+      take = rawTake.replace(/^["'“”]+|["'“”]+$/g, '').trim();
+      if (/^no read yet\.?$/i.test(take) || !take) {
         take = '';
       }
     } else {

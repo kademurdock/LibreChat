@@ -1040,4 +1040,22 @@ router.get('/takes', async (req, res) => {
   }
 });
 
+
+/* Clear one relationship's take so the next dreaming pass writes it fresh,
+ * un-anchored — for when the compass changed under it (a care note landed)
+ * or a take read wrong. The summary is untouched. */
+router.post('/take/clear', express.json({ limit: '8kb' }), async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const mongoose = require('mongoose');
+    const { userId, agentId } = req.body || {};
+    if (!userId || !agentId) return res.status(400).json({ error: 'userId and agentId required' });
+    const r = await mongoose.connection.db.collection('kadememorysummaries')
+      .updateOne({ userId: String(userId), agentId: String(agentId) }, { $set: { take: '' } });
+    res.json({ ok: true, matched: r.matchedCount, modified: r.modifiedCount });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
