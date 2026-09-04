@@ -51,7 +51,7 @@ const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
-const { splitSpeakScript, saySplit } = require('./kadeSoundBoothSplit');
+const { splitSpeakScript, saySplit, previewExcerpt } = require('./kadeSoundBoothSplit');
 const chain = require('./kadeSoundBoothChain');
 
 const router = express.Router();
@@ -366,7 +366,7 @@ function sanitizeSeed(script) {
 
 /** Cheap structural checks so a bad script is refused HERE, in a sentence she
  * can act on, instead of failing on the GPU two minutes and a wake-up later. */
-function checkScenema(script, { allowLong = false } = {}) {
+function checkScenema(script, { allowLong = false, allowEmpty = false } = {}) {
   const s = String(script || '').trim();
   if (!/^<speak[\s>]/i.test(s)) return 'A Scenema script has to start with a <speak> tag.';
   if (!/<\/speak>\s*$/i.test(s)) return 'A Scenema script has to end with </speak>.';
@@ -386,7 +386,11 @@ function checkScenema(script, { allowLong = false } = {}) {
     .replace(/<action>[\s\S]*?<\/action>/gi, '')
     .replace(/<sound>[\s\S]*?<\/sound>/gi, '')
     .trim();
-  if (!spoken) return 'There are no spoken words in that script — only directions.';
+  /* allowEmpty is for a PREVIEW: with no script yet, the sample falls back to
+   * a plain line, so an empty body is a legitimate thing to audition. Removing
+   * the page's old hardcoded "Here is how I sound." left this check refusing
+   * the very case the preview button exists for. */
+  if (!spoken && !allowEmpty) return 'There are no spoken words in that script — only directions.';
   /* Part 122: length is only a PROBLEM for a caller that cannot split. /render
    * can, so it passes allowLong and the splitter handles it; the script desk
    * still reports it, but as a plan rather than a refusal. */
@@ -889,7 +893,10 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   /* allowLong: a Scenema script over the cap is not refused here any more —
    * the splitter below turns it into parts. Every other structural problem
    * still stops the render before it spends. */
-  const problem = engine === 'seed' ? checkSeed(script) : checkScenema(script, { allowLong: true });
+  const problem =
+    engine === 'seed'
+      ? checkSeed(script)
+      : checkScenema(script, { allowLong: true, allowEmpty: b.preview === true });
   if (problem) return res.status(400).json({ error: problem });
 
   let project = null;

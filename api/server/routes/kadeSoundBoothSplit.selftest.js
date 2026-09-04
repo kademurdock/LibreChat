@@ -161,3 +161,48 @@ test('the read-back text never contains markup', () => {
   const r = previewExcerpt(wrap('Hello there. <action>softly</action> Goodbye now.'), { maxWords: 40 });
   assert.doesNotMatch(r.text, /[<>]/);
 });
+
+/* ---- the wiring guard (Part 122.2) --------------------------------------
+ * Bought with a live 400: `previewExcerpt is not defined`. The function was
+ * written, exported and tested — and the require line in kadeSoundBooth.js was
+ * never updated to import it, because the patch that should have added it was
+ * guarded by an "is this module already required?" check that saw the OLD line
+ * and skipped. Every unit test passed. The button was dead.
+ *
+ * A green test suite on a symbol nothing imports is the emptiest kind of green,
+ * so this reads the CALLER and checks its destructure against reality.
+ */
+const fs = require('fs');
+const pathMod = require('path');
+const splitModule = require('./kadeSoundBoothSplit');
+
+function callerSource() {
+  return fs.readFileSync(pathMod.join(__dirname, 'kadeSoundBooth.js'), 'utf8');
+}
+function importedNames(src) {
+  const m = src.match(/const\s*\{([^}]*)\}\s*=\s*require\('\.\/kadeSoundBoothSplit'\)/);
+  if (!m) return null;
+  return m[1].split(',').map((x) => x.trim()).filter(Boolean);
+}
+
+test('every name kadeSoundBooth.js imports from the split module actually exists', () => {
+  const names = importedNames(callerSource());
+  assert.ok(names, 'kadeSoundBooth.js does not require the split module at all');
+  for (const n of names) {
+    assert.equal(typeof splitModule[n], 'function', `kadeSoundBooth.js imports ${n}, which the split module does not export`);
+  }
+});
+
+test('every split-module function CALLED in kadeSoundBooth.js is also imported', () => {
+  const src = callerSource();
+  const imported = new Set(importedNames(src) || []);
+  for (const fn of Object.keys(splitModule)) {
+    // a call site, not a mention inside a comment or a string
+    const called = new RegExp(`(?<![\\w.'"\`])${fn}\\s*\\(`).test(
+      src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' '),
+    );
+    if (called) {
+      assert.ok(imported.has(fn), `kadeSoundBooth.js CALLS ${fn}() but never imports it — that is a live ReferenceError`);
+    }
+  }
+});
