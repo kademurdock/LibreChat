@@ -12,6 +12,11 @@ async function postBuild() {
     // wouldn't, until it's added to this list too. See docs/ANDROID_SIDELOAD
     // notes for the alternative (email) distribution path.
     await fs.copy('public/Kade-AI.apk', 'dist/Kade-AI.apk');
+    // Part 129: the Android update manifest (Part 128 added the file to
+    // public/ and never to THIS list, so /Kade-AI.apk.json was a 404 the whole
+    // time — the app's update check silently found nothing). This comment
+    // above already said exactly that would happen.
+    await fs.copy('public/Kade-AI.apk.json', 'dist/Kade-AI.apk.json');
     console.log('✅ PWA icons, robots.txt, and Kade-AI.apk copied successfully. Glob pattern warnings resolved.');
   } catch (err) {
     console.error('❌ Error copying files:', err);
