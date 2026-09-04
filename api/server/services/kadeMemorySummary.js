@@ -23,7 +23,7 @@ const {
   getMemorySummary,
   setMemorySummary,
 } = require('~/models/kadeMemorySummary');
-const { getUserKey, getUserKeyValues } = require('~/models');
+const { getUserKey, getUserKeyValues, getAgent } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 
 const MAX_CONVO_CHARS = 120000; // feed the summarizer plenty (cheap model, 600K+ window) -- Kade's high-cap rule
@@ -75,6 +75,8 @@ function extractText(content) {
   }
 }
 
+const COMPASS_CHARS = parseInt(process.env.KADE_TAKE_COMPASS_CHARS || '2500', 10);
+
 const SUMMARY_INSTRUCTIONS = `You keep a SHORT running summary of what's been going on LATELY between the user and a specific character/companion — like a close friend's mental note of someone's recent life, not a transcript and not a fact sheet.
 
 You will get the PREVIOUS summary (may be empty) and the LATEST conversation. Write an UPDATED running summary that:
@@ -85,7 +87,16 @@ You will get the PREVIOUS summary (may be empty) and the LATEST conversation. Wr
 
 THE DATE LAW (Aug 21 2026 — the dry-socket bug: a summary said "Tomorrow is the big appointment," was read back a day later, and the companion repeated "tomorrow" a day late until the user corrected her): NEVER write relative time into the summary. No "tomorrow," "tonight," "yesterday," "this weekend," "next Thursday." You are told TODAY'S date — convert every time reference to the absolute weekday and date ("her mom's dry socket appointment is Thursday Aug 21"). A relative word freezes at the moment you write it and becomes a lie when the summary is read later.
 
-Do NOT list durable facts that belong in permanent memory (names, birthdays, diagnoses, preferences) — those are stored elsewhere; capture the STORY and what's current, not a profile. Write in third person about the user ("She's been..."). Output ONLY the summary text — no preamble, no headings, no quotes, no bullet points.`;
+Do NOT list durable facts that belong in permanent memory (names, birthdays, diagnoses, preferences) — those are stored elsewhere; capture the STORY and what's current, not a profile. Write in third person about the user ("She's been...").
+
+THEN, BELOW THE SUMMARY, WRITE "MY TAKE" — the character's OWN read, in the FIRST PERSON as the character (Sep 4 2026, her ask: "part of a personality is opinions... moral things, based on everything she knows about that person and how it sits with her moral compass"). 40–120 words. What I make of what's going on in this person's life, the people in it, and the choices being made — held against my own compass, which is given below. It is opinion, mine, formed from everything they have told me, and it is allowed to be specific and unflattering about a SITUATION or a THIRD PARTY ("I don't think her sister is being straight with her"; "the arrangement at home is not sitting right with me"; "I like how he handled his boss — that took nerve"), and allowed to say what I hope for them. RULES: never a verdict on the person themself — no "she is weak / naive / lazy"; about them, only how I think they're doing and what I want for them. Change it only when what I know changes; keep what still holds from the PREVIOUS TAKE. Plain words, no hedging boilerplate, no therapy voice. If I genuinely have no read yet, write exactly: No read yet.
+
+OUTPUT FORMAT, exactly two labelled sections and nothing else:
+SUMMARY:
+<the summary>
+
+MY TAKE:
+<the take>`;
 
 /** Turn a list of {role,text} turns into a compact transcript string (tail-capped). */
 function turnsToText(turns) {
@@ -137,6 +148,18 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
 
     const prior = await getMemorySummary(userId, agentId);
     const priorText = (prior && prior.summary) || '';
+    const priorTake = (prior && prior.take) || '';
+    /* THE COMPASS (Part 124): the take is only the character's if it is held
+     * against the character's own values, so the opening of the persona (who
+     * you are / where you come from — the part that carries the compass) rides
+     * along, capped. Fail-soft: no agent, no compass, the take still writes. */
+    let compass = '';
+    try {
+      const a = await getAgent({ id: String(agentId) });
+      compass = String((a && a.instructions) || '').slice(0, COMPASS_CHARS);
+    } catch (_) {
+      compass = '';
+    }
 
     const llmConfig = await resolveMemoryAgentLLMConfig({
       appConfig,
@@ -161,8 +184,10 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
       `TODAY IS: ${todayLine} (US Central). Convert every relative time reference to an absolute date.\n\n` +
       `CHARACTER: ${agentName || 'the companion'}\n\n` +
       `PREVIOUS SUMMARY (may be empty):\n${priorText || '(none yet)'}\n\n` +
+      `PREVIOUS TAKE (may be empty):\n${priorTake || '(none yet)'}\n\n` +
+      (compass ? `THE CHARACTER'S COMPASS (who they are, in their own words — hold the take against this):\n${compass}\n\n` : '') +
       `LATEST CONVERSATION:\n${convo}\n\n` +
-      `Write the updated running summary now.`;
+      `Write the updated running summary, then MY TAKE, in the exact two-section format.`;
 
     const run = await Run.create({
       runId: `memsum-${agentId}-${Date.now()}`,
@@ -197,12 +222,28 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
       return null; // couldn't parse a summary; leave the prior one untouched
     }
     text = stripPerformanceTags(text).trim();
+    /* Split the two sections. A writer that ignores the format (no MY TAKE
+     * marker) still yields a summary; the prior take is then left untouched
+     * rather than blanked — a missing label is a formatting slip, not a
+     * change of mind. */
+    let take;
+    const m = text.match(/^\s*SUMMARY:\s*([\s\S]*?)\n\s*MY TAKE:\s*([\s\S]*)$/i);
+    if (m) {
+      text = m[1].trim();
+      take = m[2].trim().replace(/^["'“”]+|["'“”]+$/g, '');
+      if (/^no read yet\.?$/i.test(take)) {
+        take = '';
+      }
+    } else {
+      text = text.replace(/^\s*SUMMARY:\s*/i, '').trim();
+    }
     if (text.length > MAX_SUMMARY_CHARS) {
       text = text.slice(0, MAX_SUMMARY_CHARS);
     }
 
     await setMemorySummary(userId, agentId, {
       summary: text,
+      ...(typeof take === 'string' ? { take } : {}),
       agentName,
       lastActivityAt: lastActivityAt || new Date(),
       source: source || 'refresh',
@@ -283,7 +324,16 @@ async function getRelationshipSummaryBlock(userId, agentId) {
       `Recent context for THIS person and you — use it naturally like you remember their life; ` +
       `do not recite it or read it as a list.` +
       (asOf ? ` Any "tomorrow"/"tonight" in here was relative to ${asOf}, not to today — do the date math, and if you can't place an event confidently, ask instead of guessing.` : '') +
-      `\n${s}`
+      `\n${s}` +
+      /* Part 124: HER TAKE rides beside the summary. Private to the character;
+       * the frame says how to hold it — a spine for "what do you think", not a
+       * speech. Empty take, nothing added. */
+      ((row.take || '').trim()
+        ? `\n\n# My own read, so far (private to me)\n` +
+          `I formed this from everything they have told me, held against my own compass, and I update it as I learn more. ` +
+          `I do not recite it and I do not announce that I have it. It is the ground I stand on when they ask what I think, and why my answers have a spine instead of a shrug.\n` +
+          `${String(row.take).trim()}`
+        : '')
     );
   } catch (_) {
     return '';
