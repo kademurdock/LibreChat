@@ -677,6 +677,12 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
             if (agentId) {
               await syncBucketVectors(userId, agentId, own, { maxEmbeds: 6 });
             }
+            /* Part 128: shared-in buckets get a trickle too, so a fact told to
+             * another companion is findable before that companion's next turn. */
+            for (const a of extraAgentIds.slice(0, 3)) {
+              const rows = await getAllUserMemories(userId, { agentId: a });
+              await syncBucketVectors(userId, a, rows, { maxEmbeds: 3 });
+            }
           } catch (_e) {
             /* fully silent — next turn tries again */
           }
