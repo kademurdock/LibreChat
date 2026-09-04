@@ -52,6 +52,8 @@ const { logKadeUsage } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
 const { splitSpeakScript, saySplit, previewExcerpt } = require('./kadeSoundBoothSplit');
+/* Part 126: the person reads and writes a SCREENPLAY; the engine reads XML. */
+const { screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREENPLAY_HELP } = require('./kadeSoundBoothScreenplay');
 const chain = require('./kadeSoundBoothChain');
 
 const router = express.Router();
@@ -285,7 +287,12 @@ function wrapSpeak({ body, voice_description, gender, scene, shot, pace, languag
   const attrs = [`voice="${escapeXml(voice)}"`, `gender="${gender === 'male' ? 'male' : 'female'}"`];
   if (scene) attrs.push(`scene="${escapeXml(String(scene).slice(0, 200))}"`);
   if (['closeup', 'wide', 'scene'].includes(shot)) attrs.push(`shot="${shot}"`);
-  if (typeof pace === 'number' && pace >= 0.5 && pace <= 3) attrs.push(`pace="${pace}"`);
+  /* Part 126: `pace` used to be written here as an ATTRIBUTE. The engine's
+   * validator allows exactly {voice, scene, language, gender, shot} on <speak>
+   * and fails the whole render on anything else ("Unknown attribute 'pace'").
+   * Pace is a REQUEST field and already rides the bridge body; `pace` is kept
+   * in the signature so callers do not break, and ignored. */
+  void pace;
   if (language) attrs.push(`language="${escapeXml(String(language).slice(0, 40))}"`);
   return `<speak ${attrs.join(' ')}>\n${raw}\n</speak>`;
 }
@@ -314,6 +321,18 @@ function wrapSpeak({ body, voice_description, gender, scene, shot, pace, languag
 function sanitizeScenema(script) {
   let s = String(script || '');
   const notes = [];
+  /* Part 126: attributes the engine does not know fail the render. Strip them
+   * off the <speak> tag (pace= was the one this booth itself used to write). */
+  s = s.replace(/<speak\b([^>]*)>/i, (m, attrs) => {
+    let changed = false;
+    const kept = String(attrs).replace(/\s+([a-zA-Z_:-]+)\s*=\s*"[^"]*"/g, (a, name) => {
+      if (['voice', 'gender', 'scene', 'shot', 'language'].includes(String(name).toLowerCase())) return a;
+      changed = true;
+      return '';
+    });
+    if (changed) notes.push('removed a setting from the <speak> line the engine does not accept (pace and the like ride as settings, not in the script)');
+    return `<speak${kept}>`;
+  });
   // %%%anything%%% -> <action>anything</action>
   s = s.replace(/%%%\s*([^%]+?)\s*%%%/g, (_m, inner) => {
     notes.push('turned a %%% tag into a stage direction');
@@ -464,11 +483,14 @@ const GUIDE = {
       bestFor: ['one voice reading, telling, confessing, performing', 'a bedtime story, a letter read aloud, a monologue, an audiobook chapter', 'cloning a specific person from ten to twenty seconds of them talking', 'anything long — there is no length limit'],
       notFor: ['two people talking to each other', 'music', 'a scene you can hear around the voice — it can add some, but that is not its job'],
       howToWrite: [
+        SCREENPLAY_HELP,
         'Describe WHO is speaking in one specific, theatrical sentence: sex, age, register, accent, texture, manner, and a line of character. "A man speaking" gets you nothing. "Male, mid sixties, deep baritone with gravel, slight Southern inflection, worn but warm" gets you a person.',
         'Between your sentences, tell the actor what they are DOING and FEELING — "voice tightens, swallows, fighting to stay composed", "long pause, deep breath". Pair a physical cue with a feeling. Never describe the sound you want; describe the person.',
         'Write natural sentences of normal length. Anything over about fifteen seconds is split automatically.',
         'Hard names get garbled. Spell a difficult word the way it sounds.',
         'A clip beats a description for a specific person. The clip gives the identity; your description and directions give the performance. Any voice can perform any emotion, even one the clip never contained.',
+        'There is no temperature and no sampling knob to turn. This engine runs eight fixed steps; the only dice is the seed, and the same seed with the same script is the same take. What actually changes a result: the words in the voice description, the clip (ten to twenty seconds, one person, some feeling in it — a flat clip clones thin), the shot and scene settings, and the pace. Everything else is the script.',
+        'A clone can flatten the acting. If a cloned take sounds too even, put a stronger character into the voice description — the description still drives the emotion even when the clip drives the identity — or set How much of the clip to Natural.',
       ],
       settings: [
         { key: 'voice_description', label: 'Describe the voice', hint: 'Sex, age, register, accent, texture, manner, one line of character. This is the main control.', kind: 'text' },
@@ -478,6 +500,8 @@ const GUIDE = {
         { key: 'shot', label: 'Shot', hint: 'How far away the listener is. Close up is the voice at your ear, environment stripped. Wide puts the voice in a room. Scene turns the room up.', kind: 'choice', options: ['closeup', 'wide', 'scene'], default: 'closeup' },
         { key: 'background_sfx', label: 'Scene sound', hint: 'Keeps the room and weather around the voice instead of a clean voice on its own. Only does anything with Wide or Scene.', kind: 'toggle', default: false },
         { key: 'pace', label: 'Pace', hint: 'How much time the actor is given. One point five is the engine’s normal. Higher is slower and more deliberate; lower is faster. Between zero point five and three.', kind: 'number', min: 0.5, max: 3, default: 1.5 },
+        { key: 'identity', label: 'How much of the clip', hint: 'Only matters with a clip attached. Natural lets the performance breathe and sounds a little less like the person. Strong presses the clip’s identity on harder and can flatten the acting. Balanced is the engine’s own default.', kind: 'choice', options: ['balanced', 'natural', 'strong'], default: 'balanced' },
+        { key: 'validate', label: 'Pronunciation check', hint: 'On by default. The engine listens back to each fifteen-second piece and re-makes it up to three times if the words came out wrong. Turning it off is faster and riskier.', kind: 'toggle', default: true },
         { key: 'seed', label: 'Seed', hint: 'The same seed with the same script gives the same take again. Leave it empty for a new take each time.', kind: 'number', min: 0 },
         { key: 'keep_wav', label: 'Keep the studio file', hint: 'Also keeps the forty-eight kilohertz stereo WAV master alongside the MP3. Same price, bigger file.', kind: 'toggle', default: false },
       ],
@@ -731,6 +755,7 @@ function projectView(p) {
     mode: p.mode,
     sourceText: p.sourceText,
     script: p.script,
+    screenplay: p.engine === 'scenema' ? speakToScreenplay(p.script || '') : p.script,
     readback: p.readback,
     options: p.options || {},
     jobs: p.jobs || [],
@@ -859,6 +884,8 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
       engine,
       mode,
       script,
+      /* Part 126: the same script as a screenplay — what the page shows. */
+      screenplay: engine === 'scenema' ? speakToScreenplay(script) : script,
       readback,
       estimate,
       problem: problem || null,
@@ -885,7 +912,23 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
    * here without passing the script desk at all -- she can type one by hand in
    * Advanced, or paste one in. A %%% line is never legitimate Scenema, so
    * converting it can only help; nothing else about her text is touched. */
+  let compileNotes = [];
   if (engine === 'scenema') {
+    /* Part 126: a Scenema script that is not XML is a SCREENPLAY — brackets for
+     * directions, double parentheses for sounds, optional VOICE:/SEX:/SCENE:/
+     * SHOT: headers — and it is compiled here, behind the scenes, with the
+     * booth's settings filling any header left out. Raw XML still works. */
+    if (!isSpeakXml(script)) {
+      const compiled = screenplayToSpeak(script, {
+        voice: b.voice_description,
+        gender: b.gender,
+        scene: b.scene,
+        shot: b.shot,
+        language: b.language,
+      });
+      script = compiled.xml;
+      compileNotes = compiled.notes || [];
+    }
     script = sanitizeScenema(script).script;
   } else {
     script = sanitizeSeed(script).script;
@@ -918,6 +961,21 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     if (typeof b.pace === 'number' && b.pace >= 0.5 && b.pace <= 3) opts.pace = b.pace;
     if (b.keep_wav === true) opts.keep_wav = true;
     if (b.validate === false) opts.validate = false;
+    /* Part 126 — the knobs the engine actually has (its README, Sep 4 2026 read):
+     * there is NO temperature. Eight fixed distilled diffusion steps; the dice
+     * is the seed. What is tunable: pace (duration allowance), validate +
+     * min_match_ratio (Whisper re-check, up to 3 regenerations), and the clone
+     * stage — vc_cfg_rate (how hard the clip's identity is pressed on; higher =
+     * more the person, less natural), vc_steps (clone quality, 10–50), skip_vc
+     * (anchor mode: no SeedVC, every chunk seeded from the clip's tail). */
+    if (typeof b.identity === 'string') {
+      const map = { natural: 0.35, balanced: 0.5, strong: 0.7 };
+      if (map[b.identity] !== undefined) opts.vc_cfg_rate = map[b.identity];
+    }
+    if (typeof b.vc_cfg_rate === 'number' && b.vc_cfg_rate >= 0 && b.vc_cfg_rate <= 1) opts.vc_cfg_rate = b.vc_cfg_rate;
+    if (Number.isInteger(b.vc_steps) && b.vc_steps >= 10 && b.vc_steps <= 50) opts.vc_steps = b.vc_steps;
+    if (typeof b.min_match_ratio === 'number' && b.min_match_ratio >= 0.5 && b.min_match_ratio <= 1) opts.min_match_ratio = b.min_match_ratio;
+    if (b.skip_vc === true) opts.skip_vc = true;
     if (b.audio_quality === 'high') opts.audio_quality = 'high';
     if (typeof b.speed === 'number' && b.speed >= 0.5 && b.speed <= 2) opts.speed = b.speed;
     if (typeof b.volume === 'number' && b.volume >= 0.5 && b.volume <= 2) opts.volume = b.volume;
@@ -1036,6 +1094,11 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
           seed: project.voiceSeed,
           pace: opts.pace,
           keep_wav: opts.keep_wav,
+          validate: opts.validate,
+          min_match_ratio: opts.min_match_ratio,
+          vc_cfg_rate: opts.vc_cfg_rate,
+          vc_steps: opts.vc_steps,
+          skip_vc: opts.skip_vc,
         };
         /* A clip and a designed voice are two different ways to choose a voice
          * and this file says so elsewhere: "a reference clip beats a preset
@@ -1109,6 +1172,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
           ? `${sayEstimate(merged.audioSeconds, merged.renderSecondsWarm || merged.renderSeconds, merged.costUSD, false)} ${bridgeEst.spokenWait}`
           : sayEstimate(merged.audioSeconds, merged.renderSeconds, merged.costUSD, true);
       }
+      if (compileNotes.length && merged.spoken) merged.spoken += ' ' + compileNotes.join(' ');
       logger.info(`[soundbooth/render] scenema queued job=${jobId} project=${project._id} user=${req.user.id}`);
       return res.json({
         ok: true,
@@ -1520,27 +1584,49 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
     if (typeof saveBufferToS3 !== 'function') {
       return res.status(503).json({ error: 'File storage is not set up on this server.' });
     }
-    const fileName = `soundbooth-ref-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    /* Part 126: every clip becomes a 48 kHz mono WAV before it is stored —
+     * Scenema's worker cannot open an M4A (soundfile), and compressed MP3
+     * degrades the clone per its README. Seed accepts WAV too. If ffmpeg
+     * fails on a file, the original goes up as before and the booth says so. */
+    let outBuffer = f.buffer;
+    let outExt = ext;
+    let clipSeconds = null;
+    let clipAdvice = '';
+    try {
+      const { normalizeReferenceClip } = require('./kadeSoundBoothStitch');
+      const norm = await normalizeReferenceClip(f.buffer, ext);
+      if (norm && norm.buffer && norm.buffer.length > 1000) {
+        outBuffer = norm.buffer;
+        outExt = 'wav';
+        clipSeconds = norm.seconds;
+        clipAdvice = norm.advice;
+      }
+    } catch (e) {
+      logger.warn(`[soundbooth/reference] transcode failed (storing the original): ${e.message} ${String(e.stderr || '').slice(0, 200)}`);
+      clipAdvice = 'I could not convert it to a studio WAV, so the original file is attached as-is.';
+    }
+    const fileName = `soundbooth-ref-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${outExt}`;
     const url = await saveBufferToS3({
       userId: String(req.user.id),
-      buffer: f.buffer,
+      buffer: outBuffer,
       fileName,
       basePath: 'audios',
     });
     if (!url) return res.status(502).json({ error: 'The clip did not save. Try again.' });
-    logger.info(`[soundbooth/reference] user=${req.user.id} ${f.originalname || fileName} ${f.buffer.length}B`);
+    logger.info(`[soundbooth/reference] user=${req.user.id} ${f.originalname || fileName} ${f.buffer.length}B -> ${outExt} ${outBuffer.length}B ${clipSeconds !== null ? clipSeconds + 's' : ''}`);
     return res.json({
       ok: true,
       url,
-      bytes: f.buffer.length,
+      bytes: outBuffer.length,
+      seconds: clipSeconds,
       name: String(f.originalname || fileName).slice(0, 120),
       /* Said out loud on the phone the moment it lands, because a silent
        * success on an upload is indistinguishable from nothing happening. */
-      ext,
+      ext: outExt,
       /* Her ask: "have a play button to check your sample." The URL comes back
        * so the screen can play the thing that is actually attached — the
        * difference between believing a clone is set up and hearing that it is. */
-      spoken: `Clip imported, ${Math.max(1, Math.round(f.buffer.length / 1024))} kilobytes. Play it to check it, then it gets cloned.`,
+      spoken: `Clip imported${clipSeconds !== null ? `, ${clipSeconds} seconds` : ''}, saved as a studio WAV. ${clipAdvice} Play it to check it, then it gets cloned.`.replace(/\s+/g, ' '),
     });
   } catch (error) {
     logger.error('[soundbooth/reference] failed:', error);

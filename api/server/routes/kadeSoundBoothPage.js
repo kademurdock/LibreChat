@@ -114,9 +114,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 
     <fieldset>
       <legend>The script</legend>
-      <p class="hint" id="scriptHint">This is what gets performed. You can edit it here before rendering.</p>
+      <p class="hint" id="scriptHint">This is what gets performed, written like a script. Square brackets are a direction for the actor and are never spoken: [Voice tightens.] Double parentheses are a sound in the room: ((thunder)). Everything else is spoken. Edit it here before rendering; the engine's own code is built from it behind the scenes.</p>
       <label class="field" for="script">Script</label>
       <textarea id="script" aria-describedby="scriptHint" spellcheck="false"></textarea>
+      <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
       <p id="readback" class="hint"></p>
       <div>
         <button type="button" class="act quiet" id="btnPreview" hidden>Hear this voice first (15 seconds, about a penny)</button>
@@ -142,6 +143,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 
     var state = { engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null, voiceSeed:null, rerollVoice:false };
     function say(msg, isErr){ status.className = 'status' + (isErr ? ' err' : ''); status.textContent = msg; }
+    function showCode(xml){ var box = document.getElementById('codeBox'); var view = document.getElementById('codeView'); if(!box||!view) return; if(state.engine==='scenema' && xml && /<speak/i.test(xml) && state.mode==='advanced'){ view.textContent = xml; box.hidden = false; } else { box.hidden = true; view.textContent=''; } }
     function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML; }
     async function post(path, body){
       var r = await fetch(path, {method:'POST', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
@@ -204,7 +206,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('modeAdv').setAttribute('aria-pressed', m==='advanced');
       document.getElementById('modeHint').textContent = m==='easy'
         ? 'Easy: type what you want said, pick a voice and a mood, and let the script desk shape it.'
-        : 'Advanced: every setting this engine has, and the raw script to edit yourself.';
+        : 'Advanced: every setting this engine has, the script to edit yourself, and the engine\'s own code shown underneath it.';
+      showCode(state.lastXml);
       renderSettings();
     }
     document.getElementById('modeEasy').onclick = function(){ setMode('easy'); };
@@ -246,7 +249,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         var head = '<label class="field" for="'+id+'">'+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
         if(s.kind==='text') return head+'<input type="text" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" value="'+esc(v||'')+'">';
         if(s.kind==='number') return head+'<input type="number" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" step="any"'+(s.min!=null?' min="'+s.min+'"':'')+(s.max!=null?' max="'+s.max+'"':'')+' placeholder="'+(s.default!=null?esc('normal is '+s.default):'leave empty')+'" value="'+(v!=null?esc(v):'')+'">';
-        if(s.kind==='toggle') return '<label class="field"><input type="checkbox" id="'+id+'" data-key="'+s.key+'"'+(v?' checked':'')+' aria-describedby="'+id+'_h"> '+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
+        if(s.kind==='toggle') return '<label class="field"><input type="checkbox" id="'+id+'" data-key="'+s.key+'"'+(((v!=null)?v:s.default)?' checked':'')+' aria-describedby="'+id+'_h"> '+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
         if(s.kind==='choice') return head+'<select id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h">'+s.options.map(function(o){ var lab = o===''?'None':o.replace(/_/g,' '); return '<option value="'+esc(o)+'"'+((v!=null?v:s.default)===o?' selected':'')+'>'+esc(lab.charAt(0).toUpperCase()+lab.slice(1))+'</option>'; }).join('')+'</select>';
         if(s.kind==='clip'){
           /* Explicit extensions, not audio/* — a .ogg is typed video/ogg or
@@ -294,7 +297,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       g.settings.forEach(function(s){
         var v = state.values[s.key];
         if(s.kind==='clip') return;
-        if(s.kind==='toggle'){ if(v) b[s.key] = true; return; }
+        if(s.kind==='toggle'){ if(s.key==='validate'){ b.validate = (v===undefined || v===null) ? true : !!v; return; } if(v) b[s.key] = true; return; }
         if(s.kind==='number'){ var n = parseFloat(v); if(!isNaN(n)) b[s.key] = (s.key==='seed'||s.key==='pitch') ? Math.round(n) : n; return; }
         if(v!=null && String(v).trim()!=='') b[s.key] = v;
       });
@@ -314,7 +317,11 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var r = await post('/api/kade/sound-booth/script', b);
       document.getElementById('btnMake').disabled = false;
       if(!r.ok){ say(r.data.error || 'The script desk had trouble. Try again.', true); return; }
-      document.getElementById('script').value = r.data.script || '';
+      /* Part 126: the person sees the screenplay; the engine's XML sits behind
+       * a disclosure for anyone who wants it. Seed scripts are already prose. */
+      document.getElementById('script').value = r.data.screenplay || r.data.script || '';
+      state.lastXml = r.data.script || '';
+      showCode(state.lastXml);
       document.getElementById('readback').textContent = r.data.readback || '';
       state.estimate = r.data.estimate || null;
       var parts = [];
@@ -473,7 +480,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
             return '<audio controls preload="none" aria-label="' + esc(lbl) + '"><source src="' + esc(t.url) + '">' + (t.backupUrl ? '<source src="' + esc(t.backupUrl) + '">' : '') + '</audio>' +
                    '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>';
           }).join('') +
-          '<details><summary>Script</summary><pre class="script">' + esc(p.script) + '</pre></details>' +
+          '<details><summary>Script</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>' +
           '<button type="button" class="act" data-open="' + esc(p.id) + '">Open this in the booth</button></div>';
       }).join('');
       Array.prototype.forEach.call(box.querySelectorAll('[data-open]'), function(btn){
@@ -483,7 +490,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           state.projectId = p.id;
           setEngine(p.engine); setMode(p.mode === 'advanced' ? 'advanced' : 'easy');
           document.getElementById('text').value = p.sourceText || '';
-          document.getElementById('script').value = p.script || '';
+          document.getElementById('script').value = p.screenplay || p.script || '';
+          state.lastXml = p.script || ''; showCode(state.lastXml);
           document.getElementById('readback').textContent = p.readback || '';
           if(p.options){ Object.keys(p.options).forEach(function(k){ if(typeof p.options[k] !== 'object') state.values[k] = p.options[k]; }); renderSettings(); }
           say('Opened "' + p.title + '". Edit it and render again, or change the voice first.');

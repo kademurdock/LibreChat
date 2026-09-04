@@ -118,6 +118,45 @@ async function durationOf(buffer) {
   }
 }
 
+/**
+ * Part 126 (Sep 4 2026) — THE REFERENCE CLIP, MADE INTO WHAT THE ENGINE CAN
+ * READ. Scenema's worker saves a reference with a `.wav` suffix unless the URL
+ * says mp3, then opens it with soundfile — which cannot read an M4A voice memo
+ * (AAC) at all, and the README says compressed MP3 "significantly degrades"
+ * the clone. Part 121.3's comment called m4a "the first suspect" if a clone
+ * came back wrong; this is that suspect, arrested. Every clip becomes a 48 kHz
+ * mono 16-bit WAV here, once, on import, and its length is measured so the
+ * booth can say whether it is in the 10–20 s window the README asks for.
+ * @returns {Promise<{buffer: Buffer, seconds: number|null, advice: string}>}
+ */
+async function normalizeReferenceClip(buffer, ext) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'booth-ref-'));
+  try {
+    const inFile = path.join(dir, `in.${String(ext || 'bin').replace(/[^a-z0-9]/gi, '') || 'bin'}`);
+    const outFile = path.join(dir, 'ref.wav');
+    await fs.writeFile(inFile, buffer);
+    await run(['-nostdin', '-hide_banner', '-v', 'error', '-y', '-i', inFile, '-vn', '-ac', '1', '-ar', '48000', '-sample_fmt', 's16', '-t', '45', outFile], 120000);
+    const out = await fs.readFile(outFile);
+    let seconds = null;
+    try {
+      const { stdout } = await run(['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', outFile], 60000, FFPROBE);
+      const n = parseFloat(String(stdout).trim());
+      if (Number.isFinite(n) && n > 0) seconds = Math.round(n * 10) / 10;
+    } catch (_) { /* length unknown; the clip still works */ }
+    let advice = '';
+    if (seconds !== null) {
+      if (seconds < 6) advice = `It is only ${seconds} seconds. The engine wants ten to twenty seconds of one person with some feeling in it; this may clone thin.`;
+      else if (seconds < 10) advice = `It is ${seconds} seconds — a little short of the ten to twenty the engine likes, but usable.`;
+      else if (seconds <= 22) advice = `${seconds} seconds — right in the window the engine likes.`;
+      else if (seconds < 45) advice = `${seconds} seconds — longer than the engine needs; the first twenty are what count, and that is fine.`;
+      else advice = 'It was longer than forty-five seconds, so it was cut to the first forty-five; the engine only needs ten to twenty.';
+    }
+    return { buffer: out, seconds, advice };
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /** The join as a sentence, because it is read aloud. */
 function sayStitched(partCount, seconds, notes) {
   const m = Math.floor((seconds || 0) / 60);
@@ -126,4 +165,4 @@ function sayStitched(partCount, seconds, notes) {
   return `Ready. ${partCount} parts joined into one recording, ${len} of audio.${notes && notes.length ? ` Note: ${notes.join('; ')}.` : ''}`;
 }
 
-module.exports = { stitchMp3Buffers, durationOf, sayStitched, concatLine };
+module.exports = { stitchMp3Buffers, durationOf, sayStitched, concatLine, normalizeReferenceClip };
