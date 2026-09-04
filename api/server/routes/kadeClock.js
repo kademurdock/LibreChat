@@ -950,5 +950,72 @@ router.get('/last-activity', async (req, res) => {
   }
 });
 
-module.exports = router;
 
+/* ─── KADE CARE NOTES (Part 124, Sep 4 2026) ─────────────────────────────────
+ * The owner's private stance note for one seat — its own collection, never in
+ * the person's memory panel. Managed here (header secret, like every clock
+ * route) so a session or Forge can set, list, retire and AUDIT it without a
+ * site login. `GET /care-notes` also runs the LEAK SCAN: every active note is
+ * held against that seat's character replies since the note was written —
+ * any 3-gram of the note's wording in a reply, or a "someone told me about
+ * you" tell — and the hits come back with the reply's tail as a sample.
+ * make_session_brief.py reads this; a hit is a stop-the-line finding. */
+router.get('/care-notes', async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const { listCareNotes, detectLeak } = require('~/models/kadeCareNote');
+    const mongoose = require('mongoose');
+    const db = mongoose.connection.db;
+    const includeRetired = String(req.query.includeRetired || '') === '1';
+    const notes = await listCareNotes({ userId: req.query.userId, includeRetired });
+    const days = Math.min(30, Math.max(1, parseInt(req.query.days, 10) || 7));
+    const out = [];
+    for (const n of notes) {
+      const since = new Date(Math.max(new Date(n.createdAt).getTime(), Date.now() - days * 864e5));
+      const q = { user: String(n.userId), isCreatedByUser: false, createdAt: { $gte: since } };
+      if (n.agentId) q.model = n.agentId;
+      const rows = n.status === 'active'
+        ? await db.collection('messages').find(q, { projection: { text: 1, createdAt: 1, conversationId: 1, model: 1 } }).sort({ createdAt: -1 }).limit(800).toArray()
+        : [];
+      const leaks = [];
+      for (const m of rows) {
+        const r = detectLeak(m.text || '', n.text);
+        if (r.leak) leaks.push({ at: m.createdAt, conversationId: m.conversationId, agentId: m.model, ngrams: r.ngrams, tells: r.tells, tail: String(m.text || '').slice(-240) });
+      }
+      out.push({
+        id: String(n._id), userId: n.userId, agentId: n.agentId, status: n.status, author: n.author,
+        createdAt: n.createdAt, updatedAt: n.updatedAt, retiredAt: n.retiredAt, chars: (n.text || '').length,
+        text: String(req.query.full || '') === '1' ? n.text : undefined,
+        scan: { since, repliesChecked: rows.length, leaks: leaks.length, samples: leaks.slice(0, 5) },
+      });
+    }
+    res.json({ count: out.length, notes: out });
+  } catch (e) {
+    logger.error('[kadeClock] care-notes failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+router.post('/care-note', express.json({ limit: '32kb' }), async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const { setCareNote } = require('~/models/kadeCareNote');
+    const b = req.body || {};
+    const row = await setCareNote({ userId: b.userId, agentId: b.agentId || null, text: b.text, author: b.author || 'owner' });
+    res.json({ ok: true, id: String(row._id), userId: row.userId, agentId: row.agentId, chars: row.text.length });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+router.post('/care-note/retire', express.json({ limit: '8kb' }), async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const { retireCareNote } = require('~/models/kadeCareNote');
+    const row = await retireCareNote(String((req.body || {}).id || ''));
+    if (!row) return res.status(404).json({ error: 'no such note' });
+    res.json({ ok: true, id: String(row._id), status: row.status });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+module.exports = router;

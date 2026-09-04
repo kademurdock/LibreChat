@@ -682,6 +682,39 @@ class AgentClient extends BaseClient {
       logger.warn('[AgentClient] episodic-summary inject failed (non-fatal):', summaryError.message);
     }
 
+    /** KADE CANON (Part 124, Sep 4 2026): the character's own life — what it has
+     * said about itself to anyone — rides the STABLE head for every person it
+     * talks to. Lives under a fixed owner id (see packages/api memory.ts,
+     * CANON_USER_ID). Part 123 appended it to `withoutKeys`, which the pinned
+     * head above discards whenever card recall is on (it is on for every agent),
+     * so it moved here. Empty canon injects nothing. Fail-soft. */
+    try {
+      const { getCanonBlock } = require('~/server/services/kadeCanon');
+      const canonBlock = await getCanonBlock(this.options.agent?.id);
+      if (canonBlock) {
+        stableMemoryContext = stableMemoryContext
+          ? `${stableMemoryContext}\n\n${canonBlock}`
+          : canonBlock;
+      }
+    } catch (canonError) {
+      logger.warn('[AgentClient] canon inject failed (non-fatal):', canonError.message);
+    }
+
+    /** KADE CARE NOTE (Part 124): the owner's private stance note for THIS seat,
+     * never visible in the person's memory panel (its own collection), read
+     * only here and by the admin routes. Stable per relationship -> head. */
+    try {
+      const { getCareNoteBlock } = require('~/models/kadeCareNote');
+      const careBlock = await getCareNoteBlock(this.options.req.user.id, this.options.agent?.id);
+      if (careBlock) {
+        stableMemoryContext = stableMemoryContext
+          ? `${stableMemoryContext}\n\n${careBlock}`
+          : careBlock;
+      }
+    } catch (careError) {
+      logger.warn('[AgentClient] care-note inject failed (non-fatal):', careError.message);
+    }
+
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 

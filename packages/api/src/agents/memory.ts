@@ -932,13 +932,16 @@ export async function createMemoryProcessor({
    * with anyone. Read from the fixed canon owner, scoped to this character.
    * Empty canon injects nothing -- the block appears the first time she says
    * something about herself and the keeper files it. */
-  let canonForCharacter = '';
+  /* Part 124: the CHARACTER's copy of the canon is injected by the api layer
+   * (api/server/services/kadeCanon.js, into the stable head) because client.js
+   * rebuilds the head from the pinned-card split when card recall is on and
+   * discards anything appended to `withoutKeys`. Only the KEEPER's copy rides
+   * from here. */
   let canonForKeeper = '';
   if (agentId) {
     try {
       const canon = await memoryMethods.getFormattedMemories({ userId: CANON_USER_ID, agentId });
-      if (canon.withoutKeys && canon.withoutKeys.trim()) {
-        canonForCharacter = `\n\n${CANON_HEADER}\n${canon.withoutKeys}`;
+      if (canon.withKeys && canon.withKeys.trim()) {
         canonForKeeper = `\n\n# The character's own canon (scope "self" — already filed, do not re-file):\n${canon.withKeys}`;
       }
     } catch (error) {
@@ -949,7 +952,7 @@ export async function createMemoryProcessor({
   }
 
   return [
-    withoutKeys + canonForCharacter,
+    withoutKeys,
     async function (messages: BaseMessage[]): Promise<(TAttachment | null)[] | undefined> {
       try {
         return await processMemory({
