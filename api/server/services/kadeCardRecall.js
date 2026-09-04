@@ -663,7 +663,9 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
             }
             block += line;
             added += 1;
-            surfacedCards.push(String(m.key));
+            /* The audit names a secondhand card as such (keys only, never a
+             * value) so "did the share fire" is answerable from the audit. */
+            surfacedCards.push((m._secondhand ? 'secondhand:' : '') + String(m.key));
           }
           if (added > 0) {
             parts.push(block.trimEnd());
@@ -727,7 +729,13 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
         }
       }
 
-      if (diaryN > 0) {
+      /* Part 129: with sharing on, a companion with NO logbook of its own on
+       * this seat still reads the others' — so the gate counts the shared-in
+       * buckets too. (Part 128 wired the share into services/kadeDiary.js's
+       * getDiaryTailBlock, which nothing calls — THIS is the live logbook
+       * tail. Found by grep, not by a miss: the seat's turns showed no
+       * "[from their talks with …]" line because the code never ran.) */
+      if (diaryN > 0 || extraAgentIds.length > 0) {
         const hits = await searchDiary({
           userId,
           agentId,
@@ -735,6 +743,7 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
           queryVector: qv || undefined,
           limit: DIARY_TOP_K,
           minScore: DIARY_MIN_SCORE,
+          extraAgentIds,
         });
         if (hits && hits.length > 0) {
           let block =
@@ -742,15 +751,29 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
             'A few dated entries from your private logbook about this person, pulled because they seem related to what was just said. ' +
             'Wear them lightly: weave one in only if it truly fits, as a friend naturally would. Never recite, never list, never mention the logbook mechanism. ' +
             "If an entry contradicts what the person is saying right now, believe the person — their live word always beats an old note.\n";
+          /* The Part 122 hand-copies carry a "[from her talks with X]" prefix
+           * and live in this companion's own scope; with sharing on, the
+           * original surfaces beside its copy. One text, one line. */
+          const seenText = new Set();
+          const normText = (t) =>
+            String(t || '').replace(/^\[from (?:her|their|his) talks with [^\]]+\]\s*/i, '').trim().toLowerCase();
           for (const h of hits) {
-            surfacedDiary.push(String(h.date));
-            const line = '- [' + h.date + '] ' + h.text + '\n';
+            const tkey = normText(h.text);
+            if (seenText.has(tkey)) continue;
+            seenText.add(tkey);
+            const foreign =
+              h.agentId && agentId && String(h.agentId) !== String(agentId) && shareNames.has(String(h.agentId));
+            const line =
+              '- [' + h.date + '] ' +
+              (foreign ? '[from their talks with ' + shareNames.get(String(h.agentId)) + '] ' : '') +
+              h.text + '\n';
             if (block.length + line.length > DIARY_BLOCK_CHAR_CAP) {
               break;
             }
             block += line;
+            surfacedDiary.push((foreign ? 'secondhand:' : '') + String(h.date));
           }
-          parts.push(block.trimEnd());
+          if (surfacedDiary.length > 0) parts.push(block.trimEnd());
         }
       }
       /* ── MEMORY ECHO (Part 97, Aug 29 2026 — her word: soft-on) ─────────

@@ -531,6 +531,7 @@ async function searchDiary({
         date: r.entryDate,
         text: r.text,
         agentScoped: Boolean(r.agentId),
+        agentId: r.agentId ? String(r.agentId) : null,
         score: null,
       }));
     }
@@ -548,6 +549,7 @@ async function searchDiary({
         date: r.entryDate,
         text: r.text,
         agentScoped: Boolean(r.agentId),
+        agentId: r.agentId ? String(r.agentId) : null,
         score: null,
       }));
     }
