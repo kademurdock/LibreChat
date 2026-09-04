@@ -756,6 +756,11 @@ function projectView(p) {
     sourceText: p.sourceText,
     script: p.script,
     screenplay: p.engine === 'scenema' ? speakToScreenplay(p.script || '') : p.script,
+    /* Part 126 (carried ask): a library row says what made it and why, so an
+     * old project explains itself instead of leaving her to guess. */
+    why: p.engine === 'seed'
+      ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
+      : 'Scenema — one actor performing' + ((p.options || {}).reference_voice_url ? ', cloning a clip' : ', voice from the description') + (Number.isInteger(p.voiceSeed) ? `, voice ${p.voiceSeed}` : ''),
     readback: p.readback,
     options: p.options || {},
     jobs: p.jobs || [],
