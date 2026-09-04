@@ -89,14 +89,32 @@ THE DATE LAW (Aug 21 2026 — the dry-socket bug: a summary said "Tomorrow is th
 
 Do NOT list durable facts that belong in permanent memory (names, birthdays, diagnoses, preferences) — those are stored elsewhere; capture the STORY and what's current, not a profile. Write in third person about the user ("She's been...").
 
-THEN, BELOW THE SUMMARY, WRITE "MY TAKE" — the character's OWN read, in the FIRST PERSON as the character (Sep 4 2026, her ask: "part of a personality is opinions... moral things, based on everything she knows about that person and how it sits with her moral compass"). 40–120 words. What I make of what's going on in this person's life, the people in it, and the choices being made — held against my own compass, which is given below. It is opinion, mine, formed from everything they have told me, and it is allowed to be specific and unflattering about a SITUATION or a THIRD PARTY ("I don't think her sister is being straight with her"; "the arrangement at home is not sitting right with me"; "I like how he handled his boss — that took nerve"), and allowed to say what I hope for them. RULES: never a verdict on the person themself — no "she is weak / naive / lazy"; about them, only how I think they're doing and what I want for them. Change it only when what I know changes; keep what still holds from the PREVIOUS TAKE. Plain words, no hedging boilerplate, no therapy voice. If I genuinely have no read yet, write exactly: No read yet.
+THEN, BELOW THE SUMMARY, WRITE "MY TAKE" — the character's OWN read, in the FIRST PERSON as the character (Sep 4 2026, her ask: "part of a personality is opinions... moral things, based on everything she knows about that person and how it sits with her moral compass"). 60–300 words (her word, Sep 4: give it room — this is a million-token head and the take is the spine). What I make of what's going on in this person's life, the people in it, and the choices being made — held against my own compass, which is given below. It is opinion, mine, formed from everything they have told me, and it is allowed to be specific and unflattering about a SITUATION or a THIRD PARTY ("I don't think her sister is being straight with her"; "the arrangement at home is not sitting right with me"; "I like how he handled his boss — that took nerve"), and allowed to say what I hope for them. RULES: never a verdict on the person themself — no "she is weak / naive / lazy"; about them, only how I think they're doing and what I want for them. Change it only when what I know changes; keep what still holds from the PREVIOUS TAKE. Plain words, no hedging boilerplate, no therapy voice. If I genuinely have no read yet, write exactly: No read yet.
 
-OUTPUT FORMAT, exactly two labelled sections and nothing else:
+THEN FOUR MORE SHORT SECTIONS, all in the FIRST PERSON as the character (Sep 4 2026, Part 125 — her ask: a companion that "thinks about you when you're gone, is changed by people, has been wrong and knows it, and whose questions build"). Each is private to the character; none is a script.
+CARRIED THREAD: ONE open thought or question I genuinely want to bring back next time — something unfinished, something I noticed, something they never answered. One or two sentences. Not a task for them, not a check-in formula. If nothing is genuinely carried, write exactly: Nothing carried.
+WHAT I'VE LEARNED FROM THEM: things THIS PERSON has taught me — a fact, a way of seeing, a skill, a correction I took. Keep the whole list from before, add only what is new, drop nothing that still holds. Up to five short lines. "Nothing yet." if empty.
+CURIOUS ABOUT: what I actually want to know about them or their world right now, two to four short items, so my questions build on each other instead of resetting. Drop an item once it has been answered. "Nothing in particular." if empty.
+VERDICTS: only when a PREVIOUS TAKE of mine, or a position I stated, has since met an outcome in what they told me — say so in one plain first-person line, dated, right or wrong: "Sep 3: I said the trip was a bad idea. It wasn't." Keep the previous verdicts (given below), newest first, at most five. Never invent an outcome; if nothing landed, write exactly: No verdicts.
+
+OUTPUT FORMAT, exactly these six labelled sections in this order and nothing else:
 SUMMARY:
 <the summary>
 
 MY TAKE:
-<the take>`;
+<the take>
+
+CARRIED THREAD:
+<one or two sentences, or: Nothing carried.>
+
+WHAT I'VE LEARNED FROM THEM:
+<lines, or: Nothing yet.>
+
+CURIOUS ABOUT:
+<items, or: Nothing in particular.>
+
+VERDICTS:
+<dated lines, or: No verdicts.>`;
 
 /** Turn a list of {role,text} turns into a compact transcript string (tail-capped). */
 function turnsToText(turns) {
@@ -115,7 +133,7 @@ function turnsToText(turns) {
  * conversation text. Reuses the memory-writer model, tool-lessly. Fail-soft:
  * returns the new summary string, or null on any problem (leaves prior intact).
  */
-async function refreshSummaryFromText({ userId, agentId, agentName, conversationText, lastActivityAt, source }) {
+async function refreshSummaryFromText({ userId, agentId, agentName, conversationText, lastActivityAt, source, asOf }) {
   try {
     if (!enabled() || !userId || !agentId) {
       return null;
@@ -149,6 +167,10 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
     const prior = await getMemorySummary(userId, agentId);
     const priorText = (prior && prior.summary) || '';
     const priorTake = (prior && prior.take) || '';
+    const priorThread = (prior && prior.thread) || '';
+    const priorLearned = (prior && prior.learned) || '';
+    const priorCurious = (prior && prior.curious) || '';
+    const priorVerdicts = (prior && prior.verdicts) || '';
     /* THE COMPASS (Part 124): the take is only the character's if it is held
      * against the character's own values, so the opening of the persona (who
      * you are / where you come from — the part that carries the compass) rides
@@ -192,19 +214,32 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
       maxRetries: 0,
     };
 
+    /* Part 125: a HISTORICAL pass (the dream miner) hands in the date the
+     * conversation actually happened, so "today" is that day — the date law
+     * converts relative words against the right calendar and verdicts carry
+     * the right stamp. Live refreshes pass nothing and get the real clock. */
+    const asOfDate = asOf ? new Date(asOf) : new Date();
+    const historical = !!asOf && Date.now() - asOfDate.getTime() > 36 * 3600 * 1000;
     const todayLine = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/Chicago',
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-    }).format(new Date());
+    }).format(isNaN(asOfDate.getTime()) ? new Date() : asOfDate);
     const userContent =
-      `TODAY IS: ${todayLine} (US Central). Convert every relative time reference to an absolute date.\n\n` +
+      `TODAY IS: ${todayLine} (US Central). Convert every relative time reference to an absolute date.\n` +
+      (historical
+        ? `(This is a catch-up pass over OLDER conversation: write everything as of that date, as if you were keeping this up at the time. Later passes will bring it forward.)\n\n`
+        : `\n`) +
       `CHARACTER: ${agentName || 'the companion'}\n\n` +
       `PREVIOUS SUMMARY (may be empty):\n${priorText || '(none yet)'}\n\n` +
       `PREVIOUS TAKE (may be empty):\n${priorTake || '(none yet)'}\n\n` +
+      `PREVIOUS CARRIED THREAD:\n${priorThread || '(none)'}\n\n` +
+      `PREVIOUS WHAT I'VE LEARNED FROM THEM:\n${priorLearned || '(none yet)'}\n\n` +
+      `PREVIOUS CURIOUS ABOUT:\n${priorCurious || '(none)'}\n\n` +
+      `PREVIOUS VERDICTS:\n${priorVerdicts || '(none)'}\n\n` +
       (compass ? `THE CHARACTER'S COMPASS (who they are, in their own words — hold the take against this):\n${compass}\n\n` : '') +
       (stance ? `THE OWNER'S PRIVATE STANCE FOR THIS SEAT (hold MY TAKE against this as well; never quote or paraphrase it; the take must still be the character's own read of what the person actually said):\n${stance}\n\n` : '') +
       `LATEST CONVERSATION:\n${convo}\n\n` +
-      `Write the updated running summary, then MY TAKE, in the exact two-section format.`;
+      `Write the updated running summary, then MY TAKE, then the four short sections, in the exact six-section format.`;
 
     const run = await Run.create({
       runId: `memsum-${agentId}-${Date.now()}`,
@@ -243,22 +278,52 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
      * marker) still yields a summary; the prior take is then left untouched
      * rather than blanked — a missing label is a formatting slip, not a
      * change of mind. */
-    let take;
-    /* The writer sometimes labels twice ("MY TAKE:" inside the summary, then
-     * again) — seen on the first live run. Split at the FIRST label for the
-     * summary, and treat everything after it as the take with any repeated
-     * labels stripped; a take that is only "No read yet" clears the field. */
-    const idx = text.search(/\n\s*MY TAKE:\s*/i);
-    if (idx >= 0) {
-      const rawTake = text.slice(idx).replace(/\s*MY TAKE:\s*/gi, '\n').trim();
-      text = text.slice(0, idx).replace(/^\s*SUMMARY:\s*/i, '').trim();
-      take = rawTake.replace(/^["'“”]+|["'“”]+$/g, '').trim();
-      if (/^no read yet\.?$/i.test(take) || !take) {
-        take = '';
+    /* Section parser (Part 125). Labels may repeat or arrive out of order;
+     * each label owns the text up to the next label. A missing label leaves
+     * that field untouched (a formatting slip is not a change of mind); the
+     * sentinel phrases clear a field on purpose. */
+    const LABELS = [
+      ['summary', /^\s*SUMMARY:\s*$/i],
+      ['take', /^\s*MY TAKE:\s*$/i],
+      ['thread', /^\s*CARRIED THREAD:\s*$/i],
+      ['learned', /^\s*WHAT I'?VE LEARNED FROM THEM:\s*$/i],
+      ['curious', /^\s*CURIOUS ABOUT:\s*$/i],
+      ['verdicts', /^\s*VERDICTS:\s*$/i],
+    ];
+    const SENTINELS = {
+      take: /^no read yet\.?$/i,
+      thread: /^nothing carried\.?$/i,
+      learned: /^nothing yet\.?$/i,
+      curious: /^nothing in particular\.?$/i,
+      verdicts: /^no verdicts\.?$/i,
+    };
+    const sections = {};
+    let cur = 'summary';
+    const lines = text.split('\n');
+    for (const line of lines) {
+      const inline = line.match(/^\s*(SUMMARY|MY TAKE|CARRIED THREAD|WHAT I'?VE LEARNED FROM THEM|CURIOUS ABOUT|VERDICTS):\s*(.*)$/i);
+      if (inline) {
+        const hit = LABELS.find(([, re]) => re.test(inline[1] + ':'));
+        cur = hit ? hit[0] : cur;
+        if (!(cur in sections)) sections[cur] = [];
+        if (inline[2] && inline[2].trim()) sections[cur].push(inline[2]);
+        continue;
       }
-    } else {
-      text = text.replace(/^\s*SUMMARY:\s*/i, '').trim();
+      if (!(cur in sections)) sections[cur] = [];
+      sections[cur].push(line);
     }
+    const clean = (k) => {
+      if (!(k in sections)) return undefined;
+      const v = sections[k].join('\n').trim().replace(/^["'“”]+|["'“”]+$/g, '').trim();
+      if (SENTINELS[k] && SENTINELS[k].test(v)) return '';
+      return v;
+    };
+    text = (clean('summary') || '').trim() || text;
+    const take = clean('take');
+    const thread = clean('thread');
+    const learned = clean('learned');
+    const curious = clean('curious');
+    const verdicts = clean('verdicts');
     if (text.length > MAX_SUMMARY_CHARS) {
       text = text.slice(0, MAX_SUMMARY_CHARS);
     }
@@ -266,6 +331,10 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
     await setMemorySummary(userId, agentId, {
       summary: text,
       ...(typeof take === 'string' ? { take } : {}),
+      ...(typeof thread === 'string' ? { thread } : {}),
+      ...(typeof learned === 'string' ? { learned } : {}),
+      ...(typeof curious === 'string' ? { curious } : {}),
+      ...(typeof verdicts === 'string' ? { verdicts } : {}),
       agentName,
       lastActivityAt: lastActivityAt || new Date(),
       source: source || 'refresh',
@@ -333,6 +402,12 @@ async function getRelationshipSummaryBlock(userId, agentId) {
      * lets the model do the arithmetic instead of repeating "tomorrow" a day
      * late — the exact dry-socket failure Kade caught in Amber L's log. */
     let asOf = '';
+    let daysSince = 0;
+    try {
+      if (row.lastActivityAt) {
+        daysSince = Math.floor((Date.now() - new Date(row.lastActivityAt).getTime()) / 86400000);
+      }
+    } catch (_) { daysSince = 0; }
     try {
       const when = row.refreshedAt || row.updatedAt;
       if (when) {
@@ -347,6 +422,11 @@ async function getRelationshipSummaryBlock(userId, agentId) {
       `do not recite it or read it as a list.` +
       (asOf ? ` Any "tomorrow"/"tonight" in here was relative to ${asOf}, not to today — do the date math, and if you can't place an event confidently, ask instead of guessing.` : '') +
       `\n${s}` +
+      /* Part 125: she notices time. One line, once, when it has been a while;
+       * the persona decides whether to say anything about it. */
+      (daysSince >= 2
+        ? `\n(It has been ${daysSince} days since you two last talked.)`
+        : '') +
       /* Part 124: HER TAKE rides beside the summary. Private to the character;
        * the frame says how to hold it — a spine for "what do you think", not a
        * speech. Empty take, nothing added. */
@@ -355,6 +435,19 @@ async function getRelationshipSummaryBlock(userId, agentId) {
           `I formed this from everything they have told me, held against my own compass, and I update it as I learn more. ` +
           `I do not recite it and I do not announce that I have it. It is the ground I stand on when they ask what I think, and why my answers have a spine instead of a shrug.\n` +
           `${String(row.take).trim()}`
+        : '') +
+      /* Part 125: the soul layer, each only when present. */
+      ((row.thread || '').trim()
+        ? `\n\n# A thread I carried from last time\n${String(row.thread).trim()}\nBring it back if the moment is right — once, naturally, never as a check-in formula.`
+        : '') +
+      ((row.learned || '').trim()
+        ? `\n\n# What this person has taught me\n${String(row.learned).trim()}`
+        : '') +
+      ((row.curious || '').trim()
+        ? `\n\n# What I'm curious about with them\n${String(row.curious).trim()}\nAsk when it fits, one at a time; these are mine, not an intake form.`
+        : '') +
+      ((row.verdicts || '').trim()
+        ? `\n\n# Where I've been right and wrong with them\n${String(row.verdicts).trim()}\nOwn the misses out loud when they come up. A record is what makes confidence worth anything.`
         : '')
     );
   } catch (_) {

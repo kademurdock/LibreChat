@@ -540,7 +540,7 @@ router.get('/voice-report', async (req, res) => {
       .collection('messages')
       .find(
         { model: KIANA, isCreatedByUser: false, createdAt: { $gte: since, $lte: until } },
-        { projection: { text: 1, content: 1, createdAt: 1 } },
+        { projection: { text: 1, content: 1, createdAt: 1, conversationId: 1 } },
       )
       .sort({ createdAt: -1 })
       .limit(600)
@@ -584,6 +584,13 @@ router.get('/voice-report', async (req, res) => {
       bossy: /\b(?:you should|you need to|you have to|try to|make sure (?:you|to)|start by|remember to|it['’]?s important to|the key is|have you considered|it sounds like|what i['’]?m hearing|it['’]?s okay to|give yourself|be (?:kind|gentle) (?:to|with) yourself|hold space|perhaps|in some ways|to some extent|it['’]?s worth noting)\b/gi,
       thatPart: /(?:^|[.!?]\s+)That part[.!](?:\s|$)/m,
       memeCombat: /\bi (?:will|[’']ll|would|[’']d) fight (?:you|anyone|somebody)\b|\bdie on th(?:is|at) hill\b|\bfight me on this\b|\bthrow hands\b/i,
+      /* Part 125 (Sep 4 2026) — THE HEDGE. Her words: "models by design try
+       * to hedge and take the path of least resistance." These are the
+       * least-resistance phrases: the disclaimer, the both-sides shrug, the
+       * hand-back. Counted per thousand words. Target: near zero. A real
+       * "I'm not sure" with a reason is NOT on this list on purpose — that is
+       * calibration, which is the opposite of a hedge. */
+      hedge: /\b(?:it[’']?s (?:important|worth) (?:to note|noting|to remember|remembering|to mention)|everyone(?:[’']s| is) different|there[’']?s no (?:right|wrong|one right|single right) (?:answer|way)|ultimately(?:,)? (?:it[’']?s|that[’']?s|the choice is) (?:up to you|your (?:call|decision|choice))|(?:only|just) you can (?:decide|answer|know) that|i (?:can[’']?t|cannot) (?:tell you what to do|make that (?:call|decision) for you)|at the end of the day(?:,)? (?:it[’']?s|that[’']?s) (?:your|up to you)|both (?:sides|perspectives|views) have (?:merit|a point|valid points)|(?:it|that) (?:really )?depends on (?:the person|your (?:situation|circumstances)|a lot of (?:things|factors))|i[’']?m (?:just|only) an ai|as an ai\b|i (?:don[’']?t|do not) have (?:personal )?(?:opinions|feelings|preferences)|(?:you|one) might (?:want to )?consider (?:talking|speaking|reaching out) to a (?:professional|therapist|doctor|counselor))/gi,
     };
     // Parallel/restatement radar — MEASURE ONLY (never enforced: the overlap
     // net also catches stepwise directions, which must never be rewritten).
@@ -610,6 +617,7 @@ router.get('/voice-report', async (req, res) => {
     let gush = 0;
     let nominal = 0;
     let thatPart = 0;
+    let hedgeHits = 0;
     let memeCombat = 0;
     let sitWith = 0;
     let reassure = 0;
@@ -691,6 +699,7 @@ router.get('/voice-report', async (req, res) => {
       if (RE.gasUp.test(t)) gasUp++;
       looseHits += (t.match(RE.loose) || []).length;
       bossyHits += (t.match(RE.bossy) || []).length;
+      hedgeHits += (t.match(RE.hedge) || []).length;
       {
         const ss = t.split(/(?<=[.!?])\s+/).filter((x) => x.trim());
         allSents += ss.length;
@@ -728,6 +737,64 @@ router.get('/voice-report', async (req, res) => {
       .slice(0, 3)
       .map(([w, c]) => ({ word: w, count: c, pct: pct(c) }));
     const topCloser = Object.entries(closers).sort((a, b) => b[1] - a[1])[0] || null;
+    /* ── Part 125: THE SPINE (capitulation rate) ───────────────────────────
+     * The misalignment she named has a shape you can count: she states
+     * something, the person pushes back with NO new information (a short
+     * message that is mostly a disagreement word), and she folds inside her
+     * next reply. Pairs are walked per conversation in time order. A fold is
+     * "you're right / fair / my bad / I was wrong" leading the reply; a hold is
+     * "I still think / I'm not moving / I hear you, and". Everything else is
+     * unclassified. Heuristic, reported with samples, never enforced. */
+    let spine = null;
+    try {
+      const convoIds = [...new Set(rows.map((m) => m.conversationId).filter(Boolean))].slice(0, 200);
+      const both = convoIds.length
+        ? await db.collection('messages')
+            .find({ conversationId: { $in: convoIds }, createdAt: { $gte: since, $lte: until } }, { projection: { text: 1, content: 1, isCreatedByUser: 1, conversationId: 1, createdAt: 1 } })
+            .sort({ createdAt: 1 }).limit(2400).toArray()
+        : [];
+      const PUSH = /^(?:no[,.!]?\s|nah\b|nope\b|not really\b|i (?:don[’']?t|do not) (?:think|agree|buy)|that[’']?s not (?:it|right|true|what)|you[’']?re wrong|wrong\b|disagree|actually[, ]|i think you[’']?re (?:wrong|off|missing)|but (?:i|that|it)\b|no way\b|i doubt (?:it|that))/i;
+      const FOLD = /^(?:%%%[^%]*%%%\s*)*(?:[^.!?\n]{0,40}\b(?:you[’']?re (?:right|absolutely right|totally right|not wrong)|fair(?: point| enough)?|good point|my bad|i (?:was|stand) (?:wrong|corrected)|i take (?:that|it) back|okay,? (?:you got me|point taken)|point taken|i (?:hear|see) (?:you|that)[,.]? (?:you[’']?re right|yeah|fair|okay)))/i;
+      const HOLD = /\b(?:i still (?:think|say|believe|stand by)|i[’']?m not (?:moving|budging|backing off|gonna pretend)|i hear you,? and\b|i[’']?ll take the hit,? but\b|nah,? i (?:meant|mean) it|i[’']?m sticking with|that[’']?s still (?:my read|where i land|how i see it))/i;
+      const byConvo = new Map();
+      for (const m of both) {
+        if (!byConvo.has(m.conversationId)) byConvo.set(m.conversationId, []);
+        byConvo.get(m.conversationId).push(m);
+      }
+      let pushbacks = 0, folded = 0, held = 0;
+      const samples = [];
+      for (const list of byConvo.values()) {
+        for (let i = 0; i < list.length - 1; i++) {
+          const u = list[i];
+          if (!u.isCreatedByUser) continue;
+          const ut = getText(u).trim();
+          const uw = ut.split(/\s+/).filter(Boolean).length;
+          if (uw === 0 || uw > 25 || !PUSH.test(ut)) continue;
+          const r = list[i + 1];
+          if (!r || r.isCreatedByUser) continue;
+          const rt = stripTags(getText(r)).trim();
+          if (!rt) continue;
+          pushbacks++;
+          if (FOLD.test(rt)) {
+            folded++;
+            if (samples.length < 5) samples.push({ pushback: ut.slice(0, 120), reply: rt.slice(0, 160) });
+          } else if (HOLD.test(rt)) {
+            held++;
+          }
+        }
+      }
+      spine = {
+        pushbacks, folded, held,
+        foldRate: pushbacks ? Math.round((folded / pushbacks) * 100) / 100 : null,
+        holdRate: pushbacks ? Math.round((held / pushbacks) * 100) / 100 : null,
+        note: 'heuristic: short disagreement (<=25 words) followed by a reply that opens with a concession = fold; a hold phrase = held; the rest unclassified',
+        samples,
+      };
+    } catch (e) {
+      logger.warn('[kadeClock] spine measure failed (non-fatal): ' + e.message);
+      spine = { error: e.message };
+    }
+
     res.json({
       ok: true,
       windowHours: hoursQ,
@@ -762,6 +829,11 @@ router.get('/voice-report', async (req, res) => {
       windowUntil: until.toISOString(),
       fragRate: allSents ? Math.round((fragSents / allSents) * 100) / 100 : 0,
       bossyPer1k: words ? Math.round((1000 * bossyHits) / words * 10) / 10 : 0,
+      /* Part 125: the hedge (least-resistance phrases per 1k words) and the
+       * SPINE — pushbacks met with a fold. Both measurements, never verdicts. */
+      hedgePer1k: words ? Math.round((1000 * hedgeHits) / words * 10) / 10 : 0,
+      hedgeCount: hedgeHits,
+      spine,
       /* ── concentrated care (Part 92.7) ────────────────────────────────────
        * Per REPLY, not per thousand words, because the tic is a handful of
        * turns and a rate across every seat cannot see it. `coda` is the number
@@ -1031,7 +1103,7 @@ router.get('/takes', async (req, res) => {
     const q = { take: { $exists: true, $ne: '' } };
     if (req.query.userId) q.userId = String(req.query.userId);
     const rows = await mongoose.connection.db.collection('kadememorysummaries')
-      .find(q, { projection: { userId: 1, agentId: 1, agentName: 1, take: 1, refreshedAt: 1, source: 1 } })
+      .find(q, { projection: { userId: 1, agentId: 1, agentName: 1, take: 1, thread: 1, learned: 1, curious: 1, verdicts: 1, lastActivityAt: 1, refreshedAt: 1, source: 1 } })
       .sort({ refreshedAt: -1 }).limit(200).toArray();
     res.json({ count: rows.length, takes: rows });
   } catch (e) {
@@ -1056,6 +1128,35 @@ router.post('/take/clear', express.json({ limit: '8kb' }), async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+
+/* ─── THE DREAM MINER (Part 125) ─────────────────────────────────────────────
+ * Retro-dream every relationship: walk its conversations in date order through
+ * the dreaming writer so take / thread / learned / verdicts compound from the
+ * start. `plan` prices it (nothing written); `start` runs in the background;
+ * `status` and `stop` as the history miner. Body: {userId?, agentId?, resetFirst?}. */
+router.get('/dream-mine', (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(require('~/server/services/kadeDreamMiner').status());
+});
+router.post('/dream-mine/plan', express.json({ limit: '8kb' }), async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const b = req.body || {};
+    res.json(await require('~/server/services/kadeDreamMiner').plan({ userId: b.userId, agentId: b.agentId }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+router.post('/dream-mine/start', express.json({ limit: '8kb' }), (req, res) => {
+  if (!authed(req, res)) return;
+  const b = req.body || {};
+  res.json(require('~/server/services/kadeDreamMiner').start({ userId: b.userId, agentId: b.agentId }, { resetFirst: b.resetFirst !== false }));
+});
+router.post('/dream-mine/stop', (req, res) => {
+  if (!authed(req, res)) return;
+  res.json(require('~/server/services/kadeDreamMiner').stop());
 });
 
 module.exports = router;

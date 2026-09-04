@@ -28,7 +28,20 @@ const kadeMemorySummarySchema = new mongoose.Schema(
      * ... moral things like I don't think I like this person, based on
      * everything she knows about that person and how it sits with her moral
      * compass." Never a verdict on the user themself (persona law 4). */
-    take: { type: String, default: '', maxlength: 2000 },
+    take: { type: String, default: '', maxlength: 2400 },
+    /* Part 125 (Sep 4 2026) — THE SOUL LAYER, her word for it ("a synthetic
+     * soul"). Four more first-person fields the dreaming pass keeps per
+     * relationship, all private to the character, all in its own voice:
+     *   thread   — ONE open thought or question I want to bring back next time
+     *   learned  — what this person has taught me (they leave a mark on me)
+     *   curious  — what I actually want to know, so my questions build
+     *   verdicts — where a take or position of mine met an outcome: right,
+     *              wrong, and said so (rolling, newest first, max ~5 lines)
+     * Cost: the same nightly call, a few hundred more output tokens. */
+    thread: { type: String, default: '', maxlength: 600 },
+    learned: { type: String, default: '', maxlength: 1200 },
+    curious: { type: String, default: '', maxlength: 800 },
+    verdicts: { type: String, default: '', maxlength: 1600 },
     lastActivityAt: { type: Date }, // newest conversation/call turn folded in — drives decay
     refreshedAt: { type: Date }, // when the writer last rewrote this summary
     source: { type: String }, // 'call' | 'nightly' — last thing that touched it (debug)
@@ -50,7 +63,7 @@ async function getMemorySummary(userId, agentId) {
 }
 
 /** Upsert the rolling summary for a relationship. Empty/blank summary deletes the row. */
-async function setMemorySummary(userId, agentId, { summary, take, agentName, lastActivityAt, source } = {}) {
+async function setMemorySummary(userId, agentId, { summary, take, thread, learned, curious, verdicts, agentName, lastActivityAt, source } = {}) {
   if (!userId || !agentId) {
     return null;
   }
@@ -61,7 +74,13 @@ async function setMemorySummary(userId, agentId, { summary, take, agentName, las
   }
   const set = { summary: clean, refreshedAt: new Date() };
   if (typeof take === 'string') {
-    set.take = take.trim().slice(0, 2000);
+    set.take = take.trim().slice(0, 2400);
+  }
+  for (const [k, cap] of [['thread', 600], ['learned', 1200], ['curious', 800], ['verdicts', 1600]]) {
+    const v = { thread, learned, curious, verdicts }[k];
+    if (typeof v === 'string') {
+      set[k] = v.trim().slice(0, cap);
+    }
   }
   if (agentName) {
     set.agentName = String(agentName).slice(0, 120);
