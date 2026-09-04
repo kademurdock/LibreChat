@@ -1238,10 +1238,9 @@ const logsMsgText = (m) => {
  * companions with memory on this seat so a manager screen can offer 'list'. */
 router.get('/memory-share', requireJwtAuth, async (req, res) => {
   try {
-    const { getShare } = require('~/server/services/kadeMemoryShare');
+    const { getShare, companionBucketsFor } = require('~/server/services/kadeMemoryShare');
     const share = await getShare(req.user.id);
-    const MemoryEntry = mongoose.models.MemoryEntry;
-    const ids = await MemoryEntry.distinct('agentId', { userId: String(req.user.id), agentId: { $ne: null }, status: { $ne: 'superseded' } });
+    const ids = await companionBucketsFor(req.user.id);
     const companions = [];
     for (const id of ids.filter(Boolean)) {
       let name = String(id).slice(-6);

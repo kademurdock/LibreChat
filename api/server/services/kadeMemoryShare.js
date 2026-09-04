@@ -68,20 +68,9 @@ async function setShare(userId, { mode, agents, setBy } = {}) {
   return { userId: uid, mode: row.mode, agents: row.agents };
 }
 
-/** The OTHER agent buckets this companion may read for this seat, or []. */
-async function otherBucketsFor(userId, agentId) {
-  const share = await getShare(userId);
-  if (share.mode === 'off' || !agentId) return [];
-  const me = String(agentId);
-  if (share.mode === 'list') {
-    if (!share.agents.includes(me)) return [];
-    return share.agents.filter((a) => a !== me);
-  }
+/** Every companion bucket on this seat — cards ∪ logbook (Part 129). */
+async function companionBucketsFor(userId) {
   try {
-    /* Part 129: a companion that has only LOGBOOK lines on this seat (no cards
-     * yet, or cards retired) is still a companion this person talks to — the
-     * bucket list is the union of card buckets and logbook buckets. Found
-     * live: a logbook-only bucket was invisible to the share. */
     const MemoryEntry = mongoose.models.MemoryEntry;
     const DiaryEntry = mongoose.models.KadeDiaryEntry;
     const [cardIds, diaryIds] = await Promise.all([
@@ -93,7 +82,7 @@ async function otherBucketsFor(userId, agentId) {
     const seen = new Set();
     const out = [];
     for (const a of [...cardIds, ...diaryIds].map(String)) {
-      if (!a || a === me || seen.has(a)) continue;
+      if (!a || seen.has(a)) continue;
       seen.add(a);
       out.push(a);
     }
@@ -102,6 +91,18 @@ async function otherBucketsFor(userId, agentId) {
     logger.warn('[kadeMemoryShare] bucket list failed: ' + e.message);
     return [];
   }
+}
+
+/** The OTHER agent buckets this companion may read for this seat, or []. */
+async function otherBucketsFor(userId, agentId) {
+  const share = await getShare(userId);
+  if (share.mode === 'off' || !agentId) return [];
+  const me = String(agentId);
+  if (share.mode === 'list') {
+    if (!share.agents.includes(me)) return [];
+    return share.agents.filter((a) => a !== me);
+  }
+  return (await companionBucketsFor(userId)).filter((a) => a !== me);
 }
 
 const nameCache = new Map();
@@ -130,4 +131,4 @@ async function shareNotice(userId, agentId) {
   );
 }
 
-module.exports = { getShare, setShare, otherBucketsFor, agentNameOf, shareNotice, KadeMemoryShare };
+module.exports = { getShare, setShare, otherBucketsFor, companionBucketsFor, agentNameOf, shareNotice, KadeMemoryShare };

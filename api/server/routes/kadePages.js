@@ -2404,11 +2404,63 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
     </div>
   </form>
 </section>
+<section class="card" aria-labelledby="shareHead">
+  <h2 id="shareHead">Memory sharing between your companions</h2>
+  <p class="muted" style="margin-top:0;">Each companion keeps its own memories of you. Turn sharing on and the <strong>facts</strong> you told one &mdash; memory cards and logbook lines &mdash; can surface for another, marked as secondhand, so you never say a thing twice. Their <strong>opinions</strong> and their own read of you stay their own. Off is truly off; nothing is copied.</p>
+  <fieldset id="shareSet" style="border:0;padding:0;margin:0;">
+    <legend style="font-weight:600;margin-bottom:.4rem;">Who shares</legend>
+    <label style="display:block;margin:.3rem 0;"><input type="radio" name="shareMode" value="off"> Off &mdash; each companion knows only what you told it</label>
+    <label style="display:block;margin:.3rem 0;"><input type="radio" name="shareMode" value="all"> All my companions</label>
+    <label style="display:block;margin:.3rem 0;"><input type="radio" name="shareMode" value="list"> Only the companions I pick</label>
+  </fieldset>
+  <div id="shareList" style="display:none;margin:.6rem 0 0 1.2rem;"></div>
+  <div style="margin-top:1rem;">
+    <button class="pickbtn" type="button" id="shareSave">Save sharing</button>
+  </div>
+  <div id="shareStatus" class="status" role="status" aria-live="polite" style="margin-top:.6rem;"></div>
+</section>
 <footer class="muted">&mdash; Kade-AI</footer>
 <script>
 (function(){
   var TOKEN=null, entries=[];
   var statusEl=document.getElementById('status');
+  /* Part 129: the web's own sharing switch (Android and iPhone got theirs in Part 128). */
+  var shareCompanions=[];
+  function shareMode(){ var r=document.querySelector('input[name=shareMode]:checked'); return r?r.value:'off'; }
+  function renderShareList(){
+    var box=document.getElementById('shareList'); box.innerHTML='';
+    box.style.display = shareMode()==='list' ? '' : 'none';
+    if(shareMode()!=='list') return;
+    if(shareCompanions.length<2){ var p=document.createElement('p'); p.className='muted'; p.textContent='Only one companion has memories of you so far, so there is nobody to share with yet.'; box.appendChild(p); return; }
+    shareCompanions.forEach(function(c){
+      var l=document.createElement('label'); l.style.display='block'; l.style.margin='.3rem 0';
+      var cb=document.createElement('input'); cb.type='checkbox'; cb.value=c.agentId; cb.checked=!!c.on; cb.setAttribute('data-share','1');
+      l.appendChild(cb); l.appendChild(document.createTextNode(' '+c.name));
+      box.appendChild(l);
+    });
+  }
+  async function loadShare(){
+    var st=document.getElementById('shareStatus');
+    try{
+      var j=await apiGet('/api/kade/memory-share');
+      var mode=j.mode||'off'; var picked=(j.agents||[]);
+      shareCompanions=(j.companions||[]).map(function(c){ return { agentId:c.agentId, name:c.name, on: picked.indexOf(c.agentId)>=0 }; });
+      var r=document.querySelector('input[name=shareMode][value="'+mode+'"]'); if(r) r.checked=true;
+      renderShareList();
+    }catch(e){ st.textContent='Could not read the sharing setting just now.'; st.className='status err'; }
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('input[name=shareMode]'), function(r){ r.addEventListener('change', renderShareList); });
+  document.getElementById('shareSave').addEventListener('click', async function(){
+    var st=document.getElementById('shareStatus'); var mode=shareMode();
+    var agents=Array.prototype.map.call(document.querySelectorAll('#shareList input[data-share]:checked'), function(cb){ return cb.value; });
+    if(mode==='list' && agents.length<2){ st.textContent='Pick at least two companions first.'; st.className='status err'; return; }
+    st.textContent='Saving\u2026'; st.className='status';
+    try{
+      var r=await fetch('/api/kade/memory-share',{method:'PUT',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({mode:mode,agents:agents})});
+      if(!r.ok){ throw new Error(await r.text()); }
+      st.textContent='Saved. It takes effect on your next message.'; st.className='status';
+    }catch(e){ st.textContent='Could not save that. '+(e&&e.message?e.message.slice(0,120):''); st.className='status err'; }
+  });
   function setStatus(t,isErr){ statusEl.textContent=t; statusEl.className='status'+(isErr?' err':''); }
   async function getToken(){ try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include'}); if(!r.ok) return null; var j=await r.json(); return j&&j.token||null; }catch(e){ return null; } }
   async function apiGet(p){ var r=await fetch(p,{headers:{Authorization:'Bearer '+TOKEN}}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
@@ -2543,6 +2595,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
     if(!TOKEN){ setStatus('Please sign in on the main site first, then come back to this page.', true); return; }
     try{ await loadList(); }
     catch(e){ setStatus('Could not load your logbook just now. Pull to refresh or try again in a moment.', true); }
+    loadShare();
   })();
 })();
 </script>
