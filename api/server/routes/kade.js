@@ -1351,7 +1351,36 @@ router.get('/admin/logs-messages', requireJwtAuth, requireAdminAccess, async (re
       .sort({ createdAt: 1 })
       .limit(2000)
       .lean();
+    /* Part 126 (Sep 4 2026), her ask: "hear the voice they heard" on the logs.
+     * The synthesized clip is not retained anywhere, and she said regenerating
+     * in the voice they had chosen is fine — so this route now names THAT
+     * voice: the seat's own pick for this character, resolved by the same
+     * chain every surface uses (personal pick > agent default > catalog). The
+     * page renders it with the manual TTS lane. Fail-soft: no voice, no button. */
+    let agentId = null;
+    let voice = null;
+    let voiceSource = null;
+    try {
+      const { Conversation } = logsModels();
+      const convo = Conversation
+        ? await Conversation.findOne({ conversationId }, { user: 1, agent_id: 1, title: 1 }).lean()
+        : null;
+      agentId = convo && convo.agent_id ? String(convo.agent_id) : null;
+      if (convo && agentId) {
+        const { resolveVoice } = require('~/server/services/kadeVoiceResolver');
+        const r = await resolveVoice({ userId: String(convo.user), agentId, surface: 'web' });
+        if (r && r.voice) {
+          voice = r.voice;
+          voiceSource = r.source || null;
+        }
+      }
+    } catch (e) {
+      logger.warn('[kade/admin/logs-messages] voice resolve failed (non-fatal): ' + e.message);
+    }
     res.json({
+      agentId,
+      voice,
+      voiceSource,
       messages: msgs.map((m) => ({
         sender: m.isCreatedByUser ? 'User' : m.sender || 'Assistant',
         isUser: !!m.isCreatedByUser,

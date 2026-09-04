@@ -1622,6 +1622,8 @@ const logsHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Logs</titl
   .bubble.user { background:#1d55d0; color:#fff; margin-left:auto; }
   .bubble.bot  { background:#eef1f6; color:#12151b; margin-right:auto; }
   .bubble .who { display:block; font-size:.72rem; font-weight:700; opacity:.85; margin-bottom:.15rem; }
+  .bubble.playing { outline: 3px solid #ffb000; }
+  .bubble .act { font-size:.8rem; margin:.4rem .4rem 0 0; }
   .bubble .ts  { display:block; font-size:.68rem; opacity:.7; margin-top:.2rem; }
   .crumbs { color:#5b6270; font-size:.9rem; margin:.2rem 0 1rem; }
   .crumbs button { font:inherit; color:#1d55d0; background:none; border:none; cursor:pointer; padding:0; }
@@ -1722,10 +1724,50 @@ const logsHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Logs</titl
         var msgs = d.messages||[];
         if(!msgs.length){ box.innerHTML = '<p class="muted">No messages in this conversation.</p>'; return; }
         box.innerHTML = '';
-        msgs.forEach(function(m){
+        /* Part 126 (Sep 4 2026), her ask: hear these logs the way she hears her
+         * own chats. The clip the person heard is not kept anywhere, so each
+         * character line is re-made in THE VOICE THAT SEAT HAD CHOSEN for this
+         * character (the route resolves it); the person's own lines are read by
+         * the browser's plain voice so the two are never confused. "Play from
+         * here" walks the rest of the conversation in order. */
+        var voice = d.voice || null;
+        var player = new Audio();
+        var queue = null;
+        function stopAll(){ queue = null; try{ player.pause(); }catch(e){} try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){} }
+        function speakUser(text){ return new Promise(function(done){ try { var u = new SpeechSynthesisUtterance(text); u.onend = done; u.onerror = done; window.speechSynthesis.speak(u); } catch(e){ done(); } }); }
+        async function speakBot(text){
+          if(!voice) return speakUser(text);
+          var body = new URLSearchParams(); body.set('input', text); body.set('voice', voice);
+          var rr = await fetch('/api/files/speech/tts/manual', { method:'POST', headers:{'Authorization':'Bearer '+token}, body: body });
+          if(!rr.ok){ status.hidden=false; status.className='status err'; status.textContent='Could not make the voice for that line.'; return; }
+          var blob = await rr.blob();
+          return new Promise(function(done){ player.src = URL.createObjectURL(blob); player.onended = done; player.onerror = done; player.play().catch(done); });
+        }
+        async function playFrom(i){
+          stopAll(); var my = {}; queue = my;
+          for(var k=i; k<msgs.length; k++){
+            if(queue !== my) return;
+            var m = msgs[k];
+            var el = box.children[k+1]; if(el){ el.classList.add('playing'); el.scrollIntoView({block:'nearest'}); }
+            if(m.isUser) await speakUser((m.sender||'User') + ' said: ' + m.text); else await speakBot(m.text);
+            if(el) el.classList.remove('playing');
+          }
+        }
+        var bar = document.createElement('p'); bar.className='hint';
+        bar.textContent = voice ? ('Character lines play in the voice this person chose for this character (' + voice + '). Their own lines are read by your browser\'s plain voice.') : 'No voice could be resolved for this conversation; lines will be read by your browser\'s plain voice.';
+        var stopBtn = document.createElement('button'); stopBtn.className='logrow'; stopBtn.textContent='Stop playing'; stopBtn.onclick = stopAll; stopBtn.style.marginTop='.4rem';
+        bar.appendChild(document.createElement('br')); bar.appendChild(stopBtn);
+        box.appendChild(bar);
+        msgs.forEach(function(m, i){
           var div = document.createElement('div');
           div.className = 'bubble ' + (m.isUser?'user':'bot');
           div.innerHTML = '<span class="who">'+esc(m.isUser?'User':m.sender)+'</span>'+esc(m.text)+'<span class="ts">'+esc(when(m.createdAt))+'</span>';
+          var hear = document.createElement('button'); hear.type='button'; hear.className='act quiet'; hear.textContent = m.isUser ? 'Hear it' : 'Hear it in their voice';
+          hear.setAttribute('aria-label', (m.isUser?'Hear this message':'Hear this reply in the voice they heard') + ', ' + when(m.createdAt));
+          hear.onclick = function(){ stopAll(); var my={}; queue=my; (m.isUser ? speakUser(m.text) : speakBot(m.text)); };
+          var from = document.createElement('button'); from.type='button'; from.className='act quiet'; from.textContent='Play from here'; from.onclick = function(){ playFrom(i); };
+          var row = document.createElement('div'); row.appendChild(hear); row.appendChild(from);
+          div.appendChild(row);
           box.appendChild(div);
         });
       }
