@@ -78,9 +78,26 @@ async function otherBucketsFor(userId, agentId) {
     return share.agents.filter((a) => a !== me);
   }
   try {
+    /* Part 129: a companion that has only LOGBOOK lines on this seat (no cards
+     * yet, or cards retired) is still a companion this person talks to — the
+     * bucket list is the union of card buckets and logbook buckets. Found
+     * live: a logbook-only bucket was invisible to the share. */
     const MemoryEntry = mongoose.models.MemoryEntry;
-    const ids = await MemoryEntry.distinct('agentId', { userId: String(userId), agentId: { $ne: null }, status: { $ne: 'superseded' } });
-    return ids.map(String).filter((a) => a && a !== me);
+    const DiaryEntry = mongoose.models.KadeDiaryEntry;
+    const [cardIds, diaryIds] = await Promise.all([
+      MemoryEntry
+        ? MemoryEntry.distinct('agentId', { userId: String(userId), agentId: { $ne: null }, status: { $ne: 'superseded' } })
+        : [],
+      DiaryEntry ? DiaryEntry.distinct('agentId', { userId: String(userId), agentId: { $ne: null } }) : [],
+    ]);
+    const seen = new Set();
+    const out = [];
+    for (const a of [...cardIds, ...diaryIds].map(String)) {
+      if (!a || a === me || seen.has(a)) continue;
+      seen.add(a);
+      out.push(a);
+    }
+    return out;
   } catch (e) {
     logger.warn('[kadeMemoryShare] bucket list failed: ' + e.message);
     return [];
