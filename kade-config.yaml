@@ -322,9 +322,23 @@ memory:
   disabled: false
   personalize: true
   # Worst-case tokens ONE conversation can inject (shared bucket + that agent's own
-  # bucket). Was 100000 from the 1M-context GLM era; the Hermes fleet runs 131K-token
-  # windows (maxContextTokens 120000), so memory now gets ~6-7% of the window, max.
-  tokenLimit: 8000
+  # bucket). HISTORY: 100000 in the 1M-context GLM era, cut to 8000 for a Hermes 131K
+  # fleet that was evaluated and NEVER ADOPTED (the veto stands — Hermes lost on
+  # context, one provider, no tools). The fleet runs GLM-5.3-Flash on a 1M window, so
+  # 8000 was 0.8% of it and two seats had already hit the wall: Sep 4 2026, Amber A
+  # OVER on both Kiana (8814) and Della (9688), Amber Lacey 31 tokens short on Kiana.
+  # Over the cap the keeper returns "Memory storage exceeded. Cannot save new
+  # memories." — a WRITE gate, so nothing is lost and nothing drops out of the prompt,
+  # but the agent SILENTLY STOPS LEARNING and the person is never told.
+  # Raised at her word (Part 122.3). Nobody is near this; it costs nothing until a
+  # bucket actually grows into it.
+  # WARNING, and the durable fix: this ONE number is both the store cap and the
+  # injection size. The diary has the right shape — no store cap at all, bounded at
+  # the READ end (top-3 by relevance, 1200-char block). Until memory gets the same
+  # read-side cap, a bucket that really grows to 100k WILL ride every turn: attention
+  # dilution, and time-to-first-token on a voice-first product for a blind user.
+  # Watch it with memory_caps.py; build the read-side cap before it matters.
+  tokenLimit: 100000
   # validKeys REMOVED (July 10 2026): free-form "memory card" keys. One small card per
   # topic (dad_health, concert_crew, ...) instead of seven ever-growing blobs. Cards are
   # individually editable/deletable in the memory panel, ChatGPT-style. The legacy keys
