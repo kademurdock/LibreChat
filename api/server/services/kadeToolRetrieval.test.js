@@ -185,3 +185,15 @@ test('applySelection in event-driven mode filters toolDefinitions, leaves the re
   assert.strictEqual(result.toolRegistry.size, 4, 'registry untouched so execution by name still resolves');
   assert.strictEqual(result.toolContextMap.web_search, undefined);
 });
+
+test('Part 132.1 regression: her Clancy-trial sentence brings the search (no question mark)', () => {
+  const all = Object.keys(R.ALIASES);
+  const hits = R.keywordHits("Tell me about the Clancy trial. Apparently, it's all over socials, I haven't heard anything about it.", all);
+  assert.ok(hits.has('web_search'));
+  assert.ok(hits.has('kade_news'));
+  for (const quiet of ['tell Skylee I said hi', 'my sister Dot brought tomatoes', 'I love Missouri in the fall', 'ugh work was rough']) {
+    assert.ok(!R.keywordHits(quiet, all).has('web_search'), quiet);
+  }
+  assert.ok(R.worldReferent('is Walgreens open'));
+  assert.ok(!R.worldReferent('Walgreens was fine'));
+});

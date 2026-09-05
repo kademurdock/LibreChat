@@ -66,6 +66,13 @@ const DEFAULT_CORE = [
 /** Hand-written aliases: the obvious asks, matched before any embedding. */
 const ALIASES = {
   web_search: [
+    /* Part 132.1 — her "Tell me about the Clancy trial. Apparently, it's all
+     * over socials" turn attached NOTHING (no question mark, no alias, embed
+     * under the floor) and Kiana spiralled through fifteen calls of the tools
+     * she did have. The asks a person makes about the world without a "?": */
+    /\b(tell me about|what'?s (?:the )?(?:deal|story|situation|update|news|latest|word) (?:with|on|about)|what happened (?:with|to|in)|what'?s (?:going on|up) with|fill me in|catch me up|heard (?:anything |something )?(?:about|of)|haven'?t heard|ever heard of|explain (?:the|this|that|what)|what (?:is|was|are|were) (?:the|this|that|a|an) )\b/i,
+    /\b(socials?|social media|tiktok|twitter|instagram|facebook|reddit|threads|trending|viral|everybody'?s talking|all over (?:the )?(?:news|internet|feed|timeline))\b/i,
+    /\b(trial|verdict|mistrial|jury|sentenc(?:e|ed|ing)|indicted|arrested|charged with|lawsuit|sued|acquitted|convicted|scandal|recall(?:ed)? (?:on|of)|outage|election|primary|hurricane|earthquake|shooting|crash|explosion)\b/i,
     /* Part 132, her ask: a fact-shaped question about the world (not about
      * the two people talking) brings the search along, so "if you don't
      * know, look it up" has something to look with. */
@@ -76,7 +83,7 @@ const ALIASES = {
     /\b(research|dig (into|in)|deep.?dive|investigate|thorough(ly)?|cross.?check|find everything|full report)\b/i,
   ],
   kade_news: [
-    /\b(news|headlines?|current events|what'?s (going on|happening) (in the world|out there|today))\b/i,
+    /\b(news|headlines?|current events|what'?s (going on|happening) (in the world|out there|today)|socials?|social media|trending|viral|all over (?:the )?(?:internet|feed|timeline)|everybody'?s talking)\b/i,
   ],
   kade_wikipedia: [
     /\b(wikipedia|encyclopedia|who (was|is|were|are) [A-Z]|history of|biography|when (was|did) .* (born|die|found|invent|discover))\b/i,
@@ -151,6 +158,14 @@ const ALIASES = {
     /\b(tell kade|bug|broken|glitch|feature (request|idea)|feedback|report (this|that|it)|not working|didn'?t work)\b/i,
   ],
 };
+
+/** The tail line for a turn where web_search was left off (Part 132.1). */
+const NO_WEB_NOTE =
+  '[PLATFORM NOTE -- machinery, never mention it] Web search is NOT attached on this turn. ' +
+  'If answering well would take a lookup you cannot do from memory, do not substitute other tools for it ' +
+  '(memory search, weather, help pages and the feedback tool are not search engines, and the feedback tool ' +
+  'files a report to Kade -- never use it to ask for facts). Say in one plain sentence that you would need to ' +
+  'look it up and ask if they want you to; if they say yes, the search comes along on the next turn.';
 
 /** Names this module is allowed to defer. Anything else (unknown, actions,
  *  execute_code, MCP) is left attached untouched. */
@@ -238,6 +253,21 @@ function stickyAdd(convoId, names) {
 }
 
 /** Keyword pass. Returns Set of deferrable names whose alias matched. */
+/** Part 132.1: a proper noun the person did not start a sentence with, inside
+ *  an information-shaped message, is something in the world worth a search
+ *  ("the Clancy trial", "is Walgreens open", "who is Bass Reeves"). Family
+ *  chatter with names in it ("tell Skylee hi") lacks the info shape and stays
+ *  off. Over-attaching costs one ~6K-char schema on that turn; under-attaching
+ *  cost fifteen tool calls and a wrong trial. */
+const INFO_SHAPE = /\b(what|who|when|where|why|how|which|tell me|about|heard|explain|is|are|was|were|did|does|do|any (?:news|word|update)|update)\b/i;
+const PROPER_NOUN = /(?<![.!?]\s|^)(?<!["'(])\b(?!I\b|I'm\b|I'll\b|I've\b|I'd\b)[A-Z][a-z]{2,}\b/;
+function worldReferent(text) {
+  const t = String(text || '');
+  if (!INFO_SHAPE.test(t)) return false;
+  const stripped = t.replace(/%%%[\s\S]*?%%%/g, '');
+  return PROPER_NOUN.test(stripped);
+}
+
 function keywordHits(text, candidates) {
   const hits = new Set();
   const t = String(text || '');
@@ -246,6 +276,9 @@ function keywordHits(text, candidates) {
     const pats = ALIASES[name];
     if (!pats) continue;
     if (pats.some((re) => re.test(t))) hits.add(name);
+  }
+  if (candidates.includes('web_search') && !hits.has('web_search') && worldReferent(t)) {
+    hits.add('web_search');
   }
   return hits;
 }
@@ -431,6 +464,8 @@ function _resetForTests() {
 }
 
 module.exports = {
+  NO_WEB_NOTE,
+  worldReferent,
   selectTools,
   applySelection,
   memoEmbed,

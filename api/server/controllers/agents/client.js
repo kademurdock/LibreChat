@@ -837,6 +837,18 @@ class AgentClient extends BaseClient {
         if (volatileTurnContext && memoryEligible) {
           agentRunContextParts.push(volatileTurnContext);
         }
+        /** KADE Sep 5 2026 (Part 132.1, her "Clancy trial" turn): when tool
+         * retrieval left web_search OFF this turn, say so in the tail. Without
+         * this line, Kiana was told "search when you don't know" with no search
+         * attached and improvised: fifteen tool calls in a row -- memory search
+         * six times, the weather five times, the help page twice, and a BUG
+         * REPORT filed to Kade's board as a way of asking for facts -- then a
+         * confident guess at the wrong trial. Per-turn, so it lives in the
+         * volatile tail, never the cached head. */
+        const ragNote = this.options.req?._kadeToolRagNote;
+        if (ragNote && agentId === this.options.agent.id) {
+          agentRunContextParts.push(ragNote);
+        }
         const scopedContext = agentScopedContext.get(agentId);
         if (scopedContext) {
           agentRunContextParts.push(scopedContext);

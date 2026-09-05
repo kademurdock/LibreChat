@@ -191,6 +191,9 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
             embed: rag.memoEmbed(req, embedText),
           });
           const dropped = rag.applySelection(loaded, sel.keep);
+          if (req && dropped.includes('web_search')) {
+            req._kadeToolRagNote = rag.NO_WEB_NOTE;
+          }
           logger.info(
             `[kadeToolRag] agent=${agentId} kept=${sel.keep.size}:[${[...sel.keep].join(',')}] dropped=${dropped.length} ${sel.reason} ${Date.now() - t0}ms` +
               (sel.scored && sel.scored.length
