@@ -115,6 +115,14 @@
     "authConfig": []
   },
   {
+    "name": "Site Help",
+    "pluginKey": "kade_help",
+    "description": "Looks up Kade-AI's own help pages so the character can explain how a feature on this site works, what it costs, what changed recently, or what to do when something breaks — from the real current page, not a guess. Free and instant. Try: \"how do I turn on voice?\"",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Wikipedia",
     "pluginKey": "kade_wikipedia",
     "description": "Looks things up on Wikipedia — people, places, history, science — so answers come from the encyclopedia instead of memory. Free. It only knows what Wikipedia knows. Try: \"who was Bass Reeves?\"",

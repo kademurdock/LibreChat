@@ -256,7 +256,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
         <dt>Chat (the AI thinking)</dt><dd id="m_llm">$0.00</dd>
         <dt>Voice / read-aloud</dt><dd id="m_tts">Included</dd>
         <dt>Image generation</dt><dd id="m_flux">$0.00</dd>
-        <dt>Web searches</dt><dd id="m_tav">$0.00</dd>
+        <dt>Web searches <span class="muted">(the platform's own count of search tool calls; Tavily reports no spend)</span></dt><dd id="m_tav">$0.00</dd>
         <dt>Phone calls</dt><dd id="m_phone">$0.00</dd>
         <dt>Video &amp; design lab</dt><dd id="m_other">$0.00</dd>
         <dt><strong>Total this month</strong></dt><dd id="m_total"><strong>$0.00</strong></dd>
@@ -512,7 +512,7 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
           '<dt>Chat (LLM), all time</dt><dd>'+money(u.llmSpendUSD.allTime)+'</dd>'+
           '<dt>Voice, all time</dt><dd>'+num(svcQty(u,'tts'))+' chars \u00b7 ~'+listenTime(svcQty(u,'tts'))+'</dd>'+
           '<dt>Images</dt><dd>'+num(svcQty(u,'flux'))+'</dd>'+
-          '<dt>Searches</dt><dd>'+num(svcQty(u,'tavily'))+'</dd>'+
+          '<dt>Searches <span class="muted">(platform tally of tool calls)</span></dt><dd>'+num(svcQty(u,'tavily'))+'</dd>'+
           '<dt>Extra services, all time</dt><dd>'+money(svcExtra(u))+'</dd>'+
           '<dt>Balance</dt><dd id="bal_'+uid+'">'+money(u.balanceUSD)+'</dd>'+
           '</dl>'+
