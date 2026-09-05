@@ -260,6 +260,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
         <dt>Phone calls</dt><dd id="m_phone">$0.00</dd>
         <dt>Video &amp; design lab</dt><dd id="m_other">$0.00</dd>
         <dt><strong>Total this month</strong></dt><dd id="m_total"><strong>$0.00</strong></dd>
+        <dt>What you actually cost the server this month</dt><dd id="m_cost" aria-live="polite">&hellip;</dd>
       </dl>
     </div>
 
@@ -311,6 +312,9 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
       document.getElementById('m_phone').textContent = money(m.phoneUSD);
       document.getElementById('m_other').textContent = money(m.otherUSD);
       document.getElementById('m_total').innerHTML = '<strong>'+money(m.totalUSD)+'</strong>';
+      /* KADE Part 131: her ask -- "you have cost the server this much since the
+       * first of the month." Charged / multiplier + extras, from /my-cost. */
+      try { var cr = await apiGet('/api/kade/my-cost', token); if (cr.ok) { var cj = await cr.json(); document.getElementById('m_cost').textContent = money(cj.totalUSD) + (cj.multiplier && cj.multiplier !== 1 ? ' (balances are charged ' + cj.multiplier + '\u00d7 real model cost to help cover the rest of the platform)' : ''); } else { document.getElementById('m_cost').textContent = '\u2014'; } } catch(e) { document.getElementById('m_cost').textContent = '\u2014'; }
       document.getElementById('a_total').textContent = money((d.allTime||{}).totalUSD);
       const a = d.allTime || {};
       document.getElementById('qty').textContent =
@@ -333,6 +337,12 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
   <div id="status" class="status" role="status" aria-live="polite">Loading…</div>
 
   <main id="content" hidden>
+    <div class="card" id="books_card">
+      <h2 style="margin-top:0">This month &mdash; the books <span class="muted" id="books_since"></span></h2>
+      <p id="books_line" aria-live="polite">Loading the books&hellip;</p>
+      <dl class="kv" id="books_users"></dl>
+      <p class="muted" style="font-size:.85rem">"Cost the server" = charged model spend divided by the multiplier, plus phone/image/video at real prices. The bridge closes the books on the 1st and pushes Kade one line.</p>
+    </div>
     <div class="card">
       <h2 style="margin-top:0">Totals <span class="muted" id="winlabel"></span></h2>
       <dl class="kv">
@@ -419,6 +429,20 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
       document.getElementById('t_extra').textContent = money(t.extraSpendUSD.allTime);
       document.getElementById('t_grand').innerHTML = '<strong>'+money(t.grandSpendUSD.allTime)+'</strong>';
       document.getElementById('t_bal').textContent = money(t.balanceUSD);
+
+      /* KADE Part 131: the books card. */
+      try {
+        var br = await apiGet('/api/kade/books', token);
+        if (br.ok) {
+          var bj = await br.json();
+          var since = bj.monthStart ? new Date(bj.monthStart).toLocaleDateString('en-US',{month:'long',day:'numeric'}) : '';
+          document.getElementById('books_since').textContent = since ? '(since ' + since + ')' : '';
+          document.getElementById('books_line').textContent = (bj.books && bj.books.now && bj.books.now.spoken) ? bj.books.now.spoken : ('Multiplier in force: ' + bj.multiplier + '. The bridge did not answer for the provider side.');
+          var bu = document.getElementById('books_users'); bu.innerHTML = '';
+          (bj.users || []).forEach(function(u){ var dt=document.createElement('dt'); dt.textContent = u.name + (u.role==='ADMIN'?' (admin)':''); var dd=document.createElement('dd'); dd.textContent = 'cost the server ' + money(u.totalUSD) + ' \u2014 charged ' + money(u.chargedModelUSD + u.extrasUSD) + ', ' + num(u.turns) + ' meter rows'; bu.appendChild(dt); bu.appendChild(dd); });
+          if (bj.totalUSD != null) { var dt2=document.createElement('dt'); dt2.innerHTML='<strong>Everyone</strong>'; var dd2=document.createElement('dd'); dd2.innerHTML='<strong>cost the server '+money(bj.totalUSD)+'</strong>'; bu.appendChild(dt2); bu.appendChild(dd2); }
+        } else { document.getElementById('books_line').textContent = 'The books did not load.'; }
+      } catch(e) { document.getElementById('books_line').textContent = 'The books did not load.'; }
 
       const tw = d.twilio;
       if (tw) {

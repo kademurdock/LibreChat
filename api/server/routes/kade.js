@@ -146,6 +146,43 @@ router.get('/my-cost', requireJwtAuth, async (req, res) => {
 });
 
 /* ----------------------------------------------------------------------------
+ * KADE Sep 5 2026 (Part 131) — ADMIN: GET /api/kade/books
+ * The month so far, for the dashboard: the bridge's books line (charged vs real
+ * provider spend, extras, fixed bills, the multiplier in force and the one the
+ * month needed) plus every person's month-to-date SERVER COST (charged model
+ * spend / multiplier + metered extras), most expensive first. The bridge is
+ * the keeper of the daily balance snapshots, so "real" comes from there.
+ * -------------------------------------------------------------------------- */
+router.get('/books', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  const out = { monthStart: centralMonthStart().toISOString(), multiplier: billingMultiplierNow(), books: null, users: [] };
+  try {
+    const base = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
+    const secret = process.env.BRIDGE_SECRET || '';
+    if (secret) {
+      const r = await fetch(`${base}/monthly?secret=${encodeURIComponent(secret)}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' } });
+      if (r.ok) out.books = await r.json();
+    }
+  } catch (e) { out.booksError = e && e.message; }
+  try {
+    const { Transaction, KadeUsage, User } = models();
+    const since = centralMonthStart();
+    const mult = billingMultiplierNow();
+    const [tx, ku, users] = await Promise.all([
+      Transaction.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: '$user', spend: { $sum: '$tokenValue' }, turns: { $sum: 1 } } }]),
+      KadeUsage.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: '$user', costUSD: { $sum: '$costUSD' } } }]),
+      User.find({}, { name: 1, email: 1, role: 1 }).lean(),
+    ]);
+    const names = {}; for (const u of users) names[String(u._id)] = { name: u.name || u.email || String(u._id), role: u.role };
+    const rows = {};
+    for (const t of tx) { const k = String(t._id); rows[k] = rows[k] || { userId: k, chargedModelUSD: 0, modelUSD: 0, extrasUSD: 0, turns: 0 }; rows[k].chargedModelUSD = round(Math.abs(usd(t.spend))); rows[k].modelUSD = round(rows[k].chargedModelUSD / mult); rows[k].turns = t.turns; }
+    for (const e of ku) { const k = String(e._id); rows[k] = rows[k] || { userId: k, chargedModelUSD: 0, modelUSD: 0, extrasUSD: 0, turns: 0 }; rows[k].extrasUSD = round(e.costUSD || 0); }
+    out.users = Object.values(rows).map((r) => ({ ...r, name: (names[r.userId] || {}).name || r.userId, role: (names[r.userId] || {}).role || null, totalUSD: round(r.modelUSD + r.extrasUSD) })).sort((a, b) => b.totalUSD - a.totalUSD);
+    out.totalUSD = round(out.users.reduce((s, r) => s + r.totalUSD, 0));
+  } catch (e) { out.usersError = e && e.message; }
+  res.json(out);
+});
+
+/* ----------------------------------------------------------------------------
  * ADMIN: GET /api/kade/usage?days=30 — full per-user / per-service breakdown
  * -------------------------------------------------------------------------- */
 router.get('/usage', requireJwtAuth, requireAdminAccess, async (req, res) => {
