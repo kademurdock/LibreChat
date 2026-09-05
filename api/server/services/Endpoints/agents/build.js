@@ -50,7 +50,11 @@ const KADE_FRESHNESS_NOTE =
   'time-sensitive question from memory WITHOUT searching is an error, even when you feel sure — and never tell ' +
   'the user to "check the latest information" themselves: YOU are the one with the search tool, so YOU check, ' +
   'then answer with what you found. If a needed ' +
-  'search tool is unavailable to you, say plainly your info may be dated rather than guessing.';
+  'search tool is unavailable to you, say plainly your info may be dated rather than guessing. ' +
+  /* Sep 5 2026 (Part 132), her ask: the same default for plain not-knowing,
+   * not only for time-sensitive facts. */
+  'The same goes for anything you simply do not know or are not sure of: if a web search would settle it, ' +
+  'search and answer from what you find rather than guessing or stopping at "I don\'t know."';
 
 const applyKadeAudience = (req) => (agent) => {
   if (!agent) return agent;

@@ -66,6 +66,10 @@ const DEFAULT_CORE = [
 /** Hand-written aliases: the obvious asks, matched before any embedding. */
 const ALIASES = {
   web_search: [
+    /* Part 132, her ask: a fact-shaped question about the world (not about
+     * the two people talking) brings the search along, so "if you don't
+     * know, look it up" has something to look with. */
+    /(?:^|[.!?]\s+)(who|what|when|where|which|how (?:much|many|old|far|long|tall|big|fast|late|early)|is|are|was|were|did|does|do|has|have|can|will)\b(?![^?]*\b(?:you|your|yours|me|my|mine|i|i'm|we|us|our)\b)[^?]{2,120}\?/i,
     /\b(search|google|bing|look (it |that |this |him |her |them )?up|find out|online|website|latest|newest|right now|today'?s|prices?|costs? of|how much (is|are|does|do|did|would)|what'?s the score|score of|who won|open (right )?now|in stock)\b/i,
   ],
   kade_research: [
