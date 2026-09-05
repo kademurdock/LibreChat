@@ -197,3 +197,16 @@ test('Part 132.1 regression: her Clancy-trial sentence brings the search (no que
   assert.ok(R.worldReferent('is Walgreens open'));
   assert.ok(!R.worldReferent('Walgreens was fine'));
 });
+
+test('Part 132.3: placeholder conversation ids never share a sticky bucket; greetings are not fact questions', async () => {
+  R._resetForTests();
+  const embed = fakeEmbed(KIANA);
+  await R.selectTools({ tools: T(KIANA), text: 'call my mom for me', agentId: 'a', conversationId: 'new', embed });
+  const r = await R.selectTools({ tools: T(KIANA), text: "Hey. I'm about to go on the boat. It's Labor Day weekend. What's up?", agentId: 'a', conversationId: 'new', embed });
+  assert.ok(!r.keep.has('kade_phone_call'), 'nothing sticks to "new"');
+  assert.ok(!r.keep.has('web_search'), "what's up is a greeting");
+  assert.deepStrictEqual([...r.keep].sort(), [...R.DEFAULT_CORE].sort());
+  const all = Object.keys(R.ALIASES);
+  assert.ok(R.keywordHits("what's up with the Clancy trial?", all).has('web_search'), 'a greeting shape with a world referent still searches');
+  assert.ok(R.keywordHits('how is it going?', all).size === 0);
+});

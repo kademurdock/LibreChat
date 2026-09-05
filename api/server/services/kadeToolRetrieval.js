@@ -73,10 +73,6 @@ const ALIASES = {
     /\b(tell me about|what'?s (?:the )?(?:deal|story|situation|update|news|latest|word) (?:with|on|about)|what happened (?:with|to|in)|what'?s (?:going on|up) with|fill me in|catch me up|heard (?:anything |something )?(?:about|of)|haven'?t heard|ever heard of|explain (?:the|this|that|what)|what (?:is|was|are|were) (?:the|this|that|a|an) )\b/i,
     /\b(socials?|social media|tiktok|twitter|instagram|facebook|reddit|threads|trending|viral|everybody'?s talking|all over (?:the )?(?:news|internet|feed|timeline))\b/i,
     /\b(trial|verdict|mistrial|jury|sentenc(?:e|ed|ing)|indicted|arrested|charged with|lawsuit|sued|acquitted|convicted|scandal|recall(?:ed)? (?:on|of)|outage|election|primary|hurricane|earthquake|shooting|crash|explosion)\b/i,
-    /* Part 132, her ask: a fact-shaped question about the world (not about
-     * the two people talking) brings the search along, so "if you don't
-     * know, look it up" has something to look with. */
-    /(?:^|[.!?]\s+)(who|what|when|where|which|how (?:much|many|old|far|long|tall|big|fast|late|early)|is|are|was|were|did|does|do|has|have|can|will)\b(?![^?]*\b(?:you|your|yours|me|my|mine|i|i'm|we|us|our)\b)[^?]{2,120}\?/i,
     /\b(search|google|bing|look (it |that |this |him |her |them )?up|find out|online|website|latest|newest|right now|today'?s|prices?|costs? of|how much (is|are|does|do|did|would)|what'?s the score|score of|who won|open (right )?now|in stock)\b/i,
   ],
   kade_research: [
@@ -222,7 +218,19 @@ function cosine(a, b) {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
+/* Part 132.3: the web voice chat opens a conversation with the placeholder
+ * id "new" (Constants.NEW_CONVO) and the SDK's temp ids are not real either.
+ * Keying the sticky set on those pooled EVERY first turn from EVERYBODY into
+ * one bucket -- Kade's "what's up" on the boat rode 17 tools. A placeholder
+ * is not a conversation. */
+function stickyKey(convoId) {
+  const k = String(convoId || '').trim().toLowerCase();
+  if (!k || k === 'new' || k === 'null' || k === 'undefined') return null;
+  return k;
+}
+
 function stickyGet(convoId) {
+  convoId = stickyKey(convoId);
   if (!convoId) return null;
   const e = sticky.get(convoId);
   if (!e) return null;
@@ -234,6 +242,7 @@ function stickyGet(convoId) {
 }
 
 function stickyAdd(convoId, names) {
+  convoId = stickyKey(convoId);
   if (!convoId || !names || names.size === 0) return;
   let e = sticky.get(convoId);
   if (!e) {
@@ -259,10 +268,16 @@ function stickyAdd(convoId, names) {
  *  chatter with names in it ("tell Skylee hi") lacks the info shape and stays
  *  off. Over-attaching costs one ~6K-char schema on that turn; under-attaching
  *  cost fifteen tool calls and a wrong trial. */
-const INFO_SHAPE = /\b(what|who|when|where|why|how|which|tell me|about|heard|explain|is|are|was|were|did|does|do|any (?:news|word|update)|update)\b/i;
+/* Part 132, her ask: a fact-shaped question about the world (not about the two
+ * people talking) brings the search along. Kept OUT of the alias list so the
+ * greeting check (132.3) can tell it apart from the other web_search cues. */
+const FACT_Q = /(?:^|[.!?]\s+)(who|what|when|where|which|how (?:much|many|old|far|long|tall|big|fast|late|early)|is|are|was|were|did|does|do|has|have|can|will)\b(?![^?]*\b(?:you|your|yours|me|my|mine|i|i'm|we|us|our)\b)[^?]{2,120}\?/i;
+const GREETING_ONLY = /\b(what'?s|what is|how'?s|how is|hows)\s+(up|good|new|going on|happening|it going|the word|crackin'?g?|poppin'?g?|shakin'?g?|everything|life|things|your day|it)\b[^?]{0,20}\?/i;
+const INFO_SHAPE = /\b(what|who|when|where|why|how|which|tell me|about(?! to\b)|heard|explain|is|are|was|were|did|does|do|any (?:news|word|update)|update)\b/i;
 const PROPER_NOUN = /(?<![.!?]\s|^)(?<!["'(])\b(?!I\b|I'm\b|I'll\b|I've\b|I'd\b)[A-Z][a-z]{2,}\b/;
 function worldReferent(text) {
-  const t = String(text || '');
+  /* a greeting question ("what's up?") is not an information shape */
+  const t = String(text || '').replace(GREETING_ONLY, ' ');
   if (!INFO_SHAPE.test(t)) return false;
   const stripped = t.replace(/%%%[\s\S]*?%%%/g, '');
   return PROPER_NOUN.test(stripped);
@@ -277,8 +292,11 @@ function keywordHits(text, candidates) {
     if (!pats) continue;
     if (pats.some((re) => re.test(t))) hits.add(name);
   }
-  if (candidates.includes('web_search') && !hits.has('web_search') && worldReferent(t)) {
-    hits.add('web_search');
+  if (candidates.includes('web_search') && !hits.has('web_search')) {
+    /* Part 132.3: "what's up?", "how's it going?" are greetings, not questions
+     * about the world -- the fact-question rule was reading them as one. */
+    const q = FACT_Q.exec(t);
+    if ((q && !GREETING_ONLY.test(q[0])) || worldReferent(t)) hits.add('web_search');
   }
   return hits;
 }
