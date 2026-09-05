@@ -275,6 +275,21 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
      * sticker billing still runs above true effective cost — revisit with a
      * week of Z.ai traffic if the family should ride closer to effective. */
     'glm-5.3': { prompt: 1.4, completion: 4.4 },
+    /* KADE Sep 5 2026 (Part 131) — THE SAME HOLE, ONE MODEL LATER. The fleet
+     * moved to z-ai/glm-5.3-flash on Aug 28 and the longest-match lookup
+     * landed it on the 'glm-5.3' row above: $1.40/$4.40 against a real
+     * $0.075/$0.25 (promo) / $0.15/$0.50 (list from Sep 10) — every family
+     * turn billed ~18x real for a week. Then the Sep 5 sweep to x-ai/grok-4.20
+     * matched 'grok-4' ($3/$15) against a real $1.25/$2.50. Rows below are the
+     * live stickers read off OpenRouter's endpoints API the night they were
+     * written; Flash is priced at LIST so the meter does not lie next week. */
+    'glm-5.3-flash': { prompt: 0.15, completion: 0.5 },
+    'grok-4.20': { prompt: 1.25, completion: 2.5 },
+    'grok-4.20-multi-agent': { prompt: 1.25, completion: 2.5 },
+    'grok-4.3': { prompt: 1.25, completion: 2.5 },
+    'grok-4.5': { prompt: 2.0, completion: 6.0 },
+    'grok-4.6': { prompt: 2.0, completion: 6.0 },
+    'grok-build': { prompt: 1.0, completion: 2.0 },
     'glm-5.2': { prompt: 1.4, completion: 4.4 },
     'glm-5.1': { prompt: 1.4, completion: 4.4 },
     'glm-5-turbo': { prompt: 1.2, completion: 4.0 },
@@ -314,6 +329,12 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
  * The rates are 1 USD per 1M tokens.
  */
 export const cacheTokenValues: Record<string, { write: number; read: number }> = {
+  /* KADE Sep 5 2026: cached-read stickers for the fleet models (write = prompt rate,
+   * neither provider bills a separate write). Only honoured when the usage
+   * report carries cached token counts. */
+  'grok-4.20': { write: 1.25, read: 0.2 },
+  'grok-4.3': { write: 1.25, read: 0.2 },
+  'glm-5.3-flash': { write: 0.15, read: 0.03 },
   'claude-3.7-sonnet': { write: 3.75, read: 0.3 },
   'claude-3-7-sonnet': { write: 3.75, read: 0.3 },
   'claude-3.5-sonnet': { write: 3.75, read: 0.3 },
@@ -515,10 +536,27 @@ export function createTxMethods(
     return premiumEntry[tokenType as 'prompt' | 'completion'] ?? null;
   }
 
+  /** KADE Sep 5 2026 (Part 131) — THE PLATFORM MULTIPLIER, her design: "they send
+   * me 5 dollars, I add 5 dollars to their account balance… I probably need to
+   * add some onto it to cover the cost of all the other facets of the platform."
+   * Layer one (the rows above) makes a balance dollar equal a real model dollar.
+   * Layer two is this: one factor on top, so the markup is a NUMBER SHE CHOSE
+   * instead of whatever the longest-match lookup happened to land on. Set from
+   * the month's books: (model spend + every other bill) / model spend. Sep 2026
+   * books: models $82.51/30d, metered extras $2.93, Inworld founder $25, Railway
+   * ~$32 (usage API), Twilio ~$3, Codemagic ~$10 -> 1.92, shipped as 2.0.
+   * Env KADE_BILLING_MULTIPLIER, default 1 (= raw stickers). Read per call so a
+   * Railway variable change takes effect without a deploy. */
+  function billingMultiplier(): number {
+    const raw = Number(process.env.KADE_BILLING_MULTIPLIER);
+    return Number.isFinite(raw) && raw > 0 ? raw : 1;
+  }
+
   /**
    * Retrieves the multiplier for a given value key and token type.
+   * (Raw sticker rate; getMultiplier below applies the platform factor.)
    */
-  function getMultiplier({
+  function getMultiplierRaw({
     model,
     valueKey,
     endpoint,
@@ -568,10 +606,14 @@ export function createTxMethods(
     return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
   }
 
+  function getMultiplier(args: Parameters<typeof getMultiplierRaw>[0]): number {
+    return getMultiplierRaw(args) * billingMultiplier();
+  }
+
   /**
    * Retrieves the cache multiplier for a given value key and token type.
    */
-  function getCacheMultiplier({
+  function getCacheMultiplierRaw({
     valueKey,
     cacheType,
     model,
@@ -607,6 +649,11 @@ export function createTxMethods(
     }
 
     return cacheTokenValues[valueKey]?.[cacheType] ?? null;
+  }
+
+  function getCacheMultiplier(args: Parameters<typeof getCacheMultiplierRaw>[0]): number | null {
+    const raw = getCacheMultiplierRaw(args);
+    return raw == null ? null : raw * billingMultiplier();
   }
 
   return {

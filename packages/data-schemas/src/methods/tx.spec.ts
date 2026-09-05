@@ -2641,3 +2641,30 @@ describe('Premium Token Pricing', () => {
 
 // Cross-package sync validation tests (tokens.ts ↔ tx.ts) moved to
 // packages/api tests since they require maxTokensMap from @librechat/api.
+
+describe('KADE Part 131: fleet models bill at their real stickers, times the platform factor', () => {
+  afterEach(() => {
+    delete process.env.KADE_BILLING_MULTIPLIER;
+  });
+  it('glm-5.3-flash no longer falls onto the glm-5.3 row', () => {
+    expect(getValueKey('z-ai/glm-5.3-flash')).toBe('glm-5.3-flash');
+    expect(getMultiplier({ model: 'z-ai/glm-5.3-flash', tokenType: 'prompt' })).toBe(tokenValues['glm-5.3-flash'].prompt);
+    expect(getMultiplier({ model: 'z-ai/glm-5.3-flash', tokenType: 'completion' })).toBe(tokenValues['glm-5.3-flash'].completion);
+    expect(getValueKey('z-ai/glm-5.3')).toBe('glm-5.3');
+  });
+  it('grok-4.20 and grok-4.3 no longer fall onto the grok-4 row', () => {
+    expect(getValueKey('x-ai/grok-4.20')).toBe('grok-4.20');
+    expect(getValueKey('x-ai/grok-4.3')).toBe('grok-4.3');
+    expect(getMultiplier({ model: 'x-ai/grok-4.20', tokenType: 'completion' })).toBe(tokenValues['grok-4.20'].completion);
+    expect(getCacheMultiplier({ model: 'x-ai/grok-4.20', cacheType: 'read' })).toBe(cacheTokenValues['grok-4.20'].read);
+  });
+  it('KADE_BILLING_MULTIPLIER scales every rate; unset or junk means raw stickers', () => {
+    process.env.KADE_BILLING_MULTIPLIER = '2';
+    expect(getMultiplier({ model: 'x-ai/grok-4.20', tokenType: 'prompt' })).toBe(tokenValues['grok-4.20'].prompt * 2);
+    expect(getCacheMultiplier({ model: 'x-ai/grok-4.20', cacheType: 'read' })).toBe(cacheTokenValues['grok-4.20'].read * 2);
+    process.env.KADE_BILLING_MULTIPLIER = 'nope';
+    expect(getMultiplier({ model: 'x-ai/grok-4.20', tokenType: 'prompt' })).toBe(tokenValues['grok-4.20'].prompt);
+    process.env.KADE_BILLING_MULTIPLIER = '0';
+    expect(getMultiplier({ model: 'x-ai/grok-4.20', tokenType: 'prompt' })).toBe(tokenValues['grok-4.20'].prompt);
+  });
+});
