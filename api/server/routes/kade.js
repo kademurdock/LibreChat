@@ -77,6 +77,75 @@ function models() {
 }
 
 /* ----------------------------------------------------------------------------
+ * KADE Sep 5 2026 (Part 131) — GET /api/kade/my-cost
+ * Her ask, verbatim: "it might be nice if people had a thing, aside from their
+ * balance, that said you have cost the server this much since the first of the
+ * month. Refreshing every month."
+ *
+ * The balance is what they were CHARGED (real stickers x KADE_BILLING_MULTIPLIER,
+ * see data-schemas tx.ts). This is what they actually COST: charged model spend
+ * divided back by the multiplier, plus the metered extras (phone minutes, images,
+ * video, Scenema) at the real prices kadeUsage already records. Month starts at
+ * midnight on the 1st, US Central, because that is the clock every other
+ * platform note keeps. Any signed-in user reads their own; admins may pass
+ * ?userId= to read another's. Never throws a 500 on a bad row -- a zero beats
+ * a broken settings page.
+ * -------------------------------------------------------------------------- */
+function centralMonthStart(now = new Date()) {
+  // First of the current month, 00:00 America/Chicago, as a UTC Date.
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(now).reduce((o, p) => ((o[p.type] = p.value), o), {});
+  // Offset between Central wall clock and UTC at "now", applied to the 1st.
+  const wall = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour % 24, +parts.minute);
+  const offsetMs = now.getTime() - wall;
+  return new Date(Date.UTC(+parts.year, +parts.month - 1, 1, 0, 0) + offsetMs);
+}
+function billingMultiplierNow() {
+  const raw = Number(process.env.KADE_BILLING_MULTIPLIER);
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+}
+router.get('/my-cost', requireJwtAuth, async (req, res) => {
+  try {
+    const { Transaction, KadeUsage } = models();
+    const isAdmin = req.user && req.user.role === 'ADMIN';
+    const userId = isAdmin && req.query.userId ? String(req.query.userId) : String(req.user.id);
+    const since = centralMonthStart();
+    const mult = billingMultiplierNow();
+    const uid = new mongoose.Types.ObjectId(userId);
+    const [tx] = await Transaction.aggregate([
+      { $match: { user: uid, createdAt: { $gte: since } } },
+      { $group: { _id: null, spend: { $sum: '$tokenValue' }, turns: { $sum: 1 } } },
+    ]);
+    const extras = await KadeUsage.aggregate([
+      { $match: { user: uid, createdAt: { $gte: since } } },
+      { $group: { _id: '$service', costUSD: { $sum: '$costUSD' }, quantity: { $sum: '$quantity' } } },
+    ]);
+    const chargedModelUSD = round(Math.abs(usd(tx ? tx.spend : 0)));
+    const modelUSD = round(chargedModelUSD / mult);
+    const extrasUSD = round(extras.reduce((s, r) => s + (r.costUSD || 0), 0));
+    const totalUSD = round(modelUSD + extrasUSD);
+    const label = `Since ${since.toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'long', day: 'numeric' })} you have cost the server about $${totalUSD.toFixed(2)}.`;
+    res.json({
+      userId,
+      monthStart: since.toISOString(),
+      multiplier: mult,
+      modelUSD,
+      chargedModelUSD,
+      modelTurns: tx ? tx.turns : 0,
+      extrasUSD,
+      extras: extras.map((r) => ({ service: r._id, costUSD: round(r.costUSD || 0), quantity: r.quantity })),
+      totalUSD,
+      spoken: label,
+    });
+  } catch (e) {
+    logger.warn('[kade/my-cost] ' + (e && e.message));
+    res.json({ totalUSD: 0, modelUSD: 0, extrasUSD: 0, spoken: 'Your server cost for this month is not available right now.' });
+  }
+});
+
+/* ----------------------------------------------------------------------------
  * ADMIN: GET /api/kade/usage?days=30 — full per-user / per-service breakdown
  * -------------------------------------------------------------------------- */
 router.get('/usage', requireJwtAuth, requireAdminAccess, async (req, res) => {
