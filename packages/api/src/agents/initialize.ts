@@ -73,6 +73,16 @@ const googleToolCombinationTextModels = [
 const googleToolCombinationExcludedModalityRegex =
   /(?:^|-)image(?:-|$)|(?:^|-)live(?:-|$)|(?:^|-)tts(?:-|$)/;
 
+/** KADE Sep 5 2026 (Part 132): platform-wide context ceiling, see the clamp in
+ *  initializeAgent. Unset/invalid env = passthrough. */
+function applyPlatformContextCap(value: number): number {
+  const cap = Number(process.env.KADE_MAX_CONTEXT_TOKENS);
+  if (Number.isFinite(cap) && cap > 0 && value > cap) {
+    return cap;
+  }
+  return value;
+}
+
 function hasTemporalSpecialVars(text: string): boolean {
   return temporalSpecialVarRegex.test(text);
 }
@@ -1039,6 +1049,21 @@ export async function initializeAgent(
     );
     agentMaxContextTokens = modelWindowTokens;
   }
+  /** KADE Sep 5 2026 (Part 132): a PLATFORM CEILING on every agent's window,
+   * env `KADE_MAX_CONTEXT_TOKENS` (unset = no cap; read per call). The fleet
+   * carried maxContextTokens 1,000,000 on 223 records, which made the 90%
+   * compaction trigger unreachable (no family conversation has come near
+   * 131K) and the SDK's tool-result pruning inert. 200,000 changes nothing
+   * today and gives compaction a ceiling to work under the day someone gets
+   * there. One env var instead of a 223-record PATCH sweep; delete the var to
+   * revert. Also mirrored onto the returned maxContextTokens below. */
+  const platformCap = Number(process.env.KADE_MAX_CONTEXT_TOKENS);
+  if (Number.isFinite(platformCap) && platformCap > 0 && Number(agentMaxContextTokens) > platformCap) {
+    logger.info(
+      `[initializeAgent] maxContextTokens ${agentMaxContextTokens} exceeds the platform cap KADE_MAX_CONTEXT_TOKENS=${platformCap} -- clamped`,
+    );
+    agentMaxContextTokens = platformCap;
+  }
 
   if (
     agent.endpoint === EModelEndpoint.azureOpenAI &&
@@ -1321,7 +1346,7 @@ export async function initializeAgent(
     useLegacyContent: !!options.useLegacyContent,
     tools: (tools ?? []) as GenericTool[] & string[],
     maxToolResultChars: maxToolResultCharsResolved,
-    maxContextTokens:
+    maxContextTokens: applyPlatformContextCap(
       maxContextTokens != null && maxContextTokens > 0
         ? /* KADE Aug 4 2026: same clamp as agentMaxContextTokens above --
            * a configured value can never exceed the model's real window
@@ -1329,6 +1354,7 @@ export async function initializeAgent(
            * output headroom). */
           (baseContextTokens > 0 ? Math.min(maxContextTokens, baseContextTokens) : maxContextTokens)
         : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
+    ),
     primedCodeFiles,
     endpointTokenConfig: options.endpointTokenConfig,
   };

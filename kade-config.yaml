@@ -62,7 +62,14 @@ endpoints:
         # this only controls what the picker offers. Every model here was
         # verified live on OpenRouter July 2026.
         default: [
-          "z-ai/glm-5.3",              # house default since Aug 21 2026 (Part 75): same
+          # ⚠️ THE FIRST LINE IS THE BUILDER'S DEFAULT (client ModelPanel.tsx:
+          # a new agent with no model gets models[0]). Sep 5 2026 (Part 132):
+          # it was full glm-5.3 ($1.40/$4.40), which is how Della (Sep 1) and
+          # Cassie (Aug 28) landed on the $4.40 brain after the fleet moved to
+          # Flash. The fleet model goes first so a new family agent is born on
+          # what everyone else runs. Revert = move the glm-5.3 line back up.
+          "x-ai/grok-4.20",             # FLEET MODEL Sep 5 2026 (Part 131): $1.25/$2.50, 2M ctx, ZDR-pinned in reframe
+          "z-ai/glm-5.3",              # house default Aug 21–Sep 5 2026 (Part 75): same
           "z-ai/glm-5.3-flash",        # Kiana's model Aug 28 2026 (Part 93): SEES images+video,
                                         # ~18x cheaper ($0.075/$0.25 per M). Missing from this
                                         # list = illegal_model_request on EVERY turn at
@@ -90,7 +97,9 @@ endpoints:
           # CAVEAT: no OpenRouter host for these supports the tools param;
           # the fork strips tools for them automatically (initialize.js
           # NO_TOOLS_MODELS, commit 73baaae) — chat/persona use only.
-          "nousresearch/hermes-4-70b",  # uncensored workhorse, ~6x cheaper than glm-5.2
+          # "nousresearch/hermes-4-70b" REMOVED Sep 5 2026 (Part 132): a PHANTOM
+          # listing — its only host (Nebius) answers 404 "model does not exist"
+          # (proved live Part 130). A builder who picked it got a dead agent.
           "nousresearch/hermes-4-405b", # uncensored flagship, ~glm-5.2 price
           # PILOTS round 2 (July 9 2026 late): tool-CAPABLE less-corporate brains.
           "sao10k/l3.1-euryale-70b",    # RP-community favorite, host supports tools
@@ -106,7 +115,6 @@ endpoints:
           # maps Deep Think -> reasoning on. k2.6 is the fleet-wide default.
           "moonshotai/kimi-k2.6",       # 1T MoE 32B active, 256K ctx, multimodal, fleet default
           "moonshotai/kimi-k3",         # flagship deep-reasoning/creative, slow+pricey
-          "x-ai/grok-4.20",             # $1.25/$2.50, 2M ctx, bars-test co-champion
         ]
         fetch: false
       titleConvo: true

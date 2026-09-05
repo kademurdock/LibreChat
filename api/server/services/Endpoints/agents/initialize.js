@@ -192,7 +192,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
           });
           const dropped = rag.applySelection(loaded, sel.keep);
           logger.info(
-            `[kadeToolRag] agent=${agentId} kept=${sel.keep.size} dropped=${dropped.length} [${dropped.join(',')}] ${sel.reason} ${Date.now() - t0}ms` +
+            `[kadeToolRag] agent=${agentId} kept=${sel.keep.size}:[${[...sel.keep].join(',')}] dropped=${dropped.length} ${sel.reason} ${Date.now() - t0}ms` +
               (sel.scored && sel.scored.length
                 ? ' top=' + sel.scored.map(([n, s]) => `${n}:${s.toFixed(2)}`).join(',')
                 : ''),
