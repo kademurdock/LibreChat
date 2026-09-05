@@ -47,9 +47,9 @@ endpoints:
     # Sep 5 2026 (Part 132.1): a tool-loop ceiling. Default was the SDK's 50
     # steps (~25 tool rounds); Kiana ran fifteen tool calls in one turn when
     # web_search was left off. 14 steps = 7 rounds, plenty for a phone or game
-    # turn. Forge carries recursion_limit 50 on his own record (ops chains).
+    # turn. Forge keeps his own record's 999 (ops chains); the max only fences the rest.
     recursionLimit: 14
-    maxRecursionLimit: 60
+    maxRecursionLimit: 1000
     capabilities:
       - "deferred_tools"
       - "file_search"
