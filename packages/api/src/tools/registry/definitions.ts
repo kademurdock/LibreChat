@@ -213,6 +213,105 @@ export const kadeWeatherSchema: ExtendedJsonSchema = {
   required: ['location'],
 };
 
+/* KADE Sep 5 2026 (Part 132) — FOUR TOOLS THAT WERE NEVER REGISTERED HERE.
+ * Production runs event-driven tool loading (definitionsOnly=true), and in
+ * that mode a built-in tool with no entry in this registry is silently
+ * skipped (`definitions.ts`: `if (!registryDef) continue;`). kade_help (116
+ * agents), kade_location (221 agents), kade_research (every agent, her word
+ * Aug 11) and kade_transcribe were in handleTools + the manifest but not
+ * here — so no character could actually call them, and Kiana answered "where
+ * am I" and "how do I turn on voice" from her own head (probe, vischeck,
+ * 06:06Z). Found by the tool-retrieval log naming what was bound. Schemas
+ * mirror the structured tools byte for byte. */
+export const kadeHelpSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    topic: {
+      type: 'string',
+      enum: ['home', 'starthere', 'quickstart', 'faq', 'whatsnew', 'voice', 'phone', 'describe', 'characters', 'rooms', 'games', 'build', 'memory', 'images', 'audio', 'temporary', 'cheatsheet', 'tokens', 'costs', 'donate', 'accessibility', 'troubleshooting', 'notifications'],
+      description:
+        'Which help page to pull — pick the closest match to what the user is actually asking. If genuinely unsure, use "faq" or "home". Topics: home = Help home — overview of every section; starthere = Start Here — brand new to AI in general; quickstart = Your First Five Minutes — first-time orientation; faq = Questions & Answers — general FAQ; whatsnew = What\'s New — recent features and changes, dated; voice = Talking & Listening — voice input/output, in-app calls basics; phone = Phone Calls — the real phone number, calls FOR you, deep think, family check-in calls; describe = Describe My World — photo/document/video description; characters = Characters & the Marketplace; rooms = The Debate Room; games = The Game Parlor; build = Build Your Own Character; memory = What It Remembers — memory cards, forgetting, consolidation; images = Making Pictures; audio = Making Audio & Voices; temporary = Starting Over & Private/Temporary Chats; cheatsheet = The Cheat Sheet — quick command reference; tokens = What Are Tokens?; costs = What This Costs Kade; donate = Feed the Server — balance, usage, donating; accessibility = Accessibility Tips; troubleshooting = When Something Breaks / how to report a bug; notifications = Notifications & Reminders — push setup, reminder delivery choices, agent check-ins.',
+    },
+  },
+  required: ['topic'],
+};
+
+export const kadeLocationSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['where_am_i', 'whats_around', 'walk_me_there'],
+      description:
+        "'where_am_i' speaks the street/area they're at; 'whats_around' lists nearby places by distance and direction; 'walk_me_there' gives spoken walking directions to a destination.",
+    },
+    category: {
+      type: 'string',
+      description:
+        "For whats_around: pharmacy, food, restaurant, coffee, groceries, gas, bank, bus, doctor, church, school, park, hotel, shopping, or 'anything' (default).",
+    },
+    radius_feet: {
+      type: 'integer',
+      description: 'For whats_around: search radius in feet, 200-5280. Default 1000 (a couple of blocks).',
+    },
+    destination: {
+      type: 'string',
+      description:
+        "For walk_me_there: where they want to go — a place name or address ('Walgreens', '414 W Main St'). Nearest match to their position wins.",
+    },
+  },
+  required: ['action'],
+};
+
+export const kadeResearchSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['start', 'check', 'get', 'cancel'],
+      description:
+        'start = kick off a research run. check = progress on running/recent runs. get = fetch a finished report. cancel = stop a run.',
+    },
+    question: {
+      type: 'string',
+      description:
+        "For start: the research question, stated fully and neutrally in one or two sentences, with the details that matter baked in (place, budget, timeframe, constraints). Good: 'What are the real pros, cons, and monthly costs of fiber versus Starlink for a rural home near Springfield, Missouri in 2026?' Bad: 'internet options?'",
+    },
+    depth: {
+      type: 'string',
+      enum: ['quick', 'standard', 'deep'],
+      description:
+        'start only. quick = ~2 minutes, a handful of sources, short answer. standard (default) = ~5 minutes, around ten sources, the right pick for most real questions. deep = ~10 minutes, up to twenty sources with follow-up rounds — only when the question truly earns it (big decisions, contested topics).',
+    },
+    focus: {
+      type: 'string',
+      description:
+        "start, optional: a steer on what matters most to this person, in one sentence (e.g. 'wheelchair access and total out-the-door cost matter most').",
+    },
+    include_personal_notes: {
+      type: 'boolean',
+      description:
+        "start, optional, default false. Set true ONLY when the question is about the user's own life or plans AND their saved notes would genuinely sharpen the answer (their town, their setup, their constraints). Their notes never leave the report engine.",
+    },
+    id: {
+      type: 'string',
+      description:
+        'The run id (from start/check). get and cancel need it; get without an id returns the most recently finished report.',
+    },
+  },
+  required: ['action'],
+};
+
+export const kadeTranscribeSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    filename: {
+      type: 'string',
+      description: 'Optional: part of the filename to pick a specific upload instead of the newest one.',
+    },
+  },
+};
+
 export const kadeCodeSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -1151,6 +1250,34 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Get REAL current weather and a short forecast for any city — free, instant, no cost (Open-Meteo). Use this instead of web_search for weather questions. NEVER invent weather; only report what this tool returns.',
     schema: kadeWeatherSchema,
+    toolType: 'builtin',
+  },
+  kade_help: {
+    name: 'kade_help',
+    description:
+      "Look up a page from Kade-AI's own help center so you can answer questions about the SITE ITSELF accurately — how a feature works, what something costs, accessibility tips, troubleshooting, what's new — instead of guessing or relying on stale training knowledge. Use this whenever someone asks how to use something here, what a feature does or costs, what changed recently, or says something isn't working. Returns the real current page text, cleaned up for reading aloud — put it in your own words for the user rather than reciting it verbatim, unless they specifically want the exact wording.",
+    schema: kadeHelpSchema,
+    toolType: 'builtin',
+  },
+  kade_location: {
+    name: 'kade_location',
+    description:
+      'REAL location awareness for THIS user, from their own device (only when their "Share my location" setting is on). Use for: \'where am I\' (spoken street/area), \'what\'s around me\' (nearby places with distance and walking direction), and \'walk me there\' (spoken walking directions). Blind-first: answers are complete sentences ready to speak. NEVER guess or invent locations, distances, or directions — only report what this tool returns. If it says location is unavailable, relay that warmly and mention the Settings toggle.',
+    schema: kadeLocationSchema,
+    toolType: 'builtin',
+  },
+  kade_research: {
+    name: 'kade_research',
+    description:
+      "Run REAL background research on a question: many web searches, many sources read and cross-checked, then a clear spoken-style report with numbered citations. Takes minutes, not seconds — the user gets a phone tap when it's ready. For questions that deserve actual digging, not quick lookups. WHEN TO REACH FOR THIS: comparisons and decisions ('which hearing aid brand', 'is this town worth moving to'), contested or scam-adjacent claims ('is this supplement legit'), anything where one page won't cut it. WHEN NOT TO: single facts (kade_wikipedia), today's headlines (kade_news), one specific page (kade_read_page), weather (kade_weather) — those answer in seconds and cost nothing. THE FLOW, honestly narrated: (1) action='start' with a FULLY-STATED question — fold in the person's constraints (place, budget, needs) rather than researching a vague stub; pick depth honestly (standard for most things; deep costs real money and time, save it for questions that earn it; ask before going deep). (2) Tell the user plainly it's running in the background, roughly how long it'll take, and that their phone gets a tap when it's done — then keep the conversation moving; do NOT sit and poll. (3) If they ask how it's going, action='check' and read the progress note like a human would ('she's on source seven of ten'). (4) When they come back for it — or the tap lands — action='get', then DELIVER IT BY EAR: lead with the verdict in a breath or two, offer the full read, and read the report as written when they want it all (it's composed for listening — don't reformat it into lists). NEVER invent findings, never pad the report, and if it says the evidence was thin, say exactly that. If include_personal_notes fits (their own life, their own plans), say you're factoring in what you already know about their situation — no surveillance vibes, just a friend who remembers.",
+    schema: kadeResearchSchema,
+    toolType: 'builtin',
+  },
+  kade_transcribe: {
+    name: 'kade_transcribe',
+    description:
+      "Transcribe the user's most recently uploaded audio file (voice memo, recording) into formatted text. Use when the user uploads audio and asks what it says, or asks you to transcribe/summarize a voice memo. Returns the full transcript — quote or summarize it as the user asked.",
+    schema: kadeTranscribeSchema,
     toolType: 'builtin',
   },
   kade_code: {
