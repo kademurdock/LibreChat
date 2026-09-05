@@ -168,3 +168,20 @@ test('memoEmbed: one embed per text per request, shared with recall', async () =
   await e('other');
   assert.strictEqual(calls, 2);
 });
+
+test('applySelection in event-driven mode filters toolDefinitions, leaves the registry whole', () => {
+  const keep = new Set(['context', 'kade_joke']);
+  const defs = (names) => names.map((name) => ({ name, description: 'd', parameters: {} }));
+  const registry = new Map([['web_search', {}], ['kade_joke', {}], ['flux', {}], ['tool_search', {}]]);
+  const result = {
+    toolDefinitions: defs(['context', 'kade_joke', 'web_search', 'flux', 'tool_search']),
+    toolRegistry: registry,
+    toolContextMap: { web_search: 'big block' },
+    dynamicToolContextMap: { web_search: 'runtime' },
+  };
+  const dropped = R.applySelection(result, keep);
+  assert.deepStrictEqual(dropped.sort(), ['flux', 'web_search']);
+  assert.deepStrictEqual(result.toolDefinitions.map((d) => d.name), ['context', 'kade_joke', 'tool_search']);
+  assert.strictEqual(result.toolRegistry.size, 4, 'registry untouched so execution by name still resolves');
+  assert.strictEqual(result.toolContextMap.web_search, undefined);
+});

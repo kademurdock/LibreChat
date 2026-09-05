@@ -168,7 +168,13 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
        * prefix only ever grows. Kill switch KADE_TOOLS_RAG=0. Agents with
        * action tools (Forge) and turns without user text are never touched.
        * Everything about it lives in services/kadeToolRetrieval.js. */
-      if (loaded && Array.isArray(loaded.tools) && !definitionsOnly) {
+      const ragPool =
+        loaded && Array.isArray(loaded.toolDefinitions) && loaded.toolDefinitions.length > 0
+          ? loaded.toolDefinitions /* event-driven mode: what the model binds */
+          : loaded && Array.isArray(loaded.tools) && loaded.tools.length > 0
+            ? loaded.tools
+            : null;
+      if (ragPool) {
         try {
           const rag = require('~/server/services/kadeToolRetrieval');
           const { embedText } = require('~/models/kadeDiary');
@@ -177,7 +183,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
             tool_resources.file_search.file_ids.length > 0;
           const t0 = Date.now();
           const sel = await rag.selectTools({
-            tools: loaded.tools,
+            tools: ragPool,
             text: req?.body?.text,
             conversationId: req?.body?.conversationId || null,
             agentId,
@@ -186,7 +192,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
           });
           const dropped = rag.applySelection(loaded, sel.keep);
           logger.info(
-            `[kadeToolRag] agent=${agentId} kept=${loaded.tools.length} dropped=${dropped.length} ${sel.reason} ${Date.now() - t0}ms` +
+            `[kadeToolRag] agent=${agentId} kept=${sel.keep.size} dropped=${dropped.length} [${dropped.join(',')}] ${sel.reason} ${Date.now() - t0}ms` +
               (sel.scored && sel.scored.length
                 ? ' top=' + sel.scored.map(([n, s]) => `${n}:${s.toFixed(2)}`).join(',')
                 : ''),

@@ -374,10 +374,25 @@ async function selectTools(p) {
  * `toolDefinitions` if present. Returns the dropped names.
  */
 function applySelection(result, keep) {
-  if (!result || !Array.isArray(result.tools)) return [];
-  const before = result.tools.map((t) => t.name);
-  result.tools = result.tools.filter((t) => keep.has(t.name));
-  const dropped = before.filter((n) => !keep.has(n));
+  if (!result || typeof result !== 'object') return [];
+  const dropped = [];
+  /* Instance mode (definitionsOnly=false): the model binds `tools`. */
+  if (Array.isArray(result.tools) && result.tools.length > 0) {
+    const before = result.tools.map((t) => t.name);
+    result.tools = result.tools.filter((t) => keep.has(t.name));
+    for (const n of before) if (!keep.has(n)) dropped.push(n);
+  }
+  /* Event-driven mode (the production path, definitionsOnly=true): the model
+   * binds `toolDefinitions`; execution resolves by NAME through
+   * `toolRegistry`, which is left whole on purpose so nothing the model
+   * could still name is unexecutable. */
+  if (Array.isArray(result.toolDefinitions) && result.toolDefinitions.length > 0) {
+    const before = result.toolDefinitions.map((d) => d && d.name).filter(Boolean);
+    result.toolDefinitions = result.toolDefinitions.filter(
+      (d) => !d || !d.name || keep.has(d.name) || !DEFERRABLE.has(d.name),
+    );
+    for (const n of before) if (!keep.has(n) && DEFERRABLE.has(n) && !dropped.includes(n)) dropped.push(n);
+  }
   if (dropped.includes('web_search')) {
     if (result.toolContextMap && typeof result.toolContextMap === 'object') {
       delete result.toolContextMap.web_search;
@@ -385,11 +400,6 @@ function applySelection(result, keep) {
     if (result.dynamicToolContextMap && typeof result.dynamicToolContextMap === 'object') {
       delete result.dynamicToolContextMap.web_search;
     }
-  }
-  if (Array.isArray(result.toolDefinitions) && result.toolDefinitions.length > 0) {
-    result.toolDefinitions = result.toolDefinitions.filter(
-      (d) => !d || !d.name || keep.has(d.name) || !DEFERRABLE.has(d.name),
-    );
   }
   return dropped;
 }
