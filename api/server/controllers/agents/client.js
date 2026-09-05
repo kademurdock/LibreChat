@@ -651,6 +651,7 @@ class AgentClient extends BaseClient {
           userId: this.options.req.user.id,
           agentId: this.options.agent?.id,
           userText: latestUserText || this.options.req?.body?.text || '',
+          req: this.options.req,
         });
         if (recallBlock) {
           volatileTurnContext = volatileTurnContext

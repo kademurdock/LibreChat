@@ -1006,7 +1006,15 @@ export async function createRun({
     const toolInstructions = joinInstructionMap(agent.toolContextMap);
     const dynamicToolInstructions = joinInstructionMap(agent.dynamicToolContextMap);
 
-    const systemContent = [toolInstructions, agent.instructions ?? ''].join('\n').trim();
+    /* KADE 2026-09-05 (Part 132): persona FIRST, tool instructions after.
+     * Upstream put web_search's ~25K-char instruction block at the head of
+     * the system message. With tools now retrieved per turn (see
+     * api/server/services/kadeToolRetrieval.js) that block comes and goes,
+     * and a head that changes busts the provider prefix cache on the whole
+     * 57K persona behind it (Part 131 measured a 4× bill for a head change
+     * vs a tail change). Persona → platform → memory stay byte-stable at the
+     * front; whatever the turn's tools add rides behind them. */
+    const systemContent = [agent.instructions ?? '', toolInstructions].join('\n').trim();
 
     const additionalInstructions = [dynamicToolInstructions, agent.additional_instructions ?? '']
       .join('\n')

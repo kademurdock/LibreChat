@@ -152,7 +152,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
       : [..._tools, ...autoTools.filter((t) => !_tools.includes(t))];
     const agent = { id: agentId, tools: withFeedback, provider, model, tool_options };
     try {
-      return await loadAgentTools({
+      const loaded = await loadAgentTools({
         req,
         res,
         agent,
@@ -161,6 +161,41 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
         tool_resources,
         definitionsOnly,
       });
+      /* KADE 2026-09-05 (Part 132) — TOOLS AS RETRIEVAL. A core set rides
+       * every turn; the rest attach only when the person's words call for
+       * them (keyword aliases + the same Gemini embed the diary takes for
+       * this turn, memoised on req). Sticky per conversation so the cached
+       * prefix only ever grows. Kill switch KADE_TOOLS_RAG=0. Agents with
+       * action tools (Forge) and turns without user text are never touched.
+       * Everything about it lives in services/kadeToolRetrieval.js. */
+      if (loaded && Array.isArray(loaded.tools) && !definitionsOnly) {
+        try {
+          const rag = require('~/server/services/kadeToolRetrieval');
+          const { embedText } = require('~/models/kadeDiary');
+          const hasFiles =
+            Array.isArray(tool_resources?.file_search?.file_ids) &&
+            tool_resources.file_search.file_ids.length > 0;
+          const t0 = Date.now();
+          const sel = await rag.selectTools({
+            tools: loaded.tools,
+            text: req?.body?.text,
+            conversationId: req?.body?.conversationId || null,
+            agentId,
+            hasFiles,
+            embed: rag.memoEmbed(req, embedText),
+          });
+          const dropped = rag.applySelection(loaded, sel.keep);
+          logger.info(
+            `[kadeToolRag] agent=${agentId} kept=${loaded.tools.length} dropped=${dropped.length} ${sel.reason} ${Date.now() - t0}ms` +
+              (sel.scored && sel.scored.length
+                ? ' top=' + sel.scored.map(([n, s]) => `${n}:${s.toFixed(2)}`).join(',')
+                : ''),
+          );
+        } catch (ragErr) {
+          logger.warn('[kadeToolRag] skipped (full set rides): ' + (ragErr && ragErr.message));
+        }
+      }
+      return loaded;
     } catch (error) {
       logger.error('Error loading tools for agent ' + agentId, error);
     }

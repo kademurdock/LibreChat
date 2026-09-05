@@ -547,7 +547,7 @@ async function getMemorySplit(userId, agentId) {
  * @param {string} p.userText     what the user just said this turn
  * @param {object|null} p.cardSplit  result of getMemorySplit (null = cards stay head-side; diary may still fire)
  */
-async function getRecallTailBlock({ userId, agentId, userText }) {
+async function getRecallTailBlock({ userId, agentId, userText, req }) {
   /* ── RECALL AUDIT (Aug 26 2026) ──────────────────────────────────────────
    * Forge's ask, and tonight is the argument for it: SEVEN cards about one
    * surgery surfaced CORRECTLY and the reply still went wrong, and there was
@@ -582,7 +582,9 @@ async function getRecallTailBlock({ userId, agentId, userText }) {
         return null;
       }
       /* ONE embed for the whole turn. */
-      const qv = await embedText(text.slice(0, 1500));
+      /* Part 132: the same vector the tool-retrieval step already took for
+       * this turn (memo on req) — one embed per turn, shared. */
+      const qv = await require('./kadeToolRetrieval').memoEmbed(req, embedText)(text.slice(0, 1500));
       const parts = [];
 
       /* Part 128 — MEMORY SHARE: the other companions' buckets this seat has
