@@ -90,8 +90,10 @@ const SETTINGS = [
     hint: 'Speech, accessibility, and pronunciation dictionary settings.' },
   { id: 'help', href: '/help', title: 'Help', spoken: 'Help', icon: '❓',
     hint: 'How everything in the app works, section by section.' },
-  { id: 'app', href: 'https://testflight.apple.com', title: 'Get the iPhone app', spoken: 'Get the iPhone app', icon: '📱',
-    hint: 'The native Kade-AI app is the main way to use all of this. Ask Kade for a TestFlight invite if you do not have one.' },
+  /* Sep 5 2026 (Part 132.2): Kade-AI 2.0 is on the App Store. The tile points
+   * at the listing itself so nobody has to search; Android has its own page. */
+  { id: 'app', href: 'https://apps.apple.com/app/id6791024001', title: 'Get the iPhone app', spoken: 'Get the iPhone app, on the App Store', icon: '📱',
+    hint: 'Kade-AI is on the App Store. Same sign-in as here. Android phone? See Help, The Android App.' },
 ];
 
 /* Her call (Sep 2 2026): mirror native EXACTLY, and where the web has
