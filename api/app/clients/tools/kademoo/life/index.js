@@ -74,7 +74,7 @@ async function runTurn({ ch, userId, command, isWizard, live }) {
     const meanwhile = await oldEngine.collectMeanwhile(ch);
     kinds = meanwhile.map((m) => m.sound || m.kind);
     if (meanwhile.length) {
-      const recapText = meanwhile.map((m) => m.text).join(' | ').slice(0, 1500);
+      const recapText = meanwhile.map((m) => m.text).join(' | ');
       lines.push('MEANWHILE (since your last turn): ' + recapText);
       await ctxlib.setAttrs(ch, { lastMeanwhile: recapText });
     }

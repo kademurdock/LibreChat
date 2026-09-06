@@ -51,6 +51,10 @@ async function main() {
     r = await run('status');
     const second = (r.meanwhile || []).filter((e) => e.text.startsWith('Backlog '));
     check(first.length === 25 && second.length === 5, 'a 30-message backlog is delivered across turns without loss');
+    const longMessage = 'A long catch-up message. '.repeat(80) + 'The ending must be heard.';
+    await engine.emit(ch.roomId, 'fixture-b', 'Bea', 'say', longMessage);
+    r = await run('status');
+    check(r.lines.some((line) => line.includes(longMessage)), 'native catch-up lines retain the ending of long messages');
     registry.register({ name: 'fixture slow', hidden: true, free: true, async run(ctx) {
       // This independent writer simulates a friend posting during the turn.
       await MooEvent.create({ seq: await nextSeq(), roomId: ctx.ch.roomId, actorUserId: 'fixture-b', actorName: 'Bea', kind: 'say', text: 'Arrived during command' });

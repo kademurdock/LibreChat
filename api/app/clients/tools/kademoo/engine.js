@@ -284,7 +284,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
    * specific kind and no client change is needed for the meanwhile lane. */
   const kinds = meanwhile.map((m) => m.sound || m.kind);
   if (meanwhile.length) {
-    const recapText = meanwhile.map((m) => m.text).join(' | ').slice(0, 1500);
+    const recapText = meanwhile.map((m) => m.text).join(' | ');
     lines.push('MEANWHILE (since your last turn): ' + recapText);
     MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.lastMeanwhile': recapText } }).catch(() => {});
     ch.attrs = { ...(ch.attrs || {}), lastMeanwhile: recapText };
