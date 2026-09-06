@@ -150,6 +150,7 @@ function validName(s) {
  *  "remake me" re-asks the new questions without touching what they own. */
 function isReturning(ch) {
   const a = ch.attrs || {};
+  if (a.life && a.life.newcomer) return false;
   const named = /^\S+\s+\S+/.test(ch.name || '') && !/^newcomer /.test(ch.name || '');
   return named && (a.lastMeal || a.desc || a.pose || (a.coin || 0) > 0 || a.pronouns || a.walkStyle || a.home);
 }
@@ -178,6 +179,14 @@ async function handle(ctx) {
     return { ok: true, mode: 'create', lines: [...ctx.lines, ...msgLines, c.prompt].filter(Boolean), choices: c.choices, freeText: !!c.free, step: nextStep };
   };
   const save = async (nextStep) => { wiz.step = nextStep; wiz.data = data; await setAttrs(ch, { 'life.wiz': wiz }); };
+  const steps = data.remake ? STEPS.filter((s) => !['first', 'last', 'origin'].includes(s)) : STEPS;
+  const restart = async () => {
+    const kept = data.remake ? { remake: true, first: data.first, last: data.last, origin: data.origin } : {};
+    Object.keys(data).forEach((k) => delete data[k]);
+    Object.assign(data, kept);
+    await save(steps[0]);
+    return respond(['Questions started again.'], steps[0]);
+  };
 
   /* a client re-opening the page sends "look" first; a newcomer may type
    * "what" or "status" — none of those is anybody's name. Re-ask instead. */
@@ -185,14 +194,19 @@ async function handle(ctx) {
   /* control words */
   if (lower === 'help' || lower === '?') return respond([HELP[step] || 'Answer with the number, the word, or say the whole thing. "back" goes a step back, "cancel" walks away.'], step);
   if (lower === 'back') {
-    const i = STEPS.indexOf(step);
+    const i = steps.indexOf(step);
     if (i <= 0) return respond(['This is the first question.'], step);
-    await save(STEPS[i - 1]);
-    return respond(['Back one.'], STEPS[i - 1]);
+    await save(steps[i - 1]);
+    return respond(['Back one.'], steps[i - 1]);
   }
-  if (lower === 'start over') { wiz.data = {}; Object.keys(data).forEach((k) => delete data[k]); await save('first'); return respond(['Clean slate.'], 'first'); }
+  if (lower === 'start over') return restart();
   if (lower === 'cancel' || lower === 'quit') {
-    const others = await MooChar.countDocuments({ userId: ch.userId, 'attrs.life.created': true });
+    if (data.remake) {
+      await setAttrs(ch, { 'life.wiz': null });
+      ctx.life.wiz = null;
+      return { ok: true, mode: 'play', lines: [...ctx.lines, `You are still ${ch.name}. Your character and everything you own are unchanged.`], wantRoom: true };
+    }
+    const others = await MooChar.countDocuments({ _id: { $ne: ch._id }, userId: ch.userId, 'attrs.life.created': true });
     if (others > 0) {
       await MooChar.deleteOne({ _id: ch._id });
       const back = await MooChar.findOne({ userId: ch.userId, 'attrs.life.created': true }).sort({ lastActiveAt: -1 });
@@ -267,7 +281,7 @@ async function handle(ctx) {
     }
     case 'confirm': {
       if (/^(1|yes|y|ready|go|yeah|yep)\b/.test(lower)) return born(ctx, data);
-      if (/^(2|no|start over)/.test(lower)) { Object.keys(data).forEach((k) => delete data[k]); await save('first'); return respond(['Clean slate.'], 'first'); }
+      if (/^(2|no|start over)/.test(lower)) return restart();
       return respond(['Say yes to step into the city, or "start over".'], 'confirm');
     }
     default:
@@ -311,7 +325,9 @@ async function born(ctx, d) {
   if (d.remake) {
     /* keep the soul: name, coin, room, pockets, friends. Refresh who they are. */
     const old = ctx.life || {};
-    const kept = { needs: old.needs || needs.fresh(), needsAt: old.needsAt || Date.now(), skills: { ...(old.skills || {}), ...life.skills }, careers: old.careers || {}, home: old.home || null, homeName: old.homeName || null, homeStreet: old.homeStreet || null, partner: old.partner || null, partnerName: old.partnerName || null, married: old.married || false, games: old.games || {}, bornAt: old.bornAt || Date.now() };
+    const keptSkills = { ...(old.skills || {}) };
+    for (const [key, xp] of Object.entries(life.skills)) keptSkills[key] = Math.max(keptSkills[key] || 0, xp);
+    const kept = { needs: old.needs || needs.fresh(), needsAt: old.needsAt || Date.now(), skills: keptSkills, careers: old.careers || {}, home: old.home || null, homeName: old.homeName || null, homeStreet: old.homeStreet || null, partner: old.partner || null, partnerName: old.partnerName || null, married: old.married || false, games: old.games || {}, bornAt: old.bornAt || Date.now() };
     const merged = { ...old, ...life, ...kept, wiz: null, created: true, returning: false };
     await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.life': merged, 'attrs.pronouns': d.pronouns, 'attrs.desc': life.look.line } });
     ch.attrs = { ...(ch.attrs || {}), life: merged, pronouns: d.pronouns, desc: life.look.line };

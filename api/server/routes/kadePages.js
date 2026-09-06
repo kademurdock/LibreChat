@@ -55,6 +55,7 @@ const SHARED_HEAD = `
   dl.kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
   footer { margin-top: 2rem; font-size: .85rem; }
   a.back { display:inline-block; margin:0 0 .25rem; font-weight:600; text-decoration:none; color:#1d55d0; }
+  @media (prefers-color-scheme: dark) { a.back { color: #93c5fd; } }
   a.back:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   body { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; }
   nav.kadetabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: flex; background: #ffffff; border-top: 1px solid #d9dde3; padding-bottom: env(safe-area-inset-bottom, 0px); box-shadow: 0 -2px 10px rgba(0,0,0,.06); }
@@ -2950,8 +2951,14 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   header.top .meta b { color: var(--ink); font-weight: 600; }
   .pill { display: inline-block; padding: .15rem .55rem; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: .85rem; }
 
-  .layout { display: grid; grid-template-columns: 1fr; gap: .8rem; }
-  @media (min-width: 900px) { .layout { grid-template-columns: 1.35fr 1fr; align-items: start; } .col-right { position: sticky; top: .5rem; } }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; }
+  .col-left, .col-right { min-width: 0; }
+  @media (min-width: 900px) { .layout { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; } }
+  .world-shortcuts { display: flex; flex-wrap: wrap; gap: .4rem 1rem; margin-bottom: .6rem; }
+  .world-shortcuts a { min-height: 44px; display: inline-flex; align-items: center; }
+  .chip, .choice, .btn, .pill { max-width: 100%; overflow-wrap: anywhere; }
+  .chip { text-align: left; }
+  #commandStatus { min-height: 1.5em; margin: .25rem 0; }
 
   /* scene */
   .scene { position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--line); background: var(--card); min-height: 150px; }
@@ -3003,8 +3010,8 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   #log p { margin: .4rem 0; }
   #log p.you { color: var(--muted); font-style: italic; }
   #log p.you::before { content: "› "; }
-  #log p.room { font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
-  #log p.room.open { display: block; -webkit-line-clamp: unset; }
+  #log p.room { font-weight: 600; }
+  #log p { overflow-wrap: anywhere; }
   #log p.live { border-left: 3px solid var(--w1); padding-left: .55rem; }
   #log p.err { color: var(--danger); }
   #log p.system { color: var(--muted); }
@@ -3027,7 +3034,10 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
 
   /* command bar */
   form.cmd { display: flex; gap: .45rem; margin-top: .6rem; position: sticky; bottom: calc(62px + env(safe-area-inset-bottom, 0px)); /* clears the site tab bar */ background: var(--paper); padding: .35rem 0; z-index: 3; }
-  form.cmd input { flex: 1; font-size: 1.05rem; padding: .8rem .9rem; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); min-height: 48px; }
+  form.cmd input { flex: 1; min-width: 0; width: 100%; font-size: 1.05rem; padding: .8rem .9rem; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); min-height: 48px; }
+  @media (max-width: 420px) { form.cmd { flex-wrap: wrap; position: static; } form.cmd input { flex-basis: 100%; } }
+  @media (prefers-reduced-motion: reduce) { #log { scroll-behavior: auto; } .scene *, .meter .bar i, .btn.mic { animation: none !important; transition: none !important; } }
+  .scene .text { background: rgba(0,0,0,.72); }
   .btn { font-size: 1rem; font-weight: 700; padding: 0 1rem; border-radius: 12px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; min-height: 48px; min-width: 48px; }
   .btn.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); font-weight: 600; }
   .btn.mic[aria-pressed="true"] { background: var(--danger); color: #fff; animation: pulse 1.2s ease-in-out infinite; }
@@ -3035,7 +3045,9 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
 
   /* meters */
   .meters { display: grid; gap: .45rem; }
-  .meter { display: grid; grid-template-columns: 5.2rem 1fr 4.6rem; align-items: center; gap: .5rem; font-size: .95rem; }
+  .meter { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: .25rem .5rem; font-size: .95rem; overflow-wrap: anywhere; }
+  .meter .bar { grid-column: 1 / -1; grid-row: 2; }
+  .meter .word { grid-column: 2; grid-row: 1; }
   .meter .bar { height: 12px; border-radius: 999px; background: var(--line); overflow: hidden; }
   .meter .bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width .8s ease, background .8s; }
   .meter .bar i.low { background: #d98c2b; } .meter .bar i.bad { background: var(--danger); }
@@ -3067,7 +3079,8 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   </div>
 </header>
 
-<div class="layout">
+<nav class="world-shortcuts" aria-label="World shortcuts"><a href="#cmdInput">Command</a><a href="#moveBox">Move</a><a href="#hudBox">Your status</a><a href="#log">World log</a><a href="/help/world">Help</a></nav>
+<main class="layout">
   <div class="col-left">
     <section class="scene" id="scene" data-ward="gate" data-dark="0" data-wx="clear" data-water="0" aria-live="off">
       <div class="art" aria-hidden="true"><div class="sun"></div><div class="sky2"></div><div class="skyline"></div><div class="water"></div><span class="lantern l1"></span><span class="lantern l2"></span><span class="lantern l3"></span><div class="wx"></div></div>
@@ -3085,7 +3098,8 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       <div class="chips" id="personMenu" role="group" aria-label="What to do with them" hidden></div>
     </div>
 
-    <div id="log" role="log" aria-live="polite" aria-relevant="additions" aria-label="The city"></div>
+    <div id="log" role="log" aria-live="polite" aria-relevant="additions" aria-label="The city" tabindex="0"></div>
+    <button type="button" class="chip" id="latestBtn" hidden>Jump to latest</button>
 
     <div id="choicesBox" class="section hidden" style="margin-top:.8rem">
       <h3 id="choicesTitle">Choose</h3>
@@ -3094,14 +3108,15 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
 
     <form class="cmd" id="cmdForm">
       <label for="cmdInput" class="sr-only">Command or answer</label>
-      <input id="cmdInput" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="type, or tap a button" enterkeyhint="send" />
+      <input id="cmdInput" maxlength="2000" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="type, or tap a button" enterkeyhint="send" />
       <button type="button" class="btn ghost mic" id="micBtn" aria-pressed="false" aria-label="Dictate a command">🎤 Talk</button>
       <button type="submit" class="btn" aria-label="Send">Do</button>
     </form>
+    <p id="commandStatus" role="status" aria-atomic="true"></p>
   </div>
 
   <div class="col-right">
-    <div class="section" id="moveBox">
+    <div class="section" id="moveBox" tabindex="-1">
       <h3>Move</h3>
       <div class="compass" id="compass" role="group" aria-label="Compass">
         <button type="button" data-dir="nw">NW<small></small></button>
@@ -3128,7 +3143,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       <div class="chips" id="hereActs"></div>
     </div>
 
-    <div class="section" id="hudBox" style="margin-top:.8rem">
+    <div class="section" id="hudBox" style="margin-top:.8rem" tabindex="-1">
       <h3>You</h3>
       <div class="mood" id="mood">—</div>
       <div class="meters" id="meters"></div>
@@ -3152,7 +3167,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       <p class="muted" style="font-size:.85rem;margin:.5rem 0 0">Everything on this page is a button or a line of text. Typing works everywhere buttons do. Numbers pick from a list. "help" any time; "what" says what you can do right here.</p>
     </details>
   </div>
-</div>
+</main>
 <footer class="muted">&mdash; a city, not a chat &middot; <a href="/help/world">how Reverie works</a></footer>
 
 <script>
@@ -3255,11 +3270,26 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   function addLine(text, cls){
     if (!text) return;
     var p = document.createElement('p'); p.className = cls || 'world'; p.textContent = text;
-    if (cls === 'room') { p.title = 'Tap to show the whole description'; p.addEventListener('click', function(){ p.classList.toggle('open'); }); }
-    logEl.appendChild(p); logEl.scrollTop = logEl.scrollHeight;
+    var following = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 50;
+    logEl.appendChild(p);
+    if (following) logEl.scrollTop = logEl.scrollHeight;
+    else $('latestBtn').hidden = false;
     while (logEl.children.length > 300) logEl.removeChild(logEl.firstChild);
   }
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  $('latestBtn').addEventListener('click', function(){ logEl.scrollTop = logEl.scrollHeight; this.hidden = true; logEl.focus(); });
+  function syncButtons(box, rows, family, update){
+    var existing = new Map();
+    Array.from(box.children).forEach(function(b){ if (b.dataset.family === family) existing.set(b.dataset.key, b); });
+    rows.forEach(function(row, index){
+      var key = String(row.key), b = existing.get(key);
+      if (!b) { b = document.createElement('button'); b.type = 'button'; b.dataset.family = family; b.dataset.key = key; box.appendChild(b); }
+      existing.delete(key); update(b, row);
+    });
+    var lostFocus = false;
+    existing.forEach(function(b){ if (b === document.activeElement) lostFocus = true; b.remove(); });
+    if (lostFocus) { var next = box.querySelector('button'); if (next) next.focus(); else input.focus(); }
+  }
 
   /* ── RENDER ──────────────────────────────────────────────────────────── */
   var DIRS = { n: 'north', s: 'south', e: 'east', w: 'west', ne: 'northeast', nw: 'northwest', se: 'southeast', sw: 'southwest', u: 'up', d: 'down', 'in': 'in', out: 'out' };
@@ -3282,24 +3312,16 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     ambienceFor(room.roomId, room.district);
   }
   function renderPeople(people, items, furniture){
-    var box = $('people'); box.innerHTML = '';
+    var box = $('people');
     $('hereTitle').textContent = people.length ? 'Here with you' : 'Nobody else here';
-    people.forEach(function(p){
-      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip person ' + p.kind;
+    syncButtons(box, people.map(function(p){ return Object.assign({ key: p.id }, p); }), 'person', function(b, p){
+      b.className = 'chip person ' + p.kind;
       b.textContent = p.line; b.setAttribute('aria-label', p.line + '. ' + (p.kind === 'player' ? 'A player' : p.kind === 'citizen' ? 'A citizen' : p.kind) + '. Opens choices.');
-      b.addEventListener('click', function(){ openMenu(p); });
-      box.appendChild(b);
+      b.onclick = function(){ openMenu(p); };
     });
-    var tb = $('things'); tb.innerHTML = '';
-    items.forEach(function(it){
-      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip thing'; b.textContent = it; b.setAttribute('aria-label', it + '. Look at it.');
-      b.addEventListener('click', function(){ send('look ' + it.replace(/^(a|an|the|some)\\s+/i, '')); });
-      tb.appendChild(b);
-    });
-    furniture.forEach(function(it){
-      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip thing'; b.textContent = it; b.setAttribute('aria-label', it + ', furniture. Look at it.');
-      b.addEventListener('click', function(){ send('look ' + it.replace(/^(a|an|the|some)\\s+/i, '')); });
-      tb.appendChild(b);
+    syncButtons($('things'), items.concat(furniture).map(function(it){ return { key: it }; }), 'thing', function(b, it){
+      b.className = 'chip thing'; b.textContent = it.key; b.setAttribute('aria-label', it.key + '. Look at it.');
+      b.onclick = function(){ send('look ' + it.key.replace(/^(a|an|the|some)\\s+/i, '')); };
     });
     if (MENU_FOR && !people.some(function(p){ return p.id === MENU_FOR; })) closeMenu();
   }
@@ -3315,7 +3337,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     var x = document.createElement('button'); x.type = 'button'; x.className = 'chip'; x.textContent = 'Close'; x.addEventListener('click', closeMenu); m.appendChild(x);
     if (m.firstElementChild && m.children[1]) m.children[1].focus();
   }
-  function closeMenu(){ MENU_FOR = null; var m = $('personMenu'); m.hidden = true; m.innerHTML = ''; }
+  function closeMenu(){ var m = $('personMenu'), hadFocus = m.contains(document.activeElement), who = MENU_FOR; MENU_FOR = null; m.hidden = true; m.innerHTML = ''; if (hadFocus) { var b = Array.from($('people').children).find(function(p){ return p.dataset.key === who; }); (b || input).focus(); } }
   function renderExits(exits){
     var by = {}; exits.forEach(function(e){ by[e.dir] = e; });
     Array.prototype.forEach.call(document.querySelectorAll('#compass button[data-dir], #vert button[data-dir]'), function(b){
@@ -3326,19 +3348,16 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     });
     /* odd exits (named doors) get chips */
     var box = $('moveActs'); var odd = exits.filter(function(e){ return !DIRS[e.dir]; });
-    var keep = Array.prototype.filter.call(box.children, function(c){ return c.getAttribute('data-kind') === 'act'; });
-    box.innerHTML = ''; keep.forEach(function(c){ box.appendChild(c); });
-    odd.forEach(function(e){ var b = document.createElement('button'); b.type = 'button'; b.className = 'chip act move'; b.textContent = e.label + ' → ' + e.to; b.addEventListener('click', function(){ send('go ' + e.dir); }); box.appendChild(b); });
+    syncButtons(box, odd.map(function(e){ return Object.assign({ key: e.dir }, e); }), 'exit', function(b, e){ b.className = 'chip act move'; b.textContent = e.label + ' to ' + e.to; b.onclick = function(){ send('go ' + e.dir); }; });
   }
   function renderActions(actions){
     var groups = { here: $('hereActs'), move: $('moveActs'), self: $('selfActs') };
-    Object.keys(groups).forEach(function(g){ var box = groups[g]; Array.prototype.slice.call(box.children).forEach(function(c){ if (c.getAttribute('data-kind') === 'act') box.removeChild(c); }); });
-    (actions || []).forEach(function(a){
-      var box = groups[a.group] || groups.here;
-      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip act ' + (a.group || ''); b.setAttribute('data-kind', 'act'); b.textContent = a.label;
-      if (a.hint) b.title = a.hint;
-      b.addEventListener('click', function(){ if (a.cmd === 'cab' || a.cmd === 'pawn') { input.value = a.cmd + ' '; input.focus(); addLine(a.cmd === 'cab' ? 'Cab to where? Type a place after "cab" and send.' : 'Pawn what? Type the thing after "pawn" and send.', 'system'); } else send(a.cmd); });
-      box.appendChild(b);
+    Object.keys(groups).forEach(function(g){
+      var rows = (actions || []).filter(function(a){ return (groups[a.group] ? a.group : 'here') === g; }).map(function(a){ return Object.assign({ key: a.cmd }, a); });
+      syncButtons(groups[g], rows, 'act', function(b, a){
+        b.className = 'chip act ' + g; b.textContent = a.label; b.title = a.hint || '';
+        b.onclick = function(){ if (a.cmd === 'cab' || a.cmd === 'pawn') { input.value = a.cmd + ' '; input.focus(); addLine(a.cmd === 'cab' ? 'Cab to where? Type a place after "cab" and send.' : 'Pawn what? Type the thing after "pawn" and send.', 'system'); } else send(a.cmd); };
+      });
     });
     $('actBox').classList.toggle('hidden', !$('hereActs').children.length);
   }
@@ -3362,12 +3381,13 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     kv.push('<span>' + esc(h.weatherLine || '') + '</span>');
     $('kv').innerHTML = kv.join('');
   }
-  function renderChoices(choices, freeText){
-    var box = $('choicesBox'), list = $('choices'); list.innerHTML = '';
-    if (!choices || !choices.length) { box.classList.add('hidden'); return; }
-    choices.forEach(function(c){ var b = document.createElement('button'); b.type = 'button'; b.className = 'choice'; b.textContent = c.label; b.addEventListener('click', function(){ send(c.cmd); }); list.appendChild(b); });
-    box.classList.remove('hidden');
-    if (freeText) input.focus();
+  function renderChoices(choices, freeText, step){
+    var box = $('choicesBox'), list = $('choices'), hadFocus = list.contains(document.activeElement), changed = list.dataset.step !== (step || '');
+    list.dataset.step = step || '';
+    box.classList.toggle('hidden', !choices || !choices.length);
+    syncButtons(list, (choices || []).map(function(c){ return Object.assign({ key: c.cmd }, c); }), 'choice', function(b, c){ b.className = 'choice'; b.textContent = c.label; b.onclick = function(){ send(c.cmd); }; });
+    if (hadFocus && changed) (list.querySelector('button') || input).focus();
+    else if (freeText && (!choices || !choices.length)) input.focus();
   }
   function setMode(mode){
     var creating = mode === 'create';
@@ -3391,7 +3411,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     if (d.people && !d.room) renderPeople(d.people, (lastRoom && lastRoom.items) || [], (lastRoom && lastRoom.furniture) || []);
     if (d.exits && !d.room) renderExits(d.exits);
     if (d.actions) renderActions(d.actions);
-    renderChoices(d.choices, d.freeText);
+    renderChoices(d.choices, d.freeText, d.step);
     var kinds = (d.kinds || []).concat(d.sounds || []);
     if (!d.ok && !kinds.length) kinds = ['err'];
     playKinds(kinds);
@@ -3406,21 +3426,26 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     if (r.status === 401) { TOKEN = await getToken(); if (TOKEN) r = await fetch('/api/world/command', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }, body: body }); }
     return r;
   }
-  var sending = false;
+  var sending = false, pendingLive = [], seenSeqs = new Set(), streamCursor = null, streamRetry = null;
   async function send(cmd){
     cmd = (cmd || '').trim(); if (!cmd || sending) return;
     sending = true;
+    $('commandStatus').textContent = 'Doing: ' + cmd;
+    $('cmdForm').setAttribute('aria-busy', 'true');
+    $('cmdForm').querySelector('[type="submit"]').disabled = true;
     addLine(cmd, 'you');
     hist.push(cmd); if (hist.length > 60) hist.shift(); histIx = hist.length;
     closeMenu();
     try {
       var r = await post(cmd);
       if (r.status === 401) { addLine('The gate lost track of you — sign in on the main site, then come back.', 'err'); playKind('err'); return; }
-      if (!r.ok) { addLine('The world flickered (' + r.status + ') — that one did not land. Try it again in a moment.', 'err'); playKind('err'); return; }
+      if (!r.ok) { if (!input.value) input.value = cmd; addLine('The world could not confirm that action (' + r.status + '). Check look or status before repeating an action that spends coin.', 'err'); playKind('err'); return; }
       var d = await r.json();
+      (d.seenSeqs || []).forEach(function(seq){ seenSeqs.add(seq); });
+      while (seenSeqs.size > 200) seenSeqs.delete(seenSeqs.values().next().value);
       render(d);
-    } catch (e) { addLine('No road to the city just now — check your connection.', 'err'); playKind('err'); }
-    finally { sending = false; }
+    } catch (e) { if (!input.value) input.value = cmd; addLine('The connection was interrupted. Your command is in the box. Check look or status before repeating an action that spends coin.', 'err'); playKind('err'); }
+    finally { sending = false; $('commandStatus').textContent = ''; $('cmdForm').setAttribute('aria-busy', 'false'); $('cmdForm').querySelector('[type="submit"]').disabled = false; var queued = pendingLive; pendingLive = []; queued.forEach(onLive); }
   }
   var hereTimer = null;
   function refreshHere(announcePeople){
@@ -3438,11 +3463,15 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
 
   /* ── LIVE STREAM ─────────────────────────────────────────────────────── */
   async function startStream(){
-    if (!settings.live || live || !TOKEN) return;
+    if (!settings.live || streamAbort || !TOKEN || document.hidden) return;
+    clearTimeout(streamRetry);
     var ctrl = new AbortController(); streamAbort = ctrl;
+    var retry = true;
     try {
-      var r = await fetch('/api/world/stream', { headers: { Authorization: 'Bearer ' + TOKEN }, signal: ctrl.signal });
-      if (!r.ok || !r.body) { $('m-live').textContent = 'quiet'; return; }
+      var r = await fetch('/api/world/stream' + (streamCursor === null ? '' : '?after=' + streamCursor), { headers: { Authorization: 'Bearer ' + TOKEN }, signal: ctrl.signal });
+      if (r.status === 401) { TOKEN = await getToken(); retry = !!TOKEN; }
+      if (r.status === 403) retry = false;
+      if (!r.ok || !r.body) return;
       live = true; $('m-live').textContent = 'live'; $('m-live').setAttribute('aria-label', 'Hearing the room live');
       var reader = r.body.getReader(), dec = new TextDecoder(), buf = '';
       while (true) {
@@ -3457,18 +3486,27 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
         });
       }
     } catch (e) { /* aborted or dropped */ }
-    live = false; $('m-live').textContent = 'quiet';
-    if (settings.live && !ctrl.signal.aborted) setTimeout(startStream, 4000);
+    finally {
+      if (streamAbort === ctrl) {
+        streamAbort = null; live = false; $('m-live').textContent = settings.live ? 'reconnecting' : 'quiet'; $('m-live').setAttribute('aria-label', settings.live ? 'Live connection paused; commands still work' : 'Live room listening off');
+        if (retry && settings.live && !document.hidden && !ctrl.signal.aborted) streamRetry = setTimeout(startStream, 4000);
+      }
+    }
   }
-  function stopStream(){ if (streamAbort) { streamAbort.abort(); streamAbort = null; } live = false; $('m-live').textContent = 'quiet'; }
+  function stopStream(){ clearTimeout(streamRetry); if (streamAbort) { streamAbort.abort(); streamAbort = null; } live = false; $('m-live').textContent = 'quiet'; $('m-live').setAttribute('aria-label', 'Live room listening paused'); }
   function onLive(d){
     if (d.end) return;
+    if (sending) { pendingLive.push(d); return; }
+    if (Number.isSafeInteger(d.cursor)) streamCursor = d.cursor;
     var moved = false;
     (d.events || []).forEach(function(e){
+      if (e.seq && seenSeqs.has(e.seq)) return;
+      if (e.seq) seenSeqs.add(e.seq);
       addLine(e.text, e.kind === 'system' ? 'system live' : 'live');
       playKind(e.sound || e.kind);
       if (e.kind === 'enter' || e.kind === 'leave' || /moves off|comes through|heads out|arrives|comes in|let in/.test(e.text)) moved = true;
     });
+    while (seenSeqs.size > 200) seenSeqs.delete(seenSeqs.values().next().value);
     if (moved) refreshHere(false);
   }
 
@@ -3504,7 +3542,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   }
 
   /* ── WIRING ──────────────────────────────────────────────────────────── */
-  $('cmdForm').addEventListener('submit', function(ev){ ev.preventDefault(); var c = input.value; input.value = ''; send(c); input.focus(); });
+  $('cmdForm').addEventListener('submit', function(ev){ ev.preventDefault(); if (sending) return; var c = input.value; input.value = ''; send(c); input.focus(); });
   input.addEventListener('keydown', function(ev){
     if (ev.key === 'ArrowUp') { if (histIx > 0) { ev.preventDefault(); histIx--; input.value = hist[histIx] || ''; } }
     else if (ev.key === 'ArrowDown') { if (histIx < hist.length) { ev.preventDefault(); histIx++; input.value = hist[histIx] || ''; } }
@@ -3531,7 +3569,8 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   $('testSound').addEventListener('click', function(){ unlock(); playKinds(['enter', 'coin', 'say']); addLine('That was: a door, a coin, a voice.', 'system'); });
   renderToggles();
 
-  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible' && settings.live && !live) startStream(); });
+  document.addEventListener('visibilitychange', function(){ if (document.hidden) stopStream(); else if (settings.live) startStream(); });
+  window.addEventListener('pagehide', stopStream);
 
   (async function init(){
     input.disabled = true; input.placeholder = 'signing you in…';

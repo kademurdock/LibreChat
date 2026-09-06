@@ -52,9 +52,18 @@ function lifeOf(ch) {
 
 async function runCommand({ userId, displayName, command, isWizard = false, live = false }) {
   const ch = await oldEngine.getOrCreateChar(userId, displayName);
+  // City activity belongs to the live room, not the reply to this command.
   await reverie.tickWorld();
   try { await lifeTick.run(); } catch (e) { logger.error('[life] tick failed (non-fatal):', e && e.message); }
+  const { result, events } = await oldEngine.withCommandEvents(() => runTurn({ ch, userId, command, isWizard, live }));
+  if (events.length) {
+    await MooChar.updateOne({ userId: String(userId), active: true }, { $push: { 'attrs.seenEventSeqs': { $each: events, $slice: -100 } } });
+    result.seenSeqs = events;
+  }
+  return result;
+}
 
+async function runTurn({ ch, userId, command, isWizard, live }) {
   const life = lifeOf(ch);
   const lines = [];
   let kinds = [];
@@ -115,23 +124,15 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     }
   } catch (e) {
     logger.error('[life] command failed:', e && (e.stack || e.message));
-    result = { ok: false, lines: [...lines, 'The world flickered. That one did not land — try it again.'], kinds };
+    result = { ok: false, lines: [...lines, 'The world flickered before it could confirm that command. Check look or status before repeating a purchase or another action.'], kinds };
   }
+
+  // Older verbs and character switching write through their own document.
+  const current = await MooChar.findOne({ userId: String(userId), active: true });
+  if (current) { ctx.ch = current; ctx.life = lifeOf(current); ctx._room = null; }
 
   /* AFTER-EFFECTS — needs and skills queued by the verb, or implied by kind. */
   try { await applyEffects(ctx, result); } catch (e) { logger.error('[life] effects failed:', e && e.message); }
-
-  /* YOU SAW THAT. Anything the verb itself put in the chronicle — a citizen's
-   * answer, Sgt. Vann arriving — was already in this turn's lines, so the
-   * cursor moves past it. Without this, "talk to Pat" hands you Pat's line
-   * again as next turn's MEANWHILE (the old engine has done that since
-   * August). The live stream keeps its own cursor and is not touched. */
-  if (!live) {
-    try {
-      const top = await ctxlib.MooEvent.findOne({}).sort({ seq: -1 }).select('seq').lean();
-      if (top && top.seq > (ch.lastSeenSeq || 0)) { ch.lastSeenSeq = top.seq; await MooChar.updateOne({ _id: ch._id }, { $set: { lastSeenSeq: top.seq } }); }
-    } catch (_) { /* cosmetic */ }
-  }
 
   /* DECORATE — the HUD, the buttons, the people, the compass. */
   if (typeof meanwhileItems !== 'undefined' && meanwhileItems.length) result.meanwhile = meanwhileItems;
@@ -173,7 +174,7 @@ async function dispatch(ctx) {
   }
 
   /* THE OLD ENGINE still knows a hundred verbs. Let it try. */
-  const old = await oldEngine.runCommand({ userId: ch.userId, displayName: ch.name, command: cmd, isWizard: ctx.isWizard });
+  const old = await oldEngine.runCommand({ userId: ch.userId, displayName: ch.name, command: cmd, isWizard: ctx.isWizard, live: true });
   if (old && !old.unknown) {
     /* merge: our meanwhile lines first, then theirs (minus a duplicate MEANWHILE) */
     const theirs = (old.lines || []).filter((l) => !/^MEANWHILE/.test(l));
@@ -191,6 +192,7 @@ async function dispatch(ctx) {
 /** Needs and skills settle after the verb. Implied effects come from what
  *  the old engine reported (its kinds) so its hundred verbs feed the meters too. */
 async function applyEffects(ctx, result) {
+  if (!result || !result.ok) return;
   const { ch, life } = ctx;
   const delta = { ...ctx.fx.needs };
   if (ctx.fromOld && result && result.ok) {

@@ -63,11 +63,7 @@ function joinAnd(list) { const a = list.filter(Boolean); if (a.length <= 1) retu
 
 /** Write one line into the chronicle for a room. Same shape as engine.emit. */
 async function emit(roomId, actorUserId, actorName, kind, text, sound) {
-  const seq = await nextSeq();
-  const doc = { seq, roomId, actorUserId, actorName, kind, text, at: new Date() };
-  if (sound) doc.sound = sound;
-  await MooEvent.create(doc);
-  return seq;
+  return require('../engine').emit(roomId, actorUserId, actorName, kind, text, sound);
 }
 
 /** Whisper lane: a private event only one user's meanwhile can see. */

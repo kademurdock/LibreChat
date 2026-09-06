@@ -8,6 +8,14 @@
  * OUT from a standing gate rather than into a void. */
 const { MooRoom, MooChar, MooItem, MooEvent, MooDistrict, MooSound, nextSeq } = require('~/models/kadeMoo');
 const axios = require('axios');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const commandEvents = new AsyncLocalStorage();
+
+async function withCommandEvents(run) {
+  const events = [];
+  const result = await commandEvents.run(events, run);
+  return { result, events };
+}
 /* KADE 2026-08-13 (round 9): `logger` was used in this file and never
  * imported. The ledger caught it once already — a catch block whose logger
  * does not exist means the error HANDLING is the thing that throws, so a
@@ -128,6 +136,8 @@ async function emit(roomId, actorUserId, actorName, kind, text, sound) {
   const doc = { seq, roomId, actorUserId, actorName, kind, text, at: new Date() };
   if (sound) doc.sound = sound;
   await MooEvent.create(doc);
+  const observed = commandEvents.getStore();
+  if (observed) observed.push(seq);
   return seq;
 }
 
@@ -142,7 +152,7 @@ async function getOrCreateChar(userId, displayName) {
   }
   if (!ch) {
     const name = String(displayName || 'a newcomer').slice(0, 40);
-    ch = await MooChar.create({ userId: String(userId), name, roomId: 'city_gate', active: true, attrs: { alive: true, coin: 20, lastMeal: Date.now(), lastSleep: Date.now() } });
+    ch = await MooChar.create({ userId: String(userId), name, roomId: 'city_gate', active: true, attrs: { alive: true, coin: 20, lastMeal: Date.now(), lastSleep: Date.now(), life: { newcomer: true } } });
     await emit('city_gate', String(userId), name, 'enter', `${name} steps through the Threshold Gate for the first time.`);
   }
   /* LAW 3 (the Meanwhile): the world never punishes leaving. Away a day or
@@ -190,17 +200,18 @@ async function findItem(name, locations) {
 /** Everything that happened in the char's room since their cursor — the
  *  "meanwhile" lines. Own actions excluded; capped so a busy room summarizes. */
 async function collectMeanwhile(ch) {
+  const top = await MooEvent.findOne({}).sort({ seq: -1 }).select('seq').lean();
+  const upper = top ? top.seq : (ch.lastSeenSeq || 0);
   const events = await MooEvent.find({
     roomId: { $in: [ch.roomId, `whisper:${ch.userId}`] },
-    seq: { $gt: ch.lastSeenSeq },
+    seq: { $gt: ch.lastSeenSeq || 0, $lte: upper, $nin: ch.attrs?.seenEventSeqs || [] },
     actorUserId: { $ne: ch.userId },
   })
     .sort({ seq: 1 })
     .limit(25)
     .lean();
-  const top = await MooEvent.findOne({}).sort({ seq: -1 }).select('seq').lean();
-  ch.lastSeenSeq = top ? top.seq : ch.lastSeenSeq;
-  await MooChar.updateOne({ userId: ch.userId }, { $set: { lastSeenSeq: ch.lastSeenSeq, lastActiveAt: new Date() } });
+  ch.lastSeenSeq = events.length === 25 ? events[events.length - 1].seq : upper;
+  await MooChar.updateOne({ _id: ch._id }, { $max: { lastSeenSeq: ch.lastSeenSeq }, $set: { lastActiveAt: new Date() }, $pull: { 'attrs.seenEventSeqs': { $lte: ch.lastSeenSeq } } });
   /* structured for sound-driving clients; text-consumers join .text */
   /* KADE 2026-08-12: `sound` rides along beside `kind`. Additive, same shape
    * as the build-197 roomId addition -- a client that does not know the field
@@ -260,10 +271,10 @@ function normalize(cmdRaw) {
 }
 
 /** The one entry point. Returns { lines: [...facts...], room?: {...} }. */
-async function runCommand({ userId, displayName, command, isWizard = false }) {
+async function runCommand({ userId, displayName, command, isWizard = false, live = false }) {
   const ch = await getOrCreateChar(userId, displayName);
   await reverie.tickWorld();
-  const meanwhile = await collectMeanwhile(ch);
+  const meanwhile = live ? [] : await collectMeanwhile(ch);
   const cmd = normalize(command);
   const lower = cmd.toLowerCase();
   const lines = [];
@@ -2345,4 +2356,4 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
 /* LIFE LAYER (Sep 6 2026): the Sims side of the city lives in ./life and
  * shares this engine's soul-loading and meanwhile cursor, so both layers read
  * one world and one chronicle. */
-module.exports = { runCommand, getOrCreateChar, collectMeanwhile, describeRoom, emit };
+module.exports = { runCommand, getOrCreateChar, collectMeanwhile, describeRoom, emit, withCommandEvents };

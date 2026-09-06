@@ -384,7 +384,7 @@ socialVerb({
   async run(ctx) {
     const o = ctx.life.offer;
     if (!o || o.until < Date.now()) {
-      const old = await require('../engine').runCommand({ userId: ctx.userId, displayName: ctx.ch.name, command: 'accept', isWizard: ctx.isWizard });
+      const old = await require('../engine').runCommand({ userId: ctx.userId, displayName: ctx.ch.name, command: 'accept', isWizard: ctx.isWizard, live: true });
       return { ...old, lines: [...ctx.lines, ...(old.lines || []).filter((l) => !/^MEANWHILE/.test(l))] };
     }
     await setAttrs(ctx.ch, { 'life.offer': null }); ctx.life.offer = null;

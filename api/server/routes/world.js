@@ -213,16 +213,23 @@ router.get('/stream', async (req, res) => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let beat = 0;
   let lastTouch = 0;
+  let activeId = null;
+  let cursor = 0;
+  const resume = Number(req.query.after);
   try {
     while (alive) {
-      const ch = await MooChar.findOne({ userId, active: true }).select('_id roomId lastSeenSeq').lean();
+      const ch = await MooChar.findOne({ userId, active: true }).select('_id roomId lastSeenSeq attrs.seenEventSeqs').lean();
       if (!ch) { res.write('data: {"end":"no character"}\n\n'); break; }
-      let cursor = ch.lastSeenSeq || 0;
-      const evs = await MooEvent.find({ roomId: { $in: [ch.roomId, `whisper:${userId}`] }, seq: { $gt: cursor }, actorUserId: { $ne: userId } }).sort({ seq: 1 }).limit(40).lean();
+      if (String(ch._id) !== activeId) {
+        cursor = activeId === null && Number.isSafeInteger(resume) && resume >= 0 ? resume : (ch.lastSeenSeq || 0);
+        activeId = String(ch._id);
+        res.write(`data: ${JSON.stringify({ cursor, events: [] })}\n\n`);
+      }
+      const evs = await MooEvent.find({ roomId: { $in: [ch.roomId, `whisper:${userId}`] }, seq: { $gt: cursor, $nin: ch.attrs?.seenEventSeqs || [] }, actorUserId: { $ne: userId } }).sort({ seq: 1 }).limit(40).lean();
       if (evs.length) {
         cursor = evs[evs.length - 1].seq;
-        await MooChar.updateOne({ _id: ch._id }, { $set: { lastSeenSeq: cursor } });
-        res.write(`data: ${JSON.stringify({ events: evs.map((e) => ({ kind: e.kind, text: e.text, sound: e.sound || null, actor: e.actorName, roomId: e.roomId, at: e.at })) })}\n\n`);
+        await MooChar.updateOne({ _id: ch._id }, { $max: { lastSeenSeq: cursor } });
+        res.write(`id: ${cursor}\ndata: ${JSON.stringify({ cursor, events: evs.map((e) => ({ seq: e.seq, kind: e.kind, text: e.text, sound: e.sound || null, actor: e.actorName, roomId: e.roomId, at: e.at })) })}\n\n`);
       } else if (beat % 8 === 0) {
         res.write(': hb\n\n');
       }
