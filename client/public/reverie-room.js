@@ -188,6 +188,7 @@
     draw(room, hud);
     var g = room.hangout,
       box = $('hangoutPanel');
+    if (!g && box.contains(document.activeElement)) $('cmdInput').focus();
     box.hidden = !g;
     if (!g) return;
     $('hangoutTitle').textContent = g.title;

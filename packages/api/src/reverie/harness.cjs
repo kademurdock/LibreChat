@@ -1,5 +1,9 @@
-/* node -r <local dependency bootstrap> packages/api/src/reverie/harness.cjs */
+/* Build @librechat/api and install mongodb-memory-server, then run from the repo:
+ * node packages/api/src/reverie/harness.cjs. Uses disposable MongoDB only. */
 const assert = require('node:assert/strict');
+const path = require('node:path');
+require('module-alias').addAlias('~', path.resolve(__dirname, '../../../../api'));
+process.env.REVERIE_FAST = '1';
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 (async () => {
