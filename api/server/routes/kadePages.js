@@ -2914,201 +2914,639 @@ const briefHtml = `<!doctype html><html lang="en"><head><title>Morning Brief —
  * hand Kade a file per kind and it replaces the synth voice of the world.
  * Deliberately its OWN surface — not an agent chat, not the platform's face:
  * a doorway page. Ambience per district, off by default, remembered. */
-const worldHtml = `<!doctype html><html lang="en"><head><title>The World — beyond the Threshold Gate</title>${SHARED_HEAD}
+const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${SHARED_HEAD}
 <style>
-  #log { min-height: 40vh; max-height: 58vh; overflow-y: auto; padding: .8rem 1rem; border-radius: 14px;
-         background: #101216; color: #d6e2d6; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-         font-size: .98rem; line-height: 1.55; border: 1px solid #22262e; }
-  @media (prefers-color-scheme: light){ #log { background:#14161a; } }
-  #log p { margin: .35rem 0; }
-  #log p.you { color: #9ecbff; }
-  #log p.world { color: #d6e2d6; }
-  #log p.meanwhile { color: #c9b47a; font-style: italic; }
-  #log p.err { color: #ff9d8f; }
-  form.cmd { display: flex; gap: .5rem; margin-top: .7rem; }
-  form.cmd input { flex: 1; font-size: 1.05rem; padding: .75rem .9rem; border-radius: 12px; border: 1px solid #b9bfc9;
-                   background: #fff; color: #16181d; font-family: ui-monospace, Menlo, Consolas, monospace; }
-  @media (prefers-color-scheme: dark){ form.cmd input { background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
-  form.cmd input:focus-visible { outline: 4px solid #ffbf47; outline-offset: 2px; }
-  form.cmd button { font-size: 1.05rem; font-weight: 700; padding: .75rem 1.2rem; border-radius: 12px; border: 0;
-                    background: #1f7a49; color: #fff; cursor: pointer; }
-  form.cmd button:focus-visible { outline: 4px solid #ffbf47; outline-offset: 3px; }
-  .toolbar { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .6rem; }
-  .toolbar button { font-size: .92rem; padding: .5rem .8rem; border-radius: 10px; border: 1px solid #b9bfc9;
-                    background: transparent; color: inherit; cursor: pointer; }
-  .toolbar button:focus-visible { outline: 4px solid #ffbf47; outline-offset: 2px; }
-  .toolbar button[aria-pressed="true"] { background: #1f7a49; color: #fff; border-color: #1f7a49; }
+  /* ── REVERIE CLIENT (Sep 6 2026) ─────────────────────────────────────────
+   * Two audiences, one page. For a screen reader: a single live log that says
+   * everything, big labelled buttons for everything, nothing that needs a
+   * mouse, nothing decorative in the tree. For eyes: a scene that changes
+   * color and weather by ward, meters that fill, chips that glow. The picture
+   * is aria-hidden top to bottom; the words carry the game.                 */
+  :root {
+    --ink: #16181d; --paper: #f4f2ee; --card: #ffffff; --line: #e1ddd5; --muted: #6b6f78;
+    --accent: #1f7a49; --accent-ink: #fff; --focus: #ffbf47; --danger: #b3261e;
+    --w1: #6f5aa8; --w2: #2d2545; --glow: #ffd27a; /* ward palette, swapped by data-ward */
+    --sky: linear-gradient(180deg, #6f5aa8 0%, #2d2545 100%);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #e9e7e2; --paper: #131418; --card: #1c1e24; --line: #2b2e36; --muted: #a0a4ad; }
+  }
+  body { max-width: 1100px; padding-left: .8rem; padding-right: .8rem; background: var(--paper); color: var(--ink); }
+  /* ward palettes */
+  [data-ward="gate"]       { --w1: #6f5aa8; --w2: #2d2545; --glow: #ffd27a; }
+  [data-ward="bellward"]   { --w1: #c9a35e; --w2: #4a3b22; --glow: #fff1c4; }
+  [data-ward="hook"]       { --w1: #2f6f8f; --w2: #14303f; --glow: #b8e2ff; }
+  [data-ward="tanglefoot"] { --w1: #b83a8a; --w2: #1a0b1f; --glow: #ff7ad9; }
+  [data-ward="patch"]      { --w1: #c96a3b; --w2: #4b2a1a; --glow: #ffd9a8; }
+  [data-ward="millrace"]   { --w1: #7a6a5a; --w2: #2e2a26; --glow: #ffb26b; }
+  [data-ward="sweetwater"] { --w1: #4e9a6a; --w2: #1f4a33; --glow: #d8ffe3; }
+  [data-ward="fairlawn"]   { --w1: #7fb8a4; --w2: #2f5a52; --glow: #ffffff; }
+  [data-ward="longacre"]   { --w1: #d3a24a; --w2: #4a3a1e; --glow: #fff0b3; }
+  [data-ward="gravewalk"]  { --w1: #5b5e6a; --w2: #17181d; --glow: #cfd6ff; }
+
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; margin-bottom: .5rem; }
+  header.top h1 { font-size: 1.35rem; margin: 0; letter-spacing: .02em; }
+  header.top .meta { font-size: .95rem; color: var(--muted); display: flex; gap: .8rem; flex-wrap: wrap; align-items: center; }
+  header.top .meta b { color: var(--ink); font-weight: 600; }
+  .pill { display: inline-block; padding: .15rem .55rem; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: .85rem; }
+
+  .layout { display: grid; grid-template-columns: 1fr; gap: .8rem; }
+  @media (min-width: 900px) { .layout { grid-template-columns: 1.35fr 1fr; align-items: start; } .col-right { position: sticky; top: .5rem; } }
+
+  /* scene */
+  .scene { position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--line); background: var(--card); min-height: 150px; }
+  .scene .art { position: absolute; inset: 0; background: linear-gradient(180deg, var(--w1) 0%, var(--w2) 100%); opacity: .95; transition: background 1.2s ease; }
+  .scene .art .sun { position: absolute; width: 140px; height: 140px; border-radius: 50%; right: 8%; top: -40px; background: radial-gradient(circle, var(--glow) 0%, transparent 70%); opacity: .7; filter: blur(4px); animation: breathe 9s ease-in-out infinite; }
+  .scene .art .sky2 { position: absolute; inset: 0; background: radial-gradient(ellipse at 20% 110%, rgba(255,255,255,.18), transparent 60%); }
+  .scene .art .skyline { position: absolute; left: 0; right: 0; bottom: 0; height: 46%; background: var(--w2); clip-path: polygon(0 100%, 0 60%, 6% 60%, 6% 40%, 12% 40%, 12% 55%, 20% 55%, 20% 30%, 27% 30%, 27% 50%, 35% 50%, 35% 62%, 43% 62%, 43% 35%, 50% 35%, 50% 45%, 58% 45%, 58% 25%, 64% 25%, 64% 52%, 72% 52%, 72% 38%, 80% 38%, 80% 58%, 88% 58%, 88% 44%, 95% 44%, 95% 63%, 100% 63%, 100% 100%); opacity: .85; }
+  .scene .art .water { position: absolute; left: -10%; right: -10%; bottom: -6px; height: 22%; background: repeating-linear-gradient(90deg, rgba(255,255,255,.10) 0 18px, transparent 18px 36px); opacity: 0; animation: drift 12s linear infinite; }
+  .scene[data-water="1"] .art .water { opacity: .6; }
+  .scene .art .lantern { position: absolute; bottom: 44%; width: 10px; height: 10px; border-radius: 50%; background: var(--glow); box-shadow: 0 0 18px 6px var(--glow); opacity: .0; animation: flicker 3.4s ease-in-out infinite; }
+  .scene[data-dark="1"] .art .lantern { opacity: .9; }
+  .scene .art .lantern.l1 { left: 12%; } .scene .art .lantern.l2 { left: 47%; animation-delay: 1.1s; } .scene .art .lantern.l3 { left: 78%; animation-delay: 2.2s; }
+  .scene[data-dark="1"] .art { filter: brightness(.55) saturate(.8); }
+  .scene[data-dark="1"] .art .sun { opacity: .25; }
+  .scene .wx { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1s; }
+  .scene[data-wx="rain"] .wx, .scene[data-wx="storm"] .wx { opacity: .55; background: repeating-linear-gradient(105deg, transparent 0 14px, rgba(255,255,255,.35) 14px 15px); animation: rain .55s linear infinite; }
+  .scene[data-wx="snow"] .wx { opacity: .8; background-image: radial-gradient(rgba(255,255,255,.9) 1.4px, transparent 1.6px), radial-gradient(rgba(255,255,255,.7) 1px, transparent 1.2px); background-size: 46px 46px, 29px 29px; animation: snow 9s linear infinite; }
+  .scene[data-wx="fog"] .wx { opacity: .7; background: linear-gradient(180deg, rgba(220,220,230,.55), rgba(220,220,230,.15)); }
+  .scene[data-wx="overcast"] .art { filter: saturate(.6) brightness(.85); }
+  .scene[data-wx="heat"] .art { filter: saturate(1.3) contrast(1.05); }
+  .scene .text { position: relative; padding: 1rem 1.1rem 1.1rem; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.55); background: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.55)); min-height: 150px; display: flex; flex-direction: column; justify-content: flex-end; }
+  .scene .text h2 { margin: 0 0 .3rem; font-size: 1.5rem; }
+  .scene .text p { margin: 0; font-size: 1.02rem; line-height: 1.5; max-width: 60ch; }
+  .scene .text .ward { font-size: .85rem; opacity: .9; text-transform: uppercase; letter-spacing: .12em; margin-bottom: .2rem; }
+  @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+  @keyframes drift { from { transform: translateX(0); } to { transform: translateX(36px); } }
+  @keyframes flicker { 0%,100% { opacity: .85; } 50% { opacity: .55; } }
+  @keyframes rain { from { background-position: 0 0; } to { background-position: -8px 40px; } }
+  @keyframes snow { from { background-position: 0 0, 0 0; } to { background-position: 20px 46px, -10px 29px; } }
+  @media (prefers-reduced-motion: reduce) { .scene * { animation: none !important; } }
+
+  /* chips (people, things, actions) */
+  .chips { display: flex; flex-wrap: wrap; gap: .45rem; margin: .5rem 0 0; }
+  .chip { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: .55rem .9rem; font-size: .98rem; cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; gap: .35rem; }
+  .chip:hover { border-color: var(--accent); }
+  .chip:focus-visible, .btn:focus-visible, .cmd input:focus-visible, .compass button:focus-visible, .choice:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .chip.person { border-color: #8aa0c8; }
+  .chip.person.citizen { border-color: #c0a06a; } .chip.person.player { border-color: #6aa0e0; font-weight: 600; } .chip.person.stray, .chip.person.pet { border-color: #8bb98b; } .chip.person.child { border-color: #e0a0c0; }
+  .chip.thing { border-style: dashed; }
+  .chip.act { background: color-mix(in srgb, var(--accent) 12%, var(--card)); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .chip.act.move { background: color-mix(in srgb, #4d6fb8 14%, var(--card)); border-color: #4d6fb8; }
+  .chip.act.self { background: var(--card); }
+  .section { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: .8rem .95rem; }
+  .section h3 { margin: 0 0 .35rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+
+  /* log */
+  #log { min-height: 34vh; max-height: 52vh; overflow-y: auto; padding: .8rem 1rem; border-radius: 16px; background: var(--card); border: 1px solid var(--line); font-size: 1.02rem; line-height: 1.55; scroll-behavior: smooth; }
+  @media (min-width: 900px) { #log { min-height: 40vh; max-height: 60vh; } }
+  #log p { margin: .4rem 0; }
+  #log p.you { color: var(--muted); font-style: italic; }
+  #log p.you::before { content: "› "; }
+  #log p.room { font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+  #log p.room.open { display: block; -webkit-line-clamp: unset; }
+  #log p.live { border-left: 3px solid var(--w1); padding-left: .55rem; }
+  #log p.err { color: var(--danger); }
+  #log p.system { color: var(--muted); }
+  #log p.prompt { font-weight: 600; font-size: 1.08rem; }
+
+  /* choices */
+  #choices { display: grid; gap: .45rem; margin-top: .6rem; }
+  .choice { text-align: left; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 12px; padding: .8rem 1rem; font-size: 1.02rem; cursor: pointer; min-height: 48px; }
+  .choice:hover { border-color: var(--accent); }
+
+  /* compass */
+  .compass { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; max-width: 300px; margin: .4rem auto 0; }
+  .compass button { min-height: 52px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .compass button:disabled { opacity: .28; cursor: default; }
+  .compass button.center { background: color-mix(in srgb, var(--w1) 25%, var(--card)); border-color: var(--w1); }
+  .compass small { display: block; font-weight: 400; font-size: .72rem; color: var(--muted); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0 auto; }
+  .vert { display: flex; gap: .4rem; justify-content: center; margin-top: .4rem; flex-wrap: wrap; }
+  .vert button { min-height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); padding: 0 .9rem; font-weight: 600; cursor: pointer; }
+  .vert button:disabled { opacity: .28; }
+
+  /* command bar */
+  form.cmd { display: flex; gap: .45rem; margin-top: .6rem; position: sticky; bottom: calc(62px + env(safe-area-inset-bottom, 0px)); /* clears the site tab bar */ background: var(--paper); padding: .35rem 0; z-index: 3; }
+  form.cmd input { flex: 1; font-size: 1.05rem; padding: .8rem .9rem; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); min-height: 48px; }
+  .btn { font-size: 1rem; font-weight: 700; padding: 0 1rem; border-radius: 12px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; min-height: 48px; min-width: 48px; }
+  .btn.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); font-weight: 600; }
+  .btn.mic[aria-pressed="true"] { background: var(--danger); color: #fff; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(179,38,30,.5); } 50% { box-shadow: 0 0 0 8px rgba(179,38,30,0); } }
+
+  /* meters */
+  .meters { display: grid; gap: .45rem; }
+  .meter { display: grid; grid-template-columns: 5.2rem 1fr 4.6rem; align-items: center; gap: .5rem; font-size: .95rem; }
+  .meter .bar { height: 12px; border-radius: 999px; background: var(--line); overflow: hidden; }
+  .meter .bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width .8s ease, background .8s; }
+  .meter .bar i.low { background: #d98c2b; } .meter .bar i.bad { background: var(--danger); }
+  .meter .word { color: var(--muted); font-size: .85rem; text-align: right; }
+  .mood { font-size: 1.05rem; margin: .2rem 0 .5rem; }
+  .kv { display: flex; flex-wrap: wrap; gap: .4rem .9rem; font-size: .92rem; color: var(--muted); margin-top: .5rem; }
+  .kv b { color: var(--ink); font-weight: 600; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .5rem; align-items: center; }
+  .toolbar label { font-size: .9rem; display: inline-flex; gap: .35rem; align-items: center; }
+  .toolbar input[type=range] { width: 90px; }
+  .sr-only { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  details.settings summary { cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center; }
+  .hidden { display: none !important; }
+  footer.muted { margin-top: 1rem; font-size: .85rem; }
 </style>
 </head><body>
-<a class="back" href="/you">&larr; Back</a>
-<h1>The World</h1>
-<p class="muted">The city beyond the Threshold Gate. Type commands — <strong>n s e w</strong>, <strong>look</strong>, <strong>take lantern</strong>, <strong>say hello</strong>, <strong>who</strong> — or dictate them. No narrator between you and the ground; this is the direct line. Sounds mark what happens (toggle below). Your character and everything you do here are the same ones the city's keepers see.</p>
-<div id="log" role="log" aria-live="polite" aria-label="World output"></div>
-<form class="cmd" id="cmdForm">
-  <label for="cmdInput" style="position:absolute;left:-9999px;">Command</label>
-  <input id="cmdInput" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="look" />
-  <button type="submit">Do</button>
-</form>
-<div class="toolbar" role="group" aria-label="Quick commands and sound">
-  <button type="button" data-cmd="look">Look</button>
-  <button type="button" data-cmd="n">North</button>
-  <button type="button" data-cmd="s">South</button>
-  <button type="button" data-cmd="e">East</button>
-  <button type="button" data-cmd="w">West</button>
-  <button type="button" data-cmd="inventory">Inventory</button>
-  <button type="button" data-cmd="who">Who</button>
-  <button type="button" id="sfxToggle" aria-pressed="true">Sounds: on</button>
-  <button type="button" id="ambToggle" aria-pressed="false">Ambience: off</button>
+<header class="top">
+  <div>
+    <a class="back" href="/you" aria-label="Back to Kade-AI">&larr; Back</a>
+    <h1>Reverie</h1>
+  </div>
+  <div class="meta" id="meta" aria-live="off">
+    <span class="pill" id="m-name">—</span>
+    <span class="pill" id="m-ward">—</span>
+    <span class="pill" id="m-clock">—</span>
+    <span class="pill" id="m-coin">—</span>
+    <span class="pill" id="m-live" title="Live connection">…</span>
+  </div>
+</header>
+
+<div class="layout">
+  <div class="col-left">
+    <section class="scene" id="scene" data-ward="gate" data-dark="0" data-wx="clear" data-water="0" aria-live="off">
+      <div class="art" aria-hidden="true"><div class="sun"></div><div class="sky2"></div><div class="skyline"></div><div class="water"></div><span class="lantern l1"></span><span class="lantern l2"></span><span class="lantern l3"></span><div class="wx"></div></div>
+      <div class="text">
+        <div class="ward" id="s-ward">the Threshold</div>
+        <h2 id="s-name">The Threshold Gate</h2>
+        <p id="s-desc">Signing you in…</p>
+      </div>
+    </section>
+
+    <div class="section" id="hereBox" style="margin-top:.8rem">
+      <h3 id="hereTitle">Here with you</h3>
+      <div class="chips" id="people" role="group" aria-labelledby="hereTitle"></div>
+      <div class="chips" id="things" role="group" aria-label="Things here"></div>
+      <div class="chips" id="personMenu" role="group" aria-label="What to do with them" hidden></div>
+    </div>
+
+    <div id="log" role="log" aria-live="polite" aria-relevant="additions" aria-label="The city"></div>
+
+    <div id="choicesBox" class="section hidden" style="margin-top:.8rem">
+      <h3 id="choicesTitle">Choose</h3>
+      <div id="choices" role="group" aria-labelledby="choicesTitle"></div>
+    </div>
+
+    <form class="cmd" id="cmdForm">
+      <label for="cmdInput" class="sr-only">Command or answer</label>
+      <input id="cmdInput" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="type, or tap a button" enterkeyhint="send" />
+      <button type="button" class="btn ghost mic" id="micBtn" aria-pressed="false" aria-label="Dictate a command">🎤 Talk</button>
+      <button type="submit" class="btn" aria-label="Send">Do</button>
+    </form>
+  </div>
+
+  <div class="col-right">
+    <div class="section" id="moveBox">
+      <h3>Move</h3>
+      <div class="compass" id="compass" role="group" aria-label="Compass">
+        <button type="button" data-dir="nw">NW<small></small></button>
+        <button type="button" data-dir="n">N<small></small></button>
+        <button type="button" data-dir="ne">NE<small></small></button>
+        <button type="button" data-dir="w">W<small></small></button>
+        <button type="button" class="center" id="lookBtn" aria-label="Look around">Look</button>
+        <button type="button" data-dir="e">E<small></small></button>
+        <button type="button" data-dir="sw">SW<small></small></button>
+        <button type="button" data-dir="s">S<small></small></button>
+        <button type="button" data-dir="se">SE<small></small></button>
+      </div>
+      <div class="vert" id="vert">
+        <button type="button" data-dir="u">Up</button>
+        <button type="button" data-dir="d">Down</button>
+        <button type="button" data-dir="in">In</button>
+        <button type="button" data-dir="out">Out</button>
+      </div>
+      <div class="chips" id="moveActs"></div>
+    </div>
+
+    <div class="section" id="actBox" style="margin-top:.8rem">
+      <h3>Right here you can</h3>
+      <div class="chips" id="hereActs"></div>
+    </div>
+
+    <div class="section" id="hudBox" style="margin-top:.8rem">
+      <h3>You</h3>
+      <div class="mood" id="mood">—</div>
+      <div class="meters" id="meters"></div>
+      <div class="kv" id="kv"></div>
+      <div class="chips" id="selfActs" style="margin-top:.6rem"></div>
+    </div>
+
+    <details class="settings section" style="margin-top:.8rem">
+      <summary>Sound &amp; settings</summary>
+      <div class="toolbar">
+        <button type="button" class="chip" id="sfxToggle" aria-pressed="true">Sounds: on</button>
+        <button type="button" class="chip" id="ambToggle" aria-pressed="true">Ambience: on</button>
+        <label>Sounds <input type="range" id="sfxVol" min="0" max="100" value="80" aria-label="Sound volume"></label>
+        <label>Ambience <input type="range" id="ambVol" min="0" max="100" value="35" aria-label="Ambience volume"></label>
+      </div>
+      <div class="toolbar">
+        <button type="button" class="chip" id="verboseToggle" aria-pressed="true">Read the room on every move: on</button>
+        <button type="button" class="chip" id="liveToggle" aria-pressed="true">Hear the room live: on</button>
+        <button type="button" class="chip" id="testSound">Test sound</button>
+      </div>
+      <p class="muted" style="font-size:.85rem;margin:.5rem 0 0">Everything on this page is a button or a line of text. Typing works everywhere buttons do. Numbers pick from a list. "help" any time; "what" says what you can do right here.</p>
+    </details>
+  </div>
 </div>
-<footer class="muted">&mdash; a door, not a chat</footer>
+<footer class="muted">&mdash; a city, not a chat &middot; <a href="/help/world">how Reverie works</a></footer>
+
 <script>
 (function(){
-  var TOKEN=null, hist=[], histIx=-1;
-  var logEl=document.getElementById('log');
-  var input=document.getElementById('cmdInput');
+  'use strict';
+  var $ = function(id){ return document.getElementById(id); };
+  var TOKEN = null, hist = [], histIx = -1, live = false, streamAbort = null, lastRoom = null, MENU_FOR = null;
+  var logEl = $('log'), input = $('cmdInput');
+  var settings = { sfx: true, amb: true, sfxVol: .8, ambVol: .35, verbose: true, live: true };
+  try { var s = JSON.parse(localStorage.getItem('reverie_settings') || '{}'); Object.assign(settings, s); } catch (e) {}
+  function saveSettings(){ try { localStorage.setItem('reverie_settings', JSON.stringify(settings)); } catch (e) {} }
 
-  /* ── SOUND ─────────────────────────────────────────────────────────────
-   * Every engine event kind gets a voice. SOUND_URLS is HER override lane:
-   * set a URL per kind (her designed audio) and it replaces the synth. */
-  var SOUND_URLS = { move:null, look:null, take:null, drop:null, say:null, emote:null, enter:null, leave:null, err:null };
-  var ROOM_SOUNDS = {}, DISTRICT_SOUNDS = {}, ambAudio = null;
-  fetch('/api/world/sounds').then(function(r){ return r.ok ? r.json() : null; }).then(function(m){
-    if(!m) return;
-    Object.keys(m.event||{}).forEach(function(k){ SOUND_URLS[k]=m.event[k]; });
-    ROOM_SOUNDS=m.room||{}; DISTRICT_SOUNDS=m.district||{};
-  }).catch(function(){});
-  var AC=null; function ac(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return AC; }
-  var sfxOn=true, ambOn=false, ambNodes=null;
-  try{ sfxOn = localStorage.getItem('world_sfx')!=='0'; ambOn = localStorage.getItem('world_amb')==='1'; }catch(e){}
-
-  function tone(freq,dur,delay,type,gain){
-    var ctx=ac(); if(!ctx) return;
-    var o=ctx.createOscillator(), g=ctx.createGain();
-    o.type=type||'sine'; o.frequency.value=freq;
-    g.gain.setValueAtTime(0.0001, ctx.currentTime+delay);
-    g.gain.exponentialRampToValueAtTime(gain||0.12, ctx.currentTime+delay+0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+delay+dur);
-    o.connect(g); g.connect(ctx.destination);
-    o.start(ctx.currentTime+delay); o.stop(ctx.currentTime+delay+dur+0.05);
+  /* ── SOUND ──────────────────────────────────────────────────────────────
+   * Three tiers: her designed audio from the manifest (by exact id), the
+   * house game sounds already on this site, then a synth earcon so no event
+   * is ever silent. Ambience is a ward bed under a room tone, crossfaded. */
+  var MANIFEST = { event: {}, room: {}, district: {} };
+  var LOCAL = {
+    coin: '/assets/sounds/coin_flip.mp3', card_deal: '/assets/sounds/card_deal.mp3', card_flip: '/assets/sounds/card_flip.mp3', chip_win: '/assets/sounds/chip_win.mp3',
+    page_turn: '/assets/sounds/page_turn.mp3', levelup: '/assets/sounds/correct_ding.mp3', err: '/assets/sounds/wrong_buzz.mp3', locked: '/assets/sounds/wrong_buzz.mp3',
+    'bowl.roll': '/assets/sounds/dice_roll.mp3', 'bowl.strike': '/assets/sounds/jackpot_win.mp3', 'bowl.spare': '/assets/sounds/correct_ding.mp3', 'bowl.gutter': '/assets/sounds/lose_trombone.mp3', 'bowl.pins': '/assets/sounds/battleship_boom.mp3', 'bowl.pins.reset': '/assets/sounds/chip_stack.mp3',
+    'dart.hit': '/assets/sounds/bingo_pop.mp3', 'dart.miss': '/assets/sounds/dice_bad.mp3', knock: '/assets/sounds/card_slap.mp3', splash: '/assets/sounds/battleship_splash.mp3', water: '/assets/sounds/battleship_splash.mp3',
+    fight: '/assets/sounds/battleship_boom.mp3', 'transit.cab': '/assets/sounds/call-connected.mp3', 'cer.fireworks.own': '/assets/sounds/win_fanfare.mp3', 'social.laugh': '/assets/sounds/bingo_pop.mp3'
+  };
+  var ALIAS = { 'transit.bike': 'move', 'transit.scooter': 'move', 'transit.car': 'move', furniture: 'take', eat: 'take', sleep: 'emote', cook: 'take', door: 'enter', radio: 'say', 'cer.bell.distant.ward': 'cer.bell.wronghour.single' };
+  var AC = null; function ac(){ if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } if (AC && AC.state === 'suspended') { AC.resume().catch(function(){}); } return AC; }
+  function tone(freq, dur, delay, type, gain){
+    var ctx = ac(); if (!ctx) return;
+    var o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type || 'sine'; o.frequency.value = freq;
+    var t = ctx.currentTime + (delay || 0), v = (gain || .12) * settings.sfxVol;
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(.0002, v), t + .012); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + dur + .05);
   }
-  var SYNTH={
-    move:  function(){ tone(150,.05,0,'square',.09); tone(130,.05,.09,'square',.08); },
-    look:  function(){ tone(520,.07,0,'sine',.07); },
-    take:  function(){ tone(330,.05,0,'triangle',.1); tone(540,.06,.05,'triangle',.1); },
-    drop:  function(){ tone(220,.05,0,'triangle',.1); tone(110,.09,.05,'triangle',.1); },
-    say:   function(){ tone(660,.06,0,'sine',.08); tone(880,.08,.07,'sine',.07); },
+  var SYNTH = {
+    move: function(){ tone(150,.05,0,'square',.09); tone(130,.05,.09,'square',.08); },
+    look: function(){ tone(520,.07,0,'sine',.07); },
+    take: function(){ tone(330,.05,0,'triangle',.1); tone(540,.06,.05,'triangle',.1); },
+    drop: function(){ tone(220,.05,0,'triangle',.1); tone(110,.09,.05,'triangle',.1); },
+    say: function(){ tone(660,.06,0,'sine',.08); tone(880,.08,.07,'sine',.07); },
     emote: function(){ tone(440,.09,0,'sine',.08); },
     enter: function(){ tone(392,.06,0,'sine',.07); tone(494,.06,.06,'sine',.07); tone(587,.08,.12,'sine',.07); },
     leave: function(){ tone(587,.06,0,'sine',.07); tone(494,.06,.06,'sine',.07); tone(392,.08,.12,'sine',.06); },
-    err:   function(){ tone(110,.16,0,'sawtooth',.06); }
+    err: function(){ tone(110,.16,0,'sawtooth',.06); },
+    system: function(){ tone(700,.05,0,'sine',.05); },
+    coin: function(){ tone(1200,.05,0,'square',.06); tone(1600,.08,.06,'square',.05); },
+    door: function(){ tone(180,.08,0,'square',.08); tone(240,.06,.1,'square',.06); },
+    knock: function(){ tone(160,.05,0,'square',.1); tone(160,.05,.14,'square',.1); tone(160,.05,.28,'square',.1); },
+    levelup: function(){ tone(523,.08,0,'sine',.09); tone(659,.08,.09,'sine',.09); tone(784,.14,.18,'sine',.09); },
+    locked: function(){ tone(200,.1,0,'sawtooth',.05); tone(190,.12,.12,'sawtooth',.05); },
+    knockback: function(){},
+    mic_on: function(){ tone(880,.06,0,'sine',.08); tone(1320,.08,.07,'sine',.08); },
+    mic_off: function(){ tone(1320,.06,0,'sine',.08); tone(880,.08,.07,'sine',.08); },
+    live_on: function(){ tone(440,.05,0,'sine',.05); tone(660,.05,.06,'sine',.05); }
   };
+  var CACHE = {};
+  function fileFor(kind){ return MANIFEST.event[kind] || LOCAL[kind] || null; }
+  function playUrl(url){
+    try {
+      var a = CACHE[url]; if (!a) { a = new Audio(url); a.preload = 'auto'; CACHE[url] = a; }
+      var c = a.cloneNode(); c.volume = settings.sfxVol; var p = c.play(); if (p && p.catch) p.catch(function(){});
+    } catch (e) {}
+  }
   function playKind(k){
-    if(!sfxOn) return;
-    if(SOUND_URLS[k]){ try{ new Audio(SOUND_URLS[k]).play(); return; }catch(e){} }
-    (SYNTH[k]||function(){})();
+    if (!settings.sfx || !k) return;
+    var url = fileFor(k);
+    if (url) return playUrl(url);
+    var al = ALIAS[k]; if (al) { url = fileFor(al); if (url) return playUrl(url); k = al; }
+    var fn = SYNTH[k] || (k.indexOf('social.') === 0 ? SYNTH.emote : k.indexOf('life.') === 0 ? SYNTH.emote : k.indexOf('transit.') === 0 ? SYNTH.move : null);
+    if (fn) fn();
   }
-  function ambience(on, district){
-    if(ambNodes){ try{ ambNodes.g.gain.linearRampToValueAtTime(0.0001, ac().currentTime+0.4); ambNodes.o1.stop(ac().currentTime+0.6); ambNodes.o2.stop(ac().currentTime+0.6); }catch(e){} ambNodes=null; }
-    if(!on) return;
-    var ctx=ac(); if(!ctx) return;
-    var o1=ctx.createOscillator(), o2=ctx.createOscillator(), g=ctx.createGain(), f=ctx.createBiquadFilter();
-    o1.frequency.value=55; o2.frequency.value=57.3; o1.type='sine'; o2.type='sine';
-    f.type='lowpass'; f.frequency.value=160;
-    g.gain.value=0.0001;
-    o1.connect(f); o2.connect(f); f.connect(g); g.connect(ctx.destination);
-    o1.start(); o2.start();
-    g.gain.linearRampToValueAtTime(0.028, ctx.currentTime+1.2);
-    ambNodes={o1:o1,o2:o2,g:g};
-  }
+  function playKinds(kinds){ (kinds || []).slice(0, 8).forEach(function(k, i){ setTimeout(function(){ playKind(k); }, i * 160); }); }
 
-  /* ── LOG ── */
+  /* ambience: bed (district) + tone (room), crossfaded */
+  var amb = { bedUrl: null, bed: null, toneUrl: null, tone: null, drone: null };
+  function fadeTo(a, target, ms, done){ if (!a) { if (done) done(); return; } var start = a.volume, steps = 20, i = 0; var iv = setInterval(function(){ i++; a.volume = Math.max(0, Math.min(1, start + (target - start) * (i / steps))); if (i >= steps) { clearInterval(iv); if (done) done(); } }, ms / steps); }
+  function startLoop(url, vol){ var a = new Audio(url); a.loop = true; a.volume = 0; var p = a.play(); if (p && p.catch) p.catch(function(){}); fadeTo(a, vol, 1400); return a; }
+  function stopLoop(a){ if (!a) return; fadeTo(a, 0, 1000, function(){ try { a.pause(); } catch (e) {} }); }
+  function drone(on){
+    if (amb.drone) { try { amb.drone.g.gain.linearRampToValueAtTime(.0001, ac().currentTime + .6); amb.drone.o1.stop(ac().currentTime + .8); amb.drone.o2.stop(ac().currentTime + .8); } catch (e) {} amb.drone = null; }
+    if (!on) return; var ctx = ac(); if (!ctx) return;
+    var o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
+    o1.frequency.value = 55; o2.frequency.value = 57.3; f.type = 'lowpass'; f.frequency.value = 160; g.gain.value = .0001;
+    o1.connect(f); o2.connect(f); f.connect(g); g.connect(ctx.destination); o1.start(); o2.start();
+    g.gain.linearRampToValueAtTime(.02 * settings.ambVol, ctx.currentTime + 1.5); amb.drone = { o1: o1, o2: o2, g: g };
+  }
+  function ambienceFor(roomId, district){
+    if (!settings.amb) { stopLoop(amb.bed); stopLoop(amb.tone); amb.bed = amb.tone = null; amb.bedUrl = amb.toneUrl = null; drone(false); return; }
+    var bedUrl = MANIFEST.district[district] || null, toneUrl = MANIFEST.room[roomId] || null;
+    if (bedUrl !== amb.bedUrl) { stopLoop(amb.bed); amb.bed = bedUrl ? startLoop(bedUrl, settings.ambVol) : null; amb.bedUrl = bedUrl; }
+    if (toneUrl !== amb.toneUrl) { stopLoop(amb.tone); amb.tone = toneUrl ? startLoop(toneUrl, settings.ambVol * .6) : null; amb.toneUrl = toneUrl; }
+    drone(!bedUrl && !toneUrl);
+  }
+  function applyVolumes(){ if (amb.bed) amb.bed.volume = settings.ambVol; if (amb.tone) amb.tone.volume = settings.ambVol * .6; if (amb.drone) { try { amb.drone.g.gain.value = .02 * settings.ambVol; } catch (e) {} } }
+  var unlocked = false;
+  function unlock(){ if (unlocked) return; unlocked = true; ac(); if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); }
+  document.addEventListener('pointerdown', unlock, { once: true }); document.addEventListener('keydown', unlock, { once: true });
+
+  /* ── LOG ─────────────────────────────────────────────────────────────── */
   function addLine(text, cls){
-    var p=document.createElement('p'); p.className=cls||'world'; p.textContent=text;
-    logEl.appendChild(p); logEl.scrollTop=logEl.scrollHeight;
-    while(logEl.children.length>250){ logEl.removeChild(logEl.firstChild); }
+    if (!text) return;
+    var p = document.createElement('p'); p.className = cls || 'world'; p.textContent = text;
+    if (cls === 'room') { p.title = 'Tap to show the whole description'; p.addEventListener('click', function(){ p.classList.toggle('open'); }); }
+    logEl.appendChild(p); logEl.scrollTop = logEl.scrollHeight;
+    while (logEl.children.length > 300) logEl.removeChild(logEl.firstChild);
+  }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+  /* ── RENDER ──────────────────────────────────────────────────────────── */
+  var DIRS = { n: 'north', s: 'south', e: 'east', w: 'west', ne: 'northeast', nw: 'northwest', se: 'southeast', sw: 'southwest', u: 'up', d: 'down', 'in': 'in', out: 'out' };
+  var WATER_ROOMS = { the_pier: 1, pier_seven: 1, the_breakwater: 1, the_lake_dock: 1, ferry_dock_hook: 1, the_docks: 1, the_ferry_pilings: 1, hook_front_street: 1, sweetwater_park: 1 };
+  function renderRoom(room, hud, announce){
+    lastRoom = room;
+    $('s-name').textContent = room.name || ''; $('s-desc').textContent = room.desc || '';
+    var scene = $('scene'); scene.dataset.ward = room.district || 'gate';
+    if (hud) { scene.dataset.dark = hud.dark ? '1' : '0'; scene.dataset.wx = hud.weather || 'clear'; $('s-ward').textContent = hud.ward || ''; }
+    scene.dataset.water = WATER_ROOMS[room.roomId] || (room.roomId && room.roomId.indexOf('houseboat') >= 0) ? '1' : '0';
+    if (announce) {
+      addLine(room.name + '. ' + room.desc, 'room');
+      var bits = ['Exits: ' + ((room.exitsDetail && room.exitsDetail.length) ? room.exitsDetail.map(function(e){ return e.label + ' to ' + e.to + (e.locked ? ' (locked)' : ''); }).join('; ') : 'none') + '.'];
+      if (room.items && room.items.length) bits.push('Here: ' + room.items.join(', ') + '.');
+      if (room.people && room.people.length) bits.push('Present: ' + room.people.join('; ') + '.'); else bits.push('Nobody else here.');
+      addLine(bits.join(' '), 'world');
+    }
+    renderPeople(room.peopleDetail || [], room.items || [], room.furniture || []);
+    renderExits(room.exitsDetail || []);
+    ambienceFor(room.roomId, room.district);
+  }
+  function renderPeople(people, items, furniture){
+    var box = $('people'); box.innerHTML = '';
+    $('hereTitle').textContent = people.length ? 'Here with you' : 'Nobody else here';
+    people.forEach(function(p){
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip person ' + p.kind;
+      b.textContent = p.line; b.setAttribute('aria-label', p.line + '. ' + (p.kind === 'player' ? 'A player' : p.kind === 'citizen' ? 'A citizen' : p.kind) + '. Opens choices.');
+      b.addEventListener('click', function(){ openMenu(p); });
+      box.appendChild(b);
+    });
+    var tb = $('things'); tb.innerHTML = '';
+    items.forEach(function(it){
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip thing'; b.textContent = it; b.setAttribute('aria-label', it + '. Look at it.');
+      b.addEventListener('click', function(){ send('look ' + it.replace(/^(a|an|the|some)\\s+/i, '')); });
+      tb.appendChild(b);
+    });
+    furniture.forEach(function(it){
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip thing'; b.textContent = it; b.setAttribute('aria-label', it + ', furniture. Look at it.');
+      b.addEventListener('click', function(){ send('look ' + it.replace(/^(a|an|the|some)\\s+/i, '')); });
+      tb.appendChild(b);
+    });
+    if (MENU_FOR && !people.some(function(p){ return p.id === MENU_FOR; })) closeMenu();
+  }
+  function openMenu(p){
+    MENU_FOR = p.id;
+    var m = $('personMenu'); m.innerHTML = ''; m.hidden = false; m.setAttribute('aria-label', 'What to do with ' + p.name);
+    var h = document.createElement('span'); h.className = 'pill'; h.textContent = p.name + ':'; m.appendChild(h);
+    (p.cmds || []).forEach(function(c){
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip act'; b.textContent = c.label; b.setAttribute('aria-label', c.label + ' ' + p.name);
+      b.addEventListener('click', function(){ if (/whisper|teach|give 5 coin/.test(c.cmd)) { input.value = c.cmd + ' '; input.focus(); } else send(c.cmd); });
+      m.appendChild(b);
+    });
+    var x = document.createElement('button'); x.type = 'button'; x.className = 'chip'; x.textContent = 'Close'; x.addEventListener('click', closeMenu); m.appendChild(x);
+    if (m.firstElementChild && m.children[1]) m.children[1].focus();
+  }
+  function closeMenu(){ MENU_FOR = null; var m = $('personMenu'); m.hidden = true; m.innerHTML = ''; }
+  function renderExits(exits){
+    var by = {}; exits.forEach(function(e){ by[e.dir] = e; });
+    Array.prototype.forEach.call(document.querySelectorAll('#compass button[data-dir], #vert button[data-dir]'), function(b){
+      var d = b.getAttribute('data-dir'), e = by[d];
+      b.disabled = !e;
+      var small = b.querySelector('small'); if (small) small.textContent = e ? e.to : '';
+      b.setAttribute('aria-label', e ? (DIRS[d] + ', to ' + e.to + (e.locked ? ', locked' : '')) : (DIRS[d] + ', no way'));
+    });
+    /* odd exits (named doors) get chips */
+    var box = $('moveActs'); var odd = exits.filter(function(e){ return !DIRS[e.dir]; });
+    var keep = Array.prototype.filter.call(box.children, function(c){ return c.getAttribute('data-kind') === 'act'; });
+    box.innerHTML = ''; keep.forEach(function(c){ box.appendChild(c); });
+    odd.forEach(function(e){ var b = document.createElement('button'); b.type = 'button'; b.className = 'chip act move'; b.textContent = e.label + ' → ' + e.to; b.addEventListener('click', function(){ send('go ' + e.dir); }); box.appendChild(b); });
+  }
+  function renderActions(actions){
+    var groups = { here: $('hereActs'), move: $('moveActs'), self: $('selfActs') };
+    Object.keys(groups).forEach(function(g){ var box = groups[g]; Array.prototype.slice.call(box.children).forEach(function(c){ if (c.getAttribute('data-kind') === 'act') box.removeChild(c); }); });
+    (actions || []).forEach(function(a){
+      var box = groups[a.group] || groups.here;
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip act ' + (a.group || ''); b.setAttribute('data-kind', 'act'); b.textContent = a.label;
+      if (a.hint) b.title = a.hint;
+      b.addEventListener('click', function(){ if (a.cmd === 'cab' || a.cmd === 'pawn') { input.value = a.cmd + ' '; input.focus(); addLine(a.cmd === 'cab' ? 'Cab to where? Type a place after "cab" and send.' : 'Pawn what? Type the thing after "pawn" and send.', 'system'); } else send(a.cmd); });
+      box.appendChild(b);
+    });
+    $('actBox').classList.toggle('hidden', !$('hereActs').children.length);
+  }
+  function renderHud(h){
+    if (!h) return;
+    $('m-name').textContent = h.name || ''; $('m-ward').textContent = h.ward || ''; $('m-clock').textContent = h.clock || ''; $('m-coin').textContent = (h.coin != null ? h.coin + ' coin' : '');
+    if (!h.meters) return;
+    $('mood').textContent = 'Mood: ' + (h.mood || '—') + (h.hint ? ' — ' + h.hint : '');
+    var m = $('meters'); m.innerHTML = '';
+    h.meters.forEach(function(x){
+      var row = document.createElement('div'); row.className = 'meter';
+      row.innerHTML = '<span>' + esc(x.key.charAt(0).toUpperCase() + x.key.slice(1)) + '</span><div class="bar" aria-hidden="true"><i class="' + (x.value < 20 ? 'bad' : x.value < 40 ? 'low' : '') + '" style="width:' + x.value + '%"></i></div><span class="word">' + esc(x.value) + ' ' + esc(x.word) + '</span>';
+      row.setAttribute('aria-label', x.key + ' ' + x.value + ' out of 100, ' + x.word);
+      m.appendChild(row);
+    });
+    var kv = [];
+    if (h.skills && h.skills.length) kv.push('<span>Skills: <b>' + esc(h.skills.join(', ')) + '</b></span>');
+    if (h.home) kv.push('<span>Home: <b>' + esc(h.home) + '</b></span>');
+    if (h.partner) kv.push('<span>Partner: <b>' + esc(h.partner) + '</b></span>');
+    if (h.marks && h.marks.length) kv.push('<span>Marks: <b>' + esc(h.marks.join(', ')) + '</b></span>');
+    kv.push('<span>' + esc(h.weatherLine || '') + '</span>');
+    $('kv').innerHTML = kv.join('');
+  }
+  function renderChoices(choices, freeText){
+    var box = $('choicesBox'), list = $('choices'); list.innerHTML = '';
+    if (!choices || !choices.length) { box.classList.add('hidden'); return; }
+    choices.forEach(function(c){ var b = document.createElement('button'); b.type = 'button'; b.className = 'choice'; b.textContent = c.label; b.addEventListener('click', function(){ send(c.cmd); }); list.appendChild(b); });
+    box.classList.remove('hidden');
+    if (freeText) input.focus();
+  }
+  function setMode(mode){
+    var creating = mode === 'create';
+    ['moveBox', 'actBox', 'hudBox', 'hereBox'].forEach(function(id){ $(id).classList.toggle('hidden', creating); });
+    if (creating) { $('s-name').textContent = 'Becoming somebody'; $('s-desc').textContent = 'Answer the questions — tap, type, or say them. "back" goes back, "help" explains.'; $('s-ward').textContent = 'Reverie'; }
   }
 
-  async function getToken(){ try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include'}); if(!r.ok) return null; var j=await r.json(); return j&&j.token||null; }catch(e){ return null; } }
+  function render(d){
+    var mode = d.mode || 'play';
+    setMode(mode);
+    var lines = d.lines || [];
+    /* the MEANWHILE recap comes structured too; read the pieces, not the pipe-joined line */
+    if (d.meanwhile && d.meanwhile.length) {
+      lines = lines.filter(function(l){ return !/^MEANWHILE/.test(l); });
+      d.meanwhile.forEach(function(m){ addLine(m.text, 'live'); });
+    }
+    lines.forEach(function(l){ addLine(l, /flickered|does not know|lost track/.test(l) && !d.ok ? 'err' : (mode === 'create' && l === lines[lines.length - 1] && d.choices ? 'prompt' : 'world')); });
+    if (d.room) renderRoom(d.room, d.hud, settings.verbose || d.born || !lastRoom || d.room.roomId !== lastRoom.roomId);
+    else if (d.here && lastRoom && d.here.roomId !== lastRoom.roomId) refreshHere(false);
+    if (d.hud) renderHud(d.hud);
+    if (d.people && !d.room) renderPeople(d.people, (lastRoom && lastRoom.items) || [], (lastRoom && lastRoom.furniture) || []);
+    if (d.exits && !d.room) renderExits(d.exits);
+    if (d.actions) renderActions(d.actions);
+    renderChoices(d.choices, d.freeText);
+    var kinds = (d.kinds || []).concat(d.sounds || []);
+    if (!d.ok && !kinds.length) kinds = ['err'];
+    playKinds(kinds);
+    if (mode === 'play' && d.born) { $('m-live').textContent = live ? 'live' : 'quiet'; }
+  }
 
+  /* ── NETWORK ─────────────────────────────────────────────────────────── */
+  async function getToken(){ try { var r = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' }); if (!r.ok) return null; var j = await r.json(); return j && j.token || null; } catch (e) { return null; } }
+  async function post(cmd){
+    var body = JSON.stringify({ command: cmd, live: live });
+    var r = await fetch('/api/world/command', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }, body: body });
+    if (r.status === 401) { TOKEN = await getToken(); if (TOKEN) r = await fetch('/api/world/command', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }, body: body }); }
+    return r;
+  }
+  var sending = false;
   async function send(cmd){
-    cmd=(cmd||'').trim(); if(!cmd) return;
-    addLine('> '+cmd, 'you');
-    hist.push(cmd); histIx=hist.length;
-    try{
-      var r=await fetch('/api/world/command',{method:'POST',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
-      /* Aug 10 2026 (her session-close report: a command "trashed the whole
-       * page — transmission error"): the token was fetched ONCE at page
-       * load, so a tab left open past token expiry got a 401 on every
-       * command forever — "try again" was a lie until a full reload. Now a
-       * 401 quietly re-fetches the token and retries the command once;
-       * only a genuinely dead session asks her to sign back in. */
-      if(r.status===401){
-        TOKEN=await getToken();
-        if(TOKEN){ r=await fetch('/api/world/command',{method:'POST',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({command:cmd})}); }
-        if(!TOKEN || r.status===401){ addLine('The gate lost track of you — sign in on the main site, then come back.', 'err'); playKind('err'); return; }
-      }
-      if(!r.ok){ addLine('The world flickered ('+r.status+') — that one did not land. Try it again in a moment.', 'err'); playKind('err'); return; }
-      var d=await r.json();
-      (d.lines||[]).forEach(function(line){
-        addLine(line, /^MEANWHILE/.test(line)?'meanwhile':'world');
-      });
-      if(d.room){
-        addLine(d.room.name+'. '+d.room.desc, 'world');
-        addLine('Exits: '+(d.room.exits.join(', ')||'none')
-          + (d.room.items && d.room.items.length ? '. Here: '+d.room.items.join(', ') : '')
-          + (d.room.people && d.room.people.length ? '. Present: '+d.room.people.join(', ') : '. No one else here.'), 'world');
-      }
-      var kinds = d.kinds||[];
-      if(!d.ok && (!kinds.length)) { playKind('err'); }
-      kinds.forEach(function(k,i){ setTimeout(function(){ playKind(k); }, i*140); });
-      /* KADE 2026-08-12: a command may hand back SPECIFIC sound ids — the Bite's
-         nibble and take, the scale settling. They queue after the kinds so a
-         move-then-cast still reads left to right. */
-      (d.sounds||[]).forEach(function(s,i){ setTimeout(function(){ playKind(s); }, (kinds.length+i)*140); });
-      if(ambOn){
-        /* KADE 2026-08-12 FIX: room beds are keyed by roomId, not by display
-           name — build 197 added roomId to the room view for exactly this and
-           the lookup was never moved over, so no room bed has ever played. */
-        var ambUrl = (d.room && (ROOM_SOUNDS[d.room.roomId] || ROOM_SOUNDS[d.room.name])) || (d.district && DISTRICT_SOUNDS[d.district]);
-        if(ambUrl){
-          if(!ambAudio || ambAudio.src!==ambUrl){
-            if(ambAudio){ try{ ambAudio.pause(); }catch(e){} }
-            ambAudio=new Audio(ambUrl); ambAudio.loop=true; ambAudio.volume=0.25;
-            ambAudio.play().catch(function(){});
-            ambience(false);
-          }
-        } else if(d.district){ if(ambAudio){ try{ ambAudio.pause(); }catch(e){} ambAudio=null; } ambience(true, d.district); }
-      }
-    }catch(e){ addLine('No road to the city just now — check your connection.', 'err'); playKind('err'); }
+    cmd = (cmd || '').trim(); if (!cmd || sending) return;
+    sending = true;
+    addLine(cmd, 'you');
+    hist.push(cmd); if (hist.length > 60) hist.shift(); histIx = hist.length;
+    closeMenu();
+    try {
+      var r = await post(cmd);
+      if (r.status === 401) { addLine('The gate lost track of you — sign in on the main site, then come back.', 'err'); playKind('err'); return; }
+      if (!r.ok) { addLine('The world flickered (' + r.status + ') — that one did not land. Try it again in a moment.', 'err'); playKind('err'); return; }
+      var d = await r.json();
+      render(d);
+    } catch (e) { addLine('No road to the city just now — check your connection.', 'err'); playKind('err'); }
+    finally { sending = false; }
+  }
+  var hereTimer = null;
+  function refreshHere(announcePeople){
+    clearTimeout(hereTimer);
+    hereTimer = setTimeout(async function(){
+      try {
+        var r = await fetch('/api/world/here', { headers: { Authorization: 'Bearer ' + TOKEN } });
+        if (!r.ok) return; var d = await r.json(); if (!d.ok) return;
+        var moved = !lastRoom || d.room.roomId !== lastRoom.roomId;
+        renderRoom(d.room, d.hud, moved);
+        renderHud(d.hud); renderActions(d.actions);
+      } catch (e) {}
+    }, 350);
   }
 
-  document.getElementById('cmdForm').addEventListener('submit', function(ev){
-    ev.preventDefault(); var c=input.value; input.value=''; send(c); input.focus();
-  });
+  /* ── LIVE STREAM ─────────────────────────────────────────────────────── */
+  async function startStream(){
+    if (!settings.live || live || !TOKEN) return;
+    var ctrl = new AbortController(); streamAbort = ctrl;
+    try {
+      var r = await fetch('/api/world/stream', { headers: { Authorization: 'Bearer ' + TOKEN }, signal: ctrl.signal });
+      if (!r.ok || !r.body) { $('m-live').textContent = 'quiet'; return; }
+      live = true; $('m-live').textContent = 'live'; $('m-live').setAttribute('aria-label', 'Hearing the room live');
+      var reader = r.body.getReader(), dec = new TextDecoder(), buf = '';
+      while (true) {
+        var chunk = await reader.read(); if (chunk.done) break;
+        buf += dec.decode(chunk.value, { stream: true });
+        var parts = buf.split('\\n\\n'); buf = parts.pop();
+        parts.forEach(function(block){
+          block.split('\\n').forEach(function(line){
+            if (line.indexOf('data:') !== 0) return;
+            try { var d = JSON.parse(line.slice(5).trim()); onLive(d); } catch (e) {}
+          });
+        });
+      }
+    } catch (e) { /* aborted or dropped */ }
+    live = false; $('m-live').textContent = 'quiet';
+    if (settings.live && !ctrl.signal.aborted) setTimeout(startStream, 4000);
+  }
+  function stopStream(){ if (streamAbort) { streamAbort.abort(); streamAbort = null; } live = false; $('m-live').textContent = 'quiet'; }
+  function onLive(d){
+    if (d.end) return;
+    var moved = false;
+    (d.events || []).forEach(function(e){
+      addLine(e.text, e.kind === 'system' ? 'system live' : 'live');
+      playKind(e.sound || e.kind);
+      if (e.kind === 'enter' || e.kind === 'leave' || /moves off|comes through|heads out|arrives|comes in|let in/.test(e.text)) moved = true;
+    });
+    if (moved) refreshHere(false);
+  }
+
+  /* ── DICTATION (Deepgram, the same lane as voice notes) ──────────────── */
+  var rec = null, recChunks = [];
+  async function toggleMic(){
+    var btn = $('micBtn');
+    if (rec && rec.state === 'recording') { rec.stop(); return; }
+    if (!navigator.mediaDevices || !window.MediaRecorder) { addLine('This browser cannot record. Type instead.', 'err'); return; }
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      var mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '');
+      rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); recChunks = [];
+      rec.ondataavailable = function(ev){ if (ev.data && ev.data.size) recChunks.push(ev.data); };
+      rec.onstop = async function(){
+        btn.setAttribute('aria-pressed', 'false'); btn.textContent = '🎤 Talk'; playKind('mic_off');
+        stream.getTracks().forEach(function(t){ t.stop(); });
+        var blob = new Blob(recChunks, { type: rec.mimeType || 'audio/webm' });
+        if (blob.size < 800) { addLine('Heard nothing. Try again, a little longer.', 'system'); return; }
+        addLine('Listening back…', 'system');
+        try {
+          var r = await fetch('/api/kade/transcribe', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': blob.type }, body: blob });
+          var j = await r.json();
+          if (!r.ok || !j.transcript) { addLine('Could not make that out. Try again.', 'err'); return; }
+          var t = String(j.transcript).trim().replace(/[.!?]+$/, '').toLowerCase();
+          send(t);
+        } catch (e) { addLine('The ears are offline. Type it instead.', 'err'); }
+      };
+      rec.start(); btn.setAttribute('aria-pressed', 'true'); btn.textContent = '■ Stop'; playKind('mic_on');
+      addLine('Listening — say a command, then tap the microphone again.', 'system');
+      setTimeout(function(){ if (rec && rec.state === 'recording') rec.stop(); }, 12000);
+    } catch (e) { addLine('No microphone permission. Type instead.', 'err'); }
+  }
+
+  /* ── WIRING ──────────────────────────────────────────────────────────── */
+  $('cmdForm').addEventListener('submit', function(ev){ ev.preventDefault(); var c = input.value; input.value = ''; send(c); input.focus(); });
   input.addEventListener('keydown', function(ev){
-    if(ev.key==='ArrowUp'){ ev.preventDefault(); if(histIx>0){ histIx--; input.value=hist[histIx]||''; } }
-    if(ev.key==='ArrowDown'){ ev.preventDefault(); if(histIx<hist.length){ histIx++; input.value=hist[histIx]||''; } }
+    if (ev.key === 'ArrowUp') { if (histIx > 0) { ev.preventDefault(); histIx--; input.value = hist[histIx] || ''; } }
+    else if (ev.key === 'ArrowDown') { if (histIx < hist.length) { ev.preventDefault(); histIx++; input.value = hist[histIx] || ''; } }
+    else if (ev.key === 'Escape') { input.value = ''; closeMenu(); }
   });
-  Array.prototype.forEach.call(document.querySelectorAll('.toolbar button[data-cmd]'), function(b){
-    b.addEventListener('click', function(){ send(b.getAttribute('data-cmd')); input.focus(); });
-  });
-  var sfxBtn=document.getElementById('sfxToggle');
-  function renderSfx(){ sfxBtn.textContent='Sounds: '+(sfxOn?'on':'off'); sfxBtn.setAttribute('aria-pressed', String(sfxOn)); }
-  sfxBtn.addEventListener('click', function(){ sfxOn=!sfxOn; try{ localStorage.setItem('world_sfx', sfxOn?'1':'0'); }catch(e){} renderSfx(); if(sfxOn){ playKind('say'); } });
-  var ambBtn=document.getElementById('ambToggle');
-  function renderAmb(){ ambBtn.textContent='Ambience: '+(ambOn?'on':'off'); ambBtn.setAttribute('aria-pressed', String(ambOn)); }
-  ambBtn.addEventListener('click', function(){ ambOn=!ambOn; try{ localStorage.setItem('world_amb', ambOn?'1':'0'); }catch(e){} renderAmb(); if(!ambOn && ambAudio){ try{ ambAudio.pause(); }catch(e){} ambAudio=null; } ambience(ambOn); });
-  renderSfx(); renderAmb();
+  Array.prototype.forEach.call(document.querySelectorAll('#compass button[data-dir], #vert button[data-dir]'), function(b){ b.addEventListener('click', function(){ send(b.getAttribute('data-dir')); }); });
+  $('lookBtn').addEventListener('click', function(){ send('look'); });
+  $('micBtn').addEventListener('click', toggleMic);
+
+  function renderToggles(){
+    $('sfxToggle').textContent = 'Sounds: ' + (settings.sfx ? 'on' : 'off'); $('sfxToggle').setAttribute('aria-pressed', String(settings.sfx));
+    $('ambToggle').textContent = 'Ambience: ' + (settings.amb ? 'on' : 'off'); $('ambToggle').setAttribute('aria-pressed', String(settings.amb));
+    $('verboseToggle').textContent = 'Read the room on every move: ' + (settings.verbose ? 'on' : 'off'); $('verboseToggle').setAttribute('aria-pressed', String(settings.verbose));
+    $('liveToggle').textContent = 'Hear the room live: ' + (settings.live ? 'on' : 'off'); $('liveToggle').setAttribute('aria-pressed', String(settings.live));
+    $('sfxVol').value = Math.round(settings.sfxVol * 100); $('ambVol').value = Math.round(settings.ambVol * 100);
+  }
+  $('sfxToggle').addEventListener('click', function(){ settings.sfx = !settings.sfx; saveSettings(); renderToggles(); if (settings.sfx) playKind('say'); });
+  $('ambToggle').addEventListener('click', function(){ settings.amb = !settings.amb; saveSettings(); renderToggles(); if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); });
+  $('verboseToggle').addEventListener('click', function(){ settings.verbose = !settings.verbose; saveSettings(); renderToggles(); });
+  $('liveToggle').addEventListener('click', function(){ settings.live = !settings.live; saveSettings(); renderToggles(); if (settings.live) startStream(); else stopStream(); });
+  $('sfxVol').addEventListener('input', function(){ settings.sfxVol = this.value / 100; saveSettings(); });
+  $('sfxVol').addEventListener('change', function(){ playKind('coin'); });
+  $('ambVol').addEventListener('input', function(){ settings.ambVol = this.value / 100; saveSettings(); applyVolumes(); });
+  $('testSound').addEventListener('click', function(){ unlock(); playKinds(['enter', 'coin', 'say']); addLine('That was: a door, a coin, a voice.', 'system'); });
+  renderToggles();
+
+  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible' && settings.live && !live) startStream(); });
 
   (async function init(){
-    TOKEN=await getToken();
-    if(!TOKEN){ addLine('Sign in on the main site first, then come back to the gate.', 'err'); return; }
-    addLine('The gate knows you. Type look, or just press Look.', 'world');
-    send('look');
+    input.disabled = true; input.placeholder = 'signing you in…';
+    TOKEN = await getToken();
+    if (!TOKEN) { addLine('Sign in on the main site first, then come back to the gate.', 'err'); $('s-desc').textContent = 'Sign in first.'; return; }
+    try { var m = await (await fetch('/api/world/sounds', { headers: { Authorization: 'Bearer ' + TOKEN } })).json(); if (m) { MANIFEST.event = m.event || {}; MANIFEST.room = m.room || {}; MANIFEST.district = m.district || {}; } } catch (e) {}
+    addLine('Reverie. Tap, type, or talk — all three work. "help" explains, "what" says what you can do right where you are.', 'system');
+    await send('look');
+    input.disabled = false; input.placeholder = 'type, or tap a button';
+    startStream();
   })();
 })();
 </script>
-</body></html>`;
+</body></html>
+`;
 
 module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, diaryHtml, briefHtml, requestAccessHtml, accessRequestsHtml, worldHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
 

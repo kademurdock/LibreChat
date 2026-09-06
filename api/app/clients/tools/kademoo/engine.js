@@ -309,6 +309,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
   const ws = social.walkStyleOf(ch);
 
   async function setBusy(seconds, doing) {
+    if (process.env.REVERIE_FAST === '1') seconds = 0; /* LIFE (Sep 6 2026): roundtime off for the harness */
     const until = Date.now() + seconds * 1000;
     await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.busyUntil': until, 'attrs.busyDoing': doing } });
   }
@@ -2341,4 +2342,7 @@ async function runCommand({ userId, displayName, command, isWizard = false }) {
   };
 }
 
-module.exports = { runCommand };
+/* LIFE LAYER (Sep 6 2026): the Sims side of the city lives in ./life and
+ * shares this engine's soul-loading and meanwhile cursor, so both layers read
+ * one world and one chronicle. */
+module.exports = { runCommand, getOrCreateChar, collectMeanwhile, describeRoom, emit };

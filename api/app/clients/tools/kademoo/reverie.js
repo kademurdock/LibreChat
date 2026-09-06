@@ -1274,7 +1274,8 @@ async function tickWorld() {
      * ~45s apart) so that "go find the gray one" stays a thing a person can
      * decide to do and succeed at. An animal in somebody's ARMS does not
      * drift, for reasons that should not need writing down but do. */
-    const roaming = await MooChar.find({ userId: /^stray:/, 'attrs.heldBy': null }).select('userId name roomId attrs.territory').lean();
+    /* LIFE (Sep 6 2026): an ADOPTED animal has a home and does not drift. */
+    const roaming = await MooChar.find({ userId: /^stray:/, 'attrs.heldBy': null, 'attrs.owner': { $in: [null, undefined] } }).select('userId name roomId attrs.territory').lean();
     for (const a of roaming) {
       const def = STRAYS.find((d) => 'stray:' + d.id === a.userId);
       if (!def) continue;

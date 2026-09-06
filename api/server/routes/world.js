@@ -7,7 +7,13 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
-const { runCommand } = require('~/app/clients/tools/kademoo/engine');
+/* LIFE LAYER (Sep 6 2026): the Sims side of the city. Same signature, same
+ * result shape plus hud/actions/people/exits, falls through to the old engine
+ * for every verb it does not own. REVERIE_ENGINE=v1 is the hatch back. */
+const { runCommand } = process.env.REVERIE_ENGINE === 'v1'
+  ? require('~/app/clients/tools/kademoo/engine')
+  : require('~/app/clients/tools/kademoo/life');
+const reverie = require('~/app/clients/tools/kademoo/reverie');
 const { angelBuild, angelLines } = require('~/app/clients/tools/kademoo/angel');
 const { seedSounds } = require('~/app/clients/tools/kademoo/seedSounds');
 
@@ -85,6 +91,9 @@ router.post('/command', async (req, res) => {
       userId: req.user.id,
       displayName: req.user.name || req.user.username,
       command,
+      /* a client holding /stream open already hears the room live; it asks
+       * for no MEANWHILE recap so nothing is read twice. */
+      live: req.body?.live === true,
       /* Wizard tier = platform admins (the Founder and deputies) — the #2
        * workflow: walk with NVDA, build as you go. */
       isWizard: req.user.role === 'ADMIN',
@@ -163,6 +172,77 @@ router.get('/sounds', async (_req, res) => {
   } catch (e) {
     logger.error('[world] sounds manifest failed:', e.message);
     res.status(500).json({ error: 'no sounds today' });
+  }
+});
+
+
+/* ── THE LIVE STREAM (Sep 6 2026) ─────────────────────────────────────────
+ * Server-sent events: everything that happens in your room, and everything
+ * whispered to you, pushed as it lands — so a person can leave the page open
+ * and HEAR the room without typing a thing. This is what makes hanging out
+ * possible: two friends at Dez's talking, a citizen wandering in, the freight
+ * horn at 11:40. Polls Mongo every two seconds per open connection (cheap;
+ * one indexed read), advances the same lastSeenSeq cursor the command lane
+ * uses, and nudges the world tick so the census keeps moving for a room that
+ * is only listening. The client sends `live:true` on commands while this is
+ * open, and the MEANWHILE recap stays quiet. */
+const gateClosed = (req) => req.user.role !== 'ADMIN' && process.env.REVERIE_PUBLIC !== '1';
+router.get('/stream', async (req, res) => {
+  if (gateClosed(req)) return res.status(403).json({ error: 'the gate is closed' });
+  const { MooChar, MooEvent } = require('~/models/kadeMoo');
+  const userId = String(req.user.id);
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+  res.write(': reverie live\n\n');
+  let alive = true;
+  req.on('close', () => { alive = false; });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let beat = 0;
+  let lastTouch = 0;
+  try {
+    while (alive) {
+      const ch = await MooChar.findOne({ userId, active: true }).select('_id roomId lastSeenSeq').lean();
+      if (!ch) { res.write('data: {"end":"no character"}\n\n'); break; }
+      let cursor = ch.lastSeenSeq || 0;
+      const evs = await MooEvent.find({ roomId: { $in: [ch.roomId, `whisper:${userId}`] }, seq: { $gt: cursor }, actorUserId: { $ne: userId } }).sort({ seq: 1 }).limit(40).lean();
+      if (evs.length) {
+        cursor = evs[evs.length - 1].seq;
+        await MooChar.updateOne({ _id: ch._id }, { $set: { lastSeenSeq: cursor } });
+        res.write(`data: ${JSON.stringify({ events: evs.map((e) => ({ kind: e.kind, text: e.text, sound: e.sound || null, actor: e.actorName, roomId: e.roomId, at: e.at })) })}\n\n`);
+      } else if (beat % 8 === 0) {
+        res.write(': hb\n\n');
+      }
+      beat++;
+      const now = Date.now();
+      if (now - lastTouch > 60000) {
+        lastTouch = now;
+        await MooChar.updateOne({ _id: ch._id }, { $set: { lastActiveAt: new Date() } });
+        try { await reverie.tickWorld(); } catch (_) { /* the tick is never load-bearing */ }
+      }
+      await sleep(2000);
+    }
+  } catch (e) {
+    logger.warn('[world] stream ended:', e && e.message);
+  }
+  try { res.end(); } catch (_) { /* gone */ }
+});
+
+/* HERE — the room, the people, the compass, the buttons, with no side
+ * effects and no line in the log. The client calls it after a live event
+ * says somebody came or went, so the panels stay true without a "look". */
+router.get('/here', async (req, res) => {
+  try {
+    if (gateClosed(req)) return res.status(403).json({ error: 'the gate is closed' });
+    const { MooChar } = require('~/models/kadeMoo');
+    const view = require('~/app/clients/tools/kademoo/life/view');
+    const ch = await MooChar.findOne({ userId: String(req.user.id), active: true }).lean();
+    if (!ch) return res.json({ ok: false });
+    const life = (ch.attrs && ch.attrs.life) || {};
+    const ctx = { ch, userId: ch.userId, life, isWizard: req.user.role === 'ADMIN', _room: null, async room() { if (!this._room) this._room = await require('~/app/clients/tools/kademoo/life/ctx').roomOf(this.ch); return this._room; } };
+    const [room, hud, actions] = await Promise.all([view.describeRoom(ctx), view.hud(ctx), view.actions(ctx)]);
+    res.json({ ok: true, room, hud, actions, people: room.peopleDetail, exits: room.exitsDetail, district: room.district, mode: life.created && !life.wiz ? 'play' : 'create' });
+  } catch (e) {
+    logger.error('[world] here failed:', e.message);
+    res.status(500).json({ error: 'the world flickered' });
   }
 });
 
