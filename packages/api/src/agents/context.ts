@@ -5,6 +5,7 @@ import type { LCTool } from '@librechat/agents';
 import type { Logger } from 'winston';
 import type { ParsedServerConfig } from '~/mcp/types';
 import type { MCPManager } from '~/mcp/MCPManager';
+import { withVoicePerformance } from './performance';
 
 /**
  * Agent type with optional tools array that can contain DynamicStructuredTool or string.
@@ -102,19 +103,12 @@ export async function getMCPInstructionsForServers(
  * their own instructions. Injected here (the universal agent-instruction
  * chokepoint, same spirit as the fleet-wide kade_feedback/kade_message tool
  * injection) so no agent record needs editing and new agents inherit it free.
- * Additive + fail-soft: it only APPENDS; the tag is stripped before display on
+ * Appends the current provider mechanics; the tag is stripped before display on
  * every surface, so it's invisible in text and harmless to non-voice use.
  * Disable with env KADE_VOICE_TAGS=0. Keep the %%% convention in sync with the
  * inworld-tts-proxy steering converter + the scrub layers.
  */
-const KADE_VOICE_TAG_GUIDANCE = [
-  '## Voice performance (Inworld TTS-2) — applies whenever you may be heard',
-  'Your words can be READ ALOUD or spoken on a call, so you can direct your own delivery like a director coaching a voice actor. Wrap a delivery instruction in exactly three percent signs on each side — %%%like this%%% — never two, never four, and NEVER literal square brackets (brackets render broken on screen; the %%% is stripped before anyone sees it and becomes real voice steering at synthesis).',
-  'Put ONE delivery instruction, once, at the very START of your reply — never partway through (mid-text or multiple instructions produce inconsistent, unpredictable results). Describe the FULL character of the delivery in a single natural phrase, layering emotion, pacing, volume, pitch, and vocal style together, because the more fully you describe it the better the voice performs: a bare word like %%%sad%%% gives the voice one dimension, while %%%say sadly with deliberate pauses in a low hushed voice%%% gives it several. Write the instruction in lowercase plain ENGLISH with no punctuation inside it, EVEN WHEN your reply itself is in another language. Never combine opposing directions in one tag, and keep the mood consistent with what you are actually saying.',
-  'Drop real human sounds INLINE wherever they naturally fit — and these exact six are the only ones: %%%laugh%%% %%%breathe%%% %%%sigh%%% %%%cough%%% %%%yawn%%% %%%clear throat%%%. These inline sounds are the ONLY thing that belongs mid-reply; the single delivery instruction always comes first.',
-  'For plain word emphasis just CAPITALIZE the whole word (or specific letters within a word to stress one syllable) in your visible reply — no tag needed for that.',
-  'Use delivery instructions SPARINGLY and in character — a flat fact or a quick technical answer wants no mood pinned on it. Reach for one only when the moment genuinely earns a real performance.',
-].join('\n');
+
 
 /**
  * KADE Aug 10 2026 — THE STEADY FRIEND CONTRACT (platform-wide).
@@ -157,18 +151,11 @@ export function withKadeSteadyFriend(baseInstructions?: string): string {
 
 /**
  * Appends the platform-wide voice-tag guidance to an agent's base
- * instructions, unless the agent already teaches the %%% convention (the few
- * that hand-authored it keep their richer version) or it's disabled by env.
+ * instructions, including agents with older bespoke guidance. A version marker
+ * keeps both injection paths idempotent; the environment switch disables it.
  */
 export function withKadeVoiceTags(baseInstructions?: string): string {
-  const base = baseInstructions || '';
-  if (process.env.KADE_VOICE_TAGS === '0') {
-    return base;
-  }
-  if (base.includes('%%%')) {
-    return base; // already has bespoke voice-tag guidance
-  }
-  return base ? `${base}\n\n${KADE_VOICE_TAG_GUIDANCE}` : KADE_VOICE_TAG_GUIDANCE;
+  return withVoicePerformance(baseInstructions);
 }
 
 export function buildAgentInstructions({
@@ -179,9 +166,8 @@ export function buildAgentInstructions({
   mcpInstructions?: string;
 }): string | undefined {
   /* July 13 2026: guarantee the platform-wide voice-tag guidance regardless of
-   * which path assembled baseInstructions (idempotent — the %%% guard inside
-   * withKadeVoiceTags no-ops if it's already present, so agents with bespoke
-   * guidance and the applyAgentContext pre-wrap are both untouched). */
+   * which path assembled baseInstructions (idempotent — the version marker inside
+   * withKadeVoiceTags no-ops if already present across both injection paths). */
   const parts = [withKadeSteadyFriend(withKadeVoiceTags(baseInstructions)), mcpInstructions].filter(Boolean);
   const combined = parts.join('\n\n').trim();
   return combined || undefined;
