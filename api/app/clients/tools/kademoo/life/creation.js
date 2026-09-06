@@ -347,7 +347,7 @@ async function born(ctx, d) {
   /* the one who knows your name */
   await require('./relationships').adjust(ch.userId, o.contact, { friendship: 25 }, { names: { [ch.userId]: name, [o.contact]: o.contactName } });
   await moveTo(ch, o.room, null, `${name} arrives in the city for the first time.`, { noFollow: true });
-  const lines = [...ctx.lines, `${o.line}`, `You are ${name}. ${traits.join(' and ')}, wanting ${life.aspiration}. ${o.coin} coin in your pocket. The city is yours to walk — tap a direction, or say "what" to hear what you can do right here. "help" any time.`];
+  const lines = [...ctx.lines, `${o.line}`, `You are ${name}. ${traits.join(' and ')}, wanting ${life.aspiration}. $${o.coin} in your pocket. The city is yours to walk — tap a direction, or say "what" to hear what you can do right here. "help" any time.`];
   return { ok: true, mode: 'play', lines, wantRoom: true, kinds: ['enter'], born: true };
 }
 

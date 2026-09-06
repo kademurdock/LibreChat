@@ -559,7 +559,7 @@ socialVerb({
     if (!spot) return ctx.fail('Not a date spot. Try Dez’s, the Pier, the Bandshell, Pat’s, the Lake Dock, Sweetwater Park.');
     const rel = await getRel(ctx.userId, t.userId);
     if (rel.romance < 15 && kind === 'citizen') return ctx.fail(`${t.name.split(' ')[0]} likes you fine, but a date? Flirt first; see if it is mutual.`);
-    if (coinOf(ctx.ch) < 4) return ctx.fail('A date costs four coin, minimum. Even the Pier. Especially the Pier.');
+    if (coinOf(ctx.ch) < 4) return ctx.fail('A date costs four dollars, minimum. Even the Pier. Especially the Pier.');
     await require('./ctx').payCoin(ctx.ch, 4);
     await setBusy(ctx.ch, 10, 'on a date');
     const good = roll(ctx, 0.7, (ctx.life.traitKeys || []).includes('romantic') ? 0.1 : 0);

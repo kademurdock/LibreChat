@@ -134,7 +134,7 @@ registry.register({
     await earnCoin(ctx.ch, take);
     ctx.learn('hustle', 4); ctx.need({ fun: 8 });
     await rel.adjust(ctx.userId, t.userId, { friendship: -2 }, { kind: 'lifted' });
-    ctx.say(`Your hand is in and out. ${take} coin. ${t.name.split(' ')[0]} does not notice, yet. ${pick(['Your heart is going.', 'You hate how easy that was.', 'Ray would be proud, which is not a good sign.'])}`);
+    ctx.say(`Your hand is in and out. $${take}. ${t.name.split(' ')[0]} does not notice, yet. ${pick(['Your heart is going.', 'You hate how easy that was.', 'Ray would be proud, which is not a good sign.'])}`);
     if (chance(0.2)) await rumor(ctx, `somebody has been lifting wallets around ${room.name}`, 'crime', 2);
     return ctx.ok({ kinds: [...ctx.kinds, 'coin'] });
   },
@@ -151,7 +151,7 @@ async function nightCourt(ctx, charge, fine) {
   await setBusy(ch, canPay ? 15 : 45, canPay ? 'in night court' : 'sweeping the courthouse steps');
   ctx.need({ fun: -15, company: -5, clean: -5 });
   await rumor(ctx, `${ch.name} got walked into night court by Sgt. Vann`, 'crime', 4);
-  ctx.say(`Sgt. Vann does not say a word the whole way. Honorable Pham looks over the glasses: "${cap(charge)}." ${canPay ? `Fine, ${fine} coin. Paid. "Do not let me learn your name."` : `You cannot pay, so it is the steps and a broom, and the broom is heavy. "Do not let me learn your name."`} You are on record for two weeks. The city will hear.`);
+  ctx.say(`Sgt. Vann does not say a word the whole way. Honorable Pham looks over the glasses: "${cap(charge)}." ${canPay ? `Fine, $${fine}. Paid. "Do not let me learn your name."` : `You cannot pay, so it is the steps and a broom, and the broom is heavy. "Do not let me learn your name."`} You are on record for two weeks. The city will hear.`);
   return ctx.ok({ wantRoom: true, kinds: [...ctx.kinds, 'vio.siren.distant', 'cer.bell.wronghour.single'] });
 }
 
@@ -168,7 +168,7 @@ registry.register({
     await emit(ctx.ch.roomId, ctx.userId, ctx.ch.name, 'emote', `${ctx.ch.name} shoves ${t.name.split(' ')[0]}. The room takes a step back.`);
     ctx.need({ fun: 2, company: -5 });
     const rr = await rel.land(ctx, t, 'shove', `You shove ${t.name.split(' ')[0]}. ${kind === 'citizen' ? pick([`${t.name.split(' ')[0]} does not shove back. Yet.`, `${t.name.split(' ')[0]} steps in close and says something only you hear.`]) : `${t.name.split(' ')[0]} is up in your face now.`}`, null, { friendship: -10 }, { tellOther: `${ctx.ch.name} shoves you. ("fight ${ctx.ch.name.split(' ')[0]}" if you want to make it one.)` });
-    if (hoa) { await payCoin(ctx.ch, Math.min(coinOf(ctx.ch), 5)); ctx.say('The HOA fines you five coin on the spot for "conduct." A form is involved.'); }
+    if (hoa) { await payCoin(ctx.ch, Math.min(coinOf(ctx.ch), 5)); ctx.say('The HOA fines you five dollars on the spot for "conduct." A form is involved.'); }
     if (rr.friendship <= -40) await rumor(ctx, `${ctx.ch.name} and ${t.name.split(' ')[0]} are about to come to blows`, 'feud', 3);
     return ctx.ok({ kinds: [...ctx.kinds, 'err'] });
   },
@@ -214,7 +214,7 @@ async function brawl(ctx, t, kind) {
     if (kind === 'player') { const o = await MooChar.findOne({ userId: t.userId, active: true }); if (o) { await MooChar.updateOne({ _id: o._id }, { $set: { 'attrs.markMeta.bruised': Date.now() + 86400000 }, $addToSet: { 'attrs.marks': 'bruised' } }); await tell(t.userId, `You lose the fight with ${ch.name}. Bruised for a day. Mercy has ice.`, 'system', 'err'); } }
     ctx.say(`You win. It does not feel like much. ${t.name.split(' ')[0]} is down and then up and then gone, and your hands hurt.`);
   }
-  if (hoa) { await payCoin(ch, Math.min(coinOf(ch), 15)); ctx.say('The HOA fines you fifteen coin. Private security takes a photo for the newsletter.'); }
+  if (hoa) { await payCoin(ch, Math.min(coinOf(ch), 15)); ctx.say('The HOA fines you fifteen dollars. Private security takes a photo for the newsletter.'); }
   await rumor(ctx, `${ch.name} and ${t.name} fought at ${(await ctx.room()).name}${win ? ` and ${ch.name.split(' ')[0]} won` : ` and ${t.name.split(' ')[0]} won`}`, 'fight', 4);
   if (chance(0.3) && kind === 'citizen') return nightCourt(ctx, 'brawling in public', 8);
   await setBusy(ch, 12, 'catching your breath');

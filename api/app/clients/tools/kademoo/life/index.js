@@ -37,6 +37,7 @@ require('./relationships');
 require('./family');
 require('./vehicles');
 require('./activities');
+require('./hangouts');
 require('./drama');
 require('./help');
 const view = require('./view');

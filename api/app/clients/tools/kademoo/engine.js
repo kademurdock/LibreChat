@@ -571,13 +571,13 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
       $set: { 'attrs.inventory': inv },
       $inc: { 'attrs.coin': value },
     });
-    lines.push(`You sell ${item.name} for ${value} coin.`);
+    lines.push(`You sell ${item.name} for $${value}.`);
     return { ok: true, lines, sounds: ['obj.coins.drop'] };
   }
 
   /* GIVE <item> TO <name> — hand a foraged/grown item to another player.
    * Falls through to the MooItem give handler if item not in attrs.inventory. */
-  if (verb === 'give' && rest && !/^\d+\s+coins?/i.test(rest)) {
+  if (verb === 'give' && rest && !/^\d+\s+(?:coins?|dollars?|cash)\s+to\s+/i.test(rest)) {
     const gm = rest.match(/^(.+?)\s+to\s+(.+)$/i);
     if (gm) {
       const itemName = gm[1].trim();
@@ -681,7 +681,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
       lines.push(seen.length
         ? `You have met: ${seen.map((k) => (strays.STRAY_BY_ID['stray:' + k] || {}).short || k).join(', ')}.`
         : 'You have not gotten close to any of the city\'s animals yet. They are out there. approach one, slowly.');
-      lines.push('approach / pet / coax to build trust · offer <food> to <animal> is faster · carry one when it lets you · adopt (15 coin) or surrender it at the Bureau of Small Complaints.');
+      lines.push('approach / pet / coax to build trust · offer <food> to <animal> is faster · carry one when it lets you · adopt ($15) or surrender it at the Bureau of Small Complaints.');
       return { ok: true, lines };
     }
 
@@ -777,18 +777,18 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
         await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.carrying': null }, $inc: { 'attrs.coin': strays.SURRENDER_PAYS, 'attrs.kindness': 1 } });
         await MooChar.updateOne({ userId: animal.userId }, { $set: { 'attrs.heldBy': null } });
         lines.push('Opal takes it without a speech. "Lost dog, found dog, same drawer."');
-        lines.push(`She counts ${strays.SURRENDER_PAYS} coin into your hand and does not call it a reward, and you understand that it would be rude to argue.`);
+        lines.push(`She counts $${strays.SURRENDER_PAYS} into your hand and does not call it a reward, and you understand that it would be rude to argue.`);
         return { ok: true, lines, kinds: [...kinds, 'take'], sounds: ['obj.coins.drop'] };
       }
 
       /* ── ADOPT ── */
       if (verb === 'adopt') {
         if (isMine) { lines.push(`${animal.name} is already yours. call it something.`); return { ok: false, lines }; }
-        if (before < strays.CARRY_AT) { lines.push('It has to trust you first. That is the whole cost, and it is not payable in coin.'); return { ok: false, lines }; }
-        if ((ch.attrs?.coin || 0) < strays.ADOPT_COSTS) { lines.push(`Adoption is ${strays.ADOPT_COSTS} coin at Opal's desk. You have ${ch.attrs?.coin || 0}.`); return { ok: false, lines }; }
+        if (before < strays.CARRY_AT) { lines.push('It has to trust you first. That is the whole cost, and it is not payable in cash.'); return { ok: false, lines }; }
+        if ((ch.attrs?.coin || 0) < strays.ADOPT_COSTS) { lines.push(`Adoption is $${strays.ADOPT_COSTS} at Opal's desk. You have ${ch.attrs?.coin || 0}.`); return { ok: false, lines }; }
         await MooChar.updateOne({ _id: ch._id }, { $inc: { 'attrs.coin': -strays.ADOPT_COSTS } });
         await MooChar.updateOne({ userId: animal.userId }, { $set: { 'attrs.owner': ch.userId } });
-        lines.push(`Fifteen coin, and a line in a book, and that is the whole ceremony.`);
+        lines.push(`Fifteen dollars, and a line in a book, and that is the whole ceremony.`);
         lines.push(`${animal.name} is yours. It still has no name. That part costs one of yours — call ${def.short} <name>.`);
         return { ok: true, lines, kinds: [...kinds, 'take'] };
       }
@@ -921,11 +921,11 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     lines.push(`You take ${item.name} from ${box.name}.`);
     return { ok: true, lines, kinds: [...kinds, 'take'] };
   }
-  if (verb === 'give' && rest && !/^\d+\s+coins?\s+to\s+/i.test(rest)) {
+  if (verb === 'give' && rest && !/^\d+\s+(?:coins?|dollars?|cash)\s+to\s+/i.test(rest)) {
     // give <item> to <player> — MooItem system
     const m = rest.match(/^(.+?)\s+to\s+(.+)$/i);
     if (!m) {
-      lines.push('Usage: give <item> to <person>, or give <n> coin to <person>.');
+      lines.push('Usage: give <item> to <person>, or give <n> dollars to <person>.');
       return { ok: false, lines };
     }
     const target = await MooChar.findOne({ roomId: ch.roomId, name: new RegExp('^' + escapeRe(m[2].trim()) + '$', 'i') });
@@ -1019,7 +1019,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     return { ok: true, lines };
   }
   if (verb === 'coins' || verb === 'money') {
-    lines.push(`You carry ${ch.attrs?.coin || 0} coin.`);
+    lines.push(`You carry $${ch.attrs?.coin || 0}.`);
     return { ok: true, lines };
   }
   if (verb === 'exits') {
@@ -1243,14 +1243,14 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
 
   /* ── GIVE COIN ─────────────────────────────────────────────────────────
    * The economy flows between players. Coin changes hands in the same room. */
-  if (verb === 'give' && /^\d+\s+coins?\s+to\s+/i.test(rest)) {
-    const gm = rest.match(/^(\d+)\s+coins?\s+to\s+(.+)$/i);
+  if (verb === 'give' && /^\d+\s+(?:coins?|dollars?|cash)\s+to\s+/i.test(rest)) {
+    const gm = rest.match(/^(\d+)\s+(?:coins?|dollars?|cash)\s+to\s+(.+)$/i);
     if (gm) {
       const amount = parseInt(gm[1], 10);
       const recipientName = gm[2].trim();
       if (amount <= 0) { lines.push('That is not an amount.'); return { ok: false, lines }; }
       if ((ch.attrs?.coin || 0) < amount) {
-        lines.push(`You have ${ch.attrs?.coin || 0} coin. Not enough.`);
+        lines.push(`You have $${ch.attrs?.coin || 0}. Not enough.`);
         return { ok: false, lines };
       }
       const recipient = await MooChar.findOne({
@@ -1259,13 +1259,13 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
         _id: { $ne: ch._id },
       }).lean();
       if (!recipient) {
-        lines.push(`No "${recipientName}" here to give coin to.`);
+        lines.push(`No "${recipientName}" here to give money to.`);
         return { ok: false, lines };
       }
       await MooChar.updateOne({ _id: ch._id }, { $inc: { 'attrs.coin': -amount } });
       await MooChar.updateOne({ _id: recipient._id }, { $inc: { 'attrs.coin': amount } });
-      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} counts out ${amount} coin and hands it to ${recipient.name}.`, 'obj.coins.drop');
-      lines.push(`You hand ${amount} coin to ${recipient.name}.`);
+      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} counts out $${amount} and hands it to ${recipient.name}.`, 'obj.coins.drop');
+      lines.push(`You hand $${amount} to ${recipient.name}.`);
       return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: ['obj.coins.drop'] };
     }
   }
@@ -1361,7 +1361,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     bits.push(`You are ${ch.name}, in ${room?.name || ch.roomId}.`);
     bits.push(fed ? 'Fed — the day sits easy on you.' : 'Hollow — you have not eaten in a while. Nothing is wrong. Food is where the people are.');
     bits.push(rested ? 'Rested.' : 'Frayed — the world reads a little blurry. Sleep anywhere safe to reset.');
-    bits.push(`${ch.attrs?.coin || 0} coin in your pocket.`);
+    bits.push(`$${ch.attrs?.coin || 0} in your pocket.`);
     if (Array.isArray(ch.attrs?.marks) && ch.attrs.marks.length) bits.push(`Marks: ${ch.attrs.marks.join(', ')}.`);
     if (ch.attrs?.openPetition?.text) bits.push(`One petition open: "${ch.attrs.openPetition.text}"`);
     if (ch.attrs?.openWish?.text) bits.push(`One wish in the drum: "${ch.attrs.openWish.text}"`);
@@ -1438,11 +1438,11 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     if (!food) { lines.push('Nothing to eat here. Pat\'s, the taco window, Ruth-Ann\'s stoop, the truck stop — food is where the people are. (dir tells you what a place does.)'); return { ok: false, lines }; }
     const price = food.price || 0;
     const coin = ch.attrs?.coin || 0;
-    if (price > coin) { lines.push(`That runs ${price} coin and you carry ${coin}. Ruth-Ann's stoop feeds anybody, no questions — or work a shift first (work, where there's work).`); return { ok: false, lines, kinds: [...kinds, 'err'] }; }
+    if (price > coin) { lines.push(`That runs $${price} and you carry ${coin}. Ruth-Ann's stoop feeds anybody, no questions — or work a shift first (work, where there's work).`); return { ok: false, lines, kinds: [...kinds, 'err'] }; }
     await MooChar.updateOne({ _id: ch._id }, { $set: { 'attrs.lastMeal': Date.now() }, $inc: { 'attrs.coin': -price } });
     ch.attrs = { ...(ch.attrs || {}), lastMeal: Date.now(), coin: coin - price };
     await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} settles in to eat.`);
-    lines.push(`You eat: ${food.menu}. ${price ? price + ' coin, well spent.' : 'No charge. Arguing about that has been tried.'} Warmth moves in. You are Fed.`);
+    lines.push(`You eat: ${food.menu}. ${price ? '$' + price + ', well spent.' : 'No charge. Arguing about that has been tried.'} Warmth moves in. You are Fed.`);
     return { ok: true, lines, kinds: [...kinds, 'emote'] };
   }
 
@@ -1784,7 +1784,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
       $inc: { 'attrs.coin': sellValue },
     });
     await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} picks ${crop?.desc || plot.crop} from their plot.`, 'garden.pick');
-    lines.push(`You pick: ${crop?.desc || plot.crop}. The garden club nods. ${sellValue} coin for the harvest. Plot's clear — plant again whenever.`);
+    lines.push(`You pick: ${crop?.desc || plot.crop}. The garden club nods. $${sellValue} for the harvest. Plot's clear — plant again whenever.`);
     return { ok: true, lines, kinds: [...kinds, 'emote'], sounds: ['garden.pick'] };
   }
 
@@ -1809,7 +1809,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     ch.attrs = { ...(ch.attrs || {}), coin: (ch.attrs?.coin || 0) + job.wage };
     await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} works a shift at ${job.name}.`);
     await setBusy(12, 'working');
-    lines.push(`${job.line} That is ${job.wage} coin — ${workDay + 1} of 6 shifts today.`);
+    lines.push(`${job.line} That is $${job.wage} — ${workDay + 1} of 6 shifts today.`);
     return { ok: true, lines, kinds: [...kinds, 'take'] };
   }
 
@@ -1823,7 +1823,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     const dest = stops.find((s) => s.roomId !== ch.roomId && (s.name.toLowerCase().includes(wLower) || s.district.includes(wLower.replace(/\s+/g, ''))));
     if (!dest) { lines.push(`The tram does not call anywhere called "${rest}". Stops: ` + stops.map((s) => s.name).join(', ') + '.'); return { ok: false, lines }; }
     const coin = ch.attrs?.coin || 0;
-    if (coin < 1) { lines.push('Fare is 1 coin and your pocket disagrees. The Stairs are free and character-building.'); return { ok: false, lines, kinds: [...kinds, 'err'] }; }
+    if (coin < 1) { lines.push('Fare is $1 and your pocket disagrees. The Stairs are free and character-building.'); return { ok: false, lines, kinds: [...kinds, 'err'] }; }
     const origin = ch.roomId;
     await emit(origin, ch.userId, ch.name, 'leave', `${ch.name} boards the tram.`);
     ch.roomId = dest.roomId;
@@ -1832,7 +1832,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     await emit(dest.roomId, ch.userId, ch.name, 'enter', `${ch.name} steps off the tram.`);
     await setBusy(8, 'riding the tram');
     const roomView = await describeRoom(ch);
-    lines.push(`The tram hums you across the city and lets you off at ${dest.name}. 1 coin.`);
+    lines.push(`The tram hums you across the city and lets you off at ${dest.name}. $1.`);
     return { ok: true, lines, room: roomView, kinds: [...kinds, 'move'], district: roomView.district };
   }
   if (verb === 'ferry') {
@@ -1842,7 +1842,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     const dest = await MooRoom.findOne({ roomId: destId }).select('roomId name').lean();
     if (!dest) { lines.push('The far dock is not answering. Odd.'); return { ok: false, lines }; }
     const coin = ch.attrs?.coin || 0;
-    if (coin < 1) { lines.push('Crossing is 1 coin. Captain Marsh takes IOUs from exactly nobody.'); return { ok: false, lines, kinds: [...kinds, 'err'] }; }
+    if (coin < 1) { lines.push('Crossing is $1. Captain Marsh takes IOUs from exactly nobody.'); return { ok: false, lines, kinds: [...kinds, 'err'] }; }
     const origin = ch.roomId;
     await emit(origin, ch.userId, ch.name, 'leave', `${ch.name} steps aboard the ferry.`);
     ch.roomId = dest.roomId;
@@ -1851,7 +1851,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     await emit(dest.roomId, ch.userId, ch.name, 'enter', `${ch.name} comes off the ferry.`);
     await setBusy(10, 'crossing the river');
     const roomView = await describeRoom(ch);
-    lines.push(`The ferry takes it slow — conversational, the Captain calls it — and ties up at ${dest.name}. 1 coin.`);
+    lines.push(`The ferry takes it slow — conversational, the Captain calls it — and ties up at ${dest.name}. $1.`);
     return { ok: true, lines, room: roomView, kinds: [...kinds, 'move'], district: roomView.district };
   }
 
@@ -1881,7 +1881,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     if (/\b(rod|pole)\b/i.test(rest)) {
       const owns = await MooItem.findOne({ 'location.type': 'char', 'location.id': ch.userId, 'props.rod': true }).lean();
       if (owns) { lines.push('You have a rod. Marva looks at it, then at you, and does not sell you a second one.'); return { ok: false, lines }; }
-      if (coin < 6) { lines.push('A cane pole runs 6 coin. Marva waits. She is good at waiting.'); return { ok: false, lines }; }
+      if (coin < 6) { lines.push('A cane pole runs $6. Marva waits. She is good at waiting.'); return { ok: false, lines }; }
       await MooChar.updateOne({ _id: ch._id }, { $inc: { 'attrs.coin': -6 } });
       ch.attrs = { ...(ch.attrs || {}), coin: coin - 6 };
       await MooItem.create({
@@ -1894,10 +1894,10 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
       return { ok: true, lines, kinds: [...kinds, 'take'] };
     }
     const n = 5;
-    if (coin < 2) { lines.push('Bait is 2 coin for a tub. That is about as cheap as this city gets.'); return { ok: false, lines }; }
+    if (coin < 2) { lines.push('Bait is $2 for a tub. That is about as cheap as this city gets.'); return { ok: false, lines }; }
     await MooChar.updateOne({ _id: ch._id }, { $inc: { 'attrs.coin': -2, 'attrs.bait': n } });
     ch.attrs = { ...(ch.attrs || {}), coin: coin - 2, bait: (ch.attrs?.bait || 0) + n };
-    lines.push(`Two coin, and a paper tub of nightcrawlers in damp soil. Five casts' worth. You now carry ${(ch.attrs.bait)} bait.`);
+    lines.push(`Two dollars, and a paper tub of nightcrawlers in damp soil. Five casts' worth. You now carry ${(ch.attrs.bait)} bait.`);
     return { ok: true, lines, kinds: [...kinds, 'take'] };
   }
 
@@ -1906,7 +1906,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     const room = await MooRoom.findOne({ roomId: ch.roomId }).lean();
     if (ch.roomId !== 'corner_store') { lines.push('Bricks are corner-store business — the Patch corner store sells them over the counter.'); return { ok: false, lines }; }
     const coin = ch.attrs?.coin || 0;
-    if (coin < 5) { lines.push('A brick runs 5 coin. The counter waits without judgment. Mostly.'); return { ok: false, lines }; }
+    if (coin < 5) { lines.push('A brick runs $5. The counter waits without judgment. Mostly.'); return { ok: false, lines }; }
     const has = await MooItem.findOne({ 'location.type': 'char', 'location.id': ch.userId, 'props.brick': true }).lean();
     if (has) { lines.push('You already carry a brick. Losing it is a whole bad day — which is to say, a story. Not today.'); return { ok: false, lines }; }
     await MooChar.updateOne({ _id: ch._id }, { $inc: { 'attrs.coin': -5 } });
@@ -1914,7 +1914,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
     const itemId = 'brick_' + Date.now().toString(36);
     await MooItem.create({ itemId, name: `${ch.name}'s brick`, desc: 'A pocket phone — folks call any phone a brick, even the thin ones. Old joke, stuck. Calls, texts, the Feed, the map. Yours now.', location: { type: 'char', id: ch.userId }, portable: true, props: { brick: true } });
     await emit(ch.roomId, ch.userId, ch.name, 'take', `${ch.name} buys a brick over the counter. The bell over the door approves.`);
-    lines.push('Five coin across the counter and the brick is yours. Calls, texts, the Feed, the map — the city in your pocket.');
+    lines.push('Five dollars across the counter and the brick is yours. Calls, texts, the Feed, the map — the city in your pocket.');
     return { ok: true, lines, kinds: [...kinds, 'take'] };
   }
 
@@ -2313,7 +2313,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
       }
       const amt = parseInt(m[2], 10);
       await MooChar.updateOne({ _id: target._id }, { $inc: { 'attrs.coin': amt } });
-      lines.push(`${target.name} ${amt >= 0 ? 'gains' : 'loses'} ${Math.abs(amt)} coin.`);
+      lines.push(`${target.name} ${amt >= 0 ? 'gains' : 'loses'} $${Math.abs(amt)}.`);
       return { ok: true, lines };
     }
     if (wverb === 'sound') {
@@ -2340,7 +2340,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
   }
 
   if (verb === 'help') {
-    lines.push('Moving: go <exit>, go to <place>, tram, ferry, home, back, map, dir. Senses: look, look <thing>, exits, where, time, weather, who, status, recap, chord, sniff. Hands: take, drop, put, get, give, inventory, coins, eat, sleep, work, flatten penny, buy brick. Fishing: cast, wait, set, hold, give, land, release, reel in, sell. Growing: forage, almanac, plant <crop>, water, weed, check, pick, pull. Social: 36 gestures (type socials) — each takes an adverb and a target: nod slowly, smile warmly at Ruth-Ann, wave to Merle. adverbs lists them. pose <what you are doing> shows in the room. emote with * for your name, -name to point at somebody, %he/%his for pronouns. pronouns <she|he|they|it>. walk-style <how you move>. Touch: handshake, hug, highfive, fistbump, pat <name> — they accept or let it pass. Animals: strays, approach, pet, coax, offer <food> to <animal>, carry, release, adopt, surrender, call <animal> <name>. give <n> coin to <name>. Voice: say (the Quiet), speak (aloud), emote, whisper <name> <words>, page <name> <words>, talk to <citizen>, petition <words>, wish <words>. Selves: describe me as <text>, chars, newchar <First Last>, switch <name>.');
+    lines.push('Moving: go <exit>, go to <place>, tram, ferry, home, back, map, dir. Senses: look, look <thing>, exits, where, time, weather, who, status, recap, chord, sniff. Hands: take, drop, put, get, give, inventory, coins, eat, sleep, work, flatten penny, buy brick. Fishing: cast, wait, set, hold, give, land, release, reel in, sell. Growing: forage, almanac, plant <crop>, water, weed, check, pick, pull. Social: 36 gestures (type socials) — each takes an adverb and a target: nod slowly, smile warmly at Ruth-Ann, wave to Merle. adverbs lists them. pose <what you are doing> shows in the room. emote with * for your name, -name to point at somebody, %he/%his for pronouns. pronouns <she|he|they|it>. walk-style <how you move>. Touch: handshake, hug, highfive, fistbump, pat <name> — they accept or let it pass. Animals: strays, approach, pet, coax, offer <food> to <animal>, carry, release, adopt, surrender, call <animal> <name>. give <n> dollars to <name>. Voice: say (the Quiet), speak (aloud), emote, whisper <name> <words>, page <name> <words>, talk to <citizen>, petition <words>, wish <words>. Selves: describe me as <text>, chars, newchar <First Last>, switch <name>.');
     return { ok: true, lines };
   }
 

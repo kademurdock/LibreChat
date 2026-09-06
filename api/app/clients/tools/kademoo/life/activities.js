@@ -132,12 +132,12 @@ function bowlBall(ctx, pinsUp, aim) {
 }
 act({
   name: 'bowl', aliases: ['bowling', 'start bowling', 'rent lane'],
-  help: { usage: 'bowl · then roll (or roll hook), ten frames', blurb: 'Ten frames at the Millrace Lanes. Three coin a game. The board remembers.' },
+  help: { usage: 'bowl · then roll (or roll hook), ten frames', blurb: 'Ten frames at the Millrace Lanes. Three dollars a game. The board remembers.' },
   when: async (ctx) => (await ctx.room()).roomId === 'bowling_lanes',
   whyNot: () => 'The lanes are in Millrace — the Millrace Lanes, league night Thursdays.',
   async run(ctx) {
     if (ctx.life.bowl) return ctx.fail(`You have a game going — frame ${ctx.life.bowl.frames.length + 1}. "roll".`);
-    if (coinOf(ctx.ch) < 3) return ctx.fail('Three coin a game, shoes included, shoes disgusting.');
+    if (coinOf(ctx.ch) < 3) return ctx.fail('Three dollars a game, shoes included, shoes disgusting.');
     await payCoin(ctx.ch, 3);
     const own = await MooItem.findOne({ 'location.type': 'char', 'location.id': ctx.userId, 'props.bowling': true }).lean();
     ctx.life.bowl = { frames: [], own: !!own };
@@ -287,7 +287,7 @@ async function cardsSettle(ctx, how) {
   if (win) await earnCoin(ctx.ch, win);
   ctx.need({ fun: win > g.bet ? 10 : 3 }); ctx.learn('hustle', win > g.bet ? 3 : 1);
   await emit(ctx.ch.roomId, ctx.userId, ctx.ch.name, 'emote', win > g.bet ? `${ctx.ch.name} takes a hand off the house.` : `${ctx.ch.name} loses a hand to the house, quietly.`);
-  ctx.say(text + ` ${coinOf(ctx.ch)} coin.`);
+  ctx.say(text + ` $${coinOf(ctx.ch)}.`);
   return ctx.ok({ kinds: [...ctx.kinds, win > g.bet ? 'chip_win' : 'card_flip'] });
 }
 
@@ -335,7 +335,7 @@ act({
     await setBusy(ctx.ch, 12, 'playing a set');
     ctx.need({ fun: 12, company: 5, rested: -5, fed: -3 }); ctx.learn('music', 5);
     await emit(ctx.ch.roomId, ctx.userId, ctx.ch.name, 'emote', `${ctx.ch.name} plays a set on ${inst.name.replace(/^(a|an)\s+/, 'the ')}. ${tips >= 8 ? 'Coins land in the case.' : 'A coin or two.'}`);
-    ctx.say(`You open the case and play a set on ${inst.name.replace(/^(a|an)\s+/, 'the ')} — ${pick(SONGS)}, then two more. ${tips === 0 ? 'The hat stays empty. Wrong hour, wrong corner, right song.' : `${tips} coin in the case${crowd ? ' — a little crowd stopped' : ''}. ${c.h >= 17 ? 'Evening is the money hour.' : ''}`}`);
+    ctx.say(`You open the case and play a set on ${inst.name.replace(/^(a|an)\s+/, 'the ')} — ${pick(SONGS)}, then two more. ${tips === 0 ? 'The hat stays empty. Wrong hour, wrong corner, right song.' : `$${tips} in the case${crowd ? ' — a little crowd stopped' : ''}. ${c.h >= 17 ? 'Evening is the money hour.' : ''}`}`);
     return ctx.ok({ kinds: [...ctx.kinds, tips ? 'coin' : 'emote'] });
   },
   buttons: async (ctx) => (await instrument(ctx.userId)) && ['the_bandshell', 'bell_court_street', 'hook_front_street', 'the_pier', 'tanglefoot_line_street', 'sweetwater_park'].includes((await ctx.room()).roomId) ? [{ label: 'Busk for tips', cmd: 'busk', group: 'here' }] : [],

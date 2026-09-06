@@ -293,7 +293,7 @@ kidVerb({
     await MooChar.updateMany({ userId: ctx.userId }, { $set: { active: false } });
     await MooChar.updateOne({ _id: k._id }, { $set: { userId: ctx.userId, active: true, 'attrs.life': life, 'attrs.coin': 20, 'attrs.desc': life.look.line, 'attrs.legacy': true }, $unset: { 'attrs.child': 1, 'attrs.followUser': 1 } });
     await rel.adjust(ctx.userId, k.userId, { friendship: 0 }, { flags: { family: true } });
-    ctx.say(`You are ${k.name} now — grown, with twenty coin and a house key. Your ${ctx.ch.name.split(' ')[0]} self is still here: "switch ${ctx.ch.name.split(' ')[0]}" goes back.`);
+    ctx.say(`You are ${k.name} now — grown, with twenty dollars and a house key. Your ${ctx.ch.name.split(' ')[0]} self is still here: "switch ${ctx.ch.name.split(' ')[0]}" goes back.`);
     return { ok: true, lines: ctx.lines, wantRoom: true, kinds: ['enter'] };
   },
 });

@@ -48,6 +48,7 @@ const SOUNDS_TO_SEED = [
   'life.cat.meow', 'life.cat.purr', 'life.dog.bark', 'life.dog.growl', 'life.dog.pant',
   'social.cough', 'social.whistle', 'social.hug', 'social.fistbump',
   'garden.pick',
+  'hangout.seat', 'hangout.page', 'hangout.record', 'hangout.snacks',
 ];
 
 /* NOT latched on entry any more. The old version set `_seeded = true` as its
@@ -90,7 +91,9 @@ async function seedSounds() {
     for (const id of needed) {
       const key = `reverie-sounds/${id}.m4a`;
       const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
-      const url = await getSignedUrl(s3, cmd, { expiresIn: expiry });
+      const url = id.startsWith('hangout.')
+        ? `https://kademurdock.com/assets/sounds/reverie/${id}.m4a`
+        : await getSignedUrl(s3, cmd, { expiresIn: expiry });
 
       await MooSound.updateOne(
         { scopeType: 'event', scopeId: id },

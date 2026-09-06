@@ -80,7 +80,7 @@ registry.register({
     const s = await shopHere(ctx);
     const room = await ctx.room();
     if (!s) {
-      if (room && room.props && room.props.food) return ctx.fail(`This is a food counter: ${room.props.food.menu} for ${room.props.food.price || 0} coin. Say "eat".`);
+      if (room && room.props && room.props.food) return ctx.fail(`This is a food counter: ${room.props.food.menu} for $${room.props.food.price || 0}. Say "eat".`);
       return ctx.fail('No counter here. Shops: the Corner Store (Patch), Hock’s Pawn (Tanglefoot), the Salvage Yard (Millrace), the Salon (Fairlawn), the Fish Market (Hook), the Tandy stand (Long Acre), the Garages (Millrace), the Shack (Hook).');
     }
     ctx.say(s.line);
@@ -108,13 +108,13 @@ registry.register({
       if (old && !old.unknown && !/Nothing called|does not know/.test((old.lines || []).join(' '))) return { ...old, lines: [...ctx.lines, ...(old.lines || []).filter((l) => !/^MEANWHILE/.test(l))] };
       return ctx.fail(s ? `${cap(s.keeper)} does not sell "${argRaw}". "shop" shows the shelf.` : 'No counter here to buy from. "shop" anywhere with one.');
     }
-    if (coinOf(ch) < g.price) return ctx.fail(`${cap(g.name)} is ${g.price} coin and you carry ${coinOf(ch)}.`, { kinds: [...ctx.kinds, 'err'] });
+    if (coinOf(ch) < g.price) return ctx.fail(`${cap(g.name)} is $${g.price} and you carry ${coinOf(ch)}.`, { kinds: [...ctx.kinds, 'err'] });
     await payCoin(ch, g.price);
     if (g.service) return salon(ctx, g);
     await makeItem({ name: g.name, desc: g.desc, location: { type: 'char', id: ch.userId }, props: { ...(g.props || {}), boughtAt: room.roomId, price: g.price } });
     await emit(ch.roomId, ch.userId, ch.name, 'take', `${ch.name} buys ${g.name}.`);
     if (g.props && g.props.furniture) ctx.say(`You buy ${g.name} for ${g.price}. It is yours to carry home and "place". ${g.props.effect}`);
-    else ctx.say(`You buy ${g.name} for ${g.price} coin.`);
+    else ctx.say(`You buy ${g.name} for $${g.price}.`);
     if (g.props && g.props.lotto) ctx.say('Scratch it: "scratch ticket".');
     return ctx.ok({ kinds: [...ctx.kinds, 'coin'] });
   },
@@ -153,7 +153,7 @@ registry.register({
     ctx.learn('hustle', 2);
     await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} pawns ${it.name}.`);
     if (it.props && it.props.ring) await require('./drama').rumor(ctx, `${ch.name} pawned a ring at Hock’s`, 'love', 3);
-    ctx.say(`Hock gives ${it.name} the eyebrow and counts out ${val} coin. "Story’s worth more than the thing. Always is."`);
+    ctx.say(`Hock gives ${it.name} the eyebrow and counts out $${val}. "Story’s worth more than the thing. Always is."`);
     return ctx.ok({ kinds: [...ctx.kinds, 'coin'] });
   },
   buttons: async (ctx) => (await ctx.room()).roomId === 'pawn_hocks' ? [{ label: 'Pawn something', cmd: 'pawn', group: 'here' }] : [],
@@ -165,11 +165,11 @@ registry.register({
   async run(ctx) {
     const { ch } = ctx;
     const t = await MooItem.findOne({ 'location.type': 'char', 'location.id': ch.userId, 'props.lotto': true }).lean();
-    if (!t) return ctx.fail('No ticket to scratch. The Corner Store sells them, two coin.');
+    if (!t) return ctx.fail('No ticket to scratch. The Corner Store sells them, two dollars.');
     await MooItem.deleteOne({ _id: t._id });
     const r = Math.random();
     const win = r < 0.02 ? 100 : r < 0.08 ? 20 : r < 0.25 ? 5 : r < 0.4 ? 2 : 0;
-    if (win) { await earnCoin(ch, win); ctx.need({ fun: win >= 20 ? 25 : 8 }); ctx.say(win >= 100 ? `THREE BELLS. ${win} coin. The Corner Store will be talking about this for a month.` : `A winner — ${win} coin.`); if (win >= 100) await require('./drama').rumor(ctx, `${ch.name} hit a hundred on a scratch ticket`, 'money', 4); }
+    if (win) { await earnCoin(ch, win); ctx.need({ fun: win >= 20 ? 25 : 8 }); ctx.say(win >= 100 ? `THREE BELLS. $${win}. The Corner Store will be talking about this for a month.` : `A winner — $${win}.`); if (win >= 100) await require('./drama').rumor(ctx, `${ch.name} hit a hundred on a scratch ticket`, 'money', 4); }
     else { ctx.need({ fun: -2 }); ctx.say('Two bells and a boot. Nothing. The odds were printed right there on the back.'); }
     return ctx.ok({ kinds: [...ctx.kinds, win ? 'coin' : 'err'] });
   },

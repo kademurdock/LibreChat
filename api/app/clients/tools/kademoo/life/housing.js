@@ -16,7 +16,7 @@ const {
 } = require('./ctx');
 
 const LISTINGS = [
-  { key: 'room_over_pats', name: 'the room over Pat’s', ward: 'hook', street: 'hook_front_street', rent: 18, deposit: 10, landlord: 'Pat Okafor',
+  { key: 'room_over_pats', name: 'the room over Pat’s', ward: 'hook', street: 'hook_front_street', rent: 18, deposit: 10, landlord: 'Pat Harris',
     desc: 'One room over the diner. The floor is warm from the grill below and the window looks at the harbor if you lean. It smells like coffee at five every morning whether you like it or not.',
     smell: 'Bacon and coffee coming up through the floorboards.' },
   { key: 'patch_rowhouse', name: 'a row house on Gully Road', ward: 'patch', street: 'patch_gully_road', rent: 25, deposit: 15, landlord: 'Ruth-Ann Purvis',
@@ -94,7 +94,7 @@ registry.register({
     if (!rows.length) return ctx.fail('Nothing listed matching that. "listings" alone shows everything.');
     ctx.say('For rent this week (rent per week, plus a deposit once):');
     for (const l of rows) ctx.say(`${cap(l.name)} — ${l.rent} a week, ${l.deposit} down${l.purchase ? `, or buy outright for ${l.purchase}` : ''}. ${l.desc.split('. ')[0]}. Say: rent ${l.name.replace(/^(the|a)\s+/, '').split(' ').slice(0, 2).join(' ')}`);
-    ctx.say(`You carry ${coinOf(ctx.ch)} coin. Renting takes the deposit and the first week up front.`);
+    ctx.say(`You carry $${coinOf(ctx.ch)}. Renting takes the deposit and the first week up front.`);
     return ctx.ok({ choices: rows.map((l) => ({ label: `Rent ${l.name} (${l.rent}/wk)`, cmd: `rent ${l.key}` })) });
   },
   buttons: async (ctx) => {
@@ -117,7 +117,7 @@ registry.register({
     const roomId = homeIdFor(ch.userId, l.key);
     if (await MooRoom.findOne({ roomId }).lean()) return ctx.fail(`You already hold ${l.name}.`);
     const cost = l.deposit + l.rent;
-    if (coinOf(ch) < cost) return ctx.fail(`${cap(l.name)} wants ${cost} coin to move in (${l.deposit} deposit, ${l.rent} first week). You carry ${coinOf(ch)}. Work is where the verbs are.`, { kinds: [...ctx.kinds, 'err'] });
+    if (coinOf(ch) < cost) return ctx.fail(`${cap(l.name)} wants $${cost} to move in (${l.deposit} deposit, ${l.rent} first week). You carry ${coinOf(ch)}. Work is where the verbs are.`, { kinds: [...ctx.kinds, 'err'] });
     await payCoin(ch, cost);
     const street = await MooRoom.findOne({ roomId: l.street }).select('name').lean();
     await MooRoom.create({
@@ -147,7 +147,7 @@ registry.register({
     const l = listingByKey(h.listing);
     if (!l || !l.purchase) return ctx.fail(`${l ? l.landlord : 'The landlord'} is not selling this one. The Fairlawn house sells.`);
     if (h.owned) return ctx.fail('You already own it, deed and all.');
-    if (coinOf(ch) < l.purchase) return ctx.fail(`The deed runs ${l.purchase} coin. You carry ${coinOf(ch)}.`);
+    if (coinOf(ch) < l.purchase) return ctx.fail(`The deed runs $${l.purchase}. You carry ${coinOf(ch)}.`);
     await payCoin(ch, l.purchase);
     await MooRoom.updateOne({ roomId: room.roomId }, { $set: { 'props.home.owned': true, 'props.home.rent': 0 } });
     await require('./drama').rumor(ctx, `${ch.name} bought ${l.name} outright`, 'money', 4);

@@ -64,6 +64,7 @@ async function describeRoom(ctx) {
     smell: room.props && room.props.smell,
     listen: room.props && room.props.listenLine,
     outdoor: !!(room.props && room.props.outdoor),
+    hangout: require('./hangouts').view(room, ch.userId, ctx.isWizard),
     weather: wx.kind,
     home: home ? { owner: home.owner, ownerName: home.ownerName, mine: home.owner === ch.userId || (home.tenants || []).includes(ch.userId) } : null,
   };
@@ -105,7 +106,7 @@ function personCmds(ctx, p, kind) {
     if (id === 'littleray') out.push({ label: 'See Ray', cmd: 'corner' });
     return out;
   }
-  return [...base, f('Flirt', 'flirt'), f('Kiss', 'kiss'), f('Date', 'date'), f('Dance with', 'dance with'), f('Whisper to', 'whisper'), f('Give coin', 'give 5 coin to'), f('Give key', 'give key to'), f('Argue', 'argue'), f('Fight', 'fight')];
+  return [...base, f('Flirt', 'flirt'), f('Kiss', 'kiss'), f('Date', 'date'), f('Dance with', 'dance with'), f('Whisper to', 'whisper'), { label: 'Give $5', cmd: `give 5 dollars to ${p.name}` }, f('Give key', 'give key to'), f('Argue', 'argue'), f('Fight', 'fight')];
 }
 
 /** HUD: everything the meters and the header show. */

@@ -17,7 +17,7 @@ const overhear = require('./overhear');
 const { STRAYS } = require('./strays');
 const { driftTo: strayDrift } = require('./strays');
 
-const REVERIE_SEED_VERSION = 4;
+const REVERIE_SEED_VERSION = 5;
 
 /* ── THE WARDS ─────────────────────────────────────────────────────────────
  * District props carry the law tables (bible design: the engine never
@@ -436,7 +436,7 @@ const CITY_ROOMS = [
     roomId: 'the_shack', name: 'the Shack', district: 'hook',
     desc: 'CUTLER & SON MARINE SUPPLY, says the sign, and the son has not been through that door in nine years. Cane poles in a barrel by the till. Bait in a cooler that hums. A counter worn pale where forty years of elbows have leaned on it while somebody decided whether they could afford the good line.',
     exits: { w: 'the_docks' },
-    props: { smell: 'Cut bait, two-stroke oil, and the particular cold of a cooler that has never once been fully emptied.', fishhouse: true, indoor: true, merchant: true, doings: 'Buy a pole (6 coin) or bait (5 casts, 2 coin). Sell what you caught. Marva will tell you where they are biting if she likes you.', listenLine: 'The bait cooler cycling on, then off. A cane pole knocking the barrel when the door moves the air.' },
+    props: { smell: 'Cut bait, two-stroke oil, and the particular cold of a cooler that has never once been fully emptied.', fishhouse: true, indoor: true, merchant: true, doings: 'Buy a pole ($6) or bait (5 casts, $2). Sell what you caught. Marva will tell you where they are biting if she likes you.', listenLine: 'The bait cooler cycling on, then off. A cane pole knocking the barrel when the door moves the air.' },
   },
   {
     roomId: 'pier_seven', name: 'Pier Seven', district: 'hook',
@@ -527,22 +527,17 @@ const CITY_ITEMS = [
  * the room. */
 const CENSUS = [
   {
-    id: 'pat', name: 'Pat Okafor', aka: 'Pat',
-    desc: 'You hear the flat-top before you pick Pat out of the steam — broad-shouldered, towel over one shoulder, spatula conducting. The coffee is bad and Pat knows and Pat does not care, and this is the correct arrangement.',
+    id: 'pat', name: "Pat Harris", aka: 'Pat',
+    desc: "Pat wears a faded diner T-shirt and keeps a towel tucked into her apron. She is working the grill, checking the tickets, and keeping an eye on anyone who has been sitting alone too long.",
     home: 'pats_diner', family: ['dez'],
     wants: ['see the third stool argument settled for good', 'a full counter on a snow night'],
     schedule: [{ from: 0, to: 24, room: 'pats_diner', doing: 'working the grill' }],
-    talk: [
-      '"Coffee’s bad. Pie’s good. Balance." Pat refills your cup without being asked.',
-      '"You want eggs or you want to talk? Either way sit down, you’re making the room nervous."',
-      '"Heard it at the counter this morning, so it’s either true or it will be by Friday."',
-      'Pat nods at the window. "Harbor’s loud today. Means money or trouble. Same sound."',
-    ],
-    ambient: ['Pat scrapes the flat-top like it owes an apology.', 'Pat slides a plate down the counter without looking. It stops exactly where it should.', 'Pat wipes the counter in a circle that has worn the pattern off.', 'Pat flips something on the grill without looking. It sizzles agreement.'],
+    talk: ["\"Pie came out an hour ago. Apple or cherry. I saved the corner piece if you like the crust.\"", "\"Sit anywhere. Except that stool. The leg is loose, and Merle keeps saying he fixed it.\"", "\"Dez is my cousin. Tell him to return my cooler before he asks for another favor.\"", "\"You can stay after you eat. Just slide over if the lunch crowd comes in.\""],
+    ambient: ["Pat calls an order through the kitchen window.", "Pat flips two burgers and turns the radio up a little.", "Pat pours fresh coffee, then takes a sip from her own mug."],
   },
   {
-    id: 'merle', name: 'Merle Boggs', aka: 'Merle',
-    desc: 'A dockhand built like cargo, always eating something, always mid-favor. His boots announce him a room early. A Boggs, which the Hook says explains a lot without saying what.',
+    id: 'merle', name: "Merle Boggs", aka: 'Merle',
+    desc: "Merle works the docks. His boots are scuffed, his lunch is wrapped in foil, and he is usually helping somebody move something too heavy for one person.",
     home: 'the_docks', family: ['odessa'],
     wants: ['pay back the favor he owes you before you ask', 'one shift where nothing surprising comes off a boat'],
     schedule: [
@@ -551,16 +546,12 @@ const CENSUS = [
       { from: 18, to: 23, room: 'pats_diner', doing: 'holding down a stool' },
       { from: 23, to: 5, room: 'the_docks', doing: 'night watch, allegedly' },
     ],
-    talk: [
-      '"I owe you one. Don’t know for what yet. It’ll come to me." He takes another bite.',
-      '"Crate come in last night with no manifest. So officially, no crate come in last night."',
-      '"You eat? You look like you didn’t eat. Pat’s. Go. Tell her Merle sent you, she’ll charge you the same."',
-    ],
-    ambient: ['Merle unwraps something and eats it in two bites, thoughtful.', 'Merle waves at somebody on the water. The water waves back, in its way.', 'Merle checks a rope knot and nods like it passed an interview.', 'Merle counts crates under his breath, loses count, starts over unbothered.'],
+    talk: ["\"Pat says I broke her stool. I fixed it. Different leg broke. That is a new problem.\"", "\"If you want a shift, come by early. Wear boots you do not care about.\"", "\"I brought too much lunch again. Take half before I eat it just because it is there.\""],
+    ambient: ["Merle checks a rope knot and gives it another pull.", "Merle unwraps his lunch and sits on a crate.", "Merle counts the crates against a folded delivery slip."],
   },
   {
-    id: 'ines', name: 'Ines Beaumont', aka: 'Ines',
-    desc: 'The librarian. Speaks quietly and knows everyone’s business, which she files, alphabetically, behind her eyes. Cardigan sleeves pushed up like the books might require sudden action.',
+    id: 'ines', name: "Ines Beaumont", aka: 'Ines',
+    desc: "Ines runs the Archive. She wears reading glasses on a cord and knows which shelf a book belongs on without checking. She likes the quiz team, old mysteries, and getting out of work on time.",
     home: 'the_archive', family: [],
     wants: ['the bell tower stairs reopened', 'one week where nobody dog-ears anything'],
     schedule: [
@@ -568,28 +559,20 @@ const CENSUS = [
       { from: 18, to: 21, room: 'the_kettle', doing: 'tea and quiet judgment' },
       { from: 21, to: 8, room: 'the_archive', doing: 'somewhere in the stacks' },
     ],
-    talk: [
-      '"The chronicle is public record, dear. Your reading habits are between you and me. Mostly me."',
-      '"The bell has never once been on time. The year it is, I will personally reshelve the sky."',
-      '"Quiz night is Wednesday. The Archive team always wins. Everyone is sick of us. It’s wonderful."',
-    ],
-    ambient: ['Ines reshelves one book with the finality of a judge.', 'Ines hums three notes, off-key, clearly on purpose.', 'Ines adjusts her cardigan sleeves like the stacks might require sudden action.', 'Ines files something behind her eyes. Alphabetically.'],
+    talk: ["\"If you cannot find it, ask. Half the labels are older than the shelves.\"", "\"Quiz night is Wednesday. We need somebody who knows music. Our last guess was embarrassing.\"", "\"You can read in here as long as you like. There is a softer chair by the window.\""],
+    ambient: ["Ines checks a returned book for a bookmark.", "Ines writes a title on a scrap of paper for someone.", "Ines pushes her glasses up and reaches for the next book."],
   },
   {
-    id: 'dez', name: 'Desmond Okafor', aka: 'Dez',
-    desc: 'Behind the bar like the bar grew around him. Unbothered by anything — fires, heartbreak, requests. Pours with one hand, settles arguments with the other, rarely uses words when an eyebrow is in stock.',
+    id: 'dez', name: "Dez Harris", aka: 'Dez',
+    desc: "Dez has rolled-up sleeves, a silver watch, and a pencil behind one ear. He remembers what you order. If an argument gets too loud, he comes out from behind the bar to deal with it.",
     home: 'dezs_bar', family: ['pat'],
     wants: ['a night the stage surprises him', 'his cousin Pat to admit the truck stop coffee is better'],
     schedule: [
       { from: 16, to: 4, room: 'dezs_bar', doing: 'tending bar' },
       { from: 4, to: 16, room: 'dezs_bar', doing: 'around back somewhere' },
     ],
-    talk: [
-      'Dez pours without asking what you wanted. He is right, which is worse.',
-      '"Stage is open. Nobody’s stopping you but the crowd, and they only bite Fridays."',
-      '"Pat’s my cousin. The coffee thing stays in this room."',
-    ],
-    ambient: ['Dez dries a glass and watches the room like weather.', 'Dez turns the house music down one notch. The bar gets louder to fix it.', 'Dez polishes a glass that was already clean, watching the stage.', 'Dez nods at a regular. The regular nods back. The entire conversation.'],
+    talk: ["\"What are you having? Water is fine. I have been drinking it all night myself.\"", "\"The stage is free. Give me a minute to move the chairs and you can have it.\"", "\"Pat wants her cooler back. I know. If she asks, you have not seen me.\"", "\"You can pick the next record. If it clears the room, you are helping me stack the chairs.\""],
+    ambient: ["Dez rinses a glass and sets it on the rack.", "Dez turns the music down so he can hear an order.", "Dez checks the clock and puts a bowl of pretzels on the bar."],
   },
   {
     id: 'ruthann', name: 'Ruth-Ann Purvis', aka: 'Ruth-Ann',
@@ -1182,6 +1165,7 @@ async function carveReverie() {
     if (!kettle.props?.opinion) patch['props.opinion'] = true;
     if (Object.keys(patch).length) await MooRoom.updateOne({ roomId: 'the_kettle' }, { $set: patch });
   }
+  await require('@librechat/api').refreshReverieCast(MooChar);
   /* The census takes its posts. */
   for (const c of CENSUS) {
     const at = npcDoingNow('npc:' + c.id) || { room: c.home };

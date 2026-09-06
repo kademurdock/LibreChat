@@ -26,7 +26,7 @@ async function rent(now) {
     if (coin >= home.rent) {
       await MooChar.updateOne({ _id: owner._id }, { $inc: { 'attrs.coin': -home.rent }, $set: { 'attrs.life.rentBehind': 0 } });
       await MooRoom.updateOne({ roomId: h.roomId }, { $set: { 'props.home.rentDue': now + 7 * 86400000 } });
-      await tell(owner.userId, `Rent day. ${home.rent} coin to ${listing.landlord} for ${listing.name}. Paid, and nothing said.`, 'system', 'coin');
+      await tell(owner.userId, `Rent day. $${home.rent} to ${listing.landlord} for ${listing.name}. Paid, and nothing said.`, 'system', 'coin');
     } else {
       const behind = ((owner.attrs.life || {}).rentBehind || 0) + 1;
       await MooChar.updateOne({ _id: owner._id }, { $set: { 'attrs.life.rentBehind': behind } });

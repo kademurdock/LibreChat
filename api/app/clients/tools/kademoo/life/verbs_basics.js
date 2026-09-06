@@ -243,14 +243,14 @@ registry.register({
 /* ── STATUS / NEEDS / SKILLS / INVENTORY ─────────────────────────────── */
 registry.register({
   name: 'status', aliases: ['me', 'needs', 'mood', 'how am i'], free: true,
-  help: { topic: 'you', usage: 'status', blurb: 'How you are doing: mood, meters, coin, marks.' },
+  help: { topic: 'you', usage: 'status', blurb: 'How you are doing: mood, meters, money, marks.' },
   async run(ctx) {
     const { ch, life } = ctx;
     const nd = life.needs || needs.fresh();
     const room = await ctx.room();
     ctx.say(`You are ${ch.name}, at ${room ? room.name : 'nowhere'}. ${needs.statusLine(nd)}`);
     ctx.say(`Meters: ${needs.NEEDS.map((n) => `${n} ${Math.round(nd[n])} (${needs.word(n, nd[n])})`).join(', ')}.`);
-    ctx.say(`${coinOf(ch)} coin in your pocket.${life.homeName ? ` Home: ${life.homeName}.` : ' No place of your own yet (listings shows what is for rent).'}${life.partnerName ? ` Partner: ${life.partnerName}.` : ''}`);
+    ctx.say(`$${coinOf(ch)} in your pocket.${life.homeName ? ` Home: ${life.homeName}.` : ' No place of your own yet (listings shows what is for rent).'}${life.partnerName ? ` Partner: ${life.partnerName}.` : ''}`);
     if (Array.isArray(ch.attrs.marks) && ch.attrs.marks.length) ctx.say(`Marks: ${ch.attrs.marks.join(', ')}.`);
     const h = needs.hud(nd);
     if (h.hint) ctx.say(h.hint);
@@ -272,22 +272,22 @@ registry.register({
 });
 registry.register({
   name: 'inventory', aliases: ['inv', 'i', 'pockets', 'bag'], free: true,
-  help: { topic: 'you', usage: 'inventory', blurb: 'What you carry, and your coin.' },
+  help: { topic: 'you', usage: 'inventory', blurb: 'What you carry, and your money.' },
   async run(ctx) {
     const items = await itemsHeld(ctx.userId);
     const veh = items.filter((i) => i.props && i.props.vehicle);
     const rest = items.filter((i) => !(i.props && i.props.vehicle));
-    ctx.say(rest.length ? `You carry: ${rest.map((i) => i.name).join(', ')}.` : 'Your pockets hold nothing but coin.');
+    ctx.say(rest.length ? `You carry: ${rest.map((i) => i.name).join(', ')}.` : 'Your pockets hold only your money.');
     if (veh.length) ctx.say(`Yours to ride: ${veh.map((v) => v.name).join(', ')}.`);
-    ctx.say(`${coinOf(ctx.ch)} coin.`);
+    ctx.say(`$${coinOf(ctx.ch)}.`);
     return ctx.ok();
   },
   buttons: () => [{ label: 'Pockets', cmd: 'inventory', group: 'self' }],
 });
 registry.register({
   name: 'coins', aliases: ['coin', 'money', 'wallet'], free: true,
-  help: { topic: 'money', usage: 'coins', blurb: 'How much coin you have.' },
-  async run(ctx) { ctx.say(`${coinOf(ctx.ch)} coin.`); return ctx.ok(); },
+  help: { topic: 'money', usage: 'coins', blurb: 'How much money you have.' },
+  async run(ctx) { ctx.say(`$${coinOf(ctx.ch)}.`); return ctx.ok(); },
 });
 
 /* ── WHAT (can I do here) ────────────────────────────────────────────── */
@@ -332,18 +332,18 @@ registry.register({
       return ctx.fail('Nothing to eat here. Pat’s, the Taco Window, Ruth-Ann’s stoop, the Truck Stop, the Tandy stand — food is where the people are. Or cook at home.');
     }
     const price = food.price || 0;
-    if (price > coinOf(ch)) return ctx.fail(`That runs ${price} coin and you carry ${coinOf(ch)}. Ruth-Ann’s stoop feeds anybody, no questions — or work a shift first.`, { kinds: [...ctx.kinds, 'err'] });
+    if (price > coinOf(ch)) return ctx.fail(`That runs $${price} and you carry ${coinOf(ch)}. Ruth-Ann’s stoop feeds anybody, no questions — or work a shift first.`, { kinds: [...ctx.kinds, 'err'] });
     if (price) await payCoin(ch, price);
     await setAttrs(ch, { lastMeal: Date.now() });
     ctx.need({ fed: 45, fun: 4, company: 3 });
     await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} settles in to eat.`);
-    ctx.say(`You eat: ${food.menu}. ${price ? price + ' coin, well spent.' : 'No charge. Arguing about that has been tried.'}`);
+    ctx.say(`You eat: ${food.menu}. ${price ? '$' + price + ', well spent.' : 'No charge. Arguing about that has been tried.'}`);
     return ctx.ok({ kinds: [...ctx.kinds, 'eat'] });
   },
   async buttons(ctx) {
     const room = await ctx.room();
     const out = [];
-    if (room && room.props && room.props.food) out.push({ label: `Eat (${room.props.food.price || 0} coin)`, cmd: 'eat', group: 'here' });
+    if (room && room.props && room.props.food) out.push({ label: `Eat ($${room.props.food.price || 0})`, cmd: 'eat', group: 'here' });
     return out;
   },
 });
@@ -415,7 +415,7 @@ registry.register({
     await setBusy(ch, 10, 'working');
     ctx.need({ fed: -6, rested: -8, clean: -6, fun: -3, company: 4 });
     ctx.learn(careerSkill(job.name), 3);
-    ctx.say(`${job.line} That is ${wage} coin — shift ${workDay + 1} of 6 today.`);
+    ctx.say(`${job.line} That is $${wage} — shift ${workDay + 1} of 6 today.`);
     if (after > before) {
       ctx.say(`Word comes down: you are ${CAREER_TITLES[after]} at ${job.name} now. Pay goes up.`);
       await require('./drama').rumor(ctx, `${ch.name} got moved up at ${job.name}`, 'work', 2);

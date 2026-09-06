@@ -54,7 +54,7 @@ async function buy(ctx, arg) {
   await emit(ctx.ch.roomId, ctx.userId, ctx.ch.name, 'emote', `${ctx.ch.name} buys ${l.name} off Royce’s lot.`);
   ctx.need({ fun: 15 });
   await require('./drama').rumor(ctx, `${ctx.ch.name} bought ${l.name} off Royce`, 'money', l.price >= 200 ? 3 : 1);
-  ctx.say(`Royce takes the coin, hands you ${l.type === 'bike' ? 'the bike' : 'the keys'}, and says "${l.type === 'bike' ? 'Oil the chain.' : 'Third try. Every time. Don’t fight it.'}" ${cap(l.name)} is yours. "go to <place>" uses it now; "walk" if you would rather. ${l.fuel ? `Tank: ${l.fuel} trips. Gas is ${FUEL_PRICE} here or at the Truck Stop.` : ''}`);
+  ctx.say(`Royce takes the cash, hands you ${l.type === 'bike' ? 'the bike' : 'the keys'}, and says "${l.type === 'bike' ? 'Oil the chain.' : 'Third try. Every time. Don’t fight it.'}" ${cap(l.name)} is yours. "go to <place>" uses it now; "walk" if you would rather. ${l.fuel ? `Tank: ${l.fuel} trips. Gas is ${FUEL_PRICE} here or at the Truck Stop.` : ''}`);
   return ctx.ok({ kinds: [...ctx.kinds, 'coin', l.sound] });
 }
 
@@ -79,7 +79,7 @@ registry.register({
   help: { topic: 'moving', usage: 'drive to <place> · ride · walk', blurb: 'Use what you own. "drive to pats", or just "ride" to make it the default.' },
   async run(ctx, { arg }) {
     const vs = await owned(ctx.userId);
-    if (!vs.length) return ctx.fail('Nothing to ride. Royce’s lot at the Garages sells bikes and cars; the tram and the ferry take coin.');
+    if (!vs.length) return ctx.fail('Nothing to ride. Royce’s lot at the Garages sells bikes and cars; the tram and the ferry take cash.');
     if (ctx.life.transport === 'walk') { await setAttrs(ctx.ch, { 'life.transport': 'ride' }); ctx.life.transport = 'ride'; }
     const dest = arg.replace(/^to\s+(the\s+)?/, '').trim();
     if (!dest) { ctx.say(`Riding by default now. "go to <place>" and you are off. ${vs.map((v) => v.name).join(', ')}.`); return ctx.ok(); }
@@ -116,16 +116,16 @@ registry.register({
 });
 registry.register({
   name: 'gas up', aliases: ['fill up', 'gas', 'refuel', 'fuel'],
-  help: { topic: 'moving', usage: 'gas up', blurb: 'Fill the tank — at the Garages or the Truck Stop, four coin.' },
+  help: { topic: 'moving', usage: 'gas up', blurb: 'Fill the tank — at the Garages or the Truck Stop, four dollars.' },
   when: async (ctx) => ['the_garages', 'the_truck_stop'].includes((await ctx.room()).roomId),
   whyNot: () => 'Gas is at the Garages in Millrace or the Truck Stop out on Long Acre.',
   async run(ctx) {
     const vs = (await owned(ctx.userId)).filter((v) => v.props.fuel != null);
     if (!vs.length) return ctx.fail('Nothing you own takes gas.');
-    if (coinOf(ctx.ch) < FUEL_PRICE) return ctx.fail(`Gas is ${FUEL_PRICE} coin.`);
+    if (coinOf(ctx.ch) < FUEL_PRICE) return ctx.fail(`Gas is $${FUEL_PRICE}.`);
     await payCoin(ctx.ch, FUEL_PRICE);
     for (const v of vs) { const def = LOT.find((l) => l.key === v.props.vehicle.key); await MooItem.updateOne({ _id: v._id }, { $set: { 'props.fuel': def ? def.fuel : 20 } }); }
-    ctx.say(`You fill up. ${FUEL_PRICE} coin. The pump clicks off like it is proud of itself.`);
+    ctx.say(`You fill up. $${FUEL_PRICE}. The pump clicks off like it is proud of itself.`);
     return ctx.ok({ kinds: [...ctx.kinds, 'coin'] });
   },
   buttons: async (ctx) => (['the_garages', 'the_truck_stop'].includes((await ctx.room()).roomId) && (await owned(ctx.userId)).some((v) => v.props.fuel != null)) ? [{ label: 'Gas up (4)', cmd: 'gas up', group: 'here' }] : [],
@@ -134,7 +134,7 @@ registry.register({
 /* ── MEDALLION 88 ─────────────────────────────────────────────────────── */
 registry.register({
   name: 'cab', aliases: ['call cab', 'call a cab', 'taxi', 'call 88', 'medallion 88', 'hail cab'],
-  help: { topic: 'moving', usage: 'cab <place>', blurb: 'Medallion 88 comes when called. Three coin plus one a street. Knows every road, including the ones that are not.' },
+  help: { topic: 'moving', usage: 'cab <place>', blurb: 'Medallion 88 comes when called. Three dollars plus one a street. Knows every road, including the ones that are not.' },
   async run(ctx, { arg }) {
     const dest = arg.replace(/^to\s+(the\s+)?/, '').trim();
     if (!dest) return ctx.fail('Cab to where? Medallion 88 knows every place on the map — "places" lists them.');
@@ -151,7 +151,7 @@ registry.register({
     await moveTo(ctx.ch, target.roomId, `Medallion 88 pulls up out of nowhere and ${ctx.ch.name} gets in.`, `Medallion 88 pulls up and ${ctx.ch.name} climbs out. The cab is gone before the door shuts.`);
     await setBusy(ctx.ch, 5, 'in the cab');
     ctx.need({ fun: 2, rested: 2 });
-    ctx.say(`Medallion 88 is there before you finish saying it. The driver does not talk and the radio plays the Band. ${target.name}, ${fare} coin, and the cab is gone like it was never there.`);
+    ctx.say(`Medallion 88 is there before you finish saying it. The driver does not talk and the radio plays the Band. ${target.name}, $${fare}, and the cab is gone like it was never there.`);
     return ctx.ok({ wantRoom: true, kinds: [...ctx.kinds, 'transit.cab'] });
   },
   buttons: (ctx) => coinOf(ctx.ch) >= 4 ? [{ label: 'Call a cab', cmd: 'cab', group: 'move', hint: 'cab <place>' }] : [],

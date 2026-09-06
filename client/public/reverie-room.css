@@ -1,0 +1,102 @@
+.scene .art {
+  display: none;
+}
+#scene .text {
+  background: var(--card);
+  color: var(--ink);
+  padding: 1.1rem;
+  text-shadow: none;
+}
+#scene .text .ward {
+  color: var(--muted);
+  text-shadow: none;
+  opacity: 1;
+}
+#scene .text h2,
+#scene .text p {
+  text-shadow: none;
+}
+#reverieIllustration[hidden] + #sceneCaption {
+  display: none;
+}
+#reverieIllustration {
+  background: #b6c8bd;
+  aspect-ratio: 20/11;
+}
+#reverieIllustration svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+#sceneCaption {
+  position: absolute;
+  top: 0.7rem;
+  left: 0.7rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  background: #172a2de6;
+  color: #fff;
+  font-size: 0.78rem;
+  max-width: calc(100% - 2.7rem);
+}
+#hangoutPanel {
+  margin-top: 0.8rem;
+  border-left: 5px solid #b67d52;
+}
+#hangoutPanel[hidden] {
+  display: none;
+}
+#hangoutPrompt {
+  font-size: 1.15rem;
+  line-height: 1.6;
+}
+#hangoutMoments {
+  padding-left: 1.5rem;
+  max-height: 15rem;
+  overflow: auto;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+#hangoutMoments li {
+  margin: 0.5rem 0;
+}
+#hangoutPanel p {
+  overflow-wrap: anywhere;
+}
+#compass {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+#compass button {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+#compass small {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+#hangoutPanel .chips {
+  margin: 0.65rem 0;
+}
+.easy-reading {
+  font-family: Verdana, system-ui, sans-serif;
+  font-size: 1.13rem;
+  line-height: 1.75;
+  letter-spacing: 0.025em;
+  word-spacing: 0.08em;
+}
+.easy-reading #log {
+  line-height: 1.9;
+}
+.easy-reading .chip,
+.easy-reading .btn {
+  line-height: 1.5;
+  padding: 0.7rem 0.85rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene *,
+  .meter *,
+  #hangoutPanel * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
