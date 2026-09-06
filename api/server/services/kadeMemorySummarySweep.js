@@ -2,9 +2,10 @@
  *
  * The instant draft (Stage 1) refreshes a relationship's rolling summary right
  * after a CALL. This nightly pass covers the rest: every relationship that had
- * recent conversation activity (text OR calls) gets its "what's been going on
- * lately" summary refreshed, and summaries whose relationship has gone quiet
- * decay away. This is the "dreaming" cadence.
+ * recent conversation activity gets its unseen turns reflected in chronological
+ * batches across all of that relationship's chats. A saved cursor prevents
+ * repeat work and preserves unfinished batches. Quiet relationships keep their
+ * learned history; their context is dated when read.
  *
  * Self-contained + server-side (no Cowork/Claude session, no external cron):
  * an hourly setInterval that fires once per day at a target UTC hour, mirroring
@@ -15,18 +16,17 @@
  * Tunable via env (all optional):
  *   KADE_SUMMARY_UTC_HOUR       target hour, 0-23 UTC        (default 8 = ~3am Central)
  *   KADE_SUMMARY_LOOKBACK_HOURS how far back "recent" is     (default 30)
- *   KADE_SUMMARY_STALE_DAYS     decay a summary after N quiet days (default 45)
  *   KADE_SUMMARY_MAX_PER_RUN    relationships refreshed per run  (default 250)
- *   KADE_SUMMARY_MAX_MSGS       messages read per conversation   (default 80)
+ *   KADE_SUMMARY_MAX_MSGS       messages per relationship batch  (default 80)
  */
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const db = require('~/models');
-const { refreshSummaryFromText, turnsToText } = require('~/server/services/kadeMemorySummary');
-const { deleteStaleMemorySummaries } = require('~/models/kadeMemorySummary');
+const { refreshSummaryFromText } = require('~/server/services/kadeMemorySummary');
+const { buildReflectionBatch } = require('@librechat/api');
+const { KadeMemorySummary, getMemorySummary } = require('~/models/kadeMemorySummary');
 
 const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
 
 function enabled() {
   return String(process.env.KADE_MEMORY_SUMMARY || '') !== '0';
@@ -53,7 +53,7 @@ async function agentNameLookup(cache, agentId) {
 }
 
 /**
- * One pass: refresh recently-active relationships, then decay quiet ones.
+ * One pass: reflect unseen activity and resume unfinished batches.
  * Returns a small stats object. Never throws.
  */
 /* ⭐⭐⭐ READ THE REPLY WHEREVER IT ACTUALLY LIVES (Aug 19 2026).
@@ -106,13 +106,13 @@ async function runSummarySweep() {
   const lookbackHours = intEnv('KADE_SUMMARY_LOOKBACK_HOURS', 30);
   const maxPerRun = intEnv('KADE_SUMMARY_MAX_PER_RUN', 250);
   const maxMsgs = intEnv('KADE_SUMMARY_MAX_MSGS', 80);
-  const staleDays = intEnv('KADE_SUMMARY_STALE_DAYS', 45);
   const since = new Date(Date.now() - lookbackHours * HOUR_MS);
 
   let refreshed = 0;
   let skipped = 0;
   let failed = 0;
-  let decayed = 0;
+  const decayed = 0;
+  let pending = 0;
 
   try {
     // Recently-active agent conversations, newest first.
@@ -124,16 +124,17 @@ async function runSummarySweep() {
       .limit(5000)
       .lean();
 
-    // Collapse to the most-recent conversation per (user, agent) relationship.
     const perRelationship = new Map();
     for (const c of convos) {
-      if (!c.user || !c.agent_id || !c.conversationId) {
-        continue;
-      }
+      if (!c.user || !c.agent_id || !c.conversationId) continue;
       const key = `${String(c.user)}::${String(c.agent_id)}`;
-      if (!perRelationship.has(key)) {
-        perRelationship.set(key, c);
-      }
+      if (!perRelationship.has(key)) perRelationship.set(key, c);
+    }
+    // A bounded batch left unfinished yesterday must stay eligible after the lookback window.
+    const backlogs = await KadeMemorySummary.find({ 'nightlyCursor.pending': true }, 'userId agentId').lean();
+    for (const row of backlogs) {
+      const key = `${row.userId}::${row.agentId}`;
+      if (!perRelationship.has(key)) perRelationship.set(key, { user: row.userId, agent_id: row.agentId });
     }
     const targets = Array.from(perRelationship.values()).slice(0, maxPerRun);
     const nameCache = new Map();
@@ -142,24 +143,45 @@ async function runSummarySweep() {
       try {
         const userId = String(c.user);
         const agentId = String(c.agent_id);
-        const msgs = await db.getMessages({ conversationId: c.conversationId, user: userId });
-        const turns = (msgs || [])
-          .map((m) => ({ role: m.isCreatedByUser ? 'user' : 'assistant', text: summaryTextOf(m) }))
-          .filter((t) => t.text)
-          .slice(-maxMsgs);
-        if (turns.length < 2) {
-          skipped += 1;
+        const user = await db.getUserById(userId, 'personalization');
+        if (!user || user.personalization?.memories === false) {
+          skipped++;
           continue;
         }
+        const prior = await getMemorySummary(userId, agentId);
+        const cursor = prior?.nightlyCursor?.at && prior?.nightlyCursor?.messageId ? prior.nightlyCursor : null;
+        const from = cursor ? new Date(cursor.at) : since;
+        const until = new Date();
+        const sources = await Conversation.find({
+          user: userId, agent_id: agentId, updatedAt: { $gte: from },
+        }, 'conversationId').lean();
+        const turns = [];
+        for (const source of sources) {
+          const msgs = await db.getMessages({ conversationId: source.conversationId, user: userId });
+          for (const m of msgs || []) {
+            if (m.error || m.unfinished || !m.createdAt) continue;
+            turns.push({
+              messageId: m.messageId, conversationId: source.conversationId,
+              role: m.isCreatedByUser ? 'user' : 'assistant',
+              text: summaryTextOf(m).replace(/\[EARLIER IN THIS CONVERSATION[\s\S]*?Reply ONLY to what follows\.\]\s*/gi, ''),
+              at: m.updatedAt || m.createdAt,
+            });
+          }
+        }
+        const batch = buildReflectionBatch({
+          turns, cursor, since: since.toISOString(), until: until.toISOString(), maxMessages: maxMsgs,
+        });
+        if (!batch) { skipped += 1; continue; }
         const agentName = await agentNameLookup(nameCache, agentId);
         const res = await refreshSummaryFromText({
-          userId,
-          agentId,
-          agentName,
-          conversationText: turnsToText(turns),
-          lastActivityAt: c.updatedAt,
+          userId, agentId, agentName,
+          conversationText: batch.text,
+          lastActivityAt: new Date(Math.max(new Date(batch.cursor.at).getTime(), new Date(prior?.lastActivityAt || 0).getTime())),
+          asOf: batch.cursor.at,
+          nightlyCursor: batch.cursor,
           source: 'nightly',
         });
+        if (batch.cursor.pending) pending += 1;
         if (res) {
           refreshed += 1;
         } else {
@@ -174,21 +196,15 @@ async function runSummarySweep() {
     logger.warn(`[kadeSummarySweep] sweep query failed: ${err && err.message}`);
   }
 
-  // Decay: drop summaries whose relationship has been quiet past the threshold.
-  try {
-    decayed = await deleteStaleMemorySummaries(new Date(Date.now() - staleDays * DAY_MS));
-  } catch (err) {
-    logger.warn(`[kadeSummarySweep] decay failed: ${err && err.message}`);
-  }
-
+  // Quiet relationships retain their learned history and opinions. Injection already dates them.
+  // Forgetting is an explicit user action, not a side effect of being away for 45 days.
   logger.info(
-    `[kadeSummarySweep] done: ${refreshed} refreshed, ${skipped} skipped, ${failed} failed, ${decayed} decayed`,
+    `[kadeSummarySweep] done: ${refreshed} refreshed, ${skipped} skipped, ${failed} failed, ${decayed} decayed, ${pending} pending`,
   );
-  return { ran: true, refreshed, skipped, failed, decayed };
+  return { ran: true, refreshed, skipped, failed, decayed, pending };
 }
 
-/** In-memory once-per-day guard (a restart during the target hour may re-run —
- *  harmless: refreshes are idempotent-ish and cheap, decay is idempotent). */
+/** The in-memory scheduler limits runs; stored cursors prevent replay after restarts. */
 let _lastRunDay = null;
 
 function startMemorySummarySweep() {

@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
+    "test:kade-reflection": "node --require ./api/test/reflection-bootstrap.cjs --test api/server/services/kadeReflection.test.js api/server/services/kadeReflection.integration.test.js api/server/services/kadeReflectionPrivacy.integration.test.js",
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "set-balance": "node config/set-balance.js",

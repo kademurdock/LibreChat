@@ -44,7 +44,13 @@ const kadeMemorySummarySchema = new mongoose.Schema(
     verdicts: { type: String, default: '', maxlength: 1600 },
     lastActivityAt: { type: Date }, // newest conversation/call turn folded in — drives decay
     refreshedAt: { type: Date }, // when the writer last rewrote this summary
+    revision: { type: Number, default: 0 },
     source: { type: String }, // 'call' | 'nightly' — last thing that touched it (debug)
+    nightlyCursor: {
+      at: { type: String },
+      messageId: { type: String },
+      pending: { type: Boolean, default: false },
+    },
   },
   { timestamps: true },
 );
@@ -63,7 +69,7 @@ async function getMemorySummary(userId, agentId) {
 }
 
 /** Upsert the rolling summary for a relationship. Empty/blank summary deletes the row. */
-async function setMemorySummary(userId, agentId, { summary, take, thread, learned, curious, verdicts, agentName, lastActivityAt, source } = {}) {
+async function setMemorySummary(userId, agentId, { summary, take, thread, learned, curious, verdicts, agentName, lastActivityAt, source, nightlyCursor, expectedRevision } = {}) {
   if (!userId || !agentId) {
     return null;
   }
@@ -91,12 +97,16 @@ async function setMemorySummary(userId, agentId, { summary, take, thread, learne
   if (source) {
     set.source = String(source).slice(0, 24);
   }
-  await KadeMemorySummary.updateOne(
-    { userId: String(userId), agentId: String(agentId) },
-    { $set: set },
-    { upsert: true },
+  if (nightlyCursor) set.nightlyCursor = nightlyCursor;
+  const query = { userId: String(userId), agentId: String(agentId) };
+  if (expectedRevision === 0) query.$or = [{ revision: 0 }, { revision: { $exists: false } }];
+  else if (expectedRevision !== undefined) query.revision = expectedRevision;
+  const result = await KadeMemorySummary.updateOne(
+    query,
+    { $set: set, $inc: { revision: 1 } },
+    { upsert: expectedRevision === undefined || expectedRevision === 0 },
   );
-  return clean;
+  return result.matchedCount || result.upsertedCount ? clean : null;
 }
 
 /** Delete summaries not touched by any activity since `cutoff` (decay). Returns count. */

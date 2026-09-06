@@ -71,10 +71,11 @@ export const AGENT_SCOPED_MEMORY_KEY = 'agent_notes';
  */
 export const CANON_USER_ID: string = '000000000000000000000ca0';
 export const CANON_HEADER: string =
-  '# Your own life — canon\n' +
-  'Things YOU have said about your own life, to anyone, so far. They are the same for every person you talk to. ' +
-  'Never contradict them. You may add to them when a story genuinely calls for it — once said, it is remembered here and you tell it the same way next time. ' +
-  'They are yours to carry, not to prove: never present them as real-world facts anyone could check, and never turn them into claims about the person you are talking to.';
+  '# Your own history and standing views — canon\n' +
+  'Your actual platform history, general positions and tastes, consistent across conversations. ' +
+  'These are past statements, not a script. Keep the history straight; revise a view when new evidence gives you a reason, and own what changed. ' +
+  'Written background is a character background, not a lived childhood. Never invent an event to fill a gap. ' +
+  'Private facts about a person, relationship judgments and confidences do not belong in this shared canon.';
 
 /**
  * KADE CANON — THE FABRICATION GUARD (Part 123, the night the lane shipped).
@@ -422,7 +423,7 @@ export const createMemoryTool = ({
           .enum(['shared', 'agent', 'self'])
           .optional()
           .describe(
-            'Where this card lives: "shared" = visible to every assistant on the platform (default); "agent" = private to you, the current character, only; "self" = the CHARACTER\'s own autobiography (a relative, a hometown, a past job, a thing that happened to the character) — filed once and shown to the character in EVERY conversation with anyone, so it never contradicts itself. Never "self" for anything about the user. Ignored when no character is active.',
+            'Where this card lives: "shared" = available to assistants talking to THIS user (default); "agent" = private to the current character\'s relationship with THIS user; "self" = the CHARACTER\'s actual platform history, general positions or tastes, shown to the character across conversations with anyone. Never "self" for user facts, private relationship views, or invented life events. Ignored when no character is active.',
           ),
         remind_at: z
           .string()
@@ -948,7 +949,7 @@ export async function createMemoryProcessor({
       logger.warn('[MemoryAgent] canon read failed (continuing without it)', error);
     }
     finalInstructions +=
-      '\n\nSELF-CANON (scope "self") — THE CHARACTER\'S OWN LIFE, WHICH IS REAL AND NOT A CHILDHOOD: when the CHARACTER (not the user) states something TRUE of itself — a thing that actually happened to it on this platform ("a render of mine sat 98 minutes"), a standing position in its own voice ("I don\'t buy the alpha-dog stuff"), a taste or habit it claims — file it with scope "self" under a snake_case key naming it (render_hung_98_minutes, position_alpha_dog), one card per fact, one plain sentence, absolute dates. Invented childhood scenes (an aunt, a first car, a concert at twelve) are NOT canon — let them pass; a written background is not a memory. Once filed it is shown to the character in every conversation with anyone, so the same aunt exists for everybody: that is the whole point. The canon block above lists what already exists — if the claim is already there, file nothing; if the character CONTRADICTED its canon, file nothing and never overwrite canon (canon stands, the slip does not). Never file anything about the USER with scope "self"; never file the character\'s opinions, feelings or promises there (promises have their own rule); only autobiography. A passing figure of speech ("girl, I would have died") is not autobiography. ⚠️ ONLY EVER FROM WHAT THE CHARACTER ACTUALLY SAID in the chat above — an assistant turn, paraphrased. Never anticipate or invent a story from the user\'s question: you see the chat up to the user\'s latest message, so the character\'s answer to it is NOT in front of you yet; it will be next turn, and that is when to file. Receipt: asked only "what was your first concert", a keeper invented a county-fair story and filed it as canon while the character was telling a different one. A self card whose words do not appear in the character\'s own turns is refused.';
+      '\n\nSELF-CANON (scope "self") — THE CHARACTER\'S OWN LIFE, WHICH IS REAL AND NOT A CHILDHOOD: when the CHARACTER (not the user) states something TRUE of itself — a thing that actually happened to it on this platform ("a render of mine sat 98 minutes"), a standing position in its own voice ("I don\'t buy the alpha-dog stuff"), a taste or habit it claims — file it with scope "self" under a snake_case key naming it (render_hung_98_minutes, position_alpha_dog), one card per fact, one plain sentence, absolute dates. Invented childhood scenes (an aunt, a first car, a concert at twelve) are NOT canon — let them pass; a written background is not a memory. Once filed it is shown to the character in every conversation with anyone, so public positions and actual platform history stay consistent. The canon block above lists what already exists — if the claim is already there, file nothing; if the character merely contradicted a prior statement, file nothing. If it explicitly revised a general position because of new evidence and explained the change, update the SAME key, keeping the prior position and reason for revision briefly. Never file anything about the USER with scope "self"; never file private opinions about a user or their family, private feelings or promises there (promises have their own rule). General positions, tastes and verified platform events belong here; relationship-specific views stay in the private take. A passing figure of speech ("girl, I would have died") is not autobiography. ⚠️ ONLY EVER FROM WHAT THE CHARACTER ACTUALLY SAID in the chat above — an assistant turn, paraphrased. Never anticipate or invent a story from the user\'s question: you see the chat up to the user\'s latest message, so the character\'s answer to it is NOT in front of you yet; it will be next turn, and that is when to file. Receipt: asked only "what was your first concert", a keeper invented a county-fair story and filed it as canon while the character was telling a different one. A self card whose words do not appear in the character\'s own turns is refused.';
   }
 
   return [

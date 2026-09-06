@@ -670,7 +670,7 @@ class AgentClient extends BaseClient {
      * Changes after sweeps, not per turn -> rides the STABLE head. */
     try {
       const { getRelationshipSummaryBlock } = require('~/server/services/kadeMemorySummary');
-      const summaryBlock = await getRelationshipSummaryBlock(
+      const summaryBlock = withoutKeys === undefined ? '' : await getRelationshipSummaryBlock(
         this.options.req.user.id,
         this.options.agent?.id,
       );
