@@ -1426,7 +1426,15 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
         { headers: { 'User-Agent': UA }, timeout: 15000 },
       );
     } catch (e) {
-      if (e?.response?.status === 404) return res.status(404).json({ error: 'That render is not on the board.' });
+      if (e?.response?.status === 404) {
+        const message = 'The render service no longer has this job. Any saved audio is kept. Open the project and render again to retry.';
+        await KadeSoundBoothProject.updateOne({
+          _id: project._id, updatedAt: project.updatedAt, state: { $in: ['queued', 'running'] },
+          $expr: { $eq: [{ $arrayElemAt: ['$jobs', -1] }, jobId] },
+          renderLeaseUntil: { $exists: false },
+        }, { $set: { state: 'failed', lastError: message } });
+        return res.json({ jobId, projectId: String(project._id), state: 'failed', error: message, spoken: message });
+      }
       throw e;
     }
     const j = r.data || {};

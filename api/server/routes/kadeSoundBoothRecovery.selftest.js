@@ -19,7 +19,7 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
     res.json({ jobId: id });
   });
   remote.get('/audio/scenema/status', async (req, res) => {
-    await new Promise((resolve) => setTimeout(resolve, 40)); res.json(jobs.get(req.query.jobId));
+    await new Promise((resolve) => setTimeout(resolve, 40)); jobs.has(req.query.jobId) ? res.json(jobs.get(req.query.jobId)) : res.status(404).json({ error: 'gone' });
   });
   remote.post('/audio/scenema/cancel', (req, res) => { stops.push(req.body.jobId); res.json({ ok: true, state: jobs.get(req.body.jobId)?.state === 'done' ? 'done' : 'cancelled' }); });
   const remoteServer = remote.listen(0, '127.0.0.1');
@@ -105,6 +105,12 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
     const before = starts.length;
     const results = await Promise.all([call('/render', { ...body, projectId: id }), call('/render', { ...body, projectId: id })]);
     assert.deepEqual(results.map(r => r.status).sort(), [200, 409]); assert.equal(starts.length, before + 1);
+  });
+
+  await t.test('a forgotten single job exits polling and allows a retry', async () => {
+    const p = await Project.create({ user, state: 'queued', jobs: ['missing-job'], script: 'Old test' });
+    const r = await call('/status/missing-job'); assert.equal(r.status, 200); assert.equal(r.data.state, 'failed');
+    assert.equal((await Project.findById(p._id)).state, 'failed');
   });
 
 });
