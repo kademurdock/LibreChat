@@ -156,11 +156,21 @@ router.get('/sounds', async (_req, res) => {
      * logs the count, to make the next reader's job a one-line grep. */
     const rows = await MooSound.find({ scopeType: { $in: ['event', 'room', 'district'] } }).lean();
     logger.info(`[world] sound manifest: ${rows.length} rows (${rows.filter((r) => r.scopeType === 'event').length} event, ${rows.filter((r) => r.scopeType === 'room').length} room, ${rows.filter((r) => r.scopeType === 'district').length} district)`);
+    const { presignReverieUrl } = require('~/app/clients/tools/kademoo/seedSounds');
     const fresh = async (url) => {
       const u = String(url || '');
       try {
+        /* Sep 6 2026: our own keys, our own signature. getNewS3URL returns
+         * undefined for `reverie-sounds/<id>.m4a` (upstream parseS3Key wants
+         * three path parts), and an undefined value vanishes from JSON — that
+         * is how the manifest served {} with 66 rows in the collection. */
+        if (/reverie-sounds\//.test(u)) {
+          const ours = await presignReverieUrl(u);
+          if (ours) return ours;
+        }
         if (/[?&]X-Amz-/.test(u) && typeof needsRefresh === 'function' && needsRefresh(u, 3600)) {
-          return await getNewS3URL(u);
+          const re = await getNewS3URL(u);
+          if (re) return re;
         }
       } catch (e) {
         logger.warn('[world] sound URL re-sign failed (serving stored):', e.message);

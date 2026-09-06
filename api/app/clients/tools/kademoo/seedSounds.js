@@ -110,4 +110,33 @@ async function seedSounds() {
   }
 }
 
-module.exports = { seedSounds };
+/* PRESIGN OUR OWN (Sep 6 2026). The manifest used to hand every stored URL to
+ * LibreChat's getNewS3URL, and upstream's parseS3Key now insists on a
+ * basePath/userId/fileName shape — `reverie-sounds/<id>.m4a` has two parts,
+ * so it returned undefined for every row, JSON dropped the undefineds, and
+ * the live manifest served {} — 66 designed sounds silent for weeks, on web
+ * and native alike, with nothing in any log. This signs the city's own keys
+ * with the same credentials the seeder uses, cached an hour per key. */
+const _signed = new Map();
+function s3Client() {
+  return new S3Client({
+    endpoint: process.env.AWS_ENDPOINT_URL || process.env.AWS_S3_ENDPOINT,
+    region: process.env.AWS_REGION || process.env.AWS_S3_REGION || 'us-east-005',
+    credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY },
+    forcePathStyle: true,
+  });
+}
+async function presignReverieUrl(url) {
+  const m = /\/(reverie-sounds\/[^?]+)/.exec(String(url || ''));
+  if (!m) return null;
+  const key = decodeURIComponent(m[1]);
+  const hit = _signed.get(key);
+  if (hit && hit.until > Date.now()) return hit.url;
+  const bucket = process.env.AWS_BUCKET_NAME || process.env.AWS_S3_BUCKET || 'Kademurdockchat';
+  const expiry = Math.min(parseInt(process.env.S3_URL_EXPIRY_SECONDS, 10) || 604800, 604800);
+  const fresh = await getSignedUrl(s3Client(), new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn: expiry });
+  _signed.set(key, { url: fresh, until: Date.now() + 60 * 60 * 1000 });
+  return fresh;
+}
+
+module.exports = { seedSounds, presignReverieUrl };
