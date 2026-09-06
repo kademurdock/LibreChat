@@ -29,6 +29,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 const axios = require('axios');
+const { randomUUID } = require('crypto');
 /* Tolerant on purpose: this module's decision logic is worth testing on its
  * own, and a hard require on the app's logger would mean booting LibreChat to
  * check that every part gets the same voice seed. */
@@ -68,6 +69,11 @@ async function submitPart({ userId, script, opts, partIndex, total }) {
     seed: Number.isInteger(opts?.seed) ? opts.seed : deterministicSeed(userId, script, partIndex),
     pace: opts?.pace,
     keep_wav: opts?.keep_wav,
+    validate: opts?.validate,
+    min_match_ratio: opts?.min_match_ratio,
+    vc_cfg_rate: opts?.vc_cfg_rate,
+    vc_steps: opts?.vc_steps,
+    skip_vc: opts?.skip_vc,
   };
   const r = await axios.post(`${bridgeBase()}/audio/scenema/start`, body, {
     headers: { 'User-Agent': UA },
@@ -124,9 +130,36 @@ function sayProgress(project, jobWait) {
  * every poll, from either surface, as many times as it likes.
  * @returns {Promise<{changed:boolean, state:string, spoken:string, jobId?:string}>}
  */
-async function advance(project, { onStitched } = {}) {
+async function acquire(project) {
+  const lease = randomUUID();
+  const row = await project.constructor.findOneAndUpdate({
+    _id: project._id,
+    $or: [{ renderLeaseUntil: { $exists: false } }, { renderLeaseUntil: { $lt: new Date() } }],
+  }, { $set: { renderLease: lease, renderLeaseUntil: new Date(Date.now() + 30 * 60 * 1000) } });
+  return row ? lease : null;
+}
+
+async function release(project, lease) {
+  await project.constructor.updateOne({ _id: project._id, renderLease: lease },
+    { $unset: { renderLease: '', renderLeaseUntil: '' } });
+}
+
+async function advance(project, options = {}) {
+  const lease = await acquire(project);
+  if (!lease) return { changed: false, state: project.state, spoken: 'Updating this project. Checking again shortly.' };
+  try {
+    const current = await project.constructor.findById(project._id);
+    if (current) project.set(current.toObject());
+    return await advanceLocked(project, options);
+  } finally { await release(project, lease); }
+}
+
+async function advanceLocked(project, { onStitched } = {}) {
   const parts = project.parts || [];
   if (!parts.length) return { changed: false, state: project.state, spoken: '' };
+  if (['cancelled', 'failed', 'done'].includes(project.state)) {
+    return { changed: false, state: project.state, spoken: project.state === 'cancelled' ? 'Stopped. Finished parts are kept.' : project.lastError || 'Ready.' };
+  }
 
   /* 1. Reconcile the part that is in flight. */
   const inFlight = parts.find((p) => p.jobId && (p.state === 'queued' || p.state === 'running'));
@@ -266,4 +299,4 @@ async function stitch(project, { onStitched } = {}) {
   }
 }
 
-module.exports = { advance, stitch, submitPart, sayProgress, deterministicSeed, MAX_PARTS };
+module.exports = { advance, advanceLocked, acquire, release, stitch, submitPart, sayProgress, deterministicSeed, MAX_PARTS };

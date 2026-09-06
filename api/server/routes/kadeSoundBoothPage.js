@@ -71,11 +71,18 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 <body>
   <p><a class="back" href="/home" aria-label="Back to home">&larr; Home</a> &nbsp;&middot;&nbsp; <a class="back" href="/my-creations">My Creations &rarr;</a></p>
   <h1>Sound Booth</h1>
-  <p class="muted">Write something, or describe what you want, and have it performed. Two engines, and the page explains which one to pick.</p>
+  <p class="muted">Write something, or describe what you want, and have it performed. Direct a performance, make a radio scene, or build an atmosphere. Start from a script below or write your own.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading the Sound Booth&hellip;</div>
 
   <main id="app" hidden>
+    <fieldset><legend>Start something</legend>
+      <label class="field" for="starter">A starting script</label>
+      <select id="starter"><option value="">Choose a starting point</option></select>
+      <button type="button" class="act quiet" id="btnStarter">Start a new project from this</button>
+      <button type="button" class="act quiet" id="btnBlank">New blank project</button>
+      <p class="hint">These editable scripts are free to load. Nothing generates until you confirm Render. Download any unsaved script before starting another.</p>
+    </fieldset>
     <fieldset>
       <legend>Engine</legend>
       <div class="engines" role="group" aria-label="Which engine" id="engines"></div>
@@ -120,13 +127,31 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
       <p id="readback" class="hint"></p>
       <div>
-        <button type="button" class="act quiet" id="btnPreview" hidden>Hear this voice first (15 seconds, about a penny)</button>
+        <button type="button" class="act quiet" id="btnPreview" hidden>Hear this voice first (short paid preview)</button>
         <button type="button" class="act quiet" id="btnNewVoice" hidden>Cast a different voice</button>
         <button type="button" class="act primary" id="btnRender">Render</button>
         <button type="button" class="act" id="btnCancel" hidden>Stop this render</button>
       </div>
       <p class="hint">The cost is said out loud before anything runs, and Render asks once more before it spends.</p>
     </fieldset>
+
+    <button type="button" class="act quiet" id="btnScriptFile">Download this script as text</button>
+    <details><summary>Free audio workbench: trim, fade, and add a background</summary>
+      <form id="audioWorkbench"><p>Choose recordings from your device. Make a stereo WAV up to five minutes long. Files stay on this device; there is no generation charge.</p>
+        <label class="field" for="mixMain">Main recording</label><input id="mixMain" type="file" accept="audio/*,.wav,.mp3,.m4a" required>
+        <audio id="mixOriginal" controls preload="metadata" aria-label="Original recording"></audio>
+        <div class="row"><div><label for="mixStart">Keep from, seconds</label><input id="mixStart" type="number" step="any" min="0" value="0" aria-label="Start time"></div><div><label for="mixEnd">Keep until, seconds</label><input id="mixEnd" type="number" step="any" min="0.01" value="10" aria-label="End time"></div></div>
+        <label for="mixGain">Main volume, decibels</label><input id="mixGain" type="number" min="-36" max="12" value="0" aria-label="Main volume">
+        <label for="mixFadeIn">Fade in, seconds</label><input id="mixFadeIn" type="number" min="0" max="30" step="0.1" value="0" aria-label="Fade in">
+        <label for="mixFadeOut">Fade out, seconds</label><input id="mixFadeOut" type="number" min="0" max="30" step="0.1" value="0" aria-label="Fade out">
+        <label class="field" for="mixBed">Optional background music or ambience</label><input id="mixBed" type="file" accept="audio/*,.wav,.mp3,.m4a">
+        <label for="mixBedGain">Background volume, decibels</label><input id="mixBedGain" type="number" min="-48" max="0" value="-18" aria-label="Background volume">
+        <label><input id="mixLoop" type="checkbox" checked> Repeat the background to fit</label>
+        <button class="act" id="mixBuild" type="submit">Make this mix — free</button>
+        <p id="mixStatus" role="status" aria-live="polite"></p>
+        <div id="mixResult" hidden><audio id="mixPlayer" controls aria-label="Finished local mix"></audio><p><a id="mixDownload" download="sound-booth-mix.wav">Download the mix as WAV</a></p></div>
+      </form>
+    </details>
 
     <h2>Library</h2>
     <div id="library" aria-live="off"><p class="muted">Nothing here yet.</p></div>
@@ -144,17 +169,19 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     var state = { engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null, voiceSeed:null, rerollVoice:false };
     function say(msg, isErr){ status.className = 'status' + (isErr ? ' err' : ''); status.textContent = msg; }
     function showCode(xml){ var box = document.getElementById('codeBox'); var view = document.getElementById('codeView'); if(!box||!view) return; if(state.engine==='scenema' && xml && /<speak/i.test(xml) && state.mode==='advanced'){ view.textContent = xml; box.hidden = false; } else { box.hidden = true; view.textContent=''; } }
-    function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML; }
-    async function post(path, body){
-      var r = await fetch(path, {method:'POST', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
-      var j = null; try { j = await r.json(); } catch(e) {}
-      return { ok: r.ok, status: r.status, data: j || {} };
+    function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+    async function request(path, body){
+      try {
+        var r = await fetch(path, {method:body === undefined ? 'GET':'POST', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}, body:body === undefined ? undefined : JSON.stringify(body), signal:AbortSignal.timeout(240000)});
+        var j = null; try { j = await r.json(); } catch(e) {}
+        return {ok:r.ok,status:r.status,data:j||{}};
+      } catch(e) { return {ok:false,status:0,data:{error:'Connection lost. Check the library before retrying a render; it may still be working.'}}; }
     }
-    async function get(path){
-      var r = await fetch(path, {headers:{'Authorization':'Bearer '+token}});
-      var j = null; try { j = await r.json(); } catch(e) {}
-      return { ok: r.ok, status: r.status, data: j || {} };
-    }
+    function post(path, body){ return request(path,body||{}); }
+    function get(path){ return request(path); }
+    function invalidateQuote(){ state.pendingRender=null; state.estimate=null; document.getElementById('btnRender').textContent='Render'; }
+    app.addEventListener('input', invalidateQuote);
+    app.addEventListener('change', invalidateQuote);
 
     var h = await get('/api/kade/sound-booth/health');
     if(!h.ok || !h.data.guide){ say('Could not open the Sound Booth right now. Try reloading in a moment.', true); return; }
@@ -206,7 +233,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('modeAdv').setAttribute('aria-pressed', m==='advanced');
       document.getElementById('modeHint').textContent = m==='easy'
         ? 'Easy: type what you want said, pick a voice and a mood, and let the script desk shape it.'
-        : 'Advanced: every setting this engine has, the script to edit yourself, and the engine\'s own code shown underneath it.';
+        : 'Advanced: every setting this engine has, the script to edit yourself, and the code this engine uses shown underneath it.';
       showCode(state.lastXml);
       renderSettings();
     }
@@ -267,7 +294,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         return '';
       }).join('');
       Array.prototype.forEach.call(box.querySelectorAll('[data-key]'), function(el){
-        el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; };
+        el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; invalidateQuote(); };
       });
       Array.prototype.forEach.call(box.querySelectorAll('input[type=file]'), function(el){
         el.onchange = function(){ if(el.files && el.files[0]) importClip(el.files[0]); };
@@ -338,6 +365,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     document.getElementById('script').addEventListener('input', function(){ state.pendingRender=null; document.getElementById('btnRender').textContent='Render'; });
 
     async function doRender(preview){
+      if(state.rendering || state.jobId){ say('A render is already in progress. Wait for it or press Stop.', true); return; }
+      state.rendering = true;
+      document.getElementById('btnPreview').disabled = true;
+      try {
       var script = document.getElementById('script').value.trim();
       var b = collect();
       if(!script && !preview){ say('There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
@@ -355,10 +386,11 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       /* THE SEED IS THE VOICE. Without this the penny she spent auditioning a
        * voice bought her nothing — the render cast a different actor. */
       if(!preview && Number.isInteger(state.voiceSeed) && b.seed === undefined) b.seed = state.voiceSeed;
-      if(state.rerollVoice){ b.newVoice = true; state.rerollVoice = false; }
+      if(state.rerollVoice) b.newVoice = true;
       say('Sending it\\u2026');
       var r = await post('/api/kade/sound-booth/render', b);
       if(!r.ok){ say(r.data.error || 'That render could not start.', true); return; }
+      state.rerollVoice = false;
       state.projectId = r.data.projectId || state.projectId;
       if(Number.isInteger(r.data.voiceSeed)) state.voiceSeed = r.data.voiceSeed;
       if(r.data.queued){
@@ -368,42 +400,41 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         say((preview?'Voice sample queued. ':'Queued. ') + ((r.data.estimate && r.data.estimate.spoken) || '') + ' The page will say when it is ready.');
         startPoll();
       } else {
-        say('Ready. ' + r.data.seconds + ' seconds of audio, about ' + Math.max(1, Math.round((r.data.costUSD||0)*100)) + ' cents. It is in your library below and in My Creations.');
+        say(r.data.spoken || 'Ready. ' + r.data.seconds + ' seconds of audio, about ' + Math.max(1, Math.round((r.data.costUSD||0)*100)) + ' cents. It is in your library below and in My Creations.');
         loadLibrary();
       }
+      } finally { state.rendering=false; document.getElementById('btnPreview').disabled=false; }
     }
     var btnRender = document.getElementById('btnRender');
-    btnRender.onclick = async function(){
-      var script = document.getElementById('script').value.trim();
-      if(!script){ say('There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
-      if(!state.pendingRender){
-        state.pendingRender = true;
-        var est = state.estimate;
-        var words = script.replace(/<action>[\\s\\S]*?<\\/action>/gi,' ').replace(/<sound>[\\s\\S]*?<\\/sound>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\\[[^\\]]*\\]/g,' ').split(/\\s+/).filter(Boolean).length;
-        var secs = Math.max(1, Math.round(words/2.6));
-        var spoken = est && est.spoken ? est.spoken :
-          ('About ' + secs + ' seconds of audio, ' + (state.engine==='seed' ? 'a few seconds to make, about ' + Math.max(1, Math.round(secs/60*18.75)) + ' cents.' : 'a couple of minutes to make, about ' + Math.max(1, Math.round(secs/60*2)+2) + ' cents.'));
-        /* ⭐ THE ELEVEN-CENT LESSON (Part 121.3). Her first web render was
-         * quoted, confirmed and paid for with NO clip attached, and she only
-         * learned that by listening to the result. The quote now always says
-         * which it is. */
-        var cloneLine = state.clips.length
-          ? ' Cloning ' + state.clips.map(function(c){ return c.name; }).join(', ') + '.'
-          : ' No clip attached, so the voice comes from your description.';
-        say(spoken + cloneLine + ' Press Render again to go ahead.');
-        btnRender.textContent = 'Render \\u2014 confirm';
+    async function confirmRender(preview){
+      if(state.rendering || state.jobId) { say('A render is already in progress. Wait for it or press Stop.',true); return; }
+      var script=document.getElementById('script').value.trim();
+      var b=collect();
+      if(!script && !preview){ say('Write a script first.',true); return; }
+      b.script=script || '<speak voice="'+esc(b.voice_description||'A warm clear voice')+'" gender="'+(b.gender||'female')+'"></speak>';
+      b.preview=preview; b.estimateOnly=true;
+      var key=JSON.stringify(b);
+      if(state.pendingRender!==key){
+        btnRender.disabled=true;
+        var r=await post('/api/kade/sound-booth/render',b);
+        btnRender.disabled=false;
+        if(!r.ok){say(r.data.error||'Could not estimate that script.',true);return;}
+        state.pendingRender=key;
+        var cloneLine=state.clips.length ? ' Cloning '+state.clips.map(function(c){return c.name;}).join(', ')+'.' : ' No reference clip attached.';
+        say((r.data.estimate.spoken||'')+cloneLine+' Press '+(preview?'Hear this voice first':'Render')+' again to confirm.');
+        if(!preview) btnRender.textContent='Render — confirm';
         return;
       }
-      state.pendingRender = false; btnRender.textContent = 'Render'; btnRender.disabled = true;
-      await doRender(false);
-      btnRender.disabled = false;
-    };
-    document.getElementById('btnPreview').onclick = function(){ doRender(true); };
+      invalidateQuote(); btnRender.disabled=true;
+      try { await doRender(preview); } finally { btnRender.disabled=false; }
+    }
+    btnRender.onclick=function(){return confirmRender(false);};
+    document.getElementById('btnPreview').onclick=function(){return confirmRender(true);};
     /* The seed is pinned per project so a render sounds like its audition. That
      * is only kind if there is also a way OUT of a voice she does not like —
      * otherwise a project is stuck with the first actor it was ever cast. */
     document.getElementById('btnNewVoice').onclick = function(){
-      state.rerollVoice = true; state.voiceSeed = null;
+      state.rerollVoice = true; state.voiceSeed = null; delete state.values.seed; invalidateQuote();
       say('Next preview or render will cast a different voice from the same description. Press Hear this voice first to audition it before you spend on the whole thing.');
     };
     /* Part 122 -- STOP ASKS ONCE while the wait is still earned. Three renders
@@ -417,12 +448,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var w = state.lastWait;
       if(state.cancelArmed !== state.jobId && w && w.phase !== 'rendering'){
         state.cancelArmed = state.jobId;
-        say((w.spoken || 'This one has not started yet.') + ' Nothing has been charged. Press Stop again if you really want it gone.');
+        say((w.spoken || 'Still waiting for the render.') + ' Press Stop again to cancel.');
         return;
       }
-      await post('/api/kade/sound-booth/cancel/' + encodeURIComponent(state.jobId), {});
+      var result = await post('/api/kade/sound-booth/cancel/' + encodeURIComponent(state.jobId), {});
+      if(!result.ok){ say(result.data.error || 'Stop did not reach the render service. Still checking its status.',true); return; }
+      if(result.data.state==='done'){ say(result.data.spoken || 'That take just finished. Checking its result.'); return; }
       stopPoll(); state.lastWait = null; state.cancelArmed = null;
-      say('Stopped. Nothing was charged for a render that never started.');
+      state.jobId=null; say(result.data.spoken || 'Stopped. Completed takes are kept. GPU time already used may still be charged.');
       document.getElementById('btnCancel').hidden = true; loadLibrary();
     };
 
@@ -434,11 +467,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
      * talks every other poll now, and the line it speaks carries elapsed time
      * and how long until it gives up, so the wait always sounds alive. */
     function startPoll(){
-      stopPoll(); var last = '', ticks = 0;
+      stopPoll(); var last = '', ticks = 0, reading = false, failures = 0;
       state.poll = setInterval(async function(){
-        if(!state.jobId) return;
+        if(!state.jobId || reading) return;
+        reading=true;
         var r = await get('/api/kade/sound-booth/status/' + encodeURIComponent(state.jobId));
-        if(!r.ok) return;
+        reading=false;
+        if(!r.ok){ failures++; if(failures===1 || failures%4===0) say(r.data.error || 'Cannot check progress right now. The render may still be working; checking again shortly.',true); return; }
+        failures=0;
         var s = r.data.state; ticks++;
         state.lastWait = r.data.wait || null;
         var finished = (s === 'done' || s === 'failed' || s === 'cancelled');
@@ -474,6 +510,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         var stateWord = p.state === 'done' ? 'finished' : p.state;
         return '<div class="proj"><h3>' + esc(p.title) + '</h3>' +
           '<p class="hint">' + esc(p.why || engine) + ' \\u00b7 ' + esc(stateWord) + ' \\u00b7 ' + esc(when) + (p.costUSD ? ' \\u00b7 about ' + Math.max(1, Math.round(p.costUSD*100)) + ' cents' : '') + '</p>' +
+          (p.lastError ? '<p role="note">'+esc(p.lastError)+'</p>' : '') +
           (p.readback ? '<p>' + esc(p.readback) + '</p>' : '') +
           (p.takes||[]).map(function(t, n){
             var lbl = 'Take ' + ((p.takes.length) - n) + (t.seconds ? ', ' + t.seconds + ' seconds' : '') + (t.description ? '. ' + t.description : '');
@@ -493,7 +530,13 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           document.getElementById('script').value = p.screenplay || p.script || '';
           state.lastXml = p.script || ''; showCode(state.lastXml);
           document.getElementById('readback').textContent = p.readback || '';
-          if(p.options){ Object.keys(p.options).forEach(function(k){ if(typeof p.options[k] !== 'object') state.values[k] = p.options[k]; }); renderSettings(); }
+          state.values={}; state.clips=[]; state.voiceSeed=p.voiceSeed; state.rerollVoice=false;
+          if(p.options){
+            Object.keys(p.options).forEach(function(k){ if(typeof p.options[k] !== 'object') state.values[k]=p.options[k]; });
+            var urls=p.engine==='seed' ? p.options.audio_urls||[] : (p.options.reference_voice_url?[p.options.reference_voice_url]:[]);
+            state.clips=urls.map(function(url,i){return {url:url,name:'Saved reference '+(i+1)};});
+          }
+          invalidateQuote(); renderSettings();
           say('Opened "' + p.title + '". Edit it and render again, or change the voice first.');
           document.getElementById('script').focus();
         };
@@ -501,11 +544,29 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var listen = ps.filter(function(p){ return p.state === 'queued' || p.state === 'running'; })[0];
       if(listen && listen.jobs && listen.jobs.length && !state.jobId){ state.jobId = listen.jobs[listen.jobs.length-1]; document.getElementById('btnCancel').hidden = false; startPoll(); }
     }
+    var starters=state.guide.starters||[];
+    starters.forEach(function(s){var o=document.createElement('option');o.value=s.id;o.textContent=s.title;document.getElementById('starter').appendChild(o);});
+    function newProject(starter){
+      state.projectId=null;state.voiceSeed=null;state.rerollVoice=false;state.values={};state.clips=[];
+      setEngine(starter?starter.engine:'scenema');setInput('words');
+      document.getElementById('text').value='';document.getElementById('script').value=starter?starter.script:'';
+      document.getElementById('readback').textContent='';state.lastXml='';showCode('');invalidateQuote();
+      say(starter?'Starting '+starter.title+'. The script is ready to edit. Nothing has been generated.':'New blank project.');
+      document.getElementById('script').focus();
+    }
+    document.getElementById('btnStarter').onclick=function(){var s=starters.find(function(s){return s.id===document.getElementById('starter').value;});if(s)newProject(s);};
+    document.getElementById('btnBlank').onclick=function(){newProject(null);};
+    document.getElementById('btnScriptFile').onclick=function(){
+      var url=URL.createObjectURL(new Blob([document.getElementById('script').value],{type:'text/plain;charset=utf-8'}));
+      var a=document.createElement('a');a.href=url;a.download='sound-booth-script.txt';a.click();setTimeout(function(){URL.revokeObjectURL(url);},1000);
+      say('Script downloaded as text.');
+    };
     setEngine('scenema'); setMode('easy'); setInput('words');
     loadLibrary();
     say('Ready. ' + state.guide.chooser.answer);
   })();
   </script>
+<script src="/assets/soundbooth/workbench.js"></script>
 </body></html>`;
 
 module.exports = { soundBoothHtml };

@@ -438,6 +438,14 @@ function checkSeed(script) {
  * it — a wording fix is one deploy, not two builds. Every line is written to
  * be read aloud. Sources: the Scenema README and Seed Audio's own guide. */
 const GUIDE = {
+  starters: [
+  {"id":"radio","title":"Two-person radio mystery","engine":"seed","script":"A 25-second radio mystery in a small train station after closing. Distant rain and a softly humming fluorescent lamp. Two adult voices, naturally timed turns, clear dialogue, no music.\nMara (a dry, low female voice, trying to sound casual): There is a suitcase on platform three.\nEli (a tired male voice, half listening): Then put it in lost property.\nMara (quieter, very certain): I did. Twice.\nA single heavy knock from inside the suitcase. The lamp hum stops.\nEli (fully awake now): Do not pick it up again."},
+  {"id":"station","title":"Radio station ID","engine":"seed","script":"A 12-second playful radio station ident. A tight funk bass riff, a dry snare, a short brass answer, clean professional stereo production. One warm adult female announcer, smiling without shouting.\nAnnouncer (confident and friendly): You found the good part of the dial. Fresh tracks, familiar voices, and one more song before you go.\nThe brass repeats a memorable three-note sting. The music ends cleanly."},
+  {"id":"story","title":"A story told close up","engine":"scenema","script":"VOICE: A warm adult woman with a low conversational register, a little rasp, and dry humor.\nSEX: female\nSHOT: closeup\n[casual, letting the joke sneak up]\nMy uncle claimed he could fix anything with a butter knife. The toaster disagreed. So did the landlord.\n[more private, affectionate]\nBut when my bike chain came off, he sat on the curb with me until it was back on. Never charged me a thing.\n[amused, certain]\nStill kept the butter knife, though."},
+  {"id":"comedy","title":"A small comic meltdown","engine":"scenema","script":"VOICE: An adult male with a clear midrange voice, quick dry delivery, and a stubbornly polite manner.\nSEX: male\nSHOT: closeup\n[carefully courteous]\nI am not upset about the printer.\n[trying to maintain control]\nI am interested in why it printed my resignation when I asked for a shipping label.\n[bright, brittle laugh]\nAnd why it made six copies.\n[quietly conceding]\nThe formatting is excellent."},
+  {"id":"atmosphere","title":"A place you can hear","engine":"seed","script":"Twenty seconds of realistic stereo ambience inside a small wooden cabin during a steady evening rain. Rain patters on the roof and trickles down a nearby drain. A small fire settles with occasional gentle crackles. One distant low roll of thunder halfway through. Intimate, natural dynamics, no startling hits, no speech, no singing, no music. Hold the same atmosphere through the end."},
+  {"id":"music","title":"A short instrumental bed","engine":"seed","script":"A 20-second instrumental music bed for a relaxed spoken introduction. Warm electric piano plays a simple memorable four-note figure, with rounded bass, brushed drums, and a light muted guitar answer. About 88 BPM, unhurried soul groove, gentle dynamics, plenty of space in the middle for a voice. No vocals, no spoken words, no choir, no abrupt dramatic rise. End on a soft resolved chord."}
+],
   /* What the box is holding, and therefore which button exists. The screens
    * render this ABOVE the text box so there is only ever one button. */
   input: {
@@ -466,9 +474,9 @@ const GUIDE = {
     answer:
       'Ask yourself one thing: is this ONE PERSON talking, or a SCENE? One person reading a story, a letter, a monologue, a bedtime tale — with real acting — is Scenema. Two people talking, or anything with music, sound effects or a place you can hear, is Seed Audio.',
     rules: [
-      { pick: 'scenema', when: 'one voice, any length, and the acting matters — the feeling shifts mid-sentence, it breathes, it pauses' },
-      { pick: 'scenema', when: 'you want to clone a specific person from a short clip and keep the audio in the house' },
-      { pick: 'scenema', when: 'it is long — a chapter, a whole story. There is no length limit' },
+      { pick: 'scenema', when: 'one voice and the acting matters — the feeling shifts mid-sentence, it breathes, it pauses' },
+      { pick: 'scenema', when: 'you want to clone a specific person from a short clip and use the Scenema rendering lane' },
+      { pick: 'scenema', when: 'it is longer narration — the booth splits supported scripts into parts' },
       { pick: 'seed', when: 'two or more people talk to each other' },
       { pick: 'seed', when: 'you want music, sound effects, or a place you can hear around the voices' },
       { pick: 'seed', when: 'you need it back in seconds, and it is under two minutes' },
@@ -478,9 +486,9 @@ const GUIDE = {
     scenema: {
       name: 'Scenema',
       tagline: 'One actor, really acting.',
-      where: "Runs on Kade's own graphics card. Nothing leaves the house.",
-      cost: 'About two cents a minute of finished audio. Queued: a minute of audio takes about a minute and a half to make, plus a minute or two if the card was asleep.',
-      bestFor: ['one voice reading, telling, confessing, performing', 'a bedtime story, a letter read aloud, a monologue, an audiobook chapter', 'cloning a specific person from ten to twenty seconds of them talking', 'anything long — there is no length limit'],
+      where: "Runs on a RunPod-hosted graphics card for Kade-AI. Text and reference clips go to that hosted worker.",
+      cost: 'Billed for GPU time, with a wake allowance. Check the current estimate before confirming. A cold start can add about seven minutes; no free card can mean a longer queue.',
+      bestFor: ['one voice reading, telling, confessing, performing', 'a bedtime story, a letter read aloud, a monologue, an audiobook chapter', 'cloning a specific person from ten to twenty seconds of them talking', 'longer scripts, automatically split within the booth limits'],
       notFor: ['two people talking to each other', 'music', 'a scene you can hear around the voice — it can add some, but that is not its job'],
       howToWrite: [
         SCREENPLAY_HELP,
@@ -633,15 +641,15 @@ function estimateFor(engine, script) {
       spoken: sayEstimate(seconds, Math.max(10, Math.round(seconds * 0.5)), costUSD, false),
     };
   }
-  const renderSeconds = Math.round(seconds * 1.4) + 90;
-  const costUSD = Math.round((seconds / 60) * SCENEMA_USD_PER_MIN * 1000 + 20) / 1000;
+  const renderSeconds = Math.round(seconds * 1.4) + 15;
+  const costUSD = Math.round((renderSeconds / 3600 * 1.75 + 0.05) * 1000) / 1000;
   return {
     engine: 'scenema',
     words,
     audioSeconds: seconds,
     renderSeconds,
     costUSD,
-    spoken: sayEstimate(seconds, renderSeconds, costUSD, true),
+    spoken: sayEstimate(seconds, renderSeconds, costUSD, false) + ' A cold graphics card can add about seven minutes, and availability can take longer. The price includes an estimated wake allowance; actual GPU use may differ.',
   };
 }
 
@@ -678,6 +686,19 @@ async function freshAssetUrl(url) {
     logger.warn('[soundbooth] URL re-sign failed (serving stored URL): ' + e.message);
   }
   return u;
+}
+
+// Signing a saved clip again must not turn an unchanged retry into a new take.
+function stableOption(value) {
+  if (Array.isArray(value)) return value.map(stableOption);
+  if (typeof value === 'string' && /[?&]X-Amz-/.test(value)) {
+    try { const u = new URL(value); return u.origin + u.pathname; } catch (_) { /* leave malformed input intact */ }
+  }
+  return value;
+}
+async function refreshReferences(view) {
+  if (view.options?.reference_voice_url) view.options.reference_voice_url = await freshAssetUrl(view.options.reference_voice_url);
+  if (Array.isArray(view.options?.audio_urls)) view.options.audio_urls = await Promise.all(view.options.audio_urls.map(freshAssetUrl));
 }
 
 /* ---------- linking a Scenema take back to its project ----------------------
@@ -763,6 +784,8 @@ function projectView(p) {
       : 'Scenema — one actor performing' + ((p.options || {}).reference_voice_url ? ', cloning a clip' : ', voice from the description') + (Number.isInteger(p.voiceSeed) ? `, voice ${p.voiceSeed}` : ''),
     readback: p.readback,
     options: p.options || {},
+    voiceSeed: p.voiceSeed,
+    parts: (p.parts || []).map(({ index, state, durationS, costUSD }) => ({ index, state, durationS, costUSD })),
     jobs: p.jobs || [],
     assets: p.assets || [],
     state: p.state,
@@ -947,7 +970,15 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       : checkScenema(script, { allowLong: true, allowEmpty: b.preview === true });
   if (problem) return res.status(400).json({ error: problem });
 
+  if (b.estimateOnly === true) {
+    const quoteScript = b.preview === true && engine === 'scenema'
+      ? previewExcerpt(script, { maxWords: 40 }).prompt : script;
+    const estimate = estimateFor(engine, quoteScript);
+    return res.json({ ok: true, estimate, preview: b.preview === true });
+  }
+
   let project = null;
+  let projectLease = null;
   try {
     const opts = {};
     const isUrl = (u) => typeof u === 'string' && /^https?:\/\/\S+$/i.test(u) && u.length < 2048;
@@ -987,6 +1018,9 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     if (Number.isInteger(b.pitch) && b.pitch >= -12 && b.pitch <= 12) opts.pitch = b.pitch;
     if (b.multilingual === true) opts.multilingual = true;
     if (typeof b.voice === 'string' && b.voice.trim()) opts.voice = b.voice.trim().slice(0, 64);
+    if (['female', 'male'].includes(b.gender)) opts.gender = b.gender;
+    if (typeof b.language === 'string') opts.language = b.language.slice(0, 12);
+    if (['natural', 'balanced', 'strong'].includes(b.identity)) opts.identity = b.identity;
     if (b.voice_description) opts.voice_description = String(b.voice_description).slice(0, 600);
     if (['closeup', 'wide', 'scene'].includes(b.shot)) opts.shot = b.shot;
     if (b.scene) opts.scene = String(b.scene).slice(0, 200);
@@ -1005,8 +1039,27 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     }
     if (!project) {
       project = new KadeSoundBoothProject({ user: req.user.id });
+      await project.save();
     }
-    project.title = String(b.title || project.title || titleFrom(script)).slice(0, 80) || 'Untitled';
+    projectLease = await chain.acquire(project);
+    if (!projectLease) return res.status(409).json({ error: 'This project is updating. Wait a moment before starting another take.' });
+    project = await KadeSoundBoothProject.findById(project._id);
+    if (['queued', 'running'].includes(project.state)) {
+      return res.status(409).json({ error: 'This project already has a render in progress. Wait for it or stop it before starting another take.', projectId: String(project._id), jobId: project.jobs?.at(-1) });
+    }
+    const previousScript = project.script;
+    const previousOptions = project.options || {};
+    if (engine === 'scenema') {
+      if (b.newVoice === true) { project.voiceSeed = undefined; delete opts.seed; }
+      if (!Number.isInteger(project.voiceSeed) && project.parts?.length && !b.newVoice) {
+        project.voiceSeed = chain.deterministicSeed(previousScript);
+        previousOptions.seed = project.voiceSeed;
+      }
+      if (Number.isInteger(opts.seed)) project.voiceSeed = opts.seed;
+      else if (!Number.isInteger(project.voiceSeed)) project.voiceSeed = Math.floor(Math.random() * 1000000);
+      opts.seed = project.voiceSeed;
+    }
+    project.title = String(b.title || (project.title !== 'Untitled' && project.title) || titleFrom(script)).slice(0, 80) || 'Untitled';
     project.engine = engine;
     project.mode = mode;
     project.sourceText = String(b.sourceText || project.sourceText || '').slice(0, 8000);
@@ -1030,11 +1083,19 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
           error: `That script would take ${pieces.length} separate renders, which is past the ${chain.MAX_PARTS}-part limit. Cut it roughly in half and make it as two pieces.`,
         });
       }
-      project.parts = pieces.map((sc, i) => ({ index: i, script: sc, state: 'pending' }));
+      const sameOptions = Object.keys({ ...previousOptions, ...opts }).every((key) =>
+        JSON.stringify(stableOption(previousOptions[key])) === JSON.stringify(stableOption(opts[key])));
+      const resume = ['failed', 'cancelled'].includes(project.state) && !b.newVoice &&
+        previousScript === script && sameOptions && project.parts?.length === pieces.length &&
+        project.parts.every((part, i) => part.script === pieces[i]);
+      project.parts = pieces.map((sc, i) => {
+        const previous = resume && project.parts[i];
+        return previous?.state === 'done' ? previous.toObject() : { index: i, script: sc, state: 'pending' };
+      });
       project.stitchedAssetId = undefined;
       project.state = 'queued';
       await project.save();
-      const step = await chain.advance(project);
+      const step = await chain.advanceLocked(project);
       if (step.state === 'failed') {
         return res.status(400).json({ error: project.lastError, projectId: String(project._id) });
       }
@@ -1044,12 +1105,18 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         ok: true,
         jobId: step.jobId || null,
         projectId: String(project._id),
+        engine: 'scenema',
+        queued: step.state !== 'done',
+        voiceSeed: project.voiceSeed,
+        resumed: resume,
         multipart: { total: pieces.length, index: 0 },
         estimate: { ...est, spoken: `${saySplit(pieces, 'Scenema')} ${est.spoken}` },
         spoken: saySplit(pieces, 'Scenema'),
       });
     }
 
+    project.parts = [];
+    project.stitchedAssetId = undefined;
     if (engine === 'scenema') {
       const secret = process.env.BRIDGE_SECRET;
       if (!secret) return res.status(503).json({ error: 'The render lane is not configured here.' });
@@ -1082,12 +1149,6 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
          * One seed per PROJECT now, set by whichever fires first and reused by
          * every render after, so preview and render and re-render are the same
          * person. `newVoice: true` rerolls it on purpose. */
-        if (b.newVoice === true) project.voiceSeed = undefined;
-        if (Number.isInteger(opts.seed) && opts.seed >= 0) {
-          project.voiceSeed = opts.seed;
-        } else if (!Number.isInteger(project.voiceSeed)) {
-          project.voiceSeed = Math.floor(Math.random() * 1000000);
-        }
         const bridgeBody = {
           secret,
           userId: String(req.user.id),
@@ -1126,6 +1187,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         return res.status(400).json({ error: msg, projectId: String(project._id) });
       }
       const jobId = r.data?.jobId;
+      if (!jobId) throw new Error('The render service did not return a job. Check the library before retrying.');
       project.state = 'queued';
       if (jobId) project.jobs = [...(project.jobs || []), jobId].slice(-20);
       await project.save();
@@ -1137,8 +1199,8 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
             engine: 'scenema',
             words: previewInfo?.words || 0,
             audioSeconds: Math.max(5, Math.round((previewInfo?.words || 25) / 2.6)),
-            renderSeconds: 60,
-            costUSD: 0.01,
+            renderSeconds: estimateFor('scenema', promptToSend).renderSeconds,
+            costUSD: estimateFor('scenema', promptToSend).costUSD,
             voiceSeed: project.voiceSeed,
             sampleText: previewInfo?.text || '',
             fromScript: !!previewInfo?.fromScript,
@@ -1146,7 +1208,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
               (previewInfo?.fromScript
                 ? `Reading the opening of your script: "${String(previewInfo.text).slice(0, 160)}"`
                 : `Your script is empty, so it will read a plain line instead: "${String(previewInfo?.text || '').slice(0, 160)}"`) +
-              ` Voice number ${project.voiceSeed} — the full render will use this same voice. About a penny.`,
+              ` Voice number ${project.voiceSeed} — the full render will use this same voice. GPU time is billed.`,
           }
         : estimateFor('scenema', script);
       /* Part 123: the bridge's estimate is read for a PREVIEW too. Its
@@ -1283,7 +1345,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     });
   } catch (error) {
     logger.error('[soundbooth/render] failed:', error);
-    if (project) {
+    if (project && projectLease) {
       try {
         project.state = 'failed';
         project.lastError = String(error.message || 'render failed').slice(0, 300);
@@ -1293,7 +1355,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       }
     }
     return res.status(500).json({ error: 'That render could not start. Try again.' });
-  }
+  } finally { if (project && projectLease) await chain.release(project, projectLease); }
 });
 
 /* One push per finished PIECE, not per part — sent after the join, through the
@@ -1353,6 +1415,7 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
         state: project.state,
         error: project.state === 'failed' ? project.lastError || null : null,
         multipart: { total, done, joined: !!project.stitchedAssetId },
+        url: step.url || null,
         spoken: step.spoken || chain.sayProgress(project, null),
       });
     }
@@ -1368,21 +1431,20 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
     }
     const j = r.data || {};
     const map = { queued: 'queued', running: 'running', done: 'done', failed: 'failed', cancelled: 'cancelled' };
-    if (map[j.state] && project.state !== map[j.state]) {
-      project.state = map[j.state];
-      if (j.state === 'failed') project.lastError = String(j.error || 'render failed').slice(0, 300);
-      if (j.state === 'done' && typeof j.costUSD === 'number') {
-        project.costUSD = (project.costUSD || 0) + j.costUSD;
-      }
-      await project.save();
-      if (j.state === 'done') {
-        /* The gallery row may land a beat after the bridge says done -- link
-         * what is there now, and the next /projects read catches the rest. */
-        try {
-          await linkJobAssets([project], req.user.id);
-        } catch (e) {
-          logger.warn('[soundbooth] link on done failed: ' + e.message);
-        }
+    // An old take must never overwrite the currently rendering take. The
+    // conditional update also prevents two polls charging the same finish twice.
+    if (map[j.state] && project.jobs.at(-1) === jobId) {
+      const set = { state: map[j.state] };
+      if (j.state === 'failed') set.lastError = String(j.error || 'render failed').slice(0, 300);
+      const update = { $set: set };
+      if (j.state === 'done' && typeof j.costUSD === 'number') update.$inc = { costUSD: j.costUSD };
+      const changed = await KadeSoundBoothProject.updateOne({
+        _id: project._id, updatedAt: project.updatedAt, state: { $nin: [map[j.state], 'cancelled'] },
+        $or: [{ renderLeaseUntil: { $exists: false } }, { renderLeaseUntil: { $lt: new Date() } }],
+      }, update);
+      if (changed.modifiedCount && j.state === 'done') {
+        try { await linkJobAssets([project], req.user.id); }
+        catch (e) { logger.warn('[soundbooth] link on done failed: ' + e.message); }
       }
     }
     const d = Math.round(j.result?.durationS || 0);
@@ -1405,7 +1467,9 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
           ? `Ready. ${Math.floor(d / 60) ? `${Math.floor(d / 60)} minute${Math.floor(d / 60) === 1 ? '' : 's'} ` : ''}${d % 60} seconds of audio, in the Sound Booth library and My Creations.`
           : j.state === 'failed'
             ? `That render did not finish. ${String(j.error || '').slice(0, 160)}`
-            : j.wait?.spoken
+            : j.state === 'cancelled'
+            ? 'Stopped. Any completed takes are kept.'
+          : j.wait?.spoken
               ? j.wait.spoken
               : j.state === 'running'
                 ? 'Rendering now.'
@@ -1425,14 +1489,37 @@ router.post('/cancel/:jobId', requireJwtAuth, async (req, res) => {
     const jobId = String(req.params.jobId || '').slice(0, 64);
     const project = await KadeSoundBoothProject.findOne({ user: req.user.id, jobs: jobId });
     if (!project) return res.status(404).json({ error: 'No render by that name on your account.' });
-    await axios.post(
-      `${bridgeBase()}/audio/scenema/cancel`,
-      { secret, jobId },
-      { headers: { 'User-Agent': UA }, timeout: 15000 },
-    );
-    project.state = 'cancelled';
-    await project.save();
-    return res.json({ ok: true });
+    if (!['queued', 'running'].includes(project.state)) return res.json({ ok: true, state: project.state });
+    const lease = await chain.acquire(project);
+    if (!lease) return res.status(409).json({ error: 'This project is finishing an update. Try Stop again in a moment.' });
+    try {
+      const current = await KadeSoundBoothProject.findById(project._id);
+      project.set(current.toObject());
+      if (!['queued', 'running'].includes(project.state)) return res.json({ ok: true, state: project.state });
+      const active = project.parts?.find((part) => ['queued', 'running'].includes(part.state));
+      const activeJobId = active?.jobId || project.jobs.at(-1);
+      const result = await axios.post(
+        `${bridgeBase()}/audio/scenema/cancel`,
+        { secret, jobId: activeJobId },
+        { headers: { 'User-Agent': UA }, timeout: 15000 },
+      );
+      if (result.data?.state === 'done' && !active) {
+        return res.json({ ok: true, state: 'done', spoken: 'That take finished before Stop reached it. Refreshing its result.' });
+      }
+      if (active && result.data?.state === 'done') {
+        const finished = await axios.get(`${bridgeBase()}/audio/scenema/status`, {
+          params: { secret, jobId: activeJobId }, headers: { 'User-Agent': UA }, timeout: 15000,
+        });
+        const j = finished.data;
+        if (!j.result?.url) throw new Error('The finished part is not ready to save yet. Try Stop again.');
+        active.state = 'done'; active.url = j.result.url;
+        active.durationS = j.result.durationS || null; active.costUSD = j.costUSD || 0;
+        project.costUSD = (project.costUSD || 0) + active.costUSD;
+      } else if (active) active.state = 'failed';
+      project.state = 'cancelled';
+      await project.save();
+      return res.json({ ok: true, state: 'cancelled', spoken: 'Stopped. Completed takes and finished parts are kept. GPU time already used may still be charged.' });
+    } finally { await chain.release(project, lease); }
   } catch (error) {
     logger.error('[soundbooth/cancel] failed:', error);
     return res.status(500).json({ error: 'Could not stop that render.' });
@@ -1448,11 +1535,12 @@ router.get('/projects', requireJwtAuth, async (req, res) => {
       .lean();
     await linkJobAssets(rows, req.user.id);
     const takes = await takesFor(rows, req.user.id);
-    const projects = rows.map((r) => {
+    const projects = await Promise.all(rows.map(async (r) => {
       const v = projectView(r);
+      await refreshReferences(v);
       v.takes = (r.assets || []).map((id) => takes.get(String(id))).filter(Boolean).reverse();
       return v;
-    });
+    }));
     return res.json({ count: projects.length, projects });
   } catch (error) {
     logger.error('[soundbooth/projects] failed:', error);
@@ -1470,6 +1558,7 @@ router.get('/projects/:id', requireJwtAuth, async (req, res) => {
     await linkJobAssets([p], req.user.id);
     const takes = await takesFor([p], req.user.id);
     const v = projectView(p);
+    await refreshReferences(v);
     v.takes = (p.assets || []).map((id) => takes.get(String(id))).filter(Boolean).reverse();
     return res.json({ project: v });
   } catch (error) {
