@@ -150,7 +150,12 @@ router.get('/sounds', async (_req, res) => {
     await seedOnce();
     const { MooSound } = require('~/models/kadeMoo');
     const { needsRefresh, getNewS3URL } = require('@librechat/api');
-    const rows = await MooSound.find({}).lean();
+    /* Sep 6 2026: the live manifest served {} while the seeder in the SAME
+     * request counted 25 installed rows. find({}) and find({scopeType}) cannot
+     * disagree on a sane collection, so this names the scopes explicitly and
+     * logs the count, to make the next reader's job a one-line grep. */
+    const rows = await MooSound.find({ scopeType: { $in: ['event', 'room', 'district'] } }).lean();
+    logger.info(`[world] sound manifest: ${rows.length} rows (${rows.filter((r) => r.scopeType === 'event').length} event, ${rows.filter((r) => r.scopeType === 'room').length} room, ${rows.filter((r) => r.scopeType === 'district').length} district)`);
     const fresh = async (url) => {
       const u = String(url || '');
       try {
