@@ -177,10 +177,11 @@ router.get('/sounds', async (_req, res) => {
       }
       return u;
     };
-    const manifest = { event: {}, room: {}, district: {} };
+    const manifest = { event: {}, room: {}, district: {}, versions: {} };
     for (const r of rows) {
       if (manifest[r.scopeType]) {
         manifest[r.scopeType][r.scopeId] = await fresh(r.url);
+        manifest.versions[`${r.scopeType}:${r.scopeId}`] = r.updatedAt ? new Date(r.updatedAt).toISOString() : '';
       }
     }
     res.json(manifest);
