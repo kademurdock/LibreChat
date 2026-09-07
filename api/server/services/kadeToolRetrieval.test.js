@@ -67,6 +67,40 @@ test('a plain companion turn rides core only', async () => {
   assert.ok(r.dropped.includes('kade_phone_call'));
 });
 
+test('studio requests retain the tool when embeddings miss, without a prior conversation', async () => {
+  const names = [...KIANA, 'fal_studio'];
+  for (const text of [
+    'Narrate this scene for me.',
+    'Check my narration job.',
+    'Use Scenema for this take.',
+    'Open the Sound Booth.',
+    'Clone my voice for the script.',
+    'Generate a song with sung vocals.',
+    'Make a backing track.',
+    'Create rain sound effects.',
+    'Edit my last audio clip.',
+    'Continue my recording.',
+  ]) {
+    R._resetForTests();
+    const result = await R.selectTools({
+      tools: T(names), text, agentId: 'studio', embed: fakeEmbed(names),
+    });
+    assert.ok(result.keep.has('fal_studio'), text);
+    assert.match(result.reason, /kw=\[[^\]]*fal_studio/, text);
+  }
+});
+
+test('lyrics writing and ordinary listening do not automatically retrieve generation tools', async () => {
+  const names = [...KIANA, 'fal_studio'];
+  for (const text of ['Write lyrics for a rap song.', 'I listened to a good song.', 'My microphone is quiet.']) {
+    R._resetForTests();
+    const result = await R.selectTools({
+      tools: T(names), text, agentId: 'studio', embed: fakeEmbed(names),
+    });
+    assert.ok(!result.keep.has('fal_studio'), text);
+  }
+});
+
 test('keywords pull the obvious tool; embedding pulls by meaning; both stick', async () => {
   R._resetForTests();
   const embed = fakeEmbed(KIANA);

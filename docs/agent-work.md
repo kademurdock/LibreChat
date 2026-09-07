@@ -78,3 +78,12 @@ Additional free checks: `node --test api/test/narration.recovery.test.cjs` exerc
 the studio agent's status reporting through an HTTP fixture boundary; it makes
 no audio. Client Jest tests for `useResumableSSE` cover lost responses, bounded
 same-ID retries, failed lookups, expired streams, remounts and navigation.
+The API `src/tools/definitions.spec.ts` suite exercises the actual definition-only
+loader used by production agents, including narration actions, job identity and
+audio controls. Studio schemas and narration instructions live together in
+`packages/api/src/tools/registry/fal.ts`, shared with the executing `FalAI` tool;
+updating only a constructor description would not update production agent binding.
+`node --test api/server/services/kadeToolRetrieval.test.js` checks narration,
+song rendering, sound effects and audio editing against missed embedding matches;
+writing lyrics alone does not select the rendering tool through these aliases.
+These free checks establish the binding and tool behavior, not model output quality.

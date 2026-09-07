@@ -114,6 +114,9 @@ const ALIASES = {
   ],
   fal_studio: [
     /\b(video clip|make (me )?(a|an) (video|poster|logo|flyer|card|banner)|design (a|an|me)|short film|animate)\b/i,
+    /\b(narrat(?:e|ion)|scenema|sound booth|seed audio|voice clon(?:e|ing)|clone (?:my|this|that|the) voice)\b/i,
+    /\b(?:make|generate|render|create|produce)\b[^.!?]{0,60}\b(?:audio|sound effects?|sung vocals|song|instrumental|backing track)\b/i,
+    /\b(?:extend|edit|inpaint|stitch|continue|redo)\b[^.!?]{0,40}\b(?:audio|clip|recording)\b/i,
   ],
   calculator: [
     /(\d+\s*[-+*/%x×÷]\s*\d+|\d+\s*%|\b(percent|percentage|calculate|calculation|how many \w+ (in|per|are in)|convert|divided by|square root|tip on)\b)/i,

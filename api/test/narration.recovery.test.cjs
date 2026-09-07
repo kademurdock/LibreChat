@@ -99,8 +99,11 @@ test('an uncertain narration start asks for status before a new paid render', as
   assert.match(result, /do not start another automatically/);
 });
 
-test('the bound narration instructions match limits and recovery behavior', () => {
+test('the executing tool shares the production schema and narration instructions', () => {
   const { tool } = fixture();
+  const { falStudioSchema, falNarrationInstructions } = require('@librechat/api');
+  assert.equal(tool.schema, falStudioSchema);
+  assert.ok(tool.description_for_model.includes(falNarrationInstructions));
   assert.match(tool.schema.properties.action.description, /4,000 characters including XML/);
   assert.match(tool.description_for_model, /4,000 characters INCLUDING XML/);
   assert.match(tool.description_for_model, /check_narration with that job_id FIRST/);

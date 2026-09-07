@@ -17,6 +17,49 @@ describe('definitions.ts', () => {
   });
 
   describe('loadToolDefinitions', () => {
+    it.each([undefined, Providers.GOOGLE])(
+      'exposes narration and its recovery controls through production studio loading (%s)',
+      async (provider) => {
+        const result = await loadToolDefinitions(
+          {
+            userId: 'studio-user',
+            agentId: 'studio-agent',
+            tools: ['fal_studio'],
+            provider,
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            isBuiltInTool: (name) => name === 'fal_studio',
+          },
+        );
+        expect(result.toolDefinitions).toHaveLength(1);
+        const studio = result.toolDefinitions[0];
+        expect(studio.parameters?.properties?.action.enum).toEqual(
+          expect.arrayContaining(['generate_narration', 'check_narration']),
+        );
+        for (const parameter of [
+          'job_id',
+          'voice_description',
+          'gender',
+          'scene',
+          'shot',
+          'seed',
+          'audio_urls',
+          'use_recent_audio',
+          'long_form',
+          'audio_quality',
+          'volume',
+        ]) {
+          expect(studio.parameters?.properties).toHaveProperty(parameter);
+        }
+        expect(studio.description).toContain('check_narration with that job_id FIRST');
+        expect(studio.description).toContain('4,000 characters INCLUDING XML');
+        expect(studio.description).toContain('Missing or failed jobs do not prove zero charges');
+        expect(studio.description).not.toMatch(/there was NO cost|phone will buzz|\$0\.075\/min/);
+        expect(mockGetOrFetchMCPServerTools).not.toHaveBeenCalled();
+      },
+    );
+
     it('should return empty result for empty tools array', async () => {
       const params: LoadToolDefinitionsParams = {
         userId: 'user-123',
