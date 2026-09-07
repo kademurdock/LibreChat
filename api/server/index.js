@@ -221,6 +221,8 @@ const startServer = async () => {
   }
 
   app.get('/index.html', sendIndexHtml);
+  // Existing iPhone builds link here. Keep their policy link on the public help page.
+  app.get('/privacy', (_req, res) => res.redirect(302, '/help/privacy'));
   app.use(staticCache(appConfig.paths.dist));
   app.use(staticCache(appConfig.paths.fonts));
   app.use(staticCache(appConfig.paths.assets));

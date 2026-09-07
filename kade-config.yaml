@@ -503,7 +503,7 @@ memory:
       LETTING GO: when you clean up or consolidate, don't only merge and tighten -- also DROP cards that turned out to be one-off curiosities, stale this-moment details, or topics that never came up again and are not durable facts about the user. NEVER drop identity, health, family or relationships, promises a character made, reminders, or anything the user pinned by saying "remember." A short, true memory beats a long one.
 
 interface:
-  customWelcome: "Welcome to Kade-AI, {{user.name}} — Kade's own corner of the internet, where you chat with AI characters at cost: your account starts with $10 of credit on the house, everything draws from it at exactly what it costs (chat is nearly free), and when it runs dry you top up under Explore → Usage & Balance. No instructions needed: type like you'd text a friend, and your character takes it from there. Brand new to AI? There's a two-minute, plain-language guide at kademurdock.com/help/start-here — the whole help center is written for beginners and works beautifully with screen readers. Everything fun (the Debate Room, your creations, what your chats cost) lives under your account menu, bottom-left, in Explore. One thing worth doing on day one: build your Spotter — your personal live video companion, your eyes on a video call — two minutes under Explore → Your Spotter. And if anything ever feels broken or confusing, tell Kade — the site gets better every time someone speaks up."
+  customWelcome: "Welcome to Kade-AI, {{user.name}}. Talk to a character like you'd text a friend. Your account starts with $10 of credit; model usage includes a contribution toward running the platform. Usage & Balance shows your balance, charges, and estimated server cost. Need a hand getting started? Visit kademurdock.com/help/start-here. If something feels broken or confusing, tell Kade."
   # NOTE (June 27 2026): customFooter is NOT a valid interface.* key in LibreChat's schema --
   # it gets silently stripped here and does nothing. The real footer text is set via the
   # CUSTOM_FOOTER Railway env var on the LibreChat service itself, not through this file.
@@ -536,13 +536,13 @@ interface:
       Kade-AI runs on my server, my accounts, and my actual money. That makes me the landlord. Be a good tenant and we'll get along great.
 
       ## 2. Privacy, For Real
-      I'm not selling your data. More importantly: I physically and mechanically cannot see your chats. The system is locked down, and I don't have a way (or the desire) to monitor what you're typing. Spill your secrets, build your weirdest characters, or use it as a sealed confessional—your text is safe from my eyes.
+      I'm not selling your data. Conversations are stored on Kade-AI's servers, and administrators can access stored chats and memories through support tools. Chat content is also sent to the model and service providers needed to answer you. This is not end-to-end encrypted messaging. Read [Privacy & Your Data](/help/privacy) for what is stored and how to review or delete your data.
 
       ## 3. Don't Be a Menace
       No illegal nonsense, no harassing other people on here, no using this to hurt anybody. Build funny characters, weird characters, brilliant characters — just keep it not-evil.
 
       ## 4. The Tokens Aren't Free (To Me)
-      Every message you fire off costs me real money behind the curtain. Your account starts with $10 of credit on the house, and everything draws from it at exactly what it costs — no markup. Use it, enjoy it, but don't park a script in here cranking out a novel every thirty seconds. Run dry and things pause until you top up through the PayPal button (put your NAME in the note) — or just talk to me.
+      Your account starts with $10 of credit on the house. Model usage is currently charged at twice the configured provider rate to help cover the rest of the platform. Metered extras, such as pictures, videos, and phone calls, are charged separately; ordinary chat speech is included in Kade's voice plan. Usage & Balance separates your charges from estimated server cost. When your balance runs dry, top up through the PayPal button (put your NAME in the note), or talk to me.
 
       ## 5. No Warranty, No Promises
       This is run by one person, not a Fortune 500. It might go down. It might say something gloriously dumb. If it breaks I'll probably fix it, but I'm not legally on the hook if the robot whiffs or the site takes an afternoon nap.

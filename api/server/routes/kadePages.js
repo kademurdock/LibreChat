@@ -238,7 +238,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
 <body>
   <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a></p>
   <h1>Usage &amp; Balance</h1>
-  <p class="muted">The deal, plainly: your account starts with <strong>$10 of credit</strong> loaded by Kade, everything you do draws from it at exactly what it costs (no markup, no profit), and when it runs dry you top it up below and keep going. <strong>Voice is the exception: talking and listening are included free with Kade's own voice plan</strong> &mdash; they never touch your balance.</p>
+  <p class="muted">Your account starts with <strong>$10 of credit</strong> loaded by Kade. Model usage includes a contribution toward running the platform; the server-cost line below shows the current multiplier alongside your estimated cost. Metered extras such as pictures, videos, and phone calls also draw from your balance. <strong>Ordinary chat speech is included in Kade's voice plan</strong>. Top up below when you need more credit.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading your usage…</div>
 
