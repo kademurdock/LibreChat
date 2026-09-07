@@ -9,7 +9,7 @@ const vm = require('vm');
 const { describeStale } = require('./kadeOpenLoops.js');
 
 function loadFormatList() {
-  const src = fs.readFileSync(require.resolve('./kadeCardRecall.js'), 'utf8');
+  const src = fs.readFileSync(require.resolve('./kadeCardRecall.js'), 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function subjectsEnabled()');
   const endMark = src.indexOf('/**\n * Read one user');
   assert.ok(start > -1 && endMark > start, 'could not locate the format block');

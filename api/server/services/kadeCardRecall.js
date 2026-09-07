@@ -612,7 +612,7 @@ async function getMemorySplit(userId, agentId) {
  * @param {string} p.userId
  * @param {string|undefined} p.agentId
  * @param {string} p.userText     what the user just said this turn
- * @param {object|null} p.cardSplit  result of getMemorySplit (null = cards stay head-side; diary may still fire)
+ * @param {object} p.req  request-local embedding memo, shared with tool retrieval
  */
 async function getRecallTailBlock({ userId, agentId, userText, req }) {
   /* ── RECALL AUDIT (Aug 26 2026) ──────────────────────────────────────────
@@ -643,6 +643,17 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
   }
   try {
     const work = (async () => {
+      // One live snapshot per bucket for THIS lookup only. Reuse it for the
+      // vector join, open loops, and background index refresh; never cache
+      // people's cards across turns or trust an old vector's value.
+      const liveBuckets = new Map();
+      const readBucket = (id) => {
+        const key = id == null ? '' : String(id);
+        if (!liveBuckets.has(key)) {
+          liveBuckets.set(key, getAllUserMemories(userId, { agentId: id == null ? null : id }));
+        }
+        return liveBuckets.get(key);
+      };
       const cardsOn = cardRagActive(agentId);
       const diaryN = await countEntries(userId, agentId);
       if (!cardsOn && diaryN === 0) {
@@ -667,38 +678,49 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
         extraAgentIds = [];
       }
       if (cardsOn) {
-        const cardHits = qv
+        // Determine eligibility BEFORE the top-K cut. Previously pinned or
+        // deleted cards could win every slot, then be discarded with no
+        // replacements, hiding a relevant memory ranked ninth.
+        const [shared, own, ...others] = await Promise.all([
+          readBucket(null),
+          agentId ? readBucket(agentId) : Promise.resolve([]),
+          ...extraAgentIds.map(readBucket),
+        ]);
+        const ownKeys = new Set(own.map((m) => String(m.key)));
+        const liveByKey = new Map();
+        for (const m of [...shared, ...own]) {
+          liveByKey.set((m.agentId == null ? '' : String(m.agentId)) + '::' + m.key, m);
+        }
+        /* Secondhand cards: skip any key this companion already holds itself
+         * (the Part 122 copies), so a shared fact never shows up twice. */
+        for (const list of others) {
+          for (const m of list) {
+            if (ownKeys.has(String(m.key))) continue;
+            liveByKey.set(String(m.agentId) + '::' + m.key, { ...m, _secondhand: shareNames.get(String(m.agentId)) || 'another companion' });
+          }
+        }
+        const pats = pinPatterns();
+        /* Which shared cards are ACTUALLY in the head this turn — ceiling
+         * included. Anything the ceiling evicted is retrieval's job now,
+         * which is the whole point of evicting it. */
+        const headSharedKeys = pinnedSharedKeysFor(shared, own);
+        const pinnedNow = (m) => m._secondhand
+          ? false
+          : m.agentId == null
+            ? headSharedKeys.has(String(m.key))
+            : m.type === 'reminder' || pats.some((p) => String(m.key || '').toLowerCase().includes(p));
+        const keys = new Set(
+          [...liveByKey].filter(([, m]) => !pinnedNow(m)).map(([key]) => key),
+        );
+        const cardHits = qv && keys.size > 0
           ? await searchCardVectors(userId, agentId, qv, {
               limit: CARD_TOP_K,
               minScore: CARD_MIN_SCORE,
               extraAgentIds,
+              keys,
             })
           : [];
         if (cardHits.length > 0) {
-          /* Join back to LIVE entries — vectors never speak for themselves. */
-          const [shared, own, ...others] = await Promise.all([
-            getAllUserMemories(userId, { agentId: null }),
-            agentId ? getAllUserMemories(userId, { agentId }) : Promise.resolve([]),
-            ...extraAgentIds.map((a) => getAllUserMemories(userId, { agentId: a })),
-          ]);
-          const ownKeys = new Set(own.map((m) => String(m.key)));
-          const liveByKey = new Map();
-          for (const m of [...shared, ...own]) {
-            liveByKey.set((m.agentId == null ? '' : String(m.agentId)) + '::' + m.key, m);
-          }
-          /* Secondhand cards: skip any key this companion already holds itself
-           * (the Part 122 copies), so a shared fact never shows up twice. */
-          for (const list of others) {
-            for (const m of list) {
-              if (ownKeys.has(String(m.key))) continue;
-              liveByKey.set(String(m.agentId) + '::' + m.key, { ...m, _secondhand: shareNames.get(String(m.agentId)) || 'another companion' });
-            }
-          }
-          const pats = pinPatterns();
-          /* Which shared cards are ACTUALLY in the head this turn — ceiling
-           * included. Anything the ceiling evicted is retrieval's job now,
-           * which is the whole point of evicting it. */
-          const headSharedKeys = pinnedSharedKeysFor(shared, own);
           let block =
             '# Memory recall (auto-surfaced for THIS turn only)\n' +
             'Private memories of yours about this person, pulled up because they relate to what was just said. ' +
@@ -712,16 +734,10 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
               continue; /* card died since its vector was written */
             }
             /* Pinned cards already ride the head — don't spend tail on them. */
-            const k = String(m.key || '').toLowerCase();
             /* A secondhand card never rides the head, so it is never "already
              * there" — the tail is its only door. (Found live: `probe_bird_name`
              * matched the `name` pin pattern and was skipped as pinned.) */
-            const pinnedNow = m._secondhand
-              ? false
-              : m.agentId == null
-                ? headSharedKeys.has(String(m.key))
-                : m.type === 'reminder' || pats.some((p) => k.includes(p));
-            if (pinnedNow) {
+            if (pinnedNow(m)) {
               continue;
             }
             const line =
@@ -745,8 +761,8 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
         (async () => {
           try {
             const [shared, own] = await Promise.all([
-              getAllUserMemories(userId, { agentId: null }),
-              agentId ? getAllUserMemories(userId, { agentId }) : Promise.resolve([]),
+              readBucket(null),
+              agentId ? readBucket(agentId) : Promise.resolve([]),
             ]);
             await syncBucketVectors(userId, null, shared, { maxEmbeds: 3 });
             if (agentId) {
@@ -755,7 +771,7 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
             /* Part 128: shared-in buckets get a trickle too, so a fact told to
              * another companion is findable before that companion's next turn. */
             for (const a of extraAgentIds.slice(0, 3)) {
-              const rows = await getAllUserMemories(userId, { agentId: a });
+              const rows = await readBucket(a);
               await syncBucketVectors(userId, a, rows, { maxEmbeds: 3 });
             }
           } catch (_e) {
@@ -765,14 +781,13 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
       }
 
       if (cardsOn && process.env.KADE_LOOP_NUDGE !== '0') {
-        /* See selectLoopNudges above. The extra card fetch is a lean indexed
-         * read this path already does twice; a turn is never risked for it. */
+        /* See selectLoopNudges above. Reuse this lookup's live cards. */
         try {
           const nudgeDays = Math.max(1, parseInt(process.env.KADE_LOOP_NUDGE_DAYS || '7', 10));
           const nudgeMax = Math.max(1, parseInt(process.env.KADE_LOOP_NUDGE_MAX || '2', 10));
           const [shared2, own2] = await Promise.all([
-            getAllUserMemories(userId, { agentId: null }),
-            agentId ? getAllUserMemories(userId, { agentId }) : Promise.resolve([]),
+            readBucket(null),
+            agentId ? readBucket(agentId) : Promise.resolve([]),
           ]);
           const conversationId = req?.body?.conversationId || null;
           const loops = selectLoopNudges({
