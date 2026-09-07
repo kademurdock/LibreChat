@@ -49,6 +49,8 @@ const TALK = [
     hint: 'A fresh chat with your main companion. Same as the Chats tab.' },
   { id: 'convos', href: '/conversations', title: 'Your conversations', spoken: 'Your conversations', icon: '🗂️',
     hint: 'Opens your conversation list.' },
+  { id: 'agentwork', href: '/agent-work', title: 'Agent work', spoken: 'Agent work', icon: '📋',
+    hint: 'Check recent requests and find saved replies after a connection drops.' },
   { id: 'alerts', href: '/notifications', title: 'Alerts', spoken: 'Alerts', icon: '🔔',
     hint: 'Your recent reminders and check-ins, and how they reach you.' },
   { id: 'announce', href: '/announcements', title: 'Announcements', spoken: 'Announcements', icon: '📣',

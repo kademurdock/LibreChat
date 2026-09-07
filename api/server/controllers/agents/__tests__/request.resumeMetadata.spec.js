@@ -81,6 +81,17 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  getTaskReceipts: () => ({
+    claim: async (input) => ({
+      task: { ...input, conversationId: input.conversationId || 'new-test-conversation' },
+      created: true,
+    }),
+    bind: async () => {},
+    settle: async () => {},
+    recordMessages: async () => {},
+  }),
+  taskFingerprint: () => 'test-fingerprint',
+  TaskConflict: class extends Error {},
   sendEvent: jest.fn(),
   getViolationInfo: jest.fn(),
   buildMessageFiles: jest.fn(() => []),
@@ -352,6 +363,7 @@ describe('ResumableAgentController resume metadata', () => {
       streamId: conversationId,
       conversationId,
       status: 'started',
+      taskId: 'user-message',
     });
     expect(disconnect).toHaveBeenCalledTimes(1);
     expect(disconnect.mock.invocationCallOrder[0]).toBeLessThan(

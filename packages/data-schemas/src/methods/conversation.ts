@@ -13,6 +13,7 @@ import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
 import logger from '~/config/winston';
+import { removeConversationTaskLinks } from '../models/agentTask';
 
 export interface ConversationMethods {
   getConvoFiles(conversationId: string): Promise<string[]>;
@@ -793,10 +794,12 @@ export function createConversationMethods(
         await decrementTagCounts(mongoose, user, tagDecrements);
       }
 
-      const deleteMessagesResult = await deleteMessages({
-        conversationId: { $in: conversationIds },
-        user,
-      });
+      // Both cleanups must run even if the other fails after the conversation
+      // is gone. Retain an opaque receipt so a retry cannot recreate the run.
+      const [deleteMessagesResult] = await Promise.all([
+        deleteMessages({ conversationId: { $in: conversationIds }, user }),
+        deleted ? removeConversationTaskLinks(mongoose, user, conversationIds) : Promise.resolve(),
+      ]);
 
       /**
        * Refresh project stats after message cleanup so a stats-refresh error cannot

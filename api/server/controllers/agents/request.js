@@ -12,6 +12,9 @@ const {
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
   isUnpersistedPreliminaryParent,
+  getTaskReceipts,
+  taskFingerprint,
+  TaskConflict,
 } = require('@librechat/api');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const {
@@ -45,7 +48,9 @@ const friendlyTurnError = (message) => {
       }
       const balLine =
         balanceUSD != null && balanceUSD > 0.005
-          ? 'You have about $' + balanceUSD.toFixed(2) + ' of credit left, but this turn needed more than that. '
+          ? 'You have about $' +
+            balanceUSD.toFixed(2) +
+            ' of credit left, but this turn needed more than that. '
           : 'Your prepaid credit has run dry, so this turn could not run. ';
       return (
         balLine +
@@ -251,13 +256,62 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   // Generate conversationId upfront if not provided - streamId === conversationId always
   // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
   const isNewConvo = !reqConversationId || reqConversationId === 'new';
-  const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
-  const streamId = conversationId;
+  let conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
+  let streamId = conversationId;
   req.body.conversationId = conversationId;
 
   let client = null;
+  let taskId;
+  let createdTaskJob = false;
+  const taskOwner = { userId, tenantId: req.user.tenantId };
+  const settleTask = async (status, messages) => {
+    if (!taskId) return;
+    try {
+      await getTaskReceipts().settle(taskOwner, taskId, status, messages);
+    } catch (error) {
+      logger.error('[AgentTasks] Failed to save request status', { taskId, error: error.message });
+    }
+  };
 
   try {
+    // Continue/regenerate reuse message IDs intentionally; they need a new explicit requestId.
+    if (req.body.requestId || (!isRegenerate && !isContinued && !editedContent)) {
+      const requestId = req.body.requestId || req.body.messageId || crypto.randomUUID();
+      const claim = await getTaskReceipts().claim({
+        ...taskOwner,
+        taskId: requestId,
+        conversationId: reqConversationId,
+        temporary: !!req.body.isTemporary,
+        fingerprint: taskFingerprint([
+          text || '',
+          reqConversationId || 'new',
+          parentMessageId,
+          req.body.agent_id || '',
+          endpointOption?.endpoint || '',
+          JSON.stringify(req.body.files || []),
+          JSON.stringify(editedContent),
+          !!isRegenerate,
+          !!isContinued,
+          !!req.body.isTemporary,
+          editedResponseMessageId,
+          overrideParentMessageId,
+        ]),
+      });
+      if (!claim.created) {
+        await finishResumableRequest(req, userId);
+        return res.json({
+          streamId: claim.task.conversationId,
+          conversationId: claim.task.conversationId,
+          status: 'existing',
+          taskId: claim.task.taskId,
+          taskStatus: claim.task.status,
+        });
+      }
+      taskId = claim.task.taskId;
+      conversationId = claim.task.conversationId;
+      streamId = conversationId;
+      req.body.conversationId = conversationId;
+    }
     logger.debug(`[ResumableAgentController] Creating job`, {
       streamId,
       conversationId,
@@ -266,13 +320,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
 
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
+    createdTaskJob = true;
     const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
+    if (taskId) {
+      await getTaskReceipts().bind(taskOwner, taskId, jobCreatedAt);
+      await GenerationJobManager.updateMetadata(streamId, { taskId });
+    }
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
 
     // Send JSON response IMMEDIATELY so client can connect to SSE stream
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
-    res.json({ streamId, conversationId, status: 'started' });
+    res.json({ streamId, conversationId, status: 'started', ...(taskId && { taskId }) });
 
     await attachConversationCreatedAt(req, { userId, conversationId, isNewConvo });
 
@@ -375,6 +434,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
 
     if (job.abortController.signal.aborted) {
+      await settleTask('stopped');
       GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
       await finishResumableRequest(req, userId);
       return;
@@ -477,6 +537,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       try {
         const onStart = (userMsg, respMsgId, _isNewConvo) => {
           userMessage = userMsg;
+          if (taskId) {
+            getTaskReceipts()
+              .recordMessages(taskOwner, taskId, {
+                userMessageId: userMsg.messageId,
+                responseMessageId: respMsgId,
+              })
+              .catch((error) =>
+                logger.error('[AgentTasks] Message link failed', { taskId, error: error.message }),
+              );
+          }
 
           // Store userMessage and responseMessageId upfront for resume capability
           GenerationJobManager.updateMetadata(streamId, {
@@ -619,6 +689,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const jobWasReplaced = !!currentJob && currentJob.createdAt !== jobCreatedAt;
 
         if (jobWasReplaced) {
+          await settleTask('stopped', {
+            userMessageId: userMessage?.messageId,
+            responseMessageId: response?.messageId,
+          });
           logger.debug(`[ResumableAgentController] Skipping FINAL emit - job was replaced`, {
             streamId,
             originalCreatedAt: jobCreatedAt,
@@ -665,6 +739,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
 
         if (!wasAbortedBeforeComplete) {
+          await settleTask('completed', {
+            userMessageId: userMessage?.messageId,
+            responseMessageId: response?.messageId,
+          });
           const finalEvent = {
             final: true,
             conversation,
@@ -718,6 +796,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
           await finishResumableRequest(req, userId);
         } else {
+          await settleTask('stopped', {
+            userMessageId: userMessage?.messageId,
+            responseMessageId: response?.messageId,
+          });
           const finalEvent = {
             final: true,
             conversation,
@@ -784,6 +866,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         // Check if this was an abort (not a real error)
         const wasAborted = job.abortController.signal.aborted || error.message?.includes('abort');
+        await settleTask(wasAborted ? 'stopped' : 'failed');
 
         if (wasAborted) {
           logger.debug(`[ResumableAgentController] Generation aborted for ${streamId}`);
@@ -817,6 +900,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     // Start generation and handle any unhandled errors
     startGeneration().catch(async (err) => {
+      await settleTask('failed');
       logger.error(
         `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
       );
@@ -824,14 +908,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       await finishResumableRequest(req, userId);
     });
   } catch (error) {
+    await settleTask('failed');
     logger.error('[ResumableAgentController] Initialization error:', error);
     if (!res.headersSent) {
-      res.status(500).json({ error: error.message || 'Failed to start generation' });
-    } else {
+      res.status(error instanceof TaskConflict ? 409 : 503).json({
+        error:
+          error instanceof TaskConflict
+            ? error.message
+            : 'The request could not be started safely. Check Agent work before sending again.',
+      });
+    } else if (createdTaskJob) {
       // JSON already sent, emit error to stream so client can receive it
       await GenerationJobManager.emitError(streamId, error.message || 'Failed to start generation');
     }
-    GenerationJobManager.completeJob(streamId, error.message);
+    if (createdTaskJob) GenerationJobManager.completeJob(streamId, error.message);
     await finishResumableRequest(req, userId);
     if (client) {
       disposeClient(client);

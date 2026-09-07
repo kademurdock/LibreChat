@@ -53,4 +53,6 @@ export {
   SYSTEM_TENANT_ID,
 } from './config/tenantContext';
 export type { TenantContext } from './config/tenantContext';
+export { createAgentTaskModel } from './models/agentTask';
+export type { IAgentTask, AgentTaskStatus } from './models/agentTask';
 export { dropSupersededTenantIndexes, dropSupersededPromptGroupIndexes } from './migrations';

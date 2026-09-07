@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Agent work — Kade-AI</title>
+    <link rel="stylesheet" href="/assets/tasks/work.css?v=138" />
+    <script src="/assets/tasks/work.js?v=138" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#requests">Skip to your requests</a>
+    <main>
+      <nav aria-label="Page links">
+        <a href="/home">Home</a><a href="/conversations">Conversations</a
+        ><a href="/help/troubleshooting">Chat help</a>
+      </nav>
+      <p class="eyebrow">KADE-AI</p>
+      <h1>Agent work</h1>
+      <p class="intro">Find your saved replies and check work after a connection drops.</p>
+      <p>
+        Open the chat to read the reply or stop a running request. Checking this page never sends
+        your message again.
+      </p>
+      <div class="controls">
+        <button id="refresh" type="button">Refresh requests</button><span id="checked"></span>
+      </div>
+      <p id="status" role="status" aria-live="polite" aria-atomic="true">Loading your requests…</p>
+      <p id="login" hidden>
+        <a href="/login?redirect_to=%2Fagent-work">Sign in to Kade-AI</a>, then return here.
+      </p>
+      <section id="requests" aria-labelledby="requests-heading" tabindex="-1">
+        <h2 id="requests-heading">Your requests</h2>
+        <p id="empty" hidden>
+          No requests to show yet. New ordinary chat requests appear here. Your earlier
+          conversations are still in Conversations.
+        </p>
+        <ol id="list" role="list"></ol>
+        <button id="more" type="button" hidden>Show older requests</button>
+      </section>
+      <details>
+        <summary>What the statuses mean</summary>
+        <dl>
+          <dt>Reply saved</dt>
+          <dd>The agent's reply was saved. Read the chat for evidence of any action it took.</dd>
+          <dt>Working</dt>
+          <dd>The request is still running on the server.</dd>
+          <dt>Stopped</dt>
+          <dd>The agent run was stopped. Actions it already performed are not undone.</dd>
+          <dt>Interrupted</dt>
+          <dd>
+            The live run is gone and a finished reply could not be confirmed. Check the chat and any
+            action receipts before deciding what to do next.
+          </dd>
+          <dt>Could not finish</dt>
+          <dd>The request ended with an error. The chat may contain a partial reply.</dd>
+        </dl>
+        <p>
+          This page covers new ordinary chat requests. Temporary chats, regenerated replies and
+          separate voice or coding sessions may not appear. It does not resume work after a server
+          restart.
+        </p>
+      </details>
+    </main>
+  </body>
+</html>

@@ -3,6 +3,8 @@ import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
 import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
+import { createAgentTaskModel } from '../models/agentTask';
+import { getTenantId } from '../config/tenantContext';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
@@ -278,6 +280,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')): {
       if (result.deletedCount === 0) {
         return { deletedCount: 0, message: 'No user found with that ID.' };
       }
+      await createAgentTaskModel(mongoose).deleteMany({ userId, tenantId: getTenantId() || 'default' });
       return { deletedCount: result.deletedCount, message: 'User was deleted successfully.' };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

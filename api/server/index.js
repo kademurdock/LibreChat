@@ -337,6 +337,10 @@ const startServer = async () => {
   app.get('/feed-the-server', routes.kade.feedPage);
   app.get('/my-creations', routes.kade.creationsPage);
   app.get('/sound-booth', routes.kade.soundBoothPage);
+  app.get('/agent-work', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.sendFile(path.join(appConfig.paths.dist, 'assets/tasks/work.html'));
+  });
   app.get('/wall-of-fame', routes.kade.wallPage);
   // Part 116.4: /tools folded into Home (her word: "it all looks good"); the
   // old hub stays reachable at /tools-legacy for one release in case a

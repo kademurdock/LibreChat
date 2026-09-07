@@ -11,6 +11,7 @@ export type JobStatus = 'running' | 'complete' | 'error' | 'aborted';
  */
 export interface SerializableJobData {
   streamId: string;
+  taskId?: string;
   userId: string;
   tenantId?: string;
   status: JobStatus;

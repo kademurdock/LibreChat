@@ -4,6 +4,8 @@ const {
   GenerationJobManager,
   hasPersistableAbortContent,
   buildAbortedResponseMetadata,
+  createTaskRouter,
+  getTaskReceipts,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -15,7 +17,7 @@ const {
   configMiddleware,
   messageUserLimiter,
 } = require('~/server/middleware');
-const { saveMessage } = require('~/models');
+const { saveMessage, getMessages, getConvo } = require('~/models');
 const responses = require('./responses');
 const openai = require('./openai');
 const { v1 } = require('./v1');
@@ -47,6 +49,7 @@ router.use('/v1', openai);
 router.use(requireJwtAuth);
 router.use(checkBan);
 router.use(uaParser);
+router.use('/chat/tasks', createTaskRouter({ getMessages, getConvo }));
 
 /**
  * Stream endpoints - mounted before chatRouter to bypass rate limiters
@@ -236,14 +239,18 @@ router.post('/chat/abort', async (req, res) => {
 
   // Fallback: if job not found and we have a userId, look up active jobs for user
   // This handles the case where frontend sends "new" but job was created with a UUID
-  if (!job && userId) {
+  if (!jobStreamId && userId) {
     logger.debug(`[AgentStream] Job not found by ID, checking active jobs for user: ${userId}`);
     const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
       userId,
       req.user.tenantId,
     );
-    if (activeJobIds.length > 0) {
-      // Abort the most recent active job for this user
+    if (activeJobIds.length > 1) {
+      return res
+        .status(409)
+        .json({ error: 'More than one chat is working. Open the chat you want to stop.' });
+    }
+    if (activeJobIds.length === 1) {
       jobStreamId = activeJobIds[0];
       job = await GenerationJobManager.getJob(jobStreamId);
       logger.debug(`[AgentStream] Found active job for user: ${jobStreamId}`);
@@ -264,6 +271,26 @@ router.post('/chat/abort', async (req, res) => {
 
     logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
     const abortResult = await GenerationJobManager.abortJob(jobStreamId);
+    if (!abortResult.success) {
+      return res
+        .status(409)
+        .json({ error: 'The request could not be stopped. Check the chat before trying again.' });
+    }
+    if (abortResult.jobData?.taskId) {
+      try {
+        await getTaskReceipts().settle(
+          { userId, tenantId: req.user.tenantId },
+          abortResult.jobData.taskId,
+          'stopped',
+          {
+            userMessageId: abortResult.jobData.userMessage?.messageId,
+            responseMessageId: abortResult.jobData.responseMessageId,
+          },
+        );
+      } catch (error) {
+        logger.error('[AgentTasks] Stop receipt failed', { error: error.message });
+      }
+    }
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
       abortResultSuccess: abortResult.success,
       abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,

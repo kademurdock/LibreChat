@@ -478,6 +478,7 @@ class GenerationJobManagerClass {
       metadata: {
         userId: jobData.userId,
         tenantId: jobData.tenantId,
+        taskId: jobData.taskId,
         conversationId: jobData.conversationId,
         userMessage: jobData.userMessage,
         responseMessageId: jobData.responseMessageId,
@@ -1368,6 +1369,9 @@ class GenerationJobManagerClass {
     metadata: Partial<t.GenerationJobMetadata>,
   ): Promise<void> {
     const updates: Partial<SerializableJobData> = {};
+    if (metadata.taskId) {
+      updates.taskId = metadata.taskId;
+    }
     if (metadata.responseMessageId) {
       updates.responseMessageId = metadata.responseMessageId;
     }
