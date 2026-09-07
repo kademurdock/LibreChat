@@ -435,8 +435,65 @@ function pinnedSharedKeysFor(shared, own) {
  * skipped when it is already in front of the model (pinned head or this
  * turn's topical hits). She gets to be the friend who asks how it went
  * unprompted. Kill switch: KADE_LOOP_NUDGE=0. */
-function selectLoopNudges({ shared, own, surfacedKeys, headSharedKeys, pats, now = Date.now(), days = 7, max = 2 }) {
+/* ⭐ PART 141 (Sep 7 2026, Kade, reading Amber A's cat chat: "it keeps bringing
+ * things up and repeating them"). The nudge had NO memory of having nudged.
+ * Amber told Kiana at 16:32 how the Sunday service went; the plan card was
+ * still expired-and-unanswered as far as this selector could see, so the same
+ * "ask how it went" note rode the 16:34, 16:36, 16:39 and 16:43 turns too,
+ * and Kiana circled back to the service four replies running. A friend who
+ * remembered asks ONCE. The ledger below is in-process (a deploy forgets it,
+ * which costs at most one extra ask), keyed per person and card:
+ *   - never twice in the same conversation,
+ *   - never twice inside KADE_LOOP_NUDGE_COOLDOWN_H (default 24 h),
+ *   - never more than KADE_LOOP_NUDGE_LIFETIME (default 3) times at all —
+ *     after that the card is consolidation's business, not the model's.
+ * The selector takes the ledger's verdict as `recentlyNudged`; the ledger is
+ * written only after the block actually ships. */
+const LOOP_NUDGE_LEDGER = new Map(); /* `${userId}::${key}` -> { count, lastAt, convos:Set } */
+const LOOP_NUDGE_LEDGER_MAX = 5000;
+function loopNudgeCooldownMs(env = process.env) {
+  const h = parseFloat(env.KADE_LOOP_NUDGE_COOLDOWN_H || '24');
+  return (Number.isFinite(h) && h >= 0 ? h : 24) * 3600000;
+}
+function loopNudgeLifetime(env = process.env) {
+  const n = parseInt(env.KADE_LOOP_NUDGE_LIFETIME || '3', 10);
+  return Number.isFinite(n) && n > 0 ? n : 3;
+}
+function recentlyNudgedKeys({ userId, conversationId, cards, now = Date.now(), env = process.env, ledger = LOOP_NUDGE_LEDGER }) {
+  const out = new Set();
+  const cooldown = loopNudgeCooldownMs(env);
+  const lifetime = loopNudgeLifetime(env);
+  for (const m of cards || []) {
+    const e = ledger.get(String(userId) + '::' + String(m.key));
+    if (!e) {
+      continue;
+    }
+    if (e.count >= lifetime || now - e.lastAt < cooldown || (conversationId && e.convos.has(String(conversationId)))) {
+      out.add(String(m.key));
+    }
+  }
+  return out;
+}
+function recordLoopNudges({ userId, conversationId, keys, now = Date.now(), ledger = LOOP_NUDGE_LEDGER }) {
+  for (const key of keys || []) {
+    const id = String(userId) + '::' + String(key);
+    const e = ledger.get(id) || { count: 0, lastAt: 0, convos: new Set() };
+    e.count += 1;
+    e.lastAt = now;
+    if (conversationId) {
+      e.convos.add(String(conversationId));
+    }
+    ledger.delete(id); /* re-insert = newest, so the trim below evicts the oldest */
+    ledger.set(id, e);
+  }
+  while (ledger.size > LOOP_NUDGE_LEDGER_MAX) {
+    ledger.delete(ledger.keys().next().value);
+  }
+}
+
+function selectLoopNudges({ shared, own, surfacedKeys, headSharedKeys, pats, now = Date.now(), days = 7, max = 2, recentlyNudged }) {
   const surfaced = new Set(surfacedKeys || []);
+  const recent = recentlyNudged || new Set();
   return [...(shared || []), ...(own || [])]
     .filter((m) => isExpired(m, new Date(now)))
     .filter((m) => {
@@ -444,6 +501,7 @@ function selectLoopNudges({ shared, own, surfacedKeys, headSharedKeys, pats, now
       return d && now - d.getTime() <= days * 86400000;
     })
     .filter((m) => !surfaced.has(String(m.key)))
+    .filter((m) => !recent.has(String(m.key)))
     .filter((m) => {
       const k = String(m.key || '').toLowerCase();
       const pinnedNow = m.agentId == null
@@ -707,6 +765,7 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
             getAllUserMemories(userId, { agentId: null }),
             agentId ? getAllUserMemories(userId, { agentId }) : Promise.resolve([]),
           ]);
+          const conversationId = req?.body?.conversationId || null;
           const loops = selectLoopNudges({
             shared: shared2,
             own: own2,
@@ -715,16 +774,18 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
             pats: pinPatterns(),
             days: nudgeDays,
             max: nudgeMax,
+            recentlyNudged: recentlyNudgedKeys({ userId, conversationId, cards: [...shared2, ...own2] }),
           });
           if (loops.length > 0) {
             let block =
               '# Open loop (auto-surfaced)\n' +
-              'A dated plan in your notes has passed and nobody has said how it went. If the moment fits, ask — naturally, the way a friend who remembered would. Never announce the old plan as if it is current, and never mention this note.\n';
+              'A dated plan in your notes has passed and nobody has said how it went. If the moment fits, ask — naturally, the way a friend who remembered would, and ask ONCE: if they answer, or the moment never fits, let it go. Never announce the old plan as if it is current, and never mention this note.\n';
             for (const m of loops) {
               block += '- [' + fmtDate(m.updated_at) + '] ' + m.value + describeStale(m) + '\n';
               surfacedCards.push(String(m.key));
             }
             parts.push(block.trimEnd());
+            recordLoopNudges({ userId, conversationId, keys: loops.map((m) => String(m.key)) });
           }
         } catch (_e) {
           /* the nudge must never cost a turn */

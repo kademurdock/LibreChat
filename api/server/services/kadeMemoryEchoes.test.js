@@ -44,7 +44,7 @@ const recall = fs.readFileSync(require.resolve('./kadeCardRecall.js'), 'utf8');
 const rstripped = recall.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 test('the echo block sits LAST — after cards, nudge, and diary', () => {
   const nudge = rstripped.indexOf("KADE_LOOP_NUDGE !== '0'");
-  const diary = rstripped.indexOf('if (diaryN > 0) {');
+  const diary = rstripped.indexOf('if (diaryN > 0');
   const echo = rstripped.indexOf("KADE_ECHOES !== '0'");
   assert.ok(nudge > -1 && diary > nudge && echo > diary, `${nudge} < ${diary} < ${echo}`);
 });

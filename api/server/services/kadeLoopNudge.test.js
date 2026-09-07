@@ -13,15 +13,21 @@ const { isExpired, cardDate } = require('./kadeOpenLoops.js');
  * runs against a transcription proves the transcription works. */
 function loadSelector() {
   const src = fs.readFileSync(require.resolve('./kadeCardRecall.js'), 'utf8');
-  const start = src.indexOf('function selectLoopNudges(');
+  const start = src.indexOf('const LOOP_NUDGE_LEDGER = new Map()');
   const end = src.indexOf('async function getMemorySplit');
-  assert.ok(start > -1 && end > start, 'could not locate selectLoopNudges');
+  assert.ok(start > -1 && end > start, 'could not locate the nudge ledger + selectLoopNudges');
   const ctx = { process, isExpired, cardDate };
   vm.createContext(ctx);
-  vm.runInContext(src.slice(start, end) + '\nthis.fn = selectLoopNudges;', ctx);
-  return ctx.fn;
+  vm.runInContext(
+    src.slice(start, end) +
+      '\nthis.fn = selectLoopNudges; this.recentlyNudgedKeys = recentlyNudgedKeys; this.recordLoopNudges = recordLoopNudges;',
+    ctx,
+  );
+  return ctx;
 }
-const selectLoopNudges = loadSelector();
+const loaded = loadSelector();
+const selectLoopNudges = loaded.fn;
+const { recentlyNudgedKeys, recordLoopNudges } = loaded;
 const DAY = 86400000;
 const NOW = Date.UTC(2026, 7, 29, 12, 0, 0); // Aug 29 2026 noon UTC
 const iso = (msAgo) => new Date(NOW - msAgo).toISOString();
@@ -79,11 +85,69 @@ const stripped = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '
 
 test('kill switch present, block sits before the diary branch', () => {
   const kill = stripped.indexOf("KADE_LOOP_NUDGE !== '0'");
-  const diary = stripped.indexOf('if (diaryN > 0) {');
+  const diary = stripped.indexOf('if (diaryN > 0');
   assert.ok(kill > -1 && diary > -1 && kill < diary);
 });
 
 test('nudged keys land in the recall audit', () => {
-  const block = stripped.slice(stripped.indexOf("KADE_LOOP_NUDGE !== '0'"), stripped.indexOf('if (diaryN > 0) {'));
+  const block = stripped.slice(stripped.indexOf("KADE_LOOP_NUDGE !== '0'"), stripped.indexOf('if (diaryN > 0'));
   assert.match(block, /surfacedCards\.push\(String\(m\.key\)\)/);
+});
+
+// ═══ PART 141 — a friend who remembered asks ONCE ═══════════════════════════
+// (Sep 7 2026, Kade reading Amber A's chat: "it keeps bringing things up and
+// repeating them" — the same expired plan rode four consecutive turns.)
+const HOUR = 3600000;
+const fresh = () => new Map();
+
+test('a nudged card is not nudged again in the same conversation', () => {
+  const ledger = fresh();
+  const cards = [card('service', 1)];
+  const first = recentlyNudgedKeys({ userId: 'u', conversationId: 'c1', cards, now: NOW, ledger });
+  assert.strictEqual(first.size, 0);
+  recordLoopNudges({ userId: 'u', conversationId: 'c1', keys: ['service'], now: NOW, ledger });
+  const again = recentlyNudgedKeys({ userId: 'u', conversationId: 'c1', cards, now: NOW + 5 * 60000, ledger });
+  assert.ok(again.has('service'));
+  const out = selectLoopNudges({ ...base, shared: cards, own: [], recentlyNudged: again });
+  assert.strictEqual(out.length, 0);
+});
+
+test('a different conversation inside the cooldown still waits; after it, one more ask', () => {
+  const ledger = fresh();
+  const cards = [card('service', 1)];
+  recordLoopNudges({ userId: 'u', conversationId: 'c1', keys: ['service'], now: NOW, ledger });
+  const soon = recentlyNudgedKeys({ userId: 'u', conversationId: 'c2', cards, now: NOW + 2 * HOUR, ledger, env: {} });
+  assert.ok(soon.has('service'), 'inside the 24 h cooldown');
+  const later = recentlyNudgedKeys({ userId: 'u', conversationId: 'c2', cards, now: NOW + 25 * HOUR, ledger, env: {} });
+  assert.strictEqual(later.size, 0, 'cooldown over, a new conversation may ask once');
+});
+
+test('three asks and the card is consolidation business — never a fourth', () => {
+  const ledger = fresh();
+  const cards = [card('service', 1)];
+  for (let i = 0; i < 3; i++) {
+    recordLoopNudges({ userId: 'u', conversationId: 'c' + i, keys: ['service'], now: NOW + i * 30 * HOUR, ledger });
+  }
+  const out = recentlyNudgedKeys({ userId: 'u', conversationId: 'c9', cards, now: NOW + 400 * HOUR, ledger, env: {} });
+  assert.ok(out.has('service'));
+});
+
+test('the ledger is per person: her card nudged does not silence his', () => {
+  const ledger = fresh();
+  const cards = [card('service', 1)];
+  recordLoopNudges({ userId: 'amber', conversationId: 'c1', keys: ['service'], now: NOW, ledger });
+  const his = recentlyNudgedKeys({ userId: 'corey', conversationId: 'c1', cards, now: NOW, ledger, env: {} });
+  assert.strictEqual(his.size, 0);
+});
+
+test('the selector honors recentlyNudged and still nudges the rest', () => {
+  const out = selectLoopNudges({ ...base, shared: [card('a', 2), card('b', 3)], own: [], recentlyNudged: new Set(['a']) });
+  assert.strictEqual(out.map((m) => m.key).join(','), 'b');
+});
+
+test('wiring: the ledger is consulted before the block and written after it ships', () => {
+  const block = stripped.slice(stripped.indexOf("KADE_LOOP_NUDGE !== '0'"), stripped.indexOf('if (diaryN > 0'));
+  assert.match(block, /recentlyNudged: recentlyNudgedKeys\(/);
+  assert.ok(block.indexOf('recordLoopNudges(') > block.indexOf('parts.push(block.trimEnd())'));
+  assert.match(block, /ask ONCE/);
 });
