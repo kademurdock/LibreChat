@@ -83,6 +83,10 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
+  if (req.query.taskId && req.query.taskId !== job.metadata.taskId) {
+    return res.status(409).json({ error: 'This chat has a different request. Check Agent work.' });
+  }
+
   const streamTelemetry = createSseStreamTelemetry({ req, res, streamId, isResume });
 
   res.setHeader('Content-Encoding', 'identity');
@@ -125,10 +129,19 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   };
 
   let result;
+  const subscriptionOptions = {
+    expectedTaskId: typeof req.query.taskId === 'string' ? req.query.taskId : undefined,
+  };
 
   if (isResume) {
     const { subscription, resumeState, pendingEvents } =
-      await GenerationJobManager.subscribeWithResume(streamId, writeEvent, onDone, onError);
+      await GenerationJobManager.subscribeWithResume(
+        streamId,
+        writeEvent,
+        onDone,
+        onError,
+        subscriptionOptions,
+      );
 
     if (!res.writableEnded) {
       if (resumeState) {
@@ -149,7 +162,13 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
     result = subscription;
   } else {
-    result = await GenerationJobManager.subscribe(streamId, writeEvent, onDone, onError);
+    result = await GenerationJobManager.subscribe(
+      streamId,
+      writeEvent,
+      onDone,
+      onError,
+      subscriptionOptions,
+    );
   }
 
   if (!result) {

@@ -310,6 +310,71 @@ test('real controller coalesces duplicate POSTs and saves a completed receipt', 
   assert.equal(modelCalls, count + 1);
 });
 
+test('regenerate, continue and edit retries run once while a new request still creates a branch', async () => {
+  for (const variant of [
+    { isRegenerate: true },
+    { isContinued: true },
+    { editedContent: { type: 'text', text: 'edited', index: 0 } },
+  ]) {
+    const count = modelCalls;
+    const body = {
+      text: 'invented branch',
+      messageId: randomUUID(),
+      requestId: randomUUID(),
+      ...variant,
+    };
+    await request(app).post('/send').send(body).expect(200);
+    await terminal(body.requestId);
+    const duplicate = await request(app).post('/send').send(body).expect(200);
+    assert.equal(duplicate.body.status, 'existing');
+    assert.equal(modelCalls, count + 1);
+    const next = { ...body, requestId: randomUUID() };
+    await request(app).post('/send').send(next).expect(200);
+    await terminal(next.requestId);
+    assert.equal(modelCalls, count + 2);
+  }
+});
+
+test('receipt and stream checks reject a replacement request in the same conversation', async () => {
+  const { task } = await claim('replaced-request');
+  const original = await manager.createJob(task.conversationId, 'alice', task.conversationId);
+  await manager.updateMetadata(task.conversationId, { taskId: task.taskId });
+  await receipts.bind(owner, task.taskId, original.createdAt);
+  const first = await request(app).get('/api/agents/chat/tasks/replaced-request').expect(200);
+  assert.equal(first.body.streamAvailable, true);
+  await manager.completeJob(task.conversationId);
+  await manager.createJob(task.conversationId, 'alice', task.conversationId);
+  await manager.updateMetadata(task.conversationId, { taskId: 'replacement-request' });
+  await manager.emitChunk(task.conversationId, { message: 'replacement-buffer-marker' });
+  const second = await request(app).get('/api/agents/chat/tasks/replaced-request').expect(200);
+  assert.equal(second.body.streamAvailable, false);
+  await request(app)
+    .get(`/api/agents/chat/stream/${task.conversationId}?taskId=replaced-request`)
+    .expect(409);
+  const emitted = [];
+  const result = await manager.subscribeWithResume(
+    task.conversationId,
+    (event) => emitted.push(event),
+    undefined,
+    undefined,
+    { expectedTaskId: task.taskId },
+  );
+  assert.equal(result.subscription, null);
+  assert.equal(result.resumeState, null);
+  assert.deepEqual(emitted, []);
+  const replacementEvents = [];
+  const replacement = await manager.subscribe(
+    task.conversationId,
+    (event) => replacementEvents.push(event),
+    undefined,
+    undefined,
+    { expectedTaskId: 'replacement-request' },
+  );
+  assert.ok(replacementEvents.some((event) => event.message === 'replacement-buffer-marker'));
+  replacement.unsubscribe();
+  await manager.completeJob(task.conversationId);
+});
+
 test('conflicting POST preserves the original live job', async () => {
   const body = { text: 'wait here', messageId: 'conflicting-request' };
   const first = await request(app).post('/send').send(body).expect(200);

@@ -880,6 +880,9 @@ class GenerationJobManagerClass {
 
     const jobData = await this.jobStore.getJob(streamId);
 
+    if (options?.expectedTaskId && jobData?.taskId !== options.expectedTaskId) {
+      return null;
+    }
     // If job already complete/error, send final event or error
     // Error status takes precedence to ensure errors aren't misreported as successes
     setImmediate(() => {
@@ -1013,12 +1016,25 @@ class GenerationJobManagerClass {
     onChunk: t.ChunkHandler,
     onDone?: t.DoneHandler,
     onError?: t.ErrorHandler,
+    options?: t.SubscribeOptions,
   ): Promise<t.SubscribeWithResumeResult> {
+    if (options?.expectedTaskId) {
+      const job = await this.jobStore.getJob(streamId);
+      if (job?.taskId !== options.expectedTaskId) {
+        return { subscription: null, resumeState: null, pendingEvents: [] };
+      }
+    }
     const bufferLengthAtSnapshot = !this._isRedis
       ? (this.runtimeState.get(streamId)?.earlyEventBuffer.length ?? 0)
       : 0;
 
     const resumeState = await this.getResumeState(streamId);
+    if (options?.expectedTaskId) {
+      const job = await this.jobStore.getJob(streamId);
+      if (job?.taskId !== options.expectedTaskId) {
+        return { subscription: null, resumeState: null, pendingEvents: [] };
+      }
+    }
     recordGenerationStreamSubscription(
       this.storeLabel,
       'resume_state',
@@ -1041,9 +1057,11 @@ class GenerationJobManagerClass {
     }
 
     const subscription = await this.subscribe(streamId, onChunk, onDone, onError, {
+      ...options,
       skipBufferReplay: true,
     });
 
+    if (!subscription) return { subscription: null, resumeState: null, pendingEvents: [] };
     return { subscription, resumeState, pendingEvents };
   }
 

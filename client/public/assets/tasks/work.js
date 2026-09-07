@@ -10,6 +10,18 @@
   let busy = false;
   let blocked = false;
   let lastRequest = 0;
+  const requestId = new URLSearchParams(location.search).get('requestId');
+  if (requestId) {
+    document.getElementById('requests-heading').textContent = 'Your selected request';
+    refresh.textContent = 'Check this request';
+    document.querySelector('#login a').href =
+      '/login?redirect_to=' +
+      encodeURIComponent('/agent-work?requestId=' + encodeURIComponent(requestId));
+    const all = document.createElement('a');
+    all.href = '/agent-work';
+    all.textContent = 'All requests';
+    document.querySelector('nav').append(all);
+  }
   const labels = {
     starting: 'Starting',
     running: 'Working',
@@ -39,6 +51,11 @@
         token = null;
         login.hidden = false;
         throw new Error('Please sign in again, then return to Agent work.');
+      }
+      if (response.status === 404 && requestId) {
+        throw new Error(
+          'This request could not be found for your account. It may have expired or its chat was deleted. Nothing was sent again.',
+        );
       }
       if (!response.ok)
         throw new Error(
@@ -90,17 +107,32 @@
     refresh.disabled = more.disabled = true;
     status.textContent = older ? 'Loading older requests…' : 'Checking your requests…';
     try {
+      if (requestId && !/^[A-Za-z0-9_-]{8,128}$/.test(requestId)) {
+        blocked = true;
+        throw new Error('This request link is invalid. Use All requests to find your work.');
+      }
       if (!token) {
         const auth = await request('/api/auth/refresh', { method: 'POST', credentials: 'include' });
         token = auth.token;
         if (!token) throw new Error('Please sign in again, then return to Agent work.');
       }
       const result = await request(
-        '/api/agents/chat/tasks' + (older && cursor ? '?before=' + encodeURIComponent(cursor) : ''),
+        '/api/agents/chat/tasks' +
+          (requestId
+            ? '/' + encodeURIComponent(requestId)
+            : older && cursor
+              ? '?before=' + encodeURIComponent(cursor)
+              : ''),
         {
           headers: { Authorization: 'Bearer ' + token },
         },
       );
+      if (requestId) {
+        if (result.taskId !== requestId)
+          throw new Error('Could not verify this request. Try Refresh.');
+        result.tasks = [{ ...result }];
+        result.nextCursor = null;
+      }
       if (!Array.isArray(result.tasks))
         throw new Error('Could not read the request list. Try Refresh.');
       const existing = older

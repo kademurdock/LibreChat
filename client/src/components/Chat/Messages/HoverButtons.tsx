@@ -9,7 +9,6 @@ import { BookOpenText } from 'lucide-react';
 import MessageAudio from './MessageAudio';
 import KadeReadingView from './KadeReadingView';
 import DownloadAudioButton from './DownloadAudioButton';
-import Feedback from './Feedback';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -118,7 +117,6 @@ const HoverButtons = ({
   handleContinue,
   latestMessageId,
   isLast,
-  handleFeedback,
 }: THoverButtons) => {
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
@@ -160,6 +158,17 @@ const HoverButtons = ({
   const { isCreatedByUser, error } = message;
 
   if (error === true) {
+    const requestId = message.metadata?.kadeRequestId;
+    if (typeof requestId === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(requestId)) {
+      return (
+        <a
+          className="inline-flex min-h-11 items-center rounded px-3 underline focus-visible:outline"
+          href={`/agent-work?requestId=${encodeURIComponent(requestId)}`}
+        >
+          {localize('com_ui_check_agent_request')}
+        </a>
+      );
+    }
     return (
       <div className="visible flex justify-center self-end lg:justify-start">
         {regenerateEnabled && (
@@ -281,16 +290,16 @@ const HoverButtons = ({
       />
 
       {/* Feedback Buttons — REMOVED (KADE July 13 2026, her call: "if they
-        * don't have a real purpose we should take them away"): thumbs up/down
-        * had no consumer on this platform (bug reports go through the
-        * kade_feedback tool → /feedback-dashboard) and cost two extra
-        * VoiceOver swipe-stops on EVERY message. Feedback component kept for
-        * upstream merges; just not rendered.
-        * POSTMORTEM NOTE (same night): the first cut of this removal left
-        * `cond && ({comment})` behind — a parenthesized JSX comment is an
-        * EMPTY OBJECT LITERAL, which React renders as a child and crashes
-        * with minified error #31 ("object with keys {}"). Never leave a JSX
-        * comment as the sole body of a conditional. */}
+       * don't have a real purpose we should take them away"): thumbs up/down
+       * had no consumer on this platform (bug reports go through the
+       * kade_feedback tool → /feedback-dashboard) and cost two extra
+       * VoiceOver swipe-stops on EVERY message. Feedback component kept for
+       * upstream merges; just not rendered.
+       * POSTMORTEM NOTE (same night): the first cut of this removal left
+       * `cond && ({comment})` behind — a parenthesized JSX comment is an
+       * EMPTY OBJECT LITERAL, which React renders as a child and crashes
+       * with minified error #31 ("object with keys {}"). Never leave a JSX
+       * comment as the sole body of a conditional. */}
 
       {/* Regenerate Button */}
       {regenerateEnabled && (

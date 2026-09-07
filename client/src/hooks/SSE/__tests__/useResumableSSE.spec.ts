@@ -5,6 +5,7 @@ import {
   QueryKeys,
   StepEvents,
   request,
+  dataService,
 } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
 
@@ -158,6 +159,7 @@ jest.mock('librechat-data-provider', () => {
       refreshToken: jest.fn(),
       dispatchTokenUpdatedEvent: jest.fn(),
     },
+    dataService: { ...actual.dataService, getAgentTask: jest.fn() },
   };
 });
 
@@ -259,6 +261,8 @@ describe('useResumableSSE - 404 error path', () => {
     mockSetShowStopButton.mockClear();
     (request.post as jest.Mock).mockReset();
     (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-123' });
+    (dataService.getAgentTask as jest.Mock).mockReset();
+    (dataService.getAgentTask as jest.Mock).mockRejectedValue({ response: { status: 404 } });
   });
 
   afterEach(() => {
@@ -271,7 +275,10 @@ describe('useResumableSSE - 404 error path', () => {
   };
 
   const render404Scenario = async (conversationId = CONV_ID) => {
-    const submission = buildSubmission({ conversation: { conversationId } });
+    const submission = {
+      ...buildSubmission({ conversation: { conversationId } }),
+      resumeStreamId: conversationId,
+    };
     const chatHelpers = buildChatHelpers();
 
     const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
@@ -289,7 +296,7 @@ describe('useResumableSSE - 404 error path', () => {
     return { sse, unmount, chatHelpers };
   };
 
-  it('clears the text and files draft from localStorage on 404', async () => {
+  it('keeps legacy conversation resume behavior on 404', async () => {
     seedDraft(CONV_ID);
     expect(localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${CONV_ID}`)).not.toBeNull();
     expect(localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${CONV_ID}`)).not.toBeNull();
@@ -316,7 +323,7 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
-  it('clears both TEXT and FILES drafts for new-convo when conversationId is absent', async () => {
+  it('retains TEXT and FILES drafts when a newly acknowledged request loses its stream', async () => {
     localStorage.setItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`, 'unsent message');
     localStorage.setItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.NEW_CONVO}`, '[]');
 
@@ -334,72 +341,32 @@ describe('useResumableSSE - 404 error path', () => {
       sse._emit('error', { responseCode: 404 });
     });
 
-    expect(localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`)).toBeNull();
+    expect(
+      localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`),
+    ).not.toBeNull();
     expect(
       localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.NEW_CONVO}`),
-    ).toBeNull();
+    ).not.toBeNull();
     unmount();
   });
 
-  it('invalidates the stream conversation id on 404 for a new conversation', async () => {
-    mockFindAll.mockReturnValue([{ queryKey: [QueryKeys.allConversations] }]);
-    const submission = buildSubmission({
-      conversation: {},
-      userMessage: {
-        messageId: 'msg-1',
-        conversationId: null,
-        text: 'Hello',
-        isCreatedByUser: true,
-        sender: 'User',
-        parentMessageId: Constants.NO_PARENT,
-      },
-      initialResponse: {
-        messageId: 'msg-1_',
-        conversationId: null,
-        text: '',
-        isCreatedByUser: false,
-        sender: 'Assistant',
-      },
-    });
-    const chatHelpers = buildChatHelpers();
-
-    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
-
+  it('offers the exact receipt when a new request stream disappears before created', async () => {
+    const submission = {
+      ...buildSubmission({ conversation: {} }),
+      requestId: 'disappeared-request',
+    };
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+    await flushMicrotasks();
     await act(async () => {
-      await Promise.resolve();
+      getLastSSE()._emit('error', { responseCode: 404 });
     });
-
-    const sse = getLastSSE();
-    await act(async () => {
-      sse._emit('error', { responseCode: 404 });
-    });
-
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: [QueryKeys.messages, 'stream-123'],
-    });
-    expect(mockRemoveQueries).toHaveBeenCalledWith({
-      queryKey: ['streamStatus', 'stream-123'],
-    });
-
-    const allConversationWrites = mockSetQueryData.mock.calls.filter(
-      ([queryKey]) => Array.isArray(queryKey) && queryKey[0] === QueryKeys.allConversations,
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ metadata: { kadeRequestId: 'disappeared-request' } }),
+      }),
     );
-    expect(allConversationWrites).toHaveLength(2);
-
-    const removeUpdater = allConversationWrites[1][1] as (data: {
-      pages: { conversations: { conversationId: string }[]; nextCursor: null }[];
-      pageParams: never[];
-    }) => { pages: { conversations: { conversationId: string }[] }[] };
-    const result = removeUpdater({
-      pages: [
-        {
-          conversations: [{ conversationId: 'stream-123' }, { conversationId: 'other' }],
-          nextCursor: null,
-        },
-      ],
-      pageParams: [],
-    });
-    expect(result.pages[0].conversations).toEqual([{ conversationId: 'other' }]);
+    expect(mockInvalidateQueries).not.toHaveBeenCalled();
+    expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
     unmount();
   });
 
@@ -919,6 +886,152 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('recovers a lost POST response through the exact receipt without another generation', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock).mockRejectedValueOnce(
+      Object.assign(new Error('offline'), { code: 'ERR_NETWORK' }),
+    );
+    (dataService.getAgentTask as jest.Mock).mockResolvedValueOnce({
+      taskId: 'recovery-request',
+      conversationId: 'saved-chat',
+      streamAvailable: true,
+      status: 'running',
+    });
+    const submission = { ...buildSubmission(), requestId: 'recovery-request', isRegenerate: true };
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+    await flushMicrotasks();
+    await advanceRetryTimer(8500);
+    expect(request.post).toHaveBeenCalledTimes(1);
+    expect(dataService.getAgentTask).toHaveBeenCalledWith('recovery-request');
+    const { SSE } = jest.requireMock('sse.js');
+    expect(SSE).toHaveBeenLastCalledWith(
+      '/api/agents/chat/stream/saved-chat?resume=true&taskId=recovery-request',
+      expect.any(Object),
+    );
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('uses the same request ID when the first send has no receipt and is retried', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock).mockRejectedValueOnce(
+      Object.assign(new Error('offline'), { code: 'ERR_NETWORK' }),
+    );
+    const submission = { ...buildSubmission(), isContinued: true };
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+    await flushMicrotasks();
+    await advanceRetryTimer(8500);
+    await advanceRetryTimer(8500);
+    const calls = (request.post as jest.Mock).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[0][1].requestId).toMatch(/^[a-f0-9-]{36}$/);
+    expect(calls[0][1].requestId).toBe(calls[1][1].requestId);
+    unmount();
+  });
+
+  it.each([403, 503])(
+    'stops without another POST when receipt lookup returns %s',
+    async (status) => {
+      jest.useFakeTimers();
+      (request.post as jest.Mock).mockRejectedValueOnce(
+        Object.assign(new Error('offline'), { code: 'ERR_NETWORK' }),
+      );
+      (dataService.getAgentTask as jest.Mock).mockRejectedValueOnce({ response: { status } });
+      const submission = { ...buildSubmission(), requestId: 'uncertain-request' };
+      const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+      await flushMicrotasks();
+      await advanceRetryTimer(8500);
+      await advanceRetryTimer(60000);
+      expect(request.post).toHaveBeenCalledTimes(1);
+      expect(dataService.getAgentTask).toHaveBeenCalledTimes(1);
+      expect(mockSSEInstances).toHaveLength(0);
+      expect(mockErrorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            metadata: { streamStartFailed: true, kadeRequestId: 'uncertain-request' },
+          }),
+        }),
+      );
+      unmount();
+    },
+  );
+
+  it('offers receipt recovery for a finished duplicate whose stream has expired', async () => {
+    (request.post as jest.Mock).mockResolvedValueOnce({ status: 'existing', streamId: 'old-chat' });
+    (dataService.getAgentTask as jest.Mock).mockResolvedValueOnce({
+      taskId: 'finished-request',
+      conversationId: 'old-chat',
+      streamAvailable: false,
+      status: 'completed',
+    });
+    const submission = { ...buildSubmission(), requestId: 'finished-request' };
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+    await flushMicrotasks();
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(request.post).toHaveBeenCalledTimes(1);
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: { streamStartFailed: true, kadeRequestId: 'finished-request' },
+        }),
+      }),
+    );
+    unmount();
+  });
+
+  it('retains fallback identity on remount but gives another regenerate its own identity', async () => {
+    const first = { ...buildSubmission(), isRegenerate: true };
+    const a = renderHook(() => useResumableSSE(first, buildChatHelpers()));
+    await flushMicrotasks();
+    a.unmount();
+    const b = renderHook(() => useResumableSSE(first, buildChatHelpers()));
+    await flushMicrotasks();
+    b.unmount();
+    const second = { ...buildSubmission(), isRegenerate: true };
+    const c = renderHook(() => useResumableSSE(second, buildChatHelpers()));
+    await flushMicrotasks();
+    c.unmount();
+    const calls = (request.post as jest.Mock).mock.calls;
+    expect(calls[0][1].requestId).toBe(calls[1][1].requestId);
+    expect(calls[0][1].requestId).not.toBe(calls[2][1].requestId);
+  });
+
+  it('cancels receipt recovery on navigation without sending again', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock).mockRejectedValueOnce(
+      Object.assign(new Error('offline'), { code: 'ERR_NETWORK' }),
+    );
+    const submission = buildSubmission();
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+    await flushMicrotasks();
+    unmount();
+    await advanceRetryTimer(60000);
+    expect(dataService.getAgentTask).not.toHaveBeenCalled();
+    expect(request.post).toHaveBeenCalledTimes(1);
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+  });
+
+  it.each([403, 409])(
+    'does not reconnect a refused or replaced stream (%s)',
+    async (responseCode) => {
+      jest.useFakeTimers();
+      const submission = { ...buildSubmission(), requestId: 'original-request' };
+      const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+      await flushMicrotasks();
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode });
+      });
+      await advanceRetryTimer(60000);
+      expect(mockSSEInstances).toHaveLength(1);
+      expect(mockErrorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ metadata: { kadeRequestId: 'original-request' } }),
+        }),
+      );
+      unmount();
+    },
+  );
+
   it('continues retrying chat start while the server reports startup readiness pending', async () => {
     jest.useFakeTimers();
     for (let i = 0; i < 9; i++) {
@@ -969,7 +1082,7 @@ describe('useResumableSSE - 404 error path', () => {
   it('clears submission and stop state when starting generation fails', async () => {
     (request.post as jest.Mock).mockRejectedValueOnce({
       response: {
-        status: 500,
+        status: 400,
         data: { message: 'failed to start' },
       },
     });

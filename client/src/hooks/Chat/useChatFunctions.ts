@@ -598,6 +598,7 @@ export default function useChatFunctions({
 
     logger.log('message_state', initialResponse);
     const submission: TSubmission = {
+      requestId: v4(),
       conversation: {
         ...conversation,
         ...(chatProjectId ? { chatProjectId } : {}),

@@ -5,6 +5,18 @@ import type { TAttachment, TPlugin } from 'src/schemas';
 import { StepTypes, ContentTypes, ToolCallTypes } from './runs';
 
 export namespace Agents {
+  export type TaskReceipt = {
+    taskId: string;
+    conversationId: string;
+    status: 'starting' | 'running' | 'completed' | 'failed' | 'stopped' | 'interrupted';
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    responseMessageId?: string;
+    canOpenConversation: boolean;
+    streamAvailable: boolean;
+  };
+
   export type MessageType = 'human' | 'ai' | 'generic' | 'system' | 'function' | 'tool' | 'remove';
 
   export type ImageDetail = 'auto' | 'low' | 'high';

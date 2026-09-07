@@ -29,6 +29,12 @@ const task = (id, status = 'completed') => ({
       const url = new URL(route.request().url());
       if (url.pathname === '/api/auth/refresh')
         return route.fulfill({ json: { token: 'local-test-token' } });
+      if (url.pathname.startsWith('/api/agents/chat/tasks/')) {
+        requests++;
+        assert.equal(route.request().method(), 'GET');
+        if (mode === 'missing') return route.fulfill({ status: 404, json: {} });
+        return route.fulfill({ json: task('request03', 'interrupted') });
+      }
       if (url.pathname === '/api/agents/chat/tasks') {
         requests++;
         if (mode === 'offline') return route.abort('internetdisconnected');
@@ -108,6 +114,32 @@ const task = (id, status = 'completed') => ({
       path: path.join(output, `agent-work-${name}-390.png`),
       fullPage: true,
     });
+    mode = 'single';
+    await page.goto('https://fixture.test/agent-work?requestId=request03');
+    await page.clock.runFor(9000);
+    await page.locator('#list li').waitFor();
+    assert.equal(await page.locator('#list li').count(), 1);
+    assert.equal(await page.locator('#list li').getAttribute('data-task-id'), 'request03');
+    assert.equal(await page.locator('#requests-heading').textContent(), 'Your selected request');
+    assert.equal(await page.locator('#more').isHidden(), true);
+    assert.equal(
+      await page.getByRole('link', { name: 'All requests', exact: true }).getAttribute('href'),
+      '/agent-work',
+    );
+    mode = 'missing';
+    await page.locator('#refresh').click();
+    await page.clock.runFor(9000);
+    await page.waitForFunction(() =>
+      document.querySelector('#status').textContent.includes('Nothing was sent again'),
+    );
+    const singleCount = requests;
+    await page.clock.runFor(60000);
+    assert.equal(requests, singleCount);
+    await page.goto('https://fixture.test/agent-work?requestId=%3Cscript%3E');
+    await page.waitForFunction(() =>
+      document.querySelector('#status').textContent.includes('link is invalid'),
+    );
+    assert.equal(requests, singleCount, 'invalid link sends no task request');
     assert.deepEqual(errors, []);
     console.log(
       `${name}: navigation, status, pagination, XSS, offline, login expiry, 403 stop, no polling and 12 responsive layouts passed`,

@@ -112,6 +112,7 @@ export type TEphemeralAgent = {
 
 export type TPayload = Partial<TMessage> &
   Partial<TEndpointOption> & {
+    requestId?: string;
     isContinued: boolean;
     isRegenerate?: boolean;
     conversationId: string | null;
@@ -153,6 +154,8 @@ export type TEditedContent =
     };
 
 export type TSubmission = {
+  /** One logical send, retained across transport retries; a new generation gets a new ID. */
+  requestId?: string;
   userMessage: TMessage;
   isEdited?: boolean;
   isContinued?: boolean;

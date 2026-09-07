@@ -630,6 +630,9 @@ class FalAI extends Tool {
       r = await axios.post(`${this.bridgeBase()}/audio/scenema/start`, body, { timeout: 20000 });
     } catch (e) {
       const msg = e?.response?.data?.error || e.message;
+      if (!e?.response || e.response.status >= 500) {
+        return `The narration start could not be confirmed: ${msg}. It may already be queued. Call check_narration before offering another render; do not start another automatically.`;
+      }
       return `Could not start the narration: ${msg}`;
     }
     const est = r.data?.estimate || {};
@@ -639,31 +642,37 @@ class FalAI extends Tool {
       `Narration queued (job ${r.data.jobId}). About ${len} of audio from ${est.words || '?'} words; rendering takes roughly ${Math.round((est.renderSeconds || 120) / 60)} minute(s), longer if the GPU has to wake up. ` +
       `Estimated cost about $${(est.costUSD || 0).toFixed(2)}. ` +
       `${refUrls[0] ? 'Cloning the reference clip. ' : ''}` +
-      'The phone will buzz when it is ready and it will be in My Creations; tell the user that, and call check_narration on their next message.'
+      'Check My Creations when it is ready; a notification depends on their settings. Call check_narration on their next message instead of submitting another render.'
     );
   }
 
   async checkNarration(data) {
     const secret = process.env.BRIDGE_SECRET;
     if (!secret) return 'Narration is not configured on this server (BRIDGE_SECRET missing).';
-    const q = new URLSearchParams({ secret });
-    if (data.job_id) q.set('jobId', String(data.job_id)); else q.set('userId', String(this.userId));
+    const q = new URLSearchParams({ secret, userId: String(this.userId) });
+    if (data.job_id) q.set('jobId', String(data.job_id));
     let r;
     try {
       r = await axios.get(`${this.bridgeBase()}/audio/scenema/status?${q}`, { timeout: 15000 });
     } catch (e) {
-      if (e?.response?.status === 404) return 'No narration has been started for this user yet.';
+      if (e?.response?.status === 404) return data.job_id
+        ? 'That narration job could not be found for this user. It may have expired. Check My Creations before ordering another render.'
+        : 'No recent narration job could be found for this user. Check My Creations for older audio.';
       return `Could not read the narration state: ${e?.response?.data?.error || e.message}`;
     }
     const j = r.data || {};
+    if (j.userId !== String(this.userId) || (data.job_id && j.id !== String(data.job_id))) {
+      return 'That narration job could not be verified for this user. No result was returned.';
+    }
     if (j.state === 'done' && j.result?.url) {
       const d = Math.round(j.result.durationS || 0);
       const mmss = `${Math.floor(d / 60)}:${String(d % 60).padStart(2, '0')}`;
       return `Narration ${j.id} is ready: ${mmss} of audio, cost $${(j.costUSD || 0).toFixed(2)}. Play it: [Play the audio](${j.result.url}) — it is also saved in My Creations.`;
     }
-    if (j.state === 'failed') return `Narration ${j.id} failed: ${j.error || 'unknown error'}. Nothing more was charged.`;
+    if (j.state === 'failed') return `Narration ${j.id} failed: ${j.error || 'unknown error'}. This status does not confirm the final provider charge. Check My Creations and usage before choosing another render.`;
     if (j.state === 'cancelled') return `Narration ${j.id} was cancelled.`;
-    return `Narration ${j.id} is ${j.state} (started ${j.createdAt}). Expected about ${Math.round((j.estimate?.renderSeconds || 120) / 60)} minute(s) of rendering; the phone buzzes when it lands.`;
+    const wait = j.wait?.spoken ? ` ${j.wait.spoken}` : '';
+    return `Narration ${j.id} is ${j.state} (started ${j.createdAt}).${wait} Check this job again later; do not submit a replacement while it is waiting or rendering.`;
   }
 
   async generateAudio(data) {

@@ -1,4 +1,6 @@
 {
+  "com_ui_check_agent_request": "Check this request",
+  "com_ui_request_check_before_retry": "Your request may already have run. Check this request for a saved reply before sending it again.",
   "chat_direction_left_to_right": "Left to Right",
   "chat_direction_right_to_left": "Right to Left",
   "com_a11y_ai_composing": "The AI is still composing.",

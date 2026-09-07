@@ -294,6 +294,8 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
 };
 
 export const activeJobs = () => `${BASE_URL}/api/agents/chat/active`;
+export const agentTask = (taskId: string) =>
+  `${BASE_URL}/api/agents/chat/tasks/${encodeURIComponent(taskId)}`;
 
 export const mcp = {
   tools: `${BASE_URL}/api/mcp/tools`,

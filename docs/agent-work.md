@@ -1,6 +1,6 @@
 # Agent work request receipts
 
-`/agent-work` lists new ordinary two-phase agent chat requests for the signed-in
+`/agent-work` lists new two-phase agent chat requests for the signed-in
 user. Refresh and opening a saved conversation never resubmit the message.
 It works in mobile browsers and desktop browsers; native requests use the same
 server receipts. The native inbox is being prepared separately.
@@ -16,6 +16,10 @@ no new built-in model tool or admin cross-user endpoint is added.
 
 Each item includes taskId, conversationId, title, status, createdAt, updatedAt,
 canOpenConversation and an optional responseMessageId. All responses are no-store.
+`streamAvailable` is true only when the current job has the same request ID and
+creation time. A caller recovering an uncertain POST should check the exact
+receipt before sending again. `/agent-work?requestId=...` opens only that receipt;
+it never falls back to another request if it is missing.
 Reply saved means a reply was persisted, not proof an external action succeeded.
 An absent stream without a confirmed finished reply means interrupted.
 
@@ -25,6 +29,17 @@ tenant. The same identifier and fingerprint return the existing conversation;
 changed input with the same identifier receives 409. Clients must retain that
 identifier to benefit: Retry buttons that create a new ID remain new requests.
 Regenerate/continue/edit calls require an explicit fresh requestId to opt in.
+The web client now supplies one per logical submission for all these operations.
+Transport retries retain it, including an effect remount of the same submission.
+Network failures, timeouts and uncertain server errors trigger a paced read of
+the exact receipt. An existing stream resumes with `?resume=true&taskId=...`;
+the server rejects a different request in the same conversation. Only a 404
+receipt permits bounded automatic POST retries with the same ID. If checking
+fails or the stream has expired, the error offers **Check this request** rather
+than Regenerate. A deliberate new generation still gets a fresh ID.
+These IDs are not yet persisted across browser reloads; requests already claimed
+on the server remain in Agent work. Native Retry and separate voice/harness lanes
+retain their previous behavior. This is not a cross-client durable send queue.
 No external side-effect exactly-once guarantee or restart worker is introduced.
 
 Stop stays scoped to the supplied conversation/stream. A missing explicit stream
@@ -58,3 +73,8 @@ offline list retention, expired login, 403 stop, no polling, light/dark layouts 
 320/390/1280 pixels and normal/double text. WebKit's default keyboard mode skips
 links, so the skip-link activation check starts with explicit focus there.
 These checks do not replace physical VoiceOver, TalkBack or NVDA acceptance.
+
+Additional free checks: `node --test api/test/narration.recovery.test.cjs` exercises
+the studio agent's status reporting through an HTTP fixture boundary; it makes
+no audio. Client Jest tests for `useResumableSSE` cover lost responses, bounded
+same-ID retries, failed lookups, expired streams, remounts and navigation.

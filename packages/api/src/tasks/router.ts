@@ -50,6 +50,10 @@ export function createTaskRouter(queries: TaskQueries): Router {
       updatedAt: task.updatedAt.toISOString(),
       responseMessageId: conversation ? task.responseMessageId : undefined,
       canOpenConversation: !!conversation,
+      streamAvailable:
+        !!ownedJob &&
+        ownedJob.metadata.taskId === task.taskId &&
+        ownedJob.createdAt === task.jobCreatedAt,
     };
   }
 

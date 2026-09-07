@@ -1380,6 +1380,9 @@ export function getDomainServerBaseUrl(): string {
 }
 
 /* Active Jobs */
+export const getAgentTask = (taskId: string): Promise<ag.Agents.TaskReceipt> =>
+  request.get(endpoints.agentTask(taskId));
+
 export interface ActiveJobsResponse {
   activeJobIds: string[];
 }

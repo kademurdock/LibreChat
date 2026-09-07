@@ -10,6 +10,7 @@ import {
   ErrorTypes,
   StepEvents,
   apiBaseUrl,
+  dataService,
   UsageEvents,
   createPayload,
   ViolationTypes,
@@ -41,6 +42,7 @@ import {
 } from '~/data-provider';
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
 import { useAuthContext } from '~/hooks/AuthContext';
+import useLocalize from '~/hooks/useLocalize';
 import useUsageHandler from './useUsageHandler';
 import store from '~/store';
 
@@ -58,6 +60,15 @@ const getStreamStartFailureData = (errorData?: Record<string, unknown>): TResDat
   }) as unknown as TResData;
 
 const MAX_RETRIES = 5;
+const requestIds = new WeakMap<TSubmission, string>();
+const getRequestId = (submission: TSubmission): string => {
+  const existing = submission.requestId ?? requestIds.get(submission);
+  if (existing) return existing;
+  const id = v4();
+  requestIds.set(submission, id);
+  return id;
+};
+type GenerationStart = { streamId: string; resume?: boolean; taskId?: string };
 const START_GENERATION_NETWORK_RETRIES = 3;
 const START_GENERATION_READINESS_TIMEOUT_MS = 120000;
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
@@ -82,7 +93,12 @@ const isRetryableNetworkError = (error: unknown) => {
   }
 
   const { code } = toStartGenerationError(error) ?? {};
-  return code === 'ERR_NETWORK' || code === 'ERR_INTERNET_DISCONNECTED';
+  return (
+    code === 'ERR_NETWORK' ||
+    code === 'ERR_INTERNET_DISCONNECTED' ||
+    code === 'ECONNABORTED' ||
+    code === 'ETIMEDOUT'
+  );
 };
 
 const isServerNotReadyError = (error: unknown) => {
@@ -373,6 +389,7 @@ export default function useResumableSSE(
   runIndex = 0,
 ) {
   const queryClient = useQueryClient();
+  const localize = useLocalize();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
@@ -509,7 +526,11 @@ export default function useResumableSSE(
       };
 
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
-      const url = isResume ? `${baseUrl}?resume=true` : baseUrl;
+      const params = new URLSearchParams();
+      if (isResume) params.set('resume', 'true');
+      if (currentSubmission.requestId) params.set('taskId', currentSubmission.requestId);
+      const query = params.toString();
+      const url = query ? `${baseUrl}?${query}` : baseUrl;
       console.log('[ResumableSSE] Subscribing to stream:', url, { isResume });
 
       const sse = new SSE(url, {
@@ -839,12 +860,35 @@ export default function useResumableSSE(
        * Order matters: check responseCode first since HTTP errors may also include data
        */
       sse.addEventListener('error', async (e: MessageEvent) => {
-        (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
-
         /* @ts-ignore - sse.js types don't expose responseCode */
         const responseCode = e.responseCode;
 
-        // 404 → job completed & was cleaned up; messages are persisted in DB.
+        if (
+          responseCode === 403 ||
+          responseCode === 409 ||
+          (responseCode === 404 && currentSubmission.requestId)
+        ) {
+          sse.close();
+          removeActiveJob(currentStreamId);
+          resetLive({ ...currentSubmission, userMessage });
+          clearStepMaps();
+          errorHandler({
+            data: {
+              text: localize('com_ui_request_check_before_retry'),
+              metadata: { kadeRequestId: currentSubmission.requestId },
+            } as TResData,
+            submission: currentSubmission as EventSubmission,
+          });
+          setIsSubmitting(false);
+          setShowStopButton(false);
+          setStreamId(null);
+          reconnectAttemptRef.current = 0;
+          return;
+        }
+
+        (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
+
+        // Legacy conversation-only resume: refresh the saved messages on 404.
         // Invalidate cache once so react-query refetches instead of showing an error.
         if (responseCode === 404) {
           const convoId = currentSubmission.conversation?.conversationId;
@@ -1098,6 +1142,7 @@ export default function useResumableSSE(
       backfillUsage,
       resetLive,
       seedLive,
+      localize,
     ],
   );
 
@@ -1108,16 +1153,22 @@ export default function useResumableSSE(
    * Readiness retries honor Retry-After until cleanup or the readiness window expires.
    */
   const startGeneration = useCallback(
-    async (currentSubmission: TSubmission, signal?: AbortSignal): Promise<string | null> => {
+    async (
+      currentSubmission: TSubmission,
+      signal?: AbortSignal,
+    ): Promise<GenerationStart | null> => {
       const payloadData = createPayload(currentSubmission);
       let { payload } = payloadData;
       payload = removeNullishValues(payload) as TPayload;
+      const requestId = getRequestId(currentSubmission);
+      payload.requestId = requestId;
 
       clearStepMaps();
 
       const url = payloadData.server;
 
       let lastError: unknown = null;
+      let needsRecovery = false;
       let requestAttempts = 0;
       let networkAttempts = 0;
       let readinessAttempts = 0;
@@ -1127,12 +1178,26 @@ export default function useResumableSSE(
         requestAttempts += 1;
         try {
           // Use request.post which handles auth token refresh via axios interceptors
-          const data = (await request.post(url, payload)) as { streamId: string };
+          const data = (await request.post(url, payload)) as GenerationStart & { status?: string };
           if (signal?.aborted) {
             return null;
           }
+          if (typeof data.streamId !== 'string' || !data.streamId) {
+            throw Object.assign(new Error('The server did not confirm the request.'), {
+              code: 'ERR_NETWORK',
+            });
+          }
           console.log('[ResumableSSE] Generation started:', { streamId: data.streamId });
-          return data.streamId;
+          if (data.status === 'existing') {
+            needsRecovery = true;
+            const receipt = await dataService.getAgentTask(requestId);
+            if (signal?.aborted) return null;
+            if (receipt.streamAvailable) {
+              return { streamId: receipt.conversationId, resume: true, taskId: requestId };
+            }
+            break;
+          }
+          return { ...data, taskId: requestId };
         } catch (error) {
           if (signal?.aborted) {
             return null;
@@ -1141,18 +1206,37 @@ export default function useResumableSSE(
           lastError = error;
           const isNetworkError = isRetryableNetworkError(error);
           const isServerNotReady = isServerNotReadyError(error);
+          const status = toStartGenerationError(error)?.response?.status;
+          if (needsRecovery) break;
+          if (isNetworkError || (status != null && status >= 500 && !isServerNotReady)) {
+            needsRecovery = true;
+            if (!(await waitForRetryDelay(8500, signal))) return null;
+            try {
+              const receipt = await dataService.getAgentTask(requestId);
+              if (signal?.aborted) return null;
+              if (receipt.streamAvailable) {
+                return { streamId: receipt.conversationId, resume: true, taskId: requestId };
+              }
+              break;
+            } catch (lookupError) {
+              if (signal?.aborted) return null;
+              if (toStartGenerationError(lookupError)?.response?.status !== 404) break;
+              // Only an absent receipt permits another POST, with the same identifier.
+            }
+          }
           const remainingReadinessMs = readinessDeadline - Date.now();
           const shouldRetryNetwork =
             isNetworkError && networkAttempts < START_GENERATION_NETWORK_RETRIES - 1;
           const shouldRetryServerNotReady = isServerNotReady && remainingReadinessMs > 0;
 
           if (shouldRetryNetwork || shouldRetryServerNotReady) {
+            needsRecovery = false;
             networkAttempts += isNetworkError ? 1 : 0;
             readinessAttempts += isServerNotReady ? 1 : 0;
             const fallbackDelay = Math.min(1000 * Math.pow(2, requestAttempts - 1), 8000);
             const retryDelay = isServerNotReady
               ? Math.min(getRetryAfterDelay(error, fallbackDelay), remainingReadinessMs)
-              : fallbackDelay;
+              : Math.max(8500, fallbackDelay);
             const reason = isServerNotReady ? 'Server not ready' : 'Network error';
             const attempt = isServerNotReady ? readinessAttempts : networkAttempts;
             const limit = isServerNotReady
@@ -1182,7 +1266,12 @@ export default function useResumableSSE(
       const axiosError = lastError as { response?: { data?: Record<string, unknown> } };
       const errorData = axiosError?.response?.data;
       errorHandler({
-        data: getStreamStartFailureData(errorData),
+        data: needsRecovery
+          ? ({
+              text: localize('com_ui_request_check_before_retry'),
+              metadata: markStreamStartFailedMetadata({ kadeRequestId: requestId }),
+            } as TResData)
+          : getStreamStartFailureData(errorData),
         submission: currentSubmission as EventSubmission,
       });
       setShowStopButton(false);
@@ -1190,7 +1279,7 @@ export default function useResumableSSE(
       setSubmission(null);
       return null;
     },
-    [clearStepMaps, errorHandler, setIsSubmitting, setShowStopButton, setSubmission],
+    [clearStepMaps, errorHandler, setIsSubmitting, setShowStopButton, setSubmission, localize],
   );
 
   useEffect(() => {
@@ -1245,11 +1334,12 @@ export default function useResumableSSE(
       } else {
         // New generation: start and then subscribe
         console.log('[ResumableSSE] Starting NEW generation');
-        const newStreamId = await startGeneration(submission, signal);
+        const started = await startGeneration(submission, signal);
         if (signal.aborted) {
           return;
         }
-        if (newStreamId) {
+        if (started) {
+          const newStreamId = started.streamId;
           setStreamId(newStreamId);
           // Optimistically add to active jobs
           addActiveJob(newStreamId);
@@ -1264,9 +1354,12 @@ export default function useResumableSSE(
             optimisticStreamIdsRef.current.add(newStreamId);
             replaceNewConversationUrl(newStreamId);
           }
-          const streamSubmission = addOptimisticConversation(newStreamId, submission);
+          const streamSubmission = {
+            ...addOptimisticConversation(newStreamId, submission),
+            requestId: started.taskId,
+          };
           submissionRef.current = streamSubmission;
-          subscribeToStream(newStreamId, streamSubmission);
+          subscribeToStream(newStreamId, streamSubmission, started.resume);
         } else {
           console.error('[ResumableSSE] Failed to get streamId from startGeneration');
         }

@@ -52,6 +52,7 @@ export type UnsubscribeFn = () => void;
 
 /** Options for subscribing to a job event stream */
 export interface SubscribeOptions {
+  expectedTaskId?: string;
   /**
    * When true, skips replaying the earlyEventBuffer.
    * Use for resume connections after a sync event has been sent.
