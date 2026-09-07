@@ -87,10 +87,11 @@ async function chunksFor(rel) {
   const chunks = [];
   let buf = [], bufChars = 0, lastAt = null;
   const flush = () => {
-    if (buf.length) chunks.push({ text: turnsToText(buf), asOf: lastAt, turns: buf.length });
+    if (buf.length) chunks.push({ text: turnsToText(buf), asOf: lastAt, turns: buf.length, sourceConversationIds: [...new Set(buf.map((t) => t.conversationId))] });
     buf = []; bufChars = 0;
   };
   for (const c of rel.convos) {
+    if (await require('@librechat/data-schemas').getConversationMemoryPolicy(rel.userId, c.conversationId)) continue;
     const msgs = await db.getMessages({ conversationId: c.conversationId, user: rel.userId });
     const turns = (msgs || [])
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
@@ -99,7 +100,7 @@ async function chunksFor(rel) {
     if (turns.length < 2) continue;
     for (const t of turns) {
       if (bufChars + t.text.length > CHUNK_CHARS && buf.length) flush();
-      buf.push(t); bufChars += t.text.length; lastAt = t.at || c.updatedAt || lastAt;
+      buf.push({ ...t, conversationId: c.conversationId }); bufChars += t.text.length; lastAt = t.at || c.updatedAt || lastAt;
     }
   }
   flush();
@@ -153,6 +154,7 @@ async function run(scope = {}, { resetFirst = true, resume = true } = {}) {
         const r = await refreshSummaryFromText({
           userId: rel.userId, agentId: rel.agentId, agentName,
           conversationText: ch.text, lastActivityAt: ch.asOf, asOf: ch.asOf, source: 'mined',
+          sourceConversationIds: ch.sourceConversationIds,
         });
         state.chunks++;
         if (!r) { state.errors++; state.lastError = `empty result for ${state.current}`; }

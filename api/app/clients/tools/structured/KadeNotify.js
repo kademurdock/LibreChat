@@ -205,7 +205,7 @@ class KadeNotify extends Tool {
       const MemoryEntry = mongoose.models.MemoryEntry;
       let cardLine = null;
       if (MemoryEntry && this.userId) {
-        const cards = await MemoryEntry.find({ userId: this.userId }).sort({ updatedAt: -1 }).limit(500).lean();
+        const cards = (await require('~/models').getAllUserMemories(this.userId)).slice(0, 500);
         if (cards.length) {
           const newest = cards[0].updatedAt ? new Date(cards[0].updatedAt) : null;
           const days = newest ? Math.floor((Date.now() - newest.getTime()) / 86400000) : null;

@@ -29,6 +29,8 @@ const task = (id, status = 'completed') => ({
       const url = new URL(route.request().url());
       if (url.pathname === '/api/auth/refresh')
         return route.fulfill({ json: { token: 'local-test-token' } });
+      if (url.pathname === '/api/kade/work-options')
+        return route.fulfill({ json: { codingJobs: true } });
       if (url.pathname.startsWith('/api/agents/chat/tasks/')) {
         requests++;
         assert.equal(route.request().method(), 'GET');
@@ -57,7 +59,7 @@ const task = (id, status = 'completed') => ({
       });
     });
     await page.goto('https://fixture.test/agent-work');
-    await page.clock.runFor(9000);
+    await page.clock.runFor(18000);
     await page.locator('#list li').nth(1).waitFor();
     assert.equal(await page.locator('#list img').count(), 0, 'titles remain text');
     assert.equal(await page.locator('#status').getAttribute('aria-live'), 'polite');

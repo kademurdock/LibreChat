@@ -1,6 +1,11 @@
 import { Types } from 'mongoose';
 import type * as t from '~/types';
 import logger from '~/config/winston';
+import {
+  memorySourceStorage,
+  memorySourceAllowed,
+  excludedMemoryConversations,
+} from '~/memory/policy';
 
 /* Once-per-process TTL-index ensure for the overwrite-watch receipts. */
 let memoryEventsIndexEnsured = false;
@@ -56,6 +61,8 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     completed,
   }: t.SetMemoryParams): Promise<t.MemoryResult> {
     try {
+      const source = memorySourceStorage.getStore();
+      if (!(await memorySourceAllowed(source))) return { ok: false };
       if (key?.toLowerCase() === 'nothing') {
         return { ok: false };
       }
@@ -72,6 +79,13 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
       }
 
       await MemoryEntry.create({
+        ...(source
+          ? {
+              sourceConversationIds: source.conversationIds || [source.conversationId],
+              sourceMessageId: source.messageId,
+              sourceKind: source.kind,
+            }
+          : {}),
         userId,
         agentId: agentId ?? undefined,
         key,
@@ -115,8 +129,11 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     completed,
     staleAfter,
     subject,
+    userCorrection = false,
   }: t.SetMemoryParams): Promise<t.MemoryResult> {
     try {
+      const source = memorySourceStorage.getStore();
+      if (!(await memorySourceAllowed(source))) return { ok: false };
       if (key?.toLowerCase() === 'nothing') {
         return { ok: false };
       }
@@ -135,9 +152,16 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         key,
         status: { $ne: 'superseded' },
       }).sort({ updated_at: -1 });
-      const existing = existingRows[0];
+      const existing = existingRows.find((row) => row.correctionLocked) || existingRows[0];
+      if (existing?.correctionLocked && !userCorrection && existing.value.trim() !== value.trim()) {
+        return { ok: false };
+      }
 
       if (existing && existing.value.trim() === value.trim()) {
+        if (userCorrection) {
+          existing.correctionLocked = true;
+          existing.sourceKind = 'user-correction';
+        }
         existing.updated_at = new Date();
         if (tokenCount) {
           existing.tokenCount = tokenCount;
@@ -260,6 +284,15 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
       const explicitStale = staleAfter !== undefined;
       const explicitSubject = subject !== undefined;
       await MemoryEntry.create({
+        sourceConversationIds: [
+          ...new Set([
+            ...(existing?.sourceConversationIds || []),
+            ...(source ? source.conversationIds || [source.conversationId] : []),
+          ]),
+        ],
+        sourceMessageId: source?.messageId || existing?.sourceMessageId,
+        sourceKind: userCorrection ? 'user-correction' : source?.kind || existing?.sourceKind,
+        correctionLocked: userCorrection || existing?.correctionLocked || false,
         userId,
         agentId: agentId ?? undefined,
         key,
@@ -269,8 +302,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         type: type ?? existing?.type ?? 'fact',
         dueAt: explicitDueAt ? (dueAt ?? undefined) : existing?.dueAt,
         recurrence: recurrence !== undefined ? (recurrence ?? undefined) : existing?.recurrence,
-        completed:
-          completed !== undefined ? completed : explicitDueAt ? false : existing?.completed,
+        completed: completed ?? (explicitDueAt ? false : existing?.completed),
         staleAfter: explicitStale ? (staleAfter ?? undefined) : existing?.staleAfter,
         subject: explicitSubject ? (subject ?? undefined) : existing?.subject,
         supersedes: existing ? existing._id : undefined,
@@ -297,11 +329,25 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     key,
   }: t.DeleteMemoryParams): Promise<t.MemoryResult> {
     try {
+      const source = memorySourceStorage.getStore();
+      if (!(await memorySourceAllowed(source))) return { ok: false };
       const MemoryEntry = mongoose.models.MemoryEntry;
+      if (
+        source &&
+        (await MemoryEntry.exists({
+          userId,
+          agentId: toAgentFilterValue(agentId),
+          key,
+          correctionLocked: true,
+          status: { $ne: 'superseded' },
+        }))
+      )
+        return { ok: false };
       const result = await MemoryEntry.deleteMany({
         userId,
         agentId: toAgentFilterValue(agentId),
         key,
+        ...(source ? { correctionLocked: { $ne: true } } : {}),
       });
       return { ok: (result.deletedCount ?? 0) > 0 };
     } catch (error) {
@@ -332,8 +378,16 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
       }
       if (!options.includeSuperseded) {
         filter.status = { $ne: 'superseded' };
+        filter.sourceConversationIds = { $nin: await excludedMemoryConversations(String(userId)) };
       }
-      return (await MemoryEntry.find(filter).lean()) as t.IMemoryEntryLean[];
+      const rows = (await MemoryEntry.find(filter).lean()) as t.IMemoryEntryLean[];
+      if (options.includeSuperseded) return rows;
+      const locked = new Set(
+        rows.filter((row) => row.correctionLocked).map((row) => `${row.agentId || ''}:${row.key}`),
+      );
+      return rows.filter(
+        (row) => row.correctionLocked || !locked.has(`${row.agentId || ''}:${row.key}`),
+      );
     } catch (error) {
       throw new Error(
         `Failed to get all memories: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -406,7 +460,11 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         sortAsc(list)
           .map((memory, index) => {
             const date = formatDate(new Date(memory.updated_at!));
-            const tokenInfo = memory.tokenCount ? ` [${memory.tokenCount} tokens]` : '';
+            const tokenInfo =
+              (memory.tokenCount ? ` [${memory.tokenCount} tokens]` : '') +
+              (memory.correctionLocked
+                ? ' [USER CORRECTION: retain this corrected fact; do not recreate the old belief]'
+                : '');
             return `${index + 1}. [${date}]. ["key": "${memory.key}"]${tokenInfo}. ["value": "${memory.value}"]${describeReminder(memory)}`;
           })
           .join('\n\n');
@@ -415,7 +473,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         sortAsc(list)
           .map((memory, index) => {
             const date = formatDate(new Date(memory.updated_at!));
-            return `${index + 1}. [${date}]. ${memory.value}${describeReminder(memory, true)}`;
+            return `${index + 1}. [${date}]. ${memory.correctionLocked ? '[User correction] ' : ''}${memory.value}${describeReminder(memory, true)}`;
           })
           .join('\n\n');
 
@@ -437,7 +495,10 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
       ]);
 
       const withoutKeys = joinSections([
-        { label: 'What you generally know about the user', body: formatWithoutKeys(sharedMemories) },
+        {
+          label: 'What you generally know about the user',
+          body: formatWithoutKeys(sharedMemories),
+        },
         {
           label: 'What you specifically remember on your own',
           body: formatWithoutKeys(agentMemories),

@@ -212,6 +212,8 @@ async function sweepDueReminders() {
   let fired = 0;
   for (const entry of due) {
     try {
+      const excluded = await require('@librechat/data-schemas').excludedMemoryConversations(String(entry.userId));
+      if (entry.sourceConversationIds?.some((id) => excluded.includes(id))) continue;
       const staleDays = (now - new Date(entry.dueAt)) / 86400000;
       const suffix = staleDays > 1 ? ' (this one was scheduled a while back — the server may have been asleep)' : '';
       await deliverNudge(entry.userId, `Reminder: ${entry.value}${suffix}`, { type: 'reminder' });

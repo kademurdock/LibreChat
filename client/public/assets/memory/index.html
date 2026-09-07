@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Memory sources and controls</title>
+    <link rel="stylesheet" href="/assets/tasks/work.css" />
+  </head>
+  <body>
+    <main>
+      <nav><a href="/">Back to chats</a></nav>
+      <h1>Memory sources and controls</h1>
+      <p id="status" role="status">Loading your saved information…</p>
+      <section id="conversation" hidden>
+        <h2>This conversation</h2>
+        <p>
+          Turn remembering off to exclude this conversation from new memory writes and future recall
+          of memories with this recorded source. The chat itself remains saved. Older memories
+          without recorded sources cannot be matched automatically.
+        </p>
+        <button id="toggle" disabled>Check memory setting</button>
+      </section>
+      <section id="source" hidden>
+        <h2 id="key"></h2>
+        <p id="value"></p>
+        <h3>Where this came from</h3>
+        <ul id="sources"></ul>
+        <p id="protection"></p>
+        <form id="correction">
+          <h3>Correct related memories</h3>
+          <p>
+            Choose the memories this correction applies to. Each selected memory will keep its
+            history and be protected from automatic replacement. Related memories are suggested by
+            matching keys or recorded subjects.
+          </p>
+          <div id="related"></div>
+          <label for="corrected">Correct information</label
+          ><textarea
+            id="corrected"
+            required
+            maxlength="10000"
+            rows="6"
+            style="display: block; width: 100%; box-sizing: border-box; font: inherit"
+          ></textarea
+          ><button type="submit">Save selected corrections</button>
+        </form>
+      </section>
+    </main>
+    <script src="/assets/memory/controls.js?v=147" defer></script>
+  </body>
+</html>

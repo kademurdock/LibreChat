@@ -141,8 +141,11 @@ function turnsToText(turns) {
  * conversation text. Reuses the memory-writer model, tool-lessly. Fail-soft:
  * returns the new summary string, or null on any problem (leaves prior intact).
  */
-async function refreshSummaryFromText({ userId, agentId, agentName, conversationText, lastActivityAt, source, asOf, nightlyCursor }) {
+async function refreshSummaryFromText({ userId, agentId, agentName, conversationText, lastActivityAt, source, asOf, nightlyCursor, sourceConversationIds = [] }) {
   try {
+    const { excludedMemoryConversations } = require('@librechat/data-schemas');
+    const excluded = await excludedMemoryConversations(String(userId));
+    if (sourceConversationIds.some((id) => excluded.includes(id))) return null;
     if (!enabled() || !userId || !agentId || !(await memoryAllowed(userId))) {
       return null;
     }
@@ -232,7 +235,9 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
       timeZone: 'America/Chicago',
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     }).format(isNaN(asOfDate.getTime()) ? new Date() : asOfDate);
+    const protectedCards = require('mongoose').models.MemoryEntry ? await require('mongoose').models.MemoryEntry.find({ userId, correctionLocked: true, status: { $ne: 'superseded' }, sourceConversationIds: { $nin: excluded }, $or: [{ agentId: null }, { agentId }] }).select('key value').lean() : [];
     const userContent =
+      (protectedCards.length ? 'CURRENT USER CORRECTIONS — these override older conversation beliefs; do not revive the replaced belief:\n' + JSON.stringify(protectedCards.map(({ key, value }) => ({ key, value }))) + '\n\n' : '') +
       `TODAY IS: ${todayLine} (US Central). Convert every relative time reference to an absolute date.\n` +
       (historical
         ? `(This is a catch-up pass over OLDER conversation: write everything as of that date, as if you were keeping this up at the time. Later passes will bring it forward.)\n\n`
@@ -290,6 +295,7 @@ async function refreshSummaryFromText({ userId, agentId, agentName, conversation
     // A person may switch memory off while the writer is running.
     if (!(await memoryAllowed(userId))) return null;
     const saved = await setMemorySummary(userId, agentId, {
+      sourceConversationIds: [...new Set([...(prior?.sourceConversationIds || []), ...sourceConversationIds])],
       ...reflection,
       ...(nightlyCursor ? { nightlyCursor } : {}),
       expectedRevision: prior?.revision || 0,
@@ -326,6 +332,7 @@ async function refreshSummaryFromCall(doc) {
     conversationText: turnsToText(turns),
     lastActivityAt: doc.endedAt || doc.updatedAt || new Date(),
     source: 'call',
+    sourceConversationIds: [doc.conversationId || String(doc._id)].filter(Boolean),
   });
 }
 

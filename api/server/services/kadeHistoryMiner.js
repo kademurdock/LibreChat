@@ -74,6 +74,7 @@ NEVER: never call delete_memory (it will refuse); never log the mechanics of the
 
 async function mineOneConversation({ convo, memoryConfig, appConfig }) {
   const userId = String(convo.user);
+  if (await require('@librechat/data-schemas').getConversationMemoryPolicy(userId, convo.conversationId)) return { skipped: 'conversation-memory-excluded' };
   const agentId = convo.agent_id ? String(convo.agent_id).slice(0, 64) : undefined;
   const convoDate = centralDateString(new Date(convo.createdAt));
 

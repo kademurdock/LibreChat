@@ -13,6 +13,7 @@
  * build, matching kadeVoicePref / kadeCallTranscript.
  */
 const mongoose = require('mongoose');
+const { excludedMemoryConversations } = require('@librechat/data-schemas');
 
 const kadeMemorySummarySchema = new mongoose.Schema(
   {
@@ -45,6 +46,8 @@ const kadeMemorySummarySchema = new mongoose.Schema(
     lastActivityAt: { type: Date }, // newest conversation/call turn folded in — drives decay
     refreshedAt: { type: Date }, // when the writer last rewrote this summary
     revision: { type: Number, default: 0 },
+    sourceConversationIds: { type: [String], default: [] },
+    invalidated: { type: Boolean, default: false },
     source: { type: String }, // 'call' | 'nightly' — last thing that touched it (debug)
     nightlyCursor: {
       at: { type: String },
@@ -65,11 +68,16 @@ async function getMemorySummary(userId, agentId) {
   if (!userId || !agentId) {
     return null;
   }
-  return KadeMemorySummary.findOne({ userId: String(userId), agentId: String(agentId) }).lean();
+  const row = await KadeMemorySummary.findOne({ userId: String(userId), agentId: String(agentId) }).lean();
+  const excluded = await excludedMemoryConversations(String(userId));
+  if (row && (row.invalidated || row.sourceConversationIds?.some((id) => excluded.includes(id)))) {
+    return { ...row, summary: '', take: '', thread: '', learned: '', curious: '', verdicts: '', sourceConversationIds: [] };
+  }
+  return row;
 }
 
 /** Upsert the rolling summary for a relationship. Empty/blank summary deletes the row. */
-async function setMemorySummary(userId, agentId, { summary, take, thread, learned, curious, verdicts, agentName, lastActivityAt, source, nightlyCursor, expectedRevision } = {}) {
+async function setMemorySummary(userId, agentId, { summary, take, thread, learned, curious, verdicts, agentName, lastActivityAt, source, nightlyCursor, expectedRevision, sourceConversationIds = [] } = {}) {
   if (!userId || !agentId) {
     return null;
   }
@@ -78,7 +86,9 @@ async function setMemorySummary(userId, agentId, { summary, take, thread, learne
     await KadeMemorySummary.deleteOne({ userId: String(userId), agentId: String(agentId) });
     return null;
   }
-  const set = { summary: clean, refreshedAt: new Date() };
+  const excluded = await excludedMemoryConversations(String(userId));
+  if (sourceConversationIds.some((id) => excluded.includes(id))) return null;
+  const set = { summary: clean, refreshedAt: new Date(), sourceConversationIds, invalidated: false };
   if (typeof take === 'string') {
     set.take = take.trim().slice(0, 2400);
   }

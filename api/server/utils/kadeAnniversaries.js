@@ -35,7 +35,8 @@ async function getAnniversaryLine(userId, agentId) {
   if (process.env.KADE_ANNIVERSARIES === '0') return '';
   const today = centralParts();
   const dayKey = `${today.y}-${today.m}-${today.d}`;
-  const memoKey = `${userId}:${agentId || 'shared'}`;
+  const revision = await require('@librechat/data-schemas').memoryPolicyRevision(String(userId));
+  const memoKey = `${userId}:${agentId || 'shared'}:${revision}`;
   const hit = memo.get(memoKey);
   if (hit && hit.dayKey === dayKey) return hit.line;
   let line = '';
@@ -43,7 +44,7 @@ async function getAnniversaryLine(userId, agentId) {
     const mongoose = require('mongoose');
     const MemoryEntry = mongoose.models.MemoryEntry;
     if (MemoryEntry && userId) {
-      const cards = await MemoryEntry.find({ userId }).select('key value agentId createdAt').limit(500).lean();
+      const cards = (await require('~/models').getAllUserMemories(userId)).slice(0, 500);
       let best = null; // highest months wins (the rarer milestone)
       for (const card of cards) {
         if (!card.createdAt) continue;

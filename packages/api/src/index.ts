@@ -84,3 +84,7 @@ export { refreshReverieCast } from './reverie/cast';
 export { getTaskReceipts, taskFingerprint, validTaskId, TaskConflict } from './tasks/receipts';
 export { taskStatus } from './tasks/status';
 export { createTaskRouter } from './tasks/router';
+export { createHarnessRouter } from './tasks/harness';
+export { createMemoryControlsRouter } from './agents/memoryControls';
+export { createProjectContextRouter, loadProjectWork } from './projects/context';
+export { runtimeCapabilities } from './agents/capabilities';

@@ -1,5 +1,5 @@
 const express = require('express');
-const { createProjectHandlers } = require('@librechat/api');
+const { createProjectHandlers, createProjectContextRouter } = require('@librechat/api');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const db = require('~/models');
 
@@ -14,6 +14,7 @@ const handlers = createProjectHandlers({
 });
 
 router.use(requireJwtAuth);
+router.use('/:projectId/context', createProjectContextRouter(db.getChatProject));
 
 router.get('/', handlers.listProjects);
 router.post('/', handlers.createProject);

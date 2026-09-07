@@ -1,8 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const Module = require('node:module');
+require('module-alias').addAlias('~', require('node:path').resolve(__dirname, '../..'));
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const librechatApi = require('@librechat/api');
 const {
   KadeMemorySummary,
   setMemorySummary,
@@ -34,7 +36,7 @@ test('memory-off blocks relationship reads and writes, including an opt-out duri
       };
     if (id === '~/models/kadeCareNote') return { getCareNoteBlock: async () => '' };
     if (id === '@librechat/api')
-      return { ...original.apply(this, arguments), resolveMemoryAgentLLMConfig: async () => ({}) };
+      return { ...librechatApi, resolveMemoryAgentLLMConfig: async () => ({}) };
     if (id === '@librechat/agents/langchain/messages')
       return {
         HumanMessage: class {

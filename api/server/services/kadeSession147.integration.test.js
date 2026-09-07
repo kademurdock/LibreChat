@@ -1,0 +1,65 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const mongoose = require('mongoose');
+const express = require('express');
+const request = require('supertest');
+const { MongoMemoryServer } = require('mongodb-memory-server');
+const data = require('@librechat/data-schemas');
+const { createMemoryControlsRouter, createProjectContextRouter, loadProjectWork, runtimeCapabilities } = require('@librechat/api');
+
+test('durable memory controls and shared project revisions preserve ownership, source evidence and concurrent edits', async () => {
+  const mongo = await MongoMemoryServer.create();
+  await mongoose.connect(mongo.getUri());
+  try {
+    mongoose.model('MemoryEntry', data.memorySchema);
+    const User = mongoose.model('User', new mongoose.Schema({ personalization: Object }));
+    const userId = String((await User.create({ personalization: { memories: true } }))._id);
+    const other = String((await User.create({ personalization: { memories: true } }))._id);
+    const methods = data.createMethods(mongoose);
+    const source = { userId, conversationId: 'source-chat', kind: 'conversation', revision: await data.memoryPolicyRevision(userId) };
+    await data.memorySourceStorage.run(source, () => methods.setMemory({ userId, key: 'pet', value: 'old belief', tokenCount: 2 }));
+    await data.memorySourceStorage.run(source, () => methods.setMemory({ userId, agentId: 'friend', key: 'pet', value: 'old belief', tokenCount: 2 }));
+    let rows = await methods.getAllUserMemories(userId);
+    assert.equal(rows.length, 2); assert.deepEqual(rows[0].sourceConversationIds, ['source-chat']);
+    const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.user = { id: req.headers['x-test-user'] || userId }; next(); });
+    const pass = (_req, _res, next) => next();
+    app.use('/memory', createMemoryControlsRouter({ getConvo: async (uid, cid) => uid === userId && cid === 'source-chat' ? {} : null, setMemory: methods.setMemory, countTokens: (text) => text.length, canRead: pass, canUpdate: pass, canOptOut: pass }));
+    await request(app).get('/memory/source/' + rows[0]._id).set('x-test-user', other).expect(404);
+    const traced = await request(app).get('/memory/source/' + rows[0]._id).expect(200);
+    assert.equal(traced.body.sources[0].conversationId, 'source-chat'); assert.equal(traced.body.related.length, 2);
+    await request(app).post('/memory/correct').send({ ids: rows.map((row) => String(row._id)), value: 'corrected belief' }).expect(200);
+    assert.equal((await data.memorySourceStorage.run(source, () => methods.setMemory({ userId, key: 'stale-new-key', value: 'old', tokenCount: 1 }))).ok, false);
+    const fresh = { ...source, revision: await data.memoryPolicyRevision(userId) };
+    assert.equal((await data.memorySourceStorage.run(fresh, () => methods.setMemory({ userId, key: 'pet', value: 'old belief', tokenCount: 1 }))).ok, false);
+    assert.equal((await data.memorySourceStorage.run(fresh, () => methods.deleteMemory({ userId, key: 'pet' }))).ok, false);
+    rows = await methods.getAllUserMemories(userId); assert.equal(rows.length, 2); assert.ok(rows.every((row) => row.value === 'corrected belief' && row.correctionLocked));
+    assert.equal((await methods.getAllUserMemories(userId, { includeSuperseded: true })).length, 4);
+    await request(app).patch('/memory/conversation/source-chat').set('x-test-user', other).send({ excluded: true }).expect(404);
+    await request(app).patch('/memory/conversation/source-chat').send({ excluded: true }).expect(200);
+    assert.equal((await methods.getAllUserMemories(userId)).length, 0);
+    assert.equal((await data.memorySourceStorage.run(fresh, () => methods.createMemory({ userId, key: 'excluded', value: 'never', tokenCount: 1 }))).ok, false);
+    assert.equal(await data.getConversationMemoryPolicy(userId, 'source-chat'), true);
+
+    const projectId = new mongoose.Types.ObjectId().toString();
+    const getProject = async (uid, pid) => uid === userId && pid === projectId ? {} : null;
+    app.use('/projects/:projectId/context', createProjectContextRouter(getProject));
+    const base = '/projects/' + projectId + '/context';
+    await request(app).get(base).set('x-test-user', other).expect(404);
+    await request(app).put(base + '/instructions').send({ expectedRevision: 0, instructions: 'Use the shared working document.' }).expect(200);
+    let saved = await request(app).post(base + '/files').send({ expectedRevision: 1, name: 'draft.md', content: '# Original', kind: 'document' }).expect(200);
+    const fileId = saved.body.files[0].id;
+    await request(app).post(base + '/files').send({ expectedRevision: 1, id: fileId, name: 'draft.md', content: 'stale', kind: 'document' }).expect(409);
+    const work = await loadProjectWork(userId, projectId, getProject, 'agent-one');
+    assert.match(work.context, /# Original/);
+    saved = JSON.parse(await work.tool.invoke({ action: 'save', expectedRevision: 2, id: fileId, name: 'draft.md', content: '# Revised' }));
+    assert.equal(saved.revision, 3); assert.equal(saved.files[0].versions.length, 2);
+    const secondAgent = await loadProjectWork(userId, projectId, getProject, 'agent-two');
+    assert.match(secondAgent.context, /# Revised/);
+    const first = await request(app).get(base + '/files/' + fileId + '/1').expect(200); assert.equal(first.text, '# Original');
+    const second = await request(app).get(base + '/files/' + fileId + '/2').expect(200); assert.equal(second.text, '# Revised');
+    await request(app).get(base + '/files/' + fileId + '/2').set('x-test-user', other).expect(404);
+    await request(app).post(base + '/files').send({ expectedRevision: 3, name: '../escape.md', content: 'bad', kind: 'document' }).expect(409);
+    assert.deepEqual(runtimeCapabilities({ tools: [{ name: 'read_file', apiKey: 'never expose' }], toolDefinitions: [{ name: 'search' }], hasDeferredTools: true }).available, ['read_file']);
+    assert.ok(!JSON.stringify(runtimeCapabilities({ tools: [{ name: 'read_file', apiKey: 'never expose' }] })).includes('never expose'));
+  } finally { await mongoose.disconnect(); await mongo.stop(); }
+});

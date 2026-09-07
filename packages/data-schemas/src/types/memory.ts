@@ -5,6 +5,10 @@ export type MemoryEntryType = 'fact' | 'reminder';
 
 // Base memory interfaces
 export interface IMemoryEntry extends Document {
+  sourceConversationIds?: string[];
+  sourceMessageId?: string;
+  sourceKind?: string;
+  correctionLocked?: boolean;
   userId: Types.ObjectId;
   agentId?: string;
   key: string;
@@ -25,6 +29,10 @@ export interface IMemoryEntry extends Document {
 }
 
 export interface IMemoryEntryLean {
+  sourceConversationIds?: string[];
+  sourceMessageId?: string;
+  sourceKind?: string;
+  correctionLocked?: boolean;
   _id: Types.ObjectId;
   userId: Types.ObjectId;
   agentId?: string;
@@ -48,6 +56,7 @@ export interface IMemoryEntryLean {
 
 // Method parameter interfaces
 export interface SetMemoryParams {
+  userCorrection?: boolean;
   userId: string | Types.ObjectId;
   /** Omit or pass null for the shared bucket; pass the agent's string id for that agent's own bucket. */
   agentId?: string | null;

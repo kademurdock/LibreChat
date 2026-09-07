@@ -379,6 +379,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
         { $unset: { chatProjectId: '' } },
       ),
       ChatProject.deleteOne(projectFilter),
+      mongoose.connection.collection<{ _id: string; userId: string }>('kadeprojectcontexts').deleteOne({ _id: projectId, userId: user }),
     ]);
 
     return {

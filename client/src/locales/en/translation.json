@@ -1,4 +1,7 @@
 {
+  "com_ui_project_working_context": "Instructions and working files",
+  "com_ui_memory_sources_controls": "Sources and corrections",
+  "com_ui_memory_controls": "Memory controls",
   "com_ui_check_agent_request": "Check this request",
   "com_ui_request_check_before_retry": "Your request may already have run. Check this request for a saved reply before sending it again.",
   "chat_direction_left_to_right": "Left to Right",

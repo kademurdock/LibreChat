@@ -157,6 +157,7 @@ async function runSummarySweep() {
         }, 'conversationId').lean();
         const turns = [];
         for (const source of sources) {
+          if (await require('@librechat/data-schemas').getConversationMemoryPolicy(userId, source.conversationId)) continue;
           const msgs = await db.getMessages({ conversationId: source.conversationId, user: userId });
           for (const m of msgs || []) {
             if (m.error || m.unfinished || !m.createdAt) continue;
@@ -180,6 +181,7 @@ async function runSummarySweep() {
           asOf: batch.cursor.at,
           nightlyCursor: batch.cursor,
           source: 'nightly',
+          sourceConversationIds: [...new Set(turns.map((turn) => turn.conversationId))],
         });
         if (batch.cursor.pending) pending += 1;
         if (res) {

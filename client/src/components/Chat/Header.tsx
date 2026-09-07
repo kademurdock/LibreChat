@@ -11,13 +11,15 @@ import { OpenSidebar, PresetsMenu } from './Menus';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
-import { useHasAccess } from '~/hooks';
+import { useHasAccess, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
 
 function Header() {
+  const localize = useLocalize();
+  const conversation = useRecoilValue(store.conversationByIndex(0));
   const { data: startupConfig } = useGetStartupConfig();
   const navVisible = useRecoilValue(store.sidebarExpanded);
 
@@ -58,6 +60,19 @@ function Header() {
               <ModelSelector startupConfig={startupConfig} />
               <VoiceSpeedControl />
               <ScanModeButton />
+              {conversation?.conversationId && conversation.conversationId !== 'new' && (
+                <a
+                  className="whitespace-nowrap text-xs underline"
+                  href={
+                    '/assets/memory/index.html?conversationId=' +
+                    encodeURIComponent(conversation.conversationId)
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {localize('com_ui_memory_controls')}
+                </a>
+              )}
               {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
               {hasAccessToBookmarks === true && <BookmarkMenu />}
               {hasAccessToMultiConvo === true && <AddMultiConvo />}

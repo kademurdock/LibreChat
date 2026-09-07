@@ -1,14 +1,29 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
-const { requireCapability } = require('~/server/middleware/roles/capabilities');
+const { requireCapability, hasCapability } = require('~/server/middleware/roles/capabilities');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { KadeAsset } = require('~/models/kadeAsset');
-const { needsRefresh, getNewS3URL } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, createHarnessRouter } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
+router.use('/harness/jobs', requireJwtAuth, requireAdminAccess, createHarnessRouter());
+router.get('/work-options', requireJwtAuth, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try { res.json({ codingJobs: await hasCapability(req.user, SystemCapabilities.ACCESS_ADMIN) }); }
+  catch { res.status(503).json({ error: 'Could not check work access' }); }
+});
+router.get('/capabilities/:conversationId', requireJwtAuth, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const userId = String(req.user.id);
+    if (!await require('~/models').getConvo(userId, req.params.conversationId)) return res.status(404).json({ error: 'Conversation not found' });
+    const agents = await mongoose.connection.collection('kadecapabilitysnapshots').find({ userId, conversationId: req.params.conversationId, role: req.user.role }).project({ _id: 0, userId: 0, role: 0 }).toArray();
+    return res.json({ agents, note: 'Tools verified when each agent prepared its latest reply. Permissions and connections may have changed since then; the next reply checks them again.' });
+  } catch { return res.status(503).json({ error: 'Could not read the verified tool view' }); }
+});
 
 const PAYPAL = 'https://paypal.me/kademurdock';
 

@@ -1,7 +1,13 @@
 /** Memories */
 import { z } from 'zod';
 import { Tools } from 'librechat-data-provider';
-import { logger } from '@librechat/data-schemas';
+import {
+  logger,
+  memorySourceStorage,
+  memorySourceAllowed,
+  memoryPolicyRevision,
+  memoryDerivationSources,
+} from '@librechat/data-schemas';
 import { tool } from '@librechat/agents/langchain/tools';
 import { Run, Providers, GraphEvents } from '@librechat/agents';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
@@ -110,8 +116,15 @@ export function aiTurnsOf(transcript: string): string {
   const out: string[] = [];
   let inAi = false;
   for (const line of String(transcript || '').split('\n')) {
-    if (/^Human:/.test(line)) { inAi = false; continue; }
-    if (/^AI:/.test(line)) { inAi = true; out.push(line.replace(/^AI:\s*/, '')); continue; }
+    if (/^Human:/.test(line)) {
+      inAi = false;
+      continue;
+    }
+    if (/^AI:/.test(line)) {
+      inAi = true;
+      out.push(line.replace(/^AI:\s*/, ''));
+      continue;
+    }
     if (inAi) out.push(line);
   }
   return out.join('\n');
@@ -319,7 +332,11 @@ export const createMemoryTool = ({
 
         /** Scope resolution: explicit `scope: 'agent'` (or the legacy `agent_notes` key, or a forced consolidation pass) files this card in the current persona's own bucket; everything else stays shared. */
         const targetAgentId =
-          agentId && (forceAgentScope || scope === 'agent' || scope === 'self' || key === AGENT_SCOPED_MEMORY_KEY)
+          agentId &&
+          (forceAgentScope ||
+            scope === 'agent' ||
+            scope === 'self' ||
+            key === AGENT_SCOPED_MEMORY_KEY)
             ? agentId
             : undefined;
         /** KADE CANON: scope "self" files the CHARACTER's own autobiography under the
@@ -489,11 +506,19 @@ export const createDeleteMemoryTool = ({
         };
 
         const targetAgentId =
-          agentId && (forceAgentScope || scope === 'agent' || scope === 'self' || key === AGENT_SCOPED_MEMORY_KEY)
+          agentId &&
+          (forceAgentScope ||
+            scope === 'agent' ||
+            scope === 'self' ||
+            key === AGENT_SCOPED_MEMORY_KEY)
             ? agentId
             : undefined;
         const canon = scope === 'self' && Boolean(agentId) && !forceAgentScope;
-        const result = await deleteMemory({ userId: canon ? CANON_USER_ID : userId, agentId: targetAgentId, key });
+        const result = await deleteMemory({
+          userId: canon ? CANON_USER_ID : userId,
+          agentId: targetAgentId,
+          key,
+        });
         if (result.ok) {
           logger.debug(`Memory deleted for key "${key}" for user "${userId}"`);
           return [`Memory deleted for key "${key}"`, artifact];
@@ -611,7 +636,25 @@ export class BasicToolEndHandler implements EventHandler {
   }
 }
 
-export async function processMemory({
+export async function processMemory(
+  options: Parameters<typeof processMemoryCore>[0],
+): ReturnType<typeof processMemoryCore> {
+  const source = {
+    userId: String(options.userId),
+    conversationId: options.conversationId,
+    messageId: options.messageId,
+    kind: 'conversation' as const,
+  };
+  const revision = await memoryPolicyRevision(source.userId);
+  if (/^consolidat/.test(source.conversationId)) {
+    Object.assign(source, { conversationIds: await memoryDerivationSources(source.userId, options.agentId) });
+  }
+  Object.assign(source, { revision });
+  if (!(await memorySourceAllowed(source))) return undefined;
+  return memorySourceStorage.run(source, () => processMemoryCore(options));
+}
+
+async function processMemoryCore({
   res,
   userId,
   agentId,
@@ -818,7 +861,9 @@ ${memory ?? 'No existing memories'}`;
       graphConfig: {
         type: 'standard',
         llmConfig: finalLLMConfig,
-        tools: logDiary ? [memoryTool, deleteMemoryTool, createDiaryTool({ logDiary })] : [memoryTool, deleteMemoryTool],
+        tools: logDiary
+          ? [memoryTool, deleteMemoryTool, createDiaryTool({ logDiary })]
+          : [memoryTool, deleteMemoryTool],
         instructions: graphInstructions,
         additional_instructions: graphAdditionalInstructions,
         toolEnd: true,
@@ -1040,10 +1085,14 @@ Below is everything currently active in the "${scopeLabel}" memory bucket. The t
 1. SPLIT: if an entry lumps several unrelated topics together, break it into separate cards -- \`set_memory\` each new topic under its own new key, then \`set_memory\` the original key down to just its remaining topic (or \`delete_memory\` it if nothing is left).
 2. MERGE: if entries are near-duplicates or say overlapping things about the same topic, combine them into ONE card and \`delete_memory\` the leftovers.
 3. TIGHTEN: rewrite verbose, repetitive, or stale-phrased cards more concisely with \`set_memory\` on the same key. Keep the human substance -- what matters and why -- not a log of how it came up. When you rewrite, write like a close friend's journal, never a case file: no "exhibits", "reports", "has anxiety about" -- keep the fact exact and the wording human.
-4. PRUNE: \`delete_memory\` cards that are obsolete, contradicted by a newer card, or were never really durable (one-off task chatter, moment-only details).${logDiary ? `
-5. DEMOTE: if a card is EPISODIC — a dated status update, a story beat, a completed piece of work, a "what happened" rather than a "who they are" — move it to the LOGBOOK instead of keeping it as a card: call \`log_diary\` with one or two plain sentences that INCLUDE the original timeframe in the words ("Back in mid-July, ..."), then \`delete_memory\` the card, setting salience honestly (1 ordinary, 2 notable, 3 big). Durable facts, standing rules, live reminders, and active-project current-state cards STAY cards; only the story moves.` : ''}
+4. PRUNE: \`delete_memory\` cards that are obsolete, contradicted by a newer card, or were never really durable (one-off task chatter, moment-only details).${
+    logDiary
+      ? `
+5. DEMOTE: if a card is EPISODIC — a dated status update, a story beat, a completed piece of work, a "what happened" rather than a "who they are" — move it to the LOGBOOK instead of keeping it as a card: call \`log_diary\` with one or two plain sentences that INCLUDE the original timeframe in the words ("Back in mid-July, ..."), then \`delete_memory\` the card, setting salience honestly (1 ordinary, 2 notable, 3 big). Durable facts, standing rules, live reminders, and active-project current-state cards STAY cards; only the story moves.`
+      : ''
+  }
 
-HARD RULE — cards marked [\"reminder\": …] are LIVE SCHEDULED ALARMS: never merge them into other cards, never fold other cards into them, never delete them, and never change their key. At most, tighten their value wording with \`set_memory\` on the SAME key — the schedule survives a value rewrite.
+HARD RULE — cards marked ["reminder": …] are LIVE SCHEDULED ALARMS: never merge them into other cards, never fold other cards into them, never delete them, and never change their key. At most, tighten their value wording with \`set_memory\` on the SAME key — the schedule survives a value rewrite.
 
 Emit ALL of your set_memory/delete_memory calls together in a single response. Do NOT invent facts that are not already present below. Do NOT erase information that is still true just to shorten things -- tighten phrasing, don't erase substance. If everything already looks like clean one-topic cards, do nothing and end the turn immediately.`;
 
@@ -1165,7 +1214,10 @@ type MemoryConsolidationMethods = RequiredMemoryMethods & {
   getActiveMemoryBuckets: () => Promise<MemoryBucketRef[]>;
 };
 
-export type MemoryConsolidationSweepLogger = Pick<typeof logger, 'info' | 'warn' | 'error' | 'debug'>;
+export type MemoryConsolidationSweepLogger = Pick<
+  typeof logger,
+  'info' | 'warn' | 'error' | 'debug'
+>;
 
 export interface MemoryConsolidationSweepOptions {
   appConfig?: AppConfig;
@@ -1206,7 +1258,7 @@ export async function sweepMemoryConsolidation(
   const { appConfig: initialAppConfig, loadAppConfig } = options;
   const appConfig =
     typeof loadAppConfig === 'function'
-      ? (await loadAppConfig()) ?? initialAppConfig
+      ? ((await loadAppConfig()) ?? initialAppConfig)
       : initialAppConfig;
 
   const result: MemoryConsolidationSweepResult = {
@@ -1378,7 +1430,10 @@ export function isMemoryConsolidationSweepDue({
   minGapMs?: number;
 }): boolean {
   /* targetUtcDay -1 = every day (the 'daily' setting above). */
-  if ((targetUtcDay !== -1 && now.getUTCDay() !== targetUtcDay) || now.getUTCHours() !== targetUtcHour) {
+  if (
+    (targetUtcDay !== -1 && now.getUTCDay() !== targetUtcDay) ||
+    now.getUTCHours() !== targetUtcHour
+  ) {
     return false;
   }
   if (lastRunAt && now.getTime() - lastRunAt.getTime() < minGapMs) {
@@ -1447,7 +1502,12 @@ export function startMemoryConsolidationSweep(
       );
       await runAsSystem(() => setLastSweepRunAt(now));
       await runAsSystem(() =>
-        sweepMemoryConsolidation(options, { memoryMethods, db, logger: sweepLogger, createLogDiary }),
+        sweepMemoryConsolidation(options, {
+          memoryMethods,
+          db,
+          logger: sweepLogger,
+          createLogDiary,
+        }),
       );
     } catch (error) {
       sweepLogger.error('[sweepMemoryConsolidation] Background sweep failed:', error);

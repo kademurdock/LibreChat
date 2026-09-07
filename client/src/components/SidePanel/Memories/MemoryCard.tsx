@@ -32,7 +32,9 @@ export default function MemoryCard({ memory, hasUpdateAccess }: MemoryCardProps)
         <span className="truncate text-sm font-semibold text-text-primary">{memory.key}</span>
         {memory.agentId != null && (
           <span className="shrink-0 rounded-full border border-border-medium px-1.5 py-0.5 text-xs text-text-secondary">
-            {localize('com_ui_memory_only_agent', { 0: memory.agentName || localize('com_ui_agent') })}
+            {localize('com_ui_memory_only_agent', {
+              0: memory.agentName || localize('com_ui_agent'),
+            })}
           </span>
         )}
         {memory.tokenCount !== undefined && (
@@ -49,6 +51,14 @@ export default function MemoryCard({ memory, hasUpdateAccess }: MemoryCardProps)
       </div>
 
       {/* Row 2: Value + Date */}
+      <a
+        className="text-sm underline"
+        href={'/assets/memory/index.html?memoryId=' + encodeURIComponent(memory._id)}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {localize('com_ui_memory_sources_controls')}
+      </a>
       <div className="mt-1 flex items-baseline gap-2">
         <p className="min-w-0 flex-1 truncate text-sm text-text-primary" title={memory.value}>
           {memory.value}

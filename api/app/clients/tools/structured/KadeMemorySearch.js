@@ -126,6 +126,7 @@ class KadeMemorySearch extends Tool {
       const qv = query ? await embedText(String(query).slice(0, 1500)) : null;
 
       const cardLines = [];
+      const cardLine = (m) => `(${String(m.key).replace(/_/g, ' ')}) ${m.value}\n${m.correctionLocked ? 'User-corrected; automatic replacement is blocked. ' : ''}${m.sourceConversationIds?.length ? 'Recorded sources can be reviewed here: ' : 'No conversation source evidence was recorded. Review this memory here: '}https://kademurdock.com/assets/memory/index.html?memoryId=${encodeURIComponent(String(m._id))}`;
       if (wantCards) {
         try {
           const { searchCardVectors } = require('~/models/kadeCardVector');
@@ -150,7 +151,7 @@ class KadeMemorySearch extends Tool {
               const m = byKey.get((h.agentId == null ? '' : String(h.agentId)) + '::' + h.key);
               if (m && !seen.has(m.key)) {
                 seen.add(m.key);
-                cardLines.push(`(${String(m.key).replace(/_/g, ' ')}) ${m.value}`);
+                cardLines.push(cardLine(m));
               }
             }
           }
@@ -168,7 +169,7 @@ class KadeMemorySearch extends Tool {
               String(m.value).toLowerCase().includes(q)
             ) {
               seen.add(m.key);
-              cardLines.push(`(${String(m.key).replace(/_/g, ' ')}) ${m.value}`);
+              cardLines.push(cardLine(m));
             }
           }
         } catch (cardErr) {

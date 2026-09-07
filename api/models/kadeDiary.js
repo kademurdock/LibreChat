@@ -43,7 +43,7 @@
  */
 const axios = require('axios');
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
+const { logger, memorySourceStorage, memorySourceAllowed, excludedMemoryConversations } = require('@librechat/data-schemas');
 
 const kadeDiarySchema = new mongoose.Schema(
   {
@@ -59,6 +59,7 @@ const kadeDiarySchema = new mongoose.Schema(
     embedModel: { type: String, default: null },
     /** 'keeper' (memory agent) | 'manual' (future diary surface) | 'backfill' */
     source: { type: String, default: 'keeper' },
+    sourceConversationIds: { type: [String], default: [] },
     /* ⭐ ONE ENTRY PER EPISODE (Part 112, Aug 31 2026 — her call, made on the
      * read of her own Aug-31 logbook: ten entries covering three episodes,
      * Kid Tunes alone filed five times in 23 minutes. Her choice of key, put
@@ -299,6 +300,9 @@ function cosine(a, b) {
  * given agentId (privacy default). Saves even when embedding fails.
  */
 async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', source = 'keeper', entryDate = null, salience = 1, conversationId = null }) {
+  const memorySource = memorySourceStorage.getStore() || (conversationId ? { userId: String(userId), conversationId, kind: 'conversation' } : undefined);
+  if (!(await memorySourceAllowed(memorySource))) return { ok: false, error: 'Conversation memory is excluded' };
+  conversationId = conversationId || memorySource?.conversationId || null;
   if (!diaryEnabled()) {
     return { ok: false, error: 'diary disabled' };
   }
@@ -440,6 +444,8 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
           existing.embedModel = currentEmbedModel();
         }
         existing.salience = Math.max(existing.salience || 1, cleanSalience);
+        if (!(await memorySourceAllowed(memorySource))) return { ok: false, error: 'Memory policy changed during this write' };
+        existing.sourceConversationIds = [...new Set([...(existing.sourceConversationIds || []), ...(memorySource?.conversationIds || [conversationId]).filter(Boolean)])];
         await existing.save();
         return { ok: true, date: effectiveDate, amended: true };
       }
@@ -451,6 +457,7 @@ async function logDiaryEntry({ userId, agentId = null, text, scope = 'agent', so
 
   try {
     await KadeDiaryEntry.create({
+      sourceConversationIds: (memorySource?.conversationIds || [conversationId]).filter(Boolean),
       userId: String(userId),
       agentId: effectiveAgentId,
       text: cleanText,
@@ -510,6 +517,8 @@ async function searchDiary({
   const cap = Math.min(Math.max(parseInt(limit, 10) || 5, 1), 12);
   const filter = {
     userId: String(userId),
+    conversationId: { $nin: await excludedMemoryConversations(String(userId)) },
+    sourceConversationIds: { $nin: await excludedMemoryConversations(String(userId)) },
     $or: [{ agentId: null }, ...(agentId ? [{ agentId: String(agentId) }] : []), ...(Array.isArray(extraAgentIds) ? extraAgentIds.map((a) => ({ agentId: String(a) })) : [])],
   };
   if (dateFrom || dateTo) {

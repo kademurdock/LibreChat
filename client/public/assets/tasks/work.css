@@ -180,3 +180,8 @@ dd {
     outline-color: #9c4300;
   }
 }
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}

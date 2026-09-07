@@ -2,6 +2,10 @@ import { Schema } from 'mongoose';
 import type { IMemoryEntry } from '~/types/memory';
 
 const MemoryEntrySchema: Schema<IMemoryEntry> = new Schema({
+  sourceConversationIds: { type: [String], default: undefined, index: true },
+  sourceMessageId: { type: String },
+  sourceKind: { type: String },
+  correctionLocked: { type: Boolean, default: false },
   userId: {
     type: Schema.Types.ObjectId,
     ref: 'User',

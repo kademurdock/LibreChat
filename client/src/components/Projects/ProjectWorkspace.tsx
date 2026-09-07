@@ -145,6 +145,12 @@ export default function ProjectWorkspace() {
             <h1 className="truncate text-2xl font-semibold tracking-tight text-text-primary">
               {project.name}
             </h1>
+            <a
+              className="text-sm underline"
+              href={'/assets/projects/index.html?projectId=' + encodeURIComponent(projectId)}
+            >
+              {localize('com_ui_project_working_context')}
+            </a>
             {project.description ? (
               <p className="mt-0.5 line-clamp-2 text-sm text-text-secondary">
                 {project.description}

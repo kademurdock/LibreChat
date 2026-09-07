@@ -765,6 +765,14 @@ class AgentClient extends BaseClient {
     await Promise.all(
       allAgents.map(async ({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
+        const currentConversation = await db.getConvo(String(this.options.req.user.id), this.conversationId);
+        const workingProjectId = currentConversation?.chatProjectId || this.options.req.body.chatProjectId;
+        if (workingProjectId) {
+          const { loadProjectWork } = require('@librechat/api');
+          const projectWork = await loadProjectWork(String(this.options.req.user.id), String(workingProjectId), db.getChatProject, agentId);
+          agentRunContextParts.push(projectWork.context);
+          agent.tools = [...(agent.tools || []).filter((t) => t.name !== 'project_documents'), projectWork.tool];
+        }
         const memoryEligible = agentId === this.options.agent.id || memoryAgentEnabled;
         /** KADE Aug 4 2026 — THE SHARED PLATFORM LAYER (her green light; plan doc
          * PLATFORM_PROMPT_LAYER_PLAN_2026-08-04 in her folder): ONE fork-side
@@ -846,6 +854,13 @@ class AgentClient extends BaseClient {
          * confident guess at the wrong trial. Per-turn, so it lives in the
          * volatile tail, never the cached head. */
         const ragNote = this.options.req?._kadeToolRagNote;
+        const capabilities = require('@librechat/api').runtimeCapabilities(agent);
+        agentRunContextParts.push('TOOLS AVAILABLE FOR THIS REPLY\n' + JSON.stringify(capabilities));
+        try {
+          await require('mongoose').connection.collection('kadecapabilitysnapshots').updateOne(
+            { userId: String(this.options.req.user.id), conversationId: this.conversationId, agentId },
+            { $set: { ...capabilities, role: this.options.req.user.role, checkedAt: new Date() } }, { upsert: true });
+        } catch (error) { logger.warn('[capabilities] Could not save the tool view: ' + error.message); }
         if (ragNote && agentId === this.options.agent.id) {
           agentRunContextParts.push(ragNote);
         }
@@ -902,6 +917,8 @@ class AgentClient extends BaseClient {
    */
   async useMemory() {
     const user = this.options.req.user;
+    const { getConversationMemoryPolicy } = require('@librechat/data-schemas');
+    if (await getConversationMemoryPolicy(String(user.id), this.conversationId)) return;
     if (user.personalization?.memories === false) {
       return;
     }

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Project working files</title>
+    <link rel="stylesheet" href="/assets/tasks/work.css" />
+  </head>
+  <body>
+    <main>
+      <nav><a href="/projects">Projects</a></nav>
+      <h1>Project instructions and working files</h1>
+      <p>
+        These instructions and current files are shared with agents in this project’s chats. Your
+        other projects and other people’s accounts stay separate.
+      </p>
+      <p id="status" role="status">Loading…</p>
+      <button id="refresh">Reload saved project</button>
+      <form id="instructions-form">
+        <h2>Instructions</h2>
+        <label for="instructions">How agents should work in this project</label
+        ><textarea id="instructions" rows="5" maxlength="12000"></textarea
+        ><button>Save instructions</button>
+      </form>
+      <h2>Files and versions</h2>
+      <ul id="files"></ul>
+      <form id="file-form">
+        <h2 id="editor-heading">Add a working file</h2>
+        <label for="upload">Import an existing text file (.txt, .md, .csv, .json)</label
+        ><input id="upload" type="file" accept=".txt,.md,.csv,.json,text/plain" /><label for="name"
+          >Filename</label
+        ><input id="name" required maxlength="120" placeholder="working-notes.md" /><label
+          for="kind"
+          >Use as</label
+        ><select id="kind">
+          <option value="document">Working document — agents may revise</option>
+          <option value="reference">Reference — maintained by you</option></select
+        ><label for="content">Contents</label
+        ><textarea id="content" rows="12" maxlength="50000"></textarea
+        ><button>Save a new version</button
+        ><button id="new" type="button">Start another file</button>
+      </form>
+      <p>
+        Current project context is limited to 60,000 characters. Each file keeps up to 100 versions;
+        previous versions stay downloadable.
+      </p>
+    </main>
+    <style>
+      textarea,
+      input:not([type='file']),
+      select {
+        font: inherit;
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        margin: 0.5rem 0 1rem;
+        padding: 0.5rem;
+      }
+      li {
+        margin: 1rem 0;
+        overflow-wrap: anywhere;
+      }
+      button,
+      a {
+        margin: 0.3rem;
+      }
+      label {
+        display: block;
+      }
+    </style>
+    <script src="/assets/projects/work.js?v=147" defer></script>
+  </body>
+</html>

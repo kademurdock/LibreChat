@@ -1,5 +1,5 @@
 const express = require('express');
-const { Tokenizer, generateCheckAccess } = require('@librechat/api');
+const { Tokenizer, generateCheckAccess, createMemoryControlsRouter } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const { logger, runAsSystem, SystemCapabilities } = require('@librechat/data-schemas');
 const {
@@ -104,6 +104,11 @@ const checkMemoryOptOut = generateCheckAccess({
 });
 
 router.use(requireJwtAuth);
+router.use('/controls', memoryPayloadLimit, createMemoryControlsRouter({
+  getConvo: require('~/models').getConvo, setMemory,
+  countTokens: (value) => Tokenizer.getTokenCount(value, 'o200k_base'),
+  canRead: checkMemoryRead, canUpdate: checkMemoryUpdate, canOptOut: checkMemoryOptOut,
+}));
 
 /**
  * GET /memories
@@ -338,6 +343,7 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
       }
     } else {
       const result = await setMemory({
+        userCorrection: true,
         userId: req.user.id,
         agentId: scopedAgentId,
         key: newKey,
