@@ -151,3 +151,14 @@ test('wiring: the ledger is consulted before the block and written after it ship
   assert.ok(block.indexOf('recordLoopNudges(') > block.indexOf('parts.push(block.trimEnd())'));
   assert.match(block, /ask ONCE/);
 });
+
+test('a card rewritten AFTER its own date is answered, not open (Amber\'s uu_community)', () => {
+  /* staleAfter 2 days ago, updated 2 hours ago: the keeper folded in how it went */
+  const answered = { ...card('uu_community', 2), updated_at: iso(2 * HOUR) };
+  const out = selectLoopNudges({ ...base, shared: [answered], own: [] });
+  assert.strictEqual(out.length, 0);
+  /* same card untouched since before its date: still a question */
+  const open = { ...card('uu_community', 2), updated_at: iso(3 * DAY) };
+  const out2 = selectLoopNudges({ ...base, shared: [open], own: [] });
+  assert.strictEqual(out2.length, 1);
+});

@@ -502,6 +502,15 @@ function selectLoopNudges({ shared, own, surfacedKeys, headSharedKeys, pats, now
     })
     .filter((m) => !surfaced.has(String(m.key)))
     .filter((m) => !recent.has(String(m.key)))
+    /* Part 141, the live specimen: Amber's `uu_community` card carried
+     * staleAfter Sep 6 12:00 (the Sunday service). At 16:34 the keeper
+     * REWROTE the card with "How it landed: ..." -- the loop was closed in
+     * the record itself -- and staleAfter stayed put, so this selector kept
+     * calling it "passed and nobody has said how it went" for three more
+     * turns. A card touched AFTER its own date has been answered; the
+     * writer already folded the outcome in. Only a card untouched since its
+     * date is still a question. */
+    .filter((m) => !(cardDate(m) && m.updated_at && new Date(m.updated_at).getTime() > cardDate(m).getTime()))
     .filter((m) => {
       const k = String(m.key || '').toLowerCase();
       const pinnedNow = m.agentId == null
