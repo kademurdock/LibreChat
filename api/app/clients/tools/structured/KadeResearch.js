@@ -73,6 +73,12 @@ class KadeResearch extends Tool {
     this.schema = researchJsonSchema;
     this.bridgeUrl = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
     this.secret = process.env.NOTIFY_AGENT_SECRET || process.env.BRIDGE_SECRET || '';
+    /* Part 142 (Sep 7 2026): one tool instance lives one request, so this
+     * counter is per turn. Grok 4.20 answered "Sounds good to me" with six
+     * identical check calls and died on the 14-step recursion limit — an
+     * empty reply, dead air for VoiceOver. The second check in a turn now
+     * returns an order to stop, not more status to chew on. */
+    this._checks = 0;
   }
 
   _hdrs() {
@@ -121,15 +127,32 @@ class KadeResearch extends Tool {
     );
   }
 
+  _notifyNote(j) {
+    if (!j || j.status !== 'done' || !j.notify) return '';
+    if (j.notify.blocked) return ` — NOTE: the phone tap did NOT go out (${j.notify.blocked}); the user was never told, so tell them now`;
+    if (j.notify.deferred) return ' — the phone tap is queued for after quiet hours';
+    return '';
+  }
+
   async _check({ id }) {
+    this._checks += 1;
+    if (this._checks > 1) {
+      return (
+        "STOP. You already checked this turn and the run is still working — checking again will not make it faster. " +
+        "Tell the user in one breath that it's still running and their phone gets a tap when it's done, then END YOUR REPLY with real words. " +
+        "Do not call check again this turn."
+      );
+    }
     const url = `${this.bridgeUrl}/research/status?userId=${encodeURIComponent(this.userId)}${id ? `&id=${encodeURIComponent(id)}` : ''}`;
     const r = await axios.get(url, { headers: this._hdrs(), timeout: 15000 });
     const jobs = id ? [r.data] : (r.data?.jobs || []);
     if (!jobs.length) return 'No research runs on file for this user yet.';
     const lines = jobs.map((j) =>
-      `[${j.id}] "${j.question}" (${j.depth}) — ${j.status}${j.stageNote ? `: ${j.stageNote}` : ''}${j.status === 'done' ? ` (${j.sourcesFound} sources — fetch it with action='get')` : ''}${j.error ? ` — ${j.error}` : ''}`,
+      `[${j.id}] "${j.question}" (${j.depth}) — ${j.status}${j.stageNote ? `: ${j.stageNote}` : ''}${j.status === 'done' ? ` (${j.sourcesFound} sources — fetch it with action='get')` : ''}${j.error ? ` — ${j.error}` : ''}${this._notifyNote(j)}`,
     );
-    return `Research runs, newest first. Relay progress conversationally, never as a list:\n${lines.join('\n')}`;
+    return (
+      `Research runs, newest first. Relay progress conversationally, never as a list. If a run is still working, say so and finish your reply — do NOT check again this turn:\n${lines.join('\n')}`
+    );
   }
 
   async _get({ id }) {
@@ -137,12 +160,13 @@ class KadeResearch extends Tool {
     const r = await axios.get(url, { headers: this._hdrs(), timeout: 20000, validateStatus: (s) => s < 500 });
     if (r.status === 404) return "No finished report found. Use action='check' to see what's running.";
     if (r.status === 409) return `That run isn't finished yet — ${r.data?.stageNote || 'still working'}. Relay that naturally.`;
-    const { report, sourceList, costs, question } = r.data || {};
+    const { report, sourceList, costs, question, notify } = r.data || {};
     if (!report) return 'The report came back empty — tell the user honestly and offer to rerun it.';
+    const tapNote = notify && notify.blocked ? ` (Heads up: the phone tap for this one never went out — ${notify.blocked} — so if they seem surprised it's done, that's why.)` : '';
     const srcs = (sourceList || []).map((s) => `Source ${s.n}: ${s.title} — ${s.url}`).join('\n');
     return (
       `THE FINISHED REPORT on "${question}" is below. Deliver it BY EAR: verdict first in your own breath or two, then offer the full read; when they want it all, read it as written — it is composed for listening. Never add findings it does not contain.\n` +
-      `(For the curious: ${(costs && costs.estUSD) ? `this run cost about $${costs.estUSD.toFixed(2)}` : 'run cost logged'}.)\n\n${report}\n\nFULL LINKS (share only if asked):\n${srcs}`
+      `(For the curious: ${(costs && costs.estUSD) ? `this run cost about $${costs.estUSD.toFixed(2)}` : 'run cost logged'}.)${tapNote}\n\n${report}\n\nFULL LINKS (share only if asked):\n${srcs}`
     );
   }
 

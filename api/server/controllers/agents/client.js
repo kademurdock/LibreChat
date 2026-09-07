@@ -1931,6 +1931,21 @@ class AgentClient extends BaseClient {
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
           err,
         );
+        /* Part 142 (Sep 7 2026): when the graph dies on the recursion limit
+         * the agent never got to speak — the saved reply has tool calls and
+         * an error part and NO text, which the voice lane and the admin
+         * export both read as silence (Kiana, "Sounds good to me" → six
+         * research checks → limit 14 → dead air for a VoiceOver user). A
+         * spoken text part goes in FIRST so something is actually said; the
+         * error part stays for the screen. */
+        const isRecursion =
+          err?.name === 'GraphRecursionError' || /recursion limit/i.test(String(err?.message ?? ''));
+        if (isRecursion && !this.contentParts.some((p) => p?.type === ContentTypes.TEXT && p.text?.trim())) {
+          this.contentParts.push({
+            type: ContentTypes.TEXT,
+            text: "I got stuck in a loop checking on that and had to stop. Nothing's lost — whatever I kicked off is still running in the background. Ask me again in a minute and I'll pick it up.",
+          });
+        }
         this.contentParts.push({
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
