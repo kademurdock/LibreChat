@@ -632,6 +632,7 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
    * first. Kill switch: KADE_RECALL_AUDIT=0. */
   const surfacedCards = [];
   const surfacedDiary = [];
+  const pendingNudges = [];
   const t0 = Date.now();
   const empty = { block: null, ms: 0 };
   if (!userId) {
@@ -809,7 +810,7 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
               surfacedCards.push(String(m.key));
             }
             parts.push(block.trimEnd());
-            recordLoopNudges({ userId, conversationId, keys: loops.map((m) => String(m.key)) });
+            pendingNudges.push(...loops.map((m) => String(m.key)));
           }
         } catch (_e) {
           /* the nudge must never cost a turn */
@@ -889,8 +890,21 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
 
       return parts.length > 0 ? parts.join('\n\n') : null;
     })();
-    const timeout = new Promise((resolve) => setTimeout(() => resolve(null), RECALL_TIMEOUT_MS));
-    const block = await Promise.race([work, timeout]);
+    let timer;
+    const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(null), RECALL_TIMEOUT_MS); });
+    let block;
+    try {
+      block = await Promise.race([work, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+    // Only the winning recall block was handed to the caller. Timed-out work
+    // can still finish, so neither the ledger nor the audit may share its arrays.
+    const deliveredCards = block ? [...surfacedCards] : [];
+    const deliveredDiary = block ? [...surfacedDiary] : [];
+    if (block && pendingNudges.length > 0) {
+      recordLoopNudges({ userId, conversationId: req?.body?.conversationId || null, keys: pendingNudges });
+    }
     const ms = Date.now() - t0;
     /* Persist the same audit the log line carries — keys and dates, never
      * values — so "what did she have in front of her Tuesday" survives the
@@ -900,8 +914,8 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
         require('~/models/kadeRecallAudit').storeRecallAudit({
           userId,
           agentId: agentId || null,
-          cards: surfacedCards,
-          logbook: surfacedDiary,
+          cards: deliveredCards,
+          logbook: deliveredDiary,
           hit: Boolean(block),
           ms,
         });
@@ -922,9 +936,9 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
           (process.env.KADE_RECALL_AUDIT === '0'
             ? ''
             : ' cards=[' +
-              surfacedCards.join(',') +
+              deliveredCards.join(',') +
               '] logbook=[' +
-              surfacedDiary.join(',') +
+              deliveredDiary.join(',') +
               ']'),
       );
     }

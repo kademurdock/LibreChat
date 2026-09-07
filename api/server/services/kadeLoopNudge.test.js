@@ -145,10 +145,11 @@ test('the selector honors recentlyNudged and still nudges the rest', () => {
   assert.strictEqual(out.map((m) => m.key).join(','), 'b');
 });
 
-test('wiring: the ledger is consulted before the block and written after it ships', () => {
+test('wiring: selection stages nudges; the pipeline tests cover delivery and failure', () => {
   const block = stripped.slice(stripped.indexOf("KADE_LOOP_NUDGE !== '0'"), stripped.indexOf('if (diaryN > 0'));
   assert.match(block, /recentlyNudged: recentlyNudgedKeys\(/);
-  assert.ok(block.indexOf('recordLoopNudges(') > block.indexOf('parts.push(block.trimEnd())'));
+  assert.doesNotMatch(block, /recordLoopNudges\(/);
+  assert.match(block, /pendingNudges\.push/);
   assert.match(block, /ask ONCE/);
 });
 
