@@ -146,6 +146,7 @@ export type ToolCallResults = a.ToolCallResult[];
 
 /* Memories */
 export type TUserMemory = {
+  _id?: string;
   key: string;
   value: string;
   updated_at: string;

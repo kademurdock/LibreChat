@@ -51,14 +51,16 @@ export default function MemoryCard({ memory, hasUpdateAccess }: MemoryCardProps)
       </div>
 
       {/* Row 2: Value + Date */}
-      <a
-        className="text-sm underline"
-        href={'/assets/memory/index.html?memoryId=' + encodeURIComponent(memory._id)}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {localize('com_ui_memory_sources_controls')}
-      </a>
+      {memory._id && (
+        <a
+          className="text-sm underline"
+          href={'/assets/memory/index.html?memoryId=' + encodeURIComponent(memory._id)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {localize('com_ui_memory_sources_controls')}
+        </a>
+      )}
       <div className="mt-1 flex items-baseline gap-2">
         <p className="min-w-0 flex-1 truncate text-sm text-text-primary" title={memory.value}>
           {memory.value}
