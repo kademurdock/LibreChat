@@ -41,7 +41,7 @@ function fixture() {
       console,
     },
   );
-  const tool = Object.create(mod.exports.prototype);
+  const tool = new mod.exports({ userId: 'alice', override: true });
   tool.userId = 'alice';
   tool.resolveAudioRefs = async () => ({ urls: [] });
   return {
@@ -97,4 +97,13 @@ test('an uncertain narration start asks for status before a new paid render', as
   assert.match(result, /may already be queued/);
   assert.match(result, /check_narration/);
   assert.match(result, /do not start another automatically/);
+});
+
+test('the bound narration instructions match limits and recovery behavior', () => {
+  const { tool } = fixture();
+  assert.match(tool.schema.properties.action.description, /4,000 characters including XML/);
+  assert.match(tool.description_for_model, /4,000 characters INCLUDING XML/);
+  assert.match(tool.description_for_model, /check_narration with that job_id FIRST/);
+  assert.doesNotMatch(tool.description_for_model, /say the phone will buzz|Any length; ~2 cents/);
+  assert.doesNotMatch(tool.schema.properties.action.description, /1-2 minute wake|Any length \(a whole chapter\)/);
 });
