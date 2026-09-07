@@ -138,6 +138,51 @@ const ADMIN = [
 
 const homeHtml = `<!doctype html><html lang="en"><head><title>Home — Kade-AI</title>${SHARED_HEAD}
 <style>
+  /* Color and depth belong to this page; navigation order and names remain
+     the same map as native. No extra focus stops, assets, or running effects. */
+  body { background: #f7f5fa; }
+  .home-welcome { padding: 1.35rem 1.5rem; border: 1px solid #d9cfe6; border-radius: 20px; background: radial-gradient(ellipse at top right, #eadbf8, transparent 68%), #fff; }
+  .home-brand { display: block; color: #634181; font-size: .78rem; font-weight: 750; letter-spacing: .14em; margin-bottom: .35rem; }
+  .home-welcome h1 { color: #342245; font-size: 2rem; }
+  .home-welcome p { margin-bottom: 0; opacity: 1; color: #575064; }
+  main > h2 { color: #4e365f; padding-inline-start: .7rem; border-inline-start: 4px solid #9470b7; }
+  main nav.hublist { --home-accent: #72518e; --home-tint: #efe6f7; }
+  main nav[aria-labelledby="sec-talk"] { --home-accent: #74519a; --home-tint: #eee3fa; }
+  main nav[aria-labelledby="sec-tools"] { --home-accent: #246d69; --home-tint: #e2f2ee; }
+  main nav[aria-labelledby="sec-settings-and-help"] { --home-accent: #8a5934; --home-tint: #faf0df; }
+  main a.hubitem { border-color: #dfd9e7; border-inline-start: 4px solid var(--home-accent); box-shadow: 0 2px 8px #33214608; }
+  main a.hubitem > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+  main a.hubitem .hicon { display: grid; place-items: center; width: 2.7rem; height: 2.7rem; border-radius: 12px; background: var(--home-tint); font-size: 1.4rem; }
+  main a.hubitem small { opacity: 1; color: #5a5364; }
+  main a.hubitem:focus-visible { outline: 3px solid #5b2e85; outline-offset: 3px; }
+  @media (max-width: 400px) {
+    .home-welcome { padding: 1rem; }
+    main a.hubitem { padding: .85rem .7rem; gap: .65rem; }
+    main a.hubitem .hicon { width: 2.2rem; height: 2.2rem; }
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #18151e; }
+    .home-welcome { background: radial-gradient(ellipse at top right, #443051, transparent 70%), #221c2b; border-color: #675078; }
+    .home-brand { color: #d4b2ed; }
+    .home-welcome h1, main > h2 { color: #f0e1fa; }
+    .home-welcome p, main a.hubitem small { color: #c9c1d2; }
+    main a.hubitem { background: #231e2b; border-color: #54445f; border-inline-start-color: var(--home-accent); }
+    main nav.hublist { --home-accent: #b68bd6; --home-tint: #40304c; }
+    main nav[aria-labelledby="sec-talk"] { --home-accent: #b68bd6; --home-tint: #40304c; }
+    main nav[aria-labelledby="sec-tools"] { --home-accent: #77bdb0; --home-tint: #203d39; }
+    main nav[aria-labelledby="sec-settings-and-help"] { --home-accent: #d7aa74; --home-tint: #443529; }
+    main a.hubitem:focus-visible { outline-color: #e5b9ff; }
+  }
+  @media (prefers-contrast: more) {
+    .home-welcome, main a.hubitem { border-width: 2px; box-shadow: none; }
+    main a.hubitem { border-inline-start-width: 4px; }
+  }
+  @media (forced-colors: active) {
+    body, .home-welcome, main a.hubitem { background: Canvas; color: CanvasText; }
+    .home-brand, .home-welcome h1, .home-welcome p, main > h2, main a.hubitem small { color: CanvasText; }
+    main a.hubitem, .home-welcome { border-color: CanvasText; box-shadow: none; }
+    main a.hubitem:focus-visible { outline-color: Highlight; }
+  }
   .acct { margin: .25rem 0 0; }
   #adminSec, #adminNav { display: none; }
   button.signout { font: inherit; font-weight: 600; color: #8a1f1f; background: #fff; border: 1px solid #c0392b; border-radius: 10px; padding: .8rem 1.3rem; margin-top: 1.25rem; cursor: pointer; }
@@ -147,8 +192,11 @@ const homeHtml = `<!doctype html><html lang="en"><head><title>Home — Kade-AI</
 </head>
 <body>
 <main>
+<header class="home-welcome">
+<span class="home-brand" aria-hidden="true">KADE · AI</span>
 <h1>Home</h1>
 <p class="muted">Same map as the iPhone app: everything is here, in the same order, every time.</p>
+</header>
 
 <h2 id="sec-account">Your account</h2>
 <p class="acct" id="acctEmail" aria-live="polite">Checking who you are…</p>

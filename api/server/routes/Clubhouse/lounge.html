@@ -1,0 +1,162 @@
+<!doctype html><html lang="en"><head><title>Kade's Clubhouse</title><!-- KADE_SHARED_HEAD -->
+<style>
+  .rowbtn { font: inherit; background: #1f7a49; color: #fff; border: 0; border-radius: 10px; padding: .7rem 1.1rem; font-weight: 600; cursor: pointer; margin: .35rem .4rem .35rem 0; }
+  .rowbtn.gray { background: #5b6270; }
+  .rowbtn.red { background: #a33; }
+  .rowbtn.small { padding: .45rem .7rem; font-size: .9rem; font-weight: 600; }
+  .rowbtn:focus-visible, button.room:focus-visible { outline: 3px solid #ffbf47; outline-offset: 2px; }
+  button.room { display:block; width:100%; text-align:left; font:inherit; background:#fff; color:inherit; border:1px solid #cdd3da; border-radius:12px; padding:.85rem 1rem; margin:.45rem 0; cursor:pointer; }
+  button.room .desc { display:block; font-weight:400; opacity:.8; font-size:.92rem; margin-top:.15rem; }
+  @media (prefers-color-scheme: dark) { button.room { background:#1e2127; border-color:#3a4150; } }
+  #roster li { margin:.35rem 0; }
+  .talking { font-weight:700; }
+  label.blk { display:block; margin:.7rem 0 .25rem; font-weight:600; }
+  input[type="text"], input[type="password"], select { font:inherit; padding:.55rem .6rem; border-radius:9px; border:1px solid #cdd3da; background:#fff; color:inherit; max-width:100%; }
+  @media (prefers-color-scheme: dark) { input[type="text"], input[type="password"], select { background:#1e2127; border-color:#3a4150; } }
+  ol#jb-queue { padding-left:1.3rem; margin:.5rem 0; }
+  ol#jb-queue li { margin:.45rem 0; }
+  input[type="range"] { width: min(100%, 340px); accent-color:#1f7a49; }
+  .nowline { font-weight:600; }
+  /* ── decorative layer (July 24): pure eye candy, aria-hidden or CSS-only,
+     zero focus targets, zero live regions — VoiceOver never meets it. ── */
+  #glow { height:6px; border-radius:3px; margin:.2rem 0 .8rem; background:linear-gradient(90deg,#1f7a49,#67c08b,#2b4d8f,#1f7a49); background-size:300% 100%; }
+  #roster li.talking::before { content:""; display:inline-block; width:.6em; height:.6em; border-radius:50%; background:#1f9a55; margin-right:.45em; vertical-align:baseline; }
+  #jb-disc { display:inline-block; width:1.05em; height:1.05em; border-radius:50%; margin-right:.45em; vertical-align:-0.18em; background:radial-gradient(circle at center, #cdd3da 0 12%, #14171c 13% 42%, #3a4150 43% 46%, #14171c 47% 72%, #1f7a49 73% 100%); }
+  #jb-viz { display:block; width:100%; height:44px; margin:.35rem 0 .1rem; border-radius:8px; }
+  @media (prefers-reduced-motion: no-preference) {
+    #glow { animation: kglow 14s linear infinite; }
+    @keyframes kglow { 0%{background-position:0% 0} 100%{background-position:300% 0} }
+    #roster li.talking::before { animation: kpulse 1.1s ease-in-out infinite; }
+    @keyframes kpulse { 0%,100%{transform:scale(.85);opacity:.75} 50%{transform:scale(1.15);opacity:1} }
+    #jb-disc.spin { animation: kspin 3.2s linear infinite; }
+    @keyframes kspin { to{transform:rotate(360deg)} }
+  }
+  .rec-live { background:#a33 !important; }
+</style>
+</head>
+<body>
+  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/parlor">The Parlor</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/whats-new">What's new</a></p>
+  <h1>Kade's Clubhouse</h1>
+  <div id="status" class="status" role="status" aria-live="polite">Opening the Clubhouse&hellip;</div>
+  <p id="rec-done" hidden></p>
+
+  <section id="pick" hidden>
+    <p class="muted">Family voice rooms with real stereo sound. Sit and talk, load the shared jukebox, invite a companion to hang out &mdash; or get a private room in the Hotel.</p>
+    <div id="room-list"></div>
+
+    <div class="card">
+      <h2 style="margin-top:0">The Hotel &mdash; private rooms</h2>
+      <p class="muted">Rooms stay off the list on purpose &mdash; the code is the key. Check in with your group's passcode, or open a room of your own and pass the code around. A Parlor party's table code can be a passcode too.</p>
+      <label class="blk" for="hotel-code">Your group's passcode</label>
+      <input type="text" id="hotel-code" maxlength="16" autocapitalize="none" autocomplete="off">
+      <p><button type="button" class="rowbtn" id="hotel-checkin">Check in</button></p>
+      <div id="hotel-mine"></div>
+      <h3>Open a room</h3>
+      <label class="blk" for="hotel-name">Room name</label>
+      <input type="text" id="hotel-name" maxlength="40">
+      <label class="blk" for="hotel-newcode">Passcode &mdash; letters and numbers, easy to say out loud</label>
+      <input type="text" id="hotel-newcode" maxlength="16" autocapitalize="none" autocomplete="off">
+      <p><button type="button" class="rowbtn" id="hotel-create">Open the room</button></p>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">Join a game table's room</h2>
+      <label class="blk" for="code">The Parlor party code</label>
+      <input type="text" id="code" maxlength="8" autocapitalize="characters" style="text-transform:uppercase">
+      <p><button type="button" class="rowbtn" id="join-code">Join that table's voices</button></p>
+    </div>
+  </section>
+
+  <section id="room" hidden>
+    <h2 id="room-title"></h2>
+    <div id="glow" aria-hidden="true"></div>
+    <div id="rstatus" class="status" role="status" aria-live="polite" tabindex="-1"></div>
+    <p id="pa-line" class="muted"></p>
+    <p id="rec-others" class="muted" hidden></p>
+    <div class="card">
+      <h3 style="margin-top:0" id="roster-h">Who's here</h3>
+      <ul id="roster" style="list-style:none;padding:0;margin:0" aria-labelledby="roster-h"></ul>
+    </div>
+    <p>
+      <button type="button" class="rowbtn" id="btn-mic">Mute my mic</button>
+      <button type="button" class="rowbtn gray" id="btn-who">Say who's here</button>
+      <button type="button" class="rowbtn gray" id="btn-rec">Record this conversation</button>
+      <button type="button" class="rowbtn red" id="btn-leave">Leave the room</button>
+    </p>
+
+    <div class="card">
+      <h3 style="margin-top:0">The jukebox</h3>
+      <p class="muted">One player for the whole room &mdash; anybody can play, pause, skip, or jump back. Queue your song politely, or cut in and start a radio fight. House rule: volume is yours alone.</p>
+      <p class="nowline"><span id="jb-disc" aria-hidden="true" hidden></span><span id="jb-now" aria-live="off">Nothing playing yet.</span></p>
+      <canvas id="jb-viz" aria-hidden="true" hidden></canvas>
+      <p>
+        <button type="button" class="rowbtn" id="jb-toggle">Play</button>
+        <button type="button" class="rowbtn gray" id="jb-back">Back a song</button>
+        <button type="button" class="rowbtn gray" id="jb-skip">Skip ahead</button>
+        <button type="button" class="rowbtn red" id="jb-clear">Clear the queue</button>
+      </p>
+      <div id="jb-seek-row" hidden>
+        <label class="blk" for="jb-seek">Song position</label>
+        <input type="range" id="jb-seek" min="0" max="300" step="1" value="0" aria-label="Song position in seconds">
+        <p class="muted" id="jb-time"></p>
+      </div>
+      <h4 style="margin:.8rem 0 .2rem">Up next</h4>
+      <ol id="jb-queue" aria-label="The queue"></ol>
+      <label class="blk" for="jb-file">Add a song or any audio file</label>
+      <input type="file" id="jb-file" accept="audio/*">
+      <p>
+        <button type="button" class="rowbtn" id="jb-cutin" hidden>Cut in and play it now</button>
+        <button type="button" class="rowbtn gray" id="jb-queue-add" hidden>Add it to the queue</button>
+      </p>
+      <label class="blk" for="jb-link">Or paste a link &mdash; YouTube, Spotify, SoundCloud, Bandcamp, a direct MP3, most anything with sound</label>
+      <input type="text" id="jb-link" inputmode="url" autocapitalize="none" autocomplete="off">
+      <p>
+        <button type="button" class="rowbtn" id="jb-link-cutin">Fetch and play it now</button>
+        <button type="button" class="rowbtn gray" id="jb-link-queue">Fetch and queue it</button>
+        <button type="button" class="rowbtn red small" id="jb-knock-cancel" hidden>Stop knocking</button>
+      </p>
+      <p class="muted" style="font-size:.85rem">Spotify songs arrive by name-match (Spotify keeps its audio locked), so the take may differ. Songs cap at 15 minutes. If YouTube's gate is closed, I keep knocking every few minutes and holler when it opens.</p>
+      <label class="blk" for="jb-vol">My music volume &mdash; just for my ears</label>
+      <input type="range" id="jb-vol" min="0" max="100" step="5" value="25" aria-label="My music volume, percent">
+      <p class="muted" style="font-size:.85rem">Music starts low by default so talk rides over it. Voices always come through at full volume.</p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">The house PA</h3>
+      <p class="muted">Two host voices read the room out loud for everybody &mdash; Miss A works the front desk (comings, goings, taping notices) and Kade's calm narrator runs the booth (jukebox news). Real audio, no screen reader needed.</p>
+      <label style="display:flex; gap:.6rem; align-items:flex-start; cursor:pointer">
+        <input type="checkbox" id="pa-on" style="width:auto; margin-top:.3rem">
+        <span>Host voices read the announcements</span>
+      </label>
+      <label class="blk" for="pa-vol">Announcement volume &mdash; just for my ears</label>
+      <input type="range" id="pa-vol" min="0" max="100" step="5" value="90" aria-label="Announcement volume, percent">
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">My mic</h3>
+      <label style="display:flex; gap:.6rem; align-items:flex-start; cursor:pointer">
+        <input type="checkbox" id="mic-clear" style="width:auto; margin-top:.3rem">
+        <span>Headphones clarity mode &mdash; send my mic raw: no echo cancel, no noise trims, full fidelity, and incoming music stops dipping while I talk. On iPhones this is also the door to <strong>stereo</strong> music &mdash; Apple's echo-cancel engine is mono-only (the same wall TeamTalk hits). <strong>Headphones only</strong> &mdash; on a speaker, the room will hear themselves echo off you.</span>
+      </label>
+    </div>
+
+    <div class="card" id="bot-card">
+      <h3 style="margin-top:0">Company</h3>
+      <p class="muted">Invite a companion to sit in as a guest. They take turns like a polite guest: press their talk button when it's their turn, and they answer out loud in their own voice. Between turns they listen along through a rough transcription with names on it &mdash; they know who said what. Anyone can ask them to leave.</p>
+      <div id="bot-invite-row">
+        <label class="blk" for="bot-filter">Find a companion &mdash; type a few letters to shorten the list</label>
+        <input type="text" id="bot-filter" autocomplete="off" autocapitalize="none">
+        <label class="blk" for="bot-pick">Who to invite</label>
+        <select id="bot-pick"><option value="">Loading companions&hellip;</option></select>
+        <p class="muted" id="bot-count" aria-live="polite"></p>
+        <p><button type="button" class="rowbtn" id="bot-invite">Invite them in</button></p>
+      </div>
+      <p id="bot-line" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <footer class="muted">Your voices never touch the AI unless you invite a guest &mdash; the Clubhouse is person-to-person audio on Kade's own room server. &mdash; Kade-AI</footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+  <script><!-- KADE_CLIENT_SCRIPT --></script>
+</body></html>
