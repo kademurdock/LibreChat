@@ -18,7 +18,7 @@
       if(!token){ status.className='status err'; status.textContent='Please sign in at the chat site first, then reload this page.'; return; }
       if(typeof LivekitClient === 'undefined'){
         status.className='status err';
-        status.textContent='The audio engine could not load â€” check the connection and reload.';
+        status.textContent='The audio engine could not load — check the connection and reload.';
         return;
       }
       const LK = LivekitClient;
@@ -28,14 +28,14 @@
       try{
         const r = await apiGet('/api/kade/lounge/config', token);
         cfg = await r.json();
-      }catch(e){ status.className='status err'; status.textContent='Could not reach the Clubhouse â€” try a reload.'; return; }
+      }catch(e){ status.className='status err'; status.textContent='Could not reach the Clubhouse — try a reload.'; return; }
 
-      /* â”€â”€ the picker â”€â”€ */
+      /* ── the picker ── */
       $('room-list').innerHTML = (cfg.rooms||[]).map(function(r){
         return '<button type="button" class="room" data-room="'+r.key+'">'+r.name+' <span class="desc">'+r.blurb+'</span></button>';
       }).join('');
       function renderHotel(list){
-        // Only rooms YOU opened ever render â€” the Hotel keeps no public list.
+        // Only rooms YOU opened ever render — the Hotel keeps no public list.
         if(!list || !list.length){ $('hotel-mine').innerHTML = ''; return; }
         $('hotel-mine').innerHTML = '<h3>Rooms you opened</h3>' + list.map(function(h){
           return '<p>'+esc(h.name)+' <button type="button" class="rowbtn small red" data-close="'+h.key+'">Close this room</button></p>';
@@ -46,12 +46,12 @@
       $('pick').hidden = false;
       if(!cfg.ready){
         status.className = 'status';
-        status.textContent = "The Clubhouse is built and ready â€” it's just waiting on Kade to drop the room-server keys into Railway. Two-minute job, then this page comes alive.";
+        status.textContent = "The Clubhouse is built and ready — it's just waiting on Kade to drop the room-server keys into Railway. Two-minute job, then this page comes alive.";
       } else {
         status.textContent = 'Pick a room.';
       }
 
-      /* â”€â”€ shared room state â”€â”€ */
+      /* ── shared room state ── */
       let lkRoom = null;
       let micTrack = null;
       let micMuted = false;
@@ -61,18 +61,18 @@
 
       function say(text){ $('rstatus').textContent = text; }
 
-      /* â”€â”€ THE HOUSE PA (July 24, her ask: announcements "like a PA system
-       * and isn't screen reader reliant") â”€â”€
+      /* ── THE HOUSE PA (July 24, her ask: announcements "like a PA system
+       * and isn't screen reader reliant") ──
        * Room events get READ OUT LOUD on every member's device by two host
        * clone voices: Miss A pro reading works the front desk (joins,
        * leaves, taping notices) and Kade's calm narrator runs the booth
-       * (jukebox news). Everyone hears the same words at the same moment â€”
+       * (jukebox news). Everyone hears the same words at the same moment —
        * each device speaks them locally, so the PA never depends on any one
        * phone. With the PA on, room events land in a NON-live line (no
        * VoiceOver double-talk); if a clip cannot fetch or play, the text
        * falls back to the live region so nothing is ever missed. */
-      var PA_DOORS = 'Voice 393';  // Miss A pro reading â€” the front desk
-      var PA_BOOTH = 'Voice 327';  // Kade, calm inspirational â€” the booth
+      var PA_DOORS = 'Voice 393';  // Miss A pro reading — the front desk
+      var PA_BOOTH = 'Voice 327';  // Kade, calm inspirational — the booth
       var paOn = true, paVol = 0.9;
       try{ paOn = localStorage.getItem('kadeClubPAOn') !== '0'; }catch(e){}
       try{ var pv = parseInt(localStorage.getItem('kadeClubPAVol'), 10); if(!isNaN(pv)) paVol = Math.max(0, Math.min(100, pv))/100; }catch(e){}
@@ -108,7 +108,7 @@
               src.buffer = buf; src.connect(paGain);
               src.onended = done; src.start();
             });
-          }catch(e){ say(item.text); /* the PA lost power â€” VoiceOver takes it */ }
+          }catch(e){ say(item.text); /* the PA lost power — VoiceOver takes it */ }
           paBusy = false;
           paPump();
         })();
@@ -126,7 +126,7 @@
       $('pa-on').addEventListener('change', function(){
         paOn = $('pa-on').checked;
         try{ localStorage.setItem('kadeClubPAOn', paOn ? '1' : '0'); }catch(e){}
-        say(paOn ? 'Host voices are on.' : 'Host voices are off â€” announcements go back to the screen reader.');
+        say(paOn ? 'Host voices are on.' : 'Host voices are off — announcements go back to the screen reader.');
       });
       $('pa-vol').addEventListener('input', function(){
         paVol = Math.max(0, Math.min(100, parseInt($('pa-vol').value,10)||0))/100;
@@ -134,12 +134,12 @@
         if(paGain){ try{ paGain.gain.value = paVol; }catch(e){} }
       });
 
-      /* â”€â”€ THE TAPE DECK (July 24, her ask: "a record of audio the same way
-       * they do of the game conversations") â”€â”€
+      /* ── THE TAPE DECK (July 24, her ask: "a record of audio the same way
+       * they do of the game conversations") ──
        * Anybody can record the room: your mic, every voice, the jukebox,
-       * the bot â€” mixed into one file on YOUR device, downloadable like a
+       * the bot — mixed into one file on YOUR device, downloadable like a
        * Parlor transcript. The whole room is TOLD, by the PA, when a tape
-       * starts and stops â€” no sneaky taping in this house. */
+       * starts and stops — no sneaky taping in this house. */
       var recCtx=null, recDest=null, recorder=null, recWired=null, recTimer=null, recT0=0, recCap=null;
       var RECORDERS = {};
       function recWire(stream){
@@ -154,7 +154,7 @@
       function recLabel(){
         if(!recorder){ $('btn-rec').textContent = 'Record this conversation'; $('btn-rec').classList.remove('rec-live'); return; }
         var s = Math.floor((Date.now() - recT0)/1000);
-        $('btn-rec').textContent = 'Stop the recording â€” ' + Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+        $('btn-rec').textContent = 'Stop the recording — ' + Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
         $('btn-rec').classList.add('rec-live');
       }
       function renderRecOthers(){
@@ -164,7 +164,7 @@
       }
       function startRec(){
         if(recorder || !lkRoom) return;
-        if(!window.MediaRecorder){ say('This browser cannot record â€” try Safari or Chrome.'); return; }
+        if(!window.MediaRecorder){ say('This browser cannot record — try Safari or Chrome.'); return; }
         try{
           recCtx = new AC(); recDest = recCtx.createMediaStreamDestination(); recWired = new Set();
           if(micTrack && micTrack.mediaStreamTrack){ recWire(new MediaStream([micTrack.mediaStreamTrack])); }
@@ -191,7 +191,7 @@
             recLabel();
             delete RECORDERS[myIdentity]; renderRecOthers();
             var blob = new Blob(chunks, { type: type }); chunks = [];
-            if(!blob.size){ say('The tape came out blank â€” that one is on the browser.'); return; }
+            if(!blob.size){ say('The tape came out blank — that one is on the browser.'); return; }
             var ext = type.indexOf('mp4') >= 0 ? 'm4a' : 'webm';
             var stamp = new Date().toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }).replace(/[,:]/g,'.').replace(/\s+/g,' ');
             var fname = 'Clubhouse - ' + (roomLabel || 'room') + ' - ' + stamp + '.' + ext;
@@ -203,7 +203,7 @@
             box.innerHTML = '';
             var a = document.createElement('a');
             a.href = url; a.download = fname;
-            a.textContent = 'Download the recording â€” ' + mins + ', ' + mb + ' MB';
+            a.textContent = 'Download the recording — ' + mins + ', ' + mb + ' MB';
             box.appendChild(a);
             a.click(); // lands straight in Downloads/Files; the link stays for a re-grab
             if(lkRoom){ sendData({ t:'rec', on:false, fromName: myName }); }
@@ -211,7 +211,7 @@
           };
           recT0 = Date.now();
           recorder.start(1000);
-          recCap = setTimeout(function(){ if(recorder){ say('The tape ran out at two hours â€” saving what we have.'); stopRec(); } }, 7200000);
+          recCap = setTimeout(function(){ if(recorder){ say('The tape ran out at two hours — saving what we have.'); stopRec(); } }, 7200000);
           recTimer = setInterval(recLabel, 1000);
           recLabel();
           RECORDERS[myIdentity] = myName; renderRecOthers();
@@ -220,13 +220,13 @@
         }catch(e){
           recorder = null;
           if(recCtx){ try{ recCtx.close(); }catch(e2){} recCtx = null; recDest = null; recWired = null; }
-          say('The tape deck jammed â€” try again.');
+          say('The tape deck jammed — try again.');
         }
       }
       function stopRec(){ if(recorder){ try{ recorder.stop(); }catch(e){ recorder = null; recLabel(); } } }
       $('btn-rec').addEventListener('click', function(){ if(recorder){ stopRec(); } else { startRec(); } });
 
-      /* â”€â”€ the visual layer: audio-reactive bars + the spinning 45 â”€â”€
+      /* ── the visual layer: audio-reactive bars + the spinning 45 ──
        * Decorative only (aria-hidden, no focus, no live regions); sits out
        * reduced-motion and hidden tabs. */
       var REDUCED = false;
@@ -300,10 +300,10 @@
         var html = rosterParts().map(function(p){
           const me = p === lkRoom.localParticipant;
           const talking = speaking.has(p.identity);
-          return '<li'+(talking?' class="talking"':'')+'>'+(p.name||p.identity)+(me?' (you)':'')+(talking?' â€” talking':'')+'</li>';
+          return '<li'+(talking?' class="talking"':'')+'>'+(p.name||p.identity)+(me?' (you)':'')+(talking?' — talking':'')+'</li>';
         }).join('');
         if(BOT){
-          html += '<li>'+esc(BOT.name)+' â€” companion guest, invited by '+esc(BOT.anchorName||'someone')+(botBusy? ' â€” thinking' : '')+
+          html += '<li>'+esc(BOT.name)+' — companion guest, invited by '+esc(BOT.anchorName||'someone')+(botBusy? ' — thinking' : '')+
             ' <button type="button" class="rowbtn small" data-botact="cue">Your turn, '+esc(BOT.name)+'</button>'+
             ' <button type="button" class="rowbtn small gray" data-botact="kick">Ask them to leave</button></li>';
         }
@@ -311,13 +311,13 @@
         $('bot-invite-row').hidden = !!BOT;
       }
 
-      /* â”€â”€ THE SHARED JUKEBOX + BOT GUEST state (data-channel, host-hop) â”€â”€
+      /* ── THE SHARED JUKEBOX + BOT GUEST state (data-channel, host-hop) ──
        * One CLUB state for the whole room. The AUTHORITY (the current
        * song's adder if present, else the alphabetically-first identity)
        * applies every command, bumps the version, and broadcasts. Every
        * device then reconciles: "is it MY file that should be playing?
        * start/stop accordingly." Music files never leave the phone that
-       * added them â€” the audio itself rides the room as a hi-fi track. */
+       * added them — the audio itself rides the room as a hi-fi track. */
       let CLUB = { v:0, actn:0, act:'', jb:{ queue:[], curId:null, playing:false, pos:-1 } };
       let lastActn = 0;
       let BOT = null;       // {agentId,name,anchor,anchorName}
@@ -338,7 +338,7 @@
        * node works everywhere). Voices attach plain at full volume. */
       let listenCtx = null;
       let musicGains = [];
-      /* KEEPALIVE (July 24, round 5 â€” her catch survived the watchdog):
+      /* KEEPALIVE (July 24, round 5 — her catch survived the watchdog):
        * a long-IDLE AudioContext is what iOS wedges in the first place.
        * A running constant-silence source keeps the audio unit warm, so
        * pause-for-twenty-minutes wakes up like pause-for-two-seconds.
@@ -384,7 +384,7 @@
         applyMusicVol();
       });
 
-      /* â”€â”€ data channel â”€â”€ */
+      /* ── data channel ── */
       function sendData(obj){
         if(!lkRoom) return;
         try{
@@ -438,7 +438,7 @@
         if(!c){ jb.curId = null; jb.playing = false; return; }
         if(jb.playing && !present(c.by)){
           var n = nextPlayable(curIndex(), +1);
-          if(n){ setCurrentId(n.id); setAct((c.byName||'Somebody') + " left and took their song along â€” next up: " + n.title + "."); }
+          if(n){ setCurrentId(n.id); setAct((c.byName||'Somebody') + " left and took their song along — next up: " + n.title + "."); }
           else { jb.playing = false; setAct((c.byName||'Somebody') + " left and took their song along. Music off."); }
         }
       }
@@ -456,7 +456,7 @@
         } else if(m.cmd === 'skip'){
           var n = nextPlayable(i, +1);
           if(n){ setCurrentId(n.id); jb.playing = true; setAct(who + ' skipped ahead to ' + n.title + '.'); }
-          else if(jb.curId){ jb.playing = false; jb.pos = 0; setAct(who + ' skipped â€” that was the end of the queue.'); }
+          else if(jb.curId){ jb.playing = false; jb.pos = 0; setAct(who + ' skipped — that was the end of the queue.'); }
         } else if(m.cmd === 'back'){
           var p = nextPlayable(i, -1);
           if(p){ setCurrentId(p.id); jb.playing = true; setAct(who + ' went back to ' + p.title + '.'); }
@@ -516,7 +516,7 @@
         if(iAmAuthority()){ applyCmd(msg); } else { sendData(msg); }
       }
 
-      /* â”€â”€ my playback engine (only for entries I added) â”€â”€ */
+      /* ── my playback engine (only for entries I added) ── */
       function myCurrentPos(){
         if(!jbCtx || !jbSrc) return 0;
         return jbStartOffset + (jbCtx.currentTime - jbStartTime);
@@ -553,7 +553,7 @@
             /* HER BUG (July 24, "it said it was playing that other song, but
              * it never really did"): unpublishTrack(track, true) STOPS the
              * destination's MediaStreamTrack, and a stopped track is dead
-             * forever â€” republishing it ships silence while the state says
+             * forever — republishing it ships silence while the state says
              * playing. A fresh destination node every republish = a live
              * track every time. */
             jbDest = jbCtx.createMediaStreamDestination();
@@ -562,7 +562,7 @@
             await lkRoom.localParticipant.publishTrack(jbTrack, {
               dtx: false,
               red: false,
-              /* round 5: browsers do not NEGOTIATE stereo opus on their own â€”
+              /* round 5: browsers do not NEGOTIATE stereo opus on their own —
                * forceStereo writes it into the SDP so the encoder actually
                * sends two channels (her mono-on-the-receiver catch). */
               forceStereo: true,
@@ -587,10 +587,10 @@
           /* WAKE WATCHDOG (July 24, her catch: "once music has been paused a
            * while it's impossible to start the session back up again even
            * though it says it is started"): after a long pause iOS can wedge
-           * the AudioContext â€” resume() claims fine, currentTime freezes,
+           * the AudioContext — resume() claims fine, currentTime freezes,
            * no audio, no onended, no error. Verify the clock actually RUNS
            * shortly after start; if it's wedged, tear the whole audio stack
-           * down (a closed context can't be saved) and pause honestly â€” the
+           * down (a closed context can't be saved) and pause honestly — the
            * NEXT Play tap rebuilds from scratch inside the tap's user
            * gesture, which iOS always honors. */
           (function(sess, sId){
@@ -601,7 +601,7 @@
               vizDropCtx(jbCtx);
               try{ jbCtx.close(); }catch(e){}
               jbCtx = null; jbDest = null; jbMonitor = null;
-              say('iOS dozed off on the speakers â€” press Play once more.');
+              say('iOS dozed off on the speakers — press Play once more.');
               clubCmd('pause');
             }, 1200);
           })(jbSession, entry.id);
@@ -612,7 +612,7 @@
             var played = myCurrentPos();
             playingEntryId = null; jbSrc = null;
             if(played < thisDur - 2){
-              // died mid-song (audio session interruption) â€” resume once,
+              // died mid-song (audio session interruption) — resume once,
               // and if it keeps dying, pause honestly. Never eat the queue.
               myPos[thisId] = played;
               haltCount[thisId] = (haltCount[thisId] || 0) + 1;
@@ -622,7 +622,7 @@
                   if(c && c.id === thisId && CLUB.jb.playing && !playingEntryId){ startPlayback(c); }
                 }, 1500);
               } else {
-                say('The music keeps getting interrupted â€” press Play when you are ready.');
+                say('The music keeps getting interrupted — press Play when you are ready.');
                 clubCmd('pause');
               }
               return;
@@ -633,7 +633,7 @@
           jbSrc.start(0, offset);
         }catch(e){
           playingEntryId = null;
-          say("That file would not play â€” try an MP3, M4A, or WAV.");
+          say("That file would not play — try an MP3, M4A, or WAV.");
           clubCmd('remove', { id: entry.id, auto: true });
         }
       }
@@ -672,7 +672,7 @@
       function renderJukebox(){
         var jb = CLUB.jb; var cur = curEntry();
         $('jb-now').textContent = cur
-          ? ((jb.playing ? 'Now playing: ' : 'Paused: ') + cur.title + ' â€” brought by ' + cur.byName)
+          ? ((jb.playing ? 'Now playing: ' : 'Paused: ') + cur.title + ' — brought by ' + cur.byName)
           : 'Nothing playing yet.';
         $('jb-disc').hidden = !cur;
         $('jb-disc').className = (cur && jb.playing) ? 'spin' : '';
@@ -680,16 +680,16 @@
         $('jb-toggle').textContent = jb.playing ? 'Pause the music' : 'Play';
         $('jb-queue').innerHTML = jb.queue.map(function(e2){
           var here = present(e2.by);
-          var mark = e2.id === jb.curId ? (jb.playing ? ' â€” playing' : ' â€” paused') : (here ? '' : ' â€” owner stepped out');
+          var mark = e2.id === jb.curId ? (jb.playing ? ' — playing' : ' — paused') : (here ? '' : ' — owner stepped out');
           return '<li>' + esc(e2.title) + ' <span class="muted">(' + esc(e2.byName) + ')</span>' + mark +
             ' <button type="button" class="rowbtn small" data-jump="' + e2.id + '">Play this now</button>' +
             ' <button type="button" class="rowbtn small gray" data-drop="' + e2.id + '">Take it off</button></li>';
         }).join('');
       }
 
-      /* â”€â”€ the room â”€â”€ */
+      /* ── the room ── */
       async function joinRoom(roomKey, label, hotelCode){
-        status.textContent = 'Getting your room keyâ€¦';
+        status.textContent = 'Getting your room key…';
         let mint;
         try{
           const r = await fetch('/api/kade/lounge/token', { method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify({ room: roomKey, code: hotelCode || undefined }) });
@@ -703,19 +703,19 @@
         lkRoom = new LK.Room({ adaptiveStream: false, dynacast: false });
         wireRoomEvents();
         // Waking-the-room retry: a slept Railway service can take 10-25s to
-        // wake â€” eight patient tries (~30s), progress SAID each round; the
+        // wake — eight patient tries (~30s), progress SAID each round; the
         // server-side wake ping has usually finished the job before try 3.
         let attempt = 0;
         while(true){
           attempt++;
           try{
             status.textContent = attempt === 1
-              ? 'Connectingâ€¦'
-              : 'Waking the room up â€” still warming, try ' + attempt + ' of 8â€¦';
+              ? 'Connecting…'
+              : 'Waking the room up — still warming, try ' + attempt + ' of 8…';
             await lkRoom.connect(mint.url, mint.token);
             break;
           }catch(e){
-            if(attempt >= 8){ status.className='status err'; status.textContent='The room server never answered â€” it may need a look. Try once more in a minute.'; return; }
+            if(attempt >= 8){ status.className='status err'; status.textContent='The room server never answered — it may need a look. Try once more in a minute.'; return; }
             await new Promise(function(res){ setTimeout(res, 3500); });
           }
         }
@@ -724,7 +724,7 @@
           micTrack = await LK.createLocalAudioTrack(micConstraints());
           await lkRoom.localParticipant.publishTrack(micTrack);
         }catch(e){
-          say('Mic permission was refused â€” you can listen, but the room cannot hear you.');
+          say('Mic permission was refused — you can listen, but the room cannot hear you.');
         }
         $('pick').hidden = true;
         $('room').hidden = false;
@@ -761,7 +761,7 @@
             el.setAttribute('aria-hidden', 'true');
             el.dataset.club = nm || 'voice';
             if(nm === 'music'){
-              el.muted = true; el.volume = 0; // keepalive only â€” audible lane is the gain node
+              el.muted = true; el.volume = 0; // keepalive only — audible lane is the gain node
               if(!wireMusicGain(track)){ el.muted = false; try{ el.volume = musicVol; }catch(e){} }
             }
             document.body.appendChild(el);
@@ -858,7 +858,7 @@
         if(BOT && BOT.anchor === myIdentity){ sendBotState(); }
       }, 4000);
 
-      /* â”€â”€ BOT GUEST (anchored on the inviter's device) â”€â”€ */
+      /* ── BOT GUEST (anchored on the inviter's device) ── */
       let botCtx=null, botDest=null, botTrack=null;
       let TRANS = '';
       let capTimer=null, capRecs=[], capCtx=null, capGen=0;
@@ -869,7 +869,7 @@
       function showBotLine(name, line){
         $('bot-line').textContent = name + ': ' + line;
       }
-      /* the full public roster runs 200+ names â€” scrolling one giant select
+      /* the full public roster runs 200+ names — scrolling one giant select
        * is misery (her catch). A filter box narrows it live; the count line
        * tells a screen reader user how the net came back. */
       var BOT_ROSTER = [];
@@ -880,11 +880,11 @@
         var opts = hits.map(function(a){
           return '<option value="'+esc(a.id)+'" data-name="'+esc(a.name)+'">'+esc(a.name)+'</option>';
         }).join('');
-        $('bot-pick').innerHTML = '<option value="">Pick a companionâ€¦</option>' + opts;
+        $('bot-pick').innerHTML = '<option value="">Pick a companion…</option>' + opts;
         if(keep && hits.some(function(a){ return a.id === keep; })){ $('bot-pick').value = keep; }
         $('bot-count').textContent = q
           ? ('Showing ' + hits.length + ' of ' + BOT_ROSTER.length + ' companions.')
-          : (BOT_ROSTER.length ? (BOT_ROSTER.length + ' companions â€” type above to shorten the list.') : '');
+          : (BOT_ROSTER.length ? (BOT_ROSTER.length + ' companions — type above to shorten the list.') : '');
       }
       $('bot-filter').addEventListener('input', renderBotOptions);
       async function loadBotRoster(){
@@ -898,7 +898,7 @@
         }
       }
       $('bot-invite').addEventListener('click', async function(){
-        if(BOT){ say('One guest at a time â€” ask ' + BOT.name + ' to leave first.'); return; }
+        if(BOT){ say('One guest at a time — ask ' + BOT.name + ' to leave first.'); return; }
         var sel = $('bot-pick');
         var id = sel.value;
         if(!id){ say('Pick a companion first.'); return; }
@@ -911,7 +911,7 @@
           botTrack = botDest.stream.getAudioTracks()[0];
           await lkRoom.localParticipant.publishTrack(botTrack, { name: 'bot', source: LK.Track.Source.Unknown });
         }catch(e){
-          say('Could not set up the guest chair â€” try again.');
+          say('Could not set up the guest chair — try again.');
           botTeardownLocal();
           return;
         }
@@ -919,7 +919,7 @@
         TRANS = '';
         sendBotState();
         renderRoster();
-        say(nm + ' pulled up a chair. Press their talk button when you want them to speak â€” they listen along in between.');
+        say(nm + ' pulled up a chair. Press their talk button when you want them to speak — they listen along in between.');
         startCapture();
       });
       $('roster').addEventListener('click', function(ev){
@@ -964,7 +964,7 @@
             }catch(ttsErr){ /* text already landed on-screen for everyone */ }
           }
         }catch(e){
-          say((BOT ? BOT.name : 'The guest') + ' lost their train of thought â€” cue them again.');
+          say((BOT ? BOT.name : 'The guest') + ' lost their train of thought — cue them again.');
         }
         botBusy = false; renderRoster();
         sendData({ t:'bot-busy', busy: false });
@@ -991,8 +991,8 @@
        * their own track, so instead of blending everyone into one stream
        * and guessing, each 15-second cycle records EACH SEAT separately,
        * transcribes the ones that actually spoke (silent seats cost
-       * nothing), and hands the guest lines with real names on them â€”
-       * "Kade: ..., Amber: ..." â€” perfect attribution, zero guesswork.
+       * nothing), and hands the guest lines with real names on them —
+       * "Kade: ..., Amber: ..." — perfect attribution, zero guesswork.
        * Never the music, never the bot itself. Runs ONLY on the anchor's
        * device, ONLY while a guest is seated. */
       function startCapture(){
@@ -1114,7 +1114,7 @@
           if(c && c.state === 'suspended'){ try{ c.resume(); }catch(e){} }
         });
       }, true);
-      /* and a quiet heartbeat for contexts iOS dozed mid-session â€” resume
+      /* and a quiet heartbeat for contexts iOS dozed mid-session — resume
        * outside a gesture is a no-op on stubborn days, harmless always. */
       setInterval(function(){
         [listenCtx, jbCtx, botCtx, paCtx].forEach(function(c){
@@ -1122,7 +1122,7 @@
         });
       }, 15000);
 
-      /* â”€â”€ picker wiring â”€â”€ */
+      /* ── picker wiring ── */
       $('room-list').addEventListener('click', function(ev){
         const b = ev.target.closest('button[data-room]'); if(!b) return;
         const r = (cfg.rooms||[]).find(function(x){ return x.key === b.getAttribute('data-room'); });
@@ -1163,7 +1163,7 @@
           const r = await fetch('/api/kade/lounge/hotel', { method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify({ name: name, code: code }) });
           const j = await r.json();
           if(!r.ok) throw new Error(j.error || 'Could not open the room.');
-          status.textContent = 'The Hotel opened ' + j.name + '. Share the passcode with your people â€” walking you in now.';
+          status.textContent = 'The Hotel opened ' + j.name + '. Share the passcode with your people — walking you in now.';
           $('hotel-name').value = ''; $('hotel-newcode').value = '';
           joinRoom(j.key, j.name, code);
         }catch(e){ status.className='status err'; status.textContent = e.message; }
@@ -1190,7 +1190,7 @@
         cleanupRoom();
       });
 
-      /* â”€â”€ jukebox wiring â”€â”€ */
+      /* ── jukebox wiring ── */
       $('jb-file').addEventListener('change', function(){
         var has = !!$('jb-file').files.length;
         $('jb-cutin').hidden = !has;
@@ -1199,7 +1199,7 @@
       function addTrack(interrupt){
         var f = $('jb-file').files[0];
         if(!f || !lkRoom) return;
-        if(f.size > 60000000){ say('That file is too big â€” keep songs under about sixty megabytes.'); return; }
+        if(f.size > 60000000){ say('That file is too big — keep songs under about sixty megabytes.'); return; }
         var id = 'e' + Math.random().toString(36).slice(2, 9);
         var title = (f.name || 'a song').replace(/.[a-z0-9]{2,5}$/i, '').slice(0, 60);
         var entry = { id: id, title: title, by: myIdentity, byName: myName };
@@ -1212,7 +1212,7 @@
       }
       /* headphones clarity mode (July 24, her point: "we might not
          TECHnically need iphone noise reduction unless they were using the
-         speaker... The idea is audio clarity anyway.") â€” raw mic on request,
+         speaker... The idea is audio clarity anyway.") — raw mic on request,
          speaker-friendly processing stays the default because ONE
          speakerphone without echo cancel wrecks the room for everybody. */
       var micClear = false;
@@ -1234,7 +1234,7 @@
           await lkRoom.localParticipant.publishTrack(micTrack);
           if(micTrack.mediaStreamTrack){ recWire(new MediaStream([micTrack.mediaStreamTrack])); }
           if(micMuted){ try{ await lkRoom.localParticipant.setMicrophoneEnabled(false); }catch(e){} }
-          say(micClear ? 'Mic is raw now â€” full clarity, headphones etiquette.' : 'Mic is speaker-friendly now.');
+          say(micClear ? 'Mic is raw now — full clarity, headphones etiquette.' : 'Mic is speaker-friendly now.');
         }catch(e){ say('Could not switch the mic mode.'); }
       });
 
@@ -1280,7 +1280,7 @@
       $('jb-queue-add').addEventListener('click', function(){ addTrack(false); });
 
       /* the link lane: a pasted link becomes ordinary jukebox bytes (the
-       * server does the pulling) â€” after that it's a normal entry: queue
+       * server does the pulling) — after that it's a normal entry: queue
        * it, cut in, radio-fight over it. When YouTube's flickering gate is
        * closed (walled:true from the server), the KNOCKER takes the link:
        * quiet retries every 3 minutes for up to an hour, a holler when it
@@ -1306,7 +1306,7 @@
       async function fetchLink(url, interrupt, fromKnock){
         if(linkBusy){ return; }
         linkBusy = true;
-        if(!fromKnock){ say('Fetching that link â€” give it a few secondsâ€¦'); }
+        if(!fromKnock){ say('Fetching that link — give it a few seconds…'); }
         try{
           const r = await fetch('/api/kade/lounge/fetch-track', { method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify({ url: url }) });
           if(!r.ok){
@@ -1315,10 +1315,10 @@
               if(!KNOCK){ KNOCK = { url: url, interrupt: interrupt, tries: 0, timer: null }; }
               if(KNOCK.tries >= 20){
                 knockStop(true);
-                say("YouTube never opened up for that one â€” try it fresh later.");
+                say("YouTube never opened up for that one — try it fresh later.");
               } else {
-                if(!fromKnock){ say("YouTube's gate is closed â€” I'll keep knocking every few minutes and holler when it opens."); }
-                else { say('Still closed â€” knock ' + KNOCK.tries + '. I keep trying.'); }
+                if(!fromKnock){ say("YouTube's gate is closed — I'll keep knocking every few minutes and holler when it opens."); }
+                else { say('Still closed — knock ' + KNOCK.tries + '. I keep trying.'); }
                 knockLater();
               }
               linkBusy = false;
@@ -1330,13 +1330,13 @@
           try{ var th = r.headers.get('x-kade-title'); if(th){ title = decodeURIComponent(th); } }catch(e){}
           var bytes = await r.arrayBuffer();
           if(!bytes.byteLength){ throw new Error('That audio came back empty.'); }
-          if(bytes.byteLength > 60000000){ throw new Error('That file is too big â€” 60MB tops.'); }
+          if(bytes.byteLength > 60000000){ throw new Error('That file is too big — 60MB tops.'); }
           var id = 'e' + Math.random().toString(36).slice(2, 9);
           myFiles[id] = new Blob([bytes], { type: 'audio/mp4' });
           var entry = { id: id, title: title.slice(0, 60), by: myIdentity, byName: myName };
           if(iAmAuthority()){ applyAdd(entry, interrupt, myName); }
           else { sendData({ t:'add', entry: entry, interrupt: interrupt, fromName: myName }); }
-          if(fromKnock){ paSay('That link finally cleared the gate â€” ' + entry.title + ' just landed.', 'booth'); }
+          if(fromKnock){ paSay('That link finally cleared the gate — ' + entry.title + ' just landed.', 'booth'); }
           knockStop(true);
         }catch(e){ say(e.message || 'That link would not fetch.'); }
         linkBusy = false;

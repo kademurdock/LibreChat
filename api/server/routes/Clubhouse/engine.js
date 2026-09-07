@@ -22,9 +22,9 @@
   var earsOn=false, capTimer=null, capRecs=[], capCtx=null, capGen=0;
   function isDj(id){ return typeof id === 'string' && id.slice(-3) === '-dj'; }
 
-  /* â”€â”€ the tape deck (July 24 â€” "record this conversation") â”€â”€
+  /* ── the tape deck (July 24 — "record this conversation") ──
    * The engine is the one seat that hears EVERYTHING: every remote track
-   * (voices, other jukeboxes, bots â€” the app's own mic arrives as a remote
+   * (voices, other jukeboxes, bots — the app's own mic arrives as a remote
    * track too, since the engine is its own participant) plus its own local
    * music and bot output. Mix them into one MediaRecorder; hand the file
    * back to the app as chunked base64 when the tape stops. */
@@ -74,7 +74,7 @@
   }
 
   /* KEEPALIVE (round 5): a long-IDLE context is what iOS wedges in the
-   * first place â€” a running constant-silence source keeps the audio unit
+   * first place — a running constant-silence source keeps the audio unit
    * warm through any pause. Plus a 15s resume heartbeat; the engine page
    * is gesture-exempt, so resume() is always allowed here. */
   function keepWarm(ctx){
@@ -96,14 +96,14 @@
     if(mCtx.state !== 'running'){ try{ await mCtx.resume(); }catch(e){} }
     if(!mPub){
       /* silence() stops the track on unpublish, and a stopped destination
-       * track is dead forever â€” republishing it is silent "playing". Fresh
+       * track is dead forever — republishing it is silent "playing". Fresh
        * destination node every republish (her pause-then-cut-in catch). */
       mDest = mCtx.createMediaStreamDestination();
       mTrack = mDest.stream.getAudioTracks()[0];
       recWire(mDest.stream);
       await room.localParticipant.publishTrack(mTrack, {
         dtx: false, red: false,
-        /* round 5: stereo opus must be NEGOTIATED â€” forceStereo writes it
+        /* round 5: stereo opus must be NEGOTIATED — forceStereo writes it
          * into the SDP so the encoder actually sends two channels. */
         forceStereo: true,
         audioPreset: LK.AudioPresets.musicHighQualityStereo,
@@ -123,7 +123,7 @@
         if(mCtx.state !== 'running'){ try{ await mCtx.resume(); }catch(e){} }
         var buf = buffers[id];
         if(!buf && !staged[id]){
-          // the app has not fed this song's bytes yet â€” ask and wait
+          // the app has not fed this song's bytes yet — ask and wait
           post({t:'need', id: id});
           return;
         }
@@ -160,7 +160,7 @@
           var played = mPos();
           mSrc = null;
           if(played < buf.duration - 2){
-            // died mid-song â€” iOS grabbed the audio session (VoiceOver, a
+            // died mid-song — iOS grabbed the audio session (VoiceOver, a
             // call, the works). NOT the end of the song. Her live catch:
             // "when I started talking... it said the queue was finished."
             post({t:'halted', id: id, pos: played});
@@ -173,7 +173,7 @@
           setTimeout(function(){
             if(sess !== mSession || mId !== sId || !mCtx || !mSrc) return;
             if(mCtx.state === 'running' && (mCtx.currentTime - mStartT) > 0.15) return;
-            // the clock never moved â€” the context came back from its nap dead
+            // the clock never moved — the context came back from its nap dead
             hardResetAudio();
             if(sAttempt < 1){ window.KE.loadPlay(sId, sOff, sAttempt + 1); }
             else { post({t:'playfail', id: sId, why: 'publish'}); }
@@ -207,7 +207,7 @@
         if(!bCtx){ bCtx = new AC(); keepWarm(bCtx); }
         if(bCtx.state !== 'running'){ try{ await bCtx.resume(); }catch(e){} }
         if(!bPub){
-          // fresh destination every republish â€” botOff() stops the old
+          // fresh destination every republish — botOff() stops the old
           // track for good (same dead-track family as the jukebox fix).
           bDest = bCtx.createMediaStreamDestination();
           bTrack = bDest.stream.getAudioTracks()[0];
@@ -282,7 +282,7 @@
         };
         recT0 = Date.now();
         recorder.start(1000);
-        // the tape runs out at two hours â€” memory honesty, announced app-side
+        // the tape runs out at two hours — memory honesty, announced app-side
         recCap = setTimeout(recFinish, 7200000);
         post({t:'recon'});
       }catch(e){
@@ -302,9 +302,9 @@
     capRecs = [];
     if(capCtx){ try{ capCtx.close(); }catch(e){} capCtx = null; }
   }
-  /* ears PER SEAT (round 6 â€” "Do the bots also have speaker diorisation?"):
+  /* ears PER SEAT (round 6 — "Do the bots also have speaker diorisation?"):
    * every person is already their own track, so each seat records
-   * separately and the transcript carries real names â€” no blending, no
+   * separately and the transcript carries real names — no blending, no
    * guessing. Silent seats never get sent (pennies saved). The native
    * user's own mic arrives here as a remote track like everyone else's. */
   function capCycle(){
