@@ -1943,7 +1943,7 @@ class AgentClient extends BaseClient {
         if (isRecursion && !this.contentParts.some((p) => p?.type === ContentTypes.TEXT && p.text?.trim())) {
           this.contentParts.push({
             type: ContentTypes.TEXT,
-            text: "I got stuck in a loop checking on that and had to stop. Nothing's lost — whatever I kicked off is still running in the background. Ask me again in a minute and I'll pick it up.",
+            text: "I hit a limit while using tools and couldn't finish this reply. I haven't confirmed the final status of that work. Ask me to check its status before trying it again.",
           });
         }
         this.contentParts.push({

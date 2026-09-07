@@ -138,8 +138,8 @@ class KadeResearch extends Tool {
     this._checks += 1;
     if (this._checks > 1) {
       return (
-        "STOP. You already checked this turn and the run is still working — checking again will not make it faster. " +
-        "Tell the user in one breath that it's still running and their phone gets a tap when it's done, then END YOUR REPLY with real words. " +
+        "STOP. You already attempted a status check this turn. Use the result of that check if it succeeded; if it failed, say that you could not confirm the status. " +
+        "Do not assume the run is still working or promise a notification. END YOUR REPLY with real words. " +
         "Do not call check again this turn."
       );
     }
