@@ -24,27 +24,94 @@ const { logger } = require('@librechat/data-schemas');
 const HELP_TOPICS = [
   { key: 'home', path: '/help', label: 'Help home — overview of every section' },
   { key: 'starthere', path: '/help/start-here', label: 'Start Here — brand new to AI in general' },
-  { key: 'quickstart', path: '/help/quickstart', label: 'Your First Five Minutes — first-time orientation' },
+  {
+    key: 'quickstart',
+    path: '/help/quickstart',
+    label: 'Your First Five Minutes — first-time orientation',
+  },
   { key: 'faq', path: '/help/faq', label: 'Questions & Answers — general FAQ' },
-  { key: 'whatsnew', path: '/help/whats-new', label: "What's New — recent features and changes, dated" },
-  { key: 'voice', path: '/help/voice', label: 'Talking & Listening — voice input/output, in-app calls basics' },
-  { key: 'phone', path: '/help/phone', label: 'Phone Calls — the real phone number, calls FOR you, deep think, family check-in calls' },
-  { key: 'describe', path: '/help/describe', label: 'Describe My World — photo/document/video description' },
+  {
+    key: 'whatsnew',
+    path: '/help/whats-new',
+    label: "What's New — recent features and changes, dated",
+  },
+  {
+    key: 'voice',
+    path: '/help/voice',
+    label: 'Talking & Listening — voice input/output, in-app calls basics',
+  },
+  {
+    key: 'phone',
+    path: '/help/phone',
+    label: 'Phone Calls — the real phone number, calls FOR you, deep think, family check-in calls',
+  },
+  {
+    key: 'describe',
+    path: '/help/describe',
+    label: 'Describe My World — photo/document/video description',
+  },
   { key: 'characters', path: '/help/characters', label: 'Characters & the Marketplace' },
   { key: 'rooms', path: '/help/debate-room', label: 'The Debate Room' },
   { key: 'games', path: '/help/games', label: 'The Game Parlor' },
   { key: 'build', path: '/help/build', label: 'Build Your Own Character' },
-  { key: 'memory', path: '/help/memory', label: 'What It Remembers — memory cards, forgetting, consolidation' },
+  {
+    key: 'memory',
+    path: '/help/memory',
+    label: 'What It Remembers — memory cards, forgetting, consolidation',
+  },
   { key: 'images', path: '/help/images', label: 'Making Pictures' },
   { key: 'audio', path: '/help/audio', label: 'Making Audio & Voices' },
   { key: 'temporary', path: '/help/temporary', label: 'Starting Over & Private/Temporary Chats' },
-  { key: 'cheatsheet', path: '/help/cheatsheet', label: 'The Cheat Sheet — quick command reference' },
+  {
+    key: 'cheatsheet',
+    path: '/help/cheatsheet',
+    label: 'The Cheat Sheet — quick command reference',
+  },
   { key: 'tokens', path: '/help/tokens', label: 'What Are Tokens?' },
   { key: 'costs', path: '/help/costs', label: 'What This Costs Kade' },
-  { key: 'donate', path: '/help/donate', label: 'Feed the Server — balance, usage, donating' },
+  { key: 'donate', path: '/help/donate', label: 'Usage & Balance — credit, usage and top-ups' },
   { key: 'accessibility', path: '/help/accessibility', label: 'Accessibility Tips' },
-  { key: 'troubleshooting', path: '/help/troubleshooting', label: 'When Something Breaks / how to report a bug' },
-  { key: 'notifications', path: '/notifications', label: 'Notifications & Reminders — push setup, reminder delivery choices, agent check-ins' },
+  {
+    key: 'troubleshooting',
+    path: '/help/troubleshooting',
+    label: 'When Something Breaks / how to report a bug',
+  },
+  {
+    key: 'iphone',
+    path: '/help/iphone',
+    label: 'The iPhone app \u2014 installation and current controls',
+  },
+  {
+    key: 'android',
+    path: '/help/android',
+    label: 'The Android app \u2014 installation and updates',
+  },
+  {
+    key: 'createacharacter',
+    path: '/help/create-a-character',
+    label: 'Create a character with guided questions',
+  },
+  { key: 'privacy', path: '/help/privacy', label: 'Privacy, saved data and administrator access' },
+  {
+    key: 'work',
+    path: '/help/agent-work',
+    label: 'Check a saved reply, interrupted request or coding job',
+  },
+  {
+    key: 'projects',
+    path: '/help/projects',
+    label: 'Project instructions, text documents and versions',
+  },
+  {
+    key: 'clubhouse',
+    path: '/help/clubhouse',
+    label: 'Live voice rooms, shared music and companion guests',
+  },
+  {
+    key: 'notifications',
+    path: '/notifications',
+    label: 'Notifications & Reminders — push setup, reminder delivery choices, agent check-ins',
+  },
 ];
 const TOPIC_KEYS = HELP_TOPICS.map((t) => t.key);
 const TOPIC_PATHS = Object.fromEntries(HELP_TOPICS.map((t) => [t.key, t.path]));
@@ -57,13 +124,15 @@ const kadeHelpJsonSchema = {
       enum: TOPIC_KEYS,
       description:
         'Which help page to pull — pick the closest match to what the user is actually asking. If genuinely unsure, use "faq" or "home". ' +
-        'Topics: ' + HELP_TOPICS.map((t) => `${t.key} = ${t.label}`).join('; ') + '.',
+        'Topics: ' +
+        HELP_TOPICS.map((t) => `${t.key} = ${t.label}`).join('; ') +
+        '.',
     },
   },
   required: ['topic'],
 };
 
-const HELP_BASE = (process.env.HELP_SITE_URL || 'https://inworld-tts-proxy-production.up.railway.app').replace(/\/$/, '');
+const HELP_BASE = (process.env.HELP_SITE_URL || 'https://kademurdock.com').replace(/\/$/, '');
 // "notifications" lives on the main site itself (a live settings page), not
 // on the help proxy — its TOPIC_PATHS entry ('/notifications') gets the
 // CHAT base instead of HELP_BASE, handled in _call() below.
@@ -88,13 +157,24 @@ function htmlToSpeechText(html) {
   s = s.replace(/<br\s*\/?>/gi, '\n');
   s = s.replace(/<[^>]+>/g, '');
   s = s
-    .replace(/&mdash;/g, '—').replace(/&ndash;/g, '–')
-    .replace(/&rsquo;|&#0?39;|&apos;/g, "'").replace(/&lsquo;/g, "'")
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–')
+    .replace(/&rsquo;|&#0?39;|&apos;/g, "'")
+    .replace(/&lsquo;/g, "'")
     .replace(/&ldquo;|&rdquo;/g, '"')
-    .replace(/&hellip;/g, '...').replace(/&rarr;/g, '->').replace(/&larr;/g, '<-')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ');
-  s = s.replace(/[ \t]+/g, ' ').replace(/\n[ \t]+/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    .replace(/&hellip;/g, '...')
+    .replace(/&rarr;/g, '->')
+    .replace(/&larr;/g, '<-')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&nbsp;/g, ' ');
+  s = s
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   return s;
 }
 
@@ -134,7 +214,10 @@ class KadeHelp extends Tool {
       const r = await axios.get(url, {
         timeout: 15000,
         responseType: 'text',
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; KadeAI-Help/1.0)' },
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        },
         maxRedirects: 3,
       });
       const text = htmlToSpeechText(r.data).slice(0, 8000);
