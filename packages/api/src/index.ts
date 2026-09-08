@@ -88,3 +88,4 @@ export { createHarnessRouter } from './tasks/harness';
 export { createMemoryControlsRouter } from './agents/memoryControls';
 export { createProjectContextRouter, loadProjectWork } from './projects/context';
 export { runtimeCapabilities } from './agents/capabilities';
+export { publicHelp } from './web/help';

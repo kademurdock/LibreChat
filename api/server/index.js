@@ -12,6 +12,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   isEnabled,
+  publicHelp,
   apiNotFound,
   createMetrics,
   ErrorController,
@@ -132,7 +133,9 @@ const startServer = async () => {
    * routes/kadeClock.js on schedule). Unset/anything else = the app schedules
    * itself exactly as before — that's the instant revert. */
   if (process.env.KADE_CLOCK_EXTERNAL === '1') {
-    logger.info('[kadeClock] KADE_CLOCK_EXTERNAL=1 — in-process timers OFF; the bridge clock owns the schedule.');
+    logger.info(
+      '[kadeClock] KADE_CLOCK_EXTERNAL=1 — in-process timers OFF; the bridge clock owns the schedule.',
+    );
     /* Phase 2 (App Sleeping): while awake, keep the bridge told when the next
      * reminder is due so it only wakes the app when something needs delivering. */
     startDueTimeReporter();
@@ -382,11 +385,7 @@ const startServer = async () => {
   app.get('/spotter', routes.kadeSpotter.page);
   app.get('/transcribe', routes.kadeTranscribe.page);
   app.get('/calls', routes.kadeCalls.page);
-  /** kademurdock.com/help — memorable front door for the help center, which is
-   * served from the inworld proxy. Path + query carry through. (July 3 2026) */
-  app.get(['/help', '/help/*path'], (req, res) =>
-    res.redirect(302, 'https://inworld-tts-proxy-production.up.railway.app' + req.originalUrl),
-  );
+  app.get(['/help', '/help/*path'], publicHelp);
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
