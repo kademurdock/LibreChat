@@ -81,6 +81,8 @@ export type * from './flow/types';
 export type * from './types';
 export { runHangout, hangoutView } from './reverie/hangouts';
 export { refreshReverieCast } from './reverie/cast';
+export { REVERIE_OUTDOORS, reverieSenses, outdoorEncounter } from './reverie/outdoors';
+export { residentReply } from './reverie/conversation';
 export { getTaskReceipts, taskFingerprint, validTaskId, TaskConflict } from './tasks/receipts';
 export { taskStatus } from './tasks/status';
 export { createTaskRouter } from './tasks/router';

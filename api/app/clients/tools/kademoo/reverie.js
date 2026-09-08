@@ -17,7 +17,7 @@ const overhear = require('./overhear');
 const { STRAYS } = require('./strays');
 const { driftTo: strayDrift } = require('./strays');
 
-const REVERIE_SEED_VERSION = 5;
+const REVERIE_SEED_VERSION = 6;
 
 /* ── THE WARDS ─────────────────────────────────────────────────────────────
  * District props carry the law tables (bible design: the engine never
@@ -1114,6 +1114,7 @@ async function carveReverie() {
     );
     if (res.upsertedCount) newRooms++;
   }
+  await require('./life/outdoors').seed();
   for (const i of CITY_ITEMS) {
     await MooItem.updateOne(
       { itemId: i.itemId },

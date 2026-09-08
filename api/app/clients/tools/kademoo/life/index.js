@@ -38,6 +38,8 @@ require('./family');
 require('./vehicles');
 require('./activities');
 require('./hangouts');
+require('./outdoors');
+require('./conversation');
 require('./drama');
 require('./help');
 const view = require('./view');

@@ -64,6 +64,7 @@ async function describeRoom(ctx) {
     smell: room.props && room.props.smell,
     listen: room.props && room.props.listenLine,
     outdoor: !!(room.props && room.props.outdoor),
+    sensory: require('@librechat/api').reverieSenses(room, wx.kind, worldClock().dark),
     hangout: require('./hangouts').view(room, ch.userId, ctx.isWizard),
     weather: wx.kind,
     home: home ? { owner: home.owner, ownerName: home.ownerName, mine: home.owner === ch.userId || (home.tenants || []).includes(ch.userId) } : null,
@@ -100,7 +101,7 @@ function personCmds(ctx, p, kind) {
   const base = [f('Look at', 'look'), f('Chat', 'chat'), f('Joke', 'joke'), f('Compliment', 'compliment'), f('Hug', 'hug'), f('Comfort', 'comfort')];
   if (kind === 'citizen') {
     const id = String(p.userId).replace(/^npc:/, '');
-    const out = [f('Talk to', 'talk to'), ...base];
+    const out = [{ label: 'Say hello', cmd: `converse ${p.name}: Hello! How is your day going?` }, { label: 'Ask about here', cmd: `converse ${p.name}: What do you like doing around here?` }, f('Talk to', 'talk to'), ...base];
     if (!require('./relationships').NO_ROMANCE.has(id)) out.push(f('Flirt', 'flirt'), f('Date', 'date'));
     out.push(f('Argue', 'argue'), f('Shove', 'shove'));
     if (id === 'littleray') out.push({ label: 'See Ray', cmd: 'corner' });
@@ -164,6 +165,13 @@ async function decorate(ctx, result) {
   result.sounds = result.sounds || [];
   result.mode = result.mode || (ctx.life && ctx.life.wiz ? 'create' : 'play');
   ctx._room = null; /* the verb may have moved us — re-read */
+  if (result.ok && result.kinds.includes('move')) {
+    const room = await ctx.room();
+    if (room) {
+      const footstep = require('@librechat/api').reverieSenses(room, reverie.weatherNow().kind).footstep;
+      result.kinds = result.kinds.map(k => k === 'move' ? footstep : k);
+    }
+  }
 
   if (result.mode === 'play') {
     if (result.wantRoom || result.room) {

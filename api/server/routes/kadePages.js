@@ -3177,7 +3177,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   </div>
 </main>
 <footer class="muted">Make yourself at home. &middot; <a href="/help/world">how Reverie works</a></footer>
-<script src="/assets/reverie/room.js?v=136b"></script>
+<script src="/assets/reverie/room.js?v=153"></script>
 <script>
 (function(){
   'use strict';
@@ -3245,14 +3245,28 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     var url = fileFor(k);
     if (url) return playUrl(url);
     var al = ALIAS[k]; if (al) { url = fileFor(al); if (url) return playUrl(url); k = al; }
+    if (k.indexOf('move.step.') === 0) return surfaceSteps(k);
     var fn = SYNTH[k] || (k.indexOf('social.') === 0 ? SYNTH.emote : k.indexOf('life.') === 0 ? SYNTH.emote : k.indexOf('transit.') === 0 ? SYNTH.move : null);
     if (fn) fn();
   }
   function playKinds(kinds){ (kinds || []).slice(0, 8).forEach(function(k, i){ setTimeout(function(){ playKind(k); }, i * 160); }); }
+  function surfaceSteps(kind){
+    var ctx = ac(); if (!ctx) return;
+    var soft = /carpet|grass|mud/.test(kind), metal = /metal/.test(kind), wet = /wet|mud/.test(kind);
+    for (var i = 0; i < 2; i++) {
+      var length = Math.floor(ctx.sampleRate * (wet ? .22 : .13)), buffer = ctx.createBuffer(1, length, ctx.sampleRate), data = buffer.getChannelData(0);
+      for (var j = 0; j < length; j++) data[j] = (Math.random() * 2 - 1) * Math.exp(-j / (length * .2));
+      var source = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
+      source.buffer = buffer; filter.type = 'lowpass'; filter.frequency.value = soft ? 480 : metal ? 3400 : 1500;
+      gain.gain.value = settings.sfxVol * (soft ? .12 : .18);
+      source.connect(filter); filter.connect(gain); gain.connect(ctx.destination); source.start(ctx.currentTime + i * .38);
+      source.onended = (function(s, f, g){ return function(){ s.disconnect(); f.disconnect(); g.disconnect(); }; })(source, filter, gain);
+    }
+  }
 
   /* ambience: bed (district) + tone (room), crossfaded */
   var amb = { bedUrl: null, bed: null, toneUrl: null, tone: null, drone: null };
-  function fadeTo(a, target, ms, done){ if (!a) { if (done) done(); return; } var start = a.volume, steps = 20, i = 0; var iv = setInterval(function(){ i++; a.volume = Math.max(0, Math.min(1, start + (target - start) * (i / steps))); if (i >= steps) { clearInterval(iv); if (done) done(); } }, ms / steps); }
+  function fadeTo(a, target, ms, done){ if (!a) { if (done) done(); return; } clearInterval(a._fade); var start = a.volume, steps = 20, i = 0; a._fade = setInterval(function(){ i++; a.volume = Math.max(0, Math.min(1, start + (target - start) * (i / steps))); if (i >= steps) { clearInterval(a._fade); if (done) done(); } }, ms / steps); }
   function startLoop(url, vol){ var a = new Audio(url); a.loop = true; a.volume = 0; var p = a.play(); if (p && p.catch) p.catch(function(){}); fadeTo(a, vol, 1400); return a; }
   function stopLoop(a){ if (!a) return; fadeTo(a, 0, 1000, function(){ try { a.pause(); } catch (e) {} }); }
   function drone(on){
@@ -3264,13 +3278,21 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     g.gain.linearRampToValueAtTime(.02 * settings.ambVol, ctx.currentTime + 1.5); amb.drone = { o1: o1, o2: o2, g: g };
   }
   function ambienceFor(roomId, district){
-    if (!settings.amb) { stopLoop(amb.bed); stopLoop(amb.tone); amb.bed = amb.tone = null; amb.bedUrl = amb.toneUrl = null; drone(false); return; }
-    var bedUrl = MANIFEST.district[district] || null, toneUrl = MANIFEST.room[roomId] || null;
+    if (!unlocked) return;
+    if (!settings.amb || document.hidden) { stopLoop(amb.bed); stopLoop(amb.tone); amb.bed = amb.tone = null; amb.bedUrl = amb.toneUrl = null; drone(false); return; }
+    var profile = lastRoom && lastRoom.roomId === roomId && lastRoom.sensory;
+    var specific = profile && MANIFEST.event[profile.ambience];
+    var bedUrl = specific || MANIFEST.district[district] || null, toneUrl = MANIFEST.room[roomId] || null;
+    if (toneUrl === bedUrl) toneUrl = null;
+    amb.indoor = lastRoom && !lastRoom.outdoor && !specific;
     if (bedUrl !== amb.bedUrl) { stopLoop(amb.bed); amb.bed = bedUrl ? startLoop(bedUrl, settings.ambVol) : null; amb.bedUrl = bedUrl; }
     if (toneUrl !== amb.toneUrl) { stopLoop(amb.tone); amb.tone = toneUrl ? startLoop(toneUrl, settings.ambVol * .6) : null; amb.toneUrl = toneUrl; }
-    drone(!bedUrl && !toneUrl);
+    if (!bedUrl && !toneUrl && !amb.drone) drone(true);
+    else if ((bedUrl || toneUrl) && amb.drone) drone(false);
+    applyVolumes();
   }
-  function applyVolumes(){ if (amb.bed) amb.bed.volume = settings.ambVol; if (amb.tone) amb.tone.volume = settings.ambVol * .6; if (amb.drone) { try { amb.drone.g.gain.value = .02 * settings.ambVol; } catch (e) {} } }
+  function applyVolumes(){ if (amb.bed) fadeTo(amb.bed, settings.ambVol * (amb.indoor ? .18 : 1), 250); if (amb.tone) fadeTo(amb.tone, settings.ambVol * .6, 250); if (amb.drone) { try { amb.drone.g.gain.value = .02 * settings.ambVol; } catch (e) {} } }
+  document.addEventListener('visibilitychange', function(){ if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); });
   if (window.ReverieRoom) window.ReverieRoom.init({ send: send, compose: function(prefix, id){ if (input.value.trim()) { addLine('Your command box already has a draft. Send or clear it first.', 'system'); input.focus(); return; } input.value=prefix; composeHangoutId=id; input.focus(); } });
   var unlocked = false;
   function unlock(){ if (unlocked) return; unlocked = true; ac(); if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); }
@@ -3397,7 +3419,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     var box = $('choicesBox'), list = $('choices'), hadFocus = list.contains(document.activeElement), changed = list.dataset.step !== (step || '');
     list.dataset.step = step || '';
     box.classList.toggle('hidden', !choices || !choices.length);
-    syncButtons(list, (choices || []).map(function(c){ return Object.assign({ key: c.cmd }, c); }), 'choice', function(b, c){ b.className = 'choice'; b.textContent = c.label; b.onclick = function(){ send(c.cmd); }; });
+    syncButtons(list, (choices || []).map(function(c){ return Object.assign({ key: c.cmd }, c); }), 'choice', function(b, c){ b.className = 'choice'; b.textContent = c.label; b.onclick = function(){ if (c.compose) { if (!input.value.trim()) input.value = c.cmd; input.focus(); } else send(c.cmd); }; });
     if (hadFocus && changed) (list.querySelector('button') || input).focus();
     else if (freeText && (!choices || !choices.length)) input.focus();
   }

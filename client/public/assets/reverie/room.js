@@ -77,7 +77,46 @@
     var svg =
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 440" focusable="false" aria-hidden="true">';
     svg += rect(0, 0, 800, 440, dark ? '#253c49' : '#d4e5df');
-    if (outdoor) {
+    if (outdoor && room.sensory && room.sensory.nature) {
+      svg +=
+        '<path d="M0 182Q170 93 365 188T800 158V440H0Z" fill="' +
+        (dark ? '#263f3c' : '#769778') +
+        '"/>';
+      svg +=
+        '<path d="M0 275Q300 201 800 263V440H0Z" fill="' + (dark ? '#304944' : '#8aa16f') + '"/>';
+      for (var tree = 0; tree < 9; tree++) {
+        var tx = tree * 102 + 12,
+          ty = 118 + (tree % 3) * 24;
+        svg +=
+          rect(tx, ty, 14, 173, '#675647', 3) +
+          circle(tx + 7, ty, 58, dark ? '#23463e' : ['#638865', '#81945e', '#497563'][tree % 3]);
+      }
+      svg +=
+        '<path d="M282 440Q358 365 417 295Q452 258 416 234L448 226Q510 270 470 319L407 440Z" fill="#baa17c"/>';
+      if (room.sensory.water) {
+        svg +=
+          '<path d="M0 296Q202 240 389 321T800 320V410Q570 431 350 372T0 359Z" fill="#65979b"/><path d="M20 325Q184 284 357 339M442 367Q582 395 774 356" stroke="#bfd1bd" stroke-width="4" fill="none"/>';
+        for (var stone = 0; stone < 7; stone++)
+          svg +=
+            '<ellipse cx="' +
+            stone * 123 +
+            '" cy="' +
+            (324 + (stone % 2) * 44) +
+            '" rx="25" ry="12" fill="#858e80"/>';
+      }
+      if (room.roomId === 'alder_camp')
+        svg +=
+          '<ellipse cx="330" cy="338" rx="66" ry="25" fill="#687267"/><path d="M289 340L367 329M294 328L360 346" stroke="#67503e" stroke-width="12" stroke-linecap="round"/><path d="M311 336Q286 310 321 283Q315 309 342 292Q366 321 343 337Z" fill="#d68a4c"/><path d="M324 335Q310 319 332 306Q350 326 337 337Z" fill="#f4c46e"/>';
+      if (room.roomId === 'alder_hide')
+        svg +=
+          rect(61, 209, 183, 110, '#9c7959', 5) +
+          '<path d="M43 213L148 155L264 213Z" fill="#586b55"/>' +
+          rect(84, 231, 135, 26, '#354b43', 2);
+      svg +=
+        circle(686, 316, 9, '#b8aa8c') +
+        '<ellipse cx="693" cy="297" rx="4" ry="15" fill="#b8aa8c"/>' +
+        '<ellipse cx="682" cy="298" rx="4" ry="14" fill="#b8aa8c"/>';
+    } else if (outdoor) {
       svg += circle(657, 62, 26, dark ? '#f3e7c4' : '#ffe3a4') + rect(0, 230, 800, 210, '#84967a');
       svg += '<path d="M0 361L800 285V440H0Z" fill="#c7b89c"/>';
       for (var i = 0; i < 4; i++)
@@ -146,11 +185,12 @@
           rect(117, 246, 9, 45, '#bd7f60');
       }
     }
-    svg +=
-      '<ellipse cx="316" cy="353" rx="100" ry="27" fill="#302923" opacity=".15"/>' +
-      rect(262, 323, 9, 54, '#705644') +
-      rect(353, 323, 9, 54, '#705644') +
-      '<ellipse cx="313" cy="317" rx="82" ry="33" fill="#d6b483"/>';
+    if (!(room.sensory && room.sensory.nature) || room.hangout)
+      svg +=
+        '<ellipse cx="316" cy="353" rx="100" ry="27" fill="#302923" opacity=".15"/>' +
+        rect(262, 323, 9, 54, '#705644') +
+        rect(353, 323, 9, 54, '#705644') +
+        '<ellipse cx="313" cy="317" rx="82" ry="33" fill="#d6b483"/>';
     if (room.hangout)
       svg +=
         circle(304, 311, 15, '#eee2cb') +

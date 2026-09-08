@@ -101,7 +101,7 @@ act({
     ctx.need({ fun: 8, clean: -4 }); ctx.learn('cooking', good ? 6 : 3);
     await emit(ctx.ch.roomId, ctx.userId, ctx.ch.name, 'emote', `${ctx.ch.name} cooks. ${good ? 'The room starts smelling like a reason to stay.' : 'Something is a little burnt.'}`);
     ctx.say(`You cook ${r.name} on ${stove}. ${good ? r.line : 'You let it go a minute long. Edible, and honest about it.'} ${portions > 1 ? `${portions} portions, ` : ''}In your pockets — "eat ${r.key}", or "gift ${r.key} to <somebody>".`);
-    return ctx.ok({ kinds: [...ctx.kinds, 'cook'] });
+    return ctx.ok({ kinds: [...ctx.kinds, 'work.diner.grill.loop'] });
   },
   buttons: async (ctx) => (await stoveHere(ctx)) ? [{ label: 'Cook', cmd: 'recipes', group: 'here' }] : [],
 });
