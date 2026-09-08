@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 type Theme = 'cookout' | 'records' | 'stories';
 interface Guest {
@@ -21,6 +21,7 @@ interface Gathering {
   startedAt: string;
 }
 interface Album {
+  id?: string;
   title: string;
   endedAt: string;
   entries: Entry[];
@@ -162,6 +163,7 @@ const themeKeys = Object.keys(themes) as Theme[];
 const time = () => new Date().toISOString();
 const clean = (text: string) =>
   text
+    // eslint-disable-next-line no-control-regex -- Strip control characters from player input.
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -181,6 +183,7 @@ export function hangoutView(room: HangoutRoom, userId: string): HangoutView | nu
     : [{ label: 'Join in', cmd: cmd('join') }];
   if (g.host.userId === userId || room.canManage)
     choices.push({ label: 'Finish and keep the memories', cmd: cmd('finish') });
+  choices.push({ label: 'Read shared memories', cmd: 'hangout memories' });
   return {
     id: g.id,
     title: theme.title,
@@ -213,6 +216,94 @@ function fail(line: string): Reply {
   return { ok: false, lines: [line], sounds: [], choices: [], wantRoom: true };
 }
 
+const memoryPageSize = 8;
+const memoryId = (album: Album) =>
+  album.id ?? createHash('sha256').update(JSON.stringify(album)).digest('hex').slice(0, 32);
+const memoryDate = (album: Album) => {
+  const date = new Date(album.endedAt);
+  return Number.isNaN(date.getTime())
+    ? 'Date not recorded'
+    : date.toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'UTC',
+      });
+};
+
+function readMemories(room: HangoutRoom, actor: Guest, action: string): Reply {
+  const back = { label: 'Back to the hangout', cmd: 'hangout' };
+  if (action === 'memories') {
+    return {
+      ...reply(
+        room,
+        actor,
+        room.album.length
+          ? [
+              'Shared memories, newest first. Choose a gathering to read it a page at a time.',
+              ...room.album.map(
+                (a) => `${a.title}. ${memoryDate(a)}. ${a.entries.length} saved contributions.`,
+              ),
+            ]
+          : ['No hangout memories here yet. Finish a hangout to keep its shared moments.'],
+      ),
+      choices: [
+        ...room.album.map((a) => ({
+          label: `${a.title} — ${memoryDate(a)}`,
+          cmd: `hangout memory ${memoryId(a)}`,
+        })),
+        back,
+      ],
+    };
+  }
+  const match = action.match(/^memory ([a-f0-9-]{32,36})(?: ([1-9][0-9]{0,2}))?$/);
+  const album = match && room.album.find((a) => memoryId(a) === match[1]);
+  if (!album) {
+    return {
+      ...fail(
+        'That memory is no longer in this room’s album. Open shared memories for the current list.',
+      ),
+      choices: [{ label: 'Read shared memories', cmd: 'hangout memories' }],
+    };
+  }
+  const page = Number(match[2] || 1);
+  const pages = Math.max(1, Math.ceil(album.entries.length / memoryPageSize));
+  if (page > pages)
+    return fail('That page is not in this memory. Open shared memories and choose it again.');
+  return {
+    ...reply(room, actor, [
+      `${album.title}. ${memoryDate(album)}. Page ${page} of ${pages}.`,
+      ...(album.entries.length
+        ? album.entries
+            .slice((page - 1) * memoryPageSize, page * memoryPageSize)
+            .map((e) => `${e.name}: ${e.text}`)
+        : ['No contributions were written down. People still spent time together.']),
+    ]),
+    choices: [
+      ...(page > 1
+        ? [{ label: 'Previous page', cmd: `hangout memory ${memoryId(album)} ${page - 1}` }]
+        : []),
+      ...(page < pages
+        ? [{ label: 'Next page', cmd: `hangout memory ${memoryId(album)} ${page + 1}` }]
+        : []),
+      { label: 'All shared memories', cmd: 'hangout memories' },
+      back,
+    ],
+  };
+}
+
+function archiveGathering(g: Gathering, album: Album[]): Album[] {
+  return [
+    {
+      id: g.id,
+      title: `${themes[g.theme].title} with ${g.host.name}`,
+      endedAt: time(),
+      entries: g.entries.slice(-48),
+    },
+    ...album,
+  ].slice(0, 5);
+}
+
 export async function runHangout(store: Store, actor: Guest, raw: string): Promise<Reply> {
   const input = clean(raw);
   const token = input.match(/ @([a-f0-9-]{36})$/);
@@ -223,18 +314,8 @@ export async function runHangout(store: Store, actor: Guest, raw: string): Promi
     const g = before.gathering;
     if (token && (!g || g.id !== token[1]))
       return fail('That hangout has finished. Open Hangout to see what is happening here now.');
-    if (action === 'memories') {
-      return reply(
-        before,
-        actor,
-        before.album.length
-          ? before.album.flatMap((a) => [
-              a.title + '.',
-              ...a.entries.map((e) => `${e.name}: ${e.text}`),
-            ])
-          : ['No hangout memories here yet. Finish a hangout to keep its shared moments.'],
-      );
-    }
+    if (action === 'memories' || action === 'memory' || action.startsWith('memory '))
+      return readMemories(before, actor, action);
     if (!action) {
       if (g) {
         const view = hangoutView(before, actor.userId)!;
@@ -296,14 +377,7 @@ export async function runHangout(store: Store, actor: Guest, raw: string): Promi
       } else if (action === 'finish') {
         if (actor.userId !== g.host.userId && !before.canManage)
           return fail('The host or someone who lives here can finish this hangout.');
-        album = [
-          {
-            title: `${themes[g.theme].title} with ${g.host.name}`,
-            endedAt: time(),
-            entries: g.entries.slice(-12),
-          },
-          ...album,
-        ].slice(0, 5);
+        album = archiveGathering(g, album);
         next = null;
         line = `${actor.name} wraps up the ${themes[g.theme].title.toLowerCase()}. Its shared moments are saved in this room’s memories.`;
         sound = 'hangout.seat';
@@ -316,14 +390,7 @@ export async function runHangout(store: Store, actor: Guest, raw: string): Promi
             next.host = next.guests[0];
             line += ` ${next.host.name} is hosting now.`;
           } else if (!next.guests.length) {
-            album = [
-              {
-                title: `${themes[g.theme].title} with ${g.host.name}`,
-                endedAt: time(),
-                entries: g.entries.slice(-12),
-              },
-              ...album,
-            ].slice(0, 5);
+            album = archiveGathering(g, album);
             next = null;
             line += ' The last guest has left. The shared memories are saved here.';
           }
