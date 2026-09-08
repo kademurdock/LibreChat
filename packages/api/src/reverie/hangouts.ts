@@ -84,13 +84,13 @@ const themes: Record<
         key: 'grill',
         label: 'Take a turn at the grill',
         line: 'turns the food on the grill and puts a fresh plate on the table.',
-        sound: '',
+        sound: 'work.diner.grill.loop',
       },
       {
         key: 'plates',
         label: 'Set out plates',
         line: 'sets out a stack of plates and makes room for another chair.',
-        sound: '',
+        sound: 'obj.ceramic.plates.stack',
       },
       {
         key: 'snacks',

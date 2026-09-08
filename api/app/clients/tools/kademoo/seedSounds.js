@@ -11,6 +11,7 @@
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { logger } = require('@librechat/data-schemas');
+const LIFE_SOUNDS = require('./lifeSounds.json');
 
 const SOUNDS_TO_SEED = [
   // Room chord — 1-8 people present
@@ -49,6 +50,7 @@ const SOUNDS_TO_SEED = [
   'social.cough', 'social.whistle', 'social.hug', 'social.fistbump',
   'garden.pick',
   'hangout.seat', 'hangout.page', 'hangout.record', 'hangout.snacks',
+  ...Object.keys(LIFE_SOUNDS),
 ];
 
 /* NOT latched on entry any more. The old version set `_seeded = true` as its
@@ -91,13 +93,13 @@ async function seedSounds() {
     for (const id of needed) {
       const key = `reverie-sounds/${id}.m4a`;
       const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
-      const url = id.startsWith('hangout.')
+      const url = LIFE_SOUNDS[id] || (id.startsWith('hangout.')
         ? `https://kademurdock.com/assets/sounds/reverie/${id}.m4a`
-        : await getSignedUrl(s3, cmd, { expiresIn: expiry });
+        : await getSignedUrl(s3, cmd, { expiresIn: expiry }));
 
       await MooSound.updateOne(
         { scopeType: 'event', scopeId: id },
-        { $set: { url, addedBy: 'seed' } },
+        { $setOnInsert: { url, addedBy: 'seed' } },
         { upsert: true },
       );
       installed++;
