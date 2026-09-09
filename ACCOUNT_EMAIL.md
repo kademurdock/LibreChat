@@ -1,14 +1,23 @@
-# Free account email setup
+# Account email
 
-Session 170 adds a Resend HTTPS transport to the existing account email templates and flows. Registration verification, verification resend, password reset and password-change confirmation can use it. Existing single-use token rules remain in AuthService. SMTP and Mailgun remain supported when Resend is absent. Provider errors, timeouts and missing acceptance IDs fail without claiming success; exceptions contain no recipient, reset URL or credential. The same rendered email has a stable idempotency key, and uncertain sends are not automatically retried.
+Account verification, verification resend, password reset and password-change confirmation use the existing templates through the Resend HTTPS transport. `kademurdock.com` was verified with Resend on September 9, 2026. The Railway domain's original website records were preserved; only the provider-generated DKIM TXT and `rsend`/`send` CNAME records were added. Sending is enabled, receiving is disabled, and click/open tracking is off.
 
-**Not activated yet.** No sender account or credentials existed in the project or Railway configuration at inspection. Resend signup is open for Kade to complete. A new password and signup terms need the account owner's participation. DNS and live reset delivery have not been verified. Do not enable password reset or require verification until the following is complete.
+## Configuration
 
-1. Create/sign in to the free Resend account. Free transactional allowance: 3,000/month and 100/day; no paid plan or upgrade is authorized. [Resend quotas](https://resend.com/docs/knowledge-base/account-quotas-and-limits).
-2. Add `kademurdock.com` as the sending domain. Add exactly the generated DKIM and sending-subdomain SPF/MX records to Railway domain DNS. Preserve the existing website and root-domain mail records. [Railway DNS management](https://railway.com/changelog/2026-03-20-new-dashboard-layout), [Resend domains](https://resend.com/docs/dashboard/domains/introduction).
-3. After Resend verifies the domain, create a sending-only API key restricted to it. Store it only as `RESEND_API_KEY` in the LibreChat Railway service. Set `EMAIL_FROM=accounts@kademurdock.com`, `EMAIL_FROM_NAME=Kade-AI`, and `EMAIL_REPLY_TO=kademurdock@gmail.com`. This uses Reply-To, not inbox forwarding or a hosted mailbox. Do not paste keys into shared docs or terminal arguments.
-4. Confirm `DOMAIN_CLIENT` and `DOMAIN_SERVER` match the public HTTPS site. Initially preserve current login/verification behavior. Send one explicitly authorized delivery check to Kade's own address and verify the provider delivery receipt (an API acceptance alone is insufficient).
-5. On the dedicated vischeck seat, verify reset email arrival, expiry, single use, changed password authentication, and invalid/used links. Password entry through browser UI belongs to the account owner. Test registration/verification with a disposable controlled account. Existing phone-only accounts must retain their current support route; never lock existing users out to turn on mail.
-6. Only after acceptance, set `ALLOW_PASSWORD_RESET=true` and document verified signup/login behavior. Keep quotas and free-plan limits visible in operations; quota exhaustion must surface as retryable delivery failure. No bulk welcome blast or retroactive verification campaign.
+The LibreChat Railway service holds a sending-only `RESEND_API_KEY`. The temporary full-access setup key is not installed in the app. Sender: `Kade-AI <accounts@kademurdock.com>`. Replies go to `kademurdock@gmail.com` through `EMAIL_REPLY_TO`; this is not a hosted inbox or forwarding service. `DOMAIN_CLIENT` and `DOMAIN_SERVER` are both `https://kademurdock.com`.
 
-Useful code: `packages/api/src/utils/resend.ts`, `utils/email.ts`, `api/server/utils/sendEmail.js`. Tests cover provider refusals, timeout/uncertain outcomes, configuration, idempotency, and existing auth regressions. No live email has been sent by this session.
+`checkEmailConfig()` is shared by the account service and public startup configuration, so the signup and recovery screens recognize Resend. `ALLOW_PASSWORD_RESET=true` enables the reset routes. New registrations receive verification email; existing verified accounts are not changed. Phone-only accounts, lost inboxes and lost two-factor codes still need Kade's assistance. Never run a bulk welcome or retroactive verification campaign.
+
+The free transactional plan allows 3,000 emails/month and 100/day. No paid plan was selected. Quota failures must report delivery failure rather than claim an email was sent. [Resend quotas](https://resend.com/docs/knowledge-base/account-quotas-and-limits).
+
+## Delivery and recovery
+
+`packages/api/src/utils/resend.ts` uses a 15-second timeout, no redirects, a stable idempotency key for the rendered email and a required provider acceptance ID. Uncertain sends are not retried automatically. Exceptions omit credentials, recipients and reset URLs. SMTP and Mailgun remain available when Resend is absent.
+
+Reset links use the public HTTPS domain and expire after 15 minutes. Exact token consumption prevents replay, and successful reset invalidates sessions. Reset request responses do not expose links or reveal whether an account exists. Confirmation-delivery failure does not undo an already completed password change. Invalid verification links offer resend immediately; failed resends can be retried.
+
+## Rollout acceptance
+
+First verify the domain and a delivery to Kade's own inbox using the sending-only key. Stage the sender with reset disabled, then validate signup, delivered verification/resend and token consumption on a new disposable account addressed to a unique Gmail plus-alias owned by Kade. Enable reset after that readiness check, verify the live reset/change-confirmation path, log in once with the new synthetic password, then delete that test account. Never reset a real user's password for testing.
+
+Use the Railway deployments query to confirm the exact commit is SUCCESS and `/api/config` to confirm `emailEnabled` and `passwordResetEnabled`. Resend's `delivered` event confirms recipient-server acceptance, not inbox placement or a human read. Persist only sanitized IDs/statuses; do not save mail HTML, reset links, passwords or API keys. The September 9 Part170 report in the project information folder holds the final acceptance and deployment receipts. Unit tests cover expiry and failure paths; distinguish those from actual live delivery checks.

@@ -36,8 +36,9 @@ function RequestPasswordReset() {
       setVerificationStatus(true);
       countdownRedirect();
     },
-    onError: (error: unknown) => {
+    onError: () => {
       setHeaderText(localize('com_auth_email_verification_failed') + ' 😢');
+      setCountdown(0);
       setShowResendLink(true);
       setVerificationStatus(true);
     },
@@ -50,6 +51,7 @@ function RequestPasswordReset() {
     },
     onError: () => {
       setHeaderText(localize('com_auth_email_resent_failed') + ' 😢');
+      setShowResendLink(true);
     },
     onMutate: () => setShowResendLink(false),
   });
@@ -66,6 +68,7 @@ function RequestPasswordReset() {
     if (token && email) {
       verifyEmailMutation.mutate({ email, token });
     } else {
+      setCountdown(0);
       if (email) {
         setHeaderText(localize('com_auth_email_verification_failed_token_missing') + ' 😢');
       } else {
@@ -74,7 +77,7 @@ function RequestPasswordReset() {
       setShowResendLink(true);
       setVerificationStatus(true);
     }
-  }, [token, email, verificationStatus, verifyEmailMutation]);
+  }, [token, email, verificationStatus, verifyEmailMutation, localize]);
 
   const VerificationSuccess = () => (
     <div className="flex flex-col items-center justify-center">
