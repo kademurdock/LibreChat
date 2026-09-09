@@ -38,6 +38,7 @@ import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Phone, PhoneOff, Mic, StopCircle, Camera, CameraOff, ScanEye, Radio, Flashlight, FlashlightOff, SwitchCamera } from 'lucide-react';
 import { useAuthContext, useLocalize } from '~/hooks';
 import useCallCharacter from './character/useCallCharacter';
+import { playbackTime } from './character/clock';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
 import { cn } from '~/utils';
 import { stripVoiceTags, hideDanglingVoiceTag } from '~/utils/voiceTags';
@@ -891,7 +892,7 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
           src.start(start);
           currentSourceRef.current = src;
           observePlayback(presentationRef.current, src, {
-            buffer: decoded, start, clock: () => ctx.currentTime, speech,
+            buffer: decoded, start, clock: () => playbackTime(ctx), speech,
           });
         });
       } catch (err) {
@@ -1672,7 +1673,9 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
   const onDialogKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { e.preventDefault(); endCall(); return; }
     if (e.key !== 'Tab') return;
-    const nodes = dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled])');
+    const nodes = dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], [tabindex="0"]',
+    );
     if (!nodes || nodes.length === 0) return;
     const list = Array.from(nodes);
     const first = list[0];
@@ -1793,11 +1796,12 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
       ref={dialogRef}
       tabIndex={-1}
       onKeyDown={onDialogKeyDown}
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-950/97 focus:outline-none"
+      className="fixed inset-0 z-50 overflow-y-auto bg-gray-950/[0.97] focus:outline-none"
       role="dialog"
       aria-modal="true"
       aria-label="Voice conversation. Escape or End call to hang up."
     >
+      <div className="relative flex min-h-full flex-col items-center justify-center px-4 py-6">
       {/* Ambient brand-gradient glow -- decorative atmosphere only, sits behind
           everything, never affects layout, contrast, or focus order. */}
       <div
@@ -1983,7 +1987,7 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
         )}
       </div>
 
-      <label className="mb-4 flex max-w-xs items-center gap-3 px-4 text-sm text-gray-200">
+      <label className="mb-4 flex min-h-11 max-w-xs items-center gap-3 px-4 text-sm text-gray-200">
         <input type="checkbox" checked={character.enabled}
           onChange={(event) => character.toggle(event.target.checked)}
           className="h-5 w-5 accent-pink-500" />
@@ -2093,6 +2097,7 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
             : 'Tap amber to interrupt · Red to end call'
           : 'Red button ends the call'}
       </p>
+      </div>
     </div>
   );
 }

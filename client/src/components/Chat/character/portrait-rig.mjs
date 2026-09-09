@@ -11,28 +11,28 @@ export function hasPreparedPortrait(id, url) {
 // regions may differ. Source files are untouched; registration is renderer data.
 const FEATURES = [
   { kind: 'mouth', from: [.764, .217, .097, .064], to: [.457, .376, .175, .122] },
-  // Blink patches from the draft atlas do not cover the original eyelids cleanly.
-  // Keep the approved eyes intact until proper eyelid artwork is available.
+];
+const EYES = [
+  { kind: 'blink', from: [.355, .265, .125, .09], to: [.355, .265, .125, .09] },
+  { kind: 'blink', from: [.518, .219, .125, .08], to: [.518, .219, .125, .08] },
 ];
 
-export function createPortraitRig(canvas, { id, portrait, atlas, onReady = () => {}, onFailure = () => {} }) {
+export function createPortraitRig(canvas, { id, portrait, atlas, blink, onReady = () => {}, onFailure = () => {} }) {
   const ctx = canvas.getContext('2d');
   let disposed = false, ready = false, last = null, signature = '';
-  const base = new Image(), sheet = new Image();
+  const base = new Image(), sheet = new Image(), eyes = new Image();
   const layers = [];
   canvas.width = canvas.height = 512;
   canvas.setAttribute('aria-hidden', 'true');
   canvas.hidden = true;
   function fail() { if (!disposed) { ready = false; canvas.hidden = true; onFailure(); } }
-  function prepare() {
-    if (disposed || !base.complete || !sheet.complete || !base.naturalWidth || !sheet.naturalWidth) return;
-    if (!ctx || base.naturalWidth !== base.naturalHeight || sheet.naturalWidth !== sheet.naturalHeight) return fail();
-    for (const feature of FEATURES) {
+  function addLayers(image, features) {
+    for (const feature of features) {
       const layer = document.createElement('canvas'); layer.width = layer.height = 512;
       const c = layer.getContext('2d');
-      const [sx,sy,sw,sh] = feature.from.map(v => v * sheet.naturalWidth);
+      const [sx,sy,sw,sh] = feature.from.map(v => v * image.naturalWidth);
       const [x,y,w,h] = feature.to.map(v => v * 512);
-      c.drawImage(sheet,sx,sy,sw,sh,x,y,w,h);
+      c.drawImage(image,sx,sy,sw,sh,x,y,w,h);
       c.globalCompositeOperation = 'destination-in';
       c.save(); c.translate(x+w/2,y+h/2); c.scale(w/2,h/2);
       const fade = c.createRadialGradient(0,0,.60,0,0,1);
@@ -40,7 +40,18 @@ export function createPortraitRig(canvas, { id, portrait, atlas, onReady = () =>
       c.fillStyle=fade; c.fillRect(-1,-1,2,2); c.restore();
       layers.push({ kind: feature.kind, image: layer });
     }
+  }
+  function prepareEyes() {
+    if (disposed || !ready || !eyes.complete || !eyes.naturalWidth ||
+        eyes.naturalWidth !== eyes.naturalHeight || layers.some(layer => layer.kind === 'blink')) return;
+    addLayers(eyes, EYES); signature = ''; if (last) render(last);
+  }
+  function prepare() {
+    if (disposed || ready || !base.complete || !sheet.complete || !base.naturalWidth || !sheet.naturalWidth) return;
+    if (!ctx || base.naturalWidth !== base.naturalHeight || sheet.naturalWidth !== sheet.naturalHeight) return fail();
+    addLayers(sheet, FEATURES);
     ready = true; onReady(); if (last) render(last);
+    prepareEyes();
   }
   function render(frame) {
     last=frame;
@@ -59,6 +70,8 @@ export function createPortraitRig(canvas, { id, portrait, atlas, onReady = () =>
     canvas.style.transform=`rotate(${Math.max(-.7,Math.min(.7,frame.tilt || 0))}deg)`;
   }
   base.onload=sheet.onload=prepare; base.onerror=sheet.onerror=fail;
+  eyes.onload=prepareEyes;
   base.src=portrait; sheet.src=atlas;
-  return { render, dispose() { disposed=true; base.onload=sheet.onload=base.onerror=sheet.onerror=null; canvas.hidden=true; layers.length=0; } };
+  if (blink) eyes.src=blink;
+  return { render, dispose() { disposed=true; base.onload=sheet.onload=base.onerror=sheet.onerror=eyes.onload=null; canvas.hidden=true; layers.length=0; } };
 }

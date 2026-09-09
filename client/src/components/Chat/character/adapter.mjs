@@ -1,79 +1,97 @@
 import CharacterMotion from './character-motion.mjs';
 import CharacterPlayer from './character-player.mjs';
 
-/** Adapts observed playback to the existing engine without retaining AudioBuffers. */
-export function createCallCharacter({ resolveProfile, render, requestFrame, cancelFrame }) {
-  let agentId = null, generation = 0, token = null, wanted = 'idle', clock = () => performance.now() / 1000;
-  let disposed = false;
-  let notBefore = 0;
-  let refreshPending = false;
-  const pending = new Set();
+/** Keeps speaker ownership on the audio timeline, independently of visual frames. */
+export function createCallCharacter({ resolveProfile, render, requestFrame, cancelFrame,
+  setTimer = setTimeout, cancelTimer = clearTimeout }) {
+  let agentId = null, token = null, wanted = 'idle', clock = () => performance.now() / 1000;
+  let disposed = false, refreshPending = false, wake = null, current = null, speaking = false;
+  let queue = [];
   const fallback = () => ({ id: agentId || 'unknown', rigReady: false });
   const player = CharacterPlayer.create({ character: fallback(), clock: () => clock(),
-    render: frame => render(clock() < notBefore ? { ...frame, active: false, mouth: 0, blink: 0 } : frame),
-    requestFrame, cancelFrame });
+    render, requestFrame, cancelFrame });
 
+  function cancelWake() { if (wake !== null) cancelTimer(wake); wake = null; }
+  function profile() {
+    let value;
+    try { value = resolveProfile(agentId); } catch { /* Unknown rigs remain static. */ }
+    try { player.select(value || fallback()); } catch { player.select(fallback()); }
+    token = null; speaking = false; refreshPending = false;
+  }
   function clear() {
-    generation++;
-    notBefore = 0;
-    pending.clear();
+    cancelWake(); queue = []; current = null;
     if (token) player.interrupt(token);
-    token = null;
+    token = null; speaking = false;
   }
   function rest() {
-    if (pending.size || disposed) return;
-    if (refreshPending) {
-      refreshPending = false;
-      let profile;
-      try { profile = resolveProfile(agentId); } catch { /* static */ }
-      player.select(profile || fallback()); token = null;
-    }
+    if (disposed || current || queue.length) return;
+    if (refreshPending) profile();
     if (token) player.finish(token);
+    speaking = false;
     token = wanted === 'listening' ? player.listen() : wanted === 'thinking' ? player.think() : null;
   }
-  function select(id, start = 0) {
+  function reconcile() {
+    cancelWake();
     if (disposed) return;
-    clear();
-    notBefore = start;
-    agentId = id;
-    let profile;
-    try { profile = resolveProfile(id); } catch { /* Unknown rigs remain static. */ }
-    try { player.select(profile || fallback()); }
-    catch { player.select(fallback()); }
+    const now = clock();
+    if (!Number.isFinite(now) || now < 0) return;
+    if (current && now >= current.end) {
+      current = null;
+    }
+    let next = null;
+    while (queue.length && queue[0].start <= now) next = queue.shift();
+    if (next) {
+      if (next.agentId !== agentId || refreshPending) { agentId = next.agentId; profile(); }
+      if (next.end > now) {
+        current = next;
+        if (!speaking) { token = player.speak(); speaking = true; }
+        player.schedule(token, next);
+      }
+    }
     rest();
+    const boundary = current?.end ?? queue[0]?.start;
+    if (boundary === undefined) return;
+    // Boundary wakes also run with motion off. Suspended audio is rechecked
+    // slowly; neither wall time nor captions are allowed to advance a face.
+    const scheduledAt = now;
+    wake = setTimer(() => {
+      wake = null;
+      if (clock() <= scheduledAt) { wake = setTimer(reconcile, 1000); return; }
+      reconcile();
+    }, Math.max(16, (boundary - now) * 1000));
   }
   return {
-    select, clear,
+    select(id) {
+      if (disposed) return;
+      clear(); agentId = id; profile(); rest();
+    },
+    clear,
     refreshProfile() { if (!disposed) { refreshPending = true; rest(); } },
-    preferences(value) { if (!disposed) player.preferences(value); },
+    preferences(value) { if (!disposed) { reconcile(); player.preferences(value); } },
     status(value) {
       if (disposed) return;
       wanted = value;
       if (value === 'idle' || value === 'connecting') clear();
-      rest();
+      reconcile();
     },
     scheduled(segment) {
-      if (disposed) return;
-      const nextId = segment.agentId === undefined ? agentId : segment.agentId;
-      clock = segment.clock;
-      if (nextId !== agentId) {
-        select(nextId, segment.start);
-      }
-      if (!pending.size) token = player.speak();
-      const owner = generation, currentToken = token, key = {};
+      if (disposed || !segment || typeof segment.clock !== 'function') return;
+      const duration = segment.buffer?.duration, start = segment.start;
+      const tail = queue.at(-1) || current;
+      if (!Number.isFinite(start) || start < 0 || !Number.isFinite(duration) || duration <= 0 ||
+          duration > 120 || queue.length >= 64 || (tail && start < tail.end - .000001)) return;
       let envelope;
       try { if (segment.speech) envelope = CharacterMotion.envelope(segment.buffer); }
       catch { /* Invalid envelopes render closed mouths; speech continues. */ }
-      if (!player.schedule(token, { start: segment.start, duration: segment.buffer?.duration,
-        speech: segment.speech, envelope })) {
-        if (!pending.size) { player.finish(token); token = null; }
-        return;
-      }
-      pending.add(key);
+      const nextId = segment.agentId === undefined ? (tail?.agentId ?? agentId) : segment.agentId;
+      const clip = { start, duration, end: start + duration, speech: segment.speech, envelope,
+        agentId: typeof nextId === 'string' && nextId.length <= 128 ? nextId : null };
+      clock = segment.clock;
+      queue.push(clip); reconcile();
       return () => {
-        if (disposed || owner !== generation || token !== currentToken) return;
-        pending.delete(key);
-        rest();
+        if (disposed || (current !== clip && !queue.includes(clip))) return;
+        // Audio ended can precede device playout. clear() cancels interruptions.
+        reconcile();
       };
     },
     dispose() { clear(); disposed = true; player.dispose(); },

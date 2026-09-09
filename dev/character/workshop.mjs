@@ -5,6 +5,7 @@ import { observePlayback } from './playback-browser.mjs';
 const $ = id => document.getElementById(id);
 const media = matchMedia('(prefers-reduced-motion: reduce)');
 const atlas = createPortraitRig($('atlas'), { id: 'kiana', portrait: 'portrait.png', atlas: 'kiana-atlas-draft.png',
+  blink: 'eyes-closed.png',
   onFailure: () => { $('status').textContent = 'Artwork could not load. The static portrait remains available.'; } });
 const character = createCallCharacter({
   resolveProfile: id => id === 'kiana' ? { id, rigReady: true } : null,
@@ -20,11 +21,11 @@ function stop() {
   for (const source of sources) { try { source.stop(); } catch {} }
   sources.clear();
 }
-async function play(speech) {
+async function play(speech, file = 'character-sample.wav') {
   stop(); const own = generation;
   ctx ||= new AudioContext();
   await ctx.resume();
-  const data = await fetch('character-sample.wav').then(r => r.arrayBuffer());
+  const data = await fetch(file).then(r => r.arrayBuffer());
   const buffer = await ctx.decodeAudioData(data);
   if (own !== generation) return;
   const source = ctx.createBufferSource(); source.buffer = buffer; source.connect(ctx.destination);
@@ -40,6 +41,7 @@ $('enabled').onchange = preferences;
 $('character').onchange = () => { stop(); character.select($('character').value); };
 $('listen').onclick = () => { stop(); character.status('listening'); $('status').textContent = 'Showing listening motion.'; };
 $('play').onclick = () => play(true).catch(() => { stop(); $('status').textContent = 'Could not play the sample.'; });
+$('windflower').onclick = () => play(true, 'windflower-preview.wav').catch(() => { stop(); $('status').textContent = 'Could not play the Windflower sample.'; });
 $('effect').onclick = () => play(false).catch(() => { stop(); $('status').textContent = 'Could not play the sample.'; });
 $('stop').onclick = () => { stop(); $('status').textContent = 'Interrupted.'; };
 media.addEventListener('change', preferences);

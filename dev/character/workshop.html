@@ -5,14 +5,15 @@
 :root{font:17px/1.55 system-ui;color:#28202b;background:#fbf6f1;color-scheme:light dark}*{box-sizing:border-box}body{margin:0;padding:24px}main{max-width:760px;margin:auto}h1{font-size:2rem;line-height:1.2}p{max-width:65ch}.stage{position:relative;width:min(320px,80vw);aspect-ratio:1;margin:28px auto;border-radius:50%;background:#c8b4ac}.stage img,.stage canvas{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover}.controls{display:flex;flex-wrap:wrap;gap:12px;margin:20px 0}button,select{font:inherit;padding:10px 14px;min-height:48px;border:1px solid #776170;border-radius:12px;background:#fff;color:#28202b}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #914d87;outline-offset:3px}label{display:block;margin:14px 0}input{width:20px;height:20px;vertical-align:middle;margin-right:10px}.note{padding:16px;background:#efe3e9;border-radius:14px}pre{font:13px/1.4 monospace;white-space:pre-wrap;overflow-wrap:anywhere}@media(prefers-color-scheme:dark){:root{color:#f7edf3;background:#201b22}.note{background:#382b36}button,select{color:#f7edf3;background:#382b36}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 <main><p>Character animation · Development workshop</p><h1>Kiana, listening and speaking</h1>
-<p class="note">Registered mouth-layer preview. The portrait stays fixed while the mouth follows real audio. Eyelid animation awaits better artwork. This is development work, not a released call feature.</p>
-<p>Kiana has brown skin, textured locs with pink and dark heart charms, a cream knit top and layered heart necklaces. Motion adds small listening tilts and audio-driven mouth opening.</p>
+<p class="note">Kiana’s portrait stays fixed while her mouth follows the recording. She blinks and makes small listening tilts. This is a development preview; call animation is not released yet.</p>
+<p>Kiana has brown skin, textured locs with pink and dark heart charms, a cream knit top and layered heart necklaces.</p>
 <div class="stage" aria-hidden="true"><img src="portrait.png" alt=""><canvas id="atlas" hidden></canvas></div>
 <label><input id="enabled" type="checkbox">Enable character motion</label>
 <label>Character configuration <select id="character"><option value="kiana">Kiana mouth rig</option><option value="unknown">Unprepared character (static fallback)</option></select></label>
-<div class="controls"><button id="listen">Show listening</button><button id="play">Play speech sample</button><button id="effect">Play as sound effect</button><button id="stop">Interrupt</button></div>
+<div class="controls"><button id="listen">Show listening</button><button id="windflower">Play Kiana’s Windflower sample</button><button id="play">Play neutral test sample</button><button id="effect">Play as sound effect</button><button id="stop">Interrupt</button></div>
 <p id="status" role="status">Ready. Motion is off.</p>
 <p><strong>Sample transcript:</strong> I am listening. We can take our time. Here is a short pause. Now I am speaking again.</p>
-<p>The sample uses a neutral Windows test voice. It is not Kiana’s voice. No microphone, model, upload or paid service is used. Your reduced-motion setting takes priority.</p>
+<p><strong>Windflower transcript:</strong> That is the one I would pick. Those little windows look like somebody is still awake in there.</p>
+<p>The Windflower recording is a saved example from the previous session. The neutral sample uses a Windows test voice. No microphone, model, upload or paid service is used here. Your reduced-motion setting takes priority.</p>
 <pre id="frames" aria-hidden="true"></pre></main>
 <script type="module" src="workshop.mjs"></script></html>

@@ -20,6 +20,7 @@
 import { useRef, useCallback } from 'react';
 import type { CharacterAudioMetadata } from './character/metadata';
 import { readCharacterAudio } from './character/metadata';
+import { playbackTime } from './character/clock';
 import type { CallPresentation } from './character/playback';
 import { clearPresentation, observePlayback, presentationStatus, selectPresentation } from './character/playback';
 
@@ -120,7 +121,7 @@ export default function useStreamingCall() {
       sourcesRef.current.add(src);
       src.onended = () => sourcesRef.current.delete(src);
       observePlayback(presentationRef.current, src, {
-        buffer: buf, start: t, clock: () => ctx.currentTime,
+        buffer: buf, start: t, clock: () => playbackTime(ctx),
         speech: metadata?.speech === true, agentId: metadata?.agentId ?? null,
       });
     });
@@ -155,7 +156,7 @@ export default function useStreamingCall() {
       sourcesRef.current.add(src);
       src.onended = () => sourcesRef.current.delete(src);
       observePlayback(presentationRef.current, src, {
-        buffer: buf, start: t, clock: () => ctx.currentTime, speech: false, agentId: null,
+        buffer: buf, start: t, clock: () => playbackTime(ctx), speech: false, agentId: null,
       });
     });
     decodeChainRef.current = chain.catch(() => { /* keep the chain alive */ });

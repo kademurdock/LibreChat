@@ -15,6 +15,7 @@ export default function useCallCharacter({ open, agentId, avatarUrl, liveMode, s
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
   const [speaker, setSpeaker] = useState<string | null>(agentId ?? null);
   const adapter = useRef<ReturnType<typeof createCallCharacter> | null>(null);
+  const applyPreferences = useRef<(() => void) | null>(null);
   const latest = useRef({ status, enabled, liveMode });
   latest.current = { status, enabled, liveMode };
   const [presentation] = useState<CallPresentation>(() => ({
@@ -53,27 +54,31 @@ export default function useCallCharacter({ open, agentId, avatarUrl, liveMode, s
       cancelFrame: (id: number) => cancelAnimationFrame(id),
     });
     adapter.current=player;
-    const preferences=() => player.preferences({ enabled: latest.current.enabled,
-      reducedMotion: motion.matches, visible: !document.hidden && !latest.current.liveMode });
+    const preferences = () => {
+      const visible = !document.hidden && !latest.current.liveMode;
+      player.preferences({ enabled: latest.current.enabled, reducedMotion: motion.matches, visible });
+      // Only a currently authorized portrait can load artwork, and only when
+      // motion is usable. Off/reduced/hidden calls do not fetch the rig assets.
+      if (!rig && canvas && visible && latest.current.enabled && !motion.matches && hasPreparedPortrait(agentId, avatarUrl)) {
+        rig = createPortraitRig(canvas, { id: agentId, portrait: '/assets/characters/kiana/portrait.png',
+          atlas: '/assets/characters/kiana/facial-source.png', blink: '/assets/characters/kiana/eyes-closed.png',
+          onReady: () => { prepared = true; player.refreshProfile(); },
+        });
+      }
+    };
+    applyPreferences.current = preferences;
     player.select(agentId ?? null); preferences(); player.status(latest.current.status);
-    // Only the profile already returned by the authenticated call UI can opt in.
-    // Metadata for another speaker never authorizes loading their character.
-    if (canvas && hasPreparedPortrait(agentId, avatarUrl)) {
-      rig=createPortraitRig(canvas, { id: agentId, portrait: '/assets/characters/kiana/portrait.png',
-        atlas: '/assets/characters/kiana/facial-source.png',
-        onReady: () => { prepared=true; player.refreshProfile(); },
-      });
-    }
     motion.addEventListener('change',preferences);
     document.addEventListener('visibilitychange',preferences);
     return () => {
       motion.removeEventListener('change',preferences); document.removeEventListener('visibilitychange',preferences);
       if (adapter.current === player) adapter.current=null;
+      if (applyPreferences.current === preferences) applyPreferences.current = null;
       player.dispose(); rig?.dispose();
     };
   }, [open, agentId, avatarUrl, canvas]);
   useEffect(() => {
-    adapter.current?.preferences({ enabled, visible: !document.hidden && !liveMode });
+    applyPreferences.current?.();
   }, [enabled, liveMode]);
   return { presentation, enabled, toggle, setCanvas,
     showPortrait: speaker === (agentId ?? null) && !liveMode };
