@@ -15,14 +15,24 @@ const LIFE_SOUNDS = require('./lifeSounds.json');
 
 const SOUNDS_TO_SEED = [
   // Room chord — 1-8 people present
-  'chord.1', 'chord.2', 'chord.3', 'chord.4',
-  'chord.5', 'chord.6', 'chord.7', 'chord.8',
+  'chord.1',
+  'chord.2',
+  'chord.3',
+  'chord.4',
+  'chord.5',
+  'chord.6',
+  'chord.7',
+  'chord.8',
   // Social emotes
-  'social.clap', 'social.snap', 'social.handshake',
+  'social.clap',
+  'social.snap',
+  'social.handshake',
   // Economy
   'obj.coins.drop',
   // Forage & garden
-  'forage.pick', 'garden.plant', 'garden.water',
+  'forage.pick',
+  'garden.plant',
+  'garden.water',
   /* Round 9 (Aug 13 2026, evening) — the strays and the rest of the soul.
    * All ten uploaded to B2, presigned, and FETCHED BACK before this list was
    * touched, per the standing rule that an install reporting success is not
@@ -46,10 +56,20 @@ const SOUNDS_TO_SEED = [
    * They belong to the voice lane, not to foley: one generic laugh playing for
    * every character in the city is a Veil break by construction, and the
    * engine comment beside SOCIALS has said so since round 7. */
-  'life.cat.meow', 'life.cat.purr', 'life.dog.bark', 'life.dog.growl', 'life.dog.pant',
-  'social.cough', 'social.whistle', 'social.hug', 'social.fistbump',
+  'life.cat.meow',
+  'life.cat.purr',
+  'life.dog.bark',
+  'life.dog.growl',
+  'life.dog.pant',
+  'social.cough',
+  'social.whistle',
+  'social.hug',
+  'social.fistbump',
   'garden.pick',
-  'hangout.seat', 'hangout.page', 'hangout.record', 'hangout.snacks',
+  'hangout.seat',
+  'hangout.page',
+  'hangout.record',
+  'hangout.snacks',
   ...Object.keys(LIFE_SOUNDS),
 ];
 
@@ -64,9 +84,23 @@ async function seedSounds() {
 
   try {
     const { MooSound } = require('~/models/kadeMoo');
-    const rooms = { alder_trail: 'amb.woods.day', reedbank_creek: 'amb.creek.bank', alder_camp: 'amb.camp.fire', alder_hide: 'amb.woods.day', pats_diner: 'amb.diner.quiet', the_archive: 'amb.archive.quiet', ferry_dock_hook: 'amb.ferry.quiet', gully_laundry: 'amb.laundry.quiet' };
+    const rooms = {
+      alder_trail: 'amb.woods.day',
+      reedbank_creek: 'amb.creek.bank',
+      alder_camp: 'amb.camp.fire',
+      alder_hide: 'amb.woods.day',
+      pats_diner: 'amb.diner.quiet',
+      the_archive: 'amb.archive.quiet',
+      ferry_dock_hook: 'amb.ferry.quiet',
+      gully_laundry: 'amb.laundry.quiet',
+    };
     for (const [scopeId, eventId] of Object.entries(rooms)) {
-      if (LIFE_SOUNDS[eventId]) await MooSound.updateOne({ scopeType: 'room', scopeId }, { $setOnInsert: { url: LIFE_SOUNDS[eventId], addedBy: 'seed153' } }, { upsert: true });
+      if (LIFE_SOUNDS[eventId])
+        await MooSound.updateOne(
+          { scopeType: 'room', scopeId },
+          { $setOnInsert: { url: LIFE_SOUNDS[eventId], addedBy: 'seed153' } },
+          { upsert: true },
+        );
     }
 
     const existing = await MooSound.find({ scopeType: 'event' }).lean();
@@ -97,9 +131,11 @@ async function seedSounds() {
     for (const id of needed) {
       const key = `reverie-sounds/${id}.m4a`;
       const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
-      const url = LIFE_SOUNDS[id] || (id.startsWith('hangout.')
-        ? `https://kademurdock.com/assets/sounds/reverie/${id}.m4a`
-        : await getSignedUrl(s3, cmd, { expiresIn: expiry }));
+      const url =
+        LIFE_SOUNDS[id] ||
+        (id.startsWith('hangout.')
+          ? `https://kademurdock.com/assets/sounds/reverie/${id}.m4a`
+          : await getSignedUrl(s3, cmd, { expiresIn: expiry }));
 
       await MooSound.updateOne(
         { scopeType: 'event', scopeId: id },
@@ -115,7 +151,10 @@ async function seedSounds() {
     /* Log the WHOLE error. The previous version logged `e.message` and printed
      * an empty string every boot for a day, which is how a broken seeder hid
      * in plain sight in a log everybody could read. */
-    logger.error('[seed] sound seed failed (will retry on next /sounds):', e && (e.stack || e.message || String(e)));
+    logger.error(
+      '[seed] sound seed failed (will retry on next /sounds):',
+      e && (e.stack || e.message || String(e)),
+    );
   }
 }
 
@@ -127,15 +166,47 @@ async function seedSounds() {
  * and native alike, with nothing in any log. This signs the city's own keys
  * with the same credentials the seeder uses, cached an hour per key. */
 const _signed = new Map();
+// Part173: these ten original ward beds measured only 0.003–0.006 RMS.
+// Gain-only playback copies retain their stereo, timing and dynamics; original
+// B2 files and MooSound rows stay intact. A new URL invalidates phone caches.
+const LEVELED_WARDS = new Set([
+  'bellward',
+  'fairlawn',
+  'gate',
+  'gravewalk',
+  'hook',
+  'longacre',
+  'millrace',
+  'patch',
+  'sweetwater',
+  'tanglefoot',
+]);
+function leveledReverieUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const match = /^\/Kademurdockchat\/reverie-sounds\/amb\.([a-z]+)\.m4a$/.exec(parsed.pathname);
+  if (!match || !LEVELED_WARDS.has(match[1]) || !parsed.hostname.endsWith('.backblazeb2.com'))
+    return null;
+  return `https://kademurdock.com/assets/sounds/reverie/levels173/amb.${match[1]}.m4a`;
+}
 function s3Client() {
   return new S3Client({
     endpoint: process.env.AWS_ENDPOINT_URL || process.env.AWS_S3_ENDPOINT,
     region: process.env.AWS_REGION || process.env.AWS_S3_REGION || 'us-east-005',
-    credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY },
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    },
     forcePathStyle: true,
   });
 }
 async function presignReverieUrl(url) {
+  const leveled = leveledReverieUrl(url);
+  if (leveled) return leveled;
   const m = /\/(reverie-sounds\/[^?]+)/.exec(String(url || ''));
   if (!m) return null;
   const key = decodeURIComponent(m[1]);
@@ -143,9 +214,11 @@ async function presignReverieUrl(url) {
   if (hit && hit.until > Date.now()) return hit.url;
   const bucket = process.env.AWS_BUCKET_NAME || process.env.AWS_S3_BUCKET || 'Kademurdockchat';
   const expiry = Math.min(parseInt(process.env.S3_URL_EXPIRY_SECONDS, 10) || 604800, 604800);
-  const fresh = await getSignedUrl(s3Client(), new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn: expiry });
+  const fresh = await getSignedUrl(s3Client(), new GetObjectCommand({ Bucket: bucket, Key: key }), {
+    expiresIn: expiry,
+  });
   _signed.set(key, { url: fresh, until: Date.now() + 60 * 60 * 1000 });
   return fresh;
 }
 
-module.exports = { seedSounds, presignReverieUrl };
+module.exports = { seedSounds, presignReverieUrl, leveledReverieUrl };

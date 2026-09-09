@@ -544,7 +544,6 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
   </script>
 </body></html>`;
 
-
 const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations</title>${SHARED_HEAD}
 <style>
   .asset video, .asset img { width: 100%; max-width: 640px; border-radius: 10px; display: block; }
@@ -770,7 +769,6 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
   </script>
 </body></html>`;
 
-
 /* KADE July 3 2026: /game-room — the Game Parlor leaderboard. Family
  * standings computed live from finished tables. Screen-reader-first:
  * real tables with scoped headers, status region, prose summaries. */
@@ -845,7 +843,6 @@ const feedbackHtml = `<!doctype html><html lang="en"><head><title>Feedback & Bug
   load();
 </script>
 </body></html>`;
-
 
 const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notifications & Reminders</title>${SHARED_HEAD}</head>
 <body>
@@ -1128,7 +1125,6 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
 </script>
 </body></html>`;
 
-
 /* ---------------------------------------------------------------------------
  * /describe — SHARE-TO-DESCRIBE (July 11 2026). Blind-first: big Play button,
  * aria-live status, auto-read attempt, reminder offers for detected dates,
@@ -1397,7 +1393,6 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
 </script>
 </body></html>`;
 
-
 const toolsHtml = `<!doctype html><html lang="en"><head><title>Tools — Kade-AI</title>${SHARED_HEAD}</head>
 <body>
 <main>
@@ -1442,7 +1437,6 @@ const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</ti
 </main>
 <footer class="muted">&mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 </body></html>`;
-
 
 const pronunciationDictionaryHtml = `<!doctype html><html lang="en"><head><title>Pronunciation Dictionary — Kade-AI</title>${SHARED_HEAD}
 <style>
@@ -1631,7 +1625,6 @@ const tabBarAsset = `(function(){
 })();
 `;
 
-
 /* ADMIN LOGS VIEWER (session 21h). Drill-down: users -> their conversations ->
  * the messages, laid out like the user's own chat. Read-only support tool.
  * Reuses SHARED_HEAD's getToken()/apiGet()/styles; the API is admin-guarded. */
@@ -1815,7 +1808,6 @@ const logsHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Logs</titl
     })();
   </script>
 </body></html>`;
-
 
 /* ── THE PARLOR (July 23 2026 night — Kade's RS-Games-style menu room:
  * pick a game, seat characters if you want them, play YOUR OWN moves as
@@ -3334,6 +3326,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   var amb = { bedUrl: null, bed: null, toneUrl: null, tone: null, drone: null };
   function fadeTo(a, target, ms, done){ if (!a) { if (done) done(); return; } clearInterval(a._fade); var start = a.volume, steps = 20, i = 0; a._fade = setInterval(function(){ i++; a.volume = Math.max(0, Math.min(1, start + (target - start) * (i / steps))); if (i >= steps) { clearInterval(a._fade); if (done) done(); } }, ms / steps); }
   function startLoop(url, vol){ var a = new Audio(url); a.loop = true; a.volume = 0; var p = a.play(); if (p && p.catch) p.catch(function(){}); fadeTo(a, vol, 1400); return a; }
+  function resumeLoop(a){ if (!a || !a.paused) return; if (a.error) a.load(); var p = a.play(); if (p && p.catch) p.catch(function(){}); }
   function stopLoop(a){ if (!a) return; fadeTo(a, 0, 1000, function(){ try { a.pause(); } catch (e) {} }); }
   function drone(on){
     if (amb.drone) { try { amb.drone.g.gain.linearRampToValueAtTime(.0001, ac().currentTime + .6); amb.drone.o1.stop(ac().currentTime + .8); amb.drone.o2.stop(ac().currentTime + .8); } catch (e) {} amb.drone = null; }
@@ -3353,15 +3346,16 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     amb.indoor = lastRoom && !lastRoom.outdoor && !specific;
     if (bedUrl !== amb.bedUrl) { stopLoop(amb.bed); amb.bed = bedUrl ? startLoop(bedUrl, settings.ambVol) : null; amb.bedUrl = bedUrl; }
     if (toneUrl !== amb.toneUrl) { stopLoop(amb.tone); amb.tone = toneUrl ? startLoop(toneUrl, settings.ambVol * .6) : null; amb.toneUrl = toneUrl; }
+    resumeLoop(amb.bed); resumeLoop(amb.tone);
     if (!bedUrl && !toneUrl && !amb.drone) drone(true);
     else if ((bedUrl || toneUrl) && amb.drone) drone(false);
     applyVolumes();
   }
-  function applyVolumes(){ if (amb.bed) fadeTo(amb.bed, settings.ambVol * (amb.indoor ? .18 : 1), 250); if (amb.tone) fadeTo(amb.tone, settings.ambVol * .6, 250); if (amb.drone) { try { amb.drone.g.gain.value = .02 * settings.ambVol; } catch (e) {} } }
+  function applyVolumes(){ if (amb.bed) fadeTo(amb.bed, settings.ambVol * (amb.indoor ? (amb.tone ? .3 : .6) : 1), 250); if (amb.tone) fadeTo(amb.tone, settings.ambVol * .6, 250); if (amb.drone) { try { amb.drone.g.gain.value = .02 * settings.ambVol; } catch (e) {} } }
   document.addEventListener('visibilitychange', function(){ if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); });
   if (window.ReverieRoom) window.ReverieRoom.init({ send: send, describe: function(text) { addLine(text, 'system'); }, compose: function(prefix, id){ if (input.value.trim()) { addLine('Your command box already has a draft. Send or clear it first.', 'system'); input.focus(); return; } input.value=prefix; composeHangoutId=id; input.focus(); } });
   var unlocked = false;
-  function unlock(){ if (unlocked) return; unlocked = true; ac(); if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); }
+  function unlock(){ unlocked = true; ac(); if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); }
   document.addEventListener('pointerdown', unlock, { once: true }); document.addEventListener('keydown', unlock, { once: true });
 
   /* ── LOG ─────────────────────────────────────────────────────────────── */
@@ -3690,5 +3684,24 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
 </body></html>
 `;
 
-module.exports = { feedHtml, dashboardHtml, creationsHtml, wallHtml, feedbackHtml, notificationsHtml, describeHtml, toolsHtml, youHtml, pronunciationDictionaryHtml, diaryHtml, briefHtml, requestAccessHtml, accessRequestsHtml, worldHtml, tabBarAsset, logsHtml, parlorHtml, SHARED_HEAD };
-
+module.exports = {
+  feedHtml,
+  dashboardHtml,
+  creationsHtml,
+  wallHtml,
+  feedbackHtml,
+  notificationsHtml,
+  describeHtml,
+  toolsHtml,
+  youHtml,
+  pronunciationDictionaryHtml,
+  diaryHtml,
+  briefHtml,
+  requestAccessHtml,
+  accessRequestsHtml,
+  worldHtml,
+  tabBarAsset,
+  logsHtml,
+  parlorHtml,
+  SHARED_HEAD,
+};

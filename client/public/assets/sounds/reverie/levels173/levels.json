@@ -1,0 +1,162 @@
+{
+  "bellward": {
+    "before": {
+      "rms": 0.006116265556013012,
+      "peak": 0.029678158462047577,
+      "samples": 3840000
+    },
+    "after": {
+      "rms": 0.0697469722646965,
+      "peak": 0.339957058429718,
+      "samples": 3840000
+    },
+    "gainDb": 21.17223413334292,
+    "changed": true,
+    "sourceSha256": "d192b99d90ce9c26765b4eb5af9dd5ebf530ba22b4930e1288474c049d365140",
+    "sha256": "753de5577001bf9fbabc1c84459000b23da13bad43a45ca909f6a92cdcaeac0f"
+  },
+  "fairlawn": {
+    "before": {
+      "rms": 0.0033247165660258275,
+      "peak": 0.06315283477306366,
+      "samples": 3840000
+    },
+    "after": {
+      "rms": 0.025361384291623667,
+      "peak": 0.46552932262420654,
+      "samples": 3840000
+    },
+    "gainDb": 17.796064606094827,
+    "changed": true,
+    "sourceSha256": "ec9f6356da195f272b05242a7e475d270367f91c42aa2bab2200deee210bb50d",
+    "sha256": "1eff6c2cce99eed870ac0f8bc91e6f7629083feb2c7c7fa4ba2f2a855211fbb2"
+  },
+  "gate": {
+    "before": {
+      "rms": 0.004781223557783647,
+      "peak": 0.04930334538221359,
+      "samples": 3840000
+    },
+    "after": {
+      "rms": 0.04754825935249899,
+      "peak": 0.5011813640594482,
+      "samples": 3840000
+    },
+    "gainDb": 19.946393830951475,
+    "changed": true,
+    "sourceSha256": "563e9d343af0515c7214a245c19d5db752964e01a6bdcb2a0af437c734c235b0",
+    "sha256": "052d0a95f209eb591713d0b199536a9a61b07dd63fca9ed9ce823a9d739a599c"
+  },
+  "gravewalk": {
+    "before": {
+      "rms": 0.005504967402884123,
+      "peak": 0.06886603683233261,
+      "samples": 3840000
+    },
+    "after": {
+      "rms": 0.039071208557432166,
+      "peak": 0.48798438906669617,
+      "samples": 3840000
+    },
+    "gainDb": 17.04381979025372,
+    "changed": true,
+    "sourceSha256": "cbd2bb00c9e9fdab4039b464ff364f8ec506f3db10aabb3b701f3c3f86f4663d",
+    "sha256": "aa80d8fc1a19022f70462230f228aa2b8cd9ecab534bcdcfbaea3bf615a07aa7"
+  },
+  "hook": {
+    "before": {
+      "rms": 0.005211643222175137,
+      "peak": 0.07352771610021591,
+      "samples": 3840000
+    },
+    "after": {
+      "rms": 0.034643580009295835,
+      "peak": 0.4885968565940857,
+      "samples": 3840000
+    },
+    "gainDb": 16.474900075907158,
+    "changed": true,
+    "sourceSha256": "6b88ce1f0e62447914fe9bfe0e0497f6f3a5d145c66fd9c2d868b6c1113158c8",
+    "sha256": "b28917f869a3c4fdf4c76a163c06ea6268c5732f2323f644762afcfe9153a59f"
+  },
+  "longacre": {
+    "before": {
+      "rms": 0.005131775576799482,
+      "peak": 0.027266526594758034,
+      "samples": 3840000
+    },
+    "after": {
+      "rms": 0.06956172472458595,
+      "peak": 0.3679084777832031,
+      "samples": 3840000
+    },
+    "gainDb": 22.69660768990914,
+    "changed": true,
+    "sourceSha256": "80a0703d54ca1bdb42db009427db573f8b70ab3372314a17460c71dee692922c",
+    "sha256": "7e63246f37ac5f3834c02fc20ea7ef802c96248434fc74f53502f20f34c2d342"
+  },
+  "millrace": {
+    "before": {
+      "rms": 0.0038544537400230874,
+      "peak": 0.02681751735508442,
+      "samples": 3840000
+    },
+    "after": {
+      "rms": 0.06907561384215644,
+      "peak": 0.47669315338134766,
+      "samples": 3840000
+    },
+    "gainDb": 25.182704044912605,
+    "changed": true,
+    "sourceSha256": "659db53cf74df0529b286bf2ea10e432508d7cd44db5f709f01e8cfb9caa2f00",
+    "sha256": "264a531928121a6175af10a8e191e36bf6f33e1ad3944550e4a4560264c3f66f"
+  },
+  "patch": {
+    "before": {
+      "rms": 0.0049856390838414,
+      "peak": 0.0286007858812809,
+      "samples": 3840000
+    },
+    "after": {
+      "rms": 0.06985950600828718,
+      "peak": 0.4086468517780304,
+      "samples": 3840000
+    },
+    "gainDb": 22.947544075732328,
+    "changed": true,
+    "sourceSha256": "764192a76719251eaed645f31d8fd1900a38628bdef7be4af753e29fc1c9e6ca",
+    "sha256": "dac619879c3815fdf8e82c964a7069076a12a4bcd086a767cb4a162f17395869"
+  },
+  "sweetwater": {
+    "before": {
+      "rms": 0.0044259451930305505,
+      "peak": 0.043642353266477585,
+      "samples": 3840000
+    },
+    "after": {
+      "rms": 0.04952839088083839,
+      "peak": 0.48984360694885254,
+      "samples": 3840000
+    },
+    "gainDb": 21.005758392358334,
+    "changed": true,
+    "sourceSha256": "a6b8d9bdff293d4d132b063c3a11f58f82e208aa0d79408fbb7fd908c83b658b",
+    "sha256": "9a6947b281e5d5073ec6eb915636f064b61f2b5b8adfbc58ebc8a8acbd8f1e32"
+  },
+  "tanglefoot": {
+    "before": {
+      "rms": 0.006303078360228369,
+      "peak": 0.04821214824914932,
+      "samples": 3840000
+    },
+    "after": {
+      "rms": 0.06403710220798722,
+      "peak": 0.49005916714668274,
+      "samples": 3840000
+    },
+    "gainDb": 20.140791934210206,
+    "changed": true,
+    "sourceSha256": "19f26921e28a8f33388a73ef8aeca90934a78b1f709177bd26aeeb0a314f243a",
+    "sha256": "467bbbbe34b5d8a3a2cde2222a8c7d7e90c0e06be85e0210e828e7dfecf8bad7"
+  }
+}
