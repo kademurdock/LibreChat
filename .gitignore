@@ -186,3 +186,5 @@ codedb.snapshot
 /dev/character/out-mounted/
 /dev/character/out-dialog/
 /dev/recovery/out/
+
+/dev/character/out-voice/

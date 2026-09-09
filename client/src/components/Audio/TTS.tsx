@@ -1,5 +1,6 @@
 /* eslint-disable jsx-a11y/media-has-caption */
 import { useEffect } from 'react';
+import { watchVoiceAudio, stopWatchingVoiceAudio } from '~/components/Chat/character/voice-playback.mjs';
 import { useRecoilValue } from 'recoil';
 import type { TMessageAudio } from '~/common';
 import { VolumeIcon, VolumeMuteIcon, Spinner } from '@librechat/client';
@@ -78,6 +79,8 @@ export function BrowserTTS({
         </button>
       )}
       <audio
+        onPlaying={event => watchVoiceAudio(event.currentTarget, messageId)}
+        onEmptied={event => stopWatchingVoiceAudio(event.currentTarget)}
         ref={audioRef}
         controls
         preload="none"
@@ -176,6 +179,8 @@ export function ExternalTTS({
         </button>
       )}
       <audio
+        onPlaying={event => watchVoiceAudio(event.currentTarget, messageId)}
+        onEmptied={event => stopWatchingVoiceAudio(event.currentTarget)}
         ref={audioRef}
         controls
         preload="none"

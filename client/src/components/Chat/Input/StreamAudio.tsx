@@ -10,6 +10,7 @@ import { getLatestText, logger } from '~/utils';
 import { useAuthContext } from '~/hooks';
 import { globalAudioId } from '~/common';
 import store from '~/store';
+import { watchVoiceAudio, stopWatchingVoiceAudio } from '../character/voice-playback.mjs';
 
 function timeoutPromise(ms: number, message?: string) {
   return new Promise((_, reject) =>
@@ -288,6 +289,8 @@ export default function StreamAudio({ index = 0 }) {
   return (
     // eslint-disable-next-line jsx-a11y/media-has-caption
     <audio
+      onPlaying={event => watchVoiceAudio(event.currentTarget, latestMessage?.messageId)}
+      onEmptied={event => stopWatchingVoiceAudio(event.currentTarget)}
       ref={audioRef}
       controls
       controlsList="nodownload nofullscreen noremoteplayback"

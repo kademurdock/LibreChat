@@ -1,4 +1,8 @@
 {
+  "com_ui_voice_portraits": "Animated voice portraits",
+  "com_ui_voice_portrait_pause": "Pause voice message",
+  "com_ui_voice_portrait_resume": "Resume voice message",
+  "com_ui_voice_portrait_play_error": "Playback could not resume. Try Resume again.",
   "com_auth_sign_in_help": "Need help signing in?",
   "com_auth_recovery_inbox_help": "Check your inbox and spam folder. Use the newest reset email; the link lasts 15 minutes. If it expires, return to sign in and choose Forgot password again.",
   "com_auth_recovery_options": "Use your account email to recover a password. If you forgot your email, you can sign in with your linked phone number and password. For a phone-only account, a lost email inbox, or lost two-step verification codes, ask Kade for account help. Do not create a second account to recover your chats or balance.",
