@@ -16,3 +16,5 @@ node ./api/app/clients/tools/kadegames/harness.js
 ```
 
 The tests use a disposable MongoDB and explicitly replace paid HTTP for allowance checks. Production API bundle/declaration build and browser playtests are also required. Native clients get commands, choices, and event sounds from the shared API; the new illustrated scenes and background selection are web features. Keep the existing public-access gate unchanged.
+
+Session169: `hangout invite Name` adds nearby authored resident participation with existing sounds and shared albums. See /REVERIE_3D.md for the web renderer, native hold, exact test commands and implementation limits.

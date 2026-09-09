@@ -79,7 +79,7 @@ export * from './rum/proxy';
 export type * from './mcp/types';
 export type * from './flow/types';
 export type * from './types';
-export { runHangout, hangoutView } from './reverie/hangouts';
+export { runHangout, hangoutView, inviteHangout } from './reverie/hangouts';
 export { refreshReverieCast } from './reverie/cast';
 export { REVERIE_OUTDOORS, reverieSenses, outdoorEncounter } from './reverie/outdoors';
 export { residentReply } from './reverie/conversation';

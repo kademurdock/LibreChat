@@ -386,13 +386,14 @@ export async function runHangout(store: Store, actor: Guest, raw: string): Promi
         if (action === 'leave') {
           next.guests = g.guests.filter((guest) => guest.userId !== actor.userId);
           line = `${actor.name} steps out of the hangout.`;
-          if (g.host.userId === actor.userId && next.guests.length) {
-            next.host = next.guests[0];
+          const nextHost = next.guests.find((guest) => !guest.userId.startsWith('npc:'));
+          if (g.host.userId === actor.userId && nextHost) {
+            next.host = nextHost;
             line += ` ${next.host.name} is hosting now.`;
-          } else if (!next.guests.length) {
+          } else if (!next.guests.length || (g.host.userId === actor.userId && !nextHost)) {
             album = archiveGathering(g, album);
             next = null;
-            line += ' The last guest has left. The shared memories are saved here.';
+            line += ' The gathering winds down. The shared memories are saved here.';
           }
         } else if (action === 'topic') {
           next.round++;
@@ -428,4 +429,43 @@ export async function runHangout(store: Store, actor: Guest, raw: string): Promi
     if (await store.save(before, after)) return reply(after, actor, [line], sound, line);
   }
   return fail('A few people acted together. Open Hangout to catch up, then try your choice again.');
+}
+
+/** A nearby authored resident joins through the same versioned room store as a player. */
+export async function inviteHangout(
+  store: Store & { present(): Promise<boolean> },
+  actor: Guest,
+  guest: Guest,
+): Promise<Reply> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const before = await store.read();
+    const g = before.gathering;
+    if (!g) return fail('Start or join a hangout here before inviting somebody.');
+    if (!g.guests.some((p) => p.userId === actor.userId)) return fail('Join this hangout first.');
+    if (!(await store.present())) return fail('They have moved on. Invite somebody who is here.');
+    if (g.guests.some((p) => p.userId === guest.userId))
+      return reply(before, actor, [`${guest.name} has already joined.`]);
+    if (g.guests.length >= 64) return fail('This hangout is full. You can still chat here.');
+    const index = createHash('sha256')
+      .update(guest.userId + g.id)
+      .digest()[0];
+    const options = themes[g.theme].contributions;
+    const contribution = options[index % options.length];
+    const text = `joins the ${themes[g.theme].title.toLowerCase()} and ${contribution.line}`;
+    const next = {
+      ...g,
+      guests: [...g.guests, guest],
+      entries: [...g.entries, { ...guest, text, at: time() }].slice(-48),
+    };
+    const after = { ...before, revision: before.revision + 1, gathering: next };
+    if (await store.save(before, after))
+      return reply(
+        after,
+        actor,
+        [`${guest.name} ${text}`],
+        contribution.sound,
+        `${guest.name} ${text}`,
+      );
+  }
+  return fail('A few people acted together. Open Hangout and try your invitation again.');
 }

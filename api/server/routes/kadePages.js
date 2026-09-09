@@ -2974,7 +2974,7 @@ const briefHtml = `<!doctype html><html lang="en"><head><title>Morning Brief —
  * hand Kade a file per kind and it replaces the synth voice of the world.
  * Deliberately its OWN surface — not an agent chat, not the platform's face:
  * a doorway page. Ambience per district, off by default, remembered. */
-const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${SHARED_HEAD}<link rel="stylesheet" href="/assets/reverie/room.css?v=136b">
+const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${SHARED_HEAD}<link rel="stylesheet" href="/assets/reverie/room.css?v=169">
 <style>
   /* ── REVERIE CLIENT (Sep 6 2026) ─────────────────────────────────────────
    * Two audiences, one page. For a screen reader: a single live log that says
@@ -3144,6 +3144,12 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     <section class="scene" id="scene" data-ward="gate" data-dark="0" data-wx="clear" data-water="0" aria-live="off">
       <div class="art" aria-hidden="true"><div class="sun"></div><div class="sky2"></div><div class="skyline"></div><div class="water"></div><span class="lantern l1"></span><span class="lantern l2"></span><span class="lantern l3"></span><div class="wx"></div></div>
       <div id="reverieIllustration" aria-hidden="true"></div><span id="sceneCaption" aria-hidden="true"></span>
+      <details class="picture-controls"><summary>Picture controls</summary>
+        <div class="toolbar" role="group" aria-label="Picture viewpoint">
+          <button type="button" class="chip" id="viewLeft">Turn view left</button><button type="button" class="chip" id="viewRight">Turn view right</button>
+          <button type="button" class="chip" id="viewNear">Zoom in</button><button type="button" class="chip" id="viewFar">Zoom out</button>
+        </div><p class="muted" id="pictureStatus">An artistic view of your current room. Use the exits to travel.</p>
+      </details>
       <div class="text">
         <div class="ward" id="s-ward">the Threshold</div>
         <h2 id="s-name">The Threshold Gate</h2>
@@ -3229,14 +3235,15 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       <div class="toolbar">
         <button type="button" class="chip" id="verboseToggle" aria-pressed="true">Read the room on every move: on</button>
         <button type="button" class="chip" id="liveToggle" aria-pressed="true">Hear the room live: on</button>
-        <button type="button" class="chip" id="testSound">Test sound</button><button type="button" class="chip" id="illustrationToggle" aria-pressed="true">Room picture: on</button><button type="button" class="chip" id="readingToggle" aria-pressed="false">Roomy text: off</button>
+        <button type="button" class="chip" id="testSound">Test sound</button><button type="button" class="chip" id="illustrationToggle" aria-pressed="true">Room picture: on</button><button type="button" class="chip" id="motionToggle" aria-pressed="true">World motion: on</button><button type="button" class="chip" id="describePicture">Describe the picture</button><button type="button" class="chip" id="readingToggle" aria-pressed="false">Roomy text: off</button>
       </div>
       <p class="muted" style="font-size:.85rem;margin:.5rem 0 0">Everything on this page is a button or a line of text. Typing works everywhere buttons do. Numbers pick from a list. "help" any time; "what" says what you can do right here.</p>
     </details>
   </div>
 </main>
 <footer class="muted">Make yourself at home. &middot; <a href="/help/world">how Reverie works</a></footer>
-<script src="/assets/reverie/room.js?v=153"></script>
+<script src="/assets/reverie/room.js?v=169"></script>
+<script type="module" src="/assets/reverie/stage.mjs?v=169"></script>
 <script>
 (function(){
   'use strict';
@@ -3352,7 +3359,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   }
   function applyVolumes(){ if (amb.bed) fadeTo(amb.bed, settings.ambVol * (amb.indoor ? .18 : 1), 250); if (amb.tone) fadeTo(amb.tone, settings.ambVol * .6, 250); if (amb.drone) { try { amb.drone.g.gain.value = .02 * settings.ambVol; } catch (e) {} } }
   document.addEventListener('visibilitychange', function(){ if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); });
-  if (window.ReverieRoom) window.ReverieRoom.init({ send: send, compose: function(prefix, id){ if (input.value.trim()) { addLine('Your command box already has a draft. Send or clear it first.', 'system'); input.focus(); return; } input.value=prefix; composeHangoutId=id; input.focus(); } });
+  if (window.ReverieRoom) window.ReverieRoom.init({ send: send, describe: function(text) { addLine(text, 'system'); }, compose: function(prefix, id){ if (input.value.trim()) { addLine('Your command box already has a draft. Send or clear it first.', 'system'); input.focus(); return; } input.value=prefix; composeHangoutId=id; input.focus(); } });
   var unlocked = false;
   function unlock(){ if (unlocked) return; unlocked = true; ac(); if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); }
   document.addEventListener('pointerdown', unlock, { once: true }); document.addEventListener('keydown', unlock, { once: true });
@@ -3508,6 +3515,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     var kinds = Array.from(new Set((d.kinds || []).concat(d.sounds || [])));
     if (!d.ok && !kinds.length) kinds = ['err'];
     playKinds(kinds);
+    if (window.ReverieRoom) window.ReverieRoom.result(d);
     if (mode === 'play' && d.born) { $('m-live').textContent = live ? 'live' : 'quiet'; }
   }
 

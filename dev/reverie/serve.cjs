@@ -1,0 +1,27 @@
+const path = require('node:path');
+const root=path.resolve(__dirname,'../..');
+require(path.join(root,'api/test/reverie-bootstrap.cjs'));
+const express=require(path.join(root,'node_modules/express'));
+const mongoose=require(path.join(root,'node_modules/mongoose'));
+const {MongoMemoryServer}=require(path.join(root,'node_modules/mongodb-memory-server'));
+const {MooChar}=require(path.join(root,'api/models/kadeMoo'));
+const engine=require(path.join(root,'api/app/clients/tools/kademoo/life'));
+const old=require(path.join(root,'api/app/clients/tools/kademoo/engine'));
+const app=express();app.use(express.json());
+const run=command=>engine.runCommand({userId:'visual-local',displayName:'Alex Example',command,live:true,isWizard:true});
+(async()=>{
+ const db=await MongoMemoryServer.create();await mongoose.connect(db.getUri());
+ const ch=await old.getOrCreateChar('visual-local','Alex Example');
+ await MooChar.updateOne({_id:ch._id},{$set:{roomId:'pats_diner','attrs.life':{created:true,needs:{fed:80,rested:80,clean:80,fun:80,company:80},needsAt:Date.now()}}});
+ await run('look');
+ app.get('/world',(_,res)=>res.type('html').send(require(path.join(root,'api/server/routes/kadePages')).worldHtml));
+ app.use('/assets',express.static(path.join(root,'client/public/assets')));
+ app.get('/favicon.ico',(_,res)=>res.status(204).end());
+ app.use('/native',express.static(path.join(process.env.REVERIE_NATIVE_ROOT || path.resolve(root,'../kade-ai-native'),'Sources/Reverie')));
+ app.post('/api/auth/refresh',(_,res)=>res.json({token:'local-fixture'}));
+ app.get('/api/world/sounds',(_,res)=>res.json({event:{},room:{},district:{}}));
+ app.get('/api/world/here',async(_,res)=>res.json(await run('look')));
+ app.post('/api/world/command',async(req,res)=>{try{res.json(await run(req.body.command));}catch(e){console.error(e);res.status(500).json({error:e.message});}});
+ app.get('/api/world/stream',(_,res)=>res.type('text/event-stream').end());
+ app.listen(8169,'127.0.0.1',()=>console.log('Local actual-engine world: http://127.0.0.1:8169/world'));
+})();

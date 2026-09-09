@@ -7,7 +7,13 @@
   };
   var esc = function (s) {
     return String(s || '').replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      return {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      }[c];
     });
   };
   function rect(x, y, w, h, fill, r) {
@@ -154,7 +160,7 @@
         rect(280, 47, 102, 111, '#e6dac2', 2) +
         rect(289, 56, 84, 93, '#536d62', 1) +
         '<path d="M299 131L322 86L345 123L362 101V139H299Z" fill="#d1b77f"/>';
-      svg += plant(729, 236);
+      if (!home) svg += plant(729, 236);
       if (bar || diner) {
         svg += rect(440, 90, 272, 10, '#594d40', 2) + rect(440, 154, 272, 10, '#594d40', 2);
         for (var j = 0; j < 9; j++)
@@ -170,7 +176,7 @@
             rect(414 + k * 80, 298, 32, 12, '#9a584c', 7);
         if (diner)
           svg += rect(44, 232, 144, 62, '#b46a53', 13) + rect(48, 269, 144, 23, '#bc725b', 8);
-      } else {
+      } else if (!home) {
         svg +=
           rect(403, 223, 244, 86, '#617f79', 16) +
           rect(389, 256, 37, 68, '#54716c', 12) +
@@ -185,7 +191,21 @@
           rect(117, 246, 9, 45, '#bd7f60');
       }
     }
-    if (!(room.sensory && room.sensory.nature) || room.hangout)
+    if (home)
+      (room.furniture || []).slice(0, 8).forEach(function (name, i) {
+        var x = 70 + (i % 4) * 178,
+          y = 250 + Math.floor(i / 4) * 74;
+        svg +=
+          rect(x, y, 118, 48, '#8c725b', 6) +
+          '<text x="' +
+          (x + 59) +
+          '" y="' +
+          (y + 28) +
+          '" text-anchor="middle" fill="#fff" font-size="10">' +
+          esc(String(name).slice(0, 21)) +
+          '</text>';
+      });
+    if ((!home && !(room.sensory && room.sensory.nature)) || room.hangout)
       svg +=
         '<ellipse cx="316" cy="353" rx="100" ry="27" fill="#302923" opacity=".15"/>' +
         rect(262, 323, 9, 54, '#705644') +
@@ -217,15 +237,79 @@
       svg += avatar(name, pos[0], pos[1]);
     });
     svg += '</svg>';
-    $('reverieIllustration').innerHTML = svg;
+    var fallback = $('reverieIllustration').querySelector('.reverie-fallback');
+    if (!fallback) {
+      fallback = document.createElement('div');
+      fallback.className = 'reverie-fallback';
+      $('reverieIllustration').appendChild(fallback);
+    }
+    fallback.innerHTML = svg;
     $('sceneCaption').textContent =
       room.name +
       ' · ' +
-      (names.length === 1 ? 'A moment to yourself' : names.length + ' people in view');
+      ((room.peopleDetail || []).length === 0
+        ? 'A moment to yourself'
+        : 1 + (room.peopleDetail || []).length + ' here together');
   }
+  var stage = null,
+    failed = false,
+    motion = true;
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  function syncStage() {
+    var host = $('reverieIllustration');
+    if (!$('motionToggle')) return;
+    $('motionToggle').setAttribute('aria-pressed', String(motion));
+    $('motionToggle').textContent = reduced.matches
+      ? 'World motion: reduced by device'
+      : 'World motion: ' + (motion ? 'on' : 'off');
+    ['viewLeft', 'viewRight', 'viewNear', 'viewFar'].forEach(function (id) {
+      $(id).disabled = host.hidden || failed || !window.ReverieStage;
+    });
+    if (host.hidden || failed) {
+      if (stage) {
+        stage.dispose();
+        stage = null;
+      }
+      return;
+    }
+    if (!latest || !window.ReverieStage) return;
+    if (!stage) {
+      try {
+        stage = new window.ReverieStage.Stage(host, function () {
+          failed = true;
+          if (stage) {
+            stage.dispose();
+            stage = null;
+          }
+          $('pictureStatus').textContent =
+            'The illustrated view is active; 3D is unavailable on this device.';
+        });
+      } catch (error) {
+        failed = true;
+        host.querySelectorAll('canvas').forEach(function (c) {
+          c.remove();
+        });
+        $('pictureStatus').textContent =
+          'The illustrated view is active; 3D is unavailable on this device.';
+        return;
+      }
+    }
+    stage.update(latest.room, latest.hud);
+    stage.setMotion(motion && !reduced.matches);
+  }
+  window.addEventListener('reverie-stage-ready', syncStage);
+  reduced.addEventListener('change', syncStage);
+  window.addEventListener('pagehide', function () {
+    if (stage) {
+      stage.dispose();
+      stage = null;
+    }
+  });
+  window.addEventListener('pageshow', syncStage);
   function render(room, hud) {
     latest = { room: room, hud: hud };
     draw(room, hud);
+    syncStage();
     var g = room.hangout,
       box = $('hangoutPanel');
     if (!g && box.contains(document.activeElement)) $('cmdInput').focus();
@@ -282,11 +366,43 @@
   window.ReverieRoom = {
     init: function (callbacks) {
       api = callbacks;
+      try {
+        motion = localStorage.getItem('reverie_motion') !== 'off';
+      } catch (e) {}
+      $('motionToggle').onclick = function () {
+        motion = !motion;
+        try {
+          localStorage.setItem('reverie_motion', motion ? 'on' : 'off');
+        } catch (e) {}
+        syncStage();
+      };
+      $('describePicture').onclick = function () {
+        if (!latest) {
+          api.describe('Enter the world first to describe its picture.');
+          return;
+        }
+        if (!stage) {
+          api.describe('The illustrated view shows ' + latest.room.name + '. ' + latest.room.desc);
+          return;
+        }
+        api.describe(window.ReverieStage.describePicture(stage.model));
+      };
+      [
+        ['viewLeft', -0.2, 0],
+        ['viewRight', 0.2, 0],
+        ['viewNear', 0, 0.1],
+        ['viewFar', 0, -0.1],
+      ].forEach(function (v) {
+        $(v[0]).onclick = function () {
+          if (stage) stage.view(v[1], v[2]);
+        };
+      });
       $('illustrationToggle').onclick = function () {
         var hidden = $('reverieIllustration').hidden;
         $('reverieIllustration').hidden = !hidden;
         this.setAttribute('aria-pressed', String(hidden));
         this.textContent = 'Room picture: ' + (hidden ? 'on' : 'off');
+        syncStage();
         try {
           localStorage.setItem('reverie_picture', hidden ? 'on' : 'off');
         } catch (e) {}
@@ -305,10 +421,27 @@
       } catch (e) {}
     },
     render: render,
+    result: function (result) {
+      if (result.mode && result.mode !== 'play') {
+        latest = null;
+        if (stage) {
+          stage.dispose();
+          stage = null;
+        }
+        $('reverieIllustration').replaceChildren();
+        return;
+      }
+      if (latest && result.hud) {
+        latest.hud = result.hud;
+        syncStage();
+      }
+      if (stage && result.ok) stage.cue(result.kinds || []);
+    },
     people: function (people) {
       if (latest) {
         latest.room.peopleDetail = people;
         draw(latest.room, latest.hud);
+        syncStage();
       }
     },
   };
