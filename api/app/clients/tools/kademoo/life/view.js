@@ -76,7 +76,7 @@ async function describeRoom(ctx) {
         .join(', ') +
       '.';
 
-  const peopleObjs = people.map((p) => personTag(ctx, p));
+  const peopleObjs = people.map((p) => personTag(ctx, p, room.props));
   return {
     roomId: room.roomId,
     name: room.name,
@@ -106,7 +106,7 @@ async function describeRoom(ctx) {
 }
 
 /** One person, one line — pose beats schedule beats mood beats posture beats name. */
-function personTag(ctx, p) {
+function personTag(ctx, p, roomProps = {}) {
   const kind = kindOfSoul(p);
   const a = p.attrs || {};
   let tag = '';
@@ -114,7 +114,10 @@ function personTag(ctx, p) {
   else if (kind === 'stray') tag = strays.roomTag((a.trust || {})[ctx.ch.userId] || 0);
   else if (kind === 'citizen') {
     const d = reverie.npcDoingNow(p.userId);
-    tag = d && d.doing ? d.doing : '';
+    tag =
+      (!roomProps.hangout &&
+        require('./planning').publicActivity(p, d?.doing, !!roomProps.outdoor)) ||
+      (d && d.doing ? d.doing : '');
   } else if (kind === 'child') tag = a.child && a.child.doing ? a.child.doing : 'here';
   else if (kind === 'pet') tag = a.pet && a.pet.doing ? a.pet.doing : 'close by';
   else if (a.posture && a.posture !== 'standing') tag = a.posture;
@@ -132,7 +135,9 @@ function personTag(ctx, p) {
     tag,
     line,
     pronouns: a.pronouns || (kind === 'player' ? 'they' : null),
-    appearance: require('@librechat/api').reverieAppearance(a),
+    appearance:
+      require('@librechat/api').reverieAppearance(a) ||
+      require('@librechat/api').residentAppearance(p.userId),
     cmds: personCmds(ctx, p, kind),
   };
 }

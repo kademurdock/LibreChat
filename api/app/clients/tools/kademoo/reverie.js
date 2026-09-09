@@ -17,7 +17,7 @@ const overhear = require('./overhear');
 const { STRAYS } = require('./strays');
 const { driftTo: strayDrift } = require('./strays');
 
-const REVERIE_SEED_VERSION = 6;
+const REVERIE_SEED_VERSION = 7;
 
 /* ── THE WARDS ─────────────────────────────────────────────────────────────
  * District props carry the law tables (bible design: the engine never
@@ -526,6 +526,23 @@ const CITY_ITEMS = [
  * town warm at $0. ambient: lines the tick may surface when a soul is in
  * the room. */
 const CENSUS = [
+  {
+    id: 'nell', name: 'Nell Calder', aka: 'Nell',
+    desc: 'Nell runs the Gully Washhouse in a soft cardigan with the sleeves pushed up. She keeps spare buttons in a blue tin and likes repairing things before replacing them. Pat brings the diner towels here; Ines trades old mystery paperbacks with her. Nell will happily argue about the ending while she folds.',
+    home: 'gully_laundry', family: [], knows: ['pat', 'ines'],
+    wants: ['finish repairing the bench by the window', 'work out the mystery before Ines gives away the ending'],
+    schedule: [
+      { from: 7, to: 20, room: 'gully_laundry', doing: 'folding warm laundry' },
+      { from: 20, to: 7, room: 'gully_laundry', doing: 'reading a mystery by the window' },
+    ],
+    talk: [
+      '"Pat brings the towels before breakfast. I know how busy the diner was by how much syrup is on them."',
+      '"Ines left me another mystery. If she asks, I have not reached the ending. If she tells me anyway, I am keeping the book."',
+      '"There are spare buttons in the blue tin. Take one that matches, or take one you like better."',
+      '"That bench needs a new slat. The rest of it is perfectly good. I am not throwing away a whole bench over one piece of wood."',
+    ],
+    ambient: ['Nell smooths the corners of a towel before stacking it.', 'Nell turns a page with one hand and catches a sliding sock with the other.', 'Nell sorts a few spare buttons into the blue tin.'],
+  },
   {
     id: 'pat', name: "Pat Harris", aka: 'Pat',
     desc: "Pat wears a faded diner T-shirt and keeps a towel tucked into her apron. She is working the grill, checking the tickets, and keeping an eye on anyone who has been sitting alone too long.",
@@ -1115,6 +1132,7 @@ async function carveReverie() {
     if (res.upsertedCount) newRooms++;
   }
   await require('./life/outdoors').seed();
+  await require('./life/places').seed();
   for (const i of CITY_ITEMS) {
     await MooItem.updateOne(
       { itemId: i.itemId },
@@ -1277,6 +1295,7 @@ async function tickWorld() {
 
     const rooms = await activePlayerRooms();
     if (!rooms.length) return;
+    require('./life/planning').tickResidents(rooms, weatherNow().line);
     /* 2 — weather turns, where sky can be felt. */
     const w = weatherNow();
     if (lastWeatherKind === null) lastWeatherKind = w.kind;
@@ -1334,7 +1353,8 @@ async function tickWorld() {
      * VEIL RULE: never repeat the same ambient line back-to-back for an NPC.
      * Four lines per NPC + dedup = a player never notices the pool is finite. */
     if (Math.random() < 0.35) {
-      const hereNpcs = await MooChar.find({ userId: /^npc:/, roomId: { $in: rooms } }).select('userId name roomId').lean();
+      const hereNpcs = (await MooChar.find({ userId: /^npc:/, roomId: { $in: rooms } }).select('userId name roomId attrs.residentPlan').lean())
+        .filter((npc) => !require('./life/planning').publicActivity(npc, npcDoingNow(npc.userId)?.doing));
       if (hereNpcs.length) {
         const npc = hereNpcs[ambientCursor++ % hereNpcs.length];
         const def = CENSUS_BY_ID[npc.userId];

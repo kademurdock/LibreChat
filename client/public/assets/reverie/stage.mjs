@@ -8,7 +8,9 @@ import {
   figurePosition,
   figureActivity,
   activityPose,
-} from './presentation.mjs?v=171';
+  residentFace,
+  walkPose,
+} from './presentation.mjs?v=172';
 
 const COLORS = {
   wood: 0xa37750,
@@ -450,6 +452,28 @@ export class Stage {
       this.table(0.6, 0.2);
       this.furniture('chair', 0.6, 1.3, 0);
     }
+    if (this.model.type === 'barber') {
+      this.box(COLORS.wood,-2.8,.65,-2.8,2.8,1.3,.7);
+      this.box(COLORS.brass,-2.8,2,-3.25,2.4,1.65,.12);
+      this.box(0xa1c4ca,-2.8,2,-3.17,2.2,1.45,.04);
+      this.furniture('chair',-2.8,-.7,0,Math.PI);
+      this.mesh('cylinder',COLORS.ink,[-2.8,.18,-.7],[.45,.2,.45]);
+      for(let i=0;i<3;i++) this.box(COLORS.cream,-2.1,1.35+i*.08,-2.8,.55,.08,.4);
+      this.box(COLORS.ink,-3.4,1.34,-2.65,.32,.025,.09);
+      this.bench(3,1.5);
+    }
+    if (this.model.type === 'workshop') {
+      this.box(COLORS.edge,0,1,-2.8,5.5,1.8,.85);
+      this.box(COLORS.wood,0,1.95,-2.8,5.7,.18,1.0);
+      this.box(0x756a58,0,2.7,-4.1,5.2,1.4,.12);
+      for(let i=0;i<7;i++) {
+        this.box(COLORS.ink,-2.1+i*.65,2.7,-3.98,.09,.55,.07);
+        this.box(0xb5c5c3,-2.1+i*.65,3,-3.96,.27,.1,.1);
+      }
+      for(let i=0;i<3;i++) this.mesh('cylinder',COLORS.ink,[3.6,.2+i*.32,.5],[.55,.3,.55]);
+      this.mesh('cylinder',0xb78063,[-1,.6,0],[.4,.15,.4]);
+      this.mesh('cylinder',COLORS.ink,[-1,.3,0],[.055,.6,.055]);
+    }
     if (this.model.type === 'bar') {
       this.box(COLORS.edge, 0.8, .65, -1.5, 6.3, 1.3, .75);
       this.box(COLORS.wood, .8, 1.35, -1.5, 6.6, .15, 1.1);
@@ -600,11 +624,13 @@ export class Stage {
     const body = new T.Group();
     g.add(body);
     this.mesh('sphere', shirt, [0, 0.77, 0], [0.25, 0.36, 0.18], body);
-    this.mesh('sphere', skin, [0, 1.26, 0], [0.2, 0.23, 0.2], body);
+    const head = new T.Group();
+    body.add(head);
+    this.mesh('sphere', skin, [0, 1.26, 0], [0.2, 0.23, 0.2], head);
     const hair = look.hairColor;
-    if (look.hair !== 'bald') this.mesh('sphere', hair, [0, 1.41, -0.02], [0.206, 0.13, 0.2], body);
-    if (look.hair === 'bun') this.mesh('sphere', hair, [0, 1.55, -0.12], [0.13, 0.13, 0.13], body);
-    if (look.hair === 'long') this.mesh('sphere', hair, [0, 1.15, -0.13], [0.23, 0.38, 0.15], body);
+    if (look.hair !== 'bald') this.mesh('sphere', hair, [0, 1.41, -0.02], [0.206, 0.13, 0.2], head);
+    if (look.hair === 'bun') this.mesh('sphere', hair, [0, 1.55, -0.12], [0.13, 0.13, 0.13], head);
+    if (look.hair === 'long') this.mesh('sphere', hair, [0, 1.15, -0.13], [0.23, 0.38, 0.15], head);
     if (look.hair === 'locks')
       for (let i = 0; i < 9; i++) {
         const a = (i / 8) * Math.PI;
@@ -613,7 +639,7 @@ export class Stage {
           hair,
           [Math.cos(a) * 0.2, 1.15, -Math.sin(a) * 0.17],
           [0.038, 0.48 + (i % 2) * 0.08, 0.038],
-          body,
+          head,
         );
       }
     if (look.hair === 'curls')
@@ -624,12 +650,12 @@ export class Stage {
           hair,
           [Math.cos(a) * 0.17, 1.43 + Math.sin(a) * 0.065, -0.035],
           [0.095, 0.095, 0.12],
-          body,
+          head,
         );
       }
     if (look.hair === 'hat') {
-      this.mesh('cylinder', COLORS.ink, [0, 1.53, 0], [0.24, 0.17, 0.24], body);
-      this.mesh('cylinder', COLORS.ink, [0, 1.46, 0.045], [0.3, 0.035, 0.3], body);
+      this.mesh('cylinder', COLORS.ink, [0, 1.53, 0], [0.24, 0.17, 0.24], head);
+      this.mesh('cylinder', COLORS.ink, [0, 1.46, 0.045], [0.3, 0.035, 0.3], head);
     }
     if (look.outfit === 'dress') this.mesh('cone', shirt, [0, 0.52, 0], [0.39, 0.66, 0.3], body);
     if (look.outfit === 'coat') {
@@ -642,14 +668,22 @@ export class Stage {
       this.box(COLORS.cream, 0.11, 0.88, 0.177, 0.11, 0.045, 0.015, body);
     if (look.headphones) {
       for (const dx of [-0.225, 0.225])
-        this.mesh('sphere', COLORS.ink, [dx, 1.27, 0], [0.06, 0.095, 0.075], body);
-      const band = this.mesh('ring', COLORS.ink, [0, 1.32, 0], [0.25, 0.27, 0.22], body);
-      band.rotation.x = 0;
+        this.mesh('sphere', COLORS.ink, [dx, 1.27, 0], [0.06, 0.095, 0.075], head);
+      this.mesh('ring', COLORS.ink, [0, 1.32, 0], [0.25, 0.27, 0.22], head);
     }
-    this.mesh('sphere', 0x714b42, [0, 1.16, 0.19], [0.055, 0.013, 0.018], body);
-
-    for (const dx of [-0.075, 0.075])
-      this.mesh('sphere', 0x313b3b, [dx, 1.29, 0.179], [0.018, 0.022, 0.017], body);
+    const mouth = this.mesh('sphere', 0x714b42, [0, 1.16, .195], [.055,.013,.018], head);
+    const eyes = [], brows = [], corners = [];
+    for (const dx of [-1, 1]) {
+      eyes.push(this.mesh('sphere', 0x313b3b, [dx*.075,1.29,.185], [.019,.024,.019], head));
+      brows.push(this.box(hair,dx*.076,1.345,.183,.073,.014,.02,head));
+      corners.push(this.mesh('sphere',0x714b42,[dx*.046,1.165,.193],[.018,.009,.012],head));
+      this.mesh('sphere',skin,[dx*.203,1.25,0],[.043,.065,.04],head);
+      if(look.glasses) this.mesh('ring',COLORS.ink,[dx*.076,1.29,.205],[.063,.052,.045],head);
+    }
+    if(look.glasses) this.box(COLORS.ink,0,1.295,.209,.035,.012,.02,head);
+    head.children.forEach(piece => { piece.position.y -= 1.26; });
+    head.position.y = 1.26;
+    if(look.apron) this.box(COLORS.cream,0,.69,.181,.35,.51,.035,body);
     const limbs = [];
     for (const dx of [-1, 1]) {
       const arm = new T.Group();
@@ -674,6 +708,8 @@ export class Stage {
       this.box(0xa7b7b0,0,-.84,0,.16,.18,.035,limbs[2]);
       this.box(COLORS.cream,0,.7,.19,.3,.44,.025,body);
     }
+    if(look.watch) this.mesh('cylinder',COLORS.brass,[0,-.28,0],[.08,.035,.08],limbs[2]);
+    if (activity === 'washing') this.mesh('cylinder',COLORS.cream,[0,-.36,.08],[.09,.15,.09],limbs[2]);
     if (activity === 'drinking') this.mesh('cylinder',COLORS.cream,[0,-.36,.07],[.09,.15,.09],limbs[2]);
     if (activity === 'sweeping' || activity === 'fishing') {
       const tool=this.mesh('cylinder',COLORS.edge,[.38,.85,.22],[.022,1.6,.022],g);tool.rotation.z=-.2;
@@ -688,6 +724,10 @@ export class Stage {
       id: person.id,
       g,
       body,
+      head,
+      eyes,
+      brows,
+      mouth,
       limbs,
       seed,
       index,
@@ -696,33 +736,36 @@ export class Stage {
       activity,
       born: this.time,
     };
-    const walking = Math.abs(from.x - x) + Math.abs(from.z - z) > 0.02;
-    if (!previous && this.entering) {
-      figure.until = this.time + 1.1;
-      figure.action = 'walk';
-    }
-
     this.figures.push(figure);
     this.animated.push((t) => {
-      const progress = this.motion ? Math.min(1, Math.max(0, (t - figure.born) / 1.1)) : 1;
-      const ease = progress * progress * (3 - 2 * progress);
-      g.position.x = from.x + (x - from.x) * ease;
-      g.position.z = from.z + (z - from.z) * ease;
-      body.position.y = Math.sin(t * 1.6 + (seed % 7)) * 0.014;
-      const active = t < figure.until || (walking && progress < 1);
+      const elapsed = this.motion ? t - figure.born : Infinity;
+      const walk = walkPose(from, position, elapsed, seed);
+      g.position.x = walk.x;
+      g.position.z = walk.z;
+      g.rotation.y = walk.rotation;
+      body.position.y = Math.sin(t * (1.4 + seed % 5 * .1) + seed % 7) * .012;
+      const active = t < figure.until;
+      const pose = activityPose(activity, t, seed);
       limbs.forEach((limb, i) => {
-        limb.rotation.x = active
-          ? Math.sin(t * 7 + i * Math.PI) * 0.35
-          : Math.sin(t + seed + i) * 0.025;
+        limb.rotation.x = walk.walking ? walk.stride * ([1,-1,-1,1][i]) : Math.sin(t + seed + i) * .018;
       });
-      const pose=activityPose(activity,t,seed);
-      if(!active){limbs[0].rotation.x+=pose.left;limbs[2].rotation.x+=pose.right;}
-      body.rotation.x=pose.nod;
-      body.rotation.z = active && figure.action === 'dance' ? Math.sin(t * 5) * 0.1 : pose.lean;
+      if (!walk.walking) { limbs[0].rotation.x += pose.left; limbs[2].rotation.x += pose.right; }
+      body.rotation.x = pose.nod;
+      body.rotation.z = active && figure.action === 'dance' ? Math.sin(t * 5) * .1 : pose.lean;
       if (active && figure.action === 'wave') {
         limbs[2].rotation.z = -2.4;
-        limbs[2].rotation.x = Math.sin(t * 8) * 0.25;
+        limbs[2].rotation.x = Math.sin(t * 8) * .25;
       } else limbs[2].rotation.z = 0;
+      const face = residentFace(activity, t, seed);
+      head.rotation.x = face.head;
+      head.rotation.y = walk.walking ? 0 : face.gaze * .14;
+      eyes.forEach((eye, i) => {
+        eye.scale.y = .024 * Math.max(.08, 1 - face.blink);
+        eye.position.x = (i === 0 ? -.075 : .075) + face.gaze * .009;
+      });
+      brows.forEach((brow, i) => { brow.rotation.z = face.brow * (i === 0 ? 1 : -1); });
+      mouth.scale.y = .013 + face.mouth * .012;
+      corners.forEach(corner => { corner.position.y = -.095 + face.smile * .018; });
     });
   }
 

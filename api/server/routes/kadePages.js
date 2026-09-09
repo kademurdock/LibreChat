@@ -3242,8 +3242,8 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   </div>
 </main>
 <footer class="muted">Make yourself at home. &middot; <a href="/help/world">how Reverie works</a></footer>
-<script src="/assets/reverie/room.js?v=171"></script>
-<script type="module" src="/assets/reverie/stage.mjs?v=171"></script>
+<script src="/assets/reverie/room.js?v=172"></script>
+<script type="module" src="/assets/reverie/stage.mjs?v=172"></script>
 <script>
 (function(){
   'use strict';

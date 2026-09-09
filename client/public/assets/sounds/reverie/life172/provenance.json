@@ -1,0 +1,34 @@
+[
+  {
+    "name": "freesound.bowl.pins",
+    "installed": true,
+    "label": "Bowling strike",
+    "originalSeconds": 3.585354166666667,
+    "playbackSeconds": 3.605,
+    "peakDbFS": -12.06,
+    "masterSha256": "78bee755f862968117ee920b726c4224c067ad2ac6af2c15b8b30aba9cd07f49",
+    "playbackSha256": "3c46a31c0bc4ab128d05fef03d3e21e06029f477c4fb46afdd45bb874a1321db",
+    "screening": "Automated listeners disagreed. Field recordings selected from source provenance and original-file screening; human listening acceptance remains open.",
+    "id": "bowl.strike",
+    "creator": "Yarmonics / Stuart Bowditch",
+    "source": "https://freesound.org/people/Yarmonics/sounds/441856/",
+    "license": "CC0",
+    "sourceFormat": "Freesound public high-quality MP3 preview; original unmodified preview preserved"
+  },
+  {
+    "name": "freesound.laundry",
+    "installed": true,
+    "label": "Washhouse machines",
+    "originalSeconds": 43.94320833333333,
+    "playbackSeconds": 42.944,
+    "peakDbFS": -21.76,
+    "masterSha256": "a9aa0cf7560866ac1c5a3c35d8df784bca600f2bee1880ad9f2a3483343df2a3",
+    "playbackSha256": "8364ecab98e8d17749b2560f92a8ec6c1a1a821113b50cc098c1b0adb5f12380",
+    "screening": "Automated listeners disagreed. Field recordings selected from source provenance and original-file screening; human listening acceptance remains open.",
+    "id": "amb.laundry.quiet",
+    "creator": "kyles",
+    "source": "https://freesound.org/people/kyles/sounds/454460/",
+    "license": "CC0",
+    "sourceFormat": "Freesound public high-quality MP3 preview; original unmodified preview preserved"
+  }
+]

@@ -9,7 +9,7 @@ process.env.NODE_PATH = [path.join(root, 'api/node_modules'), process.env.NODE_P
 Module._initPaths();
 const compiled = {};
 const source = path.join(root, 'packages/api/src/reverie');
-for (const name of ['hangouts', 'cast', 'outdoors', 'conversation', 'appearance']) {
+for (const name of ['hangouts', 'cast', 'outdoors', 'conversation', 'appearance', 'planning', 'places']) {
   const file = path.join(source, name + '.ts');
   const module = new Module(file);
   module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {

@@ -40,6 +40,8 @@ require('./activities');
 require('./hangouts');
 require('./outdoors');
 require('./conversation');
+require('./planning');
+require('./places');
 require('./drama');
 require('./help');
 const view = require('./view');

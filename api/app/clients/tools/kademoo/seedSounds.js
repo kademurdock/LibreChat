@@ -64,7 +64,7 @@ async function seedSounds() {
 
   try {
     const { MooSound } = require('~/models/kadeMoo');
-    const rooms = { alder_trail: 'amb.woods.day', reedbank_creek: 'amb.creek.bank', alder_camp: 'amb.camp.fire', alder_hide: 'amb.woods.day', pats_diner: 'amb.diner.quiet', the_archive: 'amb.archive.quiet', ferry_dock_hook: 'amb.ferry.quiet' };
+    const rooms = { alder_trail: 'amb.woods.day', reedbank_creek: 'amb.creek.bank', alder_camp: 'amb.camp.fire', alder_hide: 'amb.woods.day', pats_diner: 'amb.diner.quiet', the_archive: 'amb.archive.quiet', ferry_dock_hook: 'amb.ferry.quiet', gully_laundry: 'amb.laundry.quiet' };
     for (const [scopeId, eventId] of Object.entries(rooms)) {
       if (LIFE_SOUNDS[eventId]) await MooSound.updateOne({ scopeType: 'room', scopeId }, { $setOnInsert: { url: LIFE_SOUNDS[eventId], addedBy: 'seed153' } }, { upsert: true });
     }
