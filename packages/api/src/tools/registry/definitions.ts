@@ -428,7 +428,7 @@ export const kadeWorldSchema: ExtendedJsonSchema = {
     command: {
       type: 'string',
       description:
-        "ONE engine command: look | look <thing> | look in <box> | go <exit> | take/drop | put <item> in <box> | get <item> from <box> | give <item> to <person> | inventory | say/emote | whisper <name> <words> | page <name> <words> | describe me as <text> | unlock <dir> | where | time | coins | who | chars | newchar <name> | switch <name>. Builder/wizard @verbs exist for the Founder's tier (@dig, @desc, @create, @set, @sound and kin) — pass them through verbatim when the player uses them. Translate natural speech to the closest single command first; chain calls for multi-step intents.",
+        "ONE engine command: look | orient | back | look <thing> | look in <box> | go <exit> | take/drop | put <item> in <box> | get <item> from <box> | give <item> to <person> | inventory | say/emote | whisper a unique first name or quoted full name followed by words | page <name> <words> | describe me as <text> | unlock <dir> | where | time | coins | who | chars | newchar <name> | switch <name>. Builder/wizard @verbs exist for the Founder's tier (@dig, @desc, @create, @set, @sound and kin) — pass them through verbatim when the player uses them. Translate natural speech to the closest single command first; chain calls for multi-step intents.",
     },
   },
   required: ['command'],

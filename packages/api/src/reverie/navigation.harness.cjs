@@ -24,6 +24,8 @@ const { moveTo } = require('../../../../api/app/clients/tools/kademoo/life/ctx')
       { roomId: 'nav_hidden', name: 'Unreachable Court', exits: {}, props: {} },
     ]) await MooRoom.create({ ...room, desc: 'An isolated navigation fixture.', district: 'gate' });
     let a = await run('nav-alex', 'orient');
+    check(!a.room, 'orientation does not repeat the full room description on native clients');
+    a.room = (await run('nav-alex', 'look')).room;
     check(a.ok && a.lines.join(' ').includes('east to Navigation Lane'), 'orientation names actual destinations');
     check(a.lines.join(' ').includes('Nobody else'), 'orientation begins with actual local presence');
     check(!JSON.stringify(a.room).includes('Private Resident') && !JSON.stringify(a.room).includes('never show this'), 'adjacent occupants and private journals stay private');
@@ -73,6 +75,18 @@ const { moveTo } = require('../../../../api/app/clients/tools/kademoo/life/ctx')
     check(attempts.filter(r => r.status === 'fulfilled').length === 1, 'only one simultaneous move claims the original room');
     check(await MooEvent.countDocuments({ actorUserId: 'nav-alex', text: 'Concurrent departure.' }) === 1, 'losing movement emits no false departure');
     check(['nav_east', 'nav_north'].includes((await MooChar.findOne({ userId: 'nav-alex' })).roomId), 'winning location survives a fresh database read');
+    const KadeWorld = require('../../../../api/app/clients/tools/structured/KadeWorld');
+    const tool = new KadeWorld({ userId: 'nav-alex', userName: 'Alex Example', isWizard: true });
+    check((await tool._call({ command: 'orient' })).includes('Ways out:'), 'actual agent World tool reaches the Life orientation command');
+    check((await tool._call({ command: 'look' })).includes('Get oriented: orient'), 'agent World tool receives discoverable Life actions');
+    const closed = new KadeWorld({ userId: 'nav-no-access', userName: 'Closed Seat' });
+    check((await closed._call({ command: 'look' })).includes('Gate is closed'), 'agent tool enforces the same private gate');
+    check(await MooChar.countDocuments({ userId: 'nav-no-access' }) === 0, 'closed agent tool creates no character');
+    const newcomer = new KadeWorld({ userId: 'nav-newcomer', userName: 'Newcomer', isWizard: true });
+    await newcomer._call({ command: 'remake me' });
+    await newcomer._call({ command: 'Robin' });
+    const creation = await newcomer._call({ command: 'Traveler' });
+    check(creation.includes('CHOICES:'), 'agent lane receives character-creation choices');
     console.log(`${checks} navigation checks passed; isolated Mongo, no provider requests.`);
   } finally { await mongoose.disconnect(); await db.stop(); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

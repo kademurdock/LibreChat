@@ -5,7 +5,7 @@ const { logger } = require('@librechat/data-schemas');
  * KADE WORLD — the doorway into the city (Aug 8 2026, her "set up the legs").
  * Canon docs (read with kade_read_page): /design/moo-workup + /design/moo-world-bible
  * on the inworld proxy. THE CONTRACT this tool enforces by shape: the ENGINE
- * (api/app/clients/tools/kademoo/engine.js) is the referee — every world fact
+ * (api/app/clients/tools/kademoo/life) is the referee — every world fact
  * comes back from here, and the character narrates ONLY those facts. The
  * agent holding this tool IS the natural-language layer: terse MUD commands
  * pass through verbatim; spoken intent ("head through the door on my left")
@@ -19,7 +19,7 @@ const worldJsonSchema = {
     command: {
       type: 'string',
       description:
-        "ONE engine command: look | look <thing> | look in <box> | go <exit> | take/drop | put <item> in <box> | get <item> from <box> | give <item> to <person> | inventory | say/emote | whisper <name> <words> | page <name> <words> | describe me as <text> | unlock <dir> | where | time | coins | who | chars | newchar <name> | switch <name>. Builder/wizard @verbs exist for the Founder's tier (@dig, @desc, @create, @set, @sound and kin) — pass them through verbatim when the player uses them. Translate natural speech to the closest single command first; chain calls for multi-step intents.",
+        'ONE engine command: look | orient | look <thing> | look in <box> | go <exit> | back | take/drop | put <item> in <box> | get <item> from <box> | give <item> to <person> | inventory | say/emote | whisper "Full Name" <words> | page <name> <words> | describe me as <text> | unlock <dir> | where | time | coins | who | chars | newchar <name> | switch <name>. Builder/wizard @verbs exist for the Founder\'s tier (@dig, @desc, @create, @set, @sound and kin) — pass them through verbatim when the player uses them. Translate natural speech to the closest single command first; chain calls for multi-step intents.',
     },
   },
   required: ['command'],
@@ -48,12 +48,18 @@ class KadeWorld extends Tool {
     if (!command || !String(command).trim()) {
       return 'Give the engine one command (look, go <exit>, take <item>, say <words>, ...).';
     }
+    if (!this.isWizard && process.env.REVERIE_PUBLIC !== '1') {
+      return 'The Threshold Gate is closed. The city opens when the Founder says it opens.';
+    }
     try {
-      const { runCommand } = require('~/app/clients/tools/kademoo/engine');
+      const { runCommand } =
+        process.env.REVERIE_ENGINE === 'v1'
+          ? require('~/app/clients/tools/kademoo/engine')
+          : require('~/app/clients/tools/kademoo/life');
       const result = await runCommand({
         userId: this.userId,
         displayName: this.userName,
-        command: String(command).slice(0, 400),
+        command: String(command).slice(0, 2000),
         isWizard: this.isWizard,
       });
       const out = [];
@@ -69,10 +75,20 @@ class KadeWorld extends Tool {
             (r.people.length ? ` Present: ${r.people.join(', ')}.` : ' No one else is here.'),
         );
       }
+      if (result.choices?.length) {
+        out.push(
+          'CHOICES: ' + result.choices.map((choice) => `${choice.label}: ${choice.cmd}`).join('; '),
+        );
+      }
+      if (result.actions?.length) {
+        out.push(
+          'ACTIONS: ' + result.actions.map((action) => `${action.label}: ${action.cmd}`).join('; '),
+        );
+      }
       return out.join('\n');
     } catch (e) {
       logger.error('[KadeWorld] engine error:', e.message);
-      return 'The world flickered — that action did not land. Tell the player the ground shivered and invite them to try again.';
+      return 'The world could not confirm that action. Check look or status before repeating it; it may already have taken effect.';
     }
   }
 }

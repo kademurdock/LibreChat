@@ -1,7 +1,7 @@
 Reverie connected exploration — session 174
 ==========================================
 
-The web World page connects its current scene to the room graph through named travel buttons and matching compass signs. The server supplies destination names, current access status, and whether an exit returns to the viewer's previous room. `orient` / Get oriented reads the room, people, exits and direct way back through the existing log. All game clients and Forge's existing World command lane can use the command.
+The web World page connects its current scene to the room graph through named travel buttons and matching compass signs. The server supplies destination names, current access status, and whether an exit returns to the viewer's previous room. `orient` / Get oriented reads the room, people, exits and direct way back through the existing log, without repeating the full room description on native clients. All game clients can use the command. The agent World tool now selects the same Life engine and private gate as the page, and forwards creation choices and available actions. Both existing schema registrations name orient. The actual tool entry point is covered by the isolated-Mongo harness; no paid agent conversation is needed.
 
 This is connected travel between existing rooms. Figure positions and the rest of the scenery remain illustrations. There are no measured player coordinates, continuous locomotion, navigation meshes, new autonomous players or changes to the private gate.
 
@@ -16,7 +16,7 @@ Whisper menus now prepare quoted full names. The Life parser accepts quoted/unqu
 Verification
 ------------
 
-- `node --require ./api/test/reverie-bootstrap.cjs packages/api/src/reverie/navigation.harness.cjs`: 26 checks against disposable Mongo, including meeting/separation, private speech, locked/missing/stale exits, private shortcuts and competing moves.
+- `node --require ./api/test/reverie-bootstrap.cjs packages/api/src/reverie/navigation.harness.cjs`: 32 checks against disposable Mongo, including meeting/separation, private speech, locked/missing/stale exits, private shortcuts and competing moves.
 - `node dev/reverie/navigation-serve.cjs`, then `node dev/reverie/navigation.cjs`: two isolated browser sessions using the actual World router, SSE and Life engine. Fake authentication exists only in this localhost development server. Production authentication is unchanged.
 - Existing Washhouse, gathering, presentation and game-engine harnesses; API bundle/declaration build; strict checking of navigation.ts; client production build; helper help tests.
 - Screenshots are reviewed at desktop and narrow widths. Canvas content remains hidden from screen readers. Connected travel works with graphics off and reduced motion.

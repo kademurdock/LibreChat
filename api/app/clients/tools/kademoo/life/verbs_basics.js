@@ -92,7 +92,7 @@ registry.register({
   async run(ctx) {
     const room = await view.describeRoom(ctx);
     ctx.say(...(room.orientation || [room.desc]));
-    return ctx.ok({ wantRoom: true, orientationRead: true });
+    return ctx.ok({ orientationRead: true });
   },
 });
 
