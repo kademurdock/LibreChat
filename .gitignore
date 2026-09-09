@@ -180,3 +180,7 @@ hive-mind-prompt-*.txt
 CLAUDE.md
 .gsd
 codedb.snapshot
+
+/dev/character/out-voice/
+
+/dev/character/check-output/

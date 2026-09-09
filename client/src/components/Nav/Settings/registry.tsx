@@ -21,7 +21,7 @@ import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication
 import ImportConversations from '../SettingsTabs/Data/ImportConversations';
 import { toggleControl, ThemeSetting, LangSetting } from './controls';
 import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
-import { EngineSTTSetting, EngineTTSSetting } from './SpeechControls';
+import { EngineSTTSetting, EngineTTSSetting, VoicePortraitSetting } from './SpeechControls';
 import FontSizeSelector from '../SettingsTabs/Chat/FontSizeSelector';
 import AdvancedPrompts from '../SettingsTabs/Chat/AdvancedPrompts';
 import DeleteAccount from '../SettingsTabs/Account/DeleteAccount';
@@ -458,6 +458,13 @@ export const registry: SettingEntry[] = [
     section: 'tts',
     labelKey: 'com_ui_settings_label_engine_tts',
     Component: EngineTTSSetting,
+  },
+  {
+    id: 'voicePortraits',
+    tab: SPEECH,
+    section: 'tts',
+    labelKey: 'com_ui_voice_portraits',
+    Component: VoicePortraitSetting,
   },
   {
     id: 'voice',

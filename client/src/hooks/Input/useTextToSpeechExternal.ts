@@ -4,6 +4,7 @@ import { useToastContext } from '@librechat/client';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+import { watchVoiceAudio, stopWatchingVoiceAudio } from '~/components/Chat/character/voice-playback.mjs';
 
 const createFormData = (text: string, voice: string, speed?: number) => {
   const formData = new FormData();
@@ -59,6 +60,7 @@ function useTextToSpeechExternal({
     };
 
     initializeAudio();
+    watchVoiceAudio(newAudio, messageId);
     const playPromise = () => newAudio.play().then(() => setIsSpeaking(true));
 
     playPromise().catch((error: Error) => {
@@ -181,6 +183,7 @@ function useTextToSpeechExternal({
   const cancelPromiseSpeech = useCallback(() => {
     if (promiseAudioRef.current) {
       promiseAudioRef.current.pause();
+      stopWatchingVoiceAudio(promiseAudioRef.current);
       promiseAudioRef.current.src && URL.revokeObjectURL(promiseAudioRef.current.src);
       promiseAudioRef.current = null;
       setIsSpeaking(false);

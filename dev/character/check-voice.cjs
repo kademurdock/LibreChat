@@ -1,0 +1,25 @@
+const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
+const {chromium}=require('../../node_modules/playwright');
+const root=path.join(__dirname,'out-voice'),out=process.env.CHARACTER_RECEIPTS || path.join(__dirname,'check-output'); fs.mkdirSync(out,{recursive:true});
+const server=http.createServer((req,res)=>{const pathname=decodeURIComponent(new URL(req.url,'http://local').pathname);const file=path.resolve(root,'.'+(pathname==='/'?'/index.html':pathname));if(!file.startsWith(root+path.sep)||!fs.existsSync(file)){res.writeHead(404);return res.end();}res.setHeader('Content-Type',({'.html':'text/html','.js':'application/javascript','.css':'text/css','.png':'image/png','.wav':'audio/wav','.svg':'image/svg+xml'})[path.extname(file)]||'application/octet-stream');res.end(fs.readFileSync(file));});
+(async()=>{await new Promise(r=>server.listen(8178,'127.0.0.1',r));const browser=await chromium.launch({channel:'msedge',headless:true});const page=await browser.newPage({viewport:{width:360,height:740}});const errors=[],requests=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>requests.push(r.url()));
+await page.goto('http://127.0.0.1:8178/');await page.getByRole('button',{name:'Play saved voice',exact:true}).click();
+await page.waitForFunction(()=>document.querySelector('canvas') && !document.querySelector('canvas').hidden);
+await page.waitForTimeout(700);await page.screenshot({path:path.join(out,'web-voice-speaking.png')});
+const before=await page.evaluate(()=>window.voiceFixture.audio.currentTime);
+await page.getByRole('button',{name:'Pause voice message',exact:true}).click();await page.getByRole('button',{name:'Resume voice message',exact:true}).waitFor();
+await page.waitForTimeout(250);const paused=await page.evaluate(()=>({time:window.voiceFixture.audio.currentTime,paused:window.voiceFixture.audio.paused,hidden:document.querySelector('canvas').hidden}));assert.equal(paused.paused,true);assert.equal(paused.hidden,true);assert.ok(Math.abs(paused.time-before)<.3);
+await page.screenshot({path:path.join(out,'web-voice-paused.png')});const count=requests.length;
+await page.getByRole('button',{name:'Resume voice message',exact:true}).click();await page.waitForTimeout(200);assert.ok(await page.evaluate(()=>window.voiceFixture.audio.currentTime)>paused.time);assert.equal(requests.length,count);
+await page.getByRole('checkbox',{name:'Animated voice portraits'}).uncheck();assert.equal(await page.locator('canvas').count(),0);assert.equal(await page.evaluate(()=>window.voiceFixture.audio.paused),false);
+await page.getByRole('checkbox',{name:'Animated voice portraits'}).check();await page.getByRole('button',{name:'Play saved voice',exact:true}).click();
+await page.emulateMedia({reducedMotion:'reduce'});await page.waitForTimeout(150);assert.equal(await page.locator('canvas').evaluate(c=>c.hidden),true);
+await page.emulateMedia({reducedMotion:'no-preference'});await page.waitForFunction(()=>document.querySelector('canvas') && !document.querySelector('canvas').hidden);
+await page.getByRole('button',{name:'Play another character',exact:true}).click();await page.waitForFunction(()=>document.querySelector('img')?.getAttribute('src')==='/test-portrait.svg');assert.equal(await page.locator('canvas').evaluate(c=>c.hidden),true); // generic portraits have no facial rig
+await page.screenshot({path:path.join(out,'web-voice-other-character.png')});
+await page.getByRole('button',{name:'Interrupt',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('canvas').length===0);
+assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+await page.setViewportSize({width:1040,height:800});await page.getByRole('button',{name:'Play saved voice',exact:true}).click();await page.waitForFunction(()=>document.querySelector('canvas') && !document.querySelector('canvas').hidden);await page.screenshot({path:path.join(out,'web-voice-desktop.png')});
+const tree=await page.locator('main').ariaSnapshot();assert.ok(!tree.includes('img'));assert.ok(tree.includes('Pause voice message'));assert.equal(errors.length,0);assert.ok(requests.every(u=>u.startsWith('http://127.0.0.1:8178/')||u.startsWith('blob:')));
+fs.writeFileSync(path.join(out,'voice-browser.json'),JSON.stringify({passed:true,paused,noNewRequestsOnResume:true,errors,requests,tree},null,2));await browser.close();server.close();console.log('Voice-message browser checks pass: playback, pause/resume without requests, reduced/off, identity, interrupt, layouts and accessibility.');
+})().catch(e=>{console.error(e);server.close();process.exit(1)});

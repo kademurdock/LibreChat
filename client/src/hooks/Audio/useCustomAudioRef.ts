@@ -1,3 +1,4 @@
+import { stopWatchingVoiceAudio } from '~/components/Chat/character/voice-playback.mjs';
 import { useEffect, useRef } from 'react';
 
 interface CustomAudioElement extends HTMLAudioElement {
@@ -85,6 +86,7 @@ export default function useCustomAudioRef({
 
     return () => {
       if (audioElement) {
+        stopWatchingVoiceAudio(audioElement);
         audioElement.removeEventListener('ended', handleEnded);
         audioElement.removeEventListener('play', handleStart);
         audioElement.removeEventListener('pause', handlePause);
