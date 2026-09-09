@@ -528,7 +528,7 @@ const CITY_ITEMS = [
 const CENSUS = [
   {
     id: 'nell', name: 'Nell Calder', aka: 'Nell',
-    desc: 'Nell runs the Gully Washhouse in a soft cardigan with the sleeves pushed up. She keeps spare buttons in a blue tin and likes repairing things before replacing them. Pat brings the diner towels here; Ines trades old mystery paperbacks with her. Nell will happily argue about the ending while she folds.',
+    desc: 'Nell runs the Gully Washhouse in a soft cardigan with the sleeves pushed up. She lives in its rear room at 12 Gully Road. Her sister lives outside the city; their mother taught them to mend, and the blue button tin was hers. Nell likes repairing things before replacing them. Pat brings the diner towels here; Ines trades old mystery paperbacks with her. Nell will happily argue about the ending while she folds. She worries that the washhouse will close and her neighbors will lose a place to sit together.',
     home: 'gully_laundry', family: [], knows: ['pat', 'ines'],
     wants: ['finish repairing the bench by the window', 'work out the mystery before Ines gives away the ending'],
     schedule: [
