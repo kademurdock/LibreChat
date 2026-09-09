@@ -13,7 +13,7 @@ function ResetPassword() {
     register,
     handleSubmit,
     watch,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<TResetPassword>();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -37,6 +37,17 @@ function ResetPassword() {
       },
     });
   };
+
+  if (!params.get('token') || !params.get('userId')) {
+    return (
+      <div role="alert" className="mt-6 space-y-4">
+        <p>{localize('com_auth_error_invalid_reset_token')}</p>
+        <a className="block underline" href="/forgot-password">
+          {localize('com_auth_recovery_new_link')}
+        </a>
+      </div>
+    );
+  }
 
   if (resetPassword.isSuccess) {
     return (
@@ -63,7 +74,7 @@ function ResetPassword() {
   return (
     <form
       className="mt-6"
-      aria-label="Password reset form"
+      aria-label={localize('com_auth_reset_password')}
       method="POST"
       onSubmit={handleSubmit(onSubmit)}
     >
@@ -83,7 +94,7 @@ function ResetPassword() {
           />
           <SecretInput
             id="password"
-            autoComplete="current-password"
+            autoComplete="new-password"
             aria-label={localize('com_auth_password')}
             {...register('password', {
               required: localize('com_auth_password_required'),
@@ -116,6 +127,7 @@ function ResetPassword() {
         <div className="relative">
           <SecretInput
             id="confirm_password"
+            autoComplete="new-password"
             aria-label={localize('com_auth_password_confirm')}
             {...register('confirm_password', {
               validate: (value) => value === password || localize('com_auth_password_not_match'),
@@ -148,12 +160,12 @@ function ResetPassword() {
       <div className="mt-6">
         <Button
           type="submit"
-          aria-label={localize('com_auth_submit_registration')}
-          disabled={!!errors.password || !!errors.confirm_password || isSubmitting}
+          aria-label={localize('com_auth_reset_password')}
+          disabled={!!errors.password || !!errors.confirm_password || resetPassword.isLoading}
           variant="submit"
           className="h-12 w-full rounded-2xl"
         >
-          {isSubmitting ? <Spinner /> : localize('com_auth_continue')}
+          {resetPassword.isLoading ? <Spinner /> : localize('com_auth_continue')}
         </Button>
       </div>
     </form>
