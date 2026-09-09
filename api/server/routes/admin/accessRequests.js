@@ -3,6 +3,8 @@ const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
 const crypto = require('node:crypto');
+const { checkEmailConfig, deliverApprovalEmail, approvalEmailNotice } = require('@librechat/api');
+const sendEmail = require('~/server/utils/sendEmail');
 const {
   findEmail,
   looksLikeEmail,
@@ -36,6 +38,8 @@ router.get('/', async (req, res) => {
         /* Part 143: what the approval actually made, so the page can say so. */
         accountEmail: r.accountEmail || '',
         hasAccount: Boolean(r.createdUserId),
+        emailStatus: r.emailStatus || '',
+        emailRecipient: r.emailRecipient || '',
       })),
     });
   } catch (error) {
@@ -70,12 +74,48 @@ router.get('/', async (req, res) => {
 /** Readable, sayable, spellable out loud -- this gets read to people, often
  * by a screen reader and sometimes over the phone. No l/1/O/0 collisions. */
 const PW_WORDS = [
-  'amber', 'anchor', 'basket', 'cedar', 'cactus', 'canyon', 'cobalt', 'copper',
-  'dagger', 'denim', 'ember', 'fable', 'fennel', 'garnet', 'ginger', 'harbor',
-  'hazel', 'indigo', 'juniper', 'kettle', 'lantern', 'maple', 'marble', 'meadow',
-  'nutmeg', 'otter', 'pepper', 'pewter', 'quartz', 'quilt', 'ranger', 'ribbon',
-  'saddle', 'sesame', 'sparrow', 'thistle', 'timber', 'tulip', 'velvet', 'walnut',
-  'willow', 'yarrow',
+  'amber',
+  'anchor',
+  'basket',
+  'cedar',
+  'cactus',
+  'canyon',
+  'cobalt',
+  'copper',
+  'dagger',
+  'denim',
+  'ember',
+  'fable',
+  'fennel',
+  'garnet',
+  'ginger',
+  'harbor',
+  'hazel',
+  'indigo',
+  'juniper',
+  'kettle',
+  'lantern',
+  'maple',
+  'marble',
+  'meadow',
+  'nutmeg',
+  'otter',
+  'pepper',
+  'pewter',
+  'quartz',
+  'quilt',
+  'ranger',
+  'ribbon',
+  'saddle',
+  'sesame',
+  'sparrow',
+  'thistle',
+  'timber',
+  'tulip',
+  'velvet',
+  'walnut',
+  'willow',
+  'yarrow',
 ];
 function tempPassword() {
   const pick = () => PW_WORDS[crypto.randomInt(0, PW_WORDS.length)];
@@ -141,7 +181,58 @@ router.post('/:id/approve', async (req, res) => {
       await KadeAccessRequest.findByIdAndUpdate(req.params.id, {
         $set: { status: 'approved', audience, decidedAt: new Date(), decidedNote: note, ...extra },
       });
-      return res.json({ ok: true, id: String(doc._id), audience, contact: doc.contact, ...payload });
+      if (payload.accountCreated || payload.alreadyHadAccount) {
+        const recipient = extra.accountEmail;
+        const emailStatus = await deliverApprovalEmail(recipient, {
+          configured: checkEmailConfig(),
+          claim: async () =>
+            Boolean(
+              await KadeAccessRequest.findOneAndUpdate(
+                {
+                  _id: doc._id,
+                  emailStatus: { $nin: ['sending', 'accepted', 'unconfirmed'] },
+                },
+                {
+                  $set: {
+                    emailStatus: 'sending',
+                    emailRecipient: recipient,
+                    emailAttemptedAt: new Date(),
+                  },
+                },
+              ),
+            ),
+          previousStatus: async () =>
+            (await KadeAccessRequest.findById(doc._id).lean())?.emailStatus || 'unconfirmed',
+          send: async () => {
+            await sendEmail({
+              email: recipient,
+              subject: 'Your Kade-AI account is ready',
+              template: 'accessApproved.handlebars',
+              payload: {
+                name,
+                domain,
+                loginId: payload.loginId || recipient,
+                password: payload.accountCreated ? payload.tempPassword : '',
+                resetEnabled: process.env.ALLOW_PASSWORD_RESET === 'true',
+              },
+            });
+          },
+          record: async (status) => {
+            await KadeAccessRequest.findByIdAndUpdate(doc._id, { $set: { emailStatus: status } });
+          },
+        });
+        payload.emailStatus = emailStatus;
+        payload.emailNotice = approvalEmailNotice(emailStatus, recipient);
+        payload.readyMessage = payload.emailNotice + '\n\n' + payload.readyMessage;
+        logger.info(`[admin-access] account email ${emailStatus} for request ${doc._id}`);
+      }
+      return res.json({
+        ok: true,
+        id: String(doc._id),
+        audience,
+        contact: doc.contact,
+        ...payload,
+      });
     };
 
     /* A typed value that is not an email address at all: say so instead of
@@ -189,6 +280,7 @@ router.post('/:id/approve', async (req, res) => {
           accountCreated: false,
           alreadyHadAccount: true,
           email: existing.email,
+          loginId: existing.kadePhone ? prettyPhone(existing.kadePhone) : existing.email,
           readyMessage:
             `Hey ${name} -- you already have an account here. Go to ${domain} and sign in with ` +
             `${existing.kadePhone ? prettyPhone(existing.kadePhone) : existing.email}. If the ` +
@@ -203,10 +295,12 @@ router.post('/:id/approve', async (req, res) => {
     const password = tempPassword();
     const result = await registerUser(
       { name, email, password, confirm_password: password },
-      phone ? { kadeAccountType: audience, kadePhone: phone } : { kadeAccountType: audience },
+      phone
+        ? { kadeAccountType: audience, kadePhone: phone, emailVerified: true }
+        : { kadeAccountType: audience, emailVerified: true },
     );
     const made = await findUser({ email }, 'email _id');
-    if (!made) {
+    if (!made || result?.createdUserId !== String(made._id)) {
       logger.error(
         `[admin-access] account creation FAILED for "${doc.name}" (${email}): ${result?.message}`,
       );
@@ -256,7 +350,9 @@ router.post('/:id/approve', async (req, res) => {
         readyMessage:
           `Hey ${name} -- you're in, and your account is already made. Go to ${domain} and sign ` +
           `in with ${loginId}, password ${password}.` +
-          (phone && !placeholder ? ` Your phone number ${prettyPhone(phone)} works in that box too.` : '') +
+          (phone && !placeholder
+            ? ` Your phone number ${prettyPhone(phone)} works in that box too.`
+            : '') +
           ` Change that password once you're in: it's under your name at the bottom left, then ` +
           `Settings, then Account. Welcome to the family's corner of the internet.`,
       },
@@ -271,7 +367,13 @@ router.post('/:id/deny', async (req, res) => {
   try {
     const doc = await KadeAccessRequest.findByIdAndUpdate(
       req.params.id,
-      { $set: { status: 'denied', decidedAt: new Date(), decidedNote: String(req.body?.note || '').slice(0, 500) } },
+      {
+        $set: {
+          status: 'denied',
+          decidedAt: new Date(),
+          decidedNote: String(req.body?.note || '').slice(0, 500),
+        },
+      },
       { new: true },
     ).lean();
     if (!doc) return res.status(404).json({ error: 'Request not found' });

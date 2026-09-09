@@ -16,12 +16,22 @@ export function preparedPortrait(id, url) {
         portrait: '/assets/characters/kiana/portrait.png',
         atlas: '/assets/characters/kiana/facial-source.png',
         blink: '/assets/characters/kiana/eyes-closed.png',
+        expression: '/assets/characters/kiana/expression.png',
+        browFeatures: [
+          { kind: 'brow', from: [0.357, 0.235, 0.13, 0.066], to: [0.357, 0.235, 0.13, 0.066] },
+          { kind: 'brow', from: [0.505, 0.151, 0.143, 0.086], to: [0.505, 0.151, 0.143, 0.086] },
+        ],
       };
     if (id === DELLA_ID && file === DELLA_PORTRAIT_FILE)
       return {
         portrait: '/assets/characters/della/portrait.png',
         atlas: '/assets/characters/della/facial-source.png',
         blink: '/assets/characters/della/facial-source.png',
+        expression: '/assets/characters/della/expression.png',
+        browFeatures: [
+          { kind: 'brow', from: [0.35, 0.221, 0.132, 0.073], to: [0.35, 0.221, 0.132, 0.073] },
+          { kind: 'brow', from: [0.53, 0.215, 0.13, 0.071], to: [0.53, 0.215, 0.13, 0.071] },
+        ],
         features: [
           { kind: 'mouth', from: [0.4, 0.462, 0.195, 0.115], to: [0.4, 0.462, 0.195, 0.115] },
         ],
@@ -61,6 +71,8 @@ export function createPortraitRig(
     blink,
     features = FEATURES,
     eyeFeatures = EYES,
+    expression,
+    browFeatures = [],
     onReady = () => {},
     onFailure = () => {},
   },
@@ -72,7 +84,8 @@ export function createPortraitRig(
     signature = '';
   const base = new Image(),
     sheet = new Image(),
-    eyes = new Image();
+    eyes = new Image(),
+    brows = new Image();
   const layers = [];
   canvas.width = canvas.height = 512;
   canvas.setAttribute('aria-hidden', 'true');
@@ -119,6 +132,19 @@ export function createPortraitRig(
     signature = '';
     if (last) render(last);
   }
+  function prepareBrows() {
+    if (
+      disposed ||
+      !ready ||
+      !brows.complete ||
+      !brows.naturalWidth ||
+      layers.some((l) => l.kind === 'brow')
+    )
+      return;
+    addLayers(brows, browFeatures);
+    signature = '';
+    if (last) render(last);
+  }
   function prepare() {
     if (
       disposed ||
@@ -140,6 +166,7 @@ export function createPortraitRig(
     onReady();
     if (last) render(last);
     prepareEyes();
+    prepareBrows();
   }
   function render(frame) {
     last = frame;
@@ -151,12 +178,13 @@ export function createPortraitRig(
     }
     const mouth = facialBlend(frame.mouth),
       blink = facialBlend(frame.blink);
-    const next = `${mouth}/${blink}`;
+    const brow = facialBlend(frame.brow || 0);
+    const next = `${mouth}/${blink}/${brow}`;
     if (signature !== next) {
       ctx.clearRect(0, 0, 512, 512);
       ctx.drawImage(base, 0, 0, 512, 512);
       for (const layer of layers) {
-        ctx.globalAlpha = layer.kind === 'mouth' ? mouth : blink;
+        ctx.globalAlpha = { mouth, brow, blink }[layer.kind] ?? blink;
         if (ctx.globalAlpha > 0) ctx.drawImage(layer.image, 0, 0);
       }
       ctx.globalAlpha = 1;
@@ -169,14 +197,16 @@ export function createPortraitRig(
   base.onload = sheet.onload = prepare;
   base.onerror = sheet.onerror = fail;
   eyes.onload = prepareEyes;
+  brows.onload = prepareBrows;
   base.src = portrait;
   sheet.src = atlas;
   if (blink) eyes.src = blink;
+  if (expression) brows.src = expression;
   return {
     render,
     dispose() {
       disposed = true;
-      base.onload = sheet.onload = base.onerror = sheet.onerror = eyes.onload = null;
+      base.onload = sheet.onload = base.onerror = sheet.onerror = eyes.onload = brows.onload = null;
       canvas.hidden = true;
       layers.length = 0;
     },

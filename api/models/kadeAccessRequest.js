@@ -17,7 +17,12 @@ const kadeAccessRequestSchema = new mongoose.Schema(
     whoYouAre: { type: String, required: true, maxlength: 1200 },
     /** Why do you want in? */
     whyHere: { type: String, default: '', maxlength: 1200 },
-    status: { type: String, enum: ['pending', 'approved', 'denied'], default: 'pending', index: true },
+    status: {
+      type: String,
+      enum: ['pending', 'approved', 'denied'],
+      default: 'pending',
+      index: true,
+    },
     /** Set at approval: 'adult' | 'child' — decides which registration code rides the blessing. */
     audience: { type: String, default: null },
     decidedAt: { type: Date, default: null },
@@ -25,6 +30,9 @@ const kadeAccessRequestSchema = new mongoose.Schema(
     /** Part 143: approval MAKES the account. What it made, for the record. */
     accountEmail: { type: String, default: '' },
     createdUserId: { type: String, default: '' },
+    emailStatus: { type: String, default: '' },
+    emailRecipient: { type: String, default: '' },
+    emailAttemptedAt: { type: Date, default: null },
     /** Light abuse forensics. */
     ip: { type: String, default: '' },
   },

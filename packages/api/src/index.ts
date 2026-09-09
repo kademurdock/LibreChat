@@ -93,3 +93,5 @@ export { createMemoryControlsRouter } from './agents/memoryControls';
 export { createProjectContextRouter, loadProjectWork } from './projects/context';
 export { runtimeCapabilities } from './agents/capabilities';
 export { publicHelp } from './web/help';
+
+export { deliverApprovalEmail, approvalEmailNotice } from './access/approval';

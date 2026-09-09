@@ -9,7 +9,7 @@ test('existing room facts select distinct scenes', () => {
     [{roomId:'pier_seven',outdoor:true},'harbor'],
     [{roomId:'gate',outdoor:true},'town'],
     [{roomId:'pats_diner'},'diner'],
-    [{roomId:'records_office'},'library'],
+    [{roomId:'records_office'},'office'],
     [{roomId:'new_home',home:{mine:true}},'home'],
   ])assert.equal(sceneModel(room).type,type);
 });

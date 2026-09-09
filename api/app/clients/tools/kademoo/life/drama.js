@@ -152,7 +152,7 @@ async function nightCourt(ctx, charge, fine) {
   ctx.need({ fun: -15, company: -5, clean: -5 });
   await rumor(ctx, `${ch.name} got walked into night court by Sgt. Vann`, 'crime', 4);
   ctx.say(`Sgt. Vann does not say a word the whole way. Honorable Pham looks over the glasses: "${cap(charge)}." ${canPay ? `Fine, $${fine}. Paid. "Do not let me learn your name."` : `You cannot pay, so it is the steps and a broom, and the broom is heavy. "Do not let me learn your name."`} You are on record for two weeks. The city will hear.`);
-  return ctx.ok({ wantRoom: true, kinds: [...ctx.kinds, 'vio.siren.distant', 'cer.bell.wronghour.single'] });
+  return ctx.ok({ wantRoom: true, kinds: [...ctx.kinds, 'vio.siren.distant', 'cer.bell.wronghour.single', ...(canPay ? [] : ['work.sweep.floor'])] });
 }
 
 /* ── THE LADDER: shove, fight ────────────────────────────────────────── */

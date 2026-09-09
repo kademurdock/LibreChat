@@ -6,7 +6,9 @@ import {
   hash,
   figureAppearance,
   figurePosition,
-} from './presentation.mjs?v=170';
+  figureActivity,
+  activityPose,
+} from './presentation.mjs?v=171';
 
 const COLORS = {
   wood: 0xa37750,
@@ -448,6 +450,54 @@ export class Stage {
       this.table(0.6, 0.2);
       this.furniture('chair', 0.6, 1.3, 0);
     }
+    if (this.model.type === 'bar') {
+      this.box(COLORS.edge, 0.8, .65, -1.5, 6.3, 1.3, .75);
+      this.box(COLORS.wood, .8, 1.35, -1.5, 6.6, .15, 1.1);
+      for (let i = 0; i < 5; i++) {
+        this.mesh('cylinder', COLORS.ink, [-1.5 + i * 1.2, .4, -.3], [.06,.8,.06]);
+        this.mesh('cylinder', 0xb9775b, [-1.5 + i * 1.2, .83, -.3], [.27,.14,.27]);
+        this.mesh('cylinder', 0x507e6f, [-.2 + i * .6, 1.6, -3.7], [.08,.42,.08]);
+      }
+      this.box(COLORS.wood, 1.1, 1.35, -3.7, 3.7,.12,.55);
+      const board = this.mesh('cylinder', COLORS.ink, [-4.3,1.8,-4.25], [.45,.07,.45]);
+      board.rotation.x = Math.PI/2;
+      this.mesh('sphere',0xc66c52,[-4.3,1.8,-4.2],[.08,.08,.025]);
+    }
+    if (this.model.type === 'bowling') {
+      for (let lane = 0; lane < 3; lane++) {
+        const x = -2.6 + lane * 2.1;
+        this.box(0xd9b97c,x,.18,-1.3,1.7,.13,5.3);
+        for (const edge of [-1,1]) this.box(COLORS.ink,x+edge*.87,.16,-1.3,.12,.12,5.3);
+        for (let row = 0; row < 4; row++) for (let j = 0; j <= row; j++) {
+          const px=x+(j-row/2)*.23,pz=-2.9-row*.2;
+          this.mesh('sphere',COLORS.cream,[px,.39,pz],[.08,.2,.08]);
+          this.mesh('sphere',COLORS.cream,[px,.62,pz],[.055,.07,.055]);
+          this.mesh('cylinder',0xb45d4c,[px,.53,pz],[.038,.035,.038]);
+        }
+      }
+      this.bench(3.9,2.8);
+      this.box(COLORS.ink,3.8,.45,.7,.8,.8,1.8);
+      for(let i=0;i<3;i++) this.mesh('sphere',[0x447e84,0xa26780,0x5f788e][i],[3.8,.96,.1+i*.5],[.2,.2,.2]);
+    }
+    if (this.model.type === 'laundry') {
+      for(let i=0;i<4;i++) {
+        const x=-3.8+i*2.0;
+        this.box(0xd3ddd4,x,.8,-3.4,1.65,1.6,1.2);
+        const door=this.mesh('cylinder',COLORS.ink,[x,.8,-2.77],[.5,.08,.5]);door.rotation.x=Math.PI/2;
+        const cloth=this.mesh('leaf',0xc38c77,[0,0.04,0],[.3,.07,.25],door);
+        this.animated.push(t=>{cloth.rotation.y=t*.5+i;});
+      }
+      this.table(.8,.4); this.mesh('cylinder',0xc9a372,[2,.4,2],[.5,.7,.5]);
+    }
+    if (this.model.type === 'office') {
+      for(let i=0;i<3;i++) {
+        const x=.5+i*1.3;
+        this.box(0x7e9a94,x,1.1,-3.7,1.1,2.2,.65);
+        for(let j=0;j<4;j++){this.box(0x98aea5,x,.3+j*.5,-3.32,.98,.43,.06);this.box(COLORS.ink,x,.36+j*.5,-3.27,.23,.035,.035);}
+      }
+      this.table(-2,-.9);this.furniture('chair',-2,.3);
+      this.box(COLORS.cream,-2.2,.97,-.9,.7,.05,.55);this.lamp(-.9,-1.3,true);
+    }
     this.lamp(4.6, -3.8, true);
   }
 
@@ -541,8 +591,11 @@ export class Stage {
       this.mesh('sphere', 0xb98968, [0, 0.43, 0.37], [0.19, 0.19, 0.19], g);
       for (const dx of [-0.1, 0.1])
         this.mesh('cone', 0x7e614e, [dx, 0.63, 0.37], [0.09, 0.16, 0.08], g);
+      const tail=this.mesh('cylinder',0xb98968,[0,.37,-.5],[.045,.55,.045],g);tail.rotation.x=.8;
+      this.animated.push(t=>{tail.rotation.z=Math.sin(t*2+seed)*.25;g.position.y=Math.sin(t*1.8+seed)*.007;});
       return;
     }
+    const activity = figureActivity(this.model, person);
     const { skin, shirt } = look;
     const body = new T.Group();
     g.add(body);
@@ -611,6 +664,21 @@ export class Stage {
       this.mesh('sphere', COLORS.cream, [0, -0.4, 0.04], [0.105, 0.065, 0.16], leg);
       limbs.push(arm, leg);
     }
+    if (activity === 'reading') {
+      const book=this.box(0x9b735d,0,.76,.33,.46,.08,.32,body);book.rotation.x=-.25;
+      this.box(COLORS.cream,0,.81,.33,.42,.025,.29,body);
+    }
+    if (activity === 'carrying') this.box(COLORS.wood,0,.65,.38,.62,.45,.5,body);
+    if (activity === 'cooking') {
+      this.mesh('cylinder',COLORS.ink,[0,-.58,0],[.02,.45,.02],limbs[2]);
+      this.box(0xa7b7b0,0,-.84,0,.16,.18,.035,limbs[2]);
+      this.box(COLORS.cream,0,.7,.19,.3,.44,.025,body);
+    }
+    if (activity === 'drinking') this.mesh('cylinder',COLORS.cream,[0,-.36,.07],[.09,.15,.09],limbs[2]);
+    if (activity === 'sweeping' || activity === 'fishing') {
+      const tool=this.mesh('cylinder',COLORS.edge,[.38,.85,.22],[.022,1.6,.022],g);tool.rotation.z=-.2;
+      if(activity==='sweeping')this.box(0xb7a077,.53,.12,.22,.32,.18,.14,g);
+    }
     const scale = person.kind === 'child' ? 0.72 : 1;
     g.scale.set(look.width * scale, look.height * scale, scale);
     g.rotation.y = position.rotation;
@@ -625,6 +693,7 @@ export class Stage {
       index,
       until: previous?.until || 0,
       action: previous?.action || '',
+      activity,
       born: this.time,
     };
     const walking = Math.abs(from.x - x) + Math.abs(from.z - z) > 0.02;
@@ -646,7 +715,10 @@ export class Stage {
           ? Math.sin(t * 7 + i * Math.PI) * 0.35
           : Math.sin(t + seed + i) * 0.025;
       });
-      body.rotation.z = active && figure.action === 'dance' ? Math.sin(t * 5) * 0.1 : 0;
+      const pose=activityPose(activity,t,seed);
+      if(!active){limbs[0].rotation.x+=pose.left;limbs[2].rotation.x+=pose.right;}
+      body.rotation.x=pose.nod;
+      body.rotation.z = active && figure.action === 'dance' ? Math.sin(t * 5) * 0.1 : pose.lean;
       if (active && figure.action === 'wave') {
         limbs[2].rotation.z = -2.4;
         limbs[2].rotation.x = Math.sin(t * 8) * 0.25;

@@ -16,6 +16,14 @@ export function sceneModel(room, hud = {}) {
           ? 'harbor'
           : room.outdoor
             ? 'town'
+            : /bowl/.test(id)
+              ? 'bowling'
+              : /bar$|dezs_bar/.test(id)
+                ? 'bar'
+                : /laundr/.test(id)
+                  ? 'laundry'
+                  : /records_office|bureau/.test(id)
+                    ? 'office'
             : /diner|kettle|truck_stop/.test(id)
               ? 'diner'
               : /archive|records|book/.test(id)
@@ -54,6 +62,10 @@ export function describePicture(model) {
     town: 'a cobbled square with colorful building fronts, planters, benches, and street lamps',
     diner: 'a cutaway diner with tiled floors, a counter, red stools, and booth seats',
     library: 'a cutaway reading room with tall bookshelves and a reading table',
+    bar: 'a cutaway neighborhood bar with an amber counter, stools, bottle shelves, and a dartboard',
+    bowling: 'a cutaway bowling alley with polished wooden lanes, pins, ball returns, and bench seating',
+    laundry: 'a cutaway laundromat with round washing-machine doors, a folding table, and baskets',
+    office: 'a cutaway records office with file cabinets, a paper-covered desk, and a reading lamp',
     interior: 'a cutaway room with a wooden floor and warm wall lights',
   };
   const furniture =
@@ -74,6 +86,8 @@ export function describePicture(model) {
       ? `The picture shows the current ${model.weather}. `
       : '') +
     `Figures in view: ${crowd}.` +
+    model.people.filter(p => p.tag).map(p => figurePosition(model, p, model.people.indexOf(p)).gathering
+      ? ` ${p.name} is taking part in the gathering.` : ` ${p.name} is ${p.tag}.`).join('') +
     (model.totalPeople > 12
       ? ` ${model.totalPeople - 12} more occupants remain listed in Here with you.`
       : '') +
@@ -90,6 +104,7 @@ export function describePicture(model) {
       )
       .join(' ') +
     (model.hangout ? ' Gathering guests stand in a circle facing the shared table. ' : ' ') +
+    'Small gestures and held objects illustrate visible activities; they do not change the world or signal game outcomes. ' +
     'Saved build, hair, and clothing choices shape the figures; custom clothing is simplified, and colors and unchosen details are artistic. Other figures remain stylized stand-ins. The scenery is an artistic layout; use the room description and exits for navigation.'
   );
 }
@@ -203,4 +218,32 @@ export function furnitureKind(name) {
     if (n.includes(kind)) return kind === 'couch' ? 'sofa' : kind === 'bookcase' ? 'shelf' : kind;
   }
   return 'cabinet';
+}
+
+export function figureActivity(model, person) {
+  if (figurePosition(model, person, Math.max(0, model.people.indexOf(person))).gathering)
+    return /story/i.test(model.hangout?.title || '') ? 'reading' : 'talking';
+  const tag = String(person.tag || '').toLowerCase();
+  if (/\b(not|never)\b/.test(tag)) return 'idle';
+  if (/grill|cook|baking/.test(tag)) return 'cooking';
+  if (/tea|coffee|pour|polishing glasses|behind the bar/.test(tag)) return 'drinking';
+  if (/read|book|stacks|keeping the quiet|paper|filing/.test(tag)) return 'reading';
+  if (/sweep|mop|clean/.test(tag)) return 'sweeping';
+  if (/haul|crates|carrying/.test(tag)) return 'carrying';
+  if (/fishing|casting/.test(tag)) return 'fishing';
+  if (/dance|dancing/.test(tag)) return 'dance';
+  return 'idle';
+}
+
+export function activityPose(activity, time, seed = 0) {
+  const t = Number.isFinite(time) && time > 0 ? time : 0;
+  const phase = t + seed % 7;
+  const pose = { left: 0, right: 0, lean: 0, nod: 0 };
+  if (activity === 'reading' || activity === 'carrying') { pose.left = -.9; pose.right = -.9; pose.nod = .06; }
+  if (activity === 'cooking' || activity === 'sweeping') { pose.right = -.7 + Math.sin(phase * 1.5) * .25; pose.lean = Math.sin(phase) * .035; }
+  if (activity === 'drinking') pose.right = -.65 - Math.max(0, Math.sin(phase * .6)) * .8;
+  if (activity === 'fishing') { pose.left = -.55; pose.right = -.85 + Math.sin(phase * .8) * .06; }
+  if (activity === 'talking') { pose.right = -.3 + Math.sin(phase * 1.3) * .18; pose.nod = Math.sin(phase) * .045; }
+  if (activity === 'dance') { pose.left = -.7; pose.right = -.7; pose.lean = Math.sin(phase * 2.4) * .1; }
+  return pose;
 }

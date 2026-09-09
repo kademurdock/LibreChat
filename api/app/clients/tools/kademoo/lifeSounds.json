@@ -23,5 +23,7 @@
   "move.step.cobble": "https://kademurdock.com/assets/sounds/reverie/world153/move.step.cobble.m4a",
   "move.step.asphalt.wet": "https://kademurdock.com/assets/sounds/reverie/world153/move.step.asphalt.wet.m4a",
   "amb.diner.quiet": "https://kademurdock.com/assets/sounds/reverie/life/work.diner.grill.loop.m4a",
-  "hunt.bow": "https://kademurdock.com/assets/sounds/reverie/world153/hunt.bow.m4a"
+  "hunt.bow": "https://kademurdock.com/assets/sounds/reverie/world153/hunt.bow.m4a",
+  "amb.ferry.quiet": "https://kademurdock.com/assets/sounds/reverie/scenes171/amb.ferry.quiet.m4a",
+  "work.sweep.floor": "https://kademurdock.com/assets/sounds/reverie/scenes171/work.sweep.floor.m4a"
 }

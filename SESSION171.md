@@ -1,0 +1,9 @@
+# Session171: expressions, living scenes and account approval
+
+Kiana and Della now have separate brow expression art with feathered regional blending and different movement cadence. The approved base portraits and identities remain intact. iPhone calls use an output-only RMS meter with a 180ms stale timeout; it stores no audio. Reduced motion, visibility and the portrait preference gate rendering. Physical-phone playback and VoiceOver listening acceptance remain open.
+
+Reverie adds detailed bar, bowling, records-office and laundry scene layouts. Residents illustrate their public scheduled activities with held books, mugs, cooking tools, brooms, crates and fishing rods. Gathering gestures override work gestures. Native snapshots include public activity tags. The offline iPhone bundle includes the full held Part169/170 world work. These are decorative gestures driven by existing world facts, not autonomous AI players. The public Reverie gate remains closed.
+
+Eight Seed Audio sources were generated with full masters and prompts preserved. The ferry engine and broom passed cold identity screening; mismatched sources remain audition-only. No shared resident vocalizations were added. ElevenLabs and Freesound remain possible sources for unfilled families; neither was used for this release. Generated scene asset metadata records the owned sources and conservative playback levels.
+
+The user authorized releasing the held iPhone changes and submitting a newer App Store version on September 9, 2026. This supersedes the prior session's build hold. Codemagic Billing showed free macOS minutes 252/500 and a zero current balance before this release; the workflow has a 20-minute build cap. Release receipts, checks and exact delivery states are recorded in the project information folder after completion.

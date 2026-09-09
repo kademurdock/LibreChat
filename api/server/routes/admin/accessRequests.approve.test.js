@@ -16,6 +16,14 @@ const mockRegisterUser = jest.fn().mockResolvedValue({ status: 200, message: 'ok
 const mockFindById = jest.fn();
 const mockFindByIdAndUpdate = jest.fn().mockResolvedValue({});
 const mockFind = jest.fn();
+const mockSendEmail = jest.fn().mockResolvedValue({ id: 'mail-1' });
+const mockClaim = jest.fn().mockResolvedValue({});
+jest.mock(
+  '~/server/utils/sendEmail',
+  () =>
+    (...args) =>
+      mockSendEmail(...args),
+);
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -42,6 +50,7 @@ jest.mock('~/models/kadeAccessRequest', () => ({
     findById: (...a) => mockFindById(...a),
     findByIdAndUpdate: (...a) => mockFindByIdAndUpdate(...a),
     find: (...a) => mockFind(...a),
+    findOneAndUpdate: (...a) => mockClaim(...a),
   },
 }));
 
@@ -68,6 +77,10 @@ beforeEach(() => {
   mockUpdateUser.mockResolvedValue({});
   mockRegisterUser.mockResolvedValue({ status: 200, message: 'ok' });
   mockFindByIdAndUpdate.mockResolvedValue({});
+  mockClaim.mockResolvedValue({});
+  mockSendEmail.mockResolvedValue({ id: 'mail-1' });
+  process.env.RESEND_API_KEY = 'test-only-key';
+  process.env.EMAIL_FROM = 'accounts@example.com';
   process.env.DOMAIN_CLIENT = 'https://kademurdock.com';
   process.env.KADE_REG_CODE_ADULT = '1336';
   process.env.KADE_REG_CODE_CHILD = '7777';
@@ -81,6 +94,7 @@ describe('approving makes the account', () => {
     mockFindById.mockReturnValue(leanReturning(doorRequest('destiny@example.com')));
     /* nobody by that email before the register call, somebody after it */
     mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-1' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'new-user-1' });
 
     const res = await approve({ audience: 'adult' });
 
@@ -92,7 +106,7 @@ describe('approving makes the account', () => {
     expect(userArg.email).toBe('destiny@example.com');
     expect(userArg.name).toBe('Destiny');
     expect(userArg.password).toBe(userArg.confirm_password);
-    expect(extraArg).toEqual({ kadeAccountType: 'adult' });
+    expect(extraArg).toEqual({ kadeAccountType: 'adult', emailVerified: true });
     /* her approval is the verification */
     expect(mockUpdateUser).toHaveBeenCalledWith('new-user-1', { emailVerified: true });
     /* and what it made is on the record */
@@ -111,6 +125,7 @@ describe('approving makes the account', () => {
   test('the message carries the sign-in, never a signup code', async () => {
     mockFindById.mockReturnValue(leanReturning(doorRequest('destiny@example.com')));
     mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-1' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'new-user-1' });
 
     const { body } = await approve({ audience: 'adult' });
 
@@ -124,6 +139,7 @@ describe('approving makes the account', () => {
   test('the temporary password is sayable out loud and long enough to be real', async () => {
     mockFindById.mockReturnValue(leanReturning(doorRequest('destiny@example.com')));
     mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-1' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'new-user-1' });
 
     const { body } = await approve({ audience: 'adult' });
 
@@ -134,10 +150,14 @@ describe('approving makes the account', () => {
   test('a kid is tagged a kid, the same way the child signup code tags one', async () => {
     mockFindById.mockReturnValue(leanReturning(doorRequest('kid@example.com')));
     mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-2' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'new-user-2' });
 
     await approve({ audience: 'child' });
 
-    expect(mockRegisterUser.mock.calls[0][1]).toEqual({ kadeAccountType: 'child' });
+    expect(mockRegisterUser.mock.calls[0][1]).toEqual({
+      kadeAccountType: 'child',
+      emailVerified: true,
+    });
   });
 
   test('an email typed on the page beats whatever the door collected', async () => {
@@ -147,6 +167,7 @@ describe('approving makes the account', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ _id: 'new-user-3' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'new-user-3' });
 
     const res = await approve({ audience: 'adult', email: '  Destiny@Example.COM ' });
 
@@ -165,7 +186,11 @@ describe('approving makes the account', () => {
 describe('a phone number is enough on its own', () => {
   test('a phone-only request still becomes a real account', async () => {
     mockFindById.mockReturnValue(leanReturning(doorRequest('4177719958')));
-    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-5' });
+    mockFindUser
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: 'new-user-5' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'new-user-5' });
 
     const res = await approve({ audience: 'adult' });
 
@@ -179,12 +204,17 @@ describe('a phone number is enough on its own', () => {
     expect(mockRegisterUser.mock.calls[0][1]).toEqual({
       kadeAccountType: 'adult',
       kadePhone: '4177719958',
+      emailVerified: true,
     });
   });
 
   test('the message tells them to sign in with the number, not the placeholder', async () => {
     mockFindById.mockReturnValue(leanReturning(doorRequest('(417) 771-9958')));
-    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-6' });
+    mockFindUser
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: 'new-user-6' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'new-user-6' });
 
     const { body } = await approve({ audience: 'adult' });
 
@@ -195,7 +225,11 @@ describe('a phone number is enough on its own', () => {
 
   test('someone with both signs in with either', async () => {
     mockFindById.mockReturnValue(leanReturning(doorRequest('destiny@example.com / 417-771-9958')));
-    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-7' });
+    mockFindUser
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: 'new-user-7' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'new-user-7' });
 
     const { body } = await approve({ audience: 'adult' });
 
@@ -207,12 +241,17 @@ describe('a phone number is enough on its own', () => {
     expect(mockRegisterUser.mock.calls[0][1]).toEqual({
       kadeAccountType: 'adult',
       kadePhone: '4177719958',
+      emailVerified: true,
     });
   });
 
   test('a phone typed on the page is used when the request had nothing', async () => {
     mockFindById.mockReturnValue(leanReturning(doorRequest('ask my brother')));
-    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-8' });
+    mockFindUser
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: 'new-user-8' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'new-user-8' });
 
     const res = await approve({ audience: 'adult', phone: '(417) 771 9958' });
 
@@ -224,7 +263,11 @@ describe('a phone number is enough on its own', () => {
     mockFindById.mockReturnValue(leanReturning(doorRequest('4177719958')));
     mockFindUser
       .mockResolvedValueOnce(null) // nobody under the placeholder address
-      .mockResolvedValueOnce({ _id: 'existing-2', email: 'someone@else.com', kadePhone: '4177719958' });
+      .mockResolvedValueOnce({
+        _id: 'existing-2',
+        email: 'someone@else.com',
+        kadePhone: '4177719958',
+      });
 
     const res = await approve({ audience: 'adult' });
 
@@ -299,13 +342,110 @@ describe('when it cannot make one', () => {
 describe('re-approving one she already approved', () => {
   test('makes the account the first approval never made', async () => {
     mockFindById.mockReturnValue(
-      leanReturning({ ...doorRequest('destiny@example.com'), status: 'approved', audience: 'adult' }),
+      leanReturning({
+        ...doorRequest('destiny@example.com'),
+        status: 'approved',
+        audience: 'adult',
+      }),
     );
     mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-4' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'new-user-4' });
 
     const res = await approve({ audience: 'adult' });
 
     expect(res.body.accountCreated).toBe(true);
     expect(mockRegisterUser).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('approval email', () => {
+  function created() {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('joiner@example.com')));
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'created' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'created' });
+  }
+  test('sends the actual new credentials after saving approval', async () => {
+    created();
+    const { body } = await approve();
+    expect(body.emailStatus).toBe('accepted');
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'joiner@example.com',
+        payload: expect.objectContaining({
+          password: body.tempPassword,
+          loginId: 'joiner@example.com',
+        }),
+      }),
+    );
+    expect(mockFindByIdAndUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSendEmail.mock.invocationCallOrder[0],
+    );
+    expect(JSON.stringify(mockFindByIdAndUpdate.mock.calls)).not.toContain(body.tempPassword);
+  });
+  test('mail failure keeps the account and its manual sign-in message', async () => {
+    created();
+    mockSendEmail.mockRejectedValue(new Error('network outcome unknown'));
+    const res = await approve();
+    expect(res.status).toBe(200);
+    expect(res.body.accountCreated).toBe(true);
+    expect(res.body.emailStatus).toBe('unconfirmed');
+    expect(res.body.readyMessage).toContain(res.body.tempPassword);
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+  });
+  test('mail claim database failure retains the account and manual password', async () => {
+    created();
+    mockClaim.mockRejectedValue(new Error('database unavailable'));
+    const res = await approve();
+    expect(res.status).toBe(200);
+    expect(res.body.accountCreated).toBe(true);
+    expect(res.body.emailStatus).toBe('unavailable');
+    expect(res.body.readyMessage).toContain(res.body.tempPassword);
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+  test('a repeated approval cannot send twice or reset the existing password', async () => {
+    mockFindById.mockReturnValue(
+      leanReturning({ ...doorRequest('joiner@example.com'), emailStatus: 'accepted' }),
+    );
+    mockFindUser.mockResolvedValue({ _id: 'existing', email: 'joiner@example.com' });
+    mockClaim.mockResolvedValue(null);
+    const { body } = await approve();
+    expect(body.emailStatus).toBe('accepted');
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockRegisterUser).not.toHaveBeenCalled();
+    expect(body.tempPassword).toBeUndefined();
+  });
+  test('an existing account receives sign-in help without a made-up password', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('joiner@example.com')));
+    mockFindUser.mockResolvedValue({
+      _id: 'existing',
+      email: 'actual@example.com',
+      kadePhone: '4175550101',
+    });
+    const { body } = await approve();
+    expect(body.emailStatus).toBe('accepted');
+    expect(mockSendEmail.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        email: 'actual@example.com',
+        payload: expect.objectContaining({ password: '', loginId: '417-555-0101' }),
+      }),
+    );
+  });
+  test('registration returning an existing account cannot send an invented password', async () => {
+    created();
+    mockRegisterUser.mockResolvedValue({ status: 200, message: 'Already exists' });
+    const res = await approve();
+    expect(res.status).toBe(500);
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+  test('phone-only accounts never attempt to email the placeholder', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('4175550101')));
+    mockFindUser
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: 'created' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'created' });
+    const { body } = await approve();
+    expect(body.emailStatus).toBe('phone-only');
+    expect(mockSendEmail).not.toHaveBeenCalled();
   });
 });

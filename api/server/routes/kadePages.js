@@ -2794,11 +2794,11 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
         card.appendChild(b);
         card.querySelectorAll('.actions button').forEach(function(x){ x.disabled=true; });
         ALL.forEach(function(r){ if(r.id===rq.id){ r.status='approved'; r.hasAccount=Boolean(d.accountCreated||d.alreadyHadAccount); r.accountEmail=d.email||r.accountEmail; } });
-        setStatus(d.accountCreated
+        setStatus((d.emailNotice ? d.emailNotice + ' ' : '') + (d.accountCreated
           ? ('Account made for '+rq.name+' — they sign in with '+(d.loginId||d.email)+'. The message is below their card.')
           : (d.alreadyHadAccount
               ? (rq.name+' already had an account under '+d.email+' — the message below says so.')
-              : ('Approved '+rq.name+', but no account was made — read the message below their card.')));
+              : ('Approved '+rq.name+', but no account was made — read the message below their card.'))));
       } else {
         card.style.opacity=.45;
         card.querySelectorAll('.actions button').forEach(function(x){ x.disabled=true; });
@@ -3242,8 +3242,8 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   </div>
 </main>
 <footer class="muted">Make yourself at home. &middot; <a href="/help/world">how Reverie works</a></footer>
-<script src="/assets/reverie/room.js?v=170"></script>
-<script type="module" src="/assets/reverie/stage.mjs?v=170"></script>
+<script src="/assets/reverie/room.js?v=171"></script>
+<script type="module" src="/assets/reverie/stage.mjs?v=171"></script>
 <script>
 (function(){
   'use strict';

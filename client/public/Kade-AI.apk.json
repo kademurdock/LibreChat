@@ -1,6 +1,6 @@
 {
-  "versionCode": 111,
-  "versionName": "2.10",
-  "notes": "Della now has her own portrait and facial animation. Della and Kiana have smoother graduated mouth and eyelid motion during voice replies. Existing voice, transcript, privacy, and playback controls remain available.",
+  "versionCode": 112,
+  "versionName": "2.11",
+  "notes": "Kiana and Della have expressive brows and individual movement during voice replies. Your existing playback and reduced-motion controls still apply.",
   "url": "https://kademurdock.com/Kade-AI.apk"
 }
