@@ -1,1 +1,6 @@
-{"versionCode": 109, "versionName": "2.8", "notes": "Native project text-file import and export: review imports before saving; export current files, saved versions or drafts. Bounded, cancellable transfers with no automatic retry.", "url": "https://kademurdock.com/Kade-AI.apk"}
+{
+  "versionCode": 110,
+  "versionName": "2.9",
+  "notes": "Native animated voice-message portraits: Kiana follows speech and blinks, while other agents use their own portraits with gentle movement. Existing audio, transcript and playback controls remain available. Settings can hide portraits.",
+  "url": "https://kademurdock.com/Kade-AI.apk"
+}
