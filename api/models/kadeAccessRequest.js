@@ -22,6 +22,9 @@ const kadeAccessRequestSchema = new mongoose.Schema(
     audience: { type: String, default: null },
     decidedAt: { type: Date, default: null },
     decidedNote: { type: String, default: '', maxlength: 500 },
+    /** Part 143: approval MAKES the account. What it made, for the record. */
+    accountEmail: { type: String, default: '' },
+    createdUserId: { type: String, default: '' },
     /** Light abuse forensics. */
     ip: { type: String, default: '' },
   },

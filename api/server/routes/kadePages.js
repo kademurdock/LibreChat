@@ -2697,12 +2697,17 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
   button.deny { border-color:#c0392b; color:#c0392b; }
   @media (prefers-color-scheme: dark){ button.approve{ color:#7fd4a5; border-color:#2c5c42; } button.deny{ color:#ff8f80; border-color:#7a2c22; } }
   .blessing { background:rgba(31,122,73,.08); border-radius:10px; padding:.7rem .8rem; margin-top:.5rem; }
+  .emailrow { margin-top:.6rem; }
+  .emailrow label { display:block; font-size:.95rem; margin-bottom:.25rem; }
+  .emailrow input { font-size:1rem; padding:.5rem .6rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; width:min(26rem,100%); }
+  @media (prefers-color-scheme: dark){ .emailrow input{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
 </style>
 </head><body>
 <a class="back" href="/you">&larr; Back</a>
 <h1>Access Requests</h1>
-<p class="muted">People knocking at the door. Approve as adult or kid and the blessing text writes itself &mdash; copy it and send it to them yourself; the code rides inside.</p>
+<p class="muted">People knocking at the door. Approving MAKES their account right there &mdash; then the sign-in text writes itself, and you copy it and send it to them. An account needs an email address: if their request left one out, type it in the box on their card first.</p>
 <div id="status" class="status" role="status" aria-live="polite">Loading&hellip;</div>
+<p><label><input type="checkbox" id="showall"> Show everyone, including the ones already handled</label></p>
 <div id="list"></div>
 <footer class="muted">&mdash; Kade-AI</footer>
 <script>
@@ -2716,50 +2721,92 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
 
   function render(reqs){
     var list=document.getElementById('list'); list.innerHTML='';
-    if(!reqs.length){ setStatus('Nobody at the door right now.'); return; }
-    setStatus(reqs.length+(reqs.length===1?' person':' people')+' waiting.');
+    if(!reqs.length){ setStatus('Nobody at the door, and nobody waiting on an account.'); return; }
+    setStatus(reqs.length+(reqs.length===1?' person':' people')+' needing something from you.');
     reqs.forEach(function(rq){
       var d=document.createElement('div'); d.className='req';
       var h=document.createElement('h3'); h.textContent=rq.name; d.appendChild(h);
       var meta=document.createElement('div'); meta.className='meta'; meta.textContent='Asked '+prettyWhen(rq.createdAt)+' · reach them at: '+rq.contact; d.appendChild(meta);
+      if(rq.status!=='pending'){
+        var st=document.createElement('div'); st.className='meta';
+        st.textContent = rq.status==='denied' ? 'Denied.'
+          : (rq.hasAccount ? ('Approved — account made under '+rq.accountEmail+'.')
+                           : 'Approved, but no account was ever made. Approving again makes it.');
+        d.appendChild(st);
+      }
       var who=document.createElement('p'); who.textContent='Who: '+rq.whoYouAre; d.appendChild(who);
       if(rq.whyHere){ var why=document.createElement('p'); why.textContent='Why: '+rq.whyHere; d.appendChild(why); }
+      /* Sep 8 2026: an account is keyed by email, and the door takes any
+         contact. Prefilled when they gave one, empty and waiting when they
+         did not -- approving without it cannot make the account. */
+      var er=document.createElement('div'); er.className='emailrow';
+      var lb=document.createElement('label'); lb.setAttribute('for','em_'+rq.id);
+      lb.textContent='Email address for their account';
+      var inp=document.createElement('input'); inp.type='email'; inp.id='em_'+rq.id;
+      inp.autocapitalize='off'; inp.setAttribute('autocomplete','off'); inp.spellcheck=false;
+      var found=(rq.contact||'').match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/);
+      inp.value = rq.accountEmail || (found ? found[0] : '');
+      inp.placeholder = found ? '' : 'they did not leave one - ask them';
+      er.appendChild(lb); er.appendChild(inp); d.appendChild(er);
       var acts=document.createElement('div'); acts.className='actions';
       var ok=document.createElement('button'); ok.type='button'; ok.className='small approve'; ok.textContent='Approve (adult)';
       var okC=document.createElement('button'); okC.type='button'; okC.className='small approve'; okC.textContent='Approve (kid)';
       var no=document.createElement('button'); no.type='button'; no.className='small deny'; no.textContent='Deny';
-      ok.addEventListener('click', function(){ decide(rq,'approve','adult',d); });
-      okC.addEventListener('click', function(){ decide(rq,'approve','child',d); });
+      ok.addEventListener('click', function(){ decide(rq,'approve','adult',d,inp); });
+      okC.addEventListener('click', function(){ decide(rq,'approve','child',d,inp); });
       no.addEventListener('click', function(){ decide(rq,'deny',null,d); });
       acts.appendChild(ok); acts.appendChild(okC); acts.appendChild(no); d.appendChild(acts);
       list.appendChild(d);
     });
   }
 
-  async function decide(rq, action, audience, card){
+  async function decide(rq, action, audience, card, emailInput){
     try{
-      var d=await api('POST','/api/admin/access-requests/'+rq.id+'/'+action, audience?{audience:audience}:{});
+      var body = audience?{audience:audience}:{};
+      if(audience && emailInput){
+        var em=(emailInput.value||'').trim();
+        if(!em){
+          emailInput.focus();
+          setStatus('I need an email address to make '+rq.name+"'s account — type it in the box on their card, then approve.", true);
+          return;
+        }
+        body.email = em;
+      }
+      var d=await api('POST','/api/admin/access-requests/'+rq.id+'/'+action, body);
       if(action==='approve'){
         var b=document.createElement('div'); b.className='blessing';
         var p=document.createElement('p'); p.textContent=d.readyMessage; b.appendChild(p);
-        var cp=document.createElement('button'); cp.type='button'; cp.className='small'; cp.textContent='Copy the blessing';
+        var cp=document.createElement('button'); cp.type='button'; cp.className='small'; cp.textContent='Copy the message';
         cp.addEventListener('click', async function(){ try{ await navigator.clipboard.writeText(d.readyMessage); setStatus('Copied — send it to '+rq.contact); }catch(e){ setStatus('Select and copy the text above.', true); } });
         b.appendChild(cp);
         card.appendChild(b);
         card.querySelectorAll('.actions button').forEach(function(x){ x.disabled=true; });
-        setStatus('Approved '+rq.name+' — the blessing text is ready below their card.');
+        ALL.forEach(function(r){ if(r.id===rq.id){ r.status='approved'; r.hasAccount=Boolean(d.accountCreated||d.alreadyHadAccount); r.accountEmail=d.email||r.accountEmail; } });
+        setStatus(d.accountCreated
+          ? ('Account made for '+rq.name+' ('+d.email+') — the sign-in message is below their card.')
+          : (d.alreadyHadAccount
+              ? (rq.name+' already had an account under '+d.email+' — the message below says so.')
+              : ('Approved '+rq.name+', but no account was made — read the message below their card.')));
       } else {
         card.style.opacity=.45;
         card.querySelectorAll('.actions button').forEach(function(x){ x.disabled=true; });
+        ALL.forEach(function(r){ if(r.id===rq.id){ r.status='denied'; } });
         setStatus('Denied. Nothing was sent to them.');
       }
     }catch(e){ setStatus('That did not go through: '+e.message, true); }
   }
 
+  var ALL=[];
+  function needsMe(r){ return r.status==='pending' || (r.status==='approved' && !r.hasAccount); }
+  function draw(){
+    var showAll=document.getElementById('showall').checked;
+    render(ALL.filter(function(r){ return showAll || needsMe(r); }));
+  }
   (async function init(){
     TOKEN=await getToken();
     if(!TOKEN){ setStatus('Sign in on the main site first, then come back.', true); return; }
-    try{ var d=await api('GET','/api/admin/access-requests?status=pending'); render(d.requests||[]); }
+    document.getElementById('showall').addEventListener('change', draw);
+    try{ var d=await api('GET','/api/admin/access-requests?status=all'); ALL=d.requests||[]; draw(); }
     catch(e){ setStatus('Could not load (admin only): '+e.message, true); }
   })();
 })();
