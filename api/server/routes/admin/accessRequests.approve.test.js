@@ -1,0 +1,228 @@
+/**
+ * APPROVE MAKES THE ACCOUNT (Part 143, Sep 8 2026).
+ *
+ * Kade's report, after her sister Destiny knocked: approving handed back a
+ * message telling Destiny to go register with code 1336 — "I could have given
+ * her that code without her messing with the door." These tests hold the door
+ * to the new contract: approve mints the account, or says exactly why it
+ * could not, and never silently hands out a signup code instead.
+ */
+const express = require('express');
+const request = require('supertest');
+
+const mockFindUser = jest.fn();
+const mockUpdateUser = jest.fn().mockResolvedValue({});
+const mockRegisterUser = jest.fn().mockResolvedValue({ status: 200, message: 'ok' });
+const mockFindById = jest.fn();
+const mockFindByIdAndUpdate = jest.fn().mockResolvedValue({});
+const mockFind = jest.fn();
+
+jest.mock('@librechat/data-schemas', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+  SystemCapabilities: { ACCESS_ADMIN: 'access:admin' },
+}));
+jest.mock('~/server/middleware/roles/capabilities', () => ({
+  requireCapability: () => (req, res, next) => next(),
+}));
+jest.mock('~/server/middleware', () => ({
+  requireJwtAuth: (req, res, next) => {
+    req.user = { id: 'admin-1' };
+    next();
+  },
+}));
+jest.mock('~/models', () => ({
+  findUser: (...a) => mockFindUser(...a),
+  updateUser: (...a) => mockUpdateUser(...a),
+}));
+jest.mock('~/server/services/AuthService', () => ({
+  registerUser: (...a) => mockRegisterUser(...a),
+}));
+jest.mock('~/models/kadeAccessRequest', () => ({
+  KadeAccessRequest: {
+    findById: (...a) => mockFindById(...a),
+    findByIdAndUpdate: (...a) => mockFindByIdAndUpdate(...a),
+    find: (...a) => mockFind(...a),
+  },
+}));
+
+const router = require('./accessRequests');
+
+const app = express();
+app.use(express.json());
+app.use('/api/admin/access-requests', router);
+
+const REQUEST_ID = '64b7f0000000000000000001';
+const doorRequest = (contact) => ({
+  _id: REQUEST_ID,
+  name: 'Destiny',
+  contact,
+  whoYouAre: "Kade's sister",
+  whyHere: 'she told me to knock',
+});
+/** The model call chains .lean() on findById. */
+const leanReturning = (doc) => ({ lean: () => Promise.resolve(doc) });
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockFindUser.mockResolvedValue(null);
+  mockUpdateUser.mockResolvedValue({});
+  mockRegisterUser.mockResolvedValue({ status: 200, message: 'ok' });
+  mockFindByIdAndUpdate.mockResolvedValue({});
+  process.env.DOMAIN_CLIENT = 'https://kademurdock.com';
+  process.env.KADE_REG_CODE_ADULT = '1336';
+  process.env.KADE_REG_CODE_CHILD = '7777';
+});
+
+const approve = (body = {}) =>
+  request(app).post(`/api/admin/access-requests/${REQUEST_ID}/approve`).send(body);
+
+describe('approving makes the account', () => {
+  test('an email in their contact line is all it takes', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('destiny@example.com')));
+    /* nobody by that email before the register call, somebody after it */
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-1' });
+
+    const res = await approve({ audience: 'adult' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.accountCreated).toBe(true);
+    expect(res.body.email).toBe('destiny@example.com');
+    expect(mockRegisterUser).toHaveBeenCalledTimes(1);
+    const [userArg, extraArg] = mockRegisterUser.mock.calls[0];
+    expect(userArg.email).toBe('destiny@example.com');
+    expect(userArg.name).toBe('Destiny');
+    expect(userArg.password).toBe(userArg.confirm_password);
+    expect(extraArg).toEqual({ kadeAccountType: 'adult' });
+    /* her approval is the verification */
+    expect(mockUpdateUser).toHaveBeenCalledWith('new-user-1', { emailVerified: true });
+    /* and what it made is on the record */
+    expect(mockFindByIdAndUpdate).toHaveBeenCalledWith(
+      REQUEST_ID,
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          status: 'approved',
+          accountEmail: 'destiny@example.com',
+          createdUserId: 'new-user-1',
+        }),
+      }),
+    );
+  });
+
+  test('the message carries the sign-in, never a signup code', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('destiny@example.com')));
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-1' });
+
+    const { body } = await approve({ audience: 'adult' });
+
+    expect(body.readyMessage).toContain('destiny@example.com');
+    expect(body.readyMessage).toContain(body.tempPassword);
+    expect(body.readyMessage).toMatch(/account is already made/i);
+    expect(body.readyMessage).not.toContain('1336');
+    expect(body.readyMessage).not.toMatch(/\/register/);
+  });
+
+  test('the temporary password is sayable out loud and long enough to be real', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('destiny@example.com')));
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-1' });
+
+    const { body } = await approve({ audience: 'adult' });
+
+    expect(body.tempPassword).toMatch(/^[a-z]+-[a-z]+-[a-z]+-\d{3}$/);
+    expect(body.tempPassword.length).toBeGreaterThanOrEqual(8);
+  });
+
+  test('a kid is tagged a kid, the same way the child signup code tags one', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('kid@example.com')));
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-2' });
+
+    await approve({ audience: 'child' });
+
+    expect(mockRegisterUser.mock.calls[0][1]).toEqual({ kadeAccountType: 'child' });
+  });
+
+  test('an email typed on the page beats whatever the door collected', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('417-555-0134')));
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-3' });
+
+    const res = await approve({ audience: 'adult', email: '  Destiny@Example.COM ' });
+
+    expect(res.body.accountCreated).toBe(true);
+    expect(res.body.email).toBe('destiny@example.com');
+    expect(mockRegisterUser.mock.calls[0][0].email).toBe('destiny@example.com');
+  });
+});
+
+describe('when it cannot make one', () => {
+  test('a phone-only request approves, says why, and still carries the code as the fallback', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('417-555-0134')));
+
+    const res = await approve({ audience: 'adult' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.accountCreated).toBe(false);
+    expect(res.body.needsEmail).toBe(true);
+    expect(mockRegisterUser).not.toHaveBeenCalled();
+    /* the phone front desk shows this text and nothing else — it has to
+       explain itself there, and leave her a way through either way */
+    expect(res.body.readyMessage).toMatch(/could not make the account/i);
+    expect(res.body.readyMessage).toContain('/access-requests');
+    expect(res.body.readyMessage).toContain('1336');
+  });
+
+  test('a typed email that is not an email is refused, not registered', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('417-555-0134')));
+
+    const res = await approve({ audience: 'adult', email: 'destiny at example dot com' });
+
+    expect(res.body.needsEmail).toBe(true);
+    expect(mockRegisterUser).not.toHaveBeenCalled();
+  });
+
+  test('somebody who already has an account is told to sign in, not signed up twice', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('destiny@example.com')));
+    mockFindUser.mockResolvedValue({ _id: 'existing-1', email: 'destiny@example.com' });
+
+    const res = await approve({ audience: 'adult' });
+
+    expect(res.body.alreadyHadAccount).toBe(true);
+    expect(res.body.accountCreated).toBe(false);
+    expect(mockRegisterUser).not.toHaveBeenCalled();
+    expect(res.body.readyMessage).toMatch(/already have an account/i);
+    expect(res.body.readyMessage).not.toContain('1336');
+  });
+
+  test('a registration that fails leaves the request waiting so she can retry', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('destiny@example.com')));
+    mockRegisterUser.mockResolvedValue({ status: 403, message: 'That email cannot be used.' });
+    mockFindUser.mockResolvedValue(null); // before AND after: nothing was made
+
+    const res = await approve({ audience: 'adult' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toContain('That email cannot be used.');
+    expect(mockFindByIdAndUpdate).not.toHaveBeenCalled(); // still pending
+  });
+
+  test('a request that is not there is a 404, not a half-made account', async () => {
+    mockFindById.mockReturnValue(leanReturning(null));
+
+    const res = await approve({ audience: 'adult' });
+
+    expect(res.status).toBe(404);
+    expect(mockRegisterUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('re-approving one she already approved', () => {
+  test('makes the account the first approval never made', async () => {
+    mockFindById.mockReturnValue(
+      leanReturning({ ...doorRequest('destiny@example.com'), status: 'approved', audience: 'adult' }),
+    );
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-4' });
+
+    const res = await approve({ audience: 'adult' });
+
+    expect(res.body.accountCreated).toBe(true);
+    expect(mockRegisterUser).toHaveBeenCalledTimes(1);
+  });
+});
