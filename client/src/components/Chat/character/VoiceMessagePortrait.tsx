@@ -45,7 +45,7 @@ function PortraitSurface({
   latest.current = playback;
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (!element.current || !canvas.current) return;
+    if (failed || !element.current || !canvas.current) return;
     const surface = element.current,
       target = canvas.current;
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -143,7 +143,7 @@ function PortraitSurface({
       motion.removeEventListener('change', refresh);
       document.removeEventListener('visibilitychange', refresh);
     };
-  }, [agentId, path, playback.audio]);
+  }, [agentId, path, playback.audio, failed]);
   if (failed) return null;
   return (
     <div className="my-3 w-44 max-w-full rounded-3xl bg-surface-secondary p-1.5">
