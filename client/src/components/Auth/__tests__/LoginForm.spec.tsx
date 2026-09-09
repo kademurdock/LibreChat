@@ -158,6 +158,29 @@ test('displays validation error messages', async () => {
   await userEvent.type(passwordInput, 'pass');
   await userEvent.click(submitButton);
 
-  expect(getByText(/You must enter a valid email address/i)).toBeInTheDocument();
+  /* Kade-AI Part 143: the box takes an email address or a phone number, so
+     the complaint about "test" says both. */
+  expect(getByText(/email address or phone number/i)).toBeInTheDocument();
   expect(getByText(/Password must be at least 8 characters/i)).toBeInTheDocument();
+});
+
+test('a phone number is a login, not a validation error (Kade-AI Part 143)', async () => {
+  const { getByLabelText, queryByText } = render(
+    <Login
+      onSubmit={mockLogin}
+      startupConfig={mockStartupConfig}
+      error={undefined}
+      setError={jest.fn()}
+    />,
+  );
+  const emailInput = getByLabelText(/email/i);
+  const passwordInput = getByLabelText(/password/i);
+  const submitButton = getByTestId(document.body, 'login-button');
+
+  await userEvent.type(emailInput, '417-771-9958');
+  await userEvent.type(passwordInput, 'password');
+  await userEvent.click(submitButton);
+
+  expect(queryByText(/email address or phone number/i)).not.toBeInTheDocument();
+  expect(mockLogin).toHaveBeenCalledWith({ email: '417-771-9958', password: 'password' });
 });

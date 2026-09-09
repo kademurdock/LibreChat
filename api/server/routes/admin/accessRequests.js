@@ -3,6 +3,13 @@ const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
 const crypto = require('node:crypto');
+const {
+  findEmail,
+  looksLikeEmail,
+  normalizePhone,
+  prettyPhone,
+  placeholderEmailForPhone,
+} = require('~/server/utils/kadeLoginId');
 const { findUser, updateUser } = require('~/models');
 const { registerUser } = require('~/server/services/AuthService');
 const { KadeAccessRequest } = require('~/models/kadeAccessRequest');
@@ -60,7 +67,6 @@ router.get('/', async (req, res) => {
  * dead-ending. On the phone the native front desk shows readyMessage and
  * swallows everything else, so the message has to carry the whole truth.
  */
-const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 /** Readable, sayable, spellable out loud -- this gets read to people, often
  * by a screen reader and sometimes over the phone. No l/1/O/0 collisions. */
 const PW_WORDS = [
@@ -76,28 +82,45 @@ function tempPassword() {
   return `${pick()}-${pick()}-${pick()}-${crypto.randomInt(100, 1000)}`;
 }
 
-/** The one place that decides which email an approval will use. */
-function emailFor(doc, body) {
-  const given = String(body?.email || '').trim();
-  if (given) {
-    return EMAIL_RE.test(given) ? given.toLowerCase() : null;
+/**
+ * The one place that decides what an approval will file the account under.
+ * Part 143, second half (Kade: "make it accept a phone as login too. Not
+ * everyone has both, one, or the other. It's not like we are texting or
+ * emailing them."): an email if there is one, otherwise the phone number,
+ * which becomes both the login and a placeholder address that can never
+ * receive mail. Only a request with NEITHER cannot become an account.
+ * @returns {{email:string|null, phone:string|null, placeholder:boolean}}
+ */
+function identityFor(doc, body) {
+  const typedEmail = String(body?.email || '').trim();
+  const typedPhone = String(body?.phone || '').trim();
+  /* What she typed on the page wins; what they left at the door is the
+   * fallback. A typed value that is neither is a mistake worth reporting, so
+   * it does not quietly fall through to the contact line. */
+  let email = null;
+  let phone = null;
+  if (typedEmail) {
+    email = looksLikeEmail(typedEmail) ? typedEmail.toLowerCase() : null;
+    if (!email) {
+      return { email: null, phone: null, placeholder: false, badInput: typedEmail };
+    }
   }
-  const found = String(doc.contact || '').match(EMAIL_RE);
-  return found ? found[0].toLowerCase() : null;
-}
-
-/** A phone number hiding in their contact line, for the voice-line signup the
- * ordinary registration path already does. */
-function phoneFor(doc, body) {
-  const given = String(body?.phone || '').trim();
-  const digits = (given || String(doc.contact || '')).replace(/\D/g, '');
-  if (digits.length === 10) {
-    return digits;
+  if (typedPhone) {
+    phone = normalizePhone(typedPhone);
   }
-  if (digits.length === 11 && digits.startsWith('1')) {
-    return digits.slice(1);
+  if (!email) {
+    email = findEmail(doc.contact);
   }
-  return null;
+  if (!phone) {
+    phone = normalizePhone(doc.contact);
+  }
+  if (email) {
+    return { email, phone, placeholder: false };
+  }
+  if (phone) {
+    return { email: placeholderEmailForPhone(phone), phone, placeholder: true };
+  }
+  return { email: null, phone: null, placeholder: false };
 }
 
 router.post('/:id/approve', async (req, res) => {
@@ -109,8 +132,10 @@ router.post('/:id/approve', async (req, res) => {
     }
     const domain = process.env.DOMAIN_CLIENT || 'https://kademurdock.com';
     const name = String(req.body?.name || doc.name || '').trim();
-    const email = emailFor(doc, req.body);
+    const { email, phone, placeholder, badInput } = identityFor(doc, req.body);
     const note = String(req.body?.note || '').slice(0, 500);
+    /** What they will type into the one login box. */
+    const loginId = placeholder ? prettyPhone(phone) : email;
 
     const finish = async (extra, payload) => {
       await KadeAccessRequest.findByIdAndUpdate(req.params.id, {
@@ -119,14 +144,24 @@ router.post('/:id/approve', async (req, res) => {
       return res.json({ ok: true, id: String(doc._id), audience, contact: doc.contact, ...payload });
     };
 
-    /* No email, no account -- said in the message itself, because the phone
-     * front desk shows the message and nothing else. The code rides along so
-     * she is never worse off than she was before this change. */
+    /* A typed value that is not an email address at all: say so instead of
+     * silently falling back to whatever the door collected. */
+    if (badInput) {
+      return res.status(400).json({
+        error: `"${badInput}" is not an email address. Fix it, or clear the box and approve to use their phone number.`,
+        needsEmail: true,
+      });
+    }
+
+    /* Neither an email nor a phone number anywhere -- the only case left that
+     * cannot become an account. Said in the message itself, because the phone
+     * front desk shows the message and nothing else, and the code rides along
+     * so she is never worse off than before any of this. */
     if (!email) {
       const code =
         audience === 'child' ? process.env.KADE_REG_CODE_CHILD : process.env.KADE_REG_CODE_ADULT;
       logger.warn(
-        `[admin-access] approved "${doc.name}" but no email in "${doc.contact}" -- no account made`,
+        `[admin-access] approved "${doc.name}" but "${doc.contact}" holds no email and no phone -- no account made`,
       );
       return finish(
         {},
@@ -134,28 +169,30 @@ router.post('/:id/approve', async (req, res) => {
           accountCreated: false,
           needsEmail: true,
           readyMessage:
-            `I approved ${name}, but I could not make the account: their request left out an ` +
-            `email address (they gave "${doc.contact}"). Get an email from them, then open ` +
-            `${domain}/access-requests, type it in, and approve again -- that makes the account. ` +
-            `If you would rather not wait, they can still sign up at ${domain}/register with the ` +
-            `code ${code}.`,
+            `I approved ${name}, but I could not make the account: their request left no email ` +
+            `address and no phone number I could read (they gave "${doc.contact}"). Get either ` +
+            `one from them, then open ${domain}/access-requests, type it in, and approve again ` +
+            `-- that makes the account. If you would rather not wait, they can still sign up at ` +
+            `${domain}/register with the code ${code}.`,
         },
       );
     }
 
-    const existing = await findUser({ email }, 'email _id name');
+    const existing =
+      (await findUser({ email }, 'email _id name kadePhone')) ||
+      (phone ? await findUser({ kadePhone: phone }, 'email _id name kadePhone') : null);
     if (existing) {
       logger.info(`[admin-access] "${doc.name}" already had an account (${email})`);
       return finish(
-        { accountEmail: email, createdUserId: String(existing._id) },
+        { accountEmail: existing.email, createdUserId: String(existing._id) },
         {
           accountCreated: false,
           alreadyHadAccount: true,
-          email,
+          email: existing.email,
           readyMessage:
-            `Hey ${name} -- you already have an account here under ${email}. Go to ${domain}, ` +
-            `sign in, and you're in. If the password is gone, use "Forgot password" on the ` +
-            `sign-in page, or tell me and I'll reset it for you.`,
+            `Hey ${name} -- you already have an account here. Go to ${domain} and sign in with ` +
+            `${existing.kadePhone ? prettyPhone(existing.kadePhone) : existing.email}. If the ` +
+            `password is gone, tell me and I'll reset it for you.`,
         },
       );
     }
@@ -166,7 +203,7 @@ router.post('/:id/approve', async (req, res) => {
     const password = tempPassword();
     const result = await registerUser(
       { name, email, password, confirm_password: password },
-      { kadeAccountType: audience },
+      phone ? { kadeAccountType: audience, kadePhone: phone } : { kadeAccountType: audience },
     );
     const made = await findUser({ email }, 'email _id');
     if (!made) {
@@ -190,7 +227,6 @@ router.post('/:id/approve', async (req, res) => {
 
     /* Same courtesy the ordinary signup does: hand the phone to the bridge so
      * the voice line knows them. Fail-soft, always. */
-    const phone = phoneFor(doc, req.body);
     if (phone) {
       const bridgeSignupUrl =
         process.env.BRIDGE_SIGNUP_URL || 'https://kade-ai-bridge-production.up.railway.app/signup';
@@ -206,19 +242,23 @@ router.post('/:id/approve', async (req, res) => {
     }
 
     logger.info(
-      `[admin-access] ACCOUNT MADE for "${doc.name}" (${email}) as ${audience} by ${req.user.id}`,
+      `[admin-access] ACCOUNT MADE for "${doc.name}" (signs in with ${loginId}${placeholder ? ', phone-only' : ''}) as ${audience} by ${req.user.id}`,
     );
     return finish(
       { accountEmail: email, createdUserId: String(made._id) },
       {
         accountCreated: true,
         email,
+        loginId,
+        phone: phone || null,
+        usesPhoneLogin: placeholder,
         tempPassword: password,
         readyMessage:
           `Hey ${name} -- you're in, and your account is already made. Go to ${domain} and sign ` +
-          `in with ${email}, password ${password}. Change that password once you're in: it's ` +
-          `under your name at the bottom left, then Settings, then Account. Welcome to the ` +
-          `family's corner of the internet.`,
+          `in with ${loginId}, password ${password}.` +
+          (phone && !placeholder ? ` Your phone number ${prettyPhone(phone)} works in that box too.` : '') +
+          ` Change that password once you're in: it's under your name at the bottom left, then ` +
+          `Settings, then Account. Welcome to the family's corner of the internet.`,
       },
     );
   } catch (error) {

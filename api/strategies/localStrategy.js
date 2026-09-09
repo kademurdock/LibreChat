@@ -4,6 +4,7 @@ const { errorsToString } = require('librechat-data-provider');
 const { Strategy: PassportLocalStrategy } = require('passport-local');
 const { isEnabled, checkEmailConfig, comparePassword } = require('@librechat/api');
 const { findUser, updateUser } = require('~/models');
+const { classifyLoginId } = require('~/server/utils/kadeLoginId');
 const { loginSchema } = require('./validators');
 
 // Unix timestamp for 2024-06-07 15:20:18 Eastern Time
@@ -23,17 +24,28 @@ async function passportLogin(req, email, password, done) {
       return done(null, false, { message: validationError });
     }
 
-    const user = await findUser({ email: email.trim() }, '+password');
+    /* Part 143 (Sep 8 2026): the one login box takes an email address or a
+     * phone number. A phone is matched against `kadePhone`, which the front
+     * door and registration both store as ten bare digits, so 417-771-9958,
+     * (417) 771 9958 and 14177719958 are the same person. The failure
+     * message stops saying "email" at people who typed a phone. */
+    const id = classifyLoginId(email);
+    const user =
+      id.kind === 'phone'
+        ? await findUser({ kadePhone: id.phone }, '+password')
+        : await findUser({ email: String(email).trim() }, '+password');
+    const noSuchAccount =
+      id.kind === 'phone' ? 'No account uses that phone number.' : 'Email does not exist.';
     if (!user) {
       logError('Passport Local Strategy - User Not Found', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
-      return done(null, false, { message: 'Email does not exist.' });
+      return done(null, false, { message: noSuchAccount });
     }
 
     if (!user.password) {
       logError('Passport Local Strategy - User has no password', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
-      return done(null, false, { message: 'Email does not exist.' });
+      return done(null, false, { message: noSuchAccount });
     }
 
     const isMatch = await comparePassword(user, password, { compare: bcrypt.compare });

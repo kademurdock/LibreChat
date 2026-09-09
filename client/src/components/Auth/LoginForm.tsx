@@ -5,7 +5,7 @@ import { ThemeContext, SecretInput, Spinner, Button, isDark } from '@librechat/c
 import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import type { TAuthContext } from '~/common';
 import { useResendVerificationEmail, useGetStartupConfig } from '~/data-provider';
-import { validateEmail } from '~/utils';
+import { validateLoginIdentifier } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 type TLoginFormProps = {
@@ -100,13 +100,14 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               type="text"
               id="email"
               autoComplete={useUsernameLogin ? 'username' : 'email'}
-              aria-label={localize('com_auth_email')}
+              aria-label={useUsernameLogin ? localize('com_auth_username') : localize('com_auth_email_or_phone')}
               {...register('email', {
-                required: localize('com_auth_email_required'),
+                required: localize('com_auth_email_or_phone_required'),
                 maxLength: { value: 120, message: localize('com_auth_email_max_length') },
                 validate: useUsernameLogin
                   ? undefined
-                  : (value) => validateEmail(value, localize('com_auth_email_pattern')),
+                  : /* Kade-AI Part 143: an email address or a phone number. */
+                    (value) => validateLoginIdentifier(value, localize('com_auth_email_or_phone_pattern')),
               })}
               aria-invalid={!!errors.email}
               className={authInputClassName}
@@ -115,7 +116,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
             <label htmlFor="email" className={authLabelClassName}>
               {useUsernameLogin
                 ? localize('com_auth_username').replace(/ \(.*$/, '')
-                : localize('com_auth_email_address')}
+                : localize('com_auth_email_or_phone')}
             </label>
           </div>
           {renderError('email')}

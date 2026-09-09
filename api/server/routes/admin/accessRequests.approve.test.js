@@ -142,7 +142,11 @@ describe('approving makes the account', () => {
 
   test('an email typed on the page beats whatever the door collected', async () => {
     mockFindById.mockReturnValue(leanReturning(doorRequest('417-555-0134')));
-    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-3' });
+    /* nobody under that address, nobody under that phone, then the new row */
+    mockFindUser
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: 'new-user-3' });
 
     const res = await approve({ audience: 'adult', email: '  Destiny@Example.COM ' });
 
@@ -152,9 +156,87 @@ describe('approving makes the account', () => {
   });
 });
 
+/**
+ * Part 143, second half. Kade: "you should make it accept a phone as login
+ * too. Not everyone has both, one, or the other. It's not like we are texting
+ * or emailing them." Destiny's own request carried a phone number and nothing
+ * else, which is the case that has to work.
+ */
+describe('a phone number is enough on its own', () => {
+  test('a phone-only request still becomes a real account', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('4177719958')));
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-5' });
+
+    const res = await approve({ audience: 'adult' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.accountCreated).toBe(true);
+    expect(res.body.usesPhoneLogin).toBe(true);
+    expect(res.body.loginId).toBe('417-771-9958');
+    /* filed under a name that can never receive mail, and says so */
+    expect(mockRegisterUser.mock.calls[0][0].email).toBe('p4177719958@phone.kade-ai.invalid');
+    /* and the phone is what they type into the login box */
+    expect(mockRegisterUser.mock.calls[0][1]).toEqual({
+      kadeAccountType: 'adult',
+      kadePhone: '4177719958',
+    });
+  });
+
+  test('the message tells them to sign in with the number, not the placeholder', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('(417) 771-9958')));
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-6' });
+
+    const { body } = await approve({ audience: 'adult' });
+
+    expect(body.readyMessage).toContain('417-771-9958');
+    expect(body.readyMessage).not.toContain('invalid');
+    expect(body.readyMessage).not.toContain('1336');
+  });
+
+  test('someone with both signs in with either', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('destiny@example.com / 417-771-9958')));
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-7' });
+
+    const { body } = await approve({ audience: 'adult' });
+
+    expect(body.email).toBe('destiny@example.com');
+    expect(body.phone).toBe('4177719958');
+    expect(body.usesPhoneLogin).toBe(false);
+    expect(body.readyMessage).toContain('destiny@example.com');
+    expect(body.readyMessage).toContain('417-771-9958');
+    expect(mockRegisterUser.mock.calls[0][1]).toEqual({
+      kadeAccountType: 'adult',
+      kadePhone: '4177719958',
+    });
+  });
+
+  test('a phone typed on the page is used when the request had nothing', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('ask my brother')));
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-8' });
+
+    const res = await approve({ audience: 'adult', phone: '(417) 771 9958' });
+
+    expect(res.body.accountCreated).toBe(true);
+    expect(res.body.loginId).toBe('417-771-9958');
+  });
+
+  test('a phone already signing somebody else in is not handed out twice', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('4177719958')));
+    mockFindUser
+      .mockResolvedValueOnce(null) // nobody under the placeholder address
+      .mockResolvedValueOnce({ _id: 'existing-2', email: 'someone@else.com', kadePhone: '4177719958' });
+
+    const res = await approve({ audience: 'adult' });
+
+    expect(res.body.alreadyHadAccount).toBe(true);
+    expect(mockRegisterUser).not.toHaveBeenCalled();
+    expect(res.body.readyMessage).toContain('417-771-9958');
+  });
+});
+
 describe('when it cannot make one', () => {
-  test('a phone-only request approves, says why, and still carries the code as the fallback', async () => {
-    mockFindById.mockReturnValue(leanReturning(doorRequest('417-555-0134')));
+  test('neither an email nor a phone approves, says why, and carries the code as the fallback', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('find me on facebook')));
 
     const res = await approve({ audience: 'adult' });
 
@@ -169,11 +251,12 @@ describe('when it cannot make one', () => {
     expect(res.body.readyMessage).toContain('1336');
   });
 
-  test('a typed email that is not an email is refused, not registered', async () => {
-    mockFindById.mockReturnValue(leanReturning(doorRequest('417-555-0134')));
+  test('a typed email that is not an email is refused, not quietly replaced', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('4177719958')));
 
     const res = await approve({ audience: 'adult', email: 'destiny at example dot com' });
 
+    expect(res.status).toBe(400);
     expect(res.body.needsEmail).toBe(true);
     expect(mockRegisterUser).not.toHaveBeenCalled();
   });

@@ -33,6 +33,8 @@ export interface IUser extends Document {
   twoFactorEnabled?: boolean;
   /** Kade-AI: which signup code registered this account */
   kadeAccountType?: 'adult' | 'child';
+  /** Kade-AI: ten digits that can be typed into the login box instead of an email. */
+  kadePhone?: string;
   totpSecret?: string;
   backupCodes?: Array<{
     codeHash: string;

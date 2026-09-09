@@ -159,6 +159,20 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       enum: ['adult', 'child'],
       default: 'adult',
     },
+    /**
+     * Kade-AI (Part 143, Sep 8 2026): ten digits somebody can sign in with
+     * instead of an email address. Her words: "not everyone has both, one, or
+     * the other. It's not like we are texting or emailing them." Sparse and
+     * unindexed-unique on purpose -- uniqueness is enforced at the two write
+     * sites (registration and the front door), because a unique index added
+     * to a live collection full of accounts without the field is a migration,
+     * not a field.
+     */
+    kadePhone: {
+      type: String,
+      sparse: true,
+      index: true,
+    },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
       type: String,

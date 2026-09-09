@@ -30,8 +30,20 @@ const usernameSchema = z
     message: 'Potential injection attack detected',
   });
 
+/* Part 143 (Sep 8 2026, Kade: "make it accept a phone as login too. Not
+ * everyone has both, one, or the other"). The login box is one field named
+ * `email` all the way down to passport, so the NAME stays and the meaning
+ * widens: an email address, or a phone number we can normalise to ten
+ * digits. classifyLoginId is the single opinion on which is which; the local
+ * strategy looks the phone up on `kadePhone`. */
+const { classifyLoginId } = require('~/server/utils/kadeLoginId');
+
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z
+    .string()
+    .refine((value) => classifyLoginId(value).kind !== 'unknown', {
+      message: 'Enter the email address or phone number for your account.',
+    }),
   password: z
     .string()
     .min(MIN_PASSWORD_LENGTH)

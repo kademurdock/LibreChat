@@ -2705,7 +2705,7 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
 </head><body>
 <a class="back" href="/you">&larr; Back</a>
 <h1>Access Requests</h1>
-<p class="muted">People knocking at the door. Approving MAKES their account right there &mdash; then the sign-in text writes itself, and you copy it and send it to them. An account needs an email address: if their request left one out, type it in the box on their card first.</p>
+<p class="muted">People knocking at the door. Approving MAKES their account right there &mdash; then the sign-in text writes itself, and you copy it and send it to them. An account is filed under an email address or a phone number, whichever they have; the box on their card is filled in from what they left, and you can change it.</p>
 <div id="status" class="status" role="status" aria-live="polite">Loading&hellip;</div>
 <p><label><input type="checkbox" id="showall"> Show everyone, including the ones already handled</label></p>
 <div id="list"></div>
@@ -2741,12 +2741,14 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
          did not -- approving without it cannot make the account. */
       var er=document.createElement('div'); er.className='emailrow';
       var lb=document.createElement('label'); lb.setAttribute('for','em_'+rq.id);
-      lb.textContent='Email address for their account';
-      var inp=document.createElement('input'); inp.type='email'; inp.id='em_'+rq.id;
+      lb.textContent='Email address or phone number for their account';
+      var inp=document.createElement('input'); inp.type='text'; inp.id='em_'+rq.id;
       inp.autocapitalize='off'; inp.setAttribute('autocomplete','off'); inp.spellcheck=false;
       var found=(rq.contact||'').match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/);
-      inp.value = rq.accountEmail || (found ? found[0] : '');
-      inp.placeholder = found ? '' : 'they did not leave one - ask them';
+      var digits=(rq.contact||'').replace(/\\D/g,'');
+      if(digits.length===11 && digits.charAt(0)==='1'){ digits=digits.slice(1); }
+      inp.value = rq.accountEmail || (found ? found[0] : (digits.length===10 ? digits : ''));
+      inp.placeholder = 'an email address or a 10-digit phone number';
       er.appendChild(lb); er.appendChild(inp); d.appendChild(er);
       var acts=document.createElement('div'); acts.className='actions';
       var ok=document.createElement('button'); ok.type='button'; ok.className='small approve'; ok.textContent='Approve (adult)';
@@ -2767,10 +2769,20 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
         var em=(emailInput.value||'').trim();
         if(!em){
           emailInput.focus();
-          setStatus('I need an email address to make '+rq.name+"'s account — type it in the box on their card, then approve.", true);
+          setStatus('I need an email address or a phone number to make '+rq.name+"'s account — type one in the box on their card, then approve.", true);
           return;
         }
-        body.email = em;
+        /* Whichever they have: an address goes in as the login, ten digits
+           become the login instead. The server keeps the same opinion. */
+        var dg=em.replace(/\\D/g,'');
+        if(dg.length===11 && dg.charAt(0)==='1'){ dg=dg.slice(1); }
+        if(em.indexOf('@')>0){ body.email=em; }
+        else if(dg.length===10){ body.phone=dg; }
+        else {
+          emailInput.focus();
+          setStatus("That is not an email address or a 10-digit phone number.", true);
+          return;
+        }
       }
       var d=await api('POST','/api/admin/access-requests/'+rq.id+'/'+action, body);
       if(action==='approve'){
@@ -2783,7 +2795,7 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
         card.querySelectorAll('.actions button').forEach(function(x){ x.disabled=true; });
         ALL.forEach(function(r){ if(r.id===rq.id){ r.status='approved'; r.hasAccount=Boolean(d.accountCreated||d.alreadyHadAccount); r.accountEmail=d.email||r.accountEmail; } });
         setStatus(d.accountCreated
-          ? ('Account made for '+rq.name+' ('+d.email+') — the sign-in message is below their card.')
+          ? ('Account made for '+rq.name+' — they sign in with '+(d.loginId||d.email)+'. The message is below their card.')
           : (d.alreadyHadAccount
               ? (rq.name+' already had an account under '+d.email+' — the message below says so.')
               : ('Approved '+rq.name+', but no account was made — read the message below their card.')));

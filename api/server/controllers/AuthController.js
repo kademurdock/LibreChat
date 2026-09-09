@@ -26,6 +26,7 @@ const {
 } = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
+const { normalizePhone } = require('~/server/utils/kadeLoginId');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
 const OPENID_REUSE_EXPIRY_BUFFER_SECONDS = 30;
@@ -64,7 +65,18 @@ const registrationController = async (req, res) => {
         });
       }
     }
-    const response = await registerUser(req.body, kadeAccountType ? { kadeAccountType } : {});
+    /* Part 143 (Sep 8 2026): the phone number this form has always collected
+     * used to go to the bridge and nowhere else. Now it is also stored on the
+     * account as a login handle, so somebody who remembers their number and
+     * not their email address can still get in. Taken only when it is free:
+     * two accounts sharing a phone would make the login ambiguous, and the
+     * schema deliberately carries no unique index to enforce that for us. */
+    const extras = kadeAccountType ? { kadeAccountType } : {};
+    const phone = normalizePhone(req.body?.phoneNumber);
+    if (phone && !(await findUser({ kadePhone: phone }, '_id'))) {
+      extras.kadePhone = phone;
+    }
+    const response = await registerUser(req.body, extras);
     const { status, message } = response;
     res.status(status).send({ message });
     // Fire-and-forget: register phone with the bridge if the user provided one
