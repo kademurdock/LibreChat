@@ -6,6 +6,7 @@ export function createCallCharacter({ resolveProfile, render, requestFrame, canc
   let agentId = null, generation = 0, token = null, wanted = 'idle', clock = () => performance.now() / 1000;
   let disposed = false;
   let notBefore = 0;
+  let refreshPending = false;
   const pending = new Set();
   const fallback = () => ({ id: agentId || 'unknown', rigReady: false });
   const player = CharacterPlayer.create({ character: fallback(), clock: () => clock(),
@@ -21,6 +22,12 @@ export function createCallCharacter({ resolveProfile, render, requestFrame, canc
   }
   function rest() {
     if (pending.size || disposed) return;
+    if (refreshPending) {
+      refreshPending = false;
+      let profile;
+      try { profile = resolveProfile(agentId); } catch { /* static */ }
+      player.select(profile || fallback()); token = null;
+    }
     if (token) player.finish(token);
     token = wanted === 'listening' ? player.listen() : wanted === 'thinking' ? player.think() : null;
   }
@@ -37,6 +44,7 @@ export function createCallCharacter({ resolveProfile, render, requestFrame, canc
   }
   return {
     select, clear,
+    refreshProfile() { if (!disposed) { refreshPending = true; rest(); } },
     preferences(value) { if (!disposed) player.preferences(value); },
     status(value) {
       if (disposed) return;

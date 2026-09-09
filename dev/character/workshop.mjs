@@ -1,10 +1,10 @@
 import { createCallCharacter } from './adapter.mjs';
-import { createAtlasRenderer } from './atlas.mjs';
+import { createPortraitRig } from './portrait-rig.mjs';
 import { observePlayback } from './playback-browser.mjs';
 
 const $ = id => document.getElementById(id);
 const media = matchMedia('(prefers-reduced-motion: reduce)');
-const atlas = createAtlasRenderer($('atlas'), { id: 'kiana', url: 'kiana-atlas-draft.png',
+const atlas = createPortraitRig($('atlas'), { id: 'kiana', portrait: 'portrait.png', atlas: 'kiana-atlas-draft.png',
   onFailure: () => { $('status').textContent = 'Artwork could not load. The static portrait remains available.'; } });
 const character = createCallCharacter({
   resolveProfile: id => id === 'kiana' ? { id, rigReady: true } : null,

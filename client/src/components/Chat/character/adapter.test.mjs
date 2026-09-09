@@ -49,6 +49,19 @@ test('clear and stale end callbacks cannot change the new turn', () => {
   assert.ok(h.frame().mouth > 0.1);
 });
 
+test('late artwork readiness waits for pending playback instead of dropping its ownership', () => {
+  const h = harness();
+  const ended = h.adapter.scheduled(h.segment(1));
+  h.adapter.status('listening');
+  h.adapter.refreshProfile();
+  h.advance(1.2);
+  assert.equal(h.frame().mode, 'speaking');
+  assert.ok(h.frame().mouth > 0.1);
+  h.advance(2); ended();
+  assert.equal(h.frame().mode, 'listening');
+  assert.equal(h.frame().mouth, 0);
+});
+
 test('unknown speaker and Spotter remain static; game clips close the mouth', () => {
   const h = harness();
   h.adapter.scheduled(h.segment(0, false));

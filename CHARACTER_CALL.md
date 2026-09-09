@@ -1,3 +1,25 @@
+# Part 165 continuation
+
+ConversationMode now mounts the character hook, registered mouth renderer and
+initially-off saved/localized motion preference. This branch is still held.
+The original portrait remains the base; blink layers are excluded after visual
+review. See dev/character/REGISTRATION.md for current limits.
+
+`npm ci`, `node dev/character/build-mounted.cjs`, then serve
+`dev/character/out-mounted` on loopback. `check-mounted.cjs` uses Playwright;
+CHARACTER_PREVIEW_URL and CHARACTER_BROWSER can select the URL/browser.
+The dependency-free `build.cjs` workshop is also updated to the mouth rig.
+
+35 engine/integration checks pass, React StrictMode controller browser checks
+pass, and the full frontend builds. Whole-project type checking has existing
+errors outside these changes; the same baseline errors were reproduced.
+Hardware, full backend call, accessibility acceptance and queued speaker
+transition review are still release gates. No native adapter or live release.
+
+---
+
+The following Part164 record describes the parent increment:
+
 # Character playback integration — Part 164
 
 This is held development work. No production caller supplies the new optional

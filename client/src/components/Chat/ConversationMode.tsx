@@ -36,7 +36,8 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Phone, PhoneOff, Mic, StopCircle, Camera, CameraOff, ScanEye, Radio, Flashlight, FlashlightOff, SwitchCamera } from 'lucide-react';
-import { useAuthContext } from '~/hooks';
+import { useAuthContext, useLocalize } from '~/hooks';
+import useCallCharacter from './character/useCallCharacter';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
 import { cn } from '~/utils';
 import { stripVoiceTags, hideDanglingVoiceTag } from '~/utils/voiceTags';
@@ -305,18 +306,6 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
 
   const [open,       setOpen]       = useState(false);
   const [status,     setStatus]     = useState<CallStatus>('idle');
-  const presentationRef = useRef(presentation);
-  const presentationRelay = useRef(createPresentationRelay(() => presentationRef.current));
-  useEffect(() => {
-    const previous = presentationRef.current;
-    if (previous !== presentation) clearPresentation(previous);
-    presentationRef.current = presentation;
-    selectPresentation(presentation, agentId ?? null);
-    return () => clearPresentation(presentation);
-  }, [presentation, agentId]);
-  useEffect(() => {
-    presentationStatus(presentationRef.current, status);
-  }, [status, presentation]);
   const [transcript, setTranscript] = useState('');
   const [aiText,     setAiText]     = useState('');
   // Game Parlor visual: sticky "current table" for this call. Set whenever a
@@ -328,6 +317,7 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
   // avatar, no fetch, or an error just keeps the classic orb. Decorative
   // only (aria-hidden with the rest of the visuals).
   const [avatarUrl,  setAvatarUrl]  = useState<string>('');
+  const avatarRequestRef = useRef<AbortController | null>(null);
   const tableSeqRef = useRef(0);
   // Live Activity state: true while a call banner is up on the Lock Screen.
   const laActiveRef = useRef(false);
@@ -409,6 +399,22 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
   // speech (different voice, continuous). liveModeRef mirrors the state for
   // callbacks that fire out of render order (video-state races at handoff).
   const [liveMode,   setLiveMode]   = useState(false);
+  const localize = useLocalize();
+  const character = useCallCharacter({ open, agentId, avatarUrl, liveMode, status });
+  const activePresentation = presentation ?? character.presentation;
+  const presentationRef = useRef(activePresentation);
+  const presentationRelay = useRef(createPresentationRelay(() => presentationRef.current));
+  useEffect(() => {
+    const previous = presentationRef.current;
+    if (previous !== activePresentation) clearPresentation(previous);
+    presentationRef.current = activePresentation;
+    selectPresentation(activePresentation, agentId ?? null);
+    return () => clearPresentation(activePresentation);
+  }, [activePresentation, agentId, open]);
+  useEffect(() => {
+    presentationStatus(presentationRef.current, status);
+  }, [status, activePresentation, open]);
+
   const [liveNotice, setLiveNotice] = useState<string | null>(null);
   const liveModeRef    = useRef(false);
   const liveConfirmRef = useRef<HTMLButtonElement | null>(null);
@@ -690,45 +696,6 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
   // entirely under prefers-reduced-motion -- the existing static scale-110
   // class on the orb is the fallback in that case. Never touches anything a
   // screen reader reads; the srStatus live region above is unaffected.
-  useEffect(() => {
-    const reduceMotion =
-      typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-
-    if (status !== 'speaking' || reduceMotion) {
-      if (pulseRafRef.current != null) {
-        window.cancelAnimationFrame(pulseRafRef.current);
-        pulseRafRef.current = null;
-      }
-      if (orbRef.current) orbRef.current.style.transform = '';
-      return;
-    }
-
-    const analyser = outputAnalyserRef.current;
-    if (!analyser) return;
-    const data = new Uint8Array(analyser.frequencyBinCount);
-
-    const tick = () => {
-      analyser.getByteFrequencyData(data);
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) sum += data[i];
-      const avg = sum / data.length / 255; // 0..1
-      // Map to a gentle 1.0 - 1.16 scale range -- noticeable but not manic.
-      const scale = 1 + Math.min(avg * 0.6, 0.16);
-      if (orbRef.current) orbRef.current.style.transform = `scale(${scale.toFixed(3)})`;
-      pulseRafRef.current = window.requestAnimationFrame(tick);
-    };
-    pulseRafRef.current = window.requestAnimationFrame(tick);
-
-    return () => {
-      if (pulseRafRef.current != null) {
-        window.cancelAnimationFrame(pulseRafRef.current);
-        pulseRafRef.current = null;
-      }
-      if (orbRef.current) orbRef.current.style.transform = '';
-    };
-  }, [status]);
-
   useEffect(() => {
     const ok = typeof navigator !== 'undefined'
       && !!navigator.mediaDevices
@@ -1405,6 +1372,7 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
     setTranscript('');
     setLiveTable(null);
     setStatus('connecting');
+    avatarRequestRef.current?.abort();
     setAvatarUrl('');
     const laStart = (name: string) => {
       const la = kadeLiveActivityPlugin();
@@ -1412,18 +1380,22 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
       laActiveRef.current = true;
       try { Promise.resolve(la.start({ agentName: name, status: 'Connecting' })).catch(() => {}); } catch { /* fail-soft */ }
     };
+    const avatarRequest = new AbortController();
+    avatarRequestRef.current = avatarRequest;
     if (agentId) {
       fetch(`/api/agents/${encodeURIComponent(agentId)}`, {
+        signal: avatarRequest.signal,
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         credentials: 'include',
       })
         .then((r) => (r.ok ? r.json() : null))
         .then((a) => {
+          if (avatarRequest.signal.aborted) return;
           const fp = a?.avatar?.filepath;
           if (fp && !abortRef.current) setAvatarUrl(String(fp));
           laStart(String(a?.name || 'Your AI'));
         })
-        .catch(() => { laStart('Your AI'); /* keep the orb */ });
+        .catch(() => { if (!avatarRequest.signal.aborted) laStart('Your AI'); /* keep the orb */ });
     } else {
       laStart('Your AI');
     }
@@ -1636,6 +1608,7 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
     setTranscript('');
     setAiText('');
     setError('');
+    avatarRequestRef.current?.abort();
     setAvatarUrl('');
     conversationIdRef.current = null;
     parentMessageIdRef.current = NO_PARENT;
@@ -1673,6 +1646,7 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      avatarRequestRef.current?.abort();
       clearPresentation(presentationRef.current);
       abortRef.current = true;
       callActiveRef.current = false;
@@ -1856,9 +1830,9 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
           'relative mb-6 rounded-full flex items-center justify-center transition-all duration-300',
           avatarUrl ? 'h-44 w-44' : 'h-28 w-28',
           liveMode ? 'ring-4 ring-emerald-500/60' :
-          status === 'listening' ? 'ring-4 ring-blue-500/40 scale-105 animate-kade-nod' :
+          status === 'listening' ? 'ring-4 ring-blue-500/40' :
           status === 'thinking'  ? 'ring-4 ring-amber-500/40' :
-          status === 'speaking'  ? 'ring-4 ring-green-500/40 scale-110' : '',
+          status === 'speaking'  ? 'ring-4 ring-green-500/40' : '',
           avatarUrl
             ? 'bg-white/5'
             : status === 'listening' ? 'bg-blue-500/20'
@@ -1876,7 +1850,7 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
           <div className="flex h-full w-full items-center justify-center rounded-full bg-emerald-600/25">
             <Radio size={avatarUrl ? 64 : 44} aria-hidden="true" className="text-emerald-300" />
           </div>
-        ) : avatarUrl ? (
+        ) : avatarUrl && character.showPortrait ? (
           <>
             {/* FaceTime Lite: the character's face IS the orb. The rAF
                 speaking pulse scales this whole container, so the photo
@@ -1915,6 +1889,8 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
             {(status === 'idle' || status === 'connecting') && <Phone size={44} className="text-gray-400" />}
           </>
         )}
+        <canvas ref={character.setCanvas} aria-hidden="true" hidden
+          className="pointer-events-none absolute inset-0 h-full w-full rounded-full" />
       </div>
 
       {/* Visible status label (decorative — announced via the sr-only region) */}
@@ -2007,6 +1983,12 @@ export default function ConversationMode({ index = 0, presentation }: Conversati
         )}
       </div>
 
+      <label className="mb-4 flex max-w-xs items-center gap-3 px-4 text-sm text-gray-200">
+        <input type="checkbox" checked={character.enabled}
+          onChange={(event) => character.toggle(event.target.checked)}
+          className="h-5 w-5 accent-pink-500" />
+        {localize('com_ui_character_motion')}
+      </label>
       {/* Controls */}
       <div className="mt-10 flex items-center gap-6">
         {(status === 'speaking' || status === 'thinking') && (

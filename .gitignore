@@ -180,3 +180,7 @@ hive-mind-prompt-*.txt
 CLAUDE.md
 .gsd
 codedb.snapshot
+
+# Reproducible character development previews
+/dev/character/out/
+/dev/character/out-mounted/
