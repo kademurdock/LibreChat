@@ -38,6 +38,12 @@ const base = 'http://127.0.0.1:' + (process.env.REVERIE_PORT || 8173);
     await send('look');
     await page.waitForFunction(() => window.loopPlayers.some(a => a.loop && !a.paused));
     checks.push('Next gesture recovers a paused loop even when room key is unchanged');
+    for (let i = 0; i < 2; i++) {
+      await page.evaluate(() => window.loopPlayers.filter(a => a.loop).forEach(a => a.pause()));
+      await page.locator('#s-name').click();
+      await page.waitForFunction(() => window.loopPlayers.some(a => a.loop && !a.paused));
+    }
+    checks.push('Repeated taps recover playback without issuing a world command');
     await page.locator('details.settings summary').click();
     await page.locator('#ambToggle').click();
     await page.waitForFunction(() => window.loopPlayers.filter(a => a.loop).every(a => a.paused));

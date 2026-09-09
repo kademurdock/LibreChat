@@ -3356,7 +3356,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   if (window.ReverieRoom) window.ReverieRoom.init({ send: send, describe: function(text) { addLine(text, 'system'); }, compose: function(prefix, id){ if (input.value.trim()) { addLine('Your command box already has a draft. Send or clear it first.', 'system'); input.focus(); return; } input.value=prefix; composeHangoutId=id; input.focus(); } });
   var unlocked = false;
   function unlock(){ unlocked = true; ac(); if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); }
-  document.addEventListener('pointerdown', unlock, { once: true }); document.addEventListener('keydown', unlock, { once: true });
+  document.addEventListener('pointerdown', unlock); document.addEventListener('keydown', unlock);
 
   /* ── LOG ─────────────────────────────────────────────────────────────── */
   function addLine(text, cls){
