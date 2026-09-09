@@ -67,7 +67,7 @@ export function createPortraitRig(canvas, { id, portrait, atlas, blink, onReady 
     }
     // The portrait registration stays fixed; listening motion moves the whole
     // decorative surface by less than a degree, with no React frame updates.
-    canvas.style.transform=`rotate(${Math.max(-.7,Math.min(.7,frame.tilt || 0))}deg)`;
+    canvas.style.transform=`rotate(${Math.max(-.7,Math.min(.7,frame.tilt || 0))}deg) translateY(${Math.max(-1,Math.min(1,frame.nod || 0))}px)`;
   }
   base.onload=sheet.onload=prepare; base.onerror=sheet.onerror=fail;
   eyes.onload=prepareEyes;

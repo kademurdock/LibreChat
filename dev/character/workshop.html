@@ -10,6 +10,8 @@
 <div class="stage" aria-hidden="true"><img src="portrait.png" alt=""><canvas id="atlas" hidden></canvas></div>
 <label><input id="enabled" type="checkbox">Enable character motion</label>
 <label>Character configuration <select id="character"><option value="kiana">Kiana mouth rig</option><option value="unknown">Unprepared character (static fallback)</option></select></label>
+<label>Gesture study <select id="gesture"><option value="reset">Neutral</option><option value="warm">Warm tilt</option><option value="amused">Amused tilt and small nod</option><option value="skeptical">Skeptical tilt</option><option value="concerned">Concerned tilt</option><option value="surprised">Surprised small nod</option></select></label>
+<p>The gesture study changes only the animation over the saved recording. It does not change the voice or claim to detect an emotion. In the call prototype, a leading voice direction selects the gesture when its audio clip starts.</p>
 <div class="controls"><button id="listen">Show listening</button><button id="windflower">Play Kiana’s Windflower sample</button><button id="play">Play neutral test sample</button><button id="effect">Play as sound effect</button><button id="stop">Interrupt</button></div>
 <p id="status" role="status">Ready. Motion is off.</p>
 <p><strong>Sample transcript:</strong> I am listening. We can take our time. Here is a short pause. Now I am speaking again.</p>

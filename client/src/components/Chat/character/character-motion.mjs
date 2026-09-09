@@ -122,6 +122,15 @@ const CharacterMotion = (() => {
         const rms = current.envelope.levels[index] || 0;
         frame.mouth = finite(rms) ? clamp((rms - 0.008) * character.mouthGain, 0, 1) : 0;
       }
+      if (mode === 'speaking' && current?.speech) {
+        const offset = time - current.start;
+        const fade = Math.min(1, offset / .2, (current.duration - offset) / .2);
+        const tilt = { warm: .45, amused: -.55, skeptical: .65, concerned: -.3 }[state.expression] || 0;
+        frame.tilt = tilt * Math.min(1, character.tiltDegrees) * fade;
+        if (state.expression === 'amused' || state.expression === 'surprised') {
+          frame.nod = Math.sin(Math.min(offset / .8, 1) * Math.PI) * character.nodDegrees * fade;
+        }
+      }
       return frame;
     }
     return {

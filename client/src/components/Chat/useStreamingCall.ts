@@ -123,6 +123,7 @@ export default function useStreamingCall() {
       observePlayback(presentationRef.current, src, {
         buffer: buf, start: t, clock: () => playbackTime(ctx),
         speech: metadata?.speech === true, agentId: metadata?.agentId ?? null,
+        cues: metadata?.cues,
       });
     });
     decodeChainRef.current = chain.catch(() => { /* keep the chain alive */ });

@@ -22,7 +22,7 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
         return source;
       };
     });
-    await page.goto('http://127.0.0.1:8166');
+    await page.goto('http://127.0.0.1:' + (process.env.CHARACTER_PORT || 8166));
     const trigger = page.getByRole('button', { name: 'Start voice conversation with the active agent', exact: true });
     await trigger.click();
     const dialog = page.getByRole('dialog'), motion = page.getByRole('checkbox', { name: 'Animate character during calls' });
@@ -61,6 +61,14 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
     }
     await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); });
     await page.emulateMedia({ reducedMotion: 'no-preference' }); await motion.check();
+    await act('clear'); await resetStarts(); await act('cues'); await waitAudio(.3);
+    const warm = await page.locator('canvas').evaluate(e => e.style.transform);
+    assert.match(warm, /rotate\(0\.[1-9]/, 'warm cue reaches the actual portrait at playback');
+    await waitAudio(1.1);
+    const skeptical = await page.locator('canvas').evaluate(e => e.style.transform);
+    assert.notEqual(skeptical, warm, 'queued delivery cue changes at its clip');
+    await waitAudio(1.9);
+    assert.match(await page.locator('canvas').evaluate(e => e.style.transform), /rotate\(0deg\)/, 'untagged clip clears the previous cue');
     await act('clear'); await resetStarts(); await act('queue'); await waitAudio(.2);
     await act('clear'); await page.waitForTimeout(1800);
     assert.equal(await dialog.locator('img').count(), 1, 'interruption cancels queued identity');

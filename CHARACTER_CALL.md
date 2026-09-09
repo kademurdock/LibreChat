@@ -1,8 +1,50 @@
-# Character call animation — Part 166
+# Character call animation — Part 167
 
-This work is held on `session166-character-timing`. It is not deployed. It includes
-Part164/165 and the production onboarding/password changes observed in this session.
-Paired streaming metadata remains on bridge `session164-character-audio` (8f85fa7).
+Animation is held on `session167-character-cues` in both fork and bridge repos.
+The fork includes Parts164–166 and the separately releasable Part167 recovery work.
+Recovery and animation have separate production ancestry; inspect both remote tips.
+
+## Part167: delivery cues on the audio boundary
+
+The bridge now passes each exact synthesis input alongside its own WAV through
+the ordered playback chain. Only its leading delivery tags can produce canonical
+clip-start cues. It never sends input text, persona, captions, names embedded in
+directions, or guessed mid-sentence times. Existing direction carry supplies the
+input; this work does not modify it or alter synthesis/audio bytes. One-shot
+speech uses the same path. Effects carry no expressions.
+
+Optional version-1 `cues` have `{at:0, tag:'warm'}` shape (up to eight canonical
+values). Both metadata parsing and the playback adapter bound/copy/validate them.
+Malformed optional cues are discarded without dropping the audio or its speaker.
+Each clip resets the previous expression, then applies only its own cues when
+playback begins. Carried directions continue only if present on the next synth
+input. No gestures leak across unknown speakers, effects, interruptions or calls.
+
+Warmth, amusement, skepticism, concern and surprise produce small tilts/nods.
+The approved portrait and local mouth/blink patches remain intact. These are
+delivery gestures, not a new smile/brow rig, phoneme lip sync or emotion detection.
+The workshop has a labeled gesture study over saved audio; it does not retune
+that recording or claim the selected gesture was heard in it.
+
+50 focused client checks, four actual bridge/cue checks and the full dialog
+browser suite pass. The latter traverses a real local WebSocket, actual bridge
+WAV dispatcher, actual streaming hook and actual portrait, including queued cues.
+Set CHARACTER_PORT=8171 to avoid a prior session's preview process. Whole frontend
+build/public asset copy pass; existing TypeScript diagnostics remain tracked.
+
+An allowed-origin browser probe reached production `ready` and `listening` with
+one test-seat login and one socket. It supplied silence and received no WAV.
+Source inspection confirms user-started web calls intentionally do not greet
+(Part110). That outcome proves connection setup, not a broken voice or a spoken
+round trip. The next paid call test must provide a synthetic spoken utterance,
+capture teardown/close events after cleanup, and verify the reply. No origin
+allowlist change is needed. This session retains a conservative $0.60 reservation
+within its approved $1 cap; no further allowance carries to another session.
+
+Full paired live speech, physical output/Bluetooth, mobile screen-reader and
+battery acceptance remain release gates. Native renderers remain unbuilt.
+
+## Parts164–166 mechanics and earlier evidence
 
 The call dialog mounts an initially-off, saved and localized motion setting.
 Only the authenticated selected agent with the matching prepared portrait gets a

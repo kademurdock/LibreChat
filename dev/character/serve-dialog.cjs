@@ -1,6 +1,7 @@
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), vm = require('node:vm');
 const { WebSocketServer, WebSocket } = require('ws');
 const root = path.join(__dirname, 'out-dialog');
+const port = Number(process.env.CHARACTER_PORT) || 8166;
 const bridge = process.env.CHARACTER_BRIDGE_SOURCE;
 if (!bridge) throw Error('Set CHARACTER_BRIDGE_SOURCE to the held bridge checkout');
 const source = fs.readFileSync(path.join(bridge, 'voice-stream.js'), 'utf8');
@@ -26,11 +27,11 @@ async function action(name) {
     if (name === 'missing') { ws.send(wav); continue; }
     if (name === 'malformed') { send(ws, { type: 'character-audio', version: 9, agentId: KIANA, speech: true }); ws.send(wav); continue; }
     if (name === 'disconnect') { ws.close(); continue; }
-    const ids = name === 'queue' ? [KIANA, 'unprepared-speaker', KIANA] : [KIANA];
-    for (const agentId of ids) {
+    const ids = name === 'queue' ? [KIANA, 'unprepared-speaker', KIANA] : name === 'cues' ? [KIANA, KIANA, KIANA] : [KIANA];
+    for (const [index, agentId] of ids.entries()) {
       const session = { agentId, llmAbort: true, ws, sendState: state => send(ws, { type: 'state', state }) };
       await sandbox.play(session, name === 'sample' ? fs.readFileSync(path.join(root, 'sample.wav')) : wav,
-        { noCaption: name === 'effect' });
+        { noCaption: name === 'effect', synthInput: name === 'cues' ? ['%%%warm%%% Hello.', '%%%skeptical%%% Really?', 'Back to neutral.'][index] : undefined });
     }
     send(ws, { type: 'state', state: 'listening' });
   }
@@ -38,7 +39,7 @@ async function action(name) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   const json = value => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); };
-  if (url.pathname === '/api/kade/web-voice/ticket') return json({ ticket: 'local-only', wsUrl: 'ws://127.0.0.1:8166/ws' });
+  if (url.pathname === '/api/kade/web-voice/ticket') return json({ ticket: 'local-only', wsUrl: `ws://127.0.0.1:${port}/ws` });
   if (url.pathname.startsWith('/api/agents/')) return json({ name: 'Kiana', avatar: { filepath: '/' + file } });
   if (url.pathname === '/api/convos') return json({ conversations: [] });
   if (url.pathname.startsWith('/test/') && req.method === 'POST') { await action(url.pathname.slice(6)); return json({ ok: true }); }
@@ -57,4 +58,4 @@ sockets.on('connection', ws => { clients.add(ws); ws.on('close', () => clients.d
   if (m.type === 'barge') { send(ws, { type: 'clear' }); send(ws, { type: 'state', state: 'listening' }); }
   if (m.type === 'bye') ws.close();
 }); });
-server.listen(8166, '127.0.0.1', () => console.log('Actual call dialog + actual bridge WAV sender: http://127.0.0.1:8166'));
+server.listen(port, '127.0.0.1', () => console.log(`Actual call dialog + actual bridge WAV sender: http://127.0.0.1:${port}`));

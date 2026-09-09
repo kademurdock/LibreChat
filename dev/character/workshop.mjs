@@ -32,7 +32,8 @@ async function play(speech, file = 'character-sample.wav') {
   const start = ctx.currentTime + 0.1;
   source.start(start); sources.add(source);
   source.onended = () => { sources.delete(source); if (own === generation) $('status').textContent = 'Sample finished.'; };
-  observePlayback(character, source, { buffer, start, clock: () => ctx.currentTime, speech, agentId: $('character').value });
+  observePlayback(character, source, { buffer, start, clock: () => ctx.currentTime, speech, agentId: $('character').value,
+    cues: speech ? [{ at: 0, tag: $('gesture').value }] : [] });
   // The server may say listening before the local audio finishes draining.
   character.status('listening');
   $('status').textContent = speech ? 'Playing the speech sample.' : 'Playing as a sound effect. Mouth stays closed.';

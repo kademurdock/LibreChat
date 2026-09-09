@@ -1,5 +1,6 @@
 import CharacterMotion from './character-motion.mjs';
 import CharacterPlayer from './character-player.mjs';
+import { readCues } from './cues.mjs';
 
 /** Keeps speaker ownership on the audio timeline, independently of visual frames. */
 export function createCallCharacter({ resolveProfile, render, requestFrame, cancelFrame,
@@ -85,6 +86,7 @@ export function createCallCharacter({ resolveProfile, render, requestFrame, canc
       catch { /* Invalid envelopes render closed mouths; speech continues. */ }
       const nextId = segment.agentId === undefined ? (tail?.agentId ?? agentId) : segment.agentId;
       const clip = { start, duration, end: start + duration, speech: segment.speech, envelope,
+        cues: [{ at: 0, tag: 'reset' }, ...(segment.speech ? readCues(segment.cues, duration) : [])],
         agentId: typeof nextId === 'string' && nextId.length <= 128 ? nextId : null };
       clock = segment.clock;
       queue.push(clip); reconcile();

@@ -114,6 +114,60 @@ test('a malformed clip cannot strand a speaking frame loop', () => {
   assert.equal(h.frame().mouth, 0);
 });
 
+test('delivery cues wait for playback, survive queueing and reset with the next untagged clip', () => {
+  const h = harness();
+  h.adapter.scheduled({ ...h.segment(1), cues: [{ at: 0, tag: 'warm' }] });
+  h.adapter.scheduled({ ...h.segment(2), cues: [{ at: 0, tag: 'skeptical' }] });
+  h.adapter.scheduled(h.segment(3));
+  h.advance(.5); assert.equal(h.frame().expression, 'neutral');
+  h.advance(1.3); assert.equal(h.frame().expression, 'warm');
+  assert.ok(h.frame().tilt > 0);
+  h.advance(2.3); assert.equal(h.frame().expression, 'skeptical');
+  h.advance(3.3); assert.equal(h.frame().expression, 'neutral');
+});
+
+test('malformed, too-late and effect cues never prevent mouth playback or leak an old expression', () => {
+  for (const cues of [[{ at: 1, tag: 'warm' }], [{ at: 0, tag: 'private words' }],
+    [{ at: NaN, tag: 'warm' }], Array(9).fill({ at: 0, tag: 'warm' }), {}]) {
+    const h = harness();
+    h.adapter.scheduled({ ...h.segment(), cues }); h.advance(.2);
+    assert.ok(h.frame().mouth > 0);
+    assert.equal(h.frame().expression, 'neutral');
+    h.adapter.dispose();
+  }
+  const h = harness();
+  h.adapter.scheduled({ ...h.segment(), cues: [{ at: 0, tag: 'warm' }] });
+  h.adapter.scheduled({ ...h.segment(1, false), cues: [{ at: 0, tag: 'laugh' }] });
+  h.advance(1.2); assert.equal(h.frame().expression, 'neutral');
+});
+
+test('interrupt, hidden and reduced preferences suppress delivery gestures and cancel future cues', () => {
+  const h = harness();
+  h.adapter.scheduled({ ...h.segment(), cues: [{ at: 0, tag: 'warm' }] });
+  h.adapter.scheduled({ ...h.segment(1), cues: [{ at: 0, tag: 'laugh' }] });
+  h.advance(.3); assert.equal(h.frame().expression, 'warm');
+  h.adapter.preferences({ reducedMotion: true });
+  assert.equal(h.frame().tilt, 0); assert.equal(h.raf.size, 0);
+  h.adapter.preferences({ reducedMotion: false, visible: false });
+  assert.equal(h.frame().expression, 'neutral');
+  h.advance(1.8);
+  h.adapter.preferences({ visible: true });
+  assert.equal(h.frame().expression, 'neutral', 'expired laugh is not replayed');
+  h.adapter.clear(); h.advance(2.2);
+  assert.equal(h.frame().expression, 'neutral');
+});
+
+test('metadata copies allowlisted cues and tolerates absent or invalid optional data', () => {
+  const good = { type: 'character-audio', version: 1, agentId: 'kiana', speech: true };
+  assert.equal(readCharacterAudio(null), null);
+  assert.equal(readCharacterAudio(undefined), null);
+  const input = [{ at: 0, tag: 'warm', privateField: 'never forward' }];
+  const parsed = readCharacterAudio({ ...good, cues: input });
+  input[0].tag = 'skeptical';
+  assert.deepEqual(parsed.cues, [{ at: 0, tag: 'warm' }]);
+  assert.deepEqual(readCharacterAudio({ ...good, cues: [{ at: -1, tag: 'laugh' }] }).cues, []);
+});
+
 test('replacement presentation is selected through the stable relay', () => {
   const calls=[];
   let current={clear:()=>calls.push('old')};
