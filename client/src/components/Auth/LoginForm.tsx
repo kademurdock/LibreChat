@@ -100,14 +100,19 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               type="text"
               id="email"
               autoComplete={useUsernameLogin ? 'username' : 'email'}
-              aria-label={useUsernameLogin ? localize('com_auth_username') : localize('com_auth_email_or_phone')}
+              aria-label={
+                useUsernameLogin
+                  ? localize('com_auth_username')
+                  : localize('com_auth_email_or_phone')
+              }
               {...register('email', {
                 required: localize('com_auth_email_or_phone_required'),
                 maxLength: { value: 120, message: localize('com_auth_email_max_length') },
                 validate: useUsernameLogin
                   ? undefined
                   : /* Kade-AI Part 143: an email address or a phone number. */
-                    (value) => validateLoginIdentifier(value, localize('com_auth_email_or_phone_pattern')),
+                    (value) =>
+                      validateLoginIdentifier(value, localize('com_auth_email_or_phone_pattern')),
               })}
               aria-invalid={!!errors.email}
               className={authInputClassName}
@@ -146,14 +151,16 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
           </div>
           {renderError('password')}
         </div>
-        {startupConfig.passwordResetEnabled && (
-          <a
-            href="/forgot-password"
-            className="inline-flex p-1 text-sm font-medium text-green-600 underline decoration-transparent transition-all duration-200 hover:text-green-700 hover:decoration-green-700 focus:text-green-700 focus:decoration-green-700 dark:text-green-500 dark:hover:text-green-400 dark:hover:decoration-green-400 dark:focus:text-green-400 dark:focus:decoration-green-400"
-          >
-            {localize('com_auth_password_forgot')}
-          </a>
-        )}
+        <a
+          href="/forgot-password"
+          className="inline-flex min-h-11 items-center p-1 text-sm font-medium text-green-600 underline decoration-transparent transition-all duration-200 hover:text-green-700 hover:decoration-green-700 focus:text-green-700 focus:decoration-green-700 dark:text-green-500 dark:hover:text-green-400 dark:hover:decoration-green-400 dark:focus:text-green-400 dark:focus:decoration-green-400"
+        >
+          {localize(
+            startupConfig.passwordResetEnabled
+              ? 'com_auth_password_forgot'
+              : 'com_auth_sign_in_help',
+          )}
+        </a>
 
         {requireCaptcha && (
           <div className="my-4 flex justify-center">

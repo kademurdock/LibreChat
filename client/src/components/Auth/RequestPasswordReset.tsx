@@ -4,7 +4,7 @@ import { Spinner, Button } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
 import { useRequestPasswordResetMutation } from 'librechat-data-provider/react-query';
 import { loginPage } from 'librechat-data-provider';
-import type { TRequestPasswordReset, TRequestPasswordResetResponse } from 'librechat-data-provider';
+import type { TRequestPasswordReset } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import type { FC } from 'react';
 import { useLocalize } from '~/hooks';
@@ -25,6 +25,7 @@ const ResetPasswordBodyText = () => {
   return (
     <div className="flex flex-col space-y-4">
       <p>{localize('com_auth_reset_password_if_email_exists')}</p>
+      <p>{localize('com_auth_recovery_inbox_help')}</p>
       <a
         className="inline-flex text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
         href={loginPage()}
@@ -43,54 +44,66 @@ function RequestPasswordReset() {
     formState: { errors },
   } = useForm<TRequestPasswordReset>();
   const [bodyText, setBodyText] = useState<ReactNode | undefined>(undefined);
+  const [requestFailed, setRequestFailed] = useState(false);
   const { startupConfig, setHeaderText } = useOutletContext<TLoginLayoutContext>();
 
   const requestPasswordReset = useRequestPasswordResetMutation();
   const { isLoading } = requestPasswordReset;
 
   const onSubmit = (data: TRequestPasswordReset) => {
-    requestPasswordReset.mutate(data, {
-      onSuccess: (data: TRequestPasswordResetResponse) => {
-        if (data.link && !startupConfig?.emailEnabled) {
-          setHeaderText('com_auth_reset_password');
-          setBodyText(
-            <span>
-              {localize('com_auth_click')}{' '}
-              <a className="text-green-500 hover:underline" href={data.link}>
-                {localize('com_auth_here')}
-              </a>{' '}
-              {localize('com_auth_to_reset_your_password')}
-            </span>,
-          );
-        } else {
+    setRequestFailed(false);
+    requestPasswordReset.mutate(
+      { ...data, email: data.email.trim().toLowerCase() },
+      {
+        onSuccess: () => {
           setHeaderText('com_auth_reset_password_link_sent');
           setBodyText(<ResetPasswordBodyText />);
-        }
+        },
+        onError: () => {
+          setRequestFailed(true);
+        },
       },
-      onError: () => {
-        setHeaderText('com_auth_reset_password_link_sent');
-        setBodyText(<ResetPasswordBodyText />);
-      },
-    });
+    );
   };
 
   if (bodyText) {
     return <BodyTextWrapper>{bodyText}</BodyTextWrapper>;
   }
 
+  if (startupConfig?.emailEnabled === false || startupConfig?.passwordResetEnabled === false) {
+    return (
+      <BodyTextWrapper>
+        <p>{localize('com_auth_recovery_unavailable')}</p>
+        <a className="mt-4 block underline" href={loginPage()}>
+          {localize('com_auth_back_to_login')}
+        </a>
+      </BodyTextWrapper>
+    );
+  }
+
   return (
     <form
       className="mt-8 space-y-6"
-      aria-label="Password reset form"
+      aria-label={localize('com_auth_reset_password')}
       method="POST"
       onSubmit={handleSubmit(onSubmit)}
     >
+      <p id="recovery-help" className="text-sm text-text-secondary-alt">
+        {localize('com_auth_recovery_options')}
+      </p>
+      {requestFailed && (
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          {localize('com_auth_recovery_request_failed')}
+        </p>
+      )}
       <div className="space-y-2">
         <div className="relative">
           <input
             type="email"
             id="email"
-            autoComplete="off"
+            autoComplete="email"
+            inputMode="email"
+            aria-describedby={errors.email ? 'recovery-help recovery-email-error' : 'recovery-help'}
             aria-label={localize('com_auth_email')}
             {...register('email', {
               required: localize('com_auth_email_required'),
@@ -119,14 +132,18 @@ function RequestPasswordReset() {
           </label>
         </div>
         {errors.email && (
-          <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
+          <p
+            id="recovery-email-error"
+            role="alert"
+            className="text-sm font-medium text-red-600 dark:text-red-400"
+          >
             {errors.email.message}
           </p>
         )}
       </div>
       <div className="space-y-4">
         <Button
-          aria-label="Continue with password reset"
+          aria-label={localize('com_auth_continue')}
           type="submit"
           disabled={!!errors.email || isLoading}
           variant="submit"

@@ -1,4 +1,10 @@
 {
+  "com_auth_sign_in_help": "Need help signing in?",
+  "com_auth_recovery_inbox_help": "Check your inbox and spam folder. Use the newest reset email; the link lasts 15 minutes. If it expires, return to sign in and choose Forgot password again.",
+  "com_auth_recovery_options": "Use your account email to recover a password. If you forgot your email, you can sign in with your linked phone number and password. For a phone-only account, a lost email inbox, or lost two-step verification codes, ask Kade for account help. Do not create a second account to recover your chats or balance.",
+  "com_auth_recovery_unavailable": "Email recovery is unavailable right now. Ask Kade for account help. Keep your existing account so your chats and balance stay together.",
+  "com_auth_recovery_request_failed": "We could not complete the reset request. Wait a moment and try again. If this continues, ask Kade for account help.",
+  "com_auth_recovery_new_link": "Request a new reset link",
   "com_ui_character_motion": "Animate character during calls",
   "com_ui_project_working_context": "Instructions and working files",
   "com_ui_memory_sources_controls": "Sources and corrections",

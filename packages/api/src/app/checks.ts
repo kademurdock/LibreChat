@@ -86,7 +86,7 @@ function checkPasswordReset() {
 
       Password reset is enabled with \`ALLOW_PASSWORD_RESET\` but email service is not configured.
       
-      This setup is insecure as password reset links will be issued with a recognized email.
+      Password reset requests will be refused until email delivery is configured.
       
       Please configure email service for secure password reset functionality.
       

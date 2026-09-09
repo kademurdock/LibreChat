@@ -578,6 +578,7 @@ describe('verifyEmail public response handling', () => {
 describe('requestPasswordReset', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    checkEmailConfig.mockReturnValue(true);
     isEmailDomainAllowed.mockReturnValue(true);
     getAppConfig.mockResolvedValue({
       registration: { allowedDomains: ['example.com'] },
@@ -585,6 +586,38 @@ describe('requestPasswordReset', () => {
     resolveAppConfigForUser.mockResolvedValue({
       registration: { allowedDomains: ['example.com'] },
     });
+  });
+
+  it('never creates, deletes or returns recovery tokens when email delivery is unavailable', async () => {
+    checkEmailConfig.mockReturnValue(false);
+    for (const email of ['known@example.com', 'unknown@example.com']) {
+      const result = await requestPasswordReset({ body: { email }, ip: '127.0.0.1' });
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toContain('temporarily unavailable');
+      expect(result.link).toBeUndefined();
+    }
+    expect(findUser).not.toHaveBeenCalled();
+    expect(createToken).not.toHaveBeenCalled();
+    expect(deleteTokens).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('sends the reset link only to the stored address and returns no credential to the requester', async () => {
+    findUser.mockResolvedValue({ _id: 'user-reset', email: 'user@example.com' });
+    const result = await requestPasswordReset({
+      body: { email: 'user@example.com' },
+      ip: '127.0.0.1',
+    });
+    expect(result.link).toBeUndefined();
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'user@example.com',
+        template: 'requestPasswordReset.handlebars',
+        payload: expect.objectContaining({
+          link: expect.stringContaining('/reset-password?token='),
+        }),
+      }),
+    );
   });
 
   it('should fast-fail with base config before DB lookup for blocked domains', async () => {
@@ -668,7 +701,71 @@ describe('requestPasswordReset', () => {
 describe('resetPassword', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    deleteTokens.mockResolvedValue({ deletedCount: 1 });
     checkEmailConfig.mockReturnValue(false);
+  });
+
+  it('rejects expired and malformed expiration dates before Mongo TTL cleanup', async () => {
+    for (const expiresAt of [new Date(Date.now() - 1), undefined, 'invalid']) {
+      findToken.mockResolvedValue({
+        userId: 'user-reset',
+        token: 'unused',
+        type: 'password_reset',
+        expiresAt,
+      });
+      expect(await resetPassword('user-reset', 'reset-token', 'new-password')).toBeInstanceOf(
+        Error,
+      );
+    }
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(deleteTokens).not.toHaveBeenCalled();
+  });
+
+  it('allows just one password update when the same token is submitted concurrently', async () => {
+    findToken.mockResolvedValue({
+      userId: 'user-reset',
+      token: bcrypt.hashSync('reset-token', 10),
+      type: 'password_reset',
+      expiresAt: new Date(Date.now() + 900000),
+    });
+    let remaining = 1;
+    deleteTokens.mockImplementation(async () => ({ deletedCount: remaining-- > 0 ? 1 : 0 }));
+    updateUser.mockResolvedValue({ email: 'user@example.com' });
+    const results = await Promise.all([
+      resetPassword('user-reset', 'reset-token', 'first-password'),
+      resetPassword('user-reset', 'reset-token', 'second-password'),
+    ]);
+    expect(results.filter((result) => result instanceof Error)).toHaveLength(1);
+    expect(updateUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('still completes a changed password when the confirmation email fails', async () => {
+    checkEmailConfig.mockReturnValue(true);
+    findToken.mockResolvedValue({
+      userId: 'user-reset',
+      token: bcrypt.hashSync('reset-token', 10),
+      type: 'password_reset',
+      expiresAt: new Date(Date.now() + 900000),
+    });
+    updateUser.mockResolvedValue({ email: 'user@example.com' });
+    sendEmail.mockRejectedValueOnce(new Error('mail transport down'));
+    expect(await resetPassword('user-reset', 'reset-token', 'new-password')).toEqual({
+      message: 'Password reset was successful',
+    });
+    expect(deleteTokens).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects invalid passwords and unbounded reset tokens before storage or hashing', async () => {
+    for (const [token, password] of [
+      ['reset-token', 'tiny'],
+      ['reset-token', ' '.repeat(10)],
+      ['x'.repeat(513), 'new-password'],
+      ['reset-token', 'x'.repeat(129)],
+    ]) {
+      expect(await resetPassword('user-reset', token, password)).toBeInstanceOf(Error);
+    }
+    expect(findToken).not.toHaveBeenCalled();
+    expect(updateUser).not.toHaveBeenCalled();
   });
 
   it('should only accept password reset tokens for password reset', async () => {
@@ -713,6 +810,7 @@ describe('resetPassword', () => {
       token: resetHash,
       userId: 'user-reset',
       type: 'password_reset',
+      expiresAt: new Date(Date.now() + 900000),
     });
     updateUser.mockResolvedValue({ email: 'user@example.com' });
 
@@ -727,6 +825,7 @@ describe('resetPassword', () => {
       { sort: { createdAt: -1 } },
     );
     expect(deleteTokens).toHaveBeenCalledWith({
+      userId: 'user-reset',
       token: resetHash,
       type: 'password_reset',
     });
@@ -742,6 +841,7 @@ describe('resetPassword', () => {
         return {
           token: legacyResetHash,
           userId: 'user-reset',
+          expiresAt: new Date(Date.now() + 900000),
         };
       }
       return null;
@@ -768,6 +868,7 @@ describe('resetPassword', () => {
       { sort: { createdAt: -1 } },
     );
     expect(deleteTokens).toHaveBeenCalledWith({
+      userId: 'user-reset',
       token: legacyResetHash,
       email: null,
       identifier: null,

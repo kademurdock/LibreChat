@@ -139,6 +139,7 @@ const getEmailVerificationTokenDeleteQuery = (emailVerificationToken) => {
 const getPasswordResetTokenDeleteQuery = (passwordResetToken) => {
   if (!passwordResetToken.email && !passwordResetToken.type) {
     return {
+      userId: passwordResetToken.userId,
       token: passwordResetToken.token,
       email: null,
       identifier: null,
@@ -147,6 +148,7 @@ const getPasswordResetTokenDeleteQuery = (passwordResetToken) => {
   }
 
   return {
+    userId: passwordResetToken.userId,
     token: passwordResetToken.token,
     type: AuthTokenTypes.PASSWORD_RESET,
   };
@@ -428,6 +430,11 @@ const registerUser = async (user, additionalData = {}) => {
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
+  if (!checkEmailConfig()) {
+    return new Error(
+      'Password recovery is temporarily unavailable. Contact the account administrator.',
+    );
+  }
 
   const baseConfig = await getAppConfig({ baseOnly: true });
   if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
@@ -458,7 +465,6 @@ const requestPasswordReset = async (req) => {
       message: 'If an account with that email exists, a password reset link has been sent to it.',
     };
   }
-  const emailEnabled = checkEmailConfig();
 
   logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);
 
@@ -486,27 +492,20 @@ const requestPasswordReset = async (req) => {
 
   const link = `${domains.client}/reset-password?token=${resetToken}&userId=${user._id}`;
 
-  if (emailEnabled) {
-    await sendEmail({
-      email: user.email,
-      subject: 'Password Reset Request',
-      payload: {
-        appName: process.env.APP_TITLE || 'LibreChat',
-        name: user.name || user.username || user.email,
-        link: link,
-        year: new Date().getFullYear(),
-      },
-      template: 'requestPasswordReset.handlebars',
-    });
-    logger.info(
-      `[requestPasswordReset] Link emailed. [Email: ${email}] [ID: ${user._id}] [IP: ${req.ip}]`,
-    );
-  } else {
-    logger.info(
-      `[requestPasswordReset] Link issued. [Email: ${email}] [ID: ${user._id}] [IP: ${req.ip}]`,
-    );
-    return { link };
-  }
+  await sendEmail({
+    email: user.email,
+    subject: 'Password Reset Request',
+    payload: {
+      appName: process.env.APP_TITLE || 'LibreChat',
+      name: user.name || user.username || user.email,
+      link: link,
+      year: new Date().getFullYear(),
+    },
+    template: 'requestPasswordReset.handlebars',
+  });
+  logger.info(
+    `[requestPasswordReset] Link emailed. [Email: ${email}] [ID: ${user._id}] [IP: ${req.ip}]`,
+  );
 
   return {
     message: 'If an account with that email exists, a password reset link has been sent to it.',
@@ -522,9 +521,24 @@ const requestPasswordReset = async (req) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
+  const minLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10) || 8;
+  if (
+    typeof userId !== 'string' ||
+    !userId ||
+    typeof token !== 'string' ||
+    !token ||
+    token.length > 512 ||
+    typeof password !== 'string' ||
+    password.length < minLength ||
+    password.length > 128 ||
+    !password.trim()
+  ) {
+    return new Error('Invalid password reset request');
+  }
   const passwordResetToken = await findPasswordResetToken(userId);
 
-  if (!passwordResetToken) {
+  const expires = new Date(passwordResetToken?.expiresAt).getTime();
+  if (!passwordResetToken || !Number.isFinite(expires) || expires <= Date.now()) {
     return new Error('Invalid or expired password reset token');
   }
 
@@ -535,22 +549,29 @@ const resetPassword = async (userId, token, password) => {
   }
 
   const hash = bcrypt.hashSync(password, 10);
+  const consumed = await deleteTokens(getPasswordResetTokenDeleteQuery(passwordResetToken));
+  if (consumed.deletedCount !== 1) {
+    return new Error('Invalid or expired password reset token');
+  }
   const user = await updateUser(userId, { password: hash });
 
   if (checkEmailConfig()) {
-    await sendEmail({
-      email: user.email,
-      subject: 'Password Reset Successfully',
-      payload: {
-        appName: process.env.APP_TITLE || 'LibreChat',
-        name: user.name || user.username || user.email,
-        year: new Date().getFullYear(),
-      },
-      template: 'passwordReset.handlebars',
-    });
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: 'Password Reset Successfully',
+        payload: {
+          appName: process.env.APP_TITLE || 'LibreChat',
+          name: user.name || user.username || user.email,
+          year: new Date().getFullYear(),
+        },
+        template: 'passwordReset.handlebars',
+      });
+    } catch {
+      logger.warn('[resetPassword] Password changed; confirmation email could not be delivered.');
+    }
   }
 
-  await deleteTokens(getPasswordResetTokenDeleteQuery(passwordResetToken));
   logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
 };
