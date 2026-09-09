@@ -10,7 +10,7 @@ import {
   activityPose,
   residentFace,
   walkPose,
-} from './presentation.mjs?v=172';
+} from './presentation.mjs?v=173';
 
 const COLORS = {
   wood: 0xa37750,
@@ -399,6 +399,9 @@ export class Stage {
       for (let i = 0; i < 11; i++)
         for (let j = 0; j < 9; j++)
           this.box((i + j) % 2 ? 0x758c86 : 0xeee0c5, -5 + i, 0.055, -4 + j, 0.98, 0.08, 0.98);
+    } else if (this.model.type === 'laundry') {
+      this.box(0xb7c8b7, 0, 0.07, 0, 11, 0.1, 9);
+      for (let i = 0; i < 40; i++) this.box(0xa9bca9, -5 + (i * 2.71) % 10, 0.125, -4 + (i * 1.37) % 8, .045, .005, .065);
     } else {
       for (let i = 0; i < 27; i++)
         this.box(i % 3 ? 0xc4a27b : 0xb4916d, 0, 0.07, -4.35 + i * 0.335, 11, 0.1, 0.31);
@@ -512,6 +515,15 @@ export class Stage {
         this.animated.push(t=>{cloth.rotation.y=t*.5+i;});
       }
       this.table(.8,.4); this.mesh('cylinder',0xc9a372,[2,.4,2],[.5,.7,.5]);
+      this.box(0x3f6c96,.55,1.0,.4,.4,.18,.28);
+      for (let i=0;i<4;i++) this.mesh('sphere',[0xe0c69b,0x654d45,0xf3e5c4][i%3],[.43+i*.075,1.105,.4],[.025,.012,.025]);
+      this.bench(-3.8,1.1,Math.PI/2);
+      if (this.model.washhouse?.benchStage < 3) {
+        this.box(COLORS.wood,-2.8,.2,1.3,.55,.13,.4);
+        this.box(COLORS.ink,-2.8,.29,1.3,.3,.055,.045);
+      }
+      this.furniture('shelf',3.8,-.5,2);
+
     }
     if (this.model.type === 'office') {
       for(let i=0;i<3;i++) {

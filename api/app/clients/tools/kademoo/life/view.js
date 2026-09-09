@@ -76,6 +76,9 @@ async function describeRoom(ctx) {
         .join(', ') +
       '.';
 
+  const bench = require('./places').benchView(room);
+  if (bench) desc += ' ' + bench.line;
+
   const peopleObjs = people.map((p) => personTag(ctx, p, room.props));
   return {
     roomId: room.roomId,
@@ -93,6 +96,7 @@ async function describeRoom(ctx) {
     listen: room.props && room.props.listenLine,
     outdoor: !!(room.props && room.props.outdoor),
     sensory: require('@librechat/api').reverieSenses(room, wx.kind, worldClock().dark),
+    washhouse: bench ? { benchStage: bench.stage } : null,
     hangout: require('./hangouts').view(room, ch.userId, ctx.isWizard),
     weather: wx.kind,
     home: home

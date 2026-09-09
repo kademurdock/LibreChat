@@ -35,6 +35,11 @@ const check=(value,label)=>{assert(value,label);checks++;console.log('PASS',labe
   await tick();
   check((await MooEvent.countDocuments({actorUserId:'npc:pat',text:/wipes a small patch/}))===1,'an actual room event describes applied activity');
   await tick();check((await MooEvent.countDocuments({actorUserId:'npc:pat',text:/wipes a small patch/}))===1,'repeated ticks never duplicate a step event');
+  const beforeStatus=requests;
+  const status=await run('@resident pilot status');
+  check(status.lines.some(line=>line.includes('1 residents have a latest saved plan; 1 of those plans show an emitted')),'founder can verify saved plans and emitted activity');
+  check(status.lines.some(line=>line.includes('planning window ends at')),'status exposes the finite window without extending it');
+  check(requests===beforeStatus,'reading status does not call the planner');
   let view=await run('look');
   check(view.room.peopleDetail.find(p=>p.id==='npc:pat').tag==='wiping the counter','actual public payload reflects the model-selected action');
   check(!JSON.stringify(view).includes('residentPlan'),'private planner state stays out of public payload');

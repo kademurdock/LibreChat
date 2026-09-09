@@ -84,8 +84,20 @@ export { refreshReverieCast } from './reverie/cast';
 export { reverieAppearance, residentAppearance } from './reverie/appearance';
 export { REVERIE_OUTDOORS, reverieSenses, outdoorEncounter } from './reverie/outdoors';
 export { residentReply } from './reverie/conversation';
-export { GULLY_LAUNDRY, laundryAction } from './reverie/places';
-export { RESIDENT_PILOT, residentOptions, activeResidentAction, planResident, runResidentPilot } from './reverie/planning';
+export {
+  GULLY_LAUNDRY,
+  laundryAction,
+  washhouseBench,
+  washhouseReadingChoices,
+  runWashhouse,
+} from './reverie/places';
+export {
+  RESIDENT_PILOT,
+  residentOptions,
+  activeResidentAction,
+  planResident,
+  runResidentPilot,
+} from './reverie/planning';
 export { sendAccountEmail } from './utils/resend';
 export { getTaskReceipts, taskFingerprint, validTaskId, TaskConflict } from './tasks/receipts';
 export { taskStatus } from './tasks/status';

@@ -159,9 +159,20 @@ register({
     const record = await MooDistrict.findOne({ districtId: RESIDENT_PILOT.id }).lean();
     const calls = record?.props?.calls || 0;
     const active = record?.props?.enabledUntil > Date.now() && calls < RESIDENT_PILOT.limit;
+    const plans = await MooChar.find({
+      userId: /^npc:/,
+      'attrs.residentPlan.startedAt': { $exists: true },
+    })
+      .select('attrs.residentPlan.emitted')
+      .lean();
+    const emitted = plans.filter((person) => person.attrs?.residentPlan?.emitted >= 0).length;
     return ctx.ok({
       lines: [
         `Resident trial: ${active ? 'active' : 'paused or finished'}. ${calls} of ${RESIDENT_PILOT.limit} requests reserved, at most $0.36 total. Starting again never refills or extends it. Ordinary routines continue.`,
+        `${plans.length} residents have a latest saved plan; ${emitted} of those plans show an emitted activity step. These are saved-plan snapshots, not a lifetime activity count or a billed-cost receipt.`,
+        record?.props?.enabledUntil > 0
+          ? `The planning window ends at ${new Date(record.props.enabledUntil).toISOString()}.`
+          : 'No planning window is currently enabled.',
       ],
     });
   },

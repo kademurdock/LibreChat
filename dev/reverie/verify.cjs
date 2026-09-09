@@ -1,6 +1,7 @@
 const {chromium}=require('playwright');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const out=process.env.REVERIE_RECEIPTS || path.join(__dirname,'receipts');
+const base='http://127.0.0.1:'+(process.env.REVERIE_PORT || 8169);
 fs.mkdirSync(out,{recursive:true});
 (async()=>{
  const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHANNEL ? {channel:process.env.PLAYWRIGHT_CHANNEL} : {}),args:['--enable-unsafe-swiftshader']});
@@ -15,7 +16,7 @@ fs.mkdirSync(out,{recursive:true});
    window.ReverieStage.Stage=class extends Original{constructor(...args){super(...args);window.stageForTest=this;}};
   });
  });
- await page.goto('http://127.0.0.1:8169/world');await page.waitForSelector('.has-stage');
+ await page.goto(base+'/world');await page.waitForSelector('.has-stage');
  const send=async cmd=>{
   await page.locator('#cmdInput').fill(cmd);await page.locator('#cmdInput').press('Enter');
   await page.waitForFunction(()=>document.getElementById('cmdForm').getAttribute('aria-busy')!=='true');
@@ -77,11 +78,14 @@ fs.mkdirSync(out,{recursive:true});
  check(await page.locator('.reverie-fallback svg').count()===1,'WebGL context loss restores illustration');
  await send('look');check((await page.locator('#s-name').textContent()).includes('Creek'),'game remains usable after WebGL loss');
  const native=await browser.newPage({viewport:{width:390,height:300}});
- await native.goto('http://127.0.0.1:8169/native/ReverieStage.html');
+ await native.goto(base+'/native/ReverieStage.html');
  const fixture={room:{roomId:'alder_camp',name:'Alder Camp',desc:'A tended fire',outdoor:true,sensory:{nature:true},peopleDetail:[{id:'friend',name:'Mira',kind:'player'}]},hud:{name:'Alex',dark:true}};
  const described=await native.evaluate(s=>window.reverieNativeUpdate(s,false),fixture);
  check(described.includes('stone fire ring'),'offline native bundle renders snapshot and describes it');
  await native.locator('canvas').screenshot({path:path.join(out,'native-bundle-camp.png')});
+ const washhouse=await native.evaluate(s=>window.reverieNativeUpdate(s,false),{room:{roomId:'gully_laundry',name:'Washhouse',desc:'A shared room',washhouse:{benchStage:3}},hud:{name:'Alex'}});
+ check(washhouse.includes('pale green linoleum') && washhouse.includes('repaired and stands steady'),'offline native bundle reflects public washhouse state');
+ await native.locator('canvas').screenshot({path:path.join(out,'native-bundle-washhouse.png')});
  await native.evaluate(()=>window.reverieNativeDispose());check(await native.locator('canvas').count()===0,'native bundle teardown removes canvas');
  check(errors.length===0,'no page errors or failed HTTP resources');
  fs.writeFileSync(path.join(out,'browser-acceptance.json'),JSON.stringify({checks,errors,fixtures:'Local disposable Mongo world; native bundle uses invented snapshot. Not a physical-phone or live-user test.'},null,2));

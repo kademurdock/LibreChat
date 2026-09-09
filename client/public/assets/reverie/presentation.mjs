@@ -40,6 +40,7 @@ export function sceneModel(room, hud = {}) {
     dark: !!hud.dark,
     weather: String(hud.weather || room.weather || 'clear'),
     outdoor: !!room.outdoor,
+    washhouse: type === 'laundry' ? { benchStage: Math.max(0, Math.min(3, Number(room.washhouse?.benchStage) || 0)) } : null,
     furniture: (room.furniture || []).slice(0, 24),
     people: [
       {
@@ -68,7 +69,7 @@ export function describePicture(model) {
     library: 'a cutaway reading room with tall bookshelves and a reading table',
     bar: 'a cutaway neighborhood bar with an amber counter, stools, bottle shelves, and a dartboard',
     bowling: 'a cutaway bowling alley with polished wooden lanes, pins, ball returns, and bench seating',
-    laundry: 'a cutaway laundromat with round washing-machine doors, a folding table, and baskets',
+    laundry: 'a cutaway laundromat with pale green linoleum, round washing-machine doors, a folding table, a blue button tin, a window bench, and a small book shelf',
     office: 'a cutaway records office with file cabinets, a paper-covered desk, and a reading lamp',
     barber: 'a cutaway barbershop with a mirror, a barber chair, combs, towels, and waiting seats',
     workshop: 'a cutaway workshop with a tool board, a workbench, stacked tires, and a rolling stool',
@@ -98,6 +99,7 @@ export function describePicture(model) {
       ? ` ${model.totalPeople - 12} more occupants remain listed in Here with you.`
       : '') +
     furniture +
+    (model.washhouse ? (model.washhouse.benchStage === 3 ? ' The window bench has been repaired and stands steady.' : ' The window bench is awaiting repairs; a small tool tray sits beside it.') : '') +
     (['diner', 'interior', 'library'].includes(model.type)
       ? ' A framed painting shows an imagined riverside town, a stone bridge, and apricot clouds reflected in teal water.'
       : '') +
