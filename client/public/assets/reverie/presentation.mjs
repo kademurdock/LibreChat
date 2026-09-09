@@ -37,6 +37,7 @@ export function sceneModel(room, hud = {}) {
     id,
     type,
     name: String(room.name || 'Reverie'),
+    exits: (room.exitsDetail || []).map((exit) => ({ dir: exit.dir, label: exit.label, to: exit.to, locked: !!exit.locked, missing: !!exit.missing, returning: !!exit.returning })),
     dark: !!hud.dark,
     weather: String(hud.weather || room.weather || 'clear'),
     outdoor: !!room.outdoor,
@@ -92,6 +93,7 @@ export function describePicture(model) {
     (model.outdoor && ['rain', 'storm', 'snow', 'fog'].includes(model.weather)
       ? `The picture shows the current ${model.weather}. `
       : '') +
+    (model.exits?.length ? 'Direction signs name the actual connected rooms: ' + model.exits.map(e => e.label + ' to ' + e.to + (e.locked ? ' (locked)' : '')).join('; ') + '. The signs mark exits, not measured distances. ' : '') +
     `Figures in view: ${crowd}.` +
     model.people.filter(p => p.tag).map(p => figurePosition(model, p, model.people.indexOf(p)).gathering
       ? ` ${p.name} is taking part in the gathering.` : ` ${p.name} is ${p.tag}.`).join('') +

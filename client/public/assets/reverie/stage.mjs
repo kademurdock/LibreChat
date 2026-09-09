@@ -10,7 +10,7 @@ import {
   activityPose,
   residentFace,
   walkPose,
-} from './presentation.mjs?v=173';
+} from './presentation.mjs?v=174';
 
 const COLORS = {
   wood: 0xa37750,
@@ -835,12 +835,37 @@ export class Stage {
     this.sun.intensity = model.dark ? 1.2 : 4;
     this.sun.color.setHex(model.dark ? 0x95bdcd : 0xffe2b1);
     this.terrain();
+    this.exitMarkers();
     if (model.hangout) this.gathering();
     model.people.forEach((p, i) => this.avatar(p, i));
     this.weather();
     this.render();
     this.host.classList.add('has-stage');
     this.syncAnimation();
+  }
+
+  exitMarkers() {
+    const anchors = { n: [0, -4.2], ne: [4.6, -3.5], e: [5.4, 0], se: [4.6, 3.5], s: [0, 4.2], sw: [-4.6, 3.5], w: [-5.4, 0], nw: [-4.6, -3.5] };
+    let other = 0;
+    for (const exit of this.model.exits) {
+      const [x, z] = anchors[exit.dir] || [-3.5 + (other++ % 5) * 1.7, 4.6 + Math.floor((other - 1) / 5) * .6];
+      const color = exit.locked || exit.missing ? 0xa6513f : exit.returning ? COLORS.brass : COLORS.teal;
+      this.box(color, x, .08, z, .9, .12, .55);
+      this.box(COLORS.wood, x, .62, z, .07, 1.1, .07);
+      const surface = document.createElement('canvas');
+      surface.width = 256; surface.height = 96;
+      const ctx = surface.getContext('2d');
+      ctx.fillStyle = '#203d44'; ctx.fillRect(0, 0, 256, 96);
+      ctx.textAlign = 'center'; ctx.fillStyle = '#fff4d9';
+      ctx.font = 'bold 25px sans-serif';
+      ctx.fillText(exit.label.toUpperCase() + (exit.locked ? ' · LOCKED' : ''), 128, 33, 244);
+      ctx.font = '23px sans-serif'; ctx.fillText(exit.to, 128, 73, 244);
+      const texture = new T.CanvasTexture(surface); texture.colorSpace = T.SRGBColorSpace;
+      const material = new T.SpriteMaterial({ map: texture, depthTest: false });
+      const sign = new T.Sprite(material);
+      sign.userData.exitSign = true; sign.position.set(x, 1.45, z); sign.scale.set(3, 1.125, 1); sign.renderOrder = 2;
+      this.world.add(sign);
+    }
   }
 
   gathering() {
@@ -951,6 +976,10 @@ export class Stage {
     this.animated = [];
     this.figures = [];
     this.world.traverse((obj) => {
+      if (obj.userData.exitSign) {
+        obj.material.map.dispose();
+        obj.material.dispose();
+      }
       if (obj.isPoints) {
         obj.geometry.dispose();
         obj.material.dispose();

@@ -47,11 +47,14 @@ async function describeRoom(ctx) {
   const destById = Object.fromEntries(destRooms.map((r) => [r.roomId, r]));
   const wx = reverie.weatherNow();
   const home = room.props && room.props.home;
-  const exitsDetail = Object.entries(room.exits || {}).map(([dir, to]) => {
+  const exitsDetail = await Promise.all(Object.entries(room.exits || {}).map(async ([dir, to]) => {
     const d = destById[to];
-    const locked = !!(room.props && room.props.locks && room.props.locks[dir]);
-    return { dir, label: DIR_WORDS[dir] || dir, to: d ? d.name : to, toId: to, locked };
-  });
+    const locked = d?.props?.home
+      ? !(await require('./housing').mayEnter(ctx, d)).ok
+      : !!room.props?.locks?.[dir];
+    return { dir, label: DIR_WORDS[dir] || dir, to: d ? d.name : 'an unavailable place', toId: to, locked,
+      missing: !d, returning: !!d && to === ch.attrs?.prevRoom };
+  }));
   const furniture = items.filter((i) => i.props && i.props.furniture);
   const loose = items.filter(
     (i) => !(i.props && i.props.furniture) && !(i.props && i.props.vehicle),
@@ -91,6 +94,7 @@ async function describeRoom(ctx) {
     furniture: furniture.map((f) => f.name),
     people: peopleObjs.map((p) => p.line),
     peopleDetail: peopleObjs,
+    orientation: require('@librechat/api').reverieOrientation({ name: room.name, peopleDetail: peopleObjs, exitsDetail }),
     doings: room.props && room.props.doings,
     smell: room.props && room.props.smell,
     listen: room.props && room.props.listenLine,
@@ -205,7 +209,7 @@ function personCmds(ctx, p, kind) {
     f('Kiss', 'kiss'),
     f('Date', 'date'),
     f('Dance with', 'dance with'),
-    f('Whisper to', 'whisper'),
+    { label: 'Whisper to', cmd: `whisper ${JSON.stringify(p.name)}` },
     { label: 'Give $5', cmd: `give 5 dollars to ${p.name}` },
     f('Give key', 'give key to'),
     f('Argue', 'argue'),

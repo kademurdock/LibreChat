@@ -146,3 +146,9 @@
     aspect-ratio: 1.1;
   }
 }
+ .exploration { margin-top: .8rem; }
+ .connected-exits { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: .5rem; margin-bottom: .8rem; }
+ .connected-exit { min-height: 54px; padding: .75rem; border: 1px solid #788f87; border-radius: .65rem; color: inherit; background: transparent; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+ .connected-exit.returning { border-width: 2px; }
+ .connected-exit:focus-visible { outline: 3px solid #c78831; outline-offset: 3px; }
+ .connected-exit:disabled { opacity: .65; cursor: wait; }

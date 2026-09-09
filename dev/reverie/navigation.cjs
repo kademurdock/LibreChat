@@ -1,0 +1,100 @@
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const out = process.env.REVERIE_RECEIPTS || path.join(__dirname, 'receipts');
+fs.mkdirSync(out, { recursive: true });
+const base = 'http://127.0.0.1:' + (process.env.REVERIE_PORT || 8174);
+(async () => {
+  const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--enable-unsafe-swiftshader'] });
+  const checks = [], errors = [];
+  const check = (v, label) => { assert(v, label); checks.push(label); console.log('PASS ' + label); };
+  try {
+    const make = async fixture => {
+      const context = await browser.newContext({ viewport: { width: 1100, height: 920 } });
+      await context.addCookies([{ name: 'fixture', value: fixture, url: base }]);
+      const page = await context.newPage();
+      page.on('pageerror', error => errors.push(error.message));
+      await page.addInitScript(() => window.addEventListener('reverie-stage-ready', () => {
+        const Original = window.ReverieStage.Stage;
+        window.ReverieStage.Stage = class extends Original { constructor(...args) { super(...args); window.stageForTest = this; } };
+      }));
+      await page.goto(base + '/world');
+      await page.waitForFunction(() => window.stageForTest?.model && document.querySelector('#m-live').textContent === 'live');
+      return page;
+    };
+    const a = await make('alex'), b = await make('mira');
+    const ready = page => page.waitForFunction(() => document.querySelector('#cmdForm').getAttribute('aria-busy') !== 'true');
+    const send = async (page, cmd) => { await page.locator('#cmdInput').fill(cmd); await page.locator('#cmdInput').press('Enter'); await ready(page); };
+    const travel = async (page, dir, id) => { await page.locator('#connectedExits [data-dir="' + dir + '"]').click(); await page.waitForFunction(id => window.stageForTest?.model.id === id, id); await ready(page); };
+    check(await a.locator('#connectedExits').innerText() === 'east — Test Lane', 'connected exit names the actual room destination');
+    check(await a.evaluate(() => window.stageForTest.model.exits[0].to === 'Test Lane' && window.stageForTest.world.children.some(c => c.userData.exitSign)), '3D direction sign comes from the same server exit');
+    await a.locator('#cmdInput').fill('A draft kept while waiting.');
+    await travel(b, 'w', 'nav_court');
+    await a.waitForFunction(() => document.querySelector('#people').textContent.includes('Mira Example'));
+    check(await a.locator('#cmdInput').inputValue() === 'A draft kept while waiting.', 'arrival refresh preserves an unsent draft');
+    check(await a.evaluate(() => window.stageForTest.model.people.some(p => p.id === 'browser-mira')), 'another client arriving updates the actual scene figures');
+    check((await b.locator('#connectedExits').innerText()).includes('way back'), 'saved last-room direction is visible');
+    await a.locator('#sayHere').click();
+    check(await a.locator('#cmdInput').inputValue() === 'A draft kept while waiting.', 'compose action cannot replace an existing draft');
+    await a.locator('#cmdInput').fill('');
+    await a.locator('#sayHere').click();
+    check(await a.locator('#cmdInput').inputValue() === 'say ', 'public conversation has a discoverable compose action');
+    await send(a, 'say Hello from Alex in the shared court.');
+    await b.waitForFunction(() => document.querySelector('#log').textContent.includes('Hello from Alex in the shared court.'));
+    check((await b.locator('#log').innerText()).includes('Alex Example says:'), 'production SSE delivers the other character public speech');
+    await b.locator('#people [data-key="browser-alex"]').click();
+    await b.getByRole('button', { name: 'Whisper to Alex Example', exact: true }).click();
+    check(await b.locator('#cmdInput').inputValue() === 'whisper "Alex Example" ', 'person menu prepares an exact full-name whisper');
+    await send(b, 'whisper "Alex Example" Private CASE kept.');
+    await a.waitForFunction(() => document.querySelector('#log').textContent.includes('Private CASE kept.'));
+    check((await a.locator('#log').innerText()).includes('Mira Example whispers to you'), 'production SSE delivers the private reply with preserved case');
+    await b.reload(); await b.waitForFunction(() => window.stageForTest?.model.id === 'nav_court');
+    check((await b.locator('#connectedExits').innerText()).includes('way back'), 'room and way back survive browser reload');
+    await travel(b, 'e', 'nav_lane');
+    await a.waitForFunction(() => !document.querySelector('#people').textContent.includes('Mira Example'));
+    check(await a.evaluate(() => !window.stageForTest.model.people.some(p => p.id === 'browser-mira')), 'departure removes the remote figure');
+    await send(b, 'say Only the lane should hear this.');
+    const room = await a.request.get(base + '/api/world/here', { headers: { Authorization: 'Bearer alex' } });
+    check(!(await room.text()).includes('Only the lane'), 'current room snapshot does not include distant speech');
+    // Delay a real /here response until after a newer command has moved this client.
+    let capturedResolve, releaseResolve;
+    const captured = new Promise(resolve => { capturedResolve = resolve; });
+    const released = new Promise(resolve => { releaseResolve = resolve; });
+    await a.route('**/api/world/here', async route => {
+      const response = await route.fetch(); const body = await response.text(); capturedResolve();
+      await released; await route.fulfill({ response, body });
+    }, { times: 1 });
+    await a.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow')));
+    await captured;
+    await travel(a, 'e', 'nav_lane'); releaseResolve();
+    await a.waitForResponse(response => response.url().endsWith('/api/world/here'));
+    await a.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    check(await a.evaluate(() => window.stageForTest.model.id === 'nav_lane'), 'delayed old-room snapshot cannot undo a confirmed move');
+    const stale = await a.request.post(base + '/api/world/command', { headers: { Authorization: 'Bearer alex' }, data: { command: 'north', live: true, expectedRoomId: 'nav_court' } });
+    const refused = await stale.json();
+    check(!refused.ok && refused.room.roomId === 'nav_lane', 'production command route refuses a stale origin');
+    await a.getByRole('button', { name: 'Get oriented', exact: true }).click(); await ready(a);
+    check((await a.locator('#log').innerText()).includes('Ways out: west to Test Court; north to Test Garden'), 'orientation is available in the same accessible log');
+    check(await a.locator('[role=log]').count() === 1, 'only one live log announces world replies');
+    check(await a.locator('canvas').evaluate(node => !!node.closest('[aria-hidden=true]')), 'direction signs and figures remain hidden from screen readers');
+    await a.locator('#reverieIllustration').screenshot({ path: path.join(out, 'exploration-scene.png') });
+    await a.screenshot({ path: path.join(out, 'exploration-desktop.png'), fullPage: true });
+    for (const width of [320, 390, 667]) {
+      await a.setViewportSize({ width, height: 844 });
+      check(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no page overflow at ' + width);
+    }
+    await a.screenshot({ path: path.join(out, 'exploration-mobile.png'), fullPage: true });
+    await a.emulateMedia({ reducedMotion: 'reduce' });
+    await a.waitForFunction(() => !window.stageForTest.running);
+    check(await a.evaluate(() => !window.stageForTest.running), 'reduced motion stops the scene');
+    await a.locator('details.settings summary').click();
+    await a.getByRole('button', { name: 'Room picture: on', exact: true }).click();
+    check(await a.locator('#connectedExits button').count() === 2 && await a.locator('canvas').count() === 0, 'connected travel remains available with graphics off');
+    const gate = await a.request.post(base + '/api/world/command', { headers: { Authorization: 'Bearer closed' }, data: { command: 'look' } });
+    check((await gate.json()).ok === false, 'the unchanged production gate rejects an ordinary seat');
+    check(errors.length === 0, 'no JavaScript errors in either client');
+    fs.writeFileSync(path.join(out, 'navigation-browser.json'), JSON.stringify({ checks, errors, scope: 'Two independent browser sessions; production World router, SSE and Life engine; disposable local Mongo. Not physical screen-reader acceptance.' }, null, 2));
+    console.log(checks.length + ' browser checks passed');
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

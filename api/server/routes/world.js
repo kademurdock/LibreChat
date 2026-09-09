@@ -91,6 +91,9 @@ router.post('/command', async (req, res) => {
       userId: req.user.id,
       displayName: req.user.name || req.user.username,
       command,
+      expectedRoomId: typeof req.body?.expectedRoomId === 'string' ? req.body.expectedRoomId.slice(0, 200) : undefined,
+      expectedExit: typeof req.body?.expectedExit?.dir === 'string' && typeof req.body?.expectedExit?.toId === 'string'
+        ? { dir: req.body.expectedExit.dir.slice(0, 200), toId: req.body.expectedExit.toId.slice(0, 200) } : undefined,
       /* a client holding /stream open already hears the room live; it asks
        * for no MEANWHILE recap so nothing is read twice. */
       live: req.body?.live === true,
@@ -228,6 +231,7 @@ router.get('/stream', async (req, res) => {
       }
       const evs = await MooEvent.find({ roomId: { $in: [ch.roomId, `whisper:${userId}`] }, seq: { $gt: cursor, $nin: ch.attrs?.seenEventSeqs || [] }, actorUserId: { $ne: userId } }).sort({ seq: 1 }).limit(40).lean();
       if (evs.length) {
+        if (!(await MooChar.exists({ _id: ch._id, active: true, roomId: ch.roomId }))) continue;
         cursor = evs[evs.length - 1].seq;
         await MooChar.updateOne({ _id: ch._id }, { $max: { lastSeenSeq: cursor } });
         res.write(`id: ${cursor}\ndata: ${JSON.stringify({ cursor, events: evs.map((e) => ({ seq: e.seq, kind: e.kind, text: e.text, sound: e.sound || null, actor: e.actorName, roomId: e.roomId, at: e.at })) })}\n\n`);

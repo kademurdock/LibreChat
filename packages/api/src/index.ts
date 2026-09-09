@@ -109,3 +109,4 @@ export { runtimeCapabilities } from './agents/capabilities';
 export { publicHelp } from './web/help';
 
 export { deliverApprovalEmail, approvalEmailNotice } from './access/approval';
+export { reverieOrientation, resolveReverieWhisper } from './reverie/navigation';

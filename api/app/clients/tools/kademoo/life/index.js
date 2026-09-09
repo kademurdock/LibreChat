@@ -55,12 +55,12 @@ function lifeOf(ch) {
   return ch.attrs.life;
 }
 
-async function runCommand({ userId, displayName, command, isWizard = false, live = false }) {
+async function runCommand({ userId, displayName, command, isWizard = false, live = false, expectedRoomId, expectedExit }) {
   const ch = await oldEngine.getOrCreateChar(userId, displayName);
   // City activity belongs to the live room, not the reply to this command.
   await reverie.tickWorld();
   try { await lifeTick.run(); } catch (e) { logger.error('[life] tick failed (non-fatal):', e && e.message); }
-  const { result, events } = await oldEngine.withCommandEvents(() => runTurn({ ch, userId, command, isWizard, live }));
+  const { result, events } = await oldEngine.withCommandEvents(() => runTurn({ ch, userId, command, isWizard, live, expectedRoomId, expectedExit }));
   if (events.length) {
     await MooChar.updateOne({ userId: String(userId), active: true }, { $push: { 'attrs.seenEventSeqs': { $each: events, $slice: -100 } } });
     result.seenSeqs = events;
@@ -68,7 +68,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
   return result;
 }
 
-async function runTurn({ ch, userId, command, isWizard, live }) {
+async function runTurn({ ch, userId, command, isWizard, live, expectedRoomId, expectedExit }) {
   const life = lifeOf(ch);
   const lines = [];
   let kinds = [];
@@ -122,7 +122,11 @@ async function runTurn({ ch, userId, command, isWizard, live }) {
   try {
     /* THE WIZARD — a soul still being born answers questions, not verbs. */
     const creation = require('./creation');
-    if (!life.created || life.wiz) {
+    if (expectedRoomId && ch.roomId !== expectedRoomId) {
+      result = ctx.fail('Your location changed before that action reached the world. Check the current room and choose again.', { wantRoom: true });
+    } else if (expectedExit && (await ctx.room())?.exits?.[expectedExit.dir] !== expectedExit.toId) {
+      result = ctx.fail('That exit changed before you reached it. Check the connected places and choose again.', { wantRoom: true });
+    } else if (!life.created || life.wiz) {
       result = await creation.handle(ctx);
     } else {
       result = await dispatch(ctx);

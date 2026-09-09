@@ -85,6 +85,17 @@ registry.register({
 });
 
 /* ── GO ───────────────────────────────────────────────────────────────── */
+registry.register({
+  name: 'orient', aliases: ['orientation'], free: true,
+  help: { topic: 'moving', usage: 'orient', blurb: 'Hear your current place, nearby people, exits and the way back.' },
+  buttons: () => [{ label: 'Get oriented', cmd: 'orient', group: 'move' }],
+  async run(ctx) {
+    const room = await view.describeRoom(ctx);
+    ctx.say(...(room.orientation || [room.desc]));
+    return ctx.ok({ wantRoom: true, orientationRead: true });
+  },
+});
+
 async function walk(ctx, dirKey) {
   const { ch } = ctx;
   const room = await ctx.room();
@@ -92,6 +103,12 @@ async function walk(ctx, dirKey) {
   const dest = exits[dirKey];
   if (!dest) return ctx.fail(`No way ${DIR_WORDS[dirKey] || dirKey} from here. ${exitsLine(room || {})}`);
   const lock = room.props && room.props.locks && room.props.locks[dirKey];
+  const destination = await MooRoom.findOne({ roomId: dest }).lean();
+  if (!destination) return ctx.fail('That exit is unavailable. Choose another way.');
+  if (destination.props?.home) {
+    const may = await require('./housing').mayEnter(ctx, destination);
+    if (!may.ok) return ctx.fail(may.line, { kinds: [...ctx.kinds, 'locked'] });
+  }
   if (lock) {
     const housing = require('./housing');
     const may = await housing.mayPass(ctx, room, dirKey, dest);
@@ -104,6 +121,19 @@ async function walk(ctx, dirKey) {
   ctx.say(`You go ${word}.`);
   return ctx.ok({ wantRoom: true, kinds: [...ctx.kinds, 'move'] });
 }
+
+registry.register({
+  name: 'whisper',
+  help: { topic: 'people', usage: 'whisper "Full Name" your words', blurb: 'Send private words to one person in this room.' },
+  async run(ctx, { argRaw }) {
+    const people = await MooChar.find({ roomId: ctx.ch.roomId }).select('userId name').lean();
+    const target = require('@librechat/api').resolveReverieWhisper(argRaw || '', people);
+    if (!target.ok) return ctx.fail(target.line);
+    await emit(`whisper:${target.person.userId}`, ctx.userId, ctx.ch.name, 'whisper', `${ctx.ch.name} whispers to you: "${target.words}"`);
+    ctx.say(`You whisper to ${target.person.name}: "${target.words}"`);
+    return ctx.ok({ kinds: [...ctx.kinds, 'say'] });
+  },
+});
 
 async function autowalk(ctx, wanted) {
   const { ch } = ctx;
@@ -125,6 +155,7 @@ async function autowalk(ctx, wanted) {
     for (const [dir, to] of Object.entries(r.exits || {})) {
       if ((r.props && r.props.locks && r.props.locks[dir]) && !(byId[to] && byId[to].props && byId[to].props.home && (byId[to].props.home.owner === ch.userId || (byId[to].props.home.tenants || []).includes(ch.userId)))) continue;
       if (to in prev || !byId[to]) continue;
+      if (byId[to].props?.home && !(await require('./housing').mayEnter(ctx, byId[to])).ok) continue;
       prev[to] = cur; queue.push(to);
     }
   }
@@ -182,9 +213,10 @@ registry.register({
     if (!prevId) return ctx.fail('No steps to retrace yet.');
     const there = await MooRoom.findOne({ roomId: prevId }).select('roomId name').lean();
     if (!there) return ctx.fail('The way back is not there anymore.');
-    await moveTo(ctx.ch, prevId, `${ctx.ch.name} doubles back.`, `${ctx.ch.name} comes back.`);
-    ctx.say('You retrace your steps.');
-    return ctx.ok({ wantRoom: true, kinds: [...ctx.kinds, 'move'] });
+    const room = await ctx.room();
+    const exit = Object.entries(room?.exits || {}).find(([, to]) => to === prevId);
+    if (exit) return walk(ctx, exit[0]);
+    return autowalk(ctx, prevId);
   },
 });
 

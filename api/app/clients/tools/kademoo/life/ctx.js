@@ -105,8 +105,9 @@ async function setBusy(ch, seconds, doing) {
  *  Poses clear on movement, prevRoom is kept for `back`. */
 async function moveTo(ch, destId, leaveText, enterText, opts = {}) {
   const origin = ch.roomId;
+  const moved = await MooChar.updateOne({ _id: ch._id, active: true, roomId: origin }, { $set: { roomId: destId, 'attrs.prevRoom': origin, 'attrs.pose': null, 'attrs.posture': 'standing' } });
+  if (!moved.matchedCount) throw new Error('Your location changed before movement completed. Look again.');
   if (leaveText) await emit(origin, ch.userId, ch.name, 'leave', leaveText);
-  await MooChar.updateOne({ _id: ch._id }, { $set: { roomId: destId, 'attrs.prevRoom': origin, 'attrs.pose': null, 'attrs.posture': 'standing' } });
   ch.roomId = destId;
   ch.attrs = { ...(ch.attrs || {}), prevRoom: origin, pose: null, posture: 'standing' };
   if (enterText) await emit(destId, ch.userId, ch.name, 'enter', enterText);
