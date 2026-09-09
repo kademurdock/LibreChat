@@ -6,7 +6,7 @@ import {
   hash,
   figureAppearance,
   figurePosition,
-} from './presentation.mjs';
+} from './presentation.mjs?v=170';
 
 const COLORS = {
   wood: 0xa37750,
