@@ -4,7 +4,7 @@ const FormData = require('form-data');
 const nodemailer = require('nodemailer');
 const handlebars = require('handlebars');
 const { logger } = require('@librechat/data-schemas');
-const { logAxiosError, isEnabled, readFileAsString } = require('@librechat/api');
+const { logAxiosError, isEnabled, readFileAsString, sendAccountEmail } = require('@librechat/api');
 
 /**
  * Sends an email using Mailgun API.
@@ -101,6 +101,16 @@ const sendEmail = async ({ email, subject, payload, template, throwError = true 
     const fromEmail = process.env.EMAIL_FROM;
     const fromAddress = `"${fromName}" <${fromEmail}>`;
     const toAddress = `"${payload.name}" <${email}>`;
+
+    if (process.env.RESEND_API_KEY) {
+      return await sendAccountEmail({
+        from: fromAddress,
+        to: email,
+        subject,
+        html,
+        replyTo: process.env.EMAIL_REPLY_TO,
+      });
+    }
 
     // Check if Mailgun is configured
     if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN) {

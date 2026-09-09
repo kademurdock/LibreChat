@@ -30,6 +30,8 @@ beforeEach(() => {
   delete process.env.EMAIL_ENCRYPTION;
   delete process.env.EMAIL_ENCRYPTION_HOSTNAME;
   delete process.env.EMAIL_ALLOW_SELFSIGNED;
+  delete process.env.RESEND_API_KEY;
+  delete process.env.EMAIL_REPLY_TO;
 
   readFileAsString.mockResolvedValue({ content: '<p>{{name}}</p>' });
   nodemailer.createTransport.mockReturnValue({ sendMail: mockSendMail });
@@ -52,6 +54,7 @@ function loadSendEmail() {
     logAxiosError: jest.fn(),
     isEnabled: jest.fn((val) => val === 'true' || val === true),
     readFileAsString: jest.fn().mockResolvedValue({ content: '<p>{{name}}</p>' }),
+    sendAccountEmail: jest.fn().mockResolvedValue({ id: 'resend-receipt' }),
   }));
   return require('../sendEmail');
 }
@@ -62,6 +65,35 @@ const baseParams = {
   payload: { name: 'User' },
   template: 'test.handlebars',
 };
+
+describe('account email dispatch', () => {
+  it('uses the existing template and configured reply address with Resend', async () => {
+    process.env.RESEND_API_KEY = 'test-only';
+    process.env.EMAIL_REPLY_TO = 'reply@example.com';
+    const sendEmail = loadSendEmail();
+    const { sendAccountEmail } = require('@librechat/api');
+    const { createTransport } = require('nodemailer');
+    await expect(sendEmail(baseParams)).resolves.toEqual({ id: 'resend-receipt' });
+    expect(sendAccountEmail).toHaveBeenCalledWith({
+      from: '"TestApp" <noreply@example.com>',
+      to: 'user@example.com',
+      subject: 'Test',
+      html: '<p>User</p>',
+      replyTo: 'reply@example.com',
+    });
+    expect(createTransport).not.toHaveBeenCalled();
+  });
+
+  it('propagates delivery failure without sending a duplicate through SMTP', async () => {
+    process.env.RESEND_API_KEY = 'test-only';
+    const sendEmail = loadSendEmail();
+    const { sendAccountEmail } = require('@librechat/api');
+    const { createTransport } = require('nodemailer');
+    sendAccountEmail.mockRejectedValue(new Error('Account email delivery could not be confirmed'));
+    await expect(sendEmail(baseParams)).rejects.toThrow('could not be confirmed');
+    expect(createTransport).not.toHaveBeenCalled();
+  });
+});
 
 describe('sendEmail SMTP auth assembly', () => {
   it('includes auth when both EMAIL_USERNAME and EMAIL_PASSWORD are set', async () => {

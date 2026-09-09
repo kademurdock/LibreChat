@@ -2,7 +2,7 @@ import { logger } from '@librechat/data-schemas';
 
 /**
  * Check if email configuration is set
- * @returns Returns `true` if either Mailgun or SMTP is properly configured
+ * @returns Returns `true` if Resend, Mailgun, or SMTP has transport configuration
  */
 export function checkEmailConfig(): boolean {
   const hasMailgunConfig =
@@ -21,5 +21,7 @@ export function checkEmailConfig(): boolean {
     }
   }
 
-  return hasMailgunConfig || hasSMTPConfig;
+  return (
+    hasMailgunConfig || hasSMTPConfig || (!!process.env.RESEND_API_KEY && !!process.env.EMAIL_FROM)
+  );
 }

@@ -2974,7 +2974,7 @@ const briefHtml = `<!doctype html><html lang="en"><head><title>Morning Brief —
  * hand Kade a file per kind and it replaces the synth voice of the world.
  * Deliberately its OWN surface — not an agent chat, not the platform's face:
  * a doorway page. Ambience per district, off by default, remembered. */
-const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${SHARED_HEAD}<link rel="stylesheet" href="/assets/reverie/room.css?v=169">
+const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${SHARED_HEAD}<link rel="stylesheet" href="/assets/reverie/room.css?v=170">
 <style>
   /* ── REVERIE CLIENT (Sep 6 2026) ─────────────────────────────────────────
    * Two audiences, one page. For a screen reader: a single live log that says
@@ -3242,8 +3242,8 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   </div>
 </main>
 <footer class="muted">Make yourself at home. &middot; <a href="/help/world">how Reverie works</a></footer>
-<script src="/assets/reverie/room.js?v=169"></script>
-<script type="module" src="/assets/reverie/stage.mjs?v=169"></script>
+<script src="/assets/reverie/room.js?v=170"></script>
+<script type="module" src="/assets/reverie/stage.mjs?v=170"></script>
 <script>
 (function(){
   'use strict';

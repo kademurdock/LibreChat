@@ -12,7 +12,9 @@ const run=command=>engine.runCommand({userId:'visual-local',displayName:'Alex Ex
 (async()=>{
  const db=await MongoMemoryServer.create();await mongoose.connect(db.getUri());
  const ch=await old.getOrCreateChar('visual-local','Alex Example');
- await MooChar.updateOne({_id:ch._id},{$set:{roomId:'pats_diner','attrs.life':{created:true,needs:{fed:80,rested:80,clean:80,fun:80,company:80},needsAt:Date.now()}}});
+ await MooChar.updateOne({_id:ch._id},{$set:{roomId:'pats_diner','attrs.life':{created:true,look:{build:'tall and lean',hair:'locs',style:'hoodie and headphones'},needs:{fed:80,rested:80,clean:80,fun:80,company:80},needsAt:Date.now()}}});
+ const guest=await old.getOrCreateChar('visual-guest','Mira Example');
+ await MooChar.updateOne({_id:guest._id},{$set:{roomId:'pats_diner','attrs.life':{created:true,look:{build:'short and sturdy',hair:'a bun',style:'sundresses and sneakers'},needsAt:Date.now()}}});
  await run('look');
  app.get('/world',(_,res)=>res.type('html').send(require(path.join(root,'api/server/routes/kadePages')).worldHtml));
  app.use('/assets',express.static(path.join(root,'client/public/assets')));
@@ -23,5 +25,5 @@ const run=command=>engine.runCommand({userId:'visual-local',displayName:'Alex Ex
  app.get('/api/world/here',async(_,res)=>res.json(await run('look')));
  app.post('/api/world/command',async(req,res)=>{try{res.json(await run(req.body.command));}catch(e){console.error(e);res.status(500).json({error:e.message});}});
  app.get('/api/world/stream',(_,res)=>res.type('text/event-stream').end());
- app.listen(8169,'127.0.0.1',()=>console.log('Local actual-engine world: http://127.0.0.1:8169/world'));
+ const server=app.listen(Number(process.env.REVERIE_PORT ?? 8169),'127.0.0.1',()=>console.log('Local actual-engine world: http://127.0.0.1:'+server.address().port+'/world'));
 })();

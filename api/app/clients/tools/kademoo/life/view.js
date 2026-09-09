@@ -132,6 +132,7 @@ function personTag(ctx, p) {
     tag,
     line,
     pronouns: a.pronouns || (kind === 'player' ? 'they' : null),
+    appearance: require('@librechat/api').reverieAppearance(a),
     cmds: personCmds(ctx, p, kind),
   };
 }
@@ -220,6 +221,8 @@ async function hud(ctx) {
     .slice(0, 3);
   return {
     name: ch.name,
+    characterId: ch.userId,
+    appearance: require('@librechat/api').reverieAppearance(ch.attrs),
     pronouns: (ch.attrs && ch.attrs.pronouns) || 'they',
     coin: coinOf(ch),
     clock: clockLine(),

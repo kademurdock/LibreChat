@@ -2,6 +2,7 @@ const fs=require('node:fs'),path=require('node:path');
 (async()=>{const {build}=await import('vite');const root=path.resolve(__dirname,'../..'),out=path.join(__dirname,'out-voice'),shell=path.join(__dirname,'voice-shell.ts');
 fs.mkdirSync(out,{recursive:true});fs.cpSync(path.join(root,'client/public/assets/characters'),path.join(out,'assets/characters'),{recursive:true});
 fs.copyFileSync(path.join(root,'client/public/assets/characters/kiana/portrait.png'),path.join(out,'agent-agent_6llV0eMu4fmIaj8f2x1Sb-avatar-1788871984269.png'));
+fs.copyFileSync(path.join(root,'client/public/assets/characters/della/portrait.png'),path.join(out,'agent-agent_BSOLa3eNEZyjs-7abCjMt-avatar-1788941611099.png'));
 fs.copyFileSync(path.join(__dirname,'character-sample.wav'),path.join(out,'sample.wav'));
 const css=fs.readdirSync(path.join(root,'client/dist/assets')).find(n=>/^index.*\.css$/.test(n));fs.copyFileSync(path.join(root,'client/dist/assets',css),path.join(out,'app.css'));
 fs.writeFileSync(path.join(out,'test-portrait.svg'),'<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="#36264d"/><circle cx="256" cy="240" r="110" fill="#ebb987"/><path d="M80 512Q90 330 256 330Q422 330 432 512" fill="#678d81"/></svg>');

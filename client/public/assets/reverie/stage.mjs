@@ -1,5 +1,12 @@
 import * as T from './vendor/three.module.js';
-import { sceneModel, describePicture, furnitureKind, hash } from './presentation.mjs';
+import {
+  sceneModel,
+  describePicture,
+  furnitureKind,
+  hash,
+  figureAppearance,
+  figurePosition,
+} from './presentation.mjs';
 
 const COLORS = {
   wood: 0xa37750,
@@ -525,25 +532,10 @@ export class Stage {
 
   avatar(person, index) {
     const seed = hash(person.id || person.name);
-    const points =
-      this.model.type === 'creek'
-        ? [
-            [1, 2],
-            [2.5, 1],
-            [0.6, 0.2],
-            [3, 2.7],
-            [1, -1],
-          ]
-        : [
-            [0.4, 1.5],
-            [-1.2, 0.2],
-            [2.1, 0.7],
-            [0.2, -1.5],
-            [2.1, 2.8],
-            [-2.2, 2.5],
-          ];
-    const [x, z] = points[index % points.length];
-    const g = this.group(x + (index >= 6 ? 0.38 : 0), 0, z + (index >= 6 ? 0.6 : 0));
+    const position = figurePosition(this.model, person, index);
+    const { x, z } = position;
+    const look = figureAppearance(person);
+    const g = this.group(x, 0, z);
     if (['stray', 'pet'].includes(person.kind)) {
       this.mesh('leaf', 0xb98968, [0, 0.22, 0], [0.28, 0.22, 0.5], g);
       this.mesh('sphere', 0xb98968, [0, 0.43, 0.37], [0.19, 0.19, 0.19], g);
@@ -551,13 +543,58 @@ export class Stage {
         this.mesh('cone', 0x7e614e, [dx, 0.63, 0.37], [0.09, 0.16, 0.08], g);
       return;
     }
-    const skin = [0xc28f68, 0x805c45, 0xe5b48d, 0xa46c4c, 0xf1ceaa][seed % 5];
-    const shirt = [0xcd8665, 0x537f8a, 0xd0b678, 0x88779a, 0x719b84][(seed >>> 4) % 5];
+    const { skin, shirt } = look;
     const body = new T.Group();
     g.add(body);
     this.mesh('sphere', shirt, [0, 0.77, 0], [0.25, 0.36, 0.18], body);
     this.mesh('sphere', skin, [0, 1.26, 0], [0.2, 0.23, 0.2], body);
-    this.mesh('sphere', seed % 3 ? 0x433c36 : 0xb78c5a, [0, 1.41, -0.02], [0.206, 0.13, 0.2], body);
+    const hair = look.hairColor;
+    if (look.hair !== 'bald') this.mesh('sphere', hair, [0, 1.41, -0.02], [0.206, 0.13, 0.2], body);
+    if (look.hair === 'bun') this.mesh('sphere', hair, [0, 1.55, -0.12], [0.13, 0.13, 0.13], body);
+    if (look.hair === 'long') this.mesh('sphere', hair, [0, 1.15, -0.13], [0.23, 0.38, 0.15], body);
+    if (look.hair === 'locks')
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 8) * Math.PI;
+        this.mesh(
+          'cylinder',
+          hair,
+          [Math.cos(a) * 0.2, 1.15, -Math.sin(a) * 0.17],
+          [0.038, 0.48 + (i % 2) * 0.08, 0.038],
+          body,
+        );
+      }
+    if (look.hair === 'curls')
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2;
+        this.mesh(
+          'sphere',
+          hair,
+          [Math.cos(a) * 0.17, 1.43 + Math.sin(a) * 0.065, -0.035],
+          [0.095, 0.095, 0.12],
+          body,
+        );
+      }
+    if (look.hair === 'hat') {
+      this.mesh('cylinder', COLORS.ink, [0, 1.53, 0], [0.24, 0.17, 0.24], body);
+      this.mesh('cylinder', COLORS.ink, [0, 1.46, 0.045], [0.3, 0.035, 0.3], body);
+    }
+    if (look.outfit === 'dress') this.mesh('cone', shirt, [0, 0.52, 0], [0.39, 0.66, 0.3], body);
+    if (look.outfit === 'coat') {
+      this.box(shirt, 0, 0.61, 0, 0.53, 0.59, 0.37, body);
+      this.box(COLORS.cream, 0, 0.88, 0.19, 0.07, 0.42, 0.022, body);
+      for (const y of [0.55, 0.7])
+        this.mesh('sphere', COLORS.brass, [0.055, y, 0.2], [0.022, 0.022, 0.02], body);
+    }
+    if (look.outfit === 'coveralls')
+      this.box(COLORS.cream, 0.11, 0.88, 0.177, 0.11, 0.045, 0.015, body);
+    if (look.headphones) {
+      for (const dx of [-0.225, 0.225])
+        this.mesh('sphere', COLORS.ink, [dx, 1.27, 0], [0.06, 0.095, 0.075], body);
+      const band = this.mesh('ring', COLORS.ink, [0, 1.32, 0], [0.25, 0.27, 0.22], body);
+      band.rotation.x = 0;
+    }
+    this.mesh('sphere', 0x714b42, [0, 1.16, 0.19], [0.055, 0.013, 0.018], body);
+
     for (const dx of [-0.075, 0.075])
       this.mesh('sphere', 0x313b3b, [dx, 1.29, 0.179], [0.018, 0.022, 0.017], body);
     const limbs = [];
@@ -574,13 +611,36 @@ export class Stage {
       this.mesh('sphere', COLORS.cream, [0, -0.4, 0.04], [0.105, 0.065, 0.16], leg);
       limbs.push(arm, leg);
     }
-    if (person.kind === 'child') g.scale.setScalar(0.72);
-    g.rotation.y = 0.2 + (index % 3) * 0.28;
-    const figure = { g, body, limbs, seed, index, until: 0, action: '' };
+    const scale = person.kind === 'child' ? 0.72 : 1;
+    g.scale.set(look.width * scale, look.height * scale, scale);
+    g.rotation.y = position.rotation;
+    const previous = this.previousFigures?.get(person.id);
+    const from = previous || (this.entering ? { x: x - 0.65, z: z + 0.4 } : { x, z });
+    const figure = {
+      id: person.id,
+      g,
+      body,
+      limbs,
+      seed,
+      index,
+      until: previous?.until || 0,
+      action: previous?.action || '',
+      born: this.time,
+    };
+    const walking = Math.abs(from.x - x) + Math.abs(from.z - z) > 0.02;
+    if (!previous && this.entering) {
+      figure.until = this.time + 1.1;
+      figure.action = 'walk';
+    }
+
     this.figures.push(figure);
     this.animated.push((t) => {
+      const progress = this.motion ? Math.min(1, Math.max(0, (t - figure.born) / 1.1)) : 1;
+      const ease = progress * progress * (3 - 2 * progress);
+      g.position.x = from.x + (x - from.x) * ease;
+      g.position.z = from.z + (z - from.z) * ease;
       body.position.y = Math.sin(t * 1.6 + (seed % 7)) * 0.014;
-      const active = t < figure.until;
+      const active = t < figure.until || (walking && progress < 1);
       limbs.forEach((limb, i) => {
         limb.rotation.x = active
           ? Math.sin(t * 7 + i * Math.PI) * 0.35
@@ -630,6 +690,16 @@ export class Stage {
     const key = JSON.stringify(model);
     if (key === this.key) return;
     this.key = key;
+    this.entering = !!this.model;
+    this.previousFigures =
+      this.model?.id === model.id
+        ? new Map(
+            this.figures.map((f) => [
+              f.id,
+              { x: f.g.position.x, z: f.g.position.z, until: f.until, action: f.action },
+            ]),
+          )
+        : new Map();
     this.model = model;
     this.clearWorld();
     this.scene.background = new T.Color(model.dark ? 0x142e39 : 0xc7d9ca);

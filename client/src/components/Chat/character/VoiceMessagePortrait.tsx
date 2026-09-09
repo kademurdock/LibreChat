@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useGetAgentByIdQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { voicePlayback } from './voice-playback.mjs';
-import { createPortraitRig, hasPreparedPortrait } from './portrait-rig.mjs';
+import { createPortraitRig, preparedPortrait } from './portrait-rig.mjs';
 import CharacterMotion from './character-motion.mjs';
 import { voiceMessagePose } from './voice-message-motion.mjs';
 import { useVoicePortraitPreference } from './useVoicePortraitPreference';
@@ -58,7 +58,7 @@ function PortraitSurface({
     let source = '',
       generation = 0;
     const abort = new AbortController();
-    const prepared = hasPreparedPortrait(agentId, path);
+    const prepared = preparedPortrait(agentId, path);
     async function readEnvelope(audio: HTMLAudioElement) {
       const src = audio.currentSrc || audio.src;
       if (source === src || !src.startsWith('blob:')) return;
@@ -93,9 +93,7 @@ function PortraitSurface({
       if (usable && prepared && !rig)
         rig = createPortraitRig(target, {
           id: agentId,
-          portrait: '/assets/characters/kiana/portrait.png',
-          atlas: '/assets/characters/kiana/facial-source.png',
-          blink: '/assets/characters/kiana/eyes-closed.png',
+          ...prepared,
         });
       if (usable && prepared) void readEnvelope(audio);
       const level = envelope?.levels[Math.floor(audio.currentTime / envelope.step)] || 0;
@@ -155,7 +153,12 @@ function PortraitSurface({
             onError={() => setFailed(true)}
             className="h-full w-full object-cover"
           />
-          <canvas hidden ref={canvas} aria-hidden="true" className="absolute inset-0 h-full w-full" />
+          <canvas
+            hidden
+            ref={canvas}
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full"
+          />
         </div>
       </div>
       <button
