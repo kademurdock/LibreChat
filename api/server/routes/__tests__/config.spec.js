@@ -104,10 +104,35 @@ afterEach(() => {
   delete process.env.ANALYTICS_GTM_ID;
   delete process.env.CUSTOM_FOOTER;
   delete process.env.HELP_AND_FAQ_URL;
+  delete process.env.RESEND_API_KEY;
+  delete process.env.EMAIL_FROM;
 });
 
 describe('GET /api/config', () => {
   describe('unauthenticated (no req.user)', () => {
+    it('advertises Resend account email without exposing its credentials', async () => {
+      process.env.RESEND_API_KEY = 'test-resend-secret';
+      process.env.EMAIL_FROM = 'accounts@example.com';
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+
+      const response = await request(createApp(null)).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.emailEnabled).toBe(true);
+      expect(JSON.stringify(response.body)).not.toContain('test-resend-secret');
+    });
+
+    it('does not advertise account email with a key but no sender address', async () => {
+      process.env.RESEND_API_KEY = 'test-resend-secret';
+      delete process.env.EMAIL_FROM;
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+
+      const response = await request(createApp(null)).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.emailEnabled).toBe(false);
+    });
+
     it('should call getAppConfig with baseOnly when no tenant context', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       mockGetTenantId.mockReturnValue(undefined);
