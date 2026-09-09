@@ -18,6 +18,10 @@
  * — callers of this hook must NOT also POST /api/kade/calls/mine.
  */
 import { useRef, useCallback } from 'react';
+import type { CharacterAudioMetadata } from './character/metadata';
+import { readCharacterAudio } from './character/metadata';
+import type { CallPresentation } from './character/playback';
+import { clearPresentation, observePlayback, presentationStatus, selectPresentation } from './character/playback';
 
 export type StreamStatus = 'connecting' | 'listening' | 'thinking' | 'speaking';
 
@@ -54,6 +58,7 @@ export interface StreamingStartArgs {
    *  minted a fresh conversation. Null/absent = fresh call, old behavior. */
   conversationId?: string | null;
   handlers: StreamingHandlers;
+  presentation?: CallPresentation;
 }
 
 const TARGET_RATE = 16000;
@@ -77,8 +82,12 @@ export default function useStreamingCall() {
   // Bumped on every flush: an in-flight decode from BEFORE a barge-in must
   // never schedule its (now stale) clip after the flush.
   const flushSeqRef   = useRef(0);
+  const presentationRef = useRef<CallPresentation>();
+  const nextMetadataRef = useRef<CharacterAudioMetadata | null>(null);
 
   const flushPlayback = useCallback(() => {
+    clearPresentation(presentationRef.current);
+    nextMetadataRef.current = null;
     flushSeqRef.current += 1;
     sourcesRef.current.forEach((s) => { try { s.stop(); } catch { /* stopped */ } });
     sourcesRef.current.clear();
@@ -88,7 +97,7 @@ export default function useStreamingCall() {
 
   // Decode + schedule serially so clips can never play out of order (the same
   // reserve-your-slot-synchronously lesson enqueueAudio learned on July 4).
-  const enqueueWav = useCallback((ab: ArrayBuffer) => {
+  const enqueueWav = useCallback((ab: ArrayBuffer, metadata: CharacterAudioMetadata | null) => {
     const seq = flushSeqRef.current;
     const chain = decodeChainRef.current.then(async () => {
       if (!activeRef.current || seq !== flushSeqRef.current) return;
@@ -110,6 +119,10 @@ export default function useStreamingCall() {
       nextTimeRef.current = t + buf.duration;
       sourcesRef.current.add(src);
       src.onended = () => sourcesRef.current.delete(src);
+      observePlayback(presentationRef.current, src, {
+        buffer: buf, start: t, clock: () => ctx.currentTime,
+        speech: metadata?.speech === true, agentId: metadata?.agentId ?? null,
+      });
     });
     decodeChainRef.current = chain.catch(() => { /* keep the chain alive */ });
   }, []);
@@ -141,6 +154,9 @@ export default function useStreamingCall() {
       nextTimeRef.current = t + buf.duration;
       sourcesRef.current.add(src);
       src.onended = () => sourcesRef.current.delete(src);
+      observePlayback(presentationRef.current, src, {
+        buffer: buf, start: t, clock: () => ctx.currentTime, speech: false, agentId: null,
+      });
     });
     decodeChainRef.current = chain.catch(() => { /* keep the chain alive */ });
   }, []);
@@ -269,15 +285,23 @@ export default function useStreamingCall() {
     }
   }, [flushPlayback]);
 
-  const start = useCallback(async ({ agentId, spotterDirect, ctx, analyser, token, conversationId, handlers }: StreamingStartArgs) => {
+  const start = useCallback(async ({ agentId, spotterDirect, ctx, analyser, token, conversationId, handlers, presentation }: StreamingStartArgs) => {
     if (activeRef.current) return;
+    clearPresentation(presentationRef.current);
+    presentationRef.current = presentation;
+    nextMetadataRef.current = null;
+    selectPresentation(presentation, agentId ?? null);
     activeRef.current = true;
     endedFiredRef.current = false;
     byeSentRef.current = false;
     outCtxRef.current = ctx;
     outAnalyserRef.current = analyser;
     nextTimeRef.current = 0;
-    handlers.onStatus('connecting');
+    const reportStatus = (status: StreamStatus) => {
+      presentationStatus(presentation, status);
+      handlers.onStatus(status);
+    };
+    reportStatus('connecting');
 
     let ticket = '';
     let wsUrl = '';
@@ -334,25 +358,32 @@ export default function useStreamingCall() {
         } catch { /* ignore */ }
       };
       ws.onmessage = (ev: MessageEvent) => {
+        if (wsRef.current !== ws || !activeRef.current) return;
         if (ev.data instanceof ArrayBuffer) {
+          const metadata = nextMetadataRef.current;
+          nextMetadataRef.current = null;
           const u8 = new Uint8Array(ev.data);
           // "LIVE" = raw live-lane PCM chunk; anything else (RIFF...) = WAV clip.
           if (u8.length > 4 && u8[0] === 0x4c && u8[1] === 0x49 && u8[2] === 0x56 && u8[3] === 0x45) {
             enqueueLivePcm(ev.data);
             return;
           }
-          enqueueWav(ev.data);
+          enqueueWav(ev.data, metadata);
           return;
         }
         let m: any;
-        try { m = JSON.parse(String(ev.data)); } catch { return; }
+        try { m = JSON.parse(String(ev.data)); } catch { nextMetadataRef.current = null; return; }
+        if (m?.type !== 'character-audio') nextMetadataRef.current = null;
         switch (m.type) {
+          case 'character-audio':
+            nextMetadataRef.current = readCharacterAudio(m);
+            break;
           case 'ready':
             if (!settled) { settled = true; clearTimeout(connectTimer); resolve(); }
-            handlers.onStatus('listening');
+            reportStatus('listening');
             break;
           case 'state':
-            handlers.onStatus(
+            reportStatus(
               m.state === 'speaking' ? 'speaking' : m.state === 'thinking' ? 'thinking' : 'listening',
             );
             break;
@@ -370,9 +401,11 @@ export default function useStreamingCall() {
           case 'video-state':
           case 'live-notice':
           case 'live-state':
+            if (m.type === 'live-state') clearPresentation(presentation);
             handlers.onVideo?.(m);
             break;
           case 'error':
+            clearPresentation(presentation);
             handlers.onError(String(m.message || 'Call error.'));
             if (!settled) { settled = true; clearTimeout(connectTimer); stop(false); reject(new Error(String(m.message || 'Call error.'))); }
             break;
@@ -382,6 +415,7 @@ export default function useStreamingCall() {
       };
       ws.onerror = () => fail('The call connection failed.');
       ws.onclose = () => {
+        if (wsRef.current !== ws) return;
         clearTimeout(connectTimer);
         const wasGraceful = byeSentRef.current;
         if (!settled) { fail('The call connection closed before it was ready.'); return; }

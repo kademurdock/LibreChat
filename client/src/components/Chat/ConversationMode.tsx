@@ -71,6 +71,8 @@ function scrubCaption(text: string): string {
 }
 import GameTable from '~/components/Chat/Messages/Content/GameTable';
 import useStreamingCall from './useStreamingCall';
+import type { CallPresentation } from './character/playback';
+import { clearPresentation, createPresentationRelay, observePlayback, presentationStatus, selectPresentation } from './character/playback';
 import store from '~/store';
 
 // Bigger synth units = better prosody (context batching, July 4 2026).
@@ -253,6 +255,7 @@ function fileExt(mime: string): string {
 // -- Component -----------------------------------------------------------------
 interface ConversationModeProps {
   index?: number;
+  presentation?: CallPresentation;
 }
 
 // KADE July 16 2026 (?kade=call — Action Button / Siri deep link): capture the
@@ -284,7 +287,7 @@ const KADE_LA_STATUS: Record<string, string> = {
   connecting: 'Connecting', listening: 'Listening', thinking: 'Thinking', speaking: 'Speaking',
 };
 
-export default function ConversationMode({ index = 0 }: ConversationModeProps) {
+export default function ConversationMode({ index = 0, presentation }: ConversationModeProps) {
   const agentId = useRecoilValue(store.conversationAgentIdByIndex(index));
   /* KADE Aug 14 2026 (call continuity, her ask): the conversation this call is
    * being placed FROM. Calling out of an open text thread should CONTINUE that
@@ -302,6 +305,18 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
 
   const [open,       setOpen]       = useState(false);
   const [status,     setStatus]     = useState<CallStatus>('idle');
+  const presentationRef = useRef(presentation);
+  const presentationRelay = useRef(createPresentationRelay(() => presentationRef.current));
+  useEffect(() => {
+    const previous = presentationRef.current;
+    if (previous !== presentation) clearPresentation(previous);
+    presentationRef.current = presentation;
+    selectPresentation(presentation, agentId ?? null);
+    return () => clearPresentation(presentation);
+  }, [presentation, agentId]);
+  useEffect(() => {
+    presentationStatus(presentationRef.current, status);
+  }, [status, presentation]);
   const [transcript, setTranscript] = useState('');
   const [aiText,     setAiText]     = useState('');
   // Game Parlor visual: sticky "current table" for this call. Set whenever a
@@ -873,7 +888,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // actually written for. The phone bridge never had this bug (its
   // equivalent chain is built the same synchronous way already); this was
   // web-only.
-  const enqueueAudio = useCallback((bufPromise: Promise<ArrayBuffer | null>, gain?: number): Promise<void> => {
+  const enqueueAudio = useCallback((bufPromise: Promise<ArrayBuffer | null>, gain?: number, speech = true): Promise<void> => {
     const myTurn = turnIdRef.current;
     const tail = playQueueRef.current.then(async () => {
       if (abortRef.current || turnIdRef.current !== myTurn) return;
@@ -883,6 +898,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       if (!ctx) return;
       try {
         const decoded = await ctx.decodeAudioData(raw.slice(0));
+        if (abortRef.current || turnIdRef.current !== myTurn) return;
         await new Promise<void>(resolve => {
           const src = ctx.createBufferSource();
           src.buffer = decoded;
@@ -904,8 +920,12 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             if (currentSourceRef.current === src) currentSourceRef.current = null;
             resolve();
           };
-          src.start();
+          const start = ctx.currentTime;
+          src.start(start);
           currentSourceRef.current = src;
+          observePlayback(presentationRef.current, src, {
+            buffer: decoded, start, clock: () => ctx.currentTime, speech,
+          });
         });
       } catch (err) {
         console.warn('[ConvMode] audio decode error:', err);
@@ -969,6 +989,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           enqueueAudio(
             fetch(cueSrc).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null),
             0.45,
+            false,
           ),
         );
       }
@@ -1424,6 +1445,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           spotterDirect: spotterAutoRef.current,
           ctx: getAudioCtx(),
           analyser: outputAnalyserRef.current,
+          presentation: presentationRelay.current,
           token,
           /* Call continuity (Aug 14 2026): hand the bridge the conversation
            * this call is being placed from, so it seeds history from it and
@@ -1540,6 +1562,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       }
     } catch { /* never block hang-up */ }
     setVoiceCallActive(false);
+    clearPresentation(presentationRef.current);
     abortRef.current = true;
     turnIdRef.current += 1;
     try { void sseReaderRef.current?.cancel(); } catch { /* ignore */ }
@@ -1632,6 +1655,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       setAiText('');
       return;
     }
+    clearPresentation(presentationRef.current);
     turnIdRef.current += 1;
     try { void sseReaderRef.current?.cancel(); } catch { /* ignore */ }
     sseReaderRef.current = null;
@@ -1649,6 +1673,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      clearPresentation(presentationRef.current);
       abortRef.current = true;
       callActiveRef.current = false;
       setVoiceCallActive(false);
