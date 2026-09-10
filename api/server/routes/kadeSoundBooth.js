@@ -66,6 +66,48 @@ const MAX_SCENEMA_CHARS = 4000; // the bridge's own cap; mirrored so we fail ear
 const MAX_SEED_CHARS = 2048; // Seed Audio's hard cap per clip
 const SEED_USD_PER_MIN = 0.1875; // fal's listed price, read Sep 2 2026 (Part 119.2)
 const SCENEMA_USD_PER_MIN = 0.02; // measured Part 119.9/119.10; the bridge returns the real estimate
+const MAX_LYRIA_CHARS = 3000; // the brief, not the lyrics; Lyria reads a description
+const LYRIA_USD_PER_SONG = 0.08; // Google bills Lyria 3.5 PER SONG, not per minute
+
+/* ---------- the model id, and the wall everybody walks into ------------------
+ * Sep 10 2026, her words: "in the api it's 3-5 which makes people hit a wall a
+ * lot of the time." Checked against the live model list on her own key, and it
+ * is worse than a typo -- Google broke their own naming on this one model:
+ *
+ *   lyria-3-clip-preview   hyphen
+ *   lyria-3-pro-preview    hyphen
+ *   lyria-3.5              DOT
+ *   lyria-realtime-exp     hyphen
+ *
+ * So the habit every sibling model teaches you is the habit that fails, and
+ * half the third-party writeups slug it "lyria-3-5" in their URLs on top of
+ * that. Rather than being right once and brittle forever, this accepts every
+ * spelling a person or an env var could reasonably carry and lands on the one
+ * the API answers to. A wrong id is a 404 with no audio and no refund of the
+ * person's attention, so the normalizing happens here, once, at the door. */
+const LYRIA_KNOWN = ['lyria-3.5', 'lyria-3-pro-preview', 'lyria-3-clip-preview'];
+function normalizeLyriaModel(raw) {
+  const t = String(raw || '').trim().toLowerCase().replace(/^models\//, '');
+  if (!t) return 'lyria-3.5';
+  if (LYRIA_KNOWN.includes(t)) return t;
+  const digits = t.replace(/[^0-9]/g, '');
+  if (/pro/.test(t)) return 'lyria-3-pro-preview';
+  if (/clip/.test(t)) return 'lyria-3-clip-preview';
+  if (digits === '35') return 'lyria-3.5';
+  return 'lyria-3.5';
+}
+const LYRIA_MODEL = normalizeLyriaModel(process.env.KADE_LYRIA_MODEL);
+/* Overridable for the self-test the same way BRIDGE_URL is for the Scenema
+ * lane -- law 17: production knocks on the same door the bench does. */
+function lyriaBase() {
+  return (process.env.KADE_LYRIA_BASE || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
+}
+/* One dedicated key if she ever wants Lyria billed apart from the rest, and
+ * the Gemini key already on this service if she does not. */
+function lyriaKey() {
+  return process.env.KADE_LYRIA_KEY || process.env.KADE_EMBED_GEMINI_KEY ||
+    process.env.GEMINI_API_KEY || process.env.KADE_VISION_KEY || '';
+}
 
 function bridgeBase() {
   return (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(
@@ -204,8 +246,24 @@ HOW THIS ENGINE WORKS, so you write for it:
 - NEVER use %%%…%%% markers. That is a different engine's syntax. A delivery note goes in parentheses after the name, or as the manner before the colon — nowhere else.
 - Output the script and nothing else. No code fence, no preamble.`;
 
+const MUSIC_GRAMMAR = `LYRIA 3.5 MUSIC BRIEF FORMAT (the only format you may output):
+
+A single flowing paragraph, or a few short ones. NOT a screenplay, NOT lines of dialogue, NOT XML. This engine reads a description of a piece of music and writes the whole record: arrangement, performance, and, if you ask for them, sung lyrics.
+
+HOW THIS ENGINE WORKS, so you write for it:
+- It makes MUSIC, and it is the only engine here that does. It sings. Ask for an instrumental and it stays instrumental; describe a singer and it writes and performs the words.
+- Lead with the FEELING and the JOB, not a genre label. "The kind of slow soul record that plays while somebody finally says the thing they have been holding" beats "R&B, 70 BPM".
+- Then name the instruments you actually want to hear, in the order they enter. Rhodes first, brushed drums under it, upright bass, a horn that answers the vocal in the last eight bars.
+- Say the tempo in words as well as numbers -- "unhurried, around seventy beats a minute" -- and say what the groove does to a body: head-nod, sway, drive.
+- Describe the VOICE if there is one: sex, register, texture, delivery, and how close the microphone is. "A woman singing low and close, more breath than volume, like she is confiding it."
+- Describe the SHAPE over time: how it opens, where it lifts, what drops out at the bridge, how it ends. A record that only has one paragraph of description tends to come back as one idea repeated.
+- If the person supplied lyrics, put them in and mark them plainly as the lyrics to sing. If they did not, either ask for the mood of the words or write them, but never quietly invent a subject they did not name.
+- Say what you do NOT want, briefly, at the end -- no vocals, no fade-out, no orchestral swell -- because that is how the negatives land.
+- Do not use %%% markers, <speak> tags, or "Name (traits) says:" lines. Those belong to the other two engines and this one will not read them.
+- Output the brief and nothing else. No code fence, no preamble, no headings.`;
+
 function systemPrompt({ engine, mode }) {
-  const grammar = engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
+  const grammar = engine === 'lyria' ? MUSIC_GRAMMAR : engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
   const job =
     mode === 'write'
       ? `The user has given you a DESCRIPTION of something they want made. Write it for them: invent the words, keep it the length they asked for (if they did not say, aim for 30 to 60 seconds of speech, which is roughly 80 to 160 words), and shape it into the format below.`
@@ -431,6 +489,21 @@ function checkSeed(script) {
   return null;
 }
 
+function checkMusic(script) {
+  const s = String(script || '').trim();
+  if (!s) return 'There is nothing to make yet. Describe the piece of music you want.';
+  if (s.includes('%%%')) {
+    return 'That brief still has %%% tag markers in it. Lyria does not know them - describe the music in plain sentences instead.';
+  }
+  if (/<speak/i.test(s)) {
+    return 'That is a Scenema speech script, not a music brief. Lyria reads a description of a piece of music. Switch engines, or describe the music you want.';
+  }
+  if (s.length > MAX_LYRIA_CHARS) {
+    return `That brief is ${s.length} characters; Lyria tops out at ${MAX_LYRIA_CHARS} here. Tighten it - the description should be rich, but it is still a description.`;
+  }
+  return null;
+}
+
 /* ---------- THE GUIDE — one explainer, served to both screens -----------------
  * Her ask (Part 121): "I don't think people will know the difference between
  * seedaudio and scenema, much less how to use the settings and prompt it."
@@ -472,8 +545,11 @@ const GUIDE = {
   chooser: {
     question: 'Which engine should I use?',
     answer:
-      'Ask yourself one thing: is this ONE PERSON talking, or a SCENE? One person reading a story, a letter, a monologue, a bedtime tale — with real acting — is Scenema. Two people talking, or anything with music, sound effects or a place you can hear, is Seed Audio.',
+      'Ask yourself what the piece IS. A song — anything sung, or a piece of music that stands on its own — is Lyria. One person reading a story, a letter, a monologue, a bedtime tale, with real acting, is Scenema. Two people talking, or a scene with effects and a place you can hear around the voices, is Seed Audio.',
     rules: [
+      { pick: 'lyria', when: 'it is a song, or a piece of music that stands on its own' },
+      { pick: 'lyria', when: 'somebody sings — Lyria is the only engine here that can' },
+      { pick: 'lyria', when: 'you want a theme, an intro bed, or something to play under a finished piece' },
       { pick: 'scenema', when: 'one voice and the acting matters — the feeling shifts mid-sentence, it breathes, it pauses' },
       { pick: 'scenema', when: 'you want to clone a specific person from a short clip and use the Scenema rendering lane' },
       { pick: 'scenema', when: 'it is longer narration — the booth splits supported scripts into parts' },
@@ -512,6 +588,29 @@ const GUIDE = {
         { key: 'validate', label: 'Pronunciation check', hint: 'On by default. The engine listens back to each fifteen-second piece and re-makes it up to three times if the words came out wrong. Turning it off is faster and riskier.', kind: 'toggle', default: true },
         { key: 'seed', label: 'Seed', hint: 'The same seed with the same script gives the same take again. Leave it empty for a new take each time.', kind: 'number', min: 0 },
         { key: 'keep_wav', label: 'Keep the studio file', hint: 'Also keeps the forty-eight kilohertz stereo WAV master alongside the MP3. Same price, bigger file.', kind: 'toggle', default: false },
+      ],
+    },
+    lyria: {
+      name: 'Lyria',
+      tagline: 'It writes the song and sings it.',
+      where: "Made on Google's servers, not here. Your brief leaves the house for this one.",
+      cost: 'About eight cents a song, and that is per SONG — not per minute, however long it comes out. Back in under a minute, usually.',
+      bestFor: ['a song, with a singer and words', 'an instrumental — a theme, an intro bed, something to play under a voice', 'a mood you can describe but could not play', 'a full arrangement in one pass, rather than one instrument at a time'],
+      notFor: ['speech — it sings and it plays, it does not read', 'a specific existing voice; there is no clip to clone from here', 'an exact edit of something you already made — every take is a new performance'],
+      howToWrite: [
+        'Lead with the FEELING and the JOB the music is doing, not a genre label. "The kind of slow soul record that plays while somebody finally says the thing they have been holding" gets you a record. "R&B, 70 BPM" gets you a demo.',
+        'Then name the instruments you want to hear, in the order they come in. Rhodes first, brushed drums under it, upright bass, a horn answering the vocal at the end.',
+        'Give the tempo in words as well as numbers, and say what the groove does to a body — head-nod, sway, drive. "Unhurried, around seventy beats a minute."',
+        'If somebody sings, describe the voice the way you would describe an actor: sex, register, texture, delivery, and how close the microphone is. "A woman singing low and close, more breath than volume, like she is confiding it."',
+        'Describe the SHAPE over time — how it opens, where it lifts, what drops out at the bridge, how it ends. A brief with only one idea in it comes back as one idea repeated.',
+        'You can hand it your own lyrics. Put them in the brief and say plainly that these are the words to sing. If you do not, it writes its own.',
+        'Put what you do NOT want at the end, briefly: no vocals, no fade-out, no orchestral swell. Negatives land better last.',
+        'Every take is a new performance. There is no seed here, so the same brief twice gives you two different records — which is a reason to render twice when you like where it is going.',
+      ],
+      settings: [
+        { key: 'instrumental', label: 'No singing', hint: 'Keeps it instrumental. Leave it off if you want a singer, and describe the voice in your brief.', kind: 'toggle', default: false },
+        { key: 'lyrics', label: 'Your own lyrics', hint: 'Paste words you have already written and it will sing these instead of writing its own. Leave it empty to let it write them.', kind: 'text' },
+        { key: 'keep_lyrics', label: 'Keep the words it wrote', hint: 'On by default. Saves the lyrics it came up with alongside the recording, so you can read them back or reuse them.', kind: 'toggle', default: true },
       ],
     },
     seed: {
@@ -602,10 +701,17 @@ function suggestEngine(text) {
   const reasons = [];
   let seed = 0;
   let scenema = 0;
+  /* Sep 10 2026: music used to score for Seed, because Seed was the only
+   * engine that could make any. Now Lyria can make a RECORD, so the word
+   * "music" has to be read more carefully than it was: a song, or a piece
+   * that stands on its own, is Lyria; music AROUND dialogue is still Seed. */
+  let lyria = 0;
   const speakerLines = (t.match(/^\s*[A-Z][a-zA-Z' ]{1,30}\s*(\([^)]*\))?\s*:/gm) || []).length;
   const quotedSpeakers = (t.match(/\b[A-Z][a-z]+ (says|said|asks|asked|replies|replied|answers|whispers|shouts)\b/g) || []).length;
   if (speakerLines >= 2 || quotedSpeakers >= 2) { seed += 3; reasons.push('more than one person talks'); }
-  if (/\b(music|soundtrack|song|jingle|theme|beat|piano|guitar|drums|orchestra|strings)\b/.test(lower)) { seed += 2; reasons.push('you asked for music'); }
+  if (/\b(song|sing|sung|singer|vocals?|chorus|verse|hook|lyrics?|anthem|ballad|album|track)\b/.test(lower)) { lyria += 3; reasons.push('it is a song'); }
+  if (/\b(instrumental|music bed|theme (tune|song|music)|underscore|beat|melody|groove|bpm)\b/.test(lower)) { lyria += 2; reasons.push('it is a piece of music on its own'); }
+  if (/\b(music|soundtrack|jingle|theme|piano|guitar|drums|orchestra|strings)\b/.test(lower)) { seed += 2; lyria += 1; reasons.push('you asked for music'); }
   if (/\b(sound effects?|sfx|thunder|rain|traffic|crowd|footsteps|door|wind|birds|ambience|ambient|background sounds?)\b/.test(lower)) { seed += 1; reasons.push('there are sounds in it'); }
   if (/\b(radio play|radio drama|commercial|advert|ad spot|podcast intro|trailer)\b/.test(lower)) { seed += 2; reasons.push('it is a produced scene'); }
   if (/\b(story|bedtime|chapter|monologue|letter|poem|narrat|read (this|it|me)|audiobook|speech|eulogy|confession|diary)\b/.test(lower)) { scenema += 2; reasons.push('one voice telling or reading'); }
@@ -613,23 +719,47 @@ function suggestEngine(text) {
   const words = t.split(/\s+/).filter(Boolean).length;
   if (words > 320) { scenema += 2; reasons.push('it is long — over two minutes'); }
   if (/\b(whisper|breath|pause|voice (breaks|cracks)|tearful|choking up|trembl)\b/.test(lower)) { scenema += 1; reasons.push('the acting matters'); }
-  if (seed === 0 && scenema === 0) {
-    return { engine: 'scenema', sure: false, reason: 'One voice is the usual case, so Scenema. If two people talk, or you want music or a place you can hear, switch to Seed Audio.' };
+  /* Spoken lines in the text mean people TALKING, which is not what Lyria
+   * makes, however much music is also named. Dialogue outranks the word
+   * "music" every time. */
+  if (speakerLines >= 2 || quotedSpeakers >= 2) lyria = 0;
+  if (seed === 0 && scenema === 0 && lyria === 0) {
+    return { engine: 'scenema', sure: false, reason: 'One voice is the usual case, so Scenema. If two people talk or you want a place you can hear, switch to Seed Audio; if it is a song, switch to Lyria.' };
   }
-  const engine = seed > scenema ? 'seed' : 'scenema';
-  const why = reasons.filter((r) => (engine === 'seed'
-    ? /person talks|music|sounds|produced/.test(r)
-    : /telling|specific person|long|acting/.test(r)));
+  const NAMES = { lyria: 'Lyria', seed: 'Seed Audio', scenema: 'Scenema' };
+  const scores = { lyria, seed, scenema };
+  const engine = ['lyria', 'seed', 'scenema'].reduce((best, k) => (scores[k] > scores[best] ? k : best), 'scenema');
+  const runnerUp = Math.max(...['lyria', 'seed', 'scenema'].filter((k) => k !== engine).map((k) => scores[k]));
+  const why = reasons.filter((r) => (engine === 'lyria'
+    ? /song|music/.test(r)
+    : engine === 'seed'
+      ? /person talks|music|sounds|produced/.test(r)
+      : /telling|specific person|long|acting/.test(r)));
   return {
     engine,
-    sure: Math.abs(seed - scenema) >= 2,
-    reason: `${engine === 'seed' ? 'Seed Audio' : 'Scenema'}, because ${why.join(' and ') || reasons.join(' and ')}.`,
+    sure: scores[engine] - runnerUp >= 2,
+    reason: `${NAMES[engine]}, because ${why.join(' and ') || reasons.join(' and ')}.`,
   };
 }
 
 /* ---------- estimates, said out loud before anything is spent ------------- */
 function estimateFor(engine, script) {
   const { words, seconds } = spokenSeconds(script);
+  if (engine === 'lyria') {
+    /* The only per-SONG price in the booth. The brief's length says nothing
+     * about how long the record will be, so this deliberately does not guess
+     * an audio length it cannot know -- it quotes the flat price and says so.
+     * Quoting a fake duration here would be the silent wrong answer this
+     * file's own header warns about. */
+    return {
+      engine: 'lyria',
+      words,
+      audioSeconds: null,
+      renderSeconds: 45,
+      costUSD: LYRIA_USD_PER_SONG,
+      spoken: `About ${Math.round(LYRIA_USD_PER_SONG * 100)} cents for the song, whatever length it comes out — Lyria is priced per song, not per minute. Usually back in under a minute.`,
+    };
+  }
   if (engine === 'seed') {
     const costUSD = Math.round((seconds / 60) * SEED_USD_PER_MIN * 1000) / 1000;
     return {
@@ -777,9 +907,12 @@ function projectView(p) {
     sourceText: p.sourceText,
     script: p.script,
     screenplay: p.engine === 'scenema' ? speakToScreenplay(p.script || '') : p.script,
+    /* A Lyria row is a brief, not a script; there is no screenplay view of it. */
     /* Part 126 (carried ask): a library row says what made it and why, so an
      * old project explains itself instead of leaving her to guess. */
-    why: p.engine === 'seed'
+    why: p.engine === 'lyria'
+      ? 'Lyria — a song made from a brief' + ((p.options || {}).instrumental ? ', instrumental' : '') + ((p.options || {}).lyrics ? ', to your own lyrics' : '')
+      : p.engine === 'seed'
       ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
       : 'Scenema — one actor performing' + ((p.options || {}).reference_voice_url ? ', cloning a clip' : ', voice from the description') + (Number.isInteger(p.voiceSeed) ? `, voice ${p.voiceSeed}` : ''),
     readback: p.readback,
@@ -814,7 +947,7 @@ function titleFrom(script, fallback) {
 router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (req, res) => {
   try {
     const b = req.body || {};
-    const engine = b.engine === 'seed' ? 'seed' : 'scenema';
+    const engine = ['seed', 'lyria'].includes(b.engine) ? b.engine : 'scenema';
     const mode = b.mode === 'write' ? 'write' : 'format';
     const text = String(b.text || '').trim().slice(0, 6000);
     if (text.length < 3) {
@@ -932,7 +1065,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
 /* ============================ POST /render ================================ */
 router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (req, res) => {
   const b = req.body || {};
-  const engine = b.engine === 'seed' ? 'seed' : 'scenema';
+  const engine = ['seed', 'lyria'].includes(b.engine) ? b.engine : 'scenema';
   let script = String(b.script || '').trim();
   const mode = b.mode === 'advanced' ? 'advanced' : 'easy';
   if (!script) return res.status(400).json({ error: 'There is nothing to render yet.' });
@@ -958,16 +1091,20 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       compileNotes = compiled.notes || [];
     }
     script = sanitizeScenema(script).script;
-  } else {
+  } else if (engine === 'seed') {
     script = sanitizeSeed(script).script;
   }
+  /* Lyria's brief is prose a person wrote about music. There is no grammar to
+   * sanitize it into, so it goes to the engine as written. */
   /* allowLong: a Scenema script over the cap is not refused here any more —
    * the splitter below turns it into parts. Every other structural problem
    * still stops the render before it spends. */
   const problem =
-    engine === 'seed'
-      ? checkSeed(script)
-      : checkScenema(script, { allowLong: true, allowEmpty: b.preview === true });
+    engine === 'lyria'
+      ? checkMusic(script)
+      : engine === 'seed'
+        ? checkSeed(script)
+        : checkScenema(script, { allowLong: true, allowEmpty: b.preview === true });
   if (problem) return res.status(400).json({ error: problem });
 
   if (b.estimateOnly === true) {
@@ -990,6 +1127,11 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     if (engine === 'seed' && !opts.audio_urls?.length && opts.reference_voice_url) opts.audio_urls = [opts.reference_voice_url];
     if (engine === 'scenema' && !opts.reference_voice_url && opts.audio_urls?.length) opts.reference_voice_url = opts.audio_urls[0];
     if (b.background_sfx === true) opts.background_sfx = true;
+    /* Lyria's three knobs. It has no clips, no seed and no voice presets, so
+     * nothing else on this list means anything to it. */
+    if (b.instrumental === true) opts.instrumental = true;
+    if (typeof b.lyrics === 'string' && b.lyrics.trim()) opts.lyrics = b.lyrics.trim().slice(0, 4000);
+    if (b.keep_lyrics === false) opts.keep_lyrics = false;
     if (Number.isInteger(b.seed) && b.seed >= 0) opts.seed = b.seed;
     /* Scenema's pace: 1.5 is the ENGINE'S normal (its README: "accounts for
      * LTX's naturally slower speaking pace"); higher = slower. The first booth
@@ -1252,6 +1394,152 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
          * auditioned is the voice she gets. */
         voiceSeed: project.voiceSeed,
         estimate: merged,
+      });
+    }
+
+    /* ---- Lyria 3.5: synchronous music, so the answer carries the record ----
+     * Same shape as the Seed lane below -- one call, one asset, state straight
+     * to 'done'. The difference is that Google hands the audio back INLINE as
+     * base64 rather than as a URL, so this lane has to put the bytes into her
+     * own storage itself before anything can play them. */
+    if (engine === 'lyria') {
+      const key = lyriaKey();
+      if (!key) return res.status(503).json({ error: 'Lyria is not set up on this server yet.' });
+      if (typeof saveBufferToS3 !== 'function') {
+        return res.status(503).json({ error: 'File storage is not set up here, so there is nowhere to keep the song.' });
+      }
+      project.state = 'running';
+      await project.save();
+
+      let brief = script;
+      if (opts.instrumental) {
+        brief += '\n\n' + 'Instrumental only. No singing, no vocals, no spoken words.';
+      }
+      if (opts.lyrics) {
+        brief += '\n\n' + 'Sing these exact lyrics, unchanged:' + '\n' + opts.lyrics;
+      }
+
+      let r;
+      try {
+        r = await axios.post(
+          `${lyriaBase()}/v1beta/models/${LYRIA_MODEL}:generateContent`,
+          { contents: [{ role: 'user', parts: [{ text: brief }] }] },
+          { headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' }, timeout: 300000 },
+        );
+      } catch (e) {
+        const status = e?.response?.status;
+        const detail = e?.response?.data?.error?.message || e?.response?.data?.error || e.message;
+        /* The wall, named out loud. A 404 here is almost always the model id,
+         * and the id is the one thing about Lyria 3.5 that does not follow its
+         * own family's pattern -- so say the right string instead of handing
+         * back Google's "not found for API version v1beta". */
+        const msg = status === 404
+          ? `Google does not recognise the model id "${LYRIA_MODEL}". The right one is lyria-3.5, with a DOT - its sibling models use hyphens, which is the usual reason this fails. Fix KADE_LYRIA_MODEL, or clear it and let the default stand.`
+          : `Lyria could not make that: ${String(detail).slice(0, 200)}`;
+        project.state = 'failed';
+        project.lastError = String(msg).slice(0, 300);
+        await project.save();
+        logger.warn(`[soundbooth/render] lyria failed status=${status} model=${LYRIA_MODEL} user=${req.user.id}: ${String(detail).slice(0, 200)}`);
+        return res.status(status === 404 ? 500 : 502).json({ error: msg, projectId: String(project._id) });
+      }
+
+      const parts = r.data?.candidates?.[0]?.content?.parts || [];
+      const audioPart = parts.find((p) => p?.inlineData?.data);
+      const lyricText = parts
+        .filter((p) => typeof p?.text === 'string' && p.text.trim())
+        .map((p) => p.text.trim())
+        .join('\n\n')
+        .slice(0, 8000);
+      if (!audioPart) {
+        /* A refusal comes back as text with no audio, and that text is the
+         * useful part -- hand it over rather than saying "no clip". */
+        const why = lyricText ? ` It said: ${lyricText.slice(0, 200)}` : '';
+        project.state = 'failed';
+        project.lastError = ('Lyria returned no audio.' + why).slice(0, 300);
+        await project.save();
+        return res.status(502).json({
+          error: `Lyria did not make a recording that time.${why} Try rewording the brief.`,
+          projectId: String(project._id),
+        });
+      }
+
+      const mime = String(audioPart.inlineData.mimeType || 'audio/mpeg');
+      const ext = /wav/i.test(mime) ? 'wav' : /ogg/i.test(mime) ? 'ogg' : 'mp3';
+      const buffer = Buffer.from(audioPart.inlineData.data, 'base64');
+      if (!buffer || buffer.length < 1000) {
+        project.state = 'failed';
+        project.lastError = 'Lyria returned an empty recording.';
+        await project.save();
+        return res.status(502).json({ error: 'Lyria returned an empty recording. Try that again.', projectId: String(project._id) });
+      }
+      const fileName = `soundbooth-lyria-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      let url = null;
+      try {
+        url = await saveBufferToS3({ userId: String(req.user.id), buffer, fileName, basePath: 'audios' });
+      } catch (e) {
+        logger.error('[soundbooth/render] lyria save failed: ' + e.message);
+      }
+      if (!url) {
+        project.state = 'failed';
+        project.lastError = 'The song was made but it did not save.';
+        await project.save();
+        /* Said plainly, because this one already cost money. */
+        return res.status(502).json({
+          error: 'The song was made but it did not save, and that take is still billed. Try again before you rewrite the brief.',
+          projectId: String(project._id),
+        });
+      }
+
+      const costUSD = LYRIA_USD_PER_SONG;
+      logKadeUsage({
+        userId: req.user.id,
+        service: 'google_lyria',
+        quantity: 1,
+        unit: 'songs',
+        costUSD,
+        metadata: { model: LYRIA_MODEL, via: 'sound-booth', format: ext, instrumental: !!opts.instrumental },
+      }).catch(() => {});
+      let assetId = null;
+      try {
+        const asset = await logKadeAsset({
+          userId: req.user.id,
+          kind: 'audio',
+          service: 'google_lyria',
+          url,
+          prompt: script,
+          model: LYRIA_MODEL,
+          costUSD,
+          metadata: {
+            via: 'sound-booth',
+            projectId: String(project._id),
+            bytes: buffer.length,
+            instrumental: !!opts.instrumental,
+            lyrics: opts.keep_lyrics === false ? undefined : lyricText || undefined,
+          },
+        });
+        if (asset && asset._id) assetId = String(asset._id);
+      } catch (e) {
+        logger.warn('[soundbooth/render] lyria asset log failed (non-fatal): ' + e.message);
+      }
+      project.state = 'done';
+      project.costUSD = (project.costUSD || 0) + costUSD;
+      if (opts.keep_lyrics !== false && lyricText) project.readback = lyricText.slice(0, 600);
+      if (assetId) project.assets = [...(project.assets || []), assetId].slice(-20);
+      await project.save();
+      logger.info(`[soundbooth/render] lyria done ${buffer.length}B $${costUSD} project=${project._id} user=${req.user.id}`);
+      return res.json({
+        ok: true,
+        engine: 'lyria',
+        queued: false,
+        projectId: String(project._id),
+        assetId,
+        url,
+        bytes: buffer.length,
+        lyrics: opts.keep_lyrics === false ? null : lyricText || null,
+        costUSD,
+        spoken: lyricText
+          ? 'The song is made, and it wrote words for it. They are saved with the recording.'
+          : 'The song is made.',
       });
     }
 
@@ -1748,14 +2036,16 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, usdPerMin: SCENEMA_USD_PER_MIN },
       seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: SEED_USD_PER_MIN },
+      lyria: { configured: !!lyriaKey(), queued: false, usdPerSong: LYRIA_USD_PER_SONG, model: LYRIA_MODEL },
     },
     scriptDesk: !!(process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY),
     model: MODEL,
     moods: Object.entries(MOODS).map(([k, v]) => ({ key: k, label: v.label })),
-    limits: { scenemaChars: MAX_SCENEMA_CHARS, seedChars: MAX_SEED_CHARS, scriptsPerDay: SCRIPT_DAILY_CAP },
+    limits: { scenemaChars: MAX_SCENEMA_CHARS, seedChars: MAX_SEED_CHARS, lyriaChars: MAX_LYRIA_CHARS, scriptsPerDay: SCRIPT_DAILY_CAP },
   });
 });
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { checkScenema, checkSeed, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE };
+module.exports._internals = { checkScenema, checkSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE };
+

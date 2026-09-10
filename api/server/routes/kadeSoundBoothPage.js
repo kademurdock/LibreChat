@@ -192,7 +192,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 
     /* ---- engine cards + chooser, from the guide ---- */
     var engBox = document.getElementById('engines');
-    ['scenema','seed'].forEach(function(k){
+    ['scenema','seed','lyria'].forEach(function(k){
       var g = state.guide.engines[k];
       var b = document.createElement('button');
       b.type='button'; b.className='engcard'; b.setAttribute('aria-pressed', k===state.engine); b.dataset.engine=k;
@@ -205,7 +205,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     var ch = state.guide.chooser;
     document.querySelector('#chooser summary').textContent = ch.question;
     document.getElementById('chooserAnswer').textContent = ch.answer;
-    document.getElementById('chooserRules').innerHTML = ch.rules.map(function(r){ return '<li><strong>'+(r.pick==='seed'?'Seed Audio':'Scenema')+'</strong> when '+esc(r.when)+'.</li>'; }).join('');
+    var ENG_NAME = { seed:'Seed Audio', scenema:'Scenema', lyria:'Lyria' };
+    document.getElementById('chooserRules').innerHTML = ch.rules.map(function(r){ return '<li><strong>'+(ENG_NAME[r.pick]||r.pick)+'</strong> when '+esc(r.when)+'.</li>'; }).join('');
 
     document.getElementById('btnSuggest').onclick = async function(){
       var t = document.getElementById('text').value.trim();
@@ -266,7 +267,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
 
     /* ---- settings, from the guide: only what THIS engine has ---- */
-    var EASY = { scenema:['voice_description','gender','reference_voice_url'], seed:['voice','audio_urls'] };
+    /* Lyria has three knobs and they all belong on the easy side: there is
+     * nothing advanced about it, because the brief IS the control. */
+    var EASY = { scenema:['voice_description','gender','reference_voice_url'], seed:['voice','audio_urls'], lyria:['instrumental','lyrics','keep_lyrics'] };
     function renderSettings(){
       var g = state.guide.engines[state.engine];
       var box = document.getElementById('settings');
@@ -330,7 +333,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       });
       if(!b.gender) b.gender = 'female';
       var mood = document.getElementById('mood').value; if(mood) b.mood = mood;
-      if(state.clips.length){ if(state.engine==='seed') b.audio_urls = state.clips.slice(0,3).map(function(c){return c.url;}); else b.reference_voice_url = state.clips[0].url; }
+      /* Lyria clones nothing, so a clip left over from another engine must not
+       * ride along with a music render. */
+      if(state.clips.length && state.engine!=='lyria'){ if(state.engine==='seed') b.audio_urls = state.clips.slice(0,3).map(function(c){return c.url;}); else b.reference_voice_url = state.clips[0].url; }
       if(state.engine==='seed' && b.audio_quality===true) b.audio_quality='high';
       if(b.audio_quality===true) b.audio_quality='high';
       return b;
@@ -506,7 +511,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(!ps.length){ box.innerHTML = '<p class="muted">Nothing here yet.</p>'; return; }
       box.innerHTML = ps.map(function(p){
         var when = ''; try { when = new Date(p.updatedAt).toLocaleString('en-US', {month:'long', day:'numeric', hour:'numeric', minute:'2-digit'}); } catch(e){}
-        var engine = p.engine === 'seed' ? 'Seed Audio' : 'Scenema';
+        var engine = p.engine === 'lyria' ? 'Lyria' : p.engine === 'seed' ? 'Seed Audio' : 'Scenema';
         var stateWord = p.state === 'done' ? 'finished' : p.state;
         return '<div class="proj"><h3>' + esc(p.title) + '</h3>' +
           '<p class="hint">' + esc(p.why || engine) + ' \\u00b7 ' + esc(stateWord) + ' \\u00b7 ' + esc(when) + (p.costUSD ? ' \\u00b7 about ' + Math.max(1, Math.round(p.costUSD*100)) + ' cents' : '') + '</p>' +
@@ -533,7 +538,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           state.values={}; state.clips=[]; state.voiceSeed=p.voiceSeed; state.rerollVoice=false;
           if(p.options){
             Object.keys(p.options).forEach(function(k){ if(typeof p.options[k] !== 'object') state.values[k]=p.options[k]; });
-            var urls=p.engine==='seed' ? p.options.audio_urls||[] : (p.options.reference_voice_url?[p.options.reference_voice_url]:[]);
+            var urls=p.engine==='lyria' ? [] : p.engine==='seed' ? p.options.audio_urls||[] : (p.options.reference_voice_url?[p.options.reference_voice_url]:[]);
             state.clips=urls.map(function(url,i){return {url:url,name:'Saved reference '+(i+1)};});
           }
           invalidateQuote(); renderSettings();
@@ -570,3 +575,4 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 </body></html>`;
 
 module.exports = { soundBoothHtml };
+

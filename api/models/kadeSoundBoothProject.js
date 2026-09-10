@@ -14,11 +14,15 @@ const mongoose = require('mongoose');
  * can be replayed, re-rendered with a different voice, or downloaded without
  * hunting through the gallery.
  *
- * Two engines, one row shape:
+ * Three engines, one row shape:
  *   - engine 'scenema' : her own RunPod GPU, QUEUED. `jobs[]` carries the
  *                        bridge job ids; state moves queued -> running -> done.
  *   - engine 'seed'    : Seed Audio 1.0 on fal, SYNCHRONOUS. One render, one
  *                        asset, no job id -- `state` goes straight to 'done'.
+ *   - engine 'lyria'   : Lyria 3.5 on Google's Gemini API, SYNCHRONOUS. Music,
+ *                        not speech. Same shape as 'seed': one render, one
+ *                        asset, no job id. Its `options` carry no clips and no
+ *                        voice settings, because it has none.
  *
  * Collection name is `kadeplayground` deliberately: the plan that ordered this
  * work called the screen the Playground and specced the rows under that name.
@@ -29,7 +33,7 @@ const kadeSoundBoothProjectSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
     title: { type: String, default: 'Untitled' },
-    engine: { type: String, enum: ['scenema', 'seed'], default: 'scenema', index: true },
+    engine: { type: String, enum: ['scenema', 'seed', 'lyria'], default: 'scenema', index: true },
     /** 'easy' or 'advanced' -- which side of the screen she was on. Kept so the
      * app can reopen a project in the mode it was written in. */
     mode: { type: String, enum: ['easy', 'advanced'], default: 'easy' },
@@ -98,3 +102,4 @@ const KadeSoundBoothProject =
   mongoose.model('KadeSoundBoothProject', kadeSoundBoothProjectSchema, 'kadeplayground');
 
 module.exports = { KadeSoundBoothProject };
+
