@@ -174,6 +174,30 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
       <p id="descText"></p>
       <ol class="scenes" id="descScenes"></ol>
     </details>
+    <details id="recapWrap" hidden><summary>What just happened?</summary>
+      <p class="hint">Pauses the video and describes the last few minutes visually, so you can ask about it.</p>
+      <div class="row">
+        <label class="field" for="recapMins" style="margin:0">Last</label>
+        <select id="recapMins" style="width:auto"><option value="2">2 minutes</option><option value="5" selected>5 minutes</option><option value="10">10 minutes</option><option value="20">20 minutes</option></select>
+        <button class="act" id="recapBtn" type="button">Tell me what just happened</button>
+      </div>
+      <p id="recapStatus" class="hint"></p>
+      <p id="recapText"></p>
+      <ol class="scenes" id="recapScenes"></ol>
+      <div class="row">
+        <label class="field" for="askBox" style="margin:0">Ask</label>
+        <input type="text" id="askBox" style="flex:1 1 14rem" placeholder="Who was the man in the hat? What did the sign say?">
+        <button class="act" id="askBtn" type="button">Ask</button>
+      </div>
+      <p id="askAnswer"></p>
+    </details>
+    <details id="libWrap"><summary id="libSummary">The librarian's note</summary>
+      <p class="hint">A short note the library's librarian digs up on the web about what this is, who made it and when. Honest about guesses.</p>
+      <div class="row"><button class="act" id="libBtn" type="button">Ask the librarian to look this up</button><button class="act quiet" id="libReadBtn" type="button" hidden>Read the note</button></div>
+      <p id="libStatus" class="hint"></p>
+      <p id="libText"></p>
+      <ul class="plain" id="libSources"></ul>
+    </details>
 
     <label class="field" for="chapterSel">Chapter</label>
     <select id="chapterSel"></select>
@@ -659,6 +683,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     $('airplayBtn').hidden = !(window.WebKitPlaybackTargetAvailabilityEvent && fileAudio.webkitShowPlaybackTargetPicker);
     $('castBtn').hidden = !(fileAudio.remote && fileAudio.remote.prompt);
     renderDescription();
+    $('recapWrap').hidden = !/^video\\//.test(t.mime || '');
     saveProgress();
     if (andPlay) play();
   }
@@ -869,6 +894,67 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
   fileAudio.addEventListener('seeking', function(){ descSpoken = {}; var t = fileAudio.currentTime; var d = book && book.tracks[pos.s] && book.tracks[pos.s].description; if (d && d.scenes) d.scenes.forEach(function(sc, i){ if (sc.t < t - 1) descSpoken[i] = true; }); });
   $('descMode').onchange = function(){ say(this.checked ? 'Descriptions on: the video pauses to describe each scene.' : 'Descriptions off.'); };
 
+  /* what just happened? */
+  var recapTimer = null, lastRecap = null;
+  function showRecap(r){
+    lastRecap = r;
+    $('recapText').textContent = r.summary || '';
+    var ol = $('recapScenes'); ol.innerHTML = '';
+    (r.scenes || []).forEach(function(sc){ var li = document.createElement('li'); li.textContent = clock(sc.t) + ' — ' + sc.text; ol.appendChild(li); });
+    $('recapStatus').textContent = 'From ' + clock(r.from) + ' to ' + clock(r.to) + '.';
+  }
+  $('recapBtn').onclick = async function(){
+    if (!book || !isVideoTrack()) return;
+    var to = fileAudio.currentTime || 0; var mins = parseInt($('recapMins').value, 10) || 5;
+    if (to < 20) { say('Play a little first — there is nothing to recap yet.'); return; }
+    pause(); $('recapStatus').textContent = 'Looking back over the last ' + mins + ' minutes…'; say('Looking back over the last ' + mins + ' minutes. This takes a minute or two.');
+    try {
+      var r = await api('/book/' + book.id + '/recap/' + pos.s, { json: { to: to, minutes: mins } });
+      if (r.state === 'done') { showRecap(r.recap); speak(r.recap.summary); return; }
+      var from = r.from;
+      var poll = async function(){
+        try {
+          var j = await api('/book/' + book.id + '/recap/' + pos.s + '?from=' + from + '&to=' + to);
+          if (j.state === 'done' && j.recap) { showRecap(j.recap); say('Here is what happened.'); speak(j.recap.summary + ' ' + (j.recap.scenes || []).map(function(sc){ return sc.text; }).join(' ')); return; }
+          $('recapStatus').textContent = 'Working… ' + (j.progress || '');
+          recapTimer = setTimeout(poll, 6000);
+        } catch(e) { $('recapStatus').textContent = e.message; }
+      };
+      recapTimer = setTimeout(poll, 8000);
+    } catch(e) { say(e.message); $('recapStatus').textContent = e.message; }
+  };
+  $('askBtn').onclick = async function(){
+    var q = $('askBox').value.trim(); if (!q || !book) return;
+    try {
+      $('askAnswer').textContent = 'Thinking…';
+      var r = await api('/book/' + book.id + '/ask/' + pos.s, { json: { question: q, to: lastRecap ? lastRecap.to : (fileAudio.currentTime || 0), from: lastRecap ? lastRecap.from : 0 } });
+      $('askAnswer').textContent = r.answer; say(r.answer); speak(r.answer);
+    } catch(e) { $('askAnswer').textContent = e.message; say(e.message); }
+  };
+  $('askBox').addEventListener('keydown', function(ev){ if (ev.key === 'Enter') { ev.preventDefault(); $('askBtn').click(); } });
+
+  /* the librarian */
+  var libTimer = null;
+  function renderLibrarian(){
+    var l = book && book.librarian;
+    $('libText').textContent = ''; $('libSources').innerHTML = ''; $('libReadBtn').hidden = true;
+    if (l && l.state === 'done') {
+      $('libSummary').textContent = 'The librarian\\'s note' + (l.identified ? ': ' + l.identified : '');
+      $('libStatus').textContent = 'Confidence: ' + (l.confidence || 'low') + '.'; $('libText').textContent = l.note; $('libReadBtn').hidden = false; $('libBtn').textContent = 'Look it up again';
+      (l.sources || []).forEach(function(src){ var li = document.createElement('li'); var a = document.createElement('a'); a.href = src.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = src.title || src.url; li.appendChild(a); $('libSources').appendChild(li); });
+    } else if (l && l.state === 'working') { $('libStatus').textContent = 'The librarian is looking…'; libTimer = setTimeout(pollLibrarian, 6000); }
+    else { $('libSummary').textContent = 'The librarian\\'s note'; $('libStatus').textContent = l && l.state === 'failed' ? 'The last try failed: ' + (l.error || '') : ''; $('libBtn').textContent = 'Ask the librarian to look this up'; }
+  }
+  async function pollLibrarian(){
+    clearTimeout(libTimer);
+    try { var j = await api('/book/' + book.id + '/librarian'); book.librarian = j.librarian; renderLibrarian(); if (j.librarian && j.librarian.state === 'done') say('The librarian has a note.'); else if (j.librarian && j.librarian.state === 'working') libTimer = setTimeout(pollLibrarian, 6000); } catch(e) {}
+  }
+  $('libBtn').onclick = async function(){
+    if (!book) return;
+    try { var again = book.librarian && book.librarian.state === 'done' ? '?again=1' : ''; var j = await api('/book/' + book.id + '/librarian' + again, { method: 'POST' }); book.librarian = j.librarian; renderLibrarian(); if (j.librarian.state !== 'done') say('The librarian is looking it up.'); } catch(e) { say(e.message); }
+  };
+  $('libReadBtn').onclick = function(){ if (book && book.librarian) { pause(); speak(book.librarian.note); } };
+
   function renderOwner(){
     var ow = $('ownerWrap'); var bw = $('borrowWrap');
     if (book.mine) {
@@ -909,7 +995,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     else { $('voiceWrap').classList.remove('hidden'); await loadVoices(); pos = { s: p.s || 0, c: p.c || 0 }; showText(pos); }
     sel.value = String(pos.s);
     sel.onchange = function(){ };
-    renderBookmarks(); renderSkipped(); renderOwner(); updateSession();
+    renderBookmarks(); renderSkipped(); renderOwner(); renderLibrarian(); updateSession();
     var resume = (pos.s || pos.c || p.pos) && !p.finished;
     say((resume ? 'Resuming ' : 'Opened ') + book.title + '. ' + (isAudio() ? 'Part ' : 'Chapter ') + (pos.s + 1) + ' of ' + list.length + (chapterTitle(pos.s) ? ': ' + chapterTitle(pos.s) : '') + '. Press Play.');
     $('playBtn').focus();

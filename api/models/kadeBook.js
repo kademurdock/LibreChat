@@ -68,6 +68,8 @@ const track = {
     error: { type: String, default: '' },
     at: { type: Date },
   },
+  /** "What just happened?" — the last few ranged descriptions, newest last. */
+  recaps: { type: [{ from: Number, to: Number, summary: String, scenes: [{ t: Number, text: String }], costUSD: Number, at: Date }], default: [] },
 };
 
 const kadeBookSchema = new mongoose.Schema(
@@ -83,6 +85,18 @@ const kadeBookSchema = new mongoose.Schema(
     originalPath: { type: String, default: '' },
     meta: { type: mongoose.Schema.Types.Mixed, default: {} },
     tags: { type: [String], default: [] },
+    /** The librarian's note: web-dug, honest about certainty, with sources. */
+    librarian: {
+      note: { type: String, default: '' },
+      confidence: { type: String, default: '' },
+      identified: { type: String, default: '' },
+      sources: { type: [{ title: String, url: String }], default: [] },
+      model: { type: String, default: '' },
+      costUSD: { type: Number, default: 0 },
+      state: { type: String, default: '' }, // '' | working | done | failed
+      error: { type: String, default: '' },
+      at: { type: Date },
+    },
     category: { type: String, enum: CATEGORIES, default: 'book', index: true },
     /** Audio items: what it is, in the donor's words ("The 1986 Disney
      * descriptive VHS", "Grandma's cassette, side A is Christmas 1994"). */

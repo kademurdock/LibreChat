@@ -361,12 +361,14 @@ router.get('/book/:id', requireJwtAuth, async (req, res) => {
         try { url = await signGet(t.key, t.mime); } catch (e) { logger.warn(`[reading-room/book] sign failed for ${t.key}: ${e.message}`); }
         const d = t.description || {};
         return { s: i, title: t.title || `Part ${i + 1}`, seconds: t.seconds || 0, bytes: t.bytes || 0, mime: t.mime, url,
+          recaps: (t.recaps || []).map((r) => ({ from: r.from, to: r.to, summary: r.summary, scenes: r.scenes || [], at: r.at })),
           description: d.state ? { state: d.state, summary: d.summary || '', scenes: d.scenes || [], model: d.model || '', costUSD: d.costUSD || 0, error: d.error || '', at: d.at } : null };
       }));
     }
     res.json({
       ...summary(book, progress),
       tracks,
+      librarian: book.librarian && book.librarian.state ? book.librarian : null,
       jacket: book.jacket,
       chapters: (book.sections || []).map((s, i) => ({ s: i, title: s.title, chunks: s.chunkCount, chars: s.chars, kind: s.kind })),
       skipped: (book.skipped || []).map((s, i) => ({ k: i, title: s.title, reason: s.reason, chunks: s.chunkCount, chars: s.chars })),
@@ -835,12 +837,12 @@ router.post('/archive/done', requireJwtAuth, express.json({ limit: '512kb' }), a
 /** Browse the archive like a drive: folders under `path`, items at `path`. */
 router.get('/archive', requireJwtAuth, async (req, res) => {
   try {
-    if (libraryHiddenFrom(req)) return res.json({ path: '', folders: [], items: [], total: 0 });
+    const hidden = libraryHiddenFrom(req); // the reviewer seat sees only its own uploads
     const child = await isChild(req);
     const at = cleanPath(req.query.path || '');
     const page = clampInt(req.query.page, 0, 100000, 0);
     const limit = clampInt(req.query.limit, 1, 200, 60);
-    const base = { state: 'ready', path: { $ne: '' }, $or: [{ shared: true }, { owner: req.user.id }], ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
+    const base = { state: 'ready', path: { $ne: '' }, $or: hidden ? [{ owner: req.user.id }] : [{ shared: true }, { owner: req.user.id }], ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
     const prefix = at ? at + '/' : '';
     const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const [folders, items, total] = await Promise.all([
@@ -865,11 +867,11 @@ router.get('/archive', requireJwtAuth, async (req, res) => {
 
 router.get('/search', requireJwtAuth, async (req, res) => {
   try {
-    if (libraryHiddenFrom(req)) return res.json({ items: [] });
+    const hidden = libraryHiddenFrom(req);
     const child = await isChild(req);
     const q = String(req.query.q || '').trim().slice(0, 120);
     if (!q) return res.json({ items: [] });
-    const base = { state: 'ready', $or: [{ shared: true }, { owner: req.user.id }], ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
+    const base = { state: 'ready', $or: hidden ? [{ owner: req.user.id }] : [{ shared: true }, { owner: req.user.id }], ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
     const words = q.split(/\s+/).filter(Boolean).map((w) => new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
     const items = await KadeBook.find({ ...base, $and: words.map((re) => ({ $or: [{ title: re }, { author: re }, { path: re }, { tags: re }] })) }).sort({ title: 1 }).limit(100).lean();
     res.json({ items: items.map((b) => summary(b, null)), q });
@@ -938,6 +940,110 @@ router.get('/book/:id/describe/:t', requireJwtAuth, async (req, res) => {
     res.json({ ok: true, state: d.state || '', progress: describer.progressOf(String(book._id), t), description: d.state ? d : null });
   } catch (e) {
     res.status(500).json({ error: 'Could not read the description.' });
+  }
+});
+
+
+/* ── THE LIBRARIAN and "what just happened?" ────────────────────────────── */
+const librarian = require('./kadeReadingRoomLibrarian');
+
+router.post('/book/:id/librarian', requireJwtAuth, async (req, res) => {
+  try {
+    const book = await openBook(req, req.params.id);
+    if (!book) return res.status(404).json({ error: 'No such item.' });
+    const cur = book.librarian || {};
+    if (cur.state === 'done' && req.query.again !== '1') return res.json({ ok: true, librarian: cur });
+    if (cur.state === 'working') return res.json({ ok: true, librarian: cur });
+    await KadeBook.updateOne({ _id: book._id }, { $set: { 'librarian.state': 'working', 'librarian.error': '' } });
+    const bookId = String(book._id);
+    setImmediate(async () => {
+      try {
+        const notes = await librarian.librarianNotes(book);
+        await KadeBook.updateOne({ _id: bookId }, { $set: { librarian: { ...notes, state: 'done', error: '' } } });
+        logKadeUsage({ userId: req.user.id, service: 'describe', quantity: 1, unit: 'items', costUSD: notes.costUSD, metadata: { source: 'librarian', book: bookId, model: notes.model, searches: notes.searches } });
+        logger.info(`[library/librarian] "${book.title}": ${notes.confidence} — ${notes.identified || '(unidentified)'} $${notes.costUSD.toFixed(4)}`);
+      } catch (e) {
+        logger.warn(`[library/librarian] "${book.title}" FAILED: ${e.message}`);
+        await KadeBook.updateOne({ _id: bookId }, { $set: { 'librarian.state': 'failed', 'librarian.error': String(e.message).slice(0, 300), 'librarian.at': new Date() } }).catch(() => {});
+      }
+    });
+    res.json({ ok: true, librarian: { state: 'working' } });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'The librarian could not start.' });
+  }
+});
+
+router.get('/book/:id/librarian', requireJwtAuth, async (req, res) => {
+  try {
+    const book = await openBook(req, req.params.id);
+    if (!book) return res.status(404).json({ error: 'No such item.' });
+    res.json({ ok: true, librarian: book.librarian || {} });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not read the note.' });
+  }
+});
+
+/** A recap of the last N minutes: queued like a description, cached on the track. */
+router.post('/book/:id/recap/:t', requireJwtAuth, express.json({ limit: '4kb' }), async (req, res) => {
+  try {
+    const book = await openBook(req, req.params.id);
+    const t = clampInt(req.params.t, 0, 10000, 0);
+    if (!book || !isMedia(book) || !(book.tracks || [])[t]) return res.status(404).json({ error: 'No such recording.' });
+    const tr = book.tracks[t];
+    if (!/^video\//.test(tr.mime || '')) return res.status(400).json({ error: 'That is a sound recording — nothing to see.' });
+    const to = Math.max(1, parseFloat((req.body || {}).to) || 0);
+    const minutes = Math.min(30, Math.max(1, parseFloat((req.body || {}).minutes) || 5));
+    const from = Math.max(0, to - minutes * 60);
+    const cached = (tr.recaps || []).find((r) => Math.abs(r.to - to) < 20 && Math.abs(r.from - from) < 20);
+    if (cached) return res.json({ ok: true, state: 'done', recap: cached });
+    const signedUrl = await signGet(tr.key, tr.mime);
+    const bookId = String(book._id);
+    const position = describer.enqueue({
+      bookId, t, from, to, userId: req.user.id, signedUrl, mime: tr.mime, title: book.title, category: book.category,
+      onDone: async (err, result) => {
+        if (err) return;
+        const recap = { from, to, summary: result.summary, scenes: result.scenes, costUSD: result.costUSD, at: new Date() };
+        await KadeBook.updateOne({ _id: bookId }, { $push: { [`tracks.${t}.recaps`]: { $each: [recap], $slice: -5 } } });
+      },
+    });
+    res.json({ ok: true, state: 'working', position, from, to });
+  } catch (e) {
+    logger.error('[library/recap] error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not start the recap.' });
+  }
+});
+
+router.get('/book/:id/recap/:t', requireJwtAuth, async (req, res) => {
+  try {
+    const book = await openBook(req, req.params.id);
+    const t = clampInt(req.params.t, 0, 10000, 0);
+    if (!book || !isMedia(book) || !(book.tracks || [])[t]) return res.status(404).json({ error: 'No such recording.' });
+    const to = parseFloat(req.query.to) || 0;
+    const from = parseFloat(req.query.from) || 0;
+    const recaps = book.tracks[t].recaps || [];
+    const hit = recaps.find((r) => Math.abs(r.to - to) < 20 && Math.abs(r.from - from) < 20);
+    res.json({ ok: true, state: hit ? 'done' : (describer.progressOf(String(book._id), t) ? 'working' : ''), progress: describer.progressOf(String(book._id), t), recap: hit || null });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not read the recap.' });
+  }
+});
+
+router.post('/book/:id/ask/:t', requireJwtAuth, express.json({ limit: '8kb' }), async (req, res) => {
+  try {
+    const book = await openBook(req, req.params.id);
+    const t = clampInt(req.params.t, 0, 10000, 0);
+    if (!book) return res.status(404).json({ error: 'No such item.' });
+    const tr = isMedia(book) ? (book.tracks || [])[t] : null;
+    const b = req.body || {};
+    const question = String(b.question || '').trim();
+    if (!question) return res.status(400).json({ error: 'Ask something first.' });
+    const to = parseFloat(b.to) || 0, from = parseFloat(b.from) || 0;
+    const recap = tr ? (tr.recaps || []).find((r) => Math.abs(r.to - to) < 20 && Math.abs(r.from - from) < 20) || (tr.recaps || [])[tr.recaps.length - 1] : null;
+    const r = await librarian.ask({ item: book, track: tr, question, recap, fromSeconds: recap ? recap.from : from, toSeconds: to || (recap ? recap.to : 0) });
+    logKadeUsage({ userId: req.user.id, service: 'describe', quantity: 1, unit: 'items', costUSD: r.costUSD, metadata: { source: 'ask', book: String(book._id), model: r.model } });
+    res.json({ ok: true, answer: r.answer });
+  } catch (e) {
+    res.status(400).json({ error: e.message || 'Could not answer.' });
   }
 });
 

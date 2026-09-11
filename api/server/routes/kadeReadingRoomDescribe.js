@@ -120,7 +120,7 @@ function parseScenes(text) {
 }
 
 /** The whole job: download → probe → shrink+segment → describe → join. */
-async function describeTrack({ signedUrl, mime, title, category, onProgress }) {
+async function describeTrack({ signedUrl, mime, title, category, onProgress, from = 0, to = 0 }) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'library-desc-'));
   const inFile = path.join(dir, 'in.bin');
   try {
@@ -129,14 +129,20 @@ async function describeTrack({ signedUrl, mime, title, category, onProgress }) {
     await new Promise((res, rej) => { const w = fsSync.createWriteStream(inFile); resp.data.pipe(w); w.on('finish', res); w.on('error', rej); resp.data.on('error', rej); });
     const total = await probeDuration(inFile);
     if (!total) throw new Error('Could not read the video (ffprobe found no duration).');
-    if (total > MAX_MINUTES() * 60) throw new Error(`That runs ${Math.round(total / 60)} minutes; the cap is ${MAX_MINUTES()} minutes a track.`);
+    // a RANGE ("what happened in the last five minutes") describes only that window
+    const winStart = Math.max(0, Math.min(from || 0, total));
+    const winEnd = to > 0 ? Math.max(winStart, Math.min(to, total)) : total;
+    const span = winEnd - winStart;
+    if (!(to > 0) && total > MAX_MINUTES() * 60) throw new Error(`That runs ${Math.round(total / 60)} minutes; the cap is ${MAX_MINUTES()} minutes a track.`);
+    if (to > 0 && span > 30 * 60) throw new Error('A recap covers at most thirty minutes at a time.');
     const seg = SEGMENT_SECONDS();
-    const segments = Math.ceil(total / seg);
-    const out = { summary: '', scenes: [], costUSD: 0, frames: 0, model: MODEL(), segments };
+    const segments = Math.max(1, Math.ceil(span / seg));
+    const out = { summary: '', scenes: [], costUSD: 0, frames: 0, model: MODEL(), segments, from: winStart, to: winEnd };
     const summaries = [];
     for (let i = 0; i < segments; i++) {
-      const start = i * seg;
-      const len = Math.min(seg, total - start);
+      const start = winStart + i * seg;
+      const len = Math.min(seg, winEnd - start);
+      if (len <= 0) break;
       onProgress && onProgress(`segment ${i + 1} of ${segments}`);
       const small = path.join(dir, `seg${i}.mp4`);
       // 360p, 6 fps, mono 32 kbps AAC: a 15-minute piece is ~15-25 MB.
@@ -152,7 +158,7 @@ async function describeTrack({ signedUrl, mime, title, category, onProgress }) {
         buf = await fs.readFile(smaller);
         if (buf.length > MODEL_BYTES_CAP) throw new Error('Even shrunk, a segment is too big for the model. Lower KADE_DESCRIBE_SEGMENT_SECONDS.');
       }
-      const r = await askModel(buf, 'video/mp4', INSTRUCTION(start, total, title, category));
+      const r = await askModel(buf, 'video/mp4', INSTRUCTION(start, total, title, category) + (to > 0 ? ' This is a RECAP of the stretch a viewer just watched; be complete about what happened in it.' : ''));
       const parsed = parseScenes(r.text);
       out.costUSD += r.costUSD;
       out.frames += Math.round(len * 6);
@@ -186,8 +192,8 @@ async function drain() {
         if (spent >= DAILY_USD()) throw new Error(`Today's description allowance ($${DAILY_USD().toFixed(2)}) is used up; it resets at midnight UTC.`);
         const result = await describeTrack({ ...job, onProgress: (p) => { progress[k] = p; } });
         await job.onDone(null, result);
-        logKadeUsage({ userId: job.userId, service: 'describe', quantity: 1, unit: 'items', costUSD: result.costUSD, metadata: { source: 'library', book: job.bookId, track: job.t, model: result.model, seconds: result.seconds, segments: result.segments } });
-        logger.info(`[library/describe] "${job.title}" track ${job.t}: ${result.scenes.length} scenes, ${Math.round(result.seconds)} s, ${result.segments} segment(s), $${result.costUSD.toFixed(4)}`);
+        logKadeUsage({ userId: job.userId, service: 'describe', quantity: 1, unit: 'items', costUSD: result.costUSD, metadata: { source: 'library', book: job.bookId, track: job.t, model: result.model, seconds: result.seconds, segments: result.segments, recap: job.to > 0 ? `${Math.round(job.from)}-${Math.round(job.to)}` : '' } });
+        logger.info(`[library/describe] "${job.title}" track ${job.t}${job.to > 0 ? ` recap ${Math.round(job.from)}-${Math.round(job.to)}s` : ''}: ${result.scenes.length} scenes, ${Math.round(result.seconds)} s, ${result.segments} segment(s), $${result.costUSD.toFixed(4)}`);
       } catch (e) {
         logger.warn(`[library/describe] "${job.title}" track ${job.t} FAILED: ${e.message} ${String(e.stderr || '').slice(0, 300)}`);
         await job.onDone(e, null).catch(() => {});
@@ -202,7 +208,7 @@ async function drain() {
 
 function enqueue(job) {
   if (!ENABLED()) throw new Error('Video descriptions are switched off on this server.');
-  if (queue.some((j) => j.bookId === job.bookId && j.t === job.t)) return queue.length;
+  if (queue.some((j) => j.bookId === job.bookId && j.t === job.t && (j.to || 0) === (job.to || 0) && (j.from || 0) === (job.from || 0))) return queue.length;
   queue.push(job);
   progress[`${job.bookId}:${job.t}`] = `waiting (${queue.length} ahead)`;
   setImmediate(drain);
