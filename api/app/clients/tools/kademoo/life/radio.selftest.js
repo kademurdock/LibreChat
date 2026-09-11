@@ -118,6 +118,16 @@ test('the daily allowance: dollars and renders both cap Seed, and defaults are w
   assert.equal(r.seedAllowed({ renders: 2, spentUSD: 0.95 }, 0.3), true);
 });
 
+test('library is the default engine; nothing is written on its own; the shelf rotates by day', () => {
+  const r = loadRadio();
+  assert.equal(r.ENGINE(), 'library');
+  assert.equal(r.AUTO_WRITES(), false);
+  assert.equal(r.ensureCurrent('tick'), null, 'library mode never starts a writer from the tick');
+  const a = r.dayIndex('2026-09-11') % 3, b = r.dayIndex('2026-09-12') % 3, c = r.dayIndex('2026-09-13') % 3;
+  assert.ok([a, b, c].every((x) => x >= 0 && x < 3));
+  assert.ok(new Set([a, b, c]).size >= 2, 'three days pick at least two different blocks from a shelf of three');
+});
+
 test('a child seat\'s corner, fists and romance answer in-world and never say restricted', () => {
   const { KID_QUIET, kidQuietLine } = loadKidQuiet();
   for (const v of ['corner', 'use', 'pickpocket', 'fight', 'flirt', 'kiss', 'date', 'propose']) {

@@ -24,12 +24,18 @@
  *             transcript rides beside it so text-only clients (the native
  *             World screen, the chat tool) read the same show.
  *
- * MONEY, stated plainly: Seed is $0.1875 a minute, so a 60–90 second block
- * is 19–28 cents. The daily allowance is REVERIE_RADIO_DAILY_USD (default
- * 1.25) and REVERIE_RADIO_DAILY_CAP renders (default 5); a block is only
- * written when somebody is actually in the city, at most once per slot per
- * day, so a quiet day costs nothing. REVERIE_RADIO=0 turns the whole lane
- * off and `radio` falls back to the authored lines it always had.
+ * MONEY, stated plainly — and her word the same afternoon: "I don't like
+ * the idea of seed audio having to spend money every day generating things
+ * for the game … there could be a bunch of cycled recordings." So the
+ * default engine is `library`: the Band plays from a SHELF of recorded
+ * blocks, one per slot chosen by the day so it rotates, and NOTHING is
+ * rendered on its own. A new recording is made only when a wizard says
+ * `radio make <slot>` (about 30 cents on Seed, stated back before it runs)
+ * or when REVERIE_RADIO_ENGINE is set to `seed` / `inworld`, which restores
+ * the once-per-slot-per-day writer under the daily allowance
+ * (REVERIE_RADIO_DAILY_USD, default 1.25; REVERIE_RADIO_DAILY_CAP, default
+ * 5). REVERIE_RADIO=0 turns the whole lane off and `radio` falls back to the
+ * authored lines it always had.
  *
  * VEIL AND KIDS: the writer is told the city's laws (nobody dies, the bell is
  * late, the freight is 11:40, never ask soul or synth) and that the audience
@@ -42,6 +48,12 @@ const { MooRadio } = require('~/models/kadeMooRadio');
 const reverie = require('../reverie');
 
 const ENABLED = () => process.env.REVERIE_RADIO !== '0';
+/* library (default) | seed | inworld — see the money note above */
+const ENGINE = () => {
+  const e = String(process.env.REVERIE_RADIO_ENGINE || 'library').toLowerCase();
+  return e === 'seed' || e === 'inworld' ? e : 'library';
+};
+const AUTO_WRITES = () => ENGINE() !== 'library';
 const DAILY_USD = () => Number(process.env.REVERIE_RADIO_DAILY_USD || 1.25);
 const DAILY_CAP = () => Number(process.env.REVERIE_RADIO_DAILY_CAP || 5);
 const SEED_USD_PER_MIN = 0.1875; // fal's listed price, same constant the Sound Booth carries
@@ -317,28 +329,57 @@ function seedAllowed(props, estimateUSD) {
 
 /* ── THE LOOP — is there a block for this slot? make one, in the background ── */
 let _inflight = null;
+/** The shelf: every finished block for a slot, oldest first. */
+async function shelf(slotName) {
+  return MooRadio.find(slotName ? { state: 'done', slot: slotName } : { state: 'done' }).sort({ at: 1 }).lean();
+}
+function dayIndex(dayKey) {
+  let h = 0;
+  for (const ch of String(dayKey)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h;
+}
 async function current() {
   const clock = worldClock();
   const slot = slotFor(clock);
   const key = slotKey(clock, slot);
   const seg = await MooRadio.findOne({ slotKey: key, state: 'done' }).lean();
   if (seg) return { seg, slot, key, fresh: true };
+  if (ENGINE() === 'library') {
+    /* the shelf for this slot, one block per day so it rotates; any slot's
+     * shelf if this one is still empty */
+    let rows = await shelf(slot.key);
+    let own = true;
+    if (!rows.length) { rows = await shelf(null); own = false; }
+    if (!rows.length) return { seg: null, slot, key, fresh: false, library: true };
+    const pickIx = dayIndex(clock.dayKey) % rows.length;
+    return { seg: rows[pickIx], slot, key, fresh: own, library: true, shelfSize: rows.length };
+  }
   /* the most recent block of any slot, so the dial is never dead */
   const prev = await MooRadio.findOne({ state: 'done' }).sort({ at: -1 }).lean();
   return { seg: prev, slot, key, fresh: false };
 }
 
-/** Called from the world tick and from `radio`; never awaited by a turn. */
+/** Called from the world tick and from `radio`; never awaited by a turn.
+ *  In library mode this does nothing — a block is made only by makeBlock(). */
 function ensureCurrent(reason = 'tick') {
+  if (!ENABLED() || !AUTO_WRITES()) return null;
+  return makeBlock(null, reason);
+}
+
+/** Write and perform one block. `slotName` null = the slot on the clock now.
+ *  Returns the shared promise; the caller never has to await it. A wizard's
+ *  `@radio make` lands here with reason 'wizard' and may add a second block
+ *  to a slot that already has one today (the shelf is the point). */
+function makeBlock(slotName, reason = 'tick') {
   if (!ENABLED()) return null;
   if (_inflight) return _inflight;
   _inflight = (async () => {
     try {
       const clock = worldClock();
-      const slot = slotFor(clock);
-      const key = slotKey(clock, slot);
-      if (await MooRadio.exists({ slotKey: key, state: { $in: ['done', 'writing'] }, at: { $gte: new Date(Date.now() - 20 * 60000) } })) return;
-      if (await MooRadio.exists({ slotKey: key, state: 'done' })) return;
+      const slot = slotName ? SLOTS.find((s) => s.key === slotName) || slotFor(clock) : slotFor(clock);
+      const key = reason === 'wizard' ? `${slotKey(clock, slot)}_${Date.now().toString(36)}` : slotKey(clock, slot);
+      if (reason !== 'wizard' && await MooRadio.exists({ slotKey: key, state: { $in: ['done', 'writing'] }, at: { $gte: new Date(Date.now() - 20 * 60000) } })) return;
+      if (reason !== 'wizard' && await MooRadio.exists({ slotKey: key, state: 'done' })) return;
       const props = await budgetDoc();
       if (props.renders >= DAILY_CAP()) { logger.info(`[radio] daily cap reached (${props.renders}/${DAILY_CAP()}), no new block`); return; }
       const claimed = await MooRadio.updateOne({ slotKey: key }, { $setOnInsert: { slotKey: key, slot: slot.key, program: slot.program, host: HOSTS[slot.host].name, state: 'writing', at: new Date(), dayKey: clock.dayKey } }, { upsert: true });
@@ -354,9 +395,9 @@ function ensureCurrent(reason = 'tick') {
       let perf = null;
       let firstError = null;
       const estimate = 0.3;
-      if (process.env.REVERIE_RADIO_ENGINE !== 'inworld' && seedAllowed(props, estimate)) {
+      if (ENGINE() !== 'inworld' && seedAllowed(props, estimate)) {
         try { perf = await performSeed(script); } catch (e) { firstError = e; logger.warn(`[radio] Seed Audio failed for ${key}: ${e?.response?.data?.detail || e.message}`); }
-      } else if (process.env.REVERIE_RADIO_ENGINE !== 'inworld') {
+      } else if (ENGINE() !== 'inworld') {
         logger.info(`[radio] Seed allowance spent for today ($${props.spentUSD.toFixed(2)} of $${DAILY_USD()}), the proxy performs ${key}`);
       }
       if (!perf) {
@@ -412,18 +453,31 @@ async function presign(url) {
 /** { intro, transcriptLines, radio } or null when the lane is off/empty. */
 async function tuneIn() {
   if (!ENABLED()) return null;
-  const { seg, slot, fresh } = await current();
-  if (!fresh) ensureCurrent('tune-in');
+  const { seg, slot, fresh, library, shelfSize } = await current();
+  if (!fresh && !library) ensureCurrent('tune-in');
   if (!seg) return null;
   const secs = Math.round(seg.seconds || 0);
-  const when = fresh ? '' : ' (from earlier — a new block is being written now)';
+  const when = library
+    ? (fresh ? '' : ` (a ${SLOTS.find((s) => s.key === seg.slot)?.program || 'block'} recording, playing in this slot until the shelf has one of its own)`)
+    : (fresh ? '' : ' (from earlier — a new block is being written now)');
   const intro = `The dial warms. On the Band, ${seg.program} with ${seg.host}: “${seg.title}”${when}, about ${secs} seconds. Say "radio words" to read it, "radio off" to turn it down.`;
   const transcriptLines = (seg.transcript || []).map((l) => `${l.speaker}: ${l.text}`);
   return {
     intro,
     transcriptLines,
-    radio: { url: await presign(seg.url), title: seg.title, program: seg.program, host: seg.host, seconds: secs, engine: seg.engine, transcript: seg.transcript || [], slotKey: seg.slotKey, fresh },
+    radio: { url: await presign(seg.url), title: seg.title, program: seg.program, host: seg.host, seconds: secs, engine: seg.engine, transcript: seg.transcript || [], slotKey: seg.slotKey, fresh: !!fresh, library: !!library, shelfSize: shelfSize || null },
   };
 }
 
-module.exports = { HOSTS, SLOTS, RADIO_ROOMS, slotFor, slotKey, shiftDay, writerPrompt, parseScript, seedScript, sceneScript, seedAllowed, ingredients, writeScript, ensureCurrent, current, tuneIn, ENABLED };
+/** What the shelf holds, for `radio bank` and the wizard. */
+async function bankStatus() {
+  const rows = await shelf(null);
+  const bySlot = {};
+  for (const s of SLOTS) bySlot[s.key] = rows.filter((r) => r.slot === s.key).length;
+  let spent = 0;
+  for (const r of rows) spent += Number(r.costUSD) || 0;
+  const props = await budgetDoc();
+  return { total: rows.length, bySlot, spentUSD: Math.round(spent * 1000) / 1000, today: { spentUSD: props.spentUSD, renders: props.renders }, engine: ENGINE(), making: !!_inflight };
+}
+
+module.exports = { HOSTS, SLOTS, RADIO_ROOMS, slotFor, slotKey, shiftDay, dayIndex, writerPrompt, parseScript, seedScript, sceneScript, seedAllowed, ingredients, writeScript, ensureCurrent, makeBlock, current, tuneIn, bankStatus, ENABLED, ENGINE, AUTO_WRITES };

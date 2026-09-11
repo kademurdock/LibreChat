@@ -414,6 +414,24 @@ act({
      * "radio words" reads the block's transcript into the log. */
     if (/^(off|stop|down|quiet)$/.test(sub)) { ctx.say('You turn the dial down. The room comes back.'); return ctx.ok({ radioStop: true }); }
     const radio = require('./radio');
+    /* Part 180.1 (her word: no daily Seed spend): the shelf, and the one
+     * way a new recording gets made — a wizard asks for it by name. */
+    if (/^(bank|shelf|library)$/.test(sub)) {
+      const b = await radio.bankStatus();
+      ctx.say(`The Band's shelf: ${b.total} recorded block${b.total === 1 ? '' : 's'} — ${radio.SLOTS.map((s) => `${s.program} ${b.bySlot[s.key]}`).join(', ')}. Spent so far $${b.spentUSD.toFixed(2)}; today $${Number(b.today.spentUSD || 0).toFixed(2)} over ${b.today.renders || 0} render${b.today.renders === 1 ? '' : 's'}. Engine: ${b.engine}${b.engine === 'library' ? ' (nothing is recorded on its own; a wizard says "radio make <morning|day|evening|night>")' : ''}${b.making ? '. A block is being made right now.' : '.'}`);
+      return ctx.ok();
+    }
+    const make = /^make(?:\s+(morning|day|evening|night))?$/.exec(sub);
+    if (make) {
+      if (!ctx.isWizard) return ctx.fail('Only the Founder can ask the Band for a new recording. "radio bank" tells you what is on the shelf.');
+      if (!radio.ENABLED()) return ctx.fail('The radio lane is switched off (REVERIE_RADIO=0).');
+      const slotName = make[1] || radio.slotFor(require('./ctx').worldClock()).key;
+      const program = radio.SLOTS.find((s) => s.key === slotName).program;
+      const p = radio.makeBlock(slotName, 'wizard');
+      if (!p) return ctx.fail('The Band is already making a block — give it two minutes.');
+      ctx.say(`The Band is writing a new ${program} block now: one small model call, then Seed Audio (about 30 cents for 60–90 seconds; the proxy's voices if Seed refuses or the day's allowance is spent). It lands on the shelf in a minute or two — "radio bank" shows it, "radio" plays it.`);
+      return ctx.ok({ kinds: [...ctx.kinds, 'radio'] });
+    }
     let tuned = null;
     try { tuned = await radio.tuneIn(); } catch (e) { require('./ctx').logger.warn('[radio] tune-in failed: ' + (e && e.message)); }
     ctx.need({ fun: 8, company: 3 });
@@ -428,14 +446,21 @@ act({
       ctx.say(tuned.intro.replace(/ Say "radio words".*$/, ''), ...tuned.transcriptLines);
       return ctx.ok({ kinds: [...ctx.kinds, 'radio'] });
     }
+    if (radio.ENABLED() && !radio.AUTO_WRITES()) {
+      /* an empty shelf in library mode: the authored lines, and no promise of a block */
+      const c0 = worldClock();
+      const slot0 = c0.h < 6 || c0.h >= 23 ? 'night' : c0.h < 11 ? 'morning' : c0.h < 17 ? 'day' : 'evening';
+      ctx.say(`The dial warms. The Band: ${pick(DJ[slot0])} Then ${pick(SONGS)}, and the room feels less empty.`);
+      return ctx.ok({ kinds: [...ctx.kinds, 'radio'] });
+    }
     /* the authored lines, as before, while the first block is being written */
     const c = worldClock();
     const slot = c.h < 6 || c.h >= 23 ? 'night' : c.h < 11 ? 'morning' : c.h < 17 ? 'day' : 'evening';
     const rumor = await MooRumor.findOne({ heat: { $gte: 3 }, kind: { $ne: 'vice' } }).sort({ at: -1 }).lean();
-    ctx.say(`The dial warms. The Band: ${pick(DJ[slot])}${rumor ? ` "And word around town: ${rumor.text}. You heard it here, or you heard it at Levi’s, same thing."` : ''} Then ${pick(SONGS)}, and the room feels less empty.${radio.ENABLED() ? ' (A new block is being written — tune in again in a minute.)' : ''}`);
+    ctx.say(`The dial warms. The Band: ${pick(DJ[slot])}${rumor ? ` "And word around town: ${rumor.text}. You heard it here, or you heard it at Levi’s, same thing."` : ''} Then ${pick(SONGS)}, and the room feels less empty.${radio.ENABLED() && radio.AUTO_WRITES() ? ' (A new block is being written — tune in again in a minute.)' : ''}`);
     return ctx.ok({ kinds: [...ctx.kinds, 'radio'] });
   },
-  buttons: async (ctx) => { const r = await ctx.room(); return ['the_band_station', 'dezs_bar', 'pats_diner', 'the_truck_stop', 'the_garages'].includes(r.roomId) || (r.props && r.props.home && await require('./housing').furnitureHere(r.roomId, 'radio')) ? [{ label: 'Turn on the radio', cmd: 'radio', group: 'here' }, { label: 'Read what the radio said', cmd: 'radio words', group: 'here' }] : []; },
+  buttons: async (ctx) => { const r = await ctx.room(); return ['the_band_station', 'dezs_bar', 'pats_diner', 'the_truck_stop', 'the_garages'].includes(r.roomId) || (r.props && r.props.home && await require('./housing').furnitureHere(r.roomId, 'radio')) ? [{ label: 'Turn on the radio', cmd: 'radio', group: 'here' }, { label: 'Read what the radio said', cmd: 'radio words', group: 'here' }, ...(ctx.isWizard && r.roomId === 'the_band_station' ? [{ label: 'Record a new block (Founder)', cmd: 'radio make', group: 'here' }] : [])] : []; },
 });
 act({
   name: 'watch tv', aliases: ['tv', 'television', 'watch television'],
