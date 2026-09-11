@@ -296,7 +296,14 @@ function cleanLyrics(raw) {
   if (!text.trim()) return '';
   const out = [];
   for (const line of text.split('\n')) {
-    let l = line.replace(/\[\[[^\]]*\]\]/g, ' ').replace(/^\s*\[:\]\s*/, '').replace(/\[:\]/g, ' ');
+    /* Part 175's render carried [[A0]] section ids and a bare [:] per line;
+     * the Part 179 render (with the Lyrics: block and responseModalities)
+     * came back with a timestamp per line instead -- "[12.8:] The porch
+     * light stays on past midnight". Any bracket holding only digits,
+     * dots, colons, dashes or spaces is a machine marker, not a word. */
+    let l = line
+      .replace(/\[\[[^\]]*\]\]/g, ' ')
+      .replace(/\[\s*[\d.:\s-]*\]/g, ' ');
     const tag = l.match(/^\s*\[([A-Za-z][A-Za-z0-9 \-']{0,30})\]\s*$/);
     if (tag) l = tag[1].trim() + ':';
     l = l.replace(/[ \t]+/g, ' ').trim();

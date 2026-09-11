@@ -165,6 +165,10 @@ test("cleanLyrics strips the engine's markers and speaks section tags, for the r
   assert.match(clean, /^People look at these walls and they see a trap\.\nThey think I am stuck here\.\n\nEverybody assumes/);
   assert.match(clean, /I chose this\.$/);
   assert.equal(pure.cleanLyrics('[Verse 1]\nla la\n[Chorus]\nda da'), 'Verse 1:\nla la\nChorus:\nda da');
+  /* the shape the Part 179 live render came back in: a timestamp per line */
+  const timed = '[12.8:] The porch light stays on past midnight\n[19.2:] The kettle knows my name\n\n[25.6:] I am not leaving this little town\n[32.0:] I chose every brick of it (Every brick)';
+  assert.equal(pure.cleanLyrics(timed), 'The porch light stays on past midnight\nThe kettle knows my name\n\nI am not leaving this little town\nI chose every brick of it (Every brick)');
+  assert.equal(pure.cleanLyrics('[0:12] hello [1:05.5] there'), 'hello there');
   assert.equal(pure.cleanLyrics(''), '');
   assert.equal(pure.cleanLyrics('plain words, no markers'), 'plain words, no markers');
 });
