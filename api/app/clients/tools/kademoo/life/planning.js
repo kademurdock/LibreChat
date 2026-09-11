@@ -6,6 +6,44 @@ const { register } = require('./registry');
 
 let pending = null;
 
+/* THE STANDING ALLOWANCE (Part 180.2, Sep 11 2026, her word: "Fifty cents a
+ * day is fine for the resident things; if glm isn't much differently priced
+ * it's fine to leave it how it is"). The twelve-call trial above stays
+ * exactly as it was (its harness proves the ceiling); beside it, a DAILY
+ * allowance lets the same planner keep choosing small activities for the
+ * citizens, on the same model, with the same five-minute spacing. Default
+ * OFF in code: REVERIE_RESIDENT_DAILY_USD on the service is the only knob
+ * (0.50 set at her word), so a test tree spends nothing and the live number
+ * is visible on Railway. Half a cent is reserved a call — a planner call is
+ * about 1,500 tokens on glm-5.3-flash, well under that — so fifty cents is
+ * at most a hundred calls a day, and the five-minute interval bounds it to
+ * 288 anyway. A new day starts on the world clock (Central). */
+const DAILY_ID = 'reverie_resident_daily_180';
+const DAILY_RESERVE_USD = 0.005;
+function dailyCapUSD() {
+  const n = Number(process.env.REVERIE_RESIDENT_DAILY_USD || 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+async function reserveDaily(now) {
+  const cap = dailyCapUSD();
+  if (!cap) return false;
+  const day = require('./ctx').worldClock().dayKey;
+  await MooDistrict.updateOne(
+    { districtId: DAILY_ID },
+    { $setOnInsert: { name: 'Resident planning, daily allowance', props: { day, calls: 0, spentUSD: 0, nextAt: 0, reservePerCallUSD: DAILY_RESERVE_USD } } },
+    { upsert: true },
+  );
+  await MooDistrict.updateOne(
+    { districtId: DAILY_ID, 'props.day': { $ne: day } },
+    { $set: { 'props.day': day, 'props.calls': 0, 'props.spentUSD': 0 } },
+  );
+  const result = await MooDistrict.updateOne(
+    { districtId: DAILY_ID, 'props.day': day, 'props.spentUSD': { $lte: cap - DAILY_RESERVE_USD + 1e-9 }, 'props.nextAt': { $lte: now } },
+    { $inc: { 'props.calls': 1, 'props.spentUSD': DAILY_RESERVE_USD }, $set: { 'props.nextAt': now + RESIDENT_PILOT.intervalMs } },
+  );
+  return result.modifiedCount === 1;
+}
+
 function publicActivity(person, schedule, outdoor = false) {
   return activeResidentAction(person.attrs?.residentPlan, person.roomId, schedule, outdoor)?.action
     .doing;
@@ -68,7 +106,9 @@ function tickResidents(rooms, weather) {
             $set: { 'props.nextAt': now + RESIDENT_PILOT.intervalMs },
           },
         );
-        return result.modifiedCount === 1;
+        if (result.modifiedCount === 1) return true;
+        /* the trial is spent or paused: the standing daily allowance, if any */
+        return reserveDaily(now);
       },
       async apply(resident, plan) {
         const slot = reverie.npcDoingNow(resident.id);
@@ -173,9 +213,18 @@ register({
         record?.props?.enabledUntil > 0
           ? `The planning window ends at ${new Date(record.props.enabledUntil).toISOString()}.`
           : 'No planning window is currently enabled.',
+        await dailyLine(),
       ],
     });
   },
 });
 
-module.exports = { tickResidents, publicActivity, settled: () => pending };
+async function dailyLine() {
+  const cap = dailyCapUSD();
+  if (!cap) return 'Standing daily allowance: off (REVERIE_RESIDENT_DAILY_USD is not set).';
+  const d = await MooDistrict.findOne({ districtId: DAILY_ID }).lean();
+  const p = (d && d.props) || {};
+  return `Standing daily allowance: $${cap.toFixed(2)} a day, half a cent reserved a call. Today (${p.day || 'no day yet'}): ${p.calls || 0} call${p.calls === 1 ? '' : 's'}, $${Number(p.spentUSD || 0).toFixed(3)} reserved.`;
+}
+
+module.exports = { tickResidents, publicActivity, settled: () => pending, dailyCapUSD, DAILY_ID, DAILY_RESERVE_USD };
