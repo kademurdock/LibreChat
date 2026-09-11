@@ -39,7 +39,10 @@ const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe';
-const MODEL = () => process.env.KADE_VISION_MODEL || 'google/gemini-3.1-flash-lite';
+/** The library's own model knob. The platform's KADE_VISION_MODEL is Gemini Pro
+ * (a minute of video cost $0.045 on the Sep 11 smoke); the library defaults to
+ * Flash Lite so a two-hour film stays under a dollar. */
+const MODEL = () => process.env.KADE_LIBRARY_VISION_MODEL || 'google/gemini-3.1-flash-lite';
 const IN_USD_PER_M = () => Number(process.env.KADE_DESCRIBE_IN_USD_PER_M || 0.1);
 const OUT_USD_PER_M = () => Number(process.env.KADE_DESCRIBE_OUT_USD_PER_M || 0.4);
 const TOKENS_PER_SECOND = 300; // Gemini video (+ audio) tokens per second of media, roughly
