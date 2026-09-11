@@ -326,6 +326,8 @@ const startServer = async () => {
   app.use('/api/kade/gpt-import', routes.kadeGptImport);
   app.use('/api/kade/clock', routes.kadeClock);
   app.use('/api/kade/sound-booth', routes.kadeSoundBooth);
+  // Part 181 (Sep 11 2026): the Reading Room — books read by a voice, and the family media library.
+  app.use('/api/kade/reading-room', routes.kadeReadingRoom);
   app.use('/api/kade/titles', routes.kadeTitles);
   app.use('/api/kade', routes.kade);
 
@@ -372,6 +374,8 @@ const startServer = async () => {
   app.get('/diary', (_req, res) => res.redirect(302, '/logbook'));
   app.get('/kade-tabbar.js', routes.kade.tabBarAssetPage);
   app.get('/parlor', routes.kadeParlor.page);
+  app.get('/reading-room', routes.kadeReadingRoom.page);
+  app.get('/library', (_req, res) => res.redirect(302, '/reading-room'));
   app.get('/lounge', routes.kadeLounge.page);
   // July 24 2026: the Lounge grew up into KADE'S CLUBHOUSE — /clubhouse is
   // the pretty front door; /lounge stays alive forever (native build 154's

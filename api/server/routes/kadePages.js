@@ -203,7 +203,7 @@ const SHARED_HEAD = `
       var path = location.pathname;
       if (path.length > 1 && path.charAt(path.length-1) === '/') path = path.slice(0, -1);
       if (!path) path = '/';
-      var toolPages = ['/tools','/describe','/transcribe','/spotter','/debate-room','/conversation-hall','/game-room','/matchmaker','/wall-of-fame','/my-creations','/calls'];
+      var toolPages = ['/tools','/describe','/transcribe','/spotter','/debate-room','/conversation-hall','/game-room','/matchmaker','/wall-of-fame','/my-creations','/calls','/reading-room'];
       var youPages = ['/you','/feed-the-server','/usage-dashboard','/feedback-dashboard','/pronunciation-dictionary'];
       var active = 'chats';
       if (path === '/notifications') active = 'alerts';
