@@ -752,7 +752,7 @@ router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' })
     const ownerName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
     const out = [];
     for (const f of files) {
-      const originalPath = cleanPath(f.originalPath || f.path && f.name ? `${f.path}/${f.name}` : f.name);
+      const originalPath = cleanPath(f.originalPath || (f.path && f.name ? `${f.path}/${f.name}` : f.name));
       const m = mimeFor(f.name, f.mime);
       if (!m) { out.push({ originalPath, error: 'not a playable audio or video file' }); continue; }
       const bytes = Math.max(0, parseInt(f.bytes, 10) || 0);
