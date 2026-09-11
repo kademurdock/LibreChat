@@ -266,7 +266,9 @@ async function performSeed(script) {
   const falKey = process.env.FAL_KEY;
   if (!falKey) throw new Error('FAL_KEY not set');
   const { text, linesUsed } = seedScript(script);
-  const r = await axios.post('https://fal.run/bytedance/seed-audio-1.0', { prompt: text, output_format: 'mp3', sample_rate: 24000 }, {
+  /* Part 180.4: 48 kHz (the engine's best rate); MP3 because the block
+   * streams to phones from the bucket and a two-minute WAV is eleven MB. */
+  const r = await axios.post('https://fal.run/bytedance/seed-audio-1.0', { prompt: text, output_format: 'mp3', sample_rate: 48000 }, {
     headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
     timeout: 180000,
   });

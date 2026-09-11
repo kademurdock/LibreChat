@@ -560,16 +560,17 @@ class FalAI extends Tool {
 
   /** One Seed Audio generation -> { url, seconds, costUSD } or null. Logs usage + gallery. */
   async _genOneAudio(promptText, data, refUrls) {
-    const hq = data.audio_quality === 'high';
+    /* Part 180.4: the engine's best by default — 48 kHz always, WAV unless
+     * the caller asks for 'low' (a 48 kHz MP3) or names a format. Neither
+     * changes the price (billed by duration). */
+    const hq = !(data.audio_quality === 'low' || data.audio_quality === false);
     const explicitFmt = ['mp3', 'wav', 'pcm', 'ogg_opus'].includes(data.output_format)
       ? data.output_format
       : null;
     const body = {
       prompt: promptText,
-      // 'high' -> 48kHz lossless WAV (studio master); else Seed Audio's default 24kHz MP3.
-      // Sample rate / format do NOT change generation cost (billed by duration).
       output_format: explicitFmt || (hq ? 'wav' : 'mp3'),
-      sample_rate: hq ? 48000 : 24000,
+      sample_rate: 48000,
     };
     if (typeof data.volume === 'number' && data.volume >= 0.5 && data.volume <= 2) {
       body.volume = data.volume;

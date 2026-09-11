@@ -327,7 +327,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       g.settings.forEach(function(s){
         var v = state.values[s.key];
         if(s.kind==='clip') return;
-        if(s.kind==='toggle'){ if(s.key==='validate'){ b.validate = (v===undefined || v===null) ? true : !!v; return; } if(v) b[s.key] = true; return; }
+        if(s.kind==='toggle'){ if(s.key==='validate'){ b.validate = (v===undefined || v===null) ? true : !!v; return; } b[s.key] = (v===undefined || v===null) ? !!s.default : !!v; return; }
         if(s.kind==='number'){ var n = parseFloat(v); if(!isNaN(n)) b[s.key] = (s.key==='seed'||s.key==='pitch') ? Math.round(n) : n; return; }
         if(v!=null && String(v).trim()!=='') b[s.key] = v;
       });

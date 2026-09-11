@@ -727,7 +727,7 @@ const GUIDE = {
         { key: 'pitch', label: 'Pitch', hint: 'In semitones. Zero is normal. Minus twelve is an octave down, twelve an octave up.', kind: 'number', min: -12, max: 12, default: 0 },
         { key: 'volume', label: 'Volume', hint: 'One is normal. Half to double.', kind: 'number', min: 0.5, max: 2, default: 1 },
         { key: 'multilingual', label: 'Multilingual', hint: 'Turn on for anything not in English, or mixed languages. Twenty languages.', kind: 'toggle', default: false },
-        { key: 'audio_quality', label: 'Studio quality', hint: 'Forty-eight kilohertz WAV instead of the usual MP3. Same price, bigger file.', kind: 'toggle', default: false },
+        { key: 'audio_quality', label: 'Studio quality', hint: 'On, the default: a forty-eight kilohertz WAV, the engine\u2019s best. Off: a forty-eight kilohertz MP3, a smaller file. Same price either way.', kind: 'toggle', default: true },
       ],
     },
   },
@@ -1276,7 +1276,16 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     if (Number.isInteger(b.vc_steps) && b.vc_steps >= 10 && b.vc_steps <= 50) opts.vc_steps = b.vc_steps;
     if (typeof b.min_match_ratio === 'number' && b.min_match_ratio >= 0.5 && b.min_match_ratio <= 1) opts.min_match_ratio = b.min_match_ratio;
     if (b.skip_vc === true) opts.skip_vc = true;
-    if (b.audio_quality === 'high') opts.audio_quality = 'high';
+    /* Part 180.4 (Sep 11 2026, her ask: "make sure the seed audio tool and
+     * company are using the high quality output settings"). The web page
+     * posts a toggle as `true`, the phone posts 'high'; the server only ever
+     * knew 'high', so the web switch did nothing. Both spellings count, and
+     * the default is the engine's best — 48 kHz always, WAV unless the
+     * person turns studio quality off, in which case a 48 kHz MP3. fal's
+     * schema (read Sep 11): sample_rate up to 48000, formats wav/mp3/pcm/
+     * ogg_opus, no bitrate knob; neither changes the price. */
+    if (b.audio_quality === 'high' || b.audio_quality === true || b.audio_quality === '1') opts.audio_quality = 'high';
+    else if (b.audio_quality === 'low' || b.audio_quality === false || b.audio_quality === '0' || b.audio_quality === 'mp3') opts.audio_quality = 'low';
     if (typeof b.speed === 'number' && b.speed >= 0.5 && b.speed <= 2) opts.speed = b.speed;
     if (typeof b.volume === 'number' && b.volume >= 0.5 && b.volume <= 2) opts.volume = b.volume;
     if (Number.isInteger(b.pitch) && b.pitch >= -12 && b.pitch <= 12) opts.pitch = b.pitch;
@@ -1680,11 +1689,11 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     project.state = 'running';
     await project.save();
 
-    const hq = opts.audio_quality === 'high';
+    const hq = opts.audio_quality !== 'low';
     const body = {
       prompt: script,
       output_format: hq ? 'wav' : 'mp3',
-      sample_rate: hq ? 48000 : 24000,
+      sample_rate: 48000,
     };
     if (typeof opts.speed === 'number') body.speed = opts.speed;
     if (typeof opts.volume === 'number') body.volume = opts.volume;
