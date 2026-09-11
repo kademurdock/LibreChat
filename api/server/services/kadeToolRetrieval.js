@@ -74,6 +74,15 @@ const ALIASES = {
     /\b(socials?|social media|tiktok|twitter|instagram|facebook|reddit|threads|trending|viral|everybody'?s talking|all over (?:the )?(?:news|internet|feed|timeline))\b/i,
     /\b(trial|verdict|mistrial|jury|sentenc(?:e|ed|ing)|indicted|arrested|charged with|lawsuit|sued|acquitted|convicted|scandal|recall(?:ed)? (?:on|of)|outage|election|primary|hurricane|earthquake|shooting|crash|explosion)\b/i,
     /\b(search|google|bing|look (it |that |this |him |her |them )?up|find out|online|website|latest|newest|right now|today'?s|prices?|costs? of|how much (is|are|does|do|did|would)|what'?s the score|score of|who won|open (right )?now|in stock)\b/i,
+    /* Part 176 (Sep 11 2026) — her "Tell me everything there is to know about
+     * the new iPhone lineup." attached kade_help (the embed heard "iPhone" and
+     * found the app's help page) and left the search off: no "?", "tell me
+     * everything" is not "tell me about", and "iPhone" is camelCase so the
+     * proper-noun rule never saw it. Kiana then recited two years of stale
+     * rumor as fact and said search was "back on her side" later. The asks
+     * about products, releases and dates that live in the world: */
+    /\b(tell me everything|everything (?:there is )?(?:to know|about)|all about|the (?:new|newest|latest|upcoming) (?:iphone|phone|model|version|album|season|episode|update|console|car|truck|game|movie|show|release)|rumou?rs?|leaks?|lineup|line-up|pre-?orders?|pre-?order(?:ing|ed)|announce(?:d|ment|s)?|release(?:d| date|s)?|launch(?:ed|ing|es)?|coming out|drops? (?:on|this|next|in)|just (?:dropped|came out|released|announced|launched)|came out|comes out|due out|on sale|available (?:now|yet|in|on)|specs|price(?:d|s|ing)? (?:at|of|for)|starts? at)\b/i,
+    /\b(iphone|ipad|ipod|macbook|imac|airpods?|apple watch|vision pro|ios|macos|watchos|android|pixel|galaxy|samsung|oneplus|xbox|playstation|ps[456]|nintendo|switch 2|steam deck|tesla|rivian|windows 1[0-9]|chatgpt|gpt-?\d|claude|grok|openai|anthropic|nvidia|microsoft|amazon|netflix|disney|hbo|spotify|tiktok|verizon|at&t|t-mobile|walmart|costco)\b/i,
   ],
   kade_research: [
     /\b(research|dig (into|in)|deep.?dive|investigate|thorough(ly)?|cross.?check|find everything|full report)\b/i,
@@ -164,7 +173,14 @@ const NO_WEB_NOTE =
   'If answering well would take a lookup you cannot do from memory, do not substitute other tools for it ' +
   '(memory search, weather, help pages and the feedback tool are not search engines, and the feedback tool ' +
   'files a report to Kade -- never use it to ask for facts). Say in one plain sentence that you would need to ' +
-  'look it up and ask if they want you to; if they say yes, the search comes along on the next turn.';
+  'look it up and ask if they want you to; if they say yes, the search comes along on the next turn. ' +
+  /* Part 176: the iPhone turn. Told to say she would need to look it up, Kiana first
+   * wrote five paragraphs of stale rumor as fact and put the offer at the end. */
+  'This rule is strict for anything that changes over time -- product releases and specs, prices, dates, ' +
+  'news, who holds a job, scores, what is out or coming out: do NOT recite what you remember about it, not ' +
+  'as a rumor roundup, not with hedges, not as a sketch. Your memory of those things is old and often wrong. ' +
+  'Give the one-sentence offer and stop. Never say search is broken, off, unavailable or coming back -- it is ' +
+  'one word from them away.';
 
 /** Names this module is allowed to defer. Anything else (unknown, actions,
  *  execute_code, MCP) is left attached untouched. */
@@ -177,6 +193,28 @@ const sticky = new Map();
 
 /** tool name → { text, vec } */
 const descVecs = new Map();
+
+/* Part 176: the NO_WEB_NOTE promises "if they say yes, the search comes along
+ * on the next turn" -- and nothing made that true. "Yes", "sure", "go ahead",
+ * "look it up" match no alias and embed like chit-chat, so the yes turn rode
+ * without search too. A conversation whose last turn dropped web_search on an
+ * information-shaped message is remembered here; a short go-ahead on the next
+ * turn attaches the search. */
+const pendingWeb = new Map(); /* conversationId → at */
+const PENDING_TTL_MS = 30 * 60 * 1000;
+const GO_AHEAD = /^\s*(?:%%%[\s\S]*?%%%\s*)?(?:yes|yeah|yep|yup|ya|sure|please|ok|okay|k|go ahead|do it|do that|look it up|please do|go for it|yes please|sure thing|let'?s see|check|find out|search it|search for it|pull it up|what'?d you find|go look)\b[\s\S]{0,80}$/i;
+function pendingSet(convoId) {
+  const k = stickyKey(convoId);
+  if (k) pendingWeb.set(k, Date.now());
+}
+function pendingTake(convoId) {
+  const k = stickyKey(convoId);
+  if (!k) return false;
+  const at = pendingWeb.get(k);
+  if (at === undefined) return false;
+  pendingWeb.delete(k);
+  return Date.now() - at <= PENDING_TTL_MS;
+}
 
 function envList(name) {
   return String(process.env[name] || '')
@@ -277,7 +315,10 @@ function stickyAdd(convoId, names) {
 const FACT_Q = /(?:^|[.!?]\s+)(who|what|when|where|which|how (?:much|many|old|far|long|tall|big|fast|late|early)|is|are|was|were|did|does|do|has|have|can|will)\b(?![^?]*\b(?:you|your|yours|me|my|mine|i|i'm|we|us|our)\b)[^?]{2,120}\?/i;
 const GREETING_ONLY = /\b(what'?s|what is|how'?s|how is|hows)\s+(up|good|new|going on|happening|it going|the word|crackin'?g?|poppin'?g?|shakin'?g?|everything|life|things|your day|it)\b[^?]{0,20}\?/i;
 const INFO_SHAPE = /\b(what|who|when|where|why|how|which|tell me|about(?! to\b)|heard|explain|is|are|was|were|did|does|do|any (?:news|word|update)|update)\b/i;
-const PROPER_NOUN = /(?<![.!?]\s|^)(?<!["'(])\b(?!I\b|I'm\b|I'll\b|I've\b|I'd\b)[A-Z][a-z]{2,}\b/;
+/* Part 176: camelCase brand names (iPhone, iPad, eBay, YouTube, PlayStation)
+ * are proper nouns too; the old rule needed a capital at a word boundary and
+ * read "iPhone" as a common word. */
+const PROPER_NOUN = /(?<![.!?]\s|^)(?<!["'(])\b(?!I\b|I'm\b|I'll\b|I've\b|I'd\b)[A-Z][a-z]{2,}\b|\b[a-z][A-Z][a-z]{2,}\b|\b[A-Z][a-z]+[A-Z][a-z]+\b/;
 function worldReferent(text) {
   /* a greeting question ("what's up?") is not an information shape */
   const t = String(text || '').replace(GREETING_ONLY, ' ');
@@ -417,8 +458,18 @@ async function selectTools(p) {
     return keepAll('embed-down');
   }
   const retrieved = new Set([...kw, ...emb.hits]);
+  /* Part 176: a go-ahead after a turn that had to decline a lookup */
+  if (all.has('web_search') && !keep.has('web_search') && !retrieved.has('web_search')) {
+    const wasPending = pendingTake(p.conversationId);
+    if (wasPending && GO_AHEAD.test(text)) retrieved.add('web_search');
+  } else {
+    pendingTake(p.conversationId);
+  }
   for (const n of retrieved) keep.add(n);
   stickyAdd(p.conversationId, retrieved);
+  if (all.has('web_search') && !keep.has('web_search') && INFO_SHAPE.test(text)) {
+    pendingSet(p.conversationId);
+  }
   const dropped = [...all].filter((n) => !keep.has(n));
   const reason = `kw=[${[...kw].join(',')}] emb=[${[...emb.hits].join(',')}]${
     stickyTools && stickyTools.size ? ` sticky=[${[...stickyTools].join(',')}]` : ''
@@ -482,6 +533,7 @@ function memoEmbed(req, embed) {
 function _resetForTests() {
   sticky.clear();
   descVecs.clear();
+  pendingWeb.clear();
 }
 
 module.exports = {
@@ -491,6 +543,7 @@ module.exports = {
   applySelection,
   memoEmbed,
   keywordHits,
+  GO_AHEAD,
   cosine,
   ALIASES,
   DEFAULT_CORE,

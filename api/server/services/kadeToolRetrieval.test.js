@@ -244,3 +244,34 @@ test('Part 132.3: placeholder conversation ids never share a sticky bucket; gree
   assert.ok(R.keywordHits("what's up with the Clancy trial?", all).has('web_search'), 'a greeting shape with a world referent still searches');
   assert.ok(R.keywordHits('how is it going?', all).size === 0);
 });
+
+test('Part 176 regression: the iPhone-lineup turn brings the search; a go-ahead after a declined lookup attaches it', async () => {
+  const all = Object.keys(R.ALIASES);
+  for (const ask of [
+    'Tell me everything there is to know about the new iPhone lineup.',
+    'I got some kind of notification about preordering them on the twelfth or something like that, and I was just curious.',
+    'when does the new Galaxy come out',
+    'any rumors on the next PlayStation',
+    'is the new Zelda out yet',
+  ]) {
+    assert.ok(R.keywordHits(ask, all).has('web_search'), ask);
+  }
+  assert.ok(R.worldReferent('I heard iPhone prices went up'), 'camelCase brand is a proper noun');
+  for (const quiet of ['I ate an apple with lunch', 'the next morning was rough', 'tell Skylee I said hi', 'I love that feature of the app']) {
+    assert.ok(!R.keywordHits(quiet, all).has('web_search'), quiet);
+  }
+  /* the go-ahead lane */
+  R._resetForTests();
+  const embed = fakeEmbed(KIANA);
+  const convo = 'c-176';
+  const first = await R.selectTools({ tools: T(KIANA), text: 'what do you think about that thing my brother mentioned', agentId: 'a', conversationId: convo, embed });
+  assert.ok(!first.keep.has('web_search'), 'no world referent, no search yet');
+  const yes = await R.selectTools({ tools: T(KIANA), text: 'yeah go ahead and look it up', agentId: 'a', conversationId: convo, embed });
+  assert.ok(yes.keep.has('web_search'), 'a go-ahead after a declined lookup attaches the search');
+  const later = await R.selectTools({ tools: T(KIANA), text: 'ok', agentId: 'a', conversationId: 'c-other', embed });
+  assert.ok(!later.keep.has('web_search'), 'a bare ok with nothing pending stays quiet');
+  R._resetForTests();
+  const chat = await R.selectTools({ tools: T(KIANA), text: 'love you too, night', agentId: 'a', conversationId: 'c-night', embed });
+  const ok2 = await R.selectTools({ tools: T(KIANA), text: 'ok', agentId: 'a', conversationId: 'c-night', embed });
+  assert.ok(!chat.keep.has('web_search') && !ok2.keep.has('web_search'), 'a good-night is not an information shape, so no pending search');
+});
