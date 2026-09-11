@@ -44,7 +44,7 @@ const { logger } = require('@librechat/data-schemas');
 const { saveBufferToS3 } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
-const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, CATEGORIES } = require('~/models/kadeBook');
+const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, CATEGORIES } = require('~/models/kadeBook');
 const { parseBook } = require('./kadeReadingRoomParse');
 
 /* ── the media library on B2 (Part 181 continued) ──────────────────────────
@@ -61,8 +61,22 @@ const { parseBook } = require('./kadeReadingRoomParse');
  * the web page falls back to the 80 MB through-the-server lane. */
 const MEDIA_PREFIX = () => process.env.KADE_MEDIA_PREFIX || 'media-library';
 const MEDIA_BUCKET = () => process.env.KADE_MEDIA_BUCKET || process.env.AWS_BUCKET_NAME || '';
-const MAX_TRACK_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB a track
-const AUDIO_EXT = { mp3: 'audio/mpeg', m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', mp4: 'audio/mp4', aiff: 'audio/aiff', aif: 'audio/aiff', wma: 'audio/x-ms-wma' };
+const MAX_TRACK_BYTES = 20 * 1024 * 1024 * 1024; // 20 GB a track (multipart above 4 GB)
+const AUDIO_EXT = { mp3: 'audio/mpeg', m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', aiff: 'audio/aiff', aif: 'audio/aiff', wma: 'audio/x-ms-wma' };
+/** Video, for the archive. MKV is not a browser format: the push tool remuxes
+ * it to MP4 before it leaves her drive. WebM plays in Chrome and on iOS 17+. */
+const VIDEO_EXT = { mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm' };
+const MEDIA_EXT = Object.assign({}, AUDIO_EXT, VIDEO_EXT);
+const mimeFor = (name, hint) => {
+  const ext = String(name || '').toLowerCase().split('.').pop();
+  if (MEDIA_EXT[ext]) return { ext, mime: MEDIA_EXT[ext], kind: VIDEO_EXT[ext] ? 'video' : 'audio' };
+  const h = String(hint || '');
+  if (h.startsWith('video/')) return { ext: 'mp4', mime: h.slice(0, 60), kind: 'video' };
+  if (h.startsWith('audio/')) return { ext: 'mp3', mime: h.slice(0, 60), kind: 'audio' };
+  return null;
+};
+const MULTIPART_PART_BYTES = 100 * 1024 * 1024; // B2's S3 lane: 5 GB a single PUT; bigger files go in parts
+const MULTIPART_ABOVE = 4 * 1024 * 1024 * 1024;
 let _s3 = null;
 function s3() {
   if (_s3) return _s3;
@@ -181,8 +195,8 @@ async function openBook(req, id) {
 function summary(book, progress) {
   const total = (book.sections || []).length;
   const s = progress ? progress.s : 0;
-  const tracks = book.kind === 'audio' ? (book.tracks || []).length : 0;
-  const seconds = book.kind === 'audio' ? (book.tracks || []).reduce((n, t) => n + (t.seconds || 0), 0) : 0;
+  const tracks = book.kind !== 'text' ? (book.tracks || []).length : 0;
+  const seconds = book.kind !== 'text' ? (book.tracks || []).reduce((n, t) => n + (t.seconds || 0), 0) : 0;
   return {
     id: String(book._id),
     kind: book.kind || 'text',
@@ -191,6 +205,10 @@ function summary(book, progress) {
     tracks,
     seconds,
     state: book.state,
+    path: book.path || '',
+    meta: book.meta || {},
+    tags: book.tags || [],
+    described: book.kind !== 'text' && (book.tracks || []).some((t) => t.description && t.description.state === 'done'),
     title: book.title,
     author: book.author,
     publisher: book.publisher,
@@ -209,7 +227,7 @@ function summary(book, progress) {
     createdAt: book.createdAt,
     progress: progress
       ? { s: progress.s, c: progress.c, pos: progress.pos || 0, voice: progress.voice, speed: progress.speed, finished: !!progress.finished, updatedAt: progress.updatedAt,
-          where: book.kind === 'audio' ? (tracks ? `${Math.min(s + 1, tracks)} of ${tracks}` : '') : total ? `${Math.min(s + 1, total)} of ${total}` : '' }
+          where: book.kind !== 'text' ? (tracks ? `${Math.min(s + 1, tracks)} of ${tracks}` : '') : total ? `${Math.min(s + 1, total)} of ${total}` : '' }
       : null,
   };
 }
@@ -221,9 +239,9 @@ router.get('/shelf', requireJwtAuth, async (req, res) => {
     const child = await isChild(req);
     const hidden = libraryHiddenFrom(req);
     const [mine, progress, library] = await Promise.all([
-      KadeBook.find({ owner: userId, state: { $in: ['ready', 'pending'] } }).sort({ updatedAt: -1 }).lean(),
+      KadeBook.find({ owner: userId, state: { $in: ['ready', 'pending'] }, path: '' }).sort({ updatedAt: -1 }).limit(500).lean(),
       KadeReadingProgress.find({ user: userId }).sort({ updatedAt: -1 }).lean(),
-      hidden ? [] : KadeBook.find({ shared: true, state: 'ready', ...(child ? { grownUpsOnly: { $ne: true } } : {}) }).sort({ sharedAt: -1 }).limit(500).lean(),
+      hidden ? [] : KadeBook.find({ shared: true, state: 'ready', path: '', ...(child ? { grownUpsOnly: { $ne: true } } : {}) }).sort({ sharedAt: -1 }).limit(500).lean(),
     ]);
     const progByBook = {};
     for (const p of progress) progByBook[String(p.book)] = p;
@@ -337,11 +355,13 @@ router.get('/book/:id', requireJwtAuth, async (req, res) => {
       KadeReadingBookmark.find({ user: req.user.id, book: book._id }).sort({ createdAt: -1 }).lean(),
     ]);
     let tracks = [];
-    if (book.kind === 'audio') {
+    if (isMedia(book)) {
       tracks = await Promise.all((book.tracks || []).map(async (t, i) => {
         let url = '';
         try { url = await signGet(t.key, t.mime); } catch (e) { logger.warn(`[reading-room/book] sign failed for ${t.key}: ${e.message}`); }
-        return { s: i, title: t.title || `Part ${i + 1}`, seconds: t.seconds || 0, bytes: t.bytes || 0, mime: t.mime, url };
+        const d = t.description || {};
+        return { s: i, title: t.title || `Part ${i + 1}`, seconds: t.seconds || 0, bytes: t.bytes || 0, mime: t.mime, url,
+          description: d.state ? { state: d.state, summary: d.summary || '', scenes: d.scenes || [], model: d.model || '', costUSD: d.costUSD || 0, error: d.error || '', at: d.at } : null };
       }));
     }
     res.json({
@@ -449,7 +469,7 @@ router.post('/book/:id/progress', requireJwtAuth, express.json({ limit: '4kb' })
     const book = await openBook(req, req.params.id);
     if (!book) return res.status(404).json({ error: 'No such book on your shelf.' });
     const b = req.body || {};
-    const audio = book.kind === 'audio';
+    const audio = isMedia(book);
     const sections = audio ? (book.tracks || []).length : (book.sections || []).length;
     const s = clampInt(b.s, 0, Math.max(0, sections - 1), 0);
     const c = audio ? 0 : clampInt(b.c, 0, Math.max(0, ((book.sections || [])[s] || { chunkCount: 1 }).chunkCount - 1), 0);
@@ -485,7 +505,7 @@ router.post('/book/:id/bookmarks', requireJwtAuth, express.json({ limit: '4kb' }
     const c = clampInt(b.c, 0, 100000, 0);
     const pos = Math.max(0, parseFloat(b.pos) || 0);
     let chunk;
-    if (book.kind === 'audio') {
+    if (isMedia(book)) {
       const t = (book.tracks || [])[s];
       if (!t) return res.status(400).json({ error: 'That spot is past the end.' });
       const m = Math.floor(pos / 60); const sec = Math.floor(pos % 60);
@@ -555,10 +575,11 @@ router.post('/media/new', requireJwtAuth, express.json({ limit: '8kb' }), async 
 async function ownAudio(req, id) {
   if (!isId(id)) return null;
   const item = await KadeBook.findById(id);
-  if (!item || item.kind !== 'audio') return null;
+  if (!item || item.kind === 'text') return null;
   if (String(item.owner) !== String(req.user.id) && !isAdmin(req)) return null;
   return item;
 }
+const isMedia = (b) => b && (b.kind === 'audio' || b.kind === 'video');
 
 /** Step 1 of a direct upload: a signed PUT the client sends the bytes to. */
 router.post('/media/:id/track/presign', requireJwtAuth, express.json({ limit: '4kb' }), async (req, res) => {
@@ -566,15 +587,14 @@ router.post('/media/:id/track/presign', requireJwtAuth, express.json({ limit: '4
     const item = await ownAudio(req, req.params.id);
     if (!item) return res.status(404).json({ error: 'No such donation.' });
     const b = req.body || {};
-    const ext = String(b.fileName || '').toLowerCase().split('.').pop();
-    const mime = AUDIO_EXT[ext] || (String(b.mime || '').startsWith('audio/') ? String(b.mime).slice(0, 60) : null);
-    if (!mime) return res.status(400).json({ error: 'That is not an audio file. MP3, M4A, M4B, AAC, WAV, OGG or FLAC all work.' });
+    const m = mimeFor(b.fileName, b.mime);
+    if (!m) return res.status(400).json({ error: 'That is not an audio or video file. MP3, M4A, M4B, AAC, WAV, OGG, FLAC, MP4, M4V, MOV or WebM all work.' });
     const bytes = Math.max(0, parseInt(b.bytes, 10) || 0);
-    if (bytes > MAX_TRACK_BYTES) return res.status(400).json({ error: 'One recording is over 2 GB — split it into parts.' });
+    if (bytes > MAX_TRACK_BYTES) return res.status(400).json({ error: 'One file is over 20 GB — split it into parts.' });
     if ((item.tracks || []).length >= 200) return res.status(400).json({ error: 'Two hundred parts is the limit for one item.' });
-    const key = trackKey(item._id, AUDIO_EXT[ext] ? ext : 'mp3');
-    const url = await signPut(key, mime, bytes);
-    res.json({ ok: true, key, url, mime, method: 'PUT', headers: { 'Content-Type': mime }, expiresInSeconds: 3 * 3600 });
+    const key = trackKey(item._id, m.ext);
+    const url = await signPut(key, m.mime, bytes);
+    res.json({ ok: true, key, url, mime: m.mime, method: 'PUT', headers: { 'Content-Type': m.mime }, expiresInSeconds: 3 * 3600 });
   } catch (e) {
     logger.error('[reading-room/media/presign] error:', e.message);
     res.status(500).json({ error: 'Could not prepare the upload. ' + (/(not configured)/.test(e.message) ? 'Media storage is not set up.' : 'Try again.') });
@@ -598,9 +618,10 @@ router.post('/media/:id/track/done', requireJwtAuth, express.json({ limit: '4kb'
       key,
       bytes: Number(head.ContentLength) || Math.max(0, parseInt(b.bytes, 10) || 0),
       seconds: Math.max(0, parseFloat(b.seconds) || 0),
-      mime: AUDIO_EXT[ext] || head.ContentType || 'audio/mpeg',
+      mime: MEDIA_EXT[ext] || head.ContentType || 'audio/mpeg',
       originalName: String(b.originalName || '').slice(0, 200),
     });
+    if (VIDEO_EXT[ext] && item.kind !== 'video') item.kind = 'video';
     item.state = 'ready';
     refreshListen(item);
     await item.save();
@@ -625,16 +646,17 @@ router.post('/media/:id/track/upload', requireJwtAuth, (req, res, next) => {
     if (!item) return res.status(404).json({ error: 'No such donation.' });
     const f = req.file;
     if (!f || !f.buffer || !f.buffer.length) return res.status(400).json({ error: 'No recording arrived.' });
-    const ext = String(f.originalname || '').toLowerCase().split('.').pop();
-    const mime = AUDIO_EXT[ext] || (String(f.mimetype || '').startsWith('audio/') ? f.mimetype : null);
-    if (!mime) return res.status(400).json({ error: 'That is not an audio file. MP3, M4A, M4B, AAC, WAV, OGG or FLAC all work.' });
-    const key = trackKey(item._id, AUDIO_EXT[ext] ? ext : 'mp3');
+    const m = mimeFor(f.originalname, f.mimetype);
+    if (!m) return res.status(400).json({ error: 'That is not an audio or video file. MP3, M4A, M4B, AAC, WAV, OGG, FLAC, MP4, M4V, MOV or WebM all work.' });
+    const mime = m.mime;
+    const key = trackKey(item._id, m.ext);
     await putBuffer(key, f.buffer, mime);
     item.tracks.push({
       title: String((req.body || {}).title || '').trim().slice(0, 200) || `Part ${item.tracks.length + 1}`,
       key, bytes: f.buffer.length, seconds: Math.max(0, parseFloat((req.body || {}).seconds) || 0), mime,
       originalName: String(f.originalname || '').slice(0, 200),
     });
+    if (m.kind === 'video') item.kind = 'video';
     item.state = 'ready';
     refreshListen(item);
     await item.save();
@@ -681,6 +703,353 @@ router.post('/media/:id/edit', requireJwtAuth, express.json({ limit: '8kb' }), a
   }
 });
 
+
+/* ── THE ARCHIVE: her sorter's collection, pushed folder by folder ──────────
+ * (Part 181 continued). `push_to_library.py` on her PC walks
+ * F:\youtube\Video\<Category>\... and sends each clip straight to B2 with
+ * these batch routes: one call presigns up to 50 files (creating their
+ * items as `pending`, path + catalogue row attached), one call marks them
+ * landed. Files over 4 GB go up in parts through the S3 multipart lane.
+ * Everything pushed is `shared` unless the tool says private — it is the
+ * family's collection. */
+const ARCHIVE_CATEGORY = (topFolder) => {
+  const t = String(topFolder || '').toLowerCase();
+  if (/commercial/.test(t)) return 'commercials';
+  if (/psa/.test(t)) return 'psa';
+  if (/home video|vhs|found cassette|tape/.test(t)) return 'vhs';
+  if (/movie|studio/.test(t)) return 'movie';
+  if (/music/.test(t)) return 'music';
+  if (/radio|podcast/.test(t)) return 'radio';
+  if (/channel|tv|show|missouri|ozark|station|sign-?off|network/.test(t)) return 'tv';
+  return 'other';
+};
+const cleanPath = (p) => String(p || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').replace(/\.\.+/g, '.').slice(0, 400);
+
+async function createMultipart(key, contentType) {
+  const client = s3();
+  const { CreateMultipartUploadCommand } = require('@aws-sdk/client-s3');
+  const r = await client.send(new CreateMultipartUploadCommand({ Bucket: MEDIA_BUCKET(), Key: key, ContentType: contentType }));
+  return r.UploadId;
+}
+async function signPart(key, uploadId, partNumber) {
+  const client = s3();
+  const { UploadPartCommand } = require('@aws-sdk/client-s3');
+  const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+  return getSignedUrl(client, new UploadPartCommand({ Bucket: MEDIA_BUCKET(), Key: key, UploadId: uploadId, PartNumber: partNumber }), { expiresIn: 6 * 3600 });
+}
+async function completeMultipart(key, uploadId, parts) {
+  const client = s3();
+  const { CompleteMultipartUploadCommand } = require('@aws-sdk/client-s3');
+  await client.send(new CompleteMultipartUploadCommand({ Bucket: MEDIA_BUCKET(), Key: key, UploadId: uploadId, MultipartUpload: { Parts: parts.map((p) => ({ ETag: p.etag, PartNumber: p.partNumber })) } }));
+}
+
+router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' }), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const files = Array.isArray(b.files) ? b.files.slice(0, 50) : [];
+    if (!files.length) return res.status(400).json({ error: 'No files listed.' });
+    const shared = b.private === true ? false : true;
+    const ownerName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
+    const out = [];
+    for (const f of files) {
+      const originalPath = cleanPath(f.originalPath || f.path && f.name ? `${f.path}/${f.name}` : f.name);
+      const m = mimeFor(f.name, f.mime);
+      if (!m) { out.push({ originalPath, error: 'not a playable audio or video file' }); continue; }
+      const bytes = Math.max(0, parseInt(f.bytes, 10) || 0);
+      if (bytes > MAX_TRACK_BYTES) { out.push({ originalPath, error: 'over 20 GB' }); continue; }
+      const existing = await KadeBook.findOne({ owner: req.user.id, originalPath }).lean();
+      if (existing && existing.state === 'ready') { out.push({ originalPath, id: String(existing._id), skipped: 'already in the library' }); continue; }
+      const folder = cleanPath(f.path || '');
+      const top = folder.split('/')[1] || folder.split('/')[0] || '';
+      const title = String(f.title || f.name || 'Untitled').replace(/\.[^.]+$/, '').slice(0, 200);
+      const meta = f.meta && typeof f.meta === 'object' ? Object.fromEntries(Object.entries(f.meta).slice(0, 20).map(([k, v]) => [String(k).slice(0, 30), String(v).slice(0, 120)])) : {};
+      const doc = existing || new KadeBook({ owner: req.user.id, ownerName });
+      doc.kind = m.kind;
+      doc.category = CATEGORIES.includes(String(f.category)) ? String(f.category) : ARCHIVE_CATEGORY(top);
+      doc.title = title;
+      doc.author = String(meta.network || meta.cableChannel || meta.callSign || meta.brand || '').slice(0, 200);
+      doc.copyrightYear = String(meta.year || '').slice(0, 12);
+      doc.description = String(f.description || '').slice(0, 2000);
+      doc.path = folder;
+      doc.originalPath = originalPath;
+      doc.meta = meta;
+      doc.tags = [top, meta.decade, meta.type, meta.market].filter(Boolean).map((x) => String(x).slice(0, 60));
+      doc.source = 'archive';
+      doc.format = m.kind;
+      doc.shared = shared;
+      if (shared && !doc.sharedAt) doc.sharedAt = new Date();
+      doc.grownUpsOnly = f.grownUpsOnly === true;
+      doc.state = 'pending';
+      doc.tracks = [];
+      await doc.save();
+      const key = trackKey(doc._id, m.ext);
+      if (bytes > MULTIPART_ABOVE) {
+        const uploadId = await createMultipart(key, m.mime);
+        const partCount = Math.ceil(bytes / MULTIPART_PART_BYTES);
+        const parts = [];
+        for (let i = 1; i <= partCount; i++) parts.push({ partNumber: i, url: await signPart(key, uploadId, i) });
+        out.push({ originalPath, id: String(doc._id), key, mime: m.mime, multipart: { uploadId, partBytes: MULTIPART_PART_BYTES, parts } });
+      } else {
+        out.push({ originalPath, id: String(doc._id), key, mime: m.mime, url: await signPut(key, m.mime, bytes) });
+      }
+    }
+    logger.info(`[library/archive] user=${req.user.id} presigned ${out.filter((o) => o.key).length}/${files.length} (${out.filter((o) => o.skipped).length} already there)`);
+    res.json({ ok: true, files: out });
+  } catch (e) {
+    logger.error('[library/archive/presign] error:', e.message);
+    res.status(500).json({ error: 'Could not prepare those uploads. ' + (/(not configured)/.test(e.message) ? 'Media storage is not set up.' : e.message) });
+  }
+});
+
+router.post('/archive/done', requireJwtAuth, express.json({ limit: '512kb' }), async (req, res) => {
+  try {
+    const files = Array.isArray((req.body || {}).files) ? req.body.files.slice(0, 50) : [];
+    const out = [];
+    for (const f of files) {
+      if (!isId(f.id)) { out.push({ id: f.id, error: 'bad id' }); continue; }
+      const item = await KadeBook.findOne({ _id: f.id, owner: req.user.id });
+      if (!item || item.kind === 'text') { out.push({ id: f.id, error: 'no such item' }); continue; }
+      const key = String(f.key || '');
+      if (!key.startsWith(`${MEDIA_PREFIX()}/${item._id}/`)) { out.push({ id: f.id, error: 'key does not belong to this item' }); continue; }
+      try {
+        if (f.multipart && f.multipart.uploadId && Array.isArray(f.multipart.parts)) await completeMultipart(key, f.multipart.uploadId, f.multipart.parts);
+        const head = await headObject(key);
+        const ext = key.split('.').pop();
+        item.tracks = [{ title: item.title, key, bytes: Number(head.ContentLength) || 0, seconds: Math.max(0, parseFloat(f.seconds) || 0), mime: MEDIA_EXT[ext] || head.ContentType || 'video/mp4', originalName: String(f.originalName || '').slice(0, 200) }];
+        if (VIDEO_EXT[ext]) item.kind = 'video';
+        item.state = 'ready';
+        refreshListen(item);
+        await item.save();
+        out.push({ id: String(item._id), ok: true, bytes: item.tracks[0].bytes });
+      } catch (e) {
+        out.push({ id: String(item._id), error: 'the file is not in storage: ' + e.message });
+      }
+    }
+    res.json({ ok: true, files: out });
+  } catch (e) {
+    logger.error('[library/archive/done] error:', e.message);
+    res.status(500).json({ error: 'Could not record those uploads.' });
+  }
+});
+
+/** Browse the archive like a drive: folders under `path`, items at `path`. */
+router.get('/archive', requireJwtAuth, async (req, res) => {
+  try {
+    if (libraryHiddenFrom(req)) return res.json({ path: '', folders: [], items: [], total: 0 });
+    const child = await isChild(req);
+    const at = cleanPath(req.query.path || '');
+    const page = clampInt(req.query.page, 0, 100000, 0);
+    const limit = clampInt(req.query.limit, 1, 200, 60);
+    const base = { state: 'ready', path: { $ne: '' }, $or: [{ shared: true }, { owner: req.user.id }], ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
+    const prefix = at ? at + '/' : '';
+    const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const [folders, items, total] = await Promise.all([
+      KadeBook.aggregate([
+        { $match: { ...base, path: { $regex: '^' + escaped + '.+' } } },
+        { $project: { seg: { $arrayElemAt: [{ $split: [{ $substrCP: ['$path', prefix.length, 400] }, '/'] }, 0] } } },
+        { $group: { _id: '$seg', count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+        { $limit: 500 },
+      ]),
+      KadeBook.find({ ...base, path: at }).sort({ title: 1 }).skip(page * limit).limit(limit).lean(),
+      KadeBook.countDocuments({ ...base, path: at }),
+    ]);
+    const progress = items.length ? await KadeReadingProgress.find({ user: req.user.id, book: { $in: items.map((i) => i._id) } }).lean() : [];
+    const pb = {}; for (const pr of progress) pb[String(pr.book)] = pr;
+    res.json({ path: at, folders: folders.map((f) => ({ name: f._id, count: f.count, path: prefix + f._id })), items: items.map((b) => summary(b, pb[String(b._id)])), total, page, limit });
+  } catch (e) {
+    logger.error('[library/archive] error:', e);
+    res.status(500).json({ error: 'Could not open that folder.' });
+  }
+});
+
+router.get('/search', requireJwtAuth, async (req, res) => {
+  try {
+    if (libraryHiddenFrom(req)) return res.json({ items: [] });
+    const child = await isChild(req);
+    const q = String(req.query.q || '').trim().slice(0, 120);
+    if (!q) return res.json({ items: [] });
+    const base = { state: 'ready', $or: [{ shared: true }, { owner: req.user.id }], ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
+    const words = q.split(/\s+/).filter(Boolean).map((w) => new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+    const items = await KadeBook.find({ ...base, $and: words.map((re) => ({ $or: [{ title: re }, { author: re }, { path: re }, { tags: re }] })) }).sort({ title: 1 }).limit(100).lean();
+    res.json({ items: items.map((b) => summary(b, null)), q });
+  } catch (e) {
+    res.status(500).json({ error: 'Search failed.' });
+  }
+});
+
+/* ── THE LIBRARY'S EYES: video descriptions ─────────────────────────────── */
+const describer = require('./kadeReadingRoomDescribe');
+
+router.get('/book/:id/describe/:t/estimate', requireJwtAuth, async (req, res) => {
+  try {
+    const book = await openBook(req, req.params.id);
+    const t = clampInt(req.params.t, 0, 10000, 0);
+    if (!book || !isMedia(book) || !(book.tracks || [])[t]) return res.status(404).json({ error: 'No such recording.' });
+    const tr = book.tracks[t];
+    const est = describer.estimate(tr.seconds || 0);
+    res.json({ ok: true, enabled: describer.ENABLED(), ...est, hasSeconds: !!tr.seconds, queued: describer.queued(), progress: describer.progressOf(String(book._id), t), state: (tr.description || {}).state || '' });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not estimate.' });
+  }
+});
+
+/** Anyone who can open the item can ask for its description; the result is
+ * stored on the item for everyone (one run serves the whole family). */
+router.post('/book/:id/describe/:t', requireJwtAuth, async (req, res) => {
+  try {
+    const book = await openBook(req, req.params.id);
+    const t = clampInt(req.params.t, 0, 10000, 0);
+    if (!book || !isMedia(book) || !(book.tracks || [])[t]) return res.status(404).json({ error: 'No such recording.' });
+    const tr = book.tracks[t];
+    if (!/^video\//.test(tr.mime || '')) return res.status(400).json({ error: 'That is a sound recording — there is nothing to see in it.' });
+    const d = tr.description || {};
+    if (d.state === 'done' && req.query.again !== '1') return res.json({ ok: true, state: 'done', description: d });
+    if (d.state === 'working') return res.json({ ok: true, state: 'working', progress: describer.progressOf(String(book._id), t) });
+    const signedUrl = await signGet(tr.key, tr.mime);
+    await KadeBook.updateOne({ _id: book._id }, { $set: { [`tracks.${t}.description.state`]: 'working', [`tracks.${t}.description.error`]: '' } });
+    const bookId = String(book._id);
+    const position = describer.enqueue({
+      bookId, t, userId: req.user.id, signedUrl, mime: tr.mime, title: book.title, category: book.category,
+      onDone: async (err, result) => {
+        if (err) {
+          await KadeBook.updateOne({ _id: bookId }, { $set: { [`tracks.${t}.description.state`]: 'failed', [`tracks.${t}.description.error`]: String(err.message || err).slice(0, 400), [`tracks.${t}.description.at`]: new Date() } });
+          return;
+        }
+        const set = { [`tracks.${t}.description`]: { summary: result.summary, scenes: result.scenes, model: result.model, costUSD: result.costUSD, frames: result.frames, state: 'done', error: '', at: new Date() } };
+        if (result.seconds && !tr.seconds) set[`tracks.${t}.seconds`] = result.seconds;
+        await KadeBook.updateOne({ _id: bookId }, { $set: set });
+      },
+    });
+    logger.info(`[library/describe] user=${req.user.id} queued "${book.title}" track ${t} (position ${position})`);
+    res.json({ ok: true, state: 'working', position });
+  } catch (e) {
+    logger.error('[library/describe] error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not start the description.' });
+  }
+});
+
+router.get('/book/:id/describe/:t', requireJwtAuth, async (req, res) => {
+  try {
+    const book = await openBook(req, req.params.id);
+    const t = clampInt(req.params.t, 0, 10000, 0);
+    if (!book || !isMedia(book) || !(book.tracks || [])[t]) return res.status(404).json({ error: 'No such recording.' });
+    const d = book.tracks[t].description || {};
+    res.json({ ok: true, state: d.state || '', progress: describer.progressOf(String(book._id), t), description: d.state ? d : null });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not read the description.' });
+  }
+});
+
+/* ── COLLECTIONS (playlists) ───────────────────────────────────────────── */
+const collOut = (c) => ({ id: String(c._id), title: c.title, description: c.description || '', shared: !!c.shared, ownerName: c.ownerName || '', owner: String(c.owner), count: (c.items || []).length, updatedAt: c.updatedAt });
+
+router.get('/collections', requireJwtAuth, async (req, res) => {
+  try {
+    const hidden = libraryHiddenFrom(req);
+    const [mine, shared] = await Promise.all([
+      KadeCollection.find({ owner: req.user.id }).sort({ updatedAt: -1 }).lean(),
+      hidden ? [] : KadeCollection.find({ shared: true, owner: { $ne: req.user.id } }).sort({ updatedAt: -1 }).limit(200).lean(),
+    ]);
+    res.json({ mine: mine.map(collOut), shared: shared.map(collOut) });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not load collections.' });
+  }
+});
+
+router.post('/collections', requireJwtAuth, express.json({ limit: '8kb' }), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const title = String(b.title || '').trim().slice(0, 200);
+    if (!title) return res.status(400).json({ error: 'Give the collection a name.' });
+    const ownerName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
+    const c = await KadeCollection.create({ owner: req.user.id, ownerName, title, description: String(b.description || '').slice(0, 1000), shared: b.shared === true });
+    res.json({ ok: true, collection: collOut(c.toObject()) });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not create it.' });
+  }
+});
+
+async function openCollection(req, id) {
+  if (!isId(id)) return null;
+  const c = await KadeCollection.findById(id);
+  if (!c) return null;
+  if (String(c.owner) === String(req.user.id) || isAdmin(req)) return c;
+  if (c.shared && !libraryHiddenFrom(req)) return c;
+  return null;
+}
+
+router.get('/collections/:id', requireJwtAuth, async (req, res) => {
+  try {
+    const c = await openCollection(req, req.params.id);
+    if (!c) return res.status(404).json({ error: 'No such collection.' });
+    const child = await isChild(req);
+    const ids = c.items.map((i) => i.book);
+    const books = ids.length ? await KadeBook.find({ _id: { $in: ids }, state: 'ready', ...(child ? { grownUpsOnly: { $ne: true } } : {}) }).lean() : [];
+    const byId = {}; for (const bk of books) byId[String(bk._id)] = bk;
+    const items = c.items.map((i, n) => {
+      const bk = byId[String(i.book)];
+      if (!bk) return null;
+      const tr = (bk.tracks || [])[i.track] || null;
+      return { n, book: summary(bk, null), track: i.track, trackTitle: tr ? tr.title : '', title: i.title || bk.title, mime: tr ? tr.mime : '', seconds: tr ? tr.seconds : 0 };
+    }).filter(Boolean);
+    res.json({ ...collOut(c.toObject()), mine: String(c.owner) === String(req.user.id), items });
+  } catch (e) {
+    logger.error('[library/collection] error:', e);
+    res.status(500).json({ error: 'Could not open that collection.' });
+  }
+});
+
+router.post('/collections/:id/items', requireJwtAuth, express.json({ limit: '8kb' }), async (req, res) => {
+  try {
+    const c = await openCollection(req, req.params.id);
+    if (!c || (String(c.owner) !== String(req.user.id) && !isAdmin(req))) return res.status(404).json({ error: 'No such collection of yours.' });
+    const b = req.body || {};
+    const book = await openBook(req, b.book);
+    if (!book) return res.status(404).json({ error: 'No such item.' });
+    const track = clampInt(b.track, 0, 10000, 0);
+    if (c.items.length >= 1000) return res.status(400).json({ error: 'A thousand items is the limit for one collection.' });
+    c.items.push({ book: book._id, track, title: String(b.title || '').slice(0, 200) });
+    await c.save();
+    res.json({ ok: true, collection: collOut(c.toObject()) });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not add that.' });
+  }
+});
+
+router.post('/collections/:id/edit', requireJwtAuth, express.json({ limit: '64kb' }), async (req, res) => {
+  try {
+    const c = await openCollection(req, req.params.id);
+    if (!c || (String(c.owner) !== String(req.user.id) && !isAdmin(req))) return res.status(404).json({ error: 'No such collection of yours.' });
+    const b = req.body || {};
+    if (typeof b.title === 'string' && b.title.trim()) c.title = b.title.trim().slice(0, 200);
+    if (typeof b.description === 'string') c.description = b.description.slice(0, 1000);
+    if (typeof b.shared === 'boolean') c.shared = b.shared;
+    if (Array.isArray(b.order)) { // new order as the current indexes
+      const seen = new Set();
+      const next = [];
+      for (const n of b.order) { const i = parseInt(n, 10); if (Number.isInteger(i) && c.items[i] && !seen.has(i)) { seen.add(i); next.push(c.items[i]); } }
+      if (next.length === c.items.length) c.items = next;
+    }
+    if (Number.isInteger(b.remove) && c.items[b.remove]) c.items.splice(b.remove, 1);
+    await c.save();
+    res.json({ ok: true, collection: collOut(c.toObject()) });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not change that.' });
+  }
+});
+
+router.delete('/collections/:id', requireJwtAuth, async (req, res) => {
+  try {
+    const c = await openCollection(req, req.params.id);
+    if (!c || (String(c.owner) !== String(req.user.id) && !isAdmin(req))) return res.status(404).json({ error: 'No such collection of yours.' });
+    await KadeCollection.deleteOne({ _id: c._id });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not delete it.' });
+  }
+});
+
 /* ── the library ───────────────────────────────────────────────────────── */
 router.post('/book/:id/share', requireJwtAuth, express.json({ limit: '2kb' }), async (req, res) => {
   try {
@@ -721,7 +1090,7 @@ router.delete('/book/:id', requireJwtAuth, async (req, res) => {
     const book = await KadeBook.findById(req.params.id);
     if (!book) return res.status(404).json({ error: 'No such book.' });
     if (String(book.owner) !== String(req.user.id) && !isAdmin(req)) return res.status(403).json({ error: 'Only the person who donated a book can withdraw it.' });
-    if (book.kind === 'audio') deleteKeys((book.tracks || []).map((t) => t.key).filter(Boolean)).catch(() => {});
+    if (isMedia(book)) deleteKeys((book.tracks || []).map((t) => t.key).filter(Boolean)).catch(() => {});
     await Promise.all([
       KadeBookText.deleteOne({ book: book._id }),
       KadeReadingProgress.deleteMany({ book: book._id }),

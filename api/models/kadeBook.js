@@ -48,7 +48,7 @@ const skippedSummary = {
  *                  `tracks[]` in order (sides, parts, episodes), each a key
  *                  in the bucket; a signed URL is minted when the item opens.
  * `category` is the library shelf it sits on. */
-const CATEGORIES = ['book', 'audiobook', 'movie', 'cassette', 'radio', 'commercials', 'music', 'other'];
+const CATEGORIES = ['book', 'audiobook', 'movie', 'cassette', 'radio', 'commercials', 'music', 'tv', 'vhs', 'psa', 'other'];
 const track = {
   title: { type: String, default: '' },
   key: { type: String, default: '' },
@@ -56,11 +56,33 @@ const track = {
   seconds: { type: Number, default: 0 },
   mime: { type: String, default: 'audio/mpeg' },
   originalName: { type: String, default: '' },
+  /** Part 181 continued — the AI video description ("a blind VDS type thing"):
+   * scenes with a time in seconds and what is on screen, plus a summary. */
+  description: {
+    summary: { type: String, default: '' },
+    scenes: { type: [{ t: { type: Number, default: 0 }, text: { type: String, default: '' } }], default: [] },
+    model: { type: String, default: '' },
+    costUSD: { type: Number, default: 0 },
+    frames: { type: Number, default: 0 },
+    state: { type: String, default: '' }, // '' | 'working' | 'done' | 'failed'
+    error: { type: String, default: '' },
+    at: { type: Date },
+  },
 };
 
 const kadeBookSchema = new mongoose.Schema(
   {
-    kind: { type: String, enum: ['text', 'audio'], default: 'text', index: true },
+    kind: { type: String, enum: ['text', 'audio', 'video'], default: 'text', index: true },
+    /** Part 181 continued — THE ARCHIVE. Her media sorter files ~46,000 clips
+     * under Video/<Category>/<Channel or Brand>/<Decade>/. A pushed clip keeps
+     * that folder as `path` so the library can be browsed the way her drive
+     * is, and the sorter's own catalogue row (year, decade, network, call
+     * sign, brand, market) rides along in `meta`. `originalPath` is the
+     * relative path on her drive — the duplicate guard for re-runs. */
+    path: { type: String, default: '', index: true },
+    originalPath: { type: String, default: '' },
+    meta: { type: mongoose.Schema.Types.Mixed, default: {} },
+    tags: { type: [String], default: [] },
     category: { type: String, enum: CATEGORIES, default: 'book', index: true },
     /** Audio items: what it is, in the donor's words ("The 1986 Disney
      * descriptive VHS", "Grandma's cassette, side A is Christmas 1994"). */
@@ -108,6 +130,28 @@ const kadeBookSchema = new mongoose.Schema(
 );
 kadeBookSchema.index({ owner: 1, updatedAt: -1 });
 kadeBookSchema.index({ shared: 1, sharedAt: -1 });
+kadeBookSchema.index({ owner: 1, originalPath: 1 });
+kadeBookSchema.index({ shared: 1, path: 1, title: 1 });
+kadeBookSchema.index({ title: 'text', author: 'text', description: 'text', tags: 'text' });
+
+/** Part 181 continued — COLLECTIONS ("playlists of vids or audio or whatever,
+ * like collections you have organised your way from stuff in the cloud").
+ * An ordered list of (item, track) pairs. Private until shared. */
+const kadeCollectionSchema = new mongoose.Schema(
+  {
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+    ownerName: { type: String, default: '' },
+    title: { type: String, default: 'Untitled collection' },
+    description: { type: String, default: '', maxlength: 1000 },
+    shared: { type: Boolean, default: false, index: true },
+    items: {
+      type: [{ book: { type: mongoose.Schema.Types.ObjectId, ref: 'KadeBook' }, track: { type: Number, default: 0 }, title: { type: String, default: '' } }],
+      default: [],
+    },
+  },
+  { timestamps: true },
+);
+kadeCollectionSchema.index({ owner: 1, updatedAt: -1 });
 
 const kadeBookTextSchema = new mongoose.Schema(
   {
@@ -157,5 +201,6 @@ const KadeReadingProgress =
   mongoose.models.KadeReadingProgress || mongoose.model('KadeReadingProgress', kadeReadingProgressSchema, 'kadereadingprogress');
 const KadeReadingBookmark =
   mongoose.models.KadeReadingBookmark || mongoose.model('KadeReadingBookmark', kadeReadingBookmarkSchema, 'kadereadingbookmarks');
+const KadeCollection = mongoose.models.KadeCollection || mongoose.model('KadeCollection', kadeCollectionSchema, 'kadecollections');
 
-module.exports = { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, CATEGORIES };
+module.exports = { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, CATEGORIES };

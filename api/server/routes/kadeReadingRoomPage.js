@@ -51,6 +51,15 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     select, input[type=text], input[type=file], textarea, .now { background:#1e2127; color:inherit; border-color:#2c2f37; }
   }
   @media (max-width: 480px) { .controls { grid-template-columns:1fr 1fr; } }
+  video.player { width:100%; max-height:60vh; background:#000; border-radius:14px; margin:.6rem 0; }
+  video.player.audioonly { height:2px; min-height:0; opacity:0; margin:0; }
+  nav.crumbs { display:flex; flex-wrap:wrap; gap:.3rem; align-items:center; margin:.4rem 0; }
+  nav.crumbs button { font:inherit; background:none; border:none; color:#1d55d0; text-decoration:underline; cursor:pointer; padding:.2rem .1rem; }
+  @media (prefers-color-scheme: dark) { nav.crumbs button { color:#93c5fd; } }
+  ul.plain li.folder span.t { font-weight:600; }
+  ol.scenes { padding-left:1.2rem; } ol.scenes li { margin:.3rem 0; }
+  ol.scenes li.now { font-weight:700; }
+  .pager { display:flex; gap:.5rem; align-items:center; margin:.5rem 0; }
 </style></head>
 <body>
   <p><a class="back" href="/home" aria-label="Back to Home">&larr; Home</a></p>
@@ -59,6 +68,25 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
 
   <section id="shelf">
     <p class="muted">Books read aloud by a voice you choose, and recordings the family has donated. Your shelf is yours; put something in the library and everyone can check it out.</p>
+
+    <h2 id="h-search">Find something</h2>
+    <div class="row">
+      <label class="field" for="searchBox" style="margin:0">Search the library</label>
+      <input type="text" id="searchBox" style="flex:1 1 14rem" placeholder="A title, a channel, a brand, a year…">
+      <button class="act" id="searchBtn" type="button">Search</button>
+    </div>
+    <ul class="plain" id="searchList" aria-labelledby="h-search"></ul>
+
+    <h2 id="h-archive">The archive</h2>
+    <p class="hint">The family's television, commercials, tapes and radio, browsed the way the collection is filed. Open a folder, then a clip.</p>
+    <nav class="crumbs" id="crumbs" aria-label="Where you are in the archive"></nav>
+    <ul class="plain" id="archiveList" aria-labelledby="h-archive"><li class="muted">Loading…</li></ul>
+    <div class="pager" id="archivePager" hidden><button class="act quiet" id="pagePrev" type="button">Previous page</button><span id="pageInfo"></span><button class="act quiet" id="pageNext" type="button">Next page</button></div>
+
+    <h2 id="h-collections">Collections</h2>
+    <p class="hint">Playlists you put together from anything in the library — yours until you share them.</p>
+    <ul class="plain" id="collectionList" aria-labelledby="h-collections"><li class="muted">Loading…</li></ul>
+    <div class="row"><input type="text" id="newCollTitle" style="flex:1 1 12rem" placeholder="New collection name" aria-label="New collection name"><button class="act" id="newCollBtn" type="button">Make it</button></div>
 
     <h2 id="h-mine">Your shelf</h2>
     <ul class="plain" id="mineList" aria-labelledby="h-mine"><li class="muted">Loading…</li></ul>
@@ -105,6 +133,14 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     </div>
   </section>
 
+  <section id="collection" class="hidden">
+    <p><button class="act quiet" id="collBack" type="button">&larr; Back to the shelf</button></p>
+    <h2 id="collTitle"></h2>
+    <p class="meta" id="collMeta"></p>
+    <div class="row"><button class="act primary" id="collPlayAll" type="button">Play all, in order</button><button class="act quiet" id="collShareBtn" type="button" hidden></button><button class="act quiet" id="collDeleteBtn" type="button" hidden>Delete this collection</button></div>
+    <ol class="plain" id="collItems"></ol>
+  </section>
+
   <section id="player" class="hidden">
     <p><button class="act quiet" id="backToShelf" type="button">&larr; Back to the shelf</button></p>
     <h2 id="bookTitle"></h2>
@@ -120,7 +156,24 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
       <button class="act quiet" id="startBtn" type="button">From the beginning</button>
     </div>
     <p class="hint">Keys: Space play or pause, Left and Right back or forward, Shift with Left or Right for chapters, B for a bookmark.</p>
+    <video id="fileMedia" class="player audioonly" controls playsinline preload="metadata" x-webkit-airplay="allow" aria-label="The recording"></video>
+    <div class="row" id="castRow" hidden>
+      <button class="act quiet" id="airplayBtn" type="button" hidden>AirPlay</button>
+      <button class="act quiet" id="castBtn" type="button" hidden>Cast to a TV</button>
+      <button class="act quiet" id="addCollBtn" type="button">Add to a collection</button>
+    </div>
     <div class="now" id="nowText" aria-label="Now reading"></div>
+    <details id="descWrap" hidden><summary id="descSummary">Video description</summary>
+      <p class="hint" id="descHint">A described-video track written by the library's eyes: what is on screen, scene by scene. One run serves everyone.</p>
+      <div class="row">
+        <button class="act" id="descBtn" type="button">Describe this video</button>
+        <button class="act quiet" id="descReadBtn" type="button" hidden>Read the description</button>
+        <label class="field" style="margin:0" id="descModeWrap" hidden><input type="checkbox" id="descMode"> Play with descriptions (pauses to describe each scene)</label>
+      </div>
+      <p id="descStatus" class="hint"></p>
+      <p id="descText"></p>
+      <ol class="scenes" id="descScenes"></ol>
+    </details>
 
     <label class="field" for="chapterSel">Chapter</label>
     <select id="chapterSel"></select>
@@ -150,7 +203,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     <details id="borrowWrap" class="hidden"><summary>Checked out</summary>
       <button class="act quiet" id="returnBtn" type="button">Return it to the library</button>
     </details>
-    <audio id="fileAudio" preload="auto" class="hidden"></audio>
+
   </section>
 
 <script>
@@ -181,6 +234,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     var by = b.author ? ' by ' + b.author : '';
     var prog = b.progress && b.progress.where ? (b.kind === 'audio' ? ' · Part ' : ' · Chapter ') + b.progress.where : '';
     var donor = where === 'library' || where === 'borrowed' ? ' · Donated by ' + esc(b.ownerName || 'someone') : '';
+    if (where === 'archive') { var m = b.meta || {}; donor = [m.year, m.network || m.cableChannel || m.callSign, m.brand, m.market].filter(Boolean).map(esc).join(' · '); donor = donor ? ' · ' + donor : ''; if (b.described) donor += ' · described'; }
     var len = b.listen ? ' · ' + b.listen : '';
     var pending = b.state === 'pending' ? ' · no recordings yet' : '';
     li.innerHTML = '<span class="t book"><strong>' + esc(b.title) + '</strong><span class="meta">' + esc(kind + by) + len + prog + donor + pending + (b.shared && where === 'mine' ? ' · in the library' : '') + '</span></span>';
@@ -220,6 +274,117 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     } catch(e) { say('Could not load the shelf: ' + e.message); }
   }
   $('catFilter').onchange = renderLibrary;
+
+  /* search */
+  async function doSearch(){
+    var q = $('searchBox').value.trim(); var ul = $('searchList'); ul.innerHTML = '';
+    if (!q) return;
+    try {
+      var j = await api('/search?q=' + encodeURIComponent(q));
+      if (!j.items.length) { ul.innerHTML = '<li class="muted">Nothing matched.</li>'; say('Nothing matched ' + q + '.'); return; }
+      j.items.forEach(function(b){ ul.appendChild(bookLi(b, b.path ? 'archive' : 'library')); });
+      say(j.items.length + ' result' + (j.items.length === 1 ? '' : 's') + ' for ' + q + '.');
+    } catch(e) { say(e.message); }
+  }
+  $('searchBtn').onclick = doSearch;
+  $('searchBox').addEventListener('keydown', function(ev){ if (ev.key === 'Enter') { ev.preventDefault(); doSearch(); } });
+
+  /* the archive */
+  var archivePath = '', archivePage = 0;
+  async function loadArchive(path, page){
+    archivePath = path || ''; archivePage = page || 0;
+    var ul = $('archiveList'); ul.innerHTML = '<li class="muted">Loading…</li>';
+    try {
+      var j = await api('/archive?path=' + encodeURIComponent(archivePath) + '&page=' + archivePage);
+      var crumbs = $('crumbs'); crumbs.innerHTML = '';
+      var home = document.createElement('button'); home.type = 'button'; home.textContent = 'Archive'; home.onclick = function(){ loadArchive('', 0); }; crumbs.appendChild(home);
+      var parts = archivePath ? archivePath.split('/') : [];
+      parts.forEach(function(seg, i){
+        var sep = document.createElement('span'); sep.textContent = ' › '; sep.setAttribute('aria-hidden', 'true'); crumbs.appendChild(sep);
+        var b = document.createElement('button'); b.type = 'button'; b.textContent = seg; var target = parts.slice(0, i + 1).join('/');
+        if (i === parts.length - 1) { b.setAttribute('aria-current', 'location'); }
+        b.onclick = function(){ loadArchive(target, 0); }; crumbs.appendChild(b);
+      });
+      ul.innerHTML = '';
+      if (!j.folders.length && !j.items.length) { ul.innerHTML = '<li class="muted">' + (archivePath ? 'This folder is empty.' : 'Nothing has been pushed to the archive yet. On the PC, run "9 - PUSH TO LIBRARY" in the collection folder.') + '</li>'; }
+      j.folders.forEach(function(f){
+        var li = document.createElement('li'); li.className = 'folder';
+        li.innerHTML = '<span class="t">📁 ' + esc(f.name) + ' <span class="muted">(' + f.count + ')</span></span>';
+        var open = document.createElement('button'); open.className = 'act quiet'; open.type = 'button'; open.textContent = 'Open folder';
+        open.setAttribute('aria-label', 'Open folder ' + f.name + ', ' + f.count + ' item' + (f.count === 1 ? '' : 's'));
+        open.onclick = function(){ loadArchive(f.path, 0); };
+        li.appendChild(open); ul.appendChild(li);
+      });
+      j.items.forEach(function(b){ ul.appendChild(bookLi(b, 'archive')); });
+      var pages = Math.ceil(j.total / j.limit);
+      $('archivePager').hidden = pages <= 1;
+      $('pageInfo').textContent = 'Page ' + (j.page + 1) + ' of ' + pages + ' (' + j.total + ' clips here)';
+      $('pagePrev').disabled = j.page <= 0; $('pageNext').disabled = j.page + 1 >= pages;
+      if (path !== undefined) say((archivePath || 'The archive') + ': ' + j.folders.length + ' folder' + (j.folders.length === 1 ? '' : 's') + ', ' + j.total + ' clip' + (j.total === 1 ? '' : 's') + '.');
+    } catch(e) { ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
+  }
+  $('pagePrev').onclick = function(){ loadArchive(archivePath, archivePage - 1); };
+  $('pageNext').onclick = function(){ loadArchive(archivePath, archivePage + 1); };
+
+  /* collections */
+  var collections = { mine: [], shared: [] };
+  async function loadCollections(){
+    var ul = $('collectionList'); ul.innerHTML = '';
+    try {
+      collections = await api('/collections');
+      var all = collections.mine.map(function(c){ c._mine = true; return c; }).concat(collections.shared);
+      if (!all.length) { ul.innerHTML = '<li class="muted">No collections yet. Name one below, then use "Add to a collection" on anything you play.</li>'; return; }
+      all.forEach(function(c){
+        var li = document.createElement('li');
+        li.innerHTML = '<span class="t book"><strong>' + esc(c.title) + '</strong><span class="meta">' + c.count + ' item' + (c.count === 1 ? '' : 's') + (c._mine ? (c.shared ? ' · shared' : ' · private') : ' · by ' + esc(c.ownerName)) + '</span></span>';
+        var open = document.createElement('button'); open.className = 'act'; open.type = 'button'; open.textContent = 'Open'; open.setAttribute('aria-label', 'Open collection ' + c.title);
+        open.onclick = function(){ location.search = '?collection=' + c.id; };
+        li.appendChild(open); ul.appendChild(li);
+      });
+    } catch(e) { ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
+  }
+  $('newCollBtn').onclick = async function(){
+    var t = $('newCollTitle').value.trim(); if (!t) { say('Give the collection a name first.'); return; }
+    try { await api('/collections', { json: { title: t } }); $('newCollTitle').value = ''; say('Made ' + t + '.'); loadCollections(); } catch(e) { say(e.message); }
+  };
+  async function openCollection(id){
+    try {
+      var c = await api('/collections/' + id);
+      $('shelf').classList.add('hidden'); $('collection').classList.remove('hidden');
+      $('collTitle').textContent = c.title;
+      $('collMeta').textContent = c.items.length + ' item' + (c.items.length === 1 ? '' : 's') + (c.mine ? (c.shared ? ' · shared with the family' : ' · private') : ' · by ' + c.ownerName) + (c.description ? ' · ' + c.description : '');
+      var ol = $('collItems'); ol.innerHTML = '';
+      c.items.forEach(function(it, i){
+        var li = document.createElement('li');
+        li.innerHTML = '<span class="t book"><strong>' + (i + 1) + '. ' + esc(it.title) + '</strong><span class="meta">' + esc((it.book.author ? it.book.author + ' · ' : '') + catName(it.book.kind === 'text' ? 'book' : it.book.category) + (it.seconds ? ' · ' + clock(it.seconds) : '')) + '</span></span>';
+        var play = document.createElement('button'); play.className = 'act'; play.type = 'button'; play.textContent = 'Play'; play.setAttribute('aria-label', 'Play ' + it.title);
+        play.onclick = function(){ queue = c.items.slice(i + 1).map(function(x){ return x.book.id; }); location.search = '?book=' + it.book.id + '&track=' + it.track + '&q=' + encodeURIComponent(queue.join(',')); };
+        li.appendChild(play);
+        if (c.mine) { var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Remove'; rm.setAttribute('aria-label', 'Remove ' + it.title + ' from this collection'); rm.onclick = async function(){ try { await api('/collections/' + id + '/edit', { json: { remove: it.n } }); say('Removed.'); openCollection(id); } catch(e) { say(e.message); } }; li.appendChild(rm); }
+        ol.appendChild(li);
+      });
+      $('collPlayAll').onclick = function(){ if (!c.items.length) { say('It is empty.'); return; } $('collItems').querySelector('button').click(); };
+      $('collShareBtn').hidden = !c.mine; $('collDeleteBtn').hidden = !c.mine;
+      $('collShareBtn').textContent = c.shared ? 'Make it private' : 'Share it with the family';
+      $('collShareBtn').onclick = async function(){ try { await api('/collections/' + id + '/edit', { json: { shared: !c.shared } }); openCollection(id); say(c.shared ? 'Private now.' : 'Shared with the family.'); } catch(e) { say(e.message); } };
+      $('collDeleteBtn').onclick = async function(){ if (!confirm('Delete the collection "' + c.title + '"? The items themselves stay in the library.')) return; try { await api('/collections/' + id, { method: 'DELETE' }); location.search = ''; } catch(e) { say(e.message); } };
+      say('Collection ' + c.title + ', ' + c.items.length + ' items.');
+    } catch(e) { say(e.message); location.search = ''; }
+  }
+  $('collBack').onclick = function(){ location.search = ''; };
+  $('addCollBtn').onclick = async function(){
+    if (!book) return;
+    try {
+      if (!collections.mine.length) collections = await api('/collections');
+      var names = collections.mine.map(function(c, i){ return (i + 1) + '. ' + c.title; });
+      var pick = prompt('Add "' + book.title + '" to which collection?\\n' + (names.length ? names.join('\\n') + '\\nType a number, or a new name to make one.' : 'You have none yet — type a name to make one.'));
+      if (pick == null || !pick.trim()) return;
+      var n = parseInt(pick, 10); var target = (n >= 1 && collections.mine[n - 1]) ? collections.mine[n - 1] : null;
+      if (!target) { var made = await api('/collections', { json: { title: pick.trim() } }); target = made.collection; }
+      await api('/collections/' + target.id + '/items', { json: { book: book.id, track: pos.s } });
+      say('Added to ' + target.title + '.');
+    } catch(e) { say(e.message); }
+  };
 
   $('bookUploadBtn').onclick = async function(){
     var f = $('bookFile').files[0];
@@ -317,8 +482,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
   /* ── player ────────────────────────────────────────────────────────── */
   var book = null, pos = { s: 0, c: 0 }, playing = false, voice = '', speed = 1;
   var ctx = null, gainNode = null, scheduled = [], nextStart = 0, cache = {}, fetching = {}, ended = false, playToken = 0;
-  var fileAudio = $('fileAudio');
-  var isAudio = function(){ return book && book.kind === 'audio'; };
+  var fileAudio = $('fileMedia');
+  var isAudio = function(){ return book && book.kind !== 'text'; };
+  var isVideoTrack = function(){ return book && book.tracks && book.tracks[pos.s] && /^video\\//.test(book.tracks[pos.s].mime || ''); };
+  var queue = []; // collection playback: item ids still to play
+  var autoplayNext = false;
 
   function chapterTitle(s){ var ch = isAudio() ? book.tracks[s] : book.chapters[s]; return ch ? ch.title : ''; }
   function announcePosition(prefix){
@@ -465,6 +633,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
   }
   function pause(){
     playing = false; $('playBtn').textContent = 'Play';
+    if (descAudio) { try { descAudio.pause(); } catch(e) {} descAudio = null; descPausedFor = null; }
     if (isAudio()) { fileAudio.pause(); saveProgress(true); updateSession(); return; }
     stopScheduled(); saveProgress(true); updateSession();
   }
@@ -485,11 +654,23 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     if (fileAudio.readyState >= 1) setTime(); else fileAudio.addEventListener('loadedmetadata', setTime, { once: true });
     fileAudio.playbackRate = speed;
     $('nowText').textContent = t.title + (t.seconds ? ' — ' + clock(t.seconds) : '');
+    fileAudio.classList.toggle('audioonly', !/^video\\//.test(t.mime || ''));
+    $('castRow').hidden = false;
+    $('airplayBtn').hidden = !(window.WebKitPlaybackTargetAvailabilityEvent && fileAudio.webkitShowPlaybackTargetPicker);
+    $('castBtn').hidden = !(fileAudio.remote && fileAudio.remote.prompt);
+    renderDescription();
     saveProgress();
     if (andPlay) play();
   }
+  $('airplayBtn').onclick = function(){ try { fileAudio.webkitShowPlaybackTargetPicker(); } catch(e) { say('AirPlay is not available here.'); } };
+  $('castBtn').onclick = function(){ try { fileAudio.remote.prompt().catch(function(e){ say('No TV to cast to was found.'); }); } catch(e) { say('Casting is not available here.'); } };
   function clock(sec){ sec = Math.floor(sec || 0); var m = Math.floor(sec / 60), s = sec % 60; var h = Math.floor(m / 60); m = m % 60; return (h ? h + ':' + String(m).padStart(2,'0') : m) + ':' + String(s).padStart(2,'0'); }
-  fileAudio.addEventListener('ended', function(){ if (pos.s + 1 < book.tracks.length) { loadTrack(pos.s + 1, 0, true); announcePosition(''); } else finishBook(); });
+  fileAudio.addEventListener('ended', function(){
+    if (descPausedFor) return;
+    if (pos.s + 1 < book.tracks.length) { loadTrack(pos.s + 1, 0, true); announcePosition(''); }
+    else if (queue.length) { var nextId = queue.shift(); say('Next in the collection.'); autoplayNext = true; try { history.replaceState(null, '', '?book=' + nextId + (queue.length ? '&q=' + queue.join(',') : '')); } catch(e) {} openBook(nextId); }
+    else finishBook();
+  });
   fileAudio.addEventListener('timeupdate', function(){ if (playing && Math.floor(fileAudio.currentTime) % 10 === 0) saveProgress(); });
   fileAudio.addEventListener('pause', function(){ if (playing && !fileAudio.ended) { playing = false; $('playBtn').textContent = 'Play'; } });
 
@@ -599,6 +780,95 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     }
     sel.value = voice;
   }
+  /* the library's eyes */
+  var descPausedFor = null, descTimer = null, descSpoken = {}, descAudio = null;
+  function renderDescription(){
+    var t = book && book.tracks && book.tracks[pos.s];
+    var wrap = $('descWrap');
+    if (!t || !/^video\\//.test(t.mime || '')) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    var d = t.description;
+    $('descScenes').innerHTML = ''; $('descText').textContent = ''; descSpoken = {};
+    if (d && d.state === 'done') {
+      $('descSummary').textContent = 'Video description (' + d.scenes.length + ' scenes)';
+      $('descBtn').textContent = 'Describe it again'; $('descReadBtn').hidden = false; $('descModeWrap').hidden = false;
+      $('descStatus').textContent = 'Described ' + (d.at ? new Date(d.at).toLocaleDateString() : '') + (d.costUSD ? ' for ' + money(d.costUSD) : '') + '.';
+      $('descText').textContent = d.summary;
+      d.scenes.forEach(function(sc, i){
+        var li = document.createElement('li'); li.id = 'scene-' + i;
+        li.innerHTML = '<span>' + esc(clock(sc.t)) + ' — ' + esc(sc.text) + '</span> ';
+        var go = document.createElement('button'); go.className = 'act quiet'; go.type = 'button'; go.textContent = 'Go'; go.setAttribute('aria-label', 'Go to ' + clock(sc.t));
+        go.onclick = function(){ fileAudio.currentTime = sc.t; play(); };
+        li.appendChild(go); $('descScenes').appendChild(li);
+      });
+    } else if (d && d.state === 'working') {
+      $('descSummary').textContent = 'Video description (working…)'; $('descStatus').textContent = 'Describing… this takes a few minutes for a long video.'; $('descBtn').textContent = 'Working…'; pollDescription();
+    } else {
+      $('descSummary').textContent = 'Video description'; $('descBtn').textContent = 'Describe this video'; $('descReadBtn').hidden = true; $('descModeWrap').hidden = true;
+      $('descStatus').textContent = d && d.state === 'failed' ? 'The last try failed: ' + (d.error || 'unknown') : '';
+    }
+  }
+  async function pollDescription(){
+    clearTimeout(descTimer);
+    try {
+      var j = await api('/book/' + book.id + '/describe/' + pos.s);
+      if (j.state === 'working') { $('descStatus').textContent = 'Describing… ' + (j.progress || ''); descTimer = setTimeout(pollDescription, 6000); return; }
+      book.tracks[pos.s].description = j.description; renderDescription();
+      if (j.state === 'done') say('The description is ready: ' + j.description.scenes.length + ' scenes.');
+      else if (j.state === 'failed') say('The description failed: ' + (j.description && j.description.error));
+    } catch(e) { descTimer = setTimeout(pollDescription, 10000); }
+  }
+  $('descBtn').onclick = async function(){
+    if (!book) return;
+    try {
+      var est = await api('/book/' + book.id + '/describe/' + pos.s + '/estimate');
+      if (!est.enabled) { say('Video descriptions are switched off on this server.'); return; }
+      var mins = Math.round(est.seconds / 60);
+      if (!confirm('Describe "' + book.tracks[pos.s].title + '"' + (est.hasSeconds ? ' (about ' + (mins || 1) + ' minute' + (mins === 1 ? '' : 's') + ')' : '') + '?\\nEstimated cost about ' + money(est.usd) + '. It takes a few minutes; the result is kept for everyone.')) return;
+      var r = await api('/book/' + book.id + '/describe/' + pos.s + (book.tracks[pos.s].description && book.tracks[pos.s].description.state === 'done' ? '?again=1' : ''), { method: 'POST' });
+      book.tracks[pos.s].description = { state: r.state === 'done' ? 'done' : 'working' };
+      if (r.description) book.tracks[pos.s].description = r.description;
+      renderDescription();
+      say(r.state === 'done' ? 'Already described.' : 'Describing. I will say when it is ready.');
+    } catch(e) { say(e.message); }
+  };
+  async function speak(text){
+    return new Promise(async function(resolve){
+      try {
+        var r = await fetch('/api/files/speech/tts/manual', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ input: text, voice: voice || undefined }) });
+        if (!r.ok) throw new Error('tts ' + r.status);
+        var blob = await r.blob(); var url = URL.createObjectURL(blob);
+        descAudio = new Audio(url); descAudio.onended = function(){ URL.revokeObjectURL(url); resolve(); }; descAudio.onerror = function(){ resolve(); };
+        descAudio.play().catch(function(){ resolve(); });
+      } catch(e) {
+        try { var u = new SpeechSynthesisUtterance(text); u.onend = resolve; u.onerror = resolve; speechSynthesis.speak(u); } catch(e2) { resolve(); }
+      }
+    });
+  }
+  $('descReadBtn').onclick = async function(){
+    var d = book && book.tracks[pos.s] && book.tracks[pos.s].description; if (!d || d.state !== 'done') return;
+    pause(); say('Reading the description.');
+    await speak(d.summary || 'No summary.');
+    for (var i = 0; i < d.scenes.length; i++) { if (playing) break; await speak('At ' + clock(d.scenes[i].t) + '. ' + d.scenes[i].text); }
+  };
+  fileAudio.addEventListener('timeupdate', function(){
+    if (!$('descMode').checked || descPausedFor || !book) return;
+    var d = book.tracks[pos.s] && book.tracks[pos.s].description; if (!d || d.state !== 'done') return;
+    var t = fileAudio.currentTime;
+    for (var i = 0; i < d.scenes.length; i++) {
+      var sc = d.scenes[i];
+      if (!descSpoken[i] && t >= sc.t && t < sc.t + 1.5) {
+        descSpoken[i] = true; descPausedFor = i;
+        fileAudio.pause();
+        var li = document.getElementById('scene-' + i); if (li) { [].forEach.call($('descScenes').children, function(x){ x.classList.remove('now'); }); li.classList.add('now'); }
+        speak(sc.text).then(function(){ descPausedFor = null; if (playing) fileAudio.play().catch(function(){}); });
+        break;
+      }
+    }
+  });
+  fileAudio.addEventListener('seeking', function(){ descSpoken = {}; var t = fileAudio.currentTime; var d = book && book.tracks[pos.s] && book.tracks[pos.s].description; if (d && d.scenes) d.scenes.forEach(function(sc, i){ if (sc.t < t - 1) descSpoken[i] = true; }); });
+  $('descMode').onchange = function(){ say(this.checked ? 'Descriptions on: the video pauses to describe each scene.' : 'Descriptions off.'); };
+
   function renderOwner(){
     var ow = $('ownerWrap'); var bw = $('borrowWrap');
     if (book.mine) {
@@ -634,7 +904,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     var p = book.progress || {};
     voice = p.voice || book.defaultVoice; speed = p.speed || 1;
     $('speedSel').value = String(speed);
-    if (isAudio()) { $('voiceWrap').classList.add('hidden'); pos = { s: p.s || 0, c: 0 }; loadTrack(pos.s, p.pos || 0, false); }
+    var wantTrack = parseInt(new URLSearchParams(location.search).get('track'), 10);
+    if (isAudio()) { $('voiceWrap').classList.add('hidden'); pos = { s: Number.isInteger(wantTrack) ? wantTrack : (p.s || 0), c: 0 }; loadTrack(pos.s, Number.isInteger(wantTrack) ? 0 : (p.pos || 0), autoplayNext); autoplayNext = false; }
     else { $('voiceWrap').classList.remove('hidden'); await loadVoices(); pos = { s: p.s || 0, c: p.c || 0 }; showText(pos); }
     sel.value = String(pos.s);
     sel.onchange = function(){ };
@@ -647,8 +918,10 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
   (async function(){
     token = await getToken();
     if (!token) { say('Please sign in first.'); location.href = '/login?redirect=' + encodeURIComponent(location.pathname + location.search); return; }
-    var id = new URLSearchParams(location.search).get('book');
-    if (id) openBook(id); else loadShelf();
+    var qs = new URLSearchParams(location.search);
+    var id = qs.get('book'); var coll = qs.get('collection');
+    if (qs.get('q')) queue = qs.get('q').split(',').filter(Boolean);
+    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); loadArchive(undefined, 0); loadCollections(); }
   })();
 })();
 </script>
