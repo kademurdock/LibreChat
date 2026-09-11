@@ -236,13 +236,13 @@ HOW THIS ENGINE WORKS, so you write for it:
 - It makes a WHOLE SCENE in one pass: several voices, music, sound effects, and ambience, mixed. Write it like a short scene brief, not a text-to-speech line.
 - The SCENE checklist — include all five: Setting (weather, location, acoustics), Cast (what each person is doing), Effects (music mood + sound effects), Notes on voice (sex, age, accent, emotion, tone, speed), Exact lines in quotes.
 - Every spoken line uses the shape:  Name (traits) says, manner: "words."  The manner goes before the colon — "lowers her voice, flustered:", "coaxes, dragging his words:", "can't help laughing:". Emotion words in parentheses after the name also work: Emma (whispering): "...".
-- Write LONG. Description is not padding: the environment, the score, and each delivery are all things this engine renders. Every sentence you leave out is a decision handed back to the model.
+- THE CAP COMES FIRST: the whole script, setting lines included, must be under 1,800 characters (the engine refuses anything over 2,048 and that is about two minutes of audio). Inside that, write DENSE, not long: the environment, the score, and each delivery are all things this engine renders, so spend the characters on them and cut the number of lines before you cut the description of a line.
 - SPELL THE SOUNDS OUT. Onomatopoeia is more reliable than naming: a bell "ring-a-ling" fading from near to far; a blade's "whoom, whoom".
 - Music by MOOD, never by music-theory terms.
 - Match the language: write the whole prompt in the language the lines are spoken in.
 - Up to three named voices. If reference clips are given they are @Audio1, @Audio2, @Audio3 — tag a clip to a speaker inline: Marcus (warm broadcaster, the actor is @Audio1) says: "...".
 - Optional exact timing: put [start:end] at the front of a line, e.g. "[5.5s:8.0s] Maya! Wait." and that line is fitted to that window.
-- Hard cap: under 1900 characters and about two minutes of audio. Longer pieces are made scene by scene with the same voices.
+- Hard cap, again: under 1,800 characters. Longer pieces are made scene by scene with the same voices, and the desk will cut a script that runs over rather than refuse it — so it is better that YOU choose what to cut.
 - NEVER use %%%…%%% markers. That is a different engine's syntax. A delivery note goes in parentheses after the name, or as the manner before the colon — nowhere else.
 - Output the script and nothing else. No code fence, no preamble.`;
 
@@ -527,6 +527,45 @@ function checkScenema(script, { allowLong = false, allowEmpty = false } = {}) {
     return `That script is ${s.length} characters; one render tops out at ${MAX_SCENEMA_CHARS} (about 600 spoken words), so it will be rendered in parts and joined into one recording.`;
   }
   return null;
+}
+
+/* Part 180.3 (Sep 11 2026, her tornado skit): the desk wrote 2,099 characters
+ * against Seed's 2,048 cap and the booth called it a PROBLEM and stopped —
+ * nothing was sent, nothing was made, and the page had no way forward but
+ * "shorten it". Length is a thing the booth can fix by itself. This cuts a
+ * long Seed script at the last line break that fits under the cap (a scene
+ * line is the unit Seed reads), keeps the closing bracket line if there was
+ * one and it fits, and says exactly what it did. Any other structural
+ * problem still stops the render. */
+function fitSeed(script) {
+  const s = String(script || '').trim();
+  if (s.length <= MAX_SEED_CHARS) return { script: s, note: null, cut: 0 };
+  const lines = s.split('\n');
+  const closing = lines.length > 1 && /^\[.*\]$/.test(lines[lines.length - 1].trim()) ? lines.pop().trim() : null;
+  const budget = MAX_SEED_CHARS - 8 - (closing ? closing.length + 1 : 0);
+  const kept = [];
+  let used = 0;
+  for (const line of lines) {
+    const add = line.length + (kept.length ? 1 : 0);
+    if (used + add > budget) break;
+    kept.push(line);
+    used += add;
+  }
+  if (kept.length < 2) {
+    /* one enormous line: cut at the last sentence end under the budget */
+    const flat = lines.join('\n').slice(0, budget);
+    const end = Math.max(flat.lastIndexOf('. '), flat.lastIndexOf('." '), flat.lastIndexOf('."'), flat.lastIndexOf('! '), flat.lastIndexOf('? '));
+    kept.length = 0;
+    kept.push(end > budget / 2 ? flat.slice(0, end + 1) : flat);
+  }
+  if (closing) kept.push(closing);
+  const out = kept.join('\n').trim();
+  const dropped = lines.length - (kept.length - (closing ? 1 : 0));
+  return {
+    script: out,
+    cut: s.length - out.length,
+    note: `Cut to fit Seed Audio: ${s.length} characters became ${out.length} (the cap is ${MAX_SEED_CHARS}, about two minutes) — ${dropped > 0 ? `the last ${dropped} line${dropped === 1 ? '' : 's'} came off the end` : 'the end of the last line came off'}${closing ? ', the closing sound line kept' : ''}. Read it back before you render.`,
+  };
 }
 
 function checkSeed(script) {
@@ -1073,6 +1112,29 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
         language: b.language,
       });
     }
+    if (engine === 'seed' && script.length > MAX_SEED_CHARS) {
+      /* one cheap second pass asks the writer to choose its own cuts; the
+       * trim below is the guarantee if it still runs over */
+      try {
+        const shorter = await callModel({
+          system: `You are the script desk in Kade-AI's Sound Booth. The Seed Audio script below is ${script.length} characters; the engine's cap is ${MAX_SEED_CHARS} and the target is under 1700. Cut it to fit. Keep the [Setting] line, every named voice with its traits, the shape of the scene and its ending; shorten spoken lines and drop the least necessary beat. Output the script and nothing else — no fence, no preamble, no READBACK.`,
+          user: script,
+          maxTokens: 1400,
+        });
+        const candidate = stripFence(shorter.text).trim();
+        if (candidate.length >= 200 && candidate.length < script.length && !/READBACK:/i.test(candidate)) {
+          repairs = [...repairs, `cut to fit Seed's cap: ${script.length} → ${candidate.length} characters`];
+          script = sanitizeSeed(candidate).script;
+        }
+      } catch (e) {
+        logger.warn('[soundbooth/script] cut-to-fit pass failed (trimming instead): ' + e.message);
+      }
+      if (script.length > MAX_SEED_CHARS) {
+        const fitted = fitSeed(script);
+        script = fitted.script;
+        repairs = [...repairs, fitted.note];
+      }
+    }
     const problem = engine === 'seed' ? checkSeed(script) : checkScenema(script);
     const estimate = estimateFor(engine, script);
     logKadeUsage({
@@ -1151,6 +1213,14 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   /* allowLong: a Scenema script over the cap is not refused here any more —
    * the splitter below turns it into parts. Every other structural problem
    * still stops the render before it spends. */
+  let fitNote = null;
+  if (engine === 'seed' && script.length > MAX_SEED_CHARS) {
+    const fitted = fitSeed(script);
+    script = fitted.script;
+    fitNote = fitted.note;
+    compileNotes = [...(compileNotes || []), fitted.note];
+    logger.info(`[soundbooth/render] seed script cut to fit: ${fitted.cut} characters off, user=${req.user.id}`);
+  }
   const problem =
     engine === 'lyria'
       ? checkMusic(script)
@@ -1163,7 +1233,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     const quoteScript = b.preview === true && engine === 'scenema'
       ? previewExcerpt(script, { maxWords: 40 }).prompt : script;
     const estimate = estimateFor(engine, quoteScript);
-    return res.json({ ok: true, estimate, preview: b.preview === true });
+    return res.json({ ok: true, estimate, preview: b.preview === true, note: fitNote, script: fitNote ? script : undefined });
   }
 
   let project = null;
@@ -2108,5 +2178,5 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE };
+module.exports._internals = { cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE };
 
