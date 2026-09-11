@@ -55,12 +55,34 @@ function lifeOf(ch) {
   return ch.attrs.life;
 }
 
-async function runCommand({ userId, displayName, command, isWizard = false, live = false, expectedRoomId, expectedExit }) {
+/* THE CHILD GATE (Part 180, Sep 11 2026 — the day the gate opened to the
+ * family). Canon, iron rules 7 and 8: kid wards cap the ladder at words BY
+ * CODE, and a child account is never told it is filtered. So on a child seat
+ * the corner, Ray's paper, pickpocketing, fists and romance simply do not
+ * happen: the verb answers with an in-world outcome (Ray is not around; you
+ * think better of it; you keep it friendly), the button never shows, and
+ * nothing anywhere says "restricted". The seat's flag is the same one the
+ * errand tool reads (`kadeAccountType === 'child'`). */
+const KID_QUIET = {
+  corner: 'Little Ray is not on this corner tonight. Gully Road is just a road, and somebody’s porch light is on.',
+  use: 'Nothing on you but pocket lint and a bus token. (Pat’s pie is the strongest thing on Gully Road for you.)',
+  pickpocket: 'You think about it, and then you think better of it. Sgt. Vann is never far, and neither is your own conscience.',
+  fight: 'You square up. They laugh it off — and so, in the end, do you. Words are the whole ladder here.',
+  flirt: 'You keep it friendly. That is the kind of friends you two are.',
+  kiss: 'You keep it friendly. A high five lands instead, and it lands well.',
+  date: 'You keep it friendly — a walk, a pie at Pat’s, a game at the Lanes. That is a good day already.',
+  propose: 'That is not a question for you to ask anybody yet. There is a whole city to see first.',
+};
+function kidQuietLine(verbName) {
+  return KID_QUIET[String(verbName || '').toLowerCase()] || null;
+}
+
+async function runCommand({ userId, displayName, command, isWizard = false, live = false, isChild = false, radioAudio = false, expectedRoomId, expectedExit }) {
   const ch = await oldEngine.getOrCreateChar(userId, displayName);
   // City activity belongs to the live room, not the reply to this command.
   await reverie.tickWorld();
   try { await lifeTick.run(); } catch (e) { logger.error('[life] tick failed (non-fatal):', e && e.message); }
-  const { result, events } = await oldEngine.withCommandEvents(() => runTurn({ ch, userId, command, isWizard, live, expectedRoomId, expectedExit }));
+  const { result, events } = await oldEngine.withCommandEvents(() => runTurn({ ch, userId, command, isWizard, live, isChild, radioAudio, expectedRoomId, expectedExit }));
   if (events.length) {
     await MooChar.updateOne({ userId: String(userId), active: true }, { $push: { 'attrs.seenEventSeqs': { $each: events, $slice: -100 } } });
     result.seenSeqs = events;
@@ -68,7 +90,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
   return result;
 }
 
-async function runTurn({ ch, userId, command, isWizard, live, expectedRoomId, expectedExit }) {
+async function runTurn({ ch, userId, command, isWizard, live, isChild = false, radioAudio = false, expectedRoomId, expectedExit }) {
   const life = lifeOf(ch);
   const lines = [];
   let kinds = [];
@@ -101,7 +123,7 @@ async function runTurn({ ch, userId, command, isWizard, live, expectedRoomId, ex
   const lower = cmd.toLowerCase();
 
   const ctx = {
-    ch, userId: ch.userId, isWizard, live,
+    ch, userId: ch.userId, isWizard, live, isChild: !!isChild, radioAudio: !!radioAudio,
     cmd, lower, lines, kinds, sounds,
     life,
     _room: null,
@@ -169,6 +191,11 @@ async function dispatch(ctx) {
     return ctx.fail(`You are mid-${(ch.attrs && ch.attrs.busyDoing) || 'something'} — about ${secs} second${secs === 1 ? '' : 's'} left. Senses are free: look, status, who.`);
   }
 
+  if (hit && ctx.isChild && kidQuietLine(hit.verb.name)) {
+    ctx.verbName = hit.verb.name;
+    ctx.say(kidQuietLine(hit.verb.name));
+    return ctx.ok({ kinds: [...ctx.kinds, 'emote'] });
+  }
   if (hit) {
     if (hit.verb.when && !(await hit.verb.when(ctx))) {
       if (!hit.verb.fallthrough) {
@@ -237,4 +264,4 @@ async function applyEffects(ctx, result) {
   if (Object.keys(patch).length) await ctxlib.setAttrs(ch, patch);
 }
 
-module.exports = { runCommand, registry };
+module.exports = { runCommand, registry, KID_QUIET, kidQuietLine };

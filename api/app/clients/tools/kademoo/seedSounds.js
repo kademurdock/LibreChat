@@ -207,7 +207,7 @@ function s3Client() {
 async function presignReverieUrl(url) {
   const leveled = leveledReverieUrl(url);
   if (leveled) return leveled;
-  const m = /\/(reverie-sounds\/[^?]+)/.exec(String(url || ''));
+  const m = /\/(reverie-(?:sounds|radio)\/[^?]+)/.exec(String(url || ''));
   if (!m) return null;
   const key = decodeURIComponent(m[1]);
   const hit = _signed.get(key);

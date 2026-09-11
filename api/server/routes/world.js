@@ -97,6 +97,11 @@ router.post('/command', async (req, res) => {
       /* a client holding /stream open already hears the room live; it asks
        * for no MEANWHILE recap so nothing is read twice. */
       live: req.body?.live === true,
+      /* Part 180: a child seat gets the words-only city (life/index.js
+       * KID_QUIET); a client that can PLAY audio says so and gets the radio
+       * as a recording instead of a transcript in the log. */
+      isChild: req.user.kadeAccountType === 'child',
+      radioAudio: req.body?.radioAudio === true,
       /* Wizard tier = platform admins (the Founder and deputies) — the #2
        * workflow: walk with NVDA, build as you go. */
       isWizard: req.user.role === 'ADMIN',
@@ -253,6 +258,21 @@ router.get('/stream', async (req, res) => {
   try { res.end(); } catch (_) { /* gone */ }
 });
 
+/* THE BAND (Part 180): what is on the air right now — the recording (a
+ * presigned url), the transcript, and the schedule — so a client can play
+ * the radio without a turn and the phone can read the words. Same gate. */
+router.get('/radio', async (req, res) => {
+  try {
+    if (gateClosed(req)) return res.status(403).json({ error: 'the gate is closed' });
+    const radio = require('~/app/clients/tools/kademoo/life/radio');
+    const tuned = await radio.tuneIn();
+    res.json({ ok: !!tuned, enabled: radio.ENABLED(), schedule: radio.SLOTS.map((s) => ({ slot: s.key, program: s.program, host: radio.HOSTS[s.host].name, from: s.from, to: s.to })), ...(tuned || {}) });
+  } catch (e) {
+    logger.error('[world] radio failed:', e.message);
+    res.status(500).json({ error: 'the dial is dead — try again' });
+  }
+});
+
 /* HERE — the room, the people, the compass, the buttons, with no side
  * effects and no line in the log. The client calls it after a live event
  * says somebody came or went, so the panels stay true without a "look". */
@@ -264,7 +284,7 @@ router.get('/here', async (req, res) => {
     const ch = await MooChar.findOne({ userId: String(req.user.id), active: true }).lean();
     if (!ch) return res.json({ ok: false });
     const life = (ch.attrs && ch.attrs.life) || {};
-    const ctx = { ch, userId: ch.userId, life, isWizard: req.user.role === 'ADMIN', _room: null, async room() { if (!this._room) this._room = await require('~/app/clients/tools/kademoo/life/ctx').roomOf(this.ch); return this._room; } };
+    const ctx = { ch, userId: ch.userId, life, isWizard: req.user.role === 'ADMIN', isChild: req.user.kadeAccountType === 'child', _room: null, async room() { if (!this._room) this._room = await require('~/app/clients/tools/kademoo/life/ctx').roomOf(this.ch); return this._room; } };
     const [room, hud, actions] = await Promise.all([view.describeRoom(ctx), view.hud(ctx), view.actions(ctx)]);
     res.json({ ok: true, room, hud, actions, people: room.peopleDetail, exits: room.exitsDetail, district: room.district, mode: life.created && !life.wiz ? 'play' : 'create' });
   } catch (e) {

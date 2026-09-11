@@ -1253,6 +1253,36 @@ async function activePlayerRooms() {
   return [...new Set(players.map((p) => p.roomId))];
 }
 
+/* THE CITY CLOCK (Part 180) — see tick step 3b. `line(room)` returns
+ * { text, sound } or null when this room does not hear the moment. Sound ids
+ * without a recording fall back to the page's synth earcons (city.*). */
+const RADIO_ROOMS_ON = new Set(['the_band_station', 'dezs_bar', 'pats_diner', 'the_truck_stop', 'the_garages']);
+const CITY_CLOCK = [
+  { key: 'gulls', h: 6, mi: 30, actor: 'the harbor', line: (r) => (r.district === 'hook' || r.district === 'sweetwater') && r.props?.outdoor
+    ? { sound: 'city.gulls', text: 'The gulls come off the water all at once, arguing about nothing, and settle on the pilings like they own them.' } : null },
+  { key: 'bell8', h: 8, mi: 0, actor: 'the Bell', line: (r) => bellLine(r, 'eight', 'seven') },
+  { key: 'whistle', h: 12, mi: 0, actor: 'the docks', line: (r) => (r.district === 'hook' || r.district === 'millrace')
+    ? { sound: 'city.whistle', text: r.props?.outdoor ? 'The noon whistle goes up from the docks — one long note the whole ward eats lunch by.' : 'The noon whistle, muffled through the wall. Lunch, says the whole ward at once.' } : null },
+  { key: 'bell12', h: 12, mi: 30, actor: 'the Bell', line: (r) => bellLine(r, 'twelve', 'eleven') },
+  { key: 'ferry', h: 17, mi: 30, actor: 'the ferry', line: (r) => (r.district === 'sweetwater' || r.district === 'hook')
+    ? { sound: 'city.ferry', text: r.props?.outdoor ? 'The ferry sounds its horn from the pier — two notes, low and patient — and the last of the day people head for the dock.' : 'The ferry horn, two low notes, comes through the window. Somebody is going home across the water.' } : null },
+  { key: 'bell18', h: 18, mi: 0, actor: 'the Bell', line: (r) => bellLine(r, 'six', 'five') },
+  { key: 'band', h: 20, mi: 0, actor: 'the Band', line: (r) => RADIO_ROOMS_ON.has(r.roomId)
+    ? { sound: 'radio', text: 'The radio behind the counter comes up: the Band signing on for the evening, the jingle first, then the voice. (Say "radio" to listen.)' } : null },
+  { key: 'taco', h: 3, mi: 0, actor: 'the taco window', line: (r) => r.district === 'tanglefoot'
+    ? { sound: 'city.taco', text: r.props?.outdoor ? 'The taco window’s line is the loudest thing in the ward: foil, laughter, somebody counting change out loud.' : 'Through the wall, the taco window’s 3 a.m. line — foil and laughter and somebody counting change.' } : null },
+];
+function bellLine(r, wrong, right) {
+  if (!r) return null;
+  if (r.district === 'bellward') return { sound: 'cer.bell.wronghour.single', text: r.props?.outdoor
+    ? `The Bell rings ${wrong} — it is ${right}. Nobody looks up. A pigeon does.`
+    : `The Bell, close, through the wall: ${wrong} strokes for ${right} o’clock. The room does not correct it either.` };
+  return { sound: r.props?.outdoor ? 'cer.bell.distant.ward' : 'cer.bell.distant.ward', text: r.props?.outdoor
+    ? `Far off, the Bell rings ${wrong}. It is ${right}. Every ward hears it, and every ward has stopped counting.`
+    : `The Bell, far away and wrong again — ${wrong} for ${right}. You only notice because the room went quiet for it.` };
+}
+const _cityClockFired = new Set();
+
 async function tickWorld() {
   const now = Date.now();
   if (now - lastTickAt < 45 * 1000) return;
@@ -1296,6 +1326,9 @@ async function tickWorld() {
     const rooms = await activePlayerRooms();
     if (!rooms.length) return;
     require('./life/planning').tickResidents(rooms, weatherNow().line);
+    /* Part 180: the Band writes its block for this slot while somebody is in
+     * the city, so "radio" answers with a recording and not a promise. */
+    try { require('./life/radio').ensureCurrent('tick'); } catch (e) { logger.warn('[reverie] radio prewarm skipped: ' + (e && e.message)); }
     /* 2 — weather turns, where sky can be felt. */
     const w = weatherNow();
     if (lastWeatherKind === null) lastWeatherKind = w.kind;
@@ -1349,24 +1382,51 @@ async function tickWorld() {
         await MooEvent.create({ seq, roomId, actorUserId: null, actorName: 'the night freight', kind: 'system', sound, text, at: new Date() });
       }
     }
-    /* 4 — one ambient breath of the census, sometimes.
+    /* 3b — THE CITY CLOCK (Part 180, Sep 11 2026: "it really needs to be a
+     * real life sim"). The freight was the only thing the whole city heard
+     * on a schedule. Now the day has a shape everywhere somebody is: gulls
+     * at first light on the water, the Bell ringing the wrong hour three
+     * times a day (near in Bellward, far everywhere else, through the walls
+     * indoors), the noon whistle on the docks and in the yards, the ferry's
+     * horn at the pier, the Band signing on for the evening wherever a
+     * radio is on, and the taco window's 3 a.m. line in Tanglefoot. Each
+     * fires once per day per moment, only in rooms with a person in them,
+     * and names its own sound so the ear gets it as well as the page. */
+    for (const m of CITY_CLOCK) {
+      const stampKey = `${today}:${m.key}`;
+      if (!(t.h === m.h && t.mi >= m.mi && t.mi < m.mi + 12) || _cityClockFired.has(stampKey)) continue;
+      _cityClockFired.add(stampKey);
+      if (_cityClockFired.size > 60) _cityClockFired.delete(_cityClockFired.values().next().value);
+      const where = await MooRoom.find({ roomId: { $in: rooms } }).select('roomId district props.outdoor').lean();
+      for (const r of where) {
+        const line = m.line(r);
+        if (!line) continue;
+        const seq = await nextSeq();
+        await MooEvent.create({ seq, roomId: r.roomId, actorUserId: null, actorName: m.actor, kind: 'system', sound: line.sound, text: line.text, at: new Date() });
+      }
+    }
+    /* 4 — one ambient breath of the census, sometimes, in EVERY room with a
+     * person in it (Part 180 — it used to be one citizen across the whole
+     * city per tick, which read as an empty town the moment two families
+     * were in two wards).
      * VEIL RULE: never repeat the same ambient line back-to-back for an NPC.
      * Four lines per NPC + dedup = a player never notices the pool is finite. */
-    if (Math.random() < 0.35) {
-      const hereNpcs = (await MooChar.find({ userId: /^npc:/, roomId: { $in: rooms } }).select('userId name roomId attrs.residentPlan').lean())
-        .filter((npc) => !require('./life/planning').publicActivity(npc, npcDoingNow(npc.userId)?.doing));
-      if (hereNpcs.length) {
-        const npc = hereNpcs[ambientCursor++ % hereNpcs.length];
-        const def = CENSUS_BY_ID[npc.userId];
-        if (def && def.ambient && def.ambient.length) {
-          /* Pick a line that isn't the same as last time */
-          const last = _lastAmbient[npc.userId];
-          const pool = def.ambient.filter(l => l !== last);
-          const line = (pool.length ? pool : def.ambient)[Math.floor(Math.random() * (pool.length || def.ambient.length))];
-          _lastAmbient[npc.userId] = line;
-          const seq = await nextSeq();
-          await MooEvent.create({ seq, roomId: npc.roomId, actorUserId: npc.userId, actorName: npc.name, kind: 'emote', text: line, at: new Date() });
-        }
+    const allHereNpcs = (await MooChar.find({ userId: /^npc:/, roomId: { $in: rooms } }).select('userId name roomId attrs.residentPlan').lean())
+      .filter((npc) => !require('./life/planning').publicActivity(npc, npcDoingNow(npc.userId)?.doing));
+    for (const roomId of rooms) {
+      if (Math.random() >= 0.3) continue;
+      const hereNpcs = allHereNpcs.filter((n) => n.roomId === roomId);
+      if (!hereNpcs.length) continue;
+      const npc = hereNpcs[ambientCursor++ % hereNpcs.length];
+      const def = CENSUS_BY_ID[npc.userId];
+      if (def && def.ambient && def.ambient.length) {
+        /* Pick a line that isn't the same as last time */
+        const last = _lastAmbient[npc.userId];
+        const pool = def.ambient.filter(l => l !== last);
+        const line = (pool.length ? pool : def.ambient)[Math.floor(Math.random() * (pool.length || def.ambient.length))];
+        _lastAmbient[npc.userId] = line;
+        const seq = await nextSeq();
+        await MooEvent.create({ seq, roomId: npc.roomId, actorUserId: npc.userId, actorName: npc.name, kind: 'emote', text: line, at: new Date() });
       }
     }
   } catch (e) {

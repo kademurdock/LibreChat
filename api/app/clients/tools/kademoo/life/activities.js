@@ -404,19 +404,38 @@ const DJ = {
 act({
   name: 'radio', aliases: ['listen radio', 'listen to the radio', 'turn on radio', 'tune in', 'the band'],
   help: { usage: 'radio', blurb: 'Tune in the Band — at home with a radio, at the station, at Dez’s or Pat’s, or in a car.' },
-  async run(ctx) {
+  async run(ctx, { arg }) {
     const room = await ctx.room();
     const car = (await require('./vehicles').owned(ctx.userId)).some((v) => v.props.vehicle.type === 'car');
     const ok = ['the_band_station', 'dezs_bar', 'pats_diner', 'the_truck_stop', 'the_garages'].includes(room.roomId) || car || (room.props && room.props.home && await require('./housing').furnitureHere(room.roomId, 'radio'));
     if (!ok) return ctx.fail('No radio here. Hock’s sells one for home; the Band comes through at Dez’s, Pat’s, the Truck Stop, and in any car.');
+    const sub = String(arg || '').trim();
+    /* Part 180: "radio off" turns the dial down (the client stops playback);
+     * "radio words" reads the block's transcript into the log. */
+    if (/^(off|stop|down|quiet)$/.test(sub)) { ctx.say('You turn the dial down. The room comes back.'); return ctx.ok({ radioStop: true }); }
+    const radio = require('./radio');
+    let tuned = null;
+    try { tuned = await radio.tuneIn(); } catch (e) { require('./ctx').logger.warn('[radio] tune-in failed: ' + (e && e.message)); }
+    ctx.need({ fun: 8, company: 3 });
+    if (tuned) {
+      if (/^(words|transcript|text|read)$/.test(sub)) {
+        ctx.say(`${tuned.radio.program} with ${tuned.radio.host} — “${tuned.radio.title}”:`, ...tuned.transcriptLines);
+        return ctx.ok({ kinds: [...ctx.kinds, 'radio'] });
+      }
+      /* a client that can play the recording gets it; every other client
+       * (the phone, the chat tool) reads the words instead */
+      if (ctx.radioAudio) { ctx.say(tuned.intro); return ctx.ok({ kinds: [...ctx.kinds, 'radio'], radio: tuned.radio }); }
+      ctx.say(tuned.intro.replace(/ Say "radio words".*$/, ''), ...tuned.transcriptLines);
+      return ctx.ok({ kinds: [...ctx.kinds, 'radio'] });
+    }
+    /* the authored lines, as before, while the first block is being written */
     const c = worldClock();
     const slot = c.h < 6 || c.h >= 23 ? 'night' : c.h < 11 ? 'morning' : c.h < 17 ? 'day' : 'evening';
-    const rumor = await MooRumor.findOne({ heat: { $gte: 3 } }).sort({ at: -1 }).lean();
-    ctx.need({ fun: 8, company: 3 });
-    ctx.say(`The dial warms. The Band: ${pick(DJ[slot])}${rumor ? ` "And word around town: ${rumor.text}. You heard it here, or you heard it at Levi’s, same thing."` : ''} Then ${pick(SONGS)}, and the room feels less empty.`);
+    const rumor = await MooRumor.findOne({ heat: { $gte: 3 }, kind: { $ne: 'vice' } }).sort({ at: -1 }).lean();
+    ctx.say(`The dial warms. The Band: ${pick(DJ[slot])}${rumor ? ` "And word around town: ${rumor.text}. You heard it here, or you heard it at Levi’s, same thing."` : ''} Then ${pick(SONGS)}, and the room feels less empty.${radio.ENABLED() ? ' (A new block is being written — tune in again in a minute.)' : ''}`);
     return ctx.ok({ kinds: [...ctx.kinds, 'radio'] });
   },
-  buttons: async (ctx) => { const r = await ctx.room(); return ['the_band_station', 'dezs_bar', 'pats_diner', 'the_truck_stop'].includes(r.roomId) || (r.props && r.props.home && await require('./housing').furnitureHere(r.roomId, 'radio')) ? [{ label: 'Turn on the radio', cmd: 'radio', group: 'here' }] : []; },
+  buttons: async (ctx) => { const r = await ctx.room(); return ['the_band_station', 'dezs_bar', 'pats_diner', 'the_truck_stop', 'the_garages'].includes(r.roomId) || (r.props && r.props.home && await require('./housing').furnitureHere(r.roomId, 'radio')) ? [{ label: 'Turn on the radio', cmd: 'radio', group: 'here' }, { label: 'Read what the radio said', cmd: 'radio words', group: 'here' }] : []; },
 });
 act({
   name: 'watch tv', aliases: ['tv', 'television', 'watch television'],
@@ -449,4 +468,4 @@ act({
 /* fallback for "play" with no child present */
 async function playGeneric(ctx, arg) { return ctx.fail(arg ? `Nobody called "${arg}" here to play with. "play cards" for a hand, "bowl" at the Lanes, "darts" at Dez’s.` : '"play with <kid>", "play cards <bet>", "bowl", "darts", "sing", "dance" — pick a thing.'); }
 
-module.exports = { RECIPES, playGeneric, scoreRolls };
+module.exports = { RECIPES, playGeneric, scoreRolls, SONGS, DJ };

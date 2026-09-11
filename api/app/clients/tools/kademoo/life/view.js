@@ -197,12 +197,24 @@ function personCmds(ctx, p, kind) {
       f('Talk to', 'talk to'),
       ...base,
     ];
-    if (!require('./relationships').NO_ROMANCE.has(id))
+    /* Part 180: a child seat is handed the words-only ladder (iron rule 7)
+     * and never a romance or a corner button (rule 8: never told why). */
+    if (!ctx.isChild && !require('./relationships').NO_ROMANCE.has(id))
       out.push(f('Flirt', 'flirt'), f('Date', 'date'));
-    out.push(f('Argue', 'argue'), f('Shove', 'shove'));
-    if (id === 'littleray') out.push({ label: 'See Ray', cmd: 'corner' });
+    out.push(f('Argue', 'argue'));
+    if (!ctx.isChild) out.push(f('Shove', 'shove'));
+    if (id === 'littleray' && !ctx.isChild) out.push({ label: 'See Ray', cmd: 'corner' });
     return out;
   }
+  if (ctx.isChild)
+    return [
+      ...base,
+      f('Dance with', 'dance with'),
+      { label: 'Whisper to', cmd: `whisper ${JSON.stringify(p.name)}` },
+      { label: 'Give $5', cmd: `give 5 dollars to ${p.name}` },
+      f('Give key', 'give key to'),
+      f('Argue', 'argue'),
+    ];
   return [
     ...base,
     f('Flirt', 'flirt'),
@@ -271,7 +283,14 @@ async function actions(ctx) {
   }
   /* de-dupe by cmd, keep first */
   const seen = new Set();
-  return out.filter((a) => (seen.has(a.cmd) ? false : (seen.add(a.cmd), true)));
+  const { kidQuietLine } = ctx.isChild ? require('./index') : { kidQuietLine: () => null };
+  return out.filter((a) => {
+    if (seen.has(a.cmd)) return false;
+    seen.add(a.cmd);
+    /* Part 180: a child seat never sees a corner/romance/fists button */
+    if (ctx.isChild && kidQuietLine(String(a.cmd).split(' ')[0])) return false;
+    return true;
+  });
 }
 
 /** Attach hud/actions/people/exits to any result. If the verb moved us or

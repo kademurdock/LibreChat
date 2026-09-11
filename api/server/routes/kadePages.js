@@ -1846,7 +1846,11 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
   <div id="status" class="status" role="status" aria-live="polite">Warming up the tables&hellip;</div>
 
   <section id="menu" hidden>
-    <p class="muted">The Parlor is the family game room: twenty-two games you play with real buttons, the house deals and referees, characters can sit in for company, and party tables let your people play their own hands from their own phones.</p>
+    <p class="muted">The Parlor is the family game room: twenty-two games you play with real buttons, the house deals and referees, characters can sit in for company, and party tables let your people play their own hands from their own phones. Reverie, the city, lives here too.</p>
+    <h2>Step into the city</h2>
+    <div class="gamelist" role="list" id="world-list">
+      <a class="game" role="listitem" href="/world" id="world-tile" style="display:block;text-decoration:none;color:inherit;box-sizing:border-box">Reverie <span class="desc">A small city that runs all the time: walk it, rent a room, work a shift, cook, fish, bowl, tune in the Band, and run into your family there. Opens in the same tab; Back returns you here.</span></a>
+    </div>
     <h2>Deal something new</h2>
     <div id="game-list" class="gamelist" role="list"></div>
     <div class="card" id="lobby-card">
@@ -3229,7 +3233,16 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       <button type="button" class="btn ghost mic" id="micBtn" aria-pressed="false" aria-label="Dictate a command">🎤 Talk</button>
       <button type="submit" class="btn" aria-label="Send">Do</button>
     </form>
-    <p id="commandStatus" role="status" aria-atomic="true"></p>
+    <p id="commandStatus" hidden></p>
+    <div class="section" id="radioBar" hidden style="margin-top:.8rem">
+      <h3 id="radioTitle">On the radio</h3>
+      <p id="radioNow" class="muted"></p>
+      <div class="toolbar">
+        <button type="button" class="chip" id="radioPlay">Play the radio</button>
+        <button type="button" class="chip" id="radioStopBtn">Turn the radio down</button>
+        <button type="button" class="chip" id="radioWords">Read the words</button>
+      </div>
+    </div>
   </div>
 
   <div class="col-right">
@@ -3286,9 +3299,9 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   </div>
 </main>
 <footer class="muted">Make yourself at home. &middot; <a href="/help/world">how Reverie works</a></footer>
-<script src="/assets/reverie/exploration.js?v=174"></script>
-<script src="/assets/reverie/room.js?v=174"></script>
-<script type="module" src="/assets/reverie/stage.mjs?v=174"></script>
+<script src="/assets/reverie/exploration.js?v=180"></script>
+<script src="/assets/reverie/room.js?v=180"></script>
+<script type="module" src="/assets/reverie/stage.mjs?v=180"></script>
 <script>
 (function(){
   'use strict';
@@ -3341,15 +3354,42 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     knockback: function(){},
     mic_on: function(){ tone(880,.06,0,'sine',.08); tone(1320,.08,.07,'sine',.08); },
     mic_off: function(){ tone(1320,.06,0,'sine',.08); tone(880,.08,.07,'sine',.08); },
-    live_on: function(){ tone(440,.05,0,'sine',.05); tone(660,.05,.06,'sine',.05); }
+    live_on: function(){ tone(440,.05,0,'sine',.05); tone(660,.05,.06,'sine',.05); },
+    /* Part 180 — the city clock and the sounds the wishlist still owes, so
+     * nothing the engine names is ever silent (ui.*, door.*, city.*) */
+    radio: function(){ noiseBurst(.22, 1800, .04); tone(880,.05,.14,'sine',.05); tone(1320,.07,.2,'sine',.04); },
+    'city.gulls': function(){ [0,.17,.31,.5].forEach(function(t,i){ tone(1450+i*110,.09,t,'sawtooth',.025); tone(1900+i*70,.06,t+.05,'sawtooth',.018); }); },
+    'city.whistle': function(){ tone(740,.9,0,'square',.045); tone(743,.9,0,'square',.03); },
+    'city.ferry': function(){ tone(110,1.1,0,'sawtooth',.06); tone(165,1.1,0,'sawtooth',.04); tone(110,.9,1.4,'sawtooth',.05); },
+    'city.taco': function(){ noiseBurst(.4, 900, .035); tone(330,.08,.25,'triangle',.05); tone(392,.08,.35,'triangle',.04); },
+    'door.open': function(){ tone(180,.08,0,'square',.07); noiseBurst(.12, 2200, .03, .06); },
+    'door.close': function(){ noiseBurst(.08, 1200, .04); tone(120,.09,.05,'square',.08); },
+    'ui.ok': function(){ tone(660,.05,0,'sine',.07); tone(990,.07,.06,'sine',.06); },
+    'ui.fail': function(){ tone(220,.09,0,'triangle',.06); tone(180,.12,.1,'triangle',.05); },
+    'ui.coin.gain': function(){ tone(1200,.05,0,'square',.06); tone(1600,.08,.06,'square',.05); tone(2000,.1,.13,'square',.04); },
+    'ui.roundtime.end': function(){ tone(520,.04,0,'sine',.05); tone(780,.05,.05,'sine',.05); },
+    'social.sit': function(){ noiseBurst(.16, 600, .04); tone(140,.08,.08,'triangle',.05); },
+    'social.stand': function(){ tone(140,.06,0,'triangle',.05); noiseBurst(.14, 700, .035, .05); }
   };
-  var CACHE = {};
+  var CACHE = {}, LAST_PLAY = {};
   function fileFor(kind){ return MANIFEST.event[kind] || LOCAL[kind] || null; }
   function playUrl(url){
     try {
+      /* Part 180: the same cue twice inside a third of a second is one cue */
+      var now = Date.now(); if (LAST_PLAY[url] && now - LAST_PLAY[url] < 300) return; LAST_PLAY[url] = now;
       var a = CACHE[url]; if (!a) { a = new Audio(url); a.preload = 'auto'; CACHE[url] = a; }
       var c = a.cloneNode(); c.volume = settings.sfxVol; var p = c.play(); if (p && p.catch) p.catch(function(){});
     } catch (e) {}
+  }
+  function noiseBurst(dur, cutoff, gain, delay){
+    var ctx = ac(); if (!ctx) return;
+    var length = Math.floor(ctx.sampleRate * dur), buffer = ctx.createBuffer(1, length, ctx.sampleRate), data = buffer.getChannelData(0);
+    for (var j = 0; j < length; j++) data[j] = (Math.random() * 2 - 1) * Math.exp(-j / (length * .35));
+    var source = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), g = ctx.createGain();
+    source.buffer = buffer; filter.type = 'bandpass'; filter.frequency.value = cutoff; filter.Q.value = .7;
+    g.gain.value = (gain || .05) * settings.sfxVol;
+    source.connect(filter); filter.connect(g); g.connect(ctx.destination); source.start(ctx.currentTime + (delay || 0));
+    source.onended = function(){ source.disconnect(); filter.disconnect(); g.disconnect(); };
   }
   function playKind(k){
     if (!settings.sfx || !k) return;
@@ -3357,10 +3397,28 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     if (url) return playUrl(url);
     var al = ALIAS[k]; if (al) { url = fileFor(al); if (url) return playUrl(url); k = al; }
     if (k.indexOf('move.step.') === 0) return surfaceSteps(k);
-    var fn = SYNTH[k] || (k.indexOf('social.') === 0 ? SYNTH.emote : k.indexOf('life.') === 0 ? SYNTH.emote : k.indexOf('transit.') === 0 ? SYNTH.move : null);
+    var fn = SYNTH[k]
+      || (k.indexOf('social.sit') === 0 ? SYNTH['social.sit'] : k.indexOf('social.stand') === 0 ? SYNTH['social.stand'] : null)
+      || (k.indexOf('door.open') === 0 ? SYNTH['door.open'] : k.indexOf('door.close') === 0 ? SYNTH['door.close'] : k.indexOf('door.') === 0 ? SYNTH.door : null)
+      || (k.indexOf('ui.enter') === 0 ? SYNTH.enter : k.indexOf('ui.leave') === 0 ? SYNTH.leave : k.indexOf('ui.coin') === 0 ? SYNTH['ui.coin.gain'] : k.indexOf('ui.') === 0 ? SYNTH.system : null)
+      || (k.indexOf('social.') === 0 ? SYNTH.emote : k.indexOf('life.') === 0 ? SYNTH.emote : k.indexOf('transit.') === 0 ? SYNTH.move : null)
+      || (k.indexOf('obj.') === 0 || k.indexOf('work.') === 0 ? SYNTH.take : k.indexOf('cer.') === 0 ? SYNTH.enter : k.indexOf('city.') === 0 ? SYNTH.emote : k.indexOf('weather.') === 0 ? SYNTH.emote : null);
     if (fn) fn();
   }
-  function playKinds(kinds){ (kinds || []).slice(0, 8).forEach(function(k, i){ setTimeout(function(){ playKind(k); }, i * 160); }); }
+  /* Part 180: at most four cues a turn, no duplicates, spaced so they read
+   * as separate things, with the ambience dipping under the burst. */
+  function playKinds(kinds){
+    var seen = {};
+    var list = (kinds || []).filter(function(k){ if (!k || seen[k]) return false; seen[k] = 1; return true; }).slice(0, 4);
+    if (list.length > 1) duck(700 + list.length * 220);
+    list.forEach(function(k, i){ setTimeout(function(){ playKind(k); }, i * 220); });
+  }
+  function duck(ms){
+    if (!amb.bed && !amb.tone) return;
+    if (amb.bed) fadeTo(amb.bed, amb.bed.volume * .45, 150);
+    if (amb.tone) fadeTo(amb.tone, amb.tone.volume * .45, 150);
+    clearTimeout(amb.duckTimer); amb.duckTimer = setTimeout(applyVolumes, ms);
+  }
   function surfaceSteps(kind){
     var ctx = ac(); if (!ctx) return;
     var soft = /carpet|grass|mud/.test(kind), metal = /metal/.test(kind), wet = /wet|mud/.test(kind);
@@ -3374,6 +3432,32 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       source.onended = (function(s, f, g){ return function(){ s.disconnect(); f.disconnect(); g.disconnect(); }; })(source, filter, gain);
     }
   }
+
+  /* THE RADIO (Part 180): the Band's block is a real recording now. One
+   * plays at a time, the ambience drops under it, and the words are one
+   * button away for anybody who would rather read than listen. */
+  var radio = { el: null, now: null };
+  function playRadio(r){
+    stopRadio(true);
+    if (!r || !r.url) return;
+    var a = new Audio(r.url); a.preload = 'auto'; a.volume = Math.min(1, settings.sfxVol);
+    radio.el = a; radio.now = r;
+    $('radioNow').textContent = r.program + ' with ' + r.host + ': “' + r.title + '” — about ' + r.seconds + ' seconds' + (r.fresh ? '' : ' (from earlier; a new block is being written)') + '.';
+    $('radioBar').hidden = false;
+    a.onended = function(){ radio.el = null; applyVolumes(); addLine('The block ends. The Band goes to a song.', 'live'); };
+    a.onplay = function(){ applyVolumes(); };
+    var p = a.play(); if (p && p.catch) p.catch(function(){ addLine('The radio needs a tap first — press "Play the radio".', 'system'); });
+  }
+  function stopRadio(quiet){
+    if (radio.el) { try { radio.el.pause(); } catch (e) {} radio.el = null; }
+    if (!quiet) { $('radioBar').hidden = true; radio.now = null; }
+    applyVolumes();
+  }
+  (document.readyState === 'loading' ? function(f){ document.addEventListener('DOMContentLoaded', f); } : function(f){ f(); })(function(){
+    $('radioPlay').addEventListener('click', function(){ unlock(); if (radio.el) { var p = radio.el.play(); if (p && p.catch) p.catch(function(){}); } else if (radio.now) playRadio(radio.now); });
+    $('radioStopBtn').addEventListener('click', function(){ stopRadio(); addLine('You turn the dial down.', 'system'); });
+    $('radioWords').addEventListener('click', function(){ send('radio words'); });
+  });
 
   /* ambience: bed (district) + tone (room), crossfaded */
   var amb = { bedUrl: null, bed: null, toneUrl: null, tone: null, drone: null };
@@ -3404,7 +3488,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     else if ((bedUrl || toneUrl) && amb.drone) drone(false);
     applyVolumes();
   }
-  function applyVolumes(){ if (amb.bed) fadeTo(amb.bed, settings.ambVol * (amb.indoor ? (amb.tone ? .3 : .6) : 1), 250); if (amb.tone) fadeTo(amb.tone, settings.ambVol * .6, 250); if (amb.drone) { try { amb.drone.g.gain.value = .02 * settings.ambVol; } catch (e) {} } }
+  function applyVolumes(){ var dk = (radio.el && !radio.el.paused) ? .3 : 1; if (amb.bed) fadeTo(amb.bed, dk * settings.ambVol * (amb.indoor ? (amb.tone ? .3 : .6) : 1), 250); if (amb.tone) fadeTo(amb.tone, dk * settings.ambVol * .6, 250); if (amb.drone) { try { amb.drone.g.gain.value = dk * .02 * settings.ambVol; } catch (e) {} } }
   document.addEventListener('visibilitychange', function(){ if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); });
   function compose(prefix, id){
     if (input.value.trim()) { addLine('Your command box already has a draft. Send or clear it first.', 'system'); input.focus(); return; }
@@ -3417,28 +3501,58 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   document.addEventListener('pointerdown', unlock); document.addEventListener('keydown', unlock);
 
   /* ── LOG ─────────────────────────────────────────────────────────────── */
+  /* Part 180 — SPEECH DISCIPLINE (her words: "sometimes voiceover interrupts
+   * itself"). Four causes were in this file: every line was its own live
+   * region addition, so a room description arrived as six announcements
+   * that VoiceOver could start and drop; the log trimmed itself WHILE it was
+   * being read; a second live region ("Doing: look") raced the first; and a
+   * live event from the room could land in the middle of a reply. Now every
+   * line written in one tick goes into ONE container and the region gets
+   * one addition; trimming happens when the next command starts; the status
+   * line is silent; and live events wait for a quiet moment sized to the
+   * text just read (about 45 ms a character, never more than nine seconds)
+   * before they are read as one addition of their own. */
+  var batch = null, batchTimer = null, quietUntil = 0;
   function addLine(text, cls){
     if (!text) return;
     var p = document.createElement('p'); p.className = cls || 'world'; p.textContent = text;
+    if (!batch) { batch = document.createElement('div'); batch.className = 'turn'; batchTimer = setTimeout(flushLines, 0); }
+    batch.appendChild(p);
+  }
+  function flushLines(){
+    clearTimeout(batchTimer); batchTimer = null;
+    if (!batch || !batch.children.length) { batch = null; return; }
     var following = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 50;
-    logEl.appendChild(p);
+    var chars = (batch.textContent || '').length;
+    logEl.appendChild(batch); batch = null;
     if (following) logEl.scrollTop = logEl.scrollHeight;
     else $('latestBtn').hidden = false;
-    while (logEl.children.length > 300) logEl.removeChild(logEl.firstChild);
+    quietUntil = Date.now() + Math.min(9000, 250 + chars * 45);
   }
+  function trimLog(){ while (logEl.children.length > 160) logEl.removeChild(logEl.firstChild); }
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   $('latestBtn').addEventListener('click', function(){ logEl.scrollTop = logEl.scrollHeight; this.hidden = true; logEl.focus(); });
   function syncButtons(box, rows, family, update){
     var existing = new Map();
-    Array.from(box.children).forEach(function(b){ if (b.dataset.family === family) existing.set(b.dataset.key, b); });
+    Array.from(box.children).forEach(function(b){
+      if (b.dataset.family !== family) return;
+      /* a button kept only because it had focus goes once focus has moved on */
+      if (b.dataset.stale && b !== document.activeElement) { b.remove(); return; }
+      existing.set(b.dataset.key, b);
+    });
     rows.forEach(function(row, index){
       var key = String(row.key), b = existing.get(key);
       if (!b) { b = document.createElement('button'); b.type = 'button'; b.dataset.family = family; b.dataset.key = key; box.appendChild(b); }
       existing.delete(key); update(b, row);
+      if (b.dataset.stale) { delete b.dataset.stale; b.disabled = false; }
     });
-    var lostFocus = false;
-    existing.forEach(function(b){ if (b === document.activeElement) lostFocus = true; b.remove(); });
-    if (lostFocus) { var next = box.querySelector('button'); if (next) next.focus(); else input.focus(); }
+    /* Part 180: a focused button is never pulled out from under the reader
+     * (a focus jump is an interruption). It stays, disabled and marked gone,
+     * until focus leaves it. */
+    existing.forEach(function(b){
+      if (b === document.activeElement) { b.disabled = true; b.dataset.stale = '1'; b.setAttribute('aria-label', (b.textContent || '') + ', gone now'); }
+      else b.remove();
+    });
   }
 
   /* ── RENDER ──────────────────────────────────────────────────────────── */
@@ -3570,6 +3684,8 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     var kinds = Array.from(new Set((d.kinds || []).concat(d.sounds || [])));
     if (!d.ok && !kinds.length) kinds = ['err'];
     playKinds(kinds);
+    if (d.radio) playRadio(d.radio);
+    if (d.radioStop) stopRadio();
     if (window.ReverieRoom) window.ReverieRoom.result(d);
     if (mode === 'play' && d.born) { $('m-live').textContent = live ? 'live' : 'quiet'; }
   }
@@ -3578,7 +3694,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   async function getToken(){ try { var r = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' }); if (!r.ok) return null; var j = await r.json(); return j && j.token || null; } catch (e) { return null; } }
   async function post(cmd, expectedRoomId, expectedExit){
     if (composeHangoutId && /^hangout add /i.test(cmd)) cmd += ' @' + composeHangoutId;
-    var body = JSON.stringify({ command: cmd, live: live, expectedRoomId: expectedRoomId, expectedExit: expectedExit });
+    var body = JSON.stringify({ command: cmd, live: live, radioAudio: true, expectedRoomId: expectedRoomId, expectedExit: expectedExit });
     var r = await fetch('/api/world/command', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }, body: body });
     if (r.status === 401) { TOKEN = await getToken(); if (TOKEN) r = await fetch('/api/world/command', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }, body: body }); }
     return r;
@@ -3591,9 +3707,9 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     stateEpoch++;
     sending = true;
     if (window.ReverieExplore) window.ReverieExplore.busy(true);
-    $('commandStatus').textContent = 'Doing: ' + cmd;
     $('cmdForm').setAttribute('aria-busy', 'true');
     $('cmdForm').querySelector('[type="submit"]').disabled = true;
+    trimLog();
     addLine(cmd, 'you');
     hist.push(cmd); if (hist.length > 60) hist.shift(); histIx = hist.length;
     closeMenu();
@@ -3607,7 +3723,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       if (d.ok && /^hangout add /i.test(cmd)) composeHangoutId = null;
       render(d);
     } catch (e) { if (!input.value) input.value = cmd; addLine('The connection was interrupted. Your command is in the box. Check look or status before repeating an action that spends money.', 'err'); playKind('err'); }
-    finally { stateEpoch++; sending = false; if (window.ReverieExplore) window.ReverieExplore.busy(false); $('commandStatus').textContent = ''; $('cmdForm').setAttribute('aria-busy', 'false'); $('cmdForm').querySelector('[type="submit"]').disabled = false; var queued = pendingLive; pendingLive = []; queued.forEach(onLive); }
+    finally { stateEpoch++; sending = false; if (window.ReverieExplore) window.ReverieExplore.busy(false); $('cmdForm').setAttribute('aria-busy', 'false'); $('cmdForm').querySelector('[type="submit"]').disabled = false; scheduleLiveFlush(); }
   }
   var hereTimer = null;
   function refreshHere(announcePeople){
@@ -3660,9 +3776,20 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     }
   }
   function stopStream(){ clearTimeout(streamRetry); if (streamAbort) { streamAbort.abort(); streamAbort = null; } live = false; $('m-live').textContent = 'quiet'; $('m-live').setAttribute('aria-label', 'Live room listening paused'); }
+  var liveFlushTimer = null;
+  function scheduleLiveFlush(){ if (liveFlushTimer) return; liveFlushTimer = setTimeout(flushLive, Math.max(120, quietUntil - Date.now() + 60)); }
+  function flushLive(){
+    liveFlushTimer = null;
+    if (!pendingLive.length) return;
+    if (sending || Date.now() < quietUntil) { scheduleLiveFlush(); return; }
+    var q = pendingLive; pendingLive = []; q.forEach(onLiveNow);
+  }
   function onLive(d){
     if (d.end) return;
-    if (sending) { pendingLive.push(d); return; }
+    if (sending || Date.now() < quietUntil) { pendingLive.push(d); scheduleLiveFlush(); return; }
+    onLiveNow(d);
+  }
+  function onLiveNow(d){
     if (Number.isSafeInteger(d.cursor)) streamCursor = d.cursor;
     var moved = false;
     (d.events || []).forEach(function(e){
@@ -3737,6 +3864,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   renderToggles();
 
   document.addEventListener('visibilitychange', function(){ if (document.hidden) stopStream(); else if (settings.live) startStream(); });
+  window.addEventListener('pagehide', function(){ stopRadio(true); });
   var presenceTimer = null;
   function watchPresence(){
     clearInterval(presenceTimer);
