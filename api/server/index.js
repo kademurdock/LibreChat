@@ -374,8 +374,8 @@ const startServer = async () => {
   app.get('/diary', (_req, res) => res.redirect(302, '/logbook'));
   app.get('/kade-tabbar.js', routes.kade.tabBarAssetPage);
   app.get('/parlor', routes.kadeParlor.page);
-  app.get('/reading-room', routes.kadeReadingRoom.page);
-  app.get('/library', (_req, res) => res.redirect(302, '/reading-room'));
+  app.get('/library', routes.kadeReadingRoom.page);
+  app.get('/reading-room', routes.kadeReadingRoom.page); // the room's first name still works
   app.get('/lounge', routes.kadeLounge.page);
   // July 24 2026: the Lounge grew up into KADE'S CLUBHOUSE — /clubhouse is
   // the pretty front door; /lounge stays alive forever (native build 154's

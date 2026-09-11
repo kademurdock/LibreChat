@@ -20,7 +20,7 @@
  * -------------------------------------------------------------------------- */
 const { SHARED_HEAD } = require('./kadePages');
 
-const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading Room — Kade-AI</title>${SHARED_HEAD}
+const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library — Kade-AI</title>${SHARED_HEAD}
 <style>
   .hidden { display:none !important; }
   .row { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
@@ -63,11 +63,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
 </style></head>
 <body>
   <p><a class="back" href="/home" aria-label="Back to Home">&larr; Home</a></p>
-  <h1 id="pageTitle">The Reading Room</h1>
+  <h1 id="pageTitle">The Library</h1>
   <p id="live" class="status" role="status" aria-live="polite"></p>
 
   <section id="shelf">
-    <p class="muted">Books read aloud by a voice you choose, and recordings the family has donated. Your shelf is yours; put something in the library and everyone can check it out.</p>
+    <p class="muted">The family library: books read aloud by a voice you choose, the archive of television, commercials, tapes and radio, recordings and videos the family has donated, and playlists. Your shelf is yours; put something in the library and everyone can check it out.</p>
 
     <h2 id="h-search">Find something</h2>
     <div class="row">
@@ -88,7 +88,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     <ul class="plain" id="collectionList" aria-labelledby="h-collections"><li class="muted">Loading…</li></ul>
     <div class="row"><input type="text" id="newCollTitle" style="flex:1 1 12rem" placeholder="New collection name" aria-label="New collection name"><button class="act" id="newCollBtn" type="button">Make it</button></div>
 
-    <h2 id="h-mine">Your shelf</h2>
+    <h2 id="h-mine">Your shelf (the Reading Room)</h2>
     <ul class="plain" id="mineList" aria-labelledby="h-mine"><li class="muted">Loading…</li></ul>
 
     <h2 id="h-borrowed">Checked out</h2>
@@ -100,6 +100,22 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
       <select id="catFilter" style="width:auto"><option value="">Everything</option></select>
     </div>
     <ul class="plain" id="libraryList" aria-labelledby="h-library"><li class="muted">Loading…</li></ul>
+
+    <h2 id="h-submit">Submit something for the library</h2>
+    <div class="card">
+      <p class="hint">Found a YouTube video, an archive.org recording, or anything else the family should have? Paste the link. The librarian looks at every submission and you are told when it is approved or declined. To submit a FILE, donate it below first (it lands on your shelf), then use "Submit this for the library" on its page.</p>
+      <label class="field" for="subUrl">Link</label><input type="text" id="subUrl" placeholder="https://www.youtube.com/watch?v=…">
+      <label class="field" for="subTitle">What is it (optional)</label><input type="text" id="subTitle" placeholder="KY3 commercials, 1994">
+      <label class="field" for="subNote">Why it belongs (optional)</label><textarea id="subNote" rows="2"></textarea>
+      <button class="act primary" id="subBtn" type="button">Submit for consideration</button>
+    </div>
+    <h2 id="h-mysubs">Your submissions</h2>
+    <ul class="plain" id="mySubs" aria-labelledby="h-mysubs"><li class="muted">Loading…</li></ul>
+    <section id="reviewWrap" hidden>
+      <h2 id="h-review">Waiting for the librarian</h2>
+      <p class="hint">You are the librarian. Approve a link and it is fetched into the collection from TubeVault's Cloud tab; approve a file and it goes into the library at once. The person who submitted it is told either way.</p>
+      <ul class="plain" id="reviewList" aria-labelledby="h-review"></ul>
+    </section>
 
     <h2 id="h-donate">Donate a book</h2>
     <div class="card">
@@ -221,6 +237,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
       <div class="row">
         <button class="act" id="shareBtn" type="button"></button>
         <button class="act quiet" id="grownBtn" type="button"></button>
+        <button class="act quiet" id="submitItemBtn" type="button">Submit this for the library</button>
         <button class="act quiet" id="deleteBtn" type="button">Withdraw it from the room</button>
       </div>
     </details>
@@ -367,6 +384,50 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
       });
     } catch(e) { ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
   }
+  /* submissions */
+  function subLi(sb, review){
+    var li = document.createElement('li');
+    var what = esc(sb.title || sb.url || 'a file');
+    var when = sb.createdAt ? new Date(sb.createdAt).toLocaleDateString() : '';
+    var state = sb.status === 'pending' ? 'waiting' : sb.status;
+    li.innerHTML = '<span class="t book"><strong>' + what + '</strong><span class="meta">' + (review ? 'from ' + esc(sb.userName) + ' · ' : '') + esc(state) + (when ? ' · ' + when : '') + (sb.url ? ' · <a href="' + esc(sb.url) + '" target="_blank" rel="noopener">open the link</a>' : '') + (sb.note ? ' · ' + esc(sb.note) : '') + (sb.decisionNote ? ' · librarian: ' + esc(sb.decisionNote) : '') + (sb.fetchedAt ? ' · fetched' : '') + '</span></span>';
+    if (review && sb.status === 'pending') {
+      var ok = document.createElement('button'); ok.className = 'act primary'; ok.type = 'button'; ok.textContent = 'Approve'; ok.setAttribute('aria-label', 'Approve ' + (sb.title || sb.url || 'this file'));
+      ok.onclick = async function(){ var note = prompt('A word for ' + sb.userName + '? (optional)') || ''; try { await api('/submissions/' + sb.id + '/decide', { json: { status: 'approved', note: note } }); say('Approved.'); loadSubmissions(); } catch(e) { say(e.message); } };
+      var no = document.createElement('button'); no.className = 'act quiet'; no.type = 'button'; no.textContent = 'Decline'; no.setAttribute('aria-label', 'Decline ' + (sb.title || sb.url || 'this file'));
+      no.onclick = async function(){ var note = prompt('Tell ' + sb.userName + ' why? (optional)') || ''; try { await api('/submissions/' + sb.id + '/decide', { json: { status: 'rejected', note: note } }); say('Declined.'); loadSubmissions(); } catch(e) { say(e.message); } };
+      li.appendChild(ok); li.appendChild(no);
+    } else if (!review && sb.status === 'pending') {
+      var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Withdraw'; rm.setAttribute('aria-label', 'Withdraw ' + (sb.title || sb.url || 'this submission'));
+      rm.onclick = async function(){ try { await api('/submissions/' + sb.id, { method: 'DELETE' }); say('Withdrawn.'); loadSubmissions(); } catch(e) { say(e.message); } };
+      li.appendChild(rm);
+    }
+    if (sb.book) { var open = document.createElement('button'); open.className = 'act quiet'; open.type = 'button'; open.textContent = 'Open the file'; open.onclick = function(){ location.search = '?book=' + sb.book; }; li.appendChild(open); }
+    return li;
+  }
+  async function loadSubmissions(){
+    try {
+      var mine = await api('/submissions?all=0'); var ul = $('mySubs'); ul.innerHTML = '';
+      if (!mine.submissions.length) ul.innerHTML = '<li class="muted">Nothing submitted yet.</li>';
+      mine.submissions.forEach(function(sb){ ul.appendChild(subLi(sb, false)); });
+      if (mine.librarian) {
+        var all = await api('/submissions?status=pending'); var rl = $('reviewList'); rl.innerHTML = '';
+        $('reviewWrap').hidden = false;
+        if (!all.submissions.length) rl.innerHTML = '<li class="muted">Nothing waiting.</li>';
+        all.submissions.forEach(function(sb){ rl.appendChild(subLi(sb, true)); });
+      }
+    } catch(e) { $('mySubs').innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
+  }
+  $('subBtn').onclick = async function(){
+    var url = $('subUrl').value.trim(); if (!url) { say('Paste a link first.'); $('subUrl').focus(); return; }
+    try { await api('/submissions', { json: { url: url, title: $('subTitle').value, note: $('subNote').value } }); $('subUrl').value = ''; $('subTitle').value = ''; $('subNote').value = ''; say('Submitted. The librarian will look at it and you will be told.'); loadSubmissions(); } catch(e) { say(e.message); }
+  };
+  $('submitItemBtn').onclick = async function(){
+    if (!book) return;
+    var note = prompt('Anything the librarian should know about "' + book.title + '"? (optional)'); if (note === null) return;
+    try { await api('/submissions', { json: { book: book.id, title: book.title, note: note } }); say('Submitted for the library. You will be told when it is approved.'); } catch(e) { say(e.message); }
+  };
+
   $('newCollBtn').onclick = async function(){
     var t = $('newCollTitle').value.trim(); if (!t) { say('Give the collection a name first.'); return; }
     try { await api('/collections', { json: { title: t } }); $('newCollTitle').value = ''; say('Made ' + t + '.'); loadCollections(); } catch(e) { say(e.message); }
@@ -975,7 +1036,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
       book = await api('/book/' + id);
     } catch(e) { say('Could not open that: ' + e.message); location.search = ''; return; }
     $('shelf').classList.add('hidden'); $('player').classList.remove('hidden');
-    $('pageTitle').textContent = 'The Reading Room';
+    $('pageTitle').textContent = 'The Library';
     $('bookTitle').textContent = book.title;
     var bits = [];
     if (book.author) bits.push('by ' + book.author);
@@ -1007,7 +1068,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     var qs = new URLSearchParams(location.search);
     var id = qs.get('book'); var coll = qs.get('collection');
     if (qs.get('q')) queue = qs.get('q').split(',').filter(Boolean);
-    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); loadArchive(undefined, 0); loadCollections(); }
+    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); loadArchive(undefined, 0); loadCollections(); loadSubmissions(); }
   })();
 })();
 </script>

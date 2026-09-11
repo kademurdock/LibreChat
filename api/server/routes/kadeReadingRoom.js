@@ -256,6 +256,7 @@ router.get('/shelf', requireJwtAuth, async (req, res) => {
     borrowed.sort((a, b) => borrowedOrder[String(a._id)] - borrowedOrder[String(b._id)]);
     const onShelf = new Set([...mineIds, ...borrowed.map((b) => String(b._id))]);
     res.json({
+      librarian: isAdmin(req),
       mine: mine.map((b) => summary(b, progByBook[String(b._id)])),
       borrowed: borrowed.map((b) => summary(b, progByBook[String(b._id)])),
       library: library.filter((b) => !onShelf.has(String(b._id))).map((b) => summary(b, null)),
@@ -1046,6 +1047,121 @@ router.post('/book/:id/ask/:t', requireJwtAuth, express.json({ limit: '8kb' }), 
     res.json({ ok: true, answer: r.answer });
   } catch (e) {
     res.status(400).json({ error: e.message || 'Could not answer.' });
+  }
+});
+
+
+/* ── SUBMISSIONS: "for library consideration" ──────────────────────────── */
+const { KadeLibrarySubmission } = require('~/models/kadeBook');
+const subOut = (s) => ({ id: String(s._id), user: String(s.user), userName: s.userName, url: s.url, title: s.title, note: s.note, book: s.book ? String(s.book) : null, status: s.status, decisionNote: s.decisionNote || '', decidedAt: s.decidedAt, fetchedAt: s.fetchedAt, createdAt: s.createdAt });
+
+async function notifyUser(userId, text, userName) {
+  try {
+    const { deliverNudge } = require('~/server/services/kadeNudges');
+    await deliverNudge(String(userId), text, { type: 'reminder', userName: userName || '' });
+  } catch (e) {
+    logger.warn(`[library/submissions] notify failed: ${e.message}`);
+  }
+}
+async function notifyLibrarians(text) {
+  try {
+    const { User } = require('~/db/models');
+    const admins = await User.find({ role: 'ADMIN' }, '_id name').lean();
+    for (const a of admins) await notifyUser(a._id, text, a.name);
+  } catch (e) {
+    logger.warn(`[library/submissions] admin notify failed: ${e.message}`);
+  }
+}
+
+router.post('/submissions', requireJwtAuth, express.json({ limit: '8kb' }), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const url = String(b.url || '').trim().slice(0, 2000);
+    const title = String(b.title || '').trim().slice(0, 300);
+    const note = String(b.note || '').trim().slice(0, 2000);
+    let book = null;
+    if (b.book && isId(b.book)) {
+      const item = await KadeBook.findOne({ _id: b.book, owner: req.user.id }).lean();
+      if (item) book = item._id;
+    }
+    if (!url && !book) return res.status(400).json({ error: 'Give a link, or donate a file first and submit that.' });
+    if (url && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'That does not look like a link. It should start with http.' });
+    const open = await KadeLibrarySubmission.countDocuments({ user: req.user.id, status: 'pending' });
+    if (open >= 50) return res.status(400).json({ error: 'You have fifty submissions waiting already — give the librarian a minute.' });
+    const userName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
+    const s = await KadeLibrarySubmission.create({ user: req.user.id, userName, url, title, note, book });
+    logger.info(`[library/submissions] ${userName} submitted ${url || 'file ' + book} "${title}"`);
+    notifyLibrarians(`${userName} submitted something for the family library${title ? `: "${title}"` : ''}${url ? ` (${url})` : ' (a file)'}. Open the Library page to approve or decline it.`);
+    res.json({ ok: true, submission: subOut(s.toObject()) });
+  } catch (e) {
+    logger.error('[library/submissions] error:', e);
+    res.status(500).json({ error: 'Could not submit that.' });
+  }
+});
+
+/** Mine; for a librarian (ADMIN) everyone's, filterable. TubeVault's Cloud
+ * tab asks for status=approved&unfetched=1. */
+router.get('/submissions', requireJwtAuth, async (req, res) => {
+  try {
+    const admin = isAdmin(req);
+    const q = admin && req.query.all !== '0' ? {} : { user: req.user.id };
+    if (req.query.status && ['pending', 'approved', 'rejected'].includes(String(req.query.status))) q.status = String(req.query.status);
+    if (req.query.unfetched === '1') { q.fetchedAt = { $exists: false }; q.url = { $ne: '' }; }
+    const rows = await KadeLibrarySubmission.find(q).sort({ createdAt: -1 }).limit(300).lean();
+    res.json({ submissions: rows.map(subOut), librarian: admin });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not list submissions.' });
+  }
+});
+
+router.post('/submissions/:id/decide', requireJwtAuth, express.json({ limit: '4kb' }), async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian decides.' });
+    if (!isId(req.params.id)) return res.status(404).json({ error: 'No such submission.' });
+    const s = await KadeLibrarySubmission.findById(req.params.id);
+    if (!s) return res.status(404).json({ error: 'No such submission.' });
+    const b = req.body || {};
+    const status = b.status === 'approved' ? 'approved' : b.status === 'rejected' ? 'rejected' : null;
+    if (!status) return res.status(400).json({ error: 'approved or rejected.' });
+    s.status = status;
+    s.decisionNote = String(b.note || '').trim().slice(0, 1000);
+    s.decidedBy = req.user.id;
+    s.decidedAt = new Date();
+    await s.save();
+    if (status === 'approved' && s.book) {
+      await KadeBook.updateOne({ _id: s.book }, { $set: { shared: true, sharedAt: new Date() } });
+    }
+    const what = s.title || s.url || 'your file';
+    notifyUser(s.user, status === 'approved'
+      ? `Your library submission "${what}" was approved${s.url ? ' — it will be fetched into the collection' : ' and is in the family library now'}.${s.decisionNote ? ' The librarian says: ' + s.decisionNote : ''}`
+      : `Your library submission "${what}" was not added this time.${s.decisionNote ? ' The librarian says: ' + s.decisionNote : ''}`, s.userName);
+    logger.info(`[library/submissions] ${status}: "${what}" from ${s.userName}`);
+    res.json({ ok: true, submission: subOut(s.toObject()) });
+  } catch (e) {
+    logger.error('[library/submissions/decide] error:', e);
+    res.status(500).json({ error: 'Could not record that decision.' });
+  }
+});
+
+router.post('/submissions/:id/fetched', requireJwtAuth, async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+    if (!isId(req.params.id)) return res.status(404).json({ error: 'No such submission.' });
+    await KadeLibrarySubmission.updateOne({ _id: req.params.id }, { $set: { fetchedAt: new Date() } });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not mark it.' });
+  }
+});
+
+router.delete('/submissions/:id', requireJwtAuth, async (req, res) => {
+  try {
+    if (!isId(req.params.id)) return res.status(404).json({ error: 'No such submission.' });
+    const q = isAdmin(req) ? { _id: req.params.id } : { _id: req.params.id, user: req.user.id, status: 'pending' };
+    const r = await KadeLibrarySubmission.deleteOne(q);
+    res.json({ ok: true, removed: r.deletedCount || 0 });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not withdraw it.' });
   }
 });
 

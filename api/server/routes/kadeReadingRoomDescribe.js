@@ -42,9 +42,9 @@ const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe';
 /** The library's own model knob. The platform's KADE_VISION_MODEL is Gemini Pro
  * (a minute of video cost $0.045 on the Sep 11 smoke); the library defaults to
  * Flash Lite so a two-hour film stays under a dollar. */
-const MODEL = () => process.env.KADE_LIBRARY_VISION_MODEL || 'google/gemini-3.1-flash-lite';
-const IN_USD_PER_M = () => Number(process.env.KADE_DESCRIBE_IN_USD_PER_M || 0.1);
-const OUT_USD_PER_M = () => Number(process.env.KADE_DESCRIBE_OUT_USD_PER_M || 0.4);
+const MODEL = () => process.env.KADE_LIBRARY_VISION_MODEL || 'google/gemini-3.1-flash'; // her word: Flash is fine as long as the descriptions are not cost-cut
+const IN_USD_PER_M = () => Number(process.env.KADE_LIBRARY_IN_USD_PER_M || 0.3); // Gemini 3.1 Flash list price, for the estimate shown before a run
+const OUT_USD_PER_M = () => Number(process.env.KADE_LIBRARY_OUT_USD_PER_M || 2.5);
 const TOKENS_PER_SECOND = 300; // Gemini video (+ audio) tokens per second of media, roughly
 const SEGMENT_SECONDS = () => Math.max(60, parseInt(process.env.KADE_DESCRIBE_SEGMENT_SECONDS, 10) || 900);
 const MAX_MINUTES = () => Math.max(1, parseFloat(process.env.KADE_DESCRIBE_MAX_MINUTES) || 180);

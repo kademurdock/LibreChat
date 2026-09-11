@@ -220,4 +220,30 @@ const KadeReadingBookmark =
   mongoose.models.KadeReadingBookmark || mongoose.model('KadeReadingBookmark', kadeReadingBookmarkSchema, 'kadereadingbookmarks');
 const KadeCollection = mongoose.models.KadeCollection || mongoose.model('KadeCollection', kadeCollectionSchema, 'kadecollections');
 
-module.exports = { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, CATEGORIES };
+/** Part 181 continued — SUBMISSIONS ("if you find a youtube video you like, an
+ * archive thing you find interesting … submit that link or file or whatever
+ * for library consideration. Like a bug report … they would get notified if
+ * it was approved or rejected"). A link, or a file already donated to the
+ * submitter's own shelf (`book`), waits for a librarian (ADMIN) decision. */
+const kadeLibrarySubmissionSchema = new mongoose.Schema(
+  {
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+    userName: { type: String, default: '' },
+    url: { type: String, default: '', maxlength: 2000 },
+    title: { type: String, default: '', maxlength: 300 },
+    note: { type: String, default: '', maxlength: 2000 },
+    /** A donated item on the submitter's shelf, shared on approval. */
+    book: { type: mongoose.Schema.Types.ObjectId, ref: 'KadeBook' },
+    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
+    decisionNote: { type: String, default: '', maxlength: 1000 },
+    decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    decidedAt: { type: Date },
+    /** An approved LINK is fetched by TubeVault's Cloud tab; this flags it done. */
+    fetchedAt: { type: Date },
+  },
+  { timestamps: true },
+);
+kadeLibrarySubmissionSchema.index({ status: 1, createdAt: -1 });
+const KadeLibrarySubmission = mongoose.models.KadeLibrarySubmission || mongoose.model('KadeLibrarySubmission', kadeLibrarySubmissionSchema, 'kadelibrarysubmissions');
+
+module.exports = { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, KadeLibrarySubmission, CATEGORIES };
