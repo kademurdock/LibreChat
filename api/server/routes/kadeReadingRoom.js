@@ -842,7 +842,9 @@ router.get('/archive', requireJwtAuth, async (req, res) => {
     const at = cleanPath(req.query.path || '');
     const page = clampInt(req.query.page, 0, 100000, 0);
     const limit = clampInt(req.query.limit, 1, 200, 60);
-    const base = { state: 'ready', path: { $ne: '' }, $or: hidden ? [{ owner: req.user.id }] : [{ shared: true }, { owner: req.user.id }], ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
+    // the aggregate below does not cast strings to ObjectId the way find() does
+    const ownerId = new mongoose.Types.ObjectId(String(req.user.id));
+    const base = { state: 'ready', path: { $ne: '' }, $or: hidden ? [{ owner: ownerId }] : [{ shared: true }, { owner: ownerId }], ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
     const prefix = at ? at + '/' : '';
     const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const [folders, items, total] = await Promise.all([

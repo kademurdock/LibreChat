@@ -146,7 +146,6 @@ kadeBookSchema.index({ owner: 1, updatedAt: -1 });
 kadeBookSchema.index({ shared: 1, sharedAt: -1 });
 kadeBookSchema.index({ owner: 1, originalPath: 1 });
 kadeBookSchema.index({ shared: 1, path: 1, title: 1 });
-kadeBookSchema.index({ title: 'text', author: 'text', description: 'text', tags: 'text' });
 
 /** Part 181 continued — COLLECTIONS ("playlists of vids or audio or whatever,
  * like collections you have organised your way from stuff in the cloud").
@@ -210,6 +209,10 @@ const kadeReadingBookmarkSchema = new mongoose.Schema(
 kadeReadingBookmarkSchema.index({ user: 1, book: 1, createdAt: -1 });
 
 const KadeBook = mongoose.models.KadeBook || mongoose.model('KadeBook', kadeBookSchema, 'kadebooks');
+/* Part 181: a text index briefly existed here and Mongo read the `language`
+ * field ("en-US") as its language override, refusing every book. Search is
+ * regex-based, so the index is gone; this drops the one already built. */
+KadeBook.collection.dropIndex('title_text_author_text_description_text_tags_text').catch(() => {});
 const KadeBookText = mongoose.models.KadeBookText || mongoose.model('KadeBookText', kadeBookTextSchema, 'kadebooktexts');
 const KadeReadingProgress =
   mongoose.models.KadeReadingProgress || mongoose.model('KadeReadingProgress', kadeReadingProgressSchema, 'kadereadingprogress');
