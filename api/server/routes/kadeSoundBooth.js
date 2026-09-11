@@ -248,25 +248,70 @@ HOW THIS ENGINE WORKS, so you write for it:
 
 const MUSIC_GRAMMAR = `LYRIA 3.5 MUSIC BRIEF FORMAT (the only format you may output):
 
-A single flowing paragraph, or a few short ones. NOT a screenplay, NOT lines of dialogue, NOT XML. This engine reads a description of a piece of music and writes the whole record: arrangement, performance, and, if you ask for them, sung lyrics.
+Plain prose, a few short sentences, in THIS order. NOT a screenplay, NOT lines of dialogue, NOT XML. This engine reads a description of a piece of music and writes the whole record: arrangement, performance and, if asked, sung words. Google's own prompt guide for it (read September 11 2026) rewards specifics in a fixed order, so write them in that order:
 
-HOW THIS ENGINE WORKS, so you write for it:
-- It makes MUSIC, and it is the only engine here that does. It sings. Ask for an instrumental and it stays instrumental; describe a singer and it writes and performs the words.
-- Lead with the FEELING and the JOB, not a genre label. "The kind of slow soul record that plays while somebody finally says the thing they have been holding" beats "R&B, 70 BPM".
-- Then name the instruments you actually want to hear, in the order they enter. Rhodes first, brushed drums under it, upright bass, a horn that answers the vocal in the last eight bars.
-- Say the tempo in words as well as numbers -- "unhurried, around seventy beats a minute" -- and say what the groove does to a body: head-nod, sway, drive.
-- Describe the VOICE if there is one: sex, register, texture, delivery, and how close the microphone is. "A woman singing low and close, more breath than volume, like she is confiding it."
-- Describe the SHAPE over time: how it opens, where it lifts, what drops out at the bridge, how it ends. A record that only has one paragraph of description tends to come back as one idea repeated.
-- If the person supplied lyrics, put them in and mark them plainly as the lyrics to sing. If they did not, either ask for the mood of the words or write them, but never quietly invent a subject they did not name.
-- Say what you do NOT want, briefly, at the end -- no vocals, no fade-out, no orchestral swell -- because that is how the negatives land.
-- Do not use %%% markers, <speak> tags, or "Name (traits) says:" lines. Those belong to the other two engines and this one will not read them.
-- Output the brief and nothing else. No code fence, no preamble, no headings.`;
+1. GENRE WITH ERA, first and plainly: "1970s Memphis soul", "a 2010s bedroom-pop song", "a modern Nashville country ballad". A genre with a decade beats a feeling. Put the feeling AFTER the genre, never instead of it.
+2. INSTRUMENTS you actually want to hear, and what each one does: "a Rhodes piano carries the chords, brushed drums keep it soft, an upright bass walks underneath, a horn section answers the vocal in the last chorus".
+3. STRUCTURE as section tags joined by arrows, then a few words on what changes at each: [Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Bridge] -> [Chorus] -> [Outro]. Say what drops out at the bridge, where it lifts, how it ends. For an exact timeline use timestamps instead: [0:00 - 0:10] piano alone, [0:10 - 0:40] the band comes in.
+4. VOCAL PROFILE if anyone sings: sex, timbre, range and delivery. "A female vocalist, warm alto, breathy and close to the microphone, confiding rather than belting." "A male tenor, raspy, pushing hard on the chorus."
+5. MOOD in two or three adjectives: "melancholy, hopeful, intimate".
+6. THE TECHNICAL LINE last: BPM as a number, the key, and the length in plain words. "Around 70 BPM, in D minor, a two-minute song." This engine reads the length from the prompt, so always say how long.
+
+LYRICS: if the person supplied their own words, the booth attaches them under a "Lyrics:" heading after your prose, so do not repeat or paraphrase them. If they did not, either write the words yourself under a final "Lyrics:" heading with [Verse 1] / [Chorus] / [Bridge] tags on their own lines and (parentheses) for echoes and backing vocals, or ask for the mood of the words -- but never quietly invent a subject they did not name.
+
+INSTRUMENTAL: if no one sings, the last line is exactly: Instrumental only, no vocals.
+
+Do not use %%% markers, <speak> tags, or "Name (traits) says:" lines. Those belong to the other two engines and this one will not read them. No code fence, no preamble, no headings other than "Lyrics:".`;
+
+/* ---- Lyria wire-prompt helpers (Part 179, Sep 11 2026) ---------------------
+ * Google's prompt guide wants supplied words under a "Lyrics:" heading with
+ * section tags, and the phrase "Instrumental only, no vocals." for an
+ * instrumental. The render lane used to append "Sing these exact lyrics,
+ * unchanged:" and "Instrumental only. No singing, no vocals, no spoken
+ * words.", which Lyria tolerated but the guide never asked for. */
+const LYRIA_INSTRUMENTAL_LINE = 'Instrumental only, no vocals.';
+const LYRIA_SECTION_TAG_RE = /^\s*\[(?:intro|verse|chorus|pre-chorus|bridge|hook|outro|refrain|interlude|breakdown|solo|drop)[^\]]*\]\s*$/im;
+
+function withLyricsBlock(brief, lyrics) {
+  const words = String(lyrics || '').trim();
+  if (!words) return brief;
+  const body = /^\s*lyrics\s*:/i.test(words) ? words.replace(/^\s*lyrics\s*:\s*/i, '') : words;
+  return String(brief || '').trimEnd() + '\n\nLyrics:\n' + body;
+}
+
+function withInstrumentalLine(brief) {
+  const b = String(brief || '').trimEnd();
+  if (/instrumental only,? no vocals/i.test(b)) return b;
+  return b + '\n\n' + LYRIA_INSTRUMENTAL_LINE;
+}
+
+/* What Lyria hands back as "lyrics" carries its own structure markers --
+ * [[A0]] [[B1]] section ids and a [:] at the head of every sung line (read
+ * off the Part 175 render). Saved raw into readback, VoiceOver reads
+ * "left bracket left bracket A zero" to a blind listener. This strips the
+ * machine markers and turns any [Verse 1]-style tag into a spoken "Verse 1:"
+ * line. The raw text stays in the asset's metadata. */
+function cleanLyrics(raw) {
+  const text = String(raw || '').replace(/\r\n?/g, '\n');
+  if (!text.trim()) return '';
+  const out = [];
+  for (const line of text.split('\n')) {
+    let l = line.replace(/\[\[[^\]]*\]\]/g, ' ').replace(/^\s*\[:\]\s*/, '').replace(/\[:\]/g, ' ');
+    const tag = l.match(/^\s*\[([A-Za-z][A-Za-z0-9 \-']{0,30})\]\s*$/);
+    if (tag) l = tag[1].trim() + ':';
+    l = l.replace(/[ \t]+/g, ' ').trim();
+    out.push(l);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
 
 function systemPrompt({ engine, mode }) {
   const grammar = engine === 'lyria' ? MUSIC_GRAMMAR : engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
   const job =
     mode === 'write'
-      ? `The user has given you a DESCRIPTION of something they want made. Write it for them: invent the words, keep it the length they asked for (if they did not say, aim for 30 to 60 seconds of speech, which is roughly 80 to 160 words), and shape it into the format below.`
+      ? engine === 'lyria'
+        ? `The user has given you a DESCRIPTION of a piece of music they want made. Write the brief for them in the format below. If they did not say how long, make it a two-minute song and say so in the technical line. If they asked for singing and gave no words, write the words under the "Lyrics:" heading.`
+        : `The user has given you a DESCRIPTION of something they want made. Write it for them: invent the words, keep it the length they asked for (if they did not say, aim for 30 to 60 seconds of speech, which is roughly 80 to 160 words), and shape it into the format below.`
       : `The user has written THEIR OWN WORDS and wants them formatted. THEIR WORDS ARE THE SCRIPT. Keep every sentence they wrote, in their order, in their wording -- do not rewrite, tighten, improve, correct, or add sentences of your own. Your entire job is to wrap their words in the format below and add the structural tags BETWEEN their sentences. If they left cues in parentheses or brackets ("(whispering)", "[thunder]"), convert those into proper tags and remove the prose cue.`;
 
   return `You are the script desk in Kade-AI's Sound Booth. You turn what a person typed into a script an audio engine can perform.
@@ -598,18 +643,18 @@ const GUIDE = {
       bestFor: ['a song, with a singer and words', 'an instrumental — a theme, an intro bed, something to play under a voice', 'a mood you can describe but could not play', 'a full arrangement in one pass, rather than one instrument at a time'],
       notFor: ['speech — it sings and it plays, it does not read', 'a specific existing voice; there is no clip to clone from here', 'an exact edit of something you already made — every take is a new performance'],
       howToWrite: [
-        'Lead with the FEELING and the JOB the music is doing, not a genre label. "The kind of slow soul record that plays while somebody finally says the thing they have been holding" gets you a record. "R&B, 70 BPM" gets you a demo.',
-        'Then name the instruments you want to hear, in the order they come in. Rhodes first, brushed drums under it, upright bass, a horn answering the vocal at the end.',
-        'Give the tempo in words as well as numbers, and say what the groove does to a body — head-nod, sway, drive. "Unhurried, around seventy beats a minute."',
-        'If somebody sings, describe the voice the way you would describe an actor: sex, register, texture, delivery, and how close the microphone is. "A woman singing low and close, more breath than volume, like she is confiding it."',
-        'Describe the SHAPE over time — how it opens, where it lifts, what drops out at the bridge, how it ends. A brief with only one idea in it comes back as one idea repeated.',
-        'You can hand it your own lyrics. Put them in the brief and say plainly that these are the words to sing. If you do not, it writes its own.',
-        'Put what you do NOT want at the end, briefly: no vocals, no fade-out, no orchestral swell. Negatives land better last.',
-        'Every take is a new performance. There is no seed here, so the same brief twice gives you two different records — which is a reason to render twice when you like where it is going.',
+        'Write it in the order Google says this engine reads best, one idea per sentence. Genre and era first: "1970s Memphis soul", "a modern Nashville ballad", "2010s bedroom pop". A genre with a decade gets you a record; a feeling on its own gets you a guess. Put the feeling after the genre.',
+        'Then the instruments you want to hear and what each one is doing: "a Rhodes piano carries the chords, brushed drums keep it soft, an upright bass walks underneath, a horn section answers the vocal in the last chorus".',
+        'Then the shape, as section tags with arrows: [Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Bridge] -> [Chorus] -> [Outro], and a few words on what changes at each one. For an exact timeline, use timestamps instead: [0:00 - 0:10] piano alone, [0:10 - 0:40] the band comes in.',
+        'If somebody sings, describe the voice: sex, timbre, range and delivery. "A female vocalist, warm alto, breathy and close to the microphone, confiding rather than belting."',
+        'Then the mood in two or three plain adjectives, and last the technical line: a BPM number, the key, and how long. "Around 70 BPM, in D minor, a two-minute song." It reads the length from your words, so always say how long.',
+        'Your own lyrics go in the Your own lyrics box, not in the brief. The booth sends them under a "Lyrics:" heading, the way the engine expects; put [Verse 1], [Chorus] and [Bridge] on their own lines above each section, and (parentheses) around echoes and backing vocals. If you leave the box empty and ask for a singer, it writes the words itself.',
+        'For no singing, turn on No singing. The booth adds the one line the engine wants, "Instrumental only, no vocals."',
+        'The words it wrote come back cleaned of its own markers, so the read-back is the song and nothing else. Every take is a new performance -- there is no seed here, so the same brief twice gives you two different records, which is a reason to render twice when you like where it is going.',
       ],
       settings: [
         { key: 'instrumental', label: 'No singing', hint: 'Keeps it instrumental. Leave it off if you want a singer, and describe the voice in your brief.', kind: 'toggle', default: false },
-        { key: 'lyrics', label: 'Your own lyrics', hint: 'Paste words you have already written and it will sing these instead of writing its own. Leave it empty to let it write them.', kind: 'text' },
+        { key: 'lyrics', label: 'Your own lyrics', hint: 'Paste words you have already written and it will sing these instead of writing its own. Put [Verse 1], [Chorus] and [Bridge] on their own lines above each part if you want to steer the shape. Leave it empty to let it write them.', kind: 'text' },
         { key: 'keep_lyrics', label: 'Keep the words it wrote', hint: 'On by default. Saves the lyrics it came up with alongside the recording, so you can read them back or reuse them.', kind: 'toggle', default: true },
       ],
     },
@@ -1411,19 +1456,23 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       project.state = 'running';
       await project.save();
 
+      /* Part 179: the wire prompt in the shape Google's guide asks for -- the
+       * brief, then the person's words under "Lyrics:", then the exact
+       * instrumental line last so it wins if both were set. */
       let brief = script;
-      if (opts.instrumental) {
-        brief += '\n\n' + 'Instrumental only. No singing, no vocals, no spoken words.';
-      }
-      if (opts.lyrics) {
-        brief += '\n\n' + 'Sing these exact lyrics, unchanged:' + '\n' + opts.lyrics;
-      }
+      if (opts.lyrics) brief = withLyricsBlock(brief, opts.lyrics);
+      if (opts.instrumental) brief = withInstrumentalLine(brief);
 
       let r;
       try {
         r = await axios.post(
           `${lyriaBase()}/v1beta/models/${LYRIA_MODEL}:generateContent`,
-          { contents: [{ role: 'user', parts: [{ text: brief }] }] },
+          {
+            contents: [{ role: 'user', parts: [{ text: brief }] }],
+            /* documented on the generateContent page for Lyria: ask for the
+             * record AND the words, explicitly. */
+            generationConfig: { responseModalities: ['AUDIO', 'TEXT'] },
+          },
           { headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' }, timeout: 300000 },
         );
       } catch (e) {
@@ -1450,10 +1499,13 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         .map((p) => p.text.trim())
         .join('\n\n')
         .slice(0, 8000);
+      /* The raw text keeps Lyria's [[A0]] / [:] markers for the asset record;
+       * everything a person reads or hears gets the cleaned copy. */
+      const lyricsClean = cleanLyrics(lyricText);
       if (!audioPart) {
         /* A refusal comes back as text with no audio, and that text is the
          * useful part -- hand it over rather than saying "no clip". */
-        const why = lyricText ? ` It said: ${lyricText.slice(0, 200)}` : '';
+        const why = lyricsClean ? ` It said: ${lyricsClean.slice(0, 200)}` : '';
         project.state = 'failed';
         project.lastError = ('Lyria returned no audio.' + why).slice(0, 300);
         await project.save();
@@ -1515,6 +1567,8 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
             bytes: buffer.length,
             instrumental: !!opts.instrumental,
             lyrics: opts.keep_lyrics === false ? undefined : lyricText || undefined,
+            lyricsClean: opts.keep_lyrics === false ? undefined : lyricsClean || undefined,
+            wirePrompt: brief.slice(0, 4000),
           },
         });
         if (asset && asset._id) assetId = String(asset._id);
@@ -1523,7 +1577,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       }
       project.state = 'done';
       project.costUSD = (project.costUSD || 0) + costUSD;
-      if (opts.keep_lyrics !== false && lyricText) project.readback = lyricText.slice(0, 600);
+      if (opts.keep_lyrics !== false && lyricsClean) project.readback = lyricsClean.slice(0, 600);
       if (assetId) project.assets = [...(project.assets || []), assetId].slice(-20);
       await project.save();
       logger.info(`[soundbooth/render] lyria done ${buffer.length}B $${costUSD} project=${project._id} user=${req.user.id}`);
@@ -1535,9 +1589,9 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         assetId,
         url,
         bytes: buffer.length,
-        lyrics: opts.keep_lyrics === false ? null : lyricText || null,
+        lyrics: opts.keep_lyrics === false ? null : lyricsClean || null,
         costUSD,
-        spoken: lyricText
+        spoken: lyricsClean
           ? 'The song is made, and it wrote words for it. They are saved with the recording.'
           : 'The song is made.',
       });
@@ -2047,5 +2101,5 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { checkScenema, checkSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE };
+module.exports._internals = { cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE };
 

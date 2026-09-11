@@ -33,6 +33,10 @@ const {
 
 const router = express.Router();
 const MAX_ACTIVE = 12;
+/* The lobby (Part 179): a party table older than this is not "open", it is
+ * abandoned -- nobody should walk into a Tuesday-night Uno table on Friday. */
+const LOBBY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const LOBBY_MAX = 20;
 
 function shortId() {
   return Math.random().toString(36).slice(2, 6);
@@ -109,6 +113,69 @@ router.get('/games', requireJwtAuth, async (_req, res) => {
   } catch (e) {
     logger.error('[parlor/games] error:', e);
     return res.status(500).json({ error: 'Could not load the menu.' });
+  }
+});
+
+/* ── The lobby (Part 179, Sep 11 2026) ─────────────────────────────────── */
+/* RS Games' whole feel is walking in and seeing who is hosting what. Until
+ * now a party table existed only for whoever was read its code out loud, and
+ * the phone's menu put an empty code box in front of the games. This lists
+ * every active family party table that still has a free seat, unless the
+ * host asked for `private:true` on /new. The code rides in the payload on
+ * purpose: everyone who can read this is a signed-in family member, and the
+ * code is how they sit down. */
+function lobbyRows(docs, userId) {
+  const me = String(userId);
+  const out = [];
+  for (const doc of docs || []) {
+    const party = doc && doc.state && doc.state.party;
+    if (!party || !party.code || party.private === true) continue;
+    const seats = party.seats || {};
+    const seatsOpen = Object.values(seats).filter((x) => x && x.kind === 'open').length;
+    if (seatsOpen < 1) continue;
+    const G = getGame(doc.gameKey);
+    out.push({
+      gameId: doc.gameId,
+      gameKey: doc.gameKey,
+      name: (G && G.meta && G.meta.name) || doc.title || doc.gameKey,
+      host: party.hostName || 'Someone',
+      seatsOpen,
+      seatsTaken: Object.values(seats).filter((x) => x && x.kind === 'guest').length,
+      code: party.code,
+      mine: String(doc.user) === me,
+      seated: String(doc.user) === me || (party.memberIds || []).map(String).includes(me),
+      since: doc.updatedAt || null,
+    });
+    if (out.length >= LOBBY_MAX) break;
+  }
+  return out;
+}
+
+/* One plain sentence for the narrator and the screen reader. */
+function sayLobby(tables) {
+  if (!tables.length) return 'Nobody has a table open right now.';
+  const parts = tables.slice(0, 5).map((t) =>
+    `${t.mine ? 'your' : t.host + "'s"} ${t.name} table, ${t.seatsOpen} seat${t.seatsOpen === 1 ? '' : 's'} open`);
+  const more = tables.length > 5 ? `, and ${tables.length - 5} more` : '';
+  return `${tables.length === 1 ? 'One table open' : tables.length + ' tables open'}: ${parts.join('; ')}${more}.`;
+}
+
+router.get('/lobby', requireJwtAuth, async (req, res) => {
+  try {
+    const docs = await KadeGameState.find({
+      status: 'active',
+      'state.party.code': { $exists: true },
+      'state.party.private': { $ne: true },
+      updatedAt: { $gte: new Date(Date.now() - LOBBY_MAX_AGE_MS) },
+    })
+      .sort({ updatedAt: -1 })
+      .limit(LOBBY_MAX * 3)
+      .lean();
+    const tables = lobbyRows(docs, req.user.id);
+    return res.json({ tables, spoken: sayLobby(tables) });
+  } catch (e) {
+    logger.error('[parlor/lobby] error:', e);
+    return res.status(500).json({ error: 'Could not read the lobby.' });
   }
 });
 
@@ -204,6 +271,9 @@ router.post('/new', requireJwtAuth, async (req, res) => {
         hostName: (req.user.name || 'The host').split(/\s+/)[0],
         seats: seatsMap,
         memberIds: [],
+        /* Part 179: `private:true` keeps the table off /lobby; friends then
+         * need the code read to them, which is how every table worked before. */
+        private: req.body?.private === true,
       };
     }
 
@@ -566,3 +636,4 @@ const { parlorHtml } = require('./kadePages');
 router.page = (_req, res) => res.type('html').send(parlorHtml);
 
 module.exports = router;
+module.exports._internals = { lobbyRows, sayLobby, LOBBY_MAX, LOBBY_MAX_AGE_MS };

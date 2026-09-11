@@ -1406,7 +1406,7 @@ const toolsHtml = `<!doctype html><html lang="en"><head><title>Tools — Kade-AI
   <a class="hubitem" href="/lounge"><span class="hicon" aria-hidden="true">🎙️</span><span><strong>Kade's Clubhouse</strong><small>Live family voice rooms with a shared jukebox, private Hotel rooms, and companion guests</small></span></a>
   <a class="hubitem" href="/debate-room"><span class="hicon" aria-hidden="true">🗣️</span><span><strong>Debate Room</strong><small>Put characters in a room with a topic and jump in</small></span></a>
   <a class="hubitem" href="/conversation-hall"><span class="hicon" aria-hidden="true">🏛️</span><span><strong>Conversation Hall</strong><small>The greatest hits people have shared from the Debate Room</small></span></a>
-  <a class="hubitem" href="/parlor"><span class="hicon" aria-hidden="true">🎲</span><span><strong>The Parlor</strong><small>Every game on a menu, party tables with friends, and the family standings</small></span></a>
+  <a class="hubitem" href="/parlor"><span class="hicon" aria-hidden="true">🎲</span><span><strong>The Parlor</strong><small>Every game on a menu, a lobby of open tables, party tables with friends, and the family standings</small></span></a>
   <a class="hubitem" href="/matchmaker"><span class="hicon" aria-hidden="true">💘</span><span><strong>Matchmaker</strong><small>Five quick questions to match you with characters</small></span></a>
   <a class="hubitem" href="/wall-of-fame"><span class="hicon" aria-hidden="true">🏆</span><span><strong>Wall of Fame</strong><small>Creations everyone has chosen to share</small></span></a>
   <a class="hubitem" href="/my-creations"><span class="hicon" aria-hidden="true">🎨</span><span><strong>My Creations</strong><small>Every video and image you have made, with downloads</small></span></a>
@@ -1846,19 +1846,26 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
   <div id="status" class="status" role="status" aria-live="polite">Warming up the tables&hellip;</div>
 
   <section id="menu" hidden>
-    <p class="muted">Every game, on a menu. Pick one, set the table your way, and play your own cards &mdash; characters are optional company, never the referee.</p>
+    <p class="muted">The Parlor is the family game room: twenty-two games you play with real buttons, the house deals and referees, characters can sit in for company, and party tables let your people play their own hands from their own phones.</p>
+    <h2>Deal something new</h2>
+    <div id="game-list" class="gamelist" role="list"></div>
+    <div class="card" id="lobby-card">
+      <h2 style="margin-top:0">Open tables right now</h2>
+      <p class="muted" id="lobby-note" role="status" aria-live="polite">Reading the lobby&hellip;</p>
+      <div id="lobby-list" class="gamelist" role="list"></div>
+      <p><button type="button" class="rowbtn gray" id="lobby-refresh">Check the lobby again</button></p>
+    </div>
     <div id="resume-card" class="card" hidden>
       <h2 style="margin-top:0">Your open tables</h2>
       <div id="resume-list" class="gamelist"></div>
     </div>
     <div class="card">
-      <h2 style="margin-top:0">Join a friend's table</h2>
-      <label class="blk" for="join-code">The 4-character code from your host</label>
+      <h2 style="margin-top:0">Join with a code</h2>
+      <p class="muted">A host can keep a table off the lobby &mdash; then you sit down with the 4-character code they read you.</p>
+      <label class="blk" for="join-code">The code from your host</label>
       <input type="text" id="join-code" autocapitalize="characters" maxlength="8" style="text-transform:uppercase">
       <p><button type="button" class="rowbtn" id="join-btn">Take a seat</button></p>
     </div>
-    <h2>Deal something new</h2>
-    <div id="game-list" class="gamelist" role="list"></div>
     <div class="card">
       <h2 style="margin-top:0">The Game Room</h2>
       <p class="muted">Family bragging rights, straight from the referee &mdash; standings, highlights, latest results, and your chip bank. It lives here in the Parlor now.</p>
@@ -1923,6 +1930,7 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
       <div id="opt-party-wrap" hidden>
         <label class="blk" for="opt-party">Open seats for friends (they join with a code)</label>
         <select id="opt-party"><option value="0" selected>None — just my table</option><option value="1">1 friend</option><option value="2">2 friends</option><option value="3">3 friends</option></select>
+        <label class="blk" id="opt-private-wrap" hidden><input type="checkbox" id="opt-private"> Keep it off the lobby (friends need the code from me)</label>
       </div>
       <div id="opt-rounds-wrap" hidden><label class="blk" for="opt-rounds">Length</label><select id="opt-rounds"></select></div>
       <div id="opt-difficulty-wrap" hidden><label class="blk" for="opt-difficulty">Difficulty</label><select id="opt-difficulty"></select></div>
@@ -2032,8 +2040,10 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
         return j;
       }
 
+      let lobbyTimer = null;
       function show(section){
         ['menu','setup','table'].forEach(function(id){ $(id).hidden = (id !== section); });
+        if(section !== 'menu' && lobbyTimer){ clearInterval(lobbyTimer); lobbyTimer = null; }
       }
       function esc(s){ const d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML; }
 
@@ -2056,7 +2066,33 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
         $('game-list').innerHTML = games.map(function(g){
           return '<button type="button" class="game" role="listitem" data-game="'+esc(g.key)+'">'+esc(g.name)+' <span class="desc">'+esc(g.blurb)+' ('+esc(g.players)+' player'+(g.players==='1'?'':'s')+(g.seatAware?' &middot; characters can sit in':'')+')</span></button>';
         }).join('');
+        await loadLobby();
+        if(!lobbyTimer) lobbyTimer = setInterval(loadLobby, 30000);
       }
+
+      /* ── THE LOBBY (Part 179): who is hosting what, with a free seat ── */
+      async function loadLobby(){
+        if($('menu').hidden) return;
+        try{
+          const l = await api('GET', '/api/kade/parlor/lobby');
+          const tables = l.tables || [];
+          $('lobby-note').textContent = tables.length
+            ? (l.spoken || '')
+            : 'Nobody has a table open right now. Deal a game with open seats for friends and it shows up here for the whole family.';
+          $('lobby-list').innerHTML = tables.map(function(t){
+            const who = t.mine ? 'Your ' : 'Sit at '+esc(t.host)+"'s ";
+            return '<button type="button" class="game" role="listitem" data-join="'+esc(t.code)+'">'+who+esc(t.name)+' table <span class="desc">'+t.seatsOpen+' seat'+(t.seatsOpen===1?'':'s')+' open &middot; code '+esc(t.code)+(t.mine?' &middot; this one is yours':'')+'</span></button>';
+          }).join('');
+        }catch(e){ $('lobby-note').textContent = 'Could not read the lobby right now.'; }
+      }
+      $('lobby-refresh').addEventListener('click', loadLobby);
+      $('lobby-list').addEventListener('click', async function(ev){
+        const b = ev.target.closest('button[data-join]'); if(!b) return;
+        try{
+          const p = await api('POST', '/api/kade/parlor/join', { code: b.getAttribute('data-join') });
+          openTable(p, false);
+        }catch(e){ status.className='status err'; status.textContent = e.message; }
+      });
 
       $('game-list').addEventListener('click', function(ev){
         const b = ev.target.closest('button[data-game]'); if(!b) return;
@@ -2096,6 +2132,9 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
         $('opt-clean-wrap').hidden = !o.clean;
         $('opt-seats-wrap').hidden = !current.seatAware;
         $('opt-party-wrap').hidden = !current.seatAware;
+        $('opt-party').value = '0';
+        $('opt-private-wrap').hidden = true;
+        $('opt-private').checked = false;
         if(current.seatAware && !roster){
           try{
             const r = await api('GET', '/api/kade/room/agents');
@@ -2118,6 +2157,9 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
       $('opt-narrator').addEventListener('change', function(){
         $('opt-narrator-custom-wrap').hidden = $('opt-narrator').value !== '__custom';
       });
+      $('opt-party').addEventListener('change', function(){
+        $('opt-private-wrap').hidden = !((parseInt($('opt-party').value, 10) || 0) > 0);
+      });
       $('setup-back').addEventListener('click', loadMenu);
 
       $('setup-form').addEventListener('submit', async function(ev){
@@ -2128,7 +2170,10 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
         const body = { game: current.key };
         if(!$('opt-party-wrap').hidden){
           const po = parseInt($('opt-party').value, 10) || 0;
-          if(po > 0) body.party_open_seats = po;
+          if(po > 0){
+            body.party_open_seats = po;
+            if($('opt-private').checked) body.private = true;
+          }
         }
         if(seats.length && current.seatAware) body.agent_seats = seats;
         else if(!$('opt-opponents-wrap').hidden) body.opponents = parseInt($('opt-opponents').value, 10);

@@ -122,6 +122,53 @@ test('a song goes to Lyria; people talking over music is still a Seed scene', ()
   assert.equal(pure.suggestEngine('Read this bedtime story aloud, one warm voice, no music.').engine, 'scenema');
 });
 
+/* ---------------- Part 179 (Sep 11 2026): the wire prompt in Google's shape --
+ * Her ask: "prompts according to the way the api requires". Google's prompt
+ * guide (read Sep 11) wants genre with era, instruments, structure tags,
+ * a vocal profile, mood, then BPM/key/length -- and supplied words under a
+ * "Lyrics:" heading, "Instrumental only, no vocals." for no singer. The
+ * booth's own grammar said nearly the opposite (feeling over genre, tempo
+ * in words), so these pin the new order and the two exact phrases. */
+test("the brief format follows Google's order: genre, instruments, structure, voice, mood, technical line", () => {
+  const g = pure.MUSIC_GRAMMAR;
+  const order = ['GENRE WITH ERA', 'INSTRUMENTS', 'STRUCTURE', 'VOCAL PROFILE', 'MOOD', 'TECHNICAL LINE'].map((k) => g.indexOf(k));
+  assert.ok(order.every((i) => i >= 0), 'every section is named');
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'and they come in that order');
+  assert.match(g, /\[Intro\] -> \[Verse 1\] -> \[Chorus\]/);
+  assert.match(g, /\[0:00 - 0:10\]/);
+  assert.match(g, /"Lyrics:" heading/);
+  assert.match(g, /Instrumental only, no vocals\./);
+  assert.doesNotMatch(g, /Lead with the FEELING/);
+  const howto = pure.GUIDE.engines.lyria.howToWrite.join('\n');
+  assert.match(howto, /Genre and era first/);
+  assert.match(howto, /\[Intro\] -> \[Verse 1\]/);
+  assert.match(howto, /BPM number, the key, and how long/);
+  assert.doesNotMatch(howto, /Lead with the FEELING/);
+});
+
+test("supplied words ride under a Lyrics: heading and the instrumental line is Google's exact phrase", () => {
+  const b = pure.withLyricsBlock('A 1970s soul song.', '[Verse 1]\nroad out of Missouri\n[Chorus]\nstaying');
+  assert.match(b, /^A 1970s soul song\.\n\nLyrics:\n\[Verse 1\]\nroad out of Missouri/);
+  assert.equal(pure.withLyricsBlock('brief', '   '), 'brief', 'no words, no heading');
+  assert.equal(pure.withLyricsBlock('brief', 'Lyrics: la la'), 'brief\n\nLyrics:\nla la', 'a heading the person typed is not doubled');
+  assert.equal(pure.LYRIA_INSTRUMENTAL_LINE, 'Instrumental only, no vocals.');
+  assert.equal(pure.withInstrumentalLine('A brief.'), 'A brief.\n\n' + pure.LYRIA_INSTRUMENTAL_LINE);
+  const once = pure.withInstrumentalLine('A brief. Instrumental only, no vocals.');
+  assert.equal(once.match(/Instrumental only/g).length, 1, 'never doubled');
+});
+
+test("cleanLyrics strips the engine's markers and speaks section tags, for the read-back", () => {
+  /* the exact shape Part 175's live render came back in */
+  const raw = '[[A0]]\n[[B1]]\n[:] People look at these walls and they see a trap.\n[:] They think I am stuck here.\n[[C2]]\n[:] Everybody assumes it just happened to me.\n[[F6]]\n[:] I chose this.';
+  const clean = pure.cleanLyrics(raw);
+  assert.doesNotMatch(clean, /\[\[|\[:\]/);
+  assert.match(clean, /^People look at these walls and they see a trap\.\nThey think I am stuck here\.\n\nEverybody assumes/);
+  assert.match(clean, /I chose this\.$/);
+  assert.equal(pure.cleanLyrics('[Verse 1]\nla la\n[Chorus]\nda da'), 'Verse 1:\nla la\nChorus:\nda da');
+  assert.equal(pure.cleanLyrics(''), '');
+  assert.equal(pure.cleanLyrics('plain words, no markers'), 'plain words, no markers');
+});
+
 /* ---------------- the render lane, against a stub Google ------------------ */
 test('the music lane: real store, stub Google, every branch that can cost money', async (t) => {
   const mongo = await MongoMemoryServer.create();
@@ -187,6 +234,9 @@ test('the music lane: real store, stub Google, every branch that can cost money'
     assert.equal(r.data.queued, false);
     assert.equal(seen.at(-1).model, 'lyria-3.5', 'the dot spelling is what actually goes on the wire');
     assert.equal(seen.at(-1).key, 'test-only-key');
+    /* Part 179: the record AND the words are asked for explicitly, the way the
+     * generateContent page documents it for Lyria. */
+    assert.deepEqual(seen.at(-1).body.generationConfig, { responseModalities: ['AUDIO', 'TEXT'] });
     /* The audio must land in HER storage, not be handed back as a Google blob. */
     assert.equal(saved.length, 1);
     assert.equal(saved[0].bytes, 4096);
@@ -204,12 +254,29 @@ test('the music lane: real store, stub Google, every branch that can cost money'
     assert.equal(p.costUSD, pure.LYRIA_USD_PER_SONG);
   });
 
-  await t.test('instrumental and supplied lyrics both reach the engine', async () => {
-    const r = await call('/render', { engine: 'lyria', script: brief, instrumental: true, lyrics: 'these exact words' });
+  await t.test("instrumental and supplied lyrics both reach the engine, in the shape Google's guide asks for", async () => {
+    const r = await call('/render', { engine: 'lyria', script: brief, instrumental: true, lyrics: '[Verse 1]\nthese exact words' });
     assert.equal(r.status, 200);
     const sent = seen.at(-1).body.contents[0].parts[0].text;
-    assert.match(sent, /Instrumental only/);
-    assert.match(sent, /these exact words/);
+    assert.match(sent, /\n\nLyrics:\n\[Verse 1\]\nthese exact words/);
+    assert.match(sent, /Instrumental only, no vocals\.$/);
+    assert.doesNotMatch(sent, /Sing these exact lyrics/);
+    assert.ok(sent.indexOf('Lyrics:') < sent.indexOf('Instrumental only'), 'the instrumental line comes last, so it wins');
+  });
+
+  await t.test('the words come back clean for the read-back, raw for the record', async () => {
+    reply = { status: 200, body: { candidates: [{ content: { parts: [
+      { text: '[[A0]]\n[[B1]]\n[:] People look at these walls and they see a trap.\n[:] I chose this.' },
+      { inlineData: { mimeType: 'audio/mpeg', data: FAKE_MP3 } },
+    ] } }] } };
+    const r = await call('/render', { engine: 'lyria', script: brief });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.lyrics, 'People look at these walls and they see a trap.\nI chose this.');
+    const p = await Project.findById(r.data.projectId);
+    assert.equal(p.readback, 'People look at these walls and they see a trap.\nI chose this.');
+    assert.match(assets.at(-1).metadata.lyrics, /\[\[A0\]\]/, 'the raw text keeps the markers');
+    assert.equal(assets.at(-1).metadata.lyricsClean, r.data.lyrics);
+    assert.match(assets.at(-1).metadata.wirePrompt, /^A slow soul record/);
   });
 
   await t.test('a refusal hands back what it said, not "no clip"', async () => {
