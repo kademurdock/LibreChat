@@ -9,10 +9,11 @@
  * error), never the text being read. Nothing auto-plays; the first Play tap
  * is what unlocks audio on iPhone Safari.
  *
- * TEXT BOOKS: each chunk is fetched as WAV from /audio/:s/:c, decoded with
- * Web Audio and scheduled to start exactly when the previous one ends
- * (gapless); two chunks are always fetched ahead. Back and Forward move a
- * chunk (about half a minute); Previous/Next chapter move a section.
+ * TEXT BOOKS: each chunk is STREAMED as WAV from /audio/:s/:c and scheduled
+ * on Web Audio as the bytes arrive (first words in under a second, gapless
+ * between chunks, the next chunk fetched the moment this one has landed).
+ * Back and Forward move a chunk (about half a minute); Previous/Next chapter
+ * move a section.
  * AUDIO DONATIONS: a plain <audio> element on the signed B2 URL; Back and
  * Forward move 15 seconds; Previous/Next move a track.
  * Both wire the Media Session API so lock-screen and headphone buttons work.
@@ -333,77 +334,133 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     if (now) go(); else saveTimer = setTimeout(go, 1500);
   }
 
-  /* text books: Web Audio scheduling */
+  /* text books: STREAMED Web Audio scheduling.
+   * The proxy streams a chunk's WAV as Inworld speaks it (~2x real time), so
+   * waiting for the whole file meant ~14 s before the first word. Instead the
+   * bytes are read as they arrive, turned into ~0.4 s AudioBuffers and
+   * scheduled back to back; the next chunk's fetch starts the moment this one
+   * has fully arrived (lookahead capped at ~60 s of audio). A marker at each
+   * chunk's scheduled end advances the position, saves progress and announces
+   * a chapter change. Pause stops every scheduled source and cancels the
+   * stream; Play restarts from the position. */
   function ensureCtx(){
     if (!ctx) { ctx = new (window.AudioContext || window.webkitAudioContext)(); gainNode = ctx.createGain(); gainNode.connect(ctx.destination); }
     if (ctx.state === 'suspended') ctx.resume();
   }
-  function key(s, c){ return s + '/' + c; }
   function nextPos(p){ var ch = book.chapters[p.s]; if (!ch) return null; if (p.c + 1 < ch.chunks) return { s: p.s, c: p.c + 1 }; if (p.s + 1 < book.chapters.length) return { s: p.s + 1, c: 0 }; return null; }
   function prevPos(p){ if (p.c > 0) return { s: p.s, c: p.c - 1 }; if (p.s > 0) { var ch = book.chapters[p.s - 1]; return { s: p.s - 1, c: Math.max(0, ch.chunks - 1) }; } return null; }
-  async function fetchChunk(p){
-    var k = key(p.s, p.c);
-    if (cache[k]) return cache[k];
-    if (fetching[k]) return fetching[k];
-    fetching[k] = (async function(){
-      var r = await fetch(API + '/book/' + book.id + '/audio/' + p.s + '/' + p.c + '?voice=' + encodeURIComponent(voice) + '&speed=' + speed, { headers: { 'Authorization': 'Bearer ' + token } });
-      if (r.status === 204) { cache[k] = { buffer: null, text: '' }; return cache[k]; }
-      if (!r.ok) throw new Error('The voice did not answer (' + r.status + ').');
-      var ab = await r.arrayBuffer();
-      var buffer = await new Promise(function(res, rej){ ctx.decodeAudioData(ab, res, rej); });
-      cache[k] = { buffer: buffer };
-      var keys = Object.keys(cache); if (keys.length > 12) delete cache[keys[0]];
-      return cache[k];
-    })();
-    try { return await fetching[k]; } finally { delete fetching[k]; }
-  }
   async function showText(p){
-    try { var j = await api('/book/' + book.id + '/text/' + p.s + '/' + p.c); $('nowText').textContent = j.text; } catch(e) {}
+    try { var j = await api('/book/' + book.id + '/text/' + p.s + '/' + p.c); if (p.s === pos.s && p.c === pos.c) $('nowText').textContent = j.text; } catch(e) {}
   }
-  function stopScheduled(){
-    playToken++;
-    scheduled.forEach(function(src){ try { src.onended = null; src.stop(); } catch(e) {} });
-    scheduled = []; nextStart = 0;
+  var pipe = null; // { nextStart, sources[], markers[] }
+  function parseWavHeader(u8){
+    if (u8.length < 12) return null;
+    if (!(u8[0] === 0x52 && u8[1] === 0x49 && u8[2] === 0x46 && u8[3] === 0x46 && u8[8] === 0x57 && u8[9] === 0x41 && u8[10] === 0x56 && u8[11] === 0x45)) return { bad: true };
+    var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    var off = 12, fmt = null;
+    while (off + 8 <= u8.length) {
+      var id = String.fromCharCode(u8[off], u8[off+1], u8[off+2], u8[off+3]);
+      var size = dv.getUint32(off + 4, true);
+      var body = off + 8;
+      if (id === 'fmt ') {
+        if (body + 16 > u8.length) return null;
+        fmt = { channels: dv.getUint16(body + 2, true), sampleRate: dv.getUint32(body + 4, true), bits: dv.getUint16(body + 14, true) };
+        off = body + size + (size % 2);
+      } else if (id === 'data') {
+        if (!fmt) return { bad: true };
+        return { fmt: fmt, pcmStart: body };
+      } else { off = body + size + (size % 2); }
+    }
+    return null;
   }
-  async function pump(myToken){
-    // keep two chunks scheduled ahead of the one playing
-    while (playing && myToken === playToken && scheduled.length < 3) {
-      var target = scheduled.length ? scheduled[scheduled.length - 1]._pos : pos;
-      var p = scheduled.length ? nextPos(target) : pos;
-      if (!p) { ended = scheduled.length === 0; if (ended) finishBook(); return; }
-      var got;
-      try { got = await fetchChunk(p); } catch(e) { say(e.message + ' Press Play to try again.'); pause(); return; }
-      if (myToken !== playToken) return;
-      if (!got.buffer) { // unspeakable chunk (rare): skip it
-        if (scheduled.length) { scheduled[scheduled.length - 1]._pos = p; } else { pos = p; }
-        continue;
+  function concatU8(a, b){ if (!a.length) return b; var o = new Uint8Array(a.length + b.length); o.set(a, 0); o.set(b, a.length); return o; }
+  function schedulePcm(bytes, fmt){
+    var bpf = fmt.channels * (fmt.bits / 8);
+    var frames = Math.floor(bytes.length / bpf);
+    if (frames <= 0) return;
+    var ab = ctx.createBuffer(1, frames, fmt.sampleRate);
+    var d = ab.getChannelData(0);
+    var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (var f = 0; f < frames; f++) {
+      var sum = 0;
+      for (var ch = 0; ch < fmt.channels; ch++) {
+        var i = (f * fmt.channels + ch) * (fmt.bits / 8);
+        sum += fmt.bits === 16 ? dv.getInt16(i, true) / 32768 : (bytes[i] - 128) / 128;
       }
-      var src = ctx.createBufferSource(); src.buffer = got.buffer; src.connect(gainNode);
-      var startAt = Math.max(ctx.currentTime + 0.05, nextStart || 0);
-      src._pos = p; src._startAt = startAt;
-      src.onended = (function(s){ return function(){
-        if (myToken !== playToken) return;
-        scheduled = scheduled.filter(function(x){ return x !== s; });
-        var nxt = scheduled[0];
-        if (nxt) { var changed = nxt._pos.s !== pos.s; pos = nxt._pos; showText(pos); saveProgress(); updateSession(); if (changed) announcePosition(''); }
-        else if (!nextPos(s._pos)) { finishBook(); return; }
-        pump(myToken);
-      }; })(src);
-      src.start(startAt);
-      nextStart = startAt + got.buffer.duration + 0.12;
-      scheduled.push(src);
-      if (scheduled.length === 1 && p.s === pos.s && p.c === pos.c) { showText(pos); }
+      d[f] = sum / fmt.channels;
+    }
+    var src = ctx.createBufferSource(); src.buffer = ab; src.connect(gainNode);
+    var at = Math.max(ctx.currentTime + 0.02, pipe.nextStart || 0);
+    src.start(at);
+    pipe.nextStart = at + ab.duration;
+    pipe.sources.push(src);
+    src.onended = function(){ var i = pipe ? pipe.sources.indexOf(src) : -1; if (i !== -1) pipe.sources.splice(i, 1); };
+  }
+  async function streamChunk(p, token){
+    var r = await fetch(API + '/book/' + book.id + '/audio/' + p.s + '/' + p.c + '?voice=' + encodeURIComponent(voice) + '&speed=' + speed, { headers: { 'Authorization': 'Bearer ' + token_() } });
+    if (token !== playToken) return { cancelled: true };
+    if (r.status === 204) return { skip: true };
+    if (!r.ok) throw new Error('The voice did not answer (' + r.status + ').');
+    var reader = r.body.getReader();
+    var buf = new Uint8Array(0), fmt = null, any = false;
+    while (true) {
+      var step = await reader.read();
+      if (token !== playToken) { try { reader.cancel(); } catch(e) {} return { cancelled: true }; }
+      if (step.value) buf = concatU8(buf, step.value);
+      if (!fmt) {
+        var h = parseWavHeader(buf);
+        if (h && h.bad) throw new Error('The voice sent something that is not audio.');
+        if (!h) { if (step.done) break; continue; }
+        fmt = h.fmt; buf = buf.subarray(h.pcmStart);
+      }
+      var bpf = fmt.channels * (fmt.bits / 8);
+      var usable = buf.length - (buf.length % bpf);
+      if (usable > 0 && (usable >= fmt.sampleRate * 0.4 * bpf || step.done)) { schedulePcm(buf.subarray(0, usable), fmt); buf = buf.subarray(usable); any = true; }
+      if (step.done) break;
+    }
+    return { played: any };
+  }
+  function token_(){ return token; }
+  async function runPipeline(myToken){
+    ensureCtx();
+    pipe = { nextStart: ctx.currentTime + 0.05, sources: [], markers: [] };
+    var p = pos;
+    while (p && myToken === playToken && playing) {
+      // lookahead: do not fetch further than ~60 s ahead of what is playing
+      while (pipe.nextStart - ctx.currentTime > 60 && myToken === playToken && playing) { await new Promise(function(res){ setTimeout(res, 500); }); }
+      if (myToken !== playToken || !playing) return;
+      var r;
+      try { r = await streamChunk(p, myToken); } catch(e) { if (myToken === playToken) { say(e.message + ' Press Play to try again.'); pause(); } return; }
+      if (r.cancelled) return;
+      var n = nextPos(p);
+      if (!r.skip) pipe.markers.push({ at: pipe.nextStart, pos: n, end: !n });
+      else if (!n) pipe.markers.push({ at: pipe.nextStart, pos: null, end: true });
+      p = n;
     }
   }
-  function finishBook(){ playing = false; $('playBtn').textContent = 'Play'; say('The end. ' + book.title + ' is finished.'); api('/book/' + book.id + '/progress', { json: { s: pos.s, c: pos.c, finished: true } }).catch(function(){}); }
+  setInterval(function(){
+    if (!pipe || !playing || !ctx) return;
+    while (pipe.markers.length && ctx.currentTime >= pipe.markers[0].at) {
+      var m = pipe.markers.shift();
+      if (m.end) { finishBook(); return; }
+      if (m.pos) { var changed = m.pos.s !== pos.s; pos = m.pos; showText(pos); saveProgress(); updateSession(); if (changed) announcePosition(''); }
+    }
+  }, 200);
+  function stopScheduled(){
+    playToken++;
+    if (pipe) { pipe.sources.forEach(function(src){ try { src.onended = null; src.stop(); } catch(e) {} }); }
+    pipe = null;
+  }
+  function finishBook(){ stopScheduled(); playing = false; $('playBtn').textContent = 'Play'; say('The end. ' + book.title + ' is finished.'); api('/book/' + book.id + '/progress', { json: { s: pos.s, c: pos.c, finished: true } }).catch(function(){}); }
   function play(){
     if (!book) return;
     if (isAudio()) { fileAudio.play().then(function(){ playing = true; $('playBtn').textContent = 'Pause'; updateSession(); }).catch(function(e){ say('Could not play: ' + e.message); }); return; }
     ensureCtx();
-    playing = true; ended = false; $('playBtn').textContent = 'Pause';
     stopScheduled();
+    playing = true; ended = false; $('playBtn').textContent = 'Pause';
     var t = playToken;
-    pump(t);
+    showText(pos);
+    runPipeline(t);
     updateSession();
   }
   function pause(){
@@ -419,7 +476,6 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Reading
     showText(pos); saveProgress();
     if (announce) announcePosition('');
     if (was) play();
-    else fetchChunk(pos).catch(function(){});
   }
   function loadTrack(s, at, andPlay){
     var t = book.tracks[s]; if (!t) return;
