@@ -42,7 +42,12 @@ const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe';
 /** The library's own model knob. The platform's KADE_VISION_MODEL is Gemini Pro
  * (a minute of video cost $0.045 on the Sep 11 smoke); the library defaults to
  * Flash Lite so a two-hour film stays under a dollar. */
-const MODEL = () => process.env.KADE_LIBRARY_VISION_MODEL || 'google/gemini-3.1-flash'; // her word: Flash is fine as long as the descriptions are not cost-cut
+/* Sep 12 2026: 'google/gemini-3.1-flash' is NOT an OpenRouter model id (400 'is not a
+ * valid model ID'), so every describe run died before it started — one of the
+ * reasons her word was 'no way to get AI descriptions'. Current Flash ids that
+ * take video: gemini-3.8-flash / 3.7 / 3.6 ($0.75 per million in), 3.5-flash-lite
+ * ($0.30). Her word stands (Flash, not cost-cut), so the newest Flash. */
+const MODEL = () => process.env.KADE_LIBRARY_VISION_MODEL || 'google/gemini-3.8-flash'; // her word: Flash is fine as long as the descriptions are not cost-cut
 const IN_USD_PER_M = () => Number(process.env.KADE_LIBRARY_IN_USD_PER_M || 0.3); // Gemini 3.1 Flash list price, for the estimate shown before a run
 const OUT_USD_PER_M = () => Number(process.env.KADE_LIBRARY_OUT_USD_PER_M || 2.5);
 const TOKENS_PER_SECOND = 300; // Gemini video (+ audio) tokens per second of media, roughly
