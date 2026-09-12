@@ -1260,6 +1260,20 @@ router.post('/archive/batch', requireJwtAuth, express.json({ limit: '64kb' }), a
   }
 });
 
+/* ── THE LIBRARIAN SORTS THE BOOKS ─────────────────────────────────────── */
+const sorter = require('./kadeReadingRoomSort');
+router.get('/librarian/sort-status', requireJwtAuth, async (req, res) => {
+  try { res.json({ ok: true, enabled: sorter.ENABLED(), unsorted: await sorter.unsortedCount(), shelves: sorter.SHELVES }); } catch (e) { res.status(500).json({ error: 'Could not count.' }); }
+});
+router.post('/librarian/sort-books', requireJwtAuth, async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+    const filed = await sorter.sortOnce({ force: true, userId: req.user.id });
+    res.json({ ok: true, filed, unsorted: await sorter.unsortedCount() });
+  } catch (e) { res.status(500).json({ error: 'The sort did not run.' }); }
+});
+sorter.startSortSweep();
+
 /* ── COLLECTIONS (playlists) ───────────────────────────────────────────── */
 const collOut = (c) => ({ id: String(c._id), title: c.title, description: c.description || '', shared: !!c.shared, ownerName: c.ownerName || '', owner: String(c.owner), count: (c.items || []).length, updatedAt: c.updatedAt });
 

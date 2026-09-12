@@ -111,6 +111,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     <h2 id="h-mysubs">Your submissions</h2>
     <ul class="plain" id="mySubs" aria-labelledby="h-mysubs"><li class="muted">Loading…</li></ul>
     <section id="reviewWrap" hidden>
+      <h2 id="h-sort">The librarian's sorting</h2>
+      <p class="hint" id="sortStatus">Books arrive without folders; the librarian files them under Books and a shelf (Romance, Urban fiction, Humor and jokes, Self-help…) on her own, a batch every few minutes. Press to do a batch now.</p>
+      <button class="act" id="sortBtn" type="button">Sort the books now</button>
       <h2 id="h-review">Waiting for the librarian</h2>
       <p class="hint">You are the librarian. Approve a link and it is fetched into the collection from TubeVault's Cloud tab; approve a file and it goes into the library at once. The person who submitted it is told either way.</p>
       <ul class="plain" id="reviewList" aria-labelledby="h-review"></ul>
@@ -463,11 +466,17 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       if (mine.librarian) {
         var all = await api('/submissions?status=pending'); var rl = $('reviewList'); rl.innerHTML = '';
         $('reviewWrap').hidden = false;
+        try { var ss = await api('/librarian/sort-status'); $('sortStatus').textContent = (ss.unsorted ? ss.unsorted + ' book' + (ss.unsorted === 1 ? '' : 's') + ' still without a shelf. ' : 'Every book has a shelf. ') + 'The librarian files a batch every few minutes on her own; press to do one now.'; } catch(e) {}
         if (!all.submissions.length) rl.innerHTML = '<li class="muted">Nothing waiting.</li>';
         all.submissions.forEach(function(sb){ rl.appendChild(subLi(sb, true)); });
       }
     } catch(e) { $('mySubs').innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
   }
+  $('sortBtn').onclick = async function(){
+    this.disabled = true; say('Sorting a batch…');
+    try { var r = await api('/librarian/sort-books', { method: 'POST' }); say('Filed ' + r.filed + ' book' + (r.filed === 1 ? '' : 's') + '. ' + r.unsorted + ' still to go.'); loadSubmissions(); loadArchive(archivePath, archivePage); } catch(e) { say(e.message); }
+    this.disabled = false;
+  };
   $('subBtn').onclick = async function(){
     var url = $('subUrl').value.trim(); if (!url) { say('Paste a link first.'); $('subUrl').focus(); return; }
     try { await api('/submissions', { json: { url: url, title: $('subTitle').value, note: $('subNote').value } }); $('subUrl').value = ''; $('subTitle').value = ''; $('subNote').value = ''; say('Submitted. The librarian will look at it and you will be told.'); loadSubmissions(); } catch(e) { say(e.message); }
