@@ -338,7 +338,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function renderLibrary(){
     var cat = $('catFilter').value;
     var items = (shelfData.library || []).filter(function(b){ return !cat || (b.kind === 'audio' ? b.category : 'book') === cat; });
-    renderList('libraryList', items, 'library', cat ? 'Nothing on that shelf yet.' : 'The library is empty — donate something from your shelf.');
+    var filed = shelfData.libraryFiled || 0;
+    renderList('libraryList', items, 'library', cat ? 'Nothing on that shelf yet.' : (filed ? 'Everything shared so far (' + filed + ' items) is filed on the shelves under The archive above — Books, Video and the rest. Loose donations would be listed here.' : 'The library is empty — donate something from your shelf.'));
   }
   async function loadShelf(){
     try {

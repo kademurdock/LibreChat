@@ -258,14 +258,26 @@ router.get('/shelf', requireJwtAuth, async (req, res) => {
     const borrowedOrder = {};
     borrowedIds.forEach((id, i) => { borrowedOrder[id] = i; });
     borrowed.sort((a, b) => borrowedOrder[String(a._id)] - borrowedOrder[String(b._id)]);
-    const onShelf = new Set([...mineIds, ...borrowed.map((b) => String(b._id))]);
+    const borrowedSet = new Set(borrowed.map((b) => String(b._id)));
+    /* Her word (Sep 12): "why does it say the library is empty? All the material I'm
+     * adding is for public consumption." The flat list used to hide her OWN shared items
+     * (they were "on her shelf") and everything filed on a shelf (path != ''). Now the
+     * list keeps her own loose items, and libraryCount says how much is really shared,
+     * filed shelves included, so no screen calls a full library empty. */
+    const sharedFilter = { shared: true, state: 'ready', ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
+    const [libraryCount, libraryFiled] = hidden ? [0, 0] : await Promise.all([
+      KadeBook.countDocuments(sharedFilter),
+      KadeBook.countDocuments({ ...sharedFilter, path: { $ne: '' } }),
+    ]);
     res.json({
       librarian: isAdmin(req),
       me: String(userId),
       archiveOwned: await KadeBook.countDocuments({ owner: userId, path: { $ne: '' } }),
+      libraryCount,
+      libraryFiled,
       mine: mine.map((b) => summary(b, progByBook[String(b._id)])),
       borrowed: borrowed.map((b) => summary(b, progByBook[String(b._id)])),
-      library: library.filter((b) => !onShelf.has(String(b._id))).map((b) => summary(b, null)),
+      library: library.filter((b) => !borrowedSet.has(String(b._id))).map((b) => summary(b, progByBook[String(b._id)] || null)),
       categories: CATEGORIES,
       defaultVoice: DEFAULT_VOICE(),
     });
