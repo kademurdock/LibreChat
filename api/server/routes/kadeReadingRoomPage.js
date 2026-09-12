@@ -287,9 +287,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function canManage(b){ return b && (librarian || (me && b.owner === me)); }
   function bookLi(b, where){
     var li = document.createElement('li');
-    var kind = b.kind === 'audio' ? catName(b.category) : 'Book';
+    var kind = b.kind !== 'text' ? catName(b.category) : 'Book';
     var by = b.author ? ' by ' + b.author : '';
-    var prog = b.progress && b.progress.where ? (b.kind === 'audio' ? ' · Part ' : ' · Chapter ') + b.progress.where : '';
+    var prog = b.progress && b.progress.where ? (b.kind !== 'text' ? ' · Part ' : ' · Chapter ') + b.progress.where : '';
     var donor = where === 'library' || where === 'borrowed' ? ' · Donated by ' + esc(b.ownerName || 'someone') : '';
     if (where === 'archive') { var m = b.meta || {}; donor = [m.year, m.network || m.cableChannel || m.callSign, m.brand, m.market].filter(Boolean).map(esc).join(' · '); donor = donor ? ' · ' + donor : ''; if (b.described) donor += ' · described'; }
     var len = b.listen ? ' · ' + b.listen : '';
@@ -300,7 +300,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     open.setAttribute('aria-label', open.textContent + ' ' + b.title);
     open.onclick = function(){ location.search = '?book=' + b.id; };
     li.appendChild(open);
-    if (where === 'mine' && b.kind === 'audio') {
+    if (where === 'mine' && b.kind !== 'text') {
       var add = document.createElement('button'); add.className = 'act quiet'; add.type = 'button'; add.textContent = 'Add parts';
       add.setAttribute('aria-label', 'Add parts to ' + b.title);
       add.onclick = function(){ openTrackAdder(b); };
@@ -314,6 +314,10 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     items.forEach(function(b){ ul.appendChild(bookLi(b, where)); });
   }
   /* the shelf as folders: Books, Recordings, Video, Archive clips — donated and checked-out alike */
+  /* Sep 12 2026, her word: videos were showing up as books. The archive files a
+     movie as kind 'video'; every 'is it a recording?' check here now asks
+     'is it not text?' so audio and video share the player, the describe
+     controls and the category names. */
   function shelfFolder(b){ if (b.kind === 'text') return 'Books'; if (b.path) return 'Archive clips'; return b.kind === 'video' ? 'Video' : 'Recordings'; }
   function renderShelf(mine, borrowed){
     var box = $('mineList'); box.innerHTML = '';
@@ -339,7 +343,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   }
   function renderLibrary(){
     var cat = $('catFilter').value;
-    var items = (shelfData.library || []).filter(function(b){ return !cat || (b.kind === 'audio' ? b.category : 'book') === cat; });
+    var items = (shelfData.library || []).filter(function(b){ return !cat || (b.kind !== 'text' ? b.category : 'book') === cat; });
     var filed = shelfData.libraryFiled || 0;
     renderList('libraryList', items, 'library', cat ? 'Nothing on that shelf yet.' : (filed ? 'Everything shared so far (' + filed + ' items) is filed on the shelves under The archive above — Books, Video and the rest. Loose donations would be listed here.' : 'The library is empty — donate something from your shelf.'));
   }
@@ -349,7 +353,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       renderShelf(shelfData.mine, shelfData.borrowed);
       me = shelfData.me || me; librarian = !!shelfData.librarian;
       var sel = $('catFilter'); var cur = sel.value; sel.innerHTML = '<option value="">Everything</option>';
-      var present = {}; (shelfData.library || []).forEach(function(b){ present[b.kind === 'audio' ? b.category : 'book'] = 1; });
+      var present = {}; (shelfData.library || []).forEach(function(b){ present[b.kind !== 'text' ? b.category : 'book'] = 1; });
       Object.keys(present).forEach(function(c){ var o = document.createElement('option'); o.value = c; o.textContent = catName(c); sel.appendChild(o); });
       sel.value = cur;
       renderLibrary();
@@ -1149,11 +1153,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     $('bookTitle').textContent = book.title;
     var bits = [];
     if (book.author) bits.push('by ' + book.author);
-    if (book.kind === 'audio') bits.push(catName(book.category));
+    if (book.kind !== 'text') bits.push(catName(book.category));
     if (book.listen) bits.push(book.listen);
     if (book.ownerName && !book.mine) bits.push('donated by ' + book.ownerName);
     $('bookMeta').textContent = bits.join(' · ');
-    $('jacketLine').textContent = book.kind === 'audio' ? (book.description || '') : '';
+    $('jacketLine').textContent = book.kind !== 'text' ? (book.description || '') : '';
     var sel = $('chapterSel'); sel.innerHTML = '';
     var list = isAudio() ? book.tracks : book.chapters;
     list.forEach(function(ch, i){ var o = document.createElement('option'); o.value = i; o.textContent = (i + 1) + '. ' + ch.title + (isAudio() && ch.seconds ? ' (' + clock(ch.seconds) + ')' : ''); sel.appendChild(o); });
