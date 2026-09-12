@@ -770,7 +770,8 @@ router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' })
       if (!m) { out.push({ originalPath, error: 'not a playable audio or video file' }); continue; }
       const bytes = Math.max(0, parseInt(f.bytes, 10) || 0);
       if (bytes > MAX_TRACK_BYTES) { out.push({ originalPath, error: 'over 20 GB' }); continue; }
-      const existing = await KadeBook.findOne({ owner: req.user.id, originalPath }).lean();
+      // a real document, not lean(): a pending row from an earlier try is reused and saved below
+      const existing = await KadeBook.findOne({ owner: req.user.id, originalPath });
       if (existing && existing.state === 'ready') { out.push({ originalPath, id: String(existing._id), skipped: 'already in the library' }); continue; }
       const folder = cleanPath(f.path || '');
       const top = folder.split('/')[1] || folder.split('/')[0] || '';
@@ -809,7 +810,7 @@ router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' })
     logger.info(`[library/archive] user=${req.user.id} presigned ${out.filter((o) => o.key).length}/${files.length} (${out.filter((o) => o.skipped).length} already there)`);
     res.json({ ok: true, files: out });
   } catch (e) {
-    logger.error('[library/archive/presign] error:', e.message);
+    logger.error(`[library/archive/presign] error: ${e.message}`);
     res.status(500).json({ error: 'Could not prepare those uploads. ' + (/(not configured)/.test(e.message) ? 'Media storage is not set up.' : e.message) });
   }
 });
@@ -835,12 +836,13 @@ router.post('/archive/done', requireJwtAuth, express.json({ limit: '512kb' }), a
         await item.save();
         out.push({ id: String(item._id), ok: true, bytes: item.tracks[0].bytes });
       } catch (e) {
-        out.push({ id: String(item._id), error: 'the file is not in storage: ' + e.message });
+        logger.warn(`[library/archive/done] ${item._id} not in storage: ${e.name || ''} ${e.message} (${e.$metadata && e.$metadata.httpStatusCode})`);
+        out.push({ id: String(item._id), error: 'the file is not in storage: ' + (e.name === 'UnknownError' || e.name === 'NotFound' ? 'it never arrived (a refused upload - check the Backblaze storage cap)' : e.message) });
       }
     }
     res.json({ ok: true, files: out });
   } catch (e) {
-    logger.error('[library/archive/done] error:', e.message);
+    logger.error(`[library/archive/done] error: ${e.message}`);
     res.status(500).json({ error: 'Could not record those uploads.' });
   }
 });
