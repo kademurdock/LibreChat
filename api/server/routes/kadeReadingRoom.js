@@ -75,8 +75,11 @@ const mimeFor = (name, hint) => {
   if (h.startsWith('audio/')) return { ext: 'mp3', mime: h.slice(0, 60), kind: 'audio' };
   return null;
 };
-const MULTIPART_PART_BYTES = 100 * 1024 * 1024; // B2's S3 lane: 5 GB a single PUT; bigger files go in parts
-const MULTIPART_ABOVE = 4 * 1024 * 1024 * 1024;
+/* Measured Sep 12 2026 from her PC: Backblaze takes about 1 MB/s PER CONNECTION and scales
+ * almost linearly with connections (10 → 9.5 MB/s). So anything over 150 MB goes up in
+ * 50 MB parts the tool sends several at a time; a 1.4 GB movie is minutes, not twenty. */
+const MULTIPART_PART_BYTES = 50 * 1024 * 1024;
+const MULTIPART_ABOVE = 150 * 1024 * 1024;
 let _s3 = null;
 function s3() {
   if (_s3) return _s3;
