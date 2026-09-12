@@ -88,11 +88,10 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     <ul class="plain" id="collectionList" aria-labelledby="h-collections"><li class="muted">Loading…</li></ul>
     <div class="row"><input type="text" id="newCollTitle" style="flex:1 1 12rem" placeholder="New collection name" aria-label="New collection name"><button class="act" id="newCollBtn" type="button">Make it</button></div>
 
-    <h2 id="h-mine">Your shelf (the Reading Room)</h2>
-    <ul class="plain" id="mineList" aria-labelledby="h-mine"><li class="muted">Loading…</li></ul>
-
-    <h2 id="h-borrowed">Checked out</h2>
-    <ul class="plain" id="borrowedList" aria-labelledby="h-borrowed"><li class="muted">Nothing checked out yet.</li></ul>
+    <h2 id="h-mine">Your shelf</h2>
+    <p class="hint">Everything you have donated and everything you have opened, in folders. Removing something from your shelf never removes it from the library.</p>
+    <div id="mineList" aria-labelledby="h-mine"><p class="muted">Loading…</p></div>
+    <ul class="plain hidden" id="borrowedList"></ul>
 
     <h2 id="h-library">The library</h2>
     <div class="row" role="group" aria-label="Show only">
@@ -233,7 +232,17 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <p class="hint">Front matter the room skips on its own: the Bookshare notice, the copyright page, the contents list, publisher sign-up pages. Play any of them here.</p>
       <ul class="plain" id="skippedList"></ul>
     </details>
-    <details id="ownerWrap" class="hidden"><summary>This is your donation</summary>
+    <details id="editWrap" class="hidden"><summary>Edit this item</summary>
+      <label class="field" for="edTitle">Title</label><input type="text" id="edTitle">
+      <label class="field" for="edAuthor">Who made it</label><input type="text" id="edAuthor">
+      <label class="field" for="edYear">Year</label><input type="text" id="edYear">
+      <label class="field" for="edCategory">Shelf</label>
+      <select id="edCategory"><option value="audiobook">Audiobook</option><option value="movie">Movie</option><option value="tv">TV</option><option value="commercials">Commercials</option><option value="psa">PSA</option><option value="vhs">VHS / home video</option><option value="cassette">Cassette</option><option value="radio">Radio</option><option value="music">Music</option><option value="other">Other</option></select>
+      <label class="field" for="edPath">Folder in the archive (blank = not in the archive)</label><input type="text" id="edPath" placeholder="Video/Commercials/Coffee & Tea">
+      <label class="field" for="edDesc">About it</label><textarea id="edDesc" rows="2"></textarea>
+      <button class="act primary" id="edSaveBtn" type="button">Save changes</button>
+    </details>
+    <details id="ownerWrap" class="hidden"><summary>Where it sits</summary>
       <div class="row">
         <button class="act" id="shareBtn" type="button"></button>
         <button class="act quiet" id="grownBtn" type="button"></button>
@@ -268,7 +277,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   }
 
   /* ── shelf ─────────────────────────────────────────────────────────── */
-  var shelfData = null;
+  var shelfData = null, me = '', librarian = false;
+  function canManage(b){ return b && (librarian || (me && b.owner === me)); }
   function bookLi(b, where){
     var li = document.createElement('li');
     var kind = b.kind === 'audio' ? catName(b.category) : 'Book';
@@ -297,6 +307,30 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (!items.length) { ul.innerHTML = '<li class="muted">' + empty + '</li>'; return; }
     items.forEach(function(b){ ul.appendChild(bookLi(b, where)); });
   }
+  /* the shelf as folders: Books, Recordings, Video, Archive clips — donated and checked-out alike */
+  function shelfFolder(b){ if (b.kind === 'text') return 'Books'; if (b.path) return 'Archive clips'; return b.kind === 'video' ? 'Video' : 'Recordings'; }
+  function renderShelf(mine, borrowed){
+    var box = $('mineList'); box.innerHTML = '';
+    var all = mine.map(function(b){ b._where = 'mine'; return b; }).concat(borrowed.map(function(b){ b._where = 'borrowed'; return b; }));
+    if (!all.length) { box.innerHTML = '<p class="muted">Nothing on your shelf yet. Donate a book or a recording below, open anything in the library, or share a file from another app to Kade-AI.</p>'; return; }
+    var groups = {}; all.forEach(function(b){ var g = shelfFolder(b); (groups[g] = groups[g] || []).push(b); });
+    ['Books', 'Recordings', 'Video', 'Archive clips'].forEach(function(g){
+      if (!groups[g]) return;
+      var d = document.createElement('details'); d.open = true;
+      var sm = document.createElement('summary'); sm.textContent = '📁 ' + g + ' (' + groups[g].length + ')'; d.appendChild(sm);
+      var ul = document.createElement('ul'); ul.className = 'plain';
+      groups[g].forEach(function(b){
+        var li = bookLi(b, b._where);
+        if (b._where === 'borrowed') {
+          var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Remove from my shelf'; rm.setAttribute('aria-label', 'Remove ' + b.title + ' from my shelf');
+          rm.onclick = async function(){ try { await api('/book/' + b.id + '/return', { method: 'POST' }); say('Removed from your shelf. It stays in the library.'); loadShelf(); } catch(e) { say(e.message); } };
+          li.appendChild(rm);
+        }
+        ul.appendChild(li);
+      });
+      d.appendChild(ul); box.appendChild(d);
+    });
+  }
   function renderLibrary(){
     var cat = $('catFilter').value;
     var items = (shelfData.library || []).filter(function(b){ return !cat || (b.kind === 'audio' ? b.category : 'book') === cat; });
@@ -305,8 +339,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   async function loadShelf(){
     try {
       shelfData = await api('/shelf');
-      renderList('mineList', shelfData.mine, 'mine', 'Nothing on your shelf yet. Donate a book or a recording below.');
-      renderList('borrowedList', shelfData.borrowed, 'borrowed', 'Nothing checked out yet.');
+      renderShelf(shelfData.mine, shelfData.borrowed);
+      me = shelfData.me || me; librarian = !!shelfData.librarian;
       var sel = $('catFilter'); var cur = sel.value; sel.innerHTML = '<option value="">Everything</option>';
       var present = {}; (shelfData.library || []).forEach(function(b){ present[b.kind === 'audio' ? b.category : 'book'] = 1; });
       Object.keys(present).forEach(function(c){ var o = document.createElement('option'); o.value = c; o.textContent = catName(c); sel.appendChild(o); });
@@ -356,7 +390,23 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         open.onclick = function(){ loadArchive(f.path, 0); };
         li.appendChild(open); ul.appendChild(li);
       });
-      j.items.forEach(function(b){ ul.appendChild(bookLi(b, 'archive')); });
+      j.items.forEach(function(b){
+        var li = bookLi(b, 'archive');
+        if (canManage(b)) {
+          var mv = document.createElement('button'); mv.className = 'act quiet'; mv.type = 'button'; mv.textContent = 'Move'; mv.setAttribute('aria-label', 'Move ' + b.title + ' to another folder');
+          mv.onclick = async function(){ var to = prompt('Move "' + b.title + '" to which folder?', b.path || archivePath); if (to === null) return; try { await api('/archive/batch', { json: { ids: [b.id], action: 'move', to: to } }); say('Moved.'); loadArchive(archivePath, archivePage); } catch(e) { say(e.message); } };
+          var del = document.createElement('button'); del.className = 'act quiet'; del.type = 'button'; del.textContent = 'Delete'; del.setAttribute('aria-label', 'Delete ' + b.title + ' from the library');
+          del.onclick = async function(){ if (!confirm('Delete "' + b.title + '" from the library for everyone?')) return; try { await api('/book/' + b.id, { method: 'DELETE' }); say('Deleted.'); loadArchive(archivePath, archivePage); } catch(e) { say(e.message); } };
+          li.appendChild(mv); li.appendChild(del);
+        }
+        ul.appendChild(li);
+      });
+      if (archivePath && (librarian || j.items.some(canManage))) {
+        var tools = document.createElement('li'); tools.className = 'folder';
+        var mvf = document.createElement('button'); mvf.className = 'act quiet'; mvf.type = 'button'; mvf.textContent = 'Move or rename this folder';
+        mvf.onclick = async function(){ var to = prompt('New name or place for the folder "' + archivePath + '"', archivePath); if (to === null || to === archivePath) return; try { var r = await api('/archive/move-folder', { json: { from: archivePath, to: to } }); say('Moved ' + r.moved + ' item' + (r.moved === 1 ? '' : 's') + ' to ' + r.to + '.'); loadArchive(r.to, 0); } catch(e) { say(e.message); } };
+        tools.appendChild(mvf); ul.appendChild(tools);
+      }
       var pages = Math.ceil(j.total / j.limit);
       $('archivePager').hidden = pages <= 1;
       $('pageInfo').textContent = 'Page ' + (j.page + 1) + ' of ' + pages + ' (' + j.total + ' clips here)';
@@ -1018,12 +1068,28 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
   function renderOwner(){
     var ow = $('ownerWrap'); var bw = $('borrowWrap');
-    if (book.mine) {
+    var ed = $('editWrap');
+    if (book.mine || librarian) {
+      ed.classList.remove('hidden');
+      $('edTitle').value = book.title || ''; $('edAuthor').value = book.author || ''; $('edYear').value = book.copyrightYear || ''; $('edDesc').value = book.description || '';
+      $('edCategory').value = book.category || 'other'; $('edCategory').disabled = book.kind === 'text'; $('edPath').value = book.path || '';
+    } else ed.classList.add('hidden');
+    if (book.mine || librarian) {
       ow.classList.remove('hidden'); bw.classList.add('hidden');
       $('shareBtn').textContent = book.shared ? 'Take it out of the library' : 'Put it in the library for everyone';
       $('grownBtn').textContent = book.grownUpsOnly ? 'Grown-ups only: on (tap to allow kids)' : 'Grown-ups only: off (tap to hide from kids)';
     } else { ow.classList.add('hidden'); bw.classList.remove('hidden'); }
   }
+  $('edSaveBtn').onclick = async function(){
+    if (!book) return;
+    try {
+      var body = { title: $('edTitle').value, author: $('edAuthor').value, year: $('edYear').value, description: $('edDesc').value, path: $('edPath').value };
+      if (book.kind !== 'text') body.category = $('edCategory').value;
+      var r = await api('/book/' + book.id + '/edit', { json: body });
+      book.title = r.item.title; book.author = r.item.author; book.copyrightYear = r.item.copyrightYear; book.category = r.item.category; book.path = r.item.path; book.description = r.item.description;
+      $('bookTitle').textContent = book.title; say('Saved.');
+    } catch(e) { say(e.message); }
+  };
   $('shareBtn').onclick = async function(){ try { var j = await api('/book/' + book.id + '/share', { json: { shared: !book.shared } }); book.shared = j.book.shared; renderOwner(); say(book.shared ? 'It is in the library now. Everyone will see "Donated by ' + (book.ownerName || 'you') + '".' : 'Back on your private shelf.'); } catch(e) { say(e.message); } };
   $('grownBtn').onclick = async function(){ try { var j = await api('/book/' + book.id + '/share', { json: { grownUpsOnly: !book.grownUpsOnly } }); book.grownUpsOnly = j.book.grownUpsOnly; renderOwner(); say(book.grownUpsOnly ? 'Hidden from the kids.' : 'The kids can see it.'); } catch(e) { say(e.message); } };
   $('deleteBtn').onclick = async function(){ if (!confirm('Withdraw "' + book.title + '" from the Reading Room for everyone? This cannot be undone.')) return; try { pause(); await api('/book/' + book.id, { method: 'DELETE' }); location.search = ''; } catch(e) { say(e.message); } };
@@ -1034,6 +1100,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   async function openBook(id){
     try {
       book = await api('/book/' + id);
+      if (!me) { try { var sh = await api('/shelf'); me = sh.me || ''; librarian = !!sh.librarian; } catch(e2) {} }
     } catch(e) { say('Could not open that: ' + e.message); location.search = ''; return; }
     $('shelf').classList.add('hidden'); $('player').classList.remove('hidden');
     $('pageTitle').textContent = 'The Library';

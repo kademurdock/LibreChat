@@ -257,6 +257,8 @@ router.get('/shelf', requireJwtAuth, async (req, res) => {
     const onShelf = new Set([...mineIds, ...borrowed.map((b) => String(b._id))]);
     res.json({
       librarian: isAdmin(req),
+      me: String(userId),
+      archiveOwned: await KadeBook.countDocuments({ owner: userId, path: { $ne: '' } }),
       mine: mine.map((b) => summary(b, progByBook[String(b._id)])),
       borrowed: borrowed.map((b) => summary(b, progByBook[String(b._id)])),
       library: library.filter((b) => !onShelf.has(String(b._id))).map((b) => summary(b, null)),
@@ -351,10 +353,17 @@ router.get('/book/:id', requireJwtAuth, async (req, res) => {
   try {
     const book = await openBook(req, req.params.id);
     if (!book) return res.status(404).json({ error: 'No such book on your shelf.' });
-    const [progress, bookmarks] = await Promise.all([
+    let [progress, bookmarks] = await Promise.all([
       KadeReadingProgress.findOne({ user: req.user.id, book: book._id }).lean(),
       KadeReadingBookmark.find({ user: req.user.id, book: book._id }).sort({ createdAt: -1 }).lean(),
     ]);
+    /* Her word: "anything they open and view … gets automatically categorised
+     * in their personal shelf, where they can remove it later and it won't
+     * remove from public access". Opening someone else's shared item makes
+     * the progress row that IS the shelf entry. */
+    if (!progress && String(book.owner) !== String(req.user.id)) {
+      progress = await KadeReadingProgress.findOneAndUpdate({ user: req.user.id, book: book._id }, { $setOnInsert: { s: 0, c: 0, pos: 0 } }, { upsert: true, new: true }).lean();
+    }
     let tracks = [];
     if (isMedia(book)) {
       tracks = await Promise.all((book.tracks || []).map(async (t, i) => {
@@ -1162,6 +1171,91 @@ router.delete('/submissions/:id', requireJwtAuth, async (req, res) => {
     res.json({ ok: true, removed: r.deletedCount || 0 });
   } catch (e) {
     res.status(500).json({ error: 'Could not withdraw it.' });
+  }
+});
+
+
+/* ── MANAGING: edit, move, delete — yours only, everything for the librarian
+ * (Part 181 continued, her word: "reorganise and delete … change the status
+ * … people who upload/submit should be able to control their own … but
+ * nobody else's"). */
+const canManage = (req, item) => item && (String(item.owner) === String(req.user.id) || isAdmin(req));
+
+router.post('/book/:id/edit', requireJwtAuth, express.json({ limit: '16kb' }), async (req, res) => {
+  try {
+    if (!isId(req.params.id)) return res.status(404).json({ error: 'No such item.' });
+    const item = await KadeBook.findById(req.params.id);
+    if (!item || !canManage(req, item)) return res.status(404).json({ error: 'No such item of yours.' });
+    const b = req.body || {};
+    const changed = [];
+    if (typeof b.title === 'string' && b.title.trim()) { item.title = b.title.trim().slice(0, 200); changed.push('title'); }
+    if (typeof b.author === 'string') { item.author = b.author.trim().slice(0, 200); changed.push('author'); }
+    if (typeof b.year === 'string') { item.copyrightYear = b.year.trim().slice(0, 12); changed.push('year'); }
+    if (typeof b.description === 'string') { item.description = b.description.trim().slice(0, 2000); if (item.kind !== 'text') item.synopsis = item.description; changed.push('description'); }
+    if (typeof b.category === 'string' && CATEGORIES.includes(b.category) && !(b.category === 'book' && item.kind !== 'text')) { item.category = b.category; changed.push('category'); }
+    if (typeof b.path === 'string') { item.path = cleanPath(b.path); changed.push('folder'); }
+    if (typeof b.shared === 'boolean') { if (b.shared && item.state !== 'ready') return res.status(400).json({ error: 'Add a recording before sharing it.' }); item.shared = b.shared; if (b.shared) item.sharedAt = new Date(); changed.push(b.shared ? 'shared' : 'private'); }
+    if (typeof b.grownUpsOnly === 'boolean') { item.grownUpsOnly = b.grownUpsOnly; changed.push('grown-ups'); }
+    if (Array.isArray(b.tags)) { item.tags = b.tags.slice(0, 30).map((t) => String(t).slice(0, 60)); changed.push('tags'); }
+    if (Array.isArray(b.trackTitles) && item.tracks) b.trackTitles.forEach((t, i) => { if (item.tracks[i] && typeof t === 'string' && t.trim()) item.tracks[i].title = t.trim().slice(0, 200); });
+    await item.save();
+    logger.info(`[library/edit] user=${req.user.id} "${item.title}" ${changed.join(',') || 'nothing'}`);
+    res.json({ ok: true, item: summary(item.toObject(), null) });
+  } catch (e) {
+    logger.error('[library/edit] error:', e);
+    res.status(500).json({ error: 'Could not save those changes.' });
+  }
+});
+
+/** Move or rename a whole archive folder (everything under `from`). Yours
+ * only; the librarian moves everyone's. */
+router.post('/archive/move-folder', requireJwtAuth, express.json({ limit: '4kb' }), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const from = cleanPath(b.from), to = cleanPath(b.to);
+    if (!from || !to) return res.status(400).json({ error: 'Say which folder and where it goes.' });
+    if (to === from || to.startsWith(from + '/')) return res.status(400).json({ error: 'A folder cannot move into itself.' });
+    const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const q = { path: { $regex: '^' + escaped + '(/|$)' }, ...(isAdmin(req) ? {} : { owner: req.user.id }) };
+    const items = await KadeBook.find(q, '_id path').lean();
+    if (!items.length) return res.status(404).json({ error: 'No items of yours in that folder.' });
+    const ops = items.map((it) => ({ updateOne: { filter: { _id: it._id }, update: { $set: { path: to + it.path.slice(from.length) } } } }));
+    await KadeBook.bulkWrite(ops);
+    logger.info(`[library/move-folder] user=${req.user.id} "${from}" -> "${to}" (${items.length} items)`);
+    res.json({ ok: true, moved: items.length, to });
+  } catch (e) {
+    logger.error('[library/move-folder] error:', e);
+    res.status(500).json({ error: 'Could not move that folder.' });
+  }
+});
+
+/** Several items at once: move, share, unshare, grown-ups, delete. */
+router.post('/archive/batch', requireJwtAuth, express.json({ limit: '64kb' }), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const ids = (Array.isArray(b.ids) ? b.ids : []).filter(isId).slice(0, 500);
+    if (!ids.length) return res.status(400).json({ error: 'Pick some items first.' });
+    const q = { _id: { $in: ids }, ...(isAdmin(req) ? {} : { owner: req.user.id }) };
+    const action = String(b.action || '');
+    let r;
+    if (action === 'move') r = await KadeBook.updateMany(q, { $set: { path: cleanPath(b.to) } });
+    else if (action === 'share') r = await KadeBook.updateMany({ ...q, state: 'ready' }, { $set: { shared: true, sharedAt: new Date() } });
+    else if (action === 'unshare') r = await KadeBook.updateMany(q, { $set: { shared: false } });
+    else if (action === 'grownups') r = await KadeBook.updateMany(q, { $set: { grownUpsOnly: b.value !== false } });
+    else if (action === 'category' && CATEGORIES.includes(String(b.value))) r = await KadeBook.updateMany({ ...q, kind: { $ne: 'text' } }, { $set: { category: String(b.value) } });
+    else if (action === 'delete') {
+      const items = await KadeBook.find(q).lean();
+      const keys = items.flatMap((it) => (it.tracks || []).map((t) => t.key)).filter(Boolean);
+      const del = items.map((it) => it._id);
+      await Promise.all([KadeBookText.deleteMany({ book: { $in: del } }), KadeReadingProgress.deleteMany({ book: { $in: del } }), KadeReadingBookmark.deleteMany({ book: { $in: del } }), KadeBook.deleteMany({ _id: { $in: del } })]);
+      deleteKeys(keys).catch(() => {});
+      r = { modifiedCount: del.length };
+    } else return res.status(400).json({ error: 'Unknown action.' });
+    logger.info(`[library/batch] user=${req.user.id} ${action} ${r.modifiedCount || 0}/${ids.length}`);
+    res.json({ ok: true, changed: r.modifiedCount || 0 });
+  } catch (e) {
+    logger.error('[library/batch] error:', e);
+    res.status(500).json({ error: 'Could not do that.' });
   }
 });
 
