@@ -761,7 +761,7 @@ router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' })
     const b = req.body || {};
     const files = Array.isArray(b.files) ? b.files.slice(0, 50) : [];
     if (!files.length) return res.status(400).json({ error: 'No files listed.' });
-    const shared = b.private === true ? false : true;
+    const shared = b.private === true ? false : isAdmin(req); // anyone else's push lands on their own shelf until the librarian approves
     const ownerName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
     const out = [];
     for (const f of files) {
@@ -1235,7 +1235,7 @@ router.post('/book/:id/edit', requireJwtAuth, express.json({ limit: '16kb' }), a
     if (typeof b.description === 'string') { item.description = b.description.trim().slice(0, 2000); if (item.kind !== 'text') item.synopsis = item.description; changed.push('description'); }
     if (typeof b.category === 'string' && CATEGORIES.includes(b.category) && !(b.category === 'book' && item.kind !== 'text')) { item.category = b.category; changed.push('category'); }
     if (typeof b.path === 'string') { item.path = cleanPath(b.path); changed.push('folder'); }
-    if (typeof b.shared === 'boolean') { if (b.shared && item.state !== 'ready') return res.status(400).json({ error: 'Add a recording before sharing it.' }); item.shared = b.shared; if (b.shared) item.sharedAt = new Date(); changed.push(b.shared ? 'shared' : 'private'); }
+    if (typeof b.shared === 'boolean' && (isAdmin(req) || b.shared === false)) { if (b.shared && item.state !== 'ready') return res.status(400).json({ error: 'Add a recording before sharing it.' }); item.shared = b.shared; if (b.shared) item.sharedAt = new Date(); changed.push(b.shared ? 'shared' : 'private'); }
     if (typeof b.grownUpsOnly === 'boolean') { item.grownUpsOnly = b.grownUpsOnly; changed.push('grown-ups'); }
     if (Array.isArray(b.tags)) { item.tags = b.tags.slice(0, 30).map((t) => String(t).slice(0, 60)); changed.push('tags'); }
     if (Array.isArray(b.trackTitles) && item.tracks) b.trackTitles.forEach((t, i) => { if (item.tracks[i] && typeof t === 'string' && t.trim()) item.tracks[i].title = t.trim().slice(0, 200); });
@@ -1280,7 +1280,7 @@ router.post('/archive/batch', requireJwtAuth, express.json({ limit: '64kb' }), a
     const action = String(b.action || '');
     let r;
     if (action === 'move') r = await KadeBook.updateMany(q, { $set: { path: cleanPath(b.to) } });
-    else if (action === 'share') r = await KadeBook.updateMany({ ...q, state: 'ready' }, { $set: { shared: true, sharedAt: new Date() } });
+    else if (action === 'share') { if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian puts things in the public library — use "Submit this for the library".' }); r = await KadeBook.updateMany({ ...q, state: 'ready' }, { $set: { shared: true, sharedAt: new Date() } }); }
     else if (action === 'unshare') r = await KadeBook.updateMany(q, { $set: { shared: false } });
     else if (action === 'grownups') r = await KadeBook.updateMany(q, { $set: { grownUpsOnly: b.value !== false } });
     else if (action === 'category' && CATEGORIES.includes(String(b.value))) r = await KadeBook.updateMany({ ...q, kind: { $ne: 'text' } }, { $set: { category: String(b.value) } });
@@ -1432,6 +1432,19 @@ router.post('/book/:id/share', requireJwtAuth, express.json({ limit: '2kb' }), a
     if (String(book.owner) !== String(req.user.id) && !isAdmin(req)) return res.status(403).json({ error: 'Only the person who donated a book can change where it sits.' });
     const b = req.body || {};
     if (b.shared === true && book.state !== 'ready') return res.status(400).json({ error: 'Add at least one recording before putting it in the library.' });
+    /* Her rule: the private shelf needs nobody's approval; the PUBLIC library
+     * needs the librarian's. Anyone but the librarian asking to share is
+     * making a submission. */
+    if (b.shared === true && !isAdmin(req) && !book.shared) {
+      const userName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
+      const open = await KadeLibrarySubmission.findOne({ book: book._id, user: req.user.id, status: 'pending', type: 'submission' }).lean();
+      if (!open) {
+        await KadeLibrarySubmission.create({ user: req.user.id, userName, type: 'submission', book: book._id, title: book.title, note: String(b.note || '').slice(0, 2000) });
+        notifyLibrarians(`${userName} asks for "${book.title}" to go in the family library. Open the Library page to approve or decline it.`);
+      }
+      if (typeof b.grownUpsOnly === 'boolean') { book.grownUpsOnly = b.grownUpsOnly; await book.save(); }
+      return res.json({ ok: true, pending: true, book: summary(book.toObject(), null) });
+    }
     if (typeof b.shared === 'boolean') {
       book.shared = b.shared;
       if (b.shared && !book.sharedAt) book.sharedAt = new Date();
