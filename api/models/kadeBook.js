@@ -123,6 +123,9 @@ const kadeBookSchema = new mongoose.Schema(
     /** The file as uploaded, on B2, so a better parser later can re-read it. */
     fileUrl: { type: String, default: '' },
     fileBytes: { type: Number, default: 0 },
+    /** Which parser cut the sections. Older than the code's PARSER_VERSION
+     * means "re-read the original on next open" (Sep 12 2026). */
+    parserVersion: { type: Number, default: 1 },
     /** The NLS-style opening ("Title. By Author. Published by ..."). */
     jacket: { type: String, default: '' },
     sections: { type: [sectionSummary], default: [] },

@@ -225,6 +225,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     <div id="voiceWrap">
       <label class="field" for="voiceSel">Voice</label>
       <select id="voiceSel"></select>
+      <button class="act" id="hearVoiceBtn" type="button" aria-describedby="hearVoiceHint">Hear this voice</button>
+      <span id="hearVoiceHint" class="muted">Plays the part you are on in the voice chosen above, so you can try a few before you settle.</span>
       <label class="field" for="speedSel">Speed</label>
       <select id="speedSel"><option value="0.8">Slower</option><option value="0.9">A little slower</option><option value="1" selected>Normal</option><option value="1.15">A little faster</option><option value="1.3">Faster</option><option value="1.5">Fastest</option></select>
     </div>
@@ -863,6 +865,27 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       book.bookmarks.unshift(j.bookmark); renderBookmarks();
       say('Bookmark placed at ' + (isAudio() ? 'part ' : 'chapter ') + (pos.s + 1) + (isAudio() ? ', ' + clock(fileAudio.currentTime) : '') + '.');
     } catch(e) { say(e.message); }
+  };
+  /* Sep 12 2026, her word: "the voice picker doesn't have a way for you to
+     preview which voice you're picking to read your audiobook". One button:
+     the chunk she is on, in the voice the select shows, through a plain
+     Audio element so it never tangles with the streamed reading pipe. */
+  var previewAudio = null;
+  $('hearVoiceBtn').onclick = async function(){
+    if (!book || isAudio()) return;
+    var sel = $('voiceSel'); var v = sel.value || voice;
+    var name = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : v;
+    if (previewAudio) { try { previewAudio.pause(); } catch(e) {} previewAudio = null; }
+    if (playing) pause();
+    say('A taste of ' + name + '. One moment.');
+    try {
+      var r = await fetch(API + '/book/' + book.id + '/audio/' + pos.s + '/' + pos.c + '?voice=' + encodeURIComponent(v) + '&speed=' + speed, { headers: { 'Authorization': 'Bearer ' + token_() } });
+      if (!r.ok) throw new Error('voice answered ' + r.status);
+      var blob = await r.blob(); var url = URL.createObjectURL(blob);
+      previewAudio = new Audio(url);
+      previewAudio.onended = function(){ URL.revokeObjectURL(url); previewAudio = null; say('That was ' + name + '. Pick it, or try another.'); };
+      await previewAudio.play();
+    } catch(e) { say('That voice did not answer. Try another one.'); }
   };
   $('voiceSel').onchange = function(){ voice = this.value; cache = {}; var was = playing; if (was) { pause(); } saveProgress(true); say('Voice: ' + this.options[this.selectedIndex].text); if (was) play(); };
   $('speedSel').onchange = function(){ speed = parseFloat(this.value) || 1; if (isAudio()) fileAudio.playbackRate = speed; else { cache = {}; var was = playing; if (was) pause(); if (was) play(); } saveProgress(true); };

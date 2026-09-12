@@ -45,7 +45,7 @@ const { saveBufferToS3 } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, CATEGORIES } = require('~/models/kadeBook');
-const { parseBook } = require('./kadeReadingRoomParse');
+const { parseBook, PARSER_VERSION } = require('./kadeReadingRoomParse');
 
 /* ── the media library on B2 (Part 181 continued) ──────────────────────────
  * Audio donations do not pass through this server: the phone or the browser
@@ -119,6 +119,96 @@ async function putBuffer(key, buffer, contentType) {
   const { PutObjectCommand } = require('@aws-sdk/client-s3');
   await client.send(new PutObjectCommand({ Bucket: MEDIA_BUCKET(), Key: key, Body: buffer, ContentType: contentType }));
 }
+async function getBuffer(key) {
+  const client = s3();
+  if (!client || !MEDIA_BUCKET()) throw new Error('media storage is not configured');
+  const { GetObjectCommand } = require('@aws-sdk/client-s3');
+  const out = await client.send(new GetObjectCommand({ Bucket: MEDIA_BUCKET(), Key: key }));
+  if (out.Body && typeof out.Body.transformToByteArray === 'function') return Buffer.from(await out.Body.transformToByteArray());
+  const parts = [];
+  for await (const chunk of out.Body) parts.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return Buffer.concat(parts);
+}
+/** The stored original's key, from the URL saveBufferToS3 handed back
+ * (".../books/<user>/book-....zip", presigned or not). */
+function keyFromFileUrl(fileUrl) {
+  try {
+    const path = decodeURIComponent(new URL(String(fileUrl)).pathname);
+    const i = path.indexOf('/books/');
+    return i === -1 ? '' : path.slice(i + 1);
+  } catch (e) {
+    return '';
+  }
+}
+
+/* ── re-read a book with a newer parser ─────────────────────────────────
+ * Sep 12 2026, her Narnia omnibus: the parser that cut it saw three sections
+ * for seven books, so "next chapter" jumped a whole book. The parser learned
+ * the shape (kadeReadingRoomParse.js PARSER_VERSION 2); every text book cut
+ * by an older parser is re-read from its stored original the next time
+ * anyone opens it. Progress rows and bookmarks are carried over by their
+ * flat chunk index, so a reader lands within a chunk of where they were.
+ * Fail-soft: a book whose original is missing or unreadable keeps its old
+ * sections and is stamped so it is not retried on every open. */
+const reparsing = new Set();
+async function reparseIfStale(book) {
+  if (!book || book.kind !== 'text' || (book.parserVersion || 1) >= PARSER_VERSION) return book;
+  const id = String(book._id);
+  if (reparsing.has(id)) return book;
+  reparsing.add(id);
+  const t0 = Date.now();
+  try {
+    const key = keyFromFileUrl(book.fileUrl);
+    if (!key) {
+      await KadeBook.updateOne({ _id: book._id }, { $set: { parserVersion: PARSER_VERSION } });
+      logger.info(`[reading-room/reparse] book=${id} "${book.title}" has no stored original; kept as cut`);
+      return book;
+    }
+    const buffer = await getBuffer(key);
+    const parsed = await parseBook(buffer, book.originalName || key.split('/').pop() || 'book');
+    if (!parsed.sections.length || parsed.stats.chars < 200) throw new Error('re-read found no text');
+    const oldCounts = (book.sections || []).map((x) => x.chunkCount || 0);
+    const newCounts = parsed.sections.map((x) => x.chunks.length);
+    const flat = (counts, s, c) => counts.slice(0, s).reduce((n, k) => n + k, 0) + c;
+    const unflat = (counts, f) => {
+      let left = Math.max(0, f);
+      for (let i = 0; i < counts.length; i++) {
+        if (left < counts[i]) return { s: i, c: left };
+        left -= counts[i];
+      }
+      const last = Math.max(0, counts.length - 1);
+      return { s: last, c: Math.max(0, (counts[last] || 1) - 1) };
+    };
+    await KadeBookText.updateOne({ book: book._id }, { $set: { sections: parsed.sections.map((x) => ({ chunks: x.chunks })), skipped: parsed.skipped.map((x) => ({ chunks: x.chunks })) } }, { upsert: true });
+    const set = {
+      parserVersion: PARSER_VERSION,
+      jacket: parsed.jacket,
+      sections: parsed.sections.map((x) => ({ title: x.title, chunkCount: x.chunks.length, chars: x.chars, kind: x.kind })),
+      skipped: parsed.skipped.map((x) => ({ title: x.title, reason: x.reason, chunkCount: x.chunks.length, chars: x.chars })),
+      stats: { chunks: parsed.stats.chunks, chars: parsed.stats.chars, listen: parsed.stats.listen },
+    };
+    await KadeBook.updateOne({ _id: book._id }, { $set: set });
+    const rows = await KadeReadingProgress.find({ book: book._id }).lean();
+    for (const r of rows) {
+      const to = unflat(newCounts, flat(oldCounts, r.s || 0, r.c || 0));
+      await KadeReadingProgress.updateOne({ _id: r._id }, { $set: { s: to.s, c: to.c } });
+    }
+    const marks = await KadeReadingBookmark.find({ book: book._id }).lean();
+    for (const m of marks) {
+      const to = unflat(newCounts, flat(oldCounts, m.s || 0, m.c || 0));
+      await KadeReadingBookmark.updateOne({ _id: m._id }, { $set: { s: to.s, c: to.c } });
+    }
+    logger.info(`[reading-room/reparse] book=${id} "${book.title}" v${book.parserVersion || 1} -> v${PARSER_VERSION}: ${oldCounts.length} -> ${newCounts.length} sections, ${parsed.stats.chunks} chunks, ${rows.length} progress row(s) and ${marks.length} bookmark(s) carried, ${Date.now() - t0}ms`);
+    return Object.assign({}, book, set);
+  } catch (e) {
+    logger.warn(`[reading-room/reparse] book=${id} "${book.title}" failed (${e.message}); kept as cut`);
+    await KadeBook.updateOne({ _id: book._id }, { $set: { parserVersion: PARSER_VERSION } }).catch(() => {});
+    return book;
+  } finally {
+    reparsing.delete(id);
+  }
+}
+
 async function deleteKeys(keys) {
   const client = s3();
   if (!client || !keys.length) return;
@@ -157,8 +247,18 @@ const PROXY_BASE = () => process.env.KADE_TTS_PROXY_URL || 'https://inworld-tts-
 const DEFAULT_VOICE = () => process.env.KADE_READING_DEFAULT_VOICE || process.env.KADE_DEFAULT_VOICE || 'Kiana (Comedian)';
 /** A bracket direction the proxy lifts into Inworld's instruction field —
  * not billed as text, and the whole of the room's "steering". `KADE_READING_STEER=`
- * (empty) turns it off; a reader can pass ?steer=0 on a chunk. */
-const STEER = () => (process.env.KADE_READING_STEER != null ? process.env.KADE_READING_STEER : '[reading a book aloud, steady audiobook pace]');
+ * (empty) turns it off; a reader can pass ?steer=0 on a chunk.
+ *
+ * Sep 12 2026, her word: "it sounds like it's reading the book really
+ * monotone ... it needs to be like the characters ... with performance
+ * instructions". The old direction ASKED for monotone ("steady audiobook
+ * pace"). This one asks for a narrator's performance: voices in the dialogue,
+ * the feeling of the scene, a storyteller's pace. Written the way Inworld's
+ * best practices want a direction (lowercase, "and" joins, no punctuation)
+ * so the proxy's sanitizer has nothing to strip. Pace words are deliberate:
+ * "unhurried" alone measured +42% on the clock (proxy Part 109), so the
+ * tempo here is "natural storytelling pace", not slow. */
+const STEER = () => (process.env.KADE_READING_STEER != null ? process.env.KADE_READING_STEER : '[performing a novel aloud like a skilled audiobook narrator and giving each character a distinct voice in the dialogue and letting the feeling of each scene come through and keeping a natural storytelling pace]');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } });
 
@@ -349,6 +449,7 @@ router.post('/upload', requireJwtAuth, (req, res, next) => {
       skipped: parsed.skipped.map((s) => ({ title: s.title, reason: s.reason, chunkCount: s.chunks.length, chars: s.chars })),
       stats: { chunks: parsed.stats.chunks, chars: parsed.stats.chars, listen: parsed.stats.listen },
       grownUpsOnly,
+      parserVersion: PARSER_VERSION,
       state: 'ready',
     });
     await KadeBookText.create({
@@ -367,8 +468,9 @@ router.post('/upload', requireJwtAuth, (req, res, next) => {
 /* ── one book ──────────────────────────────────────────────────────────── */
 router.get('/book/:id', requireJwtAuth, async (req, res) => {
   try {
-    const book = await openBook(req, req.params.id);
+    let book = await openBook(req, req.params.id);
     if (!book) return res.status(404).json({ error: 'No such book on your shelf.' });
+    book = await reparseIfStale(book);
     let [progress, bookmarks] = await Promise.all([
       KadeReadingProgress.findOne({ user: req.user.id, book: book._id }).lean(),
       KadeReadingBookmark.find({ user: req.user.id, book: book._id }).sort({ createdAt: -1 }).lean(),

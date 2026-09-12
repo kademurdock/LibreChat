@@ -55,6 +55,28 @@ test('copyright page, contents list and publisher sign-up page are skipped; dedi
   assert.equal(kept[kept.length - 1].title, 'Chapter 1');
 });
 
+test('chapters carried in paragraph classes (the Narnia omnibus shape) become real sections, and the contents list is skipped', async () => {
+  const body = `<frontmatter>${NOTICE}</frontmatter><bodymatter><level1 class="chapter" id="Contents"><h1>Contents</h1>
+  <level2><h2>Introduction</h2><p class="toc1">Chapter One: The Wrong Door</p><p class="toc1">Chapter Two: Digory and His Uncle</p><p class="toc">The Lion, the Witch and the Wardrobe</p></level2>
+  <level2 class="chapter"><p class="chapter-heads">To The Kilmer Family</p>
+  <p class="CN">Chapter One</p><p class="CT">The Wrong Door</p><p class="Text">${'This is a story about something that happened long ago when your grandfather was a child. '.repeat(12)}</p>
+  <p class="CN">Chapter Two</p><p class="CT">Digory and His Uncle</p><p class="Text">${'It was so sudden, and so horribly unlike anything that had ever happened to Digory. '.repeat(12)}</p>
+  <p class="Ext">Make your choice, adventurous Stranger;</p><p class="Text">${'Digory read it and read it again. '.repeat(20)}</p>
+  <p class="A-HEAD">Aslan</p><p class="Text">${'A lion. '.repeat(120)}</p></level2></level1></bodymatter>`;
+  const xml = dtbook(body);
+  const { kept, skipped } = classify(walkMarkup(xml, []));
+  assert.ok(skipped.some((x) => x.reason === 'contents'), 'the toc paragraphs are skipped: ' + skipped.map((x) => x.reason));
+  assert.ok(!kept.some((x) => x.paras.join(' ').includes('Chapter Two: Digory')), 'toc lines never reach a chunk');
+  const r = await parseBook(Buffer.from(xml), 'narnia.xml');
+  const titles = r.sections.map((x) => x.title);
+  assert.ok(titles.includes('Chapter One: The Wrong Door'), titles.join(' | '));
+  assert.ok(titles.includes('Chapter Two: Digory and His Uncle'), titles.join(' | '));
+  assert.ok(titles.includes('Aslan'), titles.join(' | '));
+  assert.ok(!titles.some((t) => /adventurous Stranger/.test(t)), 'a verse extract is not a heading');
+  const two = r.sections.find((x) => x.title === 'Chapter Two: Digory and His Uncle');
+  assert.ok(two.chunks.join(' ').includes('adventurous Stranger'), 'the verse stays inside the chapter');
+});
+
 test('chunks are whole sentences under the target and abbreviations do not split', () => {
   const paras = [
     'Dr. Smith went to Washington. He met Mr. and Mrs. Jones at 5 p.m. on the dot! "Really?" she asked. Yes.',

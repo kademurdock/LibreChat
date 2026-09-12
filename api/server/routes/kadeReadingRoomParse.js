@@ -41,6 +41,21 @@ const BLOCK_TAGS = new Set([
   'ul', 'ol', 'dl', 'list', 'br', 'hr', 'covertitle', 'bridgehead',
 ]);
 const HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hd']);
+/** Bump when the parser learns something that changes sections/chunks; books
+ * stamped with an older number are re-read from their stored original the
+ * next time someone opens them (kadeReadingRoom.js reparseIfStale). */
+const PARSER_VERSION = 2;
+/* Sep 12 2026, her Narnia omnibus: Bookshare's DAISY carried the whole
+ * seven-book collection as THREE <level2>s with an NCX of ten entries, and
+ * every real chapter lived in a paragraph CLASS instead ("CN" Chapter One,
+ * "CT" The Wrong Door, "chapter-heads", "A-HEAD"). The walker now reads a
+ * heading-looking class on <p>/<div> as a heading, and a table-of-contents
+ * class ("toc", "toc1", "tocpara", "contents...") as the Contents list, which
+ * classify() skips. Kept narrow on purpose: title pages ("tp-title"),
+ * copyright and cover classes are NOT headings. */
+const HEADING_CLASS_RE = /(^|[\s_-])(cn|ct|chapter[\s_-]?(?:head|heads|title|titles|number|num|no)|(?:[abc]|sub)[\s_-]?head(?:ing)?s?|hd[1-6]?|h[1-6]|heading[s]?|part[\s_-]?(?:title|number|head)|book[\s_-]?title)(?=$|[\s_-]|\d)/i;
+const TOC_CLASS_RE = /(^|[\s_-])(toc\w*|contents\w*|tocis\d*)(?=$|[\s_-]|\d)/i;
+const NOT_HEADING_CLASS_RE = /(toc|contents|copyright|title[\s_-]?page|tp[\s_-]|cover|dedication|epigraph|ext\b)/i;
 const LEVEL_TAG = /^level[1-6]?$/;
 const SKIP_TAGS = new Set(['pagenum', 'img', 'head', 'meta', 'script', 'style', 'title', 'doctitle', 'docauthor', 'link', 'svg', 'math', 'noteref', 'annoref']);
 
@@ -144,6 +159,20 @@ function walkMarkup(xml, into, opts = {}) {
       }
       if (BLOCK_TAGS.has(name)) {
         flushPara();
+        if (name === 'p' || name === 'div') {
+          const cls = attr(raw, 'class');
+          if (cls && TOC_CLASS_RE.test(cls)) {
+            if (!cur || cur.kind !== 'toc') startSection('Contents', 'toc');
+          } else if (cls && !NOT_HEADING_CLASS_RE.test(cls) && HEADING_CLASS_RE.test(cls)) {
+            // a heading dressed as a paragraph: read it exactly like <h2>
+            headingBuf = '';
+            if (!selfClosing) stack.push(name + '#hd');
+            continue;
+          } else if (cur && cur.kind === 'toc') {
+            // body text after the contents list, with no heading between
+            startSection('', 'section');
+          }
+        }
         if (titlesById) {
           const id = attr(raw, 'id');
           if (id && titlesById[id]) {
@@ -163,11 +192,11 @@ function walkMarkup(xml, into, opts = {}) {
     // closing tag
     let popped = null;
     for (let i = stack.length - 1; i >= 0; i--) {
-      if (stack[i] === name || stack[i] === name + '#notice') { popped = stack.splice(i).slice(0, 1)[0]; break; }
+      if (stack[i] === name || stack[i] === name + '#notice' || stack[i] === name + '#hd') { popped = stack.splice(i).slice(0, 1)[0]; break; }
     }
     if (SKIP_TAGS.has(name)) { if (skipDepth > 0) skipDepth--; continue; }
     if (skipDepth > 0) continue;
-    if (HEADING_TAGS.has(name)) {
+    if (HEADING_TAGS.has(name) || (popped && popped.endsWith('#hd'))) {
       const title = squash(headingBuf || '');
       headingBuf = null;
       if (title) {
@@ -254,6 +283,7 @@ function classify(sections) {
     const chars = text.length;
     let reason = null;
     if (s.notice || (NOTICE_RE.test(text) && /bookshare/i.test(text))) reason = 'bookshare-notice';
+    else if (s.kind === 'toc') reason = 'contents';
     else if (chars < 12 && !s.title) reason = 'blank';
     else if (chars < 12 && s.title && /^(cover|title page|copyright page|half title|frontispiece)$/i.test(s.title)) reason = 'blank';
     else if (!bodyStarted && chars < 6000 && (CONTENTS_RE.test(s.title) || s.kind === 'toc')) reason = 'contents';
@@ -511,6 +541,16 @@ async function readDocx(buffer, filename) {
  *   - a number-only heading with next to nothing under it ("1", "PART TWO")
  *     folds into the heading that follows ("1: The One and Only Kanye"). */
 const HEADING_LINE_RE = /^(chapter|part|book|section|prologue|epilogue|interlude|act|scene)\b|^[\divxlc]+([.:\-–—]|\s+[A-Z])/i;
+/** "3", "XII", "Chapter 1", "PART TWO" — a number heading with next to nothing
+ * under it, folded into the title that follows. A heading with NOTHING under
+ * it at all ("Chapter One" then "The Wrong Door" in the next paragraph class,
+ * the Narnia shape) folds whatever its words are — see mergeFragments. */
+const NUMBER_TITLE_RE = /^(chapter|part|book|section)?\s*[\divxlc]+\.?$/i;
+const joinTitles = (a, b) => (String(a).trim().toLowerCase() === String(b).trim().toLowerCase() ? a : a + ': ' + b);
+/** A heading that names a slot rather than a thing ("Chapter One", "Part
+ * Two", "Introduction", "Prologue"): empty, it folds into the next title.
+ * A dedication ("To Lucy Barfield") or a book title stays its own section. */
+const LABEL_TITLE_RE = /^(chapter|part|book|section|introduction|prologue|epilogue|interlude|act|scene|volume)\b/i;
 function looksLikeHeadingLine(t) {
   if (!t || t.length > 70) return false;
   if (HEADING_LINE_RE.test(t)) return true;
@@ -521,7 +561,9 @@ function mergeFragments(sections) {
   let pendingNumber = null;
   let untitledCount = 0;
   for (const s of sections) {
-    if (s.notice) { out.push(s); continue; }
+    // the notice and a contents list pass straight through; a pending
+    // heading waits for the next real section on the other side of them
+    if (s.notice || s.kind === 'toc') { out.push(s); continue; }
     if (!s.title) {
       const chars = s.paras.join(' ').length;
       const first = s.paras[0] || '';
@@ -540,12 +582,20 @@ function mergeFragments(sections) {
       }
       // else: a small untitled piece right after the notice — kept as its own section
     }
-    if (s.title && s.paras.join(' ').length < 200 && /^(chapter|part|book|section)?\s*[\divxlc]+\.?$/i.test(s.title)) {
-      pendingNumber = pendingNumber ? { title: pendingNumber.title + ' ' + s.title, paras: pendingNumber.paras.concat(s.paras) } : { title: s.title, paras: s.paras.slice() };
+    const numberOnly = s.title && s.paras.join(' ').length < 200 && NUMBER_TITLE_RE.test(s.title);
+    const labelOnly = s.title && s.paras.length === 0 && LABEL_TITLE_RE.test(s.title);
+    if (numberOnly || labelOnly) {
+      pendingNumber = pendingNumber ? { title: joinTitles(pendingNumber.title, s.title), paras: pendingNumber.paras.concat(s.paras) } : { title: s.title, paras: s.paras.slice() };
       continue;
     }
+    if (pendingNumber && s.title && s.paras.length === 0) {
+      // a bare dedication or book title between the label and its chapter:
+      // the label stands on its own rather than swallowing it
+      out.push({ title: pendingNumber.title, paras: pendingNumber.paras, kind: 'section', notice: false, ids: [] });
+      pendingNumber = null;
+    }
     if (pendingNumber) {
-      s.title = s.title ? pendingNumber.title + ': ' + s.title : pendingNumber.title;
+      s.title = s.title ? joinTitles(pendingNumber.title, s.title) : pendingNumber.title;
       s.paras = pendingNumber.paras.concat(s.paras);
       pendingNumber = null;
     }
@@ -587,5 +637,6 @@ module.exports = {
   readOpfMeta,
   listenEstimate,
   CHUNK_TARGET,
+  PARSER_VERSION,
   _internals: { decodeEntities, squash, hardSplit, NOTICE_RE, COPYRIGHT_RE },
 };
