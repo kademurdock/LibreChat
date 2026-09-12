@@ -239,7 +239,8 @@ router.get('/shelf', requireJwtAuth, async (req, res) => {
     const child = await isChild(req);
     const hidden = libraryHiddenFrom(req);
     const [mine, progress, library] = await Promise.all([
-      KadeBook.find({ owner: userId, state: { $in: ['ready', 'pending'] }, path: '' }).sort({ updatedAt: -1 }).limit(500).lean(),
+      // your own shelf items, plus any archive push that never finished (pending), so a stuck upload can be seen and deleted
+      KadeBook.find({ owner: userId, $or: [{ state: 'ready', path: '' }, { state: 'pending' }] }).sort({ updatedAt: -1 }).limit(500).lean(),
       KadeReadingProgress.find({ user: userId }).sort({ updatedAt: -1 }).lean(),
       hidden ? [] : KadeBook.find({ shared: true, state: 'ready', path: '', ...(child ? { grownUpsOnly: { $ne: true } } : {}) }).sort({ sharedAt: -1 }).limit(500).lean(),
     ]);
