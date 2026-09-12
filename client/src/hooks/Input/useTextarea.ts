@@ -276,10 +276,25 @@ export default function useTextarea({
         return;
       }
 
-      if (clipboardData.files.length > 0) {
+      /* Sep 12 2026 (Amber A's report): Safari, iOS included, can hand a
+       * pasted photo over in clipboardData.items with .files left empty.
+       * Read both, so a pasted screenshot attaches everywhere. */
+      const pastedFiles: File[] = Array.from(clipboardData.files ?? []);
+      if (pastedFiles.length === 0 && clipboardData.items) {
+        for (const item of Array.from(clipboardData.items)) {
+          if (item.kind === 'file') {
+            const file = item.getAsFile();
+            if (file) {
+              pastedFiles.push(file);
+            }
+          }
+        }
+      }
+
+      if (pastedFiles.length > 0) {
         setFilesLoading(true);
         const timestampedFiles: File[] = [];
-        for (const file of clipboardData.files) {
+        for (const file of pastedFiles) {
           const newFile = new File([file], `clipboard_${+new Date()}_${file.name}`, {
             type: file.type,
           });

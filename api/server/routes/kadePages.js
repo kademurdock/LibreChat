@@ -1150,7 +1150,7 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
 </head><body>
 <a class="back" href="/">&larr; Back to Kade-AI</a>
 <h1>Describe</h1>
-<p class="muted">Share or pick a photo, video, PDF, Word file, or text file — I will describe it or read it to you.</p>
+<p class="muted">Share, pick, or paste a photo, video, PDF, Word file, or text file — I will describe it or read it to you.</p>
 <div id="status" class="status" role="status" aria-live="polite">Loading&hellip;</div>
 <div id="controls" style="display:none; margin:1rem 0;">
   <button id="playBtn" class="playbtn" type="button">Play</button>
@@ -1177,6 +1177,8 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
   <h2>Describe another</h2>
   <label class="pickbtn" for="pick">Choose a photo or document</label>
   <input type="file" id="pick" accept="image/*,video/*,application/pdf,.pdf,.docx,.txt,.md,.csv,text/plain" style="position:absolute;width:1px;height:1px;opacity:0;">
+  <button id="pasteBtn" class="small" type="button" style="margin-left:.8rem;">Paste from the clipboard</button>
+  <p class="muted" id="pasteHint">You can also paste a copied photo or file straight onto this page (Ctrl+V, or Command+V on a Mac), or drag one here and drop it.</p>
 </section>
 <section class="card" aria-label="Set up sharing from your phone">
   <h2>Share straight from your phone</h2>
@@ -1349,6 +1351,66 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
     if(this.files && this.files[0]) uploadPicked(this.files[0]);
   });
 
+  /* Sep 12 2026 (Amber A's report): paste and drop, not only the picker.
+     Safari sometimes fills clipboardData.items but leaves .files empty, so
+     both are read. Pasted screenshots arrive nameless ("image.png"/"blob");
+     they get a real name so the upload and the status line read sensibly. */
+  function filesFrom(dt){
+    var out=[];
+    if(!dt) return out;
+    if(dt.files && dt.files.length){ for(var i=0;i<dt.files.length;i++){ out.push(dt.files[i]); } return out; }
+    if(dt.items){ for(var j=0;j<dt.items.length;j++){ var it=dt.items[j]; if(it.kind==='file'){ var f=it.getAsFile(); if(f) out.push(f); } } }
+    return out;
+  }
+  function extFor(type){
+    var t=(type||'').toLowerCase();
+    if(t==='image/jpeg') return 'jpg';
+    if(t==='application/pdf') return 'pdf';
+    if(t==='text/plain') return 'txt';
+    var tail=t.split('/')[1]||'bin';
+    return tail.split('+')[0].split(';')[0]||'bin';
+  }
+  function named(f){
+    if(f.name && f.name!=='image.png' && f.name!=='blob' && f.name.indexOf('.')>0) return f;
+    try{ return new File([f],'pasted-'+Date.now()+'.'+extFor(f.type),{type:f.type}); }catch(e){ return f; }
+  }
+  document.addEventListener('paste',function(ev){
+    var fs=filesFrom(ev.clipboardData);
+    if(!fs.length) return;
+    ev.preventDefault();
+    uploadPicked(named(fs[0]));
+  });
+  ['dragenter','dragover'].forEach(function(n){
+    document.addEventListener(n,function(ev){ ev.preventDefault(); if(ev.dataTransfer) ev.dataTransfer.dropEffect='copy'; });
+  });
+  document.addEventListener('drop',function(ev){
+    ev.preventDefault();
+    var fs=filesFrom(ev.dataTransfer);
+    if(fs.length) uploadPicked(named(fs[0]));
+  });
+  document.getElementById('pasteBtn').addEventListener('click',async function(){
+    if(!navigator.clipboard || !navigator.clipboard.read){
+      setStatus('This browser will not hand a button the clipboard. Press Ctrl+V (Command+V on a Mac) anywhere on this page instead.',true); return;
+    }
+    try{
+      var items=await navigator.clipboard.read();
+      for(var i=0;i<items.length;i++){
+        var types=items[i].types||[];
+        for(var k=0;k<types.length;k++){
+          var ty=types[k];
+          if(ty.indexOf('image/')===0 || ty==='application/pdf'){
+            var blob=await items[i].getType(ty);
+            uploadPicked(new File([blob],'pasted-'+Date.now()+'.'+extFor(ty),{type:ty}));
+            return;
+          }
+        }
+      }
+      setStatus('Nothing to paste yet. Copy a photo or a PDF first, then press this button again.',true);
+    }catch(e){
+      setStatus('Could not read the clipboard ('+(e && e.message ? e.message : e)+'). Press Ctrl+V (Command+V on a Mac) on this page instead.',true);
+    }
+  });
+
   async function iosSetup(){
     if(!TOKEN)return;
     try{
@@ -1386,7 +1448,7 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
     if(err==='share'){ setStatus('Something went wrong receiving that share — try again.',true); return; }
     iosSetup();
     if(shareId){ run(); }
-    else if(TOKEN){ setStatus('Pick a photo or document below, or share one straight from your phone.'); }
+    else if(TOKEN){ setStatus('Pick a photo or document below, paste one with Ctrl+V, or share one straight from your phone.'); }
     else { setStatus('Sign in to Kade-AI (open the app and log in), then come back to this page.',true); }
   })();
 })();
