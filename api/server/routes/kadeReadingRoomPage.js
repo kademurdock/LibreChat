@@ -179,6 +179,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <button class="act quiet" id="airplayBtn" type="button" hidden>AirPlay</button>
       <button class="act quiet" id="castBtn" type="button" hidden>Cast to a TV</button>
       <button class="act quiet" id="addCollBtn" type="button">Add to a collection</button>
+      <button class="act quiet" id="reportBtn" type="button">Suggest a different shelf</button>
     </div>
     <div class="now" id="nowText" aria-label="Now reading"></div>
     <details id="descWrap" hidden><summary id="descSummary">Video description</summary>
@@ -443,11 +444,12 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var what = esc(sb.title || sb.url || 'a file');
     var when = sb.createdAt ? new Date(sb.createdAt).toLocaleDateString() : '';
     var state = sb.status === 'pending' ? 'waiting' : sb.status;
+    if (sb.type === 'report') what = 'Wrong shelf: ' + what + (sb.suggestedPath ? ' → ' + esc(sb.suggestedPath) : '') + (sb.suggestedCategory ? ' (' + esc(sb.suggestedCategory) + ')' : '');
     li.innerHTML = '<span class="t book"><strong>' + what + '</strong><span class="meta">' + (review ? 'from ' + esc(sb.userName) + ' · ' : '') + esc(state) + (when ? ' · ' + when : '') + (sb.url ? ' · <a href="' + esc(sb.url) + '" target="_blank" rel="noopener">open the link</a>' : '') + (sb.note ? ' · ' + esc(sb.note) : '') + (sb.decisionNote ? ' · librarian: ' + esc(sb.decisionNote) : '') + (sb.fetchedAt ? ' · fetched' : '') + '</span></span>';
     if (review && sb.status === 'pending') {
-      var ok = document.createElement('button'); ok.className = 'act primary'; ok.type = 'button'; ok.textContent = 'Approve'; ok.setAttribute('aria-label', 'Approve ' + (sb.title || sb.url || 'this file'));
+      var ok = document.createElement('button'); ok.className = 'act primary'; ok.type = 'button'; ok.textContent = sb.type === 'report' ? 'Move it there' : 'Approve'; ok.setAttribute('aria-label', 'Approve ' + (sb.title || sb.url || 'this file'));
       ok.onclick = async function(){ var note = prompt('A word for ' + sb.userName + '? (optional)') || ''; try { await api('/submissions/' + sb.id + '/decide', { json: { status: 'approved', note: note } }); say('Approved.'); loadSubmissions(); } catch(e) { say(e.message); } };
-      var no = document.createElement('button'); no.className = 'act quiet'; no.type = 'button'; no.textContent = 'Decline'; no.setAttribute('aria-label', 'Decline ' + (sb.title || sb.url || 'this file'));
+      var no = document.createElement('button'); no.className = 'act quiet'; no.type = 'button'; no.textContent = sb.type === 'report' ? 'Leave it' : 'Decline'; no.setAttribute('aria-label', 'Decline ' + (sb.title || sb.url || 'this file'));
       no.onclick = async function(){ var note = prompt('Tell ' + sb.userName + ' why? (optional)') || ''; try { await api('/submissions/' + sb.id + '/decide', { json: { status: 'rejected', note: note } }); say('Declined.'); loadSubmissions(); } catch(e) { say(e.message); } };
       li.appendChild(ok); li.appendChild(no);
     } else if (!review && sb.status === 'pending') {
@@ -516,6 +518,13 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     } catch(e) { say(e.message); location.search = ''; }
   }
   $('collBack').onclick = function(){ location.search = ''; };
+  $('reportBtn').onclick = async function(){
+    if (!book) return;
+    var to = prompt('Where does "' + book.title + '" belong? A folder like Books/Fiction — Romance or Video/Commercials/Coffee & Tea (leave blank to just leave a note).', book.path || '');
+    if (to === null) return;
+    var note = prompt('Anything else the librarian should know? (optional)') || '';
+    try { var r = await api('/book/' + book.id + '/report', { json: { path: to, note: note } }); say(r.applied ? 'Moved.' : 'Sent to the librarian. You will be told when it is moved.'); } catch(e) { say(e.message); }
+  };
   $('addCollBtn').onclick = async function(){
     if (!book) return;
     try {

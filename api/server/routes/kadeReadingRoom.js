@@ -1063,7 +1063,38 @@ router.post('/book/:id/ask/:t', requireJwtAuth, express.json({ limit: '8kb' }), 
 
 /* ── SUBMISSIONS: "for library consideration" ──────────────────────────── */
 const { KadeLibrarySubmission } = require('~/models/kadeBook');
-const subOut = (s) => ({ id: String(s._id), user: String(s.user), userName: s.userName, url: s.url, title: s.title, note: s.note, book: s.book ? String(s.book) : null, status: s.status, decisionNote: s.decisionNote || '', decidedAt: s.decidedAt, fetchedAt: s.fetchedAt, createdAt: s.createdAt });
+const subOut = (s) => ({ id: String(s._id), type: s.type || 'submission', user: String(s.user), userName: s.userName, url: s.url, title: s.title, note: s.note, book: s.book ? String(s.book) : null, suggestedPath: s.suggestedPath || '', suggestedCategory: s.suggestedCategory || '', status: s.status, decisionNote: s.decisionNote || '', decidedAt: s.decidedAt, fetchedAt: s.fetchedAt, createdAt: s.createdAt });
+
+/** "This is on the wrong shelf." Anyone who can open an item may say so;
+ * the librarian moves it with one tap (or the owner/librarian's own report
+ * is applied at once). */
+router.post('/book/:id/report', requireJwtAuth, express.json({ limit: '4kb' }), async (req, res) => {
+  try {
+    const book = await openBook(req, req.params.id);
+    if (!book) return res.status(404).json({ error: 'No such item.' });
+    const b = req.body || {};
+    const suggestedPath = cleanPath(b.path || '');
+    const suggestedCategory = CATEGORIES.includes(String(b.category)) ? String(b.category) : '';
+    const note = String(b.note || '').trim().slice(0, 2000);
+    if (!suggestedPath && !suggestedCategory && !note) return res.status(400).json({ error: 'Say where it belongs, or what is wrong.' });
+    const userName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
+    if (canManage(req, book) && (suggestedPath || suggestedCategory)) {
+      const set = {};
+      if (suggestedPath) set.path = suggestedPath;
+      if (suggestedCategory && book.kind !== 'text') set.category = suggestedCategory;
+      await KadeBook.updateOne({ _id: book._id }, { $set: set });
+      logger.info(`[library/report] ${userName} moved own "${book.title}" -> ${suggestedPath || suggestedCategory}`);
+      return res.json({ ok: true, applied: true });
+    }
+    const s = await KadeLibrarySubmission.create({ user: req.user.id, userName, type: 'report', book: book._id, title: book.title, note, suggestedPath, suggestedCategory });
+    logger.info(`[library/report] ${userName} says "${book.title}" belongs in ${suggestedPath || suggestedCategory || '(see note)'}`);
+    notifyLibrarians(`${userName} says "${book.title}" is on the wrong shelf${suggestedPath ? ` — suggests ${suggestedPath}` : ''}${suggestedCategory ? ` (${suggestedCategory})` : ''}. Open the Library page to move it or leave it.`);
+    res.json({ ok: true, applied: false, submission: subOut(s.toObject()) });
+  } catch (e) {
+    logger.error('[library/report] error:', e);
+    res.status(500).json({ error: 'Could not send that.' });
+  }
+});
 
 async function notifyUser(userId, text, userName) {
   try {
@@ -1138,11 +1169,20 @@ router.post('/submissions/:id/decide', requireJwtAuth, express.json({ limit: '4k
     s.decidedBy = req.user.id;
     s.decidedAt = new Date();
     await s.save();
-    if (status === 'approved' && s.book) {
+    if (status === 'approved' && s.book && s.type === 'report') {
+      const set = {};
+      if (s.suggestedPath) set.path = s.suggestedPath;
+      if (s.suggestedCategory) set.category = s.suggestedCategory;
+      if (Object.keys(set).length) await KadeBook.updateOne({ _id: s.book, kind: s.suggestedCategory ? { $ne: 'text' } : { $exists: true } }, { $set: set });
+    } else if (status === 'approved' && s.book) {
       await KadeBook.updateOne({ _id: s.book }, { $set: { shared: true, sharedAt: new Date() } });
     }
     const what = s.title || s.url || 'your file';
-    notifyUser(s.user, status === 'approved'
+    if (s.type === 'report') {
+      notifyUser(s.user, status === 'approved'
+        ? `Thanks — "${what}" was moved${s.suggestedPath ? ' to ' + s.suggestedPath : ''}${s.suggestedCategory ? ' (' + s.suggestedCategory + ')' : ''} as you suggested.${s.decisionNote ? ' The librarian says: ' + s.decisionNote : ''}`
+        : `"${what}" stays where it is for now.${s.decisionNote ? ' The librarian says: ' + s.decisionNote : ''}`, s.userName);
+    } else notifyUser(s.user, status === 'approved'
       ? `Your library submission "${what}" was approved${s.url ? ' — it will be fetched into the collection' : ' and is in the family library now'}.${s.decisionNote ? ' The librarian says: ' + s.decisionNote : ''}`
       : `Your library submission "${what}" was not added this time.${s.decisionNote ? ' The librarian says: ' + s.decisionNote : ''}`, s.userName);
     logger.info(`[library/submissions] ${status}: "${what}" from ${s.userName}`);

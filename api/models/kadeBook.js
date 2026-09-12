@@ -232,8 +232,14 @@ const kadeLibrarySubmissionSchema = new mongoose.Schema(
     url: { type: String, default: '', maxlength: 2000 },
     title: { type: String, default: '', maxlength: 300 },
     note: { type: String, default: '', maxlength: 2000 },
-    /** A donated item on the submitter's shelf, shared on approval. */
+    /** A donated item on the submitter's shelf, shared on approval; for a
+     * report, the item that is on the wrong shelf. */
     book: { type: mongoose.Schema.Types.ObjectId, ref: 'KadeBook' },
+    /** 'submission' (add this) or 'report' (this is miscategorised — her
+     * word: "like how they do with the voices"). */
+    type: { type: String, enum: ['submission', 'report'], default: 'submission', index: true },
+    suggestedPath: { type: String, default: '', maxlength: 400 },
+    suggestedCategory: { type: String, default: '' },
     status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
     decisionNote: { type: String, default: '', maxlength: 1000 },
     decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
