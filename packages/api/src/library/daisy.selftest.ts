@@ -47,6 +47,7 @@ async function main() {
   assert.equal(libraryPath(items[0]), 'Videos/Commercials/Medicine/1980s');
   assert.equal(libraryPath(items[1]), 'Audio/Radio/1990s');
   assert.equal(libraryCategory({ kind: 'video', category: 'audiobook' }), 'other');
+  assert.equal(libraryPath({ kind: 'video', category: 'audiobook' }), 'Videos');
   console.log('DAISY navigation, clip clocks, bounded reads, missing/external media, text fallback and virtual shelves passed.');
 }
 main().catch((e) => { console.error(e); process.exitCode = 1; });

@@ -3,7 +3,8 @@ const categories: { [key: string]: string } = { audiobook: 'Audiobooks', movie: 
 export function libraryPath(item: LibraryItem): string {
   const root = item.kind === 'video' ? 'Videos' : item.kind === 'audio' ? 'Audio' : 'Books';
   const tail = (item.path || '').replace(/^(?:Books|Audio|Videos?|Recordings|Archive clips)(?:\/|$)/i, '');
-  return root + (tail ? '/' + tail : (categories[item.category || ''] ? '/' + categories[item.category || ''] : ''));
+  const category = libraryCategory(item);
+  return root + (tail ? '/' + tail : (categories[category] ? '/' + categories[category] : ''));
 }
 export function libraryCategory(item: LibraryItem): string {
   if (item.kind === 'text' || !item.kind) return 'book';
@@ -15,7 +16,7 @@ export function libraryPathExpression(): Record<string, unknown> {
   return { $let: { vars: {
     root: { $switch: { branches: [{ case: { $eq: ['$kind', 'video'] }, then: 'Videos' }, { case: { $eq: ['$kind', 'audio'] }, then: 'Audio' }], default: 'Books' } },
     parts: { $split: [{ $ifNull: ['$path', ''] }, '/'] },
-    fallback: { $switch: { branches: Object.entries(categories).map(([key, label]) => ({ case: { $eq: ['$category', key] }, then: label })), default: '' } },
+    fallback: { $switch: { branches: Object.entries(categories).map(([key, label]) => ({ case: key === 'audiobook' ? { $and: [{ $eq: ['$category', key] }, { $ne: ['$kind', 'video'] }] } : { $eq: ['$category', key] }, then: label })), default: '' } },
   }, in: { $let: { vars: {
     tail: { $cond: [{ $in: [{ $toLower: { $arrayElemAt: ['$$parts', 0] } }, ['books', 'audio', 'videos', 'video', 'recordings', 'archive clips']] }, { $slice: ['$$parts', 1, { $size: '$$parts' }] }, '$$parts'] },
   }, in: { $concat: ['$$root', { $cond: [{ $eq: [{ $filter: { input: '$$tail', as: 'p', cond: { $ne: ['$$p', ''] } } }, []] }, { $cond: [{ $eq: ['$$fallback', ''] }, '', { $concat: ['/', '$$fallback'] }] }, { $reduce: { input: '$$tail', initialValue: '', in: { $concat: ['$$value', '/', '$$this'] } } }] }] } } } } };
