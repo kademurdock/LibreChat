@@ -41,7 +41,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { saveBufferToS3, parseDaisyAudio, readDaisyFile, libraryPath, libraryCategory, libraryPathExpression, refineMediaFiling, correctedBookShelf } = require('@librechat/api');
+const { saveBufferToS3, parseDaisyAudio, readDaisyFile, libraryPath, libraryCategory, libraryPathExpression, refineMediaFiling, correctedBookShelf, reviewedLibraryMoves } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, CATEGORIES } = require('~/models/kadeBook');
@@ -1493,6 +1493,30 @@ router.post(['/librarian/refile-commercials', '/librarian/refile-books'], requir
   } catch (e) { logger.warn(`[library/refile] ${e.message}`); res.status(500).json({ error: 'Could not refile those commercials.' }); }
 });
 const sorter = require('./kadeReadingRoomSort');
+router.get('/librarian/inventory', requireJwtAuth, async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+  try {
+    const after = String(req.query.after || '');
+    if (after && !isId(after)) return res.status(400).json({ error: 'Invalid cursor.' });
+    const limit = clampInt(req.query.limit, 1, 2000, 1000);
+    const items = await KadeBook.find({ state: 'ready', $or: [{ shared: true }, { owner: req.user.id }], ...(after ? { _id: { $gt: after } } : {}) }, '_id title author synopsis description path originalPath kind category shared owner tags meta').sort({ _id: 1 }).limit(limit + 1).lean();
+    const more = items.length > limit;
+    if (more) items.pop();
+    res.json({ items, next: more ? String(items[items.length - 1]._id) : null });
+  } catch (e) { logger.warn(`[library/inventory] ${e.message}`); res.status(500).json({ error: 'Could not read the catalog.' }); }
+});
+router.post('/librarian/organize', requireJwtAuth, express.json({ limit: '1mb' }), async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+  let operations;
+  try { operations = reviewedLibraryMoves(req.body?.moves, CATEGORIES); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
+  try {
+    for (const op of operations) op.updateOne.filter.$or = [{ shared: true }, { owner: req.user.id }];
+    const result = await KadeBook.bulkWrite(operations);
+    logger.info(`[library/organize] user=${req.user.id} matched=${result.matchedCount} changed=${result.modifiedCount}`);
+    res.json({ ok: true, matched: result.matchedCount, changed: result.modifiedCount });
+  } catch (e) { logger.warn(`[library/organize] ${e.message}`); res.status(500).json({ error: 'Could not apply the reviewed changes.' }); }
+});
 router.get('/librarian/sort-status', requireJwtAuth, async (req, res) => {
   try { res.json({ ok: true, enabled: sorter.ENABLED(), unsorted: await sorter.unsortedCount(), shelves: sorter.SHELVES }); } catch (e) { res.status(500).json({ error: 'Could not count.' }); }
 });
