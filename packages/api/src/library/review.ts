@@ -9,7 +9,17 @@ interface ReviewedMove {
   newTitle?: string;
 }
 
-export function reviewedLibraryMoves(moves: ReviewedMove[], categories: readonly string[]) {
+interface ReviewedOperation {
+  updateOne: {
+    filter: { _id: string; path: string; title: string; kind: string; state: string };
+    update: {
+      $set: { path: string; category: string; title?: string };
+      $addToSet?: { tags: { $each: string[] } };
+    };
+  };
+}
+
+export function reviewedLibraryMoves(moves: ReviewedMove[], categories: readonly string[]): ReviewedOperation[] {
   if (!Array.isArray(moves) || !moves.length || moves.length > 500) throw new Error('Supply 1–500 reviewed items.');
   const ids = new Set<string>();
   return moves.map((move) => {
