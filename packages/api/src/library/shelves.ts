@@ -11,7 +11,7 @@ export function libraryCategory(item: LibraryItem): string {
   return item.category || 'other';
 }
 /** Virtual shelves leave original upload paths and in-flight imports untouched. */
-export function libraryPathExpression() {
+export function libraryPathExpression(): Record<string, unknown> {
   return { $let: { vars: {
     root: { $switch: { branches: [{ case: { $eq: ['$kind', 'video'] }, then: 'Videos' }, { case: { $eq: ['$kind', 'audio'] }, then: 'Audio' }], default: 'Books' } },
     parts: { $split: [{ $ifNull: ['$path', ''] }, '/'] },

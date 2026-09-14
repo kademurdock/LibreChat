@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 export type DaisyClip = { path: string; title: string; clipBegin: number; clipEnd?: number };
 export type DaisyAudio = { title: string; author: string; format: string; clips: DaisyClip[]; zip: JSZip };
 
-export function readDaisyFile(zip: JSZip, path: string, limit = 128 * 1024 * 1024): Promise<Buffer> {
+export function readDaisyFile(zip: JSZip, path: string, limit: number = 128 * 1024 * 1024): Promise<Buffer> {
   const file = zip.file(path);
   if (!file) return Promise.reject(new Error('A DAISY file is missing.'));
   return new Promise((accept, reject) => {

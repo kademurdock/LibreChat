@@ -1475,7 +1475,7 @@ router.post(['/librarian/refile-commercials', '/librarian/refile-books'], requir
     const books = req.path.endsWith('refile-books');
     const query = { state: 'ready', ...(books ? { kind: 'text' } : { path: /\/Commercials\/Other Commercials(?:\/|$)/i }), ...(ids.length ? { _id: { $in: ids } } : {}) };
     const items = await KadeBook.find(query, '_id title author path originalPath kind category shared owner tags').sort({ _id: 1 }).limit(10000).lean();
-    const changes = items.flatMap((item) => { const shelf = books && correctedBookShelf(item.title, item.author); const to = books ? (shelf ? 'Books/' + shelf : null) : commercialPath(item.path, item.title); return to && to !== item.path ? [{ id: String(item._id), title: item.title, from: item.path, to, originalPath: item.originalPath, tags: item.tags || [] }] : []; });
+    const changes = items.flatMap((item) => { const shelf = books && correctedBookShelf(item.title, item.author, item.path); const to = books ? (shelf ? 'Books/' + shelf : null) : commercialPath(item.path, item.title); return to && to !== item.path ? [{ id: String(item._id), title: item.title, from: item.path, to, originalPath: item.originalPath, tags: item.tags || [] }] : []; });
     if (b.apply !== true) return res.json({ ok: true, scanned: items.length, changes });
     if (!ids.length) return res.status(400).json({ error: 'Preview the changes first, then send their item IDs.' });
     const result = changes.length ? await KadeBook.bulkWrite(changes.map((c) => ({ updateOne: { filter: { _id: c.id, path: c.from, state: 'ready' }, update: { $set: { path: c.to, ...(books ? { tags: [...c.tags.filter((t) => t !== c.from.replace(/^Books\//, '')), c.to.replace(/^Books\//, '')] } : {}) } } } }))) : { modifiedCount: 0 };

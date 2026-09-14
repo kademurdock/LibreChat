@@ -10,7 +10,9 @@ async function main() {
   assert.equal(commercialPath('Video/Commercials/Other Commercials', 'Unisom and Eggo compilation'), null);
   assert.equal(commercialPath('Video/Commercials/Hand sorted', 'Unisom'), null);
   assert.equal(commercialPath('Video/Commercials/Other Commercials', 'Unisomatic'), null);
+  assert.equal(commercialPath('Video/Commercials/Other Commercials/1990s', 'Earth 2 (1994, TV Series) Retro Television Commercial'), 'Video/TV Shows/Earth 2/1990s');
   assert.equal(correctedBookShelf('Chicken Soup for the Teenage Soul', ''), 'Nonfiction — Inspirational stories');
+  assert.equal(correctedBookShelf('Any title', '', 'Books/Fiction \uFFFD Romance'), 'Fiction — Romance');
   assert.equal(daisyClock('npt=01:02:03.5'), 3723.5);
   assert.equal(daisyClock('1500ms'), 1.5);
   assert.throws(() => daisyClock('-3'));

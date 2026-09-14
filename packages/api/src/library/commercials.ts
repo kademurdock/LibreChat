@@ -1,4 +1,5 @@
 export const commercialBrands: { [shelf: string]: string[] } = {
+  'Toys & Video Games': ['tyco super blocks'],
   'Medicine & Pharmacy': ['unisom', 'comtrex', 'bayer', 'ben gay', 'bengay', 'lanacane', 'sinutab', 'dristan', 'blistex', 'actifed', 'sucrets', 'sominex', 'correctol', 'dulcolax', 'gas x', 'preparation h', 'phillips milk of magnesia', 'doans', 'doan s'],
   'Breakfast Cereal': ['special k', 'crispix', 'grape nuts', 'cream of wheat', 'frosted mini wheats', 'honey bunches of oats', 'honeycomb', 'alpha bits', 'apple jacks'],
   'Candy, Gum & Chocolate': ['m ms', 'm m s', 'doublemint', 'freedent', 'mentos', 'certs', 'dentyne', 'bubblicious', 'bubble yum', 'chiclets'],
@@ -23,6 +24,8 @@ const normalize = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[\u0
 export function commercialPath(path: string, title: string): string | null {
   if (!/(^|\/)Commercials\/Other Commercials(?:\/|$)/i.test(path)) return null;
   const name = ' ' + normalize(title) + ' ';
+  if (name.includes(' earth 2 1994 tv series ')) return path.replace(/Commercials\/Other Commercials/i, 'TV Shows/Earth 2');
+  if (name.includes(' cfmt station id and promos ')) return path.replace(/Commercials\/Other Commercials/i, 'Channels/CFMT');
   const matches = Object.entries(commercialBrands).filter(([, brands]) => brands.some((brand) => name.includes(' ' + brand + ' ')));
   if (matches.length !== 1) return null;
   return path.replace(/\/Other Commercials(?=\/|$)/i, '/' + matches[0][0]);
