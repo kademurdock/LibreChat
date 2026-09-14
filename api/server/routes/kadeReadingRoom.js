@@ -946,7 +946,7 @@ router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' })
       doc.copyrightYear = String(meta.year || '').slice(0, 12);
       doc.description = String(f.description || '').slice(0, 2000);
       doc.path = folder;
-      Object.assign(doc, refineMediaFiling(doc) || {});
+      Object.assign(doc, refineMediaFiling(doc, true) || {});
       doc.originalPath = originalPath;
       doc.meta = meta;
       doc.tags = [top, meta.decade, meta.type, meta.market].filter(Boolean).map((x) => String(x).slice(0, 60));
@@ -994,7 +994,7 @@ router.post('/archive/done', requireJwtAuth, express.json({ limit: '512kb' }), a
         item.tracks = [{ title: item.title, key, bytes: Number(head.ContentLength) || 0, seconds: Math.max(0, parseFloat(f.seconds) || 0), mime: MEDIA_EXT[ext] || head.ContentType || 'video/mp4', originalName: String(f.originalName || '').slice(0, 200) }];
         if (VIDEO_EXT[ext]) item.kind = 'video';
         item.state = 'ready';
-        Object.assign(item, refineMediaFiling(item) || {});
+        Object.assign(item, refineMediaFiling(item, true) || {});
         refreshListen(item);
         await item.save();
         out.push({ id: String(item._id), ok: true, bytes: item.tracks[0].bytes });
@@ -1054,8 +1054,11 @@ router.get('/search', requireJwtAuth, async (req, res) => {
     if (!q) return res.json({ items: [] });
     const base = { state: 'ready', ...(hidden || req.query.scope === 'mine' ? { owner: req.user.id } : { shared: true }), ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
     const words = q.split(/\s+/).filter(Boolean).map((w) => new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
-    const items = await KadeBook.find({ ...base, $and: words.map((re) => ({ $or: [{ title: re }, { author: re }, { path: re }, { tags: re }] })) }).sort({ title: 1 }).limit(100).lean();
-    res.json({ items: items.map((b) => summary(b, null)), q });
+    const page = clampInt(req.query.page, 0, 100000, 0);
+    const items = await KadeBook.find({ ...base, $and: words.map((re) => ({ $or: [{ title: re }, { author: re }, { path: re }, { tags: re }, { 'meta.callSign': re }, { 'meta.brand': re }, { 'meta.market': re }] })) }).sort({ title: 1, _id: 1 }).skip(page * 100).limit(101).lean();
+    const more = items.length > 100;
+    if (more) items.pop();
+    res.json({ items: items.map((b) => summary(b, null)), q, page, more });
   } catch (e) {
     res.status(500).json({ error: 'Search failed.' });
   }

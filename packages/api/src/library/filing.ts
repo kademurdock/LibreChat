@@ -1,3 +1,5 @@
+import { reviewedMediaTitles } from './reviewed-data';
+import { broadcastShelf } from './broadcast';
 import { filingData } from './filing-data';
 
 export const normalizeFilingTitle = (s: string): string => s.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -6,7 +8,13 @@ const ad = (s: string): boolean => /\b(?:ads?|advertisements?|adverts?|commercia
 const families: [string, string][] = [['my scene', 'My Scene'], ['myscene', 'My Scene'], ['bratz', 'Bratz'], ['kinderbot', 'Learning Toys'], ['kasey the kinderbot', 'Learning Toys'], ['kacey the kinderbot', 'Learning Toys']];
 const channels: [string, string][] = [['disney channel', 'Disney Channel'], ['nickelodeon', 'Nickelodeon'], ['nick jr', 'Nickelodeon'], ['cartoon network', 'Cartoon Network'], ['pbs', 'PBS'], ['cfmt', 'CFMT']];
 
+export function reviewedMediaFiling(title: string): { path: string; decade: string } | null {
+  return reviewedMediaTitles[normalizeFilingTitle(title.replace(/\.(?:mp4|mkv|mov|avi|webm|mp3|wav|flac|m4a|ogg)$/i, ''))] || null;
+}
+
 export function classifyMediaTitle(title: string): string | null {
+  const exact = reviewedMediaFiling(title);
+  if (exact) return exact.path;
   const s = normalizeFilingTitle(title);
   const isAd = ad(s);
   const radioAd = /\bradio (?:ads?|advertisements?|adverts?|commercials?|spots?)\b/.test(s);
@@ -22,13 +30,13 @@ export function classifyMediaTitle(title: string): string | null {
   }
   if (/\b(?:bumpers?|station ids?|station ident|sign off|sign on|program ident)\b/.test(s)) {
     const suffix = /\bbumper/.test(s) ? 'Bumpers' : 'Station IDs & Sign-offs';
+    for (const [needle, show] of [['alvin and the chipmunks', 'Alvin and the Chipmunks'], ['new woody woodpecker show', 'The New Woody Woodpecker Show'], ['finders keepers', 'Finders Keepers'], ['the fitzpatricks', 'The Fitzpatricks'], ['all star junior pyramid', 'Game Shows/All-Star Junior Pyramid']]) {
+      if (has(s, needle)) return 'TV Shows/' + show + '/' + suffix;
+    }
     const channel = channels.find(([needle]) => has(s, needle));
     if (channel) return 'Channels/' + channel[1] + '/' + suffix;
     const call = title.match(/\b[WK][A-Z]{2,3}\b/);
     if (call) return 'Channels/' + call[0] + '/' + suffix;
-    for (const [needle, show] of [['alvin and the chipmunks', 'Alvin and the Chipmunks'], ['new woody woodpecker show', 'The New Woody Woodpecker Show'], ['finders keepers', 'Finders Keepers'], ['the fitzpatricks', 'The Fitzpatricks'], ['all star junior pyramid', 'Game Shows/All-Star Junior Pyramid']]) {
-      if (has(s, needle)) return 'TV Shows/' + show + '/' + suffix;
-    }
     return 'Broadcast Presentation/' + suffix;
   }
   if (/\b(?:feature film|movie trailer|film trailer|theatrical trailer|movie preview|film preview|commercial movie|commercial film)\b/.test(s)) return 'Movies & Studios/Trailers & Previews';
@@ -46,16 +54,17 @@ export function classifyMediaTitle(title: string): string | null {
     return 'Audio Tapes/Unidentified Recordings';
   }
 
-  if (/\b(?:compilation|collection)\b/.test(s)) return null;
+  if (/\bcompilation\b/.test(s)) return null;
+  const start = s.replace(/^(?:(?:19|20)\d\d\s+|retro\s+|vintage\s+|classic\s+)/, '');
+  const ambiguous = new Set(['all', 'joy', 'total', 'gap', 'sonic', 'miller', 'dove', 'shout', 'pledge', 'bold']);
+  const prefixMatches = Object.entries(filingData.prefixes).flatMap(([category, names]) => names.filter((name) => (start === name || start.startsWith(name + ' ')) && (!ambiguous.has(name) || /^(?:ad\b|commercial\b|tv\b|television\b|19\d\d\b|20\d\d\b|detergent\b|soap\b|shampoo\b|polish\b|cleaner\b|laundry\b|ultra\b|plus\b)/.test(start.slice(name.length).trim()))).map((name) => ({ category, length: name.length })));
+  prefixMatches.sort((a, b) => b.length - a.length);
+  if (prefixMatches.length && prefixMatches[0].category !== 'Toys & Video Games') return productPath(prefixMatches[0].category);
   const toy = families.find(([needle]) => has(s, needle));
   if (toy) return productPath('Toys & Video Games/' + toy[1]);
   if (/\b(?:playset|dollhouse|styling heads?|action figures?|baby doll)\b/.test(s)) return productPath('Toys & Video Games');
   if (has(s, 'hallmark channel')) return 'Channels/Hallmark Channel/Promos';
 
-  const start = s.replace(/^(?:(?:19|20)\d\d\s+|retro\s+|vintage\s+|classic\s+)/, '');
-  const ambiguous = new Set(['all', 'joy', 'total', 'gap', 'sonic', 'miller', 'dove', 'shout', 'pledge', 'bold']);
-  const prefixMatches = Object.entries(filingData.prefixes).flatMap(([category, names]) => names.filter((name) => (start === name || start.startsWith(name + ' ')) && (!ambiguous.has(name) || /^(?:ad\b|commercial\b|tv\b|television\b|19\d\d\b|20\d\d\b|detergent\b|soap\b|shampoo\b|polish\b|cleaner\b|laundry\b|ultra\b|plus\b)/.test(start.slice(name.length).trim()))).map((name) => ({ category, length: name.length })));
-  prefixMatches.sort((a, b) => b.length - a.length);
   if (prefixMatches.length && !/\b(?:compilation|commercial collection)\b/.test(s)) return productPath(prefixMatches[0].category);
 
   const strong = Object.entries(filingData.strong).filter(([, names]) => names.some((name) => has(s, name)));
@@ -87,13 +96,19 @@ export function filingCategory(path: string, kind = 'video'): string {
   if (/\/Audiobooks(?:\/|$)/i.test(path)) return kind === 'audio' ? 'audiobook' : 'other';
   if (/\/(?:Movies & Studios)(?:\/|$)/i.test(path)) return 'movie';
   if (/\/(?:Radio|Podcasts)(?:\/|$)/i.test(path)) return 'radio';
-  if (/\/(?:Channels|TV Shows|Broadcast Presentation)(?:\/|$)/i.test(path)) return 'tv';
+  if (/\/(?:Channels|TV Shows|Broadcast Presentation|Broadcast Archives|Sports)(?:\/|$)/i.test(path)) return 'tv';
   return 'other';
 }
 
 /** Only media in machine catch-alls are eligible; ownership and source stay untouched. */
-export function refineMediaFiling(item: { kind?: string; path?: string; title?: string }): { path: string; category: string } | null {
+export function refineMediaFiling(item: { kind?: string; path?: string; title?: string; meta?: { type?: string; franchise?: string } }, imported = false): { path: string; category: string } | null {
   if (item.kind !== 'audio' && item.kind !== 'video') return null;
+  const exact = reviewedMediaFiling(item.title || '');
+  if (imported && item.meta?.type && item.meta.type !== 'custom' && exact) return { path: (item.kind === 'video' ? 'Videos/' : 'Audio/') + exact.path + '/' + exact.decade, category: filingCategory('/' + exact.path, item.kind) };
+  if (imported && item.meta?.type !== 'custom' && /^Videos?\/Channels\/[^/]+\/(?:\d{4}s|Undated|Multiple decades)$/.test(item.path || '')) {
+    const show = broadcastShelf(item.title || '', item.meta?.franchise || '');
+    if (show) return { path: (item.kind === 'video' ? 'Videos/' : 'Audio/') + show + '/' + item.path!.split('/').pop(), category: 'tv' };
+  }
   const path = commercialPath(item.path || '', item.title || '');
   return path && path !== item.path ? { path, category: filingCategory(path, item.kind) } : null;
 }

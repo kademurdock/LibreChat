@@ -53,3 +53,13 @@ assert.equal(refineMediaFiling({ kind: 'text', title: 'Unisom ad', path: 'Videos
 const first = refineMediaFiling({ kind: 'audio', title: 'Unisom radio ad', path: 'Audio' })!;
 assert.equal(refineMediaFiling({ kind: 'audio', title: 'Unisom radio ad', ...first }), null);
 console.log(`${cases.length + 10} media filing regression cases passed.`);
+
+assert.equal(classify('Olympus ad, 2003'), 'Commercials/Photography & Film');
+assert.equal(classify('Shrek The Third Out Of Control Triplets + Laugh With Me Baby Commercial (2007)'), 'Commercials/Toys & Video Games');
+assert.equal(classify('McDonalds Happy Meal Commercial: My Scene (2007)'), 'Commercials/Restaurants & Fast Food');
+assert.equal(classify('Milk-Bone ad, 1975'), 'Commercials/Pet Products');
+assert.equal(refineMediaFiling({ kind: 'video', title: 'Milk-Bone ad, 1975', path: 'Video/Commercials/Drinks (Non-Alcoholic)/1970s', meta: { type: 'commercial' } }, true)?.path, 'Videos/Commercials/Pet Products/1970s');
+assert.equal(refineMediaFiling({ kind: 'video', title: 'Milk-Bone ad, 1975', path: 'Videos/Favorites', meta: { type: 'custom' } }, true), null);
+assert.equal(refineMediaFiling({ kind: 'video', title: 'Sabrina the Teenage Witch ABC Family episode 2005', path: 'Video/Channels/ABC Family/2000s', meta: { type: 'network' } }, true)?.path, 'Videos/TV Shows/Sabrina the Teenage Witch/2000s');
+assert.equal(refineMediaFiling({ kind: 'video', title: 'Sabrina the Teenage Witch ABC Family episode 2005', path: 'Videos/Favorites', meta: { type: 'custom' } }, true), null);
+console.log('Whole collection product, program and custom-folder regressions passed.');

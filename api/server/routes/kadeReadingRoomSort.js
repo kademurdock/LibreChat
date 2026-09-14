@@ -80,7 +80,7 @@ async function sortOnce({ force = false, userId = null } = {}) {
     let filed = 0;
     for (const b of books) {
       const known = correctedBookShelf(b.title, b.author);
-      const c = known ? { shelf: known, adult: false } : out[String(b._id)];
+      const c = known ? { shelf: known, adult: out[String(b._id)]?.adult === true } : out[String(b._id)];
       if (!c) continue;
       const set = { path: `Books/${c.shelf}` };
       if (c.adult) set.grownUpsOnly = true;

@@ -77,9 +77,21 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <button class="act" id="searchBtn" type="button">Search</button>
     </div>
     <ul class="plain" id="searchList" aria-labelledby="h-search"></ul>
+    <button class="act quiet" id="searchMore" type="button" hidden>More search results</button>
 
     <h2 id="h-archive">Browse the library</h2><label for="libraryScope">Show</label><select id="libraryScope"><option value="public">Public library</option><option value="mine">Your uploads</option></select>
     <p class="hint">Books, Audio, and Videos. Your uploads stay yours to manage; only shared items appear in the public library.</p>
+    <section aria-labelledby="h-local" style="padding:1rem;border:1px solid var(--border);border-radius:14px;background:linear-gradient(120deg,rgba(41,130,112,.16),rgba(70,100,160,.1))">
+      <h3 id="h-local">Springfield, the Ozarks &amp; Missouri</h3>
+      <p class="hint">Local television, hometown businesses and Missouri memories. Start here, or explore favorite ads and shows from everywhere.</p>
+      <div class="row" id="discoveryLinks">
+        <button type="button" class="act" data-folder="Videos/Missouri">Explore Missouri</button>
+        <button type="button" class="act quiet" data-query="Springfield Ozarks">Springfield &amp; Ozarks</button>
+        <button type="button" class="act quiet" data-folder="Videos/Commercials">Commercials by subject</button>
+        <button type="button" class="act quiet" data-folder="Videos/TV Shows">TV shows &amp; familiar bumpers</button>
+        <button type="button" class="act quiet" data-folder="Audio">Radio, tapes &amp; audio</button>
+      </div>
+    </section>
     <nav class="crumbs" id="crumbs" aria-label="Where you are in the archive"></nav>
     <ul class="plain" id="archiveList" aria-labelledby="h-archive"><li class="muted">Loading…</li></ul>
     <div class="pager" id="archivePager" hidden><button class="act quiet" id="pagePrev" type="button">Previous page</button><span id="pageInfo"></span><button class="act quiet" id="pageNext" type="button">Next page</button></div>
@@ -363,22 +375,36 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   $('catFilter').onchange = renderLibrary;
 
   /* search */
-  async function doSearch(){
-    var q = $('searchBox').value.trim(); var ul = $('searchList'); ul.innerHTML = '';
+  var searchPage = 0, searchQuery = '', searchScope = '', searchRun = 0;
+  async function doSearch(more){
+    var append = more === true, q = $('searchBox').value.trim(), scope = $('libraryScope').value;
+    if (append && (q !== searchQuery || scope !== searchScope)) append = false;
+    if (!append) { searchPage = 0; searchQuery = q; searchScope = scope; $('searchList').innerHTML = ''; }
+    var run = ++searchRun, ul = $('searchList'); $('searchMore').hidden = true;
     if (!q) return;
     try {
-      var j = await api('/search?q=' + encodeURIComponent(q) + '&scope=' + $('libraryScope').value);
-      if (!j.items.length) { ul.innerHTML = '<li class="muted">Nothing matched.</li>'; say('Nothing matched ' + q + '.'); return; }
+      var j = await api('/search?q=' + encodeURIComponent(q) + '&scope=' + scope + '&page=' + searchPage);
+      if (run !== searchRun || scope !== $('libraryScope').value) return;
+      if (!j.items.length && !append) { ul.innerHTML = '<li class="muted">Nothing matched.</li>'; say('Nothing matched ' + q + '.'); return; }
+      var firstNew = ul.children.length;
       j.items.forEach(function(b){ ul.appendChild(bookLi(b, b.path ? 'archive' : 'library')); });
-      say(j.items.length + ' result' + (j.items.length === 1 ? '' : 's') + ' for ' + q + '.');
+      if (append && ul.children[firstNew]) { var nextButton = ul.children[firstNew].querySelector('button'); if (nextButton) nextButton.focus(); }
+      searchPage++; $('searchMore').hidden = !j.more;
+      say(ul.children.length + ' results loaded for ' + q + (j.more ? '. More results are available.' : '.'));
     } catch(e) { say(e.message); }
   }
+  $('searchMore').onclick = function(){ doSearch(true); };
+  $('discoveryLinks').onclick = function(ev){
+    var button = ev.target.closest('button'); if (!button) return;
+    if (button.dataset.folder) loadArchive(button.dataset.folder, 0);
+    else { $('searchBox').value = button.dataset.query; doSearch(); }
+  };
   $('searchBtn').onclick = doSearch;
   $('searchBox').addEventListener('keydown', function(ev){ if (ev.key === 'Enter') { ev.preventDefault(); doSearch(); } });
 
   /* the archive */
   var archivePath = '', archivePage = 0;
-  $('libraryScope').onchange = function(){ $('searchList').innerHTML = ''; loadArchive('', 0); };
+  $('libraryScope').onchange = function(){ searchRun++; $('searchList').innerHTML = ''; $('searchMore').hidden = true; loadArchive('', 0); };
   async function loadArchive(path, page){
     archivePath = path || ''; archivePage = page || 0;
     var ul = $('archiveList'); ul.innerHTML = '<li class="muted">Loading…</li>';
