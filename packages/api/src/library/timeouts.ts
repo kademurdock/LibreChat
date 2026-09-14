@@ -7,12 +7,12 @@ import type { Server } from 'node:http';
 export function configureBookUploadTimeouts(server: Server): void {
   const ordinaryTimeout = server.requestTimeout || 300000;
   server.requestTimeout = Math.max(ordinaryTimeout, 2 * 60 * 60 * 1000);
-  server.prependListener('request', (request, response) => {
+  server.prependListener('request', (request) => {
     if ((request.url || '').split('?')[0] === '/api/kade/reading-room/upload') return;
     const timeout = setTimeout(() => request.destroy(), ordinaryTimeout);
     timeout.unref();
     const clear = (): void => { clearTimeout(timeout); };
     request.once('end', clear);
-    response.once('close', clear);
+    request.once('close', clear);
   });
 }

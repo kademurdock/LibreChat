@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import net from 'node:net';
 import { configureBookUploadTimeouts } from './timeouts';
 
 async function main(): Promise<void> {
-  const server = http.createServer((request,response) => { request.resume(); request.on('end',()=>response.end('ok')); });
+  const server = http.createServer((request,response) => {
+    request.resume();
+    if (request.url === '/early') { response.end('rejected'); return; }
+    request.on('end',()=>response.end('ok'));
+  });
   server.requestTimeout=80;
   const headers=server.headersTimeout;
   configureBookUploadTimeouts(server);
@@ -22,6 +27,13 @@ async function main(): Promise<void> {
     });
     assert.equal(await slow('/ordinary'),false);
     assert.equal(await slow('/api/kade/reading-room/upload'),true);
+    const early=net.connect(address.port,'127.0.0.1');
+    early.on('error',()=>{});early.resume();
+    await new Promise<void>(resolve=>early.once('connect',resolve));
+    early.write('POST /early HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\nConnection: keep-alive\r\n\r\na');
+    await new Promise(resolve=>setTimeout(resolve,180));
+    const closed=early.destroyed;early.destroy();
+    assert(closed,'An early response must not clear an unfinished ordinary request deadline');
     console.log('Slow audiobook request survives; ordinary request retains its short deadline; header timeout unchanged.');
   } finally { server.closeAllConnections(); await new Promise<void>(resolve=>server.close(()=>resolve())); }
 }
