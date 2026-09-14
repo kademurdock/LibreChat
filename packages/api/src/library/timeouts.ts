@@ -9,7 +9,7 @@ export function configureBookUploadTimeouts(server: Server): void {
   server.requestTimeout = Math.max(ordinaryTimeout, 2 * 60 * 60 * 1000);
   server.prependListener('request', (request) => {
     if ((request.url || '').split('?')[0] === '/api/kade/reading-room/upload') return;
-    const timeout = setTimeout(() => request.destroy(), ordinaryTimeout);
+    const timeout = setTimeout(() => { if (!request.complete) request.destroy(); }, ordinaryTimeout);
     timeout.unref();
     const clear = (): void => { clearTimeout(timeout); };
     request.once('end', clear);

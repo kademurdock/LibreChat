@@ -5,6 +5,7 @@ import { configureBookUploadTimeouts } from './timeouts';
 
 async function main(): Promise<void> {
   const server = http.createServer((request,response) => {
+    if (request.url === '/events') { response.writeHead(200,{'Content-Type':'text/event-stream'}); response.write('data: ready\n\n'); return; }
     request.resume();
     if (request.url === '/early') { response.end('rejected'); return; }
     request.on('end',()=>response.end('ok'));
@@ -34,6 +35,12 @@ async function main(): Promise<void> {
     await new Promise(resolve=>setTimeout(resolve,180));
     const closed=early.destroyed;early.destroy();
     assert(closed,'An early response must not clear an unfinished ordinary request deadline');
+    const events=http.get({host:'127.0.0.1',port:address.port,path:'/events'});
+    events.on('error',()=>{});
+    await new Promise<void>(resolve=>events.once('response',response=>{response.resume();resolve()}));
+    await new Promise(resolve=>setTimeout(resolve,180));
+    const connected=!events.destroyed;events.destroy();
+    assert(connected,'A completed GET request must not end a long-running event response');
     console.log('Slow audiobook request survives; ordinary request retains its short deadline; header timeout unchanged.');
   } finally { server.closeAllConnections(); await new Promise<void>(resolve=>server.close(()=>resolve())); }
 }
