@@ -3,6 +3,11 @@ import type { RequestHandler } from 'express';
 const helpOrigin = 'https://inworld-tts-proxy-production.up.railway.app';
 const browserAgent =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+const downloads = new Map([
+  ['/help/android-download', { path: '/Kade-AI.apk', type: 'application/vnd.android.package-archive', name: 'Kade-AI.apk' }],
+  ['/help/library-uploader-download', { path: '/Kade-Library-Uploader.exe', type: 'application/octet-stream', name: 'Kade-Library-Uploader.exe' }],
+  ['/help/library-uploader-zip', { path: '/Kade-Library-Uploader.zip', type: 'application/zip', name: 'Kade-Library-Uploader.zip' }],
+]);
 
 /** Only public, authored help pages cross this boundary; no account headers do. */
 export const publicHelp: RequestHandler = async (req, res) => {
@@ -12,9 +17,9 @@ export const publicHelp: RequestHandler = async (req, res) => {
     return;
   }
   try {
-    const download = path === '/help/android-download';
-    const upstream = await fetch(helpOrigin + (download ? '/Kade-AI.apk' : path), {
-      headers: { 'User-Agent': browserAgent, Accept: 'text/html', 'X-Kade-Help-Proxy': '1' },
+    const download = downloads.get(path);
+    const upstream = await fetch(helpOrigin + (download?.path ?? path), {
+      headers: { 'User-Agent': browserAgent, Accept: download?.type ?? 'text/html', 'X-Kade-Help-Proxy': '1' },
       redirect: 'error',
       signal: AbortSignal.timeout(download ? 60000 : 12000),
     });
@@ -27,16 +32,19 @@ export const publicHelp: RequestHandler = async (req, res) => {
         );
       return;
     }
-    const expected = download ? 'application/vnd.android.package-archive' : 'text/html';
+    const expected = download?.type ?? 'text/html';
     if (!upstream.ok || !upstream.headers.get('content-type')?.includes(expected)) {
       throw new Error('Help unavailable');
     }
     if (download) {
       const length = Number(upstream.headers.get('content-length'));
       if (!length || length > 32 * 1024 * 1024) throw new Error('Invalid download size');
-      res.set('Content-Disposition', 'attachment; filename="Kade-AI.apk"');
+      const body = Buffer.from(await upstream.arrayBuffer());
+      if (body.length !== length) throw new Error('Incomplete download');
+      res.set('Content-Disposition', `attachment; filename="${download.name}"`);
       res.set('Cache-Control', 'public, max-age=60');
-      res.type(expected).send(Buffer.from(await upstream.arrayBuffer()));
+      res.set('X-Content-Type-Options', 'nosniff');
+      res.type(expected).send(body);
       return;
     }
     res.set('Cache-Control', 'public, max-age=60');

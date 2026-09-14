@@ -104,3 +104,43 @@ test('Android download uses only the fixed APK route and expected media type', a
   assert.equal(res.body.toString(), 'apk');
   assert.match(res.headers['Content-Disposition'], /attachment/);
 });
+
+test('Windows downloads use fixed public routes and preserve exact bytes', async (t) => {
+  for (const [path, type, name] of [
+    ['/help/library-uploader-download', 'application/octet-stream', 'Kade-Library-Uploader.exe'],
+    ['/help/library-uploader-zip', 'application/zip', 'Kade-Library-Uploader.zip'],
+  ]) {
+    let request;
+    const mock = t.mock.method(globalThis, 'fetch', async (...args) => {
+      request = args;
+      return new Response(new Uint8Array([77, 90, 0, 255]), {
+        headers: { 'Content-Type': type, 'Content-Length': '4' },
+      });
+    });
+    const res = response();
+    await publicHelp({ path, headers: { authorization: 'private', cookie: 'private' } }, res);
+    assert.equal(request[0], 'https://inworld-tts-proxy-production.up.railway.app/' + name);
+    assert.equal(request[1].headers.Authorization, undefined);
+    assert.equal(request[1].headers.cookie, undefined);
+    assert.equal(res.contentType, type);
+    assert.deepEqual(res.body, Buffer.from([77, 90, 0, 255]));
+    assert.equal(res.headers['Content-Disposition'], `attachment; filename="${name}"`);
+    assert.equal(res.headers['X-Content-Type-Options'], 'nosniff');
+    mock.mock.restore();
+  }
+});
+
+test('Windows download rejects a wrong type, size, or truncated body', async (t) => {
+  for (const headers of [
+    { 'Content-Type': 'text/html', 'Content-Length': '3' },
+    { 'Content-Type': 'application/octet-stream', 'Content-Length': '999999999' },
+    { 'Content-Type': 'application/octet-stream', 'Content-Length': '4' },
+  ]) {
+    const mock = t.mock.method(globalThis, 'fetch', async () => new Response('exe', { headers }));
+    const res = response();
+    await publicHelp({ path: '/help/library-uploader-download' }, res);
+    assert.equal(res.code, 503);
+    assert.equal(res.headers['Content-Disposition'], undefined);
+    mock.mock.restore();
+  }
+});
