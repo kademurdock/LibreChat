@@ -41,7 +41,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { saveBufferToS3, parseDaisyAudio, readDaisyFile, libraryPath, libraryCategory, libraryPathExpression, commercialPath, correctedBookShelf } = require('@librechat/api');
+const { saveBufferToS3, parseDaisyAudio, readDaisyFile, libraryPath, libraryCategory, libraryPathExpression, refineMediaFiling, correctedBookShelf } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, CATEGORIES } = require('~/models/kadeBook');
@@ -945,7 +945,8 @@ router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' })
       doc.author = String(meta.network || meta.cableChannel || meta.callSign || meta.brand || '').slice(0, 200);
       doc.copyrightYear = String(meta.year || '').slice(0, 12);
       doc.description = String(f.description || '').slice(0, 2000);
-      doc.path = commercialPath(folder, title) || folder;
+      doc.path = folder;
+      Object.assign(doc, refineMediaFiling(doc) || {});
       doc.originalPath = originalPath;
       doc.meta = meta;
       doc.tags = [top, meta.decade, meta.type, meta.market].filter(Boolean).map((x) => String(x).slice(0, 60));
@@ -993,6 +994,7 @@ router.post('/archive/done', requireJwtAuth, express.json({ limit: '512kb' }), a
         item.tracks = [{ title: item.title, key, bytes: Number(head.ContentLength) || 0, seconds: Math.max(0, parseFloat(f.seconds) || 0), mime: MEDIA_EXT[ext] || head.ContentType || 'video/mp4', originalName: String(f.originalName || '').slice(0, 200) }];
         if (VIDEO_EXT[ext]) item.kind = 'video';
         item.state = 'ready';
+        Object.assign(item, refineMediaFiling(item) || {});
         refreshListen(item);
         await item.save();
         out.push({ id: String(item._id), ok: true, bytes: item.tracks[0].bytes });
@@ -1401,6 +1403,7 @@ router.post('/book/:id/edit', requireJwtAuth, express.json({ limit: '16kb' }), a
     if (typeof b.description === 'string') { item.description = b.description.trim().slice(0, 2000); if (item.kind !== 'text') item.synopsis = item.description; changed.push('description'); }
     if (typeof b.category === 'string' && CATEGORIES.includes(b.category) && !(b.category === 'book' && item.kind !== 'text')) { item.category = b.category; changed.push('category'); }
     if (typeof b.path === 'string') { item.path = cleanPath(b.path); changed.push('folder'); }
+    if (typeof b.path === 'string' || typeof b.title === 'string') Object.assign(item, refineMediaFiling(item) || {});
     if (typeof b.shared === 'boolean' && (isAdmin(req) || b.shared === false)) { if (b.shared && item.state !== 'ready') return res.status(400).json({ error: 'Add a recording before sharing it.' }); item.shared = b.shared; if (b.shared) item.sharedAt = new Date(); changed.push(b.shared ? 'shared' : 'private'); }
     if (typeof b.grownUpsOnly === 'boolean') { item.grownUpsOnly = b.grownUpsOnly; changed.push('grown-ups'); }
     if (Array.isArray(b.tags)) { item.tags = b.tags.slice(0, 30).map((t) => String(t).slice(0, 60)); changed.push('tags'); }
@@ -1475,10 +1478,16 @@ router.post(['/librarian/refile-commercials', '/librarian/refile-books'], requir
     const books = req.path.endsWith('refile-books');
     const query = { state: 'ready', ...(books ? { kind: 'text' } : { path: /\/Commercials\/Other Commercials(?:\/|$)/i }), ...(ids.length ? { _id: { $in: ids } } : {}) };
     const items = await KadeBook.find(query, '_id title author path originalPath kind category shared owner tags').sort({ _id: 1 }).limit(10000).lean();
-    const changes = items.flatMap((item) => { const shelf = books && correctedBookShelf(item.title, item.author, item.path); const to = books ? (shelf ? 'Books/' + shelf : null) : commercialPath(item.path, item.title); return to && to !== item.path ? [{ id: String(item._id), title: item.title, from: item.path, to, originalPath: item.originalPath, tags: item.tags || [] }] : []; });
-    if (b.apply !== true) return res.json({ ok: true, scanned: items.length, changes });
+    const changes = items.flatMap((item) => {
+      const shelf = books && correctedBookShelf(item.title, item.author, item.path);
+      const filing = !books && refineMediaFiling(item);
+      const to = books ? (shelf ? 'Books/' + shelf : null) : filing?.path;
+      return to && to !== item.path ? [{ id: String(item._id), title: item.title, from: item.path, to, categoryFrom: item.category, categoryTo: filing?.category || item.category, originalPath: item.originalPath, shared: item.shared, owner: String(item.owner), tags: item.tags || [] }] : [];
+    });
+    const changedIds = new Set(changes.map((c) => c.id));
+    if (b.apply !== true) return res.json({ ok: true, scanned: items.length, changes, ...(b.includeUnmatched === true ? { unmatched: items.filter((item) => !changedIds.has(String(item._id))).map((item) => ({ id: String(item._id), title: item.title, path: item.path, kind: item.kind })) } : {}) });
     if (!ids.length) return res.status(400).json({ error: 'Preview the changes first, then send their item IDs.' });
-    const result = changes.length ? await KadeBook.bulkWrite(changes.map((c) => ({ updateOne: { filter: { _id: c.id, path: c.from, state: 'ready' }, update: { $set: { path: c.to, ...(books ? { tags: [...c.tags.filter((t) => t !== c.from.replace(/^Books\//, '')), c.to.replace(/^Books\//, '')] } : {}) } } } }))) : { modifiedCount: 0 };
+    const result = changes.length ? await KadeBook.bulkWrite(changes.map((c) => ({ updateOne: { filter: { _id: c.id, path: c.from, category: c.categoryFrom, state: 'ready' }, update: { $set: { path: c.to, ...(!books ? { category: c.categoryTo } : {}), ...(books ? { tags: [...c.tags.filter((t) => t !== c.from.replace(/^Books\//, '')), c.to.replace(/^Books\//, '')] } : {}) } } } }))) : { modifiedCount: 0 };
     logger.info(`[library/refile] corrected ${result.modifiedCount} commercial shelves`);
     res.json({ ok: true, changed: result.modifiedCount, changes });
   } catch (e) { logger.warn(`[library/refile] ${e.message}`); res.status(500).json({ error: 'Could not refile those commercials.' }); }

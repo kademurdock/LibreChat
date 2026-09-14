@@ -112,5 +112,5 @@ export { deliverApprovalEmail, approvalEmailNotice } from './access/approval';
 export { reverieOrientation, resolveReverieWhisper } from './reverie/navigation';
 export { parseDaisyAudio, readDaisyFile } from './library/daisy';
 export { libraryPath, libraryCategory, libraryPathExpression } from './library/shelves';
-export { commercialPath, commercialBrands } from './library/commercials';
+export { commercialPath, commercialBrands, classifyMediaTitle, filingCategory, refineMediaFiling } from './library/commercials';
 export { correctedBookShelf } from './library/books';
