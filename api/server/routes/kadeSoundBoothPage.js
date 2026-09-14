@@ -71,26 +71,29 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 <body>
   <p><a class="back" href="/home" aria-label="Back to home">&larr; Home</a> &nbsp;&middot;&nbsp; <a class="back" href="/my-creations">My Creations &rarr;</a></p>
   <h1>Sound Booth</h1>
-  <p class="muted">Write something, or describe what you want, and have it performed. Direct a performance, make a radio scene, or build an atmosphere. Start from a script below or write your own.</p>
+  <p class="muted">Choose a performance with Scenema, a scene with Seed Audio, or music with Lyria. Each engine has its own workspace. Switching engines keeps your drafts in this tab.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading the Sound Booth&hellip;</div>
 
   <main id="app" hidden>
-    <fieldset><legend>Start something</legend>
-      <label class="field" for="starter">A starting script</label>
-      <select id="starter"><option value="">Choose a starting point</option></select>
-      <button type="button" class="act quiet" id="btnStarter">Start a new project from this</button>
-      <button type="button" class="act quiet" id="btnBlank">New blank project</button>
-      <p class="hint">These editable scripts are free to load. Nothing generates until you confirm Render. Download any unsaved script before starting another.</p>
-    </fieldset>
     <fieldset>
       <legend>Engine</legend>
       <div class="engines" role="group" aria-label="Which engine" id="engines"></div>
+      <p id="engineSummary" class="hint"></p>
+      <details id="engineDetails"><summary>About this engine</summary><p id="engineWhere"></p><p id="engineCost"></p><p id="engineBest"></p><p id="engineNotFor"></p></details>
       <details id="chooser"><summary></summary><p id="chooserAnswer"></p><ul id="chooserRules"></ul></details>
       <button type="button" class="act quiet" id="btnSuggest">Pick one for me from what I typed</button>
     </fieldset>
+    <fieldset id="starterPanel"><legend>Start something</legend>
+      <label class="field" for="starter" id="starterLabel">A starting script</label>
+      <select id="starter"><option value="">Choose a starting point</option></select>
+      <button type="button" class="act quiet" id="btnStarter">Start a new project from this</button>
+      <button type="button" class="act quiet" id="btnBlank">New blank project</button>
+      <p class="hint" id="starterHint">Starting points are free to load. Save your current draft before replacing it. Generation starts only after you confirm the price.</p>
+    </fieldset>
 
-    <fieldset>
+
+    <fieldset id="modePanel">
       <legend>Mode</legend>
       <div class="seg" role="group" aria-label="Easy or advanced">
         <button type="button" id="modeEasy" aria-pressed="true">Easy</button>
@@ -99,8 +102,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       <p class="hint" id="modeHint">Easy: type what you want said, pick a voice and a mood, and let the script desk shape it.</p>
     </fieldset>
 
-    <fieldset>
-      <legend>What should it say?</legend>
+    <fieldset id="writingPanel">
+      <legend id="writingLegend">What should it say?</legend>
       <p class="hint" id="inputQ"></p>
       <div class="seg" role="group" aria-label="What are you putting in the box" id="inputModes"></div>
       <label class="field" for="text" id="textLabel">The words to perform</label>
@@ -108,31 +111,34 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       <textarea id="text" aria-describedby="textHint"></textarea>
       <details id="howto"><summary></summary><ul id="howtoList"></ul></details>
 
-      <div id="settings"></div>
-
-      <label class="field" for="mood">Mood</label>
-      <p class="hint">Becomes a note to the actor between your sentences &mdash; what they are doing and feeling, never how the recording should sound.</p>
-      <select id="mood"><option value="">No particular mood</option></select>
-
       <div>
         <button type="button" class="act" id="btnMake">Turn my words into a script</button>
       </div>
     </fieldset>
 
-    <fieldset>
-      <legend>The script</legend>
+    <fieldset id="settingsPanel"><legend id="settingsLegend">Voice and sound</legend>
+      <div id="settings"></div>
+
+      <div id="moodPanel"><label class="field" for="mood">Performance mood</label>
+      <p class="hint">Becomes a note to the actor between your sentences &mdash; what they are doing and feeling, never how the recording should sound.</p>
+      <select id="mood"><option value="">No particular mood</option></select></div>
+
+    </fieldset>
+
+    <fieldset id="editorPanel">
+      <legend id="editorLegend">The script</legend>
       <p class="hint" id="scriptHint">This is what gets performed, written like a script. Square brackets are a direction for the actor and are never spoken: [Voice tightens.] Double parentheses are a sound in the room: ((thunder)). Everything else is spoken. Edit it here before rendering; the engine's own code is built from it behind the scenes.</p>
-      <label class="field" for="script">Script</label>
+      <label class="field" for="script" id="editorLabel">Script</label>
       <textarea id="script" aria-describedby="scriptHint" spellcheck="false"></textarea>
       <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
       <p id="readback" class="hint"></p>
-      <div>
+      <div id="renderActions">
         <button type="button" class="act quiet" id="btnPreview" hidden>Hear this voice first (short paid preview)</button>
         <button type="button" class="act quiet" id="btnNewVoice" hidden>Cast a different voice</button>
         <button type="button" class="act primary" id="btnRender">Render</button>
         <button type="button" class="act" id="btnCancel" hidden>Stop this render</button>
       </div>
-      <p class="hint">The cost is said out loud before anything runs, and Render asks once more before it spends.</p>
+      <p class="hint">The cost is announced first. Press the generation button again to confirm the price and start.</p>
     </fieldset>
 
     <button type="button" class="act quiet" id="btnScriptFile">Download this script as text</button>
@@ -166,7 +172,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     var token = null; try { token = await getToken(); } catch(e) {}
     if(!token){ status.className='status err'; status.textContent='Please sign in at the chat site first, then reload this page.'; return; }
 
-    var state = { engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null, voiceSeed:null, rerollVoice:false };
+    var drafts = {};
+    var state = { quoteRevision:0, engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null, voiceSeed:null, rerollVoice:false };
     function say(msg, isErr){ status.className = 'status' + (isErr ? ' err' : ''); status.textContent = msg; }
     function showCode(xml){ var box = document.getElementById('codeBox'); var view = document.getElementById('codeView'); if(!box||!view) return; if(state.engine==='scenema' && xml && /<speak/i.test(xml) && state.mode==='advanced'){ view.textContent = xml; box.hidden = false; } else { box.hidden = true; view.textContent=''; } }
     function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
@@ -179,7 +186,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     function post(path, body){ return request(path,body||{}); }
     function get(path){ return request(path); }
-    function invalidateQuote(){ state.pendingRender=null; state.estimate=null; document.getElementById('btnRender').textContent='Render'; }
+    function renderLabel(){ return state.engine==='lyria' ? 'Make music' : state.engine==='seed' ? 'Generate scene' : 'Perform script'; }
+    function busy(){ return state.rendering || state.jobId || state.writing || state.importing; }
+    function invalidateQuote(){ state.quoteRevision++; state.pendingRender=null; state.estimate=null; document.getElementById('btnRender').textContent=renderLabel(); }
     app.addEventListener('input', invalidateQuote);
     app.addEventListener('change', invalidateQuote);
 
@@ -196,9 +205,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var g = state.guide.engines[k];
       var b = document.createElement('button');
       b.type='button'; b.className='engcard'; b.setAttribute('aria-pressed', k===state.engine); b.dataset.engine=k;
-      b.innerHTML = '<h3>'+esc(g.name)+' &mdash; '+esc(g.tagline)+'</h3><p>'+esc(g.where)+'</p><p>'+esc(g.cost)+'</p>' +
-        '<p><strong>Best for:</strong> '+esc(g.bestFor.join('; '))+'.</p><p><strong>Not for:</strong> '+esc(g.notFor.join('; '))+'.</p>';
-      b.setAttribute('aria-label', g.name+'. '+g.tagline+' '+g.where+' '+g.cost+' Best for: '+g.bestFor.join(', ')+'. Not for: '+g.notFor.join(', ')+'.');
+      b.innerHTML = '<strong>'+esc(g.name)+'</strong><p>'+esc(g.tagline)+'</p>';
+      b.setAttribute('aria-label', g.name+'. '+g.tagline);
       b.onclick = function(){ setEngine(k); };
       engBox.appendChild(b);
     });
@@ -209,15 +217,30 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     document.getElementById('chooserRules').innerHTML = ch.rules.map(function(r){ return '<li><strong>'+(ENG_NAME[r.pick]||r.pick)+'</strong> when '+esc(r.when)+'.</li>'; }).join('');
 
     document.getElementById('btnSuggest').onclick = async function(){
-      var t = document.getElementById('text').value.trim();
+      if(busy())return;
+      var sourceEngine=state.engine, revision=state.quoteRevision;
+      var t = document.getElementById(state.engine==='lyria'?'script':'text').value.trim();
       if(t.length < 3){ say('Type something in the box first, then I can suggest.', true); return; }
       var r = await post('/api/kade/sound-booth/suggest', {text:t});
+      if(state.engine!==sourceEngine || state.quoteRevision!==revision || busy())return;
       if(!r.ok){ say('Could not suggest right now.', true); return; }
-      setEngine(r.data.engine);
+      var hasDraft=!!drafts[r.data.engine] || r.data.engine===state.engine;
+      if(!setEngine(r.data.engine))return;
+      if(!hasDraft){if(state.engine==='lyria')document.getElementById('script').value=t;else{document.getElementById('text').value=t;setInput('brief');}}
       say(r.data.reason + (r.data.sure ? '' : ' Change it if that is not what you meant.'));
     };
 
+    function saveDraft(){
+      drafts[state.engine]={mode:state.mode,input:state.input,text:document.getElementById('text').value,script:document.getElementById('script').value,mood:document.getElementById('mood').value,readback:document.getElementById('readback').textContent,values:Object.assign({},state.values),clips:state.clips.slice(),projectId:state.projectId,voiceSeed:state.voiceSeed,rerollVoice:state.rerollVoice,lastXml:state.lastXml};
+    }
     function setEngine(e){
+      if(busy()){say('Finish the current operation or stop the render before switching workspaces.',true);return false;}
+      if(e!==state.engine){
+        saveDraft();
+        var d=drafts[e]||{};state.engine=e;
+        state.mode=d.mode||'easy';state.input=d.input||'words';state.values=Object.assign({},d.values||{});state.clips=(d.clips||[]).slice();state.projectId=d.projectId||null;state.voiceSeed=d.voiceSeed;state.rerollVoice=!!d.rerollVoice;state.lastXml=d.lastXml||'';
+        document.getElementById('text').value=d.text||'';document.getElementById('script').value=d.script||'';document.getElementById('mood').value=d.mood||'';document.getElementById('readback').textContent=d.readback||'';
+      }
       state.engine = e;
       Array.prototype.forEach.call(engBox.children, function(c){ c.setAttribute('aria-pressed', c.dataset.engine===e); });
       var g = state.guide.engines[e];
@@ -225,8 +248,36 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('howtoList').innerHTML = g.howToWrite.map(function(x){ return '<li>'+esc(x)+'</li>'; }).join('');
       document.getElementById('btnPreview').hidden = (e !== 'scenema');
       document.getElementById('btnNewVoice').hidden = (e !== 'scenema');
-      state.pendingRender = null; document.getElementById('btnRender').textContent = 'Render';
-      renderSettings();
+      invalidateQuote();setMode(state.mode);setInput(state.input||'words');applyWorkflow();showCode(state.lastXml);
+      say(g.name+'. '+(e==='lyria'?'Describe your music, add optional lyrics, then choose Make music.':e==='seed'?'Build a scene with dialogue, sounds and up to three reference voices.':'Write a performance and direct its voice.'));return true;
+    }
+    function applyWorkflow(){
+      var music=state.engine==='lyria', scene=state.engine==='seed';
+      var g=state.guide.engines[state.engine];
+      document.getElementById('engineSummary').textContent=g.tagline;
+      document.querySelector('#engineDetails summary').textContent='About '+g.name;
+      document.getElementById('engineWhere').textContent=g.where;document.getElementById('engineCost').textContent=g.cost;
+      document.getElementById('engineBest').textContent='Best for: '+g.bestFor.join('; ')+'.';document.getElementById('engineNotFor').textContent='Not for: '+g.notFor.join('; ')+'.';
+      document.getElementById('engineDetails').open=false;
+      if(music) document.getElementById('renderActions').before(document.getElementById('settingsPanel'));
+      else document.getElementById('editorPanel').before(document.getElementById('settingsPanel'));
+      document.getElementById('writingPanel').hidden=music;
+      document.getElementById('modePanel').hidden=music;
+      document.getElementById('moodPanel').hidden=music;
+      document.getElementById('writingLegend').textContent=scene?'Build your scene':'Prepare the performance';
+      document.getElementById('settingsLegend').textContent=music?'Song options':scene?'Voices and scene sound':'Voice and performance';
+      document.getElementById('editorLegend').textContent=music?'Describe your music':scene?'Scene script':'Performance script';
+      document.getElementById('editorLabel').textContent=music?'Music direction':scene?'Scene script':'Performance script';
+      document.getElementById('scriptHint').textContent=music?'Describe the genre, instruments, mood, singing voice if wanted, structure and length. Send this direction straight to Lyria; no script-writing step is needed. Put any exact words to sing in Your own lyrics.':scene?'Describe the setting, sounds and each voice. Include the exact dialogue and identify reference voices as @Audio1, @Audio2 or @Audio3.':'Write the words to perform. Square brackets give actor directions, such as [Whispers.]. Double parentheses describe sounds, such as ((thunder)).';
+      document.getElementById('script').setAttribute('aria-label',music?'Music direction':scene?'Scene script':'Performance script');
+      document.getElementById('btnScriptFile').textContent=music?'Download music direction as text':'Download this script as text';
+      document.getElementById('starterLabel').textContent=music?'A music starting point':scene?'A scene starting point':'A performance starting point';
+      var select=document.getElementById('starter'), selected=select.value;
+      select.innerHTML='<option value="">Choose a starting point</option>';
+      (state.guide.starters||[]).filter(function(x){return x.engine===state.engine;}).forEach(function(x){var o=document.createElement('option');o.value=x.id;o.textContent=x.title;select.appendChild(o);});
+      select.value=selected;
+      var howto=document.getElementById('howto');
+      document.getElementById('editorLabel').before(howto);
     }
     function setMode(m){
       state.mode = m;
@@ -236,7 +287,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         ? 'Easy: type what you want said, pick a voice and a mood, and let the script desk shape it.'
         : 'Advanced: every setting this engine has, the script to edit yourself, and the code this engine uses shown underneath it.';
       showCode(state.lastXml);
-      renderSettings();
+      renderSettings();applyWorkflow();
     }
     document.getElementById('modeEasy').onclick = function(){ setMode('easy'); };
     document.getElementById('modeAdv').onclick = function(){ setMode('advanced'); };
@@ -263,7 +314,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var btn = document.getElementById('btnMake');
       btn.textContent = m.button;
       btn.title = m.buttonHint;
-      say(m.boxLabel + '. ' + m.boxHint);
+      if(state.engine!=='lyria') say(m.boxLabel + '. ' + m.boxHint);
     }
 
     /* ---- settings, from the guide: only what THIS engine has ---- */
@@ -273,10 +324,11 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function renderSettings(){
       var g = state.guide.engines[state.engine];
       var box = document.getElementById('settings');
-      var show = g.settings.filter(function(s){ return state.mode==='advanced' || EASY[state.engine].indexOf(s.key) !== -1; });
+      var show = g.settings.filter(function(s){ if(state.engine==='lyria' && state.values.instrumental && (s.key==='lyrics'||s.key==='keep_lyrics')) return false; return state.engine==='lyria' || state.mode==='advanced' || EASY[state.engine].indexOf(s.key) !== -1; });
       box.innerHTML = show.map(function(s){
         var id = 'set_'+s.key, v = state.values[s.key];
         var head = '<label class="field" for="'+id+'">'+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
+        if(s.key==='lyrics') return head+'<textarea id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" rows="8">'+esc(v||'')+'</textarea>';
         if(s.kind==='text') return head+'<input type="text" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" value="'+esc(v||'')+'">';
         if(s.kind==='number') return head+'<input type="number" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" step="any"'+(s.min!=null?' min="'+s.min+'"':'')+(s.max!=null?' max="'+s.max+'"':'')+' placeholder="'+(s.default!=null?esc('normal is '+s.default):'leave empty')+'" value="'+(v!=null?esc(v):'')+'">';
         if(s.kind==='toggle') return '<label class="field"><input type="checkbox" id="'+id+'" data-key="'+s.key+'"'+(((v!=null)?v:s.default)?' checked':'')+' aria-describedby="'+id+'_h"> '+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
@@ -297,7 +349,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         return '';
       }).join('');
       Array.prototype.forEach.call(box.querySelectorAll('[data-key]'), function(el){
-        el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; invalidateQuote(); };
+        el.oninput = el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; invalidateQuote(); if(el.dataset.key==='instrumental'){renderSettings();document.getElementById('set_instrumental').focus();} };
       });
       Array.prototype.forEach.call(box.querySelectorAll('input[type=file]'), function(el){
         el.onchange = function(){ if(el.files && el.files[0]) importClip(el.files[0]); };
@@ -309,6 +361,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 
     async function importClip(file){
       if(file.size > 20*1024*1024){ say('That clip is over twenty megabytes. Ten to twenty seconds is all it needs.', true); return; }
+      state.importing=true;try {
       say('Importing ' + file.name + '\\u2026');
       var fd = new FormData(); fd.append('clip', file, file.name); fd.append('engine', state.engine);
       var r = await fetch('/api/kade/sound-booth/reference', {method:'POST', headers:{'Authorization':'Bearer '+token}, body: fd});
@@ -319,6 +372,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       state.clips.push({url:j.url, name:j.name||file.name});
       say((j.spoken||'Clip imported.') + (state.engine==='seed' ? ' It is @Audio'+state.clips.length+'.' : ''));
       renderSettings();
+      } catch(e){say('Could not import that clip.',true);} finally {state.importing=false;}
     }
 
     function collect(){
@@ -331,8 +385,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(s.kind==='number'){ var n = parseFloat(v); if(!isNaN(n)) b[s.key] = (s.key==='seed'||s.key==='pitch') ? Math.round(n) : n; return; }
         if(v!=null && String(v).trim()!=='') b[s.key] = v;
       });
-      if(!b.gender) b.gender = 'female';
-      var mood = document.getElementById('mood').value; if(mood) b.mood = mood;
+      if(state.engine!=='lyria' && !b.gender) b.gender = 'female';
+      if(state.engine==='lyria' && b.instrumental){delete b.lyrics;delete b.keep_lyrics;}
+      var mood = document.getElementById('mood').value; if(mood && state.engine!=='lyria') b.mood = mood;
       /* Lyria clones nothing, so a clip left over from another engine must not
        * ride along with a music render. */
       if(state.clips.length && state.engine!=='lyria'){ if(state.engine==='seed') b.audio_urls = state.clips.slice(0,3).map(function(c){return c.url;}); else b.reference_voice_url = state.clips[0].url; }
@@ -342,12 +397,13 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
 
     async function makeScript(which){
+      if(state.engine==='lyria' || busy()) return;
       var b = collect(); b.mode = which;
       if(!b.text || b.text.trim().length < 3){ say(which==='write' ? 'Say what you want made first.' : 'Type the words you want performed first.', true); document.getElementById('text').focus(); return; }
-      document.getElementById('btnMake').disabled = true;
+      state.writing=true;document.getElementById('btnMake').disabled = true;
       say(which==='write' ? 'Writing it\\u2026' : 'Shaping your words\\u2026');
       var r = await post('/api/kade/sound-booth/script', b);
-      document.getElementById('btnMake').disabled = false;
+      state.writing=false;document.getElementById('btnMake').disabled = false;
       if(!r.ok){ say(r.data.error || 'The script desk had trouble. Try again.', true); return; }
       /* Part 126: the person sees the screenplay; the engine's XML sits behind
        * a disclosure for anyone who wants it. Seed scripts are already prose. */
@@ -367,7 +423,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('script').focus();
     }
     document.getElementById('btnMake').onclick = function(){ makeScript(state.input === 'brief' ? 'write' : 'format'); };
-    document.getElementById('script').addEventListener('input', function(){ state.pendingRender=null; document.getElementById('btnRender').textContent='Render'; });
+    document.getElementById('script').addEventListener('input', function(){ state.pendingRender=null; document.getElementById('btnRender').textContent=renderLabel(); });
 
     async function doRender(preview){
       if(state.rendering || state.jobId){ say('A render is already in progress. Wait for it or press Stop.', true); return; }
@@ -376,7 +432,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       try {
       var script = document.getElementById('script').value.trim();
       var b = collect();
-      if(!script && !preview){ say('There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
+      if(!script && !preview){ say(state.engine==='lyria'?'Describe the music you want first.':'There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
       if(preview && !script && !b.voice_description){ say('Describe the voice first, or write a script, so there is a voice to preview.', true); return; }
       /* Part 122.1: this line used to invent a THIRD sample sentence ("Here is
        * how I sound."), different again from the two on the server, so what a
@@ -415,19 +471,20 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(state.rendering || state.jobId) { say('A render is already in progress. Wait for it or press Stop.',true); return; }
       var script=document.getElementById('script').value.trim();
       var b=collect();
-      if(!script && !preview){ say('Write a script first.',true); return; }
+      if(!script && !preview){ say(state.engine==='lyria'?'Describe the music you want first.':'Write a script first.',true); return; }
       b.script=script || '<speak voice="'+esc(b.voice_description||'A warm clear voice')+'" gender="'+(b.gender||'female')+'"></speak>';
       b.preview=preview; b.estimateOnly=true;
       var key=JSON.stringify(b);
       if(state.pendingRender!==key){
-        btnRender.disabled=true;
+        var quoteRevision=state.quoteRevision;btnRender.disabled=true;
         var r=await post('/api/kade/sound-booth/render',b);
         btnRender.disabled=false;
         if(!r.ok){say(r.data.error||'Could not estimate that script.',true);return;}
+        if(quoteRevision!==state.quoteRevision){say('The draft or settings changed. Choose '+renderLabel()+' again for the current price.');return;}
         state.pendingRender=key;
-        var cloneLine=state.clips.length ? ' Cloning '+state.clips.map(function(c){return c.name;}).join(', ')+'.' : ' No reference clip attached.';
-        say((r.data.estimate.spoken||'')+cloneLine+' Press '+(preview?'Hear this voice first':'Render')+' again to confirm.');
-        if(!preview) btnRender.textContent='Render — confirm';
+        var cloneLine=state.engine==='lyria' ? '' : state.clips.length ? ' Cloning '+state.clips.map(function(c){return c.name;}).join(', ')+'.' : ' No reference clip attached.';
+        say((r.data.estimate.spoken||'')+cloneLine+' Press '+(preview?'Hear this voice first':renderLabel())+' again to confirm.');
+        if(!preview) btnRender.textContent=renderLabel()+' — confirm';
         return;
       }
       invalidateQuote(); btnRender.disabled=true;
@@ -522,15 +579,15 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
             return '<audio controls preload="none" aria-label="' + esc(lbl) + '"><source src="' + esc(t.url) + '">' + (t.backupUrl ? '<source src="' + esc(t.backupUrl) + '">' : '') + '</audio>' +
                    '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>';
           }).join('') +
-          '<details><summary>Script</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>' +
+          '<details><summary>'+(p.engine==='lyria'?'Music direction':'Script')+'</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>' +
           '<button type="button" class="act" data-open="' + esc(p.id) + '">Open this in the booth</button></div>';
       }).join('');
       Array.prototype.forEach.call(box.querySelectorAll('[data-open]'), function(btn){
         btn.onclick = function(){
           var p = ps.filter(function(x){ return x.id === btn.getAttribute('data-open'); })[0];
           if(!p) return;
-          state.projectId = p.id;
-          setEngine(p.engine); setMode(p.mode === 'advanced' ? 'advanced' : 'easy');
+          if(!setEngine(p.engine)) return;
+          state.projectId = p.id; setMode(p.mode === 'advanced' ? 'advanced' : 'easy');
           document.getElementById('text').value = p.sourceText || '';
           document.getElementById('script').value = p.screenplay || p.script || '';
           state.lastXml = p.script || ''; showCode(state.lastXml);
@@ -542,7 +599,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
             state.clips=urls.map(function(url,i){return {url:url,name:'Saved reference '+(i+1)};});
           }
           invalidateQuote(); renderSettings();
-          say('Opened "' + p.title + '". Edit it and render again, or change the voice first.');
+          say('Opened "' + p.title + '". Change what you like, then generate another take.');
           document.getElementById('script').focus();
         };
       });
@@ -550,21 +607,25 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(listen && listen.jobs && listen.jobs.length && !state.jobId){ state.jobId = listen.jobs[listen.jobs.length-1]; document.getElementById('btnCancel').hidden = false; startPoll(); }
     }
     var starters=state.guide.starters||[];
-    starters.forEach(function(s){var o=document.createElement('option');o.value=s.id;o.textContent=s.title;document.getElementById('starter').appendChild(o);});
+
     function newProject(starter){
+      if(busy()){say('Finish the current operation first.',true);return;}
+      if(starter && !setEngine(starter.engine))return;
       state.projectId=null;state.voiceSeed=null;state.rerollVoice=false;state.values={};state.clips=[];
-      setEngine(starter?starter.engine:'scenema');setInput('words');
+      if(starter && starter.engine==='lyria')state.values.instrumental=starter.script.indexOf('Instrumental only, no vocals.')!==-1;
+      document.getElementById('mood').value='';
+      setInput('words');
       document.getElementById('text').value='';document.getElementById('script').value=starter?starter.script:'';
-      document.getElementById('readback').textContent='';state.lastXml='';showCode('');invalidateQuote();
-      say(starter?'Starting '+starter.title+'. The script is ready to edit. Nothing has been generated.':'New blank project.');
+      document.getElementById('readback').textContent='';state.lastXml='';showCode('');invalidateQuote();renderSettings();applyWorkflow();
+      say(starter?'Starting '+starter.title+'. The starting point is ready to edit. Nothing has been generated.':'New blank project.');
       document.getElementById('script').focus();
     }
     document.getElementById('btnStarter').onclick=function(){var s=starters.find(function(s){return s.id===document.getElementById('starter').value;});if(s)newProject(s);};
     document.getElementById('btnBlank').onclick=function(){newProject(null);};
     document.getElementById('btnScriptFile').onclick=function(){
       var url=URL.createObjectURL(new Blob([document.getElementById('script').value],{type:'text/plain;charset=utf-8'}));
-      var a=document.createElement('a');a.href=url;a.download='sound-booth-script.txt';a.click();setTimeout(function(){URL.revokeObjectURL(url);},1000);
-      say('Script downloaded as text.');
+      var a=document.createElement('a');a.href=url;a.download=state.engine==='lyria'?'music-direction.txt':'sound-booth-script.txt';a.click();setTimeout(function(){URL.revokeObjectURL(url);},1000);
+      say(state.engine==='lyria'?'Music direction downloaded.':'Script downloaded as text.');
     };
     setEngine('scenema'); setMode('easy'); setInput('words');
     loadLibrary();
