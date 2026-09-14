@@ -10,6 +10,7 @@ async function main() {
   assert.equal(commercialPath('Video/Commercials/Other Commercials', 'Unisom and Eggo compilation'), null);
   assert.equal(commercialPath('Video/Commercials/Hand sorted', 'Unisom'), null);
   assert.equal(commercialPath('Video/Commercials/Other Commercials', 'Unisomatic'), null);
+  assert.equal(commercialPath('Video/Commercials/Other Commercials', 'Special K waffles ad, 1993'), 'Video/Commercials/Food & Grocery');
   assert.equal(commercialPath('Video/Commercials/Other Commercials/1990s', 'Earth 2 (1994, TV Series) Retro Television Commercial'), 'Video/TV Shows/Earth 2/1990s');
   assert.equal(correctedBookShelf('Chicken Soup for the Teenage Soul', ''), 'Nonfiction — Inspirational stories');
   assert.equal(correctedBookShelf('Any title', '', 'Books/Fiction \uFFFD Romance'), 'Fiction — Romance');

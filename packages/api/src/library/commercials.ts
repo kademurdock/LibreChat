@@ -24,6 +24,7 @@ const normalize = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[\u0
 export function commercialPath(path: string, title: string): string | null {
   if (!/(^|\/)Commercials\/Other Commercials(?:\/|$)/i.test(path)) return null;
   const name = ' ' + normalize(title) + ' ';
+  if (name.includes(' special k waffles ')) return path.replace(/\/Other Commercials(?=\/|$)/i, '/Food & Grocery');
   if (name.includes(' earth 2 1994 tv series ')) return path.replace(/Commercials\/Other Commercials/i, 'TV Shows/Earth 2');
   if (name.includes(' cfmt station id and promos ')) return path.replace(/Commercials\/Other Commercials/i, 'Channels/CFMT');
   const matches = Object.entries(commercialBrands).filter(([, brands]) => brands.some((brand) => name.includes(' ' + brand + ' ')));
