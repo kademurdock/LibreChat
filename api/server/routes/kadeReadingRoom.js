@@ -262,6 +262,7 @@ const DEFAULT_VOICE = () => process.env.KADE_READING_DEFAULT_VOICE || process.en
 const STEER = () => (process.env.KADE_READING_STEER != null ? process.env.KADE_READING_STEER : '[performing a novel aloud like a skilled audiobook narrator and giving each character a distinct voice in the dialogue and letting the feeling of each scene come through and keeping a natural storytelling pace]');
 
 const upload = multer({ storage: multer.diskStorage({ destination: (req, _file, done) => done(null, req.bookUploadDirectory) }), limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 8, fieldSize: 4096 } });
+const mediaUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: TEXT_IMPORT_LIMIT, files: 1 } });
 
 const isId = (s) => mongoose.Types.ObjectId.isValid(String(s || ''));
 const clampInt = (v, lo, hi, dflt) => {
@@ -823,7 +824,7 @@ router.post('/media/:id/track/done', requireJwtAuth, express.json({ limit: '4kb'
 /** The through-the-server lane (<= 256 MB): for browsers until the bucket has
  * a CORS rule, and for anything small. Same result as presign + done. */
 router.post('/media/:id/track/upload', requireJwtAuth, (req, res, next) => {
-  upload.single('track')(req, res, (err) => {
+  mediaUpload.single('track')(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Over 256 MB — the phone app sends big recordings straight to storage; on the web, split it into parts.' : 'The file did not arrive.' });
     next();
   });
@@ -832,7 +833,7 @@ router.post('/media/:id/track/upload', requireJwtAuth, (req, res, next) => {
     const item = await ownAudio(req, req.params.id);
     if (!item) return res.status(404).json({ error: 'No such donation.' });
     const f = req.file;
-    if (!f || !f.path || !f.size) return res.status(400).json({ error: 'No recording arrived.' });
+    if (!f || !f.buffer || !f.buffer.length) return res.status(400).json({ error: 'No recording arrived.' });
     const m = mimeFor(f.originalname, f.mimetype);
     if (!m) return res.status(400).json({ error: 'That is not an audio or video file. MP3, M4A, M4B, AAC, WAV, OGG, FLAC, MP4, M4V, MOV or WebM all work.' });
     const mime = m.mime;
