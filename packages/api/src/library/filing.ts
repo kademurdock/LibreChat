@@ -9,7 +9,8 @@ const families: [string, string][] = [['my scene', 'My Scene'], ['myscene', 'My 
 const channels: [string, string][] = [['disney channel', 'Disney Channel'], ['nickelodeon', 'Nickelodeon'], ['nick jr', 'Nickelodeon'], ['cartoon network', 'Cartoon Network'], ['pbs', 'PBS'], ['cfmt', 'CFMT']];
 
 export function reviewedMediaFiling(title: string): { path: string; decade: string } | null {
-  return reviewedMediaTitles[normalizeFilingTitle(title.replace(/\.(?:mp4|mkv|mov|avi|webm|mp3|wav|flac|m4a|ogg)$/i, ''))] || null;
+  const key = normalizeFilingTitle(title.replace(/\.(?:mp4|mkv|mov|avi|webm|mp3|wav|flac|m4a|ogg)$/i, ''));
+  return Object.prototype.hasOwnProperty.call(reviewedMediaTitles, key) ? reviewedMediaTitles[key] : null;
 }
 
 export function classifyMediaTitle(title: string): string | null {
@@ -105,7 +106,7 @@ export function refineMediaFiling(item: { kind?: string; path?: string; title?: 
   if (item.kind !== 'audio' && item.kind !== 'video') return null;
   const exact = reviewedMediaFiling(item.title || '');
   if (imported && item.meta?.type && item.meta.type !== 'custom' && exact) return { path: (item.kind === 'video' ? 'Videos/' : 'Audio/') + exact.path + '/' + exact.decade, category: filingCategory('/' + exact.path, item.kind) };
-  if (imported && item.meta?.type !== 'custom' && /^Videos?\/Channels\/[^/]+\/(?:\d{4}s|Undated|Multiple decades)$/.test(item.path || '')) {
+  if (imported && item.meta?.type !== 'custom' && /^Videos?\/(?:Channels\/[^/]+|TV Shows\/Assorted \(One-Offs\))\/(?:\d{4}s|Undated|Multiple decades)$/.test(item.path || '')) {
     const show = broadcastShelf(item.title || '', item.meta?.franchise || '');
     if (show) return { path: (item.kind === 'video' ? 'Videos/' : 'Audio/') + show + '/' + item.path!.split('/').pop(), category: 'tv' };
   }

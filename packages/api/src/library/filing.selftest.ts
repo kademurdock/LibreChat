@@ -63,3 +63,5 @@ assert.equal(refineMediaFiling({ kind: 'video', title: 'Milk-Bone ad, 1975', pat
 assert.equal(refineMediaFiling({ kind: 'video', title: 'Sabrina the Teenage Witch ABC Family episode 2005', path: 'Video/Channels/ABC Family/2000s', meta: { type: 'network' } }, true)?.path, 'Videos/TV Shows/Sabrina the Teenage Witch/2000s');
 assert.equal(refineMediaFiling({ kind: 'video', title: 'Sabrina the Teenage Witch ABC Family episode 2005', path: 'Videos/Favorites', meta: { type: 'custom' } }, true), null);
 console.log('Whole collection product, program and custom-folder regressions passed.');
+
+assert.equal(refineMediaFiling({ kind: 'video', title: 'constructor', path: 'Video/Other', meta: { type: 'commercial' } }, true), null);
