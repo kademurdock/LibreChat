@@ -50,6 +50,8 @@ const skippedSummary = {
  * `category` is the library shelf it sits on. */
 const CATEGORIES = ['book', 'audiobook', 'movie', 'cassette', 'radio', 'commercials', 'music', 'tv', 'vhs', 'psa', 'other'];
 const track = {
+  clipBegin: { type: Number, default: 0 },
+  clipEnd: { type: Number },
   title: { type: String, default: '' },
   key: { type: String, default: '' },
   bytes: { type: Number, default: 0 },

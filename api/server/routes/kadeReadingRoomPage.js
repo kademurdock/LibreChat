@@ -67,6 +67,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   <p id="live" class="status" role="status" aria-live="polite"></p>
 
   <section id="shelf">
+    <img src="/assets/library/reading-alcove.webp" alt="" aria-hidden="true" width="1440" height="481" style="width:100%;height:auto;max-height:220px;object-fit:cover;border-radius:18px" loading="lazy">
     <p class="muted">The family library: books read aloud by a voice you choose, the archive of television, commercials, tapes and radio, recordings and videos the family has donated, and playlists. Your shelf is yours; put something in the library and everyone can check it out.</p>
 
     <h2 id="h-search">Find something</h2>
@@ -77,8 +78,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     </div>
     <ul class="plain" id="searchList" aria-labelledby="h-search"></ul>
 
-    <h2 id="h-archive">The archive</h2>
-    <p class="hint">The family's television, commercials, tapes and radio, browsed the way the collection is filed. Open a folder, then a clip.</p>
+    <h2 id="h-archive">Browse the library</h2><label for="libraryScope">Show</label><select id="libraryScope"><option value="public">Public library</option><option value="mine">Your uploads</option></select>
+    <p class="hint">Books, Audio, and Videos. Your uploads stay yours to manage; only shared items appear in the public library.</p>
     <nav class="crumbs" id="crumbs" aria-label="Where you are in the archive"></nav>
     <ul class="plain" id="archiveList" aria-labelledby="h-archive"><li class="muted">Loading…</li></ul>
     <div class="pager" id="archivePager" hidden><button class="act quiet" id="pagePrev" type="button">Previous page</button><span id="pageInfo"></span><button class="act quiet" id="pageNext" type="button">Next page</button></div>
@@ -121,28 +122,28 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
     <h2 id="h-donate">Donate a book</h2>
     <div class="card">
-      <p class="hint">Bookshare's DAISY zip (the "text only" download), an EPUB, a text file, a Word file or an HTML page. It lands on your shelf first; the Bookshare notice at the front is skipped automatically and the book opens with its jacket.</p>
+      <p class="hint">Bookshare's DAISY zip (text or recorded audio), an EPUB, a text file, a Word file or an HTML page. It lands on your shelf first; the Bookshare notice at the front is skipped automatically and the book opens with its jacket.</p>
       <label class="field" for="bookFile">Book file</label>
       <input type="file" id="bookFile" accept=".zip,.epub,.txt,.docx,.html,.htm,.xhtml,.xml,application/zip,application/epub+zip,text/plain">
-      <label class="field"><input type="checkbox" id="bookGrownUps"> Grown-ups only (hidden from the kids' accounts)</label>
+      <label class="field"><input type="checkbox" id="bookPrivate"> Keep this upload private</label><label class="field"><input type="checkbox" id="bookGrownUps"> Grown-ups only (hidden from the kids' accounts)</label>
       <button class="act primary" id="bookUploadBtn" type="button">Add this book to my shelf</button>
     </div>
 
-    <h2 id="h-donate-audio">Donate a recording</h2>
+    <h2 id="h-donate-audio">Add audio or video</h2>
     <div class="card">
-      <p class="hint">An audiobook, the audio from a described movie, a cassette side, old radio or commercials — MP3, M4A, M4B, AAC, WAV, OGG or FLAC. Give it a name, then add one or more parts. Files over 80 MB go through the phone app or need splitting here.</p>
+      <p class="hint">An audiobook, the audio from a described movie, a cassette side, old radio or commercials — MP3, M4A, M4B, AAC, WAV, OGG or FLAC. Give it a name, then add one or more parts. Audio and video files up to 256 MB work here; the phone app can send larger recordings directly to storage.</p>
       <label class="field" for="auTitle">Title</label><input type="text" id="auTitle" placeholder="The Little Mermaid (described audio)">
       <label class="field" for="auAuthor">Who made it (optional)</label><input type="text" id="auAuthor" placeholder="Author, narrator, studio, or station">
       <label class="field" for="auYear">Year (optional)</label><input type="text" id="auYear" placeholder="1989">
       <label class="field" for="auCategory">Shelf</label>
-      <select id="auCategory"><option value="audiobook">Audiobook</option><option value="movie">Movie</option><option value="cassette">Cassette</option><option value="radio">Radio</option><option value="commercials">Commercials</option><option value="music">Music</option><option value="other">Other</option></select>
+      <select id="auCategory"><option value="other">Audio or video</option><option value="audiobook">Audiobook</option><option value="movie">Movie</option><option value="cassette">Cassette</option><option value="radio">Radio</option><option value="commercials">Commercials</option><option value="music">Music</option><option value="other">Other</option></select>
       <label class="field" for="auDesc">About it (optional)</label><textarea id="auDesc" rows="3" placeholder="What it is, where it came from, anything a listener should know."></textarea>
-      <label class="field"><input type="checkbox" id="auGrownUps"> Grown-ups only</label>
+      <label class="field"><input type="checkbox" id="auPrivate"> Keep this upload private</label><label class="field"><input type="checkbox" id="auGrownUps"> Grown-ups only</label>
       <button class="act primary" id="auStartBtn" type="button">Start this donation</button>
       <div id="auTracks" class="hidden">
         <p class="hint" id="auTracksHint"></p>
-        <label class="field" for="auFile">Add a part (audio file)</label>
-        <input type="file" id="auFile" accept="audio/*,.mp3,.m4a,.m4b,.aac,.wav,.ogg,.flac">
+        <label class="field" for="auFile">Add an audio or video file</label>
+        <input type="file" id="auFile" accept="audio/*,video/*,.mp3,.m4a,.m4b,.aac,.wav,.ogg,.flac,.mp4,.mov,.m4v,.webm">
         <label class="field" for="auTrackTitle">Name for this part (optional)</label><input type="text" id="auTrackTitle" placeholder="Side A, Part 2, Episode 3…">
         <button class="act" id="auAddBtn" type="button">Upload this part</button>
         <ul class="plain" id="auTrackList"></ul>
@@ -243,7 +244,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <label class="field" for="edAuthor">Who made it</label><input type="text" id="edAuthor">
       <label class="field" for="edYear">Year</label><input type="text" id="edYear">
       <label class="field" for="edCategory">Shelf</label>
-      <select id="edCategory"><option value="audiobook">Audiobook</option><option value="movie">Movie</option><option value="tv">TV</option><option value="commercials">Commercials</option><option value="psa">PSA</option><option value="vhs">VHS / home video</option><option value="cassette">Cassette</option><option value="radio">Radio</option><option value="music">Music</option><option value="other">Other</option></select>
+      <select id="edCategory"><option value="other">Audio or video</option><option value="audiobook">Audiobook</option><option value="movie">Movie</option><option value="tv">TV</option><option value="commercials">Commercials</option><option value="psa">PSA</option><option value="vhs">VHS / home video</option><option value="cassette">Cassette</option><option value="radio">Radio</option><option value="music">Music</option><option value="other">Other</option></select>
       <label class="field" for="edPath">Folder in the archive (blank = not in the archive)</label><input type="text" id="edPath" placeholder="Video/Commercials/Coffee & Tea">
       <label class="field" for="edDesc">About it</label><textarea id="edDesc" rows="2"></textarea>
       <button class="act primary" id="edSaveBtn" type="button">Save changes</button>
@@ -318,13 +319,13 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
      movie as kind 'video'; every 'is it a recording?' check here now asks
      'is it not text?' so audio and video share the player, the describe
      controls and the category names. */
-  function shelfFolder(b){ if (b.kind === 'text') return 'Books'; if (b.path) return 'Archive clips'; return b.kind === 'video' ? 'Video' : 'Recordings'; }
+  function shelfFolder(b){ return b.kind === 'text' ? 'Books' : b.kind === 'video' ? 'Videos' : 'Audio'; }
   function renderShelf(mine, borrowed){
     var box = $('mineList'); box.innerHTML = '';
     var all = mine.map(function(b){ b._where = 'mine'; return b; }).concat(borrowed.map(function(b){ b._where = 'borrowed'; return b; }));
     if (!all.length) { box.innerHTML = '<p class="muted">Nothing on your shelf yet. Donate a book or a recording below, open anything in the library, or share a file from another app to Kade-AI.</p>'; return; }
     var groups = {}; all.forEach(function(b){ var g = shelfFolder(b); (groups[g] = groups[g] || []).push(b); });
-    ['Books', 'Recordings', 'Video', 'Archive clips'].forEach(function(g){
+    ['Books', 'Audio', 'Videos'].forEach(function(g){
       if (!groups[g]) return;
       var d = document.createElement('details'); d.open = true;
       var sm = document.createElement('summary'); sm.textContent = '📁 ' + g + ' (' + groups[g].length + ')'; d.appendChild(sm);
@@ -345,7 +346,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var cat = $('catFilter').value;
     var items = (shelfData.library || []).filter(function(b){ return !cat || (b.kind !== 'text' ? b.category : 'book') === cat; });
     var filed = shelfData.libraryFiled || 0;
-    renderList('libraryList', items, 'library', cat ? 'Nothing on that shelf yet.' : (filed ? 'Everything shared so far (' + filed + ' items) is filed on the shelves under The archive above — Books, Video and the rest. Loose donations would be listed here.' : 'The library is empty — donate something from your shelf.'));
+    renderList('libraryList', items, 'library', cat ? 'Nothing on that shelf yet.' : (filed ? 'Everything shared so far (' + filed + ' items) is filed on the shelves under Browse the library above — Books, Audio and Videos. Loose donations would be listed here.' : 'The library is empty — donate something from your shelf.'));
   }
   async function loadShelf(){
     try {
@@ -366,7 +367,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var q = $('searchBox').value.trim(); var ul = $('searchList'); ul.innerHTML = '';
     if (!q) return;
     try {
-      var j = await api('/search?q=' + encodeURIComponent(q));
+      var j = await api('/search?q=' + encodeURIComponent(q) + '&scope=' + $('libraryScope').value);
       if (!j.items.length) { ul.innerHTML = '<li class="muted">Nothing matched.</li>'; say('Nothing matched ' + q + '.'); return; }
       j.items.forEach(function(b){ ul.appendChild(bookLi(b, b.path ? 'archive' : 'library')); });
       say(j.items.length + ' result' + (j.items.length === 1 ? '' : 's') + ' for ' + q + '.');
@@ -377,13 +378,14 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
   /* the archive */
   var archivePath = '', archivePage = 0;
+  $('libraryScope').onchange = function(){ $('searchList').innerHTML = ''; loadArchive('', 0); };
   async function loadArchive(path, page){
     archivePath = path || ''; archivePage = page || 0;
     var ul = $('archiveList'); ul.innerHTML = '<li class="muted">Loading…</li>';
     try {
-      var j = await api('/archive?path=' + encodeURIComponent(archivePath) + '&page=' + archivePage);
+      var j = await api('/archive?path=' + encodeURIComponent(archivePath) + '&page=' + archivePage + '&scope=' + $('libraryScope').value);
       var crumbs = $('crumbs'); crumbs.innerHTML = '';
-      var home = document.createElement('button'); home.type = 'button'; home.textContent = 'Archive'; home.onclick = function(){ loadArchive('', 0); }; crumbs.appendChild(home);
+      var home = document.createElement('button'); home.type = 'button'; home.textContent = 'Library'; home.onclick = function(){ loadArchive('', 0); }; crumbs.appendChild(home);
       var parts = archivePath ? archivePath.split('/') : [];
       parts.forEach(function(seg, i){
         var sep = document.createElement('span'); sep.textContent = ' › '; sep.setAttribute('aria-hidden', 'true'); crumbs.appendChild(sep);
@@ -392,7 +394,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         b.onclick = function(){ loadArchive(target, 0); }; crumbs.appendChild(b);
       });
       ul.innerHTML = '';
-      if (!j.folders.length && !j.items.length) { ul.innerHTML = '<li class="muted">' + (archivePath ? 'This folder is empty.' : 'Nothing has been pushed to the archive yet. On the PC, run "9 - PUSH TO LIBRARY" in the collection folder.') + '</li>'; }
+      if (!j.folders.length && !j.items.length) { ul.innerHTML = '<li class="muted">' + (archivePath ? 'This folder is empty.' : 'No items in this view yet. Add a file below, or choose another view.') + '</li>'; }
       j.folders.forEach(function(f){
         var li = document.createElement('li'); li.className = 'folder';
         li.innerHTML = '<span class="t">📁 ' + esc(f.name) + ' <span class="muted">(' + f.count + ')</span></span>';
@@ -420,7 +422,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       }
       var pages = Math.ceil(j.total / j.limit);
       $('archivePager').hidden = pages <= 1;
-      $('pageInfo').textContent = 'Page ' + (j.page + 1) + ' of ' + pages + ' (' + j.total + ' clips here)';
+      $('pageInfo').textContent = 'Page ' + (j.page + 1) + ' of ' + pages + ' (' + j.total + ' items here)';
       $('pagePrev').disabled = j.page <= 0; $('pageNext').disabled = j.page + 1 >= pages;
       if (path !== undefined) say((archivePath || 'The archive') + ': ' + j.folders.length + ' folder' + (j.folders.length === 1 ? '' : 's') + ', ' + j.total + ' clip' + (j.total === 1 ? '' : 's') + '.');
     } catch(e) { ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
@@ -551,11 +553,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (!f) { say('Pick a book file first.'); return; }
     var btn = this; btn.disabled = true; say('Reading ' + f.name + '… this takes a few seconds.');
     try {
-      var fd = new FormData(); fd.append('book', f); fd.append('grownUpsOnly', $('bookGrownUps').checked ? '1' : '0');
+      var fd = new FormData(); fd.append('book', f); fd.append('private', $('bookPrivate').checked ? '1' : '0'); fd.append('grownUpsOnly', $('bookGrownUps').checked ? '1' : '0');
       var r = await fetch(API + '/upload', { method:'POST', headers:{ 'Authorization':'Bearer ' + token }, body: fd });
       var j = await r.json();
       if (!r.ok) throw new Error(j.error || 'Upload failed');
-      say('Added: ' + j.book.title + (j.book.author ? ' by ' + j.book.author : '') + '. ' + j.book.sections + ' sections, about ' + j.book.listen + '. ' + (j.skipped.length ? j.skipped.length + ' front-matter parts skipped.' : ''));
+      say('Added: ' + j.book.title + (j.book.author ? ' by ' + j.book.author : '') + '. ' + (j.book.kind === 'text' ? j.book.sections : j.book.tracks) + ' sections, about ' + j.book.listen + '. ' + (j.skipped.length ? j.skipped.length + ' front-matter parts skipped.' : ''));
       $('bookFile').value = '';
       loadShelf();
     } catch(e) { say(e.message); }
@@ -576,7 +578,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (!title) { say('Give the recording a title first.'); $('auTitle').focus(); return; }
     this.disabled = true;
     try {
-      var j = await api('/media/new', { json: { title: title, author: $('auAuthor').value, year: $('auYear').value, category: $('auCategory').value, description: $('auDesc').value, grownUpsOnly: $('auGrownUps').checked } });
+      var j = await api('/media/new', { json: { title: title, author: $('auAuthor').value, year: $('auYear').value, category: $('auCategory').value, description: $('auDesc').value, grownUpsOnly: $('auGrownUps').checked, private: $('auPrivate').checked } });
       say('Started. Now add the first part.');
       openTrackAdder(j.item);
     } catch(e) { say(e.message); }
@@ -657,7 +659,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function saveProgress(now){
     clearTimeout(saveTimer);
     var body = { s: pos.s, c: pos.c, voice: voice, speed: speed };
-    if (isAudio()) body.pos = fileAudio.currentTime || 0;
+    if (isAudio()) body.pos = trackPosition();
     var go = function(){ api('/book/' + book.id + '/progress', { json: body }).catch(function(){}); };
     if (now) go(); else saveTimer = setTimeout(go, 1500);
   }
@@ -810,7 +812,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var t = book.tracks[s]; if (!t) return;
     pos = { s: s, c: 0 };
     if (fileAudio.dataset.s !== String(s)) { fileAudio.src = t.url; fileAudio.dataset.s = String(s); fileAudio.load(); }
-    var setTime = function(){ try { fileAudio.currentTime = at || 0; } catch(e) {} };
+    var setTime = function(){ try { fileAudio.currentTime = (t.clipBegin || 0) + (at || 0); } catch(e) {} };
     if (fileAudio.readyState >= 1) setTime(); else fileAudio.addEventListener('loadedmetadata', setTime, { once: true });
     fileAudio.playbackRate = speed;
     $('nowText').textContent = t.title + (t.seconds ? ' — ' + clock(t.seconds) : '');
@@ -826,18 +828,20 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   $('airplayBtn').onclick = function(){ try { fileAudio.webkitShowPlaybackTargetPicker(); } catch(e) { say('AirPlay is not available here.'); } };
   $('castBtn').onclick = function(){ try { fileAudio.remote.prompt().catch(function(e){ say('No TV to cast to was found.'); }); } catch(e) { say('Casting is not available here.'); } };
   function clock(sec){ sec = Math.floor(sec || 0); var m = Math.floor(sec / 60), s = sec % 60; var h = Math.floor(m / 60); m = m % 60; return (h ? h + ':' + String(m).padStart(2,'0') : m) + ':' + String(s).padStart(2,'0'); }
-  fileAudio.addEventListener('ended', function(){
+  function finishTrack(){
     if (descPausedFor) return;
     if (pos.s + 1 < book.tracks.length) { loadTrack(pos.s + 1, 0, true); announcePosition(''); }
     else if (queue.length) { var nextId = queue.shift(); say('Next in the collection.'); autoplayNext = true; try { history.replaceState(null, '', '?book=' + nextId + (queue.length ? '&q=' + queue.join(',') : '')); } catch(e) {} openBook(nextId); }
     else finishBook();
-  });
-  fileAudio.addEventListener('timeupdate', function(){ if (playing && Math.floor(fileAudio.currentTime) % 10 === 0) saveProgress(); });
+  }
+  fileAudio.addEventListener('ended', finishTrack);
+  function trackPosition(){ var t = book && book.tracks[pos.s]; return Math.max(0, fileAudio.currentTime - (t && t.clipBegin || 0)); }
+  fileAudio.addEventListener('timeupdate', function(){ var t = book && book.tracks[pos.s]; if (playing && t && t.clipEnd != null && fileAudio.currentTime >= t.clipEnd) { finishTrack(); return; } if (playing && Math.floor(trackPosition()) % 10 === 0) saveProgress(); });
   fileAudio.addEventListener('pause', function(){ if (playing && !fileAudio.ended) { playing = false; $('playBtn').textContent = 'Play'; } });
 
-  function back(){ if (isAudio()) { fileAudio.currentTime = Math.max(0, fileAudio.currentTime - 15); say('Back 15 seconds.'); return; } var p = prevPos(pos); if (p) seekTo(p, false); else say('This is the beginning.'); }
-  function forward(){ if (isAudio()) { fileAudio.currentTime = Math.min(fileAudio.duration || 1e9, fileAudio.currentTime + 15); say('Forward 15 seconds.'); return; } var p = nextPos(pos); if (p) seekTo(p, false); else say('This is the end.'); }
-  function prevSection(){ var target = pos.s; if (isAudio() ? fileAudio.currentTime < 5 : pos.c === 0) target = pos.s - 1; if (target < 0) { say('This is the first chapter.'); return; } seekTo({ s: target, c: 0, pos: 0 }, true); }
+  function back(){ if (isAudio()) { fileAudio.currentTime = Math.max(book.tracks[pos.s].clipBegin || 0, fileAudio.currentTime - 15); say('Back 15 seconds.'); return; } var p = prevPos(pos); if (p) seekTo(p, false); else say('This is the beginning.'); }
+  function forward(){ if (isAudio()) { fileAudio.currentTime = Math.min(book.tracks[pos.s].clipEnd || fileAudio.duration || 1e9, fileAudio.currentTime + 15); say('Forward 15 seconds.'); return; } var p = nextPos(pos); if (p) seekTo(p, false); else say('This is the end.'); }
+  function prevSection(){ var target = pos.s; if (isAudio() ? trackPosition() < 5 : pos.c === 0) target = pos.s - 1; if (target < 0) { say('This is the first chapter.'); return; } seekTo({ s: target, c: 0, pos: 0 }, true); }
   function nextSection(){ var n = pos.s + 1; var count = isAudio() ? book.tracks.length : book.chapters.length; if (n >= count) { say('This is the last chapter.'); return; } seekTo({ s: n, c: 0, pos: 0 }, true); }
 
   function updateSession(){
@@ -865,9 +869,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   $('goChapterBtn').onclick = function(){ seekTo({ s: parseInt($('chapterSel').value, 10) || 0, c: 0, pos: 0 }, true); };
   $('markBtn').onclick = async function(){
     try {
-      var j = await api('/book/' + book.id + '/bookmarks', { json: { s: pos.s, c: pos.c, pos: isAudio() ? fileAudio.currentTime : 0 } });
+      var j = await api('/book/' + book.id + '/bookmarks', { json: { s: pos.s, c: pos.c, pos: isAudio() ? trackPosition() : 0 } });
       book.bookmarks.unshift(j.bookmark); renderBookmarks();
-      say('Bookmark placed at ' + (isAudio() ? 'part ' : 'chapter ') + (pos.s + 1) + (isAudio() ? ', ' + clock(fileAudio.currentTime) : '') + '.');
+      say('Bookmark placed at ' + (isAudio() ? 'part ' : 'chapter ') + (pos.s + 1) + (isAudio() ? ', ' + clock(trackPosition()) : '') + '.');
     } catch(e) { say(e.message); }
   };
   /* Sep 12 2026, her word: "the voice picker doesn't have a way for you to

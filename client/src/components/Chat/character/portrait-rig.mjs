@@ -4,6 +4,8 @@ export const KIANA_ID = 'agent_6llV0eMu4fmIaj8f2x1Sb';
 export const KIANA_PORTRAIT_FILE = 'agent-agent_6llV0eMu4fmIaj8f2x1Sb-avatar-1788871984269.png';
 export const DELLA_ID = 'agent_BSOLa3eNEZyjs-7abCjMt';
 export const DELLA_PORTRAIT_FILE = 'agent-agent_BSOLa3eNEZyjs-7abCjMt-avatar-1788941611099.png';
+export const LILLY_ID = 'agent_JhouuajXMYsfhCTVMQCv_';
+export const LILLY_PORTRAIT_FILE = 'agent-agent_JhouuajXMYsfhCTVMQCv_-avatar-1783012583668.png';
 export function hasPreparedPortrait(id, url) {
   return !!preparedPortrait(id, url);
 }
@@ -11,6 +13,17 @@ export function hasPreparedPortrait(id, url) {
 export function preparedPortrait(id, url) {
   try {
     const file = new URL(url, 'https://local.invalid').pathname.split('/').pop();
+    if (id === LILLY_ID && file === LILLY_PORTRAIT_FILE)
+      return {
+        portrait: '/assets/characters/lilly/portrait.png',
+        atlas: '/assets/characters/lilly/facial-source.png',
+        blink: '/assets/characters/lilly/facial-source.png',
+        features: [{ kind: 'mouth', from: [0.443, 0.454, 0.173, 0.102], to: [0.443, 0.454, 0.173, 0.085] }],
+        eyeFeatures: [
+          { kind: 'blink', from: [0.383, 0.331, 0.145, 0.066], to: [0.391, 0.314, 0.134, 0.074] },
+          { kind: 'blink', from: [0.58, 0.367, 0.1, 0.05], to: [0.592, 0.342, 0.092, 0.069] },
+        ],
+      };
     if (id === KIANA_ID && file === KIANA_PORTRAIT_FILE)
       return {
         portrait: '/assets/characters/kiana/portrait.png',

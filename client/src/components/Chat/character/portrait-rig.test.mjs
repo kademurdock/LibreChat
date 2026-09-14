@@ -6,8 +6,21 @@ import {
   KIANA_PORTRAIT_FILE,
   DELLA_ID,
   DELLA_PORTRAIT_FILE,
+  LILLY_ID,
+  LILLY_PORTRAIT_FILE,
   facialBlend,
 } from './portrait-rig.mjs';
+test('Lilly animation is bound to her original portrait with valid local regions', () => {
+  const lilly = preparedPortrait(LILLY_ID, '/' + LILLY_PORTRAIT_FILE);
+  assert.ok(lilly);
+  assert.equal(preparedPortrait(LILLY_ID, '/' + KIANA_PORTRAIT_FILE), null);
+  for (const feature of [...lilly.features, ...lilly.eyeFeatures]) {
+    for (const rect of [feature.from, feature.to]) {
+      assert.ok(rect.every(n => n >= 0 && n <= 1));
+      assert.ok(rect[0] + rect[2] <= 1 && rect[1] + rect[3] <= 1);
+    }
+  }
+});
 test('Della and Kiana have separate registered facial regions and exact artwork ownership', () => {
   const k = preparedPortrait(KIANA_ID, 'https://example.com/' + KIANA_PORTRAIT_FILE);
   const d = preparedPortrait(

@@ -41,7 +41,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { saveBufferToS3 } = require('@librechat/api');
+const { saveBufferToS3, parseDaisyAudio, readDaisyFile, libraryPath, libraryCategory, libraryPathExpression, commercialPath, correctedBookShelf } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, CATEGORIES } = require('~/models/kadeBook');
@@ -242,7 +242,7 @@ function refreshListen(item) {
 
 const router = express.Router();
 
-const MAX_UPLOAD_BYTES = 80 * 1024 * 1024; // a scanned DAISY with images can run large
+const MAX_UPLOAD_BYTES = 256 * 1024 * 1024;
 const PROXY_BASE = () => process.env.KADE_TTS_PROXY_URL || 'https://inworld-tts-proxy-production.up.railway.app';
 const DEFAULT_VOICE = () => process.env.KADE_READING_DEFAULT_VOICE || process.env.KADE_DEFAULT_VOICE || 'Kiana (Comedian)';
 /** A bracket direction the proxy lifts into Inworld's instruction field —
@@ -303,12 +303,12 @@ function summary(book, progress) {
   return {
     id: String(book._id),
     kind: book.kind || 'text',
-    category: book.category || 'book',
+    category: libraryCategory(book),
     description: book.description || '',
     tracks,
     seconds,
     state: book.state,
-    path: book.path || '',
+    path: libraryPath(book),
     meta: book.meta || {},
     tags: book.tags || [],
     described: book.kind !== 'text' && (book.tracks || []).some((t) => t.description && t.description.state === 'done'),
@@ -393,7 +393,7 @@ router.post('/upload', requireJwtAuth, (req, res, next) => {
   upload.single('book')(req, res, (err) => {
     if (err) {
       logger.warn(`[reading-room/upload] REFUSED user=${req.user.id}: ${err.code || err.message}`);
-      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'That file is over 80 MB. Bookshare text-only DAISY zips are usually under 5 MB — try the text-only download.' : 'The file did not arrive. Try again.' });
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'That book file exceeds the 256 MB import limit. You can add individual recordings through Add audio or video.' : 'The file did not arrive. Try again.' });
     }
     next();
   });
@@ -407,6 +407,48 @@ router.post('/upload', requireJwtAuth, (req, res, next) => {
       return res.status(400).json({ error: "I can't read that kind of file. Bookshare's DAISY zip, an EPUB, a text file, a Word file, or an HTML page all work." });
     }
     const t0 = Date.now();
+    if (ext === 'zip') {
+      let daisy;
+      try { daisy = await parseDaisyAudio(f.buffer); }
+      catch (e) { return res.status(400).json({ error: e.message }); }
+      if (daisy) {
+        const id = new mongoose.Types.ObjectId();
+        const uploaded = new Map();
+        try {
+          let bytes = 0;
+          for (const clip of daisy.clips) {
+            if (uploaded.has(clip.path)) continue;
+            const buffer = await readDaisyFile(daisy.zip, clip.path);
+            bytes += buffer.length;
+            if (bytes > 512 * 1024 * 1024) throw new Error('The expanded DAISY audio exceeds 512 MB.');
+            const media = mimeFor(clip.path);
+            if (media.ext === 'mp4') media.mime = 'audio/mp4';
+            const key = trackKey(id, media.ext);
+            uploaded.set(clip.path, { key, bytes: buffer.length, mime: media.mime });
+            await putBuffer(key, buffer, media.mime);
+          }
+          const book = new KadeBook({ _id: id, owner: req.user.id,
+            ownerName: String(req.user.name || req.user.username || '').split(' ')[0] || 'someone',
+            kind: 'audio', category: 'audiobook', path: 'Audio/Audiobooks',
+            title: daisy.title || f.originalname.replace(/\.zip$/i, ''), author: daisy.author,
+            format: daisy.format, originalName: f.originalname, fileBytes: f.buffer.length,
+            shared: isAdmin(req) && (req.body || {}).private !== '1',
+            grownUpsOnly: (req.body || {}).grownUpsOnly === '1', state: 'ready',
+            tracks: daisy.clips.map((clip) => ({ ...uploaded.get(clip.path), title: clip.title,
+              originalName: clip.path, clipBegin: clip.clipBegin, clipEnd: clip.clipEnd,
+              seconds: clip.clipEnd === undefined ? 0 : clip.clipEnd - clip.clipBegin })),
+          });
+          refreshListen(book);
+          await book.save();
+          logger.info(`[reading-room/upload] DAISY audio ${id}: ${book.tracks.length} sections, ${uploaded.size} files`);
+          return res.json({ ok: true, book: summary(book.toObject(), null), skipped: [], jacket: '' });
+        } catch (e) {
+          await deleteKeys([...uploaded.values()].map((x) => x.key)).catch(() => {});
+          logger.warn(`[reading-room/upload] DAISY audio failed: ${e.message}`);
+          return res.status(400).json({ error: `The DAISY audio did not save. ${e.message}` });
+        }
+      }
+    }
     let parsed;
     try {
       parsed = await parseBook(f.buffer, f.originalname || 'book');
@@ -415,7 +457,7 @@ router.post('/upload', requireJwtAuth, (req, res, next) => {
       return res.status(400).json({ error: `I could not read that book. ${e.message}` });
     }
     if (!parsed.sections.length || parsed.stats.chars < 200) {
-      return res.status(400).json({ error: 'That file has no readable text in it — a DAISY "audio only" zip has no words, the "text only" download does.' });
+      return res.status(400).json({ error: 'No readable text or supported DAISY audio was found in this file.' });
     }
     const grownUpsOnly = String((req.body || {}).grownUpsOnly || '') === '1' || (req.body || {}).grownUpsOnly === true;
     let fileUrl = '';
@@ -431,6 +473,7 @@ router.post('/upload', requireJwtAuth, (req, res, next) => {
     const book = await KadeBook.create({
       owner: req.user.id,
       ownerName,
+      shared: isAdmin(req) && (req.body || {}).private !== '1',
       title: parsed.meta.title || String(f.originalname || 'Untitled').replace(/\.[^.]+$/, ''),
       author: parsed.meta.author || '',
       publisher: parsed.meta.sourcePublisher || (parsed.meta.publisher && !/bookshare/i.test(parsed.meta.publisher) ? parsed.meta.publisher : ''),
@@ -488,7 +531,7 @@ router.get('/book/:id', requireJwtAuth, async (req, res) => {
         let url = '';
         try { url = await signGet(t.key, t.mime); } catch (e) { logger.warn(`[reading-room/book] sign failed for ${t.key}: ${e.message}`); }
         const d = t.description || {};
-        return { s: i, title: t.title || `Part ${i + 1}`, seconds: t.seconds || 0, bytes: t.bytes || 0, mime: t.mime, url,
+        return { s: i, title: t.title || `Part ${i + 1}`, seconds: t.seconds || 0, clipBegin: t.clipBegin || 0, clipEnd: t.clipEnd, bytes: t.bytes || 0, mime: t.mime, url,
           recaps: (t.recaps || []).map((r) => ({ from: r.from, to: r.to, summary: r.summary, scenes: r.scenes || [], at: r.at })),
           description: d.state ? { state: d.state, summary: d.summary || '', scenes: d.scenes || [], model: d.model || '', costUSD: d.costUSD || 0, error: d.error || '', at: d.at } : null };
       }));
@@ -676,11 +719,12 @@ router.post('/media/new', requireJwtAuth, express.json({ limit: '8kb' }), async 
     const b = req.body || {};
     const title = String(b.title || '').trim().slice(0, 200);
     if (!title) return res.status(400).json({ error: 'Give it a title first.' });
-    const category = CATEGORIES.includes(String(b.category)) && b.category !== 'book' ? String(b.category) : 'audiobook';
+    const category = CATEGORIES.includes(String(b.category)) && b.category !== 'book' ? String(b.category) : 'other';
     const ownerName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
     const item = await KadeBook.create({
       kind: 'audio',
       category,
+      shared: isAdmin(req) && b.private !== true,
       owner: req.user.id,
       ownerName,
       title,
@@ -763,11 +807,11 @@ router.post('/media/:id/track/done', requireJwtAuth, express.json({ limit: '4kb'
   }
 });
 
-/** The through-the-server lane (<= 80 MB): for browsers until the bucket has
+/** The through-the-server lane (<= 256 MB): for browsers until the bucket has
  * a CORS rule, and for anything small. Same result as presign + done. */
 router.post('/media/:id/track/upload', requireJwtAuth, (req, res, next) => {
   upload.single('track')(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Over 80 MB — the phone app sends big recordings straight to storage; on the web, split it into parts.' : 'The file did not arrive.' });
+    if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Over 256 MB — the phone app sends big recordings straight to storage; on the web, split it into parts.' : 'The file did not arrive.' });
     next();
   });
 }, async (req, res) => {
@@ -901,7 +945,7 @@ router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' })
       doc.author = String(meta.network || meta.cableChannel || meta.callSign || meta.brand || '').slice(0, 200);
       doc.copyrightYear = String(meta.year || '').slice(0, 12);
       doc.description = String(f.description || '').slice(0, 2000);
-      doc.path = folder;
+      doc.path = commercialPath(folder, title) || folder;
       doc.originalPath = originalPath;
       doc.meta = meta;
       doc.tags = [top, meta.decade, meta.type, meta.market].filter(Boolean).map((x) => String(x).slice(0, 60));
@@ -974,19 +1018,22 @@ router.get('/archive', requireJwtAuth, async (req, res) => {
     const limit = clampInt(req.query.limit, 1, 200, 60);
     // the aggregate below does not cast strings to ObjectId the way find() does
     const ownerId = new mongoose.Types.ObjectId(String(req.user.id));
-    const base = { state: 'ready', path: { $ne: '' }, $or: hidden ? [{ owner: ownerId }] : [{ shared: true }, { owner: ownerId }], ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
+    const scope = req.query.scope === 'mine' ? 'mine' : 'public';
+    const base = { state: 'ready', ...(hidden || scope === 'mine' ? { owner: ownerId } : { shared: true }), ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
+    const view = [{ $match: base }, { $addFields: { path: libraryPathExpression() } }];
     const prefix = at ? at + '/' : '';
     const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const [folders, items, total] = await Promise.all([
       KadeBook.aggregate([
-        { $match: { ...base, path: { $regex: '^' + escaped + '.+' } } },
+        ...view,
+        { $match: { path: { $regex: '^' + escaped + '.+' } } },
         { $project: { seg: { $arrayElemAt: [{ $split: [{ $substrCP: ['$path', prefix.length, 400] }, '/'] }, 0] } } },
         { $group: { _id: '$seg', count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
         { $limit: 500 },
       ]),
-      KadeBook.find({ ...base, path: at }).sort({ title: 1 }).skip(page * limit).limit(limit).lean(),
-      KadeBook.countDocuments({ ...base, path: at }),
+      KadeBook.aggregate([...view, { $match: { path: at } }, { $sort: { title: 1, _id: 1 } }, { $skip: page * limit }, { $limit: limit }]),
+      KadeBook.aggregate([...view, { $match: { path: at } }, { $count: 'count' }]).then((rows) => rows[0]?.count || 0),
     ]);
     const progress = items.length ? await KadeReadingProgress.find({ user: req.user.id, book: { $in: items.map((i) => i._id) } }).lean() : [];
     const pb = {}; for (const pr of progress) pb[String(pr.book)] = pr;
@@ -1003,7 +1050,7 @@ router.get('/search', requireJwtAuth, async (req, res) => {
     const child = await isChild(req);
     const q = String(req.query.q || '').trim().slice(0, 120);
     if (!q) return res.json({ items: [] });
-    const base = { state: 'ready', $or: hidden ? [{ owner: req.user.id }] : [{ shared: true }, { owner: req.user.id }], ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
+    const base = { state: 'ready', ...(hidden || req.query.scope === 'mine' ? { owner: req.user.id } : { shared: true }), ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
     const words = q.split(/\s+/).filter(Boolean).map((w) => new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
     const items = await KadeBook.find({ ...base, $and: words.map((re) => ({ $or: [{ title: re }, { author: re }, { path: re }, { tags: re }] })) }).sort({ title: 1 }).limit(100).lean();
     res.json({ items: items.map((b) => summary(b, null)), q });
@@ -1376,10 +1423,10 @@ router.post('/archive/move-folder', requireJwtAuth, express.json({ limit: '4kb' 
     if (!from || !to) return res.status(400).json({ error: 'Say which folder and where it goes.' });
     if (to === from || to.startsWith(from + '/')) return res.status(400).json({ error: 'A folder cannot move into itself.' });
     const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const q = { path: { $regex: '^' + escaped + '(/|$)' }, ...(isAdmin(req) ? {} : { owner: req.user.id }) };
-    const items = await KadeBook.find(q, '_id path').lean();
+    const q = { $expr: { $regexMatch: { input: libraryPathExpression(), regex: '^' + escaped + '(/|$)' } }, ...(isAdmin(req) ? {} : { owner: req.user.id }) };
+    const items = await KadeBook.find(q, '_id path kind category').lean();
     if (!items.length) return res.status(404).json({ error: 'No items of yours in that folder.' });
-    const ops = items.map((it) => ({ updateOne: { filter: { _id: it._id }, update: { $set: { path: to + it.path.slice(from.length) } } } }));
+    const ops = items.map((it) => ({ updateOne: { filter: { _id: it._id, path: it.path }, update: { $set: { path: to + libraryPath(it).slice(from.length) } } } }));
     await KadeBook.bulkWrite(ops);
     logger.info(`[library/move-folder] user=${req.user.id} "${from}" -> "${to}" (${items.length} items)`);
     res.json({ ok: true, moved: items.length, to });
@@ -1420,6 +1467,22 @@ router.post('/archive/batch', requireJwtAuth, express.json({ limit: '64kb' }), a
 });
 
 /* ── THE LIBRARIAN SORTS THE BOOKS ─────────────────────────────────────── */
+router.post(['/librarian/refile-commercials', '/librarian/refile-books'], requireJwtAuth, express.json({ limit: '128kb' }), async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+    const b = req.body || {};
+    const ids = Array.isArray(b.ids) ? b.ids.filter((id) => mongoose.isValidObjectId(id)).slice(0, 5000) : [];
+    const books = req.path.endsWith('refile-books');
+    const query = { state: 'ready', ...(books ? { kind: 'text' } : { path: /\/Commercials\/Other Commercials(?:\/|$)/i }), ...(ids.length ? { _id: { $in: ids } } : {}) };
+    const items = await KadeBook.find(query, '_id title author path originalPath kind category shared owner tags').sort({ _id: 1 }).limit(10000).lean();
+    const changes = items.flatMap((item) => { const shelf = books && correctedBookShelf(item.title, item.author); const to = books ? (shelf ? 'Books/' + shelf : null) : commercialPath(item.path, item.title); return to && to !== item.path ? [{ id: String(item._id), title: item.title, from: item.path, to, originalPath: item.originalPath, tags: item.tags || [] }] : []; });
+    if (b.apply !== true) return res.json({ ok: true, scanned: items.length, changes });
+    if (!ids.length) return res.status(400).json({ error: 'Preview the changes first, then send their item IDs.' });
+    const result = changes.length ? await KadeBook.bulkWrite(changes.map((c) => ({ updateOne: { filter: { _id: c.id, path: c.from, state: 'ready' }, update: { $set: { path: c.to, ...(books ? { tags: [...c.tags.filter((t) => t !== c.from.replace(/^Books\//, '')), c.to.replace(/^Books\//, '')] } : {}) } } } }))) : { modifiedCount: 0 };
+    logger.info(`[library/refile] corrected ${result.modifiedCount} commercial shelves`);
+    res.json({ ok: true, changed: result.modifiedCount, changes });
+  } catch (e) { logger.warn(`[library/refile] ${e.message}`); res.status(500).json({ error: 'Could not refile those commercials.' }); }
+});
 const sorter = require('./kadeReadingRoomSort');
 router.get('/librarian/sort-status', requireJwtAuth, async (req, res) => {
   try { res.json({ ok: true, enabled: sorter.ENABLED(), unsorted: await sorter.unsortedCount(), shelves: sorter.SHELVES }); } catch (e) { res.status(500).json({ error: 'Could not count.' }); }
