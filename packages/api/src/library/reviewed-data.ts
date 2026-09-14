@@ -7499,5 +7499,4097 @@ export const reviewedMediaTitles: { [title: string]: { path: string; decade: str
   "toyota indy 400 american express championship promos 2004": {
     "path": "Sports/Promos & Previews",
     "decade": "2000s"
+  },
+  "the sopranos 2006 promo a e": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "terror in the promised land monday night football promo 1978": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1970s"
+  },
+  "all my children general hospital promo 1981": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "all my children one life to live promo 1983": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "all my children the edge of night promo 1983": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "china beach my first love 1988 promo abc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "china beachsuperstars and their moms promos 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "full house family matters perfect strangers free spirit 1989 promo abc friday": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "growing pains head of the class 1989 promo abc wls 7 chicago illinois": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "growing pains head of the class wonder years hooperman 1988 promo abc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "growing pains head of the class wonder years abc promo 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "hardcastle mccormick monday night football 1985 promo abc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "home show perfect strangers promos 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "hooperman china beach 1988 promo abc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "jack mike 2020 promo 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "macgyver abc nfl monday night football promo 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "macgyver moonlighting promos 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "monday night football fever nfl promo 1980": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "moonlighting spencer for hire abc promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "moonlighting thirtysomething 1988 promo abc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "moonlighting thirtysomething 1989 promo abc wls 7 chicago illinois": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "moonlightingjack mike promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "one life to live general hospital promo 1980": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "one life to live general hospital promo 1981": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "one life to live general hospital promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "one life to live the edge of night promo 1982": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "people do the craziest things who s the boss promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "perfect strangers head of the class promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "ryan s hope general hospital promo 1980": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "kpix a current affair promo 1989": {
+    "path": "TV Shows/A Current Affair/Promos & Previews",
+    "decade": "1980s"
+  },
+  "wfxt a current affair promo 1988": {
+    "path": "TV Shows/A Current Affair/Promos & Previews",
+    "decade": "1980s"
+  },
+  "wroc a current affair promo 1989": {
+    "path": "TV Shows/A Current Affair/Promos & Previews",
+    "decade": "1980s"
+  },
+  "wthr a current affair promo 1988": {
+    "path": "TV Shows/A Current Affair/Promos & Previews",
+    "decade": "1980s"
+  },
+  "day 16 of the 25 days of christmas wjbk a current affair promo 1990": {
+    "path": "TV Shows/A Current Affair/Promos & Previews",
+    "decade": "1990s"
+  },
+  "chch a current affair promo 1992": {
+    "path": "TV Shows/A Current Affair/Promos & Previews",
+    "decade": "1990s"
+  },
+  "kttv a current affair promo 1991": {
+    "path": "TV Shows/A Current Affair/Promos & Previews",
+    "decade": "1990s"
+  },
+  "whdh a current affair promo 1994": {
+    "path": "TV Shows/A Current Affair/Promos & Previews",
+    "decade": "1990s"
+  },
+  "whtm a current affair extra promo 1991": {
+    "path": "TV Shows/A Current Affair/Promos & Previews",
+    "decade": "1990s"
+  },
+  "wnyw a current affair promo 1990": {
+    "path": "TV Shows/A Current Affair/Promos & Previews",
+    "decade": "1990s"
+  },
+  "wnyw a current affair promo 1991": {
+    "path": "TV Shows/A Current Affair/Promos & Previews",
+    "decade": "1990s"
+  },
+  "wnyw a current affair promo 1992": {
+    "path": "TV Shows/A Current Affair/Promos & Previews",
+    "decade": "1990s"
+  },
+  "alf amazing stories promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "alf valerie promo 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "alf valerie s family promo 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "alf promo 1 1989": {
+    "path": "TV Shows/ALF/Promos & Previews",
+    "decade": "1980s"
+  },
+  "alf promo 2 1989": {
+    "path": "TV Shows/ALF/Promos & Previews",
+    "decade": "1980s"
+  },
+  "alf promo 1986": {
+    "path": "TV Shows/ALF/Promos & Previews",
+    "decade": "1980s"
+  },
+  "burger king 1988 television commercial alf puppets record": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "1980s"
+  },
+  "burger king 1988 television commercial alf puppets alien invasion coming soon": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "1980s"
+  },
+  "alf a family for joe promos 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "alf promo 1990": {
+    "path": "TV Shows/ALF/Promos & Previews",
+    "decade": "1990s"
+  },
+  "1 800 collect 2003 television commercial alf": {
+    "path": "Commercials/Phone & Wireless",
+    "decade": "2000s"
+  },
+  "10 10 220 2002 television commercial terry bradshaw alf": {
+    "path": "Commercials/Phone & Wireless",
+    "decade": "2000s"
+  },
+  "airwolf alfred hitchcock presents promo 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "airwolf mike hammer promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "airwolf mike hammer more than murder promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "airwolf thirteen at dinner promo 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "airwolf promo 1984": {
+    "path": "TV Shows/Airwolf/Promos & Previews",
+    "decade": "1980s"
+  },
+  "airwolf promo 1987": {
+    "path": "TV Shows/Airwolf/Promos & Previews",
+    "decade": "1980s"
+  },
+  "airwolfcagney lacey promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "all in the family alice promo 1979": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1970s"
+  },
+  "all in the family 1985 promo wkab tv 32 montgomery alabama": {
+    "path": "TV Shows/All in the Family/Promos & Previews",
+    "decade": "1980s"
+  },
+  "wkbs all in the family promo bumper 1981": {
+    "path": "TV Shows/All in the Family/Bumpers",
+    "decade": "1980s"
+  },
+  "wkbs all in the family promo slide 1981": {
+    "path": "TV Shows/All in the Family/Promos & Previews",
+    "decade": "1980s"
+  },
+  "wkbs all in the family promo 1981": {
+    "path": "TV Shows/All in the Family/Promos & Previews",
+    "decade": "1980s"
+  },
+  "wmcc all in the family promo 1993": {
+    "path": "TV Shows/All in the Family/Promos & Previews",
+    "decade": "1990s"
+  },
+  "american bandstand 33 13 celebration promo 1985": {
+    "path": "TV Shows/American Bandstand/Promos & Previews",
+    "decade": "1980s"
+  },
+  "american bandstand intro 1986": {
+    "path": "TV Shows/American Bandstand/Intros & Credits",
+    "decade": "1980s"
+  },
+  "cfmt arsenio hall show pat sajak show promo 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "cfmt arsenio hall show promo 1989": {
+    "path": "TV Shows/Arsenio Hall/Promos & Previews",
+    "decade": "1980s"
+  },
+  "wsvn arsenio hall show promo 1989": {
+    "path": "TV Shows/Arsenio Hall/Promos & Previews",
+    "decade": "1980s"
+  },
+  "ktxa arsenio hall show promo 1994": {
+    "path": "TV Shows/Arsenio Hall/Promos & Previews",
+    "decade": "1990s"
+  },
+  "the arsenio hall show opening monologue june 10th 1991": {
+    "path": "TV Shows/Arsenio Hall/Intros & Credits",
+    "decade": "1990s"
+  },
+  "waga arsenio hall show promo 1992": {
+    "path": "TV Shows/Arsenio Hall/Promos & Previews",
+    "decade": "1990s"
+  },
+  "wfsb arsenio hall show promo 1991": {
+    "path": "TV Shows/Arsenio Hall/Promos & Previews",
+    "decade": "1990s"
+  },
+  "wmaz arsenio hall show promo 1993": {
+    "path": "TV Shows/Arsenio Hall/Promos & Previews",
+    "decade": "1990s"
+  },
+  "wtxf arsenio hall show promo 1992": {
+    "path": "TV Shows/Arsenio Hall/Promos & Previews",
+    "decade": "1990s"
+  },
+  "the wonder years hooperman 1988 promo abc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "three s a crowd who s the boss promo 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "who s the boss growing pains abc promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "who s the boss roseanne 1989 promo abc wls 7 chicago illinois": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "who s the boss growing pains promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "whose the boss perfect strangers 1988 promo abc tuesday": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "wonder years hooperman china beach 1989 promo wls 7 chicago illinois": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "20 20up close personal promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "2020 good morning america sunday promos 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "2020 homeward bound promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "2020 netforce promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "2020 rear window promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "2020 the norm show promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "that s incredible american music awards promo 1982": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "that s what friends are for 1987 american music awards": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the new newlywed game one life to live promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "abc monday night football dangerous minds promos 1996": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "abc promo grace under fire soul man home improvement hiller and diller 1997": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "abc tgif promo 1991 full house family matters perfect strangers going places": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "abc world news tonight the hughleys promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "all my children general hospital promos 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "all my children one life to live promo 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "america s funniest home videos 2020 the practice 1997 promo abc waay 31 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "arsenio hall the year in music deaths 1996 american music awards": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "boy meets world sabrina 1998 promo abc tgif": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "cma awards cybillalmost perfect promos 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "coach monday night football 1994 promo abc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "dangerous world the kennedy years monday night football promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "dharma gregthe drew carey show promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "dinosaurs the wonder years promo 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "dinosaurs the wonder years promos 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "family matters meego promo 1997": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "family mattersmeego walker texas ranger promos 1997": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "family mattersstep by step early editionwalker texas ranger promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "full house home improvement promo 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "full house me and the boys 1994 promo abc christmas": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "full houseedith ann promo abc tuesday bumper 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "good morning america loving promos 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "grace under fire soul man home improvement 1997 promo abc waay 31 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "home improvement coach 1993 promo abc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "home improvement coach promo 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "home improvement grace under fire 1994 promo abc christmas": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "home improvement grace under fire promo 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "home improvement the hughleys abc promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "hudson street home improvement promo 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "macgyver abc monday night football 1990 promo abc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "macgyver monday night football promo 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "michael jackson favorite male pop rock artist 1996 american music awards": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "one life to live growing painsdoogie howser md promos 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "one life to live my so called life promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "primetime live the practice promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "reba mcintire live please come home to boston 1996 american music awards": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "reba mcintire favorite country female artist 1996 american music awards": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "roseanne coach abc promo 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "sabrina boy meets world abc promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "sabrina the teenage witch happy gilmore promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "snoops the practice promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "spin city sports night promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "spin city sports night abc promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "spin city the hughleys promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "spin citysports night behind closed doors promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the drew carey show ellen abc promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the drew carey show norm promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the drew carey show whose line is it anyway promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the whole world was watchingspin city sports night promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the wonder years doogie howser md promo 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the wonder years growing pains abc promo 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the wonder years thea promos 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the wonderful world of disney the practice news abc promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "unstrung heroes the drew carey show promo 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "waay 31 1997 promo abc monday night football huntsville alabama patriots dolphins": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "wnyw living single home improvement promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "wttv home improvement seinfeld promo 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "who s the boss davis rules abc promo 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "who s the boss growing pains promo 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "whose line is it anyway 2020 promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "2020 2020 downtown promo 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "2020 lies myths and downright stupidity promo 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "alias the practice promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "alias the practice abc promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "gideon s crossingthe drew carey show the job promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "good morning americadharma greg promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "jimmy kimmel live nypd blue promos 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "sabrina the teenage witch popular promo 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "sports night academy awards promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the beach boys an american family 2020 promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the beach boys an american family the drew carey show promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the drew carey show spin city promo 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the drew carey show the job abc promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the practice nypd blue promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the practice politically incorrect promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the practicemiracles the family promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the sixth sense aliasthe practice promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the in crowd and social crueltythe practice promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "who wants to be a millionaire spin city promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "2020 michael jackson after life bumper abc 2010": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2010s"
+  },
+  "michael jackson after life abc 2020 special 2010 full": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2010s"
+  },
+  "all in the family promo cbs id 1978": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1970s"
+  },
+  "48 hours tour of duty promos 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "60 minutes promo slide cbs id 1980": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "aftermash domestic life promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "aftermash promo cbs id 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "aftermashthe four seasons body language promos 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "airwolf mike hammer 1984 promo cbs saturday": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "almost grown tour of duty promo 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "america s bake off contest tattletales promos 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "as the world turns guiding light promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "as the world turns guiding light promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "as the world turns promo cbs network id 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "cbs evening newsmurder she wrote promos network id 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "capitol guiding light promo 1983": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "capitol guiding light promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "capitol guiding light promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "dallas falcon crest promo 1983": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "dallas falcon crest promo 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "dallas falcon crest promo 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "grammy awards promo cbs id 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "grammy awardsamerica s bake off promos cbs id 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "guiding light cbs evening news promos 1980": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "guiding light promo cbs id 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "knots landing high mountain rangers promos 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "magnum piknots landing promo cbs id 1981": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "magnum pithe equalizer promo cbs id 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "miss universe pageant wiseguy promos 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "murder she wrote a hazard of hearts promo 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "murder she wrote circle of violence a family drama promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "murder she wrote circus of the stars promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "murder she wrote promo cbs id 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "murder she wrotelove betrayal promo 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "murder she wroteoutlaws promo cbs id 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "murphy brown designing women promo 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "newhart designing women promo 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "newhart the cavanaughs promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "paradise tour of duty promo 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "saturday night with connie chung 60 minutes promos 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "search for tomorrow guiding light promo 1981": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "search for tomorrowguiding light promo cbs id 1980": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "search for tomorrowthe young and the restless promo 1981": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "simon simonknots landing promo 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "snoops 48 hours promos 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the equalizer wiseguy promo 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the equalizersimon simon promos 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the famous teddy zmurphy brown promo cbs id 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the young and the restlessas the world turns promo 1983": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the young and the restlessas the world turns promo 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the young and the restlessboys and girls together promos 1980": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the young and the restlesscbs evening news promos 1982": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the young and the restlesscapitol promo 1983": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the young and the restlessguiding light promo 1983": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the young and the restlessguiding light promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the young and the restlesssearch for tomorrow promo 1981": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "tour of dutyguts glory promo 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "tour of dutysimon simon promo 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "48 hours bodies of evidence promos 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "48 hours city of angels promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "48 hoursjake and the fatman promo cbs id 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "60 minutesthe nanny can t hurry love promos 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "cbs monday promo 1999 cosby king of queens raymond becker": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "cbs mondaygrammy awardstom promo 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "cbs saturday promo 1998 early edition walker texas ranger": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "central park westcourthouse murphy browncybill promos 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "children of the dusteye to eye 48 hours promos 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "cosby everybody loves raymond promo 1997": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "cosbyeverybody loves raymond jag promos 1997": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "cosbywork with me 48 hours promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "cybillmurphy brown face of evil promos 1997": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "designing women bob promo 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "diagnosis murder burke s law promo 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "diagnosis murder matt waters promos 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "diagnosis murder murder she wrotecries from the heart promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "diagnosis murder walker texas ranger promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "dr quinn medicine woman murder she wrotewithout a kiss goodbye promos 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "dr quinn medicine woman touched by an angel promos 1996": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "dr quinn touched by an angel 1995 promo cbs": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "evening shade murphy brown promos 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "eye on sportsmurder she wrote menendez a killing in beverly hills promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "eye to eye48 hours late show with david letterman promos 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "eye to eyediagnosis murder burke s law promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "four corners grammy awards promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "getting gotti 48 hours promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "grammy awards the george wendt show promos 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "greyhounds northern exposure promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "guiding light the primetime special the hollywood game promos 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "island son knots landing promo 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "jag the nannymurphy brown promos 1997": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "jake and the fatman48 hours promo 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "kathie lee christmas every day 48 hours promo 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "knots landing farewell my lovely 1993 promo cbs": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "knots landing promo cbs id 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "late show with david letterman promo 1999 will ferrell james coburn": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "murder she wrote shell seekers promo 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "murder she wrote to be the best promo 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "murder of innocence 48 hours promos 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "murphy brown city promo 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "murphy brown cybill promo 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "murphy brown northern exposure promo 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "murphy brown rescue 911 promos 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "murphy brownlove war and in the heat of the night promos 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "nba playoffs murphy browndesigning women promos 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "northern exposure murrow mccarthy promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "northern exposure college basketball promos 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "northern exposurecbs kmart primetime payoff promos network id 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "people s choice awards march madness promos 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "promised land diagnosis murder cbs promo 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "promised landdiagnosis murder mama flora s family promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "rescue 911 48 hours promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "rescue 911 the nanny promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "rescue 91148 hours diagnosis murder promos 1996": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "rescue 91148 hours due south promos 1996": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "rescue 911designing women promos cbs id 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "sibling rivalry northern exposure promo 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the bold and the beautiful60 minutes ii promo 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the christmas box jag promos 1996": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the nanny can t hurry love promo 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the nanny pearl promo 1996": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the nanny murphy brown love war cbs monday promo 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the nannydave s world bless this house promos 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the nannymaggie winters mama flora s family promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the nannymurphy brown the rockford files promos 1997": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the trials of rosie o neill knots landing 1991 promo cbs": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the trials of rosie o neill knots landing promo 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the young and the restlessknots landing promos 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the young and the restlessrescue 911 promos 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the young and the restlessscene of the crime promos 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the young and the restlesstriumph of the heart promos 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "turks nash bridges promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "unsolved mysteries nash bridges promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "wnyw the simpsons the nanny promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "you don t look 40 charlie brown murphy browndesigning women promos 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "48 hours 911 promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "48 hours the price is right promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "48 hours worldcom classic promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "48 hours mysteries cold case promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "48 hourscsi the agency promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "60 minutes ii college basketball promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "becker master spy promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "becker survivor the amazon promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "cbs id the king of queens the ellen showmichael jackson 30th anniversary celebration promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "cbs monday jag promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "cbs monday promo 2000 the king of queens everybody loves raymond becker": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "csi cbs friday promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "csi cbs november sweeps promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "csi joan of arcadia promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "csi the agency promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "csi the king of queens promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "csithe agency afi s 100 years 100 passions promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "csithe agency late show with david letterman promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "csithe agency little john promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "csithe agency one special night promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "csithe agency the seventh stream promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "csiwithout a trace joan of arcadia promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "candid camera 60 minutes promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "century city csiwithout a trace promos 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "conspiracy theory csi promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "criminal minds csi ny cbs promo 2009": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "family law sally hemings an american scandal promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "for love or money miss universe promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "jag first monday promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "jag the guardian promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "joan of arcadia blessings promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "joan of arcadia the price is right promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "judging amy family law cbs promo 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "judging amy presidio med promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "judging amy robbie the reindeer hooves of firelegend of the lost tribe promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "martial law walker texas ranger promo 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "ncis the guardian promo 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "ncisthe guardian survivor all stars promos 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "nsync the atlantis concert cbs promos 2001 rugrats movie": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "ontv everybody loves raymond promo ctv primetime lineup bumper 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "presidio medcsi without a trace promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "survivor marquesas first monday promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "survivor marquesas living with the dead promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "survivor marquesas finalereunion special promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "survivorcsi kate brasher promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "survivor the amazon csi promo 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the agency late show with david letterman promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the fugitive csi promo 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the fugitive nash bridges cbs promo 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the guardian judging amy cbs promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the handler the king of queens promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the king of queens center of the universe promo 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the king of queens ladies man promo 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the king of queens the price is right promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the king of queens the stones promo 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "tomorrow never dies csi ny promos 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "touched by an angelmissing pieces judging amy promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "wsbk the king of queens red sox promos 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "cbs monday late show with david letterman promo 11303": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "Undated"
+  },
+  "cbs promo the rugrats movie rugrats in paris long version": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "Undated"
+  },
+  "cbs promo the rugrats movie rugrats in paris short version": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "Undated"
+  },
+  "cartoon network 2000 bumper next the powerpuff girls dexter s laboratory": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "comedy central the scout the daily show promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "comedy central movies the daily show promos 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "south park bigger longer uncut credits promo july 4 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "bear in the big blue house promo a little otter bop with pip and pop 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "bear in the big blue house promo bear and tutter 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "behind the ears rolie polie olie 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "disney behind the ears bear in the big blue house 1997 promo disney channel": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "disney channel freaky friday movie surfers promo 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "disney channel up next bumper bug juice marathon to growing pains 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "disney channel bumper 1998 bug juice growing pains": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "disney channel bumper 1999 goof troop timon pumbaa": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "disney channel tonight promo 1999 don t look under the bed so weird": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "ducktales the movie magic island 1998 promo disney channel": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "hercules 1997 promo disney channel strikes manhattan movie surfers": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "kcal mighty ducks quack pack promo 1997": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "pb j otter promo tune in to kids and family week ii june 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "pb j otter disney behind the ears disney channel 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "saturday premears jungle book rolie polie olie 1998 promo disney channel": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "so weird 1999 disney channel behind the ears": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "talespin 1992 promos cfto tv": {
+    "path": "TV Shows/TaleSpin/Promos & Previews",
+    "decade": "1990s"
+  },
+  "wpix ducktaleschip dale s rescue rangers promo 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "boy meets world so weird disney channel bumper 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "bug juice 2 in a heartbeat disney channel promo 2001 zoog weekendz": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "disney channel holiday episodes promo 2004 lilo stitch kim possible that s so raven": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "disney channel up next kim possible to boy meets world 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "disney channel up next bumper kim possible to the proud family 2006": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "disney channel fresh fridays promo 2001 zoog weekendz even stevens lizzie mcguire": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "disney home video previews movie surfers 2005": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "every day boy meets world disney channel promo 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "every day boy meets world disney channel promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "kim possible disney channel promo 2004 bumps bruises": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "movie surfers 2001 promo disney channel myra dancing in the streets recess school s out": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "movie surfers 2001 promo disney channel ashley johnson recess school s out": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "now rolie polie olie next bear in the big blue house 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "pb j otter tribute friends 1 000 subscribers special": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "Undated"
+  },
+  "next on that s so raven disney channel promos": {
+    "path": "TV Shows/That's So Raven/Promos & Previews",
+    "decade": "Undated"
+  },
+  "espn sportscenter friday night baseball promos 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "alf stone fox promo 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "crazy like a fox the equalizer promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "married with children the tracey ullman show open house 1989 promo fox": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "cops america s most wanted promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "encounters the ufo conspiracy the x files promo 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "fox audio promos herman s head beethoven all new sinbad show november 18 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "fox 54 wzdx late nights promo 1994 cops roseanne northern exposure huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "fox on ice part 2 melrose place promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "fox sunday futurama king of the hill promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "full house the simpsons bumper 1996 fox 31 albany georgia": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "harsh realm ally mcbeal promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "in living color married with children 1991 bumper fox wzdx 54 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "married with children roseanne bumper 1996 fox 31 albany georgia": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "melrose place ally mcbeal promo 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "melrose place party girl promos 1996": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "primetime cops america s most wanted fox promo 1996 wzdx fox 54 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the simpsons married with children 1990 promo fox wzdx 54 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the simpsons married with children promo 1990 wzdx 54 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the x files darkness falls firewalker promo 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the x files firewalker fire promo 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "time of your life ally mcbeal promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "true colors parker lewis can t lose fox promo 1990 wzdx 54 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "true colors parker lewis can t lose promo 1991 wzdx fox 54 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "under the helmet the x files promos 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "wzdx fox 54 weekdays promo drew carey frasier friends 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "ally mcbeal temptation island 2 promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "america s most wanted nfc playoffs promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "cops america s most wanted promo 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "dark angel undeclared promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "frasier seinfeld promo 2005 fox 54 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "greed that 70s showfamily guy promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "king of the hill bumpers promo 2003 fox": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "nfc championship the simpsonsmalcolm in the middle promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "that 70s show ally mcbeal promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "that 70s show the simpsons promo 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "that 70s show titus promo 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "that 70s showgrounded for life dark angel promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "that 70s showundeclared the x files promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "that 80s show ally mcbeal promos 1 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "that 80s show ally mcbeal promos 2 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "that 80s show america s most wanted promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the hughleys the andy griffith show promo 2003 wfxl fox 31 albany georgia": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the simpsons malcolm in the middle promo 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the simpsons malcom in the middle 2004 promo fox wzdx 54 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the simpsonsbritney in hawaii time of your life promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the x files fear promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the x files getting away with murder promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "married with children top of the heap fox promo wzdx 54 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "Undated"
+  },
+  "the simpsons syndication promo king of the hill upn24": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "Undated"
+  },
+  "the simpsons syndication promo three men and a comic book wb18": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "Undated"
+  },
+  "fx coming up bumper 2001 mash the practice married with children": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "gsn body language beat the clock promo 1997": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "gsn match game pm tattletales promo 1998": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "revenge of the nerds iv tales from the crypt promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "hbo sunday nights promo 2002 sex in the city the sopranos": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "sex and the city credits promo august 27 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "pax circle of friends promo sponsor billboard 2005": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "it s your chance of a lifetime ally mcbeal promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "nbc nightly news the best of saturday night live promos 1979": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1970s"
+  },
+  "saturday night live bumper cliffhangers promo 1979": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1970s"
+  },
+  "the story of christmas the tonight show promos 1978": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1970s"
+  },
+  "alf amazing stories nbc promo 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "alf secrets of the red bedroom 1987 promo nbc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "alf the hogan family nbc promo 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "alf sister kate my two dads 1989 promo nbc sunday": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "another world santa barbara 1986 promo nbc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "another world santa barbara promo 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "backstairs at the white house miss america promos 1980": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "baseball hill street blues promos 1981": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "caddyshack santa barbara promos 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "cheers hardball 1989 promo nbc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "cheers night court promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "cheersthe days and nights of molly dodd promo 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "days of our lives another world promos 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "days of our lives blockbusters promos 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "days of our lives main street promos 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "days of our lives santa barbara promos 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "days of our lives santa barbara promos 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "days of our lives santa barbara promos 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "days of our lives soap opera awards promos 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "days of our lives twist of fate promos 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "diff rent strokes santa barbara promos 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "fire on the mountain scrabble promos 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "highway to heaven days of our lives promo 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "highway to heaven night court promo 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "highway to heaven santa barbara promos 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "knight rider eischied promo 1983": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "knight rider scene of the crime promo 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "las vegas gambit ticket plug 1980": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "matlock hill street blues 1986 promo waff 48 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "miami vice crime story 1986 promo nbc friday": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "miami vice crime story 1986 promo nbc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "miami vice dream street promo 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "miami vice private eye promo 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "miami vice stingray promo 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "nbc news at this hour alf and hogan family promo 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "nbc nightly news hill street blues promos 1981": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "nbc nightly news today show promos 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "nbc sitcom promo 1989 night court nutt house": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "nbc sunday alf promos 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "nbc thursday today show promos 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "night court baby boom promo 1988": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "night court easy street bronx zoo 1987 promo nbc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "night court la law 1986 promo nbc waff 48 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "opryland night of stars hill street blues promo 1981": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "real people days of our lives promos 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "santa barbara the golden girls promos 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "saturday night live 1988 promo nbc tom hanks randy travis": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "search for tomorrow days of our lives promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "shogun the tonight show promos 1980": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "sonny spoon miami vice 1988 promo nbc tonight": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the cosby show family ties promo 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the cosby show family ties promo 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the powers of matthew star knight rider promo 1983": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the tonight show late night promo 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the tonight show 22nd anniversary special super password promos 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "the tonight showlate night man against the mob promos 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "this child is mine another world promos 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "time bomb miami vice promo 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "tonight nbc promo 1989 miami vice unknown subject": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "wxii a different world cheers promos 1989": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "wait til your mother gets home santa barbara promos 1984": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "wallenberg a hero s story days of our lives promos 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "wheel of fortune santa barbara promos 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "alf hogan s family nbc promo 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "alf hogans nbc promo 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "another world sisters promos 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "cheers seinfeld promo 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "cheers seinfeld nbc promo 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "days of our lives la law promos 1993 2": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "days of our lives la law promos 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "days of our lives reasonable doubts promos 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "days of our lives woman on the ledge promos 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "er today show promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "el cid the tonight show promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "empty nest mad about you 1993 bumper nbc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "empty nest nurses promo 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "family secrets days of our livesanother world promos 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "friends just shoot me seinfeld veronicas closet er 1998 promo nbc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "in the news late night with conan o brien 1996": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "mad about you hope and gloria 1995 promo nbc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "miss america pageant spies like us promos 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "nbc thursday 1998 promo friends just shoot me seinfield veronica s closet er": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "santa barbara a closer look promos 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "seinfeld who s harry crumb promos 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the tonight show late night promo 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "witi love connection night court promos 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "3rd rock will grace 2000 promo nbc finale": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "3rd rock from the sun frasier promo 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "average joe fear factor couples 2004 promo nbc waff48 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "dog eat dog third watch promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "ed third watch 2004 promo nbc waff48 huntsville alabama": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "fear factor meet my folks promo 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "fear factor spytv go fish nbc promo 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "fear factor weakest link inside schwartz nbc promo 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "fear factor weakest link nbc promo 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "fear factor bumper dog eat dog promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "fear factor bumperlaw order criminal intent promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "fear factor friendswill grace promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "fear factor las vegasnational lampoon s christmas vacation i ii promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "frasier scrubs promo 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "frasier the tonight show promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "frasierausa america s most talented kid promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "frasierausa dog eat dog promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "friendswill grace promo 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "friendswill grace promo 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "just shoot mewill grace promo 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "nbc sitcom promo 2002 watching ellie frasier": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "nbc superstar thursday promos 2000 friends cursed will grace just shoot me er": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "nbc thursday promo 2002 frasier watching ellie scrubs": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "nbc thursday promo 2002 friends leap of faith": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "nbc tuesday third watch promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "primetime live miss america promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the others days of our lives promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the restaurantwill grace promos 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the tonight show conan 2004 promo nbc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the tonight show conan tonight 2004 promo nbc": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the tonight show conan nbc promo 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the tonight show with jay leno promo 2005 featuring hank azaria anthony anderson": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the weakest link the tonight show promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the weakest link bumper fear factor promo 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "the weakest link bumper fear factor promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "third watch kingpin promos 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "third watchlaw order trial by jury promo 2005": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "wtxx frasier yes dear promos 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "las vegas gambit close partial nbc promos 122480": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "Undated"
+  },
+  "today on ren stimpy stimpy s big day the big shot 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "today on ren stimpy bumpers 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "drake josh promos august 2007": {
+    "path": "TV Shows/Drake & Josh/Promos & Previews",
+    "decade": "2000s"
+  },
+  "jimmy neutron interruption hey arnold version 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "jimmy neutron interruption during rugrats october 4 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "next time on rugrats promonickelodeon split screen credits november 7 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "surfs up promo with full house split screen creditsnick nite bumper 2017": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2010s"
+  },
+  "eureeka s castle promo magellan and his tail": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "Undated"
+  },
+  "thomas friends 1995 promo pbs apt": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "stargate sg 1 farscape promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "cbn carol burnett and friends promo 1985": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "fam carol burnett friends promo 1997": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "fam carol burnett and friends promo wwhoopi goldberg 1996": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "fox family guy ally mcbeal crossover promo 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "jellabies friends fox family promo 2000 weekdays": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "second verdict the 700 club promos 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "dawson s creek charmed promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "kstw tiny toon adventures growing pains promos 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "popular charmed promo 1999": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "wkbd tiny toon adventures head of the class promo 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "austin powers dawson s creek promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "buffy the vampire slayer haunted promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "buffy the vampire slayer manhunt promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "gilmore girls one tree hill promo 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "gilmore girls smallville wb promo 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "smallville angel promo 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "smallville gilmore girls promo over 7th heaven credits 2002 wb": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "smallville gilmore girls promo 2003": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "we felicity royal flush weekend promos 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "wttv college basketball felicity promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "what i like about you reba promo 2005": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "hello kitty friends 1998 promo toon disney": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "toon disney 1998 bumper darkwing duck gargoyles": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "toon disney 1998 bumper timon pumbaa bonkers": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "toon disney bumpers chip n dale rescue rangers timon pumbaa december 2002": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "up next on toon disney ducktales and chip n dale rescue rangers 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "up next on toon disney quack pack and ducktales 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "star trek voyager nowhere man promo 1995": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "the hughleys promos 1998": {
+    "path": "TV Shows/The Hughleys/Promos & Previews",
+    "decade": "1990s"
+  },
+  "roswell star trek voyager promos 2001": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "usa best of dragnet airwolf promos 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "usa movie airwolf promos 1987": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "usa riptide airwolf promos 1986": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1980s"
+  },
+  "drive like lightning silk stalkings promos 1993": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "duckman silk stalkings promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "silhouette usa up all night promos 1991": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "silk stalkings stompin at the savoy promos 1992": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "tuesday night fights silk stalkings promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "usa monte carlo murder she wrote promos 1990": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "usa silk stalkings shocker promos 1994": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "1990s"
+  },
+  "monk psych 2009 promo usa": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "primetime thursdayliar liar monk promos 2004": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "fun family fresh fresh 2002 promo wgn full house family matters fresh prince": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "wwor moesha the jamie foxx show promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "wwor upn 9 news moesha promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "wwor upn 9 news star trek voyager promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "wwor upn 9 news the hughleys promos 2000": {
+    "path": "TV Shows/Program Lineups",
+    "decade": "2000s"
+  },
+  "abc detergent ad 1982": {
+    "path": "Commercials/Cleaning & Household",
+    "decade": "1980s"
+  },
+  "10 10 220 ad walf emmitt smith 2003": {
+    "path": "Commercials/Phone & Wireless",
+    "decade": "2000s"
+  },
+  "10 10 220 ad walf 2003": {
+    "path": "Commercials/Phone & Wireless",
+    "decade": "2000s"
+  },
+  "10 10 220 ad whulk hogan alf 2002": {
+    "path": "Commercials/Phone & Wireless",
+    "decade": "2000s"
+  },
+  "10 10 220 commercial ft": {
+    "path": "Commercials/Phone & Wireless",
+    "decade": "Undated"
+  },
+  "pizza hut full house xl pizza television commercial stewart scott deion sanders": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "Undated"
+  },
+  "cablevision amc ad 1985": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "1980s"
+  },
+  "american treasury interstitialdoan s adcbs id 1988": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "1980s"
+  },
+  "l oreal performing preference 1988 television commercial cybill shepherd": {
+    "path": "Commercials/Health & Beauty",
+    "decade": "1980s"
+  },
+  "l oreal performing preference 1994 television commercial cybill shepherd": {
+    "path": "Commercials/Health & Beauty",
+    "decade": "1990s"
+  },
+  "cbs newsbreak aquafresh ad network id 91580": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "Undated"
+  },
+  "cbs newsbreak aquafresh ad network id 91781": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "Undated"
+  },
+  "cbs newsbreak bayer ad network id 21290": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "Undated"
+  },
+  "cbs newsbreak correctol ad network id 6485": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "Undated"
+  },
+  "cbs newsbreak doan s ad network id 101487": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "Undated"
+  },
+  "cbs newsbreak dulcolax ad network id 4291": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "Undated"
+  },
+  "cbs newsbreak publishers clearing house ad network id 122785": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "Undated"
+  },
+  "cbs newsbreak sealy ad network id 12585": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "Undated"
+  },
+  "cbs newsbreak special k ad network id 101681": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "Undated"
+  },
+  "tom jerry video game ad 1993": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "1990s"
+  },
+  "cinnamon marshmellow scooby doo cereal television commercial 2003": {
+    "path": "Commercials/Breakfast Cereal",
+    "decade": "2000s"
+  },
+  "minute maid orange juice featuring powerpuff girls television commercial 2003": {
+    "path": "Commercials/Drinks (Non-Alcoholic)",
+    "decade": "2000s"
+  },
+  "powerpuff girls dolls commercial 2000": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "circuit city television commercial 1997 directv": {
+    "path": "Commercials/Electronics & Tech",
+    "decade": "1990s"
+  },
+  "directv 1997 television commercial": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "1990s"
+  },
+  "directv 1998 television commercial": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "1990s"
+  },
+  "directv at circuit city television commercial 1997": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "1990s"
+  },
+  "directv television commercial 1999": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "1990s"
+  },
+  "directv 2003 television commercial mega march madness": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial nba league pass": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial new install": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2002 television commercial sports": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2002 television commercial stars super pak": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2002 television commercial": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial fa cup tournament": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial favorites": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial feel the joy": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial kq final elimination": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial moving": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial nhl center ice": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial ppv tyson etienne": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial ppv": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial premium channels": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial sports park nba league pass": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial tivo": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial total choice plus local": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial total choice premier": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial unfaithful blockbuster on demand": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2006 television commercial jessica simpson": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2008 television commercial": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv hd television commercial 2005": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv king kong television commercial 2009": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv sports pack television commercial 2005": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv total choice plus 2003 television commercial": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv total choice premier 2003 television commercial": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv total choice premiere 2003 television commercial": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv ad wjames earl jones 2004": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv television commercial 2000": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv television commercial 2005": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv television commercial 2006 chicken the egg": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv television commercial 2008": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv beyonce upgrade u commercial 2007": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "dish network 2008 television commercial": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "dish network 2009 television commercial": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial espn full court": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial espn game plan": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "samantha fox hotline 1 900 909 foxx television commercial 1989": {
+    "path": "Commercials/Sweepstakes & Direct Response",
+    "decade": "1980s"
+  },
+  "butterfinger ice cream bars television commercial 1991 the simpsons quick e mart": {
+    "path": "Commercials/Food & Grocery",
+    "decade": "1990s"
+  },
+  "butterfinger ice cream bars television commercial 1991 the simpsons": {
+    "path": "Commercials/Food & Grocery",
+    "decade": "1990s"
+  },
+  "milky way television commercial 1997 x files": {
+    "path": "Commercials/Candy, Gum & Chocolate",
+    "decade": "1990s"
+  },
+  "oldsmobile intrigue 1998 television commercial x files movie": {
+    "path": "Commercials/Cars and Trucks",
+    "decade": "1990s"
+  },
+  "simpsons video game ad 1992": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "1990s"
+  },
+  "wendy s kids meal television commercial 1999 bobby s world": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "1990s"
+  },
+  "barq s root beer 2000 television commercial the simpsons contest": {
+    "path": "Commercials/Drinks (Non-Alcoholic)",
+    "decade": "2000s"
+  },
+  "teenage mutant ninja turtles awesome art contest television commercial 2003 fox box tru tmnt": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "schick tracer fx television commercial 1997": {
+    "path": "Commercials/Health & Beauty",
+    "decade": "1990s"
+  },
+  "stunt race fx super nintendo television commercial 1994 snes play it loud": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "1990s"
+  },
+  "directv 2003 television commercial food network in the kitchen": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "comcast 2006 television commercial cinemax hbo": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "knology 2002 television commercial hbo cinemax": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "1 900 909 jeff television commercial 1988 fresh prince phone line": {
+    "path": "Commercials/Sweepstakes & Direct Response",
+    "decade": "1980s"
+  },
+  "1 900 909 jeff television commercial 1989 fresh prince": {
+    "path": "Commercials/Sweepstakes & Direct Response",
+    "decade": "1980s"
+  },
+  "american express 1992 television commercial jerry seinfeld national debt": {
+    "path": "Commercials/Banks & Insurance",
+    "decade": "1990s"
+  },
+  "american express 1992 television commercial jerry seinfeld ties": {
+    "path": "Commercials/Banks & Insurance",
+    "decade": "1990s"
+  },
+  "american express 1992 television commercial jerry seinfeld": {
+    "path": "Commercials/Banks & Insurance",
+    "decade": "1990s"
+  },
+  "american express ad wjerry seinfeld 1998": {
+    "path": "Commercials/Banks & Insurance",
+    "decade": "1990s"
+  },
+  "american express ad wjerry seinfeld 1999": {
+    "path": "Commercials/Banks & Insurance",
+    "decade": "1990s"
+  },
+  "jerry seinfeld american express television commercial 1997": {
+    "path": "Commercials/Banks & Insurance",
+    "decade": "1990s"
+  },
+  "american express 2002 television commercial seinfeld italy": {
+    "path": "Commercials/Banks & Insurance",
+    "decade": "2000s"
+  },
+  "burger king 1998 television commercial kids meal rugrats": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "1990s"
+  },
+  "little bear doll 1998 television commercial": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "1990s"
+  },
+  "pizza hut 1990 television commercial eureeka s castle nickelodeon": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "1990s"
+  },
+  "rugrats make up pretty angelica and suzie doll commercial 1999": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "1990s"
+  },
+  "rugrats search for reptar 1998 television commercial video game playstation 1 ps1": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "1990s"
+  },
+  "best western 2006 television commercial fairly odd parents": {
+    "path": "Commercials/Travel & Attractions",
+    "decade": "2000s"
+  },
+  "burger king 2000 television commercial rugrats in paris": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "2000s"
+  },
+  "burger king 2004 television commercial spongebob watches": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "2000s"
+  },
+  "burger king kids meal rugrats television commercial 2003": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "2000s"
+  },
+  "burger king spongebob squarepants television commercial 2003": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "2000s"
+  },
+  "burger king television commercial 2000 rugrats big kids meal": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "2000s"
+  },
+  "burger king television commercial 2000 rugrats talking watches": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "2000s"
+  },
+  "dora the explorer dora s magical castle playset commercial 2007": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "dora the explorer dress n dance dora doll commercial 2005": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "dora the explorer fairy wishes dora doll commercial 2006": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "dora the explorer magical friends singing dora doll commercial 2003": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "dora the explorer we did it dancing dora doll commercial 2002": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "quality from hell spongebob target commercial 2001": {
+    "path": "Commercials/Stores & Retail",
+    "decade": "2000s"
+  },
+  "rugrats dolls television commercial 2000 milk munchies tommy angelica nickelodeon": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "rugrats in paris the movie sing swing angelica doll commercial 2000": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "rugrats totally angelica curly girly salon and fashion designer doll commercial 2000": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "waffle crisp oreo o s cereal 2000 television commercial rugrats in paris": {
+    "path": "Commercials/Breakfast Cereal",
+    "decade": "2000s"
+  },
+  "dora the explorer window surprises dollhouse commercial 2010": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2010s"
+  },
+  "chuck e cheese 1995 television commercial pbs": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "1990s"
+  },
+  "fruit loops television commercial 2003 pbs kids": {
+    "path": "Commercials/Breakfast Cereal",
+    "decade": "2000s"
+  },
+  "k mart 2002 television commercial sesame street clothing": {
+    "path": "Commercials/Stores & Retail",
+    "decade": "2000s"
+  },
+  "directv 2002 television commercial showtime": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial showtime unlimited": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial showtime": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "directv television commercial 2001 showtime": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "knology 2002 television commercial showtime": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "showtime pooh television commercial 2001 fisher price disney": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "directv 2003 television commercial starz super pak": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "diva starz fashion glow dolls commercial 2003": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "fashion diva starz doll commercial uk 2002": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "fashion diva starz dolls commercial 2002 15 sec": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "knology television commercial 2001 starz": {
+    "path": "Commercials/Cable & Satellite Services",
+    "decade": "2000s"
+  },
+  "mini diva starz wave 1 dolls commercial 2001": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "mini diva starz wave 2 dolls commercial 2002": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "2000s"
+  },
+  "batman beyond toys action figures television commercial 1999": {
+    "path": "Commercials/Toys & Video Games",
+    "decade": "1990s"
+  },
+  "mcdonald s commercial animaniacs 1995": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "1990s"
+  },
+  "mcdonald s television commercial 1991 tiny toon adventures happy meal": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "1990s"
+  },
+  "my scene totally charmed commercial 2007": {
+    "path": "Commercials/Toys & Video Games/My Scene",
+    "decade": "2000s"
+  },
+  "mcdonald s commercial animaniacs": {
+    "path": "Commercials/Restaurants & Fast Food",
+    "decade": "Undated"
+  },
+  "at t 1994 television commercial 1 800 true usa": {
+    "path": "Commercials/Phone & Wireless",
+    "decade": "1990s"
+  },
+  "coca cola 1993 television commercial world cup usa 94 coke": {
+    "path": "Commercials/Drinks (Non-Alcoholic)",
+    "decade": "1990s"
+  },
+  "minute maid usa 1991 television commercial": {
+    "path": "Commercials/Drinks (Non-Alcoholic)",
+    "decade": "1990s"
+  },
+  "a e commercial breaks christmas eve 1985": {
+    "path": "Commercials/Commercial Breaks/A&E",
+    "decade": "1980s"
+  },
+  "a e commercial breaks 711996": {
+    "path": "Commercials/Commercial Breaks/A&E",
+    "decade": "1990s"
+  },
+  "a e commercial break april 2000": {
+    "path": "Commercials/Commercial Breaks/A&E",
+    "decade": "2000s"
+  },
+  "a e commercial breaks 4282000": {
+    "path": "Commercials/Commercial Breaks/A&E",
+    "decade": "2000s"
+  },
+  "abc commercial breaks may 1988": {
+    "path": "Commercials/Commercial Breaks/ABC",
+    "decade": "1980s"
+  },
+  "abc commercial breaks november 3 1996": {
+    "path": "Commercials/Commercial Breaks/ABC",
+    "decade": "1990s"
+  },
+  "abc commercial breaks december 5 1999": {
+    "path": "Commercials/Commercial Breaks/ABC",
+    "decade": "1990s"
+  },
+  "abc commercial breaks november 21 1997": {
+    "path": "Commercials/Commercial Breaks/ABC",
+    "decade": "1990s"
+  },
+  "disney s one saturday morning commercial breaks november 20 1999": {
+    "path": "Commercials/Commercial Breaks/ABC",
+    "decade": "1990s"
+  },
+  "wmdt abc commercial breaks august 25 1999": {
+    "path": "Commercials/Commercial Breaks/ABC",
+    "decade": "1990s"
+  },
+  "jetix on abc family commercial break july 29 2005": {
+    "path": "Commercials/Commercial Breaks/ABC Family",
+    "decade": "2000s"
+  },
+  "abc family commercial breaks june 26 2011": {
+    "path": "Commercials/Commercial Breaks/ABC Family",
+    "decade": "2010s"
+  },
+  "amc commercial breaks 311 122009": {
+    "path": "Commercials/Commercial Breaks/AMC",
+    "decade": "2000s"
+  },
+  "cbs television commercial break 1989 1": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "1980s"
+  },
+  "cbs television commercial break 1989 2": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "1980s"
+  },
+  "cbs commercial breaks august 12 1998": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "1990s"
+  },
+  "cbs commercial breaks may 22 1994": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "1990s"
+  },
+  "cbs commercial breaks august 19 1999": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "1990s"
+  },
+  "cbs commercial break february 26 2001": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "2000s"
+  },
+  "cbs commercial breaks may 31 2000": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "2000s"
+  },
+  "cbs commercial breaks december 31 2013": {
+    "path": "Commercials/Commercial Breaks/CBS",
+    "decade": "2010s"
+  },
+  "cartoon network commercial break february 6 1999": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "1990s"
+  },
+  "original commercials from cartoon network december 1999": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "1990s"
+  },
+  "toonami commercial break january 1998": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "1990s"
+  },
+  "toonami commercial break march 1998 2": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "1990s"
+  },
+  "toonami commercial break march 1998": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "1990s"
+  },
+  "adult swim action commercial breaks from february 2003": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "adult swim commercial breaks december 2008": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "adult swim commercial breaks january 8 2007": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "adult swim commercials from september 2003": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "boomerang commercial breaks december 17 2004": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "boomerang commercial breaks june 2006": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network boomerang commercials from late september 2003": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial break december 2003": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial break october 8 2003": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial break 1 february 20 2006": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial break 4 february 20 2006": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks 07072001": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks december 14 2005": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks february 25 2006": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks march 1 2003": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks march 15 2003": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks march 25 2009": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks march 27 2004": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks march 8 2003": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks may 3 2008 part 1": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks may 3 2008 part 2": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks november 17 18 2005": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks november 23 2002": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks november 28 2005": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks with fridays segments april 15 2005": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks with fridays segments july 22 2005 incomplete": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks with fridays segments september 2 2005": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "toonami commercials from november 2002 may 2005": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2000s"
+  },
+  "cartoon network commercial breaks 8212015": {
+    "path": "Commercials/Commercial Breaks/Cartoon Network",
+    "decade": "2010s"
+  },
+  "comedy central commercial breaks 6292006": {
+    "path": "Commercials/Commercial Breaks/Comedy Central",
+    "decade": "2000s"
+  },
+  "discovery channel commercial breaks january 4 2006": {
+    "path": "Commercials/Commercial Breaks/Discovery Channel",
+    "decade": "2000s"
+  },
+  "discovery channel commercial breaks 8292007": {
+    "path": "Commercials/Commercial Breaks/Discovery Channel",
+    "decade": "2000s"
+  },
+  "the disney channel commercial breaks 07281989": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "1980s"
+  },
+  "disney channel television commercial break 1997 4": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "1990s"
+  },
+  "disney channel television commercial break 1997 5": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "1990s"
+  },
+  "disney channel commercial break 08301999 partial": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "1990s"
+  },
+  "disney channel commercial break february 12 1998": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "1990s"
+  },
+  "disney channel commercial breaks 05151998": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "1990s"
+  },
+  "disney channel commercial breaks 06121998": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "1990s"
+  },
+  "the disney channel commercial breaks november 1991": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "1990s"
+  },
+  "disney channel commercial break april 12 2009": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial break february 17 2008": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial break january 2001": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial break march 13 2000": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial break may 21 2004": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial break october 14 2007": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial break september 7 2007": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial break spring 2003": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial break and onscreen banners may 11 2004": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks 01212002": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks 03312002": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks 07072002": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks 09062004": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks april 19 2008": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks april 2005 incomplete": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks april 7 2001": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks august 11 2009": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks august 17 2007": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks august 22 2009": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks december 14 2005": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks december 22 2008": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks february 23 2009": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks january 26 2009": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks january 27 28 2007": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks january 5 2009": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks january 7 2007": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks march 18 2006": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks march 2 2009": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks march 24 2006": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks march 6 2003": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks may 11 2002": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks may 2 2009": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks november 17 20 2005": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks october 11 2009": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks october 21 2002": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks september 25 2003": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks september 26 2005 incomplete": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial breaks and onscreen banners april 18 2004": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney xd commercial break march 6 2009": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "playhouse disney commercial break 011 2001": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "playhouse disney commercial break 02272002": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "playhouse disney commercial break november 2002": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "playhouse disney commercial break late august 2003": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "playhouse disney commercial breaks 07152001": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "playhouse disney commercial breaks 091 2004": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "playhouse disney and disney channel commercial break august 28 2005": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2000s"
+  },
+  "disney channel commercial break 112017 2": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney channel commercial break 132017": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney channel commercial break march 27 2019": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney channel commercial break may 23 2014": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney channel commercial break and onscreen banners september 28 2013": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney channel commercial break cut off at beginning 112017 1": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney channel commercial breaks april 16 2010": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney channel commercial breaks april 23 2010": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney channel commercial breaks january 13 2017": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney channel commercial breaks and onscreen banners christmas day 2017": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney channel commercial breaks and onscreen banners december 2 2018": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney xd commercial break 152017 2": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney xd commercial break 152017 3": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney xd commercial break 152017": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney xd commercial break 182017": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "disney xd commercial breaks 152017": {
+    "path": "Commercials/Commercial Breaks/Disney Channel",
+    "decade": "2010s"
+  },
+  "espn commercial breaks 5241986": {
+    "path": "Commercials/Commercial Breaks/ESPN",
+    "decade": "1980s"
+  },
+  "espn commercial breaks 761996": {
+    "path": "Commercials/Commercial Breaks/ESPN",
+    "decade": "1990s"
+  },
+  "fox commercial breaks 10081995": {
+    "path": "Commercials/Commercial Breaks/FOX",
+    "decade": "1990s"
+  },
+  "fox commercial breaks july 6 1997": {
+    "path": "Commercials/Commercial Breaks/FOX",
+    "decade": "1990s"
+  },
+  "fox commercial breaks december 9 2001": {
+    "path": "Commercials/Commercial Breaks/FOX",
+    "decade": "2000s"
+  },
+  "fox commercial breaks december 31 2004": {
+    "path": "Commercials/Commercial Breaks/FOX",
+    "decade": "2000s"
+  },
+  "koki 23fox commercial breaks 5312000": {
+    "path": "Commercials/Commercial Breaks/FOX",
+    "decade": "2000s"
+  },
+  "kpbi 46fox commercial breaks 4122000": {
+    "path": "Commercials/Commercial Breaks/FOX",
+    "decade": "2000s"
+  },
+  "hallmark channel commercial breaks 11102005": {
+    "path": "Commercials/Commercial Breaks/Hallmark Channel",
+    "decade": "2000s"
+  },
+  "hallmark channel commercial breaks veterans day 2005": {
+    "path": "Commercials/Commercial Breaks/Hallmark Channel",
+    "decade": "2000s"
+  },
+  "lifetime commercial breaks september 1986": {
+    "path": "Commercials/Commercial Breaks/Lifetime",
+    "decade": "1980s"
+  },
+  "lifetime commercial breaks 1271990": {
+    "path": "Commercials/Commercial Breaks/Lifetime",
+    "decade": "1990s"
+  },
+  "nbc television commercial break 1986 2": {
+    "path": "Commercials/Commercial Breaks/NBC",
+    "decade": "1980s"
+  },
+  "nbc television commercial break 1986 3": {
+    "path": "Commercials/Commercial Breaks/NBC",
+    "decade": "1980s"
+  },
+  "nbc television commercial break 1986 4": {
+    "path": "Commercials/Commercial Breaks/NBC",
+    "decade": "1980s"
+  },
+  "nbc television commercial break 1986 5": {
+    "path": "Commercials/Commercial Breaks/NBC",
+    "decade": "1980s"
+  },
+  "nbc television commercial break 1986 6": {
+    "path": "Commercials/Commercial Breaks/NBC",
+    "decade": "1980s"
+  },
+  "nbc television commercial break 1986 7": {
+    "path": "Commercials/Commercial Breaks/NBC",
+    "decade": "1980s"
+  },
+  "kjrh 2nbc commercial breaks 322001 part 2": {
+    "path": "Commercials/Commercial Breaks/NBC",
+    "decade": "2000s"
+  },
+  "nbc commercial breaks april 17 2000": {
+    "path": "Commercials/Commercial Breaks/NBC",
+    "decade": "2000s"
+  },
+  "nbc commercial breaks december 7 2004": {
+    "path": "Commercials/Commercial Breaks/NBC",
+    "decade": "2000s"
+  },
+  "nbc commercial breaks january 24 25 2004": {
+    "path": "Commercials/Commercial Breaks/NBC",
+    "decade": "2000s"
+  },
+  "last minute of christmas at eureekas castle and nickelodeon commercial break december 11 1991": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "1990s"
+  },
+  "nickelodeon partial commercial break september 18 1999": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "1990s"
+  },
+  "nickelodeon commercial break 08121992 incomplete": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "1990s"
+  },
+  "nickelodeon commercial breaks 11101991": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "1990s"
+  },
+  "nickelodeon commercial breaks 11261994": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "1990s"
+  },
+  "nickelodeon commercial breaks april 1998": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "1990s"
+  },
+  "nickelodeon commercial breaks july 12 1999": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "1990s"
+  },
+  "nickelodeon commercial breaks october 3 1998": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "1990s"
+  },
+  "snick nickelodeon commercial breaks february 20 1999": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "1990s"
+  },
+  "nickelodeon partial commercial breaks november 23 2007": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial break 06072008 incomplete": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial break august 17 2001": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial break december 21 2004": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial break february 17 2001": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial break march 1 2002 incomplete": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial break november 2005": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial break november 23 2002": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial break 1 march 15 2000": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks 11292003": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks april 2005 incomplete": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks april 21 2002": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks august 11 2004": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks august 16 2000": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks august 18 2003": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks august 7 2009": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks december 5 2002": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks february 18 2006": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks february 26 2000": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks july 12 2008": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks july 22 2005 very incomplete": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks july 29 2005": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks march 2008": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks may 1 2004": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks may 19 2006": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks may 25 2008": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks may 30 2002": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks november 1 2009": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks november 10 2006 part 2": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks november 15 2005": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks november 16 2003": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks november 2005": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks november 26 2006": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks october 14 2000": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks october 5 2001": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks september 10 2005": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks september 11 2009": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks september 21 2009": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks september 27 2009": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nickelodeon commercial breaks september 28 2009": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nicktoons commercial breaks april 2004": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2000s"
+  },
+  "nick nitenickelodeon commercial break 1312017": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2010s"
+  },
+  "nicksports nicktoons commercial break 172017": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2010s"
+  },
+  "nickelodeon commercial break 162017": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2010s"
+  },
+  "nickelodeon commercial breaks 1162017": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2010s"
+  },
+  "nickelodeon commercial breaks february 17 2010": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2010s"
+  },
+  "nickelodeon commercial breaks february 19 2010": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2010s"
+  },
+  "nickelodeon commercial breaks march 27 2010": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2010s"
+  },
+  "nicktoons commercial break 112017": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2010s"
+  },
+  "nickelodeon commercial break december 10 2021": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2020s"
+  },
+  "nicktoons commercial breaks january 31 2022": {
+    "path": "Commercials/Commercial Breaks/Nickelodeon",
+    "decade": "2020s"
+  },
+  "noggin on nick commercial breaks april 12 2001": {
+    "path": "Commercials/Commercial Breaks/Noggin",
+    "decade": "2000s"
+  },
+  "pbs kids commercial break 1192017": {
+    "path": "Commercials/Commercial Breaks/PBS",
+    "decade": "2010s"
+  },
+  "sci fi channel commercial breaks november 28 1997": {
+    "path": "Commercials/Commercial Breaks/SciFi Channel",
+    "decade": "1990s"
+  },
+  "tbs commercial breaks 12151989": {
+    "path": "Commercials/Commercial Breaks/TBS",
+    "decade": "1980s"
+  },
+  "tbs commercial breaks 3221990": {
+    "path": "Commercials/Commercial Breaks/TBS",
+    "decade": "1990s"
+  },
+  "tnt commercial breaks march 1993": {
+    "path": "Commercials/Commercial Breaks/TNT",
+    "decade": "1990s"
+  },
+  "tnt commercial breaks 6231999": {
+    "path": "Commercials/Commercial Breaks/TNT",
+    "decade": "1990s"
+  },
+  "the cw commercial breaks december 20 2008": {
+    "path": "Commercials/Commercial Breaks/The CW",
+    "decade": "2000s"
+  },
+  "cbn family channel commercial breaks 420 211989": {
+    "path": "Commercials/Commercial Breaks/The Family Channel (CBN - FAM)",
+    "decade": "1980s"
+  },
+  "the n commercial breaks circa august 2003": {
+    "path": "Commercials/Commercial Breaks/The N",
+    "decade": "2000s"
+  },
+  "kids wb commercial break june 16 1996": {
+    "path": "Commercials/Commercial Breaks/The WB",
+    "decade": "1990s"
+  },
+  "kids wb commercial breaks september 2003": {
+    "path": "Commercials/Commercial Breaks/The WB",
+    "decade": "2000s"
+  },
+  "jetix toon disney commercial breaks december 1 2008": {
+    "path": "Commercials/Commercial Breaks/Toon Disney",
+    "decade": "2000s"
+  },
+  "toon disney commercial breaks 03122004": {
+    "path": "Commercials/Commercial Breaks/Toon Disney",
+    "decade": "2000s"
+  },
+  "toon disney commercial breaks 03152004": {
+    "path": "Commercials/Commercial Breaks/Toon Disney",
+    "decade": "2000s"
+  },
+  "toon disney commercial breaks 03162004": {
+    "path": "Commercials/Commercial Breaks/Toon Disney",
+    "decade": "2000s"
+  },
+  "toon disney commercial breaks 03172004": {
+    "path": "Commercials/Commercial Breaks/Toon Disney",
+    "decade": "2000s"
+  },
+  "toon disney commercial breaks 03192004": {
+    "path": "Commercials/Commercial Breaks/Toon Disney",
+    "decade": "2000s"
+  },
+  "toon disney commercial breaks february 6 2006": {
+    "path": "Commercials/Commercial Breaks/Toon Disney",
+    "decade": "2000s"
+  },
+  "toon disney commercial breaks january 2006": {
+    "path": "Commercials/Commercial Breaks/Toon Disney",
+    "decade": "2000s"
+  },
+  "upn commercial breaks april 11 2000": {
+    "path": "Commercials/Commercial Breaks/UPN",
+    "decade": "2000s"
+  },
+  "usa network commercial breaks christmas day 1986": {
+    "path": "Commercials/Commercial Breaks/USA Network",
+    "decade": "1980s"
+  },
+  "usa network commercial breaks december 31 2004": {
+    "path": "Commercials/Commercial Breaks/USA Network",
+    "decade": "2000s"
+  },
+  "vh1 commercial break 152017": {
+    "path": "Commercials/Commercial Breaks/VH1",
+    "decade": "2010s"
+  },
+  "wgn 9 commercial breaks 11221987 with the end of family classics": {
+    "path": "Commercials/Commercial Breaks/WGN Superstation",
+    "decade": "1980s"
+  },
+  "wgn 9 commercial breaks 1141987": {
+    "path": "Commercials/Commercial Breaks/WGN Superstation",
+    "decade": "1980s"
+  },
+  "wgn 9 commercial breaks independence day 1987": {
+    "path": "Commercials/Commercial Breaks/WGN Superstation",
+    "decade": "1980s"
+  },
+  "superstation wgn commercial breaks 8212007": {
+    "path": "Commercials/Commercial Breaks/WGN Superstation",
+    "decade": "2000s"
+  },
+  "commercial compilation 2006 television broadcast wcbs tv 2 wwor tv my9nj new york nyc vhs": {
+    "path": "Commercials/Commercial Breaks/WWOR Superstation",
+    "decade": "2000s"
   }
 };

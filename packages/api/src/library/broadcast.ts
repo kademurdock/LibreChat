@@ -256,11 +256,17 @@ export const reviewedShows: { [key: string]: string } = {
   "Zoey 101": "Zoey 101"
 };
 
+const showEntries: [string, string, string][] = Object.entries(reviewedShows).map(([needle, name]) => [needle, name, normalizeFilingTitle(needle)]);
+
 export function broadcastShelf(title: string, franchise = ''): string | null {
   const s = normalizeFilingTitle(title);
   if (/\b(?:commercial breaks?|commercial compilation|commercial collection|dvd|vhs|blu ray|toy|doll|playset|action figure)\b/.test(s)) return null;
-  const matches = Object.entries(reviewedShows).filter(([needle]) => (' ' + s + ' ').includes(' ' + normalizeFilingTitle(needle) + ' '));
+  const matches = showEntries.filter(([, , normalized]) => (' ' + s + ' ').includes(' ' + normalized + ' '));
   const names = [...new Set(matches.map(([, name]) => name))];
+  if (/\blife today\b/.test(s)) return null;
+  const joined = (text: string): string => normalizeFilingTitle(text.replace(/[&/⧸]|\band\b/gi, ' join '));
+  const rest = names.length === 1 ? joined(title).replace(joined(matches[0][0]), '').replace(/\b\d+(?:\s+join\s+\d+)+\b/g, '') : '';
+  if (names.length > 1 || (/\bpromos?\b/.test(s) && /\bjoin\b/.test(rest))) return 'TV Shows/Program Lineups';
   if (names.length !== 1 || (!franchise && !/\b(?:bumper|bumpers|intros?|opening|credits|promos?|previews?|episodes?|season|theme|clip|finale|premiere|commercial)\b/.test(s))) return null;
   if (franchise && reviewedShows[franchise] !== names[0]) return null;
   const suffix = /\b(?:bumper|bumpers)\b/.test(s) ? '/Bumpers' : /\b(?:intro|opening|credits|theme)\b/.test(s) ? '/Intros & Credits' : /\b(?:promos?|previews?|finale|premiere|commercial)\b/.test(s) ? '/Promos & Previews' : '';
