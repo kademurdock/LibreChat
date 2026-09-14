@@ -115,3 +115,6 @@ export { libraryPath, libraryCategory, libraryPathExpression } from './library/s
 export { commercialPath, commercialBrands, classifyMediaTitle, filingCategory, refineMediaFiling } from './library/commercials';
 export { correctedBookShelf } from './library/books';
 export { reviewedLibraryMoves } from './library/review';
+
+export { openAudioArchive, AUDIO_ZIP_LIMIT, TEXT_IMPORT_LIMIT } from './library/archive';
+export { storeAudioStream } from './library/stream';

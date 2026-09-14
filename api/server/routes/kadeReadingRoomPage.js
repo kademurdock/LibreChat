@@ -134,7 +134,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
     <h2 id="h-donate">Donate a book</h2>
     <div class="card">
-      <p class="hint">Bookshare's DAISY zip (text or recorded audio), an EPUB, a text file, a Word file or an HTML page. It lands on your shelf first; the Bookshare notice at the front is skipped automatically and the book opens with its jacket.</p>
+      <p class="hint">An audiobook ZIP containing MP3 or M4B recordings (up to 4 GB), Bookshare's DAISY zip (text or recorded audio), an EPUB, a text file, a Word file or an HTML page. Audio recordings stay together as one audiobook; text-book imports support up to 256 MB. It lands on your shelf first; the Bookshare notice at the front is skipped automatically and the book opens with its jacket.</p>
       <label class="field" for="bookFile">Book file</label>
       <input type="file" id="bookFile" accept=".zip,.epub,.txt,.docx,.html,.htm,.xhtml,.xml,application/zip,application/epub+zip,text/plain">
       <label class="field"><input type="checkbox" id="bookPrivate"> Keep this upload private</label><label class="field"><input type="checkbox" id="bookGrownUps"> Grown-ups only (hidden from the kids' accounts)</label>
@@ -143,7 +143,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
     <h2 id="h-donate-audio">Add audio or video</h2>
     <div class="card">
-      <p class="hint">An audiobook, the audio from a described movie, a cassette side, old radio or commercials — MP3, M4A, M4B, AAC, WAV, OGG or FLAC. Give it a name, then add one or more parts. Audio and video files up to 256 MB work here; the phone app can send larger recordings directly to storage.</p>
+      <p class="hint">An audiobook, the audio from a described movie, a cassette side, old radio or commercials — MP3, M4A, M4B, AAC, WAV, OGG or FLAC. Give it a name, then add one or more parts. Audio and video files upload directly to storage, up to 20 GB per recording.</p>
       <label class="field" for="auTitle">Title</label><input type="text" id="auTitle" placeholder="The Little Mermaid (described audio)">
       <label class="field" for="auAuthor">Who made it (optional)</label><input type="text" id="auAuthor" placeholder="Author, narrator, studio, or station">
       <label class="field" for="auYear">Year (optional)</label><input type="text" id="auYear" placeholder="1989">
@@ -577,7 +577,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   $('bookUploadBtn').onclick = async function(){
     var f = $('bookFile').files[0];
     if (!f) { say('Pick a book file first.'); return; }
-    var btn = this; btn.disabled = true; say('Reading ' + f.name + '… this takes a few seconds.');
+    var btn = this; btn.disabled = true; say('Reading ' + f.name + '… large audiobooks can take several minutes. Keep this page open.');
     try {
       var fd = new FormData(); fd.append('book', f); fd.append('private', $('bookPrivate').checked ? '1' : '0'); fd.append('grownUpsOnly', $('bookGrownUps').checked ? '1' : '0');
       var r = await fetch(API + '/upload', { method:'POST', headers:{ 'Authorization':'Bearer ' + token }, body: fd });

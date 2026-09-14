@@ -41,7 +41,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { saveBufferToS3, parseDaisyAudio, readDaisyFile, libraryPath, libraryCategory, libraryPathExpression, refineMediaFiling, correctedBookShelf, reviewedLibraryMoves } = require('@librechat/api');
+const { saveBufferToS3, openAudioArchive, AUDIO_ZIP_LIMIT, TEXT_IMPORT_LIMIT, storeAudioStream, libraryPath, libraryCategory, libraryPathExpression, refineMediaFiling, correctedBookShelf, reviewedLibraryMoves } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, CATEGORIES } = require('~/models/kadeBook');
@@ -242,7 +242,8 @@ function refreshListen(item) {
 
 const router = express.Router();
 
-const MAX_UPLOAD_BYTES = 256 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = AUDIO_ZIP_LIMIT;
+const bookTemp = require('node:fs/promises');
 const PROXY_BASE = () => process.env.KADE_TTS_PROXY_URL || 'https://inworld-tts-proxy-production.up.railway.app';
 const DEFAULT_VOICE = () => process.env.KADE_READING_DEFAULT_VOICE || process.env.KADE_DEFAULT_VOICE || 'Kiana (Comedian)';
 /** A bracket direction the proxy lifts into Inworld's instruction field —
@@ -260,7 +261,7 @@ const DEFAULT_VOICE = () => process.env.KADE_READING_DEFAULT_VOICE || process.en
  * tempo here is "natural storytelling pace", not slow. */
 const STEER = () => (process.env.KADE_READING_STEER != null ? process.env.KADE_READING_STEER : '[performing a novel aloud like a skilled audiobook narrator and giving each character a distinct voice in the dialogue and letting the feeling of each scene come through and keeping a natural storytelling pace]');
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } });
+const upload = multer({ storage: multer.diskStorage({ destination: (req, _file, done) => done(null, req.bookUploadDirectory) }), limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 8, fieldSize: 4096 } });
 
 const isId = (s) => mongoose.Types.ObjectId.isValid(String(s || ''));
 const clampInt = (v, lo, hi, dflt) => {
@@ -388,50 +389,60 @@ router.get('/shelf', requireJwtAuth, async (req, res) => {
 });
 
 /* ── upload ────────────────────────────────────────────────────────────── */
+const activeBookUploads = new Set();
 const ACCEPT_EXT = ['zip', 'epub', 'txt', 'docx', 'html', 'htm', 'xhtml', 'xml'];
-router.post('/upload', requireJwtAuth, (req, res, next) => {
+router.post('/upload', requireJwtAuth, async (req, res, next) => {
+  const uploader = String(req.user.id);
+  if (activeBookUploads.has(uploader) || activeBookUploads.size >= 2) return res.status(429).json({ error: 'An audiobook import is already running. Let it finish, then try this ZIP again.' });
+  activeBookUploads.add(uploader);
+  res.once('close', () => { activeBookUploads.delete(uploader); if (req.bookUploadDirectory) bookTemp.rm(req.bookUploadDirectory, { recursive: true, force: true }).catch(() => {}); });
+  try {
+    req.bookUploadDirectory = await bookTemp.mkdtemp(require('node:path').join(require('node:os').tmpdir(), 'kade-book-'));
+    if (res.destroyed) { await bookTemp.rm(req.bookUploadDirectory, { recursive: true, force: true }); return; }
+  } catch (error) { return next(error); }
+
   upload.single('book')(req, res, (err) => {
     if (err) {
       logger.warn(`[reading-room/upload] REFUSED user=${req.user.id}: ${err.code || err.message}`);
-      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'That book file exceeds the 256 MB import limit. You can add individual recordings through Add audio or video.' : 'The file did not arrive. Try again.' });
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'That ZIP exceeds the 4 GB audiobook import limit. Split it into smaller volumes, or add its recordings through Add audio or video.' : 'The file did not arrive. Try again.' });
     }
     next();
   });
 }, async (req, res) => {
   const f = req.file;
   try {
-    if (!f || !f.buffer || !f.buffer.length) return res.status(400).json({ error: 'No book arrived. Pick a file and try again.' });
+    if (!f || !f.path || !f.size) return res.status(400).json({ error: 'No book arrived. Pick a file and try again.' });
     const ext = String(f.originalname || '').toLowerCase().split('.').pop();
-    if (!ACCEPT_EXT.includes(ext) && !f.buffer.slice(0, 2).equals(Buffer.from('PK'))) {
+    if (!ACCEPT_EXT.includes(ext)) {
       logger.warn(`[reading-room/upload] REFUSED user=${req.user.id} name=${String(f.originalname || '?').slice(0, 80)} mime=${f.mimetype || '(none)'}`);
       return res.status(400).json({ error: "I can't read that kind of file. Bookshare's DAISY zip, an EPUB, a text file, a Word file, or an HTML page all work." });
     }
     const t0 = Date.now();
     if (ext === 'zip') {
-      let daisy;
-      try { daisy = await parseDaisyAudio(f.buffer); }
+      let archive;
+      try { archive = await openAudioArchive(f.path); }
       catch (e) { return res.status(400).json({ error: e.message }); }
-      if (daisy) {
+      if (archive) {
+        const daisy = archive.publication;
         const id = new mongoose.Types.ObjectId();
         const uploaded = new Map();
         try {
-          let bytes = 0;
           for (const clip of daisy.clips) {
             if (uploaded.has(clip.path)) continue;
-            const buffer = await readDaisyFile(daisy.zip, clip.path);
-            bytes += buffer.length;
-            if (bytes > 512 * 1024 * 1024) throw new Error('The expanded DAISY audio exceeds 512 MB.');
             const media = mimeFor(clip.path);
+            if (!media) throw new Error('This audio format is not supported.');
             if (media.ext === 'mp4') media.mime = 'audio/mp4';
             const key = trackKey(id, media.ext);
-            uploaded.set(clip.path, { key, bytes: buffer.length, mime: media.mime });
-            await putBuffer(key, buffer, media.mime);
+            uploaded.set(clip.path, { key, bytes: archive.bytes(clip.path), mime: media.mime });
+            const client = s3();
+            if (!client || !MEDIA_BUCKET()) throw new Error('Audio storage is unavailable.');
+            await storeAudioStream(client, MEDIA_BUCKET(), key, await archive.stream(clip.path), media.mime);
           }
           const book = new KadeBook({ _id: id, owner: req.user.id,
             ownerName: String(req.user.name || req.user.username || '').split(' ')[0] || 'someone',
             kind: 'audio', category: 'audiobook', path: 'Audio/Audiobooks',
             title: daisy.title || f.originalname.replace(/\.zip$/i, ''), author: daisy.author,
-            format: daisy.format, originalName: f.originalname, fileBytes: f.buffer.length,
+            format: daisy.format, originalName: f.originalname, fileBytes: f.size,
             shared: isAdmin(req) && (req.body || {}).private !== '1',
             grownUpsOnly: (req.body || {}).grownUpsOnly === '1', state: 'ready',
             tracks: daisy.clips.map((clip) => ({ ...uploaded.get(clip.path), title: clip.title,
@@ -440,15 +451,17 @@ router.post('/upload', requireJwtAuth, (req, res, next) => {
           });
           refreshListen(book);
           await book.save();
-          logger.info(`[reading-room/upload] DAISY audio ${id}: ${book.tracks.length} sections, ${uploaded.size} files`);
+          logger.info(`[reading-room/upload] audio ZIP ${id}: ${book.tracks.length} sections, ${uploaded.size} files`);
           return res.json({ ok: true, book: summary(book.toObject(), null), skipped: [], jacket: '' });
         } catch (e) {
           await deleteKeys([...uploaded.values()].map((x) => x.key)).catch(() => {});
-          logger.warn(`[reading-room/upload] DAISY audio failed: ${e.message}`);
-          return res.status(400).json({ error: `The DAISY audio did not save. ${e.message}` });
-        }
+          logger.warn(`[reading-room/upload] audio ZIP failed: ${e.message}`);
+          return res.status(400).json({ error: `The audio ZIP did not save. ${e.message}` });
+        } finally { archive.close(); }
       }
     }
+    if (f.size > TEXT_IMPORT_LIMIT) return res.status(400).json({ error: 'Text-book imports are limited to 256 MB. This ZIP did not contain supported audio recordings.' });
+    f.buffer = await bookTemp.readFile(f.path);
     let parsed;
     try {
       parsed = await parseBook(f.buffer, f.originalname || 'book');
@@ -505,7 +518,7 @@ router.post('/upload', requireJwtAuth, (req, res, next) => {
   } catch (e) {
     logger.error('[reading-room/upload] error:', e);
     res.status(500).json({ error: 'The book did not save. Try again in a moment.' });
-  }
+  } finally { if (req.bookUploadDirectory) await bookTemp.rm(req.bookUploadDirectory, { recursive: true, force: true }).catch(() => {}); }
 });
 
 /* ── one book ──────────────────────────────────────────────────────────── */
@@ -819,7 +832,7 @@ router.post('/media/:id/track/upload', requireJwtAuth, (req, res, next) => {
     const item = await ownAudio(req, req.params.id);
     if (!item) return res.status(404).json({ error: 'No such donation.' });
     const f = req.file;
-    if (!f || !f.buffer || !f.buffer.length) return res.status(400).json({ error: 'No recording arrived.' });
+    if (!f || !f.path || !f.size) return res.status(400).json({ error: 'No recording arrived.' });
     const m = mimeFor(f.originalname, f.mimetype);
     if (!m) return res.status(400).json({ error: 'That is not an audio or video file. MP3, M4A, M4B, AAC, WAV, OGG, FLAC, MP4, M4V, MOV or WebM all work.' });
     const mime = m.mime;

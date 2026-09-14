@@ -54,16 +54,19 @@ function resolve(base: string, reference: string): string {
 export async function parseDaisyAudio(buffer: Buffer): Promise<DaisyAudio | null> {
   const zip = await JSZip.loadAsync(buffer);
   const names = Object.keys(zip.files).filter((n) => !zip.files[n].dir);
+  const publication = await parseDaisyPublication(names, async (path) => (await readDaisyFile(zip, path, 8 * 1024 * 1024)).toString('utf8'));
+  return publication ? { ...publication, zip } : null;
+}
+
+export type DaisyPublication = { title: string; author: string; format: string; clips: DaisyClip[] };
+
+/** Shared navigation reader for disk-backed and in-memory ZIPs. */
+export async function parseDaisyPublication(names: string[], read: (path: string) => Promise<string>): Promise<DaisyPublication | null> {
   if (names.length > 20000) throw new Error('This ZIP contains too many files.');
   if (!names.some((n) => /\.(mp3|mp4|m4a|wav|ogg|aac)$/i.test(n))) return null;
   const opfPath = names.find((n) => /\.opf$/i.test(n));
   const nccPath = names.find((n) => /(^|\/)ncc\.html?$/i.test(n));
   if (!opfPath && !nccPath) return null;
-  const read = async (path: string): Promise<string> => {
-    const file = zip.file(path);
-    if (!file) throw new Error(`A file is missing from the DAISY ZIP: ${path.slice(0, 100)}`);
-    return (await readDaisyFile(zip, path, 8 * 1024 * 1024)).toString('utf8');
-  };
   const doc = await read(opfPath || nccPath || '');
   const dc = (name: string): string => text(doc.match(new RegExp(`<(?:dc:)?${name}\\b[^>]*>([\\s\\S]*?)</(?:dc:)?${name}>`, 'i'))?.[1] || '') ||
     [...doc.matchAll(/<meta\b[^>]*>/gi)].filter((m) => attr(m[0], 'name').toLowerCase() === `dc:${name}`).map((m) => attr(m[0], 'content'))[0] || '';
@@ -106,7 +109,7 @@ export async function parseDaisyAudio(buffer: Buffer): Promise<DaisyAudio | null
       if (m[1].toLowerCase() !== 'audio') continue;
       const src = attr(m[0], 'src');
       const audioPath = resolve(path, src);
-      if (!zip.file(audioPath)) throw new Error(`Missing DAISY audio: ${audioPath.slice(0, 100)}`);
+      if (!names.includes(audioPath)) throw new Error(`Missing DAISY audio: ${audioPath.slice(0, 100)}`);
       if (!/\.(mp3|mp4|m4a|wav|ogg|aac)$/i.test(audioPath)) throw new Error('This DAISY audio format is not supported.');
       const begin = daisyClock(attr(m[0], 'clip-begin') || attr(m[0], 'clipBegin'));
       const endValue = attr(m[0], 'clip-end') || attr(m[0], 'clipEnd');
@@ -119,5 +122,5 @@ export async function parseDaisyAudio(buffer: Buffer): Promise<DaisyAudio | null
     }
   }
   if (!clips.length) return null;
-  return { title: dc('title'), author: dc('creator'), format: opfPath ? 'daisy3-audio' : 'daisy2-audio', clips, zip };
+  return { title: dc('title'), author: dc('creator'), format: opfPath ? 'daisy3-audio' : 'daisy2-audio', clips };
 }
