@@ -1,3 +1,3 @@
 export { commercialPath, classifyMediaTitle, filingCategory, refineMediaFiling } from './filing';
 import { filingData } from './filing-data';
-export const commercialBrands = filingData.strong;
+export const commercialBrands: Record<string, string[]> = filingData.strong;

@@ -70,7 +70,7 @@ export function classifyMediaTitle(title: string): string | null {
 export function commercialPath(path: string, title: string): string | null {
   const clean = path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
   const catchall = clean.match(/^(.*?)(?:Commercials\/Other Commercials)(\/.*)?$/i)
-    || clean.match(/^(Audio\/)(?:Radio\/Radio Commercials|Audio Tapes)(\/(?:\d{4}s|Unknown|Unknown Decade))?$/i);
+    || clean.match(/^(Audio\/)(?:Radio\/Radio Commercials|Audio Tapes)(\/(?:\d{4}s|Undated|Unknown|Unknown Decade))?$/i);
   const generic = clean.match(/^(Videos?|Audio)(?:\/(?:Other|Unsorted|Unsorted \(Review Me\)))?$/i);
   if (!catchall && !generic) return null;
   const s = normalizeFilingTitle(title);

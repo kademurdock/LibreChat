@@ -42,6 +42,8 @@ for (const [title, expected] of cases) assert.equal(classify(title), expected, t
 assert.equal(commercialPath('Video/Commercials/Other Commercials/2000s', cases[0][0]), 'Video/Commercials/Toys & Video Games/My Scene/2000s');
 assert.equal(commercialPath('Videos/My custom shelf', 'Unisom ad'), null);
 assert.equal(commercialPath('Audio', 'Unisom radio ad'), 'Audio/Radio/Radio Commercials/Medicine & Pharmacy');
+assert.equal(commercialPath('Audio/Radio/Radio Commercials/1990s', 'Unisom radio ad'), 'Audio/Radio/Radio Commercials/Medicine & Pharmacy/1990s');
+assert.equal(commercialPath('Audio/Audio Tapes/Undated', 'Unlabeled cassette'), 'Audio/Audio Tapes/Unidentified Recordings/Undated');
 assert.equal(commercialPath('Videos', 'My Scene story'), null);
 assert.equal(filingCategory('Audio/Audio Tapes/Spoken Word', 'audio'), 'cassette');
 assert.equal(filingCategory('Videos/Movies & Studios/Trailers & Previews'), 'movie');
