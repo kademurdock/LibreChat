@@ -27,6 +27,7 @@ const {
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
   setupGracefulShutdown,
+  configureBookUploadTimeouts,
   updateInterfacePermissions,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -448,6 +449,7 @@ const startServer = async () => {
     }
   });
 
+  configureBookUploadTimeouts(server);
   setupGracefulShutdown(server);
 };
 

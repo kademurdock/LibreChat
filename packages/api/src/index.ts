@@ -118,3 +118,5 @@ export { reviewedLibraryMoves } from './library/review';
 
 export { openAudioArchive, AUDIO_ZIP_LIMIT, TEXT_IMPORT_LIMIT } from './library/archive';
 export { storeAudioStream } from './library/stream';
+
+export { configureBookUploadTimeouts } from './library/timeouts';
