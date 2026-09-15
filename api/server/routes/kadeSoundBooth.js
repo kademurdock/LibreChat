@@ -619,6 +619,17 @@ const GUIDE = {
     scenema: {
       name: 'AuK HQ',
       tagline: 'Create a voice or reshape a recording.',
+      recipes: [
+        { label: 'Design a storyteller voice', task: 'speech', text: 'An adult woman with a warm lower register, a gentle Southern American accent, textured but clear speech, and expressive storytelling inflection.' },
+        { label: 'Change mood and inflection', task: 'edit', text: 'Make the delivery cheerful and animated, with expressive inflection. Preserve the words and speaker identity.' },
+        { label: 'Change accent', task: 'edit', text: 'Give the speaker a gentle Southern American accent. Preserve the words and overall voice identity.' },
+        { label: 'Change voice texture', task: 'edit', text: 'Make the voice warmer and slightly huskier. Preserve the words and timing.' },
+        { label: 'Change words', task: 'edit', text: 'Replace "Tuesday" with "Thursday". Preserve the speaker, delivery and all other words.' },
+        { label: 'Whisper', task: 'edit', text: 'Turn the speech into a natural whisper. Preserve the words and speaker identity.' },
+        { label: 'Adjust pitch', task: 'edit', text: 'Raise the pitch by two semitones while preserving the words and speaking speed.' },
+        { label: 'Clean noise and room echo', task: 'edit', text: 'Remove background noise and reverberation. Preserve the voice and every spoken word.' },
+        { label: 'Separate speech from background', task: 'edit', text: 'Isolate the main speaking voice and remove background sounds and music. Preserve every spoken word.' },
+      ],
       where: 'Runs on a rented RunPod GPU that sleeps between jobs. Your imported recording stays in your library.',
       cost: 'Pay for GPU startup, processing and brief idle time. A sleeping worker takes longer. The spoken estimate is provisional until measured on the selected card.',
       bestFor: ['expressive speech and reference voices', 'changing words, emotion, pitch, pace, timbre or whispering', 'removing noise or reverb, separating voices from a recording'],
@@ -1170,6 +1181,11 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       compileNotes = compiled.notes || [];
     }
     script = sanitizeScenema(script).script;
+    if (String(b.voice_description || '').trim()) {
+      const voice = escapeXml(String(b.voice_description).trim().slice(0, 600));
+      script = script.replace(/<speak\b[^>]*>/i, (tag) =>
+        tag.replace(/\svoice\s*=\s*(["'])[\s\S]*?\1/i, '').replace(/<speak\b/i, `<speak voice="${voice}"`));
+    }
   } else if (engine === 'seed') {
     script = sanitizeSeed(script).script;
   }

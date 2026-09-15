@@ -349,6 +349,17 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         }
         return '';
       }).join('');
+      if(g.recipes && g.recipes.length){
+        box.insertAdjacentHTML('beforeend','<details><summary>Voice design and editing ideas</summary><p>These fill in an editable example. They do not start a paid generation. Review the wording and change it to what you want.</p>'+g.recipes.map(function(r,i){return '<button type="button" class="act quiet" data-recipe="'+i+'">'+esc(r.label)+'</button>';}).join('')+'</details>');
+        Array.prototype.forEach.call(box.querySelectorAll('[data-recipe]'),function(button){button.onclick=function(){
+          var recipe=g.recipes[Number(button.dataset.recipe)];
+          state.values.auk_task=recipe.task;
+          var key=recipe.task==='speech'?'voice_description':'instruction';
+          state.values[key]=recipe.text; invalidateQuote(); renderSettings();
+          document.getElementById('set_'+key).focus();
+          say('Example filled in. Edit it to suit your idea. No generation started.');
+        };});
+      }
       Array.prototype.forEach.call(box.querySelectorAll('[data-key]'), function(el){
         el.oninput = el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; invalidateQuote(); if(el.dataset.key==='instrumental'){renderSettings();document.getElementById('set_instrumental').focus();} };
       });

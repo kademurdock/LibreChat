@@ -79,6 +79,16 @@ const server=http.createServer((req,res)=>{
   assert.equal(sent.length,2,'second quote, no generation or script-writing request');
   await page.locator('#btnRender').click();await page.locator('#status').filter({hasText:'Fixture recording ready'}).waitFor();
   assert.equal(sent.length,3);assert.equal(sent[2].body.estimateOnly,undefined);assert.equal(sent[2].body.lyrics,'[Verse]\nMy own lyrics');
+  await page.locator('[data-engine="scenema"]').click();
+  await page.getByText('Voice design and editing ideas',{exact:true}).click();
+  await page.getByRole('button',{name:'Design a storyteller voice',exact:true}).click();
+  assert.equal(await page.locator('#set_auk_task').inputValue(),'speech');
+  assert.match(await page.locator('#set_voice_description').inputValue(),/Southern American accent/);
+  await page.getByText('Voice design and editing ideas',{exact:true}).click();
+  await page.getByRole('button',{name:'Change mood and inflection',exact:true}).click();
+  assert.equal(await page.locator('#set_auk_task').inputValue(),'edit');
+  assert.match(await page.locator('#set_instruction').inputValue(),/Preserve the words/);
+  assert.equal(sent.length,3,'recipes must not generate or spend money');
   assert.deepEqual(errors,[]);
   if(output) await page.screenshot({path:output+'/lyria-workspace.png',fullPage:true});
   if(output) fs.writeFileSync(output+'/web-test-receipt.json',JSON.stringify({passed:true,engineDrafts:3,musicDirect:true,scriptRequests:0,confirmation:true,lyricsPreserved:true,noSpeechSettings:true},null,2));

@@ -140,4 +140,12 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
     assert.equal((await Project.findById(r.data.projectId)).script, longScript);
   });
 
+  await t.test('redesigning a voice replaces an old XML voice description safely', async () => {
+    const r = await call('/render', { engine: 'scenema', script: '<speak voice="old voice" gender="female">Hello there.</speak>', voice_description: 'Warm & expressive "storyteller"' });
+    assert.equal(r.status, 200);
+    assert.match(starts.at(-1).prompt, /voice="Warm &amp; expressive &quot;storyteller&quot;"/);
+    assert.doesNotMatch(starts.at(-1).prompt, /old voice/);
+    assert.match(starts.at(-1).prompt, /Hello there\./);
+  });
+
 });
