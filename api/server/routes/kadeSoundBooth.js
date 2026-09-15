@@ -28,7 +28,6 @@ const SCRIPT_DAILY_CAP = Number(process.env.KADE_SOUNDBOOTH_SCRIPT_CAP || 40);
 const MAX_SCENEMA_CHARS = 4000; // the bridge's own cap; mirrored so we fail early and kindly
 const MAX_SEED_CHARS = 2048; // Seed Audio's hard cap per clip
 const SEED_USD_PER_MIN = 0.1875; // fal's listed price, read Sep 2 2026 (Part 119.2)
-const SCENEMA_USD_PER_MIN = 0.02; // measured Part 119.9/119.10; the bridge returns the real estimate
 const MAX_LYRIA_CHARS = 3000; // the brief, not the lyrics; Lyria reads a description
 const LYRIA_USD_PER_SONG = 0.08; // Google bills Lyria 3.5 PER SONG, not per minute
 
@@ -2161,7 +2160,7 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
   return res.json({
     guide: GUIDE,
     engines: {
-      scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, usdPerMin: SCENEMA_USD_PER_MIN },
+      scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
       seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: SEED_USD_PER_MIN },
       lyria: { configured: !!lyriaKey(), queued: false, usdPerSong: LYRIA_USD_PER_SONG, model: LYRIA_MODEL },
     },
