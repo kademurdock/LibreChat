@@ -568,6 +568,10 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
   <h1>My Creations</h1>
   <p class="muted">Every video, image, and audio clip you've generated here, newest first. Videos and audio play right on this page. Hit "Share to the Wall of Fame" on a favorite and everyone on the site can enjoy it too.</p>
 
+  <p><label for="creationSearch">Search creations</label> <input id="creationSearch" type="search"></p>
+  <p><label for="creationKind">Kind</label> <select id="creationKind"><option value="all">All kinds</option><option value="audio">Audio</option><option value="image">Pictures</option><option value="video">Videos</option><option value="document">Documents</option></select></p>
+  <p><label><input type="checkbox" id="creationArchived"> Show archived creations</label></p>
+  <p class="muted">Archive hides an item here and keeps its file and current sharing setting. Show archived creations to restore it.</p>
   <div id="status" class="status" role="status" aria-live="polite">Loading your creations…</div>
 
   <main id="content" hidden aria-label="Your generated videos, images, and audio"></main>
@@ -583,7 +587,7 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
         status.textContent = 'Please sign in at the chat site first, then reload this page.';
         return;
       }
-      const r = await apiGet('/api/kade/my-assets', token);
+      const r = await apiGet('/api/kade/my-assets?includeArchived=1', token);
       if(!r.ok){
         status.className = 'status err';
         status.textContent = 'Could not load your creations right now. Try reloading in a moment.';
@@ -635,18 +639,49 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
         /* July 13 2026 VO audit: aria-label repeating the inner h2 = iOS
          * VoiceOver double-read (same class as the July 11 message bug).
          * The heading labels the section instead. */
-        return '<section class="card asset" aria-labelledby="asset-h-' + esc(a.id) + '">' +
+        return '<section class="card asset" data-asset-id="' + esc(a.id) + '" aria-labelledby="asset-h-' + esc(a.id) + '">' +
           '<h2 id="asset-h-' + esc(a.id) + '" style="margin:0 0 .5rem;font-size:1.05rem">' + esc(title) + '</h2>' +
           media +
           '<p class="meta"><span class="pill">' + esc(a.kind) + '</span>' + esc(a.model || a.service) + (a.costUSD ? ' &middot; ' + money(a.costUSD) : '') + '</p>' +
           (a.description && a.kind !== 'document' ? '<p class="desc"><strong>' + (a.kind === 'audio' ? 'What you will hear:' : 'What it looks like:') + '</strong> ' + esc(a.description) + '</p>' : '') +
           (a.prompt ? '<p class="prompt"><strong>Prompt:</strong> ' + esc(a.prompt) + '</p>' : '') +
           '<button type="button" class="dl" data-id="' + esc(a.id) + '" data-kind="' + esc(a.kind) + '" aria-label="Download this ' + esc(a.kind) + ' to your device">Download</button>' +
+          '<button type="button" class="archive" data-id="' + esc(a.id) + '">' + (a.archived ? 'Restore to library' : 'Archive') + '</button>' +
           '<button type="button" class="share" data-id="' + esc(a.id) + '" aria-pressed="' + (a.shared ? 'true' : 'false') + '">' +
             (a.shared ? 'On the Wall of Fame — tap to remove' : 'Share to the Wall of Fame') + '</button>' +
         '</section>';
       }).join('');
+      function filterCreations(){
+        const text=document.getElementById('creationSearch').value.toLocaleLowerCase();
+        const kind=document.getElementById('creationKind').value;
+        const archived=document.getElementById('creationArchived').checked;
+        let shown=0;
+        main.querySelectorAll('[data-asset-id]').forEach(function(row){
+          const asset=d.assets.find(function(a){return a.id===row.getAttribute('data-asset-id');});
+          row.hidden=(!archived && asset.archived) || (kind!=='all' && asset.kind!==kind) || !((asset.description||'')+' '+(asset.prompt||'')+' '+(asset.model||'')).toLocaleLowerCase().includes(text);
+          if(!row.hidden)shown++;
+        });
+        status.textContent=shown+' creations shown.';
+      }
+      document.getElementById('creationSearch').oninput=filterCreations;
+      document.getElementById('creationKind').onchange=filterCreations;
+      document.getElementById('creationArchived').onchange=filterCreations;
+      filterCreations();
       main.addEventListener('click', async function(ev){
+        const archive=ev.target.closest('button.archive');
+        if(archive){
+          const asset=d.assets.find(function(a){return a.id===archive.getAttribute('data-id');});
+          archive.disabled=true;
+          try {
+            const response=await apiPost('/api/kade/my-assets/'+encodeURIComponent(asset.id)+'/archive',token,{archived:!asset.archived});
+            if(!response.ok)throw new Error('Could not update library');
+            asset.archived=!asset.archived;archive.textContent=asset.archived?'Restore to library':'Archive';
+            filterCreations(); document.getElementById('creationArchived').focus();
+            status.textContent=asset.archived?'Archived. Show archived creations to restore it.':'Restored to library.';
+          }catch(error){status.textContent='Could not update the library. Try again.';}
+          archive.disabled=false;return;
+        }
+
         const dlBtn = ev.target.closest('button.dl');
         if(dlBtn){
           downloadAsset(dlBtn.getAttribute('data-id'), dlBtn.getAttribute('data-kind'), dlBtn, status, token);

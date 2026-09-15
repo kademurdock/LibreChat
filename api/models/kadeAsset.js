@@ -37,6 +37,7 @@ const kadeAssetSchema = new mongoose.Schema(
     description: { type: String },
     backupUrl: { type: String },
     shared: { type: Boolean, default: false, index: true },
+    archived: { type: Boolean, default: false, index: true },
     metadata: { type: mongoose.Schema.Types.Mixed },
   },
   { timestamps: true },

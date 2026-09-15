@@ -472,6 +472,7 @@ async function assetView(d, { withOwner = false } = {}) {
     backupUrl: d.backupUrl ? await freshAssetUrl(d.backupUrl) : '',
     description: d.description || '',
     shared: !!d.shared,
+    archived: !!d.archived,
     prompt: d.prompt || '',
     model: d.model || '',
     costUSD: d.costUSD || 0,
@@ -495,7 +496,7 @@ router.get('/my-assets', requireJwtAuth, async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
     const oid = new mongoose.Types.ObjectId(String(userId));
-    const docs = await KadeAsset.find({ user: oid })
+    const docs = await KadeAsset.find({ user: oid, ...(req.query.includeArchived === '1' ? {} : { archived: { $ne: true } }) })
       .sort({ createdAt: -1 })
       .limit(300)
       .lean();
@@ -511,6 +512,19 @@ router.get('/my-assets', requireJwtAuth, async (req, res) => {
  * SELF: POST /api/kade/my-assets/:id/share — toggle an asset onto/off the
  * communal Wall of Fame. Body: { shared: true|false }. Owner only.
  * -------------------------------------------------------------------------- */
+router.post('/my-assets/:id/archive', requireJwtAuth, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ error: 'Not found' });
+    if (typeof req.body?.archived !== 'boolean') return res.status(400).json({ error: 'archived must be true or false' });
+    const result = await KadeAsset.updateOne({ _id: req.params.id, user: req.user.id || req.user._id }, { $set: { archived: req.body.archived } });
+    if (!result.matchedCount) return res.status(404).json({ error: 'Not found' });
+    return res.json({ ok: true, archived: req.body.archived });
+  } catch (error) {
+    logger.error('[my-assets/archive] failed:', error);
+    return res.status(500).json({ error: 'Could not update the library. Try again.' });
+  }
+});
+
 router.post('/my-assets/:id/share', requireJwtAuth, async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
@@ -544,7 +558,9 @@ router.get('/asset-download/:id', requireJwtAuth, async (req, res) => {
     if (!d || (String(d.user) !== userId && !d.shared)) {
       return res.status(404).json({ error: 'Not found' });
     }
-    const candidates = [d.url, d.backupUrl].filter(Boolean);
+    const master = req.query.master === '1';
+    if (master && !d.metadata?.wavUrl) return res.status(404).json({ error: 'No WAV master for this take' });
+    const candidates = (master ? [d.metadata.wavUrl] : [d.url, d.backupUrl]).filter(Boolean);
     let upstream = null;
     for (const raw of candidates) {
       try {
