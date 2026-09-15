@@ -354,6 +354,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         Array.prototype.forEach.call(box.querySelectorAll('[data-recipe]'),function(button){button.onclick=function(){
           var recipe=g.recipes[Number(button.dataset.recipe)];
           state.values.auk_task=recipe.task;
+          if(recipe.task==='speech')state.clips=[];
           var key=recipe.task==='speech'?'voice_description':'instruction';
           state.values[key]=recipe.text; invalidateQuote(); renderSettings();
           document.getElementById('set_'+key).focus();
@@ -590,11 +591,24 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           (p.takes||[]).map(function(t, n){
             var lbl = 'Take ' + ((p.takes.length) - n) + (t.seconds ? ', ' + t.seconds + ' seconds' : '') + (t.description ? '. ' + t.description : '');
             return '<audio controls preload="none" aria-label="' + esc(lbl) + '"><source src="' + esc(t.url) + '">' + (t.backupUrl ? '<source src="' + esc(t.backupUrl) + '">' : '') + '</audio>' +
-                   '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.masterUrl ? ' · <a href="' + esc(t.masterUrl) + '" download target="_blank" rel="noreferrer">Download WAV master</a>' : '') + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>';
+                   '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.masterUrl ? ' · <a href="' + esc(t.masterUrl) + '" download target="_blank" rel="noreferrer">Download WAV master</a>' : '') + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>' +
+                   '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button>';
           }).join('') +
           '<details><summary>'+(p.engine==='lyria'?'Music direction':'Script')+'</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>' +
           '<button type="button" class="act" data-open="' + esc(p.id) + '">Open this in the booth</button></div>';
       }).join('');
+      Array.prototype.forEach.call(box.querySelectorAll('[data-take-project]'),function(button){button.onclick=function(){
+        if(busy()){say('Finish the current operation first.',true);return;}
+        var project=ps.filter(function(p){return p.id===button.dataset.takeProject;})[0];
+        var take=project && project.takes[Number(button.dataset.take)];
+        if(!take || !setEngine('scenema'))return;
+        state.projectId=null; state.values.auk_task=button.dataset.use;
+        if(button.dataset.use==='edit'){state.values.instruction='';delete state.values.gen_seconds;}
+        state.clips=[{url:take.masterUrl||take.url,name:project.title}];
+        invalidateQuote();renderSettings();
+        say(button.dataset.use==='edit'?'Take attached. Describe the edit you want. The original is kept.':'Voice reference attached. Write the words you want this voice to say.');
+        document.getElementById(button.dataset.use==='edit'?'set_instruction':'script').focus();
+      };});
       Array.prototype.forEach.call(box.querySelectorAll('[data-open]'), function(btn){
         btn.onclick = function(){
           var p = ps.filter(function(x){ return x.id === btn.getAttribute('data-open'); })[0];

@@ -13,7 +13,7 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
   const mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
   const remote = express(); remote.use(express.json());
-  const starts = [], stops = []; const jobs = new Map();
+  const starts = [], stops = [], uploaded = []; const jobs = new Map();
   remote.post('/audio/scenema/start', (req, res) => {
     starts.push(req.body); const id = 'job-' + starts.length; jobs.set(id, { state: 'queued' });
     res.json({ jobId: id });
@@ -30,7 +30,8 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
   const module = { exports: {} };
   const localRequire = (name) => {
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
-    if (name === '@librechat/api') return { needsRefresh: () => false };
+    if (name === '@librechat/api') return { needsRefresh: () => false, saveBufferToS3: async (data) => { uploaded.push(data); return 'https://example.test/source.wav'; } };
+    if (name === './kadeSoundBoothStitch') return { ...require(name), durationOf: async () => 61, normalizeReferenceClip: async () => { throw new Error('Must not trim an AuK source'); } };
     if (name === '~/server/middleware') return { requireJwtAuth: (req, _res, next) => { req.user = { id: String(user) }; next(); } };
     if (name === '~/models/kadeSoundBoothProject') return { KadeSoundBoothProject: Project };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async () => {} };
@@ -146,6 +147,16 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
     assert.match(starts.at(-1).prompt, /voice="Warm &amp; expressive &quot;storyteller&quot;"/);
     assert.doesNotMatch(starts.at(-1).prompt, /old voice/);
     assert.match(starts.at(-1).prompt, /Hello there\./);
+  });
+
+  await t.test('AuK import preserves the entire source beyond the old 45-second trim', async () => {
+    const original = Buffer.alloc(61 * 24000 * 2, 17);
+    const form = new FormData(); form.append('engine', 'scenema');
+    form.append('clip', new Blob([original], { type: 'audio/wav' }), 'recording.wav');
+    const r = await fetch('http://127.0.0.1:' + server.address().port + '/booth/reference', { method: 'POST', body: form });
+    assert.equal(r.status, 200); const data = await r.json();
+    assert.equal(data.seconds, 61); assert.deepEqual(uploaded.at(-1).buffer, original);
+    assert.match(data.spoken, /full original recording is kept/);
   });
 
 });

@@ -17,7 +17,7 @@ const server=http.createServer((req,res)=>{
  if(req.url.startsWith('/assets/')){res.setHeader('Content-Type','application/javascript');res.end('');return;}
  res.setHeader('Content-Type','application/json');
  if(req.url.endsWith('/health')){res.end(JSON.stringify({guide,moods:[{key:'joyful',label:'Joyful'}]}));return;}
- if(req.url.endsWith('/projects')){res.end(JSON.stringify({projects:[{id:'failed-empty',title:'Failed empty attempt',engine:'scenema',state:'failed',takes:[]},{id:'recoverable',title:'Recoverable recording',engine:'scenema',state:'failed',hasRecoverableAudio:true,takes:[]}]}));return;}
+ if(req.url.endsWith('/projects')){res.end(JSON.stringify({projects:[{id:'failed-empty',title:'Failed empty attempt',engine:'scenema',state:'failed',takes:[]},{id:'recoverable',title:'Recoverable recording',engine:'scenema',state:'failed',hasRecoverableAudio:true,takes:[{id:'take-1',url:'https://example.test/take.mp3',masterUrl:'https://example.test/take.wav'}]}]}));return;}
  if(req.method==='GET'){res.end('{}');return;}
  let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{
   const body=JSON.parse(raw||'{}');sent.push({url:req.url,body});
@@ -89,6 +89,13 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.locator('#set_auk_task').inputValue(),'edit');
   assert.match(await page.locator('#set_instruction').inputValue(),/Preserve the words/);
   assert.equal(sent.length,3,'recipes must not generate or spend money');
+  await page.getByRole('button',{name:'Edit this take',exact:true}).click();
+  assert.equal(await page.locator('#set_auk_task').inputValue(),'edit');
+  assert.equal(await page.locator('#set_instruction').inputValue(),'');
+  assert.equal(await page.locator('.clips audio source').getAttribute('src'),'https://example.test/take.wav');
+  await page.getByRole('button',{name:'Use this voice',exact:true}).click();
+  assert.equal(await page.locator('#set_auk_task').inputValue(),'speech');
+  assert.equal(sent.length,3,'attaching a saved take must not start a paid job');
   assert.deepEqual(errors,[]);
   if(output) await page.screenshot({path:output+'/lyria-workspace.png',fullPage:true});
   if(output) fs.writeFileSync(output+'/web-test-receipt.json',JSON.stringify({passed:true,engineDrafts:3,musicDirect:true,scriptRequests:0,confirmation:true,lyricsPreserved:true,noSpeechSettings:true},null,2));

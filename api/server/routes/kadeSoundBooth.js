@@ -2099,17 +2099,19 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
     if (typeof saveBufferToS3 !== 'function') {
       return res.status(503).json({ error: 'File storage is not set up on this server.' });
     }
-    /* Part 126: every clip becomes a 48 kHz mono WAV before it is stored —
-     * AuK's worker cannot open an M4A (soundfile), and compressed MP3
-     * degrades the clone per its README. Seed accepts WAV too. If ffmpeg
-     * fails on a file, the original goes up as before and the booth says so. */
+    /* Keep AuK source recordings intact. Its worker decodes M4A/MP3 with
+     * ffmpeg and samples references only for speech, never for editing. */
     let outBuffer = f.buffer;
     let outExt = ext;
     let clipSeconds = null;
     let clipAdvice = '';
     try {
-      const { normalizeReferenceClip } = require('./kadeSoundBoothStitch');
-      const norm = await normalizeReferenceClip(f.buffer, ext);
+      const { normalizeReferenceClip, durationOf } = require('./kadeSoundBoothStitch');
+      const norm = engine === 'seed' ? await normalizeReferenceClip(f.buffer, ext) : null;
+      if (engine === 'scenema') {
+        clipSeconds = await durationOf(f.buffer);
+        clipAdvice = 'The full original recording is kept. Speech uses a voice sample; editing uses the recording.';
+      }
       if (norm && norm.buffer && norm.buffer.length > 1000) {
         outBuffer = norm.buffer;
         outExt = 'wav';
@@ -2141,7 +2143,7 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
       /* Her ask: "have a play button to check your sample." The URL comes back
        * so the screen can play the thing that is actually attached — the
        * difference between believing a clone is set up and hearing that it is. */
-      spoken: `Clip imported${clipSeconds !== null ? `, ${clipSeconds} seconds` : ''}, saved as a studio WAV. ${clipAdvice} Play it to check it, then it gets cloned.`.replace(/\s+/g, ' '),
+      spoken: `Clip imported${clipSeconds !== null ? `, ${clipSeconds} seconds` : ''}. ${clipAdvice} Play it to check it before generating.`.replace(/\s+/g, ' '),
     });
   } catch (error) {
     logger.error('[soundbooth/reference] failed:', error);
