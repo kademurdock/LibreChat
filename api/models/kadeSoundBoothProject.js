@@ -61,6 +61,8 @@ const kadeSoundBoothProjectSchema = new mongoose.Schema(
           script: { type: String },
           jobId: { type: String },
           url: { type: String },
+          wavUrl: { type: String },
+          audioEngine: { type: String },
           state: { type: String, enum: ['pending', 'queued', 'running', 'done', 'failed'], default: 'pending' },
           durationS: { type: Number },
           costUSD: { type: Number },

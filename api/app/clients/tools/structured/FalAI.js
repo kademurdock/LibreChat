@@ -460,7 +460,7 @@ class FalAI extends Tool {
   }
 
   async generateNarration(data) {
-    if (!data.prompt) return 'prompt is required for generate_narration — the words to perform (plain text, or Scenema <speak> XML).';
+    if (!data.prompt) return 'prompt is required for generate_narration — the words to perform (plain text, or compatible <speak> screenplay XML for AuK).';
     const secret = process.env.BRIDGE_SECRET;
     if (!secret) return 'Narration is not configured on this server (BRIDGE_SECRET missing).';
     const prompt = this.buildSpeak(data);

@@ -52,7 +52,8 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
   const body = { engine: 'scenema', script, seed: 1234, validate: false, vc_steps: 42, min_match_ratio: 0.9, skip_vc: true };
   await t.test('a price quote makes no job and saves no project', async () => {
     const r = await call('/render', { ...body, estimateOnly: true });
-    assert.equal(r.status, 200); assert.ok(r.data.estimate.costUSD > 0);
+    assert.equal(r.status, 200); assert.equal(r.data.estimate.costUSD, null);
+    assert.match(r.data.estimate.spoken, /Startup and processing are billed/);
     assert.equal(starts.length, 0); assert.equal(await Project.countDocuments(), 0);
   });
   let id;
@@ -66,10 +67,12 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
     assert.equal((await Project.findById(id)).voiceSeed, 1234);
   });
   await t.test('overlapping device polls submit the next part only once', async () => {
-    jobs.set('job-1', { state: 'done', result: { url: 'https://example.test/part1.mp3', durationS: 30 }, costUSD: 0.1 });
+    jobs.set('job-1', { state: 'done', result: { url: 'https://example.test/part1.mp3', wavUrl: 'https://example.test/part1.wav', engine: 'auk', durationS: 30 }, costUSD: 0.1 });
     await Promise.all([call('/status/job-1'), call('/status/job-1')]);
     assert.equal(starts.length, 2); const p = await Project.findById(id);
     assert.equal(p.parts[0].state, 'done'); assert.equal(p.costUSD, 0.1); assert.equal(p.parts[1].jobId, 'job-2');
+    assert.equal(p.parts[0].wavUrl, 'https://example.test/part1.wav');
+    assert.equal(starts[1].reference_voice_url, 'https://example.test/part1.wav');
   });
   await t.test('Stop resolves the current part even when the device holds the original job id', async () => {
     const r = await call('/cancel/job-1', {}); assert.equal(r.status, 200); assert.deepEqual(stops, ['job-2']);
@@ -111,6 +114,30 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
     const p = await Project.create({ user, state: 'queued', jobs: ['missing-job'], script: 'Old test' });
     const r = await call('/status/missing-job'); assert.equal(r.status, 200); assert.equal(r.data.state, 'failed');
     assert.equal((await Project.findById(p._id)).state, 'failed');
+  });
+
+  await t.test('AuK edit preserves the instruction and source through quote and submit', async () => {
+    const edit = { engine: 'scenema', auk_task: 'edit', instruction: 'Replace Tuesday with Thursday.', reference_voice_url: 'https://example.test/source.wav', gen_seconds: 8 };
+    let r = await call('/render', { ...edit, estimateOnly: true });
+    assert.equal(r.status, 200); assert.equal(r.data.estimate.audioSeconds, 8);
+    const before = starts.length;
+    r = await call('/render', edit); assert.equal(r.status, 200);
+    assert.equal(starts.length, before + 1);
+    const sent = starts.at(-1);
+    assert.equal(sent.auk_task, 'edit'); assert.equal(sent.instruction, edit.instruction);
+    assert.equal(sent.reference_voice_url, edit.reference_voice_url); assert.equal(sent.gen_seconds, 8);
+    const saved = await Project.findById(r.data.projectId);
+    assert.equal(saved.script, edit.instruction); assert.equal(saved.options.auk_task, 'edit');
+    r = await call('/render', { ...edit, reference_voice_url: undefined }); assert.equal(r.status, 400);
+    r = await call('/render', { ...edit, gen_seconds: -1 }); assert.equal(r.status, 400);
+  });
+
+  await t.test('long scripts retain their full text for recovery', async () => {
+    const longScript = '<speak voice="clear" gender="female">' + 'A sentence with familiar words and a steady pace. '.repeat(190) + '</speak>';
+    assert.ok(longScript.length > 8000);
+    const r = await call('/render', { engine: 'scenema', script: longScript });
+    assert.equal(r.status, 200);
+    assert.equal((await Project.findById(r.data.projectId)).script, longScript);
   });
 
 });

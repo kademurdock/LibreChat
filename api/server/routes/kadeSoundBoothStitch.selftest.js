@@ -14,15 +14,15 @@ const { stitchMp3Buffers, durationOf, sayStitched, concatLine } = require('./kad
 
 function ff(args) {
   return new Promise((res, rej) =>
-    execFile('ffmpeg', args, { timeout: 60000 }, (e, so, se) => (e ? rej(new Error(String(se).slice(-400))) : res())),
+    execFile(process.env.FFMPEG_PATH || 'ffmpeg', args, { timeout: 60000 }, (e, so, se) => (e ? rej(new Error(String(se).slice(-400))) : res())),
   );
 }
 /** A real MP3 of a sine tone, n seconds long. */
-async function tone(seconds, freq = 440, rate = 44100) {
+async function tone(seconds, freq = 440, rate = 44100, format = 'mp3') {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'tone-'));
-  const f = path.join(dir, 'a.mp3');
+  const f = path.join(dir, `a.${format}`);
   await ff(['-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i',
-    `sine=frequency=${freq}:duration=${seconds}:sample_rate=${rate}`, '-c:a', 'libmp3lame', '-b:a', '192k', f]);
+    `sine=frequency=${freq}:duration=${seconds}:sample_rate=${rate}`, ...(format === 'wav' ? ['-c:a', 'pcm_s16le'] : ['-c:a', 'libmp3lame', '-b:a', '192k']), f]);
   const b = await fs.readFile(f);
   await fs.rm(dir, { recursive: true, force: true });
   return b;
@@ -66,6 +66,23 @@ test('one part comes back untouched — no pointless re-encode', async () => {
 test('empty input is an error, not a silent empty file', async () => {
   await assert.rejects(() => stitchMp3Buffers([]), /nothing to stitch/);
   await assert.rejects(() => stitchMp3Buffers([null, undefined]), /nothing to stitch/);
+});
+
+test('AuK WAV masters join without changing any PCM samples', async () => {
+  const a = await tone(1, 440, 24000, 'wav');
+  const b = await tone(2, 660, 24000, 'wav');
+  const pcm = (wav) => {
+    assert.equal(wav.toString('ascii', 0, 4), 'RIFF');
+    for (let at = 12; at + 8 <= wav.length;) {
+      const size = wav.readUInt32LE(at + 4);
+      if (wav.toString('ascii', at, at + 4) === 'data') return wav.subarray(at + 8, at + 8 + size);
+      at += 8 + size + (size % 2);
+    }
+    throw new Error('Missing PCM data');
+  };
+  const { buffer, reencoded } = await stitchMp3Buffers([a, b], 'wav');
+  assert.equal(reencoded, false);
+  assert.deepEqual(pcm(buffer), Buffer.concat([pcm(a), pcm(b)]));
 });
 
 test('a quote in a filename cannot break out of the concat list', () => {

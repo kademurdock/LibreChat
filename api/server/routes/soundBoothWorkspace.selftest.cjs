@@ -17,7 +17,7 @@ const server=http.createServer((req,res)=>{
  if(req.url.startsWith('/assets/')){res.setHeader('Content-Type','application/javascript');res.end('');return;}
  res.setHeader('Content-Type','application/json');
  if(req.url.endsWith('/health')){res.end(JSON.stringify({guide,moods:[{key:'joyful',label:'Joyful'}]}));return;}
- if(req.url.endsWith('/projects')){res.end(JSON.stringify({projects:[]}));return;}
+ if(req.url.endsWith('/projects')){res.end(JSON.stringify({projects:[{id:'failed-empty',title:'Failed empty attempt',engine:'scenema',state:'failed',takes:[]},{id:'recoverable',title:'Recoverable recording',engine:'scenema',state:'failed',hasRecoverableAudio:true,takes:[]}]}));return;}
  if(req.method==='GET'){res.end('{}');return;}
  let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{
   const body=JSON.parse(raw||'{}');sent.push({url:req.url,body});
@@ -32,6 +32,11 @@ const server=http.createServer((req,res)=>{
   const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:'+server.address().port+'/sound-booth');
   await page.locator('#app').waitFor({state:'visible'});
+  await page.getByRole('heading',{name:'Recoverable recording',exact:true}).waitFor();
+  assert.equal(await page.getByRole('heading',{name:'Failed empty attempt',exact:true}).count(),0);
+  await page.locator('#showFailed').check();
+  await page.getByRole('heading',{name:'Failed empty attempt',exact:true}).waitFor();
+  await page.locator('#showFailed').uncheck();
   await page.locator('#script').fill('Scenema spoken script');
   await page.locator('#text').fill('My exact spoken words');
   await page.locator('#set_voice_description').fill('Warm contralto');

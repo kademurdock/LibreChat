@@ -171,6 +171,8 @@ async function advanceLocked(project, { onStitched } = {}) {
     if (j.state === 'done' && j.result?.url) {
       inFlight.state = 'done';
       inFlight.url = j.result.url;
+      inFlight.wavUrl = j.result.wavUrl;
+      inFlight.audioEngine = j.result.engine;
       inFlight.durationS = j.result.durationS || null;
       inFlight.costUSD = typeof j.costUSD === 'number' ? j.costUSD : 0;
       project.costUSD = (project.costUSD || 0) + (inFlight.costUSD || 0);
@@ -194,10 +196,14 @@ async function advanceLocked(project, { onStitched } = {}) {
   const next = parts.find((p) => p.state === 'pending');
   if (next) {
     try {
+      const opts = { ...(project.options || {}) };
+      const anchor = parts.find((p) => p.state === 'done' && p.audioEngine === 'auk' && p.url);
+      if (!opts.reference_voice_url && anchor) opts.reference_voice_url = anchor.wavUrl || anchor.url;
+      if (opts.reference_voice_url) opts.reference_voice_url = await freshPartUrl(opts.reference_voice_url);
       const { jobId } = await submitPart({
         userId: project.user,
         script: next.script,
-        opts: project.options || {},
+        opts,
         partIndex: next.index,
         total: parts.length,
       });
@@ -235,7 +241,7 @@ async function stitch(project, { onStitched } = {}) {
   try {
     const buffers = [];
     for (const p of parts) {
-      const r = await axios.get(p.url, {
+      const r = await axios.get(await freshPartUrl(p.url), {
         responseType: 'arraybuffer',
         timeout: 120000,
         headers: { 'User-Agent': UA },
@@ -246,6 +252,17 @@ async function stitch(project, { onStitched } = {}) {
     const seconds = (await durationOf(buffer)) || parts.reduce((a, p) => a + (p.durationS || 0), 0);
 
     const { saveBufferToS3 } = require('@librechat/api');
+    let wavUrl;
+    if (parts.every((p) => p.wavUrl)) {
+      const masters = [];
+      for (const p of parts) {
+        const r = await axios.get(await freshPartUrl(p.wavUrl), { responseType: 'arraybuffer', timeout: 120000, headers: { 'User-Agent': UA } });
+        masters.push(Buffer.from(r.data));
+      }
+      const joined = await stitchMp3Buffers(masters, 'wav');
+      wavUrl = await saveBufferToS3({ userId: String(project.user), buffer: joined.buffer,
+        fileName: `soundbooth-${String(project._id)}-${Date.now()}.wav`, basePath: 'audios' });
+    }
     const fileName = `soundbooth-${String(project._id)}-${Date.now()}.mp3`;
     const url = await saveBufferToS3({
       userId: String(project.user),
@@ -260,17 +277,18 @@ async function stitch(project, { onStitched } = {}) {
     const asset = await logKadeAsset({
       userId: String(project.user),
       kind: 'audio',
-      service: 'scenema_audio',
+      service: parts.every((p) => p.audioEngine === 'auk') ? 'auk_audio' : 'scenema_audio',
       url,
       prompt: project.script,
-      model: 'scenema-audio',
+      model: parts.every((p) => p.audioEngine === 'auk') ? 'tencent/AuK' : 'scenema-audio',
       costUSD: project.costUSD || 0,
       metadata: {
         via: 'sound-booth',
         projectId: String(project._id),
         joinedFromParts: parts.length,
         durationS: seconds,
-        engine: 'scenema-audio',
+        engine: parts.every((p) => p.audioEngine === 'auk') ? 'auk' : 'scenema-audio',
+        wavUrl,
       },
     });
     project.stitchedAssetId = asset?._id ? String(asset._id) : 'filed';
@@ -297,6 +315,12 @@ async function stitch(project, { onStitched } = {}) {
     logger.error('[soundbooth/chain] stitch failed:', e);
     return { spoken: project.lastError };
   }
+}
+
+async function freshPartUrl(url) {
+  if (!/[?&]X-Amz-/.test(url || '')) return url;
+  const { needsRefresh, getNewS3URL } = require('@librechat/api');
+  return needsRefresh(url, 3600) ? getNewS3URL(url) : url;
 }
 
 module.exports = { advance, advanceLocked, acquire, release, stitch, submitPart, sayProgress, deterministicSeed, MAX_PARTS };

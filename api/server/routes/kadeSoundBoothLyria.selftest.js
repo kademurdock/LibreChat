@@ -95,7 +95,7 @@ test('junk or nothing falls back to a model the API actually knows', () => {
 test('the brief is checked before anything is spent', () => {
   assert.match(pure.checkMusic(''), /nothing to make/i);
   assert.match(pure.checkMusic('%%%laugh%%% a song'), /%%%/);
-  assert.match(pure.checkMusic('<speak voice="x">hello</speak>'), /Scenema speech script/i);
+  assert.match(pure.checkMusic('<speak voice="x">hello</speak>'), /AuK speech script/i);
   assert.match(pure.checkMusic('x'.repeat(pure.MAX_LYRIA_CHARS + 1)), new RegExp(String(pure.MAX_LYRIA_CHARS)));
   assert.equal(pure.checkMusic('A slow soul record, Rhodes and brushed drums, a woman singing close.'), null);
 });

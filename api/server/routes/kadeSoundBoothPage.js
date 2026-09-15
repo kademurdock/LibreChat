@@ -71,7 +71,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 <body>
   <p><a class="back" href="/home" aria-label="Back to home">&larr; Home</a> &nbsp;&middot;&nbsp; <a class="back" href="/my-creations">My Creations &rarr;</a></p>
   <h1>Sound Booth</h1>
-  <p class="muted">Choose a performance with Scenema, a scene with Seed Audio, or music with Lyria. Each engine has its own workspace. Switching engines keeps your drafts in this tab.</p>
+  <p class="muted">Choose a performance with AuK HQ, a scene with Seed Audio, or music with Lyria. Each engine has its own workspace. Switching engines keeps your drafts in this tab.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading the Sound Booth&hellip;</div>
 
@@ -160,6 +160,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     </details>
 
     <h2>Library</h2>
+    <label><input type="checkbox" id="showFailed"> Show failed and stopped attempts without audio</label>
     <div id="library" aria-live="off"><p class="muted">Nothing here yet.</p></div>
   </main>
 
@@ -186,7 +187,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     function post(path, body){ return request(path,body||{}); }
     function get(path){ return request(path); }
-    function renderLabel(){ return state.engine==='lyria' ? 'Make music' : state.engine==='seed' ? 'Generate scene' : 'Perform script'; }
+    function renderLabel(){ if(state.engine==='scenema' && state.values.auk_task==='edit') return 'Edit recording'; return state.engine==='lyria' ? 'Make music' : state.engine==='seed' ? 'Generate scene' : 'Perform script'; }
     function busy(){ return state.rendering || state.jobId || state.writing || state.importing; }
     function invalidateQuote(){ state.quoteRevision++; state.pendingRender=null; state.estimate=null; document.getElementById('btnRender').textContent=renderLabel(); }
     app.addEventListener('input', invalidateQuote);
@@ -213,7 +214,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     var ch = state.guide.chooser;
     document.querySelector('#chooser summary').textContent = ch.question;
     document.getElementById('chooserAnswer').textContent = ch.answer;
-    var ENG_NAME = { seed:'Seed Audio', scenema:'Scenema', lyria:'Lyria' };
+    var ENG_NAME = { seed:'Seed Audio', scenema:'AuK HQ', lyria:'Lyria' };
     document.getElementById('chooserRules').innerHTML = ch.rules.map(function(r){ return '<li><strong>'+(ENG_NAME[r.pick]||r.pick)+'</strong> when '+esc(r.when)+'.</li>'; }).join('');
 
     document.getElementById('btnSuggest').onclick = async function(){
@@ -320,7 +321,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     /* ---- settings, from the guide: only what THIS engine has ---- */
     /* Lyria has three knobs and they all belong on the easy side: there is
      * nothing advanced about it, because the brief IS the control. */
-    var EASY = { scenema:['voice_description','gender','reference_voice_url'], seed:['voice','audio_urls'], lyria:['instrumental','lyrics','keep_lyrics'] };
+    var EASY = { scenema:['auk_task','instruction','voice_description','reference_voice_url','gen_seconds'], seed:['voice','audio_urls'], lyria:['instrumental','lyrics','keep_lyrics'] };
     function renderSettings(){
       var g = state.guide.engines[state.engine];
       var box = document.getElementById('settings');
@@ -432,7 +433,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       try {
       var script = document.getElementById('script').value.trim();
       var b = collect();
-      if(!script && !preview){ say(state.engine==='lyria'?'Describe the music you want first.':'There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
+      if(!script && !preview && b.auk_task!=='edit'){ say(state.engine==='lyria'?'Describe the music you want first.':'There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
       if(preview && !script && !b.voice_description){ say('Describe the voice first, or write a script, so there is a voice to preview.', true); return; }
       /* Part 122.1: this line used to invent a THIRD sample sentence ("Here is
        * how I sound."), different again from the two on the server, so what a
@@ -471,7 +472,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(state.rendering || state.jobId) { say('A render is already in progress. Wait for it or press Stop.',true); return; }
       var script=document.getElementById('script').value.trim();
       var b=collect();
-      if(!script && !preview){ say(state.engine==='lyria'?'Describe the music you want first.':'Write a script first.',true); return; }
+      if(!script && !preview && b.auk_task!=='edit'){ say(state.engine==='lyria'?'Describe the music you want first.':'Write a script first.',true); return; }
       b.script=script || '<speak voice="'+esc(b.voice_description||'A warm clear voice')+'" gender="'+(b.gender||'female')+'"></speak>';
       b.preview=preview; b.estimateOnly=true;
       var key=JSON.stringify(b);
@@ -482,7 +483,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(!r.ok){say(r.data.error||'Could not estimate that script.',true);return;}
         if(quoteRevision!==state.quoteRevision){say('The draft or settings changed. Choose '+renderLabel()+' again for the current price.');return;}
         state.pendingRender=key;
-        var cloneLine=state.engine==='lyria' ? '' : state.clips.length ? ' Cloning '+state.clips.map(function(c){return c.name;}).join(', ')+'.' : ' No reference clip attached.';
+        var cloneLine=state.engine==='lyria' ? '' : state.clips.length ? (b.auk_task==='edit'?' Editing ':' Cloning ')+state.clips.map(function(c){return c.name;}).join(', ')+'.' : ' No reference clip attached.';
         say((r.data.estimate.spoken||'')+cloneLine+' Press '+(preview?'Hear this voice first':renderLabel())+' again to confirm.');
         if(!preview) btnRender.textContent=renderLabel()+' — confirm';
         return;
@@ -560,15 +561,16 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       }, 15000);
     }
 
+    document.getElementById('showFailed').onchange=function(){ loadLibrary(); };
     async function loadLibrary(){
       var r = await get('/api/kade/sound-booth/projects');
       var box = document.getElementById('library');
       if(!r.ok){ box.innerHTML = '<p class="muted">Could not load your library.</p>'; return; }
-      var ps = r.data.projects || [];
+      var ps = (r.data.projects || []).filter(function(p){ return document.getElementById('showFailed').checked || ['failed','cancelled'].indexOf(p.state)<0 || (p.takes||[]).length || p.hasRecoverableAudio; });
       if(!ps.length){ box.innerHTML = '<p class="muted">Nothing here yet.</p>'; return; }
       box.innerHTML = ps.map(function(p){
         var when = ''; try { when = new Date(p.updatedAt).toLocaleString('en-US', {month:'long', day:'numeric', hour:'numeric', minute:'2-digit'}); } catch(e){}
-        var engine = p.engine === 'lyria' ? 'Lyria' : p.engine === 'seed' ? 'Seed Audio' : 'Scenema';
+        var engine = p.engine === 'lyria' ? 'Lyria' : p.engine === 'seed' ? 'Seed Audio' : 'AuK HQ';
         var stateWord = p.state === 'done' ? 'finished' : p.state;
         return '<div class="proj"><h3>' + esc(p.title) + '</h3>' +
           '<p class="hint">' + esc(p.why || engine) + ' \\u00b7 ' + esc(stateWord) + ' \\u00b7 ' + esc(when) + (p.costUSD ? ' \\u00b7 about ' + Math.max(1, Math.round(p.costUSD*100)) + ' cents' : '') + '</p>' +
@@ -577,7 +579,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           (p.takes||[]).map(function(t, n){
             var lbl = 'Take ' + ((p.takes.length) - n) + (t.seconds ? ', ' + t.seconds + ' seconds' : '') + (t.description ? '. ' + t.description : '');
             return '<audio controls preload="none" aria-label="' + esc(lbl) + '"><source src="' + esc(t.url) + '">' + (t.backupUrl ? '<source src="' + esc(t.backupUrl) + '">' : '') + '</audio>' +
-                   '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>';
+                   '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.masterUrl ? ' · <a href="' + esc(t.masterUrl) + '" download target="_blank" rel="noreferrer">Download WAV master</a>' : '') + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>';
           }).join('') +
           '<details><summary>'+(p.engine==='lyria'?'Music direction':'Script')+'</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>' +
           '<button type="button" class="act" data-open="' + esc(p.id) + '">Open this in the booth</button></div>';

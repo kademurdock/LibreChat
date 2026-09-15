@@ -1,46 +1,9 @@
-/* ----------------------------------------------------------------------------
- * THE SOUND BOOTH (Part 120, Sep 3 2026)
- *
- * Her ask, Part 119.10: "I'm hoping the next session can be building a native
- * playground on my platform where I can use Scenema." Then, in her own words,
- * the interface: "all the settings and import and all that, but you write the
- * stuff in the textbox right? And there's some button that will either
- * generate your text idea into a full scenema script based on its formatting,
- * or it can write a new one based on a description. Like, if I said, generate
- * a blah blah blah, it could write something for me, but if I wanna write
- * myself, I can, and can have enhanced formatting. Maybe even an easy and
- * advanced mode."
- *
- * She named it the Sound Booth (Part 120) and asked for Seed Audio in here too,
- * so this lane carries BOTH engines behind one screen:
- *
- *   engine 'scenema' -> her own rented GPU through the bridge's job lane.
- *                       ONE actor performing a script with stage directions.
- *                       Queued: ~1.4x the audio length, ~2 cents a minute,
- *                       nothing leaves her boxes.
- *   engine 'seed'    -> Seed Audio 1.0 on fal, synchronous. A whole SCENE:
- *                       several voices, music, effects, ambience, in one pass.
- *                       Seconds, ~19 cents a minute, audio leaves the estate.
- *
- * THE DOORS (law 17 -- production knocks on the same door the bench does):
- *   - the model call rides the reframe proxy, like every other machine lane
- *   - the Scenema render rides the bridge's /audio/scenema/start, the same lane
- *     Cadence's generate_narration uses -- this route does NOT talk to RunPod
- *   - the Seed render posts to fal exactly as FalAI._genOneAudio does, at the
- *     CORRECTED price ($0.1875/min, Part 119.2), and logs usage + gallery the
- *     same way, so a Sound Booth clip is indistinguishable from a chat one
- *   - the phone never holds BRIDGE_SECRET or FAL_KEY. It holds a user JWT.
- *
- * ROUTES (all requireJwtAuth, mounted at /api/kade/sound-booth):
- *   POST /script          {engine, mode:'format'|'write', text, ...}  -> {script, readback}
- *   POST /render          {engine, script, title, ...}                -> {jobId|asset, estimate}
- *   GET  /projects                                                    -> newest 50
- *   GET  /projects/:id                                                -> one, job state refreshed
- *   PATCH/DELETE /projects/:id                                        -> rename / remove
- *   GET  /status/:jobId   (scenema)                                   -> bridge state, proxied
- *   POST /cancel/:jobId   (scenema)
- *   GET  /health                                                      -> what is configured, and the caps
- * -------------------------------------------------------------------------- */
+/* Sound Booth: AuK HQ speech/editing, fal Seed Audio scenes, and Lyria music.
+ * The stored engine key and bridge route "scenema" remain compatibility names
+ * so existing clients, projects, receipts and saved takes continue to work.
+ * AuK translates screenplay XML inside the worker; it is not the model API.
+ * All routes below use the signed-in user; provider keys stay server-side.
+ */
 const axios = require('axios');
 const multer = require('multer');
 const express = require('express');
@@ -97,7 +60,7 @@ function normalizeLyriaModel(raw) {
   return 'lyria-3.5';
 }
 const LYRIA_MODEL = normalizeLyriaModel(process.env.KADE_LYRIA_MODEL);
-/* Overridable for the self-test the same way BRIDGE_URL is for the Scenema
+/* Overridable for the self-test the same way BRIDGE_URL is for the AuK
  * lane -- law 17: production knocks on the same door the bench does. */
 function lyriaBase() {
   return (process.env.KADE_LYRIA_BASE || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
@@ -117,7 +80,7 @@ function bridgeBase() {
 }
 
 /* ---------- a small daily cap on the WRITING desk, not the rendering ---------
- * Rendering is capped in dollars by the bridge (Scenema) and the wallet (fal).
+ * Rendering is capped in dollars by the bridge (AuK) and the wallet (fal).
  * The script button is cheap but not free, and a stuck client could hammer it,
  * so it gets the same shape of cap the character builder uses. */
 let scriptDayStamp = '';
@@ -163,7 +126,7 @@ function spokenSeconds(script) {
 }
 
 /* ---------- the moods, in her words ----------------------------------------
- * A mood is not a knob on the audio -- it is a note to the ACTOR. Scenema's
+ * A mood is not a knob on the audio -- it is a note to the ACTOR. AuK's
  * own rule (and the tool description's) is that a direction says what the
  * speaker is DOING and FEELING, never how the recording should sound, so each
  * mood below is written as a person, not as an EQ setting. */
@@ -197,12 +160,12 @@ const MOODS = {
 
 /* ---------- the two grammars, rebuilt from the engines' own documentation ----
  * Part 121 (Sep 3 2026), her ask: "look up everything you can about prompting
- * both, make sure the settings align." Scenema: github.com/ScenemaAI/
- * scenema-audio README. Seed Audio: fal's llms.txt + the Morphic guide (the
+ * both, make sure the settings align." Speech now uses github.com/Tencent-Hunyuan/AuK. The XML below
+ * remains our internal screenplay interchange, not the AuK API. Seed Audio: fal's llms.txt + the Morphic guide (the
  * SCENE checklist, the `Name (traits) says manner: "line."` shape, spelled-out
  * sounds, @Audio tagging, [start:end] timestamps). Every rule below is one
  * the docs state, not one guessed. */
-const SCENEMA_GRAMMAR = `SCENEMA AUDIO SCRIPT FORMAT (the only format you may output):
+const SCENEMA_GRAMMAR = `KADE SCREENPLAY INTERCHANGE FORMAT (translated into AuK instructions by our worker):
 
 <speak voice="WHO IS SPEAKING, in one specific theatrical sentence" gender="male|female" scene="optional place" shot="closeup|wide|scene" language="en">
 <action>what the speaker is DOING and FEELING right now</action>
@@ -217,7 +180,7 @@ HOW THIS ENGINE WORKS, so you write for it:
 - The voice= description is the PRIMARY control. Weak: "a man speaking". Strong: "Male, mid 60s. Deep baritone with gravel. Slight Southern American inflection. Worn but warm. Nostalgic, firelight cadence. The voice of someone who has seen too much and chosen kindness anyway." Give sex, age, register, accent, texture, manner, and one line of character.
 - <action> tags are the primary tool for emotional performance. Put them BETWEEN speech segments. Describe what the speaker is DOING and FEELING — "Voice tightens. Swallows. Fighting to stay composed." / "Long pause. Deep breath. When he speaks again, his voice is raw but steady." Combine a physical cue with an emotional one. NEVER describe the audio ("add reverb", "louder", "echo") — that is not what the tag is for and it degrades the take.
 - Nothing outside a tag is a note; it is SPOKEN ALOUD. No headings, labels, speaker names, or markdown outside a tag.
-- <sound> only lands when shot="wide" or shot="scene". With shot="closeup" (the default) the environment is stripped.
+- Do not add <sound> elements. Generated backgrounds and effects use Seed Audio; this lane performs speech.
 - Each segment is at most about 15 seconds; sentences are split there automatically. Keep sentences a natural length.
 - Difficult proper nouns get garbled; spell a hard word phonetically inside the spoken text if it matters.
 - NEVER use %%%…%%% markers — that is a different engine's syntax and this one would read it out loud. Never leave a cue in parentheses or square brackets on its own line; convert it to an <action>.
@@ -385,7 +348,7 @@ async function callModel({ system, user, maxTokens = 2200 }) {
   return { text: String(out || ''), usage };
 }
 
-/* ---------- Scenema XML: build one, and check one ------------------------- */
+/* ---------- AuK XML: build one, and check one ------------------------- */
 function wrapSpeak({ body, voice_description, gender, scene, shot, pace, language }) {
   const raw = String(body || '').trim();
   if (/<speak[\s>]/i.test(raw)) return raw;
@@ -413,7 +376,7 @@ function wrapSpeak({ body, voice_description, gender, scene, shot, pace, languag
  * between the lines -- Inworld's paragraph-tag syntax, which is all over this
  * estate's prompts and personas and which the model has plainly learned.
  *
- * Scenema has never heard of it. Anything not inside a tag is SPOKEN, so that
+ * AuK has never heard of it. Anything not inside a tag is SPOKEN, so that
  * line would have been read ALOUD in the finished audio, in the middle of her
  * sentence, and the only way to find that out is to listen to a render she
  * paid for. The structural check could not see it either: `%%%` is not an XML
@@ -425,7 +388,7 @@ function wrapSpeak({ body, voice_description, gender, scene, shot, pace, languag
  * how a person writes a stage direction when they are not thinking about tags
  * -- her own probe text had "(softly)" in it.
  *
- * Only ever applied to Scenema. Seed Audio's format IS bracketed cues on
+ * Only ever applied to AuK. Seed Audio's format IS bracketed cues on
  * their own lines, and rewriting those would break the engine that wants them.
  */
 function sanitizeScenema(script) {
@@ -497,11 +460,11 @@ function sanitizeSeed(script) {
  * can act on, instead of failing on the GPU two minutes and a wake-up later. */
 function checkScenema(script, { allowLong = false, allowEmpty = false } = {}) {
   const s = String(script || '').trim();
-  if (!/^<speak[\s>]/i.test(s)) return 'A Scenema script has to start with a <speak> tag.';
-  if (!/<\/speak>\s*$/i.test(s)) return 'A Scenema script has to end with </speak>.';
+  if (!/^<speak[\s>]/i.test(s)) return 'A AuK script has to start with a <speak> tag.';
+  if (!/<\/speak>\s*$/i.test(s)) return 'A AuK script has to end with </speak>.';
   if (!/voice="/i.test(s)) return 'The <speak> tag needs a voice="..." description.';
   if (s.includes('%%%')) {
-    return 'That script still has %%% tag markers in it. Scenema would read them out loud — use <action> directions instead.';
+    return 'That script still has %%% tag markers in it. AuK would read them out loud — use <action> directions instead.';
   }
   const opens = (s.match(/<action>/gi) || []).length;
   const closes = (s.match(/<\/action>/gi) || []).length;
@@ -587,7 +550,7 @@ function checkMusic(script) {
     return 'That brief still has %%% tag markers in it. Lyria does not know them - describe the music in plain sentences instead.';
   }
   if (/<speak/i.test(s)) {
-    return 'That is a Scenema speech script, not a music brief. Lyria reads a description of a piece of music. Switch engines, or describe the music you want.';
+    return 'That is an AuK speech script, not a music brief. Lyria reads a description of a piece of music. Switch engines, or describe the music you want.';
   }
   if (s.length > MAX_LYRIA_CHARS) {
     return `That brief is ${s.length} characters; Lyria tops out at ${MAX_LYRIA_CHARS} here. Tighten it - the description should be rich, but it is still a description.`;
@@ -600,7 +563,7 @@ function checkMusic(script) {
  * seedaudio and scenema, much less how to use the settings and prompt it."
  * So the explanation lives HERE, once, and the phone and the web both render
  * it — a wording fix is one deploy, not two builds. Every line is written to
- * be read aloud. Sources: the Scenema README and Seed Audio's own guide. */
+ * be read aloud. Sources: the AuK README and Seed Audio's own guide. */
 const GUIDE = {
   starters: [
   {"id":"lyria-bed","title":"A warm instrumental theme","engine":"lyria","script":"1970s soul instrumental, warm and relaxed. Electric piano carries a four-note melody, rounded bass and brushed drums leave room for a spoken introduction. Start with piano alone, bring in the rhythm section, then finish on a soft resolved chord. About 88 BPM, around 90 seconds. Instrumental only, no vocals."},
@@ -638,13 +601,13 @@ const GUIDE = {
   chooser: {
     question: 'Which engine should I use?',
     answer:
-      'Ask yourself what the piece IS. A song — anything sung, or a piece of music that stands on its own — is Lyria. One person reading a story, a letter, a monologue, a bedtime tale, with real acting, is Scenema. Two people talking, or a scene with effects and a place you can hear around the voices, is Seed Audio.',
+      'Ask yourself what the piece IS. A song — anything sung, or a piece of music that stands on its own — is Lyria. One person reading a story, a letter, a monologue, a bedtime tale, with real acting, is AuK. Two people talking, or a scene with effects and a place you can hear around the voices, is Seed Audio.',
     rules: [
       { pick: 'lyria', when: 'it is a song, or a piece of music that stands on its own' },
       { pick: 'lyria', when: 'somebody sings — Lyria is the only engine here that can' },
       { pick: 'lyria', when: 'you want a theme, an intro bed, or something to play under a finished piece' },
       { pick: 'scenema', when: 'one voice and the acting matters — the feeling shifts mid-sentence, it breathes, it pauses' },
-      { pick: 'scenema', when: 'you want to clone a specific person from a short clip and use the Scenema rendering lane' },
+      { pick: 'scenema', when: 'you want to clone a specific person from a short clip and use the AuK rendering lane' },
       { pick: 'scenema', when: 'it is longer narration — the booth splits supported scripts into parts' },
       { pick: 'seed', when: 'two or more people talk to each other' },
       { pick: 'seed', when: 'you want music, sound effects, or a place you can hear around the voices' },
@@ -652,35 +615,30 @@ const GUIDE = {
     ],
   },
   engines: {
+    // "scenema" remains the stored project/API key for existing clients.
     scenema: {
-      name: 'Scenema',
-      tagline: 'One actor, really acting.',
-      where: "Runs on a RunPod-hosted graphics card for Kade-AI. Text and reference clips go to that hosted worker.",
-      cost: 'Billed for GPU time, with a wake allowance. Check the current estimate before confirming. A cold start can add about seven minutes; no free card can mean a longer queue.',
-      bestFor: ['one voice reading, telling, confessing, performing', 'a bedtime story, a letter read aloud, a monologue, an audiobook chapter', 'cloning a specific person from ten to twenty seconds of them talking', 'longer scripts, automatically split within the booth limits'],
-      notFor: ['two people talking to each other', 'music', 'a scene you can hear around the voice — it can add some, but that is not its job'],
+      name: 'AuK HQ',
+      tagline: 'Create a voice or reshape a recording.',
+      where: 'Runs on a rented RunPod GPU that sleeps between jobs. Your imported recording stays in your library.',
+      cost: 'Pay for GPU startup, processing and brief idle time. A sleeping worker takes longer. The spoken estimate is provisional until measured on the selected card.',
+      bestFor: ['expressive speech and reference voices', 'changing words, emotion, pitch, pace, timbre or whispering', 'removing noise or reverb, separating voices from a recording'],
+      notFor: ['generating a complete background scene: use Seed Audio', 'guaranteed accent imitation or perfect word edits without listening back'],
       howToWrite: [
-        SCREENPLAY_HELP,
-        'Describe WHO is speaking in one specific, theatrical sentence: sex, age, register, accent, texture, manner, and a line of character. "A man speaking" gets you nothing. "Male, mid sixties, deep baritone with gravel, slight Southern inflection, worn but warm" gets you a person.',
-        'Between your sentences, tell the actor what they are DOING and FEELING — "voice tightens, swallows, fighting to stay composed", "long pause, deep breath". Pair a physical cue with a feeling. Never describe the sound you want; describe the person.',
-        'Write natural sentences of normal length. Anything over about fifteen seconds is split automatically.',
-        'Hard names get garbled. Spell a difficult word the way it sounds.',
-        'A clip beats a description for a specific person. The clip gives the identity; your description and directions give the performance. Any voice can perform any emotion, even one the clip never contained.',
-        'There is no temperature and no sampling knob to turn. This engine runs eight fixed steps; the only dice is the seed, and the same seed with the same script is the same take. What actually changes a result: the words in the voice description, the clip (ten to twenty seconds, one person, some feeling in it — a flat clip clones thin), the shot and scene settings, and the pace. Everything else is the script.',
-        'A clone can flatten the acting. If a cloned take sounds too even, put a stronger character into the voice description — the description still drives the emotion even when the clip drives the identity — or set How much of the clip to Natural.',
+        'For speech, write the exact words in the performance script. Describe accent, mood, inflection and texture in Describe the voice; use bracketed acting directions between lines.',
+        'To edit, choose edit under Task, import the source recording and fill in Edit instructions. For example: Change the emotion to cheerful while keeping the words and voice; Replace "Tuesday" with "Thursday"; Remove background noise; Raise pitch by two semitones.',
+        'Target seconds is optional for edits that preserve length. Set it when changing speed or adding or removing words. Leave it blank to keep the source duration.',
+        'Long recordings are processed in sections and joined. Edits spanning a join and voice continuity need listening review. Existing takes are kept.',
+        'AuK Base uses 32 steps with BF16 inference and CPU offload. Every take keeps a 24 kHz mono WAV master plus a listening MP3. It does not automatically retry pronunciation errors.',
+        'Use Seed Audio for generated ambience, music and sound effects. AuK can clean or separate an existing background.',
       ],
       settings: [
-        { key: 'voice_description', label: 'Describe the voice', hint: 'Sex, age, register, accent, texture, manner, one line of character. This is the main control.', kind: 'text' },
-        { key: 'gender', label: 'Voice sex', hint: 'Male or female. The engine needs it for the pronouns in its own notes.', kind: 'choice', options: ['female', 'male'], default: 'female' },
-        { key: 'reference_voice_url', label: 'Import a clip to clone', hint: 'A WAV, an MP3, or an M4A voice memo — this engine cannot read OGG. Ten to twenty seconds of one person, clean, with some feeling in it; a flat monotone clip clones badly, and a noisy or heavily compressed one drags the whole result down. Play it back before you render.', kind: 'clip', max: 1 },
-        { key: 'scene', label: 'Scene', hint: 'Where this happens: "a kitchen at dawn, rain outside". Only heard if Shot is Wide or Scene and Scene sound is on.', kind: 'text' },
-        { key: 'shot', label: 'Shot', hint: 'How far away the listener is. Close up is the voice at your ear, environment stripped. Wide puts the voice in a room. Scene turns the room up.', kind: 'choice', options: ['closeup', 'wide', 'scene'], default: 'closeup' },
-        { key: 'background_sfx', label: 'Scene sound', hint: 'Keeps the room and weather around the voice instead of a clean voice on its own. Only does anything with Wide or Scene.', kind: 'toggle', default: false },
-        { key: 'pace', label: 'Pace', hint: 'How much time the actor is given. One point five is the engine’s normal. Higher is slower and more deliberate; lower is faster. Between zero point five and three.', kind: 'number', min: 0.5, max: 3, default: 1.5 },
-        { key: 'identity', label: 'How much of the clip', hint: 'Only matters with a clip attached. Natural lets the performance breathe and sounds a little less like the person. Strong presses the clip’s identity on harder and can flatten the acting. Balanced is the engine’s own default.', kind: 'choice', options: ['balanced', 'natural', 'strong'], default: 'balanced' },
-        { key: 'validate', label: 'Pronunciation check', hint: 'On by default. The engine listens back to each fifteen-second piece and re-makes it up to three times if the words came out wrong. Turning it off is faster and riskier.', kind: 'toggle', default: true },
-        { key: 'seed', label: 'Seed', hint: 'The same seed with the same script gives the same take again. Leave it empty for a new take each time.', kind: 'number', min: 0 },
-        { key: 'keep_wav', label: 'Keep the studio file', hint: 'Also keeps the forty-eight kilohertz stereo WAV master alongside the MP3. Same price, bigger file.', kind: 'toggle', default: false },
+        { key: 'auk_task', label: 'Task', hint: 'Speech creates a performance. Edit changes the imported recording.', kind: 'choice', options: ['speech', 'edit'], default: 'speech' },
+        { key: 'instruction', label: 'Edit instructions', hint: 'Describe what to change and what to preserve. Used only for edit.', kind: 'text' },
+        { key: 'voice_description', label: 'Describe the voice', hint: 'Accent, age, register, texture, mood and inflection for speech.', kind: 'text' },
+        { key: 'reference_voice_url', label: 'Import voice or recording', hint: 'For speech, a short clean voice sample. For edit, the recording you want changed. WAV, MP3 or M4A.', kind: 'clip', max: 1 },
+        { key: 'gen_seconds', label: 'Target seconds for edit', hint: 'Optional. Leave blank to retain source duration; set when changing speed or word count.', kind: 'number', min: 0.1 },
+        { key: 'pace', label: 'Speech pace allowance', hint: 'One is normal. Higher gives more time and slower speech; lower is quicker.', kind: 'number', min: 0.5, max: 3, default: 1 },
+        { key: 'seed', label: 'Seed', hint: 'Repeat a take with the same settings. A reference clip anchors voice identity more reliably than the seed alone.', kind: 'number', min: 0, max: 4294967295 },
       ],
     },
     lyria: {
@@ -712,7 +670,7 @@ const GUIDE = {
       where: "Made on fal's servers, not here. Your words and any clips you import leave the house for this one.",
       cost: 'About nineteen cents a minute. Back in seconds. Up to two minutes a pass.',
       bestFor: ['two or three people talking', 'music, sound effects, and a place you can hear', 'a radio play, an ad, a scene from a story with the room around it', 'anything you need back right now'],
-      notFor: ['a long piece — two minutes a pass, made scene by scene after that', 'the finest acting from one voice — Scenema is the stronger instrument for that', 'keeping the audio in the house'],
+      notFor: ['a long piece — two minutes a pass, made scene by scene after that', 'the finest acting from one voice — AuK is the stronger instrument for that', 'keeping the audio in the house'],
       howToWrite: [
         'Write it like a short scene brief, not a line to read. Five things, every time: the Setting, who is in it and what they are doing, the music and sound effects, notes on each voice, and the exact lines in quotes.',
         'Every line has the same shape: the name, the voice in parentheses, how they say it, a colon, then the words in quotes. "Emma (teenage, soft, shy) lowers her voice, flustered: “I still haven’t finished.”"',
@@ -817,9 +775,9 @@ function suggestEngine(text) {
    * "music" every time. */
   if (speakerLines >= 2 || quotedSpeakers >= 2) lyria = 0;
   if (seed === 0 && scenema === 0 && lyria === 0) {
-    return { engine: 'scenema', sure: false, reason: 'One voice is the usual case, so Scenema. If two people talk or you want a place you can hear, switch to Seed Audio; if it is a song, switch to Lyria.' };
+    return { engine: 'scenema', sure: false, reason: 'One voice is the usual case, so AuK. If two people talk or you want a place you can hear, switch to Seed Audio; if it is a song, switch to Lyria.' };
   }
-  const NAMES = { lyria: 'Lyria', seed: 'Seed Audio', scenema: 'Scenema' };
+  const NAMES = { lyria: 'Lyria', seed: 'Seed Audio', scenema: 'AuK' };
   const scores = { lyria, seed, scenema };
   const engine = ['lyria', 'seed', 'scenema'].reduce((best, k) => (scores[k] > scores[best] ? k : best), 'scenema');
   const runnerUp = Math.max(...['lyria', 'seed', 'scenema'].filter((k) => k !== engine).map((k) => scores[k]));
@@ -864,15 +822,15 @@ function estimateFor(engine, script) {
       spoken: sayEstimate(seconds, Math.max(10, Math.round(seconds * 0.5)), costUSD, false),
     };
   }
-  const renderSeconds = Math.round(seconds * 1.4) + 15;
-  const costUSD = Math.round((renderSeconds / 3600 * 1.75 + 0.05) * 1000) / 1000;
+  const renderSeconds = null;
+  const costUSD = null;
   return {
     engine: 'scenema',
     words,
     audioSeconds: seconds,
     renderSeconds,
     costUSD,
-    spoken: sayEstimate(seconds, renderSeconds, costUSD, false) + ' A cold graphics card can add about seven minutes, and availability can take longer. The price includes an estimated wake allowance; actual GPU use may differ.',
+    spoken: 'AuK HQ uses a sleeping GPU. Startup and processing are billed. A reliable cost and wait estimate is not available yet. Longer work runs in sections.',
   };
 }
 
@@ -924,7 +882,7 @@ async function refreshReferences(view) {
   if (Array.isArray(view.options?.audio_urls)) view.options.audio_urls = await Promise.all(view.options.audio_urls.map(freshAssetUrl));
 }
 
-/* ---------- linking a Scenema take back to its project ----------------------
+/* ---------- linking a AuK take back to its project ----------------------
  * A queued render finishes on the BRIDGE, which posts the MP3 to the fork's
  * /asset-event lane. That lane knows the user and the job, but not the project
  * -- so the asset arrives with `metadata.jobId` and nothing else to hang it
@@ -980,6 +938,7 @@ async function takesFor(projects, userId) {
       id: String(d._id),
       url: await freshAssetUrl(d.url),
       backupUrl: d.backupUrl ? await freshAssetUrl(d.backupUrl) : '',
+      masterUrl: d.metadata?.wavUrl ? await freshAssetUrl(d.metadata.wavUrl) : null,
       /* The blind-friendly description the gallery writes, when it has landed
        * yet -- enrichment runs detached, so a brand-new take often has none. */
       description: d.description || '',
@@ -1007,10 +966,11 @@ function projectView(p) {
       ? 'Lyria — a song made from a brief' + ((p.options || {}).instrumental ? ', instrumental' : '') + ((p.options || {}).lyrics ? ', to your own lyrics' : '')
       : p.engine === 'seed'
       ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
-      : 'Scenema — one actor performing' + ((p.options || {}).reference_voice_url ? ', cloning a clip' : ', voice from the description') + (Number.isInteger(p.voiceSeed) ? `, voice ${p.voiceSeed}` : ''),
+      : 'AuK — one actor performing' + ((p.options || {}).reference_voice_url ? ', cloning a clip' : ', voice from the description') + (Number.isInteger(p.voiceSeed) ? `, voice ${p.voiceSeed}` : ''),
     readback: p.readback,
     options: p.options || {},
     voiceSeed: p.voiceSeed,
+    hasRecoverableAudio: (p.parts || []).some((part) => part.state === 'done' && part.url) || (p.assets || []).length > 0,
     parts: (p.parts || []).map(({ index, state, durationS, costUSD }) => ({ index, state, durationS, costUSD })),
     jobs: p.jobs || [],
     assets: p.assets || [],
@@ -1182,16 +1142,19 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
 router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (req, res) => {
   const b = req.body || {};
   const engine = ['seed', 'lyria'].includes(b.engine) ? b.engine : 'scenema';
-  let script = String(b.script || '').trim();
+  const editing = engine === 'scenema' && b.auk_task === 'edit';
+  if (editing && (!b.reference_voice_url || !String(b.instruction || '').trim())) return res.status(400).json({ error: 'Import a recording and describe what you want to change.' });
+  if (editing && b.gen_seconds != null && (!Number.isFinite(b.gen_seconds) || b.gen_seconds <= 0)) return res.status(400).json({ error: 'Target seconds must be positive.' });
+  let script = String(editing ? b.instruction : b.script || '').trim();
   const mode = b.mode === 'advanced' ? 'advanced' : 'easy';
   if (!script) return res.status(400).json({ error: 'There is nothing to render yet.' });
   /* The same repair runs on the way to the GPU, because a script can reach
    * here without passing the script desk at all -- she can type one by hand in
-   * Advanced, or paste one in. A %%% line is never legitimate Scenema, so
+   * Advanced, or paste one in. A %%% line is never legitimate AuK, so
    * converting it can only help; nothing else about her text is touched. */
   let compileNotes = [];
-  if (engine === 'scenema') {
-    /* Part 126: a Scenema script that is not XML is a SCREENPLAY — brackets for
+  if (engine === 'scenema' && !editing) {
+    /* Part 126: a AuK script that is not XML is a SCREENPLAY — brackets for
      * directions, double parentheses for sounds, optional VOICE:/SEX:/SCENE:/
      * SHOT: headers — and it is compiled here, behind the scenes, with the
      * booth's settings filling any header left out. Raw XML still works. */
@@ -1212,7 +1175,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   }
   /* Lyria's brief is prose a person wrote about music. There is no grammar to
    * sanitize it into, so it goes to the engine as written. */
-  /* allowLong: a Scenema script over the cap is not refused here any more —
+  /* allowLong: a AuK script over the cap is not refused here any more —
    * the splitter below turns it into parts. Every other structural problem
    * still stops the render before it spends. */
   let fitNote = null;
@@ -1223,7 +1186,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     compileNotes = [...(compileNotes || []), fitted.note];
     logger.info(`[soundbooth/render] seed script cut to fit: ${fitted.cut} characters off, user=${req.user.id}`);
   }
-  const problem =
+  const problem = editing ? null :
     engine === 'lyria'
       ? checkMusic(script)
       : engine === 'seed'
@@ -1235,6 +1198,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     const quoteScript = b.preview === true && engine === 'scenema'
       ? previewExcerpt(script, { maxWords: 40 }).prompt : script;
     const estimate = estimateFor(engine, quoteScript);
+    if (editing) { estimate.audioSeconds = b.gen_seconds || null; estimate.spoken = 'AuK will edit your imported recording and save a new take. GPU time is billed; the cost depends on recording length and startup. ' + estimate.spoken; }
     return res.json({ ok: true, estimate, preview: b.preview === true, note: fitNote, script: fitNote ? script : undefined });
   }
 
@@ -1242,9 +1206,10 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   let projectLease = null;
   try {
     const opts = {};
+    if (editing) { opts.auk_task = 'edit'; opts.instruction = script; if (b.gen_seconds != null) opts.gen_seconds = b.gen_seconds; }
     const isUrl = (u) => typeof u === 'string' && /^https?:\/\/\S+$/i.test(u) && u.length < 2048;
     if (isUrl(b.reference_voice_url)) opts.reference_voice_url = b.reference_voice_url;
-    /* Seed takes up to three clips (@Audio1–3); Scenema takes one. A single
+    /* Seed takes up to three clips (@Audio1–3); AuK takes one. A single
      * imported clip is accepted under either name so the two screens can
      * share one import row. */
     if (Array.isArray(b.audio_urls)) opts.audio_urls = b.audio_urls.filter(isUrl).slice(0, 3);
@@ -1257,7 +1222,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     if (typeof b.lyrics === 'string' && b.lyrics.trim()) opts.lyrics = b.lyrics.trim().slice(0, 4000);
     if (b.keep_lyrics === false) opts.keep_lyrics = false;
     if (Number.isInteger(b.seed) && b.seed >= 0) opts.seed = b.seed;
-    /* Scenema's pace: 1.5 is the ENGINE'S normal (its README: "accounts for
+    /* AuK's pace: 1.5 is the ENGINE'S normal (its README: "accounts for
      * LTX's naturally slower speaking pace"); higher = slower. The first booth
      * told her 1.0 was normal — that was wrong, and it is fixed in the guide. */
     if (typeof b.pace === 'number' && b.pace >= 0.5 && b.pace <= 3) opts.pace = b.pace;
@@ -1299,12 +1264,12 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     if (b.voice_description) opts.voice_description = String(b.voice_description).slice(0, 600);
     if (['closeup', 'wide', 'scene'].includes(b.shot)) opts.shot = b.shot;
     if (b.scene) opts.scene = String(b.scene).slice(0, 200);
-    /* PREVIEW (her "how do I know what I'll get"): Scenema's voice_design mode
+    /* PREVIEW (her "how do I know what I'll get"): AuK's voice_design mode
      * renders ONE fifteen-second sample of the voice description — no
      * chunking, about a penny — so she can hear the actor before spending
      * on the whole piece. It is a real render on the same lane; it lands in
      * the library as a take like any other, flagged. */
-    const preview = engine === 'scenema' && b.preview === true;
+    const preview = engine === 'scenema' && !editing && b.preview === true;
 
     /* One row per piece of work. Re-rendering an existing project appends to
      * it rather than making a second row -- the Library should show a piece
@@ -1338,8 +1303,8 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     project.engine = engine;
     project.mode = mode;
     project.sourceText = String(b.sourceText || project.sourceText || '').slice(0, 8000);
-    project.script = script.slice(0, 8000);
-    project.readback = String(b.readback || project.readback || '').slice(0, 600);
+    project.script = script; // Keep the entire accepted script so resume compares the same work.
+    project.readback = String(editing ? script : b.readback || project.readback || '').slice(0, 600);
     project.options = opts;
     project.lastRenderAt = new Date();
     project.lastError = undefined;
@@ -1349,7 +1314,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
      * least able to do it by eye. Now it cuts at sentence boundaries, renders
      * the parts in order on the same pinned voice, and joins them into one
      * recording. A preview is exempt: it is one fixed fifteen-second line. */
-    if (engine === 'scenema' && !preview && script.length > MAX_SCENEMA_CHARS) {
+    if (engine === 'scenema' && !editing && !preview && script.length > MAX_SCENEMA_CHARS) {
       const secret = process.env.BRIDGE_SECRET;
       if (!secret) return res.status(503).json({ error: 'The render lane is not configured here.' });
       const pieces = splitSpeakScript(script, MAX_SCENEMA_CHARS);
@@ -1385,8 +1350,8 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         voiceSeed: project.voiceSeed,
         resumed: resume,
         multipart: { total: pieces.length, index: 0 },
-        estimate: { ...est, spoken: `${saySplit(pieces, 'Scenema')} ${est.spoken}` },
-        spoken: saySplit(pieces, 'Scenema'),
+        estimate: { ...est, spoken: `${saySplit(pieces, 'AuK')} ${est.spoken}` },
+        spoken: saySplit(pieces, 'AuK'),
       });
     }
 
@@ -1415,7 +1380,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
           previewInfo = previewExcerpt(base, { maxWords: 40 });
           promptToSend = previewInfo.prompt;
         }
-        /* ⭐ THE SEED IS THE VOICE (Part 122.1). Scenema casts a new random
+        /* ⭐ THE SEED IS THE VOICE (Part 122.1). AuK casts a new random
          * actor off the description on EVERY render unless a seed is pinned.
          * Unpinned, the penny she spent on "hear this voice first" auditioned
          * somebody the real render would never use — the preview was a lottery
@@ -1430,6 +1395,9 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
           agentId: 'soundbooth',
           agentName: 'Sound Booth',
           prompt: promptToSend,
+          auk_task: opts.auk_task,
+          instruction: opts.instruction,
+          gen_seconds: opts.gen_seconds,
           reference_voice_url: opts.reference_voice_url,
           background_sfx: opts.background_sfx,
           seed: project.voiceSeed,
@@ -1510,9 +1478,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         /* When the bridge has looked at the endpoint, its sentence about the
          * wait is the true one; sayEstimate's generic "longer if the card has
          * to wake up" is the fallback for a bridge that did not say. */
-        merged.spoken = bridgeEst.spokenWait
-          ? `${sayEstimate(merged.audioSeconds, merged.renderSecondsWarm || merged.renderSeconds, merged.costUSD, false)} ${bridgeEst.spokenWait}`
-          : sayEstimate(merged.audioSeconds, merged.renderSeconds, merged.costUSD, true);
+        merged.spoken = bridgeEst.spokenWait || est.spoken;
       }
       if (compileNotes.length && merged.spoken) merged.spoken += ' ' + compileNotes.join(' ');
       logger.info(`[soundbooth/render] scenema queued job=${jobId} project=${project._id} user=${req.user.id}`);
@@ -1951,6 +1917,7 @@ router.post('/cancel/:jobId', requireJwtAuth, async (req, res) => {
         const j = finished.data;
         if (!j.result?.url) throw new Error('The finished part is not ready to save yet. Try Stop again.');
         active.state = 'done'; active.url = j.result.url;
+        active.wavUrl = j.result.wavUrl; active.audioEngine = j.result.engine;
         active.durationS = j.result.durationS || null; active.costUSD = j.costUSD || 0;
         project.costUSD = (project.costUSD || 0) + active.costUSD;
       } else if (active) active.state = 'failed';
@@ -2014,7 +1981,7 @@ router.patch('/projects/:id', requireJwtAuth, express.json({ limit: '64kb' }), a
     if (!p) return res.status(404).json({ error: 'No such project.' });
     const b = req.body || {};
     if (typeof b.title === 'string' && b.title.trim()) p.title = b.title.trim().slice(0, 80);
-    if (typeof b.script === 'string') p.script = b.script.slice(0, 8000);
+    if (typeof b.script === 'string') p.script = b.script;
     if (typeof b.sourceText === 'string') p.sourceText = b.sourceText.slice(0, 8000);
     await p.save();
     return res.json({ project: projectView(p) });
@@ -2045,14 +2012,14 @@ router.delete('/projects/:id', requireJwtAuth, async (req, res) => {
  * Her ask, Part 120: "You might put a way to import files in native too."
  *
  * The reliable way to get a SPECIFIC voice is a reference clip -- describing a
- * voice in words missed the age three times out of four when Scenema was
+ * voice in words missed the age three times out of four when AuK was
  * measured (Part 119.10), and the record says so plainly. So the phone needs
  * to be able to hand over ten to twenty seconds of somebody talking.
  *
  * The clip goes to the same S3/Backblaze storage every gallery file uses, and
  * the render lane is handed the signed URL. It is NOT filed as a gallery asset:
  * a reference clip is an INPUT, and My Creations is for things she made. It
- * also never leaves the estate for Scenema (her own GPU pulls it); for Seed
+ * also never leaves the estate for AuK (her own GPU pulls it); for Seed
  * Audio it does, and the screen says so before she picks that engine.
  * ------------------------------------------------------------------------- */
 const refUpload = multer({
@@ -2060,15 +2027,15 @@ const refUpload = multer({
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
 });
 /* ⚠️ Part 121.3 — WHAT EACH ENGINE CAN ACTUALLY READ, from its own docs.
- * She imported a .ogg for a Scenema clone and got a render with no clone in
+ * She imported a .ogg for a AuK clone and got a render with no clone in
  * it. TWO things were wrong and both were mine: the browser's file picker
  * very likely filtered the file out before it was ever sent (an .ogg is
- * typed video/ogg or application/ogg as often as audio/ogg), and Scenema
+ * typed video/ogg or application/ogg as often as audio/ogg), and AuK
  * would not have taken it anyway — its README says reference audio is
  * **WAV or MP3**. This route was accepting six formats the renderer cannot
  * use, which is a promise the engine does not keep.
  *
- * Scenema:  WAV or MP3 (README, reference_voice_url).
+ * AuK:  WAV or MP3 (README, reference_voice_url).
  * Seed 1.0: wav, mp3, pcm, ogg_opus (fal schema, audio_urls).
  * m4a is allowed for both and transcoded nowhere — it is the format a
  * phone voice memo actually produces, both engines' stacks decode it via
@@ -2108,7 +2075,7 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
       );
       return res.status(400).json({
         error:
-          `${engine === 'seed' ? 'Seed Audio' : 'Scenema'} can't read that kind of file. It needs ${allowed.say}.` +
+          `${engine === 'seed' ? 'Seed Audio' : 'AuK'} can't read that kind of file. It needs ${allowed.say}.` +
           (ext && !allowed.exts.includes(ext) ? ` An ${ext.toUpperCase()} works for the other engine, but not this one.` : ''),
         accepted: allowed.exts,
       });
@@ -2117,7 +2084,7 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
       return res.status(503).json({ error: 'File storage is not set up on this server.' });
     }
     /* Part 126: every clip becomes a 48 kHz mono WAV before it is stored —
-     * Scenema's worker cannot open an M4A (soundfile), and compressed MP3
+     * AuK's worker cannot open an M4A (soundfile), and compressed MP3
      * degrades the clone per its README. Seed accepts WAV too. If ffmpeg
      * fails on a file, the original goes up as before and the booth says so. */
     let outBuffer = f.buffer;

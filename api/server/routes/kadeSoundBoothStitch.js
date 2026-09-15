@@ -49,7 +49,8 @@ function concatLine(file) {
  * @param {Buffer[]} buffers parts, already downloaded, in playing order
  * @returns {Promise<{buffer: Buffer, reencoded: boolean, notes: string[]}>}
  */
-async function stitchMp3Buffers(buffers) {
+async function stitchMp3Buffers(buffers, format = 'mp3') {
+  if (!['mp3', 'wav'].includes(format)) throw new Error('unsupported join format');
   const parts = (buffers || []).filter((b) => b && b.length);
   if (!parts.length) throw new Error('nothing to stitch');
   if (parts.length === 1) return { buffer: parts[0], reencoded: false, notes: [] };
@@ -59,13 +60,13 @@ async function stitchMp3Buffers(buffers) {
   try {
     const files = [];
     for (let i = 0; i < parts.length; i++) {
-      const f = path.join(dir, `part-${String(i).padStart(3, '0')}.mp3`);
+      const f = path.join(dir, `part-${String(i).padStart(3, '0')}.${format}`);
       await fs.writeFile(f, parts[i]);
       files.push(f);
     }
     const listFile = path.join(dir, 'parts.txt');
     await fs.writeFile(listFile, files.map(concatLine).join('\n') + '\n');
-    const out = path.join(dir, 'joined.mp3');
+    const out = path.join(dir, `joined.${format}`);
 
     const base = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', listFile];
     try {
@@ -74,7 +75,7 @@ async function stitchMp3Buffers(buffers) {
       /* Parts that disagree on sample rate cannot be copied. One re-encode is
        * better than handing back nothing, but SAY it happened. */
       notes.push('the parts had to be re-encoded to join cleanly');
-      await run([...base, '-c:a', 'libmp3lame', '-b:a', '192k', out]);
+      await run([...base, ...(format === 'wav' ? ['-c:a', 'pcm_s16le'] : ['-c:a', 'libmp3lame', '-b:a', '192k']), out]);
     }
     const buffer = await fs.readFile(out);
     if (!buffer.length) throw new Error('ffmpeg produced an empty file');
