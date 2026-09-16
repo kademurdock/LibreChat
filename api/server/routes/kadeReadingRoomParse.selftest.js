@@ -18,6 +18,20 @@ function dtbook(body) {
   return `<?xml version="1.0"?><dtbook xmlns="http://www.daisy.org/z3986/2005/dtbook/"><head><meta name="dc:Title" content="T"/></head><book>${body}</book></dtbook>`;
 }
 
+test('page markers disappear mid-sentence across DAISY and EPUB without deleting story numbers', () => {
+  for (const marker of ['<pagenum>22</pagenum>', '<span class="page-normal"><a>22</a></span>',
+    '<span class="page-front">xxii</span>', '<span epub:type="pagebreak">22</span>',
+    '<span role="doc-pagebreak"><span>22</span></span>', '<span class="page-number">22</span>']) {
+    const sections = walkMarkup('<h1>Story</h1><p>I was going to tell her, but I '+marker+' stopped and stared. She was 24 and paid $22.</p>', []);
+    assert.equal(sections.at(-1).paras.join(' '), 'I was going to tell her, but I stopped and stared. She was 24 and paid $22.');
+  }
+});
+
+test('HTML metadata and nested skipped tags do not swallow the book body', () => {
+ const sections = walkMarkup('<html><head><meta name="title" content="Book"><title>Hidden</title></head><body><h1>Story</h1><p>Un\u00adbroken words. <span role="doc-pagebreak"><pagenum>24</pagenum></span> Still reading.</p></body></html>', []);
+ assert.equal(sections.at(-1).paras.join(' '), 'Unbroken words. Still reading.');
+});
+
 test('the Bookshare notice is skipped whole, and the name in it never reaches a chunk', async () => {
   const xml = dtbook(`<frontmatter><doctitle>Sample</doctitle>${NOTICE}<level1 class="cover"><p><img src="c.jpg"/></p></level1></frontmatter>
   <bodymatter><level1><h1>Chapter 1</h1><p>It was a bright cold day in April, and the clocks were striking thirteen.</p><pagenum>1</pagenum><p>Winston Smith slipped quickly through the glass doors.</p></level1></bodymatter>`);

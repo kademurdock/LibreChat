@@ -608,6 +608,7 @@ router.get('/book/:id/audio/:s/:c', requireJwtAuth, async (req, res) => {
     if (!chunk) return res.status(404).json({ error: 'Past the end of the book.' });
     const voice = String(req.query.voice || DEFAULT_VOICE()).slice(0, 120);
     const speed = Math.max(0.5, Math.min(1.5, parseFloat(req.query.speed) || 1));
+    const delivery = ['STABLE', 'BALANCED', 'CREATIVE'].includes(req.query.delivery) ? req.query.delivery : 'STABLE';
     const steer = req.query.steer === '0' ? '' : STEER();
     const input = (steer ? steer + ' ' : '') + chunk.text;
     const headers = {
@@ -617,7 +618,7 @@ router.get('/book/:id/audio/:s/:c', requireJwtAuth, async (req, res) => {
     };
     const upstream = await axios.post(
       `${PROXY_BASE()}/v1/audio/speech`,
-      { input, voice, model: 'tts-1', speed, delivery: 'STABLE', stream: '1' },
+      { input, voice, model: 'tts-1', speed, delivery, stream: '1' },
       { headers, responseType: 'stream', timeout: 60000, validateStatus: () => true },
     );
     if (upstream.status !== 200) {
@@ -660,7 +661,8 @@ router.post('/book/:id/progress', requireJwtAuth, express.json({ limit: '4kb' })
     const sections = audio ? (book.tracks || []).length : (book.sections || []).length;
     const s = clampInt(b.s, 0, Math.max(0, sections - 1), 0);
     const c = audio ? 0 : clampInt(b.c, 0, Math.max(0, ((book.sections || [])[s] || { chunkCount: 1 }).chunkCount - 1), 0);
-    const set = { s, c, pos: audio ? Math.max(0, parseFloat(b.pos) || 0) : 0 };
+    const position = Number(b.pos);
+    const set = { s, c, pos: Number.isFinite(position) ? Math.max(0, position) : 0 };
     if (typeof b.voice === 'string') set.voice = b.voice.slice(0, 120);
     if (b.speed != null) set.speed = Math.max(0.5, Math.min(1.5, parseFloat(b.speed) || 1));
     if (typeof b.finished === 'boolean') set.finished = b.finished;

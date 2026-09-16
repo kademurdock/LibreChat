@@ -44,7 +44,7 @@ const HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hd']);
 /** Bump when the parser learns something that changes sections/chunks; books
  * stamped with an older number are re-read from their stored original the
  * next time someone opens them (kadeReadingRoom.js reparseIfStale). */
-const PARSER_VERSION = 2;
+const PARSER_VERSION = 3;
 /* Sep 12 2026, her Narnia omnibus: Bookshare's DAISY carried the whole
  * seven-book collection as THREE <level2>s with an NCX of ten entries, and
  * every real chapter lived in a paragraph CLASS instead ("CN" Chapter One,
@@ -58,6 +58,7 @@ const TOC_CLASS_RE = /(^|[\s_-])(toc\w*|contents\w*|tocis\d*)(?=$|[\s_-]|\d)/i;
 const NOT_HEADING_CLASS_RE = /(toc|contents|copyright|title[\s_-]?page|tp[\s_-]|cover|dedication|epigraph|ext\b)/i;
 const LEVEL_TAG = /^level[1-6]?$/;
 const SKIP_TAGS = new Set(['pagenum', 'img', 'head', 'meta', 'script', 'style', 'title', 'doctitle', 'docauthor', 'link', 'svg', 'math', 'noteref', 'annoref']);
+const VOID_TAGS = new Set(['br', 'hr', 'img', 'meta', 'link', 'input', 'source', 'area', 'base', 'embed', 'param', 'wbr', 'col', 'track']);
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', mdash: '—', ndash: '–', hellip: '…', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', copy: '©' };
 function decodeEntities(s) {
@@ -74,7 +75,7 @@ function attr(tag, name) {
   return m ? decodeEntities(m[2] != null ? m[2] : m[3]) : '';
 }
 function squash(s) {
-  return String(s).replace(/[ \t\r\n\f\v ]+/g, ' ').trim();
+  return String(s).replace(/[\u00ad\u200b\ufeff]/g, '').replace(/[ \t\r\n\f\v ]+/g, ' ').trim();
 }
 
 /* ── the walker ─────────────────────────────────────────────────────────── */
@@ -130,14 +131,17 @@ function walkMarkup(xml, into, opts = {}) {
     const name = m[1].toLowerCase().replace(/^.*:/, '');
     const rest = m[2] || '';
     const closing = raw[1] === '/';
-    const selfClosing = /\/\s*$/.test(rest) || name === 'br' || name === 'hr' || name === 'img' || name === 'pagenum' && /\/\s*$/.test(rest);
+    const selfClosing = /\/\s*$/.test(rest) || VOID_TAGS.has(name);
 
     if (!closing) {
-      if (SKIP_TAGS.has(name)) {
-        if (!selfClosing) { stack.push(name); skipDepth++; }
+      if (skipDepth > 0) { if (!selfClosing) stack.push(name); continue; }
+      const pageMarker = /(?:^|\s)(?:page-normal|page-special|page-front|pagenum|page-number|pagebreak)(?:\s|$)/i.test(attr(raw, 'class')) ||
+        /(?:^|\s)pagebreak(?:\s|$)/i.test(attr(raw, 'epub:type')) ||
+        /(?:^|\s)doc-pagebreak(?:\s|$)/i.test(attr(raw, 'role'));
+      if (SKIP_TAGS.has(name) || pageMarker) {
+        if (!selfClosing) { stack.push(name + '#skip'); skipDepth++; }
         continue;
       }
-      if (skipDepth > 0) { if (!selfClosing) stack.push(name); continue; }
       if (name === 'br') { para.push('\n'); flushPara(); continue; }
       if (LEVEL_TAG.test(name) || name === 'frontmatter' || name === 'bodymatter' || name === 'rearmatter' || name === 'body') {
         const id = attr(raw, 'id');
@@ -192,9 +196,9 @@ function walkMarkup(xml, into, opts = {}) {
     // closing tag
     let popped = null;
     for (let i = stack.length - 1; i >= 0; i--) {
-      if (stack[i] === name || stack[i] === name + '#notice' || stack[i] === name + '#hd') { popped = stack.splice(i).slice(0, 1)[0]; break; }
+      if (stack[i] === name || stack[i] === name + '#notice' || stack[i] === name + '#hd' || stack[i] === name + '#skip') { popped = stack.splice(i).slice(0, 1)[0]; break; }
     }
-    if (SKIP_TAGS.has(name)) { if (skipDepth > 0) skipDepth--; continue; }
+    if (popped && popped.endsWith('#skip')) { if (skipDepth > 0) skipDepth--; continue; }
     if (skipDepth > 0) continue;
     if (HEADING_TAGS.has(name) || (popped && popped.endsWith('#hd'))) {
       const title = squash(headingBuf || '');

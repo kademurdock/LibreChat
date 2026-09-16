@@ -240,6 +240,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <select id="voiceSel"></select>
       <button class="act" id="hearVoiceBtn" type="button" aria-describedby="hearVoiceHint">Hear this voice</button>
       <span id="hearVoiceHint" class="muted">Plays the part you are on in the voice chosen above, so you can try a few before you settle.</span>
+      <label class="field" for="deliverySel">Delivery</label>
+      <select id="deliverySel"><option value="STABLE">Steady</option><option value="BALANCED">Balanced</option><option value="CREATIVE">Lively</option></select>
+      <label class="field"><input type="checkbox" id="followAlong"> Highlight the current passage</label>
       <label class="field" for="speedSel">Speed</label>
       <select id="speedSel"><option value="0.8">Slower</option><option value="0.9">A little slower</option><option value="1" selected>Normal</option><option value="1.15">A little faster</option><option value="1.3">Faster</option><option value="1.5">Fastest</option></select>
     </div>
@@ -670,6 +673,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   /* ── player ────────────────────────────────────────────────────────── */
   var book = null, pos = { s: 0, c: 0 }, playing = false, voice = '', speed = 1;
   var ctx = null, gainNode = null, scheduled = [], nextStart = 0, cache = {}, fetching = {}, ended = false, playToken = 0;
+  var delivery = localStorage.getItem('kade.library.delivery') || 'STABLE';
   var fileAudio = $('fileMedia');
   var isAudio = function(){ return book && book.kind !== 'text'; };
   var isVideoTrack = function(){ return book && book.tracks && book.tracks[pos.s] && /^video\\//.test(book.tracks[pos.s].mime || ''); };
@@ -753,7 +757,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     src.onended = function(){ var i = pipe ? pipe.sources.indexOf(src) : -1; if (i !== -1) pipe.sources.splice(i, 1); };
   }
   async function streamChunk(p, token){
-    var r = await fetch(API + '/book/' + book.id + '/audio/' + p.s + '/' + p.c + '?voice=' + encodeURIComponent(voice) + '&speed=' + speed, { headers: { 'Authorization': 'Bearer ' + token_() } });
+    streamAbort = new AbortController();
+    var r = await fetch(API + '/book/' + book.id + '/audio/' + p.s + '/' + p.c + '?voice=' + encodeURIComponent(voice) + '&speed=' + speed + '&delivery=' + encodeURIComponent(delivery), { signal: streamAbort.signal, headers: { 'Authorization': 'Bearer ' + token_() } });
     if (token !== playToken) return { cancelled: true };
     if (r.status === 204) return { skip: true };
     if (!r.ok) throw new Error('The voice did not answer (' + r.status + ').');
@@ -794,16 +799,20 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       p = n;
     }
   }
-  setInterval(function(){
+  var cursorTimer = null, streamAbort = null;
+  function updateCursor(){
     if (!pipe || !playing || !ctx) return;
     while (pipe.markers.length && ctx.currentTime >= pipe.markers[0].at) {
       var m = pipe.markers.shift();
       if (m.end) { finishBook(); return; }
       if (m.pos) { var changed = m.pos.s !== pos.s; pos = m.pos; showText(pos); saveProgress(); updateSession(); if (changed) announcePosition(''); }
     }
-  }, 200);
+  }
   function stopScheduled(){
     playToken++;
+    clearInterval(cursorTimer); cursorTimer = null;
+    if (streamAbort) { streamAbort.abort(); streamAbort = null; }
+    if (ctx && ctx.state === 'running') ctx.suspend();
     if (pipe) { pipe.sources.forEach(function(src){ try { src.onended = null; src.stop(); } catch(e) {} }); }
     pipe = null;
   }
@@ -811,11 +820,12 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function play(){
     if (!book) return;
     if (isAudio()) { fileAudio.play().then(function(){ playing = true; $('playBtn').textContent = 'Pause'; updateSession(); }).catch(function(e){ say('Could not play: ' + e.message); }); return; }
-    ensureCtx();
     stopScheduled();
+    ensureCtx();
     playing = true; ended = false; $('playBtn').textContent = 'Pause';
     var t = playToken;
     showText(pos);
+    cursorTimer = setInterval(updateCursor, 200);
     runPipeline(t);
     updateSession();
   }
@@ -913,7 +923,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (playing) pause();
     say('A taste of ' + name + '. One moment.');
     try {
-      var r = await fetch(API + '/book/' + book.id + '/audio/' + pos.s + '/' + pos.c + '?voice=' + encodeURIComponent(v) + '&speed=' + speed, { headers: { 'Authorization': 'Bearer ' + token_() } });
+      var r = await fetch(API + '/book/' + book.id + '/audio/' + pos.s + '/' + pos.c + '?voice=' + encodeURIComponent(v) + '&speed=' + speed + '&delivery=' + encodeURIComponent(delivery), { signal: streamAbort.signal, headers: { 'Authorization': 'Bearer ' + token_() } });
       if (!r.ok) throw new Error('voice answered ' + r.status);
       var blob = await r.blob(); var url = URL.createObjectURL(blob);
       previewAudio = new Audio(url);
@@ -922,6 +932,12 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     } catch(e) { say('That voice did not answer. Try another one.'); }
   };
   $('voiceSel').onchange = function(){ voice = this.value; cache = {}; var was = playing; if (was) { pause(); } saveProgress(true); say('Voice: ' + this.options[this.selectedIndex].text); if (was) play(); };
+  $('deliverySel').value = delivery;
+  $('deliverySel').onchange = function(){ delivery = this.value; localStorage.setItem('kade.library.delivery', delivery); cache = {}; var was = playing; if (was) { pause(); play(); } };
+  $('followAlong').checked = localStorage.getItem('kade.library.followAlong') === '1';
+  function followStyle(){ $('nowText').style.fontSize = $('followAlong').checked ? '1.5rem' : ''; $('nowText').style.lineHeight = $('followAlong').checked ? '1.9' : ''; $('nowText').style.border = $('followAlong').checked ? '3px solid #bb8800' : ''; }
+  $('followAlong').onchange = function(){ localStorage.setItem('kade.library.followAlong', this.checked ? '1' : '0'); followStyle(); };
+  followStyle();
   $('speedSel').onchange = function(){ speed = parseFloat(this.value) || 1; if (isAudio()) fileAudio.playbackRate = speed; else { cache = {}; var was = playing; if (was) pause(); if (was) play(); } saveProgress(true); };
   document.addEventListener('keydown', function(ev){
     if (!book || $('player').classList.contains('hidden')) return;
@@ -963,7 +979,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         pause(); ensureCtx();
         say('Reading the skipped part: ' + sk.title);
         for (var c = 0; c < sk.chunks; c++) {
-          var r = await fetch(API + '/book/' + book.id + '/audio/' + sk.k + '/' + c + '?skipped=1&voice=' + encodeURIComponent(voice) + '&speed=' + speed, { headers: { 'Authorization': 'Bearer ' + token } });
+          var r = await fetch(API + '/book/' + book.id + '/audio/' + sk.k + '/' + c + '?skipped=1&voice=' + encodeURIComponent(voice) + '&speed=' + speed + '&delivery=' + encodeURIComponent(delivery), { headers: { 'Authorization': 'Bearer ' + token } });
           if (!r.ok) break;
           var buf = await new Promise(function(res, rej){ r.arrayBuffer().then(function(ab){ ctx.decodeAudioData(ab, res, rej); }).catch(rej); }).catch(function(){ return null; });
           if (!buf) continue;
