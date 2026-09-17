@@ -31,7 +31,6 @@
 const express = require('express');
 const https = require('https');
 const axios = require('axios');
-const { writingCost } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, fluxCost } = require('~/models/kadeUsage');
@@ -495,13 +494,21 @@ router.post('/avatar', express.json({ limit: '32kb' }), async (req, res) => {
  * that already arrives globally on every turn. Which is also why the craft
  * brief below tells the writer, in as many words, not to write anti-slop rules.
  *
- * Model and billing are shared with the other writing desks. The writing
- * model creates the persona draft; it does not choose that character's model.
+ * MODEL: pinned in env, default `z-ai/glm-5.3-flash` — KADE'S CALL, Sep 1
+ * ("I want 5.3 flash on the agent building stuff"), overriding the plan's
+ * suggestion of the full 5.3. At $0.075/M in and $0.25/M out a full round
+ * costs about a fifth of a cent, so the button says a penny and means it.
+ * Move it with KADE_PERSONA_MODEL without a code change.
  * ──────────────────────────────────────────────────────────────────────── */
 
-const PERSONA_MODEL = process.env.KADE_WRITING_MODEL || process.env.KADE_PERSONA_MODEL || 'nousresearch/hermes-4-405b';
+const PERSONA_MODEL = process.env.KADE_PERSONA_MODEL || 'z-ai/glm-5.3-flash';
 const PERSONA_DAILY_CAP = Number(process.env.KADE_PERSONA_DAILY_CAP || 12);
 const PERSONA_MAX_TOKENS = Number(process.env.KADE_PERSONA_MAX_TOKENS || 6000);
+/* OpenRouter's published price for the default model, per MILLION tokens.
+ * Used only to print an honest number; the wallet is charged the measured
+ * amount, not an estimate. */
+const PERSONA_PRICE_IN = Number(process.env.KADE_PERSONA_PRICE_IN || 0.075);
+const PERSONA_PRICE_OUT = Number(process.env.KADE_PERSONA_PRICE_OUT || 0.25);
 
 let personaDayStamp = '';
 const personaCounts = new Map();
@@ -587,7 +594,11 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
     const usage = (r.data && r.data.usage) || {};
     const inTok = Number(usage.prompt_tokens || 0);
     const outTok = Number(usage.completion_tokens || 0);
-    const { costUSD, measured } = writingCost(usage, PERSONA_MODEL, userContent.length + PERSONA_CRAFT.length, raw.length);
+    const measured = inTok > 0 || outTok > 0;
+    const costUSD = measured
+      ? (inTok * PERSONA_PRICE_IN + outTok * PERSONA_PRICE_OUT) / 1e6
+      : ((userContent.length + PERSONA_CRAFT.length) / 4 * PERSONA_PRICE_IN +
+          (raw.length / 4) * PERSONA_PRICE_OUT) / 1e6;
 
     personaCounts.set(req.user.id, used + 1);
     logKadeUsage({
@@ -673,7 +684,7 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
     app.innerHTML='<h2>How would you like to start?</h2>'
       +'<div class="row"><button type="button" id="doorDescribe" class="primary">Describe them in your own words</button>'
       +'<button type="button" id="doorQuiz">Answer eight quick questions</button></div>'
-      +'<p class="help">The first one writes a full, detailed personality for you from a description. A draft usually costs a few cents of credit; longer revisions can cost more. The questions are free and build a shorter starter personality you can grow later.</p>';
+      +'<p class="help">The first one writes a full, detailed personality for you from a description — it costs about a penny of credit. The questions are free and build a shorter starter personality you can grow later.</p>';
     say('How would you like to start? Describe them in your own words, or answer eight quick questions.');
     document.getElementById('doorDescribe').onclick=function(){ renderDescribe(); };
     document.getElementById('doorQuiz').onclick=function(){ step=0; answers={}; renderStep(); };
