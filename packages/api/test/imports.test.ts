@@ -44,6 +44,6 @@ test('HTTP import: asynchronous, owned, recoverable, size checked and idempotent
  for(let i=0;i<50&&rows.get(id).state!=='ready';i++)await new Promise(r=>setTimeout(r,10));
  assert.equal(rows.get(id).state,'ready');assert.equal(imports,1);
  // A failed job whose staging object disappeared can be uploaded again.
- row.state='failed';const retry=await call('',input);assert.equal(retry.uploadRequired,true);assert.equal(retry.id,id);
+ existing=null;row.state='ready';const retry=await call('',input);assert.equal(retry.uploadRequired,true);assert.equal(retry.id,id);
  }finally{release();server.close();}
 });

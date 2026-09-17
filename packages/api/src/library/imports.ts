@@ -131,6 +131,11 @@ export function bookImportRouter(deps: Dependencies): Router {
         if (!job) return res.status(429).json({ error: 'Finish or retry an earlier book import before starting another.' });
       }
       if (!job || job.fileName !== input.fileName || job.bytes !== input.bytes || job.private !== initial.private || job.grownUpsOnly !== initial.grownUpsOnly) return res.status(409).json({ error: 'This recovery ID belongs to a different upload. Select the original file and settings.' });
+      // Withdrawing a book must not make its original file impossible to import again.
+      if (job.state === 'ready' && !(await deps.existing(id, actor.id))) {
+        await jobs.updateOne({ _id: id, state: 'ready' }, { $set: { state: 'uploading', error: '' }, $unset: { result: 1 } });
+        job.state = 'uploading'; delete job.result;
+      }
       // A lost PUT receipt is recoverable without resending a multi-gigabyte ZIP.
       if (job.state === 'uploading' || job.state === 'failed') {
         let arrived = false;
