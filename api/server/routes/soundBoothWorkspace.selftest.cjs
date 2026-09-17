@@ -12,16 +12,18 @@ const backend=fs.readFileSync(root+'/api/server/routes/kadeSoundBooth.js','utf8'
 const a=backend.indexOf('const GUIDE = ')+14,b=backend.indexOf('\n};',a)+2;
 const guide=vm.runInNewContext('('+backend.slice(a,b)+')',{SCREENPLAY_HELP:'Actor directions in brackets; spoken text outside brackets.'});
 const sent=[],errors=[];
+let failNextRender=false;
 const server=http.createServer((req,res)=>{
  if(req.url==='/sound-booth'){res.setHeader('Content-Type','text/html');res.end(html);return;}
  if(req.url.startsWith('/assets/')){res.setHeader('Content-Type','application/javascript');res.end('');return;}
  res.setHeader('Content-Type','application/json');
  if(req.url.endsWith('/health')){res.end(JSON.stringify({guide,moods:[{key:'joyful',label:'Joyful'}]}));return;}
- if(req.url.endsWith('/projects')){res.end(JSON.stringify({projects:[{id:'failed-empty',title:'Failed empty attempt',engine:'scenema',state:'failed',takes:[]},{id:'recoverable',title:'Recoverable recording',engine:'scenema',state:'failed',hasRecoverableAudio:true,takes:[{id:'take-1',url:'https://example.test/take.mp3',masterUrl:'https://example.test/take.wav'}]}]}));return;}
+ if(req.url.endsWith('/projects')){res.end(JSON.stringify({projects:[{id:'failed-empty',title:'Failed empty attempt',engine:'scenema',state:'failed',lastError:'Missing worker component. Generation stopped.',takes:[]},{id:'recoverable',title:'Recoverable recording',engine:'scenema',state:'failed',hasRecoverableAudio:true,takes:[{id:'take-1',url:'https://example.test/take.mp3',masterUrl:'https://example.test/take.wav'}]}]}));return;}
+ if(req.url.includes('/status/')){res.end(JSON.stringify({state:'failed',error:'Fixture worker failure',spoken:'Generation stopped. Fixture worker failure.'}));return;}
  if(req.method==='GET'){res.end('{}');return;}
  let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{
   const body=JSON.parse(raw||'{}');sent.push({url:req.url,body});
-  if(req.url.endsWith('/render'))res.end(JSON.stringify(body.estimateOnly?{estimate:{spoken:'Fixture price: eight cents.'}}:{projectId:'music-fixture',spoken:'Fixture recording ready.'}));
+  if(req.url.endsWith('/render'))res.end(JSON.stringify(body.estimateOnly?{estimate:{spoken:body.engine==='scenema'?'No reliable total price estimate. GPU time costs up to $1.22 per hour.':'Fixture price: eight cents.'}}:failNextRender?{queued:true,jobId:'fixture-failure',projectId:'failed-empty',estimate:{spoken:'Fixture queued'}}:{projectId:'music-fixture',spoken:'Fixture recording ready.'}));
   else res.end(JSON.stringify({}));
  });
 });
@@ -30,11 +32,11 @@ const server=http.createServer((req,res)=>{
  const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL || 'msedge',headless:true});
  try{
   const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));
+  await page.addInitScript(()=>{const original=window.setInterval;window.setInterval=(callback,ms,...args)=>original(callback,ms===15000?30:ms,...args);});
   await page.goto('http://127.0.0.1:'+server.address().port+'/sound-booth');
   await page.locator('#app').waitFor({state:'visible'});
   await page.getByRole('heading',{name:'Recoverable recording',exact:true}).waitFor();
-  assert.equal(await page.getByRole('heading',{name:'Failed empty attempt',exact:true}).count(),0);
-  await page.locator('#showFailed').check();
+  assert.equal(await page.locator('#showFailed').isChecked(),true);
   await page.getByRole('heading',{name:'Failed empty attempt',exact:true}).waitFor();
   await page.locator('#showFailed').uncheck();
   await page.locator('#script').fill('Scenema spoken script');
@@ -53,10 +55,15 @@ const server=http.createServer((req,res)=>{
   await page.locator('#set_instrumental').check();
   assert.equal(await page.locator('#set_lyrics').count(),0);
   await page.locator('#btnRender').click();
-  await page.locator('#btnRender').filter({hasText:'confirm'}).waitFor();
+  await page.getByRole('dialog',{name:'Confirm paid generation'}).waitFor();
+  assert.equal(await page.locator('#btnConfirmRender').evaluate(el=>el===document.activeElement),true);
+  assert.equal(await page.locator('#btnConfirmRender').getAttribute('aria-describedby'),'renderConfirmationPrice');
+  assert.match(await page.locator('#renderConfirmationPrice').innerText(),/eight cents/);
   assert.equal(sent.length,1);assert.equal(sent[0].body.estimateOnly,true);
   assert.equal(sent[0].body.engine,'lyria');assert.equal(sent[0].body.script,'Slow soul instrumental with piano and bass, 90 seconds.');
   for(const field of ['mood','gender','voice_description','reference_voice_url','audio_urls','lyrics'])assert.equal(sent[0].body[field],undefined,field);
+  await page.getByRole('button',{name:'Keep editing',exact:true}).click();
+  assert.equal(sent.length,1,'cancelling price confirmation must not generate');
   await page.locator('#script').fill('Edited music direction');
   assert.equal(await page.locator('#btnRender').innerText(),'Make music');
   await page.locator('#set_instrumental').uncheck();
@@ -75,9 +82,9 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.locator('#script').inputValue(),'Edited music direction');
   assert.equal(await page.locator('#set_lyrics').inputValue(),'[Verse]\nMy own lyrics');
   assert.equal(await page.locator('#starter option').count(),3,'only music starters plus placeholder');
-  await page.locator('#btnRender').click();await page.locator('#btnRender').filter({hasText:'confirm'}).waitFor();
+  await page.locator('#btnRender').click();await page.getByRole('dialog',{name:'Confirm paid generation'}).waitFor();
   assert.equal(sent.length,2,'second quote, no generation or script-writing request');
-  await page.locator('#btnRender').click();await page.locator('#status').filter({hasText:'Fixture recording ready'}).waitFor();
+  await page.getByRole('button',{name:'Start paid generation',exact:true}).click();await page.locator('#status').filter({hasText:'Fixture recording ready'}).waitFor();
   assert.equal(sent.length,3);assert.equal(sent[2].body.estimateOnly,undefined);assert.equal(sent[2].body.lyrics,'[Verse]\nMy own lyrics');
   await page.locator('[data-engine="scenema"]').click();
   await page.getByText('Voice design and editing ideas',{exact:true}).click();
@@ -96,6 +103,22 @@ const server=http.createServer((req,res)=>{
   await page.getByRole('button',{name:'Use this voice',exact:true}).click();
   assert.equal(await page.locator('#set_auk_task').inputValue(),'speech');
   assert.equal(sent.length,3,'attaching a saved take must not start a paid job');
+  failNextRender=true;
+  await page.locator('#btnRender').click();
+  await page.getByRole('dialog',{name:'Confirm paid generation'}).waitFor();
+  assert.match(await page.locator('#renderConfirmationPrice').innerText(),/No reliable total price estimate.*1.22/);
+  assert.equal(await page.locator('#btnConfirmRender').evaluate(el=>el===document.activeElement),true);
+  await page.keyboard.press('Escape');
+  assert.equal(sent.filter(x=>!x.body.estimateOnly).length,1,'Escape cannot start paid work');
+  await page.locator('#btnRender').click();
+  await page.getByRole('button',{name:'Start paid generation',exact:true}).click();
+  await page.getByRole('alertdialog',{name:'Generation stopped'}).waitFor();
+  assert.equal(await page.locator('#btnFailureOK').evaluate(el=>el===document.activeElement),true);
+  assert.match(await page.locator('#renderFailureMessage').innerText(),/Fixture worker failure/);
+  assert.equal(await page.locator('#showFailed').isChecked(),true);
+  await page.getByRole('button',{name:'OK',exact:true}).click();
+  await page.getByRole('heading',{name:'Failed empty attempt',exact:true}).waitFor();
+  assert.equal(await page.locator('#btnCancel').isVisible(),false);
   assert.deepEqual(errors,[]);
   if(output) await page.screenshot({path:output+'/lyria-workspace.png',fullPage:true});
   if(output) fs.writeFileSync(output+'/web-test-receipt.json',JSON.stringify({passed:true,engineDrafts:3,musicDirect:true,scriptRequests:0,confirmation:true,lyricsPreserved:true,noSpeechSettings:true},null,2));

@@ -138,7 +138,18 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <button type="button" class="act primary" id="btnRender">Render</button>
         <button type="button" class="act" id="btnCancel" hidden>Stop this render</button>
       </div>
-      <p class="hint">The cost is announced first. Press the generation button again to confirm the price and start.</p>
+      <p class="hint">Review the cost information in the confirmation window, then choose Start paid generation or Keep editing.</p>
+      <dialog id="renderConfirmation" aria-labelledby="renderConfirmationTitle" aria-describedby="renderConfirmationPrice">
+        <h2 id="renderConfirmationTitle">Confirm paid generation</h2>
+        <p id="renderConfirmationPrice"></p>
+        <button type="button" class="act primary" id="btnConfirmRender" aria-describedby="renderConfirmationPrice">Start paid generation</button>
+        <button type="button" class="act" id="btnKeepEditing">Keep editing</button>
+      </dialog>
+      <dialog id="renderFailure" role="alertdialog" aria-labelledby="renderFailureTitle" aria-describedby="renderFailureMessage">
+        <h2 id="renderFailureTitle">Generation stopped</h2>
+        <p id="renderFailureMessage"></p>
+        <button type="button" class="act" id="btnFailureOK" aria-describedby="renderFailureMessage">OK</button>
+      </dialog>
     </fieldset>
 
     <button type="button" class="act quiet" id="btnScriptFile">Download this script as text</button>
@@ -160,7 +171,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     </details>
 
     <h2>Library</h2>
-    <label><input type="checkbox" id="showFailed"> Show failed and stopped attempts without audio</label>
+    <label><input type="checkbox" id="showFailed" checked> Show failed and stopped attempts without audio</label>
     <div id="library" aria-live="off"><p class="muted">Nothing here yet.</p></div>
   </main>
 
@@ -480,7 +491,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       } finally { state.rendering=false; document.getElementById('btnPreview').disabled=false; }
     }
     var btnRender = document.getElementById('btnRender');
-    async function confirmRender(preview){
+    var renderConfirmation=document.getElementById('renderConfirmation');
+    document.getElementById('btnFailureOK').onclick=function(){document.getElementById('renderFailure').close();};
+    var confirmingPreview=false, quoteLoading=false;
+    document.getElementById('btnKeepEditing').onclick=function(){invalidateQuote();renderConfirmation.close();};
+    renderConfirmation.addEventListener('cancel',function(){invalidateQuote();});
+    document.getElementById('btnConfirmRender').onclick=function(){renderConfirmation.close();return confirmRender(confirmingPreview,true);};
+    async function confirmRender(preview, confirmed){
+      if(quoteLoading) return;
       if(state.rendering || state.jobId) { say('A render is already in progress. Wait for it or press Stop.',true); return; }
       var script=document.getElementById('script').value.trim();
       var b=collect();
@@ -488,16 +506,19 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       b.script=script || '<speak voice="'+esc(b.voice_description||'A warm clear voice')+'" gender="'+(b.gender||'female')+'"></speak>';
       b.preview=preview; b.estimateOnly=true;
       var key=JSON.stringify(b);
-      if(state.pendingRender!==key){
-        var quoteRevision=state.quoteRevision;btnRender.disabled=true;
+      if(!confirmed || state.pendingRender!==key){
+        var quoteRevision=state.quoteRevision;btnRender.disabled=true;quoteLoading=true;
         var r=await post('/api/kade/sound-booth/render',b);
-        btnRender.disabled=false;
+        btnRender.disabled=false;quoteLoading=false;
         if(!r.ok){say(r.data.error||'Could not estimate that script.',true);return;}
         if(quoteRevision!==state.quoteRevision){say('The draft or settings changed. Choose '+renderLabel()+' again for the current price.');return;}
         state.pendingRender=key;
         var cloneLine=state.engine==='lyria' ? '' : state.clips.length ? (b.auk_task==='edit'?' Editing ':' Cloning ')+state.clips.map(function(c){return c.name;}).join(', ')+'.' : ' No reference clip attached.';
-        say((r.data.estimate.spoken||'')+cloneLine+' Press '+(preview?'Hear this voice first':renderLabel())+' again to confirm.');
-        if(!preview) btnRender.textContent=renderLabel()+' — confirm';
+        var price=(r.data.estimate && r.data.estimate.spoken) || 'A reliable total price is unavailable. This is a paid generation.';
+        confirmingPreview=preview;
+        document.getElementById('renderConfirmationPrice').textContent=price+cloneLine;
+        renderConfirmation.showModal();
+        document.getElementById('btnConfirmRender').focus();
         return;
       }
       invalidateQuote(); btnRender.disabled=true;
@@ -556,6 +577,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(s !== last || finished || ticks % 2 === 0){ last = s; say(r.data.spoken || s, s === 'failed'); }
         if(finished){
           stopPoll(); state.jobId = null; state.lastWait = null; state.cancelArmed = null; document.getElementById('btnCancel').hidden = true;
+          if(s === 'failed'){
+            document.getElementById('showFailed').checked=true;
+            document.getElementById('renderFailureMessage').textContent=r.data.error || r.data.spoken || 'No finished recording was returned. Your saved attempt remains in the library.';
+            document.getElementById('renderFailure').showModal();
+            document.getElementById('btnFailureOK').focus();
+          }
           /* Part 123. "Hear this voice first" means HEAR it: a finished preview
            * plays itself, instead of landing as one more audio element she has
            * to find in the library by tab. The library still gets it. */

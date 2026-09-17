@@ -840,7 +840,7 @@ function estimateFor(engine, script) {
     audioSeconds: seconds,
     renderSeconds,
     costUSD,
-    spoken: 'AuK HQ uses a sleeping GPU. Startup and processing are billed. A reliable cost and wait estimate is not available yet. Longer work runs in sections.',
+    spoken: `AuK HQ has no reliable total price estimate yet. GPU time costs up to $${Number(process.env.AUK_RATE_PER_HR || 1.22).toFixed(2)} per hour, including startup, processing and brief idle time. This is time the GPU is active, not the length of your recording. Longer work runs in sections.`,
   };
 }
 
@@ -1787,7 +1787,8 @@ async function notifyReady(userId, seconds) {
       title: 'Your narration is ready',
       body: `${len} of audio, joined from its parts, is in My Creations.`,
       urgent: false,
-      category: 'KADE_RESEARCH',
+      requested: true,
+      route: 'sound-booth',
     },
     { headers: { 'User-Agent': UA }, timeout: 15000 },
   );
