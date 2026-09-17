@@ -127,7 +127,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 
     <fieldset id="editorPanel">
       <legend id="editorLegend">The script</legend>
-      <p class="hint" id="scriptHint">This is what gets performed, written like a script. Square brackets are a direction for the actor and are never spoken: [Voice tightens.] Double parentheses are a sound in the room: ((thunder)). Everything else is spoken. Edit it here before rendering; the engine's own code is built from it behind the scenes.</p>
+      <p class="hint" id="scriptHint">Write only the words to perform. An imported reference supplies the voice and accent. Use Edit to change a recording, or Seed Audio for a scene with sound effects.</p>
       <label class="field" for="script" id="editorLabel">Script</label>
       <textarea id="script" aria-describedby="scriptHint" spellcheck="false"></textarea>
       <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
@@ -280,7 +280,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('settingsLegend').textContent=music?'Song options':scene?'Voices and scene sound':'Voice and performance';
       document.getElementById('editorLegend').textContent=music?'Describe your music':scene?'Scene script':'Performance script';
       document.getElementById('editorLabel').textContent=music?'Music direction':scene?'Scene script':'Performance script';
-      document.getElementById('scriptHint').textContent=music?'Describe the genre, instruments, mood, singing voice if wanted, structure and length. Send this direction straight to Lyria; no script-writing step is needed. Put any exact words to sing in Your own lyrics.':scene?'Describe the setting, sounds and each voice. Include the exact dialogue and identify reference voices as @Audio1, @Audio2 or @Audio3.':'Write the words to perform. Square brackets give actor directions, such as [Whispers.]. Double parentheses describe sounds, such as ((thunder)).';
+      document.getElementById('scriptHint').textContent=music?'Describe the genre, instruments, mood, singing voice if wanted, structure and length. Send this direction straight to Lyria; no script-writing step is needed. Put any exact words to sing in Your own lyrics.':scene?'Describe the setting, sounds and each voice. Include the exact dialogue and identify reference voices as @Audio1, @Audio2 or @Audio3.':'Write only the words to perform. A reference clip supplies its voice and accent. To change the recording, use Edit; adding another accent is experimental. Use Seed Audio for sound effects.';
       document.getElementById('script').setAttribute('aria-label',music?'Music direction':scene?'Scene script':'Performance script');
       document.getElementById('btnScriptFile').textContent=music?'Download music direction as text':'Download this script as text';
       document.getElementById('starterLabel').textContent=music?'A music starting point':scene?'A scene starting point':'A performance starting point';
