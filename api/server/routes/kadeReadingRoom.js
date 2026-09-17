@@ -41,7 +41,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { saveBufferToS3, openAudioArchive, AUDIO_ZIP_LIMIT, TEXT_IMPORT_LIMIT, storeAudioStream, libraryPath, libraryCategory, libraryPathExpression, refineMediaFiling, correctedBookShelf, reviewedLibraryMoves } = require('@librechat/api');
+const { bookImportRouter, saveBufferToS3, openAudioArchive, AUDIO_ZIP_LIMIT, TEXT_IMPORT_LIMIT, storeAudioStream, libraryPath, libraryCategory, libraryPathExpression, refineMediaFiling, correctedBookShelf, reviewedLibraryMoves } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, CATEGORIES } = require('~/models/kadeBook');
@@ -409,7 +409,9 @@ router.post('/upload', requireJwtAuth, async (req, res, next) => {
     }
     next();
   });
-}, async (req, res) => {
+}, importUploadedBook);
+
+async function importUploadedBook(req, res) {
   const f = req.file;
   try {
     if (!f || !f.path || !f.size) return res.status(400).json({ error: 'No book arrived. Pick a file and try again.' });
@@ -425,7 +427,7 @@ router.post('/upload', requireJwtAuth, async (req, res, next) => {
       catch (e) { return res.status(400).json({ error: e.message }); }
       if (archive) {
         const daisy = archive.publication;
-        const id = new mongoose.Types.ObjectId();
+        const id = req.importBookId ? new mongoose.Types.ObjectId(req.importBookId) : new mongoose.Types.ObjectId();
         const uploaded = new Map();
         try {
           for (const clip of daisy.clips) {
@@ -433,7 +435,7 @@ router.post('/upload', requireJwtAuth, async (req, res, next) => {
             const media = mimeFor(clip.path);
             if (!media) throw new Error('This audio format is not supported.');
             if (media.ext === 'mp4') media.mime = 'audio/mp4';
-            const key = trackKey(id, media.ext);
+            const key = req.importBookId ? `${MEDIA_PREFIX()}/${id}/import-${uploaded.size}.${media.ext}` : trackKey(id, media.ext);
             uploaded.set(clip.path, { key, bytes: archive.bytes(clip.path), mime: media.mime });
             const client = s3();
             if (!client || !MEDIA_BUCKET()) throw new Error('Audio storage is unavailable.');
@@ -477,14 +479,15 @@ router.post('/upload', requireJwtAuth, async (req, res, next) => {
     let fileUrl = '';
     try {
       if (typeof saveBufferToS3 === 'function') {
-        const fileName = `book-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext || 'bin'}`;
+        const fileName = req.importBookId ? `book-${req.importBookId}.${ext || 'bin'}` : `book-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext || 'bin'}`;
         fileUrl = (await saveBufferToS3({ userId: String(req.user.id), buffer: f.buffer, fileName, basePath: 'books' })) || '';
       }
     } catch (e) {
       logger.warn(`[reading-room/upload] original not stored (${e.message}); the parsed text is enough to read`);
     }
     const ownerName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
-    const book = await KadeBook.create({
+    const book = new KadeBook({
+      ...(req.importBookId ? { _id: new mongoose.Types.ObjectId(req.importBookId) } : {}),
       owner: req.user.id,
       ownerName,
       shared: isAdmin(req) && (req.body || {}).private !== '1',
@@ -509,18 +512,44 @@ router.post('/upload', requireJwtAuth, async (req, res, next) => {
       parserVersion: PARSER_VERSION,
       state: 'ready',
     });
-    await KadeBookText.create({
-      book: book._id,
+    await KadeBookText.updateOne({ book: book._id }, { $set: {
       sections: parsed.sections.map((s) => ({ chunks: s.chunks })),
       skipped: parsed.skipped.map((s) => ({ chunks: s.chunks })),
-    });
+    } }, { upsert: true });
+    await book.save();
     logger.info(`[reading-room/upload] user=${req.user.id} "${book.title}" ${parsed.meta.format} ${f.buffer.length}B -> ${parsed.stats.sections} sections, ${parsed.stats.chunks} chunks, ${parsed.stats.chars} chars, skipped ${parsed.stats.skipped.join(',') || 'nothing'} in ${Date.now() - t0}ms`);
     res.json({ ok: true, book: summary(book.toObject(), null), skipped: book.skipped, jacket: book.jacket });
   } catch (e) {
     logger.error('[reading-room/upload] error:', e);
     res.status(500).json({ error: 'The book did not save. Try again in a moment.' });
   } finally { if (req.bookUploadDirectory) await bookTemp.rm(req.bookUploadDirectory, { recursive: true, force: true }).catch(() => {}); }
-});
+}
+
+router.use('/imports', express.json({ limit: '8kb' }), bookImportRouter({
+  auth: requireJwtAuth,
+  actor: req => ({ id: String(req.user.id), name: req.user.name, username: req.user.username, email: req.user.email, role: req.user.role }),
+  sign: (key, bytes) => signPut(key, 'application/octet-stream', bytes),
+  head: headObject,
+  download: async key => {
+    const { GetObjectCommand } = require('@aws-sdk/client-s3');
+    const result = await s3().send(new GetObjectCommand({ Bucket: MEDIA_BUCKET(), Key: key }));
+    return result.Body;
+  },
+  remove: key => deleteKeys([key]),
+  existing: async (id, owner) => {
+    const book = await KadeBook.findOne({ _id: id, owner, state: 'ready' }).lean();
+    return book ? { ok: true, book: summary(book, null), skipped: book.skipped || [], jacket: book.jacket || '' } : null;
+  },
+  importFile: async (job, path, directory) => {
+    let result;
+    const response = { status() { return this; }, json(value) { result = value; return this; } };
+    await importUploadedBook({ user: job.actor, importBookId: job._id, bookUploadDirectory: directory,
+      file: { path, size: job.bytes, originalname: job.fileName },
+      body: { private: job.private ? '1' : '0', grownUpsOnly: job.grownUpsOnly ? '1' : '0' } }, response);
+    return result || { error: 'The import did not return a result.' };
+  },
+  log: message => logger.warn('[reading-room/import] ' + message),
+}));
 
 /* ── one book ──────────────────────────────────────────────────────────── */
 router.get('/book/:id', requireJwtAuth, async (req, res) => {
@@ -780,9 +809,15 @@ router.post('/media/:id/track/presign', requireJwtAuth, express.json({ limit: '4
     const m = mimeFor(b.fileName, b.mime);
     if (!m) return res.status(400).json({ error: 'That is not an audio or video file. MP3, M4A, M4B, AAC, WAV, OGG, FLAC, MP4, M4V, MOV or WebM all work.' });
     const bytes = Math.max(0, parseInt(b.bytes, 10) || 0);
-    if (bytes > MAX_TRACK_BYTES) return res.status(400).json({ error: 'One file is over 20 GB — split it into parts.' });
+    if (!bytes || bytes > MAX_TRACK_BYTES) return res.status(400).json({ error: 'One file is over 20 GB — split it into parts.' });
     if ((item.tracks || []).length >= 200) return res.status(400).json({ error: 'Two hundred parts is the limit for one item.' });
     const key = trackKey(item._id, m.ext);
+    if (b.multipart === true && bytes > MULTIPART_ABOVE) {
+      const uploadId = await createMultipart(key, m.mime);
+      const parts = [];
+      for (let i = 1; i <= Math.ceil(bytes / MULTIPART_PART_BYTES); i++) parts.push({ partNumber: i, url: await signPart(key, uploadId, i) });
+      return res.json({ ok: true, key, mime: m.mime, multipart: { uploadId, partBytes: MULTIPART_PART_BYTES, parts } });
+    }
     const url = await signPut(key, m.mime, bytes);
     res.json({ ok: true, key, url, mime: m.mime, method: 'PUT', headers: { 'Content-Type': m.mime }, expiresInSeconds: 3 * 3600 });
   } catch (e) {
@@ -792,7 +827,7 @@ router.post('/media/:id/track/presign', requireJwtAuth, express.json({ limit: '4
 });
 
 /** Step 2: the client says the bytes landed; we check the object exists. */
-router.post('/media/:id/track/done', requireJwtAuth, express.json({ limit: '4kb' }), async (req, res) => {
+router.post('/media/:id/track/done', requireJwtAuth, express.json({ limit: '64kb' }), async (req, res) => {
   try {
     const item = await ownAudio(req, req.params.id);
     if (!item) return res.status(404).json({ error: 'No such donation.' });
@@ -800,8 +835,17 @@ router.post('/media/:id/track/done', requireJwtAuth, express.json({ limit: '4kb'
     const key = String(b.key || '');
     if (!key.startsWith(`${MEDIA_PREFIX()}/${item._id}/`)) return res.status(400).json({ error: 'That upload does not belong to this item.' });
     if ((item.tracks || []).some((t) => t.key === key)) return res.json({ ok: true, item: summary(item.toObject(), null) });
+    if (b.multipart) {
+      const parts = b.multipart.parts;
+      if (typeof b.multipart.uploadId !== 'string' || !Array.isArray(parts) || !parts.length || parts.length > 410 ||
+          parts.some((p, i) => p.partNumber !== i + 1 || typeof p.etag !== 'string' || !p.etag || p.etag.length > 200)) return res.status(400).json({ error: 'Invalid multipart receipt.' });
+      let completed = false;
+      try { completed = Number((await headObject(key)).ContentLength) === Number(b.bytes); } catch (_) {}
+      if (!completed) await completeMultipart(key, b.multipart.uploadId, parts);
+    }
     let head;
     try { head = await headObject(key); } catch (e) { return res.status(400).json({ error: 'The file did not arrive in storage. Try the upload again.' }); }
+    if (Number(b.bytes) > 0 && Number(head.ContentLength) !== Number(b.bytes)) return res.status(400).json({ error: 'The stored file size does not match. Retry the upload.' });
     const ext = key.split('.').pop();
     item.tracks.push({
       title: String(b.title || '').trim().slice(0, 200) || `Part ${item.tracks.length + 1}`,

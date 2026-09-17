@@ -120,3 +120,4 @@ export { openAudioArchive, AUDIO_ZIP_LIMIT, TEXT_IMPORT_LIMIT } from './library/
 export { storeAudioStream } from './library/stream';
 
 export { configureBookUploadTimeouts } from './library/timeouts';
+export { bookImportRouter } from './library/imports';

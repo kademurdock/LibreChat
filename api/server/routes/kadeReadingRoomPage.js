@@ -582,10 +582,27 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (!f) { say('Pick a book file first.'); return; }
     var btn = this; btn.disabled = true; say('Reading ' + f.name + '… large audiobooks can take several minutes. Keep this page open.');
     try {
-      var fd = new FormData(); fd.append('book', f); fd.append('private', $('bookPrivate').checked ? '1' : '0'); fd.append('grownUpsOnly', $('bookGrownUps').checked ? '1' : '0');
-      var r = await fetch(API + '/upload', { method:'POST', headers:{ 'Authorization':'Bearer ' + token }, body: fd });
-      var j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'Upload failed');
+      if (!me) { var who = await api('/shelf'); me = who.me; }
+      if (!me) throw new Error('Could not identify your account. Reload before uploading.');
+      var keepPrivate = $('bookPrivate').checked, grown = $('bookGrownUps').checked;
+      var recoveryKey = 'library-import:' + JSON.stringify([me, f.name, f.size, f.lastModified, keepPrivate, grown]);
+      var requestId = localStorage.getItem(recoveryKey);
+      if (!requestId) { requestId = crypto.randomUUID(); localStorage.setItem(recoveryKey, requestId); }
+      var job = await api('/imports', { json: { requestId: requestId, fileName: f.name, bytes: f.size, private: keepPrivate, grownUpsOnly: grown } });
+      if (job.uploadRequired) {
+        say('Sending ' + f.name + ' directly to storage…');
+        var lastBookPercent = -1;
+        await putDirect(job.url, f, job.mime, function(p){ var n = Math.floor(p * 10) * 10; if(n !== lastBookPercent) { lastBookPercent = n; say('Book upload: ' + n + ' percent.'); } });
+      }
+      if (job.state !== 'ready') job = await api('/imports/' + job.id + '/commit', { json: {} });
+      if (job.state !== 'ready') say('The file is stored. Preparing the book… You can return and select this same file to check it.');
+      while (job.state !== 'ready') {
+        if (job.state === 'failed') throw new Error(job.error || 'Import failed. Retry this same file to recover the saved job.');
+        await new Promise(function(resolve){ setTimeout(resolve, 8500); });
+        job = await api('/imports/' + job.id);
+      }
+      var j = job.result;
+      if (!j || !j.book) throw new Error('The import receipt is incomplete. Select the same file to check it again.');
       say('Added: ' + j.book.title + (j.book.author ? ' by ' + j.book.author : '') + '. ' + (j.book.kind === 'text' ? j.book.sections : j.book.tracks) + ' sections, about ' + j.book.listen + '. ' + (j.skipped.length ? j.skipped.length + ' front-matter parts skipped.' : ''));
       $('bookFile').value = '';
       loadShelf();
@@ -619,7 +636,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       x.open('PUT', url, true);
       x.setRequestHeader('Content-Type', mime);
       x.upload.onprogress = function(ev){ if (ev.lengthComputable && onProgress) onProgress(ev.loaded / ev.total); };
-      x.onload = function(){ (x.status >= 200 && x.status < 300) ? resolve() : reject(new Error('storage answered ' + x.status)); };
+      x.onload = function(){ (x.status >= 200 && x.status < 300) ? resolve(x.getResponseHeader('ETag')) : reject(new Error('storage answered ' + x.status)); };
       x.onerror = function(){ reject(new Error('direct upload blocked')); };
       x.send(file);
     });
@@ -643,22 +660,37 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var btn = this; btn.disabled = true;
     var title = $('auTrackTitle').value.trim();
     try {
+      if (!me) { var who = await api('/shelf'); me = who.me; }
+      if (!me) throw new Error('Could not identify your account. Reload before uploading.');
+      var pendingKey = 'library-track-pending:' + me + ':' + auItem.id;
+      var pending = localStorage.getItem(pendingKey);
+      if (pending) {
+        var recovered = await api('/media/' + auItem.id + '/track/done', { json: JSON.parse(pending) });
+        localStorage.removeItem(pendingKey); auItem = recovered.item;
+        say('The previous recording is saved. Select the next file when ready.');
+        $('auFile').value = ''; btn.disabled = false; loadShelf(); return;
+      }
       var seconds = await fileSeconds(f);
       var lastPct = -1;
       var onProgress = function(p){ var pct = Math.round(p * 10) * 10; if (pct !== lastPct && pct % 20 === 0) { lastPct = pct; say('Uploading… ' + pct + ' percent.'); } };
-      var done = null;
-      try {
-        var pre = await api('/media/' + auItem.id + '/track/presign', { json: { fileName: f.name, mime: f.type, bytes: f.size } });
-        say('Uploading ' + f.name + ' straight to storage…');
-        await putDirect(pre.url, f, pre.mime, onProgress);
-        done = await api('/media/' + auItem.id + '/track/done', { json: { key: pre.key, title: title, bytes: f.size, seconds: seconds, originalName: f.name } });
-      } catch(e) {
-        if (f.size > 80 * 1024 * 1024) throw new Error('The direct upload did not go through and the file is over 80 MB. ' + e.message);
-        say('Direct upload did not go through (' + e.message + '); sending it through the server instead…');
-        var fd = new FormData(); fd.append('track', f); fd.append('title', title); fd.append('seconds', String(seconds));
-        var r = await fetch(API + '/media/' + auItem.id + '/track/upload', { method:'POST', headers:{ 'Authorization':'Bearer ' + token }, body: fd });
-        done = await r.json(); if (!r.ok) throw new Error(done.error || 'Upload failed');
-      }
+      var pre = await api('/media/' + auItem.id + '/track/presign', { json: { fileName: f.name, mime: f.type, bytes: f.size, multipart: true } });
+      say('Uploading ' + f.name + ' straight to storage…');
+      var receipt = { key: pre.key, title: title, bytes: f.size, seconds: seconds, originalName: f.name };
+      if (pre.multipart) {
+        var completed = [];
+        for (var part of pre.multipart.parts) {
+          var from = (part.partNumber - 1) * pre.multipart.partBytes;
+          var blob = f.slice(from, Math.min(f.size, from + pre.multipart.partBytes));
+          var etag = await putDirect(part.url, blob, pre.mime, function(p){ onProgress((from + blob.size * p) / f.size); });
+          if (!etag) throw new Error('Storage did not return a part receipt. Retry the upload; no server-upload fallback was used.');
+          completed.push({ partNumber: part.partNumber, etag: etag });
+        }
+        receipt.multipart = { uploadId: pre.multipart.uploadId, parts: completed };
+      } else await putDirect(pre.url, f, pre.mime, onProgress);
+      // A lost final receipt can be retried with this exact key and part list.
+      localStorage.setItem('library-track-pending:' + me + ':' + auItem.id, JSON.stringify(receipt));
+      var done = await api('/media/' + auItem.id + '/track/done', { json: receipt });
+      localStorage.removeItem('library-track-pending:' + me + ':' + auItem.id);
       auItem = done.item;
       var li = document.createElement('li'); li.textContent = (title || ('Part ' + auItem.tracks)) + ' — uploaded'; $('auTrackList').appendChild(li);
       $('auTracksHint').textContent = '"' + auItem.title + '" — ' + auItem.tracks + ' part' + (auItem.tracks === 1 ? '' : 's') + ' so far.';
