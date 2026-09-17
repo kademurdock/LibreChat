@@ -167,17 +167,15 @@ const MOODS = {
 const SCENEMA_GRAMMAR = `KADE SCREENPLAY INTERCHANGE FORMAT (translated into AuK instructions by our worker):
 
 <speak voice="WHO IS SPEAKING, in one specific theatrical sentence" gender="male|female" scene="optional place" shot="closeup|wide|scene" language="en">
-<action>what the speaker is DOING and FEELING right now</action>
 The spoken words, as natural prose.
-<action>the next shift — a physical cue plus an emotional one</action>
 More spoken words.
-<sound>an environmental event, only if shot is wide or scene</sound>
 </speak>
 
 HOW THIS ENGINE WORKS, so you write for it:
-- ONE speaker. It performs a single voice with real acting — emotion that shifts mid-take, breath, pauses, a voice that cracks on a word. It cannot do two characters or music.
-- The voice= description is the PRIMARY control. Weak: "a man speaking". Strong: "Male, mid 60s. Deep baritone with gravel. Slight Southern American inflection. Worn but warm. Nostalgic, firelight cadence. The voice of someone who has seen too much and chosen kindness anyway." Give sex, age, register, accent, texture, manner, and one line of character.
-- <action> tags are the primary tool for emotional performance. Put them BETWEEN speech segments. Describe what the speaker is DOING and FEELING — "Voice tightens. Swallows. Fighting to stay composed." / "Long pause. Deep breath. When he speaks again, his voice is raw but steady." Combine a physical cue with an emotional one. NEVER describe the audio ("add reverb", "louder", "echo") — that is not what the tag is for and it degrades the take.
+- ONE speaker. Write only the words the user wants spoken. Do not invent repeated acting directions between sentences.
+- With no imported reference, voice= describes the voice for the opening section. Later sections reuse that voice. Write one natural sentence describing the requested accent, register, texture and overall delivery. Keep it in the attribute, never among the spoken words.
+- With an imported reference, speech mode follows that recording's voice and accent. Do not claim that a different voice= description or stage direction changes its accent. Changing an existing recording belongs in Edit, then the user can use the edited take as a reference. Adding a new accent is experimental; the documented accent task removes a regional accent.
+- Do not add <action> tags of your own. Existing user-supplied directions can be kept as metadata, but reference-voice speech cannot promise per-line delivery changes. Never turn directions into spoken dialogue.
 - Nothing outside a tag is a note; it is SPOKEN ALOUD. No headings, labels, speaker names, or markdown outside a tag.
 - Do not add <sound> elements. Generated backgrounds and effects use Seed Audio; this lane performs speech.
 - Each segment is at most about 15 seconds; sentences are split there automatically. Keep sentences a natural length.
@@ -621,7 +619,8 @@ const GUIDE = {
       recipes: [
         { label: 'Design a storyteller voice', task: 'speech', text: 'An adult woman with a warm lower register, a gentle Southern American accent, textured but clear speech, and expressive storytelling inflection.' },
         { label: 'Change mood and inflection', task: 'edit', text: 'Make the delivery cheerful and animated, with expressive inflection. Preserve the words and speaker identity.' },
-        { label: 'Change accent', task: 'edit', text: 'Give the speaker a gentle Southern American accent. Preserve the words and overall voice identity.' },
+        { label: 'Try a new accent (experimental)', task: 'edit', text: 'Give the speaker a gentle Southern American accent. Preserve the words and overall voice identity.' },
+        { label: 'Remove a regional accent', task: 'edit', text: 'Remove the regional accent while preserving the speaker\'s voice and content.' },
         { label: 'Change voice texture', task: 'edit', text: 'Make the voice warmer and slightly huskier. Preserve the words and timing.' },
         { label: 'Change words', task: 'edit', text: 'Replace "Tuesday" with "Thursday". Preserve the speaker, delivery and all other words.' },
         { label: 'Whisper', task: 'edit', text: 'Turn the speech into a natural whisper. Preserve the words and speaker identity.' },
@@ -634,7 +633,8 @@ const GUIDE = {
       bestFor: ['expressive speech and reference voices', 'changing words, emotion, pitch, pace, timbre or whispering', 'removing noise or reverb, separating voices from a recording'],
       notFor: ['generating a complete background scene: use Seed Audio', 'guaranteed accent imitation or perfect word edits without listening back'],
       howToWrite: [
-        'For speech, write the exact words in the performance script. Describe accent, mood, inflection and texture in Describe the voice; use bracketed acting directions between lines.',
+        'For speech, put only the words to say in the performance script. With no reference clip, Describe the voice sets the opening voice and delivery; later sections reuse that voice.',
+        'With a reference clip, speech follows the clip\'s voice and accent. To try a different accent, choose Edit, describe the change while preserving the speaker and words, then use the edited take as your voice reference. Adding an accent is experimental; removing a regional accent is a documented task. Listen before using the result.',
         'To edit, choose edit under Task, import the source recording and fill in Edit instructions. For example: Change the emotion to cheerful while keeping the words and voice; Replace "Tuesday" with "Thursday"; Remove background noise; Raise pitch by two semitones.',
         'Target seconds is optional for edits that preserve length. Set it when changing speed or adding or removing words. Leave it blank to keep the source duration.',
         'Long recordings are processed in sections and joined. Edits spanning a join and voice continuity need listening review. Existing takes are kept.',
@@ -644,8 +644,8 @@ const GUIDE = {
       settings: [
         { key: 'auk_task', label: 'Task', hint: 'Speech creates a performance. Edit changes the imported recording.', kind: 'choice', options: ['speech', 'edit'], default: 'speech' },
         { key: 'instruction', label: 'Edit instructions', hint: 'Describe what to change and what to preserve. Used only for edit.', kind: 'text' },
-        { key: 'voice_description', label: 'Describe the voice', hint: 'Accent, age, register, texture, mood and inflection for speech.', kind: 'text' },
-        { key: 'reference_voice_url', label: 'Import voice or recording', hint: 'For speech, a short clean voice sample. For edit, the recording you want changed. WAV, MP3 or M4A.', kind: 'clip', max: 1 },
+        { key: 'voice_description', label: 'Describe a new voice (without a reference)', hint: 'Accent, age, texture and delivery when no reference is attached. A reference supplies its own voice and accent; use Edit to change it.', kind: 'text' },
+        { key: 'reference_voice_url', label: 'Import voice or recording', hint: 'Speech uses this recording\'s voice and accent. Edit changes the recording. To try another accent, edit first and use the new take as the reference. WAV, MP3 or M4A.', kind: 'clip', max: 1 },
         { key: 'gen_seconds', label: 'Target seconds for edit', hint: 'Optional. Leave blank to retain source duration; set when changing speed or word count.', kind: 'number', min: 0.1 },
         { key: 'pace', label: 'Speech pace allowance', hint: 'One is normal. Higher gives more time and slower speech; lower is quicker.', kind: 'number', min: 0.5, max: 3, default: 1 },
         { key: 'seed', label: 'Seed', hint: 'Repeat a take with the same settings. A reference clip anchors voice identity more reliably than the seed alone.', kind: 'number', min: 0, max: 4294967295 },
