@@ -1157,6 +1157,9 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
 router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (req, res) => {
   const b = req.body || {};
   const engine = ['seed', 'lyria'].includes(b.engine) ? b.engine : 'scenema';
+  if (b.referenceExpected === true && engine !== 'lyria' && !(engine === 'seed' ? Array.isArray(b.audio_urls) && b.audio_urls.length && b.audio_urls.every(url => typeof url === 'string' && url.trim()) : typeof b.reference_voice_url === 'string' && b.reference_voice_url.trim())) {
+    return res.status(400).json({ error: 'The expected reference clip is missing. Import it again before generating.' });
+  }
   const editing = engine === 'scenema' && b.auk_task === 'edit';
   if (editing && (!b.reference_voice_url || !String(b.instruction || '').trim())) return res.status(400).json({ error: 'Import a recording and describe what you want to change.' });
   if (editing && b.gen_seconds != null && (!Number.isFinite(b.gen_seconds) || b.gen_seconds <= 0)) return res.status(400).json({ error: 'Target seconds must be positive.' });

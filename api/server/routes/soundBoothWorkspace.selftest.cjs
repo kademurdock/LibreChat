@@ -12,7 +12,7 @@ const backend=fs.readFileSync(root+'/api/server/routes/kadeSoundBooth.js','utf8'
 const a=backend.indexOf('const GUIDE = ')+14,b=backend.indexOf('\n};',a)+2;
 const guide=vm.runInNewContext('('+backend.slice(a,b)+')',{SCREENPLAY_HELP:'Actor directions in brackets; spoken text outside brackets.'});
 const sent=[],errors=[];
-let failNextRender=false;
+let failNextRender=false, referenceResponse;
 const server=http.createServer((req,res)=>{
  if(req.url==='/sound-booth'){res.setHeader('Content-Type','text/html');res.end(html);return;}
  if(req.url.startsWith('/assets/')){res.setHeader('Content-Type','application/javascript');res.end('');return;}
@@ -20,6 +20,7 @@ const server=http.createServer((req,res)=>{
  if(req.url.endsWith('/health')){res.end(JSON.stringify({guide,moods:[{key:'joyful',label:'Joyful'}]}));return;}
  if(req.url.endsWith('/projects')){res.end(JSON.stringify({projects:[{id:'failed-empty',title:'Failed empty attempt',engine:'scenema',state:'failed',lastError:'Missing worker component. Generation stopped.',takes:[]},{id:'recoverable',title:'Recoverable recording',engine:'scenema',state:'failed',hasRecoverableAudio:true,takes:[{id:'take-1',url:'https://example.test/take.mp3',masterUrl:'https://example.test/take.wav'}]}]}));return;}
  if(req.url.includes('/status/')){res.end(JSON.stringify({state:'failed',error:'Fixture worker failure',spoken:'Generation stopped. Fixture worker failure.'}));return;}
+ if(req.url.endsWith('/reference')){req.resume();referenceResponse=res;return;}
  if(req.method==='GET'){res.end('{}');return;}
  let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{
   const body=JSON.parse(raw||'{}');sent.push({url:req.url,body});
@@ -103,22 +104,44 @@ const server=http.createServer((req,res)=>{
   await page.getByRole('button',{name:'Use this voice',exact:true}).click();
   assert.equal(await page.locator('#set_auk_task').inputValue(),'speech');
   assert.equal(sent.length,3,'attaching a saved take must not start a paid job');
+  await page.locator('[data-rmclip]').click();
+  const upload={name:'reference.wav',mimeType:'audio/wav',buffer:Buffer.from('fixture')};
+  await page.locator('#set_reference_voice_url').setInputFiles(upload);
+  await page.waitForFunction(()=>document.querySelector('#btnRender').disabled);
+  while(!referenceResponse)await new Promise(r=>setTimeout(r,10));
+  assert.equal(await page.locator('#btnPreview').isDisabled(),true);
+  await page.locator('#btnRender').evaluate(el=>el.onclick());
+  await page.locator('#btnPreview').evaluate(el=>el.onclick());
+  assert.equal(sent.length,3,'upload in progress must block every generation path');
+  referenceResponse.statusCode=500;referenceResponse.end(JSON.stringify({error:'Fixture import failed'}));referenceResponse=null;
+  await page.locator('#discardImport').waitFor();
+  assert.equal(await page.locator('#btnRender').isDisabled(),true);
+  await page.locator('#btnRender').evaluate(el=>el.onclick());
+  assert.equal(sent.length,3,'failed upload cannot silently generate without its reference');
+  await page.locator('[data-engine="seed"]').click();
+  await page.locator('[data-engine="scenema"]').click();
+  assert.equal(await page.locator('#btnRender').isDisabled(),true,'failed import survives workspace switching');
+  await page.locator('#discardImport').click();
+  assert.equal(await page.locator('#btnRender').isEnabled(),true);
+  await page.locator('#set_reference_voice_url').setInputFiles(upload);
+  while(!referenceResponse)await new Promise(r=>setTimeout(r,10));
+  referenceResponse.end(JSON.stringify({url:'https://example.test/reference.wav',name:'reference.wav',spoken:'Clip imported.'}));referenceResponse=null;
+  await page.locator('.clips audio source').waitFor({state:'attached'});
+  assert.equal(sent.length,3,'finishing an import must not automatically generate');
   failNextRender=true;
   await page.locator('#btnRender').click();
-  await page.getByRole('dialog',{name:'Confirm paid generation'}).waitFor();
-  assert.match(await page.locator('#renderConfirmationPrice').innerText(),/No reliable total price estimate.*1.22/);
-  assert.equal(await page.locator('#btnConfirmRender').evaluate(el=>el===document.activeElement),true);
-  await page.keyboard.press('Escape');
-  assert.equal(sent.filter(x=>!x.body.estimateOnly).length,1,'Escape cannot start paid work');
-  await page.locator('#btnRender').click();
-  await page.getByRole('button',{name:'Start paid generation',exact:true}).click();
   await page.getByRole('alertdialog',{name:'Generation stopped'}).waitFor();
+  assert.equal(sent.length,4,'one AuK press sends one render and no estimate');
+  assert.equal(sent[3].body.estimateOnly,undefined);
+  assert.equal(sent[3].body.referenceExpected,true);
+  assert.equal(sent[3].body.reference_voice_url,'https://example.test/reference.wav');
   assert.equal(await page.locator('#btnFailureOK').evaluate(el=>el===document.activeElement),true);
   assert.match(await page.locator('#renderFailureMessage').innerText(),/Fixture worker failure/);
   assert.equal(await page.locator('#showFailed').isChecked(),true);
   await page.getByRole('button',{name:'OK',exact:true}).click();
   await page.getByRole('heading',{name:'Failed empty attempt',exact:true}).waitFor();
   assert.equal(await page.locator('#btnCancel').isVisible(),false);
+  assert.equal(await page.locator('#btnRender').isEnabled(),true,'failure allows another attempt');
   assert.deepEqual(errors,[]);
   if(output) await page.screenshot({path:output+'/lyria-workspace.png',fullPage:true});
   if(output) fs.writeFileSync(output+'/web-test-receipt.json',JSON.stringify({passed:true,engineDrafts:3,musicDirect:true,scriptRequests:0,confirmation:true,lyricsPreserved:true,noSpeechSettings:true},null,2));

@@ -89,7 +89,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       <select id="starter"><option value="">Choose a starting point</option></select>
       <button type="button" class="act quiet" id="btnStarter">Start a new project from this</button>
       <button type="button" class="act quiet" id="btnBlank">New blank project</button>
-      <p class="hint" id="starterHint">Starting points are free to load. Save your current draft before replacing it. Generation starts only after you confirm the price.</p>
+      <p class="hint" id="starterHint">Starting points are free to load. Save your current draft before replacing it. Generation starts when you choose a generation button. AuK starts immediately; other engines show a price confirmation.</p>
     </fieldset>
 
 
@@ -138,7 +138,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <button type="button" class="act primary" id="btnRender">Render</button>
         <button type="button" class="act" id="btnCancel" hidden>Stop this render</button>
       </div>
-      <p class="hint">Review the cost information in the confirmation window, then choose Start paid generation or Keep editing.</p>
+      <p class="hint" id="renderHint">Review the cost information in the confirmation window, then choose Start paid generation or Keep editing.</p>
       <dialog id="renderConfirmation" aria-labelledby="renderConfirmationTitle" aria-describedby="renderConfirmationPrice">
         <h2 id="renderConfirmationTitle">Confirm paid generation</h2>
         <p id="renderConfirmationPrice"></p>
@@ -185,7 +185,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     if(!token){ status.className='status err'; status.textContent='Please sign in at the chat site first, then reload this page.'; return; }
 
     var drafts = {};
-    var state = { quoteRevision:0, engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null, voiceSeed:null, rerollVoice:false };
+    var state = { importError:'', quoteRevision:0, engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null, voiceSeed:null, rerollVoice:false };
     function say(msg, isErr){ status.className = 'status' + (isErr ? ' err' : ''); status.textContent = msg; }
     function showCode(xml){ var box = document.getElementById('codeBox'); var view = document.getElementById('codeView'); if(!box||!view) return; if(state.engine==='scenema' && xml && /<speak/i.test(xml) && state.mode==='advanced'){ view.textContent = xml; box.hidden = false; } else { box.hidden = true; view.textContent=''; } }
     function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
@@ -243,14 +243,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     };
 
     function saveDraft(){
-      drafts[state.engine]={mode:state.mode,input:state.input,text:document.getElementById('text').value,script:document.getElementById('script').value,mood:document.getElementById('mood').value,readback:document.getElementById('readback').textContent,values:Object.assign({},state.values),clips:state.clips.slice(),projectId:state.projectId,voiceSeed:state.voiceSeed,rerollVoice:state.rerollVoice,lastXml:state.lastXml};
+      drafts[state.engine]={mode:state.mode,input:state.input,text:document.getElementById('text').value,script:document.getElementById('script').value,mood:document.getElementById('mood').value,readback:document.getElementById('readback').textContent,values:Object.assign({},state.values),clips:state.clips.slice(),importError:state.importError,projectId:state.projectId,voiceSeed:state.voiceSeed,rerollVoice:state.rerollVoice,lastXml:state.lastXml};
     }
     function setEngine(e){
       if(busy()){say('Finish the current operation or stop the render before switching workspaces.',true);return false;}
       if(e!==state.engine){
         saveDraft();
         var d=drafts[e]||{};state.engine=e;
-        state.mode=d.mode||'easy';state.input=d.input||'words';state.values=Object.assign({},d.values||{});state.clips=(d.clips||[]).slice();state.projectId=d.projectId||null;state.voiceSeed=d.voiceSeed;state.rerollVoice=!!d.rerollVoice;state.lastXml=d.lastXml||'';
+        state.mode=d.mode||'easy';state.input=d.input||'words';state.values=Object.assign({},d.values||{});state.clips=(d.clips||[]).slice();state.importError=d.importError||'';state.projectId=d.projectId||null;state.voiceSeed=d.voiceSeed;state.rerollVoice=!!d.rerollVoice;state.lastXml=d.lastXml||'';
         document.getElementById('text').value=d.text||'';document.getElementById('script').value=d.script||'';document.getElementById('mood').value=d.mood||'';document.getElementById('readback').textContent=d.readback||'';
       }
       state.engine = e;
@@ -263,7 +263,19 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       invalidateQuote();setMode(state.mode);setInput(state.input||'words');applyWorkflow();showCode(state.lastXml);
       say(g.name+'. '+(e==='lyria'?'Describe your music, add optional lyrics, then choose Make music.':e==='seed'?'Build a scene with dialogue, sounds and up to three reference voices.':'Write a performance and direct its voice.'));return true;
     }
+    function updateRenderControls(){
+      var blocked=!!(state.importing || state.importError || state.rendering || state.jobId);
+      document.getElementById('btnRender').disabled=blocked;
+      document.getElementById('btnPreview').disabled=blocked;
+    }
+    function referenceReady(){
+      if(state.importing){say('Wait for the reference clip to finish importing.',true);return false;}
+      if(state.importError){say('The reference import failed. Retry it or choose Discard failed import before generating.',true);return false;}
+      return true;
+    }
     function applyWorkflow(){
+      updateRenderControls();
+      document.getElementById('renderHint').textContent=state.engine==='scenema' ? 'AuK starts paid generation with one press, after any reference import finishes. Startup and processing use billed GPU time; the final cost is available afterward.' : 'Review the cost information in the confirmation window, then choose Start paid generation or Keep editing.';
       var music=state.engine==='lyria', scene=state.engine==='seed';
       var g=state.guide.engines[state.engine];
       document.getElementById('engineSummary').textContent=g.tagline;
@@ -356,13 +368,19 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
               '<audio controls preload="none" aria-label="Play the imported clip, '+esc(c.name)+'"><source src="'+esc(c.url)+'"></audio>'+
               '<button type="button" class="act quiet" data-rmclip="'+i+'">Remove '+esc(c.name)+'</button></li>';
           }).join('');
-          return head+'<input type="file" id="'+id+'" accept="'+accept+'" aria-describedby="'+id+'_h"'+(state.clips.length>=s.max?' disabled':'')+'><ul class="clips">'+list+'</ul>';
+          return head+'<input type="file" id="'+id+'" accept="'+accept+'" aria-describedby="'+id+'_h"'+(state.importing || state.rendering || state.jobId || state.clips.length>=s.max?' disabled':'')+'><ul class="clips">'+list+'</ul>';
         }
         return '';
       }).join('');
+      if(state.importError){
+        box.insertAdjacentHTML('beforeend','<p role="alert">'+esc(state.importError)+' Retry the import or discard this failed attempt before generating.</p><button type="button" class="act quiet" id="discardImport">Discard failed import</button>');
+        document.getElementById('discardImport').onclick=function(){state.importError='';invalidateQuote();renderSettings();say('Failed import discarded. Review the attached clips before generating.');};
+      }
+      updateRenderControls();
       if(g.recipes && g.recipes.length){
         box.insertAdjacentHTML('beforeend','<details><summary>Voice design and editing ideas</summary><p>These fill in an editable example. They do not start a paid generation. Review the wording and change it to what you want.</p>'+g.recipes.map(function(r,i){return '<button type="button" class="act quiet" data-recipe="'+i+'">'+esc(r.label)+'</button>';}).join('')+'</details>');
         Array.prototype.forEach.call(box.querySelectorAll('[data-recipe]'),function(button){button.onclick=function(){
+          if(busy())return;
           var recipe=g.recipes[Number(button.dataset.recipe)];
           state.values.auk_task=recipe.task;
           if(recipe.task==='speech')state.clips=[];
@@ -379,24 +397,25 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         el.onchange = function(){ if(el.files && el.files[0]) importClip(el.files[0]); };
       });
       Array.prototype.forEach.call(box.querySelectorAll('[data-rmclip]'), function(btn){
-        btn.onclick = function(){ state.clips.splice(parseInt(btn.dataset.rmclip,10),1); say('Clip removed.'); renderSettings(); };
+        btn.onclick = function(){ if(busy())return; invalidateQuote();state.clips.splice(parseInt(btn.dataset.rmclip,10),1); say('Clip removed.'); renderSettings(); };
       });
     }
 
     async function importClip(file){
-      if(file.size > 20*1024*1024){ say('That clip is over twenty megabytes. Ten to twenty seconds is all it needs.', true); return; }
-      state.importing=true;try {
-      say('Importing ' + file.name + '\\u2026');
-      var fd = new FormData(); fd.append('clip', file, file.name); fd.append('engine', state.engine);
-      var r = await fetch('/api/kade/sound-booth/reference', {method:'POST', headers:{'Authorization':'Bearer '+token}, body: fd});
-      var j = null; try { j = await r.json(); } catch(e) {}
-      if(!r.ok || !j || !j.url){ say((j&&j.error)||'That clip could not be imported.', true); return; }
-      /* A silent success on an upload is indistinguishable from nothing
-       * happening, so this says the file name back and points at the player. */
-      state.clips.push({url:j.url, name:j.name||file.name});
-      say((j.spoken||'Clip imported.') + (state.engine==='seed' ? ' It is @Audio'+state.clips.length+'.' : ''));
-      renderSettings();
-      } catch(e){say('Could not import that clip.',true);} finally {state.importing=false;}
+      if(busy())return;
+      invalidateQuote();renderConfirmation.close();state.importError='';
+      if(file.size > 20*1024*1024){state.importError='That clip is over twenty megabytes.';renderSettings();say(state.importError,true);return;}
+      state.importing=true;renderSettings();
+      try {
+        say('Importing ' + file.name + '…');
+        var fd = new FormData(); fd.append('clip', file, file.name); fd.append('engine', state.engine);
+        var r = await fetch('/api/kade/sound-booth/reference', {method:'POST', headers:{'Authorization':'Bearer '+token}, body:fd, signal:AbortSignal.timeout(240000)});
+        var j = null; try { j = await r.json(); } catch(e) {}
+        if(!r.ok || !j || !j.url)throw new Error((j&&j.error)||'That clip could not be imported.');
+        state.clips.push({url:j.url, name:j.name||file.name});
+        say((j.spoken||'Clip imported.') + (state.engine==='seed' ? ' It is @Audio'+state.clips.length+'.' : ''));
+      } catch(e){state.importError=e.message||'Could not import that clip.';say(state.importError,true);}
+      finally {state.importing=false;invalidateQuote();renderSettings();}
     }
 
     function collect(){
@@ -414,7 +433,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var mood = document.getElementById('mood').value; if(mood && state.engine!=='lyria') b.mood = mood;
       /* Lyria clones nothing, so a clip left over from another engine must not
        * ride along with a music render. */
-      if(state.clips.length && state.engine!=='lyria'){ if(state.engine==='seed') b.audio_urls = state.clips.slice(0,3).map(function(c){return c.url;}); else b.reference_voice_url = state.clips[0].url; }
+      if(state.clips.length && state.engine!=='lyria'){ b.referenceExpected=true; if(state.engine==='seed') b.audio_urls = state.clips.slice(0,3).map(function(c){return c.url;}); else b.reference_voice_url = state.clips[0].url; }
       if(state.engine==='seed' && b.audio_quality===true) b.audio_quality='high';
       if(b.audio_quality===true) b.audio_quality='high';
       return b;
@@ -450,8 +469,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     document.getElementById('script').addEventListener('input', function(){ state.pendingRender=null; document.getElementById('btnRender').textContent=renderLabel(); });
 
     async function doRender(preview){
+      if(!referenceReady())return;
       if(state.rendering || state.jobId){ say('A render is already in progress. Wait for it or press Stop.', true); return; }
-      state.rendering = true;
+      state.rendering = true;updateRenderControls();
       document.getElementById('btnPreview').disabled = true;
       try {
       var script = document.getElementById('script').value.trim();
@@ -488,7 +508,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         say(r.data.spoken || 'Ready. ' + r.data.seconds + ' seconds of audio, about ' + Math.max(1, Math.round((r.data.costUSD||0)*100)) + ' cents. It is in your library below and in My Creations.');
         loadLibrary();
       }
-      } finally { state.rendering=false; document.getElementById('btnPreview').disabled=false; }
+      } finally { state.rendering=false;updateRenderControls(); }
     }
     var btnRender = document.getElementById('btnRender');
     var renderConfirmation=document.getElementById('renderConfirmation');
@@ -498,6 +518,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     renderConfirmation.addEventListener('cancel',function(){invalidateQuote();});
     document.getElementById('btnConfirmRender').onclick=function(){renderConfirmation.close();return confirmRender(confirmingPreview,true);};
     async function confirmRender(preview, confirmed){
+      if(!referenceReady())return;
+      if(state.engine==='scenema')return doRender(preview);
       if(quoteLoading) return;
       if(state.rendering || state.jobId) { say('A render is already in progress. Wait for it or press Stop.',true); return; }
       var script=document.getElementById('script').value.trim();
@@ -509,7 +531,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(!confirmed || state.pendingRender!==key){
         var quoteRevision=state.quoteRevision;btnRender.disabled=true;quoteLoading=true;
         var r=await post('/api/kade/sound-booth/render',b);
-        btnRender.disabled=false;quoteLoading=false;
+        quoteLoading=false;updateRenderControls();
         if(!r.ok){say(r.data.error||'Could not estimate that script.',true);return;}
         if(quoteRevision!==state.quoteRevision){say('The draft or settings changed. Choose '+renderLabel()+' again for the current price.');return;}
         state.pendingRender=key;
@@ -522,7 +544,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         return;
       }
       invalidateQuote(); btnRender.disabled=true;
-      try { await doRender(preview); } finally { btnRender.disabled=false; }
+      try { await doRender(preview); } finally { updateRenderControls(); }
     }
     btnRender.onclick=function(){return confirmRender(false);};
     document.getElementById('btnPreview').onclick=function(){return confirmRender(true);};
@@ -551,7 +573,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(!result.ok){ say(result.data.error || 'Stop did not reach the render service. Still checking its status.',true); return; }
       if(result.data.state==='done'){ say(result.data.spoken || 'That take just finished. Checking its result.'); return; }
       stopPoll(); state.lastWait = null; state.cancelArmed = null;
-      state.jobId=null; say(result.data.spoken || 'Stopped. Completed takes are kept. GPU time already used may still be charged.');
+      state.jobId=null;updateRenderControls(); say(result.data.spoken || 'Stopped. Completed takes are kept. GPU time already used may still be charged.');
       document.getElementById('btnCancel').hidden = true; loadLibrary();
     };
 
@@ -576,7 +598,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         var finished = (s === 'done' || s === 'failed' || s === 'cancelled');
         if(s !== last || finished || ticks % 2 === 0){ last = s; say(r.data.spoken || s, s === 'failed'); }
         if(finished){
-          stopPoll(); state.jobId = null; state.lastWait = null; state.cancelArmed = null; document.getElementById('btnCancel').hidden = true;
+          stopPoll(); state.jobId = null;updateRenderControls(); state.lastWait = null; state.cancelArmed = null; document.getElementById('btnCancel').hidden = true;
           if(s === 'failed'){
             document.getElementById('showFailed').checked=true;
             document.getElementById('renderFailureMessage').textContent=r.data.error || r.data.spoken || 'No finished recording was returned. Your saved attempt remains in the library.';
@@ -631,7 +653,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(!take || !setEngine('scenema'))return;
         state.projectId=null; state.values.auk_task=button.dataset.use;
         if(button.dataset.use==='edit'){state.values.instruction='';delete state.values.gen_seconds;}
-        state.clips=[{url:take.masterUrl||take.url,name:project.title}];
+        state.importError='';state.clips=[{url:take.masterUrl||take.url,name:project.title}];
         invalidateQuote();renderSettings();
         say(button.dataset.use==='edit'?'Take attached. Describe the edit you want. The original is kept.':'Voice reference attached. Write the words you want this voice to say.');
         document.getElementById(button.dataset.use==='edit'?'set_instruction':'script').focus();
@@ -646,7 +668,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           document.getElementById('script').value = p.screenplay || p.script || '';
           state.lastXml = p.script || ''; showCode(state.lastXml);
           document.getElementById('readback').textContent = p.readback || '';
-          state.values={}; state.clips=[]; state.voiceSeed=p.voiceSeed; state.rerollVoice=false;
+          state.values={}; state.clips=[];state.importError=''; state.voiceSeed=p.voiceSeed; state.rerollVoice=false;
           if(p.options){
             Object.keys(p.options).forEach(function(k){ if(typeof p.options[k] !== 'object') state.values[k]=p.options[k]; });
             var urls=p.engine==='lyria' ? [] : p.engine==='seed' ? p.options.audio_urls||[] : (p.options.reference_voice_url?[p.options.reference_voice_url]:[]);
@@ -665,7 +687,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function newProject(starter){
       if(busy()){say('Finish the current operation first.',true);return;}
       if(starter && !setEngine(starter.engine))return;
-      state.projectId=null;state.voiceSeed=null;state.rerollVoice=false;state.values={};state.clips=[];
+      state.projectId=null;state.voiceSeed=null;state.rerollVoice=false;state.values={};state.clips=[];state.importError='';
       if(starter && starter.engine==='lyria')state.values.instrumental=starter.script.indexOf('Instrumental only, no vocals.')!==-1;
       document.getElementById('mood').value='';
       setInput('words');
