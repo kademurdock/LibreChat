@@ -23,6 +23,7 @@ export * from './mcp/request';
 /* Utilities */
 export * from './mcp/utils';
 export * from './utils';
+export * from './utils/writing';
 export { default as Tokenizer, countTokens } from './utils/tokenizer';
 export type { EncodingName } from './utils/tokenizer';
 export * from './db/utils';

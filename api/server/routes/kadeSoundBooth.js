@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3 } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
@@ -23,7 +23,7 @@ const router = express.Router();
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
-const MODEL = process.env.KADE_SOUNDBOOTH_MODEL || 'z-ai/glm-5.3-flash';
+const MODEL = process.env.KADE_WRITING_MODEL || process.env.KADE_SOUNDBOOTH_MODEL || 'nousresearch/hermes-4-405b';
 const SCRIPT_DAILY_CAP = Number(process.env.KADE_SOUNDBOOTH_SCRIPT_CAP || 40);
 const MAX_SCENEMA_CHARS = 4000; // the bridge's own cap; mirrored so we fail early and kindly
 const MAX_SEED_CHARS = 2048; // Seed Audio's hard cap per clip
@@ -342,7 +342,7 @@ async function callModel({ system, user, maxTokens = 2200 }) {
   );
   const out = r.data?.choices?.[0]?.message?.content;
   const usage = r.data?.usage || {};
-  return { text: String(out || ''), usage };
+  return { text: String(out || ''), usage, ...writingCost(usage, MODEL, system.length + user.length, String(out || '').length) };
 }
 
 /* ---------- AuK XML: build one, and check one ------------------------- */
@@ -1055,11 +1055,13 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
     }
 
     const started = Date.now();
-    const { text: raw, usage } = await callModel({
+    const { text: raw, usage, costUSD: firstCost, measured: firstMeasured } = await callModel({
       system: systemPrompt({ engine, mode }),
       user: lines.join('\n\n'),
       maxTokens: engine === 'seed' ? 1200 : 2200,
     });
+    let totalCost = firstCost;
+    let costMeasured = firstMeasured;
     let { script, readback } = splitScriptAndReadback(raw);
     if (!script) {
       return res.status(502).json({ error: 'The script desk came back empty. Try again.' });
@@ -1094,6 +1096,8 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
           maxTokens: 1400,
         });
         const candidate = stripFence(shorter.text).trim();
+        totalCost += shorter.costUSD;
+        costMeasured = costMeasured && shorter.measured;
         if (candidate.length >= 200 && candidate.length < script.length && !/READBACK:/i.test(candidate)) {
           repairs = [...repairs, `cut to fit Seed's cap: ${script.length} → ${candidate.length} characters`];
           script = sanitizeSeed(candidate).script;
@@ -1114,10 +1118,11 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
       service: 'soundbooth_script',
       quantity: 1,
       unit: 'calls',
-      costUSD: 0.0006,
+      costUSD: totalCost,
       metadata: {
         engine,
         mode,
+        costMeasured,
         model: MODEL,
         ms: Date.now() - started,
         inTok: usage.prompt_tokens,
