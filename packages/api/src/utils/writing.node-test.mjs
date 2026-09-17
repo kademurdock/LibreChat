@@ -17,13 +17,13 @@ test('Hermes draft estimates are marked as estimates, with missing and invalid u
   assert.equal(writingCost({ cost: -1, prompt_tokens: -1, completion_tokens: 1000 }, 'nousresearch/hermes-4-405b').costUSD, 0.003);
 });
 
-test('real Sound Booth request honors the shared model and returns its actual cost', async () => {
+test('real Sound Booth request honors its configured model and returns its actual cost', async () => {
   const route = readFileSync(new URL('../../../../api/server/routes/kadeSoundBooth.js', import.meta.url), 'utf8');
   const declaration = route.match(/^const MODEL = .*;$/m)[0];
   const start = route.indexOf('async function callModel(');
   const end = route.indexOf('\n/* ---------- AuK XML', start);
   const requests = [];
-  const context = { writingCost, process: { env: { KADE_WRITING_MODEL: 'nousresearch/hermes-4-405b', KADE_SOUNDBOOTH_MODEL: 'x-ai/grok-4.20', REFRAME_PROXY_SECRET: 'fixture' } }, UA: 'fixture', axios: { post: async (...args) => { requests.push(args); return { data: { choices: [{ message: { content: '<speak>At the end of the day.</speak>' } }], usage: { cost: 0.003 } } }; } } };
+  const context = { writingCost, process: { env: { KADE_SOUNDBOOTH_MODEL: 'nousresearch/hermes-4-405b', REFRAME_PROXY_SECRET: 'fixture' } }, UA: 'fixture', axios: { post: async (...args) => { requests.push(args); return { data: { choices: [{ message: { content: '<speak>At the end of the day.</speak>' } }], usage: { cost: 0.003 } } }; } } };
   vm.runInNewContext(declaration + '\n' + route.slice(start, end) + '\nthis.call=callModel;', context);
   const result = await context.call({ system: 'Format only.', user: 'At the end of the day.' });
   assert.equal(requests[0][1].model, 'nousresearch/hermes-4-405b');
@@ -40,7 +40,7 @@ test('real script route accounts for the shortening call as well as the first dr
   let calls = 0;
   const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map(method => [method, (path, ...handlersForPath) => { handlers.set(method + path, handlersForPath.at(-1)); }]));
   const multer = Object.assign(() => ({ single() { return () => {}; } }), { memoryStorage() { return {}; } });
-  const context = { module: { exports: {} }, Buffer, URL, console, process: { env: { KADE_WRITING_MODEL: 'nousresearch/hermes-4-405b', REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
+  const context = { module: { exports: {} }, Buffer, URL, console, process: { env: { KADE_SOUNDBOOTH_MODEL: 'nousresearch/hermes-4-405b', REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'axios') return { post: async () => { calls++; return { data: { choices: [{ message: { content: '[Setting: A quiet room.]\nNora (calm woman) says softly: "' + 'Stay here. '.repeat(calls === 1 ? 220 : 30) + '"' } }], usage: { cost: calls === 1 ? 0.004 : 0.002 } } }; } };

@@ -23,7 +23,7 @@ const router = express.Router();
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
-const MODEL = process.env.KADE_WRITING_MODEL || process.env.KADE_SOUNDBOOTH_MODEL || 'nousresearch/hermes-4-405b';
+const MODEL = process.env.KADE_SOUNDBOOTH_MODEL || 'nousresearch/hermes-4-405b';
 const SCRIPT_DAILY_CAP = Number(process.env.KADE_SOUNDBOOTH_SCRIPT_CAP || 40);
 const MAX_SCENEMA_CHARS = 4000; // the bridge's own cap; mirrored so we fail early and kindly
 const MAX_SEED_CHARS = 2048; // Seed Audio's hard cap per clip
