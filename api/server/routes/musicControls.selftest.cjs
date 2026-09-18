@@ -9,23 +9,44 @@ function source(name) {
   return mod.exports;
 }
 const { createYueRouter, yueInput } = source('yue');
-const { createLyricsRouter, registerMusicReference } = source('lyrics');
+const { createLyricsRouter, registerMusicReference, transcribeMusicLyrics } = source('lyrics');
 const { notifyMusic } = source('notify');
 (async () => {
   const mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri());
-  Object.assign(process.env, { YUE_ENDPOINT_ID: 'fixture', RUNPOD_API_KEY: 'fixture', BRIDGE_SECRET: 'fixture', BRIDGE_URL: 'https://bridge.test' });
+  Object.assign(process.env, { YUE_ENDPOINT_ID: 'fixture', RUNPOD_API_KEY: 'fixture', BRIDGE_SECRET: 'fixture', BRIDGE_URL: 'https://bridge.test', GEMINI_API_KEY: 'gemini-fixture', ELEVENLABS_API_KEY: 'scribe-fixture' });
   const providers = new Map(), submitted = [], saved = new Map(), notifications = [];
   let lostSubmission = 0, transcriptionCalls = 0, duration = 30;
+  let geminiMode = 'ok', scribeFailure = false, geminiCalls = 0, scribeCalls = 0;
   axios.defaults.adapter = async config => {
     const url = config.url;
     const body = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
     let data;
-    if (url.endsWith('/notify')) {
+    if (url.includes('generativelanguage.googleapis.com')) {
+      geminiCalls++;
+      assert.equal(config.headers['x-goog-api-key'], 'gemini-fixture');
+      assert.equal(config.maxRedirects, 0);
+      assert.ok(config.timeout <= 60000);
+      assert.equal(body.contents[0].parts[0].inlineData.mimeType, 'audio/mpeg');
+      assert.equal(Buffer.from(body.contents[0].parts[0].inlineData.data, 'base64').toString(), 'ID3fixture audio');
+      assert.match(body.contents[0].parts[1].text, /audibly present/);
+      assert.equal(body.contents[0].parts.length, 2, 'the model gets audio and instructions, never saved lyrics');
+      if (geminiMode === 'error') throw new Error('Gemini unavailable');
+      data = { candidates: [{ finishReason: geminiMode === 'truncated' ? 'MAX_TOKENS' : 'STOP', content: { parts: [{ thought: true, text: 'Private reasoning must never be used as lyrics.' }, { text: 'Heard words\nRepeated chorus\nRepeated chorus' }] } }], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20, thoughtsTokenCount: 3 } };
+    } else if (url === 'https://api.elevenlabs.io/v1/speech-to-text') {
+      scribeCalls++;
+      assert.equal(config.headers['xi-api-key'], 'scribe-fixture');
+      assert.equal(config.maxRedirects, 0); assert.ok(config.timeout <= 90000);
+      const form = config.data.getBuffer().toString();
+      assert.match(form, /scribe_v2/); assert.match(form, /ID3fixture audio/);
+      assert.match(form, /name="tag_audio_events"\r\n\r\nfalse/);
+      if (scribeFailure) throw new Error('Scribe unavailable');
+      data = { text: 'Fallback lyrics. Same chorus. Same chorus.' };
+    } else if (url.endsWith('/notify')) {
       assert.equal(config.headers['x-bridge-secret'], 'fixture'); assert.equal(body.requested, true);
       assert.equal(body.route, 'sound-booth'); assert.equal(body.broadcast, undefined);
       notifications.push(body); data = { ok: true, sent: 1 };
     } else if (url === 'https://assets.test/reference.wav') {
-      assert.equal(config.maxRedirects, 0); data = Buffer.from('fixture audio');
+      assert.equal(config.maxRedirects, 0); data = Buffer.from('ID3fixture audio');
     } else if (url.endsWith('/run')) {
       submitted.push(body.input); const id = 'provider' + submitted.length;
       if (submitted.length === lostSubmission) throw new Error('Submission response lost');
@@ -48,7 +69,7 @@ const { notifyMusic } = source('notify');
   }));
   app.use(createLyricsRouter({ auth, user, savedSources: async () => [], refresh: async url => url,
     duration: async () => duration,
-    transcribe: async () => { transcriptionCalls++; return { transcript: '[Verse]\nHeard words', seconds: 30, model: 'fixture' }; },
+    transcribe: async (...args) => { transcriptionCalls++; return transcribeMusicLyrics(...args); },
   }));
   await mongoose.model('KadeYueJob').init(); await mongoose.model('KadeMusicReference').init();
   const server = app.listen(0); await new Promise(resolve => server.once('listening', resolve));
@@ -97,8 +118,32 @@ const { notifyMusic } = source('notify');
     assert.equal((await post('/reference/lyrics', { url: 'http://localhost' })).status, 400);
     duration = 361; assert.equal((await post('/reference/lyrics', { url: ref })).status, 400); assert.equal(transcriptionCalls, 0);
     duration = 30;
+    const References = mongoose.model('KadeMusicReference');
+    await References.updateOne({ user: 'a' }, { $set: { transcript: { transcript: 'Old incomplete words', model: 'nova-3', seconds: 30 } } });
     const lyrics = await (await post('/reference/lyrics', { url: ref })).json(); assert.match(lyrics.transcript, /Heard words/); assert.match(lyrics.warning, /wrong or missing/);
+    assert.equal(lyrics.model, 'gemini-3.8-flash'); assert.equal(lyrics.cached, false);
+    assert.equal(lyrics.seconds, 30); assert.deepEqual(lyrics.usage, { inputTokens: 100, outputTokens: 23 });
+    assert.doesNotMatch(lyrics.transcript, /reasoning|Old incomplete/);
+    assert.equal((lyrics.transcript.match(/Repeated chorus/g) || []).length, 2);
     const cached = await (await post('/reference/lyrics', { url: ref })).json(); assert.equal(cached.cached, true); assert.equal(transcriptionCalls, 1);
+    assert.equal(geminiCalls, 1); assert.equal(scribeCalls, 0);
+    geminiMode = 'truncated';
+    const fallback = await transcribeMusicLyrics(Buffer.from('ID3fixture audio'), 'application/octet-stream', 45);
+    assert.equal(fallback.model, 'scribe_v2'); assert.equal(fallback.transcript, 'Fallback lyrics.\nSame chorus.\nSame chorus.');
+    assert.equal(fallback.seconds, 45); assert.equal(scribeCalls, 1);
+    const largeAudio = Buffer.alloc(14 * 1024 * 1024 + 1);
+    largeAudio.write('ID3fixture audio');
+    const beforeLarge = geminiCalls;
+    assert.equal((await transcribeMusicLyrics(largeAudio, 'application/octet-stream', 360)).model, 'scribe_v2');
+    assert.equal(geminiCalls, beforeLarge, 'oversized inline audio uses Scribe without uploading to Gemini');
+    geminiMode = 'error'; scribeFailure = true;
+    await References.updateOne({ user: 'a' }, { $set: { transcriptVersion: 'older-version' } });
+    assert.equal((await post('/reference/lyrics', { url: ref })).status, 502);
+    const afterFailure = await References.findOne({ user: 'a' }).lean();
+    assert.equal(afterFailure.transcript.transcript, lyrics.transcript, 'provider failures preserve existing draft');
+    assert.equal(afterFailure.leaseUntil, undefined);
+    geminiMode = 'ok'; scribeFailure = false;
+    assert.equal((await post('/reference/lyrics', { url: ref })).status, 200);
     console.log('Music controls integration passed: batches, distinct seeds, controls, concurrent-click guard, partial saves, single routed notification, uncertain submissions, cancellation, legacy jobs, private transcription, duration guard and cached drafts.');
   } finally { server.closeAllConnections(); server.close(); await mongoose.disconnect(); await mongo.stop(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

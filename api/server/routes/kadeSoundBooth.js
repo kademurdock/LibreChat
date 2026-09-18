@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
@@ -23,7 +23,7 @@ const router = express.Router();
 router.use(createLyricsRouter({
   auth: requireJwtAuth, user: req => String(req.user.id), refresh: freshAssetUrl,
   duration: buffer => require('./kadeSoundBoothStitch').durationOf(buffer),
-  transcribe: (buffer, mime) => require('./kadeTranscribe').transcribeBuffer(buffer, mime),
+  transcribe: transcribeMusicLyrics,
   savedSources: async user => {
     const projects = await KadeSoundBoothProject.find({ user, 'options.reference_voice_url': { $exists: true } }).select('options.reference_voice_url').lean();
     const assets = await KadeAsset.find({ user, kind: 'audio' }).select('url metadata.wavUrl').lean();

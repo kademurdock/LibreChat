@@ -128,4 +128,4 @@ export { bookImportRouter } from './library/imports';
 
 export { createYueRouter, yueConfigured, yueCost } from './music/yue';
 export { notifyMusic } from './music/notify';
-export { createLyricsRouter, registerMusicReference } from './music/lyrics';
+export { createLyricsRouter, registerMusicReference, transcribeMusicLyrics } from './music/lyrics';
