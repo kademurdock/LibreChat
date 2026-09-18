@@ -9,9 +9,10 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, lyricAgentId, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
+const { getAgent } = require('~/models');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
 const { splitSpeakScript, saySplit, previewExcerpt } = require('./kadeSoundBoothSplit');
@@ -1178,7 +1179,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
 
     const started = Date.now();
     const { text: raw, usage, costUSD: firstCost, measured: firstMeasured } = await callModel({
-      system: systemPrompt({ engine, mode }),
+      system: await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode }, getAgent),
       user: lines.join('\n\n'),
       maxTokens: engine === 'seed' ? 1200 : 2200,
     });
@@ -1245,6 +1246,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
         engine,
         mode,
         costMeasured,
+        writingPersona: mode === 'write' && ['lyria', 'yue2'].includes(engine) ? lyricAgentId : undefined,
         model: MODEL,
         ms: Date.now() - started,
         inTok: usage.prompt_tokens,
@@ -2307,6 +2309,7 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
       lyria: { configured: !!lyriaKey(), queued: false, usdPerSong: LYRIA_USD_PER_SONG, model: LYRIA_MODEL },
     },
     scriptDesk: !!(process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY),
+    lyricWritingPersona: 'Lyric',
     model: MODEL,
     moods: Object.entries(MOODS).map(([k, v]) => ({ key: k, label: v.label })),
     limits: { scenemaChars: MAX_SCENEMA_CHARS, seedChars: MAX_SEED_CHARS, lyriaChars: MAX_LYRIA_CHARS, scriptsPerDay: SCRIPT_DAILY_CAP },
