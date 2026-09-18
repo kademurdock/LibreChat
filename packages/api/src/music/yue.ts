@@ -63,6 +63,7 @@ type Job = {
 type Hooks = {
   auth: RequestHandler;
   user: (req: Request) => string;
+  validateReference: (user: string, url: string) => Promise<string>;
   project: (user: string, input: Input, sourceText: string) => Promise<string>;
   update: (job: Job) => Promise<void>;
   complete: (job: Job) => Promise<void>;
@@ -319,7 +320,9 @@ export function createYueRouter(hooks: Hooks): Router {
             ) {
               take.state = response.status === 'CANCELLED' ? 'cancelled' : 'failed';
               take.error =
-                response.output?.error || 'The music worker did not finish. Your writing is saved.';
+                response.output?.error ||
+                response.error ||
+                'The music worker did not finish. Your writing is saved.';
             } else {
               take.state = response.status === 'IN_PROGRESS' ? 'running' : 'queued';
             }
@@ -385,6 +388,11 @@ export function createYueRouter(hooks: Hooks): Router {
       let input: Input;
       try {
         input = yueInput(req.body);
+        if (input.reference_voice_url)
+          input.reference_voice_url = await hooks.validateReference(
+            hooks.user(req),
+            input.reference_voice_url,
+          );
       } catch (error) {
         return res
           .status(400)

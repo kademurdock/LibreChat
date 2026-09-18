@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
@@ -20,7 +20,7 @@ const { screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREENPLAY_HELP } = re
 const chain = require('./kadeSoundBoothChain');
 
 const router = express.Router();
-router.use(createLyricsRouter({
+const musicReferenceHooks = {
   auth: requireJwtAuth, user: req => String(req.user.id), refresh: freshAssetUrl,
   duration: buffer => require('./kadeSoundBoothStitch').durationOf(buffer),
   transcribe: transcribeMusicLyrics,
@@ -29,10 +29,12 @@ router.use(createLyricsRouter({
     const assets = await KadeAsset.find({ user, kind: 'audio' }).select('url metadata.wavUrl').lean();
     return [...projects.map(p => p.options.reference_voice_url), ...assets.flatMap(a => [a.url, a.metadata?.wavUrl])].filter(Boolean);
   },
-}));
+};
+router.use(createLyricsRouter(musicReferenceHooks));
 router.use(createYueRouter({
   auth: requireJwtAuth,
   user: req => String(req.user.id),
+  validateReference: (user, url) => validateMusicReference(user, url, musicReferenceHooks),
   project: async (user, input, sourceText) => {
     const p = await KadeSoundBoothProject.create({ user, engine: 'yue2', title: input.title, script: input.style,
       sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, seed: input.seed, reference_voice_url: input.reference_voice_url, count: input.count, weirdness: input.weirdness, steps: input.steps, guidance: input.guidance }, state: 'queued' });
@@ -2204,6 +2206,10 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
       logger.warn(`[soundbooth/reference] transcode failed (storing the original): ${e.message} ${String(e.stderr || '').slice(0, 200)}`);
       clipAdvice = 'I could not convert it to a studio WAV, so the original file is attached as-is.';
     }
+    if (engine === 'yue2') {
+      const error = musicReferenceError(clipSeconds);
+      if (error) return res.status(400).json({ error });
+    }
     const fileName = `soundbooth-ref-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${outExt}`;
     const url = await saveBufferToS3({
       userId: String(req.user.id),
@@ -2212,7 +2218,7 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
       basePath: 'audios',
     });
     if (!url) return res.status(502).json({ error: 'The clip did not save. Try again.' });
-    await registerMusicReference(String(req.user.id), url);
+    await registerMusicReference(String(req.user.id), url, clipSeconds);
     logger.info(`[soundbooth/reference] user=${req.user.id} ${f.originalname || fileName} ${f.buffer.length}B -> ${outExt} ${outBuffer.length}B ${clipSeconds !== null ? clipSeconds + 's' : ''}`);
     return res.json({
       ok: true,

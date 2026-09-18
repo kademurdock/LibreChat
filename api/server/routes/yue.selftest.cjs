@@ -34,7 +34,7 @@ async function main() {
         return { data: path.endsWith('/run') ? { id: 'provider1' } : { status: state, executionTime: 60000, output: state === 'COMPLETED' ? { url: 'https://assets.test/song.mp3', duration_s: 20, truncated: false } : undefined }, status: 200, statusText: 'OK', headers: {}, config };
     };
     const app = (0, express_1.default)();
-    app.use((0, yue_1.createYueRouter)({ auth: (_req, _res, next) => next(), user: req => String(req.headers['x-test-user'] || 'a'),
+    app.use((0, yue_1.createYueRouter)({ auth: (_req, _res, next) => next(), user: req => String(req.headers['x-test-user'] || 'a'), validateReference: async (_user, url) => url,
         project: async () => new mongoose_1.default.Types.ObjectId().toString(), update: async () => { }, complete: async () => { completions++; } }));
     await mongoose_1.default.model('KadeYueJob').init();
     const server = app.listen(0);

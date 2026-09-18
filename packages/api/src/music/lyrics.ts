@@ -136,6 +136,7 @@ type Reference = {
   user: string;
   key: string;
   url: string;
+  seconds?: number;
   transcript?: Transcript;
   transcriptVersion?: string;
   leaseUntil?: Date;
@@ -144,6 +145,7 @@ const schema = new mongoose.Schema<Reference>({
   user: String,
   key: String,
   url: String,
+  seconds: Number,
   transcript: mongoose.Schema.Types.Mixed,
   transcriptVersion: String,
   leaseUntil: Date,
@@ -158,17 +160,88 @@ function identity(url: string): string {
     throw new Error('Use an imported recording.');
   return parsed.origin + parsed.pathname;
 }
-export async function registerMusicReference(user: string, url: string): Promise<void> {
-  await References.updateOne({ user, key: identity(url) }, { $set: { url } }, { upsert: true });
+export async function registerMusicReference(
+  user: string,
+  url: string,
+  seconds?: number | null,
+): Promise<void> {
+  await References.updateOne(
+    { user, key: identity(url) },
+    {
+      $set: {
+        url,
+        ...(typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0
+          ? { seconds }
+          : {}),
+      },
+    },
+    { upsert: true },
+  );
 }
 type Hooks = {
   auth: RequestHandler;
   user: (req: Request) => string;
   savedSources: (user: string) => Promise<string[]>;
   refresh: (url: string) => Promise<string>;
-  duration: (buffer: Buffer) => Promise<number>;
+  duration: (buffer: Buffer) => Promise<number | null>;
   transcribe: (buffer: Buffer, mime: string, seconds: number) => Promise<Transcript>;
 };
+
+export function musicReferenceError(seconds: number | null | undefined): string | undefined {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0)
+    return 'The recording could not be read. Import a readable audio file before generating.';
+  if (seconds <= 360) return;
+  const rounded = Math.round(seconds);
+  return `This recording is ${Math.floor(rounded / 60)} minutes ${rounded % 60} seconds long. Covers support up to 6 minutes. Import a shorter recording or an excerpt; your original will not be trimmed automatically.`;
+}
+
+async function ownedReference(user: string, key: string, hooks: Pick<Hooks, 'savedSources'>) {
+  const reference = await References.findOne({ user, key }).lean();
+  if (reference) return reference;
+  const sources = await hooks.savedSources(user);
+  const owned = sources.find((url) => {
+    try {
+      return identity(url) === key;
+    } catch {
+      return false;
+    }
+  });
+  if (!owned) return null;
+  await registerMusicReference(user, owned);
+  return References.findOne({ user, key }).lean();
+}
+
+export async function validateMusicReference(
+  user: string,
+  url: string,
+  hooks: Pick<Hooks, 'savedSources' | 'refresh' | 'duration'>,
+): Promise<string> {
+  const key = identity(url);
+  const reference = await ownedReference(user, key, hooks);
+  if (!reference) throw new Error('That recording is not saved on your account. Import it again.');
+  let refreshed: string;
+  let seconds = reference.seconds;
+  try {
+    refreshed = await hooks.refresh(reference.url);
+    if (seconds === undefined) {
+      const audio = await axios.get<ArrayBuffer>(refreshed, {
+        responseType: 'arraybuffer',
+        maxRedirects: 0,
+        maxContentLength: 20 * 1024 * 1024,
+        timeout: 45000,
+      });
+      seconds = (await hooks.duration(Buffer.from(audio.data))) ?? undefined;
+      await registerMusicReference(user, reference.url, seconds);
+    }
+  } catch {
+    throw new Error(
+      'Could not check the cover recording. No music request was sent. Import it again and retry.',
+    );
+  }
+  const error = musicReferenceError(seconds);
+  if (error) throw new Error(error);
+  return refreshed;
+}
 
 export function createLyricsRouter(hooks: Hooks): Router {
   const router = express.Router();
@@ -188,24 +261,12 @@ export function createLyricsRouter(hooks: Hooks): Router {
         return;
       }
       try {
-        let reference = await References.findOne({ user, key }).lean();
+        const reference = await ownedReference(user, key, hooks);
         if (!reference) {
-          const sources = await hooks.savedSources(user);
-          const owned = sources.find((url) => {
-            try {
-              return identity(url) === key;
-            } catch {
-              return false;
-            }
-          });
-          if (!owned) {
-            res
-              .status(404)
-              .json({ error: 'That recording is not saved on your account. Import it again.' });
-            return;
-          }
-          await registerMusicReference(user, owned);
-          reference = await References.findOne({ user, key }).lean();
+          res
+            .status(404)
+            .json({ error: 'That recording is not saved on your account. Import it again.' });
+          return;
         }
         const warning =
           'Draft lyrics only: singing, backing vocals and instruments can cause wrong or missing words. Listen and correct the Lyrics box before generating. Add section tags where useful.';
@@ -242,8 +303,9 @@ export function createLyricsRouter(hooks: Hooks): Router {
           });
           const buffer = Buffer.from(audio.data);
           const seconds = await hooks.duration(buffer);
-          if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 360) {
-            res.status(400).json({ error: 'Use a readable recording up to six minutes long.' });
+          const durationError = musicReferenceError(seconds);
+          if (durationError || seconds === null) {
+            res.status(400).json({ error: durationError });
             return;
           }
           const result = await hooks.transcribe(

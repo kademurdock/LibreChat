@@ -9,7 +9,7 @@ function source(name) {
   return mod.exports;
 }
 const { createYueRouter, yueInput } = source('yue');
-const { createLyricsRouter, registerMusicReference, transcribeMusicLyrics } = source('lyrics');
+const { createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = source('lyrics');
 const { notifyMusic } = source('notify');
 (async () => {
   const mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri());
@@ -17,6 +17,7 @@ const { notifyMusic } = source('notify');
   const providers = new Map(), submitted = [], saved = new Map(), notifications = [];
   let lostSubmission = 0, transcriptionCalls = 0, duration = 30;
   let geminiMode = 'ok', scribeFailure = false, geminiCalls = 0, scribeCalls = 0;
+  let audioDownloads = 0, downloadFails = false, projectWrites = 0;
   axios.defaults.adapter = async config => {
     const url = config.url;
     const body = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
@@ -46,6 +47,8 @@ const { notifyMusic } = source('notify');
       assert.equal(body.route, 'sound-booth'); assert.equal(body.broadcast, undefined);
       notifications.push(body); data = { ok: true, sent: 1 };
     } else if (url === 'https://assets.test/reference.wav') {
+      audioDownloads++;
+      if (downloadFails) throw new Error('Audio unavailable');
       assert.equal(config.maxRedirects, 0); data = Buffer.from('ID3fixture audio');
     } else if (url.endsWith('/run')) {
       submitted.push(body.input); const id = 'provider' + submitted.length;
@@ -62,8 +65,10 @@ const { notifyMusic } = source('notify');
   };
   const auth = (_req, _res, next) => next(), user = req => String(req.headers['x-user'] || 'a');
   const app = express();
+  const referenceHooks = { savedSources: async () => [], refresh: async url => url, duration: async () => duration };
   app.use(createYueRouter({ auth, user,
-    project: async () => new mongoose.Types.ObjectId().toString(), update: async () => {},
+    validateReference: (seat, url) => validateMusicReference(seat, url, referenceHooks),
+    project: async () => { projectWrites++; return new mongoose.Types.ObjectId().toString(); }, update: async () => {},
     complete: async job => saved.set(job.id, job),
     notify: async job => notifyMusic(job.user, job.input.title, job.takes.filter(t => t.state === 'done').length, job.takes.length, job.state !== 'done'),
   }));
@@ -89,7 +94,9 @@ const { notifyMusic } = source('notify');
     providers.get('provider1').status = 'COMPLETED';
     let progress = await status(job.jobId); assert.equal(progress.completed, 1); assert.equal(progress.total, 2); assert.equal(notifications.length, 0);
     providers.get('provider2').status = 'FAILED';
+    providers.get('provider2').error = 'Use a source recording up to six minutes long.';
     progress = await status(job.jobId); assert.equal(progress.state, 'failed'); assert.equal(progress.completed, 1); assert.equal(saved.size, 1);
+    assert.match(progress.error, /Use a source recording up to six minutes long/);
     await Promise.all([status(job.jobId), status(job.jobId)]); assert.equal(notifications.length, 1);
     assert.match(notifications[0].body, /1 of 2 takes saved/);
     assert.equal((await mongoose.model('KadeYueJob').findOne({ id: job.jobId }).lean()).notification.accepted, 1);
@@ -144,6 +151,37 @@ const { notifyMusic } = source('notify');
     assert.equal(afterFailure.leaseUntil, undefined);
     geminiMode = 'ok'; scribeFailure = false;
     assert.equal((await post('/reference/lyrics', { url: ref })).status, 200);
+
+    const cover = { ...input, reference_voice_url: ref };
+    const beforeSubmissions = submitted.length, beforeProjects = projectWrites;
+    assert.equal((await post('/render', cover, 'outsider')).status, 400);
+    assert.equal(submitted.length, beforeSubmissions);
+    await registerMusicReference('overlong', ref);
+    duration = 433.1;
+    const overlong = await post('/render', cover, 'overlong');
+    assert.equal(overlong.status, 400); assert.match((await overlong.json()).error, /7 minutes 13 seconds.*6 minutes/);
+    assert.equal(submitted.length, beforeSubmissions); assert.equal(projectWrites, beforeProjects);
+    assert.equal(await Jobs.countDocuments({ user: 'overlong' }), 0);
+    const beforeCached = audioDownloads;
+    assert.equal((await post('/render', cover, 'overlong')).status, 400);
+    assert.equal(audioDownloads, beforeCached, 'server-measured duration is cached for old imports');
+    await registerMusicReference('unreadable', ref); duration = null;
+    assert.equal((await post('/render', cover, 'unreadable')).status, 400);
+    assert.equal(submitted.length, beforeSubmissions);
+    await registerMusicReference('unavailable', ref); downloadFails = true;
+    assert.equal((await post('/render', cover, 'unavailable')).status, 400);
+    assert.equal(submitted.length, beforeSubmissions); downloadFails = false;
+    await registerMusicReference('boundary', ref, 360);
+    const downloadsBeforeValid = audioDownloads;
+    const valid = await post('/render', cover, 'boundary'); assert.equal(valid.status, 200);
+    assert.equal(audioDownloads, downloadsBeforeValid, 'new imports reuse trusted duration');
+    assert.equal(submitted.length, beforeSubmissions + 2);
+    const validJob = await valid.json(); await post('/cancel/' + validJob.jobId, {}, 'boundary');
+    duration = 30;
+    const savedSource = await validateMusicReference('old-project', ref, { ...referenceHooks, savedSources: async () => [ref], refresh: async () => ref });
+    assert.equal(savedSource, ref, 'pre-registry owned projects remain usable');
+    assert.equal(musicReferenceError(360), undefined);
+    for (const seconds of [null, undefined, NaN, 0, -1]) assert.match(musicReferenceError(seconds), /could not be read/);
     console.log('Music controls integration passed: batches, distinct seeds, controls, concurrent-click guard, partial saves, single routed notification, uncertain submissions, cancellation, legacy jobs, private transcription, duration guard and cached drafts.');
   } finally { server.closeAllConnections(); server.close(); await mongoose.disconnect(); await mongo.stop(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
