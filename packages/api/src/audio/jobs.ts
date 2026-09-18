@@ -26,6 +26,8 @@ type Output = {
   truncated?: boolean;
   error?: string;
   score_key?: string;
+  queue_ms?: number;
+  execution_ms?: number;
 };
 export type Provider = {
   id?: string;
@@ -36,6 +38,7 @@ export type Provider = {
   status?: string;
   output?: Output;
   executionTime?: number;
+  delayTime?: number;
   error?: string;
 };
 export type Take = {

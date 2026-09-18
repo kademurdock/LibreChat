@@ -116,7 +116,15 @@ export function createYueRouter(hooks: Hooks): Router {
       provider('run', { input, policy: { executionTimeout: 1200000, ttl: 7200000 } }),
     status: async (take) => {
       const result = await provider(`status/${encodeURIComponent(take.providerId || '')}`);
-      return { ...result, costUSD: ((result.executionTime || 0) / 3600000) * 1.22 };
+      /* RunPod reports how long the job waited for a GPU (delayTime) and how long
+       * it ran. Keeping both beside the take is what tells a cold wake from a
+       * slow run; the booth used to discard them. */
+      const output = result.output && {
+        ...result.output,
+        queue_ms: result.delayTime,
+        execution_ms: result.executionTime,
+      };
+      return { ...result, output, costUSD: ((result.executionTime || 0) / 3600000) * 1.22 };
     },
     cancel: async (take) => {
       await provider(`cancel/${encodeURIComponent(take.providerId || '')}`);

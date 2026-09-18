@@ -32,7 +32,7 @@ async function main() {
         }
         if (path.includes('/cancel/'))
             state = 'CANCELLED';
-        return { data: path.endsWith('/run') ? { id: 'provider1' } : { status: state, executionTime: 60000, output: state === 'COMPLETED' ? { url: 'https://assets.test/song.mp3', duration_s: 20, truncated: false } : undefined }, status: 200, statusText: 'OK', headers: {}, config };
+        return { data: path.endsWith('/run') ? { id: 'provider1' } : { status: state, executionTime: 60000, delayTime: 110000, output: state === 'COMPLETED' ? { url: 'https://assets.test/song.mp3', duration_s: 20, truncated: false } : undefined }, status: 200, statusText: 'OK', headers: {}, config };
     };
     const app = (0, express_1.default)();
     app.use((0, yue_1.createYueRouter)({ auth: (_req, _res, next) => next(), user: req => String(req.headers['x-test-user'] || 'a'), validateReference: async (_user, url) => url,
@@ -71,6 +71,9 @@ async function main() {
         res = await fetch(base + '/status/' + job.jobId);
         strict_1.default.equal((await res.json()).state, 'done');
         strict_1.default.equal(completions, 1);
+        const timed = (await mongoose_1.default.connection.db.collection('kadeyuejobs').findOne({ id: job.jobId })).takes[0].output;
+        strict_1.default.equal(timed.queue_ms, 110000, 'GPU wait is kept beside the take');
+        strict_1.default.equal(timed.execution_ms, 60000);
         await fetch(base + '/status/' + job.jobId);
         strict_1.default.equal(completions, 1);
         failSubmit = true;
