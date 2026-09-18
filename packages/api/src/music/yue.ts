@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import axios from 'axios';
 import express from 'express';
 import mongoose from 'mongoose';
-import type { Request, Response, RequestHandler } from 'express';
+import type { Request, Response, RequestHandler, Router } from 'express';
 
 type Input = { style: string; lyrics: string; abc?: string; cot: 'full' | 'melody'; seed: number };
 type Output = { url?: string; wav_url?: string; duration_s?: number; bytes?: number; truncated?: boolean; error?: string; score_key?: string };
@@ -33,7 +33,7 @@ export function yueInput(body: { script?: string; lyrics?: string; abc?: string;
   return { style: body.script.trim(), lyrics: body.lyrics.trim(), abc: body.abc || undefined,
     cot: body.abc && body.cot !== 'full' ? 'melody' : 'full', seed: body.seed ?? Math.floor(Math.random() * 2147483647) };
 }
-export function yueConfigured() { return !!(process.env.YUE_ENDPOINT_ID && process.env.RUNPOD_API_KEY); }
+export function yueConfigured(): boolean { return !!(process.env.YUE_ENDPOINT_ID && process.env.RUNPOD_API_KEY); }
 async function provider(path: string, data?: { input: Input; policy: { executionTimeout: number; ttl: number } }): Promise<Provider> {
   const base = `https://api.runpod.ai/v2/${process.env.YUE_ENDPOINT_ID}`;
   const response = await axios.request<Provider>({ url: `${base}/${path}`, method: data || path.startsWith('cancel/') ? 'POST' : 'GET', data,
@@ -41,7 +41,7 @@ async function provider(path: string, data?: { input: Input; policy: { execution
   return response.data;
 }
 
-export function createYueRouter(hooks: Hooks) {
+export function createYueRouter(hooks: Hooks): Router {
   const router = express.Router();
   let indexes: Promise<void> | undefined;
   function authorize(req: Request, res: Response, action: () => Promise<Response | void>) {

@@ -35,12 +35,13 @@ router.use(createYueRouter({
     });
   },
   complete: async job => {
+    const scoreUrl = job.output.score_key ? await getNewS3URL(job.output.wav_url, job.output.score_key) : undefined;
     const asset = await KadeAsset.findOneAndUpdate({ user: job.user, service: 'runpod_yue2', 'metadata.jobId': job.id }, {
       $setOnInsert: { user: job.user, service: 'runpod_yue2', kind: 'audio', url: job.output.url,
         model: 'm-a-p/YuE2-3B', prompt: job.input.style, description: 'YuE2 song: ' + job.input.style,
         costUSD: job.costUSD || 0, metadata: { jobId: job.id, projectId: job.projectId, via: 'sound-booth',
           wavUrl: job.output.wav_url, seconds: job.output.duration_s, lyrics: job.input.lyrics,
-          scoreKey: job.output.score_key, truncated: job.output.truncated, costScope: 'execution estimate; startup and idle are additional' } },
+          scoreKey: job.output.score_key, scoreUrl, truncated: job.output.truncated, costScope: 'execution estimate; startup and idle are additional' } },
     }, { upsert: true, new: true });
     await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, { $addToSet: { assets: String(asset._id) } });
   },
@@ -989,6 +990,7 @@ async function takesFor(projects, userId) {
       url: await freshAssetUrl(d.url),
       backupUrl: d.backupUrl ? await freshAssetUrl(d.backupUrl) : '',
       masterUrl: d.metadata?.wavUrl ? await freshAssetUrl(d.metadata.wavUrl) : null,
+      scoreUrl: d.metadata?.scoreUrl ? await freshAssetUrl(d.metadata.scoreUrl) : null,
       /* The blind-friendly description the gallery writes, when it has landed
        * yet -- enrichment runs detached, so a brand-new take often has none. */
       description: d.description || '',
@@ -1073,6 +1075,9 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
     const mood = MOODS[b.mood] || null;
     const lines = [];
     lines.push(mode === 'write' ? `WHAT THEY WANT MADE:\n${text}` : `THEIR WORDS:\n${text}`);
+    if (['lyria', 'yue2'].includes(engine) && typeof b.lyrics === 'string' && b.lyrics.trim()) {
+      lines.push(`THEIR EXISTING LYRICS: Keep these words exactly and shape the music around them.\n${b.lyrics.slice(0, 8000)}`);
+    }
     if (b.voice_description) {
       lines.push(`WHO IS SPEAKING: ${String(b.voice_description).slice(0, 600)}`);
     }

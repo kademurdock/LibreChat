@@ -71,7 +71,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 <body>
   <p><a class="back" href="/home" aria-label="Back to home">&larr; Home</a> &nbsp;&middot;&nbsp; <a class="back" href="/my-creations">My Creations &rarr;</a></p>
   <h1>Sound Booth</h1>
-  <p class="muted">Choose a performance with AuK HQ, a scene with Seed Audio, or music with Lyria. Each engine has its own workspace. Switching engines keeps your drafts in this tab.</p>
+  <p class="muted">Make a performance with AuK, music with Lyria or YuE2, or a scene with Seed Audio. Start with an idea; adjust the details when you want. Each engine keeps its draft in this tab.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading the Sound Booth&hellip;</div>
 
@@ -287,7 +287,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     function applyWorkflow(){
       updateRenderControls();
-      document.getElementById('renderHint').textContent=state.engine==='scenema' ? 'AuK starts paid generation with one press, after any reference import finishes. Startup and processing use billed GPU time; the final cost is available afterward.' : 'Review the cost information in the confirmation window, then choose Start paid generation or Keep editing.';
+      document.getElementById('renderHint').textContent=state.engine==='scenema' ? 'AuK starts paid generation with one press, after any reference import finishes. Startup, generation and ten minutes awake after the last job use billed GPU time. Ten idle minutes costs about twenty cents.' : 'Review the cost information in the confirmation window, then choose Start paid generation or Keep editing.';
       var music=(state.engine==='lyria'||state.engine==='yue2'), scene=state.engine==='seed';
       var g=state.guide.engines[state.engine];
       document.getElementById('engineSummary').textContent=g.tagline;
@@ -510,17 +510,17 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var box=document.getElementById('script'), original=box.value;
       var text=original.trim()||document.getElementById('text').value.trim();
       if(text.length<3){say('Write an idea first, or choose Surprise me.',true);box.focus();return;}
-      var engine=state.engine, body=collect();body.text=text;body.mode='write';
+      var engine=state.engine, revision=state.quoteRevision, body=collect();body.text=text;body.mode='write';
       state.writing=true;box.readOnly=true;this.disabled=true;
       document.getElementById('btnInspire').disabled=true;updateRenderControls();
       say('Writing a draft from your idea.');
       try {
         var r=await post('/api/kade/sound-booth/script',body);
         if(!r.ok)throw new Error(r.data.error||'The writing desk could not finish. Your text is kept.');
-        if(state.engine!==engine || box.value!==original){say('Your editor changed while the draft was being written. Your current text is kept.',true);return;}
+        if(state.engine!==engine || box.value!==original || state.quoteRevision!==revision){say('Your editor or settings changed while the draft was being written. Your current text is kept.',true);return;}
         var result=r.data.screenplay||r.data.script;
         if(!result)throw new Error('The writing desk returned no draft. Your text is kept.');
-        if(engine==='yue2'){var split=result.split(/\\nLyrics:\\s*/i);if(split.length<2)throw new Error('The writer did not provide separate lyrics. Your idea is kept; try again or add your lyrics in song settings.');writingLyrics=state.values.lyrics;state.values.lyrics=split.slice(1).join('\\n');result=split[0];renderSettings();}
+        if(engine==='yue2'){var split=result.split(/\\nLyrics:\\s*/i);if(split.length<2)throw new Error('The writer did not provide separate lyrics. Your idea is kept; try again or add your lyrics in song settings.');writingLyrics=state.values.lyrics||'';state.values.lyrics=split.slice(1).join('\\n');result=split[0];renderSettings();}
         changeWriting(result);document.getElementById('readback').textContent=r.data.readback||'';
         say('Draft ready in the editor. You can change it or undo. No audio has been generated.');
       } catch(e){say(e.message||'The writing desk could not finish. Your text is kept.',true);}
@@ -586,6 +586,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var script=document.getElementById('script').value.trim();
       var b=collect();
       if(!script && !preview && b.auk_task!=='edit'){ say((state.engine==='lyria'||state.engine==='yue2')?'Describe the music you want first.':'Write a script first.',true); return; }
+      if(state.engine==='yue2' && !b.lyrics){document.getElementById('settingsDrawer').open=true;document.getElementById('set_lyrics').focus();say('Add the words to sing, or use Write my song idea to draft lyrics.',true);return;}
       b.script=script || '<speak voice="'+esc(b.voice_description||'A warm clear voice')+'" gender="'+(b.gender||'female')+'"></speak>';
       b.preview=preview; b.estimateOnly=true;
       var key=JSON.stringify(b);
@@ -692,16 +693,16 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(!ps.length){ box.innerHTML = '<p class="muted">Nothing here yet.</p>'; return; }
       box.innerHTML = ps.map(function(p){
         var when = ''; try { when = new Date(p.updatedAt).toLocaleString('en-US', {month:'long', day:'numeric', hour:'numeric', minute:'2-digit'}); } catch(e){}
-        var engine = p.engine === 'lyria' ? 'Lyria' : p.engine === 'seed' ? 'Seed Audio' : 'AuK HQ';
+        var engine = p.engine === 'yue2' ? 'YuE2' : p.engine === 'lyria' ? 'Lyria' : p.engine === 'seed' ? 'Seed Audio' : 'AuK HQ';
         var stateWord = p.state === 'done' ? 'finished' : p.state;
         return '<div class="proj"><h3>' + esc(p.title) + '</h3>' +
-          '<p class="hint">' + esc(p.why || engine) + ' \\u00b7 ' + esc(stateWord) + ' \\u00b7 ' + esc(when) + (p.costUSD ? ' \\u00b7 about ' + Math.max(1, Math.round(p.costUSD*100)) + ' cents' : '') + '</p>' +
+          '<p class="hint">' + esc(p.why || engine) + ' \\u00b7 ' + esc(stateWord) + ' \\u00b7 ' + esc(when) + (p.costUSD ? ' \\u00b7 about ' + Math.max(1, Math.round(p.costUSD*100)) + ' cents'+(p.engine==='yue2'?' of execution; startup and idle are extra':'') : '') + '</p>' +
           (p.lastError ? '<p role="note">'+esc(p.lastError)+'</p>' : '') +
           (p.readback ? '<p>' + esc(p.readback) + '</p>' : '') +
           (p.takes||[]).map(function(t, n){
             var lbl = 'Take ' + ((p.takes.length) - n) + (t.seconds ? ', ' + t.seconds + ' seconds' : '') + (t.description ? '. ' + t.description : '');
             return '<audio controls preload="none" aria-label="' + esc(lbl) + '"><source src="' + esc(t.url) + '">' + (t.backupUrl ? '<source src="' + esc(t.backupUrl) + '">' : '') + '</audio>' +
-                   '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.masterUrl ? ' · <a href="' + esc(t.masterUrl) + '" download target="_blank" rel="noreferrer">Download WAV master</a>' : '') + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>' +
+                   '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.masterUrl ? ' · <a href="' + esc(t.masterUrl) + '" download target="_blank" rel="noreferrer">Download WAV master</a>' : '') + (t.scoreUrl ? ' · <a href="'+esc(t.scoreUrl)+'" download target="_blank" rel="noreferrer">Download composition score</a>' : '') + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>' +
                    '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button>';
           }).join('') +
           '<details><summary>'+(p.engine==='lyria'?'Music direction':'Script')+'</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>' +
