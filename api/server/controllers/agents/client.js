@@ -854,6 +854,10 @@ class AgentClient extends BaseClient {
          * confident guess at the wrong trial. Per-turn, so it lives in the
          * volatile tail, never the cached head. */
         const ragNote = this.options.req?._kadeToolRagNote;
+        if (this.options.req.body?.kadeToolPolicy === 'morning-brief') {
+          require('@librechat/api').restrictBriefTools(agent);
+          logger.info(`[brief-tools] agent=${agentId} composition only: weather/news`);
+        }
         const capabilities = require('@librechat/api').runtimeCapabilities(agent);
         agentRunContextParts.push('TOOLS AVAILABLE FOR THIS REPLY\n' + JSON.stringify(capabilities));
         try {

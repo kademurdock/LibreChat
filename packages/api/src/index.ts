@@ -109,6 +109,7 @@ export { createHarnessRouter } from './tasks/harness';
 export { createMemoryControlsRouter } from './agents/memoryControls';
 export { createProjectContextRouter, loadProjectWork } from './projects/context';
 export { runtimeCapabilities } from './agents/capabilities';
+export { isBriefToolAllowed, assertBriefToolCalls, restrictBriefTools } from './agents/brief';
 export { publicHelp } from './web/help';
 
 export { deliverApprovalEmail, approvalEmailNotice } from './access/approval';

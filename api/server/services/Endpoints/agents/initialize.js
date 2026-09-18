@@ -150,7 +150,11 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
     const withFeedback = toolless
       ? []
       : [..._tools, ...autoTools.filter((t) => !_tools.includes(t))];
-    const agent = { id: agentId, tools: withFeedback, provider, model, tool_options };
+    const selectedTools =
+      req.body?.kadeToolPolicy === 'morning-brief'
+        ? withFeedback.filter(require('@librechat/api').isBriefToolAllowed)
+        : withFeedback;
+    const agent = { id: agentId, tools: selectedTools, provider, model, tool_options };
     try {
       const loaded = await loadAgentTools({
         req,
@@ -306,6 +310,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   const toolExecuteOptions = {
     loadTools: async (toolNames, agentId) => {
+      if (req.body?.kadeToolPolicy === 'morning-brief') {
+        require('@librechat/api').assertBriefToolCalls(toolNames);
+      }
       const ctx = agentToolContexts.get(agentId) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
       logger.debug(`[ON_TOOL_EXECUTE] toolRegistry size: ${ctx.toolRegistry?.size ?? 'undefined'}`);
