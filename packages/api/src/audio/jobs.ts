@@ -10,6 +10,7 @@ export type Input = {
   count: number;
   weirdness?: number;
   steps?: number;
+  soundModel?: '3_medium' | '3_small_sfx';
   guidance?: number;
   lyrics?: string;
   abc?: string;
@@ -88,12 +89,13 @@ export type Config = {
   parse: (body: InputBody) => Input;
   estimate: (input: Input) => { spoken: string; costUSD?: number };
   submit: (input: Input) => Promise<Provider>;
-  status: (take: Take) => Promise<Provider>;
+  status: (take: Take, input: Input) => Promise<Provider>;
   cancel: (take: Take) => Promise<void>;
   working: string;
   stopping: string;
 };
 export type InputBody = {
+  soundModel?: string;
   title?: string;
   count?: number;
   duration?: number;
@@ -256,7 +258,7 @@ export function createAudioRouter(hooks: Hooks, config: Config): Router {
           if (!activeStates.includes(take.state)) continue;
           if (take.state !== 'saving') {
             if (!take.providerId) continue;
-            const response = await config.status(take);
+            const response = await config.status(take, job.input);
             if (response.status === 'COMPLETED' && response.output?.url && !response.output.error) {
               take.state = 'saving';
               take.output = response.output;

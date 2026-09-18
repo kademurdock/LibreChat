@@ -3,12 +3,12 @@ const fs = require('node:fs'), path = require('node:path'), ts = require('typesc
 const express = require('express'), axios = require('axios'), mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 require.extensions['.ts'] = (mod, filename) => mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText, filename);
-const { createEffectsRouter, effectsInput, downloadEffects, effectsPrice } = require(path.resolve(__dirname, '../../../packages/api/src/audio/effects.ts'));
+const { createEffectsRouter, effectsInput, downloadEffects, effectsPrice, effectsVariant } = require(path.resolve(__dirname, '../../../packages/api/src/audio/effects.ts'));
 const { notifyMusic } = require(path.resolve(__dirname, '../../../packages/api/src/music/notify.ts'));
 (async () => {
   const mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri());
   Object.assign(process.env, { FAL_KEY: 'fixture', BRIDGE_SECRET: 'fixture', BRIDGE_URL: 'https://bridge.test' });
-  const submitted = [], rows = new Map(), saved = new Map(), notifications = [];
+  const submitted = [], endpoints = [], rows = new Map(), saved = new Map(), notifications = [];
   let missingSubmission = false, savingFails = false;
   axios.defaults.adapter = async config => {
     const url = config.url, body = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
@@ -18,7 +18,7 @@ const { notifyMusic } = require(path.resolve(__dirname, '../../../packages/api/s
     else {
       assert.equal(config.headers.Authorization, 'Key fixture'); assert.equal(config.maxRedirects, 0);
       if (url.endsWith('/text-to-audio')) {
-        submitted.push(body);
+        submitted.push(body); endpoints.push(url);
         if (missingSubmission) throw new Error('Connection lost after submission');
         const id = 'take-' + submitted.length, base = 'https://queue.fal.run/fal-ai/stable-audio-3/requests/' + id;
         rows.set(id, { status: 'IN_QUEUE' });
@@ -53,15 +53,26 @@ const { notifyMusic } = require(path.resolve(__dirname, '../../../packages/api/s
   const progress = async id => (await fetch(base + '/status/' + id)).json();
   const input = { engine: 'stable', title: 'Harbor', script: 'Small waves, distant gulls, quiet rigging. No music.', duration: 12, count: 4, seed: 42 };
   try {
-    for (const bad of [{ count: 5 }, { duration: 121 }, { duration: 1.5 }, { steps: 101 }, { seed: -1 }, { title: 'a'.repeat(81) }]) assert.throws(() => effectsInput({ ...input, ...bad }));
+    for (const bad of [{ count: 5 }, { duration: 121 }, { duration: 1.5 }, { steps: 101 }, { seed: -1 }, { title: 'a'.repeat(81) }, { soundModel: 'unknown' }, { soundModel: '__proto__' }, { soundModel: {} }]) assert.throws(() => effectsInput({ ...input, ...bad }));
     assert.equal(effectsInput(input).steps, 8);
+    assert.equal(effectsInput(input).soundModel, '3_medium');
+    assert.equal(effectsVariant().price, 0.0206, 'stored jobs without a model retain the original price');
+    const routeSource = fs.readFileSync(path.join(__dirname, 'kadeSoundBooth.js'), 'utf8');
+    const projectView = require('node:vm').runInNewContext('(' + routeSource.slice(routeSource.indexOf('function projectView('), routeSource.indexOf('\nfunction titleFrom(')) + ')', { effectsVariant });
+    assert.equal(projectView({ engine: 'stable' }).options.soundModel, '3_small_sfx', 'opening an old project keeps its original model');
+    assert.match(projectView({ engine: 'stable', options: { soundModel: '3_medium' } }).why, /3 Medium/);
     await assert.rejects(() => downloadEffects('http://127.0.0.1/private'));
     const quote = await (await post('/render', { ...input, estimateOnly: true })).json();
-    assert.equal(quote.estimate.costUSD, 0.0824); assert.equal(submitted.length, 0);
+    assert.equal(quote.estimate.costUSD, 0.1504); assert.match(quote.estimate.spoken, /3 Medium/);
+    const smallQuote = await (await post('/render', { ...input, soundModel: '3_small_sfx', estimateOnly: true })).json();
+    assert.equal(smallQuote.estimate.costUSD, 0.0824); assert.match(smallQuote.estimate.spoken, /3 Small SFX/); assert.equal(submitted.length, 0);
     const attempts = await Promise.all([post('/render', input), post('/render', input)]);
     assert.deepEqual(attempts.map(r => r.status).sort(), [200, 409]);
     const job = await attempts.find(r => r.status === 200).json();
     assert.deepEqual(submitted.map(x => x.seed), [42, 43, 44, 45]);
+    assert.ok(endpoints.every(url => url.endsWith('/medium/text-to-audio')));
+    assert.equal((await Jobs.findOne({ id: job.jobId })).input.soundModel, '3_medium');
+    assert.ok(submitted.every(x => x.prompt === 'TrackType: SFX, ' + input.script));
     assert.ok(submitted.every(x => x.output_format === 'wav' && x.num_inference_steps === 8 && x.duration === 12 && x.enable_safety_checker && !x.enable_prompt_expansion));
     assert.equal((await fetch(base + '/status/' + job.jobId, { headers: { 'x-user': 'stranger' } })).status, 404);
     rows.get('take-1').status = 'COMPLETED'; savingFails = true;
@@ -78,14 +89,18 @@ const { notifyMusic } = require(path.resolve(__dirname, '../../../packages/api/s
     assert.equal(saved.size, 2); assert.equal(notifications.length, 1);
     assert.equal(notifications[0].title, 'Your sound batch has stopped'); assert.equal(notifications[0].userId, 'a');
     assert.equal((await Jobs.findOne({ id: job.jobId })).costUSD, effectsPrice * 2);
-    const next = await (await post('/render', { ...input, count: 2 })).json();
+    const next = await (await post('/render', { ...input, count: 2, soundModel: '3_small_sfx' })).json();
+    assert.ok(endpoints.slice(4).every(url => url.endsWith('/small/sfx/text-to-audio')));
+    assert.equal((await Jobs.findOne({ id: next.jobId })).input.soundModel, '3_small_sfx');
+    await Jobs.updateOne({ id: next.jobId }, { $unset: { 'input.soundModel': 1 } });
     rows.get('take-5').status = 'COMPLETED';
     assert.equal((await post('/cancel/' + next.jobId, {})).status, 200);
     assert.equal((await progress(next.jobId)).completed, 1, 'cancel race keeps a completed recording');
+    assert.equal((await Jobs.findOne({ id: next.jobId })).costUSD, 0.0206, 'legacy job polling must not adopt the Medium price');
     missingSubmission = true;
     const uncertain = await post('/render', input); assert.equal(uncertain.status, 502);
     assert.equal(submitted.length, 7, 'a lost response does not trigger more paid submissions');
     assert.equal((await post('/render', input)).status, 409);
-    console.log('Stable Audio integration passed: exact payload/price, four seeds, duplicate guard, account isolation, saving retry, partial failures, single notification, cancellation race, ambiguous submission protection.');
+    console.log('Stable Audio integration passed: both models and prices, SFX conditioning, legacy job/project compatibility, four seeds, duplicate guard, account isolation, saving retry, partial failures, single notification, cancellation race, ambiguous submission protection.');
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await mongoose.disconnect(); await mongo.stop(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

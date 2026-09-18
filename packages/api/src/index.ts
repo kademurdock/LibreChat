@@ -149,6 +149,8 @@ export {
   effectsCost,
   effectsPrice,
   effectsModel,
+  effectsVariant,
+  effectsVariants,
   downloadEffects,
 } from './audio/effects';
 

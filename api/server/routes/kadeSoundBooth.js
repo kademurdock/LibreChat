@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -75,7 +75,7 @@ router.use(createEffectsRouter({
   project: async (user, input, sourceText) => {
     const project = await KadeSoundBoothProject.create({ user, engine: 'stable', title: input.title,
       script: input.style, sourceText: sourceText.slice(0, 8000), state: 'queued',
-      options: { duration: input.duration, count: input.count, steps: input.steps, seed: input.seed } });
+      options: { soundModel: input.soundModel, duration: input.duration, count: input.count, steps: input.steps, seed: input.seed } });
     return String(project._id);
   },
   update: async job => {
@@ -102,9 +102,9 @@ router.use(createEffectsRouter({
       const project = await KadeSoundBoothProject.findOne({ _id: job.projectId, user: job.user }).select('title').lean();
       const title = project?.title || job.input.title;
       asset = await KadeAsset.findOneAndUpdate(query, { $setOnInsert: {
-        user: job.user, service: 'fal_stable_audio', kind: 'audio', url, model: effectsModel,
-        prompt: job.input.style, description: title, costUSD: effectsPrice,
-        metadata: { title, seed: job.input.seed, steps: job.input.steps, seconds, wavUrl: url,
+        user: job.user, service: 'fal_stable_audio', kind: 'audio', url, model: effectsVariant(job.input).model,
+        prompt: job.input.style, description: title, costUSD: effectsVariant(job.input).price,
+        metadata: { title, soundModel: job.input.soundModel || '3_small_sfx', seed: job.input.seed, steps: job.input.steps, seconds, wavUrl: url,
           jobId: job.id, projectId: job.projectId, via: 'sound-booth', format: 'wav',
           costScope: 'provider cost; no credit balance deduction during trial' },
       } }, { upsert: true, new: true });
@@ -1094,13 +1094,13 @@ function projectView(p) {
     /* A Lyria row is a brief, not a script; there is no screenplay view of it. */
     /* Part 126 (carried ask): a library row says what made it and why, so an
      * old project explains itself instead of leaving her to guess. */
-    why: p.engine === 'stable' ? 'Stable Audio — sound effects and ambience' : p.engine === 'yue2' ? 'YuE2 — a song made on the sleeping music GPU' : p.engine === 'lyria'
+    why: p.engine === 'stable' ? effectsVariant(p.options).name + ' — sound effects and ambience' : p.engine === 'yue2' ? 'YuE2 — a song made on the sleeping music GPU' : p.engine === 'lyria'
       ? 'Lyria — a song made from a brief' + ((p.options || {}).instrumental ? ', instrumental' : '') + ((p.options || {}).lyrics ? ', to your own lyrics' : '')
       : p.engine === 'seed'
       ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
       : 'AuK — one actor performing' + ((p.options || {}).reference_voice_url ? ', cloning a clip' : ', voice from the description') + (Number.isInteger(p.voiceSeed) ? `, voice ${p.voiceSeed}` : ''),
     readback: p.readback,
-    options: p.options || {},
+    options: p.engine === 'stable' ? { ...p.options, soundModel: p.options?.soundModel || '3_small_sfx' } : p.options || {},
     voiceSeed: p.voiceSeed,
     hasRecoverableAudio: (p.parts || []).some((part) => part.state === 'done' && part.url) || (p.assets || []).length > 0,
     parts: (p.parts || []).map(({ index, state, durationS, costUSD }) => ({ index, state, durationS, costUSD })),
@@ -2308,7 +2308,7 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
       seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: SEED_USD_PER_MIN },
-      stable: { configured: effectsConfigured(), queued: true, model: effectsModel, usdPerRecording: effectsPrice },
+      stable: { configured: effectsConfigured(), queued: true, model: effectsModel, usdPerRecording: effectsPrice, models: effectsVariants },
       yue2: { configured: yueConfigured(), queued: true, model: 'm-a-p/YuE2-3B' },
       lyria: { configured: !!lyriaKey(), queued: false, usdPerSong: LYRIA_USD_PER_SONG, model: LYRIA_MODEL },
     },

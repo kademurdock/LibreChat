@@ -3,15 +3,31 @@ import type { Router } from 'express';
 import type { Hooks, Input, InputBody, Provider, Take } from './jobs';
 import { createAudioRouter } from './jobs';
 
-export const effectsModel = 'fal-ai/stable-audio-3/small/sfx/text-to-audio';
-export const effectsPrice = 0.0206;
+export const effectsVariants = {
+  '3_medium': {
+    name: 'Stable Audio 3 Medium',
+    model: 'fal-ai/stable-audio-3/medium/text-to-audio',
+    price: 0.0376,
+  },
+  '3_small_sfx': {
+    name: 'Stable Audio 3 Small SFX',
+    model: 'fal-ai/stable-audio-3/small/sfx/text-to-audio',
+    price: 0.0206,
+  },
+} as const;
+export const effectsModel = effectsVariants['3_medium'].model;
+export const effectsPrice = effectsVariants['3_medium'].price;
+export function effectsVariant(input?: Pick<Input, 'soundModel'> | null) {
+  return effectsVariants[input?.soundModel || '3_small_sfx'] || effectsVariants['3_small_sfx'];
+}
 export const effectsCost =
-  'Provider cost: 2.06 cents per recording, or 8.24 cents for four. This trial does not deduct from your credit balance; Kade pays the provider cost. Each press starts generation without another confirmation.';
+  'Provider cost: 3 Medium is 3.76 cents per recording, or 15.04 cents for four. 3 Small SFX is 2.06 cents per recording, or 8.24 cents for four. This trial does not deduct from your credit balance; Kade pays the provider cost. Each press starts generation without another confirmation.';
 const queue = 'https://queue.fal.run';
 export const effectsGuide = {
   name: 'Stable Audio',
-  tagline: 'Sound effects and layered ambience, saved as lossless WAV.',
-  where: 'Stable Audio 3 Small SFX, hosted on fal. Your description is sent to fal.',
+  tagline: 'Stereo sound effects and layered ambience, saved as lossless WAV.',
+  where:
+    'Stable Audio 3 Medium is the default; the original 3 Small SFX remains available in Sound settings. Both run on fal. Your description is sent to fal.',
   cost: effectsCost as string,
   bestFor: [
     'nature and room ambience',
@@ -29,9 +45,17 @@ export const effectsGuide = {
   ],
   settings: [
     {
+      key: 'soundModel',
+      label: 'Sound model',
+      hint: '3 Medium is the larger model and our recommended starting point for detailed ambience: 3.76 cents per take. 3 Small SFX is the original option: 2.06 cents per take. Stereo width and layer accuracy still vary between recordings.',
+      kind: 'choice',
+      options: ['3_medium', '3_small_sfx'],
+      default: '3_medium',
+    },
+    {
       key: 'duration',
       label: 'Duration in seconds',
-      hint: '1 to 120 seconds. Provider pricing is per recording.',
+      hint: '1 to 120 seconds in Sound Booth for either model. Provider pricing is per recording.',
       kind: 'number',
       min: 1,
       max: 120,
@@ -41,7 +65,7 @@ export const effectsGuide = {
     {
       key: 'count',
       label: 'Number of takes',
-      hint: '1 to 4 variations, submitted together with different seeds. Each recording costs Kade 2.06 cents.',
+      hint: '1 to 4 variations, submitted together with different seeds. Each costs Kade 3.76 cents with Medium or 2.06 cents with Small SFX.',
       kind: 'number',
       min: 1,
       max: 4,
@@ -51,7 +75,7 @@ export const effectsGuide = {
     {
       key: 'steps',
       label: 'Inference steps',
-      hint: '8 is the recommended default for this distilled model. More steps take longer and do not guarantee better sound.',
+      hint: '8 is the recommended default for both distilled models. More steps take longer and do not guarantee better sound.',
       kind: 'number',
       min: 1,
       max: 100,
@@ -81,6 +105,9 @@ type Result = {
 };
 
 export function effectsInput(body: InputBody): Input {
+  const soundModel = body.soundModel ?? '3_medium';
+  if (soundModel !== '3_medium' && soundModel !== '3_small_sfx')
+    throw new Error('Choose 3 Medium or 3 Small SFX as the sound model.');
   if (typeof body.script !== 'string' || body.script.trim().length < 3 || body.script.length > 3000)
     throw new Error('Describe your sounds in 3 to 3000 characters.');
   if (body.title != null && (typeof body.title !== 'string' || body.title.length > 80))
@@ -98,6 +125,7 @@ export function effectsInput(body: InputBody): Input {
     return value;
   };
   return {
+    soundModel,
     style: body.script.trim(),
     title: body.title?.trim() || body.script.trim().split(/\s+/).slice(0, 7).join(' ').slice(0, 80),
     count: number(body.count, 1, 1, 4, 'Number of takes'),
@@ -137,8 +165,8 @@ async function request(url: string, method: 'GET' | 'POST' | 'PUT' = 'GET', data
 }
 
 async function submit(input: Input): Promise<Provider> {
-  const response = await request(`${queue}/${effectsModel}`, 'POST', {
-    prompt: input.style,
+  const response = await request(`${queue}/${effectsVariant(input).model}`, 'POST', {
+    prompt: `TrackType: SFX, ${input.style}`,
     duration: input.duration,
     seed: input.seed,
     num_inference_steps: input.steps,
@@ -172,7 +200,7 @@ function failure(result: Result): string {
   ).slice(0, 500);
 }
 
-async function status(take: Take): Promise<Provider> {
+async function status(take: Take, input: Input): Promise<Provider> {
   const id = take.providerId || '';
   const response = await request(queueUrl(take.statusUrl, id));
   const result = response.data;
@@ -184,7 +212,7 @@ async function status(take: Take): Promise<Provider> {
     return { status: 'FAILED', error: failure(finished.data) };
   return {
     status: 'COMPLETED',
-    costUSD: effectsPrice,
+    costUSD: effectsVariant(input).price,
     output: {
       url: finished.data.audio.url,
       wav_url: finished.data.audio.url,
@@ -232,8 +260,8 @@ export function createEffectsRouter(hooks: Hooks): Router {
     status,
     cancel,
     estimate: (input) => ({
-      costUSD: Number((input.count * effectsPrice).toFixed(4)),
-      spoken: `${input.count} take${input.count === 1 ? '' : 's'}: ${(input.count * effectsPrice * 100).toFixed(2)} cents provider cost. No deduction from your credit balance during this trial.`,
+      costUSD: Number((input.count * effectsVariant(input).price).toFixed(4)),
+      spoken: `${effectsVariant(input).name}, ${input.count} take${input.count === 1 ? '' : 's'}: ${(input.count * effectsVariant(input).price * 100).toFixed(2)} cents provider cost. No deduction from your credit balance during this trial.`,
     }),
     working:
       'Stable Audio is generating your sounds. Takes are submitted together; fal controls available parallel capacity.',
