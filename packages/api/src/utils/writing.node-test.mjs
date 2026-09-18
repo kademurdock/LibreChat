@@ -5,7 +5,7 @@ import { stripTypeScriptTypes, createRequire } from 'node:module';
 import vm from 'node:vm';
 const source = stripTypeScriptTypes(readFileSync(new URL('./writing.ts', import.meta.url), 'utf8'));
 const musicSource = stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8'));
-const { musicWritingPrompt, lyricAgentId } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
+const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 
 test('music drafting reads the current Lyric persona while formatting and speech stay untouched', async () => {
@@ -27,7 +27,7 @@ test('music drafting reads the current Lyric persona while formatting and speech
   await assert.rejects(() => musicWritingPrompt('format', { engine: 'yue2', mode: 'write' }, async () => null), error => error.status === 503);
 });
 
-test('the real music writing handler sends Lyric instructions to Hermes and preserves supplied lyrics', async () => {
+test('the real music writing handler sends Lyric instructions and creative settings to Grok and preserves supplied lyrics', async () => {
   const url = new URL('../../../../api/server/routes/kadeSoundBooth.js', import.meta.url), localRequire = createRequire(url);
   const handlers = new Map(), requests = [], ledger = [];
   let instructions = 'Saved Lyric persona v1: connected thoughts and meaningful rhyme.';
@@ -37,7 +37,7 @@ test('the real music writing handler sends Lyric instructions to Hermes and pres
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: 'Intimate R&B with warm piano.\nLyrics:\n[Verse]\nMy exact authored line.\nREADBACK: A quiet song.' } }], usage: { cost: 0.002 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models') return { getAgent: async filter => { assert.equal(filter.id, lyricAgentId); return { instructions }; } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
@@ -50,14 +50,29 @@ test('the real music writing handler sends Lyric instructions to Hermes and pres
   const request = { user: { id: 'writer-fixture' }, body: { engine: 'yue2', mode: 'write', text: 'An intimate R&B song about coming home.', lyrics: 'My exact authored line.' } };
   await handlers.get('post/script')(request, response);
   assert.ok(requests[0].messages[0].content.includes(instructions));
-  assert.equal(requests[0].model, 'nousresearch/hermes-4-405b');
+  assert.equal(requests[0].model, 'x-ai/grok-4.20');
+  assert.equal(requests[0].temperature, 0.85);
+  assert.equal(requests[0].top_p, 0.95);
+  assert.equal(requests[0].reasoning.enabled, false);
+  assert.equal(requests[0].reasoning.effort, 'none');
+  assert.equal(ledger[0].metadata.model, 'x-ai/grok-4.20');
   assert.match(requests[0].messages[1].content, /Keep these words exactly/);
   assert.match(result.script, /Lyrics:\n\[Verse\]/);
   assert.equal(ledger[0].metadata.writingPersona, lyricAgentId);
+  assert.equal(ledger[0].costUSD, 0.002);
   instructions = 'Saved Lyric persona v2: changed by the owner.';
   await handlers.get('post/script')(request, response);
   assert.ok(requests[1].messages[0].content.includes(instructions));
   assert.ok(!requests[1].messages[0].content.includes('persona v1'));
+  request.body.engine = 'lyria';
+  await handlers.get('post/script')(request, response);
+  assert.equal(requests[2].model, 'x-ai/grok-4.20');
+  request.body.mode = 'format';
+  await handlers.get('post/script')(request, response);
+  assert.equal(requests[3].model, 'nousresearch/hermes-4-405b');
+  assert.equal(requests[3].temperature, 0.7);
+  assert.equal(requests[3].reasoning, undefined);
+  assert.equal(requests[3].top_p, undefined);
 });
 
 test('provider cost, including free/cached calls, wins over token estimates', () => {
@@ -84,6 +99,9 @@ test('real Sound Booth request honors its configured model and returns its actua
   assert.equal(result.text, '<speak>At the end of the day.</speak>');
   assert.equal(result.costUSD, 0.003);
   assert.equal(result.measured, true);
+  const grok = await context.call({ system: 'Write lyrics.', user: 'Coming home.', ...musicWritingSettings({ engine: 'yue2', mode: 'write' }) });
+  assert.equal(requests[1][1].model, 'x-ai/grok-4.20');
+  assert.equal(grok.costUSD, 0.003);
 });
 
 test('real script route accounts for the shortening call as well as the first draft', async () => {
@@ -98,7 +116,7 @@ test('real script route accounts for the shortening call as well as the first dr
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'axios') return { post: async () => { calls++; return { data: { choices: [{ message: { content: '[Setting: A quiet room.]\nNora (calm woman) says softly: "' + 'Stay here. '.repeat(calls === 1 ? 220 : 30) + '"' } }], usage: { cost: calls === 1 ? 0.004 : 0.002 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
     if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay') return localRequire(name);
@@ -113,4 +131,8 @@ test('real script route accounts for the shortening call as well as the first dr
   assert.equal(ledger[0].costUSD, 0.006);
   assert.equal(ledger[0].metadata.costMeasured, true);
   assert.equal(ledger[0].metadata.model, 'nousresearch/hermes-4-405b');
+});
+
+test('Grok token estimates use Grok prices', () => {
+  assert.deepEqual(writingCost({ prompt_tokens: 3000, completion_tokens: 1000 }, lyricWritingModel), { costUSD: 0.00625, measured: false });
 });

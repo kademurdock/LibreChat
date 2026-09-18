@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, lyricAgentId, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -409,7 +409,7 @@ function stripFence(s) {
   return t;
 }
 
-async function callModel({ system, user, maxTokens = 2200 }) {
+async function callModel({ system, user, maxTokens = 2200, model = MODEL, temperature = 0.7, top_p, reasoning }) {
   const gatewayUrl =
     process.env.KADE_LLM_GATEWAY_URL ||
     'https://reframe-proxy-production.up.railway.app/chat/completions';
@@ -422,9 +422,11 @@ async function callModel({ system, user, maxTokens = 2200 }) {
   const r = await axios.post(
     gatewayUrl,
     {
-      model: MODEL,
+      model,
       max_tokens: maxTokens,
-      temperature: 0.7,
+      temperature,
+      ...(top_p !== undefined ? { top_p } : {}),
+      ...(reasoning ? { reasoning } : {}),
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -437,7 +439,7 @@ async function callModel({ system, user, maxTokens = 2200 }) {
   );
   const out = r.data?.choices?.[0]?.message?.content;
   const usage = r.data?.usage || {};
-  return { text: String(out || ''), usage, ...writingCost(usage, MODEL, system.length + user.length, String(out || '').length) };
+  return { text: String(out || ''), usage, ...writingCost(usage, model, system.length + user.length, String(out || '').length) };
 }
 
 /* ---------- AuK XML: build one, and check one ------------------------- */
@@ -1178,7 +1180,9 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
     }
 
     const started = Date.now();
+    const writingSettings = musicWritingSettings({ engine, mode });
     const { text: raw, usage, costUSD: firstCost, measured: firstMeasured } = await callModel({
+      ...writingSettings,
       system: await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode }, getAgent),
       user: lines.join('\n\n'),
       maxTokens: engine === 'seed' ? 1200 : 2200,
@@ -1247,7 +1251,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
         mode,
         costMeasured,
         writingPersona: mode === 'write' && ['lyria', 'yue2'].includes(engine) ? lyricAgentId : undefined,
-        model: MODEL,
+        model: writingSettings.model || MODEL,
         ms: Date.now() - started,
         inTok: usage.prompt_tokens,
         outTok: usage.completion_tokens,
@@ -2310,6 +2314,7 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
     },
     scriptDesk: !!(process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY),
     lyricWritingPersona: 'Lyric',
+    lyricWritingModel,
     model: MODEL,
     moods: Object.entries(MOODS).map(([k, v]) => ({ key: k, label: v.label })),
     limits: { scenemaChars: MAX_SCENEMA_CHARS, seedChars: MAX_SEED_CHARS, lyriaChars: MAX_LYRIA_CHARS, scriptsPerDay: SCRIPT_DAILY_CAP },

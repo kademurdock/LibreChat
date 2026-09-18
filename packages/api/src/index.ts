@@ -116,7 +116,13 @@ export { deliverApprovalEmail, approvalEmailNotice } from './access/approval';
 export { reverieOrientation, resolveReverieWhisper } from './reverie/navigation';
 export { parseDaisyAudio, readDaisyFile } from './library/daisy';
 export { libraryPath, libraryCategory, libraryPathExpression } from './library/shelves';
-export { commercialPath, commercialBrands, classifyMediaTitle, filingCategory, refineMediaFiling } from './library/commercials';
+export {
+  commercialPath,
+  commercialBrands,
+  classifyMediaTitle,
+  filingCategory,
+  refineMediaFiling,
+} from './library/commercials';
 export { correctedBookShelf } from './library/books';
 export { reviewedLibraryMoves } from './library/review';
 
@@ -136,6 +142,19 @@ export {
   musicReferenceError,
 } from './music/lyrics';
 
-export { createEffectsRouter, effectsGuide, effectsConfigured, effectsCost, effectsPrice, effectsModel, downloadEffects } from './audio/effects';
+export {
+  createEffectsRouter,
+  effectsGuide,
+  effectsConfigured,
+  effectsCost,
+  effectsPrice,
+  effectsModel,
+  downloadEffects,
+} from './audio/effects';
 
-export { musicWritingPrompt, lyricAgentId } from './music/writing';
+export {
+  musicWritingPrompt,
+  musicWritingSettings,
+  lyricWritingModel,
+  lyricAgentId,
+} from './music/writing';

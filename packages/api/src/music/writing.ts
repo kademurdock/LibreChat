@@ -1,7 +1,23 @@
 import type { IAgent } from '@librechat/data-schemas';
 
 export const lyricAgentId = 'agent_9YHpms0vJoApICwshh0mR';
+export const lyricWritingModel = 'x-ai/grok-4.20';
 type Reader = (filter: { id: string }) => Promise<Pick<IAgent, 'name' | 'instructions'> | null>;
+
+export function musicWritingSettings(request: { engine: string; mode: string }): {
+  model?: string;
+  temperature?: number;
+  top_p?: number;
+  reasoning?: { enabled: boolean; effort: 'none' };
+} {
+  if (!['lyria', 'yue2'].includes(request.engine) || request.mode !== 'write') return {};
+  return {
+    model: lyricWritingModel,
+    temperature: 0.85,
+    top_p: 0.95,
+    reasoning: { enabled: false, effort: 'none' },
+  };
+}
 
 export async function musicWritingPrompt(
   base: string,
