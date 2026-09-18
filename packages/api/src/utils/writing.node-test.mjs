@@ -14,8 +14,10 @@ test('music drafting reads the current Lyric persona while formatting and speech
   const read = async filter => { reads.push(filter); return { instructions }; };
   const first = await musicWritingPrompt('Sound Booth format', { engine: 'yue2', mode: 'write' }, read);
   assert.ok(first.includes(instructions));
-  assert.match(first, /multisyllabic/); assert.match(first, /Keep supplied lyrics exactly/);
-  assert.match(first, /format above overrides Lyric's default/);
+  assert.match(first, /multisyllable/); assert.match(first, /Keep supplied lyrics exactly/);
+  assert.match(first, /at least eight sung lines/); assert.match(first, /shadows, whispers, echoes, neon/);
+  assert.ok(first.indexOf(instructions) < first.indexOf('Sound Booth format'), 'persona leads, format closes');
+  assert.match(first, /format below overrides Lyric's default/);
   instructions = 'Updated saved persona: vivid narration with conversational phrasing.';
   const updated = await musicWritingPrompt('Sound Booth format', { engine: 'lyria', mode: 'write' }, read);
   assert.ok(updated.includes(instructions)); assert.ok(!updated.includes('First saved persona'));
@@ -27,7 +29,7 @@ test('music drafting reads the current Lyric persona while formatting and speech
   await assert.rejects(() => musicWritingPrompt('format', { engine: 'yue2', mode: 'write' }, async () => null), error => error.status === 503);
 });
 
-test('the real music writing handler sends Lyric instructions and creative settings to Grok and preserves supplied lyrics', async () => {
+test('the real music writing handler sends Lyric instructions and reasoning settings to the lyric model and preserves supplied lyrics', async () => {
   const url = new URL('../../../../api/server/routes/kadeSoundBooth.js', import.meta.url), localRequire = createRequire(url);
   const handlers = new Map(), requests = [], ledger = [];
   let instructions = 'Saved Lyric persona v1: connected thoughts and meaningful rhyme.';
@@ -50,12 +52,12 @@ test('the real music writing handler sends Lyric instructions and creative setti
   const request = { user: { id: 'writer-fixture' }, body: { engine: 'yue2', mode: 'write', text: 'An intimate R&B song about coming home.', lyrics: 'My exact authored line.' } };
   await handlers.get('post/script')(request, response);
   assert.ok(requests[0].messages[0].content.includes(instructions));
-  assert.equal(requests[0].model, 'x-ai/grok-4.20');
+  assert.equal(requests[0].model, lyricWritingModel);
+  assert.equal(requests[0].max_tokens, 16000);
   assert.equal(requests[0].temperature, 0.85);
   assert.equal(requests[0].top_p, 0.95);
-  assert.equal(requests[0].reasoning.enabled, false);
-  assert.equal(requests[0].reasoning.effort, 'none');
-  assert.equal(ledger[0].metadata.model, 'x-ai/grok-4.20');
+  assert.deepEqual({ ...requests[0].reasoning }, { enabled: true, effort: 'medium', exclude: true }, 'thin briefs must not depend on the gateway classifier to think');
+  assert.equal(ledger[0].metadata.model, lyricWritingModel);
   assert.match(requests[0].messages[1].content, /Keep these words exactly/);
   assert.match(result.script, /Lyrics:\n\[Verse\]/);
   assert.equal(ledger[0].metadata.writingPersona, lyricAgentId);
@@ -66,13 +68,14 @@ test('the real music writing handler sends Lyric instructions and creative setti
   assert.ok(!requests[1].messages[0].content.includes('persona v1'));
   request.body.engine = 'lyria';
   await handlers.get('post/script')(request, response);
-  assert.equal(requests[2].model, 'x-ai/grok-4.20');
+  assert.equal(requests[2].model, lyricWritingModel);
   request.body.mode = 'format';
   await handlers.get('post/script')(request, response);
   assert.equal(requests[3].model, 'nousresearch/hermes-4-405b');
   assert.equal(requests[3].temperature, 0.7);
   assert.equal(requests[3].reasoning, undefined);
   assert.equal(requests[3].top_p, undefined);
+  assert.equal(requests[3].max_tokens, 2200);
 });
 
 test('provider cost, including free/cached calls, wins over token estimates', () => {
@@ -100,7 +103,9 @@ test('real Sound Booth request honors its configured model and returns its actua
   assert.equal(result.costUSD, 0.003);
   assert.equal(result.measured, true);
   const grok = await context.call({ system: 'Write lyrics.', user: 'Coming home.', ...musicWritingSettings({ engine: 'yue2', mode: 'write' }) });
-  assert.equal(requests[1][1].model, 'x-ai/grok-4.20');
+  assert.equal(requests[1][1].model, lyricWritingModel);
+  assert.equal(requests[1][2].timeout, 112000, 'must give up before iPhone build 302 does at 120 seconds');
+  assert.equal(requests[0][2].timeout, 90000);
   assert.equal(grok.costUSD, 0.003);
 });
 
@@ -133,6 +138,7 @@ test('real script route accounts for the shortening call as well as the first dr
   assert.equal(ledger[0].metadata.model, 'nousresearch/hermes-4-405b');
 });
 
-test('Grok token estimates use Grok prices', () => {
-  assert.deepEqual(writingCost({ prompt_tokens: 3000, completion_tokens: 1000 }, lyricWritingModel), { costUSD: 0.00625, measured: false });
+test('lyric model token estimates use its own prices', () => {
+  assert.equal(lyricWritingModel, 'moonshotai/kimi-k3');
+  assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, lyricWritingModel), { costUSD: 12.87, measured: false });
 });

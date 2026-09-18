@@ -372,7 +372,7 @@ function systemPrompt({ engine, mode }) {
   const job =
     mode === 'write'
       ? (engine === 'lyria' || engine === 'yue2')
-        ? `The user has given you a DESCRIPTION of a piece of music they want made. Write the brief for them in the format below. If they did not say how long, make it a two-minute song and say so in the technical line. If they asked for singing and gave no words, write the words under the "Lyrics:" heading.`
+        ? `The user has given you a DESCRIPTION of a piece of music they want made. Write the brief for them in the format below. If they did not say how long, make it a full song of three to three and a half minutes when it has sung words, or two minutes when it is instrumental, and say so in the technical line. If they asked for singing and gave no words, write the words under the "Lyrics:" heading.`
         : `The user has given you a DESCRIPTION of something they want made. Write it for them: invent the words, keep it the length they asked for (if they did not say, aim for 30 to 60 seconds of speech, which is roughly 80 to 160 words), and shape it into the format below.`
       : `The user has written THEIR OWN WORDS and wants them formatted. THEIR WORDS ARE THE SCRIPT. Keep every sentence they wrote, in their order, in their wording -- do not rewrite, tighten, improve, correct, or add sentences of your own. Your entire job is to wrap their words in the format below and add the structural tags BETWEEN their sentences. If they left cues in parentheses or brackets ("(whispering)", "[thunder]"), convert those into proper tags and remove the prose cue.`;
 
@@ -409,7 +409,7 @@ function stripFence(s) {
   return t;
 }
 
-async function callModel({ system, user, maxTokens = 2200, model = MODEL, temperature = 0.7, top_p, reasoning }) {
+async function callModel({ system, user, maxTokens = 2200, model = MODEL, temperature = 0.7, top_p, reasoning, timeoutMs = 90000 }) {
   const gatewayUrl =
     process.env.KADE_LLM_GATEWAY_URL ||
     'https://reframe-proxy-production.up.railway.app/chat/completions';
@@ -434,7 +434,7 @@ async function callModel({ system, user, maxTokens = 2200, model = MODEL, temper
     },
     {
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'User-Agent': UA },
-      timeout: 90000,
+      timeout: timeoutMs,
     },
   );
   const out = r.data?.choices?.[0]?.message?.content;
@@ -1185,7 +1185,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
       ...writingSettings,
       system: await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode }, getAgent),
       user: lines.join('\n\n'),
-      maxTokens: engine === 'seed' ? 1200 : 2200,
+      maxTokens: writingSettings.maxTokens || (engine === 'seed' ? 1200 : 2200),
     });
     let totalCost = firstCost;
     let costMeasured = firstMeasured;
@@ -1277,7 +1277,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
     logger.error('[soundbooth/script] failed:', error);
     return res
       .status(status)
-      .json({ error: status === 503 ? error.message : 'The script desk had trouble. Try again.' });
+      .json({ error: status === 503 ? error.message : error.code === 'ECONNABORTED' ? 'The writer ran out of time on that one. Your idea is kept; nothing was recorded. Try again.' : 'The script desk had trouble. Try again.' });
   }
 });
 
