@@ -15,16 +15,17 @@ const writesMusic = (request: Request): boolean =>
  * one-sentence song idea is classed simple, so thin briefs were written in
  * seven seconds with no reasoning. The desk asks for reasoning itself; the
  * gateway respects an explicit choice. Reasoning tokens count against
- * max_tokens, hence the larger budget. Medium effort measured about 75
- * seconds; high ran to 180. iPhone build 302 abandons this request at 120
- * seconds, so the desk gives up first and says so. */
+ * max_tokens, hence the larger budget. Measured on Kimi K3: low effort 25 to
+ * 30 seconds, medium 73 to 111, high up to 180, and a reasoning max_tokens cap
+ * ran past 300. iPhone build 302 abandons this request at 120 seconds, so the
+ * desk uses low, gives up first and says so. Low still wrote the better song. */
 export function musicWritingSettings(request: Request): {
   model?: string;
   temperature?: number;
   top_p?: number;
   maxTokens?: number;
   timeoutMs?: number;
-  reasoning?: { enabled: boolean; effort: 'medium'; exclude: boolean };
+  reasoning?: { enabled: boolean; effort: 'low'; exclude: boolean };
 } {
   if (!writesMusic(request)) return {};
   return {
@@ -33,7 +34,7 @@ export function musicWritingSettings(request: Request): {
     top_p: 0.95,
     maxTokens: 16000,
     timeoutMs: 112000,
-    reasoning: { enabled: true, effort: 'medium', exclude: true },
+    reasoning: { enabled: true, effort: 'low', exclude: true },
   };
 }
 

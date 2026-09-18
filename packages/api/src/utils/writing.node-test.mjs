@@ -56,7 +56,7 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
   assert.equal(requests[0].max_tokens, 16000);
   assert.equal(requests[0].temperature, 0.85);
   assert.equal(requests[0].top_p, 0.95);
-  assert.deepEqual({ ...requests[0].reasoning }, { enabled: true, effort: 'medium', exclude: true }, 'thin briefs must not depend on the gateway classifier to think');
+  assert.deepEqual({ ...requests[0].reasoning }, { enabled: true, effort: 'low', exclude: true }, 'thin briefs must not depend on the gateway classifier to think');
   assert.equal(ledger[0].metadata.model, lyricWritingModel);
   assert.match(requests[0].messages[1].content, /Keep these words exactly/);
   assert.match(result.script, /Lyrics:\n\[Verse\]/);
