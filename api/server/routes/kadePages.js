@@ -3112,7 +3112,7 @@ const briefHtml = `<!doctype html><html lang="en"><head><title>Morning Brief —
  * hand Kade a file per kind and it replaces the synth voice of the world.
  * Deliberately its OWN surface — not an agent chat, not the platform's face:
  * a doorway page. Ambience per district, off by default, remembered. */
-const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${SHARED_HEAD}<link rel="stylesheet" href="/assets/reverie/room.css?v=174">
+const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${SHARED_HEAD}<link rel="stylesheet" href="/assets/reverie/room.css?v=204">
 <style>
   /* ── REVERIE CLIENT (Sep 6 2026) ─────────────────────────────────────────
    * Two audiences, one page. For a screen reader: a single live log that says
@@ -3286,7 +3286,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
         <div class="toolbar" role="group" aria-label="Picture viewpoint">
           <button type="button" class="chip" id="viewLeft">Turn view left</button><button type="button" class="chip" id="viewRight">Turn view right</button>
           <button type="button" class="chip" id="viewNear">Zoom in</button><button type="button" class="chip" id="viewFar">Zoom out</button>
-        </div><p class="muted" id="pictureStatus">An artistic view of your current room. Use the exits to travel.</p>
+        </div><p class="muted" id="pictureStatus">Tap a figure to interact or a sign to travel. Tap your own figure to change your look. The same actions are in the buttons below.</p>
       </details>
       <div class="text">
         <div class="ward" id="s-ward">the Threshold</div>
@@ -3295,8 +3295,16 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       </div>
     </section>
 
+    <nav class="section pocket-controls" aria-label="Quick world actions">
+      <button type="button" class="chip" data-quick="orient">Where am I?</button>
+      <button type="button" class="chip" data-quick="places">Find a place</button>
+      <button type="button" class="chip" data-quick="waterfront">River walk</button>
+      <button type="button" class="chip" data-quick="forecast">Forecast</button>
+      <button type="button" class="chip" data-quick="wardrobe">Dress up</button>
+      <button type="button" class="chip" data-quick="home">Go home</button>
+    </nav>
     <section class="section exploration" id="explorationPanel" aria-labelledby="explorationTitle" hidden>
-      <h3 id="explorationTitle">Explore from here</h3>
+      <h3 id="explorationTitle" tabindex="-1">Explore from here</h3>
       <p id="explorationSummary"></p>
       <div id="connectedExits" class="connected-exits" role="group" aria-label="Connected places"></div>
       <button type="button" class="chip" id="sayHere">Say something to the room</button>
@@ -3396,9 +3404,9 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   </div>
 </main>
 <footer class="muted">Make yourself at home. &middot; <a href="/help/world">how Reverie works</a></footer>
-<script src="/assets/reverie/exploration.js?v=180"></script>
-<script src="/assets/reverie/room.js?v=180"></script>
-<script type="module" src="/assets/reverie/stage.mjs?v=180"></script>
+<script src="/assets/reverie/exploration.js?v=204"></script>
+<script src="/assets/reverie/room.js?v=204"></script>
+<script type="module" src="/assets/reverie/stage.mjs?v=204"></script>
 <script>
 (function(){
   'use strict';
@@ -3511,9 +3519,10 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     list.forEach(function(k, i){ setTimeout(function(){ playKind(k); }, i * 220); });
   }
   function duck(ms){
-    if (!amb.bed && !amb.tone) return;
+    if (!amb.bed && !amb.tone && !amb.weather) return;
     if (amb.bed) fadeTo(amb.bed, amb.bed.volume * .45, 150);
     if (amb.tone) fadeTo(amb.tone, amb.tone.volume * .45, 150);
+    if (amb.weather) fadeTo(amb.weather, amb.weather.volume * .45, 150);
     clearTimeout(amb.duckTimer); amb.duckTimer = setTimeout(applyVolumes, ms);
   }
   function surfaceSteps(kind){
@@ -3557,7 +3566,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   });
 
   /* ambience: bed (district) + tone (room), crossfaded */
-  var amb = { bedUrl: null, bed: null, toneUrl: null, tone: null, drone: null };
+  var amb = { bedUrl: null, bed: null, toneUrl: null, tone: null, weatherUrl: null, weather: null, drone: null };
   function fadeTo(a, target, ms, done){ if (!a) { if (done) done(); return; } clearInterval(a._fade); var start = a.volume, steps = 20, i = 0; a._fade = setInterval(function(){ i++; a.volume = Math.max(0, Math.min(1, start + (target - start) * (i / steps))); if (i >= steps) { clearInterval(a._fade); if (done) done(); } }, ms / steps); }
   function startLoop(url, vol){ var a = new Audio(url); a.loop = true; a.volume = 0; var p = a.play(); if (p && p.catch) p.catch(function(){}); fadeTo(a, vol, 1400); return a; }
   function resumeLoop(a){ if (!a || !a.paused) return; if (a.error) a.load(); var p = a.play(); if (p && p.catch) p.catch(function(){}); }
@@ -3572,7 +3581,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   }
   function ambienceFor(roomId, district){
     if (!unlocked) return;
-    if (!settings.amb || document.hidden) { stopLoop(amb.bed); stopLoop(amb.tone); amb.bed = amb.tone = null; amb.bedUrl = amb.toneUrl = null; drone(false); return; }
+    if (!settings.amb || document.hidden) { stopLoop(amb.bed); stopLoop(amb.tone); stopLoop(amb.weather); amb.bed = amb.tone = amb.weather = null; amb.bedUrl = amb.toneUrl = amb.weatherUrl = null; drone(false); return; }
     var profile = lastRoom && lastRoom.roomId === roomId && lastRoom.sensory;
     var specific = profile && MANIFEST.event[profile.ambience];
     var bedUrl = specific || MANIFEST.district[district] || null, toneUrl = MANIFEST.room[roomId] || null;
@@ -3580,12 +3589,14 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     amb.indoor = lastRoom && !lastRoom.outdoor && !specific;
     if (bedUrl !== amb.bedUrl) { stopLoop(amb.bed); amb.bed = bedUrl ? startLoop(bedUrl, settings.ambVol) : null; amb.bedUrl = bedUrl; }
     if (toneUrl !== amb.toneUrl) { stopLoop(amb.tone); amb.tone = toneUrl ? startLoop(toneUrl, settings.ambVol * .6) : null; amb.toneUrl = toneUrl; }
-    resumeLoop(amb.bed); resumeLoop(amb.tone);
+    var weatherUrl = lastRoom && ['rain', 'storm'].includes(lastRoom.weather) ? MANIFEST.event['amb.weather.rain'] || null : null;
+    if (weatherUrl !== amb.weatherUrl) { stopLoop(amb.weather); amb.weather = weatherUrl ? startLoop(weatherUrl, 0) : null; amb.weatherUrl = weatherUrl; }
+    resumeLoop(amb.bed); resumeLoop(amb.tone); resumeLoop(amb.weather);
     if (!bedUrl && !toneUrl && !amb.drone) drone(true);
     else if ((bedUrl || toneUrl) && amb.drone) drone(false);
     applyVolumes();
   }
-  function applyVolumes(){ var dk = (radio.el && !radio.el.paused) ? .3 : 1; if (amb.bed) fadeTo(amb.bed, dk * settings.ambVol * (amb.indoor ? (amb.tone ? .3 : .6) : 1), 250); if (amb.tone) fadeTo(amb.tone, dk * settings.ambVol * .6, 250); if (amb.drone) { try { amb.drone.g.gain.value = dk * .02 * settings.ambVol; } catch (e) {} } }
+  function applyVolumes(){ var dk = (radio.el && !radio.el.paused) ? .3 : 1; if (amb.weather) fadeTo(amb.weather, dk * settings.ambVol * (lastRoom && lastRoom.outdoor ? .7 : .2), 250); if (amb.bed) fadeTo(amb.bed, dk * settings.ambVol * (amb.indoor ? (amb.tone ? .3 : .6) : 1), 250); if (amb.tone) fadeTo(amb.tone, dk * settings.ambVol * .6, 250); if (amb.drone) { try { amb.drone.g.gain.value = dk * .02 * settings.ambVol; } catch (e) {} } }
   document.addEventListener('visibilitychange', function(){ if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); });
   function compose(prefix, id){
     if (input.value.trim()) { addLine('Your command box already has a draft. Send or clear it first.', 'system'); input.focus(); return; }
@@ -3661,7 +3672,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     if (window.ReverieExplore) window.ReverieExplore.render(room);
     $('s-name').textContent = room.name || ''; $('s-desc').textContent = room.desc || '';
     var scene = $('scene'); scene.dataset.ward = room.district || 'gate';
-    if (hud) { scene.dataset.dark = hud.dark ? '1' : '0'; scene.dataset.wx = hud.weather || 'clear'; $('s-ward').textContent = hud.ward || ''; }
+    if (hud) { scene.dataset.dark = hud.dark ? '1' : '0'; scene.dataset.wx = room.outdoor ? (hud.weather || 'clear') : 'clear'; $('s-ward').textContent = hud.ward || ''; }
     scene.dataset.water = WATER_ROOMS[room.roomId] || (room.roomId && room.roomId.indexOf('houseboat') >= 0) ? '1' : '0';
     if (announce) {
       addLine(room.name + '. ' + room.desc, 'room');
@@ -3747,11 +3758,15 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     $('kv').innerHTML = kv.join('');
   }
   function renderChoices(choices, freeText, step){
-    var box = $('choicesBox'), list = $('choices'), hadFocus = list.contains(document.activeElement), changed = list.dataset.step !== (step || '');
+    var box = $('choicesBox'), list = $('choices'), hadFocus = list.contains(document.activeElement), changed = list.dataset.menu !== JSON.stringify(choices || []);
     list.dataset.step = step || '';
+    list.dataset.menu = JSON.stringify(choices || []);
     box.classList.toggle('hidden', !choices || !choices.length);
     syncButtons(list, (choices || []).map(function(c){ return Object.assign({ key: c.cmd }, c); }), 'choice', function(b, c){ b.className = 'choice'; b.textContent = c.label; b.onclick = function(){ if (c.compose) { if (!input.value.trim()) input.value = c.cmd; input.focus(); } else send(c.cmd); }; });
-    if (hadFocus && changed) (list.querySelector('button') || input).focus();
+    if (sending && changed && (hadFocus || document.activeElement === commandFocus)) {
+      var next = choices && choices.length ? list.querySelector('button:not([data-stale])') : $('explorationTitle');
+      if (next) next.focus();
+    }
     else if (freeText && (!choices || !choices.length)) input.focus();
   }
   function setMode(mode){
@@ -3798,10 +3813,12 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   }
   var stateEpoch = 0, hereSerial = 0;
   var sending = false, pendingLive = [], seenSeqs = new Set(), streamCursor = null, streamRetry = null;
+  var commandFocus = null;
   async function send(cmd, expectedRoomId, expectedExit){
     cmd = (cmd || '').trim(); if (!cmd || sending) return;
     expectedRoomId = expectedRoomId || (lastRoom && lastRoom.roomId) || undefined;
     stateEpoch++;
+    commandFocus = document.activeElement;
     sending = true;
     if (window.ReverieExplore) window.ReverieExplore.busy(true);
     $('cmdForm').setAttribute('aria-busy', 'true');
@@ -3822,6 +3839,18 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     } catch (e) { if (!input.value) input.value = cmd; addLine('The connection was interrupted. Your command is in the box. Check look or status before repeating an action that spends money.', 'err'); playKind('err'); }
     finally { stateEpoch++; sending = false; if (window.ReverieExplore) window.ReverieExplore.busy(false); $('cmdForm').setAttribute('aria-busy', 'false'); $('cmdForm').querySelector('[type="submit"]').disabled = false; scheduleLiveFlush(); }
   }
+  document.querySelectorAll('[data-quick]').forEach(function(button){ button.addEventListener('click', function(){ send(button.dataset.quick); }); });
+  document.addEventListener('reverie-scene-action', function(event){
+    var action = event.detail;
+    if (sending || !lastRoom || !action || action.roomId !== lastRoom.roomId) return;
+    if (action.personId) {
+      var person = (lastRoom.peopleDetail || []).find(function(p){ return p.id === action.personId; });
+      if (person) openMenu(person);
+    } else if (action.direction) {
+      var exit = (lastRoom.exitsDetail || []).find(function(e){ return e.dir === action.direction && !e.missing; });
+      if (exit) send('go ' + exit.dir, lastRoom.roomId, { dir: exit.dir, toId: exit.toId });
+    } else if (action.command === 'wardrobe' || Array.from($('hereActs').children).some(function(b){ return b.dataset.key === action.command; })) send(action.command, lastRoom.roomId);
+  });
   var hereTimer = null;
   function refreshHere(announcePeople){
     clearTimeout(hereTimer);

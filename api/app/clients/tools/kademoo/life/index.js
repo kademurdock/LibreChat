@@ -42,6 +42,8 @@ require('./outdoors');
 require('./conversation');
 require('./planning');
 require('./places');
+require('./authored');
+require('./wardrobe');
 require('./drama');
 require('./help');
 const view = require('./view');

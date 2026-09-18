@@ -17,7 +17,7 @@ const overhear = require('./overhear');
 const { STRAYS } = require('./strays');
 const { driftTo: strayDrift } = require('./strays');
 
-const REVERIE_SEED_VERSION = 7;
+const REVERIE_SEED_VERSION = 8;
 
 /* ── THE WARDS ─────────────────────────────────────────────────────────────
  * District props carry the law tables (bible design: the engine never
@@ -1015,26 +1015,8 @@ function centralNow() {
   const g = (t) => parseInt(parts.find((p) => p.type === t)?.value || '0', 10);
   return { y: g('year'), mo: g('month'), d: g('day'), h: g('hour') % 24, mi: g('minute') };
 }
-const WEATHER_LINES = {
-  clear: 'The sky is clear and means it.',
-  overcast: 'Low gray cloud, even and patient.',
-  rain: 'Rain — steady, honest rain that changes every roof into an instrument.',
-  storm: 'Storm. Thunder rolls the whole sky like furniture being moved upstairs.',
-  fog: 'Fog off the water, thick enough to borrow. The foghorn talks in long vowels.',
-  snow: 'Snow, coming down like it has nowhere better to be.',
-  heat: 'Heat with weight to it. Even the shade is sweating.',
-};
-function weatherNow() {
-  const t = centralNow();
-  const slot = Math.floor(t.h / 3);
-  const roll = hashStr(`${t.y}-${t.mo}-${t.d}-${slot}-rev`) % 100;
-  const winter = t.mo === 12 || t.mo <= 2;
-  const summer = t.mo >= 6 && t.mo <= 8;
-  let kind;
-  if (winter) kind = roll < 45 ? 'clear' : roll < 65 ? 'overcast' : roll < 80 ? 'snow' : roll < 92 ? 'fog' : 'rain';
-  else if (summer) kind = roll < 40 ? 'clear' : roll < 60 ? 'heat' : roll < 75 ? 'overcast' : roll < 88 ? 'rain' : 'storm';
-  else kind = roll < 45 ? 'clear' : roll < 65 ? 'overcast' : roll < 82 ? 'rain' : roll < 90 ? 'fog' : 'storm';
-  return { kind, line: WEATHER_LINES[kind] };
+function weatherNow(at = new Date()) {
+  return require('@librechat/api').reverieWeather(at);
 }
 
 function npcDoingNow(userId) {
@@ -1133,6 +1115,7 @@ async function carveReverie() {
   }
   await require('./life/outdoors').seed();
   await require('./life/places').seed();
+  await require('./life/authored').seed();
   for (const i of CITY_ITEMS) {
     await MooItem.updateOne(
       { itemId: i.itemId },

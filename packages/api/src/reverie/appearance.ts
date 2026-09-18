@@ -4,6 +4,29 @@ export interface ReverieAppearance {
   style: string;
 }
 
+export function reverieWardrobe(
+  field: 'hair' | 'style',
+  words: string,
+): {
+  ok: boolean;
+  value: string;
+  line: string;
+} {
+  // eslint-disable-next-line no-control-regex
+  const value = words.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  if (!value || value.length > 120)
+    return {
+      ok: false,
+      value: '',
+      line: 'Describe your look in 120 characters or fewer, or choose a button.',
+    };
+  return {
+    ok: true,
+    value,
+    line: `${field === 'hair' ? 'Your hair is now' : 'You are now wearing'} ${value}.`,
+  };
+}
+
 const residentClothes: { [id: string]: string } = {
   'npc:pat': 'faded diner T-shirt and apron',
   'npc:merle': 'work clothes and scuffed boots',

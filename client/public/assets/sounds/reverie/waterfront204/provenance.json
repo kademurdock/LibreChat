@@ -1,0 +1,54 @@
+[
+  {
+    "id": "amb.ropewalk.water",
+    "label": "Ropewalk: complete Seed Audio river scene",
+    "source": "amb.waterfront.scene.wav",
+    "processing": "none",
+    "loopCrossfadeSeconds": 0.6,
+    "seconds": 19.413,
+    "rmsDbFS": -27.36,
+    "peakDbFS": -5.77,
+    "sha256": "04462553b50cb522964c1cefbc4226b7448a3d9addd40ba6eb8a91c76e9287ac",
+    "screening": "Automated audio description and technical checks only; human listening acceptance remains open.",
+    "loudnessNormalization": "ffmpeg loudnorm I=-24:TP=-6:LRA=7; AAC decode peaks checked separately"
+  },
+  {
+    "id": "amb.netloft.room",
+    "label": "Net Loft: the river heard through wood",
+    "source": "amb.waterfront.scene.wav",
+    "processing": "lowpass=f=850",
+    "loopCrossfadeSeconds": 0.6,
+    "seconds": 19.413,
+    "rmsDbFS": -26.54,
+    "peakDbFS": -6.0,
+    "sha256": "0ddb68a75d57271650d37a4b1b01e5eb1ef2dcb36da181ec47fb565122925c7d",
+    "screening": "Automated audio description and technical checks only; human listening acceptance remains open.",
+    "loudnessNormalization": "ffmpeg loudnorm I=-24:TP=-6:LRA=7; AAC decode peaks checked separately"
+  },
+  {
+    "id": "amb.reeds.breeze",
+    "label": "Reed Pavilion: open river water",
+    "source": "amb.ropewalk.water.mp3",
+    "processing": "none",
+    "loopCrossfadeSeconds": 0.6,
+    "seconds": 19.413,
+    "rmsDbFS": -28.55,
+    "peakDbFS": -5.09,
+    "sha256": "0f39087d170d0999726202ef0dd29832eeacd3beee9e387500e08f7140c8560a",
+    "screening": "Automated audio description and technical checks only; human listening acceptance remains open.",
+    "loudnessNormalization": "ffmpeg loudnorm I=-24:TP=-6:LRA=7; AAC decode peaks checked separately"
+  },
+  {
+    "id": "amb.weather.rain",
+    "label": "Rain dripping from shelter",
+    "source": "amb.weather.rain.mp3",
+    "processing": "none",
+    "loopCrossfadeSeconds": 0.6,
+    "seconds": 19.413,
+    "rmsDbFS": -30.66,
+    "peakDbFS": -5.37,
+    "sha256": "b8e4af971b9108ad096af2b56f88efc3d96e525ac3e724dab8decf6eda65865d",
+    "screening": "Automated audio description and technical checks only; human listening acceptance remains open.",
+    "loudnessNormalization": "ffmpeg loudnorm I=-24:TP=-6:LRA=7; AAC decode peaks checked separately"
+  }
+]

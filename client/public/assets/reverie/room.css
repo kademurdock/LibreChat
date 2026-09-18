@@ -113,7 +113,9 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  pointer-events: none;
+  pointer-events: auto;
+  touch-action: pan-y pinch-zoom;
+  cursor: pointer;
 }
 #reverieIllustration.has-stage .reverie-fallback {
   visibility: hidden;
@@ -152,3 +154,11 @@
  .connected-exit.returning { border-width: 2px; }
  .connected-exit:focus-visible { outline: 3px solid #c78831; outline-offset: 3px; }
  .connected-exit:disabled { opacity: .65; cursor: wait; }
+
+.pocket-controls { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .8rem; }
+.pocket-controls button { flex: 1 1 8rem; min-height: 48px; }
+@media (max-width: 700px) {
+  .world-shortcuts { position: sticky; top: 0; z-index: 8; background: var(--bg); padding: .4rem; border-bottom: 1px solid var(--line); }
+  .world-shortcuts a { flex: 1 1 auto; justify-content: center; }
+  #choicesBox, #moveBox, #hudBox, #log, #cmdInput { scroll-margin-top: 8rem; }
+}

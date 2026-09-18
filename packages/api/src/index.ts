@@ -80,9 +80,11 @@ export * from './rum/proxy';
 export type * from './mcp/types';
 export type * from './flow/types';
 export type * from './types';
+export { reverieWeather, reverieForecast } from './reverie/weather';
+export { compileReverie } from './reverie/authoring';
 export { runHangout, hangoutView, inviteHangout } from './reverie/hangouts';
 export { refreshReverieCast } from './reverie/cast';
-export { reverieAppearance, residentAppearance } from './reverie/appearance';
+export { reverieAppearance, reverieWardrobe, residentAppearance } from './reverie/appearance';
 export { REVERIE_OUTDOORS, reverieSenses, outdoorEncounter } from './reverie/outdoors';
 export { residentReply } from './reverie/conversation';
 export {

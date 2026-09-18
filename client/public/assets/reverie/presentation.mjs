@@ -4,7 +4,7 @@ export function sceneModel(room, hud = {}) {
   const senses = room.sensory || {};
   const nature = !!senses.nature;
   const water = !!senses.water || /pier|dock|breakwater|pilings|houseboat/.test(id);
-  const type = room.home
+  const type = id === 'reed_pavilion' ? 'pavilion' : id === 'net_loft' ? 'netloft' : room.home
     ? 'home'
     : id === 'alder_camp'
       ? 'camp'
@@ -60,6 +60,8 @@ export function sceneModel(room, hud = {}) {
 
 export function describePicture(model) {
   const settings = {
+    pavilion: 'a roofed riverside platform with open sides, facing benches, reeds, and a framed estuary painting',
+    netloft: 'a wooden public sitting room with broad river windows, rope coils, a worktable, and an estuary painting',
     home: 'a cutaway home with an open front, wooden floorboards, and a window',
     camp: 'a woodland clearing with a stone fire ring, log seats, and a covered picnic table',
     creek: 'a winding blue-green creek, rounded stones, reeds, and layered trees',
@@ -105,6 +107,9 @@ export function describePicture(model) {
     (['diner', 'interior', 'library'].includes(model.type)
       ? ' A framed painting shows an imagined riverside town, a stone bridge, and apricot clouds reflected in teal water.'
       : '') +
+    (['pavilion', 'netloft'].includes(model.type)
+      ? ' A cutaway roof reveals wooden benches and a framed watercolor of a winding estuary boardwalk beneath a warm evening sky.'
+      : '') +
     ' ' +
     model.people
       .filter((p) => p.appearance)
@@ -115,7 +120,7 @@ export function describePicture(model) {
       .join(' ') +
     (model.hangout ? ' Gathering guests stand in a circle facing the shared table. ' : ' ') +
     'Figures blink at different times, glance around, and change their brows and posture with visible activities. Walking figures turn toward their destination. Small gestures and held objects illustrate visible activities; they do not change the world or signal game outcomes. ' +
-    'Saved build, hair, and clothing choices shape the figures; custom clothing is simplified, and colors and unchosen details are artistic. Other figures remain stylized stand-ins. The scenery is an artistic layout; use the room description and exits for navigation.'
+    'Saved build, hair, and clothing choices shape the figures, including common chosen colors. Custom clothing is simplified and unchosen details are artistic. Other figures remain stylized stand-ins. The scenery is an artistic layout. Tap figures and direction signs, or use the matching labeled people and exit buttons.'
   );
 }
 
@@ -128,8 +133,8 @@ export function hash(value) {
 export function figureAppearance(person) {
   const look = person.appearance || {};
   const build = look.build || '';
-  const hair = look.hair || '';
-  const style = look.style || '';
+  const hair = (look.hair || '').toLowerCase();
+  const style = (look.style || '').toLowerCase();
   const seed = hash(person.id || person.name);
   return {
     width: /big|solid|sturdy/.test(build) ? 1.3 : /slight|lean/.test(build) ? 0.82 : 1,
@@ -147,7 +152,7 @@ export function figureAppearance(person) {
               : /curls|gray/.test(hair)
                 ? 'curls'
                 : 'short',
-    hairColor: /gray/.test(hair) ? 0xbcbab1 : 0x433c36,
+    hairColor: /pink/i.test(hair) ? 0xe888b8 : /purple/i.test(hair) ? 0x9974d4 : /blue/i.test(hair) ? 0x659cdf : /red|ginger/i.test(hair) ? 0xb65c39 : /blond/i.test(hair) ? 0xe7ce85 : /gray|silver|white/i.test(hair) ? 0xbcbab1 : 0x433c36,
     outfit: /dress/.test(style)
       ? 'dress'
       : /coat|suit|church/.test(style)
@@ -160,7 +165,7 @@ export function figureAppearance(person) {
     apron: /apron/.test(style),
     watch: /watch/.test(style),
     skin: [0xc28f68, 0x805c45, 0xe5b48d, 0xa46c4c, 0xf1ceaa][seed % 5],
-    shirt: [0xcd8665, 0x537f8a, 0xd0b678, 0x88779a, 0x719b84][(seed >>> 4) % 5],
+    shirt: /pink/.test(style) ? 0xe888b8 : /blue/.test(style) ? 0x537fc3 : /green/.test(style) ? 0x719b84 : /purple/.test(style) ? 0x9974d4 : /red/.test(style) ? 0xc46457 : /yellow/.test(style) ? 0xe5c363 : [0xcd8665, 0x537f8a, 0xd0b678, 0x88779a, 0x719b84][(seed >>> 4) % 5],
   };
 }
 

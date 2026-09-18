@@ -47,6 +47,7 @@ export function reverieSenses(
   if (/diner|kettle/.test(id)) ambience = 'amb.diner.quiet';
   if (p.home) ambience = 'amb.home.quiet';
   if (id === 'gully_laundry') ambience = 'amb.laundry.quiet';
+  if (p.sound) ambience = p.sound;
   const texture: { [key: string]: string } = {
     'wood.interior': 'Wooden boards give a little underfoot.',
     carpet: 'Carpet softens your steps.',

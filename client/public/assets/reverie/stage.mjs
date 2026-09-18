@@ -10,7 +10,7 @@ import {
   activityPose,
   residentFace,
   walkPose,
-} from './presentation.mjs?v=174';
+} from './presentation.mjs?v=204';
 
 const COLORS = {
   wood: 0xa37750,
@@ -32,7 +32,7 @@ const shapes = {
   ring: new T.TorusGeometry(1, 0.025, 4, 32),
 };
 
-/** A decorative view only. It never requests game data, plays sound, or sends commands. */
+/** Shared-state picture. Taps request the same validated actions as the labeled controls. */
 export class Stage {
   constructor(host, onFailure) {
     this.host = host;
@@ -63,6 +63,27 @@ export class Stage {
     this.canvas.setAttribute('role', 'presentation');
     this.canvas.className = 'reverie-canvas';
     this.host.appendChild(this.canvas);
+    this.tapStart = null;
+    this.raycaster = new T.Raycaster();
+    this.onPointerDown = (event) => { this.tapStart = event.isPrimary && event.button === 0 ? { x: event.clientX, y: event.clientY, room: this.model?.id } : null; };
+    this.onPointerCancel = () => { this.tapStart = null; };
+    this.onPointerUp = (event) => {
+      const start = this.tapStart; this.tapStart = null;
+      if (!event.isPrimary || !start || !this.model || start.room !== this.model.id || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 9) return;
+      const bounds = this.canvas.getBoundingClientRect();
+      this.raycaster.setFromCamera(new T.Vector2((event.clientX - bounds.left) / bounds.width * 2 - 1, -(event.clientY - bounds.top) / bounds.height * 2 + 1), this.camera);
+      const hits = this.raycaster.intersectObjects(this.world.children, true);
+      for (const hit of hits) {
+        let object = hit.object;
+        while (object && !object.userData.interaction) object = object.parent;
+        if (!object) continue;
+        this.host.dispatchEvent(new CustomEvent('reverie-scene-action', { bubbles: true, detail: { roomId: this.model.id, ...object.userData.interaction } }));
+        break;
+      }
+    };
+    this.canvas.addEventListener('pointerdown', this.onPointerDown);
+    this.canvas.addEventListener('pointerup', this.onPointerUp);
+    this.canvas.addEventListener('pointercancel', this.onPointerCancel);
     this.scene = new T.Scene();
     this.camera = new T.OrthographicCamera(-8, 8, 5, -5, 0.1, 80);
     this.world = new T.Group();
@@ -76,6 +97,9 @@ export class Stage {
       map: this.painting,
       roughness: 1,
     });
+    this.waterfrontPainting = new T.TextureLoader().load((window.ReverieAssetBase || '/assets/reverie/') + 'waterfront.webp', () => this.render());
+    this.waterfrontPainting.colorSpace = T.SRGBColorSpace;
+    this.waterfrontMaterial = new T.MeshStandardMaterial({ map: this.waterfrontPainting, roughness: 1 });
     this.hemi = new T.HemisphereLight(0xfff1d8, 0x678d98, 2.7);
     this.sun = new T.DirectionalLight(0xffe2b1, 4);
     this.sun.position.set(-4, 10, 6);
@@ -281,6 +305,7 @@ export class Stage {
       }
       return;
     }
+    if (type === 'pavilion' || type === 'netloft') { this.waterfront(); return; }
     if (type === 'harbor') {
       this.water(-3.8, 0, 3.4, 9);
       for (let i = 0; i < 30; i++)
@@ -297,6 +322,35 @@ export class Stage {
     }
     if (type === 'town') this.town();
     else this.interior();
+  }
+
+  waterfront() {
+    const open = this.model.type === 'pavilion';
+    this.water(-4.2, 0, 2.1, 9);
+    for (let i = 0; i < 24; i++) this.box(i % 3 ? 0xb99873 : 0xa88968, 0.9, 0.12, -4 + i * 0.34, 8.2, 0.14, 0.3);
+    for (const x of [-2.8, 4.5]) for (const z of [-3.5, 3.3]) this.box(COLORS.edge, x, 1.5, z, .18, 3, .18);
+    // A cutaway roof keeps the room, people, and painting visible from above.
+    this.box(COLORS.teal, .8, 3.15, -3.5, 8, .2, .9);
+    this.box(COLORS.cream, .8, open ? 1 : 1.6, -3.6, 7.6, open ? 1.6 : 3, .18);
+    this.bench(-1.2, -.2, Math.PI / 2); this.bench(3.2, -.2, -Math.PI / 2);
+    this.box(COLORS.edge, .8, 2.15, -3.45, 2.9, 1.85, .13);
+    const art = new T.Mesh(shapes.box, this.waterfrontMaterial);
+    art.scale.set(2.65, 1.65, .01);
+    art.position.set(.8, 2.15, -3.36); this.world.add(art);
+    if (open) {
+      for (let i = 0; i < 18; i++) {
+        const reed = this.mesh('cylinder', 0x7a8c4e, [-3 + (i % 3) * .14, .55, -3 + i * .35], [.025, 1, .025]);
+        this.animated.push((t) => { reed.rotation.z = Math.sin(t * .8 + i) * .07; });
+      }
+    } else {
+      this.box(COLORS.wood, .8, .95, -.3, 2.5, .15, 1.5);
+      for (let i = 0; i < 4; i++) {
+        const coil = this.mesh('ring', 0xc4aa78, [.2 + i * .4, 1.07, -.3], [.18, .18, .18]); coil.rotation.x = Math.PI / 2;
+      }
+    }
+    this.lamp(4, 2.6);
+    const token = this.box(COLORS.wood, 1, .6, 1.5, 1.8, .16, .65);
+    token.userData.interaction = { command: open ? 'listen to the reeds' : 'try a sailors knot' };
   }
 
   camp() {
@@ -622,6 +676,7 @@ export class Stage {
     const { x, z } = position;
     const look = figureAppearance(person);
     const g = this.group(x, 0, z);
+    g.userData.interaction = person.self ? { command: 'wardrobe' } : { personId: person.id };
     if (['stray', 'pet'].includes(person.kind)) {
       this.mesh('leaf', 0xb98968, [0, 0.22, 0], [0.28, 0.22, 0.5], g);
       this.mesh('sphere', 0xb98968, [0, 0.43, 0.37], [0.19, 0.19, 0.19], g);
@@ -863,6 +918,7 @@ export class Stage {
       const texture = new T.CanvasTexture(surface); texture.colorSpace = T.SRGBColorSpace;
       const material = new T.SpriteMaterial({ map: texture, depthTest: false });
       const sign = new T.Sprite(material);
+      sign.userData.interaction = exit.missing ? null : { direction: exit.dir };
       sign.userData.exitSign = true; sign.position.set(x, 1.45, z); sign.scale.set(3, 1.125, 1); sign.renderOrder = 2;
       this.world.add(sign);
     }
@@ -991,6 +1047,9 @@ export class Stage {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.canvas.removeEventListener('pointerdown', this.onPointerDown);
+    this.canvas.removeEventListener('pointerup', this.onPointerUp);
+    this.canvas.removeEventListener('pointercancel', this.onPointerCancel);
     this.renderer.setAnimationLoop(null);
     this.resizeObserver.disconnect();
     this.intersection.disconnect();
@@ -998,6 +1057,8 @@ export class Stage {
     this.canvas.removeEventListener('webglcontextlost', this.contextLost);
     this.clearWorld();
     this.materials.forEach((m) => m.dispose());
+    this.waterfrontPainting.dispose();
+    this.waterfrontMaterial.dispose();
     this.painting.dispose();
     this.paintingMaterial.dispose();
     this.renderer.dispose();

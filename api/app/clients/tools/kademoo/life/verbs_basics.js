@@ -224,15 +224,16 @@ registry.register({
   name: 'places', aliases: ['where can i go', 'destinations'], free: true,
   help: { topic: 'moving', usage: 'places · places hook', blurb: 'Every named place you can "go to", by ward.' },
   async run(ctx, { arg }) {
-    const rooms = await MooRoom.find({ 'props.home': { $exists: false } }).select('name district').lean();
-    const wards = {};
-    for (const r of rooms) (wards[r.district] = wards[r.district] || []).push(r.name);
-    const names = { gate: 'the Threshold', bellward: 'Bellward', hook: 'the Hook', tanglefoot: 'Tanglefoot', patch: 'the Patch', millrace: 'Millrace', sweetwater: 'Sweetwater', fairlawn: 'Fairlawn', longacre: 'Long Acre', gravewalk: 'the Gravewalk' };
-    const want = arg ? Object.keys(names).find((k) => k.includes(arg) || names[k].toLowerCase().includes(arg)) : null;
-    const keys = want ? [want] : Object.keys(names).filter((k) => wards[k] && k !== 'gravewalk');
-    for (const k of keys) if (wards[k]) ctx.say(`${names[k]}: ${wards[k].sort().join(', ')}.`);
-    ctx.say('Say "go to <place>" and your feet find it.');
-    return ctx.ok();
+    const names = { gate: 'the Threshold', bellward: 'Bellward', hook: 'the Hook', tanglefoot: 'Tanglefoot', patch: 'the Patch', millrace: 'Millrace', sweetwater: 'Sweetwater', fairlawn: 'Fairlawn', longacre: 'Long Acre' };
+    const want = arg ? Object.keys(names).find((k) => k === arg || names[k].toLowerCase() === arg || names[k].toLowerCase().replace(/^the /, '') === arg) : null;
+    if (!arg) {
+      ctx.say('Choose a neighborhood to find a place. You can also type places followed by part of a place name.');
+      return ctx.ok({ choices: Object.entries(names).map(([id, name]) => ({ label: name, cmd: `places ${id}` })) });
+    }
+    const rooms = await MooRoom.find({ 'props.home': { $exists: false }, district: { $in: Object.keys(names) } }).select('roomId name district').lean();
+    const matches = rooms.filter((room) => want ? room.district === want : room.name.toLowerCase().includes(arg.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name));
+    ctx.say(matches.length ? `${want ? names[want] : 'Matching places'}: choose where to walk.` : 'No matching public place. Try a neighborhood or part of a name.');
+    return ctx.ok({ choices: [...matches.slice(0, 24).map((room) => ({ label: room.name, cmd: `go to ${room.roomId}` })), { label: 'All neighborhoods', cmd: 'places' }] });
   },
 });
 

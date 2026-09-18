@@ -1,0 +1,46 @@
+# Reverie's waterfront. These lines are the actual source loaded by the game.
+# Link adds an exit only if its direction is unused. Existing places are never overwritten.
+
+Place ropewalk in hook.
+Name: Ropewalk
+Description: A broad wooden walk follows the river away from the ferry landing. A continuous waist-high rail runs along the water. Mooring ropes tap the posts below. South returns to the Hook ferry dock; north follows the reeds to the listening pavilion. A wide doorway east leads into the old net loft.
+Outside: yes
+Ground: wood.interior
+Water: river
+Ambience: amb.ropewalk.water
+Smell: River air, sun-dried rope, and the mineral smell of wet wood.
+Listen: Water knocks softly beneath the boards. Ropes tap the posts just beyond the rail.
+Doings: Sit by the water, meet someone for a walk, or follow the rail to the pavilion.
+South: ferry_dock_hook
+North: reed_pavilion
+East: net_loft
+Action: sit by the water | Sit by the water | You settle on the long bench. The rail is cool beneath your hand. Water laps below your feet, and the seat beside you stays open. | hangout.seat | settles on the Ropewalk bench, leaving room for company.
+
+Place net_loft in hook.
+Name: the Net Loft
+Description: The old net loft is now a public sitting room. Coils of rope fill shallow trays on a long table; broad windows face the river. A ramp through the west doorway returns to Ropewalk. A painting beside the window shows the boardwalk curving along the estuary. There is room to gather here when the weather closes in.
+Outside: no
+Ground: wood.interior
+Ambience: amb.netloft.room
+Smell: Dry hemp rope, cedar shelving, and beeswax on the table.
+Listen: The wooden building creaks softly. Water against the pilings reaches you through the floor.
+Doings: Try a sailor's knot, start a story circle, or sit out the weather together.
+West: ropewalk
+Action: try a sailors knot | Try a sailor's knot | You follow the sample rope with your fingers: a loop, the free end through, around the standing rope, and back through the loop. Your bowline holds. You loosen it for the next person. | hangout.page | ties a bowline at the rope table and loosens it for the next person.
+
+Place reed_pavilion in sweetwater.
+Name: the Reed Pavilion
+Description: A low roof covers a wooden platform at the bend of the river. Open sides let the sound of reeds and water pass through. Wide benches face one another. South follows Ropewalk to the Hook; north returns to Sweetwater Park. On the wall, a painting catches the estuary in evening light.
+Outside: no
+Ground: wood.interior
+Water: river
+Ambience: amb.reeds.breeze
+Smell: Fresh reeds, damp river stone, and cedar warmed beneath the roof.
+Listen: Reeds brush together at the river bend. Water folds against the bank beneath the platform.
+Doings: Listen to the reeds, share records or stories, or continue the river walk.
+South: ropewalk
+North: sweetwater_park
+Action: listen to the reeds | Listen to the reeds | You lean against the rail and let the reed stems brush and part. Close water makes a low, irregular rhythm. From farther downriver comes a soft knock of rope against wood. | hangout.seat | rests at the pavilion rail, listening to the reeds.
+
+Link ferry_dock_hook north to ropewalk.
+Link sweetwater_park southeast to reed_pavilion.

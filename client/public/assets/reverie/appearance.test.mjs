@@ -40,5 +40,6 @@ test('gathering follows the engine guest names and public appearance survives sc
   assert.equal(figurePosition(m, m.people[1], 1).gathering, false);
   assert.equal(figurePosition(m, m.people[2], 2).gathering, true);
   assert.match(describePicture(m), /Alex: solid, a bun/);
-  assert.match(describePicture(m), /colors and unchosen details are artistic/);
+  assert.match(describePicture(m), /including common chosen colors/);
+  assert.match(describePicture(m), /unchosen details are artistic/);
 });
