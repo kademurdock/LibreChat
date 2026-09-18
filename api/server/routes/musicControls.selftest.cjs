@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), Module = require('node:module');
 const ts = require('typescript'), express = require('express'), axios = require('axios'), mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+require.extensions['.ts'] = (mod, filename) => mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText, filename);
 function source(name) {
   const filename = path.resolve(__dirname, '../../../packages/api/src/music/' + name + '.ts');
   const mod = new Module(filename, module); mod.filename = filename; mod.paths = module.paths;

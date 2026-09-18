@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
@@ -68,6 +68,52 @@ router.use(createYueRouter({
   },
 }));
 
+router.use(createEffectsRouter({
+  auth: requireJwtAuth,
+  user: req => String(req.user.id),
+  project: async (user, input, sourceText) => {
+    const project = await KadeSoundBoothProject.create({ user, engine: 'stable', title: input.title,
+      script: input.style, sourceText: sourceText.slice(0, 8000), state: 'queued',
+      options: { duration: input.duration, count: input.count, steps: input.steps, seed: input.seed } });
+    return String(project._id);
+  },
+  update: async job => {
+    await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, {
+      $set: { state: job.state === 'uncertain' ? 'failed' : job.state === 'saving' ? 'running' : job.state,
+        lastError: job.error, costUSD: job.costUSD || 0 }, $addToSet: { jobs: job.id },
+    });
+  },
+  notify: async job => {
+    const project = await KadeSoundBoothProject.findOne({ _id: job.projectId, user: job.user }).select('title').lean();
+    const completed = (job.takes || []).filter(take => take.state === 'done').length;
+    const receipt = await notifyMusic(job.user, project?.title || job.input.title, completed, job.takes?.length || 1, job.state !== 'done', 'effects');
+    logger.info(`[soundbooth/effects] notification job=${job.id} accepted=${receipt.accepted} deferred=${receipt.deferred === true} blocked=${receipt.blocked || 'none'}`);
+    return receipt;
+  },
+  complete: async job => {
+    const query = { user: job.user, service: 'fal_stable_audio', 'metadata.jobId': job.id };
+    let asset = await KadeAsset.findOne(query);
+    if (!asset) {
+      const buffer = await downloadEffects(job.output.wav_url || job.output.url);
+      const seconds = await require('./kadeSoundBoothStitch').durationOf(buffer);
+      if (!(seconds > 0)) throw new Error('Could not verify Stable Audio duration');
+      const url = await saveBufferToS3({ userId: job.user, buffer, fileName: `${job.id}.wav`, basePath: 'audios' });
+      const project = await KadeSoundBoothProject.findOne({ _id: job.projectId, user: job.user }).select('title').lean();
+      const title = project?.title || job.input.title;
+      asset = await KadeAsset.findOneAndUpdate(query, { $setOnInsert: {
+        user: job.user, service: 'fal_stable_audio', kind: 'audio', url, model: effectsModel,
+        prompt: job.input.style, description: title, costUSD: effectsPrice,
+        metadata: { title, seed: job.input.seed, steps: job.input.steps, seconds, wavUrl: url,
+          jobId: job.id, projectId: job.projectId, via: 'sound-booth', format: 'wav',
+          costScope: 'provider cost; no credit balance deduction during trial' },
+      } }, { upsert: true, new: true });
+    }
+    job.output.url = asset.url;
+    job.output.wav_url = asset.metadata.wavUrl;
+    job.output.duration_s = asset.metadata.seconds;
+    await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, { $addToSet: { assets: String(asset._id) } });
+  },
+}));
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -611,6 +657,9 @@ function checkMusic(script) {
  * be read aloud. Sources: the AuK README and Seed Audio's own guide. */
 const GUIDE = {
   starters: [
+    { id: 'stable-cabin', engine: 'stable', title: 'Rain at a wooden cabin', script: 'A continuous natural stereo field recording from inside a small wooden cabin. Gentle rain patters on the roof, a fire softly crackles nearby, and occasional low thunder rolls far away. Cozy enclosed acoustics, distinct quiet layers, no speech, no music.' },
+    { id: 'stable-harbor', engine: 'stable', title: 'A quiet harbor', script: 'A continuous natural stereo field recording at a quiet harbor. Small waves lap against wooden pilings in the foreground, rigging gently taps against distant sailboat masts, and occasional seagulls call far away. Soft open-air ambience. No speech, no music.' },
+    { id: 'stable-stream', engine: 'stable', title: 'Forest stream', script: 'A continuous natural stereo field recording beside a shallow forest stream. Clear water trickles over stones nearby, leaves rustle gently above, and scattered birds sing in the distance. Calm, spacious, realistic, no speech, no music.' },
   {"id":"lyria-bed","title":"A warm instrumental theme","engine":"lyria","script":"1970s soul instrumental, warm and relaxed. Electric piano carries a four-note melody, rounded bass and brushed drums leave room for a spoken introduction. Start with piano alone, bring in the rhythm section, then finish on a soft resolved chord. About 88 BPM, around 90 seconds. Instrumental only, no vocals."},
   {"id":"lyria-song","title":"An original song with a singer","engine":"lyria","script":"Modern acoustic folk with a hopeful, intimate mood. Fingerpicked guitar, upright bass and soft percussion. A warm alto sings an original song about finding a familiar place after a long journey. [Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Outro]. The chorus opens up with gentle harmonies. Around 92 BPM, about two minutes long."},
   {"id":"radio","title":"Two-person radio mystery","engine":"seed","script":"A 25-second radio mystery in a small train station after closing. Distant rain and a softly humming fluorescent lamp. Two adult voices, naturally timed turns, clear dialogue, no music.\nMara (a dry, low female voice, trying to sound casual): There is a suitcase on platform three.\nEli (a tired male voice, half listening): Then put it in lost property.\nMara (quieter, very certain): I did. Twice.\nA single heavy knock from inside the suitcase. The lamp hum stops.\nEli (fully awake now): Do not pick it up again."},
@@ -699,6 +748,7 @@ const GUIDE = {
         { key: 'seed', label: 'Seed', hint: 'Repeat a take with the same settings. A reference clip anchors voice identity more reliably than the seed alone.', kind: 'number', min: 0, max: 4294967295 },
       ],
     },
+    stable: effectsGuide,
     yue2: {
       name: 'YuE2', tagline: 'Original songs with your lyrics and an editable composition.',
       where: 'Runs on your separate sleeping RunPod music worker.',
@@ -1041,7 +1091,7 @@ function projectView(p) {
     /* A Lyria row is a brief, not a script; there is no screenplay view of it. */
     /* Part 126 (carried ask): a library row says what made it and why, so an
      * old project explains itself instead of leaving her to guess. */
-    why: p.engine === 'yue2' ? 'YuE2 — a song made on the sleeping music GPU' : p.engine === 'lyria'
+    why: p.engine === 'stable' ? 'Stable Audio — sound effects and ambience' : p.engine === 'yue2' ? 'YuE2 — a song made on the sleeping music GPU' : p.engine === 'lyria'
       ? 'Lyria — a song made from a brief' + ((p.options || {}).instrumental ? ', instrumental' : '') + ((p.options || {}).lyrics ? ', to your own lyrics' : '')
       : p.engine === 'seed'
       ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
@@ -2252,6 +2302,7 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
       seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: SEED_USD_PER_MIN },
+      stable: { configured: effectsConfigured(), queued: true, model: effectsModel, usdPerRecording: effectsPrice },
       yue2: { configured: yueConfigured(), queued: true, model: 'm-a-p/YuE2-3B' },
       lyria: { configured: !!lyriaKey(), queued: false, usdPerSong: LYRIA_USD_PER_SONG, model: LYRIA_MODEL },
     },

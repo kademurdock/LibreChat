@@ -33,7 +33,7 @@ const kadeSoundBoothProjectSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
     title: { type: String, default: 'Untitled' },
-    engine: { type: String, enum: ['scenema', 'seed', 'lyria', 'yue2'], default: 'scenema', index: true },
+    engine: { type: String, enum: ['scenema', 'seed', 'lyria', 'yue2', 'stable'], default: 'scenema', index: true },
     /** 'easy' or 'advanced' -- which side of the screen she was on. Kept so the
      * app can reopen a project in the mode it was written in. */
     mode: { type: String, enum: ['easy', 'advanced'], default: 'easy' },

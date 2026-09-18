@@ -10,6 +10,7 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const mongodb_memory_server_1 = require("mongodb-memory-server");
 
 const fs=require('fs'),path=require('path'),Module=require('module'),ts=require('typescript');
+require.extensions['.ts'] = (mod, filename) => mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText, filename);
 const source=path.resolve(__dirname,'../../../packages/api/src/music/yue.ts');
 const compiled=new Module(source,module);compiled.filename=source;compiled.paths=module.paths;
 compiled._compile(ts.transpileModule(fs.readFileSync(source,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,source);

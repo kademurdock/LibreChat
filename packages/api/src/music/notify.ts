@@ -16,6 +16,7 @@ export async function notifyMusic(
   completed: number,
   total: number,
   failed: boolean,
+  kind: 'music' | 'effects' = 'music',
 ): Promise<Delivery> {
   const at = new Date();
   if (!process.env.BRIDGE_SECRET)
@@ -23,14 +24,17 @@ export async function notifyMusic(
   const base = (
     process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app'
   ).replace(/\/$/, '');
-  const readyTitle = total === 1 ? 'Your song is ready' : 'Your songs are ready';
+  let readyTitle = total === 1 ? 'Your song is ready' : 'Your songs are ready';
+  if (kind === 'effects') readyTitle = 'Your sounds are ready';
   const response = await axios.post<Receipt>(
     `${base}/notify`,
     {
       userId: user,
       agentId: 'soundbooth',
       agentName: 'Sound Booth',
-      title: failed ? 'Your music batch has stopped' : readyTitle,
+      title: failed
+        ? `Your ${kind === 'effects' ? 'sound' : 'music'} batch has stopped`
+        : readyTitle,
       body: `${title}: ${completed} of ${total} takes saved. Open the Sound Booth to listen${total > 1 ? ' and compare' : ''}.${failed ? ' Your writing and finished takes are kept.' : ''}`,
       requested: true,
       urgent: false,

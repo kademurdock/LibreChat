@@ -135,3 +135,5 @@ export {
   validateMusicReference,
   musicReferenceError,
 } from './music/lyrics';
+
+export { createEffectsRouter, effectsGuide, effectsConfigured, effectsCost, effectsPrice, effectsModel, downloadEffects } from './audio/effects';
