@@ -39,6 +39,8 @@ function loadBooth({ saved, usage, assets }) {
     if (name === '@librechat/api') {
       return {
         needsRefresh: () => false,
+        createYueRouter: () => require('express').Router(),
+        yueConfigured: () => false,
         getNewS3URL: async (u) => u,
         saveBufferToS3: async ({ buffer, fileName }) => {
           saved.push({ bytes: buffer.length, fileName });

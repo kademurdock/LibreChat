@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, createYueRouter, yueConfigured } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
@@ -20,6 +20,32 @@ const { screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREENPLAY_HELP } = re
 const chain = require('./kadeSoundBoothChain');
 
 const router = express.Router();
+router.use(createYueRouter({
+  auth: requireJwtAuth,
+  user: req => String(req.user.id),
+  project: async (user, input, sourceText) => {
+    const p = await KadeSoundBoothProject.create({ user, engine: 'yue2', title: input.style.slice(0, 80), script: input.style,
+      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, seed: input.seed }, state: 'queued' });
+    return String(p._id);
+  },
+  update: async job => {
+    await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, {
+      $set: { state: job.state === 'uncertain' ? 'failed' : job.state === 'saving' ? 'running' : job.state,
+        lastError: job.error, costUSD: job.costUSD || 0 }, $addToSet: { jobs: job.id },
+    });
+  },
+  complete: async job => {
+    const asset = await KadeAsset.findOneAndUpdate({ user: job.user, service: 'runpod_yue2', 'metadata.jobId': job.id }, {
+      $setOnInsert: { user: job.user, service: 'runpod_yue2', kind: 'audio', url: job.output.url,
+        model: 'm-a-p/YuE2-3B', prompt: job.input.style, description: 'YuE2 song: ' + job.input.style,
+        costUSD: job.costUSD || 0, metadata: { jobId: job.id, projectId: job.projectId, via: 'sound-booth',
+          wavUrl: job.output.wav_url, seconds: job.output.duration_s, lyrics: job.input.lyrics,
+          scoreKey: job.output.score_key, truncated: job.output.truncated, costScope: 'execution estimate; startup and idle are additional' } },
+    }, { upsert: true, new: true });
+    await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, { $addToSet: { assets: String(asset._id) } });
+  },
+}));
+
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -273,10 +299,10 @@ function cleanLyrics(raw) {
 }
 
 function systemPrompt({ engine, mode }) {
-  const grammar = engine === 'lyria' ? MUSIC_GRAMMAR : engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
+  const grammar = engine === 'yue2' ? MUSIC_GRAMMAR + '\nFor YuE2, output a short style direction followed by a Lyrics: heading and complete original lyrics with verse and chorus tags. Always provide both. Do not include lyrics in the style paragraph.' : engine === 'lyria' ? MUSIC_GRAMMAR : engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
   const job =
     mode === 'write'
-      ? engine === 'lyria'
+      ? (engine === 'lyria' || engine === 'yue2')
         ? `The user has given you a DESCRIPTION of a piece of music they want made. Write the brief for them in the format below. If they did not say how long, make it a two-minute song and say so in the technical line. If they asked for singing and gave no words, write the words under the "Lyrics:" heading.`
         : `The user has given you a DESCRIPTION of something they want made. Write it for them: invent the words, keep it the length they asked for (if they did not say, aim for 30 to 60 seconds of speech, which is roughly 80 to 160 words), and shape it into the format below.`
       : `The user has written THEIR OWN WORDS and wants them formatted. THEIR WORDS ARE THE SCRIPT. Keep every sentence they wrote, in their order, in their wording -- do not rewrite, tighten, improve, correct, or add sentences of your own. Your entire job is to wrap their words in the format below and add the structural tags BETWEEN their sentences. If they left cues in parentheses or brackets ("(whispering)", "[thunder]"), convert those into proper tags and remove the prose cue.`;
@@ -601,7 +627,7 @@ const GUIDE = {
       'Ask yourself what the piece IS. A song — anything sung, or a piece of music that stands on its own — is Lyria. One person reading a story, a letter, a monologue, a bedtime tale, with real acting, is AuK. Two people talking, or a scene with effects and a place you can hear around the voices, is Seed Audio.',
     rules: [
       { pick: 'lyria', when: 'it is a song, or a piece of music that stands on its own' },
-      { pick: 'lyria', when: 'somebody sings — Lyria is the only engine here that can' },
+      { pick: 'lyria', when: 'somebody sings — start with Lyria for simple, fixed-price songs' },
       { pick: 'lyria', when: 'you want a theme, an intro bed, or something to play under a finished piece' },
       { pick: 'scenema', when: 'one voice and the acting matters — the feeling shifts mid-sentence, it breathes, it pauses' },
       { pick: 'scenema', when: 'you want to clone a specific person from a short clip and use the AuK rendering lane' },
@@ -629,7 +655,7 @@ const GUIDE = {
         { label: 'Separate speech from background', task: 'edit', text: 'Isolate the main speaking voice and remove background sounds and music. Preserve every spoken word.' },
       ],
       where: 'Runs on a rented RunPod GPU that sleeps between jobs. Your imported recording stays in your library.',
-      cost: 'Pay for GPU startup, processing and brief idle time. A sleeping worker takes longer. The spoken estimate is provisional until measured on the selected card.',
+      cost: 'Pay for GPU startup, processing and ten minutes awake after the last job. A sleeping worker takes longer. There is no reliable total estimate yet.',
       bestFor: ['expressive speech and reference voices', 'changing words, emotion, pitch, pace, timbre or whispering', 'removing noise or reverb, separating voices from a recording'],
       notFor: ['generating a complete background scene: use Seed Audio', 'guaranteed accent imitation or perfect word edits without listening back'],
       howToWrite: [
@@ -649,6 +675,20 @@ const GUIDE = {
         { key: 'gen_seconds', label: 'Target seconds for edit', hint: 'Optional. Leave blank to retain source duration; set when changing speed or word count.', kind: 'number', min: 0.1 },
         { key: 'pace', label: 'Speech pace allowance', hint: 'One is normal. Higher gives more time and slower speech; lower is quicker.', kind: 'number', min: 0.5, max: 3, default: 1 },
         { key: 'seed', label: 'Seed', hint: 'Repeat a take with the same settings. A reference clip anchors voice identity more reliably than the seed alone.', kind: 'number', min: 0, max: 4294967295 },
+      ],
+    },
+    yue2: {
+      name: 'YuE2', tagline: 'Original songs with your lyrics and an editable composition.',
+      where: 'Runs on your separate sleeping RunPod music worker.',
+      cost: 'About $1.22 per GPU hour, including startup, generation and ten minutes awake after the last job. No reliable per-song price yet.',
+      bestFor: ['songs with your own lyrics', 'a new arrangement from an ABC melody score'],
+      notFor: ['direct recording uploads for covers yet', 'saved singer personas or voice cloning'],
+      howToWrite: ['Describe the style, instruments and singing voice in Music direction.', 'Put exact words under Lyrics, with [Verse] and [Chorus] tags.', 'An optional ABC melody score can guide a new arrangement.'],
+      settings: [
+        { key: 'lyrics', label: 'Lyrics', hint: 'The words to sing. Use [Verse] and [Chorus] tags, or choose Write my song idea to draft them.', kind: 'text' },
+        { key: 'abc', label: 'Optional composition (ABC)', hint: 'A melody score for a new arrangement. Audio transcription is not enabled yet.', kind: 'text' },
+        { key: 'cot', label: 'Composition', hint: 'Melody gives the arrangement more freedom; full keeps chords too.', kind: 'choice', options: ['melody','full'], default: 'melody' },
+        { key: 'seed', label: 'Optional seed', hint: 'Leave blank for a new take. Reuse a number for a similar starting point.', kind: 'number', min: 0, max: 2147483647 },
       ],
     },
     lyria: {
@@ -840,7 +880,7 @@ function estimateFor(engine, script) {
     audioSeconds: seconds,
     renderSeconds,
     costUSD,
-    spoken: `AuK HQ has no reliable total price estimate yet. GPU time costs up to $${Number(process.env.AUK_RATE_PER_HR || 1.22).toFixed(2)} per hour, including startup, processing and brief idle time. This is time the GPU is active, not the length of your recording. Longer work runs in sections.`,
+    spoken: `AuK HQ has no reliable total price estimate yet. GPU time costs up to $${Number(process.env.AUK_RATE_PER_HR || 1.22).toFixed(2)} per hour, including startup, processing and ten minutes awake after the last job. This is time the GPU is active, not the length of your recording. Longer work runs in sections.`,
   };
 }
 
@@ -972,7 +1012,7 @@ function projectView(p) {
     /* A Lyria row is a brief, not a script; there is no screenplay view of it. */
     /* Part 126 (carried ask): a library row says what made it and why, so an
      * old project explains itself instead of leaving her to guess. */
-    why: p.engine === 'lyria'
+    why: p.engine === 'yue2' ? 'YuE2 — a song made on the sleeping music GPU' : p.engine === 'lyria'
       ? 'Lyria — a song made from a brief' + ((p.options || {}).instrumental ? ', instrumental' : '') + ((p.options || {}).lyrics ? ', to your own lyrics' : '')
       : p.engine === 'seed'
       ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
@@ -1010,7 +1050,7 @@ function titleFrom(script, fallback) {
 router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (req, res) => {
   try {
     const b = req.body || {};
-    const engine = ['seed', 'lyria'].includes(b.engine) ? b.engine : 'scenema';
+    const engine = ['seed', 'lyria', 'yue2'].includes(b.engine) ? b.engine : 'scenema';
     const mode = b.mode === 'write' ? 'write' : 'format';
     const text = String(b.text || '').trim().slice(0, 6000);
     if (text.length < 3) {
@@ -1111,8 +1151,8 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
         repairs = [...repairs, fitted.note];
       }
     }
-    const problem = engine === 'seed' ? checkSeed(script) : checkScenema(script);
-    const estimate = estimateFor(engine, script);
+    const problem = ['lyria', 'yue2'].includes(engine) ? null : engine === 'seed' ? checkSeed(script) : checkScenema(script);
+    const estimate = engine === 'yue2' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor(engine, script);
     logKadeUsage({
       userId: req.user.id,
       service: 'soundbooth_script',
@@ -2171,6 +2211,7 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
       seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: SEED_USD_PER_MIN },
+      yue2: { configured: yueConfigured(), queued: true, model: 'm-a-p/YuE2-3B' },
       lyria: { configured: !!lyriaKey(), queued: false, usdPerSong: LYRIA_USD_PER_SONG, model: LYRIA_MODEL },
     },
     scriptDesk: !!(process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY),

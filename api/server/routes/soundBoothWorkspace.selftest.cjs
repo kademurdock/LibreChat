@@ -25,6 +25,7 @@ const server=http.createServer((req,res)=>{
  let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{
   const body=JSON.parse(raw||'{}');sent.push({url:req.url,body});
   if(req.url.endsWith('/render'))res.end(JSON.stringify(body.estimateOnly?{estimate:{spoken:body.engine==='scenema'?'No reliable total price estimate. GPU time costs up to $1.22 per hour.':'Fixture price: eight cents.'}}:failNextRender?{queued:true,jobId:'fixture-failure',projectId:'failed-empty',estimate:{spoken:'Fixture queued'}}:{projectId:'music-fixture',spoken:'Fixture recording ready.'}));
+  else if(req.url.endsWith('/script'))res.end(JSON.stringify({script:body.engine==='yue2'?'Warm folk with guitar\nLyrics:\n[Verse]\nHere are original words':'A newly written performance.',readback:'Fixture draft'}));
   else res.end(JSON.stringify({}));
  });
 });
@@ -41,6 +42,8 @@ const server=http.createServer((req,res)=>{
   await page.getByRole('heading',{name:'Failed empty attempt',exact:true}).waitFor();
   await page.locator('#showFailed').uncheck();
   await page.locator('#script').fill('Scenema spoken script');
+  await page.locator('#writingDrawer summary').first().click();
+  await page.locator('#settingsDrawer > summary').click();
   await page.locator('#text').fill('My exact spoken words');
   await page.locator('#set_voice_description').fill('Warm contralto');
   await page.locator('[data-engine="lyria"]').click();
@@ -142,6 +145,30 @@ const server=http.createServer((req,res)=>{
   await page.getByRole('heading',{name:'Failed empty attempt',exact:true}).waitFor();
   assert.equal(await page.locator('#btnCancel').isVisible(),false);
   assert.equal(await page.locator('#btnRender').isEnabled(),true,'failure allows another attempt');
+  await page.locator('#script').fill('Keep my original idea');
+  const beforeWriting=sent.length;
+  await page.locator('#btnInspire').click();
+  assert.notEqual(await page.locator('#script').inputValue(),'Keep my original idea');
+  assert.equal(sent.length,beforeWriting,'inspiration is local and free');
+  await page.locator('#btnUndoWriting').click();
+  assert.equal(await page.locator('#script').inputValue(),'Keep my original idea');
+  await page.locator('#btnDraft').click();
+  await page.waitForFunction(()=>document.getElementById('script').value==='A newly written performance.');
+  assert.equal(sent.at(-1).body.text,'Keep my original idea');
+  assert.ok(sent.at(-1).url.endsWith('/script'));
+  assert.equal(sent.length,beforeWriting+1,'drafting does not start an audio job');
+  await page.locator('#btnUndoWriting').click();
+  assert.equal(await page.locator('#script').inputValue(),'Keep my original idea');
+  await page.locator('[data-engine="yue2"]').click();
+  await page.locator('#script').fill('A folk song about coming home');
+  await page.locator('#set_lyrics').fill('Original lyrics');
+  await page.locator('#btnDraft').click();
+  await page.waitForFunction(()=>document.getElementById('script').value==='Warm folk with guitar');
+  assert.equal(await page.locator('#set_lyrics').inputValue(),'[Verse]\nHere are original words');
+  await page.locator('#btnUndoWriting').click();
+  assert.equal(await page.locator('#script').inputValue(),'A folk song about coming home');
+  assert.equal(await page.locator('#set_lyrics').inputValue(),'Original lyrics');
+  assert.equal(await page.locator('#set_reference_voice_url').count(),0);
   assert.deepEqual(errors,[]);
   if(output) await page.screenshot({path:output+'/lyria-workspace.png',fullPage:true});
   if(output) fs.writeFileSync(output+'/web-test-receipt.json',JSON.stringify({passed:true,engineDrafts:3,musicDirect:true,scriptRequests:0,confirmation:true,lyricsPreserved:true,noSpeechSettings:true},null,2));

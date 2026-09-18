@@ -30,7 +30,7 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
   const module = { exports: {} };
   const localRequire = (name) => {
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
-    if (name === '@librechat/api') return { needsRefresh: () => false, saveBufferToS3: async (data) => { uploaded.push(data); return 'https://example.test/source.wav'; } };
+    if (name === '@librechat/api') return { createYueRouter: () => require('express').Router(), yueConfigured: () => false, needsRefresh: () => false, saveBufferToS3: async (data) => { uploaded.push(data); return 'https://example.test/source.wav'; } };
     if (name === './kadeSoundBoothStitch') return { ...require(name), durationOf: async () => 61, normalizeReferenceClip: async () => { throw new Error('Must not trim an AuK source'); } };
     if (name === '~/server/middleware') return { requireJwtAuth: (req, _res, next) => { req.user = { id: String(user) }; next(); } };
     if (name === '~/models/kadeSoundBoothProject') return { KadeSoundBoothProject: Project };
@@ -54,7 +54,7 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
   await t.test('a price quote makes no job and saves no project', async () => {
     const r = await call('/render', { ...body, estimateOnly: true });
     assert.equal(r.status, 200); assert.equal(r.data.estimate.costUSD, null);
-    assert.match(r.data.estimate.spoken, /Startup and processing are billed/);
+    assert.match(r.data.estimate.spoken, /startup, processing/i);
     assert.equal(starts.length, 0); assert.equal(await Project.countDocuments(), 0);
   });
   let id;
