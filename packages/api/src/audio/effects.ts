@@ -3,7 +3,8 @@ import type { Router } from 'express';
 import type { Hooks, Input, InputBody, Provider, Take } from './jobs';
 import { createAudioRouter } from './jobs';
 
-export const effectsVariants = {
+type Variant = { name: string; model: string; price: number };
+export const effectsVariants: Record<NonNullable<Input['soundModel']>, Variant> = {
   '3_medium': {
     name: 'Stable Audio 3 Medium',
     model: 'fal-ai/stable-audio-3/medium/text-to-audio',
@@ -14,10 +15,10 @@ export const effectsVariants = {
     model: 'fal-ai/stable-audio-3/small/sfx/text-to-audio',
     price: 0.0206,
   },
-} as const;
-export const effectsModel = effectsVariants['3_medium'].model;
-export const effectsPrice = effectsVariants['3_medium'].price;
-export function effectsVariant(input?: Pick<Input, 'soundModel'> | null) {
+};
+export const effectsModel: string = effectsVariants['3_medium'].model;
+export const effectsPrice: number = effectsVariants['3_medium'].price;
+export function effectsVariant(input?: Pick<Input, 'soundModel'> | null): Variant {
   return effectsVariants[input?.soundModel || '3_small_sfx'] || effectsVariants['3_small_sfx'];
 }
 export const effectsCost =
