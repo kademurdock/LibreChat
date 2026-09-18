@@ -4,7 +4,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import type { Request, Response, RequestHandler, Router } from 'express';
 
-type Input = { style: string; lyrics: string; abc?: string; cot: 'full' | 'melody'; seed: number };
+type Input = { style: string; lyrics: string; abc?: string; reference_voice_url?: string; cot: 'full' | 'melody'; seed: number };
 type Output = { url?: string; wav_url?: string; duration_s?: number; bytes?: number; truncated?: boolean; error?: string; score_key?: string };
 type Provider = { id?: string; status?: string; output?: Output; executionTime?: number; error?: string };
 type Job = { id: string; user: string; projectId: string; providerId?: string; state: string; input: Input; output?: Output; error?: string; createdAt: Date; leaseUntil?: Date; costUSD?: number; active: boolean };
@@ -25,13 +25,17 @@ const Jobs = mongoose.models.KadeYueJob as mongoose.Model<Job> || mongoose.model
 const rate = 1.22;
 const spokenCost = 'YuE2 uses a sleeping GPU at about $1.22 an hour. Startup, generation and ten minutes awake after the last job are billed. There is no reliable per-song estimate yet.';
 
-export function yueInput(body: { script?: string; lyrics?: string; abc?: string; cot?: string; seed?: number }): Input {
+export function yueInput(body: { script?: string; lyrics?: string; abc?: string; cot?: string; seed?: number; reference_voice_url?: string; referenceExpected?: boolean }): Input {
   if (typeof body.script !== 'string' || body.script.trim().length < 3 || body.script.length > 3000) throw new Error('Describe the music in 3 to 3000 characters.');
   if (typeof body.lyrics !== 'string' || !body.lyrics.trim() || body.lyrics.length > 8000) throw new Error('Add the words to sing in Lyrics, up to 8000 characters.');
   if (body.abc != null && (typeof body.abc !== 'string' || body.abc.length > 40000)) throw new Error('The score must be ABC text, up to 40000 characters.');
   if (body.seed != null && (!Number.isInteger(body.seed) || body.seed < 0 || body.seed > 2147483647)) throw new Error('Seed must be a whole number from 0 to 2147483647.');
+  if (body.referenceExpected && !body.reference_voice_url) throw new Error('Wait for the cover recording to finish importing, or discard the failed import.');
+  if (body.reference_voice_url && (typeof body.reference_voice_url !== 'string' || !body.reference_voice_url.startsWith('https://') || body.reference_voice_url.length > 12000)) throw new Error('Import the source recording again.');
+  if (body.reference_voice_url && body.abc) throw new Error('Use an imported recording or a composition score. Remove one before generating.');
   return { style: body.script.trim(), lyrics: body.lyrics.trim(), abc: body.abc || undefined,
-    cot: body.abc && body.cot !== 'full' ? 'melody' : 'full', seed: body.seed ?? Math.floor(Math.random() * 2147483647) };
+    reference_voice_url: body.reference_voice_url || undefined,
+    cot: body.reference_voice_url || (body.abc && body.cot !== 'full') ? 'melody' : 'full', seed: body.seed ?? Math.floor(Math.random() * 2147483647) };
 }
 export function yueConfigured(): boolean { return !!(process.env.YUE_ENDPOINT_ID && process.env.RUNPOD_API_KEY); }
 async function provider(path: string, data?: { input: Input; policy: { executionTimeout: number; ttl: number } }): Promise<Provider> {
@@ -94,7 +98,6 @@ export function createYueRouter(hooks: Hooks): Router {
       if (!yueConfigured()) return res.status(503).json({ error: 'YuE2 is being prepared. Lyria is available now.' });
       let input: Input;
       try { input = yueInput(req.body); } catch (error) { return res.status(400).json({ error: error instanceof Error ? error.message : 'Check the song inputs.' }); }
-      if (req.body.referenceExpected || req.body.reference_voice_url || req.body.audio_urls?.length) return res.status(400).json({ error: 'Audio covers need transcription first. Use an ABC melody score; direct recording import is not enabled yet.' });
       if (req.body.estimateOnly) return res.json({ ok: true, estimate: { spoken: spokenCost } });
       const user = hooks.user(req), id = `yue_${randomUUID()}`;
       let created = false;

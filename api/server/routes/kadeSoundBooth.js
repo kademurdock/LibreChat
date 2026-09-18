@@ -25,7 +25,7 @@ router.use(createYueRouter({
   user: req => String(req.user.id),
   project: async (user, input, sourceText) => {
     const p = await KadeSoundBoothProject.create({ user, engine: 'yue2', title: input.style.slice(0, 80), script: input.style,
-      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, seed: input.seed }, state: 'queued' });
+      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, seed: input.seed, reference_voice_url: input.reference_voice_url }, state: 'queued' });
     return String(p._id);
   },
   update: async job => {
@@ -40,7 +40,7 @@ router.use(createYueRouter({
       $setOnInsert: { user: job.user, service: 'runpod_yue2', kind: 'audio', url: job.output.url,
         model: 'm-a-p/YuE2-3B', prompt: job.input.style, description: 'YuE2 song: ' + job.input.style,
         costUSD: job.costUSD || 0, metadata: { jobId: job.id, projectId: job.projectId, via: 'sound-booth',
-          wavUrl: job.output.wav_url, seconds: job.output.duration_s, lyrics: job.input.lyrics,
+          wavUrl: job.output.wav_url, seconds: Math.round(job.output.duration_s || 0), lyrics: job.input.lyrics,
           scoreKey: job.output.score_key, scoreUrl, truncated: job.output.truncated, costScope: 'execution estimate; startup and idle are additional' } },
     }, { upsert: true, new: true });
     await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, { $addToSet: { assets: String(asset._id) } });
@@ -682,12 +682,13 @@ const GUIDE = {
       name: 'YuE2', tagline: 'Original songs with your lyrics and an editable composition.',
       where: 'Runs on your separate sleeping RunPod music worker.',
       cost: 'About $1.22 per GPU hour, including startup, generation and ten minutes awake after the last job. No reliable per-song price yet.',
-      bestFor: ['songs with your own lyrics', 'a new arrangement from an ABC melody score'],
-      notFor: ['direct recording uploads for covers yet', 'saved singer personas or voice cloning'],
-      howToWrite: ['Describe the style, instruments and singing voice in Music direction.', 'Put exact words under Lyrics, with [Verse] and [Chorus] tags.', 'An optional ABC melody score can guide a new arrangement.'],
+      bestFor: ['songs with your own lyrics', 'a cover with a different style and arrangement', 'a new arrangement from a composition score'],
+      notFor: ['saved singer personas or voice cloning', 'guaranteeing an exact transcription of the source melody'],
+      howToWrite: ['Describe the new style, instruments and singing voice in Music direction.', 'Put exact words under Lyrics, with [Verse] and [Chorus] tags. The melody transcriber does not transcribe lyrics.', 'For a cover, import one source recording up to six minutes. The worker transcribes its melody, then makes a new arrangement. Listen for transcription errors; the source is kept intact.'],
       settings: [
         { key: 'lyrics', label: 'Lyrics', hint: 'The words to sing. Use [Verse] and [Chorus] tags, or choose Write my song idea to draft them.', kind: 'text' },
-        { key: 'abc', label: 'Optional composition (ABC)', hint: 'A melody score for a new arrangement. Audio transcription is not enabled yet.', kind: 'text' },
+        { key: 'reference_voice_url', label: 'Recording to cover (optional)', hint: 'Import one song, up to six minutes. YuE2 uses its melody for a new arrangement; this does not clone the original singer. Add the words you want under Lyrics.', kind: 'clip', max: 1 },
+        { key: 'abc', label: 'Optional composition (ABC)', hint: 'Use a melody score instead of an imported recording.', kind: 'text' },
         { key: 'cot', label: 'Composition', hint: 'Melody gives the arrangement more freedom; full keeps chords too.', kind: 'choice', options: ['melody','full'], default: 'melody' },
         { key: 'seed', label: 'Optional seed', hint: 'Leave blank for a new take. Reuse a number for a similar starting point.', kind: 'number', min: 0, max: 2147483647 },
       ],
@@ -2124,8 +2125,8 @@ const ENGINE_REF_FORMATS = {
 router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, res) => {
   try {
     const f = req.file;
-    const engine = (req.body || {}).engine === 'seed' ? 'seed' : 'scenema';
-    const allowed = ENGINE_REF_FORMATS[engine];
+    const engine = ['seed', 'yue2'].includes((req.body || {}).engine) ? req.body.engine : 'scenema';
+    const allowed = ENGINE_REF_FORMATS[engine === 'yue2' ? 'seed' : engine];
     if (!f || !f.buffer || !f.buffer.length) {
       /* Logged, because a REFUSED upload used to leave no trace at all — the
        * only log line fired on success, so "did she even try?" was
@@ -2161,9 +2162,9 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
     try {
       const { normalizeReferenceClip, durationOf } = require('./kadeSoundBoothStitch');
       const norm = engine === 'seed' ? await normalizeReferenceClip(f.buffer, ext) : null;
-      if (engine === 'scenema') {
+      if (engine === 'scenema' || engine === 'yue2') {
         clipSeconds = await durationOf(f.buffer);
-        clipAdvice = 'The full original recording is kept. Speech uses a voice sample; editing uses the recording.';
+        clipAdvice = engine === 'yue2' ? 'The full original is kept. Cover generation transcribes the melody; add your lyrics separately.' : 'The full original recording is kept. Speech uses a voice sample; editing uses the recording.';
       }
       if (norm && norm.buffer && norm.buffer.length > 1000) {
         outBuffer = norm.buffer;

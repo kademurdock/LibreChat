@@ -45,6 +45,12 @@ async function main() {
     async function post(path, body, user = 'a') { return fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', 'x-test-user': user }, body: JSON.stringify(body) }); }
     try {
         strict_1.default.throws(() => (0, yue_1.yueInput)({ script: 'Jazz' }), /Lyrics|words to sing/);
+        strict_1.default.throws(() => (0, yue_1.yueInput)({ script: 'Jazz', lyrics: 'Words', referenceExpected: true }), /finish importing/);
+        strict_1.default.throws(() => (0, yue_1.yueInput)({ script: 'Jazz', lyrics: 'Words', abc: 'X:1', reference_voice_url: 'https://assets.test/source.wav' }), /Remove one/);
+        strict_1.default.throws(() => (0, yue_1.yueInput)({ script: 'Jazz', lyrics: 'Words', reference_voice_url: 'http://assets.test/source.wav' }), /Import/);
+        const cover = (0, yue_1.yueInput)({ script: 'Jazz', lyrics: 'Words', reference_voice_url: 'https://assets.test/source.wav' });
+        strict_1.default.equal(cover.cot, 'melody');
+        strict_1.default.equal(cover.reference_voice_url, 'https://assets.test/source.wav');
         let res = await post('/render', { engine: 'yue2', script: 'Jazz', lyrics: '[Verse]\nOriginal words', estimateOnly: true });
         strict_1.default.equal(res.status, 200);
         strict_1.default.equal(submissions, 0);

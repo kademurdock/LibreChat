@@ -168,7 +168,7 @@ const server=http.createServer((req,res)=>{
   await page.locator('#btnUndoWriting').click();
   assert.equal(await page.locator('#script').inputValue(),'A folk song about coming home');
   assert.equal(await page.locator('#set_lyrics').inputValue(),'Original lyrics');
-  assert.equal(await page.locator('#set_reference_voice_url').count(),0);
+  assert.equal(await page.locator('#set_reference_voice_url').count(),1);
   assert.deepEqual(errors,[]);
   if(output) await page.screenshot({path:output+'/lyria-workspace.png',fullPage:true});
   if(output) fs.writeFileSync(output+'/web-test-receipt.json',JSON.stringify({passed:true,engineDrafts:3,musicDirect:true,scriptRequests:0,confirmation:true,lyricsPreserved:true,noSpeechSettings:true},null,2));

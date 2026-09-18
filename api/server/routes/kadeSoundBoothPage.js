@@ -311,7 +311,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('script').setAttribute('aria-label',music?'Music direction':scene?'Scene script':'Performance script');
       document.getElementById('btnScriptFile').textContent=music?'Download music direction as text':'Download this script as text';
       document.getElementById('starterLabel').textContent=music?'A music starting point':scene?'A scene starting point':'A performance starting point';
-      if(state.engine==='yue2')document.getElementById('scriptHint').textContent='Describe the style and singing voice here. Add Lyrics in song settings, or choose Write my song idea to draft both. YuE2 wakes on demand and stays awake for ten minutes after use.';
+      if(state.engine==='yue2')document.getElementById('scriptHint').textContent='Describe the style and singing voice here. Add Lyrics in song settings, or choose Write my song idea to draft both. To cover a song, import it under song settings and add the words to sing. YuE2 uses the source melody, then makes a new arrangement.';
       var select=document.getElementById('starter'), selected=select.value;
       select.innerHTML='<option value="">Choose a starting point</option>';
       (state.guide.starters||[]).filter(function(x){return x.engine===state.engine;}).forEach(function(x){var o=document.createElement('option');o.value=x.id;o.textContent=x.title;select.appendChild(o);});
@@ -378,7 +378,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
            * application/ogg as often as audio/ogg, so a wildcard filter can
            * hide the file she is trying to pick. And each clip gets a PLAYER,
            * her ask: hearing what is attached is the only way to know. */
-          var accept = state.engine==='seed' ? '.wav,.mp3,.m4a,.ogg,audio/*' : '.wav,.mp3,.m4a,audio/*';
+          var accept = (state.engine==='seed'||state.engine==='yue2') ? '.wav,.mp3,.m4a,.ogg,audio/*' : '.wav,.mp3,.m4a,audio/*';
           var list = state.clips.slice(0, s.max).map(function(c,i){
             return '<li>'+(s.max>1?'@Audio'+(i+1)+': ':'')+esc(c.name)+
               '<audio controls preload="none" aria-label="Play the imported clip, '+esc(c.name)+'"><source src="'+esc(c.url)+'"></audio>'+
@@ -449,7 +449,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var mood = document.getElementById('mood').value; if(mood && (state.engine!=='lyria'&&state.engine!=='yue2')) b.mood = mood;
       /* Lyria clones nothing, so a clip left over from another engine must not
        * ride along with a music render. */
-      if(state.clips.length && (state.engine!=='lyria'&&state.engine!=='yue2')){ b.referenceExpected=true; if(state.engine==='seed') b.audio_urls = state.clips.slice(0,3).map(function(c){return c.url;}); else b.reference_voice_url = state.clips[0].url; }
+      if(state.clips.length && state.engine!=='lyria'){ b.referenceExpected=true; if(state.engine==='seed') b.audio_urls = state.clips.slice(0,3).map(function(c){return c.url;}); else b.reference_voice_url = state.clips[0].url; }
       if(state.engine==='seed' && b.audio_quality===true) b.audio_quality='high';
       if(b.audio_quality===true) b.audio_quality='high';
       return b;
@@ -703,7 +703,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
             var lbl = 'Take ' + ((p.takes.length) - n) + (t.seconds ? ', ' + t.seconds + ' seconds' : '') + (t.description ? '. ' + t.description : '');
             return '<audio controls preload="none" aria-label="' + esc(lbl) + '"><source src="' + esc(t.url) + '">' + (t.backupUrl ? '<source src="' + esc(t.backupUrl) + '">' : '') + '</audio>' +
                    '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.masterUrl ? ' · <a href="' + esc(t.masterUrl) + '" download target="_blank" rel="noreferrer">Download WAV master</a>' : '') + (t.scoreUrl ? ' · <a href="'+esc(t.scoreUrl)+'" download target="_blank" rel="noreferrer">Download composition score</a>' : '') + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>' +
-                   '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button>';
+                   ((p.engine==='lyria'||p.engine==='yue2') ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="cover">Cover this take</button>' : '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button>');
           }).join('') +
           '<details><summary>'+(p.engine==='lyria'?'Music direction':'Script')+'</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>' +
           '<button type="button" class="act" data-open="' + esc(p.id) + '">Open this in the booth</button></div>';
@@ -712,12 +712,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(busy()){say('Finish the current operation first.',true);return;}
         var project=ps.filter(function(p){return p.id===button.dataset.takeProject;})[0];
         var take=project && project.takes[Number(button.dataset.take)];
-        if(!take || !setEngine('scenema'))return;
+        var covering=button.dataset.use==='cover';
+        if(!take || !setEngine(covering?'yue2':'scenema'))return;
         state.projectId=null; state.values.auk_task=button.dataset.use;
+        if(covering){state.values={lyrics:project.options&&project.options.lyrics||''};document.getElementById('script').value=project.screenplay||project.script||'';}
         if(button.dataset.use==='edit'){state.values.instruction='';delete state.values.gen_seconds;}
         state.importError='';state.clips=[{url:take.masterUrl||take.url,name:project.title}];
         invalidateQuote();renderSettings();
-        say(button.dataset.use==='edit'?'Take attached. Describe the edit you want. The original is kept.':'Voice reference attached. Write the words you want this voice to say.');
+        say(covering?'Song attached for a YuE2 cover. Describe the new style and check the lyrics. The original is kept.':button.dataset.use==='edit'?'Take attached. Describe the edit you want. The original is kept.':'Voice reference attached. Write the words you want this voice to say.');
         document.getElementById(button.dataset.use==='edit'?'set_instruction':'script').focus();
       };});
       Array.prototype.forEach.call(box.querySelectorAll('[data-open]'), function(btn){
