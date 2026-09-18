@@ -88,6 +88,7 @@ async function transcribeBuffer(buf, contentType, keyterms) {
   }
   const resp = await fetch(`${DG_URL}?${dgParams(keyterms)}`, {
     method: 'POST',
+    signal: AbortSignal.timeout(120000),
     headers: {
       Authorization: `Token ${key}`,
       'Content-Type': contentType && contentType.startsWith('audio') ? contentType : 'application/octet-stream',

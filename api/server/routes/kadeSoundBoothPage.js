@@ -133,6 +133,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     <fieldset id="editorPanel">
       <legend id="editorLegend">The script</legend>
       <p class="hint" id="scriptHint">Write only the words to perform. An imported reference supplies the voice and accent. Use Edit to change a recording, or Seed Audio for a scene with sound effects.</p>
+      <label class="field" for="trackTitle">Track title</label><input type="text" id="trackTitle" maxlength="80" aria-describedby="trackTitleHint"><p class="hint" id="trackTitleHint">Optional. Leave blank to use the first seven words of your direction. Rename saved work in the library.</p>
       <label class="field" for="script" id="editorLabel">Script</label>
       <textarea id="script" aria-describedby="scriptHint" spellcheck="false"></textarea>
       <div class="quick-actions" role="group" aria-label="Writing help">
@@ -149,13 +150,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <button type="button" class="act primary" id="btnRender">Render</button>
         <button type="button" class="act" id="btnCancel" hidden>Stop this render</button>
       </div>
-      <p class="hint" id="renderHint">Review the cost information in the confirmation window, then choose Start paid generation or Keep editing.</p>
-      <dialog id="renderConfirmation" aria-labelledby="renderConfirmationTitle" aria-describedby="renderConfirmationPrice">
-        <h2 id="renderConfirmationTitle">Confirm paid generation</h2>
-        <p id="renderConfirmationPrice"></p>
-        <button type="button" class="act primary" id="btnConfirmRender" aria-describedby="renderConfirmationPrice">Start paid generation</button>
-        <button type="button" class="act" id="btnKeepEditing">Keep editing</button>
-      </dialog>
+      <p class="hint" id="renderHint">Generation starts with one press. Cost information is shown here before you start.</p>
       <dialog id="renderFailure" role="alertdialog" aria-labelledby="renderFailureTitle" aria-describedby="renderFailureMessage">
         <h2 id="renderFailureTitle">Generation stopped</h2>
         <p id="renderFailureMessage"></p>
@@ -200,9 +195,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function say(msg, isErr){ status.className = 'status' + (isErr ? ' err' : ''); status.textContent = msg; }
     function showCode(xml){ var box = document.getElementById('codeBox'); var view = document.getElementById('codeView'); if(!box||!view) return; if(state.engine==='scenema' && xml && /<speak/i.test(xml) && state.mode==='advanced'){ view.textContent = xml; box.hidden = false; } else { box.hidden = true; view.textContent=''; } }
     function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
-    async function request(path, body){
+    async function request(path, body, method){
       try {
-        var r = await fetch(path, {method:body === undefined ? 'GET':'POST', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}, body:body === undefined ? undefined : JSON.stringify(body), signal:AbortSignal.timeout(240000)});
+        var r = await fetch(path, {method:method || (body === undefined ? 'GET':'POST'), headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}, body:body === undefined ? undefined : JSON.stringify(body), signal:AbortSignal.timeout(240000)});
         var j = null; try { j = await r.json(); } catch(e) {}
         return {ok:r.ok,status:r.status,data:j||{}};
       } catch(e) { return {ok:false,status:0,data:{error:'Connection lost. Check the library before retrying a render; it may still be working.'}}; }
@@ -254,7 +249,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     };
 
     function saveDraft(){
-      drafts[state.engine]={mode:state.mode,input:state.input,text:document.getElementById('text').value,script:document.getElementById('script').value,mood:document.getElementById('mood').value,readback:document.getElementById('readback').textContent,values:Object.assign({},state.values),clips:state.clips.slice(),importError:state.importError,projectId:state.projectId,voiceSeed:state.voiceSeed,rerollVoice:state.rerollVoice,lastXml:state.lastXml};
+      drafts[state.engine]={title:document.getElementById('trackTitle').value,mode:state.mode,input:state.input,text:document.getElementById('text').value,script:document.getElementById('script').value,mood:document.getElementById('mood').value,readback:document.getElementById('readback').textContent,values:Object.assign({},state.values),clips:state.clips.slice(),importError:state.importError,projectId:state.projectId,voiceSeed:state.voiceSeed,rerollVoice:state.rerollVoice,lastXml:state.lastXml};
     }
     function setEngine(e){
       if(busy()){say('Finish the current operation or stop the render before switching workspaces.',true);return false;}
@@ -262,7 +257,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         saveDraft();
         var d=drafts[e]||{};state.engine=e;
         state.mode=d.mode||'easy';state.input=d.input||'words';state.values=Object.assign({},d.values||{});state.clips=(d.clips||[]).slice();state.importError=d.importError||'';state.projectId=d.projectId||null;state.voiceSeed=d.voiceSeed;state.rerollVoice=!!d.rerollVoice;state.lastXml=d.lastXml||'';
-        document.getElementById('text').value=d.text||'';document.getElementById('script').value=d.script||'';document.getElementById('mood').value=d.mood||'';document.getElementById('readback').textContent=d.readback||'';
+        document.getElementById('trackTitle').value=d.title||'';document.getElementById('text').value=d.text||'';document.getElementById('script').value=d.script||'';document.getElementById('mood').value=d.mood||'';document.getElementById('readback').textContent=d.readback||'';
       }
       state.engine = e;
       document.getElementById('btnUndoWriting').hidden=!writingUndo || writingUndo.engine!==e;
@@ -287,9 +282,11 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     function applyWorkflow(){
       updateRenderControls();
-      document.getElementById('renderHint').textContent=state.engine==='scenema' ? 'AuK starts paid generation with one press, after any reference import finishes. Startup, generation and ten minutes awake after the last job use billed GPU time. Ten idle minutes costs about twenty cents.' : 'Review the cost information in the confirmation window, then choose Start paid generation or Keep editing.';
+      document.getElementById('renderHint').textContent=state.engine==='scenema' ? 'AuK starts paid generation with one press, after any reference import finishes. Startup, generation and ten minutes awake after the last job use billed GPU time. Ten idle minutes costs about twenty cents.' : state.guide.engines[state.engine].cost + ' Generation starts with one press.';
       var music=(state.engine==='lyria'||state.engine==='yue2'), scene=state.engine==='seed';
       var g=state.guide.engines[state.engine];
+      document.getElementById('renderHint').textContent=g.cost + ' Generation starts with one press.';
+      document.getElementById('btnRender').setAttribute('aria-describedby','renderHint');
       document.getElementById('engineSummary').textContent=g.tagline;
       document.querySelector('#engineDetails summary').textContent='About '+g.name;
       document.getElementById('engineWhere').textContent=g.where;document.getElementById('engineCost').textContent=g.cost;
@@ -370,7 +367,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         var head = '<label class="field" for="'+id+'">'+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
         if(s.key==='lyrics') return head+'<textarea id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" rows="8">'+esc(v||'')+'</textarea>';
         if(s.kind==='text') return head+'<input type="text" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" value="'+esc(v||'')+'">';
-        if(s.kind==='number') return head+'<input type="number" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" step="any"'+(s.min!=null?' min="'+s.min+'"':'')+(s.max!=null?' max="'+s.max+'"':'')+' placeholder="'+(s.default!=null?esc('normal is '+s.default):'leave empty')+'" value="'+(v!=null?esc(v):'')+'">';
+        if(s.kind==='range') return head+'<input type="range" id="'+id+'" data-key="'+s.key+'" min="'+s.min+'" max="'+s.max+'" step="'+(s.step||1)+'" aria-describedby="'+id+'_h" value="'+(v!=null?esc(v):s.default)+'"><output id="'+id+'_value" for="'+id+'">'+(v!=null?esc(v):s.default)+'</output>';
+        if(s.kind==='number') return head+'<input type="number" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" step="'+(s.step||'any')+'"'+(s.min!=null?' min="'+s.min+'"':'')+(s.max!=null?' max="'+s.max+'"':'')+' placeholder="'+(s.default!=null?esc('normal is '+s.default):'leave empty')+'" value="'+(v!=null?esc(v):'')+'">';
         if(s.kind==='toggle') return '<label class="field"><input type="checkbox" id="'+id+'" data-key="'+s.key+'"'+(((v!=null)?v:s.default)?' checked':'')+' aria-describedby="'+id+'_h"> '+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
         if(s.kind==='choice') return head+'<select id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h">'+s.options.map(function(o){ var lab = o===''?'None':o.replace(/_/g,' '); return '<option value="'+esc(o)+'"'+((v!=null?v:s.default)===o?' selected':'')+'>'+esc(lab.charAt(0).toUpperCase()+lab.slice(1))+'</option>'; }).join('')+'</select>';
         if(s.kind==='clip'){
@@ -388,6 +386,11 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         }
         return '';
       }).join('');
+      if(state.engine==='yue2' && state.clips.length){
+        box.insertAdjacentHTML('beforeend','<button type="button" class="act" id="btnLyrics">Transcribe reference lyrics</button><p class="hint">Tries to hear the sung words using the transcription service. Review and correct the draft; singing can be misheard. Your previous lyrics can be restored with Undo writing change. This does not generate music or deduct credits.</p>');
+        document.getElementById('btnLyrics').disabled=busy();
+        document.getElementById('btnLyrics').onclick=transcribeLyrics;
+      }
       if(state.importError){
         box.insertAdjacentHTML('beforeend','<p role="alert">'+esc(state.importError)+' Retry the import or discard this failed attempt before generating.</p><button type="button" class="act quiet" id="discardImport">Discard failed import</button>');
         document.getElementById('discardImport').onclick=function(){state.importError='';invalidateQuote();renderSettings();say('Failed import discarded. Review the attached clips before generating.');};
@@ -407,7 +410,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         };});
       }
       Array.prototype.forEach.call(box.querySelectorAll('[data-key]'), function(el){
-        el.oninput = el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; invalidateQuote(); if(el.dataset.key==='instrumental'){renderSettings();document.getElementById('set_instrumental').focus();} };
+        if(state.transcribing && el.dataset.key==='lyrics')el.disabled=true;
+        el.oninput = el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; var output=document.getElementById(el.id+'_value');if(output)output.textContent=el.value; invalidateQuote(); if(el.dataset.key==='instrumental'){renderSettings();document.getElementById('set_instrumental').focus();} };
       });
       Array.prototype.forEach.call(box.querySelectorAll('input[type=file]'), function(el){
         el.onchange = function(){ if(el.files && el.files[0]) importClip(el.files[0]); };
@@ -417,9 +421,22 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       });
     }
 
+    async function transcribeLyrics(){
+      if(busy() || !referenceReady() || !state.clips.length)return;
+      var sourceEngine=state.engine,reference=state.clips[0].url;
+      writingUndo={engine:state.engine,text:document.getElementById('script').value,lyrics:state.values.lyrics||''};
+      state.transcribing=true;state.writing=true;renderSettings();say('Listening for the sung words. Your current lyrics are kept until the draft is ready.');
+      var result=await post('/api/kade/sound-booth/reference/lyrics',{url:reference});
+      state.transcribing=false;state.writing=false;
+      if(state.engine!==sourceEngine || !state.clips.length || state.clips[0].url!==reference){renderSettings();return;}
+      if(!result.ok){renderSettings();say(result.data.error||'Could not hear the words. Your lyrics are kept.',true);return;}
+      state.values.lyrics=result.data.transcript;invalidateQuote();renderSettings();
+      document.getElementById('btnUndoWriting').hidden=false;
+      document.getElementById('set_lyrics').focus();say(result.data.warning);
+    }
     async function importClip(file){
       if(busy())return;
-      invalidateQuote();renderConfirmation.close();state.importError='';
+      invalidateQuote();state.importError='';
       if(file.size > 20*1024*1024){state.importError='That clip is over twenty megabytes.';renderSettings();say(state.importError,true);return;}
       state.importing=true;renderSettings();
       try {
@@ -435,13 +452,13 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
 
     function collect(){
-      var b = { engine: state.engine, mode: state.mode, text: document.getElementById('text').value };
+      var b = { title:document.getElementById('trackTitle').value.trim(), engine: state.engine, mode: state.mode, text: document.getElementById('text').value };
       var g = state.guide.engines[state.engine];
       g.settings.forEach(function(s){
         var v = state.values[s.key];
         if(s.kind==='clip') return;
         if(s.kind==='toggle'){ if(s.key==='validate'){ b.validate = (v===undefined || v===null) ? true : !!v; return; } b[s.key] = (v===undefined || v===null) ? !!s.default : !!v; return; }
-        if(s.kind==='number'){ var n = parseFloat(v); if(!isNaN(n)) b[s.key] = (s.key==='seed'||s.key==='pitch') ? Math.round(n) : n; return; }
+        if(s.kind==='number'||s.kind==='range'){ var n = parseFloat(v); if(!isNaN(n)) b[s.key] = (s.key==='seed'||s.key==='pitch') ? Math.round(n) : n; return; }
         if(v!=null && String(v).trim()!=='') b[s.key] = v;
       });
       if((state.engine!=='lyria'&&state.engine!=='yue2') && !b.gender) b.gender = 'female';
@@ -572,41 +589,11 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       } finally { state.rendering=false;updateRenderControls(); }
     }
     var btnRender = document.getElementById('btnRender');
-    var renderConfirmation=document.getElementById('renderConfirmation');
     document.getElementById('btnFailureOK').onclick=function(){document.getElementById('renderFailure').close();};
-    var confirmingPreview=false, quoteLoading=false;
-    document.getElementById('btnKeepEditing').onclick=function(){invalidateQuote();renderConfirmation.close();};
-    renderConfirmation.addEventListener('cancel',function(){invalidateQuote();});
-    document.getElementById('btnConfirmRender').onclick=function(){renderConfirmation.close();return confirmRender(confirmingPreview,true);};
-    async function confirmRender(preview, confirmed){
+    async function confirmRender(preview){
       if(state.writing || !referenceReady())return;
-      if(state.engine==='scenema')return doRender(preview);
-      if(quoteLoading) return;
-      if(state.rendering || state.jobId) { say('A render is already in progress. Wait for it or press Stop.',true); return; }
-      var script=document.getElementById('script').value.trim();
-      var b=collect();
-      if(!script && !preview && b.auk_task!=='edit'){ say((state.engine==='lyria'||state.engine==='yue2')?'Describe the music you want first.':'Write a script first.',true); return; }
-      if(state.engine==='yue2' && !b.lyrics){document.getElementById('settingsDrawer').open=true;document.getElementById('set_lyrics').focus();say('Add the words to sing, or use Write my song idea to draft lyrics.',true);return;}
-      b.script=script || '<speak voice="'+esc(b.voice_description||'A warm clear voice')+'" gender="'+(b.gender||'female')+'"></speak>';
-      b.preview=preview; b.estimateOnly=true;
-      var key=JSON.stringify(b);
-      if(!confirmed || state.pendingRender!==key){
-        var quoteRevision=state.quoteRevision;btnRender.disabled=true;quoteLoading=true;
-        var r=await post('/api/kade/sound-booth/render',b);
-        quoteLoading=false;updateRenderControls();
-        if(!r.ok){say(r.data.error||'Could not estimate that script.',true);return;}
-        if(quoteRevision!==state.quoteRevision){say('The draft or settings changed. Choose '+renderLabel()+' again for the current price.');return;}
-        state.pendingRender=key;
-        var cloneLine=(state.engine==='lyria'||state.engine==='yue2') ? '' : state.clips.length ? (b.auk_task==='edit'?' Editing ':' Cloning ')+state.clips.map(function(c){return c.name;}).join(', ')+'.' : ' No reference clip attached.';
-        var price=(r.data.estimate && r.data.estimate.spoken) || 'A reliable total price is unavailable. This is a paid generation.';
-        confirmingPreview=preview;
-        document.getElementById('renderConfirmationPrice').textContent=price+cloneLine;
-        renderConfirmation.showModal();
-        document.getElementById('btnConfirmRender').focus();
-        return;
-      }
-      invalidateQuote(); btnRender.disabled=true;
-      try { await doRender(preview); } finally { updateRenderControls(); }
+      if(state.engine==='yue2' && !collect().lyrics){document.getElementById('settingsDrawer').open=true;document.getElementById('set_lyrics').focus();say('Add the words to sing, or use Write my song idea to draft lyrics.',true);return;}
+      return doRender(preview);
     }
     btnRender.onclick=function(){return confirmRender(false);};
     document.getElementById('btnPreview').onclick=function(){return confirmRender(true);};
@@ -706,8 +693,19 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
                    ((p.engine==='lyria'||p.engine==='yue2') ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="cover">Cover this take</button>' : '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button>');
           }).join('') +
           '<details><summary>'+(p.engine==='lyria'?'Music direction':'Script')+'</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>' +
+          '<label for="rename_'+esc(p.id)+'">Track title</label><input id="rename_'+esc(p.id)+'" maxlength="80" value="'+esc(p.title)+'"><button type="button" class="act quiet" data-rename="'+esc(p.id)+'">Save title</button>'+
           '<button type="button" class="act" data-open="' + esc(p.id) + '">Open this in the booth</button></div>';
       }).join('');
+      Array.prototype.forEach.call(box.querySelectorAll('[data-rename]'),function(button){button.onclick=async function(){
+        var id=button.dataset.rename,title=document.getElementById('rename_'+id).value.trim();
+        if(!title){say('Enter a title first.',true);return;}
+        button.disabled=true;
+        var result=await request('/api/kade/sound-booth/projects/'+encodeURIComponent(id),{title:title},'PATCH');
+        button.disabled=false;
+        if(!result.ok){say(result.data.error||'Could not save the title.',true);return;}
+        if(state.projectId===id)document.getElementById('trackTitle').value=title;
+        say('Title saved: '+title);await loadLibrary();
+      };});
       Array.prototype.forEach.call(box.querySelectorAll('[data-take-project]'),function(button){button.onclick=function(){
         if(busy()){say('Finish the current operation first.',true);return;}
         var project=ps.filter(function(p){return p.id===button.dataset.takeProject;})[0];
@@ -715,7 +713,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         var covering=button.dataset.use==='cover';
         if(!take || !setEngine(covering?'yue2':'scenema'))return;
         state.projectId=null; state.values.auk_task=button.dataset.use;
-        if(covering){state.values={lyrics:project.options&&project.options.lyrics||''};document.getElementById('script').value=project.screenplay||project.script||'';}
+        if(covering){document.getElementById('trackTitle').value=project.title+' (cover)';state.values={lyrics:project.options&&project.options.lyrics||''};document.getElementById('script').value=project.screenplay||project.script||'';}
         if(button.dataset.use==='edit'){state.values.instruction='';delete state.values.gen_seconds;}
         state.importError='';state.clips=[{url:take.masterUrl||take.url,name:project.title}];
         invalidateQuote();renderSettings();
@@ -728,6 +726,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           if(!p) return;
           if(!setEngine(p.engine)) return;
           state.projectId = p.id; setMode(p.mode === 'advanced' ? 'advanced' : 'easy');
+          document.getElementById('trackTitle').value = p.title || '';
           document.getElementById('text').value = p.sourceText || '';
           document.getElementById('script').value = p.screenplay || p.script || '';
           state.lastXml = p.script || ''; showCode(state.lastXml);
@@ -753,6 +752,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(starter && !setEngine(starter.engine))return;
       state.projectId=null;state.voiceSeed=null;state.rerollVoice=false;state.values={};state.clips=[];state.importError='';
       if(starter && starter.engine==='lyria')state.values.instrumental=starter.script.indexOf('Instrumental only, no vocals.')!==-1;
+      document.getElementById('trackTitle').value=starter?starter.title:'';
       document.getElementById('mood').value='';
       setInput('words');
       document.getElementById('text').value='';document.getElementById('script').value=starter?starter.script:'';

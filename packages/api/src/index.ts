@@ -126,4 +126,6 @@ export { storeAudioStream } from './library/stream';
 export { configureBookUploadTimeouts } from './library/timeouts';
 export { bookImportRouter } from './library/imports';
 
-export { createYueRouter, yueConfigured } from './music/yue';
+export { createYueRouter, yueConfigured, yueCost } from './music/yue';
+export { notifyMusic } from './music/notify';
+export { createLyricsRouter, registerMusicReference } from './music/lyrics';

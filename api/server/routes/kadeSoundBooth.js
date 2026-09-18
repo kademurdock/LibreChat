@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, createYueRouter, yueConfigured } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
@@ -20,12 +20,22 @@ const { screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREENPLAY_HELP } = re
 const chain = require('./kadeSoundBoothChain');
 
 const router = express.Router();
+router.use(createLyricsRouter({
+  auth: requireJwtAuth, user: req => String(req.user.id), refresh: freshAssetUrl,
+  duration: buffer => require('./kadeSoundBoothStitch').durationOf(buffer),
+  transcribe: (buffer, mime) => require('./kadeTranscribe').transcribeBuffer(buffer, mime),
+  savedSources: async user => {
+    const projects = await KadeSoundBoothProject.find({ user, 'options.reference_voice_url': { $exists: true } }).select('options.reference_voice_url').lean();
+    const assets = await KadeAsset.find({ user, kind: 'audio' }).select('url metadata.wavUrl').lean();
+    return [...projects.map(p => p.options.reference_voice_url), ...assets.flatMap(a => [a.url, a.metadata?.wavUrl])].filter(Boolean);
+  },
+}));
 router.use(createYueRouter({
   auth: requireJwtAuth,
   user: req => String(req.user.id),
   project: async (user, input, sourceText) => {
-    const p = await KadeSoundBoothProject.create({ user, engine: 'yue2', title: input.style.slice(0, 80), script: input.style,
-      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, seed: input.seed, reference_voice_url: input.reference_voice_url }, state: 'queued' });
+    const p = await KadeSoundBoothProject.create({ user, engine: 'yue2', title: input.title, script: input.style,
+      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, seed: input.seed, reference_voice_url: input.reference_voice_url, count: input.count, weirdness: input.weirdness, steps: input.steps, guidance: input.guidance }, state: 'queued' });
     return String(p._id);
   },
   update: async job => {
@@ -34,12 +44,21 @@ router.use(createYueRouter({
         lastError: job.error, costUSD: job.costUSD || 0 }, $addToSet: { jobs: job.id },
     });
   },
+  notify: async job => {
+    const project = await KadeSoundBoothProject.findOne({ _id: job.projectId, user: job.user }).select('title').lean();
+    const completed = (job.takes || []).filter(take => take.state === 'done').length;
+    const receipt = await notifyMusic(job.user, project?.title || job.input.title || 'Your song', completed, job.takes?.length || 1, job.state !== 'done');
+    logger.info(`[soundbooth/music] notification job=${job.id} accepted=${receipt.accepted} deferred=${receipt.deferred === true} blocked=${receipt.blocked || 'none'}`);
+    return receipt;
+  },
   complete: async job => {
     const scoreUrl = job.output.score_key ? await getNewS3URL(job.output.wav_url, job.output.score_key) : undefined;
+    const project = await KadeSoundBoothProject.findOne({ _id: job.projectId, user: job.user }).select('title').lean();
+    const title = project?.title || job.input.title || job.input.style.slice(0, 80);
     const asset = await KadeAsset.findOneAndUpdate({ user: job.user, service: 'runpod_yue2', 'metadata.jobId': job.id }, {
       $setOnInsert: { user: job.user, service: 'runpod_yue2', kind: 'audio', url: job.output.url,
-        model: 'm-a-p/YuE2-3B', prompt: job.input.style, description: 'YuE2 song: ' + job.input.style,
-        costUSD: job.costUSD || 0, metadata: { jobId: job.id, projectId: job.projectId, via: 'sound-booth',
+        model: 'm-a-p/YuE2-3B', prompt: job.input.style, description: title,
+        costUSD: job.costUSD || 0, metadata: { title, seed: job.input.seed, weirdness: job.input.weirdness, steps: job.input.steps, guidance: job.input.guidance, jobId: job.id, projectId: job.projectId, via: 'sound-booth',
           wavUrl: job.output.wav_url, seconds: Math.round(job.output.duration_s || 0), lyrics: job.input.lyrics,
           scoreKey: job.output.score_key, scoreUrl, truncated: job.output.truncated, costScope: 'execution estimate; startup and idle are additional' } },
     }, { upsert: true, new: true });
@@ -681,15 +700,19 @@ const GUIDE = {
     yue2: {
       name: 'YuE2', tagline: 'Original songs with your lyrics and an editable composition.',
       where: 'Runs on your separate sleeping RunPod music worker.',
-      cost: 'About $1.22 per GPU hour, including startup, generation and ten minutes awake after the last job. No reliable per-song price yet.',
+      cost: yueCost,
       bestFor: ['songs with your own lyrics', 'a cover with a different style and arrangement', 'a new arrangement from a composition score'],
       notFor: ['saved singer personas or voice cloning', 'guaranteeing an exact transcription of the source melody'],
-      howToWrite: ['Describe the new style, instruments and singing voice in Music direction.', 'Put exact words under Lyrics, with [Verse] and [Chorus] tags. The melody transcriber does not transcribe lyrics.', 'For a cover, import one source recording up to six minutes. The worker transcribes its melody, then makes a new arrangement. Listen for transcription errors; the source is kept intact.'],
+      howToWrite: ['Describe the new style, instruments and singing voice in Music direction.', 'Put exact words under Lyrics, with [Verse] and [Chorus] tags. Use Transcribe reference lyrics after importing a cover to get an editable draft, then correct anything it misheard.', 'For a cover, import one source recording up to six minutes. The worker transcribes its melody, then makes a new arrangement. Listen for transcription errors; the source is kept intact.'],
       settings: [
         { key: 'lyrics', label: 'Lyrics', hint: 'The words to sing. Use [Verse] and [Chorus] tags, or choose Write my song idea to draft them.', kind: 'text' },
         { key: 'reference_voice_url', label: 'Recording to cover (optional)', hint: 'Import one song, up to six minutes. YuE2 uses its melody for a new arrangement; this does not clone the original singer. Add the words you want under Lyrics.', kind: 'clip', max: 1 },
         { key: 'abc', label: 'Optional composition (ABC)', hint: 'Use a melody score instead of an imported recording.', kind: 'text' },
         { key: 'cot', label: 'Composition', hint: 'Melody gives the arrangement more freedom; full keeps chords too.', kind: 'choice', options: ['melody','full'], default: 'melody' },
+        { key: 'count', label: 'Number of takes', hint: 'Request 1 to 4 variations together. Up to two generate in parallel when GPUs are available. Every take uses a different seed and additional GPU time.', kind: 'number', min: 1, max: 4, step: 1, default: 1 },
+        { key: 'weirdness', label: 'Creative variation (weirdness)', hint: '50 keeps the original sound settings. Lower is more predictable; higher explores less likely musical choices and may sound less coherent. Changes sampling temperature; this is a YuE2 control, not a copy of Suno.', kind: 'range', min: 0, max: 100, step: 1, default: 50 },
+        { key: 'steps', label: 'Inference steps', hint: '32 is the original setting. 16 is faster; up to 64 spends more time refining the audio. More steps do not guarantee a better song.', kind: 'number', min: 16, max: 64, step: 1, default: 32 },
+        { key: 'guidance', label: 'Prompt guidance', hint: '1 is the original setting. Higher values strengthen the style and lyric conditioning, but add work and can reduce naturalness. Experimental; try small changes.', kind: 'range', min: 1, max: 3, step: 0.1, default: 1 },
         { key: 'seed', label: 'Optional seed', hint: 'Leave blank for a new take. Reuse a number for a similar starting point.', kind: 'number', min: 0, max: 2147483647 },
       ],
     },
@@ -994,6 +1017,7 @@ async function takesFor(projects, userId) {
       scoreUrl: d.metadata?.scoreUrl ? await freshAssetUrl(d.metadata.scoreUrl) : null,
       /* The blind-friendly description the gallery writes, when it has landed
        * yet -- enrichment runs detached, so a brand-new take often has none. */
+      title: d.metadata?.title || '',
       description: d.description || '',
       seconds: (d.metadata && (d.metadata.seconds || d.metadata.durationS)) || null,
       costUSD: d.costUSD || 0,
@@ -1686,6 +1710,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
           costUSD,
           metadata: {
             via: 'sound-booth',
+            title: project.title,
             projectId: String(project._id),
             bytes: buffer.length,
             instrumental: !!opts.instrumental,
@@ -1703,6 +1728,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       if (opts.keep_lyrics !== false && lyricsClean) project.readback = lyricsClean.slice(0, 600);
       if (assetId) project.assets = [...(project.assets || []), assetId].slice(-20);
       await project.save();
+      await notifyMusic(String(req.user.id), project.title, 1, 1, false).catch(error => logger.warn('[soundbooth/music] Lyria notification failed: ' + error.message));
       logger.info(`[soundbooth/render] lyria done ${buffer.length}B $${costUSD} project=${project._id} user=${req.user.id}`);
       return res.json({
         ok: true,
@@ -2050,10 +2076,12 @@ router.patch('/projects/:id', requireJwtAuth, express.json({ limit: '64kb' }), a
     const p = await KadeSoundBoothProject.findOne({ _id: req.params.id, user: req.user.id });
     if (!p) return res.status(404).json({ error: 'No such project.' });
     const b = req.body || {};
-    if (typeof b.title === 'string' && b.title.trim()) p.title = b.title.trim().slice(0, 80);
+    if (b.title != null && (typeof b.title !== 'string' || !b.title.trim() || b.title.length > 80)) return res.status(400).json({ error: 'Use a title from 1 to 80 characters.' });
+    if (typeof b.title === 'string') p.title = b.title.trim();
     if (typeof b.script === 'string') p.script = b.script;
     if (typeof b.sourceText === 'string') p.sourceText = b.sourceText.slice(0, 8000);
     await p.save();
+    if (typeof b.title === 'string') await KadeAsset.updateMany({ user: req.user.id, 'metadata.projectId': String(p._id) }, { $set: { 'metadata.title': p.title, description: p.title } });
     return res.json({ project: projectView(p) });
   } catch (error) {
     logger.error('[soundbooth/project patch] failed:', error);
@@ -2164,7 +2192,7 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
       const norm = engine === 'seed' ? await normalizeReferenceClip(f.buffer, ext) : null;
       if (engine === 'scenema' || engine === 'yue2') {
         clipSeconds = await durationOf(f.buffer);
-        clipAdvice = engine === 'yue2' ? 'The full original is kept. Cover generation transcribes the melody; add your lyrics separately.' : 'The full original recording is kept. Speech uses a voice sample; editing uses the recording.';
+        clipAdvice = engine === 'yue2' ? 'The full original is kept. Choose Transcribe reference lyrics for an editable draft of the words. Singing can be misheard; review before generating.' : 'The full original recording is kept. Speech uses a voice sample; editing uses the recording.';
       }
       if (norm && norm.buffer && norm.buffer.length > 1000) {
         outBuffer = norm.buffer;
@@ -2184,6 +2212,7 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
       basePath: 'audios',
     });
     if (!url) return res.status(502).json({ error: 'The clip did not save. Try again.' });
+    await registerMusicReference(String(req.user.id), url);
     logger.info(`[soundbooth/reference] user=${req.user.id} ${f.originalname || fileName} ${f.buffer.length}B -> ${outExt} ${outBuffer.length}B ${clipSeconds !== null ? clipSeconds + 's' : ''}`);
     return res.json({
       ok: true,
