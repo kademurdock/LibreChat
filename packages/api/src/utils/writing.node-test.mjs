@@ -276,3 +276,12 @@ test('Part 217: the audit asks for the turn, the hook and the spice, carries fla
   assert.match(fixed, /^\[Whistling\]$/m); assert.match(fixed, /^\[Claps and bass only\]$/m);
   assert.match(fixed, /^\(oh-oh\)$/m, 'a sung ad-lib stays in parentheses');
 });
+
+test('Part 217: a line lifted from the system\'s own examples is flagged like any other tell', () => {
+  const copied = 'R&B.\nLyrics:\n[Verse 1]\nYou text at a decent hour now\nReal polite, like we ain\'t been through it\nI burned the toast and blamed the toaster\n[Outro - Vamp]\nMm. I saw it. I ain\'t answer.\n(I sleep fine)';
+  const tells = lyricTells(copied, 'r&b song about being over somebody');
+  assert.deepEqual(tells.map(t => t.line), ['You text at a decent hour now', "Real polite, like we ain't been through it", "Mm. I saw it. I ain't answer."]);
+  assert.ok(tells.every(t => /copied from the writing system/.test(t.tell)));
+  assert.equal(lyricTells('x\nLyrics:\nI paid the light bill twice this month and I ain\'t tell nobody').length, 1, 'FIX lines are examples too');
+  assert.equal(lyricTells('x\nLyrics:\nNow they know').length, 0, 'three common words are not ownable');
+});

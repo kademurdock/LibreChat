@@ -84,6 +84,25 @@ const LYRIC_TELLS: [string, RegExp][] = [
 
 export type LyricTell = { line: string; tell: string };
 
+/* Part 217, seen live: given an idea close to one of the system's worked
+ * examples, the writer handed back that example almost word for word. The
+ * examples teach; they are never output. Every example and BAD/FIX line of four
+ * words or more is remembered here, and a sung line that matches one is flagged
+ * like any other tell and rewritten by the audit. */
+const plain = (line: string): string =>
+  line
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z0-9' ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+const EXAMPLE_LINES: Set<string> = new Set(
+  hitWritingSystem
+    .split('\n')
+    .map((line) => plain(line.replace(/^(?:BAD|FIX):\s*/, '')))
+    .filter((line) => line.split(' ').length >= 4 && line.length <= 90),
+);
+
 /** The sung lines of a draft that lean on a stock tell. Looks only below the
  *  "Lyrics:" heading, skips section tags, and reports each distinct line once. */
 export function lyricTells(script: string, brief = ''): LyricTell[] {
@@ -94,6 +113,11 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
   for (const raw of script.slice(at).split('\n').slice(1)) {
     const line = raw.trim();
     if (!line || /^\[[^\]]*\]$/.test(line) || /^READBACK:/i.test(line) || seen.has(line)) continue;
+    if (EXAMPLE_LINES.has(plain(line))) {
+      seen.add(line);
+      found.push({ line, tell: "copied from the writing system's own examples; write your own" });
+      continue;
+    }
     for (const [tell, pattern] of LYRIC_TELLS) {
       const hit = pattern.exec(line);
       if (!hit || brief.toLowerCase().includes(hit[0].toLowerCase())) continue;

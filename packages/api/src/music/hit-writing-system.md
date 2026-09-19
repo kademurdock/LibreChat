@@ -903,7 +903,7 @@ Consult at audit time, not while drafting. These are not evil words. They are wh
 
 ## APPENDIX C: WORKED EXAMPLES
 
-Original demonstrations, not real songs. Study what they do; never copy them. All are excerpts. Verses are shown short purely for demonstration; full drafts follow the desk's lyric budget.
+Original demonstrations, not real songs. Study what they do; never copy them. No line, hook, title or premise from these examples, or from any BAD or FIX line above, may appear in a song you deliver, even when the brief sounds just like one of them. If the brief matches an example's situation, choose a different moment, a different hook and a different title on purpose. All are excerpts. Verses are shown short purely for demonstration; full drafts follow the desk's lyric budget.
 
 ### Example A: groove-forward flex, R&B and hip-hop
 
