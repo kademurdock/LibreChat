@@ -4,7 +4,7 @@ import type { TMessageProps } from '~/common';
 import MessageRender from './ui/MessageRender';
 import MultiMessage from './MultiMessage';
 import VoiceMessagePortrait from '../character/VoiceMessagePortrait';
-import { messageCharacterId } from '../character/voice-message-motion.mjs';
+import { messageCharacterId, messageSpeechText } from '../character/voice-message-motion.mjs';
 
 const MessageContainer = React.memo(function MessageContainer({
   handleScroll,
@@ -42,7 +42,11 @@ export default function Message(props: TMessageProps) {
       <MessageContainer handleScroll={handleScroll}>
         <div className="m-auto justify-center p-4 py-2 md:gap-6">
           {!message.isCreatedByUser && messageId && (
-            <VoiceMessagePortrait messageId={messageId} agentId={messageCharacterId(message)} />
+            <VoiceMessagePortrait
+              messageId={messageId}
+              agentId={messageCharacterId(message)}
+              text={messageSpeechText(message)}
+            />
           )}
           <MessageRender
             {...props}

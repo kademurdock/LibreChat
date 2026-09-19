@@ -34,3 +34,38 @@ test('late events from a cancelled or previous speaker cannot change the new fac
  c.apply('one','amused');c.stop('one');c.endMoment('one');assert.equal(c.state().expression,'skeptical');
  c.stop('two');c.apply('two','amused');assert.equal(c.state().expression,'neutral');
 });
+test('a wide vocabulary: real directions from a day of deepseek land on an expression',()=>{
+ const want={
+  "dry a little raspy like I'm on my second cup and you're not":'dry',
+  "flat and hot like I'm mad on her behalf":'angry',
+  'flat and clipped with no patience left':'frustrated',
+  'genuinely delighted leaning in with a raised pitch on the first word':'excited',
+  'warm but not letting it slide':'warm',
+  'quiet taking it in':'tender',
+  'steady the pitch coming down a notch taking charge':'serious',
+  'light and teasing':'playful',
+  'dry a little smug':'smug',
+  'curious leaning in pitch lifting on the question':'curious',
+  'worn out and yawning':'tired',
+  'voice shaking a little scared':'afraid',
+  'heavy hearted close to crying':'sad',
+  'wide eyed like you cannot believe it':'surprised',
+  'one eyebrow raised not buying it':'skeptical',
+  'settled and unhurried':'calm',
+  'slow and careful choosing each word':'thoughtful',
+  'lip curled in contempt':'disgusted',
+  'worried and protective':'concerned',
+  'brisk and sure of it':'confident',
+ };
+ for(const [tag,expression] of Object.entries(want))assert.equal(cue(tag).expression,expression,tag);
+ assert.equal(cue('soft chuckle').kind,'moment');assert.equal(cue('soft chuckle').expression,'amused');
+ assert.equal(cue('yawn').expression,'tired');assert.equal(cue('cough').expression,null);
+});
+test('every expression has a complete bounded style and unknown names fall back to neutral',async()=>{
+ const E=(await import('./avatar-expression.mjs')).default;
+ assert.ok(E.expressions.length>=20);
+ for(const name of E.expressions){const s=E.expressionStyle(name);
+  for(const k of ['brow','browTalk','tilt','sway','nod','tempo','blink','lift'])assert.ok(Number.isFinite(s[k]),name+'.'+k);
+  assert.ok(s.brow>=0&&s.brow<=1&&Math.abs(s.tilt)<=1&&s.tempo>=0.4&&s.tempo<=1.6);}
+ assert.equal(E.expressionStyle('nonsense'),E.expressionStyle('neutral'));
+});

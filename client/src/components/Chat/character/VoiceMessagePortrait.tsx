@@ -4,15 +4,17 @@ import { useLocalize } from '~/hooks';
 import { voicePlayback } from './voice-playback.mjs';
 import { createPortraitRig, preparedPortrait } from './portrait-rig.mjs';
 import CharacterMotion from './character-motion.mjs';
-import { voiceMessagePose } from './voice-message-motion.mjs';
+import { voiceMessagePose, expressionSchedule } from './voice-message-motion.mjs';
 import { useVoicePortraitPreference } from './useVoicePortraitPreference';
 
 export default function VoiceMessagePortrait({
   messageId,
   agentId,
+  text,
 }: {
   messageId: string;
   agentId?: string | null;
+  text?: string;
 }) {
   const playback = useSyncExternalStore(voicePlayback.subscribe, voicePlayback.snapshot);
   const [enabled] = useVoicePortraitPreference();
@@ -21,17 +23,27 @@ export default function VoiceMessagePortrait({
   if (!selected || !agentId || !agent) return null;
   const path = agent.avatar?.filepath;
   if (!path) return null;
-  return <PortraitSurface key={agentId + path} playback={playback} agentId={agentId} path={path} />;
+  return (
+    <PortraitSurface
+      key={agentId + path}
+      playback={playback}
+      agentId={agentId}
+      path={path}
+      text={text ?? ''}
+    />
+  );
 }
 
 function PortraitSurface({
   playback,
   agentId,
   path,
+  text,
 }: {
   playback: any;
   agentId: string;
   path: string;
+  text: string;
 }) {
   const localize = useLocalize();
   const [playError, setPlayError] = useState(false);
@@ -43,6 +55,15 @@ function PortraitSurface({
   const canvas = useRef<HTMLCanvasElement>(null);
   const latest = useRef(playback);
   latest.current = playback;
+  // The character's own %%%directions%%%, placed along the audio once its
+  // length is known (and again if a streamed file's length arrives late).
+  const spoken = useRef(text);
+  spoken.current = text;
+  const schedule = useRef<{ text: string; duration: number; cues: ReturnType<typeof expressionSchedule> }>({
+    text: '',
+    duration: -1,
+    cues: [],
+  });
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     if (failed || !element.current || !canvas.current) return;
@@ -97,7 +118,20 @@ function PortraitSurface({
         });
       if (usable && prepared) void readEnvelope(audio);
       const level = envelope?.levels[Math.floor(audio.currentTime / envelope.step)] || 0;
-      const pose = voiceMessagePose({ id: agentId, time: audio.currentTime, level, active });
+      const length = Number.isFinite(audio.duration) ? audio.duration : 0;
+      if (schedule.current.text !== spoken.current || schedule.current.duration !== length)
+        schedule.current = {
+          text: spoken.current,
+          duration: length,
+          cues: expressionSchedule(spoken.current, length),
+        };
+      const pose = voiceMessagePose({
+        id: agentId,
+        time: audio.currentTime,
+        level,
+        active,
+        cues: schedule.current.cues,
+      });
       rig?.render(pose);
       surface.style.transform = `rotate(${pose.tilt}deg) translateY(${pose.nod}px)`;
       // Rig also moves its canvas; neutralize the duplicate transform.

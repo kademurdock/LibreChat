@@ -125,9 +125,12 @@ const CharacterMotion = (() => {
       if (mode === 'speaking' && current?.speech) {
         const offset = time - current.start;
         const fade = Math.min(1, offset / .2, (current.duration - offset) / .2);
-        const tilt = { warm: .45, amused: -.55, skeptical: .65, concerned: -.3 }[state.expression] || 0;
-        frame.tilt = tilt * Math.min(1, character.tiltDegrees) * fade;
-        if (state.expression === 'amused' || state.expression === 'surprised') {
+        // One style table for every renderer (avatar-expression.mjs), so a new
+        // expression moves the call face and the chat face alike.
+        const style = expressions.expressionStyle(state.expression);
+        frame.tilt = style.tilt * Math.min(1, character.tiltDegrees) * fade;
+        frame.brow = style.brow * fade;
+        if (style.nod >= 1.5) {
           frame.nod = Math.sin(Math.min(offset / .8, 1) * Math.PI) * character.nodDegrees * fade;
         }
       }
