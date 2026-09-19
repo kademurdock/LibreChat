@@ -286,3 +286,9 @@ test('Part 214: the no-web note names attached information tools and says to use
   assert.doesNotMatch(note, /kade_wikipedia/, 'only what is actually riding is named');
   assert.doesNotMatch(note, /kade_feedback gets|kade_memory_search gets/, 'memory, help and feedback are never offered as lookups');
 });
+test('Part 214: casual asks for news attach the news tool, small talk does not', () => {
+  for (const ask of ['anything interesting going on in the world?', "what's happening out there today", 'what did I miss', 'anything big happening tonight?', "how's the world"])
+    assert.ok(R.keywordHits(ask, ['kade_news', 'web_search']).has('kade_news'), ask);
+  for (const chat of ['anything good for dinner?', 'my day was long', "what's new with you", 'something is going on with my knee'])
+    assert.ok(!R.keywordHits(chat, ['kade_news', 'web_search']).has('kade_news'), chat);
+});

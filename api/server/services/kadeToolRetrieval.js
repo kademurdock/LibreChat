@@ -88,6 +88,9 @@ const ALIASES = {
     /\b(research|dig (into|in)|deep.?dive|investigate|thorough(ly)?|cross.?check|find everything|full report)\b/i,
   ],
   kade_news: [
+    /* Part 214: "anything interesting going on in the world?" matched nothing, so no
+     * news tool rode and she could only offer. The casual ways people ask for news: */
+    /\b(?:(?:anything|something|what(?:'?s| is)?) (?:\w+ ){0,2}(?:going on|happening|new|interesting|big|good|crazy|wild)\b[^.?!]{0,40}\b(?:in the world|out there|in the country|around here|in town|locally|today|tonight|lately|this week)|what(?:'?s| is) new (?:in the world|out there|today)|what(?:'?d| did) i miss|catch me up on (?:the )?(?:world|day|week)|how(?:'?s| is) the world)\b/i,
     /\b(news|headlines?|current events|what'?s (going on|happening) (in the world|out there|today)|socials?|social media|trending|viral|all over (?:the )?(?:internet|feed|timeline)|everybody'?s talking)\b/i,
   ],
   kade_wikipedia: [
