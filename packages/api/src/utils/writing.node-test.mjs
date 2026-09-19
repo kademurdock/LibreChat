@@ -5,7 +5,7 @@ import { stripTypeScriptTypes, createRequire } from 'node:module';
 import vm from 'node:vm';
 const source = stripTypeScriptTypes(readFileSync(new URL('./writing.ts', import.meta.url), 'utf8'));
 const musicSource = stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8'));
-const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
+const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 
 test('music drafting reads the current Lyric persona while formatting and speech stay untouched', async () => {
@@ -39,7 +39,7 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: 'Intimate R&B with warm piano.\nLyrics:\n[Verse]\nMy exact authored line.\nREADBACK: A quiet song.' } }], usage: { cost: 0.002 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models') return { getAgent: async filter => { assert.equal(filter.id, lyricAgentId); return { instructions }; } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
@@ -121,7 +121,7 @@ test('real script route accounts for the shortening call as well as the first dr
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'axios') return { post: async () => { calls++; return { data: { choices: [{ message: { content: '[Setting: A quiet room.]\nNora (calm woman) says softly: "' + 'Stay here. '.repeat(calls === 1 ? 220 : 30) + '"' } }], usage: { cost: calls === 1 ? 0.004 : 0.002 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
     if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay') return localRequire(name);
@@ -194,7 +194,7 @@ test('Part 216: the real handler repairs a flagged draft once, and never touches
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: requests.length === 1 || /supplied/.test(body.messages[1].content) ? draft : repaired } }], usage: { cost: 0.01 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models') return { getAgent: async () => ({ instructions: 'Saved Lyric persona.' }) };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
@@ -226,4 +226,26 @@ test('Part 216: only the sung words come from a repair; direction and READBACK s
   assert.ok(dropped.endsWith('sung by a tired man.'));
   assert.equal(mergeRepairedLyrics(first, 'Sure! Here is a description with no lyrics.'), null);
   assert.equal(mergeRepairedLyrics(first, 'x\nLyrics:\n[Verse 1]\nOnly one line now'), null, 'a repair that lost lines is refused');
+});
+
+test('Part 216: a song the desk sized itself must have three verses; her own length wins', () => {
+  const two = 'Pop.\nLyrics:\n[Verse 1]\na\n[Chorus]\nb\n[Verse 2]\nc\n[Bridge]\nd\n[Chorus]\nb\nREADBACK: x';
+  assert.match(lyricShapeIssue(two, 'a pop song about luck'), /only two verses.*Add a \[Verse 3\]/);
+  assert.equal(lyricShapeIssue(two.replace('[Bridge]', '[Verse 3]'), 'a pop song about luck'), null);
+  for (const brief of ['a short jingle', 'two verses and a chorus', 'a ninety second song', 'sixteen bars about my dog'])
+    assert.equal(lyricShapeIssue(two, brief), null, brief);
+  assert.equal(lyricShapeIssue('Instrumental brief. Instrumental only, no vocals.', 'surf rock'), null);
+  const ask = lyricRepairRequest(two, [], lyricShapeIssue(two, 'luck'));
+  assert.match(ask, /it stays, word for word/); assert.match(ask, /Add a \[Verse 3\]/); assert.ok(ask.endsWith(two));
+  assert.match(lyricRepairRequest(two, [{ line: 'a', tell: 'coffee' }], 'Add a verse.'), /Also: Add a verse\./);
+});
+
+test('Part 216: an unlabelled readback is never left among the sung words', () => {
+  const prose = 'A sunny pop song of about four minutes sung by a grinning woman who keeps failing upward, with every mistake landing her somewhere better than she planned.';
+  const raw = 'Pop.\n\nLyrics:\n[Verse 1]\nI missed the turn and found the shortcut anyway\n[Outro]\nIt works out anyway\n\n' + prose;
+  const fixed = labelReadback(raw);
+  assert.ok(fixed.endsWith('READBACK: ' + prose)); assert.match(fixed, /It works out anyway\n\nREADBACK:/);
+  assert.equal(labelReadback(fixed), fixed, 'a labelled draft is left alone');
+  const sung = 'Pop.\n\nLyrics:\n[Outro]\nIt works out anyway\n\nGood enough, good enough for me';
+  assert.equal(labelReadback(sung), sung, 'a short sung last line is not mistaken for prose');
 });

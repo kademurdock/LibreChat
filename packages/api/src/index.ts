@@ -160,6 +160,8 @@ export {
   lyricTells,
   lyricRepairRequest,
   mergeRepairedLyrics,
+  lyricShapeIssue,
+  labelReadback,
   lyricWritingModel,
   lyricAgentId,
 } from './music/writing';

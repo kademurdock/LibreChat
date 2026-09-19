@@ -103,11 +103,25 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
 }
 
 /** The second, surgical request: replace the flagged lines and nothing else. */
-export function lyricRepairRequest(script: string, tells: LyricTell[]): string {
+/** Seen live: asked for three verses, the writer delivered two. Returns the
+ *  instruction to add when a song the desk sized itself came back short; null
+ *  when the person set the length or structure, or the shape is fine. */
+export function lyricShapeIssue(script: string, brief = ''): string | null {
+  if (/\b(?:verses?|minutes?|seconds?|short|brief|quick|jingle|hook only|chorus only|one verse|two verses|bars)\b/i.test(brief)) return null;
+  const at = script.search(/^\s*lyrics\s*:/im);
+  if (at === -1) return null;
+  const verses = (script.slice(at).match(/^\s*\[verse[^\]]*\]\s*$/gim) || []).length;
+  if (verses === 0 || verses >= 3) return null;
+  return `The song has only ${verses === 1 ? 'one verse' : 'two verses'} and this desk writes three. Add a [Verse ${verses + 1}] of eight to twelve sung lines in the same voice, placed after the bridge if there is one and before the final chorus, otherwise before the last chorus. It must turn the story: pay off a detail planted earlier, or say what the narrator has been avoiding. New events, not a summary.`;
+}
+
+export function lyricRepairRequest(script: string, tells: LyricTell[], shape: string | null = null): string {
+  if (!tells.length && shape)
+    return `Your draft is below. It is good and it stays, word for word. One thing is missing. ${shape} Every existing line, the music direction, the section tags and the READBACK line must come back exactly as they are. Return the complete draft in the same format and nothing else.\n\n${script}`;
   return `Your draft is below. It is good and it stays. Only these lines lean on stock images that the owner of this desk hears as machine writing:
 
 ${tells.map((t, i) => `${i + 1}. "${t.line}" -- ${t.tell}`).join('\n')}
-
+${shape ? `\nAlso: ${shape}\n` : ''}
 Rewrite ONLY those lines. For each, ask what this narrator actually has in their hands, where exactly they are, what they would really drink, and what day or hour it is for someone with their life, and write that: a specific nobody has heard in a song. Keep each new line's rhyme sound, stress count and approximate length so it still sings in the same slot, and keep the joke or the turn if the old line had one. If a flagged line repeats (a chorus or a hook), change it the same way everywhere it appears. If the flagged word is the song's title or hook word, find a better hook word and carry it through. Do not swap one stock image for another from the desk's list. Every other line, the music direction, the section tags and the READBACK line must come back exactly as they are. Return the complete corrected draft in the same format and nothing else.
 
 ${script}`;
@@ -137,8 +151,22 @@ export function mergeRepairedLyrics(original: string, repaired: string): string 
   const sung = (t: string): number =>
     t.split('\n').filter((l) => l.trim() && !/^\s*\[/.test(l)).length;
   const before = original.slice(from.index + from[0].length, tailAt === -1 ? undefined : tailAt);
-  if (!words || sung(words) < sung(before) * 0.9 || sung(words) > sung(before) * 1.2) return null;
+  if (!words || sung(words) < sung(before) * 0.9 || sung(words) > sung(before) * 1.4) return null;
   return `${original.slice(0, from.index + from[0].length).trimEnd()}\n${words}\n\n${tail}`.trimEnd();
+}
+
+/** Seen live: the writer left the "READBACK:" label off, so the spoken
+ *  description rode at the end of the lyrics, where a singer would sing it. A
+ *  final paragraph that is one long prose line after the sung words is the
+ *  readback; give it its label back. Leaves a labelled draft alone. */
+export function labelReadback(raw: string): string {
+  if (raw.includes('READBACK:') || !/^\s*lyrics\s*:/im.test(raw)) return raw;
+  const lines = raw.trimEnd().split('\n');
+  const last = lines[lines.length - 1].trim();
+  const before = (lines[lines.length - 2] || '').trim();
+  const prose = last.length >= 120 && /[.!?]["')]?$/.test(last) && !/^\s*[\[(]/.test(last);
+  if (!prose || before !== '') return raw;
+  return `${lines.slice(0, -1).join('\n').trimEnd()}\n\nREADBACK: ${last}`;
 }
 
 export async function musicWritingPrompt(

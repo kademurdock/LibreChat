@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricWritingModel, lyricAgentId, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricWritingModel, lyricAgentId, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -1218,14 +1218,16 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
         logger.warn('[soundbooth/script] retry for missing lyrics failed: ' + e.message);
       }
     }
+    if (ownsLyrics) raw = labelReadback(raw);
     const tells = ownsLyrics && typeof lyricTells === 'function' ? lyricTells(raw, text) : [];
+    const shape = wantsWords ? lyricShapeIssue(raw, text) : null;
     const timeLeft = (writingSettings.timeoutMs || 0) - (Date.now() - started) - 4000;
-    if (tells.length && timeLeft >= 30000) {
+    if ((tells.length || shape) && timeLeft >= 30000) {
       try {
         const fixed = await callModel({
           ...writingSettings,
           system: writingSystem,
-          user: lyricRepairRequest(raw, tells),
+          user: lyricRepairRequest(raw, tells, shape),
           maxTokens: writingSettings.maxTokens,
           timeoutMs: timeLeft,
         });
@@ -1235,9 +1237,11 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
          * stay exactly as first written (the repair is careless with them). */
         const merged = mergeRepairedLyrics(raw, fixed.text);
         const remaining = merged ? lyricTells(merged, text).length : tells.length;
-        if (merged && remaining < tells.length) {
+        const grew = !!merged && !!shape && !lyricShapeIssue(merged, text);
+        if (merged && (remaining < tells.length || grew) && remaining <= tells.length) {
           raw = merged;
-          repairs = [`rewrote ${tells.length - remaining} line${tells.length - remaining === 1 ? '' : 's'} that leaned on stock images`];
+          if (remaining < tells.length) repairs = [...repairs, `rewrote ${tells.length - remaining} line${tells.length - remaining === 1 ? '' : 's'} that leaned on stock images`];
+          if (grew) repairs = [...repairs, 'added a third verse'];
         }
       } catch (e) {
         logger.warn('[soundbooth/script] tell repair skipped (first draft kept): ' + e.message);
