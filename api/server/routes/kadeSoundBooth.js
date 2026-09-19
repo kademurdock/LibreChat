@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricWritingModel, lyricAgentId, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -1180,7 +1180,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
     }
 
     const started = Date.now();
-    const writingSettings = musicWritingSettings({ engine, mode });
+    const writingSettings = musicWritingSettings({ engine, mode, patient: b.patient === true });
     const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode }, getAgent);
     const first = await callModel({
       ...writingSettings,
@@ -1222,12 +1222,14 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
     const tells = ownsLyrics && typeof lyricTells === 'function' ? lyricTells(raw, text) : [];
     const shape = wantsWords ? lyricShapeIssue(raw, text) : null;
     const timeLeft = (writingSettings.timeoutMs || 0) - (Date.now() - started) - 4000;
-    if ((tells.length || shape) && timeLeft >= 30000) {
+    /* Part 217: every originated song gets the producer's audit when there is time
+     * for it; flagged tells and a missing verse ride in the same call. */
+    if (wantsWords && timeLeft >= 45000) {
       try {
         const fixed = await callModel({
           ...writingSettings,
           system: writingSystem,
-          user: lyricRepairRequest(raw, tells, shape),
+          user: lyricAuditRequest(raw, tells, shape),
           maxTokens: writingSettings.maxTokens,
           timeoutMs: timeLeft,
         });
@@ -1238,8 +1240,9 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
         const merged = mergeRepairedLyrics(raw, fixed.text);
         const remaining = merged ? lyricTells(merged, text).length : tells.length;
         const grew = !!merged && !!shape && !lyricShapeIssue(merged, text);
-        if (merged && (remaining < tells.length || grew) && remaining <= tells.length) {
+        if (merged && remaining <= tells.length) {
           raw = merged;
+          repairs = [...repairs, "second pass: the producer's audit"];
           if (remaining < tells.length) repairs = [...repairs, `rewrote ${tells.length - remaining} line${tells.length - remaining === 1 ? '' : 's'} that leaned on stock images`];
           if (grew) repairs = [...repairs, 'added a third verse'];
         }
@@ -1247,6 +1250,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
         logger.warn('[soundbooth/script] tell repair skipped (first draft kept): ' + e.message);
       }
     }
+    if (ownsLyrics) raw = fixStageDirections(raw);
     let { script, readback } = splitScriptAndReadback(raw);
     if (!script) {
       return res.status(502).json({ error: 'The script desk came back empty. Try again.' });

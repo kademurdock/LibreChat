@@ -529,10 +529,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var box=document.getElementById('script'), original=box.value;
       var text=original.trim()||document.getElementById('text').value.trim();
       if(text.length<3){say('Write an idea first, or choose Surprise me.',true);box.focus();return;}
-      var engine=state.engine, revision=state.quoteRevision, body=collect();body.text=text;body.mode='write';
+      var engine=state.engine, revision=state.quoteRevision, body=collect();body.text=text;body.mode='write';body.patient=true;
       state.writing=true;box.readOnly=true;this.disabled=true;
       document.getElementById('btnInspire').disabled=true;updateRenderControls();
-      say('Writing a draft from your idea.');
+      say((engine==='lyria'||engine==='yue2') ? 'Writing your song. The writer drafts it, then goes back over it like a producer, so this takes about a minute and a half. Keep this page open.' : 'Writing a draft from your idea.');
       try {
         var r=await post('/api/kade/sound-booth/script',body);
         if(!r.ok)throw new Error(r.data.error||'The writing desk could not finish. Your text is kept.');

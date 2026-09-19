@@ -161,6 +161,8 @@ export {
   lyricRepairRequest,
   mergeRepairedLyrics,
   lyricShapeIssue,
+  lyricAuditRequest,
+  fixStageDirections,
   labelReadback,
   lyricWritingModel,
   lyricAgentId,

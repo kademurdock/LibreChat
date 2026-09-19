@@ -1,4 +1,5 @@
 import type { IAgent } from '@librechat/data-schemas';
+import { hitWritingSystem } from './hitSystem';
 
 export const lyricAgentId = 'agent_9YHpms0vJoApICwshh0mR';
 /* Chosen by side-by-side drafts on identical briefs (Part 212): Kimi K3 wrote
@@ -6,7 +7,7 @@ export const lyricAgentId = 'agent_9YHpms0vJoApICwshh0mR';
  * couplets, and it writes explicit lyrics when asked. */
 export const lyricWritingModel = 'moonshotai/kimi-k3';
 type Reader = (filter: { id: string }) => Promise<Pick<IAgent, 'name' | 'instructions'> | null>;
-type Request = { engine: string; mode: string };
+type Request = { engine: string; mode: string; patient?: boolean };
 
 const writesMusic = (request: Request): boolean =>
   ['lyria', 'yue2'].includes(request.engine) && request.mode === 'write';
@@ -28,6 +29,21 @@ export function musicWritingSettings(request: Request): {
   reasoning?: { enabled: boolean; effort: 'low'; exclude: boolean };
 } {
   if (!writesMusic(request)) return {};
+  /* Part 217: the website's own page says it can wait (it aborts at 240 s). iPhone
+   * build 302 sends no such flag and gives up at 120 s, so it keeps the 112 s limit. */
+  /* Measured with the hit-writing system in the prompt: medium effort wrote the
+   * best song of the night and took 275 seconds, past any web request. So both
+   * lanes draft on low and then run one low-effort producer's audit (about 30 s
+   * plus 40 s). The patient flag only buys time, so the audit always has room. */
+  if (request.patient)
+    return {
+      model: lyricWritingModel,
+      temperature: 0.85,
+      top_p: 0.95,
+      maxTokens: 16000,
+      timeoutMs: 225000,
+      reasoning: { enabled: true, effort: 'low', exclude: true },
+    };
   return {
     model: lyricWritingModel,
     temperature: 0.85,
@@ -38,24 +54,11 @@ export function musicWritingSettings(request: Request): {
   };
 }
 
-export const musicWritingCraft: string = `HOW LYRICS ARE WRITTEN AT THIS DESK
-The person who owns this desk has rejected its drafts as generic machine writing: short verses, stock imagery, diary poetry. Treat what follows as the standard for every set of lyrics you originate. It never applies to words the person supplied; those stay exactly as written.
-
-Think before you write, privately. A thin brief is a topic, not a song. Choose the song inside it: one narrator with a job, an age and a way of talking; who they are talking to; the particular day or night this is happening; what just happened; what they want; what they will not admit. Write down the first five images this topic suggests and discard them, because every other song on the topic already used them. Find the detail only this narrator would notice. Decide what changes between the first verse and the last.
-
-Length and build. The owner's standing complaint is that these songs are too short. Unless the person gave a length, write a full song of about four minutes with THREE verses: verse one ten to fourteen sung lines, verse two ten to twelve, verse three eight to twelve, or sixteen bars each for rap, unless the person or the genre plainly calls for less. Never make a later verse a shorter copy of the first to hurry back to the hook; verse three is where the song turns, pays off a detail planted in verse one, or tells what the narrator was avoiding. Any older advice in the persona about thirty to forty lines total or a shorter second verse was written for a different music engine and does not apply at this desk. Write every repeated chorus out in full. Lines are complete thoughts in natural spoken word order, long enough to say something, and not all the same length. Every verse adds an event, a fact or a turn; verse two never paraphrases verse one. The chorus says something a person would actually say, not the title repeated with synonyms. A bridge changes the angle or tells the truth the verses avoided.
-
-Show it; do not name it. Feelings arrive through what the narrator does, says, avoids, breaks, keeps or counts. Do not lean on abstractions such as pain, fear, darkness, emptiness, soul, dreams, demons, scars, broken, lost, alone or free to do the work of a scene.
-
-Stock vocabulary. These words and pictures are the fingerprints of machine lyrics. Use none of them, in any form, singular or plural, noun or verb, unless the person's own brief used them: shadows, whispers, echoes, neon, ghosts or being a ghost, four walls, embers, ashes, flames, burning it all down, shattered glass, mirrors, masks, hollow, void, abyss, chains, cages, storms or rain standing in for feelings, drowning, stars, moonlight, city lights, tapestry, symphony, dancing as a metaphor, the silence screaming, screaming inside, rising from anything, wings, phoenix, a heart on fire, through the night, the weight of the world.
-
-Default-reach props, places and times. These come from the owner's own list of what a machine grabs on autopilot. They are not evil words; they are where every generated song already went, so a draft that leans on them reads as generated. Do not use them unless the person's brief did. Fake-specific time stamps: naming a weekday (Tuesday above all), "two a.m.", "three a.m.", midnight as the stock hour, golden hour, sunrise and sunset. Props: coffee in any form (cup, mug, pot, being out of it), cigarettes, ashtrays, lighters, a wine or whiskey glass, empty bottles, the bathroom mirror, cold or clean sheets, keys on the counter, an empty chair, the rearview mirror, voicemail, missed calls, a phone face down, a hoodie or sweater left behind, a toothbrush, photographs, polaroids, vinyl or a mixtape, old letters. Places: the porch light, the front porch, the kitchen table, the bedroom floor, bathroom tiles, the doorstep, a hallway, a rooftop, a fire escape, a parking lot, a driveway, a street corner, crossroads, a train station, an airport, a coffee shop, a diner, the passenger seat, streetlights, headlights. Body: trembling hands, a racing heart, butterflies, staring at the ceiling, standing in a doorway, walking away, looking back. Filler adjectives and nouns: clean, steady, scene or scenes, static, proof, cracks, hollow. Phrases: clean slate, fresh start, moving on, letting go, turn the page, still standing, beautiful disaster, what we had, meant to be. When you catch yourself reaching for one, ask what THIS narrator actually has in their hands, which room of which building they are in, what they drink, and what day it would be for someone with their job, then write that instead. A specific the listener has not heard in a song before is worth more than a rhyme.
-
-Rhyme and rhythm. Songs rhyme, and this desk is judged on rhyme craft. Every verse and chorus needs a rhyme design a listener can feel on first hearing; blank verse is a failure here, not a style. Build it the way skilled lyricists do: multisyllable and phrase rhymes that match two or three stressed vowels, internal rhymes inside the line, slant rhymes, and a rhyme family carried across four or more lines before it pivots. What is not acceptable is the lazy version: an AABB march of one-syllable perfect rhymes, or a word chosen because it rhymes. When a rhyme forces the meaning, change the setup line. No inverted grammar. For rap and hip hop, stack internal and multisyllable rhymes densely and let sentences run across bar lines. Read each line in your head against the tempo: stresses fall where a singer would put them, and matching lines carry matching stress counts.
-
-Endings. Do not resolve the song with a sudden triumphant reversal, a lesson or an uplift the story has not earned. An unresolved or uncomfortable ending is allowed.
-
-Revise before you deliver, privately. Reread the draft as a hard editor who has heard ten thousand songs. Replace any line that could sit in a thousand other songs with one only this narrator would say. Extend any verse that is under length with new events, not restatement, and confirm there are three verses. Fix every rhyme that chose the word instead of the meaning. Remove every item from the stock list. Check that the singer has room to breathe. Deliver only the revised song, never the draft, the notes or a description of this process.`;
+export const musicWritingCraft: string = `DESK NOTES FROM THE OWNER (these outrank the system above where they differ)
+- Words the person supplied are theirs. Never rewrite, trim or "improve" supplied lyrics; shape the music around them.
+- The songs have been coming out too short. Follow the desk's lyric budget: about four minutes, three verses, every verse new story. Verse two is not a shorter copy of verse one, and verse three is the payoff.
+- Her named pet hates, in her words: "Everything's always a tuesday, drinks are always coffee, scenes are clean." Never name a weekday or a clock time, never reach for coffee, the porch light, the kitchen table, neon, shadows, whispers or echoes, and never use clean, steady or scene as filler, unless her own brief used the word. Ask what THIS singer actually has in their hands, where exactly they are and what they would really drink, and write that.
+- Do the SONG SPEC and the hook lab silently before the first line, and the QUALITY GATES silently after the last. Deliver only the finished song.`;
 
 /* Part 216 (Sep 19 2026). Her words: "Everything's always a tuesday, drinks are
  * always coffee, scenes are clean." The desk runs the writer on low reasoning so
@@ -127,6 +130,51 @@ Rewrite ONLY those lines. For each, ask what this narrator actually has in their
 ${script}`;
 }
 
+/** A whole-line parenthesis that is a stage direction, not a sung ad-lib, gets
+ *  sung by the generator as words. Seen: "(Whistling)", "(Claps and bass only)".
+ *  Turn those into bracket cues; leave real ad-libs and echoes alone. */
+export function fixStageDirections(script: string): string {
+  const cue = /^\s*\(([^()]*\b(?:whistl\w*|instrumental|solo|fades?|fading|band|guitars?|bass|drums?|claps?|piano|strings|horns?|beat|music|spoken|humming|hummed)\b[^()]*)\)\s*$/i;
+  const at = script.search(/^\s*lyrics\s*:/im);
+  if (at === -1) return script;
+  const body = script
+    .slice(at)
+    .split('\n')
+    .map((line) => {
+      const hit = cue.exec(line);
+      if (!hit) return line;
+      const words = hit[1].trim().replace(/\s+/g, ' ');
+      return `[${words.charAt(0).toUpperCase()}${words.slice(1)}]`;
+    })
+    .join('\n');
+  return script.slice(0, at) + body;
+}
+
+/** Part 217: the producer's audit. Deep reasoning wrote the best songs (a planted
+ *  detail paid off in verse three, a last chorus that rereads) but took 275
+ *  seconds, which no web request survives. A fast draft followed by ONE fast
+ *  audit gets most of that: the writer is handed its own draft and the gates
+ *  that matter most, and fixes in place. Flagged tells ride in the same call. */
+export function lyricAuditRequest(script: string, tells: LyricTell[], shape: string | null = null): string {
+  const flagged = tells.length
+    ? `\n\nThese exact lines lean on default-reach words and must be rewritten, keeping each line's rhyme sound, stress count and length, the same way everywhere a line repeats, and never by swapping in another default-reach word:\n${tells.map((t, i) => `${i + 1}. "${t.line}" -- ${t.tell}`).join('\n')}`
+    : '';
+  return `Your first draft is below. Now be the producer who decides whether it gets cut. Run the QUALITY GATES on it silently and return the upgraded song. Fix in place: protect every line that already works, the hook above all, and do not paraphrase a working song into a different one.
+
+Check, in this order, and change only what fails:
+1. THE TURN and the payoff. Does verse three do new work? Plant one concrete detail in verse one and bring it back loaded in verse three, or let one new fact make the last chorus mean something it did not mean the first time. On the final chorus, change exactly one word or one line if that lands the turn.
+2. The hook. Plain speech, six to eight syllables, its click syllable on an open vowel, exactly one surprise, repeated verbatim, title landing four to eight times. If the best line in the song is hiding in a verse, it is the hook in the wrong seat.
+3. Hook stew. A near-wordless second hook (a post-chorus chant or run) if the genre wants one.
+4. The spice. Exactly one from the list, visible.
+5. Variance. Line lengths breathe between sections, one line rhymes with nothing, at least one fragment, no section of tidy perfect-rhymed couplets, no worn rhyme pairs.
+6. Moment and voice. Happening now, one attitude in every line, a first line that grabs in eight words, no retrospective wisdom, no Tier 1 structure anywhere.
+7. Singability. Open vowels under held notes, a breath in every long line, no stacked sibilants or consonant pileups on stressed beats, parentheses only for sung ad-libs and echoes, never stage directions.${shape ? `\n8. Length. ${shape}` : ''}${flagged}
+
+Return the complete song in the same format: the music direction, the Lyrics: heading with every sung line and every chorus written out in full, then the READBACK line. Nothing else.
+
+${script}`;
+}
+
 /** Take ONLY the sung words from a repair and keep the first draft's music
  *  direction and READBACK. Measured: the repair pass writes better lines but is
  *  careless with the wrapper -- it dropped the READBACK label once and the whole
@@ -184,19 +232,21 @@ export async function musicWritingPrompt(
       { status: 503 },
     );
 
-  return `You are Lyric, working the songwriting desk in Kade-AI's Sound Booth. Your saved persona below is who you are and how you write. After it come this desk's standard for lyrics and then the delivery format the audio engine needs.
+  return `You are Lyric, working the songwriting desk in Kade-AI's Sound Booth. Your saved persona below is who you are in conversation. The HIT-WRITING SYSTEM after it is how every song at this desk is written; where the two differ about craft, the system wins. Then come the owner's desk notes and the delivery format the audio engine needs.
 
 LYRIC'S CURRENT SONGWRITING PERSONA
 
 ${agent.instructions}
+
+${hitWritingSystem}
 
 ${musicWritingCraft}
 
 SOUND BOOTH DELIVERY CONTRACT
 This is a single text-only writing request, not a conversation. Do not ask questions; make the creative choices and deliver. Do not access conversation history, personal memory, other agents, or audio tools.
 Keep supplied lyrics exactly as the request instructs; do not rewrite them merely to improve their rhymes. Formatting-only work must preserve authored words.
-The Sound Booth format below overrides Lyric's default Lyrics Box, Tag Box and Negative Tag Box labels: output the music direction first, then a Lyrics: heading and the complete sung words when lyrics are requested, followed by the required READBACK: line. Never output commentary, a critique, rhyme annotations, a greeting or an offer to continue. Keep production instructions out of sung lines. Do not add lyrics to an instrumental request.
-Length check, when you wrote the lyrics yourself and the person gave no length: count them. Three verses. At least ten sung lines in verse one and in verse two, at least eight in verse three; sixteen bars each for rap. The technical line says about four minutes. If a verse is short, add what happened next, not another way of saying the same thing. Then check every line against the default-reach list one more time. This check is private; the answer is always the complete draft in the format below, never a description of it.
+The Sound Booth format below is the ONLY output format. There is no Lyrics Box, Tag Box or Negative Tag Box here: what would go in a tag box (genre, BPM with feel, drums, bass, instrumentation, the signature instrumental hook, the lead voice, backing vocals, arrangement dynamics) is written as the music direction prose, and nothing about story or theme goes in it. So: output the music direction first, then a Lyrics: heading and the complete sung words when lyrics are requested, followed by the required READBACK: line. Never output commentary, a critique, rhyme annotations, a greeting or an offer to continue. Keep production instructions out of sung lines. Do not add lyrics to an instrumental request.
+Length check, when you wrote the lyrics yourself and the person gave no length: three verses sized by the genre's density tier, the technical line says about four minutes, and a short verse gets what happened next, not another way of saying the same thing. Then run the Tier 2 scan against Appendix A one more time. This check is private; the answer is always the complete draft in the format below, never a description of it.
 
 ${base}`;
 }
