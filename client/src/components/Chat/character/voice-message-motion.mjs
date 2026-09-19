@@ -68,24 +68,46 @@ export function styleAt(cues, time) {
     }
   }
   name = to;
-  let current = mix(style(from), style(to), smooth((time - since) / BLEND));
+  const blend = smooth((time - since) / BLEND);
+  let face = { from: AvatarExpression.expressionFace(from), to: AvatarExpression.expressionFace(to), blend };
+  let current = mix(style(from), style(to), blend);
   if (moment) {
     const age = time - moment.at;
     const weight = Math.min(smooth(age / 0.15), smooth((MOMENT - age) / 0.3));
     current = mix(current, style(moment.expression), weight);
     name = moment.expression;
+    // A laugh is the one sound with a face of its own.
+    const shown = moment.expression === 'amused' ? 'laugh' : AvatarExpression.expressionFace(moment.expression);
+    face = { from: face.blend >= 0.5 ? face.to : face.from, to: shown, blend: weight };
   }
-  return { style: current, expression: name };
+  return { style: current, expression: name, face };
 }
 
-export function voiceMessagePose({ id, time, level = 0, active, cues }) {
+// Mouth shapes without phonemes. A saved message has no word timings, so the
+// shape follows what the sound itself gives: how loud (how open), how hissy
+// (teeth together for s, f, th), and a new pick about every syllable so the
+// lips keep moving between round, spread and open the way talking does.
+// Index into the mouth sheet; 0 means closed and lets the expression's own mouth show.
+export function visemeAt(time, strength, sibilance = 0, seed = 0) {
+  if (!(strength > 0.06)) return 0;
+  if (sibilance > 0.32 && strength < 0.5) return 7;
+  const slot = Math.floor(time / 0.14);
+  let h = (Math.imul(slot + 1, 2654435761) ^ seed) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0;
+  const r = ((h ^ (h >>> 13)) >>> 0) / 4294967296;
+  if (strength < 0.25) return r < 0.6 ? 1 : r < 0.8 ? 4 : 7;
+  if (strength < 0.55) return r < 0.45 ? 2 : r < 0.75 ? 5 : 4;
+  return r < 0.4 ? 3 : r < 0.75 ? 8 : 2;
+}
+
+export function voiceMessagePose({ id, time, level = 0, active, cues, sibilance = 0 }) {
   const still = { characterId: id, active: false, expression: 'neutral', mouth: 0, blink: 0, brow: 0, tilt: 0, nod: 0 };
   if (!active || !Number.isFinite(time) || time < 0) return still;
   let seed = 5381;
   for (const byte of new TextEncoder().encode(id || 'unknown'))
     seed = (Math.imul(seed, 33) + byte) >>> 0;
   const phase = (seed % 1000) / 1000;
-  const { style, expression } = styleAt(cues, time);
+  const { style, expression, face } = styleAt(cues, time);
   const period = (4.3 + phase * 0.8) * Math.max(0.5, Math.min(1.6, style.blink));
   const t = time + phase * period,
     blinkPhase = t % period;
@@ -102,6 +124,8 @@ export function voiceMessagePose({ id, time, level = 0, active, cues }) {
     characterId: id,
     active: true,
     expression,
+    face,
+    viseme: visemeAt(time, strength, sibilance, seed),
     brow: clamp(
       style.brow +
         strength * (style.browTalk + 0.25 * Math.sin(t * 0.65 * tempo)) +

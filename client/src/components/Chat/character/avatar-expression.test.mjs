@@ -69,3 +69,11 @@ test('every expression has a complete bounded style and unknown names fall back 
   assert.ok(s.brow>=0&&s.brow<=1&&Math.abs(s.tilt)<=1&&s.tempo>=0.4&&s.tempo<=1.6);}
  assert.equal(E.expressionStyle('nonsense'),E.expressionStyle('neutral'));
 });
+test('nine drawn faces serve every expression; warmth outranks mere confidence',async()=>{
+ const E=(await import('./avatar-expression.mjs')).default;
+ const drawn=new Set(['neutral','smile','laugh','surprised','skeptical','angry','sad','worried']);
+ for(const name of E.expressions)assert.ok(drawn.has(E.expressionFace(name)),name);
+ assert.equal(E.expressionFace('nonsense'),'neutral');
+ assert.equal(cue('warm and sure in your corner').expression,'warm');assert.equal(E.expressionFace('warm'),'smile');
+ assert.equal(cue('warm but completely serious').expression,'serious');
+});

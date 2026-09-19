@@ -46,9 +46,9 @@ const AvatarExpression = (() => {
     ['thoughtful',w('thoughtful(?:ly)?|thinking|pondering|ponder|musing|mulling|reflective|reflecting|considering|careful(?:ly)?|cautious(?:ly)?|contemplat\\w*|working it out|slow(?:ly)? and careful|deliberate(?:ly)?|taking your time|choosing (?:your|each) words?')],
     ['curious',w('curious(?:ly)?|curiosity|intrigued|interested|inquisitive|leaning in|lean in|fascinated|nosy|probing|puzzled|perplexed|confused|quizzical(?:ly)?')],
     ['tender',w('tender(?:ly)?|soft(?:ly|er|ening)?|gentle|gently|quiet(?:ly|er)?|hushed|whisper\\w*|murmur\\w*|intimate|low and close|soothing|comforting|loving(?:ly)?|affectionate(?:ly)?|cradling|careful with (?:her|him|them|you)')],
+    ['warm',w('warm(?:ly|er|ing|th)?|fond(?:ly|ness)?|friendly|kind(?:ly)?|welcoming|smil\\w*|glad|happy|happily|cheerful(?:ly)?|cheery|sunny|pleasant(?:ly)?|pleased|grateful|appreciative|encouraging|supportive|proud of (?:you|her|him|them)|in your corner|in her corner')],
     ['confident',w('confident(?:ly)?|sure|certain|assured|self[- ]assured|bold(?:ly)?|decisive(?:ly)?|strong(?:ly)?|unshak\\w*|brisk(?:ly)?|crisp(?:ly)?|business[- ]?like|landing it')],
     ['calm',w('calm(?:ly|er|ing)?|relaxed|easy|easygoing|unhurried|settled|settling|peaceful|serene|mellow|laid[- ]back|even|evenly|patient(?:ly)?|reassuring(?:ly)?|grounded|slowing down')],
-    ['warm',w('warm(?:ly|er|ing|th)?|fond(?:ly|ness)?|friendly|kind(?:ly)?|welcoming|smil\\w*|glad|happy|happily|cheerful(?:ly)?|cheery|sunny|pleasant(?:ly)?|pleased|grateful|appreciative|encouraging|supportive|proud of (?:you|her|him|them)|in your corner|in her corner')],
   ];
   const NEGATED=/\b(?:not|never|without|no|hardly|barely any|zero|isn't|aren't|don't|doesn't)\s+(?:a |an |any |the |at all |even |really |so |very |quite |much |being |sounding |letting |giving |going )*[a-z'-]+/g;
 
@@ -83,6 +83,14 @@ const AvatarExpression = (() => {
     tired:     style(0.00,0.10,-0.30,0.4,0.3,0.50,0.60, 0.6),
   });
   const expressionStyle=(name)=>styles[name]||styles.neutral;
+  // Nine drawn faces serve twenty-two expressions; the style table above keeps
+  // the ones that share a face apart through brow, head and pace. Whole faces
+  // only: a half-strength face shows two sets of eyebrows.
+  const faces=Object.freeze({neutral:'neutral',calm:'neutral',confident:'neutral',thoughtful:'neutral',tired:'neutral',serious:'neutral',curious:'neutral',
+    warm:'smile',tender:'smile',amused:'smile',playful:'smile',excited:'smile',
+    skeptical:'skeptical',dry:'skeptical',smug:'skeptical',
+    frustrated:'angry',angry:'angry',disgusted:'angry',surprised:'surprised',sad:'sad',concerned:'worried',afraid:'worried'});
+  const expressionFace=(name)=>faces[name]||'neutral';
 
   function cue(tag) {
     const s=String(tag).toLowerCase().trim().replace(/[‘’]/g,"'").replace(/\s+/g,' ');
@@ -114,6 +122,6 @@ const AvatarExpression = (() => {
       state(){return {owner,expression:moment||base,persistent:base,moment:!!moment,revision};},
     };
   }
-  return {cue,timeline,controller,expressionStyle,expressions:Object.freeze(Object.keys(styles))};
+  return {cue,timeline,controller,expressionStyle,expressionFace,expressions:Object.freeze(Object.keys(styles))};
 })();
 export default AvatarExpression;

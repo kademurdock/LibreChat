@@ -32,17 +32,23 @@ const CharacterMotion = (() => {
     const count = Math.ceil(buffer.length / stride);
     if (!Number.isInteger(buffer.length) || buffer.length <= 0 || count > 12000) throw new RangeError('Unsupported audio length');
     const levels = new Float32Array(count);
+    // Share of sample-to-sample sign changes per window: high for s, f, th, sh.
+    const sibilance = new Float32Array(count);
     for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
       const samples = buffer.getChannelData(channel);
       for (let i = 0; i < count; i++) {
         const end = Math.min((i + 1) * stride, samples.length);
-        let sum = 0;
-        for (let j = i * stride; j < end; j++) sum += finite(samples[j]) ? samples[j] * samples[j] : 0;
+        let sum = 0, crossings = 0;
+        for (let j = i * stride; j < end; j++) {
+          sum += finite(samples[j]) ? samples[j] * samples[j] : 0;
+          if (j > i * stride && (samples[j] >= 0) !== (samples[j - 1] >= 0)) crossings++;
+        }
+        if (channel === 0) sibilance[i] = crossings / Math.max(1, end - i * stride);
         // Max channel avoids stereo phase cancellation.
         levels[i] = Math.max(levels[i], Math.sqrt(sum / Math.max(1, end - i * stride)));
       }
     }
-    return { levels, step: stride / buffer.sampleRate, duration: buffer.duration };
+    return { levels, sibilance, step: stride / buffer.sampleRate, duration: buffer.duration };
   }
 
   function create(config) {

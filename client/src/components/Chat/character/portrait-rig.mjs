@@ -1,5 +1,16 @@
 // A stationary portrait with registered, feathered local facial layers.
 // Never swap the full generated frames: their backgrounds/head poses drift.
+import { createFaceSheetRig } from './face-sheet-rig.mjs';
+// Regions inside one sheet panel, 0..1: the brow-to-chin oval, the mouth, the eyes.
+// Registered by eye against each character's own sheets, Sep 19 2026.
+const SHEETS = {
+  kiana: { expressions: '/assets/characters/kiana/expressions.webp', mouths: '/assets/characters/kiana/mouths.webp',
+    face: [0.34, 0.17, 0.5, 0.56], mouth: [0.43, 0.46, 0.31, 0.2], eyes: [0.36, 0.27, 0.44, 0.15] },
+  della: { expressions: '/assets/characters/della/expressions.webp', mouths: '/assets/characters/della/mouths.webp',
+    face: [0.3, 0.2, 0.46, 0.56], mouth: [0.38, 0.46, 0.3, 0.19], eyes: [0.34, 0.29, 0.38, 0.14] },
+  lilly: { expressions: '/assets/characters/lilly/expressions.webp', mouths: '/assets/characters/lilly/mouths.webp',
+    face: [0.38, 0.2, 0.46, 0.5], mouth: [0.48, 0.48, 0.28, 0.2], eyes: [0.4, 0.3, 0.42, 0.18] },
+};
 export const KIANA_ID = 'agent_6llV0eMu4fmIaj8f2x1Sb';
 export const KIANA_PORTRAIT_FILE = 'agent-agent_6llV0eMu4fmIaj8f2x1Sb-avatar-1788871984269.png';
 export const DELLA_ID = 'agent_BSOLa3eNEZyjs-7abCjMt';
@@ -16,6 +27,7 @@ export function preparedPortrait(id, url) {
     if (id === LILLY_ID && file === LILLY_PORTRAIT_FILE)
       return {
         portrait: '/assets/characters/lilly/portrait.png',
+        sheet: SHEETS.lilly,
         atlas: '/assets/characters/lilly/facial-source.png',
         blink: '/assets/characters/lilly/facial-source.png',
         features: [{ kind: 'mouth', from: [0.443, 0.454, 0.173, 0.102], to: [0.443, 0.454, 0.173, 0.085] }],
@@ -27,6 +39,7 @@ export function preparedPortrait(id, url) {
     if (id === KIANA_ID && file === KIANA_PORTRAIT_FILE)
       return {
         portrait: '/assets/characters/kiana/portrait.png',
+        sheet: SHEETS.kiana,
         atlas: '/assets/characters/kiana/facial-source.png',
         blink: '/assets/characters/kiana/eyes-closed.png',
         expression: '/assets/characters/kiana/expression.png',
@@ -38,6 +51,7 @@ export function preparedPortrait(id, url) {
     if (id === DELLA_ID && file === DELLA_PORTRAIT_FILE)
       return {
         portrait: '/assets/characters/della/portrait.png',
+        sheet: SHEETS.della,
         atlas: '/assets/characters/della/facial-source.png',
         blink: '/assets/characters/della/facial-source.png',
         expression: '/assets/characters/della/expression.png',
@@ -90,6 +104,9 @@ export function createPortraitRig(
     onFailure = () => {},
   },
 ) {
+  // Characters with expression sheets get the full face; the patch rig below
+  // remains for anyone who only has the older art.
+  if (arguments[1]?.sheet) return createFaceSheetRig(canvas, arguments[1]);
   const ctx = canvas.getContext('2d');
   let disposed = false,
     ready = false,

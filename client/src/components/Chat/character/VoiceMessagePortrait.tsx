@@ -75,7 +75,7 @@ function PortraitSurface({
       frame = 0,
       lastTick = 0;
     let rig: ReturnType<typeof createPortraitRig> | undefined;
-    let envelope: { levels: Float32Array; step: number } | undefined;
+    let envelope: { levels: Float32Array; sibilance?: Float32Array; step: number } | undefined;
     let source = '',
       generation = 0;
     const abort = new AbortController();
@@ -129,6 +129,7 @@ function PortraitSurface({
         id: agentId,
         time: audio.currentTime,
         level,
+        sibilance: envelope?.sibilance?.[Math.floor(audio.currentTime / envelope.step)] || 0,
         active,
         cues: schedule.current.cues,
       });
