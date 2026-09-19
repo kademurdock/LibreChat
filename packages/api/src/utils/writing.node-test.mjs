@@ -5,7 +5,7 @@ import { stripTypeScriptTypes, createRequire } from 'node:module';
 import vm from 'node:vm';
 const source = stripTypeScriptTypes(readFileSync(new URL('./writing.ts', import.meta.url), 'utf8'));
 const musicSource = stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8'));
-const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
+const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 
 test('music drafting reads the current Lyric persona while formatting and speech stay untouched', async () => {
@@ -15,7 +15,7 @@ test('music drafting reads the current Lyric persona while formatting and speech
   const first = await musicWritingPrompt('Sound Booth format', { engine: 'yue2', mode: 'write' }, read);
   assert.ok(first.includes(instructions));
   assert.match(first, /multisyllable/); assert.match(first, /Keep supplied lyrics exactly/);
-  assert.match(first, /at least eight sung lines/); assert.match(first, /shadows, whispers, echoes, neon/);
+  assert.match(first, /THREE verses: verse one ten to fourteen sung lines/); assert.match(first, /naming a weekday \(Tuesday above all\)/); assert.match(first, /coffee in any form/); assert.match(first, /shadows, whispers, echoes, neon/);
   assert.ok(first.indexOf(instructions) < first.indexOf('Sound Booth format'), 'persona leads, format closes');
   assert.match(first, /format below overrides Lyric's default/);
   instructions = 'Updated saved persona: vivid narration with conversational phrasing.';
@@ -39,7 +39,7 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: 'Intimate R&B with warm piano.\nLyrics:\n[Verse]\nMy exact authored line.\nREADBACK: A quiet song.' } }], usage: { cost: 0.002 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models') return { getAgent: async filter => { assert.equal(filter.id, lyricAgentId); return { instructions }; } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
@@ -121,7 +121,7 @@ test('real script route accounts for the shortening call as well as the first dr
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'axios') return { post: async () => { calls++; return { data: { choices: [{ message: { content: '[Setting: A quiet room.]\nNora (calm woman) says softly: "' + 'Stay here. '.repeat(calls === 1 ? 220 : 30) + '"' } }], usage: { cost: calls === 1 ? 0.004 : 0.002 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
     if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay') return localRequire(name);
@@ -141,4 +141,89 @@ test('real script route accounts for the shortening call as well as the first dr
 test('lyric model token estimates use its own prices', () => {
   assert.equal(lyricWritingModel, 'moonshotai/kimi-k3');
   assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, lyricWritingModel), { costUSD: 12.87, measured: false });
+});
+
+const HER_SONG = `A loose mid-tempo pop song. Around 100 BPM, a four-minute song.
+Lyrics:
+[Verse 1]
+I got eleven dollars and a full tank of nothing to do
+My phone's at four percent and honestly that feels about right
+I'm out of coffee, out of patience, but never out of luck
+[Chorus]
+Everything's crooked but I'm standing straight up
+Call it chaos, I call it Tuesday
+[Bridge]
+Worst case I end up somewhere with a story and a porch light
+[Outro]
+Call it chaos, I call it Tuesday
+READBACK: A sunny song about a lucky mess on a Tuesday.`;
+
+test('Part 216: the kill scan finds her three tells in her own song and nothing else', () => {
+  const tells = lyricTells(HER_SONG);
+  assert.deepEqual(tells.map(t => t.tell), ['coffee', 'a named weekday', 'the porch light']);
+  assert.equal(tells[1].line, 'Call it chaos, I call it Tuesday', 'a repeated hook line is reported once');
+  assert.ok(!tells.some(t => /eleven dollars|four percent|crooked/.test(t.line)), 'good specifics are left alone');
+  assert.ok(!tells.some(t => /^READBACK|^A loose/.test(t.line)), 'only sung lines below Lyrics: are scanned');
+});
+
+test('Part 216: a word from the person\'s own brief is theirs; drafts without lyrics scan clean', () => {
+  assert.deepEqual(lyricTells(HER_SONG, 'a song about my Tuesday coffee run past the porch light').length, 0);
+  assert.deepEqual(lyricTells('An instrumental brief with coffee and neon in the prose. Instrumental only, no vocals.'), []);
+  for (const line of ['We cleaned the gutters Saturday', 'Shadows on the wall', 'She whispered it twice', 'Keep it steady now', 'at three a.m. again'])
+    assert.equal(lyricTells('x\nLyrics:\n' + line).length, 1, line);
+  for (const line of ['I burned the rice again, we ordered in', 'The cleaner called about your coat', 'Sundaes at the Dairy Barn', 'He scenery-chewed the whole toast'])
+    assert.equal(lyricTells('x\nLyrics:\n' + line).length, 0, line);
+});
+
+test('Part 216: the repair request names the exact lines and protects everything else', () => {
+  const ask = lyricRepairRequest(HER_SONG, lyricTells(HER_SONG));
+  assert.match(ask, /1\. "I'm out of coffee, out of patience, but never out of luck" -- coffee/);
+  assert.match(ask, /Rewrite ONLY those lines/); assert.match(ask, /change it the same way everywhere it appears/);
+  assert.match(ask, /find a better hook word and carry it through/);
+  assert.ok(ask.endsWith(HER_SONG));
+});
+
+test('Part 216: the real handler repairs a flagged draft once, and never touches supplied lyrics', async () => {
+  const url = new URL('../../../../api/server/routes/kadeSoundBooth.js', import.meta.url), localRequire = createRequire(url);
+  const handlers = new Map(), requests = [], ledger = [];
+  const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map(method => [method, (path, ...values) => handlers.set(method + path, values.at(-1))]));
+  const multer = Object.assign(() => ({ single: () => () => {} }), { memoryStorage: () => ({}) });
+  const draft = 'Warm folk.\nLyrics:\n[Verse 1]\nI poured my coffee on a Tuesday\nThe dog ate half my sandwich\nREADBACK: A folk song.';
+  const repaired = 'Warm folk.\nLyrics:\n[Verse 1]\nI poured my Tang the day the fair left town\nThe dog ate half my sandwich\nREADBACK: A folk song.';
+  const context = { module: { exports: {} }, Buffer, URL, console, Date, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
+    if (name === 'express') return { Router: () => router, json: () => () => {} };
+    if (name === 'multer') return multer;
+    if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: requests.length === 1 || /supplied/.test(body.messages[1].content) ? draft : repaired } }], usage: { cost: 0.01 } } }; } };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
+    if (name === '~/models') return { getAgent: async () => ({ instructions: 'Saved Lyric persona.' }) };
+    if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
+    if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay') return localRequire(name);
+    return {};
+  } };
+  vm.runInNewContext(readFileSync(url, 'utf8'), context);
+  let result; const response = { status() { return this; }, json(value) { result = value; return this; } };
+  await handlers.get('post/script')({ user: { id: 'scan-fixture' }, body: { engine: 'yue2', mode: 'write', text: 'a folk song about a bad morning' } }, response);
+  assert.equal(requests.length, 2, 'one draft, one repair');
+  assert.match(requests[1].messages[1].content, /"I poured my coffee on a Tuesday" -- a named weekday|-- coffee/);
+  assert.match(result.script, /Tang the day the fair left town/); assert.doesNotMatch(result.script, /Tuesday/);
+  assert.deepEqual([...result.repairs], ['rewrote 1 line that leaned on stock images']);
+  assert.equal(ledger[0].costUSD, 0.02, 'both calls are on the ledger');
+  requests.length = 0;
+  await handlers.get('post/script')({ user: { id: 'scan-fixture-2' }, body: { engine: 'yue2', mode: 'write', text: 'arrange my supplied words', lyrics: 'I poured my coffee on a Tuesday' } }, response);
+  assert.equal(requests.length, 1, 'supplied lyrics are never scanned or sent for repair');
+});
+
+test('Part 216: only the sung words come from a repair; direction and READBACK stay as first written', () => {
+  const first = 'Warm folk, about four minutes.\n\nLyrics:\n[Verse 1]\nI poured my coffee on a Tuesday\nThe dog ate half my sandwich\n\nREADBACK: A folk song about a bad morning, sung by a tired man.';
+  const labelDropped = 'Warm FOLK, four mins, rewritten.\n\nLyrics:\n[Verse 1]\nI poured my Tang the day the fair left town\nThe dog ate half my sandwich\n\nA folk song about a bad morning, sung by a tired man.';
+  const merged = mergeRepairedLyrics(first, labelDropped);
+  assert.ok(merged.startsWith('Warm folk, about four minutes.'), 'direction is the original');
+  assert.match(merged, /Tang the day the fair left town/);
+  assert.ok(merged.endsWith('READBACK: A folk song about a bad morning, sung by a tired man.'), 'readback is the original, with its label');
+  assert.equal(merged.match(/sung by a tired man/g).length, 1, 'the unlabeled readback is not sung');
+  const dropped = mergeRepairedLyrics(first, 'x\nLyrics:\n[Verse 1]\nI poured my Tang the day the fair left town\nThe dog ate half my sandwich');
+  assert.ok(dropped.endsWith('sung by a tired man.'));
+  assert.equal(mergeRepairedLyrics(first, 'Sure! Here is a description with no lyrics.'), null);
+  assert.equal(mergeRepairedLyrics(first, 'x\nLyrics:\n[Verse 1]\nOnly one line now'), null, 'a repair that lost lines is refused');
 });

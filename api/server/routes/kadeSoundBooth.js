@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricWritingModel, lyricAgentId, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -372,7 +372,7 @@ function systemPrompt({ engine, mode }) {
   const job =
     mode === 'write'
       ? (engine === 'lyria' || engine === 'yue2')
-        ? `The user has given you a DESCRIPTION of a piece of music they want made. Write the brief for them in the format below. If they did not say how long, make it a full song of three to three and a half minutes when it has sung words, or two minutes when it is instrumental, and say so in the technical line. If they asked for singing and gave no words, write the words under the "Lyrics:" heading.`
+        ? `The user has given you a DESCRIPTION of a piece of music they want made. Write the brief for them in the format below. If they did not say how long, make it a full song of about four minutes when it has sung words, or two minutes when it is instrumental, and say so in the technical line. If they asked for singing and gave no words, write the words under the "Lyrics:" heading.`
         : `The user has given you a DESCRIPTION of something they want made. Write it for them: invent the words, keep it the length they asked for (if they did not say, aim for 30 to 60 seconds of speech, which is roughly 80 to 160 words), and shape it into the format below.`
       : `The user has written THEIR OWN WORDS and wants them formatted. THEIR WORDS ARE THE SCRIPT. Keep every sentence they wrote, in their order, in their wording -- do not rewrite, tighten, improve, correct, or add sentences of your own. Your entire job is to wrap their words in the format below and add the structural tags BETWEEN their sentences. If they left cues in parentheses or brackets ("(whispering)", "[thunder]"), convert those into proper tags and remove the prose cue.`;
 
@@ -1181,19 +1181,72 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
 
     const started = Date.now();
     const writingSettings = musicWritingSettings({ engine, mode });
-    const { text: raw, usage, costUSD: firstCost, measured: firstMeasured } = await callModel({
+    const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode }, getAgent);
+    const first = await callModel({
       ...writingSettings,
-      system: await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode }, getAgent),
+      system: writingSystem,
       user: lines.join('\n\n'),
       maxTokens: writingSettings.maxTokens || (engine === 'seed' ? 1200 : 2200),
     });
-    let totalCost = firstCost;
-    let costMeasured = firstMeasured;
+    let raw = first.text;
+    const usage = first.usage;
+    let totalCost = first.costUSD;
+    let costMeasured = first.measured;
+    let repairs = [];
+    /* Part 216: the kill scan. Only for lyrics the desk originated -- supplied
+     * lyrics are hers and are never scanned or touched. One surgical rewrite of
+     * the flagged lines, and only if it fits inside what is left of the phone's
+     * patience; a draft with a Tuesday in it still beats a timeout. */
+    const ownsLyrics = !!writingSettings.model && !(typeof b.lyrics === 'string' && b.lyrics.trim());
+    /* Seen once in testing: the writer answered with only a one-paragraph
+     * description and no song. A sung request that comes back without a Lyrics:
+     * heading is a failed draft, not something to hand her; ask once more. */
+    const wantsWords = ownsLyrics && !/\binstrumental\b|\bno (?:vocals|singing|lyrics)\b/i.test(text);
+    if (wantsWords && !/^\s*lyrics\s*:/im.test(raw) && (writingSettings.timeoutMs || 0) - (Date.now() - started) >= 45000) {
+      try {
+        const again = await callModel({
+          ...writingSettings,
+          system: writingSystem,
+          user: lines.join('\n\n') + '\n\nWrite the complete draft now: the music direction, then the Lyrics: heading with every sung line, then the READBACK line.',
+          maxTokens: writingSettings.maxTokens,
+          timeoutMs: (writingSettings.timeoutMs || 0) - (Date.now() - started) - 4000,
+        });
+        totalCost += again.costUSD;
+        costMeasured = costMeasured && again.measured;
+        if (/^\s*lyrics\s*:/im.test(again.text)) raw = again.text;
+      } catch (e) {
+        logger.warn('[soundbooth/script] retry for missing lyrics failed: ' + e.message);
+      }
+    }
+    const tells = ownsLyrics && typeof lyricTells === 'function' ? lyricTells(raw, text) : [];
+    const timeLeft = (writingSettings.timeoutMs || 0) - (Date.now() - started) - 4000;
+    if (tells.length && timeLeft >= 30000) {
+      try {
+        const fixed = await callModel({
+          ...writingSettings,
+          system: writingSystem,
+          user: lyricRepairRequest(raw, tells),
+          maxTokens: writingSettings.maxTokens,
+          timeoutMs: timeLeft,
+        });
+        totalCost += fixed.costUSD;
+        costMeasured = costMeasured && fixed.measured;
+        /* Only the sung words come from the repair; her direction and READBACK
+         * stay exactly as first written (the repair is careless with them). */
+        const merged = mergeRepairedLyrics(raw, fixed.text);
+        const remaining = merged ? lyricTells(merged, text).length : tells.length;
+        if (merged && remaining < tells.length) {
+          raw = merged;
+          repairs = [`rewrote ${tells.length - remaining} line${tells.length - remaining === 1 ? '' : 's'} that leaned on stock images`];
+        }
+      } catch (e) {
+        logger.warn('[soundbooth/script] tell repair skipped (first draft kept): ' + e.message);
+      }
+    }
     let { script, readback } = splitScriptAndReadback(raw);
     if (!script) {
       return res.status(502).json({ error: 'The script desk came back empty. Try again.' });
     }
-    let repairs = [];
     if (engine === 'seed') {
       const cleaned = sanitizeSeed(script);
       script = cleaned.script;

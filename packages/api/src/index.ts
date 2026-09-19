@@ -157,6 +157,9 @@ export {
 export {
   musicWritingPrompt,
   musicWritingSettings,
+  lyricTells,
+  lyricRepairRequest,
+  mergeRepairedLyrics,
   lyricWritingModel,
   lyricAgentId,
 } from './music/writing';
