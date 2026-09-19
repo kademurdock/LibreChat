@@ -1251,6 +1251,12 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
     if (!script) {
       return res.status(502).json({ error: 'The script desk came back empty. Try again.' });
     }
+    /* Part 216: she hears the readback before she spends on a render. When the
+     * writer gives none, say the music direction's opening instead of nothing. */
+    if (!readback && writingSettings.model) {
+      const direction = script.split(/^\s*lyrics\s*:/im)[0].replace(/\[[^\]]*\]|->/g, ' ').replace(/\s+/g, ' ').trim();
+      readback = (direction.match(/^(?:[^.!?]+[.!?]){1,2}/) || [direction])[0].trim().slice(0, 400);
+    }
     if (engine === 'seed') {
       const cleaned = sanitizeSeed(script);
       script = cleaned.script;
