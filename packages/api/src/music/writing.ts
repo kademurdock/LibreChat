@@ -7,7 +7,7 @@ export const lyricAgentId = 'agent_9YHpms0vJoApICwshh0mR';
  * couplets, and it writes explicit lyrics when asked. */
 export const lyricWritingModel = 'moonshotai/kimi-k3';
 type Reader = (filter: { id: string }) => Promise<Pick<IAgent, 'name' | 'instructions'> | null>;
-type Request = { engine: string; mode: string; patient?: boolean };
+type Request = { engine: string; mode: string; patient?: boolean; deep?: boolean };
 
 const writesMusic = (request: Request): boolean =>
   ['lyria', 'yue2'].includes(request.engine) && request.mode === 'write';
@@ -26,9 +26,22 @@ export function musicWritingSettings(request: Request): {
   top_p?: number;
   maxTokens?: number;
   timeoutMs?: number;
-  reasoning?: { enabled: boolean; effort: 'low'; exclude: boolean };
+  reasoning?: { enabled: boolean; effort: 'low' | 'medium'; exclude: boolean };
 } {
   if (!writesMusic(request)) return {};
+  /* Part 218: Kade, "I want the best lyrics I can get, even if it means waiting."
+   * The draft runs as a background job, so no web request has to stay open and
+   * the writer can think on medium (275 s measured with the system in the
+   * prompt). The audit that follows stays on low; the handler sets that. */
+  if (request.deep)
+    return {
+      model: lyricWritingModel,
+      temperature: 0.85,
+      top_p: 0.95,
+      maxTokens: 24000,
+      timeoutMs: 600000,
+      reasoning: { enabled: true, effort: 'medium', exclude: true },
+    };
   /* Part 217: the website's own page says it can wait (it aborts at 240 s). iPhone
    * build 302 sends no such flag and gives up at 120 s, so it keeps the 112 s limit. */
   /* Measured with the hit-writing system in the prompt: medium effort wrote the

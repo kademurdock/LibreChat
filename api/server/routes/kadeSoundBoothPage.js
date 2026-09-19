@@ -140,6 +140,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <button type="button" class="act" id="btnDraft">Help write this</button>
         <button type="button" class="act quiet" id="btnInspire"><span aria-hidden="true">&#127922; </span>Surprise me</button>
         <button type="button" class="act quiet" id="btnUndoWriting" hidden>Undo writing change</button>
+        <label id="quickDraftWrap" hidden><input type="checkbox" id="quickDraft"> Quick song draft: about a minute and a half instead of five, less polished</label>
       </div>
       <p class="hint" id="quickWritingHint">Start with an idea or write it yourself. Help write this uses the writing model; Surprise me is free. Neither makes audio.</p>
       <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
@@ -260,6 +261,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         document.getElementById('trackTitle').value=d.title||'';document.getElementById('text').value=d.text||'';document.getElementById('script').value=d.script||'';document.getElementById('mood').value=d.mood||'';document.getElementById('readback').textContent=d.readback||'';
       }
       state.engine = e;
+      document.getElementById('quickDraftWrap').hidden=!(e==='lyria'||e==='yue2');
       document.getElementById('btnUndoWriting').hidden=!writingUndo || writingUndo.engine!==e;
       Array.prototype.forEach.call(engBox.children, function(c){ c.setAttribute('aria-pressed', c.dataset.engine===e); });
       var g = state.guide.engines[e];
@@ -519,22 +521,47 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var place=pick(['a train leaving at midnight','a seaside town after the tourists leave','a kitchen during a thunderstorm','an old theatre before opening night','a road trip with no destination']);
       var turn=pick(['an unexpected reunion','a promise finally kept','a secret that changes everything','a small act of courage','finding something you thought was lost']);
       var idea=(state.engine==='lyria'||state.engine==='yue2')
-        ? pick(['Soulful acoustic folk','Dreamy synth pop','Warm country soul','Intimate piano jazz','Driving indie rock'])+', about '+place+' and '+turn+'. A memorable chorus, expressive lead vocal, a quiet opening that builds to a full band, about two minutes.'
+        ? pick(['Soulful acoustic folk','Dreamy synth pop','Warm country soul','Intimate piano jazz','Driving indie rock'])+', about '+place+' and '+turn+'. A memorable chorus, expressive lead vocal, a quiet opening that builds to a full band, about four minutes.'
         : state.engine==='seed' ? 'A short scene at '+place+'. Two people discover '+turn+'. Include natural dialogue and the sounds around them.'
         : 'Write a short, vivid first-person story about '+place+' and '+turn+'. Give it a strong opening and a satisfying ending.';
       changeWriting(idea);say('New idea in the editor. Change it or choose Help write this. Undo restores your previous writing.');
     };
+    /* Part 218: the deep lane. The server takes the song draft as a job and the
+     * page asks after it, so the writer can think for minutes. The job id is kept
+     * in this browser so leaving the page and coming back finds the draft. */
+    var DRAFT_KEY='kadeSoundBoothDraftJob';
+    function draftJob(v){try{if(v===undefined)return localStorage.getItem(DRAFT_KEY)||'';if(v)localStorage.setItem(DRAFT_KEY,v);else localStorage.removeItem(DRAFT_KEY);}catch(e){}return '';}
+    async function waitDraft(id){
+      var misses=0, lastSaid=0;
+      for(var i=0;i<100;i++){
+        var g=await get('/api/kade/sound-booth/script/job/'+encodeURIComponent(id));
+        if(g.status===404){draftJob('');return {ok:false,data:g.data};}
+        if(!g.ok){misses++;if(misses>6)return {ok:false,data:{error:'Connection lost while waiting for the draft. Choose Help write this again to pick it back up.'}};}
+        else if(g.data.state==='done'){draftJob('');return {ok:true,data:g.data.result||{}};}
+        else if(g.data.state==='failed'){draftJob('');return {ok:false,data:{error:g.data.error}};}
+        else {misses=0;var mins=Math.floor((g.data.seconds||0)/60);if(mins>lastSaid){lastSaid=mins;say('Still writing. '+mins+(mins===1?' minute':' minutes')+' so far.');}}
+        await new Promise(function(done){setTimeout(done,8000);});
+      }
+      return {ok:false,data:{error:'The writer is taking far too long. Your idea is kept; try again.'}};
+    }
     document.getElementById('btnDraft').onclick=async function(){
       if(busy())return;
       var box=document.getElementById('script'), original=box.value;
       var text=original.trim()||document.getElementById('text').value.trim();
       if(text.length<3){say('Write an idea first, or choose Surprise me.',true);box.focus();return;}
       var engine=state.engine, revision=state.quoteRevision, body=collect();body.text=text;body.mode='write';body.patient=true;
+      var song=(engine==='lyria'||engine==='yue2'), deep=song && !document.getElementById('quickDraft').checked;
+      if(deep)body.background=true;
       state.writing=true;box.readOnly=true;this.disabled=true;
       document.getElementById('btnInspire').disabled=true;updateRenderControls();
-      say((engine==='lyria'||engine==='yue2') ? 'Writing your song. The writer drafts it, then goes back over it like a producer, so this takes about a minute and a half. Keep this page open.' : 'Writing a draft from your idea.');
+      say(deep ? 'Writing your song. The writer takes its time now, about five minutes, then goes back over it like a producer. You can stay here, or leave and come back; a notice arrives when the draft is ready.' : song ? 'Writing a quick song draft, about a minute and a half. Keep this page open.' : 'Writing a draft from your idea.');
       try {
-        var r=await post('/api/kade/sound-booth/script',body);
+        var r=null, waiting=deep?draftJob():'';
+        if(waiting){r=await waitDraft(waiting);if(!r.ok&&r.data&&/gone/i.test(r.data.error||''))r=null;}
+        if(!r){
+          r=await post('/api/kade/sound-booth/script',body);
+          if(r.data&&r.data.job&&(r.status===202||r.status===409)){draftJob(r.data.job);r=await waitDraft(r.data.job);}
+        }
         if(!r.ok)throw new Error(r.data.error||'The writing desk could not finish. Your text is kept.');
         if(state.engine!==engine || box.value!==original || state.quoteRevision!==revision){say('Your editor or settings changed while the draft was being written. Your current text is kept.',true);return;}
         var result=r.data.screenplay||r.data.script;

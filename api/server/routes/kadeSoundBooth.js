@@ -1129,7 +1129,78 @@ function titleFrom(script, fallback) {
 }
 
 /* ============================ POST /script ================================ */
-router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (req, res) => {
+/* Part 218: the deep lane. A sung draft asked for with background:true becomes a
+ * job: the request returns at once, the writer takes the minutes it needs, and
+ * the page or phone asks GET /script/job/:id until it is done. Jobs live in
+ * memory for an hour; a restart loses one and the client says so plainly. */
+const scriptJobs = new Map();
+const SCRIPT_JOB_TTL_MS = 60 * 60 * 1000;
+function sweepScriptJobs() {
+  const now = Date.now();
+  for (const [id, job] of scriptJobs) if (now - job.started > SCRIPT_JOB_TTL_MS) scriptJobs.delete(id);
+}
+async function notifyDraft(userId, ok) {
+  const secret = process.env.BRIDGE_SECRET;
+  if (!secret) return;
+  await axios.post(
+    `${bridgeBase()}/notify`,
+    {
+      secret,
+      userId: String(userId),
+      agentId: 'soundbooth',
+      agentName: 'Sound Booth',
+      title: ok ? 'Your song draft is ready' : 'Your song draft did not finish',
+      body: ok ? 'The lyrics are waiting in the Sound Booth. Nothing has been recorded yet.' : 'The writer could not finish. Your idea is kept; try again.',
+      urgent: false,
+      requested: true,
+      route: 'sound-booth',
+    },
+    { headers: { 'User-Agent': UA }, timeout: 15000 },
+  );
+}
+
+router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), (req, res) => {
+  const b = req.body || {};
+  const deep = b.background === true && b.mode === 'write' && ['lyria', 'yue2'].includes(b.engine) && String(b.text || '').trim().length >= 3;
+  if (!deep) return scriptHandler(req, res);
+  sweepScriptJobs();
+  const userId = String(req.user.id);
+  for (const job of scriptJobs.values()) {
+    if (job.userId === userId && job.state === 'working') {
+      return res.status(409).json({ error: 'The writer is already working on a song for you. Wait for that draft first.', job: job.id });
+    }
+  }
+  const id = require('crypto').randomBytes(12).toString('hex');
+  const job = { id, userId, state: 'working', started: Date.now(), result: null, error: null };
+  scriptJobs.set(id, job);
+  const shim = {
+    code: 200,
+    status(code) { this.code = code; return this; },
+    json(body) {
+      job.ms = Date.now() - job.started;
+      if (this.code >= 400) { job.state = 'failed'; job.error = (body && body.error) || 'The script desk had trouble. Try again.'; }
+      else { job.state = 'done'; job.result = body; }
+      return this;
+    },
+  };
+  scriptHandler(req, shim)
+    .catch((e) => { job.state = 'failed'; job.error = 'The script desk had trouble. Try again.'; logger.error('[soundbooth/script] deep job crashed:', e); })
+    .then(() => { if (b.notify !== false) return notifyDraft(userId, job.state === 'done'); })
+    .catch((e) => logger.warn('[soundbooth/script] draft notice failed: ' + e.message));
+  return res.status(202).json({ job: id, state: 'working', spoken: 'The writer has your idea and is taking its time, about five minutes. You can leave this page; you will get a notice when the draft is ready.' });
+});
+
+router.get('/script/job/:id', requireJwtAuth, (req, res) => {
+  const job = scriptJobs.get(String(req.params.id));
+  if (!job || job.userId !== String(req.user.id)) {
+    return res.status(404).json({ error: 'That draft is gone. The server restarted while the writer was working. Your idea is kept; try again.' });
+  }
+  if (job.state === 'done') return res.json({ state: 'done', seconds: Math.round(job.ms / 1000), result: job.result });
+  if (job.state === 'failed') return res.json({ state: 'failed', error: job.error });
+  return res.json({ state: 'working', seconds: Math.round((Date.now() - job.started) / 1000) });
+});
+
+async function scriptHandler(req, res) {
   try {
     const b = req.body || {};
     const engine = ['seed', 'lyria', 'yue2'].includes(b.engine) ? b.engine : 'scenema';
@@ -1180,7 +1251,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
     }
 
     const started = Date.now();
-    const writingSettings = musicWritingSettings({ engine, mode, patient: b.patient === true });
+    const writingSettings = musicWritingSettings({ engine, mode, patient: b.patient === true, deep: b.background === true });
     const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode }, getAgent);
     const first = await callModel({
       ...writingSettings,
@@ -1231,7 +1302,9 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
           system: writingSystem,
           user: lyricAuditRequest(raw, tells, shape),
           maxTokens: writingSettings.maxTokens,
-          timeoutMs: timeLeft,
+          /* the deep lane thinks hard on the draft; the audit is an edit, not a rewrite */
+          reasoning: writingSettings.reasoning ? { ...writingSettings.reasoning, effort: 'low' } : undefined,
+          timeoutMs: Math.min(timeLeft, 225000),
         });
         totalCost += fixed.costUSD;
         costMeasured = costMeasured && fixed.measured;
@@ -1347,7 +1420,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
       .status(status)
       .json({ error: status === 503 ? error.message : error.code === 'ECONNABORTED' ? 'The writer ran out of time on that one. Your idea is kept; nothing was recorded. Try again.' : 'The script desk had trouble. Try again.' });
   }
-});
+}
 
 /* ============================ POST /render ================================ */
 router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (req, res) => {

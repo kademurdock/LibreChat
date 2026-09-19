@@ -44,6 +44,7 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
   const context = { module: { exports: {} }, Buffer, URL, console, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
+    if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: 'Intimate R&B with warm piano.\nLyrics:\n[Verse]\nMy exact authored line.\nREADBACK: A quiet song.' } }], usage: { cost: 0.002 } } }; } };
     if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
@@ -126,6 +127,7 @@ test('real script route accounts for the shortening call as well as the first dr
   const context = { module: { exports: {} }, Buffer, URL, console, process: { env: { KADE_SOUNDBOOTH_MODEL: 'nousresearch/hermes-4-405b', REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
+    if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async () => { calls++; return { data: { choices: [{ message: { content: '[Setting: A quiet room.]\nNora (calm woman) says softly: "' + 'Stay here. '.repeat(calls === 1 ? 220 : 30) + '"' } }], usage: { cost: calls === 1 ? 0.004 : 0.002 } } }; } };
     if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
@@ -199,6 +201,7 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
   const context = { module: { exports: {} }, Buffer, URL, console, Date, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
+    if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: requests.length === 1 || /supplied/.test(body.messages[1].content) ? draft : repaired } }], usage: { cost: 0.01 } } }; } };
     if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
@@ -219,6 +222,24 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
   requests.length = 0;
   await handlers.get('post/script')({ user: { id: 'scan-fixture-2' }, body: { engine: 'yue2', mode: 'write', text: 'arrange my supplied words', lyrics: 'I poured my coffee on a Tuesday' } }, response);
   assert.equal(requests.length, 1, 'supplied lyrics are never scanned or sent for repair');
+  /* Part 218: the deep lane answers at once with a job, thinks on medium, audits on low. */
+  requests.length = 0; let code = 0; result = null;
+  const accepted = { status(value) { code = value; return this; }, json(value) { result = value; return this; } };
+  handlers.get('post/script')({ user: { id: 'deep-fixture' }, body: { engine: 'yue2', mode: 'write', background: true, notify: false, text: 'a folk song about a bad morning' } }, accepted);
+  assert.equal(code, 202); assert.equal(result.job, 'job-fixture'); assert.match(result.spoken, /about five minutes/);
+  handlers.get('post/script')({ user: { id: 'deep-fixture' }, body: { engine: 'yue2', mode: 'write', background: true, text: 'another one' } }, accepted);
+  assert.equal(code, 409, 'one deep draft per person at a time');
+  for (let i = 0; i < 50 && requests.length < 2; i++) await new Promise(done => setTimeout(done, 5));
+  await new Promise(done => setTimeout(done, 20));
+  assert.equal(requests[0].reasoning.effort, 'medium'); assert.equal(requests[1].reasoning.effort, 'low');
+  let polled; const poll = { status() { return this; }, json(value) { polled = value; return this; } };
+  handlers.get('get/script/job/:id')({ user: { id: 'deep-fixture' }, params: { id: 'job-fixture' } }, poll);
+  assert.equal(polled.state, 'done'); assert.match(polled.result.script, /Tang the day the fair left town/);
+  handlers.get('get/script/job/:id')({ user: { id: 'someone-else' }, params: { id: 'job-fixture' } }, poll);
+  assert.match(polled.error, /That draft is gone/, 'a job belongs to the person who asked');
+  const deepSettings = musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true });
+  assert.equal(deepSettings.reasoning.effort, 'medium'); assert.equal(deepSettings.timeoutMs, 600000);
+  assert.deepEqual(musicWritingSettings({ engine: 'scenema', mode: 'write', deep: true }), {}, 'speech has no deep lane');
 });
 
 test('Part 216: only the sung words come from a repair; direction and READBACK stay as first written', () => {
