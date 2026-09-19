@@ -1240,6 +1240,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), async (
         const merged = mergeRepairedLyrics(raw, fixed.text);
         const remaining = merged ? lyricTells(merged, text).length : tells.length;
         const grew = !!merged && !!shape && !lyricShapeIssue(merged, text);
+        logger.info(`[soundbooth/script] audit: merged=${!!merged} tells ${tells.length}->${remaining} shape=${shape ? 'short' : 'ok'} grew=${grew} ${Date.now() - started}ms`);
         if (merged && remaining <= tells.length) {
           raw = merged;
           repairs = [...repairs, "second pass: the producer's audit"];
