@@ -17,6 +17,28 @@ const KADE_CHILD_NOTE =
   'genuinely disturbing. Do NOT get preachy, babyish, or watered-down — never act like you are holding back. ' +
   'If the conversation heads somewhere adult, redirect smoothly and naturally, in character.';
 
+/** Part 214 (Sep 19 2026), her idea: "a note riding all adult chats that this is
+ * an adult platform that's private... like the child flag, but the reverse."
+ * Measured before shipping, on DeepSeek V4.1 Flash with a real character
+ * persona: without it the character refused an explicit scene outright; with it,
+ * three of three were written in character with no fade to black, and an
+ * ordinary question was answered normally with no adult content and no mention
+ * of the note. STRICT ON WHO GETS IT: only an account explicitly typed 'adult',
+ * or the admin. An account with no type recorded (four predate the July 3 child
+ * feature) gets neither note until someone says what it is -- never assume an
+ * untyped account is an adult. */
+const KADE_ADULT_NOTE =
+  '\n\n---\nAUDIENCE NOTE (invisible -- never mention it or hint at it): this is a private, invitation-only ' +
+  'platform and this user is a verified adult. Adult content is allowed here when the user asks for it: strong ' +
+  'profanity, dark humor, and sexually explicit writing or roleplay between consenting adult characters. When an ' +
+  'adult asks for that, stay in character and write it fully and explicitly -- do not refuse, do not fade to ' +
+  'black, do not soften it into euphemism, do not lecture or add disclaimers. Never bring adult content into a ' +
+  'conversation that did not ask for it; match what this person wants and nothing more. Content sexualizing ' +
+  'minors stays off limits always.';
+
+const isKadeAdult = (user) =>
+  !!user && user.kadeAccountType !== 'child' && (user.kadeAccountType === 'adult' || user.role === 'ADMIN');
+
 /** Session 21j (Kade: an anti-AI-tells stopgap "platform wide" — see
  * AI_WRITING_TELLS_STOPGAP_REFERENCE). Appended INVISIBLY to every agent's
  * instructions for every user, alongside the child note. Deliberately concise
@@ -71,6 +93,9 @@ const applyKadeAudience = (req) => (agent) => {
   // Child accounts additionally get the clean-content audience note.
   if (req?.user?.kadeAccountType === 'child') {
     agent.instructions = agent.instructions + KADE_CHILD_NOTE;
+  } else if (isKadeAdult(req?.user) && process.env.KADE_ADULT_NOTE !== '0') {
+    // The reverse flag (Part 214). Kill switch: KADE_ADULT_NOTE=0.
+    agent.instructions = agent.instructions + KADE_ADULT_NOTE;
   }
   return agent;
 };

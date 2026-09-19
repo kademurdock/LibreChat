@@ -182,6 +182,39 @@ const NO_WEB_NOTE =
   'Give the one-sentence offer and stop. Never say search is broken, off, unavailable or coming back -- it is ' +
   'one word from them away.';
 
+/* Part 214 (Sep 19 2026) -- her report after the fleet moved to DeepSeek: asked
+ * "whats the news looking like tonight", Kiana offered to look instead of
+ * looking, and once said her search "isn't hooked up on this turn". The news
+ * tool WAS attached. The note above says "do not substitute other tools" and
+ * lists news among the things to offer-and-stop on; Grok ignored that, DeepSeek
+ * obeys it to the letter. The note now names the information tools that ARE
+ * riding and says to use them at once. What each one is for, in words a model
+ * can match against the ask: */
+const INFO_TOOLS = {
+  kade_news: "kade_news gets today's real headlines, local, national or by topic",
+  kade_weather: 'kade_weather gets current conditions and the forecast for any place',
+  kade_wikipedia: 'kade_wikipedia gets background on people, places, things and history',
+  kade_research: 'kade_research runs a deep multi-source dig and writes it up',
+  kade_read_page: 'kade_read_page opens a link or site the person named',
+  kade_lyrics: 'kade_lyrics finds the words to a song',
+  kade_location: 'kade_location knows where the person is, for anything local',
+};
+
+/** The no-web note for THIS turn: the strict rule, minus whatever an attached
+ *  information tool can already fetch. @param {Iterable<string>} keep */
+function noWebNote(keep) {
+  const riding = Object.keys(INFO_TOOLS).filter((name) => keep && new Set(keep).has(name));
+  if (!riding.length) return NO_WEB_NOTE;
+  return (
+    NO_WEB_NOTE +
+    ' EXCEPTION, and it outranks everything above: these information tools ARE attached on this turn -- ' +
+    riding.map((name) => INFO_TOOLS[name]).join('; ') +
+    '. When what the person asked for is something one of them can fetch, call it NOW, in this reply, without ' +
+    'asking permission first and without offering to do it later. The offer-and-stop rule is only for lookups ' +
+    'that none of the attached tools can do.'
+  );
+}
+
 /** Names this module is allowed to defer. Anything else (unknown, actions,
  *  execute_code, MCP) is left attached untouched. */
 const DEFERRABLE = new Set(Object.keys(ALIASES));
@@ -538,6 +571,8 @@ function _resetForTests() {
 
 module.exports = {
   NO_WEB_NOTE,
+  noWebNote,
+  INFO_TOOLS,
   worldReferent,
   selectTools,
   applySelection,

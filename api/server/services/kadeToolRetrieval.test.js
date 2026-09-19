@@ -275,3 +275,14 @@ test('Part 176 regression: the iPhone-lineup turn brings the search; a go-ahead 
   const ok2 = await R.selectTools({ tools: T(KIANA), text: 'ok', agentId: 'a', conversationId: 'c-night', embed });
   assert.ok(!chat.keep.has('web_search') && !ok2.keep.has('web_search'), 'a good-night is not an information shape, so no pending search');
 });
+
+test('Part 214: the no-web note names attached information tools and says to use them now', () => {
+  assert.strictEqual(R.noWebNote(new Set(['context', 'kade_notify', 'kade_help'])), R.NO_WEB_NOTE, 'nothing to fetch with: the strict note stands');
+  const note = R.noWebNote(new Set(['context', 'kade_news', 'kade_weather', 'kade_feedback']));
+  assert.ok(note.startsWith(R.NO_WEB_NOTE));
+  assert.match(note, /kade_news gets today's real headlines/);
+  assert.match(note, /kade_weather gets current conditions/);
+  assert.match(note, /call it NOW, in this reply, without asking permission/);
+  assert.doesNotMatch(note, /kade_wikipedia/, 'only what is actually riding is named');
+  assert.doesNotMatch(note, /kade_feedback gets|kade_memory_search gets/, 'memory, help and feedback are never offered as lookups');
+});
