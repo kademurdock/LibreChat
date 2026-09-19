@@ -546,21 +546,26 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     document.getElementById('btnDraft').onclick=async function(){
       if(busy())return;
+      /* Part 219: one press. Coming back to the page picks the waiting draft up by
+       * itself (see the resume below); nobody presses this twice. */
+      var resume=this.getAttribute('data-resume')==='1';this.removeAttribute('data-resume');
       var box=document.getElementById('script'), original=box.value;
       var text=original.trim()||document.getElementById('text').value.trim();
-      if(text.length<3){say('Write an idea first, or choose Surprise me.',true);box.focus();return;}
+      if(!resume&&text.length<3){say('Write an idea first, or choose Surprise me.',true);box.focus();return;}
       var engine=state.engine, revision=state.quoteRevision, body=collect();body.text=text;body.mode='write';body.patient=true;
       var song=(engine==='lyria'||engine==='yue2'), deep=song && !document.getElementById('quickDraft').checked;
       if(deep)body.background=true;
+      if(resume)deep=true;
+      var label=this.textContent;if(deep)this.textContent='Writing your song\u2026';
       state.writing=true;box.readOnly=true;this.disabled=true;
       document.getElementById('btnInspire').disabled=true;updateRenderControls();
-      say(deep ? 'Writing your song. The writer takes its time now, about five minutes, then goes back over it like a producer. You can stay here, or leave and come back; a notice arrives when the draft is ready.' : song ? 'Writing a quick song draft, about a minute and a half. Keep this page open.' : 'Writing a draft from your idea.');
+      say(resume ? 'Your song is still being written. The draft will appear here by itself when it is ready.' : deep ? 'Writing your song. The writer is thinking it through, about six minutes, and the draft will appear here by itself. You can stay, or leave and come back; a notice arrives when it is ready, and this page picks it up on its own.' : song ? 'Writing a quick song draft, about a minute and a half. Keep this page open.' : 'Writing a draft from your idea.');
       try {
-        var r=null, waiting=deep?draftJob():'';
-        if(waiting){r=await waitDraft(waiting);if(!r.ok&&r.data&&/gone/i.test(r.data.error||''))r=null;}
+        var r=null, waiting=deep?draftJob().split('|')[0]:'';
+        if(waiting){r=await waitDraft(waiting);if(!r.ok&&r.data&&/gone/i.test(r.data.error||'')&&!resume)r=null;}
         if(!r){
           r=await post('/api/kade/sound-booth/script',body);
-          if(r.data&&r.data.job&&(r.status===202||r.status===409)){draftJob(r.data.job);r=await waitDraft(r.data.job);}
+          if(r.data&&r.data.job&&(r.status===202||r.status===409)){draftJob(r.data.job+'|'+engine);r=await waitDraft(r.data.job);}
         }
         if(!r.ok)throw new Error(r.data.error||'The writing desk could not finish. Your text is kept.');
         if(state.engine!==engine || box.value!==original || state.quoteRevision!==revision){say('Your editor or settings changed while the draft was being written. Your current text is kept.',true);return;}
@@ -570,8 +575,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         changeWriting(result);document.getElementById('readback').textContent=r.data.readback||'';
         say('Draft ready in the editor. You can change it or undo. No audio has been generated.');
       } catch(e){say(e.message||'The writing desk could not finish. Your text is kept.',true);}
-      finally {state.writing=false;box.readOnly=false;this.disabled=false;document.getElementById('btnInspire').disabled=false;updateRenderControls();}
+      finally {state.writing=false;box.readOnly=false;this.disabled=false;this.textContent=label;document.getElementById('btnInspire').disabled=false;updateRenderControls();}
     };
+    setTimeout(function(){
+      var kept=draftJob().split('|');
+      if(!kept[0]||busy())return;
+      if((kept[1]==='lyria'||kept[1]==='yue2')&&state.engine!==kept[1]&&setEngine(kept[1])===false)return;
+      var button=document.getElementById('btnDraft');button.setAttribute('data-resume','1');button.click();
+    },800);
 
     document.getElementById('script').addEventListener('input', function(){ state.pendingRender=null; document.getElementById('btnRender').textContent=renderLabel(); });
 
