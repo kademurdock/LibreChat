@@ -165,6 +165,10 @@ const anthropicModels = {
 
 const deepseekModels = {
   deepseek: 128000,
+  /* KADE Sep 19 2026 (Part 213): the V4 family is 1M context. Without these rows
+   * an agent with no explicit maxContextTokens (Della, Cassie) is cut to 128K. */
+  'deepseek-v4': 1000000,
+  'deepseek-v4.1-flash': 1000000,
   'deepseek-chat': 128000,
   'deepseek-v3': 128000,
   'deepseek.r1': 128000,

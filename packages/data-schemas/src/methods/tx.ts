@@ -297,6 +297,11 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'glm-4.7-flashx': { prompt: 0.07, completion: 0.4 },
     'glm-4.7': { prompt: 0.6, completion: 2.2 },
     'deepseek-v4-flash': { prompt: 0.07, completion: 0.17 },
+    /* KADE Sep 19 2026 (Part 213): the fleet moved to deepseek/deepseek-v4.1-flash.
+     * 'v4.1' does not match the 'v4-flash' row above, so without its own row it
+     * would fall to a generic rate: the Aug 28 and Sep 5 hole a third time.
+     * OpenRouter list price; the pinned US hosts run 0.14/0.42 to 0.30/1.20. */
+    'deepseek-v4.1-flash': { prompt: 0.15, completion: 0.6 },
     'gemini-3.1-flash-lite': { prompt: 0.25, completion: 1.5 },
     qwen: { prompt: 0.08, completion: 0.33 },
     'qwen2.5': { prompt: 0.08, completion: 0.33 },
@@ -335,6 +340,7 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'grok-4.20': { write: 1.25, read: 0.2 },
   'grok-4.3': { write: 1.25, read: 0.2 },
   'glm-5.3-flash': { write: 0.15, read: 0.03 },
+  'deepseek-v4.1-flash': { write: 0.15, read: 0.0042 },
   'claude-3.7-sonnet': { write: 3.75, read: 0.3 },
   'claude-3-7-sonnet': { write: 3.75, read: 0.3 },
   'claude-3.5-sonnet': { write: 3.75, read: 0.3 },

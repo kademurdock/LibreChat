@@ -2652,6 +2652,13 @@ describe('KADE Part 131: fleet models bill at their real stickers, times the pla
     expect(getMultiplier({ model: 'z-ai/glm-5.3-flash', tokenType: 'completion' })).toBe(tokenValues['glm-5.3-flash'].completion);
     expect(getValueKey('z-ai/glm-5.3')).toBe('glm-5.3');
   });
+  it('deepseek-v4.1-flash has its own row and does not fall onto v4-flash or a generic rate', () => {
+    expect(getValueKey('deepseek/deepseek-v4.1-flash')).toBe('deepseek-v4.1-flash');
+    expect(getValueKey('deepseek/deepseek-v4-flash')).toBe('deepseek-v4-flash');
+    expect(getMultiplier({ model: 'deepseek/deepseek-v4.1-flash', tokenType: 'prompt' })).toBe(0.15);
+    expect(getMultiplier({ model: 'deepseek/deepseek-v4.1-flash', tokenType: 'completion' })).toBe(0.6);
+    expect(getCacheMultiplier({ model: 'deepseek/deepseek-v4.1-flash', cacheType: 'read' })).toBe(0.0042);
+  });
   it('grok-4.20 and grok-4.3 no longer fall onto the grok-4 row', () => {
     expect(getValueKey('x-ai/grok-4.20')).toBe('grok-4.20');
     expect(getValueKey('x-ai/grok-4.3')).toBe('grok-4.3');

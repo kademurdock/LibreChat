@@ -40,6 +40,8 @@ const KADE_MODEL_NOTES: Record<string, string> = {
   'z-ai/glm-5.2': 'The house default. Smart, dependable, and great with tools -- if you are not sure, pick this.',
   'minimax/minimax-m3': 'Big flagship brain that can also see images you share. Good all-rounder, costs more than the default.',
   'z-ai/glm-4.7': 'The default’s cheaper sibling. Solid all-rounder for everyday characters.',
+  'deepseek/deepseek-v4.1-flash':
+    'The family default. Warm, stays in character, careful with tools, a huge memory, and very cheap. A little slower to answer than Grok.',
   'deepseek/deepseek-v4-flash': 'Very cheap and fast with a huge memory -- great for long, chatty conversations.',
   'deepseek/deepseek-v4-pro': 'The deep thinker. Slower, but strongest on hard problems and careful reasoning.',
   'google/gemini-3-flash-preview': 'Fast, and can see images, audio, and video you share.',

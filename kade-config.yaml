@@ -74,7 +74,11 @@ endpoints:
           # Cassie (Aug 28) landed on the $4.40 brain after the fleet moved to
           # Flash. The fleet model goes first so a new family agent is born on
           # what everyone else runs. Revert = move the glm-5.3 line back up.
-          "x-ai/grok-4.20",             # FLEET MODEL Sep 5 2026 (Part 131): $1.25/$2.50, 2M ctx, ZDR-pinned in reframe
+          "deepseek/deepseek-v4.1-flash", # FLEET MODEL Sep 19 2026 (Part 213), public trial, her call: about a tenth of
+                                          # Grok's cost per turn, no redundant searches in the battery, 1M ctx. Pinned in
+                                          # reframe (deepseek.js) to US zero-retention hosts. Revert = move the grok line
+                                          # back up and run the rollback in GROK_VS_DEEPSEEK_2026-09-18_PART213.md.
+          "x-ai/grok-4.20",             # fleet model Sep 5-19 2026 (Part 131): $1.25/$2.50, 2M ctx, ZDR-pinned in reframe
           "z-ai/glm-5.3",              # house default Aug 21–Sep 5 2026 (Part 75): same
           "z-ai/glm-5.3-flash",        # Kiana's model Aug 28 2026 (Part 93): SEES images+video,
                                         # ~18x cheaper ($0.075/$0.25 per M). Missing from this
