@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path');
 (async()=>{const {build}=await import('vite');const root=path.resolve(__dirname,'../..'),out=path.join(__dirname,'out-voice'),shell=path.join(__dirname,'voice-shell.ts');
 fs.mkdirSync(out,{recursive:true});fs.cpSync(path.join(root,'client/public/assets/characters'),path.join(out,'assets/characters'),{recursive:true});
-fs.copyFileSync(path.join(root,'client/public/assets/characters/kiana/portrait.png'),path.join(out,'agent-agent_6llV0eMu4fmIaj8f2x1Sb-avatar-1788871984269.png'));
+fs.copyFileSync(path.join(root,'client/public/assets/characters/kiana/portrait.png'),path.join(out,'agent-agent_6llV0eMu4fmIaj8f2x1Sb-avatar-1789863013865.png'));
 fs.copyFileSync(path.join(root,'client/public/assets/characters/della/portrait.png'),path.join(out,'agent-agent_BSOLa3eNEZyjs-7abCjMt-avatar-1788941611099.png'));
 fs.copyFileSync(path.join(__dirname,'character-sample.wav'),path.join(out,'sample.wav'));
 const css=fs.readdirSync(path.join(root,'client/dist/assets')).find(n=>/^index.*\.css$/.test(n));fs.copyFileSync(path.join(root,'client/dist/assets',css),path.join(out,'app.css'));

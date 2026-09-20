@@ -12,7 +12,7 @@ const SHEETS = {
     face: [0.38, 0.2, 0.46, 0.5], mouth: [0.48, 0.48, 0.28, 0.2], eyes: [0.4, 0.3, 0.42, 0.18] },
 };
 export const KIANA_ID = 'agent_6llV0eMu4fmIaj8f2x1Sb';
-export const KIANA_PORTRAIT_FILE = 'agent-agent_6llV0eMu4fmIaj8f2x1Sb-avatar-1788871984269.png';
+export const KIANA_PORTRAIT_FILE = 'agent-agent_6llV0eMu4fmIaj8f2x1Sb-avatar-1789863013865.png';
 export const DELLA_ID = 'agent_BSOLa3eNEZyjs-7abCjMt';
 export const DELLA_PORTRAIT_FILE = 'agent-agent_BSOLa3eNEZyjs-7abCjMt-avatar-1788941611099.png';
 export const LILLY_ID = 'agent_JhouuajXMYsfhCTVMQCv_';
