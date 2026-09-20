@@ -220,6 +220,22 @@ ${script}`;
  *  direction and READBACK. Measured: the repair pass writes better lines but is
  *  careless with the wrapper -- it dropped the READBACK label once and the whole
  *  READBACK line once. Returns null when the repair cannot be trusted. */
+/* Sep 20 2026, sung on Kade's harp song: a repair came back with the READBACK
+ * reworded and its label gone, so the matching above found nothing and the engine
+ * sang the description. Sung lines are short. Closing paragraphs made only of long
+ * prose sentences (or a relabelled "Readback:") are never sung words. */
+function dropTrailingProse(words: string): string {
+  const blocks = words.trim().split(/\n\s*\n/);
+  const prose = (block: string): boolean => {
+    const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) return true;
+    if (/^[*_#\s]*read\s?back\b/i.test(lines[0])) return true;
+    return lines.every((l) => l.length >= 110 && !/^[\[(]/.test(l) && /[.!?]["')*_]*$/.test(l));
+  };
+  while (blocks.length > 1 && prose(blocks[blocks.length - 1])) blocks.pop();
+  return blocks.join('\n\n').trim();
+}
+
 export function mergeRepairedLyrics(original: string, repaired: string): string | null {
   const heading = /^\s*lyrics\s*:\s*$/im;
   const from = heading.exec(original);
@@ -236,7 +252,7 @@ export function mergeRepairedLyrics(original: string, repaired: string): string 
     const at = opening.length >= 20 ? words.lastIndexOf(opening) : -1;
     if (at !== -1) words = words.slice(0, at);
   }
-  words = words.trim();
+  words = dropTrailingProse(words);
   const sung = (t: string): number =>
     t.split('\n').filter((l) => l.trim() && !/^\s*\[/.test(l)).length;
   const before = original.slice(from.index + from[0].length, tailAt === -1 ? undefined : tailAt);
@@ -249,6 +265,8 @@ export function mergeRepairedLyrics(original: string, repaired: string): string 
  *  final paragraph that is one long prose line after the sung words is the
  *  readback; give it its label back. Leaves a labelled draft alone. */
 export function labelReadback(raw: string): string {
+  // "Readback:", "**READBACK:**" and the like are the same label; the splitter only knows one spelling.
+  raw = raw.replace(/^[ \t]*[*_#]*[ \t]*read\s?back[ \t]*[*_]*[ \t]*:[ \t]*[*_]*[ \t]*/im, 'READBACK: ');
   if (raw.includes('READBACK:') || !/^\s*lyrics\s*:/im.test(raw)) return raw;
   const lines = raw.trimEnd().split('\n');
   const last = lines[lines.length - 1].trim();

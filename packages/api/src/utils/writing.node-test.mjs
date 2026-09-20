@@ -279,6 +279,21 @@ test('Part 216: an unlabelled readback is never left among the sung words', () =
   assert.equal(labelReadback(sung), sung, 'a short sung last line is not mistaken for prose');
 });
 
+test('Part 228: a repair whose READBACK was reworded and unlabelled is never sung (her harp song)', () => {
+  const first = 'Orchestral R&B slow jam, 66 BPM.\n\nLyrics:\n[Verse 1]\nThe swing chain creaks the way it did\nI let my shoes fall in the grass\n[Chorus]\nLet it spin, let it spin\nI will catch it coming round\n\nREADBACK: A tired woman sings from a swing in her yard over a rolling harp, about four minutes, and the bridge turns it.';
+  const reworded = 'A woman sits on a swing in her yard at the end of a long day, singing low and close to the microphone while a harp rolls in triple time behind her, and the whole thing runs about four minutes. The mood turns at the bridge, where the arrangement drops to harp and one voice and she admits the world has been spinning fine without her.';
+  const repair = 'Direction.\n\nLyrics:\n[Verse 1]\nThe swing chain creaks the way it did\nI let my good shoes fall in the grass\n[Chorus]\nLet it spin, let it spin\nI will catch it coming round\n\n' + reworded;
+  const merged = mergeRepairedLyrics(first, repair);
+  assert.match(merged, /good shoes/);
+  assert.doesNotMatch(merged, /singing low and close/);
+  assert.ok(merged.endsWith('and the bridge turns it.'));
+  const twoParagraphs = mergeRepairedLyrics(first, repair.replace('four minutes. The mood', 'four minutes, with room to breathe between every phrase she sings tonight.\n\nThe mood'));
+  assert.doesNotMatch(twoParagraphs, /singing low|mood turns/);
+  const relabelled = mergeRepairedLyrics(first, repair.replace(reworded, '**Readback:** short one.'));
+  assert.doesNotMatch(relabelled, /short one/);
+  assert.match(labelReadback('Pop.\n\nLyrics:\n[Outro]\nIt works out\n\n**Readback:** A pop song.'), /\n\nREADBACK: A pop song\.$/);
+});
+
 test('Part 217: the website says it can wait and gets time for the audit; the phone stays inside its limit', () => {
   const phone = musicWritingSettings({ engine: 'yue2', mode: 'write' });
   const web = musicWritingSettings({ engine: 'yue2', mode: 'write', patient: true });
