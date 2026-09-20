@@ -36,13 +36,15 @@ export function musicWritingSettings(request: Request): {
   /* Part 218: Kade, "I want the best lyrics I can get, even if it means waiting."
    * The draft runs as a background job, so no web request has to stay open and
    * the writer can think on medium (275 s measured with the system in the
-   * prompt). The audit that follows stays on low; the handler sets that. */
+   * prompt). The audit that follows stays on low; the handler sets that.
+   * Sep 20 2026: budgets raised by 8,000 each after a DeepSeek draft spent its
+   * whole 16,000 thinking about rhyme and meter and came back cut off mid-bridge. */
   if (request.deep)
     return {
       model: lyricWritingModel,
       temperature: 0.85,
       top_p: 0.95,
-      maxTokens: 24000,
+      maxTokens: 32000,
       timeoutMs: 600000,
       reasoning: { enabled: true, effort: 'medium', exclude: true },
     };
@@ -57,7 +59,7 @@ export function musicWritingSettings(request: Request): {
       model: lyricWritingModel,
       temperature: 0.85,
       top_p: 0.95,
-      maxTokens: 16000,
+      maxTokens: 24000,
       timeoutMs: 225000,
       reasoning: { enabled: true, effort: 'low', exclude: true },
     };
@@ -65,7 +67,7 @@ export function musicWritingSettings(request: Request): {
     model: lyricWritingModel,
     temperature: 0.85,
     top_p: 0.95,
-    maxTokens: 16000,
+    maxTokens: 24000,
     timeoutMs: 112000,
     reasoning: { enabled: true, effort: 'low', exclude: true },
   };
@@ -75,6 +77,13 @@ export const musicWritingCraft: string = `DESK NOTES FROM THE OWNER (these outra
 - Words the person supplied are theirs. Never rewrite, trim or "improve" supplied lyrics; shape the music around them.
 - The songs have been coming out too short. Follow the desk's lyric budget: about four minutes, three verses, every verse new story. Verse two is not a shorter copy of verse one, and verse three is the payoff.
 - Her named pet hates, in her words: "Everything's always a tuesday, drinks are always coffee, scenes are clean." Never name a weekday or a clock time, never reach for coffee, the porch light, the kitchen table, neon, shadows, whispers or echoes, and never use clean, steady or scene as filler, unless her own brief used the word. Ask what THIS singer actually has in their hands, where exactly they are and what they would really drink, and write that.
+- SING-ALONG FIRST. Her verdict on this desk's drafts (Sep 20 2026): "it's still not sounding like a song I would sing along to at all. It still feels like literary work." She is right, and where the system above disagrees with the rules below, these win:
+  1. RHYME YOU CAN HEAR. Every verse is built in couplets (AABB) or alternating lines (ABAB, or XAXA at the very least), and the rhyming word is the LAST word of the line. Perfect rhymes and strong slant rhymes both count; a vowel that merely looks similar does not. A listener must be able to guess the last word of a line before it lands. The chorus rhymes too, and the title line has a rhyme partner. The system's advice to leave lines unrhymed and avoid tidy couplets is for a writer who over-rhymes. This desk under-rhymes. At most ONE deliberately unrhymed line in the whole song.
+  2. ONE METER PER SECTION. Choose a syllable count for the verse lines and hold it within one syllable, line after line, and match it again in verse two and verse three so the same tune fits all three. Long line, short line, long line, short line is fine if it repeats exactly. A verse whose lines run 5, 12, 7 and 10 syllables cannot be sung. Do not count syllables one by one while you think; that burns the whole budget and the song comes back cut off. Pick a beat (four stresses a line is the workhorse), say each line to it once, and move on. The desk counts afterwards and will tell you which verses wander.
+  3. SAY IT PLAIN IN THE CHORUS. The verses can show; the chorus TELLS. It is the singer saying the feeling straight out in words a ten year old knows, short lines, the title first or last, built to be shouted by a car full of people. Four to six lines plus repeats. No chorus made of description.
+  4. SONG, NOT SHORT STORY. No more than two observed details per verse; the rest is the singer talking, to someone, in plain sentences. Cut every line that only notices something (the crack in the seat, the chain that squeaks) unless the next line cashes it in. No understatement contests, no trailing off, no "and that's that".
+  5. LET IT BE FUN. Jokes, stories where something happens, animals, kids, bragging, nonsense syllables, call and response, a bit the crowd does. A children's song or a comedy song gets the same craft and none of the melancholy.
+  6. More of her pet hates: humming or a hum of any kind (the heater, the fridge, the engine, a tune), "knowing" as a noun or a mood ("the knowing", "a knowing look"), anything done "slow", and the radio playing a song that comments on the scene.
 - Do the SONG SPEC and the hook lab silently before the first line, and the QUALITY GATES silently after the last. Deliver only the finished song.`;
 
 /* Part 216 (Sep 19 2026). Her words: "Everything's always a tuesday, drinks are
@@ -96,6 +105,8 @@ const LYRIC_TELLS: [string, RegExp][] = [
   ['four walls', /\bfour walls\b/i],
   ['"clean" or "steady" as filler', /\b(?:clean|steady)\b/i],
   ['"scene" or "scenes"', /\bscenes?\b/i],
+  ['humming', /\bhumm?(?:s|ed|ing|in['’]?)?\b/i],
+  ['"knowing" as a mood', /\b(?:the|a|that|this|some) knowing\b|\bknowing (?:look|smile|glance|eyes?)\b/i],
   ['a stock phrase', /\b(?:clean slate|fresh start|moving on|turn(?:ed|ing)? the page|still standing|beautiful disaster|meant to be|what we had|weight of the world)\b/i],
 ];
 
@@ -196,20 +207,63 @@ export function fixStageDirections(script: string): string {
  *  seconds, which no web request survives. A fast draft followed by ONE fast
  *  audit gets most of that: the writer is handed its own draft and the gates
  *  that matter most, and fixes in place. Flagged tells ride in the same call. */
+/* Sep 20 2026. Models cannot count syllables, and "hold one meter" in a prompt
+ * changed nothing measurable. So the desk counts (roughly: vowel groups, silent
+ * final e dropped) and hands the audit the numbers for every verse whose lines
+ * wander by more than four syllables. Rough is fine; the instruction is to even
+ * the lines out, and a miscount of one does not change that. */
+const syllables = (line: string): number =>
+  line
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z' ]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .reduce((n, word) => {
+      const w = word.replace(/'/g, '').replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '').replace(/^y/, '');
+      return n + Math.max(1, (w.match(/[aeiouy]{1,2}/g) || []).length);
+    }, 0);
+
+export function lyricMeterNote(script: string): string {
+  const at = script.search(/^\s*lyrics\s*:/im);
+  if (at === -1) return '';
+  const uneven: string[] = [];
+  let tag = '';
+  let counts: number[] = [];
+  const close = (): void => {
+    if (/^verse/i.test(tag) && counts.length >= 4 && Math.max(...counts) - Math.min(...counts) > 4)
+      uneven.push(`[${tag}] lines run ${counts.join(', ')} syllables`);
+    counts = [];
+  };
+  for (const raw of script.slice(at).split('\n').slice(1)) {
+    const line = raw.trim();
+    if (/^READBACK:/i.test(line)) break;
+    const section = /^\[([^\]]*)\]$/.exec(line);
+    if (section) {
+      close();
+      tag = section[1];
+    } else if (line && !/^\(.*\)$/.test(line)) counts.push(syllables(line));
+  }
+  close();
+  return uneven.length
+    ? `\n\nCounted by the desk (roughly), these verses cannot carry one tune: ${uneven.join('; ')}. Even each verse out so lines in the same position match within one syllable, and so verse two and verse three match verse one.`
+    : '';
+}
+
 export function lyricAuditRequest(script: string, tells: LyricTell[], shape: string | null = null): string {
   const flagged = tells.length
     ? `\n\nThese exact lines lean on default-reach words and must be rewritten, keeping each line's rhyme sound, stress count and length, the same way everywhere a line repeats, and never by swapping in another default-reach word:\n${tells.map((t, i) => `${i + 1}. "${t.line}" -- ${t.tell}`).join('\n')}`
     : '';
-  return `Your first draft is below. Now be the producer who decides whether it gets cut. Run the QUALITY GATES on it silently and return the upgraded song. Fix in place: protect every line that already works, the hook above all, and do not paraphrase a working song into a different one.
+  return `Your first draft is below. Now be the producer who decides whether it gets cut. Run the QUALITY GATES on it silently and return the upgraded song. Fix in place: keep the story, the hook and every line that already sings, and do not paraphrase a working song into a different one. The exception is gate 5: if the verses do not rhyme or do not hold a meter, rewriting their line endings throughout is the job, not a liberty.
 
 Check, in this order, and change only what fails:
 1. THE TURN and the payoff. Does verse three do new work? Plant one concrete detail in verse one and bring it back loaded in verse three, or let one new fact make the last chorus mean something it did not mean the first time. On the final chorus, change exactly one word or one line if that lands the turn.
 2. The hook. Plain speech, six to eight syllables, its click syllable on an open vowel, exactly one surprise, repeated verbatim, title landing four to eight times. If the best line in the song is hiding in a verse, it is the hook in the wrong seat.
 3. Hook stew. A near-wordless second hook (a post-chorus chant or run) if the genre wants one.
 4. The spice. Exactly one from the list, visible.
-5. Variance. Line lengths breathe between sections, one line rhymes with nothing, at least one fragment, no section of tidy perfect-rhymed couplets, no worn rhyme pairs.
-6. Moment and voice. Happening now, one attitude in every line, a first line that grabs in eight words, no retrospective wisdom, no Tier 1 structure anywhere.
-7. Singability. Open vowels under held notes, a breath in every long line, no stacked sibilants or consonant pileups on stressed beats, parentheses only for sung ad-libs and echoes, never stage directions.${shape ? `\n8. Length. ${shape}` : ''}${flagged}
+5. SING-ALONG, the gate this desk fails most. Read each verse's line endings down the page: they must rhyme in couplets or alternating lines, with the rhyme on the last word, so a listener can guess the word before it lands. Rewrite line endings until they do; move words around inside the line before you change its meaning. Then count syllables: lines in the same position carry the same count, within one, in every verse. Then the chorus: it says the feeling straight out in plain words, rhymes, and could be shouted from a car. If the chorus describes instead of declaring, rewrite it and keep the title. No worn rhyme pairs (fire and desire, heart and apart, love and above).
+6. Song, not short story. No more than two observed details per verse; cut any line that only notices something. Moment and voice. Happening now, one attitude in every line, a first line that grabs in eight words, no retrospective wisdom, no Tier 1 structure anywhere.
+7. Singability. Open vowels under held notes, a breath in every long line, no stacked sibilants or consonant pileups on stressed beats, parentheses only for sung ad-libs and echoes, never stage directions.${shape ? `\n8. Length. ${shape}` : ''}${flagged}${lyricMeterNote(script)}
 
 Return the complete song in the same format: the music direction, the Lyrics: heading with every sung line and every chorus written out in full, then the READBACK line. Nothing else.
 

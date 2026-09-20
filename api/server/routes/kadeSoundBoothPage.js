@@ -530,7 +530,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
        * server. The list above is only what she gets if the writer cannot be reached. */
       var btn=this, label=btn.textContent, engine=state.engine, box=document.getElementById('script'), original=box.value;
       state.writing=true;btn.disabled=true;document.getElementById('btnDraft').disabled=true;updateRenderControls();
-      say('Thinking up a song nobody has written. The writer is brainstorming and throwing ideas away, so give it about twenty seconds.');
+      say('Thinking up a song nobody has written. The writer is brainstorming and throwing ideas away, so give it twenty seconds to a minute.');
       post('/api/kade/sound-booth/idea',{}).then(function(r){
         if(state.engine!==engine || box.value!==original){say('Your editor changed while the idea was being made. Your current text is kept.',true);return;}
         if(r.ok&&r.data&&r.data.idea){changeWriting(r.data.idea);say('New song idea in the editor. Change it, press Surprise me again for another, or choose Help write this. Undo restores your previous writing.');}

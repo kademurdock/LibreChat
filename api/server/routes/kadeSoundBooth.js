@@ -2469,7 +2469,7 @@ router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req,
       temperature: 1.1,
       top_p: 0.95,
       reasoning: { enabled: true, effort: 'medium', exclude: true },
-      timeoutMs: 75000,
+      timeoutMs: 110000,
     });
     const idea = cleanSongIdea(made.text);
     logKadeUsage({

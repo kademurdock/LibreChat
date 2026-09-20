@@ -60,7 +60,7 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
   await handlers.get('post/script')(request, response);
   assert.ok(requests[0].messages[0].content.includes(instructions));
   assert.equal(requests[0].model, lyricWritingModel);
-  assert.equal(requests[0].max_tokens, 16000);
+  assert.equal(requests[0].max_tokens, 24000);
   assert.equal(requests[0].temperature, 0.85);
   assert.equal(requests[0].top_p, 0.95);
   assert.deepEqual({ ...requests[0].reasoning }, { enabled: true, effort: 'low', exclude: true }, 'thin briefs must not depend on the gateway classifier to think');
@@ -327,17 +327,33 @@ test('Part 228: Surprise me draws a way of looking, never nouns; asks on the son
   const ideaSource = stripTypeScriptTypes(readFileSync(new URL('../music/idea.ts', import.meta.url), 'utf8'));
   const { songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea } = await import('data:text/javascript;base64,' + Buffer.from(ideaSource).toString('base64'));
   const low = songIdeaSparks(() => 0), high = songIdeaSparks(() => 0.999999), edge = songIdeaSparks(() => 1, Array.from({ length: 20 }, (_, n) => 'Title ' + n));
-  for (const sparks of [low, high, edge]) for (const key of ['type', 'method', 'shape']) assert.ok(sparks[key] && sparks[key].length > 3, key);
+  for (const sparks of [low, high, edge]) for (const key of ['type', 'method', 'shape', 'territory', 'tone', 'sound']) assert.ok(sparks[key] && sparks[key].length > 3, key);
   assert.notEqual(low.method, high.method);
   assert.equal(edge.avoid.length, 12, 'only the most recent titles ride along'); assert.equal(edge.avoid.at(-1), 'Title 19');
   assert.ok(songIdeaSystem.startsWith("You are Lyric, working the songwriting desk in Kade-AI's Sound Booth."), 'the gateway keeps chat guards off this opening; keep it identical to musicWritingPrompt');
-  assert.match(songIdeaSystem, /A named weekday, coffee, porch lights/); assert.match(songIdeaSystem, /it is a costume/); assert.match(songIdeaSystem, /do not default to a woman and an ex/);
+  assert.match(songIdeaSystem, /A named weekday, a clock time, coffee/); assert.match(songIdeaSystem, /it is a costume/); assert.match(songIdeaSystem, /there is no couple, no ex and no bar/); assert.match(songIdeaSystem, /a dog falls in love with a stick/);
   assert.doesNotMatch(songIdeaRequest(low), /Recent ideas/);
   const ask = songIdeaRequest(edge);
+  assert.ok(ask.includes('Territory: ' + edge.territory) && ask.includes('Tone: ' + edge.tone) && ask.includes('Sound: ' + edge.sound));
+  assert.match(songIdeaSparks(() => 0.3).sound + songIdeaSparks(() => 0.7).sound, /\w/); assert.doesNotMatch(songIdeaSparks(() => 0.2).sound, /^(.+) crossed with ,/, 'a genre is never crossed with itself');
   assert.ok(ask.includes(edge.method) && ask.includes('- Title 19') && !ask.includes('- Title 7\n'));
   const pitch = '"I Mow At Seven" is a man out on his own grass with the engine already running on his one day off, staring back at the neighbour watching him through the blinds. He is not sorry about the hour. Twitchy late-2000s dance-punk with dry machine drums and a clavinet, about four minutes.';
   assert.equal(songIdeaTitle(pitch), 'I Mow At Seven');
   assert.equal(cleanSongIdea('Brainstorm: ten titles, struck nine.\n\n**' + pitch + '**'), pitch, 'leaked working-out is not the idea');
   assert.equal(cleanSongIdea('Too short.'), null);
   assert.equal(cleanSongIdea(pitch + '\n\nLyrics:\n[Verse 1]\nla la'), null, 'a pitch is never lyrics');
+});
+
+test('Part 230: the desk demands rhyme and one meter, counts syllables itself, and knows her newest pet hates', async () => {
+  const prompt = await musicWritingPrompt('format', { engine: 'yue2', mode: 'write' }, async () => ({ instructions: 'persona' }));
+  assert.match(prompt, /SING-ALONG FIRST/); assert.match(prompt, /This desk under-rhymes/); assert.match(prompt, /SAY IT PLAIN IN THE CHORUS/);
+  const wander = 'Pop.\n\nLyrics:\n[Verse 1]\nBar is half full and the jukebox is dying tonight again\nYou by the window\nSome fella walked in and he looked you up and he looked you down\nI got a beer\n[Chorus]\nLook at her\n\nREADBACK: x';
+  const audit = lyricAuditRequest(wander, [], null);
+  assert.match(audit, /SING-ALONG, the gate this desk fails most/); assert.doesNotMatch(audit, /one line rhymes with nothing/);
+  assert.match(audit, /\[Verse 1\] lines run \d+, \d+, \d+, \d+ syllables/);
+  const even = 'Pop.\n\nLyrics:\n[Verse 1]\nI saw it lying on the ground\nThe best thing I have ever found\nYou threw the frisbee, I don\'t care\nI dropped it and I left it there\n\nREADBACK: x';
+  assert.doesNotMatch(lyricAuditRequest(even, [], null), /Counted by the desk/);
+  const tells = lyricTells('x\nLyrics:\n[Verse 1]\nThe heater hummin\' warm and low\nShe gave me that knowing look\nI know the way back home\n(Mm, mm)', '');
+  assert.deepEqual(tells.map(t => t.tell), ['humming', '"knowing" as a mood']);
+  assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true }).maxTokens, 32000);
 });
