@@ -574,6 +574,167 @@ function keeperShadowFinish(shadow, { attachments, logged, failed, messageId, lo
   }
 }
 
+/* ── 4. THE REVERIE DIRECTOR (Part 237, Sep 20 2026) ──────────────────────
+ * Kade's ask: "it could play my synth characters in the sim world reverie."
+ * Her shape, chosen this session: Jev directs, the LLM voices.
+ *
+ * WHAT THE CITY DOES TODAY. reverie.js tickWorld step 4: a coin flip
+ * (Math.random() >= 0.3), a round-robin cursor over whoever is in the room,
+ * then ONE LINE PICKED AT RANDOM from that citizen's pool of three or four,
+ * with a rule against repeating the last one. That is the whole of it. A
+ * citizen says a random canned line whatever is happening in front of them,
+ * which is exactly the thing that reads as a machine.
+ *
+ * WHAT THIS CHANGES. Jev reads the room — who is here, what they are doing,
+ * the hour, the weather, and the last few things that actually happened —
+ * and picks which authored line fits THIS moment, or picks nobody. One
+ * request, about 200 ms, six thousandths of a cent, which is why it can run
+ * on every room on every tick where the LLM planner never could: that one has
+ * a fifty-cent day and a five-minute spacing.
+ *
+ * THE VEIL HOLDS. Every option is a line a human already wrote and the city
+ * already had. Jev chooses among them and can choose silence. It writes no
+ * words, moves nobody, touches no money, relationship, inventory or outcome —
+ * the canon's own contract for an AI trial in Reverie, kept to the letter.
+ *
+ * LLM AS THE VOICE. `fresh` is the second question: does this moment deserve
+ * something the pool does not contain? That is the signal for the existing
+ * resident pilot (life/planning.js, glm, REVERIE_RESIDENT_DAILY_USD) to spend
+ * one of its calls on new words. Nothing here spends it — this reports, the
+ * pilot decides, so her fifty cents a day is never touched by a Jev verdict.
+ *
+ * TRIAL (Sep 20 2026, live API, 8 scenes off the real census, scratchpad
+ * jev_reverie_trial.js). What it got right is the part random cannot do:
+ * "asks Pat whether the coffee is fresh" → Pat pours fresh coffee (0.86);
+ * "asks if anybody needs a hand with the crates", with Pat and Nell also in
+ * the room → MERLE and the crate line (0.73); an empty afternoon → silence.
+ * `fresh` fired on exactly the three scenes where the visitor addressed
+ * somebody and stayed quiet on the other five. The best single result is the
+ * one that does both: "asks Nell how her sister is doing" → silence WITH
+ * fresh, meaning Nell does not say something canned at a real question, and
+ * the moment is flagged for words the pool does not have.
+ *
+ * Three of eight came back under the confidence floor and fell to the old
+ * coin flip, and that is the design working rather than failing: when the
+ * scene genuinely does not favour one line over another, random is as good
+ * an answer as any, and the calls that matter are the ones where random
+ * would have looked stupid. About $0.03 per thousand room-ticks.
+ *
+ * Kill: KADE_JEV_REVERIE=0, KADE_JEV=0, or no key. Off → the coin flip and
+ * the random line, exactly as before. */
+const REVERIE_NOBODY = 'nobody';
+/* This asks about an OBSERVABLE FACT, not about whether the line pool is
+ * adequate. The first draft asked the aesthetic question ("does this moment
+ * call for something the lines do not cover") and it never once fired in the
+ * trial, including on "Kade asks Nell how her sister is doing" — the exact
+ * case it exists for. Jev's nouls are sharp on crisp questions and mushy on
+ * taste, so the question became: was one of these people ADDRESSED. */
+const DIRECTOR_FRESH_Q = {
+  type: 'noul',
+  instructions:
+    'Read `justHappened`. Did the visitor directly address one of the people named in `whoIsHere` — speak to them, ask them a question, greet them, thank them, or ask them for something?',
+  criteria: {
+    true: 'The visitor spoke TO one of these people, or asked them something, or greeted or thanked them, or asked them for help. A question aimed at one of them counts even if their name is not used.',
+    false: 'The visitor acted without addressing anybody: walking in, sitting down, looking around, reading, eating, passing through, or speaking to somebody who is not in this room. An empty room is also false.',
+  },
+};
+
+/** Build the choice list: every authored line each present citizen could use,
+ * plus doing nothing. Keys are `<npcId>#<index>` so the caller can map back
+ * without trusting anything Jev returns. */
+function directorOptions(present, { perPerson = 4, maxOptions = 40 } = {}) {
+  const options = {};
+  const map = {};
+  for (const p of present) {
+    const lines = (Array.isArray(p.lines) ? p.lines : []).filter((l) => typeof l === 'string' && l.trim());
+    for (let i = 0; i < lines.length && i < perPerson; i++) {
+      if (Object.keys(options).length >= maxOptions) break;
+      const key = `${p.id}#${i}`;
+      options[key] = `${p.name}: ${lines[i]}`;
+      map[key] = { id: p.id, name: p.name, line: lines[i] };
+    }
+  }
+  options[REVERIE_NOBODY] =
+    'Nobody does anything just now. The room stays as it is. Choose this whenever no offered line genuinely suits the moment — a quiet room is normal and correct.';
+  return { options, map };
+}
+
+function directorKnobs() {
+  return {
+    minConfidence: num('KADE_JEV_REVERIE_MIN_CONF', 0.45),
+    freshAt: num('KADE_JEV_REVERIE_FRESH', 0.7),
+  };
+}
+
+/** Pure: Jev's answer → { line, id, name } | null (nobody / not sure). */
+function decideDirector(answers, map, knobs = directorKnobs()) {
+  const c = answers && answers.pick;
+  const key = c && c.choice;
+  if (!key || key === REVERIE_NOBODY) return null;
+  if (!Object.prototype.hasOwnProperty.call(map, key)) return null;
+  if (typeof c.confidence !== 'number' || c.confidence < knobs.minConfidence) return null;
+  return { ...map[key], confidence: c.confidence };
+}
+
+/**
+ * Direct one room. `present` is [{ id, name, doing, lines: [...] }].
+ * Resolves to { answered, pick, fresh, costUSD } and NEVER rejects.
+ *
+ * `answered` is the flag the caller must branch on, and the distinction is
+ * the whole safety of this: answered=true with pick=null means JEV CHOSE
+ * SILENCE, which is a real decision and stands. answered=false means Jev was
+ * off, slow, unreachable or unsure — and then the caller runs the old coin
+ * flip exactly as it did before Jev existed. Collapsing those two into "no
+ * pick" would turn every outage into a silent, empty-feeling city.
+ */
+async function directRoom(scene, present, { ask = jev.ask, timeoutMs = 2000 } = {}) {
+  const out = { answered: false, pick: null, fresh: false, costUSD: 0 };
+  try {
+    if (!jev.enabled('KADE_JEV_REVERIE')) return out;
+    if (!Array.isArray(present) || !present.length) return out;
+    const { options, map } = directorOptions(present);
+    if (!Object.keys(map).length) return out;
+    const state = {
+      place: String((scene && scene.place) || 'a room in the city').slice(0, 200),
+      time: String((scene && scene.time) || 'unknown').slice(0, 60),
+      weather: String((scene && scene.weather) || 'unremarkable').slice(0, 80),
+      whoIsHere: present.map((p) => `${p.name}${p.doing ? ` (${p.doing})` : ''}`).join('; ').slice(0, 600),
+      justHappened: String((scene && scene.justHappened) || '(nothing in a while)').slice(0, 1800),
+    };
+    const { answers, usage } = await ask(
+      state,
+      {
+        pick: {
+          type: 'choice',
+          instructions:
+            'A visitor is in this room of a small city. The residents listed in `whoIsHere` each have things they might do or say. Read `justHappened` and choose the ONE line that best fits this exact moment, or choose nobody. Prefer nobody over a line that would read as unprompted or repetitive. Do not pick a line that simply repeats something already in `justHappened`.',
+          criteria: options,
+        },
+        fresh: DIRECTOR_FRESH_Q,
+      },
+      timeoutMs,
+    );
+    out.costUSD = ((Number(usage && usage.input_tokens) || 0) * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6;
+    const knobs = directorKnobs();
+    const c = answers && answers.pick;
+    /* Answered means Jev returned a choice we understand: a real line, or
+     * `nobody`. An unreadable answer is not an answer. */
+    out.answered = !!(c && (c.choice === REVERIE_NOBODY || Object.prototype.hasOwnProperty.call(map, c.choice)));
+    out.pick = decideDirector(answers, map, knobs);
+    /* Picked a line but under the confidence floor: that is "unsure", not
+     * "silence", so hand the room back to the old road. */
+    if (out.answered && !out.pick && c.choice !== REVERIE_NOBODY) out.answered = false;
+    try {
+      out.fresh = jev.noulOf(answers, 'fresh') >= knobs.freshAt;
+    } catch (_) {
+      out.fresh = false;
+    }
+    return out;
+  } catch (_) {
+    return out;
+  }
+}
+
 /* ── 3. TOOL RETRIEVAL (SHADOW ONLY) ──────────────────────────────────────
  * services/kadeToolRetrieval.js picks tools by regex and embedding, and its
  * header comments are a list of misses ("whats the news looking like
@@ -633,6 +794,7 @@ function toolsShadow({ text, tools, keep, log }, { ask = jev.ask, timeoutMs = 30
 module.exports = {
   SHELF_CRITERIA, SHELF_OF, SHELF_Q, ADULT_Q, ADULT_WORDS, bookState, decideBook, sortBooks, shelfKnobs,
   AD_CATEGORY_CRITERIA, AD_CATEGORY_Q, IS_AD_Q, adState, adDecade, adKnobs, decideAd, fileAds,
+  REVERIE_NOBODY, DIRECTOR_FRESH_Q, directorOptions, directorKnobs, decideDirector, directRoom,
   KEEPER_CARD_Q, KEEPER_LOG_Q, KEEPER_PROMISE_Q, keeperState, keeperWrote, keeperShadowStart, keeperShadowFinish,
   keeperFloor, keeperGateDecide, keeperGate, keeperGateLog,
   TOOL_NEEDS, toolQuestion, toolsShadow,

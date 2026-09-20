@@ -287,6 +287,85 @@ test('fileAds: switched off, nothing is asked and nothing moves', async () => {
   assert.strictEqual(r.skipped.length, 1);
 });
 
+/* ── Part 237: the Reverie director ──────────────────────────────────────── */
+
+const PRESENT = [
+  { id: 'npc:nell', name: 'Nell Calder', doing: 'folding warm laundry', lines: ['Nell smooths a towel.', 'Nell turns a page.'] },
+  { id: 'npc:pat', name: 'Pat Harris', doing: 'working the grill', lines: ['Pat calls an order through the window.'] },
+];
+
+test('directorOptions: every authored line is offered, plus nobody, and keys map back', () => {
+  const { options, map } = J.directorOptions(PRESENT);
+  assert.strictEqual(Object.keys(options).length, 4, 'three lines plus nobody');
+  assert.ok(options[J.REVERIE_NOBODY], 'silence is always on the menu');
+  assert.deepStrictEqual(map['npc:nell#0'], { id: 'npc:nell', name: 'Nell Calder', line: 'Nell smooths a towel.' });
+  assert.ok(options['npc:pat#0'].includes('Pat Harris'), 'the option text names the speaker');
+  /* a citizen with no lines contributes nothing and breaks nothing */
+  const bare = J.directorOptions([{ id: 'x', name: 'X', lines: [] }]);
+  assert.deepStrictEqual(Object.keys(bare.map), []);
+});
+
+test('decideDirector: silence, an unknown key and a shaky pick all mean no line', () => {
+  const { map } = J.directorOptions(PRESENT);
+  const k = { minConfidence: 0.45, freshAt: 0.7 };
+  assert.strictEqual(J.decideDirector({ pick: { choice: J.REVERIE_NOBODY, confidence: 0.9 } }, map, k), null);
+  /* a key Jev invented is never honoured — the city only says authored lines */
+  assert.strictEqual(J.decideDirector({ pick: { choice: 'npc:ghost#9', confidence: 0.99 } }, map, k), null);
+  assert.strictEqual(J.decideDirector({ pick: { choice: 'npc:nell#0', confidence: 0.2 } }, map, k), null);
+  const got = J.decideDirector({ pick: { choice: 'npc:nell#0', confidence: 0.8 } }, map, k);
+  assert.strictEqual(got.line, 'Nell smooths a towel.');
+  assert.strictEqual(got.name, 'Nell Calder');
+});
+
+test('directRoom: SILENCE is answered, a failure is NOT — the difference the city rides on', async () => {
+  await withEnv(ON, async () => {
+    const silent = await J.directRoom({}, PRESENT, {
+      ask: async () => ({ answers: { pick: { choice: J.REVERIE_NOBODY, confidence: 0.9 }, fresh: { noul: 0.1 } } }),
+    });
+    assert.deepStrictEqual({ answered: silent.answered, pick: silent.pick }, { answered: true, pick: null },
+      'Jev choosing nobody is a decision and must stand');
+
+    const dead = await J.directRoom({}, PRESENT, { ask: async () => { throw new Error('timeout 2000ms'); } });
+    assert.strictEqual(dead.answered, false, 'an outage must hand the room back to the old coin flip');
+    assert.strictEqual(dead.pick, null);
+
+    const shaky = await J.directRoom({}, PRESENT, {
+      ask: async () => ({ answers: { pick: { choice: 'npc:nell#0', confidence: 0.1 }, fresh: { noul: 0.1 } } }),
+    });
+    assert.strictEqual(shaky.answered, false, 'unsure is not silence');
+
+    const junk = await J.directRoom({}, PRESENT, {
+      ask: async () => ({ answers: { pick: { choice: 'npc:invented#3', confidence: 0.99 }, fresh: { noul: 0 } } }),
+    });
+    assert.strictEqual(junk.answered, false);
+    assert.strictEqual(junk.pick, null);
+  });
+});
+
+test('directRoom: picks a line, reports fresh, costs a fraction of a cent, never rejects', async () => {
+  await withEnv(ON, async () => {
+    const r = await J.directRoom(
+      { place: 'pats_diner', time: '7:40 in the morning', weather: 'cold rain', justHappened: 'Kade: sits at the counter' },
+      PRESENT,
+      { ask: async () => ({ answers: { pick: { choice: 'npc:pat#0', confidence: 0.82 }, fresh: { noul: 0.85 } }, usage: { input_tokens: 900 } }) },
+    );
+    assert.strictEqual(r.answered, true);
+    assert.strictEqual(r.pick.line, 'Pat calls an order through the window.');
+    assert.strictEqual(r.fresh, true, 'the LLM-as-voice signal');
+    assert.ok(r.costUSD > 0 && r.costUSD < 0.0001);
+  });
+  /* off: nothing asked, nothing answered, the old road runs */
+  let asked = 0;
+  const off = await withEnv({ ...ON, KADE_JEV_REVERIE: '0' }, () =>
+    J.directRoom({}, PRESENT, { ask: async () => { asked++; return {}; } }),
+  );
+  assert.strictEqual(asked, 0);
+  assert.strictEqual(off.answered, false);
+  const none = await withEnv(ON, () => J.directRoom({}, [], { ask: async () => { asked++; return {}; } }));
+  assert.strictEqual(asked, 0);
+  assert.strictEqual(none.answered, false);
+});
+
 /* ── Part 237: the gate that can actually skip the keeper ────────────────── */
 
 test('keeperState: latestAssistant is the character turn before the last human one', () => {

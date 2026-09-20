@@ -1396,10 +1396,73 @@ async function tickWorld() {
      * Four lines per NPC + dedup = a player never notices the pool is finite. */
     const allHereNpcs = (await MooChar.find({ userId: /^npc:/, roomId: { $in: rooms } }).select('userId name roomId attrs.residentPlan').lean())
       .filter((npc) => !require('./life/planning').publicActivity(npc, npcDoingNow(npc.userId)?.doing));
+    /* Part 237 — THE DIRECTOR. Jev reads the room and picks which authored
+     * line fits THIS moment, or picks nobody. It writes nothing: every
+     * option is a line the census already carried, so the Veil and the prose
+     * law are untouched, and the coin flip below is still the whole of the
+     * behaviour whenever Jev is off, slow or unsure. See the long note in
+     * services/kadeJevJudges.js directRoom(). Kill: KADE_JEV_REVERIE=0. */
+    let director = null;
+    try {
+      director = require('~/server/services/kadeJevJudges');
+    } catch (_) {
+      director = null;
+    }
     for (const roomId of rooms) {
-      if (Math.random() >= 0.3) continue;
       const hereNpcs = allHereNpcs.filter((n) => n.roomId === roomId);
       if (!hereNpcs.length) continue;
+
+      let directed = null;
+      if (director && typeof director.directRoom === 'function') {
+        try {
+          const present = hereNpcs
+            .map((n) => {
+              const d = CENSUS_BY_ID[n.userId];
+              return d && d.ambient && d.ambient.length
+                ? { id: n.userId, name: n.name, doing: npcDoingNow(n.userId)?.doing || '', lines: d.ambient }
+                : null;
+            })
+            .filter(Boolean);
+          if (present.length) {
+            const recent = await MooEvent.find({ roomId }).sort({ seq: -1 }).limit(5).select('actorName text kind').lean();
+            const scene = {
+              place: roomId,
+              time: require('./life/ctx').clockLine(),
+              weather: (weatherNow() || {}).line || '',
+              justHappened: recent
+                .reverse()
+                .map((e) => `${e.actorName || 'someone'}: ${String(e.text || '').slice(0, 200)}`)
+                .join('\n'),
+            };
+            const r = await director.directRoom(scene, present);
+            /* answered=true and no pick means Jev chose SILENCE, which is a
+             * real decision and stands. answered=false means it was off,
+             * slow or unsure, and the old coin flip below runs untouched. */
+            if (r && r.answered) directed = r.pick || 'silence';
+            /* `fresh` says a visitor actually spoke TO somebody here and the
+             * authored pool has no answer for it. Nothing acts on it yet —
+             * spending on new words is the resident pilot's fifty-cent day to
+             * spend, not this tick's. The line is here so a week of them can
+             * be read before that is wired. */
+            if (r && r.fresh) {
+              logger.info(`[reverie][jev] fresh room=${roomId} said=${r.pick ? 'line' : 'silence'} here=${present.map((p) => p.name).join(',')}`);
+            }
+          }
+        } catch (_) {
+          directed = null;
+        }
+      }
+      if (directed === 'silence') continue;
+
+      if (directed && typeof directed === 'object') {
+        _lastAmbient[directed.id] = directed.line;
+        const seq = await nextSeq();
+        await MooEvent.create({ seq, roomId, actorUserId: directed.id, actorName: directed.name, kind: 'emote', text: directed.line, at: new Date() });
+        continue;
+      }
+
+      /* Jev off, unreachable or unsure — the Part 180 behaviour, unchanged. */
+      if (Math.random() >= 0.3) continue;
       const npc = hereNpcs[ambientCursor++ % hereNpcs.length];
       const def = CENSUS_BY_ID[npc.userId];
       if (def && def.ambient && def.ambient.length) {
