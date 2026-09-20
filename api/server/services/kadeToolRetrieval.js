@@ -510,7 +510,41 @@ async function selectTools(p) {
   const reason = `kw=[${[...kw].join(',')}] emb=[${[...emb.hits].join(',')}]${
     stickyTools && stickyTools.size ? ` sticky=[${[...stickyTools].join(',')}]` : ''
   }`;
+  jevToolsShadow(text, all, keep);
   return { keep, dropped, reason, scored: emb.scored.slice(0, 3) };
+}
+
+/* Part 236 (Sep 20 2026) — JEV WATCHES THE SELECTION, SHADOW ONLY. The header
+ * of this file is a list of turns the regexes and the embed floor missed
+ * ("whats the news looking like tonight", the iPhone lineup, the Clancy
+ * trial). Jev, the decision model (services/kadeJev.js), is asked one yes/no
+ * per tool for the five that matter most (web_search, kade_news,
+ * kade_weather, kade_notify, kade_memory_search, whichever are loaded):
+ * "would answering `message` well need <what the tool does>?". The selection
+ * above is ALREADY MADE when this fires; it is never awaited and never
+ * changes `keep`. It logs one line beside [kadeToolRag]:
+ *   [kadeJev][tools-shadow] kept=[...] jev={web_search:0.96,kade_news:0.80,...}
+ * so a week of lines shows where the two disagree. TRIAL (live API, 24
+ * labelled messages, scratchpad jev_fork_tools_trial.js): every needed tool
+ * scored 0.87 or higher (13 of 13), including all three documented misses
+ * above; of 94 unneeded tool readings one reached 0.50 ("do I need a jacket
+ * today" put web_search at exactly 0.50 beside weather at 0.96) and greetings,
+ * venting, jokes and "I love you, night night" sat under 0.10 on everything.
+ * Oddity to expect in the lines: a bare "yes" put memory search at 0.60.
+ * 130-700 ms, about 900 input tokens, four thousandths of a cent a turn.
+ * Kill: KADE_JEV_TOOLS_SHADOW=0, KADE_JEV=0, or no TYPESAFE_API_KEY. */
+function jevToolsShadow(text, all, keep) {
+  try {
+    const p = require('./kadeJevJudges').toolsShadow({
+      text,
+      tools: [...all],
+      keep: new Set(keep),
+      log: (line) => logger.info(line),
+    });
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (_) {
+    /* a shadow never throws into the selection */
+  }
 }
 
 /**

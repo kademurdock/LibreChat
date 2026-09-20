@@ -321,6 +321,16 @@ router.get('/memory-health', async (req, res) => {
       },
       echoes,
       echoPreviews: previewOn,
+      /* Part 236 (Sep 20 2026): Jev, the decision model (services/kadeJev.js).
+       * Is it on, which switches, and how its calls have gone since this
+       * process started. Counts only; never the key. */
+      jev: (() => {
+        try {
+          return require('~/server/services/kadeJev').health();
+        } catch (_e) {
+          return { configured: false, ok: 0, failed: 0, lastError: 'health unreadable' };
+        }
+      })(),
       /* ── WARNINGS (Aug 26 2026) ────────────────────────────────────────────
        * Her line, and it is the reason this block exists: "something needs to
        * read/monitor it."

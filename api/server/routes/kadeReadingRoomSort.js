@@ -44,7 +44,66 @@ async function spentToday() {
   } catch (_) { return 0; }
 }
 
+/* Part 236 (Sep 20 2026). JEV READS THE BOOKS FIRST. Her word: move every
+ * judgment that can move onto the decision model. A shelf is a pick-one and
+ * "is it adult" is a yes/no, which is all Jev does; it costs about six
+ * thousandths of a cent a book and answers in a fifth of a second. The
+ * questions and the deciding live in services/kadeJevJudges.js.
+ *
+ * The contract: Jev is a first opinion. A book is filed on Jev's word only
+ * when it is sure of the shelf (confidence >= 0.70) AND decisive on adult
+ * (<= 0.15 or >= 0.85). Every other book, and every book when Jev fails or
+ * is switched off, goes to the LLM call below exactly as before, batched
+ * into one call. `grownUpsOnly` hides a book from child accounts, so the
+ * mistake that matters is "not adult" said about a book that is: on top of
+ * the 0.15 line, any book whose own title or synopsis uses an adult word
+ * (erotic, explicit, sex, adults only...) never takes Jev's "not adult" on
+ * trust, and neither does anything Jev shelves under Sex & dating.
+ *
+ * TRIAL, live API, jev-1.13.0, 36 labelled books (scratchpad
+ * jev_fork_library_trial.js), 26 shelves, 10 adult books of which 5 had coy
+ * synopses with no explicit word in them:
+ *   shelf: 36 of 36 on an acceptable shelf; zero wrong at any confidence.
+ *          At 0.70, 32 of 36 accepted; the four under it were honestly
+ *          two-shelf books (Letters to Penthouse 0.60, a bare-title Stephen
+ *          King 0.69 which it rightly called Other).
+ *   adult: the 10 adult books scored 0.99 0.99 0.99 0.98 0.99 0.92 0.94 0.96
+ *          0.75 0.55. The LOWEST adult book was 0.55 against a 0.15 line, so
+ *          ZERO false negatives, with room. The 26 non-adult books topped out
+ *          at 0.59 (a dirty joke book) against a 0.85 line: zero false
+ *          positives. Six sat between the lines and went to the LLM.
+ *   whole rule: 26 filed by Jev, 10 to the LLM, 0 wrong shelves, 0 adult
+ *          mistakes either way. 150-430 ms a book, one cold call 1.3 s.
+ * Kill: KADE_JEV_LIBRARY=0 (or KADE_JEV=0, or no TYPESAFE_API_KEY): then this
+ * is byte for byte the old road. Knobs: KADE_JEV_LIBRARY_MIN_CONF (0.70),
+ * KADE_JEV_LIBRARY_ADULT_LOW (0.15), KADE_JEV_LIBRARY_ADULT_HIGH (0.85). */
 async function classify(books) {
+  let first = { out: {}, leftovers: books, costUSD: 0 };
+  try {
+    first = await require('~/server/services/kadeJevJudges').sortBooks(books);
+  } catch (_) {
+    first = { out: {}, leftovers: books, costUSD: 0 };
+  }
+  const byJev = Object.keys(first.out).length;
+  if (!first.leftovers.length) {
+    logger.info(`[kadeJev][library] jev filed ${byJev}, llm 0`);
+    return { out: first.out, costUSD: first.costUSD };
+  }
+  let rest;
+  try {
+    rest = await classifyLLM(first.leftovers);
+  } catch (e) {
+    /* With nothing from Jev this is the old failure, thrown the old way. With
+     * some filed, keep them: the leftovers stay unsorted for the next pass. */
+    if (!byJev) throw e;
+    logger.warn(`[kadeJev][library] jev filed ${byJev}, llm failed on ${first.leftovers.length}: ${e.message}`);
+    return { out: first.out, costUSD: first.costUSD };
+  }
+  if (byJev) logger.info(`[kadeJev][library] jev filed ${byJev}, llm ${first.leftovers.length}`);
+  return { out: { ...rest.out, ...first.out }, costUSD: rest.costUSD + first.costUSD };
+}
+
+async function classifyLLM(books) {
   const key = process.env.OPENROUTER_KEY;
   if (!key) throw new Error('OPENROUTER_KEY not configured');
   const list = books.map((b, i) => `${i + 1}. id=${b._id} | title: ${b.title} | author: ${b.author || '?'} | year: ${b.copyrightYear || '?'} | synopsis: ${String(b.synopsis || '').slice(0, 1200)}`).join('\n');

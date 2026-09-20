@@ -1085,6 +1085,9 @@ class AgentClient extends BaseClient {
        * quiet no-op inside logDiaryEntry. */
       logDiary: async ({ text, scope, salience }) => {
         const { logDiaryEntry } = require('~/models/kadeDiary');
+        /* Part 236: a note for the Jev keeper shadow's log line (runMemory),
+         * that the keeper reached for the logbook this turn. Read by nothing else. */
+        this._kadeKeeperLogged = true;
         /* Part 112: the conversation rides along so the diary can keep ONE
          * entry per episode (her key choice) — injected here, never decided
          * by the keeper. See kadeDiary.js's episode block. */
@@ -1284,7 +1287,61 @@ class AgentClient extends BaseClient {
         });
       }
       const bufferMessage = new HumanMessage(limitedMemoryInput);
-      return await this.processMemory([bufferMessage]);
+      /* Part 236 (Sep 20 2026) — THE KEEPER GATE, SHADOW ONLY. The keeper is a
+       * generative call after every turn platform-wide, and its own first rule
+       * is "most turns should save NOTHING". Jev (the decision model, see
+       * services/kadeJev.js) reads the same window beside it and answers two
+       * yes/no questions written from the keeper's WHAT TO SAVE rules: is there
+       * a lasting fact worth a card, is this a moment worth a logbook line. It
+       * is started here and NEVER awaited on this road; when the keeper is done
+       * one line is logged with what the keeper actually did:
+       *   [kadeJev][keeper-shadow] card=0.xx log=0.xx keeper_wrote=card|log|card+log|nothing|error msg=<id>
+       * It changes nothing. After a week of lines she can pick a floor under
+       * which the keeper call is skipped. TRIAL (live API, 20 labelled turns,
+       * scratchpad jev_fork_keeper_trial.js): the 9 save-nothing turns
+       * (greeting, good night, drive-by question, joke, work chatter, "check
+       * your logbook", a game stabbing, an opinion ask, off the record) scored
+       * at most 0.23 card / 0.28 log, eight of them under 0.10; the 11 turns
+       * worth saving scored at least 0.57 on the side that mattered (the
+       * rabbit hole was the low one, 0.57 log). A skip-when-both-under-0.30
+       * gate would have skipped 9 of 9 and wrongly skipped 0. Known blind
+       * spot: Jev reads the PERSON's latest turn, so character canon and
+       * promises the character made (keeper rule 4, how_we_talk) will show up
+       * as keeper_wrote=card on a low score. That is what the shadow is for.
+       * Kill: KADE_JEV_KEEPER_SHADOW=0, KADE_JEV=0, or no TYPESAFE_API_KEY. */
+      let jevJudges = null;
+      let jevShadow = null;
+      try {
+        jevJudges = require('~/server/services/kadeJevJudges');
+        this._kadeKeeperLogged = false;
+        jevShadow = jevJudges.keeperShadowStart(filteredMessages);
+      } catch (_) {
+        jevShadow = null;
+      }
+      const shadowDone = (attachments, failed) => {
+        try {
+          if (jevJudges && jevShadow) {
+            jevJudges.keeperShadowFinish(jevShadow, {
+              attachments,
+              failed,
+              logged: this._kadeKeeperLogged === true,
+              messageId: this.responseMessageId,
+              log: (line) => logger.info(line),
+            });
+          }
+        } catch (_) {
+          /* a shadow never throws into the keeper */
+        }
+      };
+      let attachments;
+      try {
+        attachments = await this.processMemory([bufferMessage]);
+      } catch (error) {
+        shadowDone(undefined, true);
+        throw error;
+      }
+      shadowDone(attachments, false);
+      return attachments;
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
     }
