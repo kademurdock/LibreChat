@@ -30,7 +30,8 @@ const { runCommand } = require('./engine');
 const ANGEL_USER_ID = 'system:angel';
 const ANGEL_NAME = 'Angel';
 const REFRAME_URL = (process.env.REFRAME_PROXY_URL || 'https://reframe-proxy-production.up.railway.app').replace(/\/$/, '');
-const ANGEL_MODEL = process.env.ANGEL_MODEL || 'moonshotai/kimi-k3';
+/* Sep 20 2026: was moonshotai/kimi-k3 until the Moonshot account ran dry (Kade: everything off Moonshot). */
+const ANGEL_MODEL = process.env.ANGEL_MODEL || 'deepseek/deepseek-v4.1-flash';
 const MAX_COMMANDS = 30;
 
 const VERB_REFERENCE = `

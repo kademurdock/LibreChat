@@ -43,8 +43,9 @@ const {
 
 /* ────────────────────────────────────────────────────────────────────────────
  * THE MODEL MENU — models as choices a person can hear and pick between.
- * Slugs verified against the live fleet (Kiana herself runs OpenRouter /
- * moonshotai/kimi-k3). `everyoneNote` is the line the page reads out loud;
+ * Slugs verified against the live fleet (Sep 20 2026: Kiana and 223 others run
+ * OpenRouter / deepseek/deepseek-v4.1-flash; the all-rounder was moonshotai/kimi-k3
+ * until the Moonshot account ran dry and Kade moved everything off it). `everyoneNote` is the line the page reads out loud;
  * `expert` is what the "show technical names" toggle reveals.
  * ──────────────────────────────────────────────────────────────────────── */
 const MODEL_MENU = [
@@ -52,7 +53,7 @@ const MODEL_MENU = [
     key: 'all-rounder',
     plainName: 'The all-rounder',
     provider: 'OpenRouter',
-    model: 'moonshotai/kimi-k3',
+    model: 'deepseek/deepseek-v4.1-flash',
     blurb: 'Quick, warm, and steady, with a good memory for the conversation. This is what nearly every character on the platform runs.',
     goodFor: 'friends, companions, helpers, almost anything',
     speed: 'fast',
