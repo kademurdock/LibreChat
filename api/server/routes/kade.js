@@ -2149,10 +2149,55 @@ router.get('/agent-default', requireJwtAuth, async (req, res) => {
       { $sort: { count: -1, last: -1 } },
       { $limit: 3 },
     ]);
-    return res.json({ top: rows.map((r) => ({ agentId: r._id, count: r.count })) });
+    // Sep 20 2026: a main agent Kade picked FOR this person rides along. The
+    // phone applies a given stamp once, so their own later pick always stands.
+    let assigned = null;
+    try {
+      const row = await mongoose.connection.db
+        .collection('kadeassigneddefaults')
+        .findOne({ userId: String(req.user.id) });
+      if (row && row.agentId) {
+        assigned = { agentId: String(row.agentId), stamp: String(row.stamp || '') };
+      }
+    } catch (_) {
+      /* fail-soft: no assignment */
+    }
+    return res.json({ top: rows.map((r) => ({ agentId: r._id, count: r.count })), assigned });
   } catch (e) {
     logger.warn('[kade/agent-default] failed:', e.message);
     return res.json({ top: [] });
+  }
+});
+
+/* POST /api/kade/agent-default/assign — Kade's word sets somebody's main agent
+ * ("make it Holly Murdock's default agent"). Machine-to-machine, same trust
+ * model as /usage-event. Body: { secret, email, agentId } ; agentId null clears. */
+router.post('/agent-default/assign', async (req, res) => {
+  try {
+    const expected = process.env.KADE_USAGE_EVENT_SECRET;
+    if (!expected || (req.body || {}).secret !== expected) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const { email, agentId } = req.body || {};
+    const { User } = models();
+    const u = await User.findOne({ email: String(email || '').toLowerCase().trim() }, { _id: 1 }).lean();
+    if (!u) return res.status(404).json({ error: 'No such user' });
+    const mongoose = require('mongoose');
+    const col = mongoose.connection.db.collection('kadeassigneddefaults');
+    if (!agentId) {
+      await col.deleteOne({ userId: String(u._id) });
+      return res.json({ ok: true, cleared: true });
+    }
+    const stamp = new Date().toISOString();
+    await col.updateOne(
+      { userId: String(u._id) },
+      { $set: { userId: String(u._id), agentId: String(agentId).slice(0, 64), stamp } },
+      { upsert: true },
+    );
+    return res.json({ ok: true, stamp });
+  } catch (e) {
+    logger.error('[kade/agent-default/assign] failed:', e);
+    return res.status(500).json({ error: 'Could not assign' });
   }
 });
 
