@@ -205,6 +205,187 @@ test('keeper shadow: one line, never rejects, silent when off or when Jev fails'
   assert.strictEqual(asked, 0);
 });
 
+/* ── Part 237: the commercial shelf ──────────────────────────────────────── */
+
+test('the ad categories are exactly the ones the library already files under', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '../../../packages/api/src/library/filing-data.ts'),
+    'utf8',
+  );
+  const body = src.slice(src.indexOf('= {') + 2, src.lastIndexOf('}') + 1).replace(/\/\*[\s\S]*?\*\//g, '');
+  const data = JSON.parse(body);
+  const known = new Set([...Object.keys(data.prefixes), ...Object.keys(data.strong), ...Object.keys(data.generic)]);
+  for (const c of Object.keys(J.AD_CATEGORY_CRITERIA)) {
+    assert.ok(known.has(c), `Jev may choose "${c}" but the library has no such shelf`);
+  }
+  assert.strictEqual(Object.keys(J.AD_CATEGORY_CRITERIA).length, known.size, 'every shelf should be offered');
+});
+
+test('adState: the decade is read off the path and never invented', () => {
+  assert.deepStrictEqual(J.adState({ title: 'Tegrin ad, 1969', path: 'Video/Commercials/Other Commercials/1960s' }), {
+    title: 'Tegrin ad, 1969', decade: '1960s',
+  });
+  assert.strictEqual(J.adState({ title: 'x', path: 'Video/Commercials/Other Commercials/Undated' }).decade, 'Undated');
+  assert.strictEqual(J.adState({ title: 'x', path: 'Video/Commercials/Other Commercials' }).decade, 'unknown');
+  assert.strictEqual(J.adState({}).decade, 'unknown');
+});
+
+test('decideAd: needs a real shelf, confidence over the floor, and an actual advert', () => {
+  const good = { category: { choice: 'Breakfast Cereal', confidence: 0.85 }, isAd: { noul: 0.93 } };
+  assert.deepStrictEqual(J.decideAd(good, { minConfidence: 0.7, minIsAd: 0.5 }), {
+    category: 'Breakfast Cereal', confidence: 0.85, isAd: 0.93,
+  });
+  const k = { minConfidence: 0.7, minIsAd: 0.5 };
+  /* under the floor: this is the Lever 2000 case */
+  assert.strictEqual(J.decideAd({ category: { choice: 'Cars and Trucks', confidence: 0.56 }, isAd: { noul: 0.94 } }, k), null);
+  /* a PSA or a station ID is not a product advert */
+  assert.strictEqual(J.decideAd({ category: { choice: 'Breakfast Cereal', confidence: 0.99 }, isAd: { noul: 0.2 } }, k), null);
+  /* a shelf the library does not have is never honoured */
+  assert.strictEqual(J.decideAd({ category: { choice: 'Submarines', confidence: 0.99 }, isAd: { noul: 0.99 } }, k), null);
+  assert.strictEqual(J.decideAd({ category: { choice: 'Breakfast Cereal' }, isAd: { noul: 0.9 } }, k), null);
+  assert.strictEqual(J.decideAd({ category: { choice: 'Breakfast Cereal', confidence: 0.9 }, isAd: {} }, k), null);
+  assert.strictEqual(J.decideAd(null, k), null);
+});
+
+test('fileAds: renames only the product folder, keeps the decade, never throws', async () => {
+  const items = [
+    { _id: 'a', title: 'Team Flakes ad, 1978', path: 'Video/Commercials/Other Commercials/1970s' },
+    { _id: 'b', title: 'Lever 2000 ad, 1992', path: 'Video/Commercials/Other Commercials/1990s' },
+    { _id: 'c', title: 'boom', path: 'Video/Commercials/Other Commercials/1980s' },
+  ];
+  const answers = {
+    a: { category: { choice: 'Breakfast Cereal', confidence: 0.85 }, isAd: { noul: 0.93 } },
+    b: { category: { choice: 'Cars and Trucks', confidence: 0.56 }, isAd: { noul: 0.94 } },
+  };
+  const r = await withEnv(ON, () =>
+    J.fileAds(items, {
+      ask: async (state) => {
+        const it = items.find((i) => i.title === state.title);
+        if (it._id === 'c') throw new Error('timeout');
+        return { answers: answers[it._id], usage: { input_tokens: 500 } };
+      },
+    }),
+  );
+  assert.strictEqual(r.moves.length, 1);
+  assert.deepStrictEqual(
+    { from: r.moves[0].from, to: r.moves[0].to },
+    { from: 'Video/Commercials/Other Commercials/1970s', to: 'Video/Commercials/Breakfast Cereal/1970s' },
+    'the decade folder must survive the move',
+  );
+  assert.deepStrictEqual(r.skipped.map((s) => s._id).sort(), ['b', 'c'], 'the unsure and the failed both stay put');
+  assert.ok(r.costUSD > 0 && r.costUSD < 0.01);
+});
+
+test('fileAds: switched off, nothing is asked and nothing moves', async () => {
+  let asked = 0;
+  const items = [{ _id: 'a', title: 't', path: 'Video/Commercials/Other Commercials/1980s' }];
+  const r = await withEnv({ ...ON, KADE_JEV_LIBRARY: '0' }, () =>
+    J.fileAds(items, { ask: async () => { asked++; return {}; } }),
+  );
+  assert.strictEqual(asked, 0);
+  assert.deepStrictEqual(r.moves, []);
+  assert.strictEqual(r.skipped.length, 1);
+});
+
+/* ── Part 237: the gate that can actually skip the keeper ────────────────── */
+
+test('keeperState: latestAssistant is the character turn before the last human one', () => {
+  const s = J.keeperState([
+    { role: 'assistant', content: 'older reply' },
+    { role: 'user', content: 'how are you' },
+    { role: 'assistant', content: "I'll check on that Tuesday" },
+    { role: 'user', content: 'thanks' },
+  ]);
+  assert.strictEqual(s.latestUser, 'thanks');
+  assert.strictEqual(s.latestAssistant, "I'll check on that Tuesday");
+  /* nothing from the character yet */
+  assert.strictEqual(J.keeperState([{ role: 'user', content: 'hi' }]).latestAssistant, '(none)');
+});
+
+test('keeperGateDecide: skips only when all three sit under the floor', () => {
+  const low = { card: 0.04, log: 0.07, promise: 0.02 };
+  assert.strictEqual(J.keeperGateDecide(low, 0.3), true);
+  /* any one speaking up runs the keeper — including the promise, which is the
+   * whole reason the third question exists */
+  assert.strictEqual(J.keeperGateDecide({ ...low, card: 0.91 }, 0.3), false);
+  assert.strictEqual(J.keeperGateDecide({ ...low, log: 0.57 }, 0.3), false);
+  assert.strictEqual(J.keeperGateDecide({ ...low, promise: 0.88 }, 0.3), false);
+  /* exactly at the floor is not under it */
+  assert.strictEqual(J.keeperGateDecide({ card: 0.3, log: 0.1, promise: 0.1 }, 0.3), false);
+  /* garbage never authorises a skip */
+  assert.strictEqual(J.keeperGateDecide(null, 0.3), false);
+  assert.strictEqual(J.keeperGateDecide({ card: 0.1, log: 0.1 }, 0.3), false);
+  assert.strictEqual(J.keeperGateDecide({ card: NaN, log: 0.1, promise: 0.1 }, 0.3), false);
+  assert.strictEqual(J.keeperGateDecide({ card: -1, log: 0.1, promise: 0.1 }, 0.3), false);
+});
+
+test("keeperGateDecide: the Part 236 trial's own numbers still say what they said", () => {
+  /* the 9 save-nothing turns topped out at 0.23 card / 0.28 log; the worst
+   * keeper-worthy turn (the rabbit hole) was 0.57 log */
+  const promise = 0.05;
+  assert.strictEqual(J.keeperGateDecide({ card: 0.23, log: 0.28, promise }, 0.3), true);
+  assert.strictEqual(J.keeperGateDecide({ card: 0.1, log: 0.57, promise }, 0.3), false);
+});
+
+test('keeperGate: fails OPEN on every failure, and never rejects', async () => {
+  const msgs = [{ role: 'user', content: 'good night' }];
+  await withEnv(ON, async () => {
+    const boom = await J.keeperGate(msgs, { ask: async () => { throw new Error('timeout 2500ms'); } });
+    assert.deepStrictEqual(boom, { skip: false, scores: null });
+    const malformed = await J.keeperGate(msgs, { ask: async () => ({ answers: { card: {}, log: {}, promise: {} } }) });
+    assert.deepStrictEqual(malformed, { skip: false, scores: null });
+    /* no human turn to read */
+    const empty = await J.keeperGate([{ role: 'assistant', content: 'hi' }], { ask: async () => { throw new Error('never'); } });
+    assert.deepStrictEqual(empty, { skip: false, scores: null });
+  });
+  /* switched off entirely: Jev is never even asked */
+  let asked = 0;
+  const off = await withEnv({ ...ON, KADE_JEV_KEEPER_SHADOW: '0' }, () =>
+    J.keeperGate(msgs, { ask: async () => { asked++; return { answers: {} }; } }),
+  );
+  assert.deepStrictEqual(off, { skip: false, scores: null });
+  assert.strictEqual(asked, 0);
+});
+
+test('keeperGate: asks all three and skips; KADE_JEV_KEEPER_GATE=0 keeps the reading, drops the skipping', async () => {
+  const msgs = [{ role: 'user', content: 'good night' }];
+  const quiet = async () => ({ answers: { card: { noul: 0.04 }, log: { noul: 0.07 }, promise: { noul: 0.02 } } });
+  let sawQuestions = null;
+  const spy = async (state, questions) => { sawQuestions = Object.keys(questions); return quiet(); };
+
+  const on = await withEnv(ON, () => J.keeperGate(msgs, { ask: spy }));
+  assert.deepStrictEqual(sawQuestions, ['card', 'log', 'promise']);
+  assert.strictEqual(on.skip, true);
+  assert.deepStrictEqual(on.scores, { card: 0.04, log: 0.07, promise: 0.02 });
+
+  const gated = await withEnv({ ...ON, KADE_JEV_KEEPER_GATE: '0' }, () => J.keeperGate(msgs, { ask: quiet }));
+  assert.strictEqual(gated.skip, false, 'gate off must never skip');
+  assert.ok(gated.scores, 'gate off still reads, so the lines keep coming');
+
+  /* a floor she moved herself is honoured */
+  const strict = await withEnv({ ...ON, KADE_JEV_KEEPER_FLOOR: '0.01' }, () => J.keeperGate(msgs, { ask: quiet }));
+  assert.strictEqual(strict.skip, false);
+});
+
+test('keeperGateLog: one line for both outcomes, and it never throws', () => {
+  const lines = [];
+  const log = (l) => lines.push(l);
+  withEnv(ON, () => {
+    J.keeperGateLog({ card: 0.04, log: 0.07, promise: 0.02 }, { skipped: true, messageId: 'm1', log });
+    J.keeperGateLog({ card: 0.91, log: 0.12, promise: 0.03 }, {
+      skipped: false, attachments: [{ memory: { type: 'update' } }], logged: false, messageId: 'm2', log,
+    });
+    J.keeperGateLog(null, { skipped: false, attachments: [], logged: false, messageId: 'm3', log });
+  });
+  assert.deepStrictEqual(lines, [
+    '[kadeJev][keeper-gate] card=0.04 log=0.07 promise=0.02 floor=0.30 keeper=SKIPPED msg=m1',
+    '[kadeJev][keeper-gate] card=0.91 log=0.12 promise=0.03 floor=0.30 keeper=card msg=m2',
+    '[kadeJev][keeper-gate] card=? log=? promise=? (jev silent) floor=0.30 keeper=nothing msg=m3',
+  ]);
+  /* a dead logger must not take the keeper down with it */
+  J.keeperGateLog({ card: 0, log: 0, promise: 0 }, { skipped: true, log: () => { throw new Error('logger down'); } });
+});
+
 test('tools shadow: asks only about loaded tools, logs one line, never rejects, never touches keep', async () => {
   const lines = [];
   const log = (l) => lines.push(l);

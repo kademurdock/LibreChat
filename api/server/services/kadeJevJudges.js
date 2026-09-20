@@ -180,6 +180,172 @@ async function sortBooks(books, { ask = jev.ask, timeoutMs = 4000, concurrency =
   return { out, leftovers, costUSD: (inputTokens * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6 };
 }
 
+/* ── 1b. THE COMMERCIAL SHELF (Part 237, Sep 20 2026) ─────────────────────
+ * Kade's ask: "organise my backblaze library." The catalog's 4,866 catch-all
+ * items are almost all one thing — `Video/Commercials/Other Commercials/<decade>`,
+ * a commercial whose PRODUCT the filing regexes could not name. Part 185 filed
+ * 2,866 and wrote "unknown titles were not guessed", because the filer is a
+ * brand-name list and these brands are not on it: "Tegrin ad, 1969",
+ * "Gulf Spray ad, 1968", "Toast'em ad, 1968", "American Tourister ad, 1978".
+ * A list cannot know what Tegrin is. Jev can.
+ *
+ * The 49 categories below are the exact union of filingData's prefixes,
+ * strong and generic keys, so a Jev answer lands on a shelf the library
+ * already has and no new folder is ever invented. The decade stays where the
+ * old path put it — Jev is weak at dates and is never asked for one.
+ *
+ * Two questions: is this even a product advertisement, and which product. A
+ * filing needs BOTH — decisive on the ad question and confident on the shelf —
+ * otherwise the item stays exactly where it is, which is no worse than today.
+ */
+const AD_CATEGORY_CRITERIA = {
+  'Airlines & Rail': 'An airline, a railroad, Amtrak, air or rail travel itself.',
+  'Baby & Kids': 'Diapers, formula, baby food, car seats, strollers, baby care. Not toys.',
+  'Banks & Insurance': 'A bank, savings and loan, credit union, credit card, or an insurance company of any kind.',
+  'Beer, Wine & Spirits': 'Alcohol: beer, wine, liquor, coolers.',
+  'Breakfast Cereal': 'Breakfast cereal specifically, hot or cold.',
+  'Cable & Satellite Services': 'A cable or satellite TV provider or package.',
+  'Candy, Gum & Chocolate': 'Candy bars, sweets, chewing gum, mints, chocolate.',
+  'Car Rental & Transport': 'Car rental, moving trucks, taxis, buses, shipping and courier services.',
+  'Cars and Trucks': 'A car or truck itself, a car maker, a dealership, a model year.',
+  'Charities & Nonprofits': 'A charity, a church appeal, a nonprofit, a fundraising drive.',
+  'Cleaning & Household': 'Cleaning the house and its laundry: detergent, bleach, soap for dishes, polish, air freshener, trash bags, foil, insecticide, paper towels.',
+  'Clothing & Shoes': 'Clothes, shoes, jeans, underwear, hosiery, coats, luggage and handbags.',
+  'Drinks (Non-Alcoholic)': 'Soda, juice, coffee, tea, milk, bottled water, drink mixes.',
+  'Education & Careers': 'A school, college, trade school, correspondence course, job training or recruiting.',
+  'Electronics & Tech': 'Televisions, stereos, computers, video game consoles as hardware, cameras as electronics, batteries.',
+  'Feminine & Personal Care': 'Feminine hygiene, tampons, pads, douches, and adult incontinence.',
+  'Food & Grocery': 'Food to cook or eat at home that is not cereal, snack, candy or drink: canned goods, frozen dinners, meat, bread, condiments, baking, a grocery brand.',
+  'Furniture & Mattresses': 'Furniture, mattresses, carpet and flooring, a furniture store.',
+  'Gas, Oil & Auto Care': 'Gasoline, motor oil, tires, car batteries, car repair, car wash, auto parts.',
+  'Greeting Cards & Gifts': 'Greeting cards, flowers, gift shops, collectibles and figurines.',
+  'Health & Beauty': 'Grooming and looking after yourself: shampoo, soap, deodorant, toothpaste, shaving, make-up, skin and hair care, perfume.',
+  'Healthcare & Safety Services': 'A hospital, clinic, doctor, dentist, health plan, a safety campaign or emergency service.',
+  'Home & Appliances': 'Large and small household appliances: refrigerators, washers, vacuums, microwaves, and housewares.',
+  'Home Improvement': 'Paint, tools, lumber, building supplies, a hardware or home improvement store, remodelling and contractors.',
+  'Internet & Online Services': 'An internet provider, an online service, a website, software as a service.',
+  'Jewelry & Watches': 'Jewellery, diamonds, watches, a jeweller.',
+  'Lawn, Garden & Hardware': 'Lawn mowers, fertiliser, seed, garden tools, outdoor and yard care.',
+  'Lottery & Gambling': 'A lottery, scratch-offs, a casino, betting.',
+  'Medicine & Pharmacy': 'Something you take for an ailment: pain relievers, cold and allergy remedies, antacids, sleep aids, laxatives, vitamins, prescription drugs, a pharmacy.',
+  'Movies & Home Entertainment': 'A film in theatres, a movie trailer, a VHS or DVD release, a video rental store.',
+  'Music & Records': 'A record label, an album or artist being promoted, a concert, a music store.',
+  'Music Offers': 'A mail-order music compilation or record club: "not available in stores", K-Tel and its kind.',
+  'Newspapers, Magazines & Books': 'A newspaper, magazine, book, book club or publisher.',
+  'Office & Business': 'Office supplies, copiers, business equipment and services sold to businesses.',
+  'Pet Products': 'Pet food, pet care, pet supplies, a veterinarian.',
+  'Phone & Wireless': 'A phone company, long distance, cellular service, pagers, telephones.',
+  'Photography & Film': 'Cameras, film, photo developing, a film brand.',
+  'Real Estate': 'Houses or land for sale, a realtor, an apartment complex.',
+  'Restaurants & Fast Food': 'A restaurant or fast food chain, a sit-down meal out, a pizza delivery.',
+  'Snacks, Chips & Cookies': 'Chips, crackers, cookies, popcorn, pretzels, snack cakes.',
+  'Sporting Goods': 'Sports equipment, bicycles, athletic shoes as sporting goods, outdoor recreation gear.',
+  'Sports & Fitness': 'A gym, exercise equipment, a fitness programme, a sports league or event.',
+  'Stores & Retail': 'A shop you walk into, sold as the shop rather than one product: department stores, discount chains, supermarkets, catalogue showrooms, a sale event.',
+  'Sweepstakes & Direct Response': 'A sweepstakes, a contest, a mail-in offer, an "operators are standing by" direct-response pitch for a gadget.',
+  'Taxes & Financial Services': 'Tax preparation, investing, brokerages, loans, financial planning.',
+  'Tobacco': 'Cigarettes, cigars, chewing tobacco, snuff.',
+  'Toys & Video Games': 'Toys, dolls, action figures, board games, and video games as games.',
+  'Travel & Attractions': 'A hotel, a resort, a theme park, a tourist attraction, a state or city tourism campaign, a cruise.',
+  'Weight Loss & Diet': 'A diet programme, diet food, weight-loss aids.',
+};
+const AD_CATEGORY_Q = {
+  type: 'choice',
+  instructions:
+    'A television or radio commercial from an archive is described by `title` and `decade`. The title is usually a brand or product name followed by the word ad. Say which kind of product or service the commercial is advertising. Use what you know about the brand named in the title, and judge by what the product actually IS, not by what a word in its name sounds like: a bug spray called Gulf Spray is a household insecticide, not petrol; a soap called Irish Spring is soap, not travel. When a brand is unfamiliar, use the ordinary meaning of the words in the title. Pick the single best fit.',
+  criteria: AD_CATEGORY_CRITERIA,
+};
+const IS_AD_Q = {
+  type: 'noul',
+  instructions:
+    'Is the item described by `title` a commercial or advertisement for a product, a service or a shop?',
+  criteria: {
+    true: 'An advert for something you can buy: a brand, a product, a service, a shop, a restaurant, a car, a film. The title usually names it and says ad, advert, commercial or spot.',
+    false: 'Anything that is not selling a product: a public service announcement, a station identification, a bumper, a promo for a TV show, a news clip, an episode of a programme, a political advert, a home recording, or a title so bare or cryptic that it names no product at all.',
+  },
+};
+
+function adState(item) {
+  const path = String(item.path || '');
+  const decade = (path.match(/\/((?:19|20)\d0s|Undated|Unknown[^/]*|Multiple decades)$/i) || [])[1] || 'unknown';
+  return {
+    title: String(item.title || '').slice(0, 300),
+    decade: String(decade),
+  };
+}
+
+/** The decade folder the item already sits in, kept exactly as it was. */
+function adDecade(item) {
+  return adState(item).decade;
+}
+
+function adKnobs() {
+  return {
+    minConfidence: num('KADE_JEV_ADS_MIN_CONF', 0.7),
+    minIsAd: num('KADE_JEV_ADS_MIN_ISAD', 0.5),
+  };
+}
+
+/** Pure: one Jev answer → a destination category, or null when not decisive. */
+function decideAd(answers, knobs = adKnobs()) {
+  const c = answers && answers.category;
+  const category = c && c.choice;
+  if (!category || !Object.prototype.hasOwnProperty.call(AD_CATEGORY_CRITERIA, category)) return null;
+  if (typeof c.confidence !== 'number' || c.confidence < knobs.minConfidence) return null;
+  let isAd;
+  try {
+    isAd = jev.noulOf(answers, 'isAd');
+  } catch (_) {
+    return null;
+  }
+  /* Not an advert at all (a PSA, a station ID, a bare title) — the product
+   * shelves are the wrong place for it, so leave it where it is. */
+  if (isAd < knobs.minIsAd) return null;
+  return { category, confidence: c.confidence, isAd };
+}
+
+/**
+ * Read a batch of catch-all commercials. Returns
+ * { moves: [{id, title, from, to, category, confidence}], skipped, costUSD }.
+ * NEVER throws. A move only ever renames the PRODUCT folder; the decade and
+ * everything above `Commercials/` are copied from the path it already had.
+ */
+async function fileAds(items, { ask = jev.ask, timeoutMs = 6000, concurrency = 5, onProgress } = {}) {
+  const moves = [];
+  const skipped = [];
+  let inputTokens = 0;
+  let done = 0;
+  if (!jev.enabled('KADE_JEV_LIBRARY')) return { moves, skipped: [...items], costUSD: 0 };
+  const knobs = adKnobs();
+  const queue = [...items];
+  async function worker() {
+    for (let it = queue.shift(); it; it = queue.shift()) {
+      try {
+        const { answers, usage } = await ask(adState(it), { category: AD_CATEGORY_Q, isAd: IS_AD_Q }, timeoutMs);
+        inputTokens += Number(usage && usage.input_tokens) || 0;
+        const d = decideAd(answers, knobs);
+        if (d) {
+          const from = String(it.path || '');
+          const to = from.replace(
+            /Commercials\/Other Commercials(?=\/|$)/i,
+            'Commercials/' + d.category,
+          );
+          if (to && to !== from) {
+            moves.push({ id: String(it._id || it.id), title: it.title, from, to, category: d.category, confidence: d.confidence, isAd: d.isAd });
+          } else skipped.push(it);
+        } else skipped.push(it);
+      } catch (_) {
+        skipped.push(it);
+      }
+      if (typeof onProgress === 'function' && ++done % 100 === 0) onProgress(done, items.length);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, worker));
+  const order = new Map(items.map((b, i) => [String(b._id || b.id), i]));
+  moves.sort((a, b) => order.get(a.id) - order.get(b.id));
+  return { moves, skipped, costUSD: (inputTokens * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6 };
+}
+
 /* ── 2. THE MEMORY KEEPER GATE (SHADOW ONLY) ──────────────────────────────
  * The keeper is a generative call after every turn platform-wide, and its own
  * instructions say "Most turns should save NOTHING". These two nouls are the
@@ -205,6 +371,33 @@ const KEEPER_LOG_Q = {
   },
 };
 
+/* Part 237 (Sep 20 2026). The third question, and the reason the gate can be
+ * trusted to SKIP rather than only to log. The two above read the PERSON's
+ * latest turn, which is the keeper's rules 1-3. Rule 4 is the character's own
+ * side: canon it stated about itself and promises it made. The Part 236
+ * shadow named that as its known blind spot in so many words, so a gate built
+ * on card+log alone would drop exactly the turns where the assistant said
+ * "I'll check on that Tuesday". This asks about the ASSISTANT's latest turn,
+ * and the gate skips only when all three are low.
+ *
+ * TRIAL (Sep 20 2026, live API, jev-1.13.0, scratchpad jev_promise_trial.js):
+ * 14 of 14 labelled turns correct at the 0.30 floor, and not close — the six
+ * that should fire (a dated promise, a standing arrangement, "I'll remember
+ * that", a follow-up commitment, canon about itself, how it will talk from
+ * now on) scored 0.88 to 0.97; the eight that should stay quiet (answering,
+ * sympathy, storytelling, a question back, explaining, banter, doing the
+ * thing asked, correcting itself) scored 0.02 to 0.07. Nothing landed between
+ * 0.07 and 0.88, so the floor is nowhere near a decision boundary here. */
+const KEEPER_PROMISE_Q = {
+  type: 'noul',
+  instructions:
+    'A memory keeper also records what the ASSISTANT character committed to or revealed about itself. Does `latestAssistant` contain a promise, commitment or a lasting fact about the assistant character worth remembering?',
+  criteria: {
+    true: 'The assistant promises or commits to something ("I will check tomorrow", "I\'ll remember that", "next time we talk I\'ll ask how it went"), agrees to a standing arrangement or a nickname, states a durable fact about itself or its own history, or settles how it will talk to this person from now on.',
+    false: 'Ordinary answering, explaining, storytelling, opinions, questions back, sympathy, and anything the assistant says only about the current reply. A turn that merely does the thing asked is not a promise.',
+  },
+};
+
 function messageText(m) {
   const c = m && m.content;
   if (typeof c === 'string') return c;
@@ -216,7 +409,11 @@ function isHuman(m) {
   return t === 'human' || t === 'user';
 }
 
-/** The keeper's own window → Jev state. latestUser is the last human turn. */
+/** The keeper's own window → Jev state. latestUser is the last human turn.
+ * `latestAssistant` (Part 237) is the character's most recent turn BEFORE it,
+ * which is the half KEEPER_PROMISE_Q reads; '(none)' at the start of a
+ * conversation. Everything else is unchanged, so the shadow's numbers still
+ * mean what they meant. */
 function keeperState(messages) {
   const list = Array.isArray(messages) ? messages : [];
   let at = -1;
@@ -225,12 +422,20 @@ function keeperState(messages) {
   const clean = (s) => String(s || '').replace(/%%%[\s\S]*?%%%/g, ' ').replace(/\s+/g, ' ').trim();
   const latestUser = clean(messageText(list[at])).slice(-2000);
   if (!latestUser) return null;
+  let latestAssistant = '';
+  for (let i = at - 1; i >= 0; i--) {
+    if (!isHuman(list[i])) { latestAssistant = clean(messageText(list[i])).slice(-2000); break; }
+  }
   const earlier = list
     .slice(0, at)
     .map((m) => `${isHuman(m) ? 'PERSON' : 'ASSISTANT'}: ${clean(messageText(m)).slice(0, 700)}`)
     .join('\n')
     .slice(-3000);
-  return { earlier: earlier || '(start of conversation)', latestUser };
+  return {
+    earlier: earlier || '(start of conversation)',
+    latestUser,
+    latestAssistant: latestAssistant || '(none)',
+  };
 }
 
 /** What the keeper did, in one word, from what the JS side can see. */
@@ -263,6 +468,92 @@ function keeperShadowStart(messages, { ask = jev.ask, timeoutMs = 3000 } = {}) {
       .catch(() => null);
   } catch (_) {
     return Promise.resolve(null);
+  }
+}
+
+/* ── 2b. THE KEEPER GATE, FOR REAL (Part 237, Sep 20 2026) ────────────────
+ * Kade's word, this session: turn it on at the tested floor. So the shadow
+ * above becomes a decision. The keeper is a generative call after EVERY turn
+ * platform-wide; under the floor it does not run at all.
+ *
+ * THREE readings, not the shadow's two. card and log are the person's side
+ * (trial: 9 of 9 save-nothing turns at most 0.23 card / 0.28 log; every turn
+ * worth saving at least 0.57 on the side that mattered). promise is the
+ * assistant's side, added here because the Part 236 shadow named that gap as
+ * its blind spot. The keeper is skipped only when ALL THREE sit under the
+ * floor, so any one of them speaking up is enough to let the keeper run.
+ *
+ * FAIL OPEN, ALWAYS. No key, killed, a timeout, a malformed answer, a state
+ * we could not build — every one of those runs the keeper exactly as before.
+ * A memory is only ever lost by a confident low reading from all three, never
+ * by Jev being slow or down.
+ *
+ * Knobs, read per call: KADE_JEV_KEEPER_GATE=0 kills the skipping (the shadow
+ * line keeps printing), KADE_JEV_KEEPER_FLOOR moves the floor (0.30),
+ * KADE_JEV_KEEPER_GATE_MS the leash (2500). KADE_JEV=0 kills all of it. */
+function keeperFloor() {
+  return num('KADE_JEV_KEEPER_FLOOR', 0.3);
+}
+
+/** Pure, so a test can hold the rule still: may the keeper be skipped? */
+function keeperGateDecide(v, floor = keeperFloor()) {
+  if (!v) return false;
+  const { card, log, promise } = v;
+  for (const p of [card, log, promise]) {
+    if (typeof p !== 'number' || !(p >= 0 && p <= 1)) return false;
+  }
+  return card < floor && log < floor && promise < floor;
+}
+
+/**
+ * Ask all three, decide, and say what to do. AWAITED on the keeper's road —
+ * which costs the person nothing, because the keeper already runs after the
+ * reply has been sent. Resolves to { skip, scores } and NEVER rejects.
+ */
+async function keeperGate(messages, { ask = jev.ask, timeoutMs } = {}) {
+  const ms = timeoutMs || num('KADE_JEV_KEEPER_GATE_MS', 2500);
+  try {
+    if (!jev.enabled('KADE_JEV_KEEPER_SHADOW')) return { skip: false, scores: null };
+    const state = keeperState(messages);
+    if (!state) return { skip: false, scores: null };
+    const { answers } = await ask(
+      state,
+      { card: KEEPER_CARD_Q, log: KEEPER_LOG_Q, promise: KEEPER_PROMISE_Q },
+      ms,
+    );
+    const scores = {
+      card: jev.noulOf(answers, 'card'),
+      log: jev.noulOf(answers, 'log'),
+      promise: jev.noulOf(answers, 'promise'),
+    };
+    /* The gate may be off while the reading still happens: that is the shadow,
+     * and it is what keeps producing lines to audit. */
+    const skip = process.env.KADE_JEV_KEEPER_GATE === '0' ? false : keeperGateDecide(scores);
+    return { skip, scores };
+  } catch (_) {
+    return { skip: false, scores: null };
+  }
+}
+
+/**
+ * The one audit line, for BOTH outcomes, so a week of these can be read as
+ * one set. `keeper=SKIPPED` means Jev's three readings kept the generative
+ * call from running; otherwise it carries what the keeper actually wrote, and
+ * a `card`/`card+log` next to three low numbers is the pair worth hunting:
+ *   [kadeJev][keeper-gate] card=0.04 log=0.07 promise=0.02 floor=0.30 keeper=SKIPPED msg=…
+ *   [kadeJev][keeper-gate] card=0.91 log=0.12 promise=0.03 floor=0.30 keeper=card msg=…
+ * scores=null means Jev never answered and the keeper ran regardless.
+ */
+function keeperGateLog(scores, { skipped, attachments, logged, failed, messageId, log }) {
+  try {
+    if (typeof log !== 'function') return;
+    const wrote = skipped ? 'SKIPPED' : keeperWrote({ attachments, logged, failed });
+    const n = scores
+      ? `card=${scores.card.toFixed(2)} log=${scores.log.toFixed(2)} promise=${scores.promise.toFixed(2)}`
+      : 'card=? log=? promise=? (jev silent)';
+    log(`[kadeJev][keeper-gate] ${n} floor=${keeperFloor().toFixed(2)} keeper=${wrote} msg=${messageId || '?'}`);
+  } catch (_) {
+    /* the gate never throws into the keeper */
   }
 }
 
@@ -341,6 +632,8 @@ function toolsShadow({ text, tools, keep, log }, { ask = jev.ask, timeoutMs = 30
 
 module.exports = {
   SHELF_CRITERIA, SHELF_OF, SHELF_Q, ADULT_Q, ADULT_WORDS, bookState, decideBook, sortBooks, shelfKnobs,
-  KEEPER_CARD_Q, KEEPER_LOG_Q, keeperState, keeperWrote, keeperShadowStart, keeperShadowFinish,
+  AD_CATEGORY_CRITERIA, AD_CATEGORY_Q, IS_AD_Q, adState, adDecade, adKnobs, decideAd, fileAds,
+  KEEPER_CARD_Q, KEEPER_LOG_Q, KEEPER_PROMISE_Q, keeperState, keeperWrote, keeperShadowStart, keeperShadowFinish,
+  keeperFloor, keeperGateDecide, keeperGate, keeperGateLog,
   TOOL_NEEDS, toolQuestion, toolsShadow,
 };

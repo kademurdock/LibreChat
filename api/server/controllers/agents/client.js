@@ -1287,7 +1287,23 @@ class AgentClient extends BaseClient {
         });
       }
       const bufferMessage = new HumanMessage(limitedMemoryInput);
-      /* Part 236 (Sep 20 2026) — THE KEEPER GATE, SHADOW ONLY. The keeper is a
+      /* Part 237 (Sep 20 2026) — THE KEEPER GATE IS LIVE. It skips the keeper.
+       * Kade's word this session: "turn it on at the tested floor." Under the
+       * floor the generative keeper does not run, which is the one Jev switch
+       * on this platform that saves real money rather than time. The gate
+       * reads THREE nouls, not the shadow's two — the third (promise) covers
+       * the assistant's own turn, which the Part 236 shadow named as its
+       * blind spot and which a card/log-only gate would have dropped. All
+       * three must sit under KADE_JEV_KEEPER_FLOOR (0.30) to skip; any one
+       * speaking up runs the keeper. Every turn logs one line either way:
+       *   [kadeJev][keeper-gate] card=.. log=.. promise=.. floor=0.30 keeper=SKIPPED|card|log|card+log|nothing|error msg=<id>
+       * Kill the SKIPPING but keep the lines: KADE_JEV_KEEPER_GATE=0. Kill the
+       * whole thing: KADE_JEV_KEEPER_SHADOW=0, KADE_JEV=0, or no key. It fails
+       * open on every error, so a slow or dead Jev costs a memory nothing.
+       * The Part 236 note below is kept because it is where the floor
+       * came from:
+       *
+       * Part 236 (Sep 20 2026) — THE KEEPER GATE, SHADOW ONLY. The keeper is a
        * generative call after every turn platform-wide, and its own first rule
        * is "most turns should save NOTHING". Jev (the decision model, see
        * services/kadeJev.js) reads the same window beside it and answers two
@@ -1310,18 +1326,29 @@ class AgentClient extends BaseClient {
        * as keeper_wrote=card on a low score. That is what the shadow is for.
        * Kill: KADE_JEV_KEEPER_SHADOW=0, KADE_JEV=0, or no TYPESAFE_API_KEY. */
       let jevJudges = null;
-      let jevShadow = null;
+      let jevScores = null;
+      let jevSkip = false;
       try {
         jevJudges = require('~/server/services/kadeJevJudges');
         this._kadeKeeperLogged = false;
-        jevShadow = jevJudges.keeperShadowStart(filteredMessages);
+        /* Part 237: AWAITED, unlike the Part 236 shadow. This road already
+         * runs after the reply has gone out, so the ~400 ms costs the person
+         * nothing, and the answer decides whether the generative keeper runs
+         * at all. keeperGate never rejects and returns skip:false on every
+         * failure, so the keeper's old behaviour is what a broken Jev buys. */
+        const gate = await jevJudges.keeperGate(filteredMessages);
+        jevScores = gate.scores;
+        jevSkip = gate.skip === true;
       } catch (_) {
-        jevShadow = null;
+        jevJudges = jevJudges || null;
+        jevScores = null;
+        jevSkip = false;
       }
-      const shadowDone = (attachments, failed) => {
+      const gateDone = (attachments, failed, skipped) => {
         try {
-          if (jevJudges && jevShadow) {
-            jevJudges.keeperShadowFinish(jevShadow, {
+          if (jevJudges) {
+            jevJudges.keeperGateLog(jevScores, {
+              skipped,
               attachments,
               failed,
               logged: this._kadeKeeperLogged === true,
@@ -1330,17 +1357,21 @@ class AgentClient extends BaseClient {
             });
           }
         } catch (_) {
-          /* a shadow never throws into the keeper */
+          /* the gate never throws into the keeper */
         }
       };
+      if (jevSkip) {
+        gateDone(undefined, false, true);
+        return undefined;
+      }
       let attachments;
       try {
         attachments = await this.processMemory([bufferMessage]);
       } catch (error) {
-        shadowDone(undefined, true);
+        gateDone(undefined, true, false);
         throw error;
       }
-      shadowDone(attachments, false);
+      gateDone(attachments, false, false);
       return attachments;
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);

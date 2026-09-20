@@ -1580,6 +1580,80 @@ router.post('/librarian/organize', requireJwtAuth, express.json({ limit: '1mb' }
     res.json({ ok: true, matched: result.matchedCount, changed: result.modifiedCount });
   } catch (e) { logger.warn(`[library/organize] ${e.message}`); res.status(500).json({ error: 'Could not apply the reviewed changes.' }); }
 });
+/* ── JEV FILES THE CATCH-ALL COMMERCIALS (Part 237, Sep 20 2026) ─────────
+ * Kade: "organise my backblaze library." Part 185 filed what its brand lists
+ * could name and left 4,864 in `Commercials/Other Commercials/<decade>` with
+ * "unknown titles were not guessed". Jev knows what Tegrin and Toast'em are.
+ *
+ * POST /librarian/jev-file-ads   { apply?: true, limit?: n, decade?: '1980s' }
+ *   apply omitted → a preview: every move Jev would make, nothing written.
+ *   apply: true   → the moves are applied, guarded on the path they came from.
+ *
+ * WHAT IT WILL NOT DO. It only ever renames the product folder inside
+ * `Commercials/`; the decade and everything above it are copied from the path
+ * the item already had, because Jev is weak at dates and is never asked for
+ * one. It touches nothing but `path` — never sharing, never the owner, never
+ * `grownUpsOnly`, never a file on B2. `originalPath` is untouched, so every
+ * move can be read back and undone. Items Jev is not sure of stay exactly
+ * where they are, which is no worse than today.
+ *
+ * TRIAL (Sep 20 2026, live API, 60 real titles off this catalog, scratchpad
+ * jev_ads_trial2.js): at the 0.70 floor 34 of 60 filed and the filings were
+ * right — Tourister to Clothing (luggage), Arm & Hammer to Cleaning, Stax to
+ * Music, Bendix Brakes to Auto, Team Flakes to Cereal. The floor is where the
+ * quality is: below about 0.65 Jev starts guessing on obscure old brands and
+ * guesses badly (Lever 2000 to "Cars and Trucks"). Two ways round that were
+ * tried and BOTH FAILED — a brand join against the 20,222 already-filed
+ * commercials matched only 8% and matched them wrongly ("Children's Palace",
+ * a toy shop, onto "Children's Panadol" and into Medicine), and a second
+ * yes/no asking Jev to confirm its own middling pick rejected the right
+ * answers and let the worst wrong one through at 0.81. So roughly 2,100
+ * obscure regional brands are past what Jev knows, and no amount of re-asking
+ * gets at knowledge that is not there. They keep their decade folder and wait
+ * for a human or a better model. */
+router.post('/librarian/jev-file-ads', requireJwtAuth, express.json({ limit: '16kb' }), async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+    const judges = require('~/server/services/kadeJevJudges');
+    const b = req.body || {};
+    const limit = clampInt(b.limit, 1, 6000, 6000);
+    const decade = typeof b.decade === 'string' && /^[\w -]{1,24}$/.test(b.decade) ? b.decade : null;
+    const query = {
+      state: 'ready',
+      category: 'commercials',
+      path: decade
+        ? new RegExp(`/Commercials/Other Commercials/${decade.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+        : /\/Commercials\/Other Commercials(?:\/|$)/i,
+    };
+    const items = await KadeBook.find(query, '_id title path').sort({ _id: 1 }).limit(limit).lean();
+    if (!items.length) return res.json({ ok: true, scanned: 0, moves: [], changed: 0 });
+    const t0 = Date.now();
+    const { moves, skipped, costUSD } = await judges.fileAds(items);
+    logger.info(
+      `[library/jev-ads] read ${items.length} → ${moves.length} filed, ${skipped.length} left, ${Date.now() - t0}ms, $${costUSD.toFixed(4)}`,
+    );
+    if (b.apply !== true) {
+      return res.json({ ok: true, scanned: items.length, filed: moves.length, left: skipped.length, costUSD, moves: moves.slice(0, 400) });
+    }
+    /* Guarded on the path we read, so a move that raced an upload is a no-op
+     * rather than a wrong write. */
+    const result = moves.length
+      ? await KadeBook.bulkWrite(
+          moves.map((m) => ({
+            updateOne: { filter: { _id: m.id, path: m.from, state: 'ready' }, update: { $set: { path: m.to } } },
+          })),
+        )
+      : { modifiedCount: 0 };
+    const byShelf = {};
+    for (const m of moves) byShelf[m.category] = (byShelf[m.category] || 0) + 1;
+    logger.info(`[library/jev-ads] applied ${result.modifiedCount}/${moves.length}`);
+    res.json({ ok: true, scanned: items.length, filed: moves.length, left: skipped.length, changed: result.modifiedCount || 0, costUSD, byShelf });
+  } catch (e) {
+    logger.warn(`[library/jev-ads] ${e.message}`);
+    res.status(500).json({ error: 'Could not file those commercials.' });
+  }
+});
+
 router.get('/librarian/sort-status', requireJwtAuth, async (req, res) => {
   try { res.json({ ok: true, enabled: sorter.ENABLED(), unsorted: await sorter.unsortedCount(), shelves: sorter.SHELVES }); } catch (e) { res.status(500).json({ error: 'Could not count.' }); }
 });
