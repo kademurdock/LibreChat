@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystem, songIdeaRequest, cleanSongIdea, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -2434,6 +2434,49 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
   } catch (error) {
     logger.error('[soundbooth/reference] failed:', error);
     return res.status(500).json({ error: 'That clip could not be imported.' });
+  }
+});
+
+/* ============================ POST /idea ================================== */
+/* Part 228: Surprise me, for songs. The dice are thrown on the server (see
+ * packages/api/src/music/idea.ts) and the lyric model turns them into one
+ * pitch. About a fifth of a cent and four to nine seconds, measured. Any
+ * failure answers 502 and the page falls back to its own free list, so the
+ * button never leaves her with nothing. Its cap is its own: ideas must not
+ * eat the day's drafts. */
+const IDEA_DAILY_CAP = Number(process.env.KADE_SOUNDBOOTH_IDEA_CAP || 80);
+let ideaDayStamp = '';
+const ideaCounts = new Map();
+router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req, res) => {
+  const started = Date.now();
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+  if (ideaDayStamp !== today) { ideaDayStamp = today; ideaCounts.clear(); }
+  const used = ideaCounts.get(req.user.id) || 0;
+  if (used >= IDEA_DAILY_CAP) return res.status(429).json({ error: `That's ${IDEA_DAILY_CAP} ideas today.` });
+  ideaCounts.set(req.user.id, used + 1);
+  try {
+    const sparks = songIdeaSparks();
+    const made = await callModel({
+      system: songIdeaSystem,
+      user: songIdeaRequest(sparks),
+      model: lyricWritingModel,
+      maxTokens: 3000,
+      temperature: 1.05,
+      top_p: 0.95,
+      reasoning: { enabled: true, effort: 'low', exclude: true },
+      timeoutMs: 40000,
+    });
+    const idea = cleanSongIdea(made.text);
+    logKadeUsage({
+      userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD: made.costUSD,
+      metadata: { mode: 'idea', costMeasured: made.measured, model: lyricWritingModel, ms: Date.now() - started, inTok: made.usage.prompt_tokens, outTok: made.usage.completion_tokens },
+    }).catch(() => {});
+    logger.info(`[soundbooth/idea] user=${req.user.id} ok=${!!idea} ${Date.now() - started}ms`);
+    if (!idea) return res.status(502).json({ error: 'The writer came back without an idea.' });
+    return res.json({ idea });
+  } catch (error) {
+    logger.warn('[soundbooth/idea] failed: ' + error.message);
+    return res.status(502).json({ error: 'The writer could not be reached.' });
   }
 });
 

@@ -322,3 +322,19 @@ test('Part 217: a line lifted from the system\'s own examples is flagged like an
   assert.equal(lyricTells('x\nLyrics:\nI paid the light bill twice this month and I ain\'t tell nobody').length, 1, 'FIX lines are examples too');
   assert.equal(lyricTells('x\nLyrics:\nNow they know').length, 0, 'three common words are not ownable');
 });
+
+test('Part 228: Surprise me draws sparks, asks on the song desk lane, and takes one clean paragraph or nothing', async () => {
+  const ideaSource = stripTypeScriptTypes(readFileSync(new URL('../music/idea.ts', import.meta.url), 'utf8'));
+  const { songIdeaSparks, songIdeaSystem, songIdeaRequest, cleanSongIdea } = await import('data:text/javascript;base64,' + Buffer.from(ideaSource).toString('base64'));
+  const low = songIdeaSparks(() => 0), high = songIdeaSparks(() => 0.999999), edge = songIdeaSparks(() => 1);
+  for (const sparks of [low, high, edge]) for (const key of ['sound', 'singer', 'place', 'thing', 'trouble']) assert.ok(sparks[key] && sparks[key].length > 3, key);
+  assert.notEqual(low.singer, high.singer);
+  assert.ok(songIdeaSystem.startsWith("You are Lyric, working the songwriting desk in Kade-AI's Sound Booth."), 'the gateway keeps chat guards off this opening; keep it identical to musicWritingPrompt');
+  assert.match(songIdeaSystem, /a named weekday, coffee, porch lights/);
+  const ask = songIdeaRequest(low);
+  assert.ok(ask.includes(low.sound) && ask.includes(low.trouble));
+  const pitch = 'Late-nineties slowcore on a detuned baritone guitar with brushed drums, sung by a woman in a cracked close alto. A bail bondswoman sits on a stalled fishing boat begging her client to stay for the hearing. He dares her to sing instead. "Put the Cuffs on the Chorus" runs about four minutes.';
+  assert.equal(cleanSongIdea('Here is your pitch:\n\n**' + pitch + '**\n\nWant another?'), pitch);
+  assert.equal(cleanSongIdea('Too short.'), null);
+  assert.equal(cleanSongIdea(pitch + '\n\nLyrics:\n[Verse 1]\nla la'), null, 'a pitch is never lyrics');
+});

@@ -142,7 +142,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <button type="button" class="act quiet" id="btnUndoWriting" hidden>Undo writing change</button>
         <label id="quickDraftWrap" hidden><input type="checkbox" id="quickDraft"> Quick song draft: about a minute and a half instead of five, less polished</label>
       </div>
-      <p class="hint" id="quickWritingHint">Start with an idea or write it yourself. Help write this uses the writing model; Surprise me is free. Neither makes audio.</p>
+      <p class="hint" id="quickWritingHint">Start with an idea or write it yourself. Help write this uses the writing model. For songs, Surprise me asks the writer to invent an original idea, a fraction of a cent; for speech and scenes it is free. Neither makes audio.</p>
       <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
       <p id="readback" class="hint"></p>
       <div id="renderActions">
@@ -524,7 +524,20 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         ? pick(['Soulful acoustic folk','Dreamy synth pop','Warm country soul','Intimate piano jazz','Driving indie rock'])+', about '+place+' and '+turn+'. A memorable chorus, expressive lead vocal, a quiet opening that builds to a full band, about four minutes.'
         : state.engine==='seed' ? 'A short scene at '+place+'. Two people discover '+turn+'. Include natural dialogue and the sounds around them.'
         : 'Write a short, vivid first-person story about '+place+' and '+turn+'. Give it a strong opening and a satisfying ending.';
-      changeWriting(idea);say('New idea in the editor. Change it or choose Help write this. Undo restores your previous writing.');
+      var song=(state.engine==='lyria'||state.engine==='yue2');
+      if(!song){changeWriting(idea);say('New idea in the editor. Change it or choose Help write this. Undo restores your previous writing.');return;}
+      /* Part 228: for songs the writer invents the idea from sparks drawn on the
+       * server. The list above is only what she gets if the writer cannot be reached. */
+      var btn=this, label=btn.textContent, engine=state.engine, box=document.getElementById('script'), original=box.value;
+      state.writing=true;btn.disabled=true;document.getElementById('btnDraft').disabled=true;updateRenderControls();
+      say('Thinking up a song nobody has written. A few seconds.');
+      post('/api/kade/sound-booth/idea',{}).then(function(r){
+        if(state.engine!==engine || box.value!==original){say('Your editor changed while the idea was being made. Your current text is kept.',true);return;}
+        if(r.ok&&r.data&&r.data.idea){changeWriting(r.data.idea);say('New song idea in the editor. Change it, press Surprise me again for another, or choose Help write this. Undo restores your previous writing.');}
+        else {changeWriting(idea);say('The writer could not be reached, so this idea came from the short list. Change it or choose Help write this. Undo restores your previous writing.');}
+      }).catch(function(){
+        if(state.engine===engine && box.value===original){changeWriting(idea);say('The writer could not be reached, so this idea came from the short list. Undo restores your previous writing.');}
+      }).then(function(){state.writing=false;btn.disabled=false;btn.textContent=label;document.getElementById('btnDraft').disabled=false;updateRenderControls();});
     };
     /* Part 218: the deep lane. The server takes the song draft as a job and the
      * page asks after it, so the writer can think for minutes. The job id is kept
