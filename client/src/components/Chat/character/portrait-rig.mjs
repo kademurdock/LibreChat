@@ -10,7 +10,13 @@ const SHEETS = {
     face: [0.3, 0.2, 0.46, 0.56], mouth: [0.38, 0.46, 0.3, 0.19], eyes: [0.34, 0.29, 0.38, 0.14] },
   lilly: { expressions: '/assets/characters/lilly/expressions.webp', mouths: '/assets/characters/lilly/mouths.webp',
     face: [0.38, 0.2, 0.46, 0.5], mouth: [0.48, 0.48, 0.28, 0.2], eyes: [0.4, 0.3, 0.42, 0.18] },
+  // Sep 20 2026: Harley. Both sheets re-cut onto this grid with each panel moved
+  // onto the resting head (the mouth sheet as drawn sat 22 px to the right).
+  harley: { expressions: '/assets/characters/harley/expressions.webp', mouths: '/assets/characters/harley/mouths.webp',
+    face: [0.28, 0.24, 0.52, 0.5], mouth: [0.41, 0.47, 0.27, 0.22], eyes: [0.34, 0.31, 0.42, 0.13] },
 };
+export const HARLEY_ID = 'agent_d26Mtu8mgOzkVGQECqO1a';
+export const HARLEY_PORTRAIT_FILE = 'agent-agent_d26Mtu8mgOzkVGQECqO1a-avatar-1789921519491.png';
 export const KIANA_ID = 'agent_6llV0eMu4fmIaj8f2x1Sb';
 export const KIANA_PORTRAIT_FILE = 'agent-agent_6llV0eMu4fmIaj8f2x1Sb-avatar-1789863013865.png';
 export const DELLA_ID = 'agent_BSOLa3eNEZyjs-7abCjMt';
@@ -24,6 +30,8 @@ export function hasPreparedPortrait(id, url) {
 export function preparedPortrait(id, url) {
   try {
     const file = new URL(url, 'https://local.invalid').pathname.split('/').pop();
+    if (id === HARLEY_ID && file === HARLEY_PORTRAIT_FILE)
+      return { portrait: '/assets/characters/harley/portrait.png', sheet: SHEETS.harley };
     if (id === LILLY_ID && file === LILLY_PORTRAIT_FILE)
       return {
         portrait: '/assets/characters/lilly/portrait.png',
