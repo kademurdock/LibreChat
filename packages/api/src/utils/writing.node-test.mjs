@@ -323,25 +323,34 @@ test('Part 217: a line lifted from the system\'s own examples is flagged like an
   assert.equal(lyricTells('x\nLyrics:\nNow they know').length, 0, 'three common words are not ownable');
 });
 
-test('Part 228: Surprise me draws a way of looking, never nouns; asks on the song desk lane; takes one clean paragraph or nothing', async () => {
-  const ideaSource = stripTypeScriptTypes(readFileSync(new URL('../music/idea.ts', import.meta.url), 'utf8'));
-  const { songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea } = await import('data:text/javascript;base64,' + Buffer.from(ideaSource).toString('base64'));
-  const low = songIdeaSparks(() => 0), high = songIdeaSparks(() => 0.999999), edge = songIdeaSparks(() => 1, Array.from({ length: 20 }, (_, n) => 'Title ' + n));
-  for (const sparks of [low, high, edge]) for (const key of ['type', 'method', 'shape', 'territory', 'tone', 'sound']) assert.ok(sparks[key] && sparks[key].length > 3, key);
-  assert.notEqual(low.method, high.method);
-  assert.equal(edge.avoid.length, 12, 'only the most recent titles ride along'); assert.equal(edge.avoid.at(-1), 'Title 19');
+test('Part 231: Surprise me writes ideas in her format, shows her list only as a register, and refuses a copy', async () => {
+  const strip = file => stripTypeScriptTypes(readFileSync(new URL('../music/' + file, import.meta.url), 'utf8'));
+  const shelfSource = strip('ideaShelf.ts').replace('export const ideaShelf', 'const ideaShelf');
+  const ideaSource = shelfSource + '\n' + strip('idea.ts').replace("import { ideaShelf } from './ideaShelf';", '') + '\nexport { ideaShelf };';
+  const { songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, ideaShelf } = await import('data:text/javascript;base64,' + Buffer.from(ideaSource).toString('base64'));
+  assert.equal(ideaShelf.length, 100, 'her hundred, all of them');
+  let n = 0; const rolling = () => ((n = (n * 9301 + 49297) % 233280) / 233280);
+  const sparks = songIdeaSparks(rolling, Array.from({ length: 40 }, (_, i) => 'Shown ' + i));
+  for (const key of ['sound', 'lens', 'territory']) assert.ok(sparks[key] && sparks[key].length > 3, key);
+  assert.equal(typeof sparks.rule, 'boolean');
+  assert.equal(sparks.shelf.length, 6); assert.equal(new Set(sparks.shelf).size, 6, 'six different ideas of hers');
+  assert.equal(sparks.avoid.length, 30); assert.equal(sparks.avoid.at(-1), 'Shown 39');
+  for (const edge of [() => 0, () => 0.999999, () => 1]) assert.ok(songIdeaSparks(edge).sound);
+  assert.doesNotMatch(songIdeaSparks(() => 0.1).sound, /^(.+) crossed with \1$/, 'a genre is never crossed with itself');
   assert.ok(songIdeaSystem.startsWith("You are Lyric, working the songwriting desk in Kade-AI's Sound Booth."), 'the gateway keeps chat guards off this opening; keep it identical to musicWritingPrompt');
-  assert.match(songIdeaSystem, /A named weekday, a clock time, coffee/); assert.match(songIdeaSystem, /it is a costume/); assert.match(songIdeaSystem, /there is no couple, no ex and no bar/); assert.match(songIdeaSystem, /a dog falls in love with a stick/);
-  assert.doesNotMatch(songIdeaRequest(low), /Recent ideas/);
-  const ask = songIdeaRequest(edge);
-  assert.ok(ask.includes('Territory: ' + edge.territory) && ask.includes('Tone: ' + edge.tone) && ask.includes('Sound: ' + edge.sound));
-  assert.match(songIdeaSparks(() => 0.3).sound + songIdeaSparks(() => 0.7).sound, /\w/); assert.doesNotMatch(songIdeaSparks(() => 0.2).sound, /^(.+) crossed with ,/, 'a genre is never crossed with itself');
-  assert.ok(ask.includes(edge.method) && ask.includes('- Title 19') && !ask.includes('- Title 7\n'));
-  const pitch = '"I Mow At Seven" is a man out on his own grass with the engine already running on his one day off, staring back at the neighbour watching him through the blinds. He is not sorry about the hour. Twitchy late-2000s dance-punk with dry machine drums and a clavinet, about four minutes.';
-  assert.equal(songIdeaTitle(pitch), 'I Mow At Seven');
-  assert.equal(cleanSongIdea('Brainstorm: ten titles, struck nine.\n\n**' + pitch + '**'), pitch, 'leaked working-out is not the idea');
-  assert.equal(cleanSongIdea('Too short.'), null);
-  assert.equal(cleanSongIdea(pitch + '\n\nLyrics:\n[Verse 1]\nla la'), null, 'a pitch is never lyrics');
+  assert.match(songIdeaSystem, /They are not material/); assert.match(songIdeaSystem, /No title, no instrument list/);
+  assert.doesNotMatch(songIdeaSystem, /sump pump|falls in love with a stick/i, 'an example in the prompt comes back as the idea');
+  const ask = songIdeaRequest(sparks);
+  assert.ok(ask.includes('Genre: ' + sparks.sound) && ask.includes(sparks.shelf[3]) && ask.includes('- Shown 39') && !ask.includes('- Shown 9\n'));
+  const good = "Miami bass: The cashier at a check-cashing place notices which customers fold their pay stubs before sliding them across and which keep them flat, and she knows who will ask for the extra twenty before they open their mouths. Never say the word broke.";
+  assert.equal(cleanSongIdea('Here is one:\n\n**' + good + '**'), good);
+  assert.equal(cleanSongIdea('1. ' + good), good);
+  assert.equal(cleanSongIdea('A paragraph with no genre tag at all, however long it happens to run on for, is not an idea in her format.'), null);
+  assert.equal(cleanSongIdea(good + '\n\nLyrics:\n[Verse 1]\nla la'), null, 'an idea is never lyrics');
+  assert.equal(songIdeaTitle(good).length, 170);
+  assert.equal(tooCloseToShelf(good), false);
+  assert.equal(tooCloseToShelf('Swing: Someone keeps taking the long way home because the flat is empty and the dog died.'), true, 'five of her words in a row is a copy');
+  assert.equal(tooCloseToShelf('Polka: A different idea entirely about a cashier who notices which customers fold their pay stubs.', [good]), true, 'so is one she was already shown');
 });
 
 test('Part 230: the desk demands rhyme and one meter, counts syllables itself, and knows her newest pet hates', async () => {

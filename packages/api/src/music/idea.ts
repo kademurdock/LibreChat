@@ -1,138 +1,145 @@
-/* Part 228 (Sep 20 2026). Kade: "On the surprise me button, can we make the
- * writing desk come up with some super original song prompt?" The button used
- * to join one of five styles, five places and five turns.
- *
- * The first server version drew five nouns (a sound, a singer, a place, a
- * thing, a trouble) and had the writer stitch them. Her verdict the same night:
- * "very boring unoriginal prompts that feel like fill in the blanks or madlibs."
- * She was right: every pitch was a quirky stranger holding a quirky prop, in
- * the same sentence order. Nouns handed to a model come back as nouns.
- *
- * So nothing the listener would see is drawn here any more. What is drawn is
- * HOW to look for the idea: one of her own system's song types, one way of
- * finding a concept (title first, the cliche flip, the second meaning), and a
- * shape for the pitch so two ideas in a row do not read alike. The writer
- * brainstorms privately, throws away what it has heard before, and pitches
- * the survivor.
- *
- * Her second verdict, an hour later: "a lot better, though it is still a little
- * weird and cliche. You would think it would choose more genres and mashups and
- * topics besides men and women's relationship problems." And she described a
- * song she loved: a dog falls in love with a stick, is not allowed to bring it
- * inside, is world-ending sad, and then is given a ball. "Even stories like that
- * are sometimes interesting. Children's music, all that." Eight of the ten
- * methods and nine of the eleven song types were adult confessionals, so that
- * is what came out. Now a TERRITORY (what part of life), a TONE and a SOUND (a
- * genre, half the time crossed with a second one) are drawn as well. These are
- * wide fields, not props: the writer still has to find the song inside them. */
+import { ideaShelf } from './ideaShelf';
 
-export type SongSparks = { type: string; method: string; shape: string; territory: string; tone: string; sound: string; avoid: string[] };
+/* Surprise me, for songs. Four versions in one night (Sep 20 2026), each one
+ * corrected by Kade's ear, and the corrections are the design:
+ *
+ * 1. The page joined one of five styles, places and turns. Greeting cards.
+ * 2. The server drew five NOUNS for the writer to stitch. Her word: "madlibs".
+ *    Nouns handed to a model come back as nouns.
+ * 3. A way of looking was drawn instead (a concept-finding method, a song type),
+ *    then a territory, a tone and a genre. "A lot better, though it is still a
+ *    little weird and cliche." It wrote 100-word pitches with a title, an
+ *    instrument list and a running time, it parroted the one example the prompt
+ *    contained, and it kept repeating itself because the list of what she had
+ *    already seen lived in memory and every deploy emptied it.
+ * 4. She pasted a hundred ideas of the kind she wants (ideaShelf.ts): a genre
+ *    tag, ONE very specific human situation, and often a craft rule ("Never say
+ *    we grew apart"). This version writes those. What is drawn: a genre (crossed
+ *    with a second about a third of the time), a LENS taken from what makes her
+ *    hundred work, a loose territory, whether to add a craft rule, and six of her
+ *    ideas at random as the register to hit. A pitch that reuses one of hers, or
+ *    one she has already been shown, is refused in code, because a model shown an
+ *    example will hand it back. */
 
-const TYPES: string[] = [
-  'the flex or anthem', 'the slow-burn seduction', 'the kiss-off', 'the longing ballad', 'the party starter', 'the diss or callout',
-  'the love-drunk devotional', 'the story song', 'the grown-and-gone', 'the obsession spiral', 'the last-call confession',
-  'a song type of your own choosing that is none of the usual eleven',
-  'a story song with a beginning, a middle and an end, where something actually happens', 'a story song with a beginning, a middle and an end, where something actually happens',
-  "a children's song that the grown-ups end up singing too", 'a comedy song that is also a real song', 'a singalong anthem for a whole room',
-  'a work song or a marching song', 'a lullaby', 'a tall tale', 'a dance song that tells you what to do', 'a theme song for someone or something that has never had one',
-];
-/* What part of life. Romance is ONE line in this list on purpose. */
-const TERRITORIES: string[] = [
-  "an animal's point of view, taken completely seriously", "an animal's point of view, taken completely seriously",
-  'small stakes felt as the end of the world, and then the beginning of a new one', 'small stakes felt as the end of the world, and then the beginning of a new one',
-  'being a child: the rules, the injustice, the best day ever', 'a parent and a child', 'brothers and sisters', 'a grandparent',
-  'best friends', 'a job and the people at it', 'money: not having it, suddenly having it, owing it', 'food and the people who make it',
-  'a machine or an object that has feelings about its work', 'weather, a season, or a night sky, as a character',
-  'a town, a street or a house, sung as an anthem', 'a game, a sport or a contest', 'a vehicle and the road', 'the body: getting older, getting stronger, getting sick, getting well',
-  'faith, doubt, luck and superstition', 'a holiday or a day of the year nobody writes songs for', 'a villain who is enjoying it', 'a monster, a legend or a fairy tale told from the inside',
-  'a moment in history seen by somebody unimportant who was standing there', 'outer space, the sea or the deep woods', 'neighbours', 'a rivalry that is not about love',
-  'romance, but not a breakup and not a complaint', 'a celebration: somebody won, arrived, graduated, got out, got home',
-];
-const TONES: string[] = [
-  'laugh-out-loud funny', 'silly and completely sincere', 'joyful', 'triumphant', 'sweet without being soft', 'tender', 'mischievous', 'spooky and fun',
-  'furious', 'smug', 'swaggering', 'wide-eyed wonder', 'bittersweet', 'heartbroken', 'cosy', 'rowdy',
-];
-/* Genres to cross. Broad on purpose; the writer chooses the instruments. */
+export type SongSparks = { sound: string; lens: string; territory: string; rule: boolean; shelf: string[]; avoid: string[] };
+
 const GENRES: string[] = [
-  'bluegrass', 'outlaw country', 'Western swing', 'zydeco', 'Tejano cumbia', 'delta blues', 'Chicago blues', 'Memphis soul', 'Motown', 'gospel choir', 'doo-wop',
-  'New Orleans brass band', 'big band swing', 'ragtime', 'a Broadway show tune', 'a Disney-style musical number', 'a sea shanty', 'an Irish pub song', 'polka', 'klezmer',
-  'mariachi', 'bossa nova', 'salsa', 'reggae', 'ska', 'dancehall', 'Afrobeats', 'highlife', 'Bollywood filmi', 'K-pop', 'city pop', 'disco', 'funk', 'boogie', 'new jack swing',
-  '1990s R&B', 'crunk', 'G-funk', 'boom bap hip-hop', 'trap', 'Miami bass', 'house', 'UK garage', 'drum and bass', 'synthwave', 'new wave', 'post-punk', 'pop punk',
-  'grunge', 'hair metal', 'symphonic metal', 'surf rock', 'rockabilly', 'psychedelic rock', 'yacht rock', 'a power ballad', 'indie folk', 'a campfire singalong',
-  'a nursery rhyme', 'a marching band', 'barbershop quartet', 'a cappella stomp and clap', 'a lullaby for music box', 'a cinematic orchestral score', 'chiptune', 'lo-fi bedroom pop',
+  '90s R&B slow jam', 'modern R&B', 'neo-soul', 'quiet storm R&B', '2000s R&B', 'alternative R&B', 'R&B duet', 'new jack swing',
+  'boom-bap hip-hop', 'storytelling rap', 'Southern hip-hop', 'old-school rap', 'female rap', 'trap', 'G-funk', 'Miami bass', 'crunk',
+  '70s soul', 'Memphis soul', 'Motown-style soul', 'deep soul ballad', 'Southern soul', 'soul waltz', 'psychedelic soul', 'soul duet',
+  'traditional country', '90s country', 'outlaw country', 'country story song', 'country comedy', 'country duet', 'bluegrass', 'Western swing', 'Appalachian folk', 'Americana',
+  'delta blues', 'Chicago blues', 'electric blues', 'swamp blues', 'blues shuffle', 'dirty blues comedy', 'blues-rock',
+  'funk', '70s funk', 'P-Funk-style weirdness', 'disco-funk', 'funk-pop', 'boogie', 'disco',
+  'grunge', '90s alt-rock', 'garage rock', 'indie rock', 'punk rock', 'pop-punk', 'Southern rock', 'hard rock', 'power ballad', 'surf rock', 'rockabilly', 'new wave', 'yacht rock',
+  'heavy metal', 'thrash metal', 'doom metal', 'groove metal', 'metalcore', 'nu metal', 'industrial metal', 'hair metal',
+  'gospel choir', 'gospel-blues', 'gospel funk', 'piano gospel ballad', 'gospel rap', 'secular gospel',
+  'jazz ballad', 'big band swing', 'electro-swing', 'trip-hop', 'synth-pop', 'dark synth-pop', 'city pop', 'house', 'UK garage',
+  'acoustic folk', 'sea shanty', 'Irish pub song', 'polka', 'zydeco', 'Tejano cumbia', 'mariachi', 'reggae', 'ska', 'dancehall', 'Afrobeats', 'bossa nova',
+  'Broadway show tune', 'animated-musical number', "children's singalong", 'lullaby', 'barbershop quartet', 'campfire singalong', 'marching band',
 ];
-const METHODS: string[] = [
-  'TITLE FIRST. Start from a phrase people really say out loud (at work, in a fight, in bed, at a register, in a group chat) that has never been a song title, and that means a second thing by the last chorus.',
-  'THE CLICHE FLIP. Take a worn saying and flip it: swap its parts, aim the whole phrase at someone it is never aimed at, or zoom into one small detail inside it.',
-  'TWO FEELINGS THAT SHOULD NOT SHARE A ROOM. Find the moment where a person feels both at once and is not ashamed of either, and name it in a way people will quote.',
-  'FIVE MINUTES OFF. Take a situation every song covers and move the camera to five minutes before it or five minutes after it, where nobody writes.',
-  'THE WRONG NARRATOR. A familiar kind of song sung by the person who never gets to sing it: the one who did the leaving, the one who was right, the one who is fine.',
-  'AN ARGUMENT WITH ONE SPECIFIC YOU. The whole song is said to one person who would recognise themselves, and the hook is the line the singer has been rehearsing.',
-  'A RULE, A LIST OR A RITUAL. The song is a set of instructions, terms and conditions, a count, or a habit, and the feeling leaks out through the form.',
-  'THE BRAG THAT IS TRUE. Somebody is proud of something nobody writes songs about, and means it completely.',
-  'THE ORDINARY DAY. Nothing happens. A person who got through something is simply living, and one small detail shows what it cost or what it bought.',
-  'THE THING NOBODY ADMITS. A petty, horny, jealous, relieved or greedy thought that most people have had and no song has said plainly.',
+
+/* What makes her hundred work, as ways of looking. The last three are the
+ * novelty lane she asked to keep: about one draw in five. */
+const LENSES: string[] = [
+  'ONE TINY TELL. A small habit, object, sound or smell gives the whole situation away, and the song stays on it.',
+  'THE FORM IS THE IDEA. The structure does the work: two singers who remember the same night differently, every verse a message never sent, one object followed through many hands, a building taken room by room, loud sections for what they want to say and soft ones for what comes out, several narrators at one event.',
+  'THE JOB THAT SEES EVERYTHING. Someone whose ordinary work lets them read people, and what they have noticed.',
+  'COMEDY OF ESCALATING SPECIFICS. One plain annoyance or one bad stretch, told through more and more exact and ridiculous particulars.',
+  'THE SAME OLD THING. A couple, a family or two friends doing what they have always done, with the real feeling sitting underneath it.',
+  'A PLACE OR A THING AS WITNESS. A house, a vehicle, a drawer, a machine or a building holds the story, and the people are seen through it.',
+  'THIRTY SECONDS. A feeling that ambushes someone in a completely ordinary place, and is gone again.',
+  'THE SMALL ASK. Faith, doubt, courage or pride at the size of one phone call, one drive, one shift, one year with nothing glamorous in it.',
+  'PRETENDING. Someone performing fine, or uninterested, or together, while each verse lets a little more of the truth out.',
+  'THE WORLD MOVED. Someone notices that the people, the town or the life they knew quietly turned into something else, themselves included.',
+  'A WHOLE GROUP. A family, a congregation, a friend group, a street or a workplace, with its grudges and its loyalty, on one particular day.',
+  'AN ABSURD PREMISE PLAYED COMPLETELY STRAIGHT. An outsider or an impossible narrator looking at ordinary life, or a small chore treated as an epic.',
+  'SMALL STAKES, END OF THE WORLD. An animal or a child wants one thing, loses it, grieves completely, and the story actually goes somewhere.',
+  'SMALL STAKES, END OF THE WORLD. An animal or a child wants one thing, loses it, grieves completely, and the story actually goes somewhere.',
 ];
-const SHAPES: string[] = [
-  'Open with the title in double quotes, then say what the song is in two or three plain sentences, then the sound.',
-  'Open with the sound in one sentence, then the idea as if you were telling a friend about a song you cannot stop playing.',
-  'Open with "What if" and let the idea run, then the title, then the sound.',
-  'Open with the one line from the chorus everybody will sing, in double quotes, then explain who is singing it and why it stings or grins, then the sound.',
-  'Write it as one long breathless sentence followed by one short one.',
-  'Open with who is singing and the exact minute we meet them, then the hook title, then the sound.',
+
+const TERRITORIES: string[] = [
+  'a couple, years in', 'two people who should not start anything', 'an ex, handled like an adult or not at all', 'a parent and a grown child', 'a parent and a small child',
+  'brothers and sisters', 'grandparents', 'old friends', 'neighbours', 'a workplace', 'a night shift', 'money and being broke', 'food and whoever cooks it',
+  'a vehicle', 'a house', 'a small town', 'a city block', 'a church or no church', 'a funeral, a wedding or a reunion', 'getting older', 'the body', 'technology',
+  'an animal', 'being a kid', 'a holiday', 'a game or a contest', 'paperwork, queues and customer service', 'a party', 'a road trip', 'a stranger',
 ];
+
+function sample(xs: string[], n: number, random: () => number): string[] {
+  const pool = xs.slice();
+  const out: string[] = [];
+  while (out.length < n && pool.length) out.push(pool.splice(Math.min(pool.length - 1, Math.floor(random() * pool.length)), 1)[0]);
+  return out;
+}
 
 export function songIdeaSparks(random: () => number = Math.random, avoid: string[] = []): SongSparks {
   const pick = (xs: string[]): string => xs[Math.min(xs.length - 1, Math.floor(random() * xs.length))];
   const first = pick(GENRES);
-  let second = random() < 0.5 ? pick(GENRES) : '';
-  if (second === first) second = '';
-  const sound = second ? `${first} crossed with ${second}, as one band that really plays both` : first;
-  return { type: pick(TYPES), method: pick(METHODS), shape: pick(SHAPES), territory: pick(TERRITORIES), tone: pick(TONES), sound, avoid: avoid.slice(-12) };
+  const second = random() < 0.3 ? pick(GENRES) : '';
+  return {
+    sound: second && second !== first ? `${first} crossed with ${second}` : first,
+    lens: pick(LENSES),
+    territory: pick(TERRITORIES),
+    rule: random() < 0.5,
+    shelf: sample(ideaShelf, 6, random),
+    avoid: avoid.slice(-30),
+  };
 }
 
 /* Opens with the song desk's own first sentence on purpose: the gateway knows
  * that sentence (reframe-proxy lyrics.js) and keeps its chat notes and chat
  * rewriters away from the reply. */
-export const songIdeaSystem: string = `You are Lyric, working the songwriting desk in Kade-AI's Sound Booth. Right now you are not writing a song. You are handing a songwriter ONE idea worth a song: a concept with an angle, the kind a room of professional writers would stop talking for. She is bored. She has heard every safe idea, every "quirky" one, and far too many songs about a man and a woman having a problem.
+export const songIdeaSystem: string = `You are Lyric, working the songwriting desk in Kade-AI's Sound Booth. Right now you are not writing a song. You are writing ONE generator-ready song idea for a songwriter who will hand it to the lyric writer with one press.
 
-HOW TO FIND IT (do this privately, never show it)
-1. You are given a territory, a tone, a song type, a method and a sound. The territory and the tone are the assignment: stay inside them. Using the method as a lens where it fits (drop it where it fights the territory), brainstorm at least ten different title-and-concept pairs. Go fast and go wide: different singers, different ages, different stakes. A singer can be a child, an animal, a machine, a whole town.
-2. Strike every one you have effectively heard before, every one a greeting card could print, and every one whose only interest is that the character or the prop is odd. An odd job, an odd object and an odd place is not an idea; it is a costume. The idea is the ANGLE, or the STORY. An angle is what the song says about wanting, pride, money, family, revenge, faith, getting older or getting away with it that a listener recognises from their own life and has never heard sung. A story is a small chain of events with a want, an obstacle and a change, simple enough to retell in two sentences and felt all the way: a dog falls in love with a stick, is told it cannot come inside, grieves like the world has ended, and is handed a ball. Small stakes, total commitment. Either is a song.
-3. Of what survives, keep the one where the title is a phrase people actually say, could be shouted back by a crowd, and lands differently at the end than at the start.
-4. Use the sound you are given. If it is two genres crossed, say how they meet: which one owns the rhythm, which one owns the melody and the instruments. Describe it by era, scene, two or three signature instruments and the feel of the tempo; never name a real artist or song.
+WHAT AN IDEA IS HERE
+A genre tag, a colon, then one very specific human situation in one to three plain sentences. Specific means a listener can see who it is, where they are and what just happened or keeps happening, and recognises it from their own life or laughs because they do. Generic prompts ("an emotional song about heartbreak") are where a writer reaches for neon, shattered mirrors, ghosts in the hallway and heartbeats echoing through the universe. A specific situation leaves no room for those.
 
-WHAT A GOOD ONE HAS
-A specific singer mid-feeling, not looking back on it. A reason the song exists right now. A hook title a crowd, or a car full of kids, would sing back. One turn, second meaning, or ending that pays off. It sounds like a song people would put on again, not like the premise of a short story. Funny, silly, sweet, filthy, furious, smug, tender and strange are all welcome; bland and wise are not. No moral, unless it is a children's song, where the moral must be smuggled in, never announced.
+You are shown a few ideas of hers as the REGISTER to hit: their size, their plainness, their eye. They are not material. Do not reuse their situations, their objects or their phrasing, and do not write a close cousin of any of them.
+
+HOW TO FIND IT (privately; never show the working)
+1. Use the genre you are given as the tag; you may sharpen it with an era or a style word. If two genres are crossed, the tag says so.
+2. Look through the lens you are given. The territory is a loose nudge; drop it if it fights the lens.
+3. Think of eight different situations. Strike any you have effectively heard as a song, any a greeting card could print, and any whose only interest is that someone has an odd job or an odd object. Strike anything that needs explaining.
+4. Keep the one that is most specific and most human, the one that makes a writer think "I know exactly what verse two is".
 
 NEVER
-A named weekday, a clock time, coffee, a kitchen table, a bar at closing, porch lights, neon, shadows, whispers, echoes, rain on glass, empty roads, small-town nostalgia, dancing in a kitchen, finding yourself, healing, a journey, a song about music or writing, ghosts, clowns, carnivals, lighthouses, psychics, or any character whose job is the joke.
-
-RANGE
-Most songs pitched at this desk have been a man or a woman unhappy about the other. That is one corner of the map. Unless the territory you are given is romance, there is no couple, no ex and no bar in this idea. Do not drift into melancholy when the tone you were given is bright. Whatever the recent ideas were about, go somewhere else.
+Neon, fluorescent light, mirrors, ghosts, shadows, whispers, echoes, heartbeats, the universe, storms as feelings, rain on glass, empty roads, a named weekday, a clock time, coffee, porch lights, kitchen tables, healing, a journey, finding yourself, a moral, a song about songwriting. No real artists, songs or brands.
 
 HOW TO WRITE IT DOWN
-The territory, the tone, the method, the song type and the shape are private instructions. Never repeat their wording or name them in the paragraph ("the thing nobody admits", "two feelings", "the turn", "the angle", "kiss-off" and the like stay out of it). Plain talk, the way she would type an idea to herself: 60 to 120 words, one paragraph, following the shape you are given. It must include the working title in double quotes, who is singing and what is happening to them right now, the angle or turn, the sound, and that it runs about four minutes. Do not label these parts. No lyrics beyond the quoted title or one quoted hook line, no headings, no list, no preamble, no sign-off, nothing after the paragraph.`;
+One line, 25 to 70 words: the genre tag, a colon, the situation. No title, no instrument list, no tempo, no running time, no lyrics, no quotation of a hook. If you are told to add a craft rule, end with one short sentence that fences the writer off from the lazy version of this exact song, in the manner of "Never say the word sorry." or "Told entirely through what is on the table." or "No one raises their voice." Otherwise end after the situation. No preamble, no sign-off, nothing else.`;
 
 export function songIdeaRequest(sparks: SongSparks): string {
-  const avoid = sparks.avoid.length ? `\n\nRecent ideas she has already seen; be nothing like them in subject, sound or title:\n- ${sparks.avoid.join('\n- ')}` : '';
-  return `Territory: ${sparks.territory}.\nTone: ${sparks.tone}.\nSound: ${sparks.sound}.\nSong type to aim at: ${sparks.type}.\nMethod: ${sparks.method}\nShape of the paragraph: ${sparks.shape}${avoid}\n\nFind the idea, then write the paragraph.`;
+  const avoid = sparks.avoid.length ? `\n\nIdeas she has already been shown. Be nothing like any of them in situation, genre or structure:\n- ${sparks.avoid.join('\n- ')}` : '';
+  return `Genre: ${sparks.sound}.\nLens: ${sparks.lens}\nTerritory (loose): ${sparks.territory}.\nCraft rule: ${sparks.rule ? 'yes, end with one' : 'no'}.\n\nThe register to hit, from her own list (never reuse these):\n- ${sparks.shelf.join('\n- ')}${avoid}\n\nWrite the one idea.`;
 }
 
-/** The working title of a pitch, for the "already seen" list. */
+/** What goes on the "already shown" list for a pitch. */
 export function songIdeaTitle(idea: string): string {
-  const quoted = /["“]([^"”]{2,60})["”]/.exec(idea);
-  return (quoted ? quoted[1] : idea.slice(0, 60)).trim();
+  return idea.replace(/\s+/g, ' ').trim().slice(0, 170);
 }
 
-/** One paragraph of pitch, or null when the writer returned anything else. */
+const words = (text: string): string[] => text.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').split(/\s+/).filter(Boolean);
+
+/** True when a pitch lifts a run of five words from her shelf or from an idea
+ *  she has already been shown. A model shown an example hands it back. */
+export function tooCloseToShelf(idea: string, seen: string[] = []): boolean {
+  const mine = words(idea.replace(/^[^:]{0,60}:/, ''));
+  const runs = new Set<string>();
+  for (let i = 0; i + 5 <= mine.length; i++) runs.add(mine.slice(i, i + 5).join(' '));
+  for (const other of [...ideaShelf, ...seen]) {
+    const theirs = words(other.replace(/^[^:]{0,60}:/, ''));
+    for (let i = 0; i + 5 <= theirs.length; i++) if (runs.has(theirs.slice(i, i + 5).join(' '))) return true;
+  }
+  return false;
+}
+
+/** One idea line, or null when the writer returned anything else. */
 export function cleanSongIdea(text: string): string | null {
-  const paragraphs = String(text || '')
+  if (/^\s*(lyrics\s*:|\[verse)/im.test(text)) return null;
+  const lines = String(text || '')
     .replace(/```[a-z]*|```/gi, '')
-    .split(/\n\s*\n/)
-    .map((p) => p.replace(/\s+/g, ' ').replace(/^[#*_>\-\s]+|[*_\s]+$/g, '').trim())
-    .filter((p) => p.length >= 120 && !/^(sure|here(?:'s| is)|okay|pitch|brainstorm|candidates?|step \d)\b/i.test(p));
-  const idea = paragraphs[paragraphs.length - 1];
-  if (!idea || /^\s*(lyrics\s*:|\[verse)/im.test(text)) return null;
-  return idea.slice(0, 1400);
+    .split(/\n+/)
+    .map((p) => p.replace(/\s+/g, ' ').replace(/^(?:[#*_>\-\s]|\d+[.)]\s)+|[*_\s]+$/g, '').trim())
+    .filter((p) => p.length >= 60 && /^[^:]{3,60}:\s+\S/.test(p) && !/^(sure|here(?:'s| is)|okay|idea|pitch|lens|territory|craft rule)\b/i.test(p));
+  const idea = lines[lines.length - 1];
+  return idea ? idea.slice(0, 700) : null;
 }

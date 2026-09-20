@@ -9,9 +9,9 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
-const { logKadeUsage } = require('~/models/kadeUsage');
+const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
@@ -2438,19 +2438,29 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
 });
 
 /* ============================ POST /idea ================================== */
-/* Part 228: Surprise me, for songs. The dice are thrown on the server (see
- * packages/api/src/music/idea.ts) and the lyric model turns them into one
- * pitch. The first version drew nouns and she called the result madlibs; now
- * only the WAY of looking is drawn and the writer brainstorms and discards on
- * medium reasoning: 14 to 28 seconds and about a third of a cent, measured.
- * Titles she has already been shown ride along so the next idea goes elsewhere. Any
- * failure answers 502 and the page falls back to its own free list, so the
- * button never leaves her with nothing. Its cap is its own: ideas must not
- * eat the day's drafts. */
+/* Surprise me, for songs (Parts 228 to 231; the whole story is at the top of
+ * packages/api/src/music/idea.ts). The server draws a genre, a lens and six of
+ * Kade's own hundred ideas as the register; the lyric model writes one idea in
+ * her format: genre tag, one specific human situation, sometimes a craft rule.
+ * 5 to 15 seconds and about a fifth of a cent, measured.
+ * What she has already been shown is read back from the usage ledger, because
+ * the first version kept that list in memory and every deploy emptied it, so
+ * the same sump pump came round again. A pitch that lifts five words in a row
+ * from her list or from one she has seen is refused and asked for once more.
+ * Any failure answers 502 and the page falls back to its own free list. */
 const IDEA_DAILY_CAP = Number(process.env.KADE_SOUNDBOOTH_IDEA_CAP || 80);
 let ideaDayStamp = '';
 const ideaCounts = new Map();
-const ideaSeen = new Map();
+async function ideasAlreadyShown(userId) {
+  try {
+    const rows = await KadeUsage.find({ user: userId, service: 'soundbooth_script', 'metadata.mode': 'idea', 'metadata.idea': { $exists: true } })
+      .sort({ createdAt: -1 }).limit(30).select('metadata.idea').lean();
+    return rows.map((row) => String(row.metadata.idea)).reverse();
+  } catch (e) {
+    logger.warn('[soundbooth/idea] could not read shown ideas: ' + e.message);
+    return [];
+  }
+}
 router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req, res) => {
   const started = Date.now();
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
@@ -2459,26 +2469,31 @@ router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req,
   if (used >= IDEA_DAILY_CAP) return res.status(429).json({ error: `That's ${IDEA_DAILY_CAP} ideas today.` });
   ideaCounts.set(req.user.id, used + 1);
   try {
-    const seen = ideaSeen.get(req.user.id) || [];
-    const sparks = songIdeaSparks(Math.random, seen);
-    const made = await callModel({
-      system: songIdeaSystem,
-      user: songIdeaRequest(sparks),
-      model: lyricWritingModel,
-      maxTokens: 8000,
-      temperature: 1.1,
-      top_p: 0.95,
-      reasoning: { enabled: true, effort: 'medium', exclude: true },
-      timeoutMs: 110000,
-    });
-    const idea = cleanSongIdea(made.text);
+    const seen = await ideasAlreadyShown(req.user.id);
+    let idea = null, costUSD = 0, measured = true, tries = 0, usage = {};
+    while (!idea && tries < 2) {
+      tries += 1;
+      const made = await callModel({
+        system: songIdeaSystem,
+        user: songIdeaRequest(songIdeaSparks(Math.random, seen)),
+        model: lyricWritingModel,
+        maxTokens: 8000,
+        temperature: 1.1,
+        top_p: 0.95,
+        reasoning: { enabled: true, effort: 'medium', exclude: true },
+        timeoutMs: 60000,
+      });
+      costUSD += made.costUSD; measured = measured && made.measured; usage = made.usage;
+      const candidate = cleanSongIdea(made.text);
+      if (candidate && !tooCloseToShelf(candidate, seen)) idea = candidate;
+      else logger.info(`[soundbooth/idea] try ${tries} refused: ${candidate ? 'too close to an idea she has seen' : 'not an idea'}`);
+    }
     logKadeUsage({
-      userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD: made.costUSD,
-      metadata: { mode: 'idea', costMeasured: made.measured, model: lyricWritingModel, ms: Date.now() - started, inTok: made.usage.prompt_tokens, outTok: made.usage.completion_tokens },
+      userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD,
+      metadata: { mode: 'idea', idea: idea ? songIdeaTitle(idea) : undefined, tries, costMeasured: measured, model: lyricWritingModel, ms: Date.now() - started, inTok: usage.prompt_tokens, outTok: usage.completion_tokens },
     }).catch(() => {});
-    logger.info(`[soundbooth/idea] user=${req.user.id} ok=${!!idea} ${Date.now() - started}ms`);
+    logger.info(`[soundbooth/idea] user=${req.user.id} ok=${!!idea} tries=${tries} ${Date.now() - started}ms`);
     if (!idea) return res.status(502).json({ error: 'The writer came back without an idea.' });
-    ideaSeen.set(req.user.id, [...seen, songIdeaTitle(idea)].slice(-12));
     return res.json({ idea });
   } catch (error) {
     logger.warn('[soundbooth/idea] failed: ' + error.message);
