@@ -2169,6 +2169,30 @@ router.get('/agent-default', requireJwtAuth, async (req, res) => {
   }
 });
 
+/* POST /api/kade/agent-promote — Sep 20 2026, her ask: the fully animated
+ * characters lead the marketplace. Stock LibreChat reads `is_promoted` (the
+ * first tab, opened by default) but ships no way to set it. Body:
+ * { secret, agentIds: [...], promoted: true|false }. Same trust model as
+ * /usage-event. Touches that one flag and nothing else. */
+router.post('/agent-promote', async (req, res) => {
+  try {
+    const expected = process.env.KADE_USAGE_EVENT_SECRET;
+    if (!expected || (req.body || {}).secret !== expected) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const ids = Array.isArray((req.body || {}).agentIds) ? req.body.agentIds.map(String).slice(0, 50) : [];
+    if (!ids.length) return res.status(400).json({ error: 'agentIds required' });
+    const mongoose = require('mongoose');
+    const out = await mongoose.connection.db
+      .collection('agents')
+      .updateMany({ id: { $in: ids } }, { $set: { is_promoted: req.body.promoted !== false } });
+    return res.json({ ok: true, matched: out.matchedCount, modified: out.modifiedCount });
+  } catch (e) {
+    logger.error('[kade/agent-promote] failed:', e);
+    return res.status(500).json({ error: 'Could not update' });
+  }
+});
+
 /* POST /api/kade/agent-default/assign — Kade's word sets somebody's main agent
  * ("make it Holly Murdock's default agent"). Machine-to-machine, same trust
  * model as /usage-event. Body: { secret, email, agentId } ; agentId null clears. */
