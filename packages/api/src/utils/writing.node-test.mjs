@@ -366,3 +366,13 @@ test('Part 230: the desk demands rhyme and one meter, counts syllables itself, a
   assert.deepEqual(tells.map(t => t.tell), ['humming', '"knowing" as a mood']);
   assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true }).maxTokens, 32000);
 });
+
+test('Part 231: a duet line that opens with a singer cue is a sung line, so a repair that relabels singers still merges', () => {
+  const first = 'Duet.\n\nLyrics:\n[Verse 1]\n(Her) You go first\n(Him) No, you go first\n(Her) I saved you a seat\n(Him) You ordered the lamb\n\nREADBACK: Two singers argue.';
+  const repair = 'Duet.\n\nLyrics:\n[Verse 1]\n[Her] You go first\n[Him] No, you go first\n[Her] I saved you a seat by the door\n[Him] You ordered the lamb\n\nREADBACK: Two singers argue.';
+  const merged = mergeRepairedLyrics(first, repair);
+  assert.ok(merged, 'four sung lines in, four sung lines out');
+  assert.match(merged, /\[Her\] I saved you a seat by the door/);
+  const audit = lyricAuditRequest(first, [], null);
+  assert.match(audit, /do NOT count syllables yourself/); assert.match(audit, /not a nursery rhyme either/);
+});
