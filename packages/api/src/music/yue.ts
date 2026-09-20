@@ -6,6 +6,27 @@ import { createAudioRouter } from '../audio/jobs';
 export const yueCost =
   'No reliable per-song cost estimate yet. YuE2 currently does not deduct from your credit balance. Kade pays GPU time at about $1.22 per hour per GPU, including startup and ten minutes awake after the last job. Up to two GPUs can run together; extra takes and higher settings use more GPU time.';
 
+/* Trained styles (Part 235): each is an AR LoRA Kade trained from her own folders, kept in the
+ * private bucket and folded in by the worker for one song. The lead sentence is the caption the
+ * LoRA was trained under, trigger word first, so it has to open the style text. They were trained
+ * score-free, so a new song in a trained style asks the worker for cot off. Her ear picked the
+ * checkpoints: kids step 1200, soul step 800, both on the stock decoder. */
+export const yueStyles: Record<string, { key: string; scale: number; lead: string }> = {
+  kids_choir: {
+    key: 'yue2-loras/kids-step1200.pt',
+    scale: 1,
+    lead: "kdkids, in the style of kdkids. English, children's choir, a group of young voices singing together, bright and clear.",
+  },
+  soul: {
+    key: 'yue2-loras/soul-step800.pt',
+    scale: 1,
+    lead: 'kdsoul, in the style of kdsoul. English, soulful, heartfelt expressive lead vocal with rich harmonies, warm groove.',
+  },
+};
+export function yueStylesEnabled(): boolean {
+  return process.env.YUE_STYLES_ENABLED === '1';
+}
+
 export function yueInput(body: {
   title?: string;
   count?: number;
@@ -16,6 +37,7 @@ export function yueInput(body: {
   lyrics?: string;
   abc?: string;
   cot?: string;
+  band?: string;
   seed?: number;
   reference_voice_url?: string;
   referenceExpected?: boolean;
@@ -48,6 +70,10 @@ export function yueInput(body: {
     );
   if (body.title != null && (typeof body.title !== 'string' || body.title.length > 80))
     throw new Error('Use a title up to 80 characters.');
+  const band = body.band && body.band !== 'none' ? body.band : undefined;
+  if (band && (!yueStylesEnabled() || !Object.prototype.hasOwnProperty.call(yueStyles, band)))
+    throw new Error('That trained style is not available. Choose None or another style.');
+  const trained = band ? yueStyles[band] : undefined;
   function number(
     value: number | undefined,
     fallback: number,
@@ -70,7 +96,7 @@ export function yueInput(body: {
     return value;
   }
   return {
-    style: body.script.trim(),
+    style: trained ? `${trained.lead} ${body.script.trim()}`.slice(0, 3000) : body.script.trim(),
     title: body.title?.trim() || body.script.trim().split(/\s+/).slice(0, 7).join(' ').slice(0, 80),
     count: number(body.count, 1, 1, 4, 'Number of takes'),
     weirdness: number(body.weirdness, 50, 0, 100, 'Creative variation'),
@@ -79,7 +105,15 @@ export function yueInput(body: {
     lyrics: body.lyrics.trim(),
     abc: body.abc || undefined,
     reference_voice_url: body.reference_voice_url || undefined,
-    cot: body.reference_voice_url || (body.abc && body.cot !== 'full') ? 'melody' : 'full',
+    cot:
+      body.reference_voice_url || (body.abc && body.cot !== 'full')
+        ? 'melody'
+        : trained && !body.abc
+          ? 'off'
+          : 'full',
+    band,
+    lora_key: trained?.key,
+    lora_scale: trained?.scale,
     seed: body.seed ?? Math.floor(Math.random() * 2147483647),
   };
 }

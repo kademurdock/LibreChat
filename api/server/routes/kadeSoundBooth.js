@@ -9,7 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -38,7 +38,7 @@ router.use(createYueRouter({
   validateReference: (user, url) => validateMusicReference(user, url, musicReferenceHooks),
   project: async (user, input, sourceText) => {
     const p = await KadeSoundBoothProject.create({ user, engine: 'yue2', title: input.title, script: input.style,
-      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, seed: input.seed, reference_voice_url: input.reference_voice_url, count: input.count, weirdness: input.weirdness, steps: input.steps, guidance: input.guidance }, state: 'queued' });
+      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, band: input.band, seed: input.seed, reference_voice_url: input.reference_voice_url, count: input.count, weirdness: input.weirdness, steps: input.steps, guidance: input.guidance }, state: 'queued' });
     return String(p._id);
   },
   update: async job => {
@@ -763,7 +763,8 @@ const GUIDE = {
         { key: 'lyrics', label: 'Lyrics', hint: 'The words to sing. Use [Verse] and [Chorus] tags, or choose Write my song idea to draft them.', kind: 'text' },
         { key: 'reference_voice_url', label: 'Recording to cover (optional)', hint: 'Import one song, up to six minutes. YuE2 uses its melody for a new arrangement; this does not clone the original singer. Add the words you want under Lyrics.', kind: 'clip', max: 1 },
         { key: 'abc', label: 'Optional composition (ABC)', hint: 'Use a melody score instead of an imported recording.', kind: 'text' },
-        { key: 'cot', label: 'Composition', hint: 'Melody gives the arrangement more freedom; full keeps chords too.', kind: 'choice', options: ['melody','full'], default: 'melody' },
+        ...(yueStylesEnabled() ? [{ key: 'band', label: 'Trained style', hint: 'A sound trained from your own music folders. Kids choir came from the kids choir recordings; Soul came from the music group recordings. None is plain YuE2. A trained style leads the song, and Music direction still steers it, for example a woman singing lead, or slow and gentle. Works for new songs and for covers.', kind: 'choice', options: ['none', ...Object.keys(yueStyles)], default: 'none' }] : []),
+        { key: 'cot', label: 'Following a score (only used with an ABC composition)', hint: 'This does nothing for a brand new song. With an ABC score, Melody follows the tune and frees the arrangement; Full keeps the chords too. A cover from a recording always uses Melody.', kind: 'choice', options: ['melody','full'], default: 'melody' },
         { key: 'count', label: 'Number of takes', hint: 'Request 1 to 4 variations together. Up to two generate in parallel when GPUs are available. Every take uses a different seed and additional GPU time.', kind: 'number', min: 1, max: 4, step: 1, default: 1 },
         { key: 'weirdness', label: 'Creative variation (weirdness)', hint: '50 keeps the original sound settings. Lower is more predictable; higher explores less likely musical choices and may sound less coherent. Changes sampling temperature; this is a YuE2 control, not a copy of Suno.', kind: 'range', min: 0, max: 100, step: 1, default: 50 },
         { key: 'steps', label: 'Inference steps', hint: '32 is the original setting. 16 is faster; up to 64 spends more time refining the audio. More steps do not guarantee a better song.', kind: 'number', min: 16, max: 64, step: 1, default: 32 },

@@ -15,7 +15,10 @@ export type Input = {
   lyrics?: string;
   abc?: string;
   reference_voice_url?: string;
-  cot?: 'full' | 'melody';
+  cot?: 'full' | 'melody' | 'off';
+  band?: string;
+  lora_key?: string;
+  lora_scale?: number;
   seed: number;
 };
 type Output = {
@@ -109,6 +112,7 @@ export type InputBody = {
   lyrics?: string;
   abc?: string;
   cot?: string;
+  band?: string;
   seed?: number;
   reference_voice_url?: string;
   referenceExpected?: boolean;
