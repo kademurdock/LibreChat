@@ -323,18 +323,21 @@ test('Part 217: a line lifted from the system\'s own examples is flagged like an
   assert.equal(lyricTells('x\nLyrics:\nNow they know').length, 0, 'three common words are not ownable');
 });
 
-test('Part 228: Surprise me draws sparks, asks on the song desk lane, and takes one clean paragraph or nothing', async () => {
+test('Part 228: Surprise me draws a way of looking, never nouns; asks on the song desk lane; takes one clean paragraph or nothing', async () => {
   const ideaSource = stripTypeScriptTypes(readFileSync(new URL('../music/idea.ts', import.meta.url), 'utf8'));
-  const { songIdeaSparks, songIdeaSystem, songIdeaRequest, cleanSongIdea } = await import('data:text/javascript;base64,' + Buffer.from(ideaSource).toString('base64'));
-  const low = songIdeaSparks(() => 0), high = songIdeaSparks(() => 0.999999), edge = songIdeaSparks(() => 1);
-  for (const sparks of [low, high, edge]) for (const key of ['sound', 'singer', 'place', 'thing', 'trouble']) assert.ok(sparks[key] && sparks[key].length > 3, key);
-  assert.notEqual(low.singer, high.singer);
+  const { songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea } = await import('data:text/javascript;base64,' + Buffer.from(ideaSource).toString('base64'));
+  const low = songIdeaSparks(() => 0), high = songIdeaSparks(() => 0.999999), edge = songIdeaSparks(() => 1, Array.from({ length: 20 }, (_, n) => 'Title ' + n));
+  for (const sparks of [low, high, edge]) for (const key of ['type', 'method', 'shape']) assert.ok(sparks[key] && sparks[key].length > 3, key);
+  assert.notEqual(low.method, high.method);
+  assert.equal(edge.avoid.length, 12, 'only the most recent titles ride along'); assert.equal(edge.avoid.at(-1), 'Title 19');
   assert.ok(songIdeaSystem.startsWith("You are Lyric, working the songwriting desk in Kade-AI's Sound Booth."), 'the gateway keeps chat guards off this opening; keep it identical to musicWritingPrompt');
-  assert.match(songIdeaSystem, /a named weekday, coffee, porch lights/);
-  const ask = songIdeaRequest(low);
-  assert.ok(ask.includes(low.sound) && ask.includes(low.trouble));
-  const pitch = 'Late-nineties slowcore on a detuned baritone guitar with brushed drums, sung by a woman in a cracked close alto. A bail bondswoman sits on a stalled fishing boat begging her client to stay for the hearing. He dares her to sing instead. "Put the Cuffs on the Chorus" runs about four minutes.';
-  assert.equal(cleanSongIdea('Here is your pitch:\n\n**' + pitch + '**\n\nWant another?'), pitch);
+  assert.match(songIdeaSystem, /A named weekday, coffee, porch lights/); assert.match(songIdeaSystem, /it is a costume/); assert.match(songIdeaSystem, /do not default to a woman and an ex/);
+  assert.doesNotMatch(songIdeaRequest(low), /Recent ideas/);
+  const ask = songIdeaRequest(edge);
+  assert.ok(ask.includes(edge.method) && ask.includes('- Title 19') && !ask.includes('- Title 7\n'));
+  const pitch = '"I Mow At Seven" is a man out on his own grass with the engine already running on his one day off, staring back at the neighbour watching him through the blinds. He is not sorry about the hour. Twitchy late-2000s dance-punk with dry machine drums and a clavinet, about four minutes.';
+  assert.equal(songIdeaTitle(pitch), 'I Mow At Seven');
+  assert.equal(cleanSongIdea('Brainstorm: ten titles, struck nine.\n\n**' + pitch + '**'), pitch, 'leaked working-out is not the idea');
   assert.equal(cleanSongIdea('Too short.'), null);
   assert.equal(cleanSongIdea(pitch + '\n\nLyrics:\n[Verse 1]\nla la'), null, 'a pitch is never lyrics');
 });

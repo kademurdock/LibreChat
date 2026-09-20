@@ -167,4 +167,4 @@ export {
   lyricWritingModel,
   lyricAgentId,
 } from './music/writing';
-export { songIdeaSparks, songIdeaSystem, songIdeaRequest, cleanSongIdea } from './music/idea';
+export { songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea } from './music/idea';
