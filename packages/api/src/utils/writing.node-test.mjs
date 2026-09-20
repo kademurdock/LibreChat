@@ -147,8 +147,9 @@ test('real script route accounts for the shortening call as well as the first dr
 });
 
 test('lyric model token estimates use its own prices', () => {
-  assert.equal(lyricWritingModel, 'moonshotai/kimi-k3');
-  assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, lyricWritingModel), { costUSD: 12.87, measured: false });
+  assert.equal(lyricWritingModel, 'deepseek/deepseek-v4.1-flash');
+  assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, lyricWritingModel), { costUSD: 1.5, measured: false });
+  assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, 'moonshotai/kimi-k3'), { costUSD: 12.87, measured: false });
 });
 
 const HER_SONG = `A loose mid-tempo pop song. Around 100 BPM, a four-minute song.

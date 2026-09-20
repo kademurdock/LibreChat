@@ -17,6 +17,7 @@ export function writingCost(
     'nousresearch/hermes-4-405b': [1, 3],
     'x-ai/grok-4.20': [1.25, 2.5],
     'moonshotai/kimi-k3': [1.95, 10.92],
+    'deepseek/deepseek-v4.1-flash': [0.3, 1.2],
     'z-ai/glm-5.3-flash': [0.075, 0.25],
   };
   const rates = prices[model];

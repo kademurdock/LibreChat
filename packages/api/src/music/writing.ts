@@ -4,8 +4,12 @@ import { hitWritingSystem } from './hitSystem';
 export const lyricAgentId = 'agent_9YHpms0vJoApICwshh0mR';
 /* Chosen by side-by-side drafts on identical briefs (Part 212): Kimi K3 wrote
  * concrete, witty, well-rhymed verses where Grok 4.20 and 4.6 wrote filler
- * couplets, and it writes explicit lyrics when asked. */
-export const lyricWritingModel = 'moonshotai/kimi-k3';
+ * couplets, and it writes explicit lyrics when asked.
+ * Sep 20 2026: Kade's word, "Switch the desk to deepseek flash v4.1", after the
+ * Moonshot balance ran out and every draft failed with a 429. One probe on a
+ * one-sentence brief: 27 s on low, about one cent, three full verses. To go
+ * back to Kimi, restore 'moonshotai/kimi-k3' here; its price row is kept. */
+export const lyricWritingModel = 'deepseek/deepseek-v4.1-flash';
 type Reader = (filter: { id: string }) => Promise<Pick<IAgent, 'name' | 'instructions'> | null>;
 type Request = { engine: string; mode: string; patient?: boolean; deep?: boolean };
 
