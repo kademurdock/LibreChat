@@ -1086,3 +1086,21 @@ test('readVoiceFlags: the cap holds and the questions are shaped right', async (
     assert.deepStrictEqual(Object.keys(q.criteria).sort(), ['false', 'true']);
   }
 });
+
+test('sameReports: the window keeps a long board from becoming every pair', async () => {
+  const rows = Array.from({ length: 40 }, (_, i) => ({ _id: 'r' + i, subject: 'report ' + i, detail: 'detail ' + i }));
+  let asked = 0;
+  await withEnv(ON, async () => {
+    await J.sameReports(rows, {
+      ask: async () => { asked++; return { answers: { same: { noul: 0.01 } } }; },
+      concurrency: 2,
+    });
+  });
+  /* 40 rows, a window of 8: 8 comparisons each until the tail runs out. */
+  assert.strictEqual(asked, 8 * 40 - (8 * 9) / 2, 'window, not 780 pairs');
+  asked = 0;
+  await withEnv({ ...ON, KADE_JEV_FEEDBACK_WINDOW: '2' }, async () => {
+    await J.sameReports(rows.slice(0, 5), { ask: async () => { asked++; return { answers: { same: { noul: 0.01 } } }; }, concurrency: 1 });
+  });
+  assert.strictEqual(asked, 2 + 2 + 2 + 1, 'the env var moves it');
+});

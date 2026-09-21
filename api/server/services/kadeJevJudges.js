@@ -1384,13 +1384,22 @@ function reportText(row) {
  * [{ id, twinId, p }], newest row named first. NEVER throws. Compares each
  * row only against the ones OLDER than it, so a pair is reported once.
  */
-async function sameReports(rows, { ask = jev.ask, timeoutMs = 5000, concurrency = 5, maxPairs = 120 } = {}) {
+async function sameReports(rows, { ask = jev.ask, timeoutMs = 5000, concurrency = 5, maxPairs = 1200, window = 0 } = {}) {
   const out = [];
   if (!jev.enabled('KADE_JEV_FEEDBACK_TWINS')) return out;
   const list = (rows || []).filter((r) => r && reportText(r));
+  /* A WINDOW, not every pair. The board holds 74 rows, and every pair of
+   * those is 2,701 questions to answer a thing that is nearly always local:
+   * the admin-alert echo arrives right behind the report it echoes, and a
+   * second person hitting the same bug files within a day or two. Rows come
+   * in newest-first, so comparing each row against the handful just older
+   * than it is both the cheap read and the accurate one. `window` 0 means
+   * every pair, for a small list or a deliberate sweep. */
+  const w = window > 0 ? window : num('KADE_JEV_FEEDBACK_WINDOW', 8);
   const pairs = [];
   for (let i = 0; i < list.length; i++) {
-    for (let j = i + 1; j < list.length; j++) {
+    const stop = w > 0 ? Math.min(list.length, i + 1 + w) : list.length;
+    for (let j = i + 1; j < stop; j++) {
       if (pairs.length >= maxPairs) break;
       pairs.push([list[i], list[j]]);
     }
