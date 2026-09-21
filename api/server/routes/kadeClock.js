@@ -862,6 +862,20 @@ router.get('/voice-report', async (req, res) => {
        * regex counts above (reframes, reassure, and the rest) are untouched
        * and keep their months of history; these land beside them under
        * `jevFlags`. Counts only. Kill: KADE_JEV_VOICE_FLAGS=0. */
+      /* Sep 21 2026 -- READING LEVEL, FINALLY PRINTED. fkGrade and bigWordPct
+       * have been computed on every pass since Part 116 and carried in the
+       * JSON response, where nothing ever looked at them. They are the one
+       * instrument already on this platform that measures TEXTURE rather than
+       * phrases, which is exactly what Kade means by "everything is just
+       * described in poetic professorial ways that don't seem human". The
+       * comment on the calculation says conversation between adults sits at
+       * about grade 5 to 7. Now it lands in the log beside the Jev flags, so
+       * the two can be read against each other without a JSON fetch. */
+      const fkNow =
+        wordTok && allSents
+          ? Math.round(Math.max(0, 0.39 * (wordTok / allSents) + 11.8 * (sylTotal / wordTok) - 15.59) * 10) / 10
+          : null;
+      const bigNow = wordTok ? Math.round((1000 * bigWords) / wordTok) / 10 : null;
       try {
         const judges = require('~/server/services/kadeJevJudges');
         const vf = await judges.readVoiceFlags(careTexts);
@@ -873,7 +887,7 @@ router.get('/voice-report', async (req, res) => {
             costUSD: Math.round(vf.costUSD * 1e5) / 1e5,
             note: 'Jev read the real replies of the day for three of the nightly battery seven flags, plus the essay-register flag added Sep 21 2026. The regex counts elsewhere in this report are unchanged.',
           };
-          logger.info(`[kadeJev][voice-flags] read=${vf.read}/${careTexts.length} reframe=${vf.flags.reframeTic} therapy=${vf.flags.therapyPhrasing} aiself=${vf.flags.aiSelfReference} essay=${vf.flags.essayRegister} regexReframe=${reframes} $${vf.costUSD.toFixed(5)}`);
+          logger.info(`[kadeJev][voice-flags] read=${vf.read}/${careTexts.length} reframe=${vf.flags.reframeTic} therapy=${vf.flags.therapyPhrasing} aiself=${vf.flags.aiSelfReference} essay=${vf.flags.essayRegister} regexReframe=${reframes} fkGrade=${fkNow} bigWords=${bigNow}% $${vf.costUSD.toFixed(5)}`);
         }
       } catch (e) {
         logger.warn('[kadeJev][voice-flags] skipped: ' + e.message);
@@ -907,12 +921,11 @@ router.get('/voice-report', async (req, res) => {
        * approved: loosePer1k 12.1, fragRate 0.29. Baseline the night this
        * shipped: 3.0 and 0.08. */
       loosePer1k: words ? Math.round((1000 * looseHits) / words * 10) / 10 : 0,
-      // Part 116 -- reading level. fkGrade is Flesch-Kincaid over the window.
-      fkGrade:
-        wordTok && allSents
-          ? Math.round(Math.max(0, 0.39 * (wordTok / allSents) + 11.8 * (sylTotal / wordTok) - 15.59) * 10) / 10
-          : null,
-      bigWordPct: wordTok ? Math.round((1000 * bigWords) / wordTok) / 10 : null,
+      /* Part 116 -- reading level. fkGrade is Flesch-Kincaid over the window.
+       * Computed once above as fkNow/bigNow so the logged numbers and the
+       * reported ones cannot drift apart. */
+      fkGrade: fkNow,
+      bigWordPct: bigNow,
       windowSince: since.toISOString(),
       windowUntil: until.toISOString(),
       fragRate: allSents ? Math.round((fragSents / allSents) * 100) / 100 : 0,
