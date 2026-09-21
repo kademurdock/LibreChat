@@ -645,6 +645,162 @@ async function fileAudio(items, { ask = jev.ask, timeoutMs = 6000, concurrency =
   return { moves, skipped, costUSD: (inputTokens * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6 };
 }
 
+/* ── 1e. THE LYRIC TELLS (Part 238, Sep 20 2026) ──────────────────────────
+ * Her ask: "whether it's ai tells in lyrics or just whatever you can think of."
+ *
+ * The Sound Booth already hunts tells, with `lyricTells` in
+ * packages/api/src/music/writing.ts: fourteen regexes over the sung lines, and
+ * every line that matches is handed to a repair model to be rewritten. A word
+ * list has the two failures a word list always has, and here both cost her
+ * something real:
+ *
+ *   FALSE ALARMS. /\b(?:clean|steady)\b/ fires on any use of either word, and
+ *   /\bshadows?\b/ and /\bscenes?\b/ on any use of those. "I scrubbed the truck
+ *   bed clean and drove it to your mother" is flagged today and sent away to be
+ *   rewritten. The list's own comment accepts this — "a false alarm costs one
+ *   rewritten line" — but a rewritten line is a line she wrote and lost.
+ *
+ *   MISSES. "The weight of everything we never said" and "In the quiet of the
+ *   in-between" carry no banned word, so the list cannot see them at all, and
+ *   those are the lines that actually sound like a machine.
+ *
+ * TRIAL (scratchpad jev_lyric_trial.js, live). Ground truth was her own: the
+ * fourteen BAD/FIX pairs inside the desk's writing system, plus eight lines
+ * invented for the trial that the current list flags and a person would keep,
+ * plus six stock lines with no banned word in them. Four of the BAD/FIX pairs
+ * turned out to be craft instructions rather than lyrics and are not data. On
+ * the 35 real lines Jev agreed with the label 33 times. What matters more than
+ * the total is where the two kinds of error fell:
+ *   - all EIGHT false alarms scored 0.10-0.38, so all eight are saved;
+ *   - all SIX invisible stock lines scored 0.88-0.92, so all six are caught;
+ *   - the only over-flag, "I ain't tryna hold on" at 0.61, sits below the 0.70
+ *     flagging floor and is therefore kept anyway.
+ * So at these thresholds the trial had no false positive on a real lyric line.
+ *
+ * Two independent switches, because they do opposite things and she may want
+ * one without the other. Both fail OPEN: any error, any timeout, any switch
+ * off, and the word list's answer stands exactly as it does today.
+ */
+const LYRIC_STOCK_Q = {
+  type: 'noul',
+  instructions:
+    'A single sung line from a song draft is given as `line`. Is it stock writing — the kind of line a machine assembles because it fits anywhere, rather than a line this writer wrote about one particular person, place or moment? Judge the whole line, not one word in it: a common word used about something concrete and specific is not stock. Abstraction, borrowed profundity, named feelings and lines that would fit in any song are stock; a name, a place, a brand, an object, a piece of plain speech or a specific action are not.',
+  criteria: {
+    true: 'It could be dropped into any song by anyone. It names a feeling instead of showing a thing, reaches for wisdom, or uses an image from the worn pile — the kind of line that sounds like lyrics rather than like somebody talking.',
+    false: 'It is anchored to something in particular: a named person or place, a physical object, an action somebody actually did, or plain conversational speech. Even a common word is fine when it is attached to something real.',
+  },
+};
+
+function lyricKnobs() {
+  return {
+    /* Flag a line the list missed only well above the middle. A missed tell
+     * costs one mediocre line; a wrong flag costs one of her good ones. */
+    minFlag: num('KADE_JEV_LYRIC_MIN', 0.7),
+    /* Veto one of the list's flags when Jev is clearly unbothered. 0.4 sits
+     * above every false alarm in the trial (highest 0.38). */
+    maxVeto: num('KADE_JEV_LYRIC_VETO_MAX', 0.4),
+    perSong: num('KADE_JEV_LYRIC_MAX_LINES', 80),
+  };
+}
+
+/** The sung lines of a draft: below the "Lyrics:" heading, no section tags,
+ *  no READBACK, each distinct line once. Mirrors `lyricTells` deliberately —
+ *  if the desk ever changes what counts as a sung line, both must change. */
+function lyricLines(script) {
+  const text = String(script || '');
+  /* `\s*` in the heading pattern can swallow the newline before it, so
+   * searching and then dropping one line can leave the word "Lyrics:" itself
+   * looking like a sung line. Cut from the END of what actually matched. A
+   * test caught this; the same off-by-one is harmless upstream in
+   * `lyricTells`, where "Lyrics:" simply matches none of the fourteen. */
+  const m = /^\s*lyrics\s*:/im.exec(text);
+  if (!m) return [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of text.slice(m.index + m[0].length).split('\n').slice(1)) {
+    const line = raw.trim();
+    if (!line || /^\[[^\]]*\]$/.test(line) || /^READBACK:/i.test(line) || seen.has(line)) continue;
+    seen.add(line);
+    out.push(line);
+  }
+  return out;
+}
+
+/**
+ * Pure: the word list's tells plus Jev's scores → the tells that survive.
+ * Kept separate from the asking so a test can hold the rule still.
+ * `scores` is a Map of line → 0..1. A line with no score is left exactly as
+ * the word list left it, which is what makes a partial failure harmless.
+ */
+function refineTells(tells, scores, knobs = lyricKnobs(), { veto = true, catchMissed = true } = {}) {
+  const flagged = new Set(tells.map((t) => t.line));
+  const kept = veto
+    ? tells.filter((t) => {
+        const s = scores.get(t.line);
+        return typeof s !== 'number' || s > knobs.maxVeto;
+      })
+    : [...tells];
+  if (!catchMissed) return kept;
+  const added = [];
+  for (const [line, s] of scores) {
+    if (flagged.has(line) || typeof s !== 'number' || s < knobs.minFlag) continue;
+    added.push({ line, tell: 'reads like stock lyric writing rather than something you would say' });
+  }
+  return [...kept, ...added];
+}
+
+/**
+ * Give the word list a second opinion. Returns the refined tell list, or the
+ * ORIGINAL list untouched if Jev is off, slow or broken. NEVER throws, and
+ * never returns fewer or more than it can justify: a line Jev did not answer
+ * for keeps whatever the word list said about it.
+ */
+async function lyricTellsJev(script, tells, { ask = jev.ask, timeoutMs = 4000, concurrency = 6 } = {}) {
+  const veto = jev.enabled('KADE_JEV_LYRIC_VETO');
+  const catchMissed = jev.enabled('KADE_JEV_LYRIC_CATCH');
+  if (!veto && !catchMissed) return { tells, scores: new Map(), costUSD: 0, asked: 0 };
+  const knobs = lyricKnobs();
+  const flagged = new Set((tells || []).map((t) => t.line));
+  /* Ask about the flagged lines first: vetoing a false alarm saves a line she
+   * wrote, and that is worth more than catching one extra. */
+  const lines = [...lyricLines(script)].sort((a, b) => (flagged.has(b) ? 1 : 0) - (flagged.has(a) ? 1 : 0)).slice(0, knobs.perSong);
+  if (!lines.length) return { tells, scores: new Map(), costUSD: 0, asked: 0 };
+  const scores = new Map();
+  let inputTokens = 0;
+  const queue = [...lines];
+  async function worker() {
+    for (let line = queue.shift(); line; line = queue.shift()) {
+      try {
+        const { answers, usage } = await ask({ line }, { stock: LYRIC_STOCK_Q }, timeoutMs);
+        inputTokens += Number(usage && usage.input_tokens) || 0;
+        scores.set(line, jev.noulOf(answers, 'stock'));
+      } catch (_) {
+        /* no score for this line: the word list's verdict on it stands */
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, lines.length)) }, worker));
+  return {
+    tells: refineTells(tells || [], scores, knobs, { veto, catchMissed }),
+    scores,
+    costUSD: (inputTokens * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6,
+    asked: lines.length,
+  };
+}
+
+/** One line for the log, so a week of drafts can be read back before anyone
+ *  argues about whether this helped. */
+function lyricTellsLog(before, after, { asked, costUSD, log }) {
+  const was = new Set(before.map((t) => t.line));
+  const now = new Set(after.map((t) => t.line));
+  const saved = [...was].filter((l) => !now.has(l)).length;
+  const caught = [...now].filter((l) => !was.has(l)).length;
+  (log || (() => {}))(
+    `[kadeJev][lyric-tells] lines=${asked} list=${before.length} jev=${after.length} saved=${saved} caught=${caught} $${costUSD.toFixed(5)}`,
+  );
+  return { saved, caught };
+}
+
 /* ── 2. THE MEMORY KEEPER GATE (SHADOW ONLY) ──────────────────────────────
  * The keeper is a generative call after every turn platform-wide, and its own
  * instructions say "Most turns should save NOTHING". These two nouls are the
@@ -1095,6 +1251,7 @@ module.exports = {
   AD_CATEGORY_CRITERIA, AD_CATEGORY_Q, IS_AD_Q, adState, adDecade, adKnobs, decideAd, fileAds,
   LOCAL_ROOT, LOCAL_KIND_CRITERIA, LOCAL_KIND_Q, localState, localKnobs, decideLocal, localDestination, fileLocal,
   AUDIO_ROOT, AUDIO_LOCAL_ROOT, AUDIO_KIND_CRITERIA, AUDIO_KIND_Q, OZARKS_Q, audioKnobs, audioDecade, audioGame, audioDestination, fileAudio,
+  LYRIC_STOCK_Q, lyricKnobs, lyricLines, refineTells, lyricTellsJev, lyricTellsLog,
   REVERIE_NOBODY, DIRECTOR_FRESH_Q, directorOptions, directorKnobs, decideDirector, directRoom,
   KEEPER_CARD_Q, KEEPER_LOG_Q, KEEPER_PROMISE_Q, keeperState, keeperWrote, keeperShadowStart, keeperShadowFinish,
   keeperFloor, keeperGateDecide, keeperGate, keeperGateLog,

@@ -693,3 +693,128 @@ test('the local and audio questions are shaped the way kadeJev demands', () => {
     assert.ok(!k.includes('/') && !k.includes('\\') && k !== '..' && k.trim() === k, k);
   }
 });
+
+/* ── Part 238: the lyric tells ─────────────────────────────────────────── */
+
+const DRAFT = [
+  'Title: Route D',
+  'Music: slow country, brushes',
+  '',
+  'Lyrics:',
+  '[Verse 1]',
+  'I scrubbed the truck bed clean and drove it to your mother',
+  'The weight of everything we never said',
+  'You texted me while I was still in the parkin lot',
+  '',
+  '[Chorus]',
+  'I scrubbed the truck bed clean and drove it to your mother',
+  'READBACK: Route D',
+].join('\n');
+
+test('lyricLines: below the heading, no tags, no READBACK, each line once', () => {
+  assert.deepStrictEqual(J.lyricLines(DRAFT), [
+    'I scrubbed the truck bed clean and drove it to your mother',
+    'The weight of everything we never said',
+    'You texted me while I was still in the parkin lot',
+  ]);
+  assert.deepStrictEqual(J.lyricLines('no heading here'), []);
+  assert.deepStrictEqual(J.lyricLines(''), []);
+  assert.deepStrictEqual(J.lyricLines(null), []);
+});
+
+test('refineTells: a veto saves her line, a catch finds what the list cannot see', () => {
+  const knobs = { minFlag: 0.7, maxVeto: 0.4, perSong: 80 };
+  const good = 'I scrubbed the truck bed clean and drove it to your mother';
+  const slop = 'The weight of everything we never said';
+  const tells = [{ line: good, tell: '"clean" or "steady" as filler' }];
+  const scores = new Map([[good, 0.10], [slop, 0.91]]);
+  const r = J.refineTells(tells, scores, knobs);
+  assert.deepStrictEqual(r.map((t) => t.line), [slop], 'the good line is saved, the stock line is caught');
+
+  /* Each half can be had without the other. */
+  assert.deepStrictEqual(J.refineTells(tells, scores, knobs, { veto: false, catchMissed: true }).map((t) => t.line), [good, slop]);
+  assert.deepStrictEqual(J.refineTells(tells, scores, knobs, { veto: true, catchMissed: false }).map((t) => t.line), []);
+});
+
+test('refineTells: an unanswered line keeps exactly what the word list said', () => {
+  const knobs = { minFlag: 0.7, maxVeto: 0.4, perSong: 80 };
+  const line = 'coffee on the dash';
+  const tells = [{ line, tell: 'coffee' }];
+  /* Jev never answered for it — a timeout, a 500, a line past the cap. */
+  assert.deepStrictEqual(J.refineTells(tells, new Map(), knobs), tells);
+  assert.deepStrictEqual(J.refineTells(tells, new Map([[line, undefined]]), knobs), tells);
+  /* And a borderline score neither vetoes nor is invented into a new flag. */
+  assert.deepStrictEqual(J.refineTells([], new Map([[line, 0.55]]), knobs), []);
+  assert.deepStrictEqual(J.refineTells(tells, new Map([[line, 0.55]]), knobs), tells);
+});
+
+test('refineTells: never flags the same line twice', () => {
+  const knobs = { minFlag: 0.7, maxVeto: 0.4, perSong: 80 };
+  const line = 'shadows and neon and whispers';
+  const tells = [{ line, tell: 'neon, shadows, whispers or echoes' }];
+  const r = J.refineTells(tells, new Map([[line, 0.95]]), knobs);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].tell, 'neon, shadows, whispers or echoes', 'the list keeps its own wording');
+});
+
+test('lyricTellsJev: off means the word list is handed straight back, unasked', async () => {
+  const tells = [{ line: 'x', tell: 'coffee' }];
+  let asked = 0;
+  const r = await withEnv({ ...ON, KADE_JEV_LYRIC_VETO: '0', KADE_JEV_LYRIC_CATCH: '0' }, () =>
+    J.lyricTellsJev(DRAFT, tells, { ask: async () => { asked++; } }),
+  );
+  assert.strictEqual(r.tells, tells, 'the very same array');
+  assert.strictEqual(asked, 0);
+  assert.strictEqual(r.costUSD, 0);
+});
+
+test('lyricTellsJev: a total Jev failure changes nothing at all', async () => {
+  const good = 'I scrubbed the truck bed clean and drove it to your mother';
+  const tells = [{ line: good, tell: '"clean" or "steady" as filler' }];
+  await withEnv(ON, async () => {
+    const r = await J.lyricTellsJev(DRAFT, tells, { ask: async () => { throw new Error('HTTP 500'); } });
+    assert.deepStrictEqual(r.tells, tells, 'the flag stands when Jev cannot answer');
+    assert.strictEqual(r.scores.size, 0);
+  });
+});
+
+test('lyricTellsJev: asks the flagged lines first, so a cap never costs a veto', async () => {
+  const good = 'I scrubbed the truck bed clean and drove it to your mother';
+  const order = [];
+  await withEnv({ ...ON, KADE_JEV_LYRIC_MAX_LINES: '1' }, async () => {
+    const r = await J.lyricTellsJev(DRAFT, [{ line: good, tell: 'filler' }], {
+      ask: async (state) => {
+        order.push(state.line);
+        return { answers: { stock: { noul: 0.05 } }, usage: { input_tokens: 300 } };
+      },
+      concurrency: 1,
+    });
+    assert.deepStrictEqual(order, [good], 'the one question it could afford went to the flagged line');
+    assert.deepStrictEqual(r.tells, [], 'and it bought back her line');
+  });
+});
+
+test('lyricTellsJev: the real shape end to end', async () => {
+  const good = 'I scrubbed the truck bed clean and drove it to your mother';
+  const slop = 'The weight of everything we never said';
+  await withEnv(ON, async () => {
+    const r = await J.lyricTellsJev(DRAFT, [{ line: good, tell: '"clean" or "steady" as filler' }], {
+      ask: async (state) => ({
+        answers: { stock: { noul: state.line === slop ? 0.91 : 0.12 } },
+        usage: { input_tokens: 300 },
+      }),
+    });
+    assert.deepStrictEqual(r.tells.map((t) => t.line), [slop]);
+    assert.strictEqual(r.asked, 3);
+    assert.ok(r.costUSD > 0);
+  });
+});
+
+test('lyricTellsLog: counts what was saved and what was caught', () => {
+  const lines = [];
+  const before = [{ line: 'a', tell: 'x' }, { line: 'b', tell: 'y' }];
+  const after = [{ line: 'b', tell: 'y' }, { line: 'c', tell: 'z' }];
+  const r = J.lyricTellsLog(before, after, { asked: 9, costUSD: 0.00012, log: (m) => lines.push(m) });
+  assert.deepStrictEqual(r, { saved: 1, caught: 1 });
+  assert.deepStrictEqual(lines, ['[kadeJev][lyric-tells] lines=9 list=2 jev=2 saved=1 caught=1 $0.00012']);
+});

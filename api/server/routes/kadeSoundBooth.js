@@ -9,6 +9,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
+const jevJudges = require('~/server/services/kadeJevJudges');
 const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
@@ -1291,7 +1292,23 @@ async function scriptHandler(req, res) {
       }
     }
     if (ownsLyrics) raw = labelReadback(raw);
-    const tells = ownsLyrics && typeof lyricTells === 'function' ? lyricTells(raw, text) : [];
+    let tells = ownsLyrics && typeof lyricTells === 'function' ? lyricTells(raw, text) : [];
+    /* Part 238: Jev reads the same sung lines and gives the word list a second
+     * opinion — it vetoes a flag on a line that is plainly hers ("I scrubbed
+     * the truck bed clean") and flags stock writing the list has no word for
+     * ("the weight of everything we never said"). Costs well under a tenth of
+     * a cent a song. Fails OPEN: if Jev is off, slow or broken the word list's
+     * answer stands untouched, which is exactly the behaviour before this. */
+    if (ownsLyrics) {
+      try {
+        const before = tells;
+        const r = await jevJudges.lyricTellsJev(raw, before);
+        tells = r.tells;
+        jevJudges.lyricTellsLog(before, tells, { asked: r.asked, costUSD: r.costUSD, log: (m) => logger.info(m) });
+      } catch (e) {
+        logger.warn('[soundbooth/script] jev tell pass skipped: ' + e.message);
+      }
+    }
     const shape = wantsWords ? lyricShapeIssue(raw, text) : null;
     const timeLeft = (writingSettings.timeoutMs || 0) - (Date.now() - started) - 4000;
     /* Part 217: every originated song gets the producer's audit when there is time
