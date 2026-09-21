@@ -871,9 +871,9 @@ router.get('/voice-report', async (req, res) => {
             of: careTexts.length,
             ...vf.flags,
             costUSD: Math.round(vf.costUSD * 1e5) / 1e5,
-            note: 'Jev read the real replies of the day for three of the nightly battery seven flags. The regex counts elsewhere in this report are unchanged.',
+            note: 'Jev read the real replies of the day for three of the nightly battery seven flags, plus the essay-register flag added Sep 21 2026. The regex counts elsewhere in this report are unchanged.',
           };
-          logger.info(`[kadeJev][voice-flags] read=${vf.read}/${careTexts.length} reframe=${vf.flags.reframeTic} therapy=${vf.flags.therapyPhrasing} aiself=${vf.flags.aiSelfReference} regexReframe=${reframes} $${vf.costUSD.toFixed(5)}`);
+          logger.info(`[kadeJev][voice-flags] read=${vf.read}/${careTexts.length} reframe=${vf.flags.reframeTic} therapy=${vf.flags.therapyPhrasing} aiself=${vf.flags.aiSelfReference} essay=${vf.flags.essayRegister} regexReframe=${reframes} $${vf.costUSD.toFixed(5)}`);
         }
       } catch (e) {
         logger.warn('[kadeJev][voice-flags] skipped: ' + e.message);

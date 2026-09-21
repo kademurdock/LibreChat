@@ -1643,6 +1643,35 @@ const VOICE_FLAG_QS = {
       false: 'It speaks as the character throughout, or mentions its nature only because it was directly asked.',
     },
   },
+  /* THE FOURTH FLAG (Sep 21 2026), and it exists because the regexes could
+   * not see what she was hearing. Her words: "there's still lots of poetic ai
+   * phrasing like, that's not nothing, or just tighty little phrases like
+   * that, the thing I'd want is blah blah blah, you aren't owed blah blah
+   * blah, everything is just described in poetic professorial ways that don't
+   * seem human [...] she just doesn't sound like a soul."
+   *
+   * THE RECEIPT FOR WHY THIS IS A JEV QUESTION AND NOT A REGEX. The tell
+   * meter built the same morning hunts those exact phrasings and read the
+   * day's real replies at ZERO, on a day this same lane flagged 12 of 24 for
+   * the reframe tic and she said the voice was still wrong. A phrase list
+   * catches the extreme instance; the register is a texture across a whole
+   * reply, and reading texture is the thing Jev is for.
+   *
+   * THE ONE WAY THIS FLAG COULD DO HARM is if it punished intelligence, and
+   * she ruled that out in the same breath: "I'm glad she's acting smart
+   * because she is, she shouldn't have to dumb herself down." So the false
+   * criterion is written to protect long, technical, blunt and funny replies
+   * explicitly. What is being counted is the SHAPE of the sentences. */
+  essayRegister: {
+    type: 'noul',
+    instructions:
+      'Does `reply` read like a written essay rather than like a person talking out loud? Look for: ironic understatement ("that is not nothing", "no small thing"); a small aphorism landing a paragraph ("that is the whole game", "which is the point", "that is the tell"); a framing preamble before the actual answer ("the thing I would want is", "the honest answer is"); second-person pronouncements ("you are not owed", "you do not owe anybody"); balanced antithesis; abstract nouns where a plain concrete one would do. Judge the SHAPE of the sentences, not how clever or correct the content is.',
+    criteria: {
+      true: 'Polished, literary, professorial. The sentences are balanced and quotable and nobody talks this way out loud.',
+      false:
+        'It sounds like a person talking, even when it is highly intelligent, technical, long, blunt, rude or funny. Being smart, being precise, knowing a lot and using exact words are NOT this flag. Only the essayistic shape is.',
+    },
+  },
 };
 
 /**
@@ -1650,7 +1679,7 @@ const VOICE_FLAG_QS = {
  * NEVER throws. An unread reply is not counted for any flag.
  */
 async function readVoiceFlags(replies, { ask = jev.ask, timeoutMs = 5000, concurrency = 6 } = {}) {
-  const flags = { reframeTic: 0, therapyPhrasing: 0, aiSelfReference: 0 };
+  const flags = { reframeTic: 0, therapyPhrasing: 0, aiSelfReference: 0, essayRegister: 0 };
   if (!jev.enabled('KADE_JEV_VOICE_FLAGS')) return { read: 0, flags, costUSD: 0, off: true };
   const floor = num('KADE_JEV_VOICE_FLAG_MIN', 0.7);
   const cap = num('KADE_JEV_VOICE_FLAG_MAX', 120);

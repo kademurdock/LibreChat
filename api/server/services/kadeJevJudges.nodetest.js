@@ -1081,7 +1081,29 @@ test('the approved questions are shaped the way kadeJev demands', () => {
   }
 });
 
-test('readVoiceFlags: counts the three flags, is off when off, and an unread reply counts for nothing', async () => {
+test('the essay-register flag must never punish intelligence, which was her one condition', () => {
+  /* Kade, Sep 21 2026, in the same breath as asking for this: "I'm glad she's
+   * acting smart because she is, she shouldn't have to dumb herself down."
+   * The flag counts the SHAPE of the sentences. A future edit that quietly
+   * turns it into a complexity detector would be the worst possible outcome,
+   * so the false criterion's protections are asserted rather than trusted. */
+  const q = J.VOICE_FLAG_QS.essayRegister;
+  assert.ok(q, 'the essay-register flag is gone');
+  assert.strictEqual(q.type, 'noul');
+  const no = q.criteria.false.toLowerCase();
+  for (const protectedKind of ['intelligent', 'technical', 'long', 'blunt', 'funny']) {
+    assert.ok(no.includes(protectedKind), `the false criterion stopped protecting "${protectedKind}" replies`);
+  }
+  assert.ok(/shape/i.test(q.instructions), 'the question stopped saying it judges sentence shape');
+  assert.ok(/not how clever|not how/i.test(q.instructions), 'the question stopped excluding cleverness');
+  /* Her own named examples have to be in the question, or it is not her flag. */
+  const asked = q.instructions.toLowerCase();
+  for (const example of ['not nothing', 'the thing i would want', 'you are not owed']) {
+    assert.ok(asked.includes(example), `her example "${example}" is missing from the question`);
+  }
+});
+
+test('readVoiceFlags: counts the four flags, is off when off, and an unread reply counts for nothing', async () => {
   const replies = [
     'That is not laziness, that is your body asking for a rest.',
     'I put the bins out and the neighbour waved, so that is that.',
@@ -1092,18 +1114,36 @@ test('readVoiceFlags: counts the three flags, is off when off, and an unread rep
       reframeTic: { noul: /That is not laziness/.test(state.reply) ? 0.93 : 0.04 },
       therapyPhrasing: { noul: 0.05 },
       aiSelfReference: { noul: /As an AI/.test(state.reply) ? 0.97 : 0.02 },
+      essayRegister: { noul: /That is not laziness/.test(state.reply) ? 0.88 : 0.03 },
     },
     usage: { input_tokens: 600 },
   });
   await withEnv(ON, async () => {
     const r = await J.readVoiceFlags(replies, { ask, concurrency: 1 });
     assert.strictEqual(r.read, 3);
-    assert.deepStrictEqual(r.flags, { reframeTic: 1, therapyPhrasing: 0, aiSelfReference: 1 });
+    assert.deepStrictEqual(r.flags, { reframeTic: 1, therapyPhrasing: 0, aiSelfReference: 1, essayRegister: 1 });
     assert.ok(r.costUSD > 0);
+
+    /* A judge that answers only the older three leaves the fourth at zero and
+     * does not lose the reply: each flag is read inside its own try. */
+    const partial = await J.readVoiceFlags(replies, {
+      concurrency: 1,
+      ask: async (state) => ({
+        answers: {
+          reframeTic: { noul: /That is not laziness/.test(state.reply) ? 0.93 : 0.04 },
+          therapyPhrasing: { noul: 0.05 },
+          aiSelfReference: { noul: 0.02 },
+        },
+        usage: { input_tokens: 600 },
+      }),
+    });
+    assert.strictEqual(partial.read, 3, 'a missing fourth answer lost the whole reply');
+    assert.strictEqual(partial.flags.essayRegister, 0);
+    assert.strictEqual(partial.flags.reframeTic, 1);
 
     const broke = await J.readVoiceFlags(replies, { ask: async () => { throw new Error('HTTP 500'); } });
     assert.strictEqual(broke.read, 0);
-    assert.deepStrictEqual(broke.flags, { reframeTic: 0, therapyPhrasing: 0, aiSelfReference: 0 });
+    assert.deepStrictEqual(broke.flags, { reframeTic: 0, therapyPhrasing: 0, aiSelfReference: 0, essayRegister: 0 });
 
     /* Too short to be a reply worth reading. */
     const tiny = await J.readVoiceFlags(['ok', '', null], { ask });
