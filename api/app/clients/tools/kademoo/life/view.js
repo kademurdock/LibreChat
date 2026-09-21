@@ -11,6 +11,7 @@ const needs = require('./needs');
 const skills = require('./skills');
 const reverie = require('../reverie');
 const strays = require('../strays');
+const veil = require('./veil');
 require('../social');
 const {
   MooRoom,
@@ -114,35 +115,69 @@ async function describeRoom(ctx) {
 }
 
 /** One person, one line — pose beats schedule beats mood beats posture beats name. */
+/* WHAT A PERSON IS DOING: one rule, both kinds (the Veil, Sep 21 2026).
+ *
+ * This used to be two rules, and the difference between them gave the whole
+ * game away. A citizen's tag came from npcDoingNow, which CANNOT return empty
+ * (it falls through to `{ room: def.home, doing: 'about' }`), so a synth always
+ * had a parenthesis. A human's tag only ever came from an idle timer, so an
+ * active soul never had one. `Name (something)` meant synth and a bare `Name`
+ * meant soul, every single time, in the most-read line in the game and the
+ * whole visual field for a player using a screen reader.
+ *
+ * Now both come down the same ladder: posture, then a current activity, then
+ * the same idle sentences on the same clock. A person of either kind can show
+ * any of them. A citizen whose schedule only says the generic 'about' is as
+ * untagged as a human standing still, which is the honest answer in both
+ * cases, because the world genuinely does not know what they are up to.
+ */
+const GENERIC_DOING = new Set(['about', 'here', '']);
+const LAST_DOING_MS = 10 * 60 * 1000;
+function personDoing(p, a, kind, roomProps) {
+  if (a.posture && a.posture !== 'standing') return a.posture;
+  if (kind === 'citizen') {
+    const d = reverie.npcDoingNow(p.userId);
+    const doing =
+      (!roomProps.hangout &&
+        require('./planning').publicActivity(p, d?.doing, !!roomProps.outdoor)) ||
+      (d && d.doing) ||
+      '';
+    if (!GENERIC_DOING.has(doing)) return doing;
+  } else {
+    /* setBusy remembers the last thing a soul actually did, in the same
+     * grammar the census uses, and it outlives the roundtime on purpose. */
+    if (a.busyUntil > Date.now() && a.busyDoing) return a.busyDoing;
+    if (a.lastDoing && Date.now() - (a.lastDoingAt || 0) < LAST_DOING_MS) return a.lastDoing;
+  }
+  const idleMin = (Date.now() - new Date(p.lastActiveAt || 0).getTime()) / 60000;
+  if (idleMin > 30) return 'here, but their mind is elsewhere';
+  if (idleMin > 8) return 'quiet for a while';
+  return '';
+}
+
 function personTag(ctx, p, roomProps = {}) {
   const kind = kindOfSoul(p);
   const a = p.attrs || {};
   let tag = '';
   if (a.pose) tag = a.pose;
   else if (kind === 'stray') tag = strays.roomTag((a.trust || {})[ctx.ch.userId] || 0);
-  else if (kind === 'citizen') {
-    const d = reverie.npcDoingNow(p.userId);
-    tag =
-      (!roomProps.hangout &&
-        require('./planning').publicActivity(p, d?.doing, !!roomProps.outdoor)) ||
-      (d && d.doing ? d.doing : '');
-  } else if (kind === 'child') tag = a.child && a.child.doing ? a.child.doing : 'here';
+  else if (kind === 'child') tag = a.child && a.child.doing ? a.child.doing : 'here';
   else if (kind === 'pet') tag = a.pet && a.pet.doing ? a.pet.doing : 'close by';
-  else if (a.posture && a.posture !== 'standing') tag = a.posture;
-  else if (kind === 'player') {
-    const idleMin = (Date.now() - new Date(p.lastActiveAt || 0).getTime()) / 60000;
-    if (idleMin > 30) tag = 'here, but their mind is elsewhere';
-    else if (idleMin > 8) tag = 'quiet for a while';
-  }
-  let line = p.name;
-  if (tag) line = kind === 'stray' || a.pose ? `${p.name}, ${tag}` : `${p.name} (${tag})`;
+  else tag = personDoing(p, a, kind, roomProps);
+  const line = veil.sameGrammar(p.name, tag, { pose: kind === 'stray' || !!a.pose });
   return {
     id: p.userId,
     name: p.name,
-    kind,
+    /* The wire says `person` for a citizen AND for a player. The client only
+     * ever branches on stray/pet/child (stage.mjs), so nothing downstream
+     * needs the answer, and the field that used to give it away in plain
+     * words no longer does. `kind` stays accurate inside the server. */
+    kind: veil.publicKind(kind),
     tag,
     line,
-    pronouns: a.pronouns || (kind === 'player' ? 'they' : null),
+    /* Everybody gets a pronoun. A citizen used to get null here and a player
+     * got 'they', which was the same tell wearing a different hat. */
+    pronouns: a.pronouns || 'they',
     appearance:
       require('@librechat/api').reverieAppearance(a) ||
       require('@librechat/api').residentAppearance(p.userId),

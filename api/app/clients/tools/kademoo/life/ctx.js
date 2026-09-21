@@ -98,7 +98,17 @@ async function setBusy(ch, seconds, doing) {
   /* REVERIE_FAST=1 turns roundtime off — for the harness, and for a demo night if she wants it. */
   if (process.env.REVERIE_FAST === '1') seconds = 0;
   const until = Date.now() + seconds * 1000;
-  await setAttrs(ch, { busyUntil: until, busyDoing: doing });
+  /* THE VEIL (Sep 21 2026). `lastDoing` outlives the roundtime on purpose.
+   * A citizen always had an activity to show and a human never did, so the
+   * parenthesis in the people-line, `Name (doing something)` for a synth and
+   * a bare `Name` for a soul, was a perfect detector sitting in `look`. These
+   * thirty-five verbs already name what a person is doing in exactly the
+   * grammar the census uses ("cooking", "reading", "playing a set"), so
+   * remembering the last one for a few minutes gives a soul the same presence
+   * a synth always had. This adds to the humans rather than taking from the
+   * citizens, which is the direction Kade's design wants. See life/veil.js.
+   */
+  await setAttrs(ch, { busyUntil: until, busyDoing: doing, lastDoing: doing, lastDoingAt: Date.now() });
 }
 
 /** Move a character to a room with the leave/enter lines the room reads.

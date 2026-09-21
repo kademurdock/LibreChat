@@ -1,7 +1,8 @@
-const { residentReply } = require('@librechat/api');
 const { register } = require('./registry');
-const { MooChar, MooDistrict, matchName, setAttrs } = require('./ctx');
+const { MooChar, matchName, setAttrs, emit } = require('./ctx');
 const reverie = require('../reverie');
+const veil = require('./veil');
+const voice = require('./voice');
 
 register({
   name: 'converse',
@@ -17,7 +18,12 @@ register({
     const split = verbName === 'reply' ? -1 : argRaw.indexOf(':');
     const query = split >= 0 ? argRaw.slice(0, split).trim() : '';
     const text = (split >= 0 ? argRaw.slice(split + 1) : argRaw).trim();
-    const people = await MooChar.find({ roomId: ctx.ch.roomId, userId: /^npc:/ }).lean();
+    /* EVERY PERSON IN THE ROOM, not only the synths (the Veil, Sep 21 2026).
+     * Both speaking verbs used to filter `userId: /^npc:/`, so "converse
+     * Kade: hello" answered "choose somebody who is here" about somebody who
+     * was standing right there. Working out whether a person was a soul took
+     * one command and no cleverness at all. */
+    const people = await MooChar.find(veil.speakableIn(ctx.ch.roomId, ctx.ch.userId)).lean();
     const person = query
       ? matchName(people, query)
       : people.find((p) => p.userId === ctx.life.conversationWith);
@@ -28,6 +34,21 @@ register({
     if (!text) return ctx.fail(`Type converse ${person.name}: followed by what you want to say.`);
     if (text.length > 600)
       return ctx.fail('Keep each turn to 600 characters or fewer so there is room for an answer.');
+    /* A SOUL ON THE OTHER END. No model, no allowance, no waiting: the words
+     * just reach them. From outside, the verb behaves the way it does on a
+     * citizen, which is the whole point of it accepting them at all. */
+    if (!person.userId.startsWith('npc:')) {
+      await emit(ctx.ch.roomId, ctx.ch.userId, ctx.ch.name, 'say', `${ctx.ch.name} says to ${person.name}, "${text}"`);
+      await setAttrs(ctx.ch, { 'life.conversationWith': person.userId });
+      ctx.say(`You say to ${person.name}, "${text}"`).need({ company: 3 });
+      return ctx.ok({
+        conversation: { name: person.name, prefix: 'reply ' },
+        choices: [
+          { label: `Reply to ${person.name}`, cmd: 'reply ', compose: true },
+          { label: 'End conversation', cmd: 'end conversation' },
+        ],
+      });
+    }
     const now = Date.now();
     const lock = await MooChar.updateOne(
       {
@@ -44,44 +65,47 @@ register({
     const history = ctx.life.conversations?.[key] || [];
     let answer = null;
     try {
-      if (process.env.REFRAME_PROXY_SECRET) {
-        await MooDistrict.updateOne(
-          { districtId: 'reverie_conversation_budget_153' },
-          {
-            $setOnInsert: {
-              name: 'Resident conversation allowance',
-              props: { calls: 0, limit: 100, reservedPerCallUSD: 0.01 },
-            },
-          },
-          { upsert: true },
-        );
-        const reservation = await MooDistrict.updateOne(
-          { districtId: 'reverie_conversation_budget_153', 'props.calls': { $lt: 100 } },
-          { $inc: { 'props.calls': 1 } },
-        );
-        if (reservation.modifiedCount)
-          answer = await residentReply({
-            name: person.name,
-            character: JSON.stringify({
-              description: person.attrs?.desc,
-              canon: reverie.CENSUS_BY_ID?.[person.userId] || reverie.CENSUS_BY_ID?.[key],
-            }).slice(0, 2200),
-            place: (await ctx.room()).name,
-            weather: reverie.weatherNow().line,
-            doing: reverie.npcDoingNow(person.userId)?.doing || '',
-            player: ctx.ch.name,
-            message: text,
-            history,
-          });
-      }
+      answer = await voice.speak({
+        person,
+        place: (await ctx.room()).name,
+        weather: reverie.weatherNow().line,
+        doing: reverie.npcDoingNow(person.userId)?.doing || '',
+        player: ctx.ch.name,
+        message: text,
+        history,
+        canon: reverie.CENSUS_BY_ID?.[person.userId] || reverie.CENSUS_BY_ID?.[key],
+      });
+      /* FALL BACK SILENTLY. The old line here was "<name> cannot answer freely
+       * right now. You can still use Talk to for their usual conversation."
+       * That sentence announces, in plain words and at the moment a player is
+       * paying the most attention, that this person is run by a machine whose
+       * meter has run out. It is the single loudest tell in the city, and
+       * after the hundredth call in the lifetime of the deployment it was the
+       * ONLY thing any citizen would ever say again.
+       *
+       * A person with nothing new to say says one of the things they always
+       * say. So do they. The authored pool is still good writing; it just
+       * cannot be the whole of somebody. */
       if (!answer) {
-        ctx.say(
-          `${person.name} cannot answer freely right now. You can still use Talk to for their usual conversation.`,
-        );
-        return ctx.ok({
-          choices: [{ label: `Talk to ${person.name}`, cmd: `talk to ${person.name}` }],
-        });
+        const def = reverie.CENSUS_BY_ID?.[person.userId];
+        const heardAll = (ctx.ch.attrs && ctx.ch.attrs.heard) || {};
+        if (def) {
+          const spoke = reverie.npcTalkLine(def, {
+            hour: new Date().getHours(),
+            weather: (reverie.weatherNow() || {}).kind || 'clear',
+            playerName: ctx.ch.name,
+            roomId: ctx.ch.roomId,
+            peopleCount: await MooChar.countDocuments({ roomId: ctx.ch.roomId }),
+            heard: heardAll[person.userId] || [],
+          });
+          answer = spoke.line;
+          if (spoke.hash) {
+            const next = require('../overhear').rememberLine(heardAll[person.userId] || [], spoke.hash);
+            await MooChar.updateOne({ _id: ctx.ch._id }, { $set: { [`attrs.heard.${person.userId}`]: next } });
+          }
+        }
       }
+      if (!answer) return ctx.fail(`${person.name} is listening, but does not answer just now.`);
       if (!(await MooChar.exists({ _id: ctx.ch._id, active: true, roomId: ctx.ch.roomId }))) {
         return ctx.fail('You have moved on. Start a conversation with somebody where you are now.');
       }

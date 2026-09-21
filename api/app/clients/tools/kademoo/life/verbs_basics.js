@@ -247,9 +247,29 @@ registry.register({
     const rooms = await MooRoom.find({ roomId: { $in: players.map((p) => p.roomId) } }).select('roomId name district').lean();
     const byId = Object.fromEntries(rooms.map((r) => [r.roomId, r]));
     const others = players.filter((p) => p.userId !== ctx.userId);
-    const cits = await MooChar.countDocuments({ userId: /^npc:/ });
-    if (!others.length) ctx.say(`Nobody else is awake in the city right now — just you and ${cits} citizens going about their day. Say something anyway; the room hears you.`);
-    else ctx.say(`Awake in the city: ${others.map((p) => { const r = byId[p.roomId]; return `${p.name} (${r ? r.name : 'somewhere'})`; }).join(', ')}. Plus you.`);
+    /* ONE LIST (the Veil, Sep 21 2026). This used to answer "Nobody else is
+     * awake in the city right now, just you and 26 citizens going about their
+     * day", which partitions the population out loud, names the machine half,
+     * counts it, and hands the player the subtraction. It was the fastest way
+     * in the game to learn the true shape of the world: one word, no cleverness.
+     *
+     * Now it answers the question a player is actually asking, which is who is
+     * around. Everybody in one list, no arithmetic, sorted by NAME rather than
+     * by id, because ids beginning `npc:` sort into a block of their own and a
+     * block is an answer too. */
+    const cits = await MooChar.find({ userId: /^npc:/, active: true }).select('name roomId').lean();
+    const citRooms = await MooRoom.find({ roomId: { $in: [...new Set(cits.map((c) => c.roomId))] } })
+      .select('roomId name')
+      .lean();
+    const where = { ...byId, ...Object.fromEntries(citRooms.map((r) => [r.roomId, r])) };
+    const about = [...others, ...cits]
+      .map((p) => `${p.name} (${where[p.roomId] ? where[p.roomId].name : 'somewhere'})`)
+      .sort((a, b) => a.localeCompare(b));
+    if (!about.length) ctx.say('The city is quiet just now. Say something anyway; the room hears you.');
+    else {
+      const shown = about.slice(0, 12);
+      ctx.say(`About the city: ${shown.join(', ')}${about.length > shown.length ? `, and ${about.length - shown.length} more.` : '.'}`);
+    }
     return ctx.ok();
   },
 });

@@ -12,6 +12,7 @@
  * it has to be, because it has to answer in fifty milliseconds forever. */
 const registry = require('./registry');
 const skills = require('./skills');
+const veil = require('./veil');
 const reverie = require('../reverie');
 const { MooRel } = require('~/models/kadeMooLife');
 const {
@@ -80,7 +81,22 @@ const TEMPER = {
   cass: 'warm', chike: 'formal', marva: 'gruff', royce: 'cool', birdie: 'warm', emmett: 'gruff', junie: 'warm',
 };
 const NO_ROMANCE = new Set(['junie', 'reed', 'pham', 'odessa', 'chike']); /* a kid, and the people whose job it is not */
-function temperOf(npcId) { return TEMPER[String(npcId).replace(/^npc:/, '')] || 'warm'; }
+/* A TEMPERAMENT FOR ANYBODY (the Veil, Sep 21 2026).
+ *
+ * Ten social verbs read `kind === 'citizen' ? react(...) : 'one hardcoded
+ * sentence'`. A synth got a reaction bank keyed to its temperament; a soul got
+ * the same sentence every time, forever. `chat` even paid 4 friendship for a
+ * citizen and 5 for a player, so the difference was measurable with a notepad.
+ * The banks are good writing and there was never a reason souls could not have
+ * them, so now everybody does.
+ *
+ * A human has no authored TEMPER row, and defaulting them all to 'warm' would
+ * be the same tell in a nicer coat. Hashing the id gives each person one manner
+ * that is theirs, stable for the life of the character, evenly spread across
+ * the four voices, and free. */
+function temperOf(npcId) {
+  return veil.temperOf(npcId, TEMPER[String(npcId).replace(/^npc:/, '')]);
+}
 
 const REACT = {
   chat: {
@@ -184,9 +200,9 @@ socialVerb({
     const { t, kind } = r;
     await setBusy(ctx.ch, 3, 'talking');
     ctx.need({ company: 8, fun: 2 }); ctx.learn('charm', 2);
-    const line = kind === 'citizen' ? react('chat', t) : `You and ${t.name.split(' ')[0]} talk a while about nothing in particular, which is the good kind.`;
+    const line = veil.isPerson(kind) ? react('chat', t) : `You and ${t.name.split(' ')[0]} talk a while about nothing in particular, which is the good kind.`;
     const topic = pick(['the weather', 'the bell being wrong again', 'what Pat put in the pie', 'the ferry schedule', 'who moved into the Patch', 'the freight last night', 'Dez’s new speakers', 'the Salon’s latest victim', 'the price of eggs', 'the strays on Gully Road']);
-    await land(ctx, t, 'chat', `You chat with ${t.name.split(' ')[0]} about ${topic}. ${line}`, `${ctx.ch.name} and ${t.name.split(' ')[0]} fall into talking about ${topic}.`, { friendship: kind === 'citizen' ? 4 : 5 });
+    await land(ctx, t, 'chat', `You chat with ${t.name.split(' ')[0]} about ${topic}. ${line}`, `${ctx.ch.name} and ${t.name.split(' ')[0]} fall into talking about ${topic}.`, { friendship: veil.isPerson(kind) ? 4 : 5 });
     return ctx.ok({ kinds: [...ctx.kinds, 'say'] });
   },
 });
@@ -199,7 +215,7 @@ socialVerb({
     const { t, kind } = r;
     const hit = roll(ctx, 0.55, (ctx.life.traitKeys || []).includes('funny') ? 0.15 : 0);
     ctx.need({ fun: hit ? 8 : 2, company: 4 }); ctx.learn('charm', hit ? 3 : 1);
-    const line = kind === 'citizen' ? react(hit ? 'joke_hit' : 'joke_miss', t) : (hit ? `${t.name.split(' ')[0]} laughs — a real one.` : `${t.name.split(' ')[0]} gives you a courtesy laugh. You both hear it.`);
+    const line = veil.isPerson(kind) ? react(hit ? 'joke_hit' : 'joke_miss', t) : (hit ? `${t.name.split(' ')[0]} laughs — a real one.` : `${t.name.split(' ')[0]} gives you a courtesy laugh. You both hear it.`);
     await land(ctx, t, 'joke', `You tell ${t.name.split(' ')[0]} a joke. ${line}`, hit ? `${ctx.ch.name} tells a joke and ${t.name.split(' ')[0]} actually laughs.` : `${ctx.ch.name} tells a joke. It goes by.`, { friendship: hit ? 5 : -1 });
     return ctx.ok({ kinds: [...ctx.kinds, hit ? 'social.laugh' : 'emote'] });
   },
@@ -215,7 +231,7 @@ socialVerb({
     const recentSame = (rel.recent || []).slice(-2).filter((k) => k === 'compliment').length;
     const hit = recentSame < 2 && roll(ctx, 0.65);
     ctx.need({ company: 4 }); ctx.learn('charm', hit ? 2 : 1);
-    const line = kind === 'citizen' ? react(hit ? 'compliment_hit' : 'compliment_miss', t) : (hit ? `${t.name.split(' ')[0]} takes it well.` : `${t.name.split(' ')[0]} has heard enough of those for one day.`);
+    const line = veil.isPerson(kind) ? react(hit ? 'compliment_hit' : 'compliment_miss', t) : (hit ? `${t.name.split(' ')[0]} takes it well.` : `${t.name.split(' ')[0]} has heard enough of those for one day.`);
     await land(ctx, t, 'compliment', `You pay ${t.name.split(' ')[0]} a compliment. ${line}`, `${ctx.ch.name} says something nice to ${t.name.split(' ')[0]}.`, { friendship: hit ? 4 : 0, romance: hit && rel.romance > 0 ? 3 : 0 });
     return ctx.ok({ kinds: [...ctx.kinds, 'emote'] });
   },
@@ -237,7 +253,7 @@ socialVerb({
     if (taken && !(taken.a === ctx.userId || taken.b === ctx.userId)) { await land(ctx, t, 'flirt', `${t.name.split(' ')[0]} is spoken for, and says so, kindly.`, null, { friendship: -1 }, { tierNote: false }); return ctx.ok(); }
     const hit = roll(ctx, 0.45, ((ctx.life.traitKeys || []).includes('romantic') ? 0.15 : 0) + (rel.friendship >= 30 ? 0.1 : 0) + (rel.romance >= 20 ? 0.1 : 0));
     ctx.need({ fun: hit ? 10 : 0, company: 4 }); ctx.learn('charm', hit ? 3 : 1);
-    const line = kind === 'citizen' ? react(hit ? 'flirt_hit' : 'flirt_miss', t) : (hit ? `${t.name.split(' ')[0]} does not step back.` : `${t.name.split(' ')[0]} lets it go by, gently.`);
+    const line = veil.isPerson(kind) ? react(hit ? 'flirt_hit' : 'flirt_miss', t) : (hit ? `${t.name.split(' ')[0]} does not step back.` : `${t.name.split(' ')[0]} lets it go by, gently.`);
     const firstTime = !(rel.recent || []).includes('flirt');
     await land(ctx, t, 'flirt', `You flirt with ${t.name.split(' ')[0]}. ${line}`, `${ctx.ch.name} is flirting with ${t.name.split(' ')[0]}. The room notices.`, { romance: hit ? 8 : 1, friendship: hit ? 2 : -1 }, { tellOther: firstTime ? `${ctx.ch.name} is flirting with you. Flirt back if you like — or "no flirting" tells the whole city you are not here for that.` : null });
     return ctx.ok({ kinds: [...ctx.kinds, 'emote'] });
@@ -304,7 +320,7 @@ socialVerb({
     const { t, kind } = r;
     ctx.need({ company: 8 }); ctx.learn('care', 3);
     await setBusy(ctx.ch, 3, 'sitting with somebody');
-    await land(ctx, t, 'comfort', `You sit with ${t.name.split(' ')[0]} a while. ${kind === 'citizen' ? react('comfort', t) : 'Whatever it is, it is a little lighter for two.'}`, `${ctx.ch.name} sits with ${t.name.split(' ')[0]} a while.`, { friendship: 6 });
+    await land(ctx, t, 'comfort', `You sit with ${t.name.split(' ')[0]} a while. ${veil.isPerson(kind) ? react('comfort', t) : 'Whatever it is, it is a little lighter for two.'}`, `${ctx.ch.name} sits with ${t.name.split(' ')[0]} a while.`, { friendship: 6 });
     if (kind === 'player') { const o = await MooChar.findOne({ userId: t.userId, active: true }); if (o && o.attrs && o.attrs.life) { const n = require('./needs'); const nn = n.apply(o.attrs.life.needs || n.fresh(), { company: 10, fun: 3 }); await MooChar.updateOne({ _id: o._id }, { $set: { 'attrs.life.needs': nn } }); } }
     return ctx.ok({ kinds: [...ctx.kinds, 'emote'] });
   },
@@ -320,7 +336,7 @@ socialVerb({
     const win = roll(ctx, 0.5, (ctx.life.traitKeys || []).includes('stubborn') ? 0.2 : 0);
     ctx.need({ fun: win ? 6 : -4, company: 2 }); ctx.learn('charm', 2);
     const topic = about || pick(['the third stool', 'whose turn it was', 'the ferry schedule', 'what the bell means', 'money', 'the right way to do it']);
-    await land(ctx, t, 'argue', `You argue with ${t.name.split(' ')[0]} about ${topic}. ${kind === 'citizen' ? react(win ? 'argue_win' : 'argue_lose', t) : (win ? 'You get the last word.' : `${t.name.split(' ')[0]} gets the last word.`)}`, `${ctx.ch.name} and ${t.name.split(' ')[0]} are arguing about ${topic}. Voices up.`, { friendship: -3 });
+    await land(ctx, t, 'argue', `You argue with ${t.name.split(' ')[0]} about ${topic}. ${veil.isPerson(kind) ? react(win ? 'argue_win' : 'argue_lose', t) : (win ? 'You get the last word.' : `${t.name.split(' ')[0]} gets the last word.`)}`, `${ctx.ch.name} and ${t.name.split(' ')[0]} are arguing about ${topic}. Voices up.`, { friendship: -3 });
     return ctx.ok({ kinds: [...ctx.kinds, 'say'] });
   },
 });
@@ -332,7 +348,7 @@ socialVerb({
     const r = await target(ctx, arg, { noKids: true }); if (r.err) return ctx.fail(r.err);
     const { t, kind } = r;
     ctx.need({ fun: 3, company: -4 });
-    const rel = await land(ctx, t, 'insult', `You say the mean thing to ${t.name.split(' ')[0]}. ${kind === 'citizen' ? react('insult', t) : `${t.name.split(' ')[0]} heard every word.`}`, `${ctx.ch.name} says something ugly to ${t.name.split(' ')[0]}. The room goes quiet.`, { friendship: -12, romance: -10 }, { tellOther: `${ctx.ch.name} insults you, out loud, in front of people.` });
+    const rel = await land(ctx, t, 'insult', `You say the mean thing to ${t.name.split(' ')[0]}. ${veil.isPerson(kind) ? react('insult', t) : `${t.name.split(' ')[0]} heard every word.`}`, `${ctx.ch.name} says something ugly to ${t.name.split(' ')[0]}. The room goes quiet.`, { friendship: -12, romance: -10 }, { tellOther: `${ctx.ch.name} insults you, out loud, in front of people.` });
     if (rel.friendship <= -40) await require('./drama').rumor(ctx, `${ctx.ch.name} and ${t.name.split(' ')[0]} are feuding`, 'feud', 3);
     return ctx.ok({ kinds: [...ctx.kinds, 'err'] });
   },
@@ -347,7 +363,7 @@ socialVerb({
     const rel = await getRel(ctx.userId, t.userId);
     const ok = roll(ctx, rel.friendship < -30 ? 0.35 : 0.7, (ctx.life.traitKeys || []).includes('stubborn') ? -0.15 : 0.05);
     ctx.need({ company: 3 }); ctx.learn('care', 2);
-    await land(ctx, t, 'apologize', `You apologize to ${t.name.split(' ')[0]}. ${kind === 'citizen' ? react(ok ? 'apologize_yes' : 'apologize_no', t) : (ok ? `${t.name.split(' ')[0]} hears you.` : `${t.name.split(' ')[0]} is not there yet.`)}`, `${ctx.ch.name} apologizes to ${t.name.split(' ')[0]}.`, { friendship: ok ? 10 : 2 });
+    await land(ctx, t, 'apologize', `You apologize to ${t.name.split(' ')[0]}. ${veil.isPerson(kind) ? react(ok ? 'apologize_yes' : 'apologize_no', t) : (ok ? `${t.name.split(' ')[0]} hears you.` : `${t.name.split(' ')[0]} is not there yet.`)}`, `${ctx.ch.name} apologizes to ${t.name.split(' ')[0]}.`, { friendship: ok ? 10 : 2 });
     return ctx.ok({ kinds: [...ctx.kinds, 'emote'] });
   },
 });
@@ -367,7 +383,7 @@ socialVerb({
     if (kind === 'player') await MooItem.updateOne({ _id: it._id }, { $set: { location: { type: 'char', id: t.userId } } });
     else await MooItem.deleteOne({ _id: it._id });
     ctx.need({ company: 6, fun: 4 }); ctx.learn('charm', 2);
-    const line = kind === 'citizen' ? react(p.gift === 'romance' ? 'gift_flowers' : 'gift_yes', t, { gift: it.name }) : `${t.name.split(' ')[0]} has it now.`;
+    const line = veil.isPerson(kind) ? react(p.gift === 'romance' ? 'gift_flowers' : 'gift_yes', t, { gift: it.name }) : `${t.name.split(' ')[0]} has it now.`;
     await land(ctx, t, 'gift', `You give ${t.name.split(' ')[0]} ${it.name}. ${line}`, `${ctx.ch.name} gives ${t.name.split(' ')[0]} ${it.name}.`, { friendship, romance }, { tellOther: `${ctx.ch.name} gives you ${it.name}. It is in your pockets.`, sound: 'coin' });
     return ctx.ok({ kinds: [...ctx.kinds, 'coin'] });
   },
