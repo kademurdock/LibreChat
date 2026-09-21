@@ -1388,20 +1388,50 @@ async function sameReports(rows, { ask = jev.ask, timeoutMs = 5000, concurrency 
   const out = [];
   if (!jev.enabled('KADE_JEV_FEEDBACK_TWINS')) return out;
   const list = (rows || []).filter((r) => r && reportText(r));
-  /* A WINDOW, not every pair. The board holds 74 rows, and every pair of
-   * those is 2,701 questions to answer a thing that is nearly always local:
-   * the admin-alert echo arrives right behind the report it echoes, and a
-   * second person hitting the same bug files within a day or two. Rows come
-   * in newest-first, so comparing each row against the handful just older
-   * than it is both the cheap read and the accurate one. `window` 0 means
-   * every pair, for a small list or a deliberate sweep. */
-  const w = window > 0 ? window : num('KADE_JEV_FEEDBACK_WINDOW', 8);
+  /* WHICH PAIRS ARE WORTH ASKING ABOUT. Every pair of a 74-row board is
+   * 2,701 questions, which is slow and mostly wasted. The first try here was
+   * a time window — compare each row with the handful just older — on the
+   * theory that an echo arrives right behind its report. THE LIVE BOARD SAID
+   * NO: a smoke test over the real 74 rows found zero twins while the board
+   * plainly holds "Voice in the wrong section: Monarch" three times, days
+   * apart, with nineteen other voices between them. Adjacency was my
+   * assumption, not the data's.
+   *
+   * So: a shared DISTINCTIVE word picks the candidates. Two rows are worth a
+   * question when they both name something specific — a voice, a page, a
+   * feature — and a word carried by most of the board (every row here says
+   * "voice") is not specific, so it is dropped. This is a lexical filter
+   * choosing what to ASK, never what to answer: Jev still decides, and the
+   * cost of the filter being narrow is a missed pair, never a wrong merge.
+   * Set `window` to compare each row with the N just older instead. */
   const pairs = [];
-  for (let i = 0; i < list.length; i++) {
-    const stop = w > 0 ? Math.min(list.length, i + 1 + w) : list.length;
-    for (let j = i + 1; j < stop; j++) {
-      if (pairs.length >= maxPairs) break;
-      pairs.push([list[i], list[j]]);
+  const seenPair = new Set();
+  const w = window > 0 ? window : 0;
+  if (w > 0) {
+    for (let i = 0; i < list.length && pairs.length < maxPairs; i++) {
+      for (let j = i + 1; j < Math.min(list.length, i + 1 + w) && pairs.length < maxPairs; j++) pairs.push([list[i], list[j]]);
+    }
+  } else {
+    const STOP = /^(the|and|for|from|with|that|this|a|an|is|it|in|on|of|to|via|new|bug|report|problem|not|was|when|but|you|your|my|me|i)$/;
+    const index = new Map();
+    list.forEach((row, i) => {
+      for (const tok of new Set(reportText(row).toLowerCase().match(/[a-z][a-z'-]{2,}/g) || [])) {
+        if (STOP.test(tok)) continue;
+        if (!index.has(tok)) index.set(tok, []);
+        index.get(tok).push(i);
+      }
+    });
+    const common = Math.max(2, Math.ceil(list.length * num('KADE_JEV_FEEDBACK_COMMON', 0.3)));
+    for (const [, rowsWith] of index) {
+      if (rowsWith.length < 2 || rowsWith.length > common) continue;
+      for (let a = 0; a < rowsWith.length; a++) {
+        for (let b = a + 1; b < rowsWith.length; b++) {
+          const key = rowsWith[a] + ':' + rowsWith[b];
+          if (seenPair.has(key) || pairs.length >= maxPairs) continue;
+          seenPair.add(key);
+          pairs.push([list[rowsWith[a]], list[rowsWith[b]]]);
+        }
+      }
     }
   }
   const floor = num('KADE_JEV_FEEDBACK_MIN_SAME', 0.7);

@@ -1087,20 +1087,40 @@ test('readVoiceFlags: the cap holds and the questions are shaped right', async (
   }
 });
 
-test('sameReports: the window keeps a long board from becoming every pair', async () => {
-  const rows = Array.from({ length: 40 }, (_, i) => ({ _id: 'r' + i, subject: 'report ' + i, detail: 'detail ' + i }));
+test('sameReports: a shared distinctive word picks the pairs, not adjacency', async () => {
+  /* Modelled on the real board, which is what corrected this design: twenty
+   * rows about twenty different voices, and ONE repeat far from its twin. A
+   * time window never compares rows 1 and 19, which is why the first live
+   * smoke test found nothing on a board that plainly holds a triplicate. */
+  const rows = [
+    { _id: 'r0', category: 'bug', subject: 'Voice in the wrong section: Monarch', detail: 'Monarch is with the women' },
+    ...Array.from({ length: 18 }, (_, i) => ({ _id: 'x' + i, category: 'bug', subject: 'Voice in the wrong section: Filler' + i, detail: 'Filler' + i + ' is misplaced' })),
+    { _id: 'r19', category: 'bug', subject: 'Voice in the wrong section: Monarch', detail: 'Monarch again, still wrong' },
+  ];
+  const asked = [];
+  await withEnv(ON, async () => {
+    const out = await J.sameReports(rows, {
+      ask: async (state) => {
+        asked.push(state);
+        const both = /Monarch/.test(state.report) && /Monarch/.test(state.other);
+        return { answers: { same: { noul: both ? 0.94 : 0.02 } } };
+      },
+      concurrency: 1,
+    });
+    assert.strictEqual(out.length, 1, 'the far-apart repeat is found');
+    assert.deepStrictEqual({ id: out[0].id, twinId: out[0].twinId }, { id: 'r0', twinId: 'r19' });
+  });
+  /* "voice", "wrong" and "section" are on every row, so they are not
+   * distinctive and must not have generated 190 questions. */
+  assert.ok(asked.length < 40, `asked ${asked.length}, expected only the shared-name pairs`);
+  assert.ok(asked.some((s) => /Monarch/.test(s.report) && /Monarch/.test(s.other)));
+});
+
+test('sameReports: an explicit window is still available for a deliberate sweep', async () => {
+  const rows = Array.from({ length: 5 }, (_, i) => ({ _id: 'r' + i, subject: 'report ' + i, detail: 'detail ' + i }));
   let asked = 0;
   await withEnv(ON, async () => {
-    await J.sameReports(rows, {
-      ask: async () => { asked++; return { answers: { same: { noul: 0.01 } } }; },
-      concurrency: 2,
-    });
+    await J.sameReports(rows, { window: 2, ask: async () => { asked++; return { answers: { same: { noul: 0.01 } } }; }, concurrency: 1 });
   });
-  /* 40 rows, a window of 8: 8 comparisons each until the tail runs out. */
-  assert.strictEqual(asked, 8 * 40 - (8 * 9) / 2, 'window, not 780 pairs');
-  asked = 0;
-  await withEnv({ ...ON, KADE_JEV_FEEDBACK_WINDOW: '2' }, async () => {
-    await J.sameReports(rows.slice(0, 5), { ask: async () => { asked++; return { answers: { same: { noul: 0.01 } } }; }, concurrency: 1 });
-  });
-  assert.strictEqual(asked, 2 + 2 + 2 + 1, 'the env var moves it');
+  assert.strictEqual(asked, 2 + 2 + 2 + 1);
 });
