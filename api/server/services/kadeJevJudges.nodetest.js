@@ -818,3 +818,61 @@ test('lyricTellsLog: counts what was saved and what was caught', () => {
   assert.deepStrictEqual(r, { saved: 1, caught: 1 });
   assert.deepStrictEqual(lines, ['[kadeJev][lyric-tells] lines=9 list=2 jev=2 saved=1 caught=1 $0.00012']);
 });
+
+/* ── Part 238: the frame filer's decision ──────────────────────────────── */
+
+test('decideAdFromFrame: the eye is handed to the same floor as the text filer', async () => {
+  const item = { title: 'Tegrin ad, 1969', path: 'Video/Commercials/Other Commercials/1960s' };
+  let seenState = null;
+  const ask = async (state) => {
+    seenState = state;
+    return { answers: { category: { choice: 'Health & Beauty', confidence: 0.93 } }, usage: { input_tokens: 700 } };
+  };
+  await withEnv(ON, async () => {
+    const r = await J.decideAdFromFrame(item, 'Tegrin medicated shampoo, tube and box', { ask });
+    assert.strictEqual(r.category, 'Health & Beauty');
+    assert.ok(r.costUSD > 0);
+    /* The decade still comes off the path and is never invented. */
+    assert.deepStrictEqual(seenState, {
+      title: 'Tegrin ad, 1969',
+      decade: '1960s',
+      seen: 'Tegrin medicated shampoo, tube and box',
+    });
+  });
+});
+
+test('decideAdFromFrame: under the floor, an invented shelf, or a throw — nothing moves', async () => {
+  const item = { title: 'x ad', path: 'Video/Commercials/Other Commercials/1970s' };
+  await withEnv(ON, async () => {
+    const low = await J.decideAdFromFrame(item, 'a crowd of people', {
+      ask: async () => ({ answers: { category: { choice: 'Tobacco', confidence: 0.55 } }, usage: { input_tokens: 700 } }),
+    });
+    assert.strictEqual(low.category, null);
+    assert.strictEqual(low.confidence, 0.55, 'the score is reported even when it loses');
+
+    const bogus = await J.decideAdFromFrame(item, 'x', {
+      ask: async () => ({ answers: { category: { choice: 'Shampoo Aisle', confidence: 0.99 } }, usage: { input_tokens: 700 } }),
+    });
+    assert.strictEqual(bogus.category, null, 'a shelf the library does not have is refused');
+
+    const boom = await J.decideAdFromFrame(item, 'x', { ask: async () => { throw new Error('HTTP 500'); } });
+    assert.deepStrictEqual(boom, { category: null, costUSD: 0 });
+  });
+});
+
+test('decideAdFromFrame: the floor is the ads floor, not a second one', async () => {
+  const item = { title: 'x ad', path: 'Video/Commercials/Other Commercials/1970s' };
+  const ask = async () => ({ answers: { category: { choice: 'Tobacco', confidence: 0.75 } }, usage: { input_tokens: 700 } });
+  await withEnv({ ...ON, KADE_JEV_ADS_MIN_CONF: '0.9' }, async () => {
+    assert.strictEqual((await J.decideAdFromFrame(item, 'a pack of cigarettes', { ask })).category, null);
+  });
+  await withEnv({ ...ON, KADE_JEV_ADS_MIN_CONF: undefined }, async () => {
+    assert.strictEqual((await J.decideAdFromFrame(item, 'a pack of cigarettes', { ask })).category, 'Tobacco');
+  });
+});
+
+test('AD_FRAME_Q offers exactly the shelves the library already has', () => {
+  assert.strictEqual(J.AD_FRAME_Q.type, 'choice');
+  assert.strictEqual(J.AD_FRAME_Q.criteria, J.AD_CATEGORY_CRITERIA, 'one list of shelves, not two that can drift');
+  assert.ok(/\bseen\b/.test(J.AD_FRAME_Q.instructions), 'the question has to mention the field it is given');
+});

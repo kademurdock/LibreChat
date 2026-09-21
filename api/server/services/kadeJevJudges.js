@@ -801,6 +801,47 @@ function lyricTellsLog(before, after, { asked, costUSD, log }) {
   return { saved, caught };
 }
 
+/* ── 1f. THE LAST 2,270, WITH EYES (Part 238, Sep 20 2026) ────────────────
+ * The frame filer (`kadeReadingRoomFrameFile.js`) pulls one frame from a
+ * commercial and gets a short label back from a vision model — "Tegrin
+ * medicated shampoo, tube and box" — then hands THAT here. The vision model
+ * never picks the shelf. It names what it saw; the tested filing path decides
+ * where that belongs, so the 49 categories and the floor stay the one thing
+ * that files anything.
+ *
+ * `seen` is leaned on ahead of `title` on purpose: the title is exactly what
+ * failed in Part 237. But a frame can also be a title card, a crowd or a
+ * jingle shot with nothing in it, so the wording says to fall back on the
+ * title when the frame names no product, and the confidence floor — the same
+ * one the text filer uses, read from the same place so the two cannot drift
+ * apart — still has the last word. */
+const AD_FRAME_Q = {
+  type: 'choice',
+  instructions:
+    'A commercial from an archive is described by `title`, `decade` and `seen` — `seen` is what a viewer reports is actually visible in one frame of it, which is better evidence than the title, because the title is often only an unfamiliar old brand name. Say which kind of product or service the commercial is advertising. Lead with `seen`; fall back on `title` only when `seen` names no product. Judge by what the thing actually IS, not by what a word in its name sounds like: a bug spray called Gulf Spray is a household insecticide, not petrol. Pick the single best fit.',
+  criteria: AD_CATEGORY_CRITERIA,
+};
+
+/**
+ * One frame's label → a shelf. Returns { category, confidence, costUSD } with
+ * `category` null whenever nothing should move. NEVER throws.
+ */
+async function decideAdFromFrame(item, seen, { ask = jev.ask, timeoutMs = 6000 } = {}) {
+  const knobs = adKnobs();
+  try {
+    const state = { ...adState(item), seen: String(seen || '').slice(0, 200) };
+    const { answers, usage } = await ask(state, { category: AD_FRAME_Q }, timeoutMs);
+    const costUSD = ((Number(usage && usage.input_tokens) || 0) * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6;
+    const c = answers && answers.category;
+    const category = c && c.choice;
+    if (!category || !Object.prototype.hasOwnProperty.call(AD_CATEGORY_CRITERIA, category)) return { category: null, costUSD };
+    if (typeof c.confidence !== 'number' || c.confidence < knobs.minConfidence) return { category: null, costUSD, confidence: c.confidence };
+    return { category, confidence: c.confidence, costUSD };
+  } catch (_) {
+    return { category: null, costUSD: 0 };
+  }
+}
+
 /* ── 2. THE MEMORY KEEPER GATE (SHADOW ONLY) ──────────────────────────────
  * The keeper is a generative call after every turn platform-wide, and its own
  * instructions say "Most turns should save NOTHING". These two nouls are the
@@ -1252,6 +1293,7 @@ module.exports = {
   LOCAL_ROOT, LOCAL_KIND_CRITERIA, LOCAL_KIND_Q, localState, localKnobs, decideLocal, localDestination, fileLocal,
   AUDIO_ROOT, AUDIO_LOCAL_ROOT, AUDIO_KIND_CRITERIA, AUDIO_KIND_Q, OZARKS_Q, audioKnobs, audioDecade, audioGame, audioDestination, fileAudio,
   LYRIC_STOCK_Q, lyricKnobs, lyricLines, refineTells, lyricTellsJev, lyricTellsLog,
+  AD_FRAME_Q, decideAdFromFrame,
   REVERIE_NOBODY, DIRECTOR_FRESH_Q, directorOptions, directorKnobs, decideDirector, directRoom,
   KEEPER_CARD_Q, KEEPER_LOG_Q, KEEPER_PROMISE_Q, keeperState, keeperWrote, keeperShadowStart, keeperShadowFinish,
   keeperFloor, keeperGateDecide, keeperGate, keeperGateLog,

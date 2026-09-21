@@ -1773,6 +1773,81 @@ router.post('/librarian/jev-file-audio', requireJwtAuth, express.json({ limit: '
   }
 });
 
+/* THE LAST 2,270, WITH EYES (Part 238, Sep 20 2026). Kade chose this route
+ * when the options were put to her, at a quoted fifteen cents for all of them.
+ * One frame from each commercial the text filer could not place, a short label
+ * from a cheap vision model, and then the SAME Jev question that already knows
+ * the 49 shelves. The eye names the product; Jev files it.
+ *
+ * OFF until `KADE_LIBRARY_VISION_FILE=1` is set, because unlike the other
+ * filers this one spends real money at a vision model and pulls bytes out of
+ * the bucket. Every run is bounded three ways: `limit` (60 by default, 400
+ * ceiling), the dollar cap in `KADE_FRAME_RUN_USD_CAP`, and preview unless
+ * `apply:true`. Same write guards as its siblings — path-filtered bulkWrite,
+ * `path` the only field written, `originalPath` untouched.
+ *
+ * The response carries `seen` on every move so a person can read what the eye
+ * reported before anything is applied. Read them. That is the whole point of
+ * previewing a batch first. */
+router.post('/librarian/vision-file-ads', requireJwtAuth, express.json({ limit: '16kb' }), async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+    const framer = require('./kadeReadingRoomFrameFile');
+    if (!framer.ENABLED()) return res.status(409).json({ error: 'The vision filer is off. Set KADE_LIBRARY_VISION_FILE=1 to turn it on.' });
+    const b = req.body || {};
+    const limit = clampInt(b.limit, 1, 400, 60);
+    const decade = typeof b.decade === 'string' && /^[\w -]{1,24}$/.test(b.decade) ? b.decade : null;
+    const query = {
+      state: 'ready',
+      category: 'commercials',
+      path: decade
+        ? new RegExp(`/Commercials/Other Commercials/${decade.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+        : /\/Commercials\/Other Commercials(?:\/|$)/i,
+    };
+    const items = await KadeBook.find(query, '_id title path tracks').sort({ _id: 1 }).skip(clampInt(b.skip, 0, 100000, 0)).limit(limit).lean();
+    if (!items.length) return res.json({ ok: true, scanned: 0, moves: [], changed: 0 });
+    const t0 = Date.now();
+    /* The route owns the bucket; the framer only knows how to look. */
+    const signOf = async (it) => {
+      const tr = (it.tracks || []).find((t) => /^video\//.test((t && t.mime) || ''));
+      return tr && tr.key ? signGet(tr.key, tr.mime) : null;
+    };
+    const r = await framer.fileByFrame(items, { signOf });
+    const costUSD = (r.visionUSD || 0) + (r.jevUSD || 0);
+    logger.info(
+      `[library/vision-ads] read ${items.length} → looked ${r.looked}, named ${r.labelled}, filed ${r.moves.length}, ${Date.now() - t0}ms, vision $${(r.visionUSD || 0).toFixed(4)} jev $${(r.jevUSD || 0).toFixed(4)}`,
+    );
+    const byShelf = {};
+    for (const m of r.moves) byShelf[m.category] = (byShelf[m.category] || 0) + 1;
+    const summary = {
+      ok: true,
+      scanned: items.length,
+      looked: r.looked,
+      named: r.labelled,
+      filed: r.moves.length,
+      left: r.skipped.length,
+      visionUSD: r.visionUSD,
+      jevUSD: r.jevUSD,
+      costUSD,
+      cappedAt: r.cappedAt || null,
+      byShelf,
+    };
+    if (b.apply !== true) return res.json({ ...summary, moves: r.moves.slice(0, 200) });
+    const result = r.moves.length
+      ? await KadeBook.bulkWrite(
+          r.moves.map((m) => ({
+            updateOne: { filter: { _id: m.id, path: m.from, state: 'ready' }, update: { $set: { path: m.to } } },
+          })),
+        )
+      : { modifiedCount: 0 };
+    logger.info(`[library/vision-ads] applied ${result.modifiedCount}/${r.moves.length}`);
+    res.json({ ...summary, changed: result.modifiedCount || 0 });
+  } catch (e) {
+    logger.warn(`[library/vision-ads] ${e.message}`);
+    res.status(500).json({ error: 'Could not look at those commercials.' });
+  }
+});
+
 router.get('/librarian/sort-status', requireJwtAuth, async (req, res) => {
   try { res.json({ ok: true, enabled: sorter.ENABLED(), unsorted: await sorter.unsortedCount(), shelves: sorter.SHELVES }); } catch (e) { res.status(500).json({ error: 'Could not count.' }); }
 });
