@@ -855,6 +855,29 @@ router.get('/voice-report', async (req, res) => {
       } catch (e) {
         logger.warn('[kadeJev][spine] skipped (the old numbers stand): ' + e.message);
       }
+      /* Part 239 — THE BATTERY'S FLAGS, ON REAL REPLIES. The other half of
+       * the battery idea. The nightly battery asks these of FIVE probe
+       * replies to one agent once a night; this asks the same three of the
+       * day's actual replies to her family, for a fraction of a cent. The
+       * regex counts above (reframes, reassure, and the rest) are untouched
+       * and keep their months of history; these land beside them under
+       * `jevFlags`. Counts only. Kill: KADE_JEV_VOICE_FLAGS=0. */
+      try {
+        const judges = require('~/server/services/kadeJevJudges');
+        const vf = await judges.readVoiceFlags(careTexts);
+        if (!vf.off && vf.read) {
+          spine.jevFlags = {
+            read: vf.read,
+            of: careTexts.length,
+            ...vf.flags,
+            costUSD: Math.round(vf.costUSD * 1e5) / 1e5,
+            note: 'Jev read the real replies of the day for three of the nightly battery seven flags. The regex counts elsewhere in this report are unchanged.',
+          };
+          logger.info(`[kadeJev][voice-flags] read=${vf.read}/${careTexts.length} reframe=${vf.flags.reframeTic} therapy=${vf.flags.therapyPhrasing} aiself=${vf.flags.aiSelfReference} regexReframe=${reframes} $${vf.costUSD.toFixed(5)}`);
+        }
+      } catch (e) {
+        logger.warn('[kadeJev][voice-flags] skipped: ' + e.message);
+      }
     } catch (e) {
       logger.warn('[kadeClock] spine measure failed (non-fatal): ' + e.message);
       spine = { error: e.message };

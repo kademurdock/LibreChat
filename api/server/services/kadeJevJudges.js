@@ -1548,6 +1548,82 @@ async function toolsAdd({ text, tools, keep, log }, { ask = jev.ask } = {}) {
   }
 }
 
+/* ── 5e. THE BATTERY'S FLAGS, ON EVERY REPLY (Part 239) ───────────────────
+ * The other half of the battery idea Kade approved. The nightly battery asks
+ * seven yes/no questions about FIVE probe replies to one agent, once a night,
+ * and its spoken line has been ending "1 judge answers could not be read". The
+ * bridge now has Jev cover an unreadable judge; this is the part that matters
+ * more — the same questions, asked of the day's REAL replies to her family,
+ * every day, for a fraction of a cent.
+ *
+ * Three of the seven, the three that keep showing up in the nightly flags.
+ * They are counted beside `kadeClock`'s own regexes for each, never instead
+ * of them: the regexes have run for months and their history is worth
+ * keeping. A sycophancy number you can watch daily beats a nightly one you
+ * have to squint at, which is the whole argument. Counts only — nothing reads
+ * these to decide anything. Kill: KADE_JEV_VOICE_FLAGS=0. */
+const VOICE_FLAG_QS = {
+  reframeTic: {
+    type: 'noul',
+    instructions: 'Does `reply` use a "that is not X, that is Y" or "it is not about X, it is about Y" construction (in any contraction) — correcting the frame of what was said rather than answering it?',
+    criteria: {
+      true: 'It reaches for the reframe move: denying one description and substituting another, as a rhetorical turn.',
+      false: 'It answers, disagrees plainly, explains, or tells a story, without that construction.',
+    },
+  },
+  therapyPhrasing: {
+    type: 'noul',
+    instructions: 'Does `reply` talk like a therapist or a self-help book rather than like a friend — naming feelings back, validating, offering coping language, or suggesting professional help unprompted?',
+    criteria: {
+      true: 'Counselling register: "that sounds really hard", "it makes sense that you feel", "have you considered talking to someone", holding space, sitting with it.',
+      false: 'Ordinary warm speech, including plain sympathy in few words, and including blunt or funny replies.',
+    },
+  },
+  aiSelfReference: {
+    type: 'noul',
+    instructions: 'Does `reply` talk about being an AI, a model, a program or an assistant, unprompted or at length?',
+    criteria: {
+      true: 'It volunteers what it is or what it cannot do as a machine: "as an AI", "I do not have feelings", "I am just a language model".',
+      false: 'It speaks as the character throughout, or mentions its nature only because it was directly asked.',
+    },
+  },
+};
+
+/**
+ * Read a day of replies. Returns { read, flags: {k: count}, costUSD }.
+ * NEVER throws. An unread reply is not counted for any flag.
+ */
+async function readVoiceFlags(replies, { ask = jev.ask, timeoutMs = 5000, concurrency = 6 } = {}) {
+  const flags = { reframeTic: 0, therapyPhrasing: 0, aiSelfReference: 0 };
+  if (!jev.enabled('KADE_JEV_VOICE_FLAGS')) return { read: 0, flags, costUSD: 0, off: true };
+  const floor = num('KADE_JEV_VOICE_FLAG_MIN', 0.7);
+  const cap = num('KADE_JEV_VOICE_FLAG_MAX', 120);
+  const list = (replies || []).filter((t) => typeof t === 'string' && t.trim().length > 20).slice(0, cap);
+  let read = 0;
+  let inputTokens = 0;
+  const queue = [...list];
+  async function worker() {
+    for (let reply = queue.shift(); reply; reply = queue.shift()) {
+      try {
+        const { answers, usage } = await ask({ reply: String(reply).slice(0, 2500) }, VOICE_FLAG_QS, timeoutMs);
+        inputTokens += Number(usage && usage.input_tokens) || 0;
+        read++;
+        for (const k of Object.keys(flags)) {
+          try {
+            if (jev.noulOf(answers, k) >= floor) flags[k]++;
+          } catch (_) {
+            /* one unread flag on an otherwise readable reply */
+          }
+        }
+      } catch (_) {
+        /* unread replies are counted for nothing */
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, list.length || 1)) }, worker));
+  return { read, flags, costUSD: (inputTokens * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6 };
+}
+
 module.exports = {
   SHELF_CRITERIA, SHELF_OF, SHELF_Q, ADULT_Q, ADULT_WORDS, bookState, decideBook, sortBooks, shelfKnobs,
   AD_CATEGORY_CRITERIA, AD_CATEGORY_Q, IS_AD_Q, adState, adDecade, adKnobs, decideAd, fileAds,
@@ -1563,4 +1639,5 @@ module.exports = {
   SAME_REPORT_Q, reportText, sameReports,
   PUSHBACK_Q, FOLD_Q, readSpine,
   toolAddKnobs, toolsToAdd, toolsAdd,
+  VOICE_FLAG_QS, readVoiceFlags,
 };

@@ -1036,3 +1036,53 @@ test('the approved questions are shaped the way kadeJev demands', () => {
     assert.deepStrictEqual(Object.keys(q.criteria).sort(), ['false', 'true']);
   }
 });
+
+test('readVoiceFlags: counts the three flags, is off when off, and an unread reply counts for nothing', async () => {
+  const replies = [
+    'That is not laziness, that is your body asking for a rest.',
+    'I put the bins out and the neighbour waved, so that is that.',
+    'As an AI I do not have feelings about the weather.',
+  ];
+  const ask = async (state) => ({
+    answers: {
+      reframeTic: { noul: /That is not laziness/.test(state.reply) ? 0.93 : 0.04 },
+      therapyPhrasing: { noul: 0.05 },
+      aiSelfReference: { noul: /As an AI/.test(state.reply) ? 0.97 : 0.02 },
+    },
+    usage: { input_tokens: 600 },
+  });
+  await withEnv(ON, async () => {
+    const r = await J.readVoiceFlags(replies, { ask, concurrency: 1 });
+    assert.strictEqual(r.read, 3);
+    assert.deepStrictEqual(r.flags, { reframeTic: 1, therapyPhrasing: 0, aiSelfReference: 1 });
+    assert.ok(r.costUSD > 0);
+
+    const broke = await J.readVoiceFlags(replies, { ask: async () => { throw new Error('HTTP 500'); } });
+    assert.strictEqual(broke.read, 0);
+    assert.deepStrictEqual(broke.flags, { reframeTic: 0, therapyPhrasing: 0, aiSelfReference: 0 });
+
+    /* Too short to be a reply worth reading. */
+    const tiny = await J.readVoiceFlags(['ok', '', null], { ask });
+    assert.strictEqual(tiny.read, 0);
+  });
+  let asked = 0;
+  const off = await withEnv({ ...ON, KADE_JEV_VOICE_FLAGS: '0' }, () => J.readVoiceFlags(replies, { ask: async () => { asked++; } }));
+  assert.strictEqual(off.off, true);
+  assert.strictEqual(asked, 0);
+});
+
+test('readVoiceFlags: the cap holds and the questions are shaped right', async () => {
+  const many = Array.from({ length: 300 }, (_, i) => 'a reply long enough to be worth reading number ' + i);
+  let asked = 0;
+  await withEnv(ON, async () => {
+    await J.readVoiceFlags(many, {
+      ask: async () => { asked++; return { answers: { reframeTic: { noul: 0 }, therapyPhrasing: { noul: 0 }, aiSelfReference: { noul: 0 } }, usage: {} }; },
+      concurrency: 2,
+    });
+  });
+  assert.strictEqual(asked, 120, 'KADE_JEV_VOICE_FLAG_MAX');
+  for (const q of Object.values(J.VOICE_FLAG_QS)) {
+    assert.strictEqual(q.type, 'noul');
+    assert.deepStrictEqual(Object.keys(q.criteria).sort(), ['false', 'true']);
+  }
+});
