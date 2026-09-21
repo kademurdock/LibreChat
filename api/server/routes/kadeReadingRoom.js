@@ -1654,6 +1654,125 @@ router.post('/librarian/jev-file-ads', requireJwtAuth, express.json({ limit: '16
   }
 });
 
+/* THE LOCAL SHELF — Jev gives the Ozarks archive a shape you can walk
+ * (Part 238, Sep 20 2026). Her ask, in her words: "My main expectation is
+ * that people can find my local stuff quickly and easily, as far as ozarks
+ * springfield missouri type stuff."
+ *
+ * 1,672 items live under `Video/Ozarks (Springfield Area)` in folders named
+ * only for a decade, 1,207 of them in the one called 1990s. This asks Jev
+ * what each item actually IS and puts a kind between the root and the decade,
+ * so the walk becomes nine short lists instead of one list of twelve hundred.
+ * The kinds are in `kadeJevJudges.LOCAL_KIND_CRITERIA` with the trial that
+ * chose their wording.
+ *
+ * Same guards as the commercial filer and for the same reasons: preview
+ * unless `apply:true`, a bulkWrite filtered on the path that was read so a
+ * move that raced an upload is a no-op, and `path` is the only field written
+ * — never sharing, never the owner, never `grownUpsOnly`, never a file on B2.
+ * `originalPath` is untouched so every move can be read back and undone.
+ *
+ * Nothing ever leaves the Ozarks root and nothing loses its decade, so the
+ * worst a wrong answer can do is put a local item on the wrong local shelf.
+ * The `local` tag, `meta.callSign` and `author` are all untouched, and
+ * /search already reads all three, so "Springfield", "KOLR" and "Ozarks"
+ * keep finding everything they found before. */
+router.post('/librarian/jev-file-local', requireJwtAuth, express.json({ limit: '16kb' }), async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+    const judges = require('~/server/services/kadeJevJudges');
+    const b = req.body || {};
+    const limit = clampInt(b.limit, 1, 3000, 3000);
+    const decade = typeof b.decade === 'string' && /^[\w -]{1,24}$/.test(b.decade) ? b.decade : null;
+    const root = judges.LOCAL_ROOT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    /* Only items sitting DIRECTLY in a decade folder — `[^/]+$` is what keeps
+     * a second run from burrowing an already-filed item one level deeper. */
+    const query = {
+      state: 'ready',
+      path: decade
+        ? new RegExp(`^${root}/${decade.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+        : new RegExp(`^${root}/[^/]+$`, 'i'),
+    };
+    const items = await KadeBook.find(query, '_id title path author meta').sort({ _id: 1 }).limit(limit).lean();
+    if (!items.length) return res.json({ ok: true, scanned: 0, moves: [], changed: 0 });
+    const t0 = Date.now();
+    const { moves, skipped, costUSD } = await judges.fileLocal(items);
+    logger.info(
+      `[library/jev-local] read ${items.length} → ${moves.length} filed, ${skipped.length} left, ${Date.now() - t0}ms, $${costUSD.toFixed(4)}`,
+    );
+    const byKind = {};
+    for (const m of moves) byKind[m.kind] = (byKind[m.kind] || 0) + 1;
+    if (b.apply !== true) {
+      return res.json({ ok: true, scanned: items.length, filed: moves.length, left: skipped.length, costUSD, byKind, moves: moves.slice(0, 400) });
+    }
+    const result = moves.length
+      ? await KadeBook.bulkWrite(
+          moves.map((m) => ({
+            updateOne: { filter: { _id: m.id, path: m.from, state: 'ready' }, update: { $set: { path: m.to } } },
+          })),
+        )
+      : { modifiedCount: 0 };
+    logger.info(`[library/jev-local] applied ${result.modifiedCount}/${moves.length}`);
+    res.json({ ok: true, scanned: items.length, filed: moves.length, left: skipped.length, changed: result.modifiedCount || 0, costUSD, byKind });
+  } catch (e) {
+    logger.warn(`[library/jev-local] ${e.message}`);
+    res.status(500).json({ error: 'Could not file those local items.' });
+  }
+});
+
+/* THE AUDIO SHELF — her radio collection, out of the drop folder
+ * (Part 238, Sep 20 2026). Her rule this session: "audio and video will be
+ * organised by category and decade whenever possible." The video is; the
+ * audio never was. Every radio item was still sitting in
+ * `./old radio ads from 90s 2000s` — the folder name as she dragged it in,
+ * leading dot and all, not even under `Audio/`, with no decade recorded.
+ *
+ * This asks Jev what each recording IS before asking where it goes, because
+ * three unlike things are mixed in there: real radio adverts, eighty spoof
+ * adverts from Grand Theft Auto IV, and thirteen airchecks of which twelve
+ * are Springfield stations. See `kadeJevJudges` section 1d for the trial and
+ * for why the destination rules read the way they do.
+ *
+ * Same guards as the other two filers: preview unless `apply:true`, a
+ * bulkWrite filtered on the path that was read, `path` the only field written,
+ * `originalPath` untouched so every move can be read back and undone. */
+router.post('/librarian/jev-file-audio', requireJwtAuth, express.json({ limit: '16kb' }), async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+    const judges = require('~/server/services/kadeJevJudges');
+    const b = req.body || {};
+    const limit = clampInt(b.limit, 1, 2000, 2000);
+    /* Anything of kind audio that is not already on the Audio shelf. Written
+     * as the absence of a prefix rather than as the one drop folder's name, so
+     * the next folder she drags in is picked up without a code change. */
+    const query = { state: 'ready', kind: 'audio', path: { $not: new RegExp(`^${judges.AUDIO_ROOT}/`) } };
+    const items = await KadeBook.find(query, '_id title path meta').sort({ _id: 1 }).limit(limit).lean();
+    if (!items.length) return res.json({ ok: true, scanned: 0, moves: [], changed: 0 });
+    const t0 = Date.now();
+    const { moves, skipped, costUSD } = await judges.fileAudio(items);
+    logger.info(
+      `[library/jev-audio] read ${items.length} → ${moves.length} filed, ${skipped.length} left, ${Date.now() - t0}ms, $${costUSD.toFixed(4)}`,
+    );
+    const byKind = {};
+    for (const m of moves) byKind[m.kind] = (byKind[m.kind] || 0) + 1;
+    if (b.apply !== true) {
+      return res.json({ ok: true, scanned: items.length, filed: moves.length, left: skipped.length, costUSD, byKind, moves: moves.slice(0, 400) });
+    }
+    const result = moves.length
+      ? await KadeBook.bulkWrite(
+          moves.map((m) => ({
+            updateOne: { filter: { _id: m.id, path: m.from, state: 'ready' }, update: { $set: { path: m.to } } },
+          })),
+        )
+      : { modifiedCount: 0 };
+    logger.info(`[library/jev-audio] applied ${result.modifiedCount}/${moves.length}`);
+    res.json({ ok: true, scanned: items.length, filed: moves.length, left: skipped.length, changed: result.modifiedCount || 0, costUSD, byKind });
+  } catch (e) {
+    logger.warn(`[library/jev-audio] ${e.message}`);
+    res.status(500).json({ error: 'Could not file that audio.' });
+  }
+});
+
 router.get('/librarian/sort-status', requireJwtAuth, async (req, res) => {
   try { res.json({ ok: true, enabled: sorter.ENABLED(), unsorted: await sorter.unsortedCount(), shelves: sorter.SHELVES }); } catch (e) { res.status(500).json({ error: 'Could not count.' }); }
 });

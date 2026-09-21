@@ -496,3 +496,200 @@ test('tools shadow: asks only about loaded tools, logs one line, never rejects, 
   assert.strictEqual(off, null);
   assert.strictEqual(asked, 0);
 });
+
+/* ── Part 238: the local shelf ─────────────────────────────────────────── */
+
+test('localDestination: a kind goes between the root and the decade', () => {
+  assert.strictEqual(
+    J.localDestination('Video/Ozarks (Springfield Area)/1990s', 'Local Commercials'),
+    'Video/Ozarks (Springfield Area)/Local Commercials/1990s',
+  );
+  for (const d of ['1920s', '2000s', 'Undated', 'Multiple decades']) {
+    assert.strictEqual(
+      J.localDestination('Video/Ozarks (Springfield Area)/' + d, 'Weather'),
+      'Video/Ozarks (Springfield Area)/Weather/' + d,
+      d,
+    );
+  }
+});
+
+test('localDestination: a SECOND run is a no-op, not a second burrowing', () => {
+  /* The thing that would quietly ruin the shelf: re-running the filer and
+   * getting .../Local News/Local News/1990s. The decade pattern is anchored
+   * to the root, so an already-filed path simply does not match. */
+  assert.strictEqual(J.localDestination('Video/Ozarks (Springfield Area)/Local News/1990s', 'Local News'), null);
+  assert.strictEqual(J.localDestination('Video/Ozarks (Springfield Area)/Weather/1990s', 'Local News'), null);
+  assert.strictEqual(J.localDestination('Video/Commercials/Other Commercials/1980s', 'Local News'), null);
+  assert.strictEqual(J.localDestination('Video/Ozarks (Springfield Area)', 'Local News'), null);
+  assert.strictEqual(J.localDestination('', 'Local News'), null);
+});
+
+test('decideLocal: the floor holds and an invented kind is refused', () => {
+  const knobs = { minConfidence: 0.7 };
+  assert.deepStrictEqual(J.decideLocal({ kind: { choice: 'Weather', confidence: 0.9 } }, knobs), { kind: 'Weather', confidence: 0.9 });
+  assert.strictEqual(J.decideLocal({ kind: { choice: 'Weather', confidence: 0.69 } }, knobs), null);
+  assert.strictEqual(J.decideLocal({ kind: { choice: 'Springfield Stuff', confidence: 1 } }, knobs), null);
+  assert.strictEqual(J.decideLocal({ kind: { choice: 'Weather' } }, knobs), null);
+  assert.strictEqual(J.decideLocal({}, knobs), null);
+  assert.strictEqual(J.decideLocal(null, knobs), null);
+});
+
+test('localKnobs: the floor is an env var', () => {
+  assert.strictEqual(withEnv({ KADE_JEV_LOCAL_MIN_CONF: undefined }, () => J.localKnobs().minConfidence), 0.7);
+  assert.strictEqual(withEnv({ KADE_JEV_LOCAL_MIN_CONF: '0.85' }, () => J.localKnobs().minConfidence), 0.85);
+});
+
+test('fileLocal: reads the title, never invents a decade, and is off when the switch is off', async () => {
+  const items = [
+    { _id: 'a', title: 'KOLR-TV Channel 10 CBS Springfield Mo ID Back In The Winter Of 1987', path: 'Video/Ozarks (Springfield Area)/1980s', author: 'KOLR', meta: { decade: '1980s' } },
+    { _id: 'b', title: 'Promo For Maury', path: 'Video/Ozarks (Springfield Area)/1990s', author: 'KOLR', meta: { decade: '1990s' } },
+    { _id: 'c', title: 'a mystery', path: 'Video/Ozarks (Springfield Area)/1990s', author: 'KY3', meta: { decade: '1990s' } },
+  ];
+  const seen = [];
+  const ask = async (state) => {
+    seen.push(state);
+    if (state.title.includes('ID')) return { answers: { kind: { choice: 'Station IDs & Sign-offs', confidence: 0.99 } }, usage: { input_tokens: 500 } };
+    if (state.title.includes('Maury')) return { answers: { kind: { choice: 'Show Promos', confidence: 0.95 } }, usage: { input_tokens: 500 } };
+    return { answers: { kind: { choice: 'Around the Ozarks', confidence: 0.4 } }, usage: { input_tokens: 500 } };
+  };
+  await withEnv(ON, async () => {
+    const r = await J.fileLocal(items, { ask, concurrency: 1 });
+    assert.strictEqual(r.moves.length, 2);
+    assert.strictEqual(r.skipped.length, 1, 'the 0.40 answer stays put');
+    assert.strictEqual(r.moves[0].to, 'Video/Ozarks (Springfield Area)/Station IDs & Sign-offs/1980s');
+    assert.strictEqual(r.moves[1].to, 'Video/Ozarks (Springfield Area)/Show Promos/1990s');
+    assert.ok(r.costUSD > 0);
+    assert.deepStrictEqual(Object.keys(seen[0]).sort(), ['decade', 'station', 'title']);
+    assert.strictEqual(seen[0].station, 'KOLR');
+  });
+  let asked = 0;
+  const off = await withEnv({ ...ON, KADE_JEV_LIBRARY: '0' }, () => J.fileLocal(items, { ask: async () => { asked++; } }));
+  assert.strictEqual(off.moves.length, 0);
+  assert.strictEqual(off.skipped.length, 3);
+  assert.strictEqual(asked, 0);
+});
+
+test('fileLocal: a thrown ask leaves the item exactly where it was', async () => {
+  const items = [{ _id: 'a', title: 't', path: 'Video/Ozarks (Springfield Area)/1990s' }];
+  await withEnv(ON, async () => {
+    const r = await J.fileLocal(items, { ask: async () => { throw new Error('HTTP 500'); } });
+    assert.strictEqual(r.moves.length, 0);
+    assert.strictEqual(r.skipped.length, 1);
+  });
+});
+
+/* ── Part 238: the audio shelf ─────────────────────────────────────────── */
+
+test('audioDecade: from the year folder, then the title, never from Jev', () => {
+  assert.strictEqual(J.audioDecade({ path: './old radio ads from 90s 2000s/2005', title: "Visa - 'Chicas'" }), '2000s');
+  assert.strictEqual(J.audioDecade({ path: './old radio ads from 90s 2000s/1987', title: 'x' }), '1980s');
+  assert.strictEqual(J.audioDecade({ path: './old radio ads/airchecks', title: 'KWTO FM 98 7 Rock99 Springfield MO August 2 1985' }), '1980s');
+  assert.strictEqual(J.audioDecade({ path: './old radio ads/mountain dew', title: 'Mountain Dew spot' }), 'Undated');
+  assert.strictEqual(J.audioDecade({}), 'Undated');
+});
+
+test('audioGame: the game is the folder up to the first dash', () => {
+  assert.strictEqual(J.audioGame({ path: './x/Grand Theft Auto IV - Commercials' }), 'Grand Theft Auto IV');
+  assert.strictEqual(J.audioGame({ path: './x/Grand Theft Auto IV - LibertyCityRadio.net - Vol. A' }), 'Grand Theft Auto IV');
+  assert.strictEqual(J.audioGame({ path: './x/' }), 'Other Games');
+  assert.strictEqual(J.audioGame({ path: './x/../evil' }), 'evil', 'the last segment is the folder; the dots are already spent');
+  assert.strictEqual(J.audioGame({ path: './x/..' }), 'Other Games', 'a folder actually named .. cannot become a path segment');
+  assert.strictEqual(J.audioGame({ path: './x/a/b' }), 'b');
+  assert.strictEqual(J.audioGame({ path: './x/.hidden' }), 'Other Games', 'a name must start with a word character');
+});
+
+test('audioDestination: kind decides first, and a local advert is local before it is a category', () => {
+  const knobs = { minKind: 0.7, minCategory: 0.7, minOzarks: 0.5 };
+  const A = (kind, kc, oz, cat, cc) => ({
+    kind: { choice: kind, confidence: kc },
+    ozarks: { noul: oz },
+    category: { choice: cat, confidence: cc },
+  });
+  const at = (folder, title) => ({ path: './old radio ads from 90s 2000s/' + folder, title: title || 'x' });
+
+  assert.strictEqual(
+    J.audioDestination(at('Grand Theft Auto IV - Commercials'), A('Video Game Radio', 0.95, 0.01, 'Medicine & Pharmacy', 0.9), knobs),
+    'Audio/Video Game Radio/Grand Theft Auto IV',
+    'a game spoof never lands beside real radio',
+  );
+  assert.strictEqual(
+    J.audioDestination(at('airchecks', 'KTTS-FM, Springfield, MO, Station I.D'), A('Aircheck', 0.99, 0.98, 'Phone & Wireless', 0.8), knobs),
+    'Audio/Ozarks (Springfield Area)/Radio Airchecks/Undated',
+  );
+  assert.strictEqual(
+    J.audioDestination(at('airchecks', 'WLS Chicago ID'), A('Aircheck', 0.99, 0.02, 'Phone & Wireless', 0.8), knobs),
+    'Audio/Radio Airchecks/Undated',
+  );
+  assert.strictEqual(
+    J.audioDestination(at('2005'), A('Radio Commercial', 0.95, 0.9, 'Cars and Trucks', 0.95), knobs),
+    'Audio/Ozarks (Springfield Area)/Radio Commercials/2000s',
+    'a Springfield car dealer belongs with her local material, not under Cars and Trucks',
+  );
+  assert.strictEqual(
+    J.audioDestination(at('2005'), A('Radio Commercial', 0.95, 0.02, 'Cars and Trucks', 0.95), knobs),
+    'Audio/Radio Commercials/Cars and Trucks/2000s',
+  );
+  assert.strictEqual(
+    J.audioDestination(at('2005'), A('Radio Commercial', 0.95, 0.02, 'Cars and Trucks', 0.4), knobs),
+    'Audio/Radio Commercials/Other Commercials/2000s',
+    'an unshelvable advert still leaves the drop folder and still gets its decade',
+  );
+  assert.strictEqual(J.audioDestination(at('2005'), A('Other Audio', 0.95, 0.02, 'x', 0.9), knobs), null);
+  assert.strictEqual(J.audioDestination(at('2005'), A('Radio Commercial', 0.5, 0.02, 'Cars and Trucks', 0.95), knobs), null, 'the kind floor');
+  assert.strictEqual(J.audioDestination(at('2005'), A('Invented Kind', 0.99, 0.02, 'Cars and Trucks', 0.95), knobs), null);
+  assert.strictEqual(J.audioDestination(at('2005'), null, knobs), null);
+});
+
+test('audioDestination: a missing ozarks answer reads as not local rather than throwing', () => {
+  const knobs = { minKind: 0.7, minCategory: 0.7, minOzarks: 0.5 };
+  assert.strictEqual(
+    J.audioDestination(
+      { path: './drop/2005', title: 'x' },
+      { kind: { choice: 'Radio Commercial', confidence: 0.9 }, category: { choice: 'Tobacco', confidence: 0.9 } },
+      knobs,
+    ),
+    'Audio/Radio Commercials/Tobacco/2000s',
+  );
+});
+
+test('fileAudio: asks all three questions in one call and is off when the switch is off', async () => {
+  const items = [{ _id: 'a', title: "Folgers - 'Checkout Commotion'", path: './old radio ads from 90s 2000s/2007' }];
+  let seenQ = null;
+  let seenState = null;
+  const ask = async (state, questions) => {
+    seenQ = Object.keys(questions).sort();
+    seenState = state;
+    return {
+      answers: { kind: { choice: 'Radio Commercial', confidence: 0.98 }, ozarks: { noul: 0.02 }, category: { choice: 'Drinks (Non-Alcoholic)', confidence: 0.92 } },
+      usage: { input_tokens: 2400 },
+    };
+  };
+  await withEnv(ON, async () => {
+    const r = await J.fileAudio(items, { ask });
+    assert.deepStrictEqual(seenQ, ['category', 'kind', 'ozarks'], 'one call, three questions');
+    assert.deepStrictEqual(seenState, { title: "Folgers - 'Checkout Commotion'", folder: '2007' });
+    assert.strictEqual(r.moves.length, 1);
+    assert.strictEqual(r.moves[0].to, 'Audio/Radio Commercials/Drinks (Non-Alcoholic)/2000s');
+    assert.strictEqual(r.moves[0].from, './old radio ads from 90s 2000s/2007');
+  });
+  let asked = 0;
+  const off = await withEnv({ ...ON, KADE_JEV_LIBRARY: '0' }, () => J.fileAudio(items, { ask: async () => { asked++; } }));
+  assert.strictEqual(off.moves.length, 0);
+  assert.strictEqual(asked, 0);
+});
+
+test('the local and audio questions are shaped the way kadeJev demands', () => {
+  for (const q of [J.LOCAL_KIND_Q, J.AUDIO_KIND_Q]) {
+    assert.strictEqual(q.type, 'choice');
+    assert.ok(q.instructions.length > 80);
+    assert.ok(Object.keys(q.criteria).length >= 4);
+    for (const v of Object.values(q.criteria)) assert.strictEqual(typeof v, 'string');
+  }
+  assert.strictEqual(J.OZARKS_Q.type, 'noul');
+  assert.deepStrictEqual(Object.keys(J.OZARKS_Q.criteria).sort(), ['false', 'true']);
+  /* Every kind Jev may answer has to be a folder name that is safe to paste
+   * into a path — no slashes, no dot segments. */
+  for (const k of [...Object.keys(J.LOCAL_KIND_CRITERIA), ...Object.keys(J.AUDIO_KIND_CRITERIA)]) {
+    assert.ok(!k.includes('/') && !k.includes('\\') && k !== '..' && k.trim() === k, k);
+  }
+});

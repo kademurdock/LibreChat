@@ -346,6 +346,305 @@ async function fileAds(items, { ask = jev.ask, timeoutMs = 6000, concurrency = 5
   return { moves, skipped, costUSD: (inputTokens * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6 };
 }
 
+/* ── 1c. THE LOCAL SHELF (Part 238, Sep 20 2026) ──────────────────────────
+ * Kade's word this session: "My main expectation is that people can find my
+ * local stuff quickly and easily, as far as ozarks springfield missouri type
+ * stuff." Today it cannot be. `Video/Ozarks (Springfield Area)` holds 1,672
+ * items in nine folders named only for a decade, and 1,207 of them sit in the
+ * single folder called 1990s. A screen reader reads that list one item at a
+ * time. A long flat list is the hardest shape there is to hunt through and a
+ * short list at each turning is the easiest, so the fix is depth, not search.
+ *
+ * The titles are nearly all one template: "<CALL>-TV Channel <N> <NET>
+ * Springfield Mo <the actual subject> Back In <when>". The station prefix is
+ * WHERE it came from and says nothing about what it is, which is why the
+ * question below tells Jev to read past it. What is left is a judgement call
+ * a list of words cannot make: "Promo For Maury" is a syndicated show, "Promo
+ * For KOLR 10 Newsbeat" is the local news, and "Promo's Back In May Of 1987"
+ * is neither — it is a reel of promos about nothing in particular.
+ *
+ * Two things the trial taught, both kept in the wording below because both
+ * cost real accuracy when they were missing:
+ *   - Promo Reels had to exist. Without it the 233 bare "Promo's + a date"
+ *     items scattered between Show Promos and Station IDs at 0.3-0.6 and
+ *     nearly all fell under the floor. With it they answer at 0.89-1.00.
+ *   - A local advert is named, a break is not. "Commercials Meeks" is one ad
+ *     for Meeks the Springfield lumber yard; "Commercials Back In October Of
+ *     1988" is a break. Before that sentence went in, Meeks answered
+ *     Commercial Breaks at 0.43; after it, Local Commercials at 0.93.
+ *     Smitty's, GFS, Colony, Oak Express and Carpet Barn all moved the same
+ *     way. These are the crown jewels of a local archive — the shops that are
+ *     gone — so the wording that finds them is load-bearing, not decoration.
+ *
+ * The station is NOT asked for and NOT used as a folder: `meta.callSign`,
+ * `author` and the tags already carry it and /search already reads all three,
+ * so "KOLR" finds its 608 either way. Decade comes off the path, never Jev.
+ */
+const LOCAL_ROOT = 'Video/Ozarks (Springfield Area)';
+const LOCAL_KIND_CRITERIA = {
+  'Local Commercials':
+    'ONE advertisement, for a business, shop, restaurant, car dealer, bank, hospital or service in the Springfield / Ozarks area. A title of the form "Commercials <name>" names the single business the advert is for, even when that name is unfamiliar, and belongs here.',
+  'Local News':
+    "Local news itself or the local news brand: a newscast, a news opening, a news story, an anchor or reporter, or a promo for that station's own local news programme.",
+  Weather:
+    "Local weather: a forecast, a weather segment, a storm, or the station's weather team or weatherman.",
+  'Local Sports':
+    'Local sport: a team, a game, a coach, a local sports report or sports personality, a hall of fame.',
+  'Station IDs & Sign-offs':
+    'The station announcing itself rather than a programme: a station identification, a sign-on or sign-off, a bumper, a movie opening or a movie bumper, a channel logo.',
+  'Show Promos':
+    'A promo advertising a television programme that is not local news: a syndicated or network show such as Maury, Donahue, Roseanne, Designing Women, a movie the station is airing, or a Saturday cartoon.',
+  'Commercial Breaks':
+    'A recorded stretch of a broadcast holding several different adverts, with NO single business named in the title. "Commercials & Promos" and a bare "Commercials" and a date mean this. If the title names a business, it is not this.',
+  'Promo Reels':
+    'Several promos by the station itself recorded together with no one subject named, so that no single programme, newscast or advert is what the item is about. A title that is only the word Promos and a date means this.',
+  'Around the Ozarks':
+    'The place and its people rather than a broadcast: a town, a landmark, a fair, a parade, a festival, a school or college, local history, a local musician or notable person, a community event.',
+};
+const LOCAL_KIND_Q = {
+  type: 'choice',
+  instructions:
+    'An item from a Springfield, Missouri television archive is described by `title`, `station` and `decade`. Say what kind of thing it is. Almost every title begins with the station call letters, the channel number, the network and the words Springfield Mo — that part describes WHERE it came from and never what it is; judge only by what comes after it. The word "Promo" alone does not decide anything: a promo for the station\'s own news is Local News, a promo for Maury or Roseanne is a Show Promos, and a promo for the weather team is Weather. A title that names no subject at all, only the word Promos and a date, is a Promo Reels. A word or two sitting directly after the word Commercials is the name of a local business, however odd it looks, and makes the item one Local Commercial rather than a break. Pick the single best fit.',
+  criteria: LOCAL_KIND_CRITERIA,
+};
+
+/** The decade folder, read off the path. Jev is never asked for a date. */
+const LOCAL_DECADE = /^Video\/Ozarks \(Springfield Area\)\/((?:19|20)\d0s|Undated|Multiple decades)$/i;
+
+function localState(item) {
+  return {
+    title: String(item.title || '').slice(0, 300),
+    station: String(item.author || (item.meta || {}).callSign || 'unknown'),
+    decade: String((item.meta || {}).decade || 'unknown'),
+  };
+}
+
+function localKnobs() {
+  return { minConfidence: num('KADE_JEV_LOCAL_MIN_CONF', 0.7) };
+}
+
+/** Pure: one Jev answer → a kind, or null when Jev is not confident enough. */
+function decideLocal(answers, knobs = localKnobs()) {
+  const k = answers && answers.kind;
+  const kind = k && k.choice;
+  if (!kind || !Object.prototype.hasOwnProperty.call(LOCAL_KIND_CRITERIA, kind)) return null;
+  if (typeof k.confidence !== 'number' || k.confidence < knobs.minConfidence) return null;
+  return { kind, confidence: k.confidence };
+}
+
+/**
+ * Where an item goes, or null to leave it alone. Pure, so a test can hold the
+ * rule still. Only an item sitting DIRECTLY in a decade folder under the
+ * Ozarks root is ever moved: once it has a kind in its path the pattern no
+ * longer matches, so a second run is a no-op rather than a second burrowing.
+ */
+function localDestination(path, kind) {
+  const m = LOCAL_DECADE.exec(String(path || ''));
+  if (!m) return null;
+  return LOCAL_ROOT + '/' + kind + '/' + m[1];
+}
+
+/**
+ * Read a batch of Ozarks items. Returns
+ * { moves: [{id, title, from, to, kind, confidence}], skipped, costUSD }.
+ * NEVER throws. Nothing leaves the Ozarks root and nothing loses its decade,
+ * so the worst case of a wrong answer is a local item on the wrong local
+ * shelf — still local, still tagged, still found by search.
+ */
+async function fileLocal(items, { ask = jev.ask, timeoutMs = 6000, concurrency = 5, onProgress } = {}) {
+  const moves = [];
+  const skipped = [];
+  let inputTokens = 0;
+  let done = 0;
+  if (!jev.enabled('KADE_JEV_LIBRARY')) return { moves, skipped: [...items], costUSD: 0 };
+  const knobs = localKnobs();
+  const queue = [...items];
+  async function worker() {
+    for (let it = queue.shift(); it; it = queue.shift()) {
+      try {
+        const { answers, usage } = await ask(localState(it), { kind: LOCAL_KIND_Q }, timeoutMs);
+        inputTokens += Number(usage && usage.input_tokens) || 0;
+        const d = decideLocal(answers, knobs);
+        const to = d && localDestination(it.path, d.kind);
+        if (to && to !== String(it.path || '')) {
+          moves.push({ id: String(it._id || it.id), title: it.title, from: String(it.path || ''), to, kind: d.kind, confidence: d.confidence });
+        } else skipped.push(it);
+      } catch (_) {
+        skipped.push(it);
+      }
+      if (typeof onProgress === 'function' && ++done % 100 === 0) onProgress(done, items.length);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, worker));
+  const order = new Map(items.map((b, i) => [String(b._id || b.id), i]));
+  moves.sort((a, b) => order.get(a.id) - order.get(b.id));
+  return { moves, skipped, costUSD: (inputTokens * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6 };
+}
+
+/* ── 1d. THE AUDIO SHELF (Part 238, Sep 20 2026) ──────────────────────────
+ * Her rule, given this session: "audio and video will be organised by
+ * category and decade whenever possible." Her audio was not organised at all.
+ * All 214 radio items sat under `./old radio ads from 90s 2000s` — the literal
+ * folder she dragged in, leading dot and all, not even beneath `Audio/` — with
+ * `category: radio`, no `meta`, and therefore no decade.
+ *
+ * Three different things are mixed in there and only one of them is a
+ * commercial, so the kind has to be settled before the shelf:
+ *   - 119 real radio adverts, titled "<Brand> - '<Spot>'".
+ *   - 80 spoof adverts from Grand Theft Auto IV's radio stations. Written for
+ *     a game, never broadcast. Filing those beside real 2005 radio would
+ *     quietly corrupt the archive.
+ *   - 13 airchecks — stations being stations. TWELVE OF THE THIRTEEN are
+ *     Springfield: KTTS, KWTO, KTXR, KXUS, KOSP, KKLH, KCTG, Mix 92.9. Her
+ *     local radio history was sitting in a junk folder, which is exactly the
+ *     thing she said she wanted findable.
+ *
+ * The trial (scratchpad jev_audio_trial2.js, all 214 read live) answered 205
+ * decisively at the 0.70 floor and left 2 as Other Audio, both genuinely
+ * unplaceable ("starberst mittens"). One sentence in the wording was worth ~30
+ * items: without it, "Sprint - 'Mrs Chavez'" and "US Navy - 'Freedom'" read as
+ * songs and fell to Other Audio at 0.17–0.30. Naming the archive's title
+ * template — advertiser, dash, spot name in quotes — put them back.
+ *
+ * The decade is NEVER asked of Jev. It comes off the year folder the file was
+ * dropped in, or a four-digit year in the title, or it stays Undated.
+ */
+const AUDIO_ROOT = 'Audio';
+const AUDIO_LOCAL_ROOT = 'Audio/Ozarks (Springfield Area)';
+const AUDIO_KIND_CRITERIA = {
+  'Radio Commercial':
+    'A real radio advertisement for a product, a shop or a service. The title is usually a brand name and then the name of the spot in quotes.',
+  'Video Game Radio':
+    'A spoof advert or radio segment written for a video game rather than broadcast on real radio — the fake stations in Grand Theft Auto and its kind.',
+  Aircheck:
+    'A recording of a radio station being a station: a station identification, a jingle, a legal ID, a DJ on air, a segment of a broadcast, a live interview.',
+  'Other Audio':
+    'Anything else: a song or piece of music, a speech, a whole programme, a sound effect, a home recording, or a title so bare it names nothing at all. Do not put an advertiser and a spot name here.',
+};
+const AUDIO_KIND_Q = {
+  type: 'choice',
+  instructions:
+    'An item from an audio archive of old radio recordings is described by `title` and `folder`. Say what kind of recording it is. Nearly every real advert in this archive is titled with the advertiser, then a dash, then the name of the spot in quotation marks, as in "Folgers - Checkout Commotion" or "Sprint - Mrs Chavez": the quoted part names the spot, never a song, so that shape is a Radio Commercial even when the quoted words sound like a title. The folder is where the file was dropped and is a hint, not the answer. Pick the single best fit.',
+  criteria: AUDIO_KIND_CRITERIA,
+};
+/* Asked of audio only. The call letters are listed because they are the one
+ * fact that settles it, and they are facts about her town, not a judgement. */
+const OZARKS_Q = {
+  type: 'noul',
+  instructions:
+    'Is this recording from the Springfield, Missouri / Ozarks area? Radio call letters are the strongest evidence: KTTS, KWTO, KTXR, KXUS, KOSP, KKLH, KCTG, KOMG, KOBC and KADI are Springfield-area stations, and a title naming Springfield, Ozark, Nixa, Republic, Branson, Marshfield, Bolivar or the Ozarks is local too.',
+  criteria: {
+    true: 'A station, business, place or event in the Springfield / Ozarks area of southwest Missouri.',
+    false: 'A national brand, a station somewhere else, or nothing in the title that ties it to the Ozarks.',
+  },
+};
+
+function audioKnobs() {
+  return {
+    minKind: num('KADE_JEV_AUDIO_MIN_KIND', 0.7),
+    minCategory: num('KADE_JEV_AUDIO_MIN_CAT', 0.7),
+    minOzarks: num('KADE_JEV_AUDIO_MIN_OZ', 0.5),
+  };
+}
+
+/** The decade, from the folder or the title. Pure, and never from Jev. */
+function audioDecade(item) {
+  const folder = String(item.path || '').split('/').pop() || '';
+  const y = folder.match(/^((?:19|20)\d\d)$/) || String(item.title || '').match(/\b((?:19|20)\d\d)\b/);
+  return y ? y[1].slice(0, 3) + '0s' : 'Undated';
+}
+
+/** "Grand Theft Auto IV - Commercials" → "Grand Theft Auto IV". */
+function audioGame(item) {
+  const folder = String(item.path || '').split('/').pop() || '';
+  const name = folder.split(' - ')[0].trim();
+  /* Must start with a word character, so a segment that is only dots can
+   * never become a path segment. {0,58} and not {1,58}: a one-character name
+   * is odd but legal, and rejecting it was a bug a test caught. */
+  return /^[\w][\w '.&-]{0,58}$/.test(name) ? name : 'Other Games';
+}
+
+/**
+ * Pure: Jev's answers → a destination path, or null to leave it alone.
+ * A commercial Jev cannot shelve still moves — to `Other Commercials` under
+ * its decade — because being out of the drop folder and under a decade is
+ * what she asked for, and a shelf can be refined later. Only Other Audio and
+ * an undecided kind stay put.
+ */
+function audioDestination(item, answers, knobs = audioKnobs()) {
+  const k = answers && answers.kind;
+  if (!k || !Object.prototype.hasOwnProperty.call(AUDIO_KIND_CRITERIA, k.choice)) return null;
+  if (typeof k.confidence !== 'number' || k.confidence < knobs.minKind) return null;
+  const kind = k.choice;
+  if (kind === 'Other Audio') return null;
+  if (kind === 'Video Game Radio') return AUDIO_ROOT + '/Video Game Radio/' + audioGame(item);
+  let ozarks = 0;
+  try {
+    ozarks = jev.noulOf(answers, 'ozarks');
+  } catch (_) {
+    ozarks = 0;
+  }
+  const decade = audioDecade(item);
+  const local = ozarks >= knobs.minOzarks;
+  if (kind === 'Aircheck') {
+    return (local ? AUDIO_LOCAL_ROOT : AUDIO_ROOT) + '/Radio Airchecks/' + decade;
+  }
+  /* A local advert is local first: a Springfield car dealer on KTTS belongs
+   * with her Ozarks material, not filed away under Cars and Trucks. */
+  if (local) return AUDIO_LOCAL_ROOT + '/Radio Commercials/' + decade;
+  const c = answers && answers.category;
+  const shelf =
+    c && Object.prototype.hasOwnProperty.call(AD_CATEGORY_CRITERIA, c.choice) && typeof c.confidence === 'number' && c.confidence >= knobs.minCategory
+      ? c.choice
+      : 'Other Commercials';
+  return AUDIO_ROOT + '/Radio Commercials/' + shelf + '/' + decade;
+}
+
+/**
+ * Read a batch of audio items. Returns
+ * { moves: [{id, title, from, to, kind, confidence}], skipped, costUSD }.
+ * NEVER throws. Writes nothing itself — the caller applies the moves.
+ */
+async function fileAudio(items, { ask = jev.ask, timeoutMs = 6000, concurrency = 5, onProgress } = {}) {
+  const moves = [];
+  const skipped = [];
+  let inputTokens = 0;
+  let done = 0;
+  if (!jev.enabled('KADE_JEV_LIBRARY')) return { moves, skipped: [...items], costUSD: 0 };
+  const knobs = audioKnobs();
+  const queue = [...items];
+  async function worker() {
+    for (let it = queue.shift(); it; it = queue.shift()) {
+      try {
+        const state = {
+          title: String(it.title || '').slice(0, 200),
+          folder: String(String(it.path || '').split('/').pop() || '').slice(0, 120),
+        };
+        const { answers, usage } = await ask(state, { kind: AUDIO_KIND_Q, ozarks: OZARKS_Q, category: AD_CATEGORY_Q }, timeoutMs);
+        inputTokens += Number(usage && usage.input_tokens) || 0;
+        const to = audioDestination(it, answers, knobs);
+        if (to && to !== String(it.path || '')) {
+          moves.push({
+            id: String(it._id || it.id),
+            title: it.title,
+            from: String(it.path || ''),
+            to,
+            kind: answers.kind.choice,
+            confidence: answers.kind.confidence,
+          });
+        } else skipped.push(it);
+      } catch (_) {
+        skipped.push(it);
+      }
+      if (typeof onProgress === 'function' && ++done % 100 === 0) onProgress(done, items.length);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, worker));
+  const order = new Map(items.map((b, i) => [String(b._id || b.id), i]));
+  moves.sort((a, b) => order.get(a.id) - order.get(b.id));
+  return { moves, skipped, costUSD: (inputTokens * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6 };
+}
+
 /* ── 2. THE MEMORY KEEPER GATE (SHADOW ONLY) ──────────────────────────────
  * The keeper is a generative call after every turn platform-wide, and its own
  * instructions say "Most turns should save NOTHING". These two nouls are the
@@ -794,6 +1093,8 @@ function toolsShadow({ text, tools, keep, log }, { ask = jev.ask, timeoutMs = 30
 module.exports = {
   SHELF_CRITERIA, SHELF_OF, SHELF_Q, ADULT_Q, ADULT_WORDS, bookState, decideBook, sortBooks, shelfKnobs,
   AD_CATEGORY_CRITERIA, AD_CATEGORY_Q, IS_AD_Q, adState, adDecade, adKnobs, decideAd, fileAds,
+  LOCAL_ROOT, LOCAL_KIND_CRITERIA, LOCAL_KIND_Q, localState, localKnobs, decideLocal, localDestination, fileLocal,
+  AUDIO_ROOT, AUDIO_LOCAL_ROOT, AUDIO_KIND_CRITERIA, AUDIO_KIND_Q, OZARKS_Q, audioKnobs, audioDecade, audioGame, audioDestination, fileAudio,
   REVERIE_NOBODY, DIRECTOR_FRESH_Q, directorOptions, directorKnobs, decideDirector, directRoom,
   KEEPER_CARD_Q, KEEPER_LOG_Q, KEEPER_PROMISE_Q, keeperState, keeperWrote, keeperShadowStart, keeperShadowFinish,
   keeperFloor, keeperGateDecide, keeperGate, keeperGateLog,
