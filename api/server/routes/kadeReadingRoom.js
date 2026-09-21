@@ -43,6 +43,7 @@ const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { bookImportRouter, saveBufferToS3, openAudioArchive, AUDIO_ZIP_LIMIT, TEXT_IMPORT_LIMIT, storeAudioStream, libraryPath, libraryCategory, libraryPathExpression, refineMediaFiling, correctedBookShelf, reviewedLibraryMoves } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
+const { tubeVaultHints, validTubeVaultItems } = require('@librechat/api');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, CATEGORIES } = require('~/models/kadeBook');
 const { parseBook, PARSER_VERSION } = require('./kadeReadingRoomParse');
@@ -1845,6 +1846,22 @@ router.post('/librarian/vision-file-ads', requireJwtAuth, express.json({ limit: 
   } catch (e) {
     logger.warn(`[library/vision-ads] ${e.message}`);
     res.status(500).json({ error: 'Could not look at those commercials.' });
+  }
+});
+
+router.post('/librarian/tubevault-hints', requireJwtAuth, express.json({ limit: '64kb' }), async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+  if (!validTubeVaultItems(req.body?.items)) return res.status(400).json({ error: 'Supply 1 to 50 titles with station and rejected fields.' });
+  const jev = require('~/server/services/kadeJev');
+  if (!jev.enabled('KADE_JEV_TUBEVAULT')) return res.status(503).json({ error: 'Jev sorting is unavailable. Offline sorting still works.' });
+  try {
+    const result = await tubeVaultHints(req.body.items, jev.ask);
+    logger.info(`[library/tubevault] hints=${result.hints.length} failed=${result.failed.length} inputTokens=${result.inputTokens}`);
+    return res.json({ ok: true, ...result });
+  } catch (e) {
+    const limited = e.message === 'Busy' || e.message === 'Daily limit';
+    if (limited) res.set('Retry-After', '60');
+    return res.status(limited ? 429 : 500).json({ error: limited ? e.message : 'Could not prepare sorting hints.' });
   }
 });
 

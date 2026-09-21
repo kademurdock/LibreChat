@@ -143,3 +143,87 @@ test('the kill switch turns it off without turning anything else off', () => {
     }
   }
 });
+
+/* ── THE ESSAY VOICE ──────────────────────────────────────────────────────
+ *
+ * Kade, Sep 21 2026, naming it better than any taxonomy: "there's still lots
+ * of poetic ai phrasing like, that's not nothing, or just tighty little
+ * phrases like that, the thing I'd want is blah blah blah, you aren't owed
+ * blah blah blah, everything is just described in poetic professorial ways
+ * that don't seem human."
+ *
+ * The examples in the first test are HERS, verbatim where she gave them. The
+ * second test is the one that matters: every one of these patterns is
+ * something a person could say once, so the detector has to leave ordinary
+ * speech alone or its number means nothing.
+ */
+const kinds = (text) => meter.essayVoice(text).map((h) => h.kind);
+
+test("her own examples all fire, because they are the spec", () => {
+  assert.ok(kinds("That's not nothing.").includes('litotes'));
+  assert.ok(kinds("The thing I'd want is a straight answer.").includes('preamble'));
+  assert.ok(kinds("You aren't owed an explanation.").includes('pronouncement'));
+  assert.ok(kinds("You're not owed that.").includes('pronouncement'), "the contraction with no space after 'you'");
+  assert.ok(kinds("That's the whole trade.").includes('aphorism'));
+  assert.ok(kinds('Honesty IS the warmth.').includes('is-the'));
+  assert.ok(kinds("And that's okay.").includes('and-thats-okay'));
+  assert.ok(kinds('Full stop.').includes('hard-stop'));
+  assert.ok(kinds('It was no small thing, what she did.').includes('litotes'));
+});
+
+test('ordinary speech is left alone, which is the whole value of the number', () => {
+  for (const line of [
+    "No, she didn't say anything about it.",
+    "That's the one I meant.",
+    "It's fine, honestly. Go.",
+    'He owes me twenty bucks.',
+    'You are owed a refund, call them.',
+    'That is the job, and I like it.',
+    'Nothing about that was easy.',
+    'I want a straight answer out of him for once.',
+    'She is the reason I stayed.',
+    "You're not going to believe this.",
+    'Stop. Just stop.',
+  ]) {
+    assert.deepStrictEqual(kinds(line), [], line);
+  }
+});
+
+test('the aphorism rule is case-insensitive and the IS rule is not', () => {
+  /* The first version of the aphorism rule had no `i` flag and silently
+   * missed every capitalised "That's the whole trade" -- which is the exact
+   * phrasing she quoted. The IS rule is case-SENSITIVE on purpose: the
+   * shouting is the tell, and lowercased it is just a sentence. */
+  assert.ok(kinds("that's the whole trade").includes('aphorism'));
+  assert.ok(kinds("That's The Whole Trade").includes('aphorism'));
+  assert.ok(kinds('Honesty IS the warmth.').includes('is-the'));
+  assert.deepStrictEqual(kinds('Honesty is the warmth of it.'), []);
+});
+
+test('one em-dash aside is punctuation; two is a habit', () => {
+  const one = 'She came back \u2014 late, as usual \u2014 and said nothing.';
+  const two = one + ' He left \u2014 without a word \u2014 before dinner.';
+  assert.ok(!kinds(one).includes('appositive'), 'a single aside fired');
+  assert.ok(kinds(two).includes('appositive'));
+});
+
+test('essay voice rides into tellsIn as ONE flag carrying its own count', () => {
+  const essay = "That's not nothing. You aren't owed an explanation. And that's okay.";
+  const tells = meter.tellsIn(essay);
+  const flags = tells.map((t) => t.tell);
+  assert.strictEqual(flags.filter((f) => f.startsWith('essay-voice')).length, 1, flags.join(','));
+  const flag = flags.find((f) => f.startsWith('essay-voice'));
+  for (const kind of ['litotes', 'pronouncement', 'and-thats-okay']) {
+    assert.ok(flag.includes(kind), `${kind} missing from ${flag}`);
+  }
+});
+
+test('the house prompt is measurable by the same rule as a reply', () => {
+  /* The point of exporting essayVoice separately: a house prompt written in
+   * this register teaches it to every character that reads it, so the prompt
+   * has to be measurable the same way a reply is. */
+  const { KADE_PLATFORM_NOTE } = require('./kadePlatformNote');
+  assert.ok(Array.isArray(meter.essayVoice(KADE_PLATFORM_NOTE)));
+  assert.deepStrictEqual(meter.essayVoice(''), []);
+  assert.deepStrictEqual(meter.essayVoice('   '), []);
+});

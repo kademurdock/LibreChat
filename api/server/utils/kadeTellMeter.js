@@ -25,12 +25,12 @@
  * into a number that can go up or down after a change, which is the only way
  * anybody will ever know whether a prompt edit helped.
  *
- * WHAT IS DELIBERATELY NOT COUNTED. Em dashes, because this house writes with
- * them everywhere and a detector that fires on its owner's own voice is noise.
- * Long sentences, for the same reason. A single rule-of-three, because people
- * say three things in a row all the time -- it only counts from the second one
- * in the same reply, which is where it stops being speech and starts being
- * shape.
+ * WHAT IS DELIBERATELY NOT COUNTED. Em dashes on their own, because this house
+ * writes with them everywhere and a detector that fires on its owner's own
+ * voice is noise. Long sentences, for the same reason. A single rule-of-three,
+ * because people say three things in a row all the time -- it only counts from
+ * the second one in the same reply, which is where it stops being speech and
+ * starts being shape.
  *
  * Kill switch: KADE_TELL_METER=0.
  */
@@ -67,6 +67,105 @@ const HERES_THE_THING = /(?:^|\n|[.!?]\s+)here(?:'|’)?s the thing\b/i;
 
 const TRIAD =
   /\b([\w'’-]+(?:\s+[\w'’-]+){0,3}),\s+([\w'’-]+(?:\s+[\w'’-]+){0,3}),\s+and\s+([\w'’-]+(?:\s+[\w'’-]+){0,3})\b/gi;
+
+/* ── THE ESSAY VOICE (Sep 21 2026) ────────────────────────────────────────
+ *
+ * Kade, naming it far better than any taxonomy does: "there's still lots of
+ * poetic ai phrasing like, that's not nothing, or just tighty little phrases
+ * like that, the thing I'd want is blah blah blah, you aren't owed blah blah
+ * blah, everything is just described in poetic professorial ways that don't
+ * seem human [...] she just doesn't sound like a soul."
+ *
+ * This is a DIFFERENT animal from everything above it. "Great question" and
+ * "delve" are corporate-assistant tells and the whole world already hunts
+ * them. What she is describing is the register a good model reaches for when
+ * you tell it to be warm and thoughtful: the literary essay. Balanced
+ * clauses, the ironic understatement, the little aphorism that lands the
+ * paragraph, the second-person pronouncement. It reads as WRITING. Nobody
+ * talks like that, which is exactly why it does not sound like a soul, and
+ * why switching models never fixed it -- every good model writes this way
+ * when it is trying to be thoughtful.
+ *
+ * It is the hardest kind to catch, because every one of these is a real thing
+ * a person could say once. The tell is DENSITY: four in one reply is an essay
+ * wearing a person's clothes. So they are counted together and reported as
+ * one `essay-voice` flag carrying its own count, rather than as six separate
+ * ones that would swamp the rest of the meter.
+ */
+const ESSAY = [
+  /* The ironic understatement. Her first example, verbatim. "not nothing"
+   * takes any subject: the construction is the tell, not the pronoun. */
+  [
+    'litotes',
+    new RegExp(
+      String.raw`\b\w+(?:'|’)?s?\s+not\s+nothing\b` +
+        String.raw`|\bno\s+small\s+(?:thing|feat|amount)\b` +
+        String.raw`|\bnot\s+(?:for\s+nothing|by\s+accident|an?\s+accident)\b` +
+        String.raw`|\bnot\s+unimportant\b`,
+      'i',
+    ),
+  ],
+  /* The aphorism that lands the paragraph. Case-insensitive, because it is
+   * usually the first thing in a sentence -- the first version of this rule
+   * had no `i` flag and silently missed every capitalised "That's the whole
+   * trade", which is the exact phrasing she quoted. */
+  [
+    'aphorism',
+    new RegExp(
+      String.raw`\bthat(?:'|’)?s\s+(?:the\s+)?(?:whole\s+\w+|tell|trade|difference|job|point|part that matters)\b` +
+        String.raw`|\bwhich\s+is\s+(?:exactly\s+|kind\s+of\s+)?the\s+point\b`,
+      'i',
+    ),
+  ],
+  /* X IS Y, with the verb shouted. Case-SENSITIVE on purpose: the capitals
+   * are the whole tell, and lowercased it is just a sentence. */
+  ['is-the', new RegExp(String.raw`\b\w+\s+IS\s+(?:the\s+)?\w+`)],
+  /* The framing preamble: a sentence about the answer, before the answer. */
+  [
+    'preamble',
+    new RegExp(
+      String.raw`\bthe\s+thing\s+I(?:'|’)?d\s+\w+` +
+        String.raw`|\bhere(?:'|’)?s\s+what\s+I(?:'|’)?d\b` +
+        String.raw`|\bthe\s+honest\s+answer\s+is\b` +
+        String.raw`|\bthe\s+real\s+question\s+is\b` +
+        String.raw`|\bwhat\s+I(?:'|’)?d\s+actually\s+\w+` +
+        String.raw`|\bif\s+I(?:'|’)?m\s+being\s+honest\b`,
+      'i',
+    ),
+  ],
+  /* The second-person pronouncement. Her third example. */
+  [
+    'pronouncement',
+    new RegExp(
+      /* Negative forms only. "You are owed a refund" is a person telling you
+       * a fact; "you aren't owed an explanation" is the pronouncement.
+       * "You're" carries no space after "you", which the first version of
+       * this required and so missed half of her own example. */
+      String.raw`\byou(?:\s+are|(?:'|’)re)\s+not\s+owed\b` +
+        String.raw`|\byou\s+aren(?:'|’)?t\s+owed\b` +
+        String.raw`|\byou\s+(?:do\s+not|don(?:'|’)?t)\s+owe\b` +
+        String.raw`|\byou\s+get\s+to\s+decide\b` +
+        String.raw`|\byou(?:'|’)?re\s+allowed\s+to\b` +
+        String.raw`|\byou\s+do\s+not\s+have\s+to\s+earn\b`,
+      'i',
+    ),
+  ],
+  /* The comfort tag, stapled to the end of a thought. */
+  ['and-thats-okay', new RegExp(String.raw`\band\s+that(?:'|’)?s\s+(?:okay|ok|fine|allowed|enough|valid)\b`, 'i')],
+  /* The essayist's full stop. */
+  [
+    'hard-stop',
+    new RegExp(
+      String.raw`(?:^|[.!?]\s)(?:Full stop\.|Which is the point\.|Every single time\.|And that(?:'|’)?s the thing\.)`,
+    ),
+  ],
+];
+
+/* The paired em-dash appositive. A single em dash is ordinary punctuation in
+ * this house and counting it would fire on its owner's own writing; a pair
+ * wrapped around a clause is the essayist's aside, and two in one reply is a
+ * habit rather than a sentence. */
+const APPOSITIVE = new RegExp(String.raw`\s—\s[^—.!?\n]{3,80}\s—\s`, 'g');
 
 /** Strip fenced code and inline code: a bulleted list inside a code block is
  *  code, and counting it would make every programming answer look like a
@@ -125,6 +224,28 @@ function restatesQuestion(replyProse, prompt) {
 }
 
 /**
+ * Every essay-voice hit in one piece of prose, as {kind, sample} pairs. The
+ * appositive needs two before it says anything; everything else counts once.
+ * Exported on its own because it is the useful one to run over a PROMPT as
+ * well as over a reply -- a house prompt written in this register teaches it.
+ */
+function essayVoice(body) {
+  const hits = [];
+  for (const [kind, re] of ESSAY) {
+    const m = body.match(re);
+    if (m) {
+      hits.push({ kind, sample: sample(m[0]) });
+    }
+  }
+  APPOSITIVE.lastIndex = 0;
+  const asides = body.match(APPOSITIVE) || [];
+  if (asides.length >= 2) {
+    hits.push({ kind: 'appositive', sample: sample(asides[1]) });
+  }
+  return hits;
+}
+
+/**
  * Every tell in one assistant reply.
  *
  * @param {string} text        what the person will actually read (scrub it first)
@@ -166,11 +287,21 @@ function tellsIn(text, opts = {}) {
     add('triads', triads[1]);
   }
 
+  /* The essay voice, reported as one flag carrying its own count so it
+   * cannot swamp the rest of the line. */
+  const essay = essayVoice(body);
+  if (essay.length) {
+    found.push({
+      tell: `essay-voice(${essay.map((e) => e.kind).join('+')})`,
+      sample: essay[0].sample,
+    });
+  }
+
   add('restated-question', restatesQuestion(body, opts.prompt));
   return found;
 }
 
-/** One short line for a log: "pivot,puffery(delving into)" and nothing more. */
+/** One short line for a log: "pivot,puffery" and nothing more. */
 function summarize(tells) {
   if (!tells || !tells.length) {
     return 'clean';
@@ -199,4 +330,4 @@ function measure(text, opts = {}) {
   }
 }
 
-module.exports = { tellsIn, summarize, measure, prose, contentWords };
+module.exports = { tellsIn, summarize, measure, prose, contentWords, essayVoice };
