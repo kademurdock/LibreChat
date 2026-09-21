@@ -39,7 +39,11 @@ const judges = require('~/server/services/kadeJevJudges');
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const ENABLED = () => process.env.KADE_LIBRARY_VISION_FILE === '1';
-const MODEL = () => process.env.KADE_FRAME_MODEL || 'google/gemini-3.8-flash-lite';
+/* Checked against OpenRouter's own model list, not guessed: the first slug
+ * here was invented and every call came back 400. This one exists, takes
+ * images, and is the cheapest that does — $0.10/M in, $0.40/M out, which is
+ * the fifteen cents for all 2,270 that was quoted to her. */
+const MODEL = () => process.env.KADE_FRAME_MODEL || 'google/gemini-2.5-flash-lite';
 const IN_USD_PER_M = () => Number(process.env.KADE_FRAME_IN_USD_PER_M || 0.1);
 const OUT_USD_PER_M = () => Number(process.env.KADE_FRAME_OUT_USD_PER_M || 0.4);
 /* A commercial's first second is often black or a leader frame, so seek in a
@@ -116,7 +120,13 @@ async function labelFrame(jpeg, title) {
       ],
     },
     { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 120000 },
-  );
+  ).catch((e) => {
+    /* An axios error says only "status code 400". What OpenRouter actually
+     * objected to is in the body, and without it a bad model slug costs a
+     * whole deploy to find. It did once; it should not twice. */
+    const said = e.response?.data?.error?.message || e.response?.data?.error || '';
+    throw new Error(`${e.message}${said ? ' — ' + String(said).slice(0, 200) : ''}`);
+  });
   const usage = r.data?.usage || {};
   const est = ((Number(usage.prompt_tokens) || 0) * IN_USD_PER_M() + (Number(usage.completion_tokens) || 0) * OUT_USD_PER_M()) / 1e6;
   const text = String(r.data?.choices?.[0]?.message?.content || '').trim().replace(/^["'`]+|["'`.]+$/g, '');
