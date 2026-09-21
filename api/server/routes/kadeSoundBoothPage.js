@@ -746,6 +746,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
                    (p.engine==='stable' ? '' : (p.engine==='lyria'||p.engine==='yue2') ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="cover">Cover this take</button>' : '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button>');
           }).join('') +
           '<details><summary>'+(p.engine==='stable'?'Sound description':p.engine==='lyria'?'Music direction':'Script')+'</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>' +
+          ((p.carryTo||[]).length ?
+            '<fieldset class="carry"><legend>Try this on another engine</legend>' +
+            '<p class="hint">Your lyrics, their section tags, the words you typed, the seed and any recording you imported come across exactly, for free. This one stays exactly as it is.</p>' +
+            '<label><input type="checkbox" id="carryrw_'+esc(p.id)+'"> Also have the script desk rewrite the description in the new format</label>' +
+            (p.carryTo||[]).map(function(d){
+              return '<button type="button" class="act quiet" data-carry="'+esc(p.id)+'" data-carryto="'+esc(d.engine)+'">Carry this to '+esc(d.label)+'</button>';
+            }).join(' ') + '</fieldset>' : '') +
+          (p.carriedFrom ? '<p class="hint">Carried over from a '+esc(p.carriedFrom.engine==='yue2'?'YuE2':p.carriedFrom.engine==='lyria'?'Lyria':p.carriedFrom.engine==='seed'?'Seed Audio':p.carriedFrom.engine==='stable'?'Stable Audio':'AuK')+' project.</p>' : '') +
           '<label for="rename_'+esc(p.id)+'">Track title</label><input id="rename_'+esc(p.id)+'" maxlength="80" value="'+esc(p.title)+'"><button type="button" class="act quiet" data-rename="'+esc(p.id)+'">Save title</button>'+
           '<button type="button" class="act" data-open="' + esc(p.id) + '">Open this in the booth</button></div>';
       }).join('');
@@ -758,6 +766,20 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(!result.ok){say(result.data.error||'Could not save the title.',true);return;}
         if(state.projectId===id)document.getElementById('trackTitle').value=title;
         say('Title saved: '+title);await loadLibrary();
+      };});
+      Array.prototype.forEach.call(box.querySelectorAll('[data-carry]'),function(button){button.onclick=async function(){
+        if(busy()){say('Finish the current operation first.',true);return;}
+        var id=button.dataset.carry, to=button.dataset.carryto;
+        var box2=document.getElementById('carryrw_'+id);
+        var rewrite=!!(box2 && box2.checked);
+        button.disabled=true;
+        say(rewrite?'Carrying it over and asking the desk to rewrite the description. This takes a moment.':'Carrying it over.');
+        var result=await request('/api/kade/sound-booth/projects/'+encodeURIComponent(id)+'/carry',{engine:to,rewrite:rewrite},'POST');
+        button.disabled=false;
+        if(!result.ok){say((result.data&&result.data.error)||'Could not carry that over.',true);return;}
+        var notes=(result.data.notes||[]).join(' ');
+        say('Carried over as "'+result.data.project.title+'". '+notes+' The original is untouched and still in your library.');
+        await loadLibrary();
       };});
       Array.prototype.forEach.call(box.querySelectorAll('[data-take-project]'),function(button){button.onclick=function(){
         if(busy()){say('Finish the current operation first.',true);return;}

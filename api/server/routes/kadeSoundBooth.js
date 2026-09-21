@@ -19,6 +19,7 @@ const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
 const { splitSpeakScript, saySplit, previewExcerpt } = require('./kadeSoundBoothSplit');
 /* Part 126: the person reads and writes a SCREENPLAY; the engine reads XML. */
 const { screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREENPLAY_HELP } = require('./kadeSoundBoothScreenplay');
+const carry = require('./kadeSoundBoothCarry');
 const chain = require('./kadeSoundBoothChain');
 
 const router = express.Router();
@@ -1103,6 +1104,9 @@ function projectView(p) {
       : 'AuK — one actor performing' + ((p.options || {}).reference_voice_url ? ', cloning a clip' : ', voice from the description') + (Number.isInteger(p.voiceSeed) ? `, voice ${p.voiceSeed}` : ''),
     readback: p.readback,
     options: p.engine === 'stable' ? { ...p.options, soundModel: p.options?.soundModel || '3_small_sfx' } : p.options || {},
+    /* Where this one could go next, so a client never has to know the rules. */
+    carryTo: carry.destinationsFor(p.engine),
+    carriedFrom: (p.options || {}).carriedFrom || null,
     voiceSeed: p.voiceSeed,
     hasRecoverableAudio: (p.parts || []).some((part) => part.state === 'done' && part.url) || (p.assets || []).length > 0,
     parts: (p.parts || []).map(({ index, state, durationS, costUSD }) => ({ index, state, durationS, costUSD })),
@@ -2303,6 +2307,72 @@ router.patch('/projects/:id', requireJwtAuth, express.json({ limit: '64kb' }), a
   } catch (error) {
     logger.error('[soundbooth/project patch] failed:', error);
     return res.status(500).json({ error: "Couldn't save that." });
+  }
+});
+
+/* ==================== POST /projects/:id/carry ============================
+ *
+ * "If I'm working on something on yue2 music, and I feel like switching over
+ * to lyria, which is also music, can you make my lyrics and tags and stuff
+ * jump over?"
+ *
+ * Yes, and without spending anything by default. The lyrics, the section
+ * tags, her own typed words, the seed and the imported clip are data and move
+ * exactly; the style paragraph is the only thing written in a grammar. Pass
+ * rewrite:true and the script desk writes that paragraph again in the new
+ * engine's format -- the same desk, in `format` mode, so her words are kept
+ * and only the shape around them changes.
+ *
+ * The original project is never touched. Switching vendors is something you
+ * do because you did not like what you got, so what you did not like has to
+ * still be there to compare against.
+ */
+router.post('/projects/:id/carry', requireJwtAuth, express.json({ limit: '16kb' }), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) {
+      return res.status(404).json({ error: 'No such project.' });
+    }
+    const source = await KadeSoundBoothProject.findOne({ _id: req.params.id, user: req.user.id }).lean();
+    if (!source) return res.status(404).json({ error: 'No such project.' });
+    const to = String((req.body || {}).engine || '');
+    const out = carry.carryOver(source, to, { toScreenplay: speakToScreenplay });
+    if (!out.ok) return res.status(400).json({ error: out.why });
+
+    const notes = [...out.notes];
+    const draft = { ...out.draft };
+    /* The optional, paid half. It writes the STYLE paragraph again in the new
+     * grammar; the lyrics are never sent through it, because they are hers
+     * and they already carried across exactly. */
+    if ((req.body || {}).rewrite === true && String(draft.script || '').trim()) {
+      try {
+        const raw = await callModel({
+          system: systemPrompt({ engine: to, mode: 'format' }),
+          user: `This was written for ${carry.ENGINES[source.engine].label} and is moving to ${carry.ENGINES[to].label}. Keep what it asks for and put it in the format below.\n\n${draft.script.slice(0, 6000)}`,
+          maxTokens: 2000,
+        });
+        const split = splitScriptAndReadback(raw);
+        if (split.script) {
+          draft.script = split.script;
+          draft.readback = split.readback;
+          notes.push('The desk rewrote the description in the new engine\u2019s format. Your lyrics were not sent to it.');
+        }
+      } catch (error) {
+        logger.warn('[soundbooth/carry] rewrite skipped: ' + (error && error.message));
+        notes.push('The script desk was busy, so the description came across as it was. You can still edit it by hand.');
+      }
+    }
+
+    const created = await KadeSoundBoothProject.create({ user: req.user.id, ...draft });
+    logger.info(`[soundbooth/carry] ${source.engine} -> ${to} user=${req.user.id} from=${source._id} to=${created._id} rewrite=${(req.body || {}).rewrite === true}`);
+    return res.json({
+      project: projectView(created.toObject ? created.toObject() : created),
+      from: { id: String(source._id), engine: source.engine, title: source.title },
+      notes,
+      rewriteAdvised: out.rewriteAdvised,
+    });
+  } catch (error) {
+    logger.error('[soundbooth/carry] failed:', error);
+    return res.status(500).json({ error: "Couldn't carry that over." });
   }
 });
 
