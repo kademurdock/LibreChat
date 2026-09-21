@@ -245,7 +245,11 @@ router.get('/stream', async (req, res) => {
       }
       beat++;
       const now = Date.now();
-      if (now - lastTouch > 60000) {
+      /* Twenty seconds, not sixty. This is the only thing that moves the world
+       * for somebody who is READING rather than typing -- standing in a room
+       * listening -- and at a minute apart the city they were listening to
+       * could only produce a line a minute at its absolute best. */
+      if (now - lastTouch > 20000) {
         lastTouch = now;
         await MooChar.updateOne({ _id: ch._id }, { $set: { lastActiveAt: new Date() } });
         try { await reverie.tickWorld(); } catch (_) { /* the tick is never load-bearing */ }

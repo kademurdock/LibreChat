@@ -37,12 +37,21 @@ registry.register({
     if (person) {
       const a = person.attrs || {};
       const bits = [];
-      bits.push(`${person.name}: ${a.desc || (person.userId.startsWith('npc:') ? (reverie.CENSUS_BY_ID[person.userId] || {}).desc : null) || `${person.name} keeps their look to themselves, so far.`}`);
+      /* WHAT YOU CAN SEE, not what the city knows. A citizen's row is five or
+       * six sentences of biography and a soul's is one line about their hair,
+       * so the LENGTH of this answer used to be a free oracle. It is now cut
+       * to where you two stand -- see visibleDesc in veil.js. */
+      const rels = require('./relationships');
+      const tier = rels.tierOf(await rels.getRel(ch.userId, person.userId));
+      const full = a.desc
+        || (person.userId.startsWith('npc:') ? (reverie.CENSUS_BY_ID[person.userId] || {}).desc : null)
+        || `${person.name} keeps their look to themselves, so far.`;
+      bits.push(`${person.name}: ${require('./veil').visibleDesc(full, tier)}`);
       if (a.look && a.look.line) bits.push(a.look.line);
       if (a.pose) bits.push(`${person.name} is ${a.pose}.`);
       else if (a.posture && a.posture !== 'standing') bits.push(`They are ${a.posture}.`);
       if (Array.isArray(a.marks) && a.marks.length) bits.push(`Marks: ${a.marks.join(', ')}.`);
-      const rel = await require('./relationships').describeRel(ch, person);
+      const rel = await rels.describeRel(ch, person);
       if (rel) bits.push(rel);
       return ctx.ok({ lines: [...ctx.lines, bits.join(' ')] });
     }

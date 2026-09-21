@@ -47,7 +47,7 @@ const overhear = require('./overhear');
 const { STRAYS } = require('./strays');
 const { driftTo: strayDrift } = require('./strays');
 
-const REVERIE_SEED_VERSION = 8;
+const REVERIE_SEED_VERSION = 9;
 
 /* ── THE WARDS ─────────────────────────────────────────────────────────────
  * District props carry the law tables (bible design: the engine never
@@ -1052,7 +1052,20 @@ function weatherNow(at = new Date()) {
 function npcDoingNow(userId) {
   const def = CENSUS_BY_ID[userId];
   if (!def) return null;
-  const { h } = centralNow();
+  const { y, mo, d, h } = centralNow();
+  /* THE ERRANDS (Sep 21 2026). Two hours a day nobody is at their post,
+   * because a city where thirteen of twenty-six people never leave one room
+   * is a city you cannot walk in on. Pure, deterministic, free, and it does
+   * not touch a line of the authored schedule below. See life/errands.js for
+   * the measurement that ordered it. */
+  try {
+    const out = require('./life/errands').errandFor(
+      userId, def, { h, dayKey: `${y}-${mo}-${d}` }, CENSUS_BY_ID,
+    );
+    if (out) return out;
+  } catch (_) {
+    /* an errand is a nicety; the post is the truth */
+  }
   for (const s of def.schedule) {
     const inSlot = s.from <= s.to ? h >= s.from && h < s.to : h >= s.from || h < s.to;
     if (inSlot) return { room: s.room, doing: s.doing };
@@ -1201,6 +1214,7 @@ async function carveReverie() {
   /* The census takes its posts. */
   for (const c of CENSUS) {
     const at = npcDoingNow('npc:' + c.id) || { room: c.home };
+    const pron = require('./life/veil').pronounsOf(c.id);
     await MooChar.updateOne(
       { userId: 'npc:' + c.id },
       { $setOnInsert: {
@@ -1209,6 +1223,18 @@ async function carveReverie() {
         } },
       { upsert: true },
     );
+    /* Seed v9, the Veil: pronouns are a NEW field, so $setOnInsert above can
+     * never reach the twenty-six rows that already exist. This is the one
+     * deliberate $set in the carve and it is safe because nothing -- not her,
+     * not the Angel, not a verb -- has ever written this key on a citizen.
+     * Without it every synth stays they/them forever while every soul answers
+     * the wizard, and two `%he` emotes tell a player which is which. */
+    if (pron) {
+      await MooChar.updateOne(
+        { userId: 'npc:' + c.id, 'attrs.pronouns': { $exists: false } },
+        { $set: { 'attrs.pronouns': pron } },
+      );
+    }
   }
   /* THE STRAYS take their patches (round 9). They are MooChars, not items —
    * her ruling, and it is the right one: "a player char is a player char
@@ -1320,9 +1346,27 @@ function bellLine(r, wrong, right) {
 }
 const _cityClockFired = new Set();
 
+/* HOW OFTEN THE CITY BREATHES (Sep 21 2026).
+ *
+ * "If nobody's connected, might as well not waste money. But if someone is,
+ * things are gold." Both halves of that are a throttle setting.
+ *
+ * The tick was a flat 45 seconds and its ambient step is one citizen per room,
+ * so a room with somebody in it produced about one and a half sentences every
+ * five minutes. That is not a model problem and no amount of better dialogue
+ * touches it -- it is a timer, and the timer was set for an empty city.
+ *
+ * So the timer now knows whether anybody is there. Twenty seconds while
+ * somebody is in the city, forty-five when the last pass found nobody, and in
+ * a city with nobody connected at all this function is never called in the
+ * first place. Nothing about the cost of a quiet city changes. */
+const TICK_LIVELY_MS = 20 * 1000;
+const TICK_QUIET_MS = 45 * 1000;
+let lastTickLively = false;
+
 async function tickWorld() {
   const now = Date.now();
-  if (now - lastTickAt < 45 * 1000) return;
+  if (now - lastTickAt < (lastTickLively ? TICK_LIVELY_MS : TICK_QUIET_MS)) return;
   lastTickAt = now;
   try {
     /* 1 — the census keeps its schedule. */
@@ -1361,6 +1405,7 @@ async function tickWorld() {
     }
 
     const rooms = await activePlayerRooms();
+    lastTickLively = rooms.length > 0;
     if (!rooms.length) return;
     /* Part 239: the rooms where somebody was spoken to recently go first, so
      * that when more residents are eligible than the pilot's limit of twelve,
@@ -1563,7 +1608,10 @@ async function tickWorld() {
       }
 
       /* Jev off, unreachable or unsure — the Part 180 behaviour, unchanged. */
-      if (Math.random() >= 0.3) continue;
+      /* The coin was 0.3, which with a 45 second tick meant a room answered
+       * about once every two and a half minutes. Raised with the timer above,
+       * for the same reason and at the same cost, which is none. */
+      if (Math.random() >= 0.45) continue;
       const npc = hereNpcs[ambientCursor++ % hereNpcs.length];
       const def = CENSUS_BY_ID[npc.userId];
       if (def && def.ambient && def.ambient.length) {

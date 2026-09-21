@@ -31,6 +31,7 @@ const fishing = require('./fishing');
 const social = require('./social');
 const strays = require('./strays');
 const overhear = require('./overhear');
+const voice = require('./life/voice');
 
 const DIR_ALIASES = {
   north: 'n', south: 's', east: 'e', west: 'w',
@@ -339,24 +340,95 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
    * answer and happens on purpose. Zero model calls. */
   async function roomAnswers(text) {
     try {
-      const here = await MooChar.find({ roomId: ch.roomId, userId: /^npc:/ }).select('name userId').lean();
+      const here = await MooChar.find({ roomId: ch.roomId, userId: /^npc:/ }).select('name userId attrs').lean();
       if (!here.length) return null;
-      const cands = here.map((n) => ({ id: n.userId.replace(/^npc:/, ''), name: n.name, userId: n.userId }));
+      const cands = here.map((n) => ({ id: n.userId.replace(/^npc:/, ''), name: n.name, userId: n.userId, doc: n }));
       const who = overhear.chooseResponder(cands, text);
       if (!who) return null;
       const heardAll = (ch.attrs && ch.attrs.heard) || {};
       const heard = heardAll[who.userId] || [];
       const reply = overhear.overhearReply(who, text, { heard });
       if (!reply) return null;
+
+      /* ── THEIR OWN WORDS, NOT THE WRITTEN ONES ──────────────────────────
+       *
+       * KADE, Sep 21 2026: "all the canned phrasing and stuff seems rather
+       * tellish and stupid, and they should just interact and talk and stuff
+       * like humans."
+       *
+       * She is describing this exact function. overhear.js does the hard part
+       * beautifully and for free -- it decides WHO speaks, whether anybody
+       * speaks at all, and what the subject is -- but the last step was
+       * reading a sentence out of an array, and 70 of the 93 topic pools in
+       * that file hold exactly ONE sentence. Ask Pat about food twice and you
+       * have met the database.
+       *
+       * The fix is the seam overhear.js designed for itself on the day it was
+       * written: "the narrator lane can inhabit any of it later without
+       * touching a line of this file -- that is why the answers are stored as
+       * data and picked by a pure function." So the pure function still makes
+       * every DECISION (silence is still silence, rule 1 still means a
+       * librarian does not hold forth on outboard motors, rule 2 still picks
+       * one voice) and the model only supplies the WORDS for a decision that
+       * has already been made. Nothing about the world is up to it.
+       *
+       * When it cannot -- no key, allowance spent, provider slow -- the
+       * authored line is used and nobody is told. That is the whole failure
+       * mode, and it is the same city it was yesterday.
+       *
+       * The wait is capped well under residentReply's own eighteen seconds,
+       * because `say` has to feel like `say`. */
+      let line = null;
+      let usedAuthored = true;
+      try {
+        const def = reverie.CENSUS_BY_ID[who.userId];
+        const kind = overhear.kindOf(text);
+        const steer =
+          `${ch.name} said this out loud in the room. It was not necessarily aimed at you -- you are simply the one who answers, and in a room full of people most remarks go unanswered. ` +
+          (kind === 'greeting'
+            ? 'It is a greeting. Greet them back the way you would, and do not use their name unless you know them. '
+            : reply.topic
+              ? `This is your subject. Answer it out of what you actually know about ${reply.topic}. `
+              : 'This is not your subject. Say so in your own way rather than inventing an answer -- not knowing, out loud, is more human than knowing everything. ') +
+          'One or two sentences, the length of a remark across a room and not a speech. Do not narrate yourself and do not ask what they need.';
+        const fresh = await voice.speak({
+          person: who.doc,
+          place: (await MooRoom.findOne({ roomId: ch.roomId }).select('name').lean())?.name || '',
+          weather: reverie.weatherNow().line,
+          doing: reverie.npcDoingNow(who.userId)?.doing || '',
+          player: ch.name,
+          message: text,
+          steer,
+          timeoutMs: 8000,
+          canon: voice.dossier(def, {
+            standing: await voice.standingBetween(ch.userId, who.userId),
+            note: `You have said this before and would rather not repeat it word for word: ${reply.line}`,
+          }),
+        });
+        if (fresh) {
+          line = fresh;
+          usedAuthored = false;
+        }
+      } catch (_) {
+        line = null;
+      }
+      if (!line) line = reply.line;
+
       /* Rule 4 is per (player, npc) and it has to survive the turn, so it is
-       * written before the line is spoken, not after. */
-      const nextHeard = overhear.rememberLine(heard, reply.hash);
-      await MooChar.updateOne({ _id: ch._id }, { $set: { [`attrs.heard.${who.userId}`]: nextHeard } });
-      ch.attrs = { ...(ch.attrs || {}), heard: { ...heardAll, [who.userId]: nextHeard } };
+       * written before the line is spoken, not after. It is only recorded
+       * when the AUTHORED line was actually used -- burning a written line
+       * the city never said would empty the fallback pool for nothing. */
+      if (usedAuthored) {
+        const nextHeard = overhear.rememberLine(heard, reply.hash);
+        await MooChar.updateOne({ _id: ch._id }, { $set: { [`attrs.heard.${who.userId}`]: nextHeard } });
+        ch.attrs = { ...(ch.attrs || {}), heard: { ...heardAll, [who.userId]: nextHeard } };
+      }
       /* A line that already names the speaker (an action beat like "Pat lifts
-       * the spatula") must not be prefixed again. */
-      const spoken = reply.line.startsWith(who.name) ? reply.line : `${who.name}: ${reply.line}`;
+       * the spatula") must not be prefixed again. Everything else is speech
+       * and wears speech's punctuation whoever wrote it. */
+      const spoken = line.startsWith(who.name) ? line : `${who.name}: ${voice.asSpeech(line)}`;
       await emit(ch.roomId, who.userId, who.name, 'say', spoken);
+      await MooChar.updateOne({ userId: who.userId }, { $set: { lastActiveAt: new Date() } }).catch(() => {});
       return spoken;
     } catch (err) {
       logger.error('[reverie] overhear failed (non-fatal):', err.message);
@@ -393,7 +465,13 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
       }
       const person = await MooChar.findOne({ roomId: ch.roomId, name: new RegExp('^' + escapeRe(arg) + '$', 'i') }).lean();
       if (person) {
-        const pdesc = person.attrs?.desc || `${person.name} keeps their look to themselves, so far.`;
+        /* The same rule as the life-layer `look` in verbs_basics.js: a
+         * stranger sees what a stranger can see. See veil.js visibleDesc. */
+        const rels = require('./life/relationships');
+        const tier = rels.tierOf(await rels.getRel(ch.userId, person.userId));
+        const pdesc = require('./life/veil').visibleDesc(
+          person.attrs?.desc || `${person.name} keeps their look to themselves, so far.`, tier,
+        );
         const marks = Array.isArray(person.attrs?.marks) && person.attrs.marks.length ? ` Marks: ${person.attrs.marks.join(', ')}.` : '';
         const posture = person.attrs?.posture && person.attrs.posture !== 'standing' ? ` They are ${person.attrs.posture}.` : '';
         lines.push(`${person.name}: ${pdesc}${marks}${posture}`);
@@ -1524,7 +1602,7 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
      * that you cannot tell which of the two you just got. See life/voice.js. */
     let fresh = null;
     try {
-      fresh = await require('./life/voice').speak({
+      fresh = await voice.speak({
         person: target,
         place: (await MooRoom.findOne({ roomId: ch.roomId }).lean())?.name || 'the city',
         weather: (reverie.weatherNow() || {}).line || '',
@@ -1532,7 +1610,10 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
         player: ch.name,
         message: `${ch.name} comes over to talk with you. Say something to them.`,
         history: [],
-        canon: def,
+        steer:
+          'They have walked up to you and have not said what they want yet. Open the way you would: a greeting, or whatever is actually on your mind while you work. ' +
+          'One or two sentences. Do not ask how you can help them and do not offer a list of options.',
+        canon: voice.dossier(def, { standing: await voice.standingBetween(ch.userId, target.userId) }),
       });
     } catch (_) {
       fresh = null;
@@ -1548,8 +1629,14 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
       ch.attrs = { ...(ch.attrs || {}), heard: { ...heardAll, [target.userId]: nextHeard } };
     }
     await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} stops to talk with ${target.name}.`);
-    await emit(ch.roomId, target.userId, target.name, 'say', `${target.name}: ${spoke.line}`);
-    lines.push(`${target.name}: ${spoke.line}`);
+    /* Written lines arrive already quoted and fresh ones arrive bare, so
+     * without asSpeech the punctuation itself said which was which. */
+    const said = spoke.line.startsWith(target.name)
+      ? spoke.line
+      : `${target.name}: ${voice.asSpeech(spoke.line)}`;
+    await emit(ch.roomId, target.userId, target.name, 'say', said);
+    await MooChar.updateOne({ userId: target.userId }, { $set: { lastActiveAt: new Date() } }).catch(() => {});
+    lines.push(said);
     return { ok: true, lines, kinds: [...kinds, 'say'] };
   }
 

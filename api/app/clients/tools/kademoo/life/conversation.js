@@ -73,7 +73,16 @@ register({
         player: ctx.ch.name,
         message: text,
         history,
-        canon: reverie.CENSUS_BY_ID?.[person.userId] || reverie.CENSUS_BY_ID?.[key],
+        steer:
+          'They are talking with you face to face and have just said this. Answer their actual words. ' +
+          'One to three sentences, the way a person answers in the middle of doing something else.',
+        /* The dossier, not the raw census row. The row is a schedule and a
+         * pile of arrays; the dossier is who this person is, how they talk,
+         * what they want, who they know, and where you two stand. See the
+         * long note in life/voice.js. */
+        canon: voice.dossier(reverie.CENSUS_BY_ID?.[person.userId] || reverie.CENSUS_BY_ID?.[key], {
+          standing: await voice.standingBetween(ctx.ch.userId, person.userId),
+        }),
       });
       /* FALL BACK SILENTLY. The old line here was "<name> cannot answer freely
        * right now. You can still use Talk to for their usual conversation."
@@ -111,14 +120,16 @@ register({
       }
       await setAttrs(ctx.ch, {
         'life.conversationWith': person.userId,
+        /* Sixteen stored, ten sent. A citizen who forgets what you told them
+         * ninety seconds ago is the cheapest tell in the game. */
         [`life.conversations.${key}`]: [
           ...history,
           { role: 'user', content: text },
           { role: 'assistant', content: answer },
-        ].slice(-6),
+        ].slice(-16),
       });
       ctx
-        .say(`You say to ${person.name}, “${text}”`, `${person.name}: ${answer}`)
+        .say(`You say to ${person.name}, “${text}”`, `${person.name}: ${voice.asSpeech(answer)}`)
         .need({ company: 3 });
       return ctx.ok({
         conversation: { name: person.name, prefix: 'reply ' },

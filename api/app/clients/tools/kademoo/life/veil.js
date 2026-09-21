@@ -97,4 +97,75 @@ function speakableIn(roomId, exceptUserId) {
   return q;
 }
 
-module.exports = { publicKind, isPerson, sameGrammar, temperOf, TEMPERS, EVERY_PERSON, speakableIn };
+/* ── THE SEVENTH LEAK: EVERY CITIZEN WAS "THEY" ────────────────────────────
+ *
+ * A player answers `pronouns she|he|they|it` in the creation wizard and the
+ * answer lands in attrs.pronouns. The census never had the field, because the
+ * census was written before there were two kinds of person to keep apart. So
+ * `attrs.pronouns || 'they'` — which is the right default and the right
+ * fallback — quietly meant that in the emote substitutions, in the children's
+ * roster, and anywhere else the city speaks ABOUT somebody, a synth was always
+ * they/them and a soul was whatever they chose. Two `%he` emotes and you knew.
+ *
+ * The prose already knew. Twenty-four of the twenty-six say it plainly in
+ * their own descriptions and ambient lines — "Doc washes HER hands out of
+ * habit", "Boone checks HIS watch against the schedule" — and this table is
+ * read off that text, not guessed from names. Ilse Marsh and Cass Delaney are
+ * they/them because the city has never once said otherwise about them, and
+ * that is the author's answer rather than a gap to fill in.
+ *
+ * It lives here rather than inline in the census because it is a Veil rule and
+ * not a fact about any one person: what matters is that the question "what
+ * does the city call this person" gets answered the same way for both kinds.
+ * The carve writes it onto the MooChar rows so everything downstream reads one
+ * field and never has to ask which kind it is holding.
+ */
+const CITIZEN_PRONOUNS = {
+  nell: 'she', pat: 'she', merle: 'he', ines: 'she', dez: 'he',
+  ruthann: 'she', levi: 'he', doc: 'she', hock: 'he', boone: 'he',
+  marsh: 'they', reed: 'she', odessa: 'she', wendell: 'he', opal: 'she',
+  constance: 'she', oleander: 'he', pham: 'she', littleray: 'he', cass: 'they',
+  chike: 'he', marva: 'she', royce: 'he', birdie: 'she', emmett: 'he',
+  junie: 'she',
+};
+
+/** What the city calls this citizen. Accepts 'nell' or 'npc:nell'. */
+function pronounsOf(id) {
+  return CITIZEN_PRONOUNS[String(id || '').replace(/^npc:/, '')] || null;
+}
+
+/* ── THE EIGHTH LEAK: LOOKING AT SOMEBODY HANDED YOU A DOSSIER ─────────────
+ *
+ * `look <a citizen>` printed their whole census row: five or six sentences
+ * covering not only what they are wearing but where their sister lives, what
+ * their mother taught them, and what they are quietly afraid of. `look <a
+ * soul>` printed the one sentence the creation wizard wrote — build, hair,
+ * what they had on. Length alone answered the question, every time, from
+ * across the room, for free.
+ *
+ * Trimming the citizens is the wrong instinct and it is not what this does.
+ * The biography is good and the speaking lane needs every word of it. What is
+ * wrong is that STRANGERS could read it. You do not learn where somebody's
+ * sister lives by looking at them; you learn it by knowing them a while.
+ *
+ * So what you can see grows with where you stand. A stranger gets what a
+ * stranger gets — these descriptions all open with the visible part, because
+ * whoever wrote them wrote them in the right order — and the rest arrives as
+ * you get to know somebody, which is both the honest rule and a reason to
+ * bother. A soul's one line is unaffected, and the two now read alike.
+ */
+const CLOSE = new Set(['friends', 'close friends', 'like family', 'family', 'partners', 'married']);
+const WARM = new Set(['acquaintances', 'exes']);
+function visibleDesc(desc, tier) {
+  const text = String(desc || '').trim();
+  if (!text) return text;
+  if (CLOSE.has(tier)) return text;
+  const sentences = text.match(/[^.!?]+[.!?]+(\s|$)/g);
+  if (!sentences || sentences.length <= 2) return text;
+  return sentences.slice(0, WARM.has(tier) ? 3 : 2).join('').trim();
+}
+
+module.exports = {
+  publicKind, isPerson, sameGrammar, temperOf, TEMPERS, EVERY_PERSON, speakableIn,
+  CITIZEN_PRONOUNS, pronounsOf, visibleDesc,
+};
