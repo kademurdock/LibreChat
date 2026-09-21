@@ -70,7 +70,11 @@ async function describeRel(ch, other) {
   const rel = await getRel(ch.userId, other.userId);
   const tier = tierOf(rel);
   const rw = romanceWord(rel);
-  if (tier === 'strangers' && !rw) return k === 'citizen' ? `You and ${other.name.split(' ')[0]} have not really talked.` : null;
+  /* EVERYBODY GETS THE STRANGER LINE (the Veil, Sep 21 2026). A citizen you
+   * had not talked to got "You and Pat have not really talked"; a human you
+   * had not talked to got NOTHING. So in `look`, the presence of the sentence
+   * was the answer. It is true of both and now it is said of both. */
+  if (tier === 'strangers' && !rw) return `You and ${other.name.split(' ')[0]} have not really talked.`;
   return `You and ${other.name.split(' ')[0]} are ${tier}${rw ? `, and there is ${rw}` : ''}.`;
 }
 

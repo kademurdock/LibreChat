@@ -119,7 +119,21 @@ registry.register({
     const t = matchName(here, arg.replace(/^from\s+/, ''));
     if (!t) return ctx.fail(`Nobody called "${arg}" here.`);
     const k = kindOfSoul(t);
-    if (k !== 'citizen') return ctx.fail(k === 'player' ? 'Not players. That is not the game. Hustle the house, not your friends.' : 'No.');
+    /* THE ONE PLACE THE VEIL AND CONSENT PULL APART, and consent wins.
+     *
+     * You cannot lift from a real person, and that is right: nobody gets their
+     * pockets gone through because somebody else typed a verb. But the refusal
+     * used to SAY WHICH -- "Not players. That is not the game." for a soul and
+     * a flat "No." for anything else -- so one attempt labelled them.
+     *
+     * A player now gets the same refusal the protected citizens get a line
+     * below (Odessa, Pham, Reed, Junie, Ruth-Ann), so the sentence no longer
+     * distinguishes: it could be a soul, or it could be somebody you simply
+     * will not rob. Somebody determined could still infer it from enough
+     * attempts, and that is a real seam worth her knowing about rather than
+     * one worth pretending away. */
+    if (k !== 'citizen')
+      return ctx.fail(k === 'player' ? 'Not them. Even you have a line.' : 'No.');
     if (kidSafe || law.ladderCap === 'words' || law.ladderCap === 'hands') return ctx.fail(`Not in ${ward}. ${hoa ? 'Private security is already smiling at you.' : 'Everybody here knows everybody.'}`);
     if (['npc:odessa', 'npc:pham', 'npc:reed', 'npc:junie', 'npc:ruthann'].includes(t.userId)) return ctx.fail(t.userId === 'npc:odessa' ? 'You consider it. Sgt. Vann considers you back. You reconsider.' : 'Not them. Even you have a line.');
     const L = lvl(ctx, 'hustle');
@@ -167,7 +181,7 @@ registry.register({
     if (kind === 'citizen' && ['npc:odessa', 'npc:pham'].includes(t.userId)) return nightCourt(ctx, `laying hands on ${t.name}`, 15);
     await emit(ctx.ch.roomId, ctx.userId, ctx.ch.name, 'emote', `${ctx.ch.name} shoves ${t.name.split(' ')[0]}. The room takes a step back.`);
     ctx.need({ fun: 2, company: -5 });
-    const rr = await rel.land(ctx, t, 'shove', `You shove ${t.name.split(' ')[0]}. ${kind === 'citizen' ? pick([`${t.name.split(' ')[0]} does not shove back. Yet.`, `${t.name.split(' ')[0]} steps in close and says something only you hear.`]) : `${t.name.split(' ')[0]} is up in your face now.`}`, null, { friendship: -10 }, { tellOther: `${ctx.ch.name} shoves you. ("fight ${ctx.ch.name.split(' ')[0]}" if you want to make it one.)` });
+    const rr = await rel.land(ctx, t, 'shove', `You shove ${t.name.split(' ')[0]}. ${require('./veil').isPerson(kind) ? pick([`${t.name.split(' ')[0]} does not shove back. Yet.`, `${t.name.split(' ')[0]} steps in close and says something only you hear.`]) : `${t.name.split(' ')[0]} is up in your face now.`}`, null, { friendship: -10 }, { tellOther: `${ctx.ch.name} shoves you. ("fight ${ctx.ch.name.split(' ')[0]}" if you want to make it one.)` });
     if (hoa) { await payCoin(ctx.ch, Math.min(coinOf(ctx.ch), 5)); ctx.say('The HOA fines you five dollars on the spot for "conduct." A form is involved.'); }
     if (rr.friendship <= -40) await rumor(ctx, `${ctx.ch.name} and ${t.name.split(' ')[0]} are about to come to blows`, 'feud', 3);
     return ctx.ok({ kinds: [...ctx.kinds, 'err'] });

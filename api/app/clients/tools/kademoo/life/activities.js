@@ -351,7 +351,7 @@ act({
     if (who) {
       const r = await require('./relationships').target(ctx, who); if (r.err) return ctx.fail(r.err);
       ctx.need({ fun: 15, company: 12 }); ctx.learn('charm', 3);
-      await require('./relationships').land(ctx, r.t, 'dance', `You dance with ${r.t.name.split(' ')[0]}. ${r.kind === 'citizen' ? pick(['They know the steps. You do not. It works out.', 'They lead. You follow. Somebody hollers.', 'Two songs, and neither of you sits down.']) : 'Two songs, and neither of you sits down.'}`, `${ctx.ch.name} and ${r.t.name.split(' ')[0]} are dancing.`, { friendship: 5, romance: 4 }, { tellOther: `${ctx.ch.name} pulls you up to dance.` });
+      await require('./relationships').land(ctx, r.t, 'dance', `You dance with ${r.t.name.split(' ')[0]}. ${require('./veil').isPerson(r.kind) ? pick(['They know the steps. You do not. It works out.', 'They lead. You follow. Somebody hollers.', 'Two songs, and neither of you sits down.']) : 'Two songs, and neither of you sits down.'}`, `${ctx.ch.name} and ${r.t.name.split(' ')[0]} are dancing.`, { friendship: 5, romance: 4 }, { tellOther: `${ctx.ch.name} pulls you up to dance.` });
       return ctx.ok({ kinds: [...ctx.kinds, 'emote'] });
     }
     ctx.need({ fun: 12, company: 4, rested: -3 }); ctx.learn('fitness', 2);

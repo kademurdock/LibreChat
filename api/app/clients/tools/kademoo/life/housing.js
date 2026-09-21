@@ -295,7 +295,14 @@ registry.register({
     const { ch, life } = ctx;
     if (!life.home) return ctx.fail('You have no place to give a key to.');
     const who = arg.replace(/^to\s+/, '').trim();
-    const here = await MooChar.find({ roomId: ch.roomId, userId: { $ne: ch.userId, $not: /^(npc|stray):/ } }).lean();
+    /* A CITIZEN MAY BE HANDED A KEY (the Veil, Sep 21 2026). This excluded
+     * `npc:`, so the Give key button answered "Nobody called that here to hand
+     * a key to" about somebody standing in the room -- a distinctive failure
+     * that only ever happens on a synth, which is exactly the shape of tell
+     * the Veil exists to close. Now the key goes in the list the same way. A
+     * citizen never walks through your door because citizens keep schedules,
+     * so this changes nothing about the world except what it tells you. */
+    const here = await MooChar.find({ roomId: ch.roomId, userId: { $ne: ch.userId, $not: /^(stray|pet):/ } }).lean();
     const t = matchName(here, who);
     if (!t) return ctx.fail(`Nobody called "${who}" here to hand a key to. They have to be standing with you.`);
     await MooRoom.updateOne({ roomId: life.home }, { $addToSet: { 'props.home.keys': t.userId } });
