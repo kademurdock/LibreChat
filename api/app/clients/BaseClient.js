@@ -942,6 +942,35 @@ class BaseClient {
     } catch (e) {
       scrubbed = message;
     }
+    /* THE TELL METER (Sep 21 2026). Kade: "help Kiana sound more like Kiana
+     * and less like an AI text book with no personality and lots of tells."
+     *
+     * The scrub above removes the tells a regex can safely CUT. The loudest
+     * ones left -- the contrastive pivot, signposting, a reply that says the
+     * question back before answering it -- cannot be cut, only avoided, and
+     * the prompt layer has been telling the fleet to avoid them for two months
+     * with nothing anywhere checking whether it worked.
+     *
+     * So this counts them on the text that is actually about to be read, and
+     * writes one line. It edits nothing, blocks nothing, costs nothing, and
+     * cannot throw. `grep telltale` in the service logs turns "she sounds like
+     * a textbook" into a number that can move. KADE_TELL_METER=0 to stop it. */
+    try {
+      if (message && message.isCreatedByUser === false) {
+        const line = require('~/server/utils/kadeTellMeter').measure(
+          typeof scrubbed.text === 'string' ? scrubbed.text : '',
+          {
+            agentId: options?.req?.body?.agent_id || options?.agent?.id || message.model || null,
+            prompt: options?.req?.body?.text || '',
+          },
+        );
+        if (line) {
+          logger.info(line);
+        }
+      }
+    } catch (_e) {
+      /* a measurement must never be able to break a reply */
+    }
     const savedMessage = await db.saveMessage(
       reqCtx,
       {

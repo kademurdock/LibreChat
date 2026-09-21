@@ -14,6 +14,12 @@ const AI_TELL_LEAD_BANS = [
   /^\s*(?:that['’]s|what)\s+(?:a\s+)?(?:great|excellent|fascinating|wonderful|brilliant|interesting)\b[^.!?]*[.!?]\s*/i,
   /^\s*you['’]re\s+(?:absolutely\s+)?right[^.!?]*[.!?]\s*/i,
   /^\s*i\s+love\s+(?:that|how)\b[^.!?]*[.!?]\s*/i,
+  /* Sep 21 2026. "Certainly!" and "I'd be happy to" are the two assistant
+   * openers with no human left in them at all -- the sentence after each one
+   * stands perfectly well alone, which is the only test for putting a phrase
+   * on this list. "Of course" and "Sure" are NOT here: people say those. */
+  /^\s*certainly[!.,:]\s*/i,
+  /^\s*i['’]d\s+be\s+happy\s+to\s+(?:help\s+(?:you\s+)?)?(?:with\s+that\s*)?[!.,:]\s*/i,
 ];
 const AI_TELL_SENTENCE_BANS = [
   /\bas an ai(?:\s+language model)?\b[^.!?]*[.!?]/gi,
@@ -32,9 +38,15 @@ const AI_TELL_PHRASE_BANS = [
   /\bneedless\s+to\s+say,?\s+/gi,
   /\bit\s+goes\s+without\s+saying\s+that\s+/gi,
   /\bat\s+the\s+end\s+of\s+the\s+day,?\s+/gi,
+  /* Sep 21 2026: the essay-shaped connectives. KADE_STYLE_NOTE has banned
+   * these in words since July; the meter is there to say whether that worked,
+   * and these three can be cut without touching the sentence. */
+  /\bin\s+(?:conclusion|summary),?\s+/gi,
+  /\bto\s+sum\s+up,?\s+/gi,
+  /\bin\s+today['’]s\s+(?:world|fast-?paced\s+world|digital\s+age),?\s+/gi,
 ];
 const AI_TELL_TRAIL_BANS = [
-  /\s*(?:i\s+)?hope\s+(?:this|that)\s+helps?!?\s*$/i,
+  /\s*(?:i\s+)?hope\s+(?:this|that)\s+(?:helps?|is\s+helpful|gives\s+you[^.!?]*)!?[.!?]?\s*$/i,
   /\s*(?:please\s+)?(?:feel\s+free\s+to|don['’]t\s+hesitate\s+to)\s+reach\s+out[^.!?]*[.!?]?\s*$/i,
   /\s*let\s+me\s+know\s+if\s+(?:you\s+)?(?:have\s+any\s+questions|(?:you\s+)?need\s+anything(?:\s+else)?)[^.!?]*[.!?]?\s*$/i,
   /\s*is\s+there\s+anything\s+else\s+i\s+can\s+(?:help|assist)[^.!?]*\??\s*$/i,
