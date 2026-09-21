@@ -224,44 +224,39 @@ function personCmds(ctx, p, kind) {
     f('Hug', 'hug'),
     f('Comfort', 'comfort'),
   ];
-  if (kind === 'citizen') {
-    const id = String(p.userId).replace(/^npc:/, '');
-    const out = [
-      { label: 'Say hello', cmd: `converse ${p.name}: Hello! How is your day going?` },
-      { label: 'Ask about here', cmd: `converse ${p.name}: What do you like doing around here?` },
-      f('Talk to', 'talk to'),
-      ...base,
-    ];
-    /* Part 180: a child seat is handed the words-only ladder (iron rule 7)
-     * and never a romance or a corner button (rule 8: never told why). */
-    if (!ctx.isChild && !require('./relationships').NO_ROMANCE.has(id))
-      out.push(f('Flirt', 'flirt'), f('Date', 'date'));
-    out.push(f('Argue', 'argue'));
-    if (!ctx.isChild) out.push(f('Shove', 'shove'));
-    if (id === 'littleray' && !ctx.isChild) out.push({ label: 'See Ray', cmd: 'corner' });
-    return out;
-  }
-  if (ctx.isChild)
-    return [
-      ...base,
-      f('Dance with', 'dance with'),
-      { label: 'Whisper to', cmd: `whisper ${JSON.stringify(p.name)}` },
-      { label: 'Give $5', cmd: `give 5 dollars to ${p.name}` },
-      f('Give key', 'give key to'),
-      f('Argue', 'argue'),
-    ];
-  return [
+  /* ONE MENU FOR EVERY PERSON (the Veil, Sep 21 2026).
+   *
+   * The comment above this function has always said the client "never has to
+   * know who is a citizen and who is a cat" -- and then the menu told you
+   * anyway, in the most-tapped control in the game. A citizen offered "Say
+   * hello", "Ask about here" and "Talk to"; a human offered Kiss, Fight,
+   * Whisper to and Give $5, and neither offered the other's. One tap on a name
+   * and you had your answer, without typing a word.
+   *
+   * Both speaking verbs now accept a human (see life/veil.js speakableIn), and
+   * both give/whisper verbs always accepted a citizen, so there is nothing left
+   * to keep apart. What varies from here is the PERSON, never the kind: the
+   * romance buttons are withheld from the people whose job it is not, and
+   * Ray's door is Ray's, which is as it should be. */
+  const id = String(p.userId).replace(/^npc:/, '');
+  const out = [
+    { label: 'Say hello', cmd: `converse ${p.name}: Hello! How is your day going?` },
+    { label: 'Ask about here', cmd: `converse ${p.name}: What do you like doing around here?` },
+    f('Talk to', 'talk to'),
     ...base,
-    f('Flirt', 'flirt'),
-    f('Kiss', 'kiss'),
-    f('Date', 'date'),
     f('Dance with', 'dance with'),
     { label: 'Whisper to', cmd: `whisper ${JSON.stringify(p.name)}` },
     { label: 'Give $5', cmd: `give 5 dollars to ${p.name}` },
     f('Give key', 'give key to'),
     f('Argue', 'argue'),
-    f('Fight', 'fight'),
   ];
+  /* Part 180: a child seat is handed the words-only ladder (iron rule 7) and
+   * never a romance or a corner button (rule 8: never told why). */
+  if (!ctx.isChild && !require('./relationships').NO_ROMANCE.has(id))
+    out.push(f('Flirt', 'flirt'), f('Kiss', 'kiss'), f('Date', 'date'));
+  if (!ctx.isChild) out.push(f('Shove', 'shove'), f('Fight', 'fight'));
+  if (id === 'littleray' && !ctx.isChild) out.push({ label: 'See Ray', cmd: 'corner' });
+  return out;
 }
 
 /** HUD: everything the meters and the header show. */

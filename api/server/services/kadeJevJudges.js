@@ -1138,16 +1138,33 @@ const DIRECTOR_FRESH_Q = {
 /** Build the choice list: every authored line each present citizen could use,
  * plus doing nothing. Keys are `<npcId>#<index>` so the caller can map back
  * without trusting anything Jev returns. */
-function directorOptions(present, { perPerson = 4, maxOptions = 40 } = {}) {
+/* A LINE MAY BE A GESTURE OR IT MAY BE SPEECH (Sep 21 2026).
+ *
+ * Part 237 handed this function `def.ambient` and nothing else. Every option
+ * Jev could choose was therefore a stage direction, and so every single thing
+ * the director ever made a citizen do was an EMOTE. No citizen in Reverie has
+ * ever spoken first. Twenty-six people with 86 written lines of dialogue
+ * between them, and the only way to hear any of it was to walk up and use a
+ * verb on somebody.
+ *
+ * An entry may now be `{ text, said }` as well as a bare string, so the caller
+ * can offer a citizen's spoken lines alongside their gestures and the emit can
+ * put speech in the room as speech. Plain strings still work exactly as they
+ * did, which is what the Part 237 tests pass in. */
+function directorOptions(present, { perPerson = 8, maxOptions = 40 } = {}) {
   const options = {};
   const map = {};
   for (const p of present) {
-    const lines = (Array.isArray(p.lines) ? p.lines : []).filter((l) => typeof l === 'string' && l.trim());
+    const lines = (Array.isArray(p.lines) ? p.lines : [])
+      .map((l) => (typeof l === 'string' ? { text: l, said: false } : l))
+      .filter((l) => l && typeof l.text === 'string' && l.text.trim());
     for (let i = 0; i < lines.length && i < perPerson; i++) {
       if (Object.keys(options).length >= maxOptions) break;
       const key = `${p.id}#${i}`;
-      options[key] = `${p.name}: ${lines[i]}`;
-      map[key] = { id: p.id, name: p.name, line: lines[i] };
+      options[key] = lines[i].said
+        ? `${p.name} says: ${lines[i].text}`
+        : `${p.name}: ${lines[i].text}`;
+      map[key] = { id: p.id, name: p.name, line: lines[i].text, said: !!lines[i].said };
     }
   }
   options[REVERIE_NOBODY] =

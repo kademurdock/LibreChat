@@ -1478,10 +1478,21 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
    * inhabits them fully later). */
   if (verb === 'talk' && /^to\s+/i.test(rest)) {
     const who = rest.replace(/^to\s+/i, '').trim();
-    const folks = await MooChar.find({ roomId: ch.roomId, userId: /^npc:/ }).lean();
+    /* EVERY PERSON IN THE ROOM (the Veil, Sep 21 2026). This used to filter
+     * `userId: /^npc:/`, so `talk to <a human>` answered "Nobody called that
+     * here to talk to" about somebody standing right in front of you, and
+     * finding out who was a machine took one command. */
+    const folks = await MooChar.find(require('./life/veil').speakableIn(ch.roomId, ch.userId)).lean();
     const target = folks.find((f) => f.name.toLowerCase().includes(who.toLowerCase()) || (f.attrs?.aka || '').toLowerCase() === who.toLowerCase());
     if (!target) { lines.push(`Nobody called "${who}" here to talk to.`); return { ok: false, lines }; }
     const def = reverie.CENSUS_BY_ID[target.userId];
+    /* A SOUL on the other end. You turn to them and the room sees it; they
+     * answer in their own time, the way a person does. No model, no allowance. */
+    if (!String(target.userId).startsWith('npc:')) {
+      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} stops to talk with ${target.name}.`);
+      lines.push(`You turn to ${target.name} to talk.`);
+      return { ok: true, lines, kinds: [...kinds, 'emote'] };
+    }
     /* Pass game state so the NPC's response varies by time, weather,
      * crowd size — combinatorial, never the same canned rotation. */
     const heardAll = (ch.attrs && ch.attrs.heard) || {};
@@ -1497,7 +1508,40 @@ async function runCommand({ userId, displayName, command, isWizard = false, live
        * person on the receiving end, so they draw from one pool. */
       heard: heardAll[target.userId] || [],
     };
-    const spoke = def ? reverie.npcTalkLine(def, talkCtx) : { line: `${target.name} nods at you, friendly enough.`, hash: null };
+    /* NEW WORDS FIRST, AUTHORED WORDS AS THE FLOOR (Sep 21 2026).
+     *
+     * This is the discoverable verb: it is on the tap menu, in the help, and
+     * in the line that tells you what you can do with a person. It is also the
+     * one that drew from a pool of three or four sentences, so a player
+     * exhausted any one citizen in about four commands and then watched them
+     * repeat. Twenty-six citizens hold 86 talk lines between them, 3.3 each.
+     * That is precisely what Kade means by "with canned responses, people are
+     * obviously gonna tell what is who".
+     *
+     * So it asks the voice lane first, at $0.00016 a turn against a daily
+     * allowance, and falls back to the authored line when the lane is off,
+     * spent or unreachable. The fallback is SILENT, because the whole point is
+     * that you cannot tell which of the two you just got. See life/voice.js. */
+    let fresh = null;
+    try {
+      fresh = await require('./life/voice').speak({
+        person: target,
+        place: (await MooRoom.findOne({ roomId: ch.roomId }).lean())?.name || 'the city',
+        weather: (reverie.weatherNow() || {}).line || '',
+        doing: reverie.npcDoingNow(target.userId)?.doing || '',
+        player: ch.name,
+        message: `${ch.name} comes over to talk with you. Say something to them.`,
+        history: [],
+        canon: def,
+      });
+    } catch (_) {
+      fresh = null;
+    }
+    const spoke = fresh
+      ? { line: fresh, hash: null }
+      : def
+        ? reverie.npcTalkLine(def, talkCtx)
+        : { line: `${target.name} nods at you, friendly enough.`, hash: null };
     if (spoke.hash) {
       const nextHeard = overhear.rememberLine(talkCtx.heard, spoke.hash);
       await MooChar.updateOne({ _id: ch._id }, { $set: { [`attrs.heard.${target.userId}`]: nextHeard } });

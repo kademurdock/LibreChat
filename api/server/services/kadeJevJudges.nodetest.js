@@ -298,11 +298,55 @@ test('directorOptions: every authored line is offered, plus nobody, and keys map
   const { options, map } = J.directorOptions(PRESENT);
   assert.strictEqual(Object.keys(options).length, 4, 'three lines plus nobody');
   assert.ok(options[J.REVERIE_NOBODY], 'silence is always on the menu');
-  assert.deepStrictEqual(map['npc:nell#0'], { id: 'npc:nell', name: 'Nell Calder', line: 'Nell smooths a towel.' });
+  assert.deepStrictEqual(map['npc:nell#0'], {
+    id: 'npc:nell', name: 'Nell Calder', line: 'Nell smooths a towel.', said: false,
+  });
   assert.ok(options['npc:pat#0'].includes('Pat Harris'), 'the option text names the speaker');
   /* a citizen with no lines contributes nothing and breaks nothing */
   const bare = J.directorOptions([{ id: 'x', name: 'X', lines: [] }]);
   assert.deepStrictEqual(Object.keys(bare.map), []);
+});
+
+test('directorOptions: a line can be speech, and the emit has to be able to tell', () => {
+  /* Part 237 offered only `def.ambient`, so every choice the director could
+   * make was a stage direction and no citizen had ever spoken first. Their
+   * written dialogue sat unused in `def.talk`. An entry may now carry `said`,
+   * and reverie.js emits those as `say` rather than `emote`. */
+  const { options, map } = J.directorOptions([
+    {
+      id: 'npc:pat', name: 'Pat Harris', doing: 'working the grill',
+      lines: [
+        { text: 'Pat wipes down the counter.', said: false },
+        { text: 'Coffee is fresh, if you believe me.', said: true },
+      ],
+    },
+  ]);
+  assert.strictEqual(map['npc:pat#0'].said, false);
+  assert.strictEqual(map['npc:pat#1'].said, true);
+  assert.ok(options['npc:pat#1'].includes('says'), 'Jev is told which ones are spoken');
+  assert.ok(!options['npc:pat#0'].includes('says'));
+  /* Bare strings are still gestures, which is what every Part 237 caller and
+   * every test above passes in. Breaking that would silently turn the city
+   * chatty in places nobody looked at. */
+  const legacy = J.directorOptions([{ id: 'npc:nell', name: 'Nell Calder', lines: ['Nell turns a page.'] }]);
+  assert.strictEqual(legacy.map['npc:nell#0'].said, false);
+  /* A malformed entry is dropped rather than crashing the tick. */
+  const junk = J.directorOptions([{ id: 'npc:x', name: 'X', lines: [null, 42, { said: true }, { text: '  ' }] }]);
+  assert.deepStrictEqual(Object.keys(junk.map), []);
+});
+
+test('directorOptions: more lines per person now, and the ceiling still holds', () => {
+  /* perPerson went 4 -> 8 so a citizen's spoken lines are actually reachable
+   * beside their gestures; maxOptions is what stops a crowded room from
+   * sending Jev a wall of text. */
+  const many = Array.from({ length: 12 }, (_, i) => `line ${i}`);
+  const one = J.directorOptions([{ id: 'npc:a', name: 'A', lines: many }]);
+  assert.strictEqual(Object.keys(one.map).length, 8);
+  const crowd = J.directorOptions(
+    Array.from({ length: 9 }, (_, i) => ({ id: `npc:p${i}`, name: `P${i}`, lines: many })),
+  );
+  assert.ok(Object.keys(crowd.map).length <= 40, 'maxOptions caps the whole room');
+  assert.ok(crowd.options[J.REVERIE_NOBODY], 'silence survives the cap');
 });
 
 test('decideDirector: silence, an unknown key and a shaky pick all mean no line', () => {

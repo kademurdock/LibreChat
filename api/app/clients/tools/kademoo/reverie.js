@@ -1,7 +1,37 @@
 /* REVERIE — the city, carved (Aug 10 2026, from REVERIE_FOUNDERS_PLAN v2).
  * This file is DATA plus deterministic systems: the wards, the streets, the
  * rooms, the census of synth citizens, the weather, and the world tick.
- * No model in any loop — the Game Parlor law holds here too. The engine
+ * THE LAW, AS AMENDED BY THE FOUNDER (Sep 21 2026).
+ *
+ * This line used to read "No model in any loop", with one carved exception
+ * letting a finite trial "select only approved small activities for nearby
+ * public residents, without moving anyone or changing money, relationships,
+ * inventory or outcomes". Part 240 stopped at that sentence on purpose and
+ * said the wider question was hers. She has answered it:
+ *
+ *   "the twist is, I had the idea that synth players would inhabit the world
+ *    alongside soul players. And nobody should ever be able to tell whether
+ *    the person behind the player is a synth or a soul. With canned responses,
+ *    people are obviously gonna tell what is who. I don't want players to know
+ *    who or what is on the other end of that keyboard. So it's expensive to
+ *    have an llm play the game, I was thinking jev does the playing and llm
+ *    does the speeking interacting whatever."
+ *
+ * So the law now reads: NO MODEL DECIDES WHAT IS TRUE. A model may give a
+ * citizen WORDS, because a person who only ever says one of four sentences is
+ * not a person and the Veil cannot survive them. A model still may not move
+ * anybody, spend anything, or change money, inventory, relationships, consent,
+ * location or any world fact -- the referee is still code, the outcome is
+ * still code, and residentReply is handed no tools and told so in its prompt.
+ *
+ * Jev directs and the LLM voices, which is her split exactly, and the
+ * arithmetic agrees with her instinct: PLAYING is constant, so it goes to the
+ * cheap classifier; SPEAKING is bounded by how fast a person can type, so it
+ * can afford words. See life/voice.js for the money and life/veil.js for what
+ * a player is allowed to learn about who they are talking to.
+ *
+ * The world still sleeps when nobody is connected. Nothing below spends a cent
+ * in an empty city. The engine
  * (engine.js) calls carveReverie() once per boot (idempotent, insert-if-
  * absent: it NEVER overwrites a room she or the Angel has touched) and
  * tickWorld() on a throttle from runCommand.
@@ -1442,11 +1472,22 @@ async function tickWorld() {
       let directed = null;
       if (director && typeof director.directRoom === 'function') {
         try {
+          /* GESTURES AND WORDS BOTH (Sep 21 2026). This used to offer Jev only
+           * `d.ambient`, so every choice it could make was a stage direction
+           * and no citizen in the city had ever spoken first. Their written
+           * dialogue was sitting in `d.talk` the whole time, reachable only if
+           * a player walked up and used a verb. Now the director can have
+           * somebody say something because the moment called for it, which is
+           * most of what "there are other players here" actually feels like. */
           const present = hereNpcs
             .map((n) => {
               const d = CENSUS_BY_ID[n.userId];
-              return d && d.ambient && d.ambient.length
-                ? { id: n.userId, name: n.name, doing: npcDoingNow(n.userId)?.doing || '', lines: d.ambient }
+              const lines = [
+                ...(d && Array.isArray(d.ambient) ? d.ambient.map((t) => ({ text: t, said: false })) : []),
+                ...(d && Array.isArray(d.talk) ? d.talk.map((t) => ({ text: t, said: true })) : []),
+              ];
+              return lines.length
+                ? { id: n.userId, name: n.name, doing: npcDoingNow(n.userId)?.doing || '', lines }
                 : null;
             })
             .filter(Boolean);
@@ -1503,7 +1544,21 @@ async function tickWorld() {
       if (directed && typeof directed === 'object') {
         _lastAmbient[directed.id] = directed.line;
         const seq = await nextSeq();
-        await MooEvent.create({ seq, roomId, actorUserId: directed.id, actorName: directed.name, kind: 'emote', text: directed.line, at: new Date() });
+        /* Speech goes in as speech. An emote reads as scenery; a `say` reads
+         * as somebody talking to the room, which is the difference between a
+         * place with people in it and a place with furniture in it. */
+        await MooEvent.create({
+          seq,
+          roomId,
+          actorUserId: directed.id,
+          actorName: directed.name,
+          kind: directed.said ? 'say' : 'emote',
+          text: directed.said ? `${directed.name}: ${directed.line}` : directed.line,
+          at: new Date(),
+        });
+        /* A citizen who just spoke or moved is not idle, and the people-line
+         * reads their idleness the same way it reads a human's now. */
+        await MooChar.updateOne({ userId: directed.id }, { $set: { lastActiveAt: new Date() } });
         continue;
       }
 

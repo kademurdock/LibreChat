@@ -51,7 +51,13 @@ export function sceneModel(room, hud = {}) {
         self: true,
         appearance: hud.appearance,
       },
-      ...(room.peopleDetail || []).toSorted((a, b) => String(a.id).localeCompare(String(b.id))),
+      /* SORT BY NAME, NOT BY ID (the Veil, Sep 21 2026). Ids beginning `npc:`
+       * sort into a contiguous block, so the citizens always stood together in
+       * the same part of the picture and in the same stretch of the read-out
+       * order. A block is an answer too. Names interleave. */
+      ...(room.peopleDetail || []).toSorted((a, b) =>
+        String(a.name || '').localeCompare(String(b.name || '')) ||
+        String(a.id).localeCompare(String(b.id))),
     ].slice(0, 12),
     totalPeople: 1 + (room.peopleDetail || []).length,
     hangout: room.hangout ? { title: room.hangout.title, guests: room.hangout.guests || [] } : null,
