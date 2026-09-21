@@ -792,7 +792,40 @@ class AgentClient extends BaseClient {
          * KADE_STYLE_NOTE already carries it (same do-not-double rule as
          * KADE_FRESHNESS_NOTE). The includes-guard is paranoia against any
          * lane appending twice. */
-        const headParts = [agent.instructions];
+        /** KADE Sep 21 2026 — THE PERSONA GOES LAST. Her call, in her words:
+         * "You can fix the persona thing house voice etc. I care about prompt
+         * caching more than safety presidence lol."
+         *
+         * WHAT WAS MEASURED. KADE_PLATFORM_NOTE is 3,099 words and
+         * KADE_STYLE_NOTE another 268 — about 4,545 tokens of house machinery
+         * on every agent, every turn — and this head used to OPEN with the
+         * persona and put all of it after. So a thousand-word character sat at
+         * the top and four and a half thousand tokens of house voice sat
+         * between her and the conversation, which is the part a model weights
+         * hardest. Her complaint was that Kiana "sounds like an AI text book
+         * with no personality"; that ordering is a plausible mechanical reason
+         * for it, and the fix is the order and not more prose.
+         *
+         * WHAT IT DOES TO THE CHILD NOTE, which is the part worth asking about
+         * before touching. The audience notes are appended to agent.instructions
+         * in build.js, so they travel WITH the persona — from in front of the
+         * platform note to behind it. That makes them later, and therefore
+         * weighted harder, not softer. The platform note's hard line already
+         * yielded to them in words rather than by position; the one sentence
+         * that described them as "appended BEFORE this one" was true only of
+         * the old order and has been reworded to say what is now the case.
+         *
+         * AND IT IS BETTER FOR THE CACHE, which is what she said she cares
+         * about most. The platform note is fleet-wide and a persona is not, so
+         * leading with the note gives every agent on the platform the same
+         * first ~4,500 tokens to share, where before two agents shared no
+         * prefix at all. One conversation's own head is byte-stable either way,
+         * so nothing that works today gets slower.
+         *
+         * Kill: KADE_PERSONA_LAST=0 puts it back at the front. */
+        const personaLast = process.env.KADE_PERSONA_LAST !== '0';
+        const personaBlock = agent.instructions;
+        const headParts = personaLast ? [] : [personaBlock];
         /** KADE Aug 7 2026 — BARE PROBE agents (her cost-teeth round): an
          * agent whose instructions carry the marker "KADE BARE PROBE" (the
          * Canary today) skips the platform note, world block, memory, and
@@ -840,6 +873,10 @@ class AgentClient extends BaseClient {
           } catch (_e) {
             /* an anniversary is garnish — never break the turn */
           }
+        }
+        /* Last, so the character is the thing closest to the conversation. */
+        if (personaLast) {
+          headParts.push(personaBlock);
         }
         agent.instructions = headParts.filter(Boolean).join('\n\n');
         if (volatileTurnContext && memoryEligible) {
