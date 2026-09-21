@@ -506,12 +506,32 @@ async function selectTools(p) {
   if (all.has('web_search') && !keep.has('web_search') && INFO_SHAPE.test(text)) {
     pendingSet(p.conversationId);
   }
-  const dropped = [...all].filter((n) => !keep.has(n));
   const reason = `kw=[${[...kw].join(',')}] emb=[${[...emb.hits].join(',')}]${
     stickyTools && stickyTools.size ? ` sticky=[${[...stickyTools].join(',')}]` : ''
   }`;
+  /* Part 239 — F2, THE ADD-ONLY SWITCH. Kade approved the whole ideas list.
+   * The shadow above has been watching since Part 236 and its trial is
+   * unusually clean: of 24 labelled messages every genuinely needed tool
+   * scored 0.87 or higher (13 of 13, including all three misses the regexes
+   * made), and of 94 readings of a tool that was NOT needed the highest was
+   * exactly 0.50. The floor sits at 0.80, in that gap.
+   *
+   * Jev may only ADD. It can hand the model a tool the patterns missed; it
+   * can never take one away. A wrong add offers a tool the model declines.
+   * A wrong drop would leave somebody unanswerable — which is the fault this
+   * exists to fix — so dropping is not on the table at any score. `dropped`
+   * is recomputed AFTER the add so the two can never disagree.
+   * Kill: KADE_JEV_TOOLS_ADD=0. Budget: KADE_JEV_TOOLS_ADD_MS (1200). */
+  let added = [];
+  try {
+    added = await require('./kadeJevJudges').toolsAdd({ text, tools: [...all], keep, log: (line) => logger.info(line) });
+  } catch (_) {
+    added = [];
+  }
   jevToolsShadow(text, all, keep);
-  return { keep, dropped, reason, scored: emb.scored.slice(0, 3) };
+  /* computed here, after the add, so it can never disagree with `keep` */
+  const dropped = [...all].filter((n) => !keep.has(n));
+  return { keep, dropped, reason: added.length ? `${reason} jev+[${added.join(',')}]` : reason, scored: emb.scored.slice(0, 3) };
 }
 
 /* Part 236 (Sep 20 2026) — JEV WATCHES THE SELECTION, SHADOW ONLY. The header

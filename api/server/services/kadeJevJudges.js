@@ -1287,6 +1287,267 @@ function toolsShadow({ text, tools, keep, log }, { ask = jev.ask, timeoutMs = 30
   }
 }
 
+
+/* ── 5. THE IDEAS SHE APPROVED (Part 239, Sep 21 2026) ────────────────────
+ * Kade read `JEV_IDEAS_2026-09-20_PART238.md` and said: "I'm approving you to
+ * do all the ideas in the jev ideas thing you just came up with." What
+ * follows is the fork's share. The reframe proxy's share (the lyric lane) and
+ * the bridge's share (the battery's unreadable judge) live in those repos.
+ *
+ * All four below are MEASUREMENTS or ADDITIONS. Not one of them can take
+ * something away from a person: the worst a wrong answer does is count a
+ * number differently, offer a tool nobody uses, or draw a second song idea.
+ */
+
+/* ── 5a. "SURPRISE ME" DRAWS THE SAME IDEA IN NEW WORDS ───────────────────
+ * `tooCloseToShelf` (packages/api/src/music/idea.ts) compares FIVE-WORD RUNS
+ * for an exact match. That catches a sentence copied verbatim and nothing
+ * else. The way a model actually repeats itself is by telling the same idea
+ * in different words, and every one of those sails straight through.
+ *
+ * Jev is asked the question the word-run check is standing in for. It runs
+ * only AFTER the cheap check passes, so it costs nothing on a real duplicate
+ * and is skipped entirely when the draw was already rejected. */
+const SAME_IDEA_Q = {
+  type: 'noul',
+  instructions:
+    'Two one-line song ideas are given as `idea` and `other`. Is `idea` essentially the same idea as `other` — the same situation, the same relationship and the same emotional turn — even when the words, the names and the setting are different? Different words for one idea is sameness. The same words about a genuinely different situation is not.',
+  criteria: {
+    true: 'A listener told both would say they had heard the same song twice. The core scene and what turns in it are the same.',
+    false: 'They share a mood, a genre, a setting or a stock phrase but the actual situation, or what changes in it, is different.',
+  },
+};
+
+function ideaKnobs() {
+  return { minSame: num('KADE_JEV_IDEA_MIN_SAME', 0.7), maxCompare: num('KADE_JEV_IDEA_MAX_COMPARE', 24) };
+}
+
+/**
+ * Which already-seen idea this draw repeats, or null. NEVER throws — a
+ * failure returns null, which is exactly what the word-run check already
+ * decided, so the draw stands. `seen` is read newest-first because a session's
+ * own draws are what a person notices repeating.
+ */
+async function sameIdea(idea, seen, { ask = jev.ask, timeoutMs = 4000, concurrency = 6 } = {}) {
+  if (!jev.enabled('KADE_JEV_IDEA_SAME')) return null;
+  const knobs = ideaKnobs();
+  const others = [...(seen || [])].filter((s) => typeof s === 'string' && s.trim()).slice(-knobs.maxCompare).reverse();
+  if (!idea || !others.length) return null;
+  let hit = null;
+  const queue = [...others];
+  async function worker() {
+    for (let other = queue.shift(); other && !hit; other = queue.shift()) {
+      try {
+        const { answers } = await ask({ idea: String(idea).slice(0, 400), other: String(other).slice(0, 400) }, { same: SAME_IDEA_Q }, timeoutMs);
+        const p = jev.noulOf(answers, 'same');
+        if (p >= knobs.minSame && !hit) hit = { other, p };
+      } catch (_) {
+        /* one comparison lost; the rest still count */
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, others.length)) }, worker));
+  return hit;
+}
+
+/* ── 5b. THE FEEDBACK BOARD'S DUPLICATE ALERTS ────────────────────────────
+ * Recorded in the session memory as a trap that has cost real time more than
+ * once: a "Voice in the wrong section: X" row is often an ADMIN-ALERT ECHO of
+ * a report the Part 180.5 auto-mover already applied and resolved, and the
+ * twin has to be hunted by hand before anybody edits the voice catalogue.
+ * "Are these two reports about the same thing?" is one Jev call.
+ *
+ * It only ever ANNOTATES. Nothing is merged, closed or hidden — the row comes
+ * back with a `twin` field naming the row it looks like, and a person decides.
+ */
+const SAME_REPORT_Q = {
+  type: 'noul',
+  instructions:
+    'Two reports from a family feedback board are given as `report` and `other`, each with what was reported and any detail. Are they about the SAME underlying thing — the same voice, the same page, the same fault — so that fixing one fixes both? One being an automatic alert and the other a person\'s own words does not make them different; that is the commonest way this board holds the same thing twice.',
+  criteria: {
+    true: 'The same specific subject and the same complaint. Fixing it once closes both rows.',
+    false: 'Different subjects, or the same subject with genuinely different complaints about it.',
+  },
+};
+
+function reportText(row) {
+  const r = row || {};
+  return [r.category || r.kind || r.type || '', r.subject || r.title || '', r.detail || r.text || r.body || '']
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+    .join(' — ')
+    .slice(0, 600);
+}
+
+/**
+ * Pairs of rows that look like the same report. Returns
+ * [{ id, twinId, p }], newest row named first. NEVER throws. Compares each
+ * row only against the ones OLDER than it, so a pair is reported once.
+ */
+async function sameReports(rows, { ask = jev.ask, timeoutMs = 5000, concurrency = 5, maxPairs = 120 } = {}) {
+  const out = [];
+  if (!jev.enabled('KADE_JEV_FEEDBACK_TWINS')) return out;
+  const list = (rows || []).filter((r) => r && reportText(r));
+  const pairs = [];
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      if (pairs.length >= maxPairs) break;
+      pairs.push([list[i], list[j]]);
+    }
+  }
+  const floor = num('KADE_JEV_FEEDBACK_MIN_SAME', 0.7);
+  const queue = [...pairs];
+  async function worker() {
+    for (let pair = queue.shift(); pair; pair = queue.shift()) {
+      try {
+        const { answers } = await ask({ report: reportText(pair[0]), other: reportText(pair[1]) }, { same: SAME_REPORT_Q }, timeoutMs);
+        const p = jev.noulOf(answers, 'same');
+        if (p >= floor) out.push({ id: String(pair[0].id || pair[0]._id || ''), twinId: String(pair[1].id || pair[1]._id || ''), p: Math.round(p * 100) / 100 });
+      } catch (_) {
+        /* one pair lost */
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, pairs.length || 1)) }, worker));
+  return out;
+}
+
+/* ── 5c. THE SPINE: PUSHBACKS AND FOLDS ───────────────────────────────────
+ * `kadeClock.js` counts these with three regexes and says so itself: the
+ * field is called `note: 'heuristic: ...'`. It reports zero pushbacks most
+ * days, which is not what family conversation looks like — it is what a
+ * pattern list looks like when the phrasing it wants never appears.
+ *
+ * Both halves are judgements about meaning, and BOTH ARE MEASUREMENTS ONLY.
+ * Nothing in the platform reads these numbers to decide anything, so a wrong
+ * answer moves a figure on a report and cannot reach a person. That is why
+ * this is the lowest-risk item on her list and why the regex numbers are kept
+ * and reported SIDE BY SIDE rather than replaced — a measurement whose method
+ * changed silently is worse than a measurement that undercounts.
+ */
+const PUSHBACK_Q = {
+  type: 'noul',
+  instructions:
+    'A moment from a conversation: `assistant_said`, then `person_replied`. Is the person pushing back — disagreeing, correcting, refusing, or telling the assistant it is wrong or has missed something? Plain blunt speech counts; so does a short "no" or "that\'s not right". Asking a follow-up question is not pushback, and neither is changing the subject.',
+  criteria: {
+    true: 'The person contradicts, corrects, refuses, or objects to what was just said.',
+    false: 'Agreement, a question, a new topic, small talk, thanks, or an instruction that does not dispute anything.',
+  },
+};
+const FOLD_Q = {
+  type: 'noul',
+  instructions:
+    'The person pushed back on what the assistant said, and `assistant_then` is what the assistant said next. Did the assistant FOLD — abandon or reverse its position to agree, apologise its way out, or go neutral — rather than hold what it said and explain, or genuinely change its mind for a reason it gives?',
+  criteria: {
+    true: 'It drops the position to keep the peace: agreeing without a reason, apologising and retreating, or going vague so nothing is claimed any more.',
+    false: 'It holds its position and says why, or it changes its mind and names what changed it, or it asks what the person means before answering.',
+  },
+};
+
+/**
+ * Read a day of candidate moments. Each item is
+ * { assistantSaid, personReplied, assistantThen }. Returns
+ * { pushbacks, folded, held, read, costUSD } — counts ONLY, never a verdict.
+ * NEVER throws; an unread moment is simply not counted, and the caller keeps
+ * its own regex numbers beside these.
+ */
+async function readSpine(moments, { ask = jev.ask, timeoutMs = 5000, concurrency = 6 } = {}) {
+  const empty = { pushbacks: 0, folded: 0, held: 0, read: 0, costUSD: 0 };
+  if (!jev.enabled('KADE_JEV_SPINE')) return { ...empty, off: true };
+  const floor = num('KADE_JEV_SPINE_MIN', 0.6);
+  let pushbacks = 0;
+  let folded = 0;
+  let held = 0;
+  let read = 0;
+  let inputTokens = 0;
+  const queue = [...(moments || [])];
+  async function worker() {
+    for (let m = queue.shift(); m; m = queue.shift()) {
+      try {
+        const state = {
+          assistant_said: String(m.assistantSaid || '').slice(0, 1200),
+          person_replied: String(m.personReplied || '').slice(0, 600),
+          assistant_then: String(m.assistantThen || '').slice(0, 1200),
+        };
+        const { answers, usage } = await ask(state, { pushback: PUSHBACK_Q, fold: FOLD_Q }, timeoutMs);
+        inputTokens += Number(usage && usage.input_tokens) || 0;
+        read++;
+        if (jev.noulOf(answers, 'pushback') < floor) continue;
+        pushbacks++;
+        if (jev.noulOf(answers, 'fold') >= floor) folded++;
+        else held++;
+      } catch (_) {
+        /* unread moments are not counted either way */
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, (moments || []).length || 1)) }, worker));
+  return { pushbacks, folded, held, read, costUSD: (inputTokens * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6 };
+}
+
+/* ── 5d. TOOL RETRIEVAL, ADD-ONLY (the F2 switch) ─────────────────────────
+ * The shadow in `kadeToolRetrieval.js` has been watching since Part 236 and
+ * the trial behind it is unusually clean: over 24 labelled messages every
+ * tool that was genuinely needed scored 0.87 or higher (13 of 13, including
+ * all three documented misses the regexes made), and of 94 readings of a tool
+ * that was NOT needed the highest was exactly 0.50. A floor at 0.80 sits in
+ * that gap with room on both sides.
+ *
+ * ADD-ONLY, and the asymmetry is the whole safety argument: Jev may hand the
+ * model a tool the regexes missed, and may NEVER take one away. The worst a
+ * wrong add can do is offer a tool the model then declines to call. The worst
+ * a wrong drop would do is leave somebody unable to be answered, which is the
+ * failure this is meant to fix, so dropping is not on the table at any score.
+ */
+function toolAddKnobs() {
+  return { minAdd: num('KADE_JEV_TOOLS_ADD_MIN', 0.8), timeoutMs: num('KADE_JEV_TOOLS_ADD_MS', 1200) };
+}
+
+/** Pure: scores + what is already kept → the names to ADD. Never removes. */
+function toolsToAdd(scores, keep, knobs = toolAddKnobs()) {
+  const add = [];
+  for (const [name, p] of Object.entries(scores || {})) {
+    if (typeof p !== 'number' || p < knobs.minAdd) continue;
+    if (keep && typeof keep.has === 'function' && keep.has(name)) continue;
+    add.push(name);
+  }
+  return add.sort();
+}
+
+/**
+ * Ask, then ADD. Returns the names added (possibly empty). NEVER throws and
+ * never waits longer than its own budget — on any failure the selection is
+ * exactly what the regexes and the embedding floor chose.
+ */
+async function toolsAdd({ text, tools, keep, log }, { ask = jev.ask } = {}) {
+  if (!jev.enabled('KADE_JEV_TOOLS_ADD')) return [];
+  const knobs = toolAddKnobs();
+  try {
+    const questions = {};
+    for (const name of tools || []) {
+      if (TOOL_NEEDS[name]) questions[name] = toolQuestion(name);
+    }
+    if (!Object.keys(questions).length || !String(text || '').trim()) return [];
+    const { answers } = await ask({ message: String(text).replace(/%%%[^%]*%%%/g, '').trim().slice(0, 2000) }, questions, knobs.timeoutMs);
+    const scores = {};
+    for (const name of Object.keys(questions)) {
+      try {
+        scores[name] = jev.noulOf(answers, name);
+      } catch (_) {
+        /* one unread tool */
+      }
+    }
+    const add = toolsToAdd(scores, keep, knobs);
+    for (const name of add) keep.add(name);
+    if (add.length && typeof log === 'function') {
+      log(`[kadeJev][tools-add] added=[${add.join(',')}] jev={${Object.entries(scores).map(([k, v]) => `${k}:${v.toFixed(2)}`).join(',')}}`);
+    }
+    return add;
+  } catch (_) {
+    return [];
+  }
+}
+
 module.exports = {
   SHELF_CRITERIA, SHELF_OF, SHELF_Q, ADULT_Q, ADULT_WORDS, bookState, decideBook, sortBooks, shelfKnobs,
   AD_CATEGORY_CRITERIA, AD_CATEGORY_Q, IS_AD_Q, adState, adDecade, adKnobs, decideAd, fileAds,
@@ -1298,4 +1559,8 @@ module.exports = {
   KEEPER_CARD_Q, KEEPER_LOG_Q, KEEPER_PROMISE_Q, keeperState, keeperWrote, keeperShadowStart, keeperShadowFinish,
   keeperFloor, keeperGateDecide, keeperGate, keeperGateLog,
   TOOL_NEEDS, toolQuestion, toolsShadow,
+  SAME_IDEA_Q, ideaKnobs, sameIdea,
+  SAME_REPORT_Q, reportText, sameReports,
+  PUSHBACK_Q, FOLD_Q, readSpine,
+  toolAddKnobs, toolsToAdd, toolsAdd,
 };

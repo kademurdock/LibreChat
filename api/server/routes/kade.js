@@ -1166,6 +1166,29 @@ router.get('/feedback', requireJwtAuth, requireAdminAccess, async (req, res) => 
       .limit(500)
       .populate('user', 'name email')
       .lean();
+    /* Part 239 — TWINS. Kade approved the whole ideas list. The session record
+     * names this as a trap that has cost real time more than once: a "Voice in
+     * the wrong section: X" row is often an ADMIN-ALERT ECHO of a report the
+     * Part 180.5 auto-mover already applied and resolved, and the twin has to
+     * be hunted by hand before anybody edits the voice catalogue.
+     *
+     * Opt-in with `?twins=1`, so the ordinary listing is byte-for-byte what it
+     * always was. It only ANNOTATES: a row gains `twin: { id, p }` naming the
+     * older row it looks like. Nothing is merged, closed, hidden or reordered
+     * — a person still decides. Kill: KADE_JEV_FEEDBACK_TWINS=0. */
+    if (req.query.twins === '1' && items.length > 1) {
+      try {
+        const pairs = await require('~/server/services/kadeJevJudges').sameReports(items);
+        const byId = new Map(items.map((i) => [String(i._id), i]));
+        for (const pair of pairs) {
+          const row = byId.get(pair.id);
+          if (row) row.twin = { id: pair.twinId, p: pair.p };
+        }
+        if (pairs.length) logger.info(`[kadeJev][feedback-twins] ${pairs.length} pair(s) over ${items.length} row(s)`);
+      } catch (e) {
+        logger.warn('[kadeJev][feedback-twins] skipped: ' + e.message);
+      }
+    }
     res.json(items);
   } catch (err) {
     logger.error(`[kade/feedback] list failed: ${err.message}`);

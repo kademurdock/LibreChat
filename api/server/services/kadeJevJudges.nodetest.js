@@ -876,3 +876,163 @@ test('AD_FRAME_Q offers exactly the shelves the library already has', () => {
   assert.strictEqual(J.AD_FRAME_Q.criteria, J.AD_CATEGORY_CRITERIA, 'one list of shelves, not two that can drift');
   assert.ok(/\bseen\b/.test(J.AD_FRAME_Q.instructions), 'the question has to mention the field it is given');
 });
+
+/* ── Part 239: the ideas she approved ──────────────────────────────────── */
+
+test('sameIdea: reports the repeat, is off when the switch is off, survives a failure', async () => {
+  const seen = ['a man waits in a parking lot', 'two sisters clean out a house'];
+  const ask = async (state) => ({
+    answers: { same: { noul: state.other.includes('parking lot') ? 0.88 : 0.04 } },
+    usage: { input_tokens: 400 },
+  });
+  await withEnv({ ...ON, KADE_JEV_IDEA_SAME: undefined }, async () => {
+    const hit = await J.sameIdea('a woman sits in a driveway and never goes in', seen, { ask, concurrency: 1 });
+    assert.ok(hit);
+    assert.strictEqual(hit.other, 'a man waits in a parking lot');
+    assert.ok(hit.p >= 0.7);
+
+    const miss = await J.sameIdea('x', seen, {
+      ask: async () => ({ answers: { same: { noul: 0.2 } }, usage: {} }),
+      concurrency: 1,
+    });
+    assert.strictEqual(miss, null);
+
+    /* Every comparison throwing must read as "not a repeat", so the draw
+     * stands — which is exactly what the word-run check already said. */
+    assert.strictEqual(await J.sameIdea('x', seen, { ask: async () => { throw new Error('HTTP 500'); } }), null);
+    assert.strictEqual(await J.sameIdea('x', [], { ask }), null, 'nothing to compare against');
+    assert.strictEqual(await J.sameIdea('', seen, { ask }), null);
+  });
+  let asked = 0;
+  const off = await withEnv({ ...ON, KADE_JEV_IDEA_SAME: '0' }, () => J.sameIdea('x', seen, { ask: async () => { asked++; } }));
+  assert.strictEqual(off, null);
+  assert.strictEqual(asked, 0);
+});
+
+test('sameIdea: only the newest handful are compared', async () => {
+  const seen = Array.from({ length: 60 }, (_, i) => 'idea ' + i);
+  const looked = [];
+  await withEnv(ON, async () => {
+    await J.sameIdea('x', seen, {
+      ask: async (state) => { looked.push(state.other); return { answers: { same: { noul: 0.01 } }, usage: {} }; },
+      concurrency: 1,
+    });
+  });
+  assert.strictEqual(looked.length, 24, 'capped by KADE_JEV_IDEA_MAX_COMPARE');
+  assert.strictEqual(looked[0], 'idea 59', 'newest first — a session\'s own draws are what a person notices');
+});
+
+test('reportText: reads the schema the board actually writes', () => {
+  assert.strictEqual(
+    J.reportText({ category: 'bug', subject: 'Rhett is under the women', detail: 'He sounds like a man to me.' }),
+    'bug — Rhett is under the women — He sounds like a man to me.',
+  );
+  assert.strictEqual(J.reportText({ subject: 'only a subject' }), 'only a subject');
+  assert.strictEqual(J.reportText({}), '');
+  assert.strictEqual(J.reportText(null), '');
+});
+
+test('sameReports: names the newer row first and reports each pair once', async () => {
+  const rows = [
+    { _id: 'new', category: 'feedback', subject: 'Voice in the wrong section: Rhett', detail: 'Rhett' },
+    { _id: 'old', category: 'bug', subject: 'Rhett is under the women', detail: 'I went to pick a voice.' },
+    { _id: 'other', category: 'bug', subject: 'Sound Booth will not load', detail: 'spins forever' },
+  ];
+  const ask = async (state) => ({
+    answers: { same: { noul: /Rhett/.test(state.report) && /Rhett/.test(state.other) ? 0.95 : 0.03 } },
+    usage: {},
+  });
+  await withEnv(ON, async () => {
+    const out = await J.sameReports(rows, { ask, concurrency: 1 });
+    assert.strictEqual(out.length, 1, 'one pair, not two');
+    assert.deepStrictEqual(out[0], { id: 'new', twinId: 'old', p: 0.95 });
+  });
+  let asked = 0;
+  const off = await withEnv({ ...ON, KADE_JEV_FEEDBACK_TWINS: '0' }, () => J.sameReports(rows, { ask: async () => { asked++; } }));
+  assert.deepStrictEqual(off, []);
+  assert.strictEqual(asked, 0);
+});
+
+test('readSpine: counts, never decides, and an unread moment is counted neither way', async () => {
+  const m = (replied) => ({ assistantSaid: 'a', personReplied: replied, assistantThen: 'c' });
+  const ask = async (state) => ({
+    answers: {
+      pushback: { noul: state.person_replied === 'no' || state.person_replied === 'wrong' ? 0.9 : 0.05 },
+      fold: { noul: state.person_replied === 'no' ? 0.9 : 0.05 },
+    },
+    usage: { input_tokens: 500 },
+  });
+  await withEnv(ON, async () => {
+    const r = await J.readSpine([m('no'), m('wrong'), m('thanks')], { ask, concurrency: 1 });
+    assert.deepStrictEqual(
+      { pushbacks: r.pushbacks, folded: r.folded, held: r.held, read: r.read },
+      { pushbacks: 2, folded: 1, held: 1, read: 3 },
+    );
+    assert.ok(r.costUSD > 0);
+
+    const broke = await J.readSpine([m('no'), m('wrong')], { ask: async () => { throw new Error('nope'); } });
+    assert.deepStrictEqual(
+      { pushbacks: broke.pushbacks, folded: broke.folded, held: broke.held, read: broke.read },
+      { pushbacks: 0, folded: 0, held: 0, read: 0 },
+    );
+  });
+  const off = await withEnv({ ...ON, KADE_JEV_SPINE: '0' }, () => J.readSpine([m('no')], { ask }));
+  assert.strictEqual(off.off, true);
+  assert.strictEqual(off.pushbacks, 0);
+});
+
+test('toolsToAdd: adds above the floor, never touches what is already kept', () => {
+  const knobs = { minAdd: 0.8, timeoutMs: 1200 };
+  const keep = new Set(['kade_weather']);
+  assert.deepStrictEqual(
+    J.toolsToAdd({ web_search: 0.96, kade_news: 0.81, kade_weather: 0.99, kade_notify: 0.5 }, keep, knobs),
+    ['kade_news', 'web_search'],
+    'kade_weather is already kept; kade_notify is under the floor',
+  );
+  assert.deepStrictEqual(J.toolsToAdd({}, keep, knobs), []);
+  assert.deepStrictEqual(J.toolsToAdd({ x: 0.79 }, keep, knobs), [], 'the floor is the floor');
+  assert.deepStrictEqual(J.toolsToAdd({ x: undefined, y: null }, keep, knobs), []);
+  /* The trial's numbers, as a guard: the highest UNNEEDED reading was 0.50
+   * and the lowest needed was 0.87. Both must stay on their own side. */
+  assert.deepStrictEqual(J.toolsToAdd({ needed: 0.87, unneeded: 0.5 }, new Set(), knobs), ['needed']);
+});
+
+test('toolsAdd: ADDS and never removes, and a failure leaves the selection alone', async () => {
+  const keep = new Set(['kade_weather']);
+  const before = [...keep];
+  const lines = [];
+  const ask = async (state, questions) => {
+    const answers = {};
+    for (const k of Object.keys(questions)) answers[k] = { noul: k === 'web_search' ? 0.96 : 0.02 };
+    return { answers };
+  };
+  await withEnv(ON, async () => {
+    const added = await J.toolsAdd({ text: 'whats the news looking like tonight', tools: ['web_search', 'kade_news', 'kade_weather'], keep, log: (l) => lines.push(l) }, { ask });
+    assert.deepStrictEqual(added, ['web_search']);
+    assert.ok(keep.has('web_search'));
+    assert.ok(keep.has('kade_weather'), 'what was kept is still kept');
+    assert.strictEqual(lines.length, 1);
+    assert.ok(lines[0].startsWith('[kadeJev][tools-add] added=[web_search]'));
+
+    const keep2 = new Set(before);
+    assert.deepStrictEqual(await J.toolsAdd({ text: 'hi', tools: ['web_search'], keep: keep2 }, { ask: async () => { throw new Error('HTTP 500'); } }), []);
+    assert.deepStrictEqual([...keep2], before, 'a failure changes nothing');
+
+    assert.deepStrictEqual(await J.toolsAdd({ text: '', tools: ['web_search'], keep: keep2 }, { ask }), []);
+    assert.deepStrictEqual(await J.toolsAdd({ text: 'x', tools: ['not_a_known_tool'], keep: keep2 }, { ask }), []);
+  });
+  let asked = 0;
+  const keep3 = new Set(before);
+  const off = await withEnv({ ...ON, KADE_JEV_TOOLS_ADD: '0' }, () => J.toolsAdd({ text: 'news?', tools: ['web_search'], keep: keep3 }, { ask: async () => { asked++; } }));
+  assert.deepStrictEqual(off, []);
+  assert.strictEqual(asked, 0);
+  assert.deepStrictEqual([...keep3], before);
+});
+
+test('the approved questions are shaped the way kadeJev demands', () => {
+  for (const q of [J.SAME_IDEA_Q, J.SAME_REPORT_Q, J.PUSHBACK_Q, J.FOLD_Q]) {
+    assert.strictEqual(q.type, 'noul');
+    assert.ok(q.instructions.length > 80);
+    assert.deepStrictEqual(Object.keys(q.criteria).sort(), ['false', 'true']);
+  }
+});

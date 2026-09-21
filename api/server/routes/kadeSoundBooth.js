@@ -2503,8 +2503,24 @@ router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req,
       });
       costUSD += made.costUSD; measured = measured && made.measured; usage = made.usage;
       const candidate = cleanSongIdea(made.text);
-      if (candidate && !tooCloseToShelf(candidate, seen)) idea = candidate;
-      else logger.info(`[soundbooth/idea] try ${tries} refused: ${candidate ? 'too close to an idea she has seen' : 'not an idea'}`);
+      /* Part 239: `tooCloseToShelf` compares five-word runs, so it catches a
+       * sentence copied word for word and nothing else. The way a model
+       * really repeats itself is by telling the same idea in new words, and
+       * every one of those used to pass. Jev is asked the question the word
+       * runs were standing in for, and only AFTER they pass, so a real
+       * duplicate still costs nothing. Fails open: no answer, draw stands.
+       * Kill: KADE_JEV_IDEA_SAME=0. */
+      let twin = null;
+      if (candidate && !tooCloseToShelf(candidate, seen)) {
+        try {
+          twin = await jevJudges.sameIdea(candidate, seen);
+        } catch (e) {
+          twin = null;
+        }
+        if (twin) logger.info(`[kadeJev][idea-same] ${twin.p.toFixed(2)} redraw: "${String(candidate).slice(0, 60)}" repeats "${String(twin.other).slice(0, 60)}"`);
+      }
+      if (candidate && !twin && !tooCloseToShelf(candidate, seen)) idea = candidate;
+      else logger.info(`[soundbooth/idea] try ${tries} refused: ${candidate ? (twin ? 'the same idea she has already seen, in new words' : 'too close to an idea she has seen') : 'not an idea'}`);
     }
     logKadeUsage({
       userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD,

@@ -800,6 +800,61 @@ router.get('/voice-report', async (req, res) => {
         note: 'heuristic: short disagreement (<=25 words) followed by a reply that opens with a concession = fold; a hold phrase = held; the rest unclassified',
         samples,
       };
+      /* Part 239 — JEV READS THE SAME MOMENTS, BESIDE THE REGEXES.
+       * Kade approved the whole ideas list. The three patterns above only
+       * ever see the phrasing they were written for, which is why this
+       * reports zero pushbacks most days — that is not what family
+       * conversation looks like, it is what a pattern list looks like.
+       *
+       * The candidate set is WIDER than the regexes': every short person's
+       * turn that follows something the assistant said, whether or not it
+       * matches PUSH. Jev then answers two questions of meaning about it.
+       *
+       * The regex numbers above are KEPT AND UNCHANGED and Jev's land beside
+       * them under `jev`. A measurement whose method changed silently is
+       * worse than one that undercounts, and nothing on the platform reads
+       * these to decide anything, so a wrong answer moves a figure on a
+       * report and cannot reach a person. Kill: KADE_JEV_SPINE=0. */
+      try {
+        const judges = require('~/server/services/kadeJevJudges');
+        const moments = [];
+        const capped = Math.max(1, Math.min(2000, parseInt(process.env.KADE_JEV_SPINE_MAX, 10) || 240));
+        for (const list of byConvo.values()) {
+          for (let i = 1; i < list.length - 1 && moments.length < capped; i++) {
+            const u = list[i];
+            if (!u.isCreatedByUser) continue;
+            const prev = list[i - 1];
+            const next = list[i + 1];
+            if (!prev || prev.isCreatedByUser || !next || next.isCreatedByUser) continue;
+            const ut = getText(u).trim();
+            const uw = ut.split(/\s+/).filter(Boolean).length;
+            if (uw === 0 || uw > 25) continue;
+            moments.push({
+              assistantSaid: stripTags(getText(prev)).trim(),
+              personReplied: ut,
+              assistantThen: stripTags(getText(next)).trim(),
+            });
+          }
+        }
+        if (moments.length) {
+          const jr = await judges.readSpine(moments);
+          if (!jr.off) {
+            spine.jev = {
+              read: jr.read,
+              candidates: moments.length,
+              pushbacks: jr.pushbacks,
+              folded: jr.folded,
+              held: jr.held,
+              foldRate: jr.pushbacks ? Math.round((jr.folded / jr.pushbacks) * 100) / 100 : null,
+              costUSD: Math.round(jr.costUSD * 1e5) / 1e5,
+              note: 'Jev read every short person-turn between two assistant turns, not only the ones a pattern matched. Counts only; the numbers above are the old measure, untouched.',
+            };
+            logger.info(`[kadeJev][spine] candidates=${moments.length} read=${jr.read} push=${jr.pushbacks} fold=${jr.folded} held=${jr.held} regexPush=${pushbacks} $${jr.costUSD.toFixed(5)}`);
+          }
+        }
+      } catch (e) {
+        logger.warn('[kadeJev][spine] skipped (the old numbers stand): ' + e.message);
+      }
     } catch (e) {
       logger.warn('[kadeClock] spine measure failed (non-fatal): ' + e.message);
       spine = { error: e.message };

@@ -1228,6 +1228,30 @@ let lastHornDate = null;
 let ambientCursor = 0;
 const _lastAmbient = {};  /* Veil dedup: last ambient line per NPC */
 
+/* Part 239 — WHERE SOMEBODY WAS SPOKEN TO. The director sets these when its
+ * `fresh` question says a visitor addressed a citizen by name. They decay on
+ * their own, so a quiet city forgets and the ordering goes back to whatever
+ * the query returned. Memory only, deliberately: this is a hint about who to
+ * plan for first, never a fact the world depends on, so losing it in a
+ * restart costs nothing. */
+const FRESH_ROOM_MS = 10 * 60_000;
+const _freshRooms = new Map();
+function markFreshRoom(roomId) {
+  _freshRooms.set(roomId, Date.now());
+  if (_freshRooms.size > 200) {
+    for (const [id, at] of _freshRooms) if (Date.now() - at > FRESH_ROOM_MS) _freshRooms.delete(id);
+  }
+}
+/** The same rooms, in the same set, with the recently-spoken-to ones first. */
+function freshFirst(rooms) {
+  const now = Date.now();
+  return [...rooms].sort((a, b) => {
+    const fa = now - (_freshRooms.get(a) || 0) < FRESH_ROOM_MS ? 1 : 0;
+    const fb = now - (_freshRooms.get(b) || 0) < FRESH_ROOM_MS ? 1 : 0;
+    return fb - fa;
+  });
+}
+
 async function activePlayerRooms() {
   const cutoff = new Date(Date.now() - 15 * 60 * 1000);
   const players = await MooChar.find({
@@ -1308,7 +1332,10 @@ async function tickWorld() {
 
     const rooms = await activePlayerRooms();
     if (!rooms.length) return;
-    require('./life/planning').tickResidents(rooms, weatherNow().line);
+    /* Part 239: the rooms where somebody was spoken to recently go first, so
+     * that when more residents are eligible than the pilot's limit of twelve,
+     * the twelve are the ones a person is actually standing in front of. */
+    require('./life/planning').tickResidents(freshFirst(rooms), weatherNow().line);
     /* Part 180: the Band writes its block for this slot while somebody is in
      * the city, so "radio" answers with a recording and not a promise. */
     try { require('./life/radio').ensureCurrent('tick'); } catch (e) { logger.warn('[reverie] radio prewarm skipped: ' + (e && e.message)); }
@@ -1440,11 +1467,30 @@ async function tickWorld() {
              * slow or unsure, and the old coin flip below runs untouched. */
             if (r && r.answered) directed = r.pick || 'silence';
             /* `fresh` says a visitor actually spoke TO somebody here and the
-             * authored pool has no answer for it. Nothing acts on it yet —
-             * spending on new words is the resident pilot's fifty-cent day to
-             * spend, not this tick's. The line is here so a week of them can
-             * be read before that is wired. */
+             * authored pool has no answer for it.
+             *
+             * Part 239 — WHAT IT NOW DOES, AND WHAT IT DELIBERATELY DOES NOT.
+             * The idea Kade approved was "let `fresh` decide when the LLM
+             * spends". Reading the planner showed that was the wrong fix
+             * twice over. It is ALREADY event-gated — `tickResidents` only
+             * looks at rooms a real person has been in within fifteen minutes
+             * — so gating it further would buy pennies by making the town
+             * quieter, which is the opposite of the point. And the obvious
+             * richer version, an LLM writing what a citizen SAYS back, is
+             * barred by this world's canon: the exception permits a model to
+             * "select only approved small activities for nearby public
+             * residents", never to speak. That needs her word on the canon,
+             * not a commit.
+             *
+             * What `fresh` does instead is decide WHO gets the money that is
+             * already being spent. RESIDENT_PILOT.limit is 12, and when more
+             * than twelve residents are eligible the twelve chosen were
+             * whatever order the query returned. Now the citizen somebody
+             * just spoke to goes to the front of that queue. No extra spend,
+             * no new words, squarely inside the canon — the person who is
+             * being talked to is the one whose next activity gets chosen. */
             if (r && r.fresh) {
+              markFreshRoom(roomId);
               logger.info(`[reverie][jev] fresh room=${roomId} said=${r.pick ? 'line' : 'silence'} here=${present.map((p) => p.name).join(',')}`);
             }
           }
