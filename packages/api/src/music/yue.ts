@@ -6,21 +6,24 @@ import { createAudioRouter } from '../audio/jobs';
 export const yueCost =
   'No reliable per-song cost estimate yet. YuE2 currently does not deduct from your credit balance. Kade pays GPU time at about $1.22 per hour per GPU, including startup and ten minutes awake after the last job. Up to two GPUs can run together; extra takes and higher settings use more GPU time.';
 
-/* Trained styles (Part 235): each is an AR LoRA Kade trained from her own folders, kept in the
- * private bucket and folded in by the worker for one song. The lead sentence is the caption the
- * LoRA was trained under, trigger word first, so it has to open the style text. They were trained
- * score-free, so a new song in a trained style asks the worker for cot off. Her ear picked the
- * checkpoints: kids step 1200, soul step 800, both on the stock decoder. */
+/* Trained styles: each is an AR LoRA trained on a folder of real songs, kept in the private
+ * bucket and folded into the composer by the worker for one song. The lead sentence is the
+ * caption its LoRA was trained under, trigger word first, so it has to open the style text.
+ * They were trained score-free, so a new song in a style asks the worker for cot off.
+ * Chosen by ear on the stock decoder (Part 239): kids step 1200, soul the sonauto step 1800,
+ * which replaced the first soul LoRA because it sings one steady voice instead of drifting
+ * between a man and a woman. Nothing here names a person or a private folder: this menu is
+ * read by everyone who uses the booth. */
 export const yueStyles: Record<string, { key: string; scale: number; lead: string }> = {
-  kids_choir: {
+  kids: {
     key: 'yue2-loras/kids-step1200.pt',
     scale: 1,
     lead: "kdkids, in the style of kdkids. English, children's choir, a group of young voices singing together, bright and clear.",
   },
   soul: {
-    key: 'yue2-loras/soul-step800.pt',
+    key: 'yue2-loras/soul-sona1800.pt',
     scale: 1,
-    lead: 'kdsoul, in the style of kdsoul. English, soulful, heartfelt expressive lead vocal with rich harmonies, warm groove.',
+    lead: 'kdsona, in the style of kdsona. English, female lead vocal.',
   },
 };
 export function yueStylesEnabled(): boolean {
