@@ -47,3 +47,60 @@ test('a scrub never empties a message and never touches code', () => {
   const code = 'Try:\n```\nIn conclusion, print("hi")\n```';
   assert.ok(stripAiTells(code).includes('In conclusion, print("hi")'));
 });
+
+/* ── THE ANTI-TELL RULES MUST SURVIVE A REWRITE (Sep 21 2026) ─────────────
+ *
+ * These exist because the rules did NOT survive one. A rewrite of
+ * KADE_STYLE_NOTE on Sep 21 2026 replaced the anti-tell block with a
+ * companionship block and took all seven rules with it; a check across both
+ * house notes afterwards found none of them anywhere. On the same day the Jev
+ * voice-flags lane was reading the reframe tic in 12 of 24 real replies.
+ *
+ * Both halves matter and neither may eat the other, so both are asserted.
+ */
+const { KADE_STYLE_NOTE } = require('./stripAiTells');
+
+test('the house note still carries BOTH halves: companionship and the habits to drop', () => {
+  assert.ok(/Companionship is a full use/.test(KADE_STYLE_NOTE), 'the conversation half is gone');
+  assert.ok(/HABITS TO DROP/.test(KADE_STYLE_NOTE), 'the anti-tell half is gone');
+});
+
+test('every anti-tell rule that was silently deleted once is still there', () => {
+  const rules = {
+    'contrastive pivot': /correction move/i,
+    'pivot shapes named': /it is not X, it is Y/i,
+    puffery: /delve.*tapestry|tapestry.*delve/i,
+    'as an AI': /do not say you are an AI/i,
+    'training cutoff': /training cutoff/i,
+    'praise openers': /praising what they said/i,
+    'restating the question': /question back to them/i,
+    'offer-bait closer': /offering more help/i,
+    'tool narration': /narrate choosing a tool/i,
+  };
+  for (const [name, re] of Object.entries(rules)) {
+    assert.ok(re.test(KADE_STYLE_NOTE), `the "${name}" rule is missing from the house note`);
+  }
+});
+
+test('the pivot rule teaches the repair, not just the ban', () => {
+  /* The old ban ran for two months and did not work. It was a prohibition
+   * with no replacement, so the model had nowhere to put the thought. What
+   * is different now is the worked example, and that is the part a future
+   * trim would cut first for being long. */
+  const befores = KADE_STYLE_NOTE.match(/Before:/g) || [];
+  const afters = KADE_STYLE_NOTE.match(/After:/g) || [];
+  assert.ok(befores.length >= 3, `only ${befores.length} worked examples left`);
+  assert.strictEqual(befores.length, afters.length, 'a Before lost its After');
+  assert.ok(/delete the denial/i.test(KADE_STYLE_NOTE), 'the reason the repair works is gone');
+});
+
+test('the note that bans literary phrasing is not itself written in it', () => {
+  /* A model imitates the VOICE of its instructions. A ban on essay register
+   * written in essay register teaches the opposite of what it says. */
+  const meter = require('./kadeTellMeter');
+  assert.deepStrictEqual(
+    meter.essayVoice(KADE_STYLE_NOTE),
+    [],
+    'the house note picked up the register it forbids',
+  );
+});
