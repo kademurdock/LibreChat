@@ -170,3 +170,5 @@ export {
 export { songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf } from './music/idea';
 
 export { tubeVaultHints, validTubeVaultItems } from './library/tubevault';
+
+export { descriptionBatchRouter } from './library/descriptions';

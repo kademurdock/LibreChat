@@ -41,7 +41,7 @@ const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { bookImportRouter, saveBufferToS3, openAudioArchive, AUDIO_ZIP_LIMIT, TEXT_IMPORT_LIMIT, storeAudioStream, libraryPath, libraryCategory, libraryPathExpression, refineMediaFiling, correctedBookShelf, reviewedLibraryMoves } = require('@librechat/api');
+const { descriptionBatchRouter, bookImportRouter, saveBufferToS3, openAudioArchive, AUDIO_ZIP_LIMIT, TEXT_IMPORT_LIMIT, storeAudioStream, libraryPath, libraryCategory, libraryPathExpression, refineMediaFiling, correctedBookShelf, reviewedLibraryMoves } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { tubeVaultHints, validTubeVaultItems } = require('@librechat/api');
 const { logKadeUsage } = require('~/models/kadeUsage');
@@ -1072,6 +1072,13 @@ router.post('/archive/done', requireJwtAuth, express.json({ limit: '512kb' }), a
 });
 
 /** Browse the archive like a drive: folders under `path`, items at `path`. */
+router.use('/archive/descriptions', descriptionBatchRouter({
+  auth: requireJwtAuth,
+  owner: (req) => String(req.user.id),
+  write: async (operations) => { await KadeBook.bulkWrite(operations); },
+  read: (filter) => KadeBook.find(filter, '_id description').lean(),
+}));
+
 router.get('/archive', requireJwtAuth, async (req, res) => {
   try {
     const hidden = libraryHiddenFrom(req); // the reviewer seat sees only its own uploads
