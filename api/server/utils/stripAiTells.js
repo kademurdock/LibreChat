@@ -303,6 +303,15 @@ const KADE_CONVERSATION_NOTE = "\n\n---\nCONVERSATION (private instructions): Co
  * in words and taught only through plain statements; the note must carry no
  * instance of the construction, and a test holds it to that with the same
  * detector that reads the replies.
+ *
+ * SAME DAY, 20:16Z -- AND THE RE-RUN DID NOT BEAR THAT OUT. With this note
+ * live, a manual battery read Kiana 15 of 24 and the control 8 of 24 on the
+ * LLM judges (both the highest ever) while Jev read them flat, and Kiana made
+ * the same kitchen joke with no example in sight. The probes invite the
+ * construction, so the lookalike sentences were a hypothesis, not a cause.
+ * This note stands on its principle (never demonstrate a banned form), not
+ * on proof. The revert rule and the numbers are in
+ * ANDROID_PARITY_AND_PIVOT_2026-09-22_PART265.md in the project folder.
  */
 const KADE_TELL_NOTE = `
 
