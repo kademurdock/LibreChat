@@ -22,6 +22,13 @@ export const FACE_PANELS = Object.freeze({
 // 0 closed, 1 slightly open, 2 open, 3 round and wide "oh", 4 pursed "oo",
 // 5 spread with teeth "ee", 6 pressed, 7 teeth nearly together, 8 wide open.
 export const MOUTH_PANELS = 9;
+export const NUANCE_PANELS = Object.freeze({ curious: 1, thoughtful: 2, playful: 3, confident: 4, tender: 5, tired: 6, serious: 7, delighted: 8 });
+const fallbackFaces = Object.freeze({ curious: 'neutral', thoughtful: 'neutral', playful: 'smile', confident: 'neutral', tender: 'smile', tired: 'neutral', serious: 'neutral', delighted: 'smile' });
+
+export function resolveFace(name, nuanceReady) {
+  if (nuanceReady && Object.hasOwn(NUANCE_PANELS, name)) return { source: 'nuance', panel: NUANCE_PANELS[name] };
+  return { source: 'faces', panel: FACE_PANELS[fallbackFaces[name] || name] ?? 0 };
+}
 
 export function panelRect(index) {
   if (!Number.isInteger(index) || index < 0 || index >= SHEET_GRID * SHEET_GRID) throw new RangeError('panel');
@@ -33,9 +40,9 @@ const q = (n) => Math.round(Math.max(0, Math.min(1, Number.isFinite(n) ? n : 0))
 
 export function createFaceSheetRig(canvas, { id, sheet, onReady = () => {}, onFailure = () => {} }) {
   const ctx = canvas.getContext('2d');
-  const faces = new Image(), mouths = new Image();
+  const faces = new Image(), mouths = new Image(), nuance = new Image();
   const cache = new Map();
-  let disposed = false, ready = false, last = null, signature = '';
+  let disposed = false, ready = false, nuanceReady = false, last = null, signature = '';
   canvas.width = canvas.height = SIZE;
   canvas.setAttribute('aria-hidden', 'true');
   canvas.hidden = true;
@@ -84,37 +91,48 @@ export function createFaceSheetRig(canvas, { id, sheet, onReady = () => {}, onFa
     canvas.hidden = !show;
     if (!show) { signature = ''; return; }
     const face = frame.face || { from: 'neutral', to: 'neutral', blend: 1 };
-    const from = FACE_PANELS[face.from] ?? 0, to = FACE_PANELS[face.to] ?? 0;
+    const from = resolveFace(face.from, nuanceReady), to = resolveFace(face.to, nuanceReady);
     const blend = q(face.blend), blink = q(frame.blink);
     const viseme = Number.isInteger(frame.viseme) && frame.viseme > 0 && frame.viseme < MOUTH_PANELS ? frame.viseme : 0;
-    const next = `${from}/${to}/${blend}/${viseme}/${blink}`;
+    const next = `${from.source}:${from.panel}/${to.source}:${to.panel}/${blend}/${viseme}/${blink}`;
     if (next !== signature) {
       const [nx, ny, nw, nh] = panelRect(0).map((v) => v * faces.naturalWidth);
       ctx.globalAlpha = 1;
       ctx.clearRect(0, 0, SIZE, SIZE);
       ctx.drawImage(faces, nx, ny, nw, nh, 0, 0, SIZE, SIZE);
-      const facePatch = (panel) => patch(faces, panel, sheet.face, 0.72, 'f' + panel);
+      const facePatch = ({ source, panel }) => patch(source === 'nuance' ? nuance : faces, panel, sheet.face, 0.72, source + panel);
       // "from" at full strength then "to" at the blend gives a true dissolve.
-      if (from !== 0 && blend < 1) put(facePatch(from), 1);
-      if (to !== 0) put(facePatch(to), from === to ? 1 : blend);
-      else if (from !== 0 && blend < 1) put(facePatch(0), blend);
+      if (blend < 1) put(facePatch(from), 1);
+      put(facePatch(to), blend);
       // A laugh keeps its own open mouth; every other face talks with shapes.
-      if (viseme && !(to === FACE_PANELS.laugh && blend > 0.5)) put(patch(mouths, viseme, sheet.mouth, 0.5, 'm' + viseme), 1);
+      if (viseme && !(face.to === 'laugh' && blend > 0.5)) put(patch(mouths, viseme, sheet.mouth, 0.5, 'm' + viseme), 1);
       if (blink > 0) put(patch(faces, FACE_PANELS.closed, sheet.eyes, 0.6, 'e'), blink);
       ctx.globalAlpha = 1;
       signature = next;
     }
-    canvas.style.transform = `rotate(${Math.max(-1.4, Math.min(1.4, frame.tilt || 0))}deg) translateY(${Math.max(-1.8, Math.min(1.8, frame.nod || 0))}px)`;
+    canvas.style.transform = `rotate(${Math.max(-2.8, Math.min(2.8, frame.tilt || 0))}deg) translateY(${Math.max(-3.2, Math.min(3.2, frame.nod || 0))}px) scale(${Math.max(1, Math.min(1.04, frame.scale || 1))})`;
   }
   faces.onload = mouths.onload = prepare;
   faces.onerror = mouths.onerror = fail;
   faces.src = sheet.expressions;
   mouths.src = sheet.mouths;
+  if (sheet.nuance) {
+    nuance.onload = () => {
+      if (disposed || !nuance.naturalWidth || nuance.naturalWidth !== nuance.naturalHeight) return;
+      nuanceReady = true;
+      signature = '';
+      if (last) render(last);
+    };
+    // Additional art is optional: a failed download keeps the original faces.
+    nuance.onerror = () => { nuanceReady = false; };
+    nuance.src = sheet.nuance;
+  }
   return {
     render,
     dispose() {
       disposed = true;
       faces.onload = mouths.onload = faces.onerror = mouths.onerror = null;
+      nuance.onload = nuance.onerror = null;
       canvas.hidden = true;
       cache.clear();
     },

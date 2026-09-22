@@ -90,7 +90,8 @@ const AvatarExpression = (() => {
     warm:'smile',tender:'smile',amused:'smile',playful:'smile',excited:'smile',
     skeptical:'skeptical',dry:'skeptical',smug:'skeptical',
     frustrated:'angry',angry:'angry',disgusted:'angry',surprised:'surprised',sad:'sad',concerned:'worried',afraid:'worried'});
-  const expressionFace=(name)=>faces[name]||'neutral';
+  const nuancedFaces=Object.freeze({curious:'curious',thoughtful:'thoughtful',playful:'playful',smug:'playful',confident:'confident',tender:'tender',tired:'tired',serious:'serious',excited:'delighted'});
+  const expressionFace=(name,extended=false)=>(extended && nuancedFaces[name])||faces[name]||'neutral';
 
   function cue(tag) {
     const s=String(tag).toLowerCase().trim().replace(/[‘’]/g,"'").replace(/\s+/g,' ');

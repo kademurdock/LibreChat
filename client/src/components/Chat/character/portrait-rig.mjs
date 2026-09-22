@@ -4,15 +4,15 @@ import { createFaceSheetRig } from './face-sheet-rig.mjs';
 // Regions inside one sheet panel, 0..1: the brow-to-chin oval, the mouth, the eyes.
 // Registered by eye against each character's own sheets, Sep 19 2026.
 const SHEETS = {
-  kiana: { expressions: '/assets/characters/kiana/expressions.webp', mouths: '/assets/characters/kiana/mouths.webp',
+  kiana: { expressions: '/assets/characters/kiana/expressions.webp', mouths: '/assets/characters/kiana/mouths.webp', nuance: '/assets/characters/kiana/nuance.png',
     face: [0.34, 0.17, 0.5, 0.56], mouth: [0.43, 0.46, 0.31, 0.2], eyes: [0.36, 0.27, 0.44, 0.15] },
-  della: { expressions: '/assets/characters/della/expressions.webp', mouths: '/assets/characters/della/mouths.webp',
+  della: { expressions: '/assets/characters/della/expressions.webp', mouths: '/assets/characters/della/mouths.webp', nuance: '/assets/characters/della/nuance.png',
     face: [0.3, 0.2, 0.46, 0.56], mouth: [0.38, 0.46, 0.3, 0.19], eyes: [0.34, 0.29, 0.38, 0.14] },
-  lilly: { expressions: '/assets/characters/lilly/expressions.webp', mouths: '/assets/characters/lilly/mouths.webp',
+  lilly: { expressions: '/assets/characters/lilly/expressions.webp', mouths: '/assets/characters/lilly/mouths.webp', nuance: '/assets/characters/lilly/nuance.png',
     face: [0.38, 0.2, 0.46, 0.5], mouth: [0.48, 0.48, 0.28, 0.2], eyes: [0.4, 0.3, 0.42, 0.18] },
   // Sep 20 2026: Harley. Both sheets re-cut onto this grid with each panel moved
   // onto the resting head (the mouth sheet as drawn sat 22 px to the right).
-  harley: { expressions: '/assets/characters/harley/expressions.webp', mouths: '/assets/characters/harley/mouths.webp',
+  harley: { expressions: '/assets/characters/harley/expressions.webp', mouths: '/assets/characters/harley/mouths.webp', nuance: '/assets/characters/harley/nuance.png',
     face: [0.28, 0.24, 0.52, 0.5], mouth: [0.41, 0.47, 0.27, 0.22], eyes: [0.34, 0.31, 0.42, 0.13] },
 };
 export const HARLEY_ID = 'agent_d26Mtu8mgOzkVGQECqO1a';

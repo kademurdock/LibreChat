@@ -134,7 +134,7 @@ function PortraitSurface({
         cues: schedule.current.cues,
       });
       rig?.render(pose);
-      surface.style.transform = `rotate(${pose.tilt}deg) translateY(${pose.nod}px)`;
+      surface.style.transform = `rotate(${pose.tilt}deg) translateY(${pose.nod}px) scale(${pose.scale ?? 1})`;
       // Rig also moves its canvas; neutralize the duplicate transform.
       target.style.transform = '';
       lastTick = now;
@@ -179,7 +179,7 @@ function PortraitSurface({
   }, [agentId, path, playback.audio, failed]);
   if (failed) return null;
   return (
-    <div className="my-3 w-44 max-w-full rounded-3xl bg-surface-secondary p-1.5">
+    <div className="my-3 w-64 max-w-full rounded-3xl bg-surface-secondary p-2.5 shadow-lg">
       <div aria-hidden="true" className="pointer-events-none">
         <div ref={element} className="relative aspect-square overflow-hidden rounded-2xl">
           <img

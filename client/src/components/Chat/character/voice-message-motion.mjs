@@ -1,4 +1,5 @@
 import AvatarExpression from './avatar-expression.mjs';
+import { presencePose } from './presence.mjs';
 
 // Sep 19 2026 (Kade: "I want it to respond to tags in chat like it does in
 // call, I'm surprised it doesn't already"). The call renderer has always fed
@@ -56,7 +57,7 @@ const mix = (a, b, k) => {
 };
 
 /** The style in force at `time`: the last direction, blended in, with a sound's moment laid over it. */
-export function styleAt(cues, time) {
+export function styleAt(cues, time, extended = false) {
   const style = AvatarExpression.expressionStyle;
   let from = 'neutral', to = 'neutral', since = -Infinity, moment = null, name = 'neutral';
   for (const cue of cues || []) {
@@ -69,7 +70,7 @@ export function styleAt(cues, time) {
   }
   name = to;
   const blend = smooth((time - since) / BLEND);
-  let face = { from: AvatarExpression.expressionFace(from), to: AvatarExpression.expressionFace(to), blend };
+  let face = { from: AvatarExpression.expressionFace(from, extended), to: AvatarExpression.expressionFace(to, extended), blend };
   let current = mix(style(from), style(to), blend);
   if (moment) {
     const age = time - moment.at;
@@ -77,7 +78,7 @@ export function styleAt(cues, time) {
     current = mix(current, style(moment.expression), weight);
     name = moment.expression;
     // A laugh is the one sound with a face of its own.
-    const shown = moment.expression === 'amused' ? 'laugh' : AvatarExpression.expressionFace(moment.expression);
+    const shown = moment.expression === 'amused' ? 'laugh' : AvatarExpression.expressionFace(moment.expression, extended);
     face = { from: face.blend >= 0.5 ? face.to : face.from, to: shown, blend: weight };
   }
   return { style: current, expression: name, face };
@@ -107,7 +108,7 @@ export function voiceMessagePose({ id, time, level = 0, active, cues, sibilance 
   for (const byte of new TextEncoder().encode(id || 'unknown'))
     seed = (Math.imul(seed, 33) + byte) >>> 0;
   const phase = (seed % 1000) / 1000;
-  const { style, expression, face } = styleAt(cues, time);
+  const { style, expression, face } = styleAt(cues, time, true);
   const period = (4.3 + phase * 0.8) * Math.max(0.5, Math.min(1.6, style.blink));
   const t = time + phase * period,
     blinkPhase = t % period;
@@ -120,6 +121,7 @@ export function voiceMessagePose({ id, time, level = 0, active, cues, sibilance 
   const strength = Number.isFinite(level) ? Math.max(0, Math.min(1, (level - 0.008) * 5)) : 0;
   const tempo = (id === 'agent_BSOLa3eNEZyjs-7abCjMt' ? 0.8 : 1) * style.tempo;
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+  const presence = presencePose(id, time, strength, expression);
   return {
     characterId: id,
     active: true,
@@ -136,11 +138,12 @@ export function voiceMessagePose({ id, time, level = 0, active, cues, sibilance 
     mouth: strength,
     blink,
     tilt: clamp(
-      style.tilt * 0.6 + (Math.sin(t * 0.3 * tempo) * 0.28 + Math.sin(t * 0.7 * tempo) * 0.32) * style.sway,
-      -1.4,
-      1.4,
+      style.tilt * 0.6 + (Math.sin(t * 0.3 * tempo) * 0.28 + Math.sin(t * 0.7 * tempo) * 0.32) * style.sway + presence.tilt,
+      -presence.tiltLimit,
+      presence.tiltLimit,
     ),
-    nod: clamp(Math.sin(t * 1.1 * tempo) * (0.18 + strength * 0.4) * style.nod + style.lift, -1.8, 1.8),
+    nod: clamp(Math.sin(t * 1.1 * tempo) * (0.18 + strength * 0.4) * style.nod + style.lift + presence.nod, -presence.nodLimit, presence.nodLimit),
+    scale: presence.scale,
   };
 }
 
