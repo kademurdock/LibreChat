@@ -68,7 +68,7 @@ test('the house note still carries BOTH halves: companionship and the habits to 
 test('every anti-tell rule that was silently deleted once is still there', () => {
   const rules = {
     'contrastive pivot': /correction move/i,
-    'pivot shapes named': /it is not X, it is Y/i,
+    'pivot described': /first saying what something is not/i,
     puffery: /delve.*tapestry|tapestry.*delve/i,
     'as an AI': /do not say you are an AI/i,
     'training cutoff': /training cutoff/i,
@@ -84,14 +84,25 @@ test('every anti-tell rule that was silently deleted once is still there', () =>
 
 test('the pivot rule teaches the repair, not just the ban', () => {
   /* The old ban ran for two months and did not work. It was a prohibition
-   * with no replacement, so the model had nowhere to put the thought. What
-   * is different now is the worked example, and that is the part a future
-   * trim would cut first for being long. */
-  const befores = KADE_STYLE_NOTE.match(/Before:/g) || [];
-  const afters = KADE_STYLE_NOTE.match(/After:/g) || [];
-  assert.ok(befores.length >= 3, `only ${befores.length} worked examples left`);
-  assert.strictEqual(befores.length, afters.length, 'a Before lost its After');
+   * with no replacement, so the model had nowhere to put the thought. The
+   * repair is taught by plain example statements, and that is the part a
+   * future trim would cut first for being long. */
+  const examples = KADE_STYLE_NOTE.match(/Plain statements like these[^]*?(?=When the person)/);
+  assert.ok(examples, 'the worked repair is gone');
+  const quoted = examples[0].match(/"[^"]+"/g) || [];
+  assert.ok(quoted.length >= 3, `only ${quoted.length} plain examples left`);
   assert.ok(/delete the denial/i.test(KADE_STYLE_NOTE), 'the reason the repair works is gone');
+});
+
+test('the house note never quotes the construction it bans (Sep 22 2026)', () => {
+  /* The first battery run under the restored note found Kiana copying its
+   * Before examples nearly word for word. A model reproduces what it is
+   * shown, so the note may describe the habit but never demonstrate it. The
+   * same detector that counts the tic in replies must find none here. */
+  const meter = require('./kadeTellMeter');
+  const pivots = meter.tellsIn(KADE_STYLE_NOTE).filter((t) => t.tell === 'pivot');
+  assert.deepStrictEqual(pivots, [], 'the house note is demonstrating the pivot again');
+  assert.ok(!/Before:/.test(KADE_STYLE_NOTE), 'a Before example of the banned form came back');
 });
 
 test('the note that bans literary phrasing is not itself written in it', () => {
