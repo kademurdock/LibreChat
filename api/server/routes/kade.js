@@ -1120,6 +1120,7 @@ const FEEDBACK_STATUSES = ['open', 'acknowledged', 'resolved', 'wontfix'];
  * now it does. Same collection the kade_feedback chat tool writes and the
  * admin /feedback-dashboard reads, so reports land in one pile either way.
  * -------------------------------------------------------------------------- */
+const { feedbackClientFields } = require('~/server/utils/kadeFeedbackClient');
 router.post('/feedback', requireJwtAuth, async (req, res) => {
   try {
     const detail = String((req.body || {}).detail || '').trim().slice(0, 8000);
@@ -1138,6 +1139,7 @@ router.post('/feedback', requireJwtAuth, async (req, res) => {
       detail,
       surface,
       agent: 'Report a problem',
+      ...feedbackClientFields(req.body),
     });
     /* Session 23: owner alert (in-chat nudge + app push) — see
      * services/kadeOwnerAlerts. Fire-and-forget, never blocks the 200. */
@@ -2683,6 +2685,8 @@ router.requestAccessPage = sendHtml(REQUEST_ACCESS_HTML);
 // Public on purpose: the person using it is locked out.
 require('./kadePhoneReset').mountPhoneReset(router);
 router.phoneResetPage = sendHtml(require('./kadePages').phoneResetHtml);
+// Sep 23 2026: /feedback, the page Android's "Send feedback" row has opened since Sep 4.
+router.feedbackFormPage = sendHtml(require('./kadePages').feedbackFormHtml);
 router.accessRequestsPage = sendHtml(ACCESS_REQUESTS_HTML);
 router.worldPage = sendHtml(WORLD_HTML);
 router.tabBarAssetPage = (req, res) => res.type('application/javascript').send(TABBAR_JS);

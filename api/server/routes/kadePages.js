@@ -835,7 +835,7 @@ const feedbackHtml = `<!doctype html><html lang="en"><head><title>Feedback & Bug
         '<p>'+esc(it.detail)+'</p>'+
         '<dl class="kv" style="grid-template-columns:auto 1fr">'+
           '<dt>From</dt><dd style="text-align:left">'+esc(who)+'</dd>'+
-          '<dt>Filed by</dt><dd style="text-align:left">'+esc(it.agent||'agent')+' ('+esc(it.surface||'chat')+')</dd>'+
+          '<dt>Filed by</dt><dd style="text-align:left">'+esc(it.agent||'agent')+' ('+esc(it.surface||'chat')+')'+(it.platform?' on '+esc(it.platform)+(it.appVersion?' '+esc(it.appVersion):''):'')+(it.device?', '+esc(it.device):'')+'</dd>'+
           '<dt>When</dt><dd style="text-align:left">'+esc(whenStr(it.createdAt))+'</dd>'+
           '<dt>Status</dt><dd style="text-align:left" id="st-'+it._id+'"><strong>'+esc(it.status)+'</strong></dd>'+
         '</dl>'+
@@ -2904,6 +2904,99 @@ const phoneResetHtml = `<!doctype html><html lang="en"><head><title>Reset your p
 </script>
 </body></html>`;
 
+/* Tell Kade how it's going (Part 269, Sep 23 2026). Android's More > "Send
+ * feedback" row has opened /feedback since Sep 4, and until now that URL was a
+ * 404. This page is the fix for every phone already installed: the app's web
+ * view carries the site's sign-in cookie, so the page gets a token from
+ * /api/auth/refresh and posts to the same /api/kade/feedback the iPhone uses.
+ * Real fieldset and legend radios, a labelled text box, focus moved to the
+ * heading or the error, and nothing timed. */
+const feedbackFormHtml = `<!doctype html><html lang="en"><head><title>Tell Kade how it's going — Kade-AI</title>${SHARED_HEAD}
+<style>
+  form fieldset { border:1px solid #b9bfc9; border-radius:12px; padding:.8rem 1rem; margin:1rem 0; }
+  form legend { font-weight:700; font-size:1.15rem; padding:0 .3rem; }
+  form .choice { display:flex; align-items:center; gap:.6rem; margin:.6rem 0; font-size:1.1rem; }
+  form .choice input { width:1.4rem; height:1.4rem; margin:0; }
+  form label.block { display:block; font-weight:600; margin:.9rem 0 .3rem; font-size:1.1rem; }
+  form textarea { width:100%; min-height:8rem; font-size:1.05rem; padding:.6rem .7rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; box-sizing:border-box; }
+  @media (prefers-color-scheme: dark){ form textarea{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } form fieldset{ border-color:#3a3f49; } }
+  .pickbtn { display:inline-block; font-size:1.1rem; font-weight:700; padding:.9rem 1.6rem; border-radius:12px; border:0; background:#1f7a49; color:#fff; cursor:pointer; margin:1rem .5rem 0 0; text-decoration:none; }
+  .pickbtn:focus-visible { outline:4px solid #ffbf47; outline-offset:3px; }
+  h2:focus, #err:focus { outline:none; }
+  #err { color:#b3261e; font-weight:600; }
+  @media (prefers-color-scheme: dark){ #err { color:#ffb4ab; } }
+</style>
+</head><body>
+<a class="back" href="/">&larr; Back to chat</a>
+<h1>Tell Kade how it&rsquo;s going</h1>
+<p class="muted">Say how the app is going, report something broken, or share an idea. It goes straight to Kade with your name on it.</p>
+<div id="status" class="status" role="status" aria-live="polite"></div>
+<p id="err" tabindex="-1" hidden></p>
+<section id="signin" hidden>
+  <h2 id="hs" tabindex="-1">Sign in first</h2>
+  <p>Reports carry your name so Kade can follow up with you.</p>
+  <p><a class="pickbtn" href="/login">Sign in</a></p>
+</section>
+<section id="formSection">
+<form id="fbForm" novalidate>
+  <fieldset>
+    <legend>How&rsquo;s it going?</legend>
+    <div class="choice"><input type="radio" name="how" id="how-good" value="feedback"><label for="how-good">Going well</label></div>
+    <div class="choice"><input type="radio" name="how" id="how-bad" value="bug"><label for="how-bad">Something&rsquo;s not right</label></div>
+    <div class="choice"><input type="radio" name="how" id="how-idea" value="feature"><label for="how-idea">I have an idea</label></div>
+  </fieldset>
+  <label class="block" for="detail">Tell Kade more</label>
+  <p class="muted" id="detailHint">You can skip this when it&rsquo;s going well. For a problem, say what you did and what happened.</p>
+  <textarea id="detail" maxlength="8000" aria-describedby="detailHint"></textarea>
+  <button class="pickbtn" type="submit" id="sendBtn">Send to Kade</button>
+</form>
+</section>
+<section id="done" hidden>
+  <h2 id="hd" tabindex="-1">Sent. Thank you &mdash; Kade will see it.</h2>
+  <p><a class="pickbtn" href="/">Back to chat</a><button class="pickbtn" type="button" id="againBtn">Send another</button></p>
+</section>
+<footer class="muted">&mdash; Kade-AI</footer>
+<script>
+(function(){
+  var TOKEN=null;
+  var statusEl=document.getElementById('status'), errEl=document.getElementById('err');
+  function status(t){ statusEl.textContent=t; }
+  function fail(t){ status(''); errEl.textContent=t; errEl.hidden=false; errEl.focus(); }
+  function clearErr(){ errEl.hidden=true; errEl.textContent=''; }
+  function param(n){ try{ return new URLSearchParams(location.search).get(n)||''; }catch(e){ return ''; } }
+  function platform(){
+    var app=param('app'); if(app==='android'||app==='ios') return app;
+    var ua=navigator.userAgent||''; if(/Android/i.test(ua)) return 'android'; if(/iPhone|iPad|iPod/i.test(ua)) return 'ios'; return 'web';
+  }
+  async function getToken(){ try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}); if(!r.ok) return null; var j=await r.json(); return j&&j.token||null; }catch(e){ return null; } }
+  function show(id, heading){ ['formSection','done','signin'].forEach(function(s){ document.getElementById(s).hidden=(s!==id); }); if(heading) document.getElementById(heading).focus(); }
+  (async function(){ TOKEN=await getToken(); if(!TOKEN) show('signin','hs'); })();
+  document.getElementById('fbForm').addEventListener('submit', async function(ev){
+    ev.preventDefault(); clearErr();
+    var picked=document.querySelector('input[name="how"]:checked');
+    if(!picked){ fail('First choose how it is going: Going well, Something is not right, or I have an idea.'); return; }
+    var detail=document.getElementById('detail').value.trim();
+    if(picked.value!=='feedback' && detail.length<3){ fail(picked.value==='bug' ? 'Say a little about what went wrong, then send.' : 'Say a little about your idea, then send.'); return; }
+    if(!detail) detail='Going well.';
+    if(!TOKEN) TOKEN=await getToken();
+    if(!TOKEN){ show('signin','hs'); return; }
+    var subject={feedback:'Going well',bug:'Something is not right',feature:'An idea'}[picked.value];
+    var btn=document.getElementById('sendBtn'); btn.disabled=true; status('Sending…');
+    try{
+      var r=await fetch('/api/kade/feedback',{method:'POST',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},
+        body:JSON.stringify({category:picked.value, subject:subject, detail:detail, surface:'web', platform:platform(), appVersion:param('version'), entry:'how-its-going'})});
+      var d={}; try{ d=await r.json(); }catch(e){}
+      if(r.ok){ document.getElementById('fbForm').reset(); status(''); show('done','hd'); }
+      else if(r.status===401){ TOKEN=null; status(''); show('signin','hs'); }
+      else fail(d.error||'Could not send just now. Your words are still here; try again in a minute.');
+    }catch(e){ fail('Could not reach Kade-AI just now. Your words are still here; try again in a minute.'); }
+    btn.disabled=false;
+  });
+  document.getElementById('againBtn').addEventListener('click', function(){ clearErr(); status(''); show('formSection'); document.getElementById('how-good').focus(); });
+})();
+</script>
+</body></html>`;
+
 /* Admin review page — the other side of the door. */
 const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access Requests — Kade-AI</title>${SHARED_HEAD}
 <style>
@@ -4116,6 +4209,7 @@ module.exports = {
   briefHtml,
   requestAccessHtml,
   phoneResetHtml,
+  feedbackFormHtml,
   accessRequestsHtml,
   worldHtml,
   tabBarAsset,

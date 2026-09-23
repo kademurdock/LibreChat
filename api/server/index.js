@@ -339,6 +339,7 @@ const startServer = async () => {
   app.get('/usage-dashboard', routes.kade.dashboardPage);
   app.get('/logs', routes.kade.logsPage);
   app.get('/feedback-dashboard', routes.kade.feedbackPage);
+  app.get('/feedback', routes.kade.feedbackFormPage); // Android's Send feedback row (Sep 23 2026)
   app.get('/notifications', routes.kade.notificationsPage);
   app.get('/describe', routes.kadeDescribe.page);
   app.get('/import', routes.kadeGptImport.importPage);

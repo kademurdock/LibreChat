@@ -14,6 +14,8 @@ const mongoose = require('mongoose');
  *   - agent:     which agent filed it (name, for context)
  *   - surface:   where it came from ('chat' | 'phone' | 'conversation' | 'web')
  *   - status:    'open' (default) | 'acknowledged' | 'resolved' | 'wontfix'
+ *   - platform, appVersion, device: optional, from the apps and the /feedback
+ *     page (utils/kadeFeedbackClient.js checks them)
  */
 const kadeFeedbackSchema = new mongoose.Schema(
   {
@@ -24,6 +26,9 @@ const kadeFeedbackSchema = new mongoose.Schema(
     agent: { type: String, maxlength: 100 },
     surface: { type: String, enum: ['chat', 'phone', 'conversation', 'web', 'app'], default: 'chat' },
     status: { type: String, enum: ['open', 'acknowledged', 'resolved', 'wontfix'], default: 'open', index: true },
+    platform: { type: String, enum: ['android', 'ios', 'web'] },
+    appVersion: { type: String, maxlength: 40 },
+    device: { type: String, maxlength: 80 },
   },
   { timestamps: true },
 );
