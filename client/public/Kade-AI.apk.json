@@ -1,6 +1,6 @@
 {
-  "versionCode": 117,
-  "versionName": "2.15.0",
-  "notes": "Live voice calls from your chats, with mute, speaker and hang-up controls. Eight new facial expressions and individual motion for Kiana, Della, Lilly and Harley.",
+  "versionCode": 118,
+  "versionName": "2.15.1",
+  "notes": "Replies now read cleanly: no more percent-sign voice directions on screen or in TalkBack. New people land right in a chat with a welcome and starter ideas, and sign-in has Ask Kade to join and Forgot your password.",
   "url": "https://kademurdock.com/Kade-AI.apk"
 }
