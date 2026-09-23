@@ -453,6 +453,9 @@ class KadeNotify extends Tool {
           { timeout: 15000, headers: this._hdrs() },
         );
         const rm = r.data && r.data.reminder;
+        if (!r.data?.ok || !rm?.id) {
+          return `Reminder not set: ${r.data?.blocked || r.data?.error || 'the service did not confirm a reminder'}. Tell the user plainly; do not say it is scheduled.`;
+        }
         return `Reminder set (id ${rm.id}): I'll deliver "${rm.text}" to their phone at ${rm.fireAtCentral || rm.fireAt} -- it fires even in quiet hours since they picked this exact moment. Offer list_reminders/cancel_reminder if they want to check or change it.`;
       }
       if (action === 'cancel_reminder') {
