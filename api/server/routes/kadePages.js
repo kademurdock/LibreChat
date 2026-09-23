@@ -2821,6 +2821,89 @@ const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Ask to Jo
 </script>
 </body></html>`;
 
+/* Password reset by phone call (Sep 22 2026): for accounts that sign in with a
+ * phone number, whose placeholder email can never receive the website's reset
+ * link. Two steps on one page; focus moves to each step's heading so a screen
+ * reader lands in the right place. The API is kadePhoneReset.js. */
+const phoneResetHtml = `<!doctype html><html lang="en"><head><title>Reset your password by phone — Kade-AI</title>${SHARED_HEAD}
+<style>
+  form label { display:block; font-weight:600; margin:.9rem 0 .3rem; }
+  form input { width:100%; font-size:1.1rem; padding:.6rem .7rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; }
+  @media (prefers-color-scheme: dark){ form input{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
+  .pickbtn { display:inline-block; font-size:1.1rem; font-weight:700; padding:.9rem 1.6rem; border-radius:12px; border:0; background:#1f7a49; color:#fff; cursor:pointer; margin-top:1rem; }
+  .pickbtn:focus-visible { outline:4px solid #ffbf47; outline-offset:3px; }
+  h2:focus { outline:none; }
+</style>
+</head><body>
+<a class="back" href="/login">&larr; Back to sign in</a>
+<h1>Reset your password by phone</h1>
+<p class="muted">For accounts that sign in with a phone number. Kade-AI calls that phone from 833-530-0313 and reads you a six-digit code. If you sign in with an email address, use <a href="/forgot-password">the email reset</a> instead.</p>
+<div id="status" class="status" role="status" aria-live="polite"></div>
+<section id="step1">
+  <h2 id="h1" tabindex="-1">Step 1: Get a code</h2>
+  <form id="callForm">
+    <label for="phone">Your phone number</label>
+    <input type="tel" id="phone" required maxlength="20" autocomplete="tel" inputmode="tel">
+    <button class="pickbtn" type="submit" id="callBtn">Call me with a code</button>
+  </form>
+</section>
+<section id="step2" hidden>
+  <h2 id="h2" tabindex="-1">Step 2: Type the code and a new password</h2>
+  <form id="resetForm">
+    <label for="code">Six-digit code from the call</label>
+    <input type="text" id="code" required maxlength="12" autocomplete="one-time-code" inputmode="numeric">
+    <label for="pw1">New password (8 characters or more)</label>
+    <input type="password" id="pw1" required minlength="8" maxlength="128" autocomplete="new-password">
+    <label for="pw2">Type the new password again</label>
+    <input type="password" id="pw2" required minlength="8" maxlength="128" autocomplete="new-password">
+    <button class="pickbtn" type="submit" id="resetBtn">Change my password</button>
+  </form>
+  <p><button class="pickbtn" type="button" id="againBtn">Call me again</button></p>
+</section>
+<section id="done" hidden>
+  <h2 id="h3" tabindex="-1">All set</h2>
+  <p><a class="pickbtn" href="/login">Go to sign in</a></p>
+</section>
+<footer class="muted">&mdash; Kade-AI</footer>
+<script>
+(function(){
+  var statusEl=document.getElementById('status');
+  function setStatus(t,isErr){ statusEl.textContent=t; statusEl.className='status'+(isErr?' err':''); }
+  function show(id, heading){ ['step1','step2','done'].forEach(function(s){ document.getElementById(s).hidden = (s!==id); }); document.getElementById(heading).focus(); }
+  async function post(path, body){
+    var r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d={}; try{ d=await r.json(); }catch(e){}
+    return {ok:r.ok, data:d};
+  }
+  async function askForCall(){
+    var btn=document.getElementById('callBtn'); btn.disabled=true;
+    setStatus('Asking for the call…');
+    try{
+      var out=await post('/api/kade/phone-reset/start',{phone:document.getElementById('phone').value});
+      if(out.ok){ show('step2','h2'); setStatus(out.data.message||'Calling now.'); }
+      else setStatus(out.data.message||'That did not work. Try again in a minute.', true);
+    }catch(e){ setStatus('Could not reach Kade-AI just now. Try again in a minute.', true); }
+    btn.disabled=false;
+  }
+  document.getElementById('callForm').addEventListener('submit', function(ev){ ev.preventDefault(); askForCall(); });
+  document.getElementById('againBtn').addEventListener('click', function(){ show('step1','h1'); setStatus('Check the number, then choose Call me with a code.'); });
+  document.getElementById('resetForm').addEventListener('submit', async function(ev){
+    ev.preventDefault();
+    var a=document.getElementById('pw1').value, b=document.getElementById('pw2').value;
+    if(a!==b){ setStatus('The two passwords are different. Type them again.', true); document.getElementById('pw1').focus(); return; }
+    var btn=document.getElementById('resetBtn'); btn.disabled=true;
+    setStatus('Changing your password…');
+    try{
+      var out=await post('/api/kade/phone-reset/finish',{phone:document.getElementById('phone').value, code:document.getElementById('code').value, password:a});
+      if(out.ok){ show('done','h3'); setStatus(out.data.message||'Your password is changed.'); }
+      else { setStatus(out.data.message||'That did not work. Try again.', true); document.getElementById('code').focus(); }
+    }catch(e){ setStatus('Could not reach Kade-AI just now. Try again in a minute.', true); }
+    btn.disabled=false;
+  });
+})();
+</script>
+</body></html>`;
+
 /* Admin review page — the other side of the door. */
 const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access Requests — Kade-AI</title>${SHARED_HEAD}
 <style>
@@ -4032,6 +4115,7 @@ module.exports = {
   diaryHtml,
   briefHtml,
   requestAccessHtml,
+  phoneResetHtml,
   accessRequestsHtml,
   worldHtml,
   tabBarAsset,

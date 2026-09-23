@@ -2679,6 +2679,10 @@ router.get('/admin/app-crashes', requireJwtAuth, requireAdminAccess, async (req,
 });
 
 router.requestAccessPage = sendHtml(REQUEST_ACCESS_HTML);
+// Sep 22 2026: password reset by phone call for phone-number accounts (kadePhoneReset.js).
+// Public on purpose: the person using it is locked out.
+require('./kadePhoneReset').mountPhoneReset(router);
+router.phoneResetPage = sendHtml(require('./kadePages').phoneResetHtml);
 router.accessRequestsPage = sendHtml(ACCESS_REQUESTS_HTML);
 router.worldPage = sendHtml(WORLD_HTML);
 router.tabBarAssetPage = (req, res) => res.type('application/javascript').send(TABBAR_JS);

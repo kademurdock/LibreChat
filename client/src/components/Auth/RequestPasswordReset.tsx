@@ -151,6 +151,13 @@ function RequestPasswordReset() {
         >
           {isLoading ? <Spinner /> : localize('com_auth_continue')}
         </Button>
+        {/* Sep 22 2026: phone-number accounts have no real inbox, so they reset by a phone call. */}
+        <a
+          href="/reset-by-phone"
+          className="block text-center text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+        >
+          Sign in with a phone number? Get a reset code by phone call
+        </a>
         <a
           href={loginPage()}
           className="block text-center text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"

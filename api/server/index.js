@@ -370,6 +370,7 @@ const startServer = async () => {
   app.get('/logbook', routes.kade.diaryPage);
   app.get('/brief', routes.kade.briefPage);
   app.get('/request-access', routes.kade.requestAccessPage);
+  app.get('/reset-by-phone', routes.kade.phoneResetPage);
   app.get('/access-requests', routes.kade.accessRequestsPage);
   app.get('/world', routes.kade.worldPage);
   app.get('/diary', (_req, res) => res.redirect(302, '/logbook'));
