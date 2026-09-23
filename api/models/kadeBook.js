@@ -151,6 +151,10 @@ kadeBookSchema.index({ owner: 1, updatedAt: -1 });
 kadeBookSchema.index({ shared: 1, sharedAt: -1 });
 kadeBookSchema.index({ owner: 1, originalPath: 1 });
 kadeBookSchema.index({ shared: 1, path: 1, title: 1 });
+/* Part 270: the media librarian's rounds find new arrivals by createdAt and
+ * spot an identical copy by title, on the database the family chat shares. */
+kadeBookSchema.index({ createdAt: -1 });
+kadeBookSchema.index({ title: 1 });
 
 /** Part 181 continued — COLLECTIONS ("playlists of vids or audio or whatever,
  * like collections you have organised your way from stuff in the cloud").

@@ -1883,6 +1883,10 @@ router.post('/librarian/sort-books', requireJwtAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'The sort did not run.' }); }
 });
 sorter.startSortSweep();
+/* Part 270: the media librarian files new arrivals and audits the rest (routes/kadeReadingRoomMediaSweep.js). */
+const mediaSweep = require('./kadeReadingRoomMediaSweep');
+mediaSweep.mount(router, { requireJwtAuth, isAdmin, express });
+mediaSweep.start();
 
 /* ── COLLECTIONS (playlists) ───────────────────────────────────────────── */
 const collOut = (c) => ({ id: String(c._id), title: c.title, description: c.description || '', shared: !!c.shared, ownerName: c.ownerName || '', owner: String(c.owner), count: (c.items || []).length, updatedAt: c.updatedAt });
