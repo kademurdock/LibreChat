@@ -16,4 +16,5 @@ test('test seats cannot send web pushes, telephone nudges, or queued outreach', 
     assert.equal(await context.deliverNudge(id, 'unused'), 'off');
   }
   assert.equal(context.isTestUser('family'), false);
+  assert.equal(context.isTestUser(null), false);
 });

@@ -42,7 +42,7 @@ function isPushConfigured() {
 // The bridge enforces the same list at its native push dispatcher.
 function isTestUser(userId) {
   return ['6a6125d73939d20b95251078', '6a69074cc74d975de21f5b2a', '6a572e3be680dcdaadca0f04',
-    ...String(process.env.NOTIFY_TEST_USER_IDS || '').split(',').map((id) => id.trim())]
+    ...String(process.env.NOTIFY_TEST_USER_IDS || '').split(',').map((id) => id.trim()).filter(Boolean)]
     .includes(String(userId || ''));
 }
 
