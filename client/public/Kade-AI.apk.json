@@ -1,6 +1,6 @@
 {
-  "versionCode": 118,
-  "versionName": "2.15.1",
-  "notes": "Replies now read cleanly: no more percent-sign voice directions on screen or in TalkBack. New people land right in a chat with a welcome and starter ideas, and sign-in has Ask Kade to join and Forgot your password.",
+  "versionCode": 119,
+  "versionName": "2.15.2",
+  "notes": "Voice messages now tell your companion the words came from transcription, so they have context for names and punctuation. This stays with your draft through edits, reopening the app and retrying a send. Review names before sending.",
   "url": "https://kademurdock.com/Kade-AI.apk"
 }
