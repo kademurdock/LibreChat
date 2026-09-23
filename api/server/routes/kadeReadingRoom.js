@@ -1887,6 +1887,8 @@ sorter.startSortSweep();
 const mediaSweep = require('./kadeReadingRoomMediaSweep');
 mediaSweep.mount(router, { requireJwtAuth, isAdmin, express });
 mediaSweep.start();
+// Part 272: her uploads public unless she says private; a one-time share, off unless switched on.
+require('~/server/services/kadeLibraryPublicDefault').start();
 
 /* ── COLLECTIONS (playlists) ───────────────────────────────────────────── */
 const collOut = (c) => ({ id: String(c._id), title: c.title, description: c.description || '', shared: !!c.shared, ownerName: c.ownerName || '', owner: String(c.owner), count: (c.items || []).length, updatedAt: c.updatedAt });
