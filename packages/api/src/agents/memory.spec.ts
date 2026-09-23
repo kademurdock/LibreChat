@@ -611,6 +611,24 @@ describe('Kade canon (scope "self")', () => {
 });
 
 
+describe('memory updates preserve the existing private bucket', () => {
+  const userId = new Types.ObjectId().toString();
+  const agentId = 'kiana';
+  const existingBuckets = [{ key: 'favorite_snack', agentId }];
+  it('corrects in place even if the keeper selects shared', async () => {
+    const setMemory = jest.fn(async () => ({ ok: true }));
+    const t = createMemoryTool({ userId, agentId, setMemory, existingBuckets });
+    await t.invoke({ key: 'favorite_snack', value: 'Salted pretzels.', scope: 'shared' });
+    expect(setMemory).toHaveBeenCalledWith(expect.objectContaining({ userId, agentId, key: 'favorite_snack', value: 'Salted pretzels.' }));
+  });
+  it('forgets the existing card when the keeper omits its scope', async () => {
+    const deleteMemory = jest.fn(async () => ({ ok: true }));
+    const t = createDeleteMemoryTool({ userId, agentId, deleteMemory, existingBuckets });
+    await t.invoke({ key: 'favorite_snack' });
+    expect(deleteMemory).toHaveBeenCalledWith({ userId, agentId, key: 'favorite_snack' });
+  });
+});
+
 describe('Kade canon — the fabrication guard', () => {
   const userId = new Types.ObjectId().toString();
   const agentId = 'agent_6llV0eMu4fmIaj8f2x1Sb';

@@ -120,4 +120,5 @@ export interface FormattedMemoriesResult {
   withKeys: string;
   withoutKeys: string;
   totalTokens?: number;
+  buckets?: Array<{ key: string; agentId?: string }>;
 }

@@ -35,6 +35,8 @@ import { getProviderConfig } from '~/endpoints/config/providers';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { resolveConfigHeaders, createSafeUser } from '~/utils';
 import Tokenizer from '~/utils/tokenizer';
+import { existingMemoryScope } from './memoryScope';
+import type { MemoryBucket } from './memoryScope';
 
 type RequiredMemoryMethods = Pick<
   MemoryMethods,
@@ -201,7 +203,8 @@ function normalizeMemoryLLMConfig(llmConfig?: Partial<LLMConfig>): SanitizedMemo
 export const memoryInstructions: string =
   'The system automatically stores important user information and can update or delete memories based on user requests, enabling dynamic memory management. ' +
   'Treat these memories as private knowledge, not a script: sensitive ones (health, body, medications, money, private struggles) are things the user trusted you with — ' +
-  'keep them in mind, but use judgment about when to raise them. Bring them up only when clearly relevant or when the user opens the topic; never recite them back unprompted.';
+  'keep them in mind, but use judgment about when to raise them. Bring them up only when clearly relevant or when the user opens the topic; never recite them back unprompted. ' +
+  'A clear request to forget a topic is sufficient: do not ask which conflicting value is true, repeat the unwanted information, or ask them to provide it again. Memory changes are handled by a separate keeper; acknowledge the request without claiming a completed deletion you have not verified.';
 
 const getDefaultInstructions = (
   validKeys?: string[],
@@ -252,6 +255,7 @@ export const createMemoryTool = ({
   totalTokens = 0,
   forceAgentScope = false,
   canonEvidence,
+  existingBuckets = [],
 }: {
   userId: string | ObjectId;
   /** The persona currently in the conversation, if any. Writes with `scope: 'agent'` (or the legacy `agent_notes` key) go to this persona's own bucket; everything else stays shared. */
@@ -264,6 +268,7 @@ export const createMemoryTool = ({
   forceAgentScope?: boolean;
   /** KADE CANON: what the CHARACTER actually said in the window. A scope:"self" card must be grounded in it. Undefined = no guard (consolidation passes). */
   canonEvidence?: string;
+  existingBuckets?: MemoryBucket[];
 }): DynamicStructuredTool => {
   const remainingTokens = tokenLimit ? tokenLimit - totalTokens : Infinity;
   const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
@@ -331,7 +336,7 @@ export const createMemoryTool = ({
         };
 
         /** Scope resolution: explicit `scope: 'agent'` (or the legacy `agent_notes` key, or a forced consolidation pass) files this card in the current persona's own bucket; everything else stays shared. */
-        const targetAgentId =
+        let targetAgentId =
           agentId &&
           (forceAgentScope ||
             scope === 'agent' ||
@@ -343,6 +348,7 @@ export const createMemoryTool = ({
          * fixed canon owner, not under this user -- one fact, every seat. Only when a
          * character is active; with no agentId there is nobody to be canon about. */
         const canon = scope === 'self' && Boolean(agentId) && !forceAgentScope;
+        if (!canon && !forceAgentScope) targetAgentId = existingMemoryScope(existingBuckets, key, targetAgentId);
         const targetUserId = canon ? CANON_USER_ID : userId;
         if (canon && typeof canonEvidence === 'string') {
           const share = canonEvidenceShare(value, canonEvidence);
@@ -478,6 +484,7 @@ export const createDeleteMemoryTool = ({
   deleteMemory,
   validKeys,
   forceAgentScope = false,
+  existingBuckets = [],
 }: {
   userId: string | ObjectId;
   agentId?: string;
@@ -485,6 +492,7 @@ export const createDeleteMemoryTool = ({
   validKeys?: string[];
   /** When true (agent-bucket consolidation), deletions always target `agentId`'s bucket. */
   forceAgentScope?: boolean;
+  existingBuckets?: MemoryBucket[];
 }): DynamicStructuredTool => {
   return tool(
     async ({ key, scope }) => {
@@ -505,7 +513,7 @@ export const createDeleteMemoryTool = ({
           },
         };
 
-        const targetAgentId =
+        let targetAgentId =
           agentId &&
           (forceAgentScope ||
             scope === 'agent' ||
@@ -514,6 +522,7 @@ export const createDeleteMemoryTool = ({
             ? agentId
             : undefined;
         const canon = scope === 'self' && Boolean(agentId) && !forceAgentScope;
+        if (!canon && !forceAgentScope) targetAgentId = existingMemoryScope(existingBuckets, key, targetAgentId);
         const result = await deleteMemory({
           userId: canon ? CANON_USER_ID : userId,
           agentId: targetAgentId,
@@ -673,6 +682,7 @@ async function processMemoryCore({
   user,
   forceAgentScope = false,
   logDiary,
+  existingBuckets = [],
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -695,6 +705,7 @@ async function processMemoryCore({
   forceAgentScope?: boolean;
   /** KADE diary (Aug 7 2026): when provided, the keeper also gets `log_diary` for episodic archive entries. */
   logDiary?: DiaryLogFn;
+  existingBuckets?: MemoryBucket[];
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -705,6 +716,7 @@ async function processMemoryCore({
       validKeys,
       totalTokens,
       forceAgentScope,
+      existingBuckets,
       /* KADE CANON: the AI side of the window is the only evidence a "self" card may rest on. */
       canonEvidence: forceAgentScope
         ? undefined
@@ -720,6 +732,7 @@ async function processMemoryCore({
       validKeys,
       deleteMemory,
       forceAgentScope,
+      existingBuckets,
     });
 
     const currentMemoryTokens = totalTokens;
@@ -969,7 +982,8 @@ export async function createMemoryProcessor({
       '\n\nOFF THE RECORD: if the user has said "off the record" in the visible conversation and has not since said they\'re back on the record, save NOTHING from that span — no cards, no logbook entries, no exceptions. When they say "back on the record" (or similar), normal listening resumes from that point. If they ask you to forget an off-record slip you already saved, delete it.';
   }
 
-  const { withKeys, withoutKeys, totalTokens } = await memoryMethods.getFormattedMemories({
+  finalInstructions += '\n\nMEMORY CONTROLS: A direct request to correct, update, forget or remove a saved fact is a memory action, never task chatter. Act on the latest user request even if the assistant response disagrees or asks a question. Reuse BOTH the exact key and the scope printed on the existing card. If the same obsolete fact exists in shared and agent cards, correct or delete each affected card in its own scope. A request to forget a topic does not require choosing which conflicting value is true. Do not save the forget request as a new fact or diary entry.';
+  const { withKeys, withoutKeys, totalTokens, buckets } = await memoryMethods.getFormattedMemories({
     userId,
     agentId,
   });
@@ -1013,6 +1027,7 @@ export async function createMemoryProcessor({
           streamId,
           conversationId,
           memory: withKeys + canonForKeeper,
+          existingBuckets: buckets,
           totalTokens: totalTokens || 0,
           instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,

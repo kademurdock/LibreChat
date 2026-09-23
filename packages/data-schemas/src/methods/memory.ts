@@ -465,7 +465,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
               (memory.correctionLocked
                 ? ' [USER CORRECTION: retain this corrected fact; do not recreate the old belief]'
                 : '');
-            return `${index + 1}. [${date}]. ["key": "${memory.key}"]${tokenInfo}. ["value": "${memory.value}"]${describeReminder(memory)}`;
+            return `${index + 1}. [${date}]. ["key": "${memory.key}"] ["scope": "${memory.agentId ? 'agent' : 'shared'}"]${tokenInfo}. ["value": "${memory.value}"]${describeReminder(memory)}`;
           })
           .join('\n\n');
 
@@ -505,7 +505,10 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         },
       ]);
 
-      return { withKeys, withoutKeys, totalTokens };
+      return {
+        withKeys, withoutKeys, totalTokens,
+        buckets: allMemories.map((memory) => ({ key: memory.key, agentId: memory.agentId || undefined })),
+      };
     } catch (error) {
       logger.error('Failed to get formatted memories:', error);
       return { withKeys: '', withoutKeys: '', totalTokens: 0 };
