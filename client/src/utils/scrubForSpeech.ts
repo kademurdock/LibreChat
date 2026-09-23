@@ -9,7 +9,7 @@
 
 const TRAILING_SOURCES_RE =
   /\n+\s*(?:#{1,6}\s*)?(?:\*{0,2})(?:sources|references|citations|works cited)(?:\*{0,2})\s*:?\s*\n[\s\S]*$/i;
-const CITATION_ANCHOR_RE = /(?:\\?u[eE]20[0-9a-fA-F]|\b)turn\d+[a-z]+\d+\b/gi;
+const CITATION_ANCHOR_RE = /(?:\\?u[eE]20[0-9a-fA-F]|\b)(?:turn\d+[a-z]+\d+)+\b/gi;
 const PUA_RE = /[\uE200-\uE20F\uF000-\uF0FF]/g;
 const LITERAL_NBSP_RE = /\\u00a0/gi;
 const FOOTNOTE_REF_RE = /\s*\[(?:\d{1,3})\](?=[\s.,;:!?)]|$)/g;

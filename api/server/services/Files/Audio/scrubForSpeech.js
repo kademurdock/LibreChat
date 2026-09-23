@@ -20,7 +20,7 @@ const TRAILING_SOURCES_RE =
 
 // Citation anchor tokens the model may type as literal text ("turn0search3"),
 // with or without the escaped/real private-use prefix.
-const CITATION_ANCHOR_RE = /(?:\\?u[eE]20[0-9a-fA-F]|\b)turn\d+[a-z]+\d+\b/gi;
+const CITATION_ANCHOR_RE = /(?:\\?u[eE]20[0-9a-fA-F]|\b)(?:turn\d+[a-z]+\d+)+\b/gi;
 
 // Private-use citation glyphs (explicit escapes, heredoc-safe).
 const PUA_RE = /[\uE200-\uE20F\uF000-\uF0FF]/g;

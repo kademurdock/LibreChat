@@ -53,7 +53,7 @@ const AI_TELL_TRAIL_BANS = [
 ];
 
 function scrubSegment(t, includeTrail) {
-  t = t.replace(/\bturn\d+[a-z]+\d+\b/gi, '');
+  t = t.replace(/\b(?:turn\d+[a-z]+\d+)+\b/gi, '');
   for (const re of AI_TELL_LEAD_BANS) t = t.replace(re, '');
   for (const re of AI_TELL_SENTENCE_BANS) t = t.replace(re, '');
   for (const re of AI_TELL_PHRASE_BANS) t = t.replace(re, '');
