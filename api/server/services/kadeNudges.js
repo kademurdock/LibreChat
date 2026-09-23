@@ -38,6 +38,14 @@ function isPushConfigured() {
   return pushConfigured;
 }
 
+// Keep review/demo seats isolated even when a browser or phone registers them.
+// The bridge enforces the same list at its native push dispatcher.
+function isTestUser(userId) {
+  return ['6a6125d73939d20b95251078', '6a69074cc74d975de21f5b2a', '6a572e3be680dcdaadca0f04',
+    ...String(process.env.NOTIFY_TEST_USER_IDS || '').split(',').map((id) => id.trim())]
+    .includes(String(userId || ''));
+}
+
 /** ---- US Central time helpers (whole family is Missouri; DST-safe) ---- */
 function chicagoParts(date = new Date()) {
   const fmt = new Intl.DateTimeFormat('en-US', {
@@ -86,6 +94,7 @@ function parseCentralDateTime(str) {
 
 /** ---- channels ---- */
 async function sendPushToUser(userId, { title, body, url }) {
+  if (isTestUser(userId)) return 0;
   if (!pushConfigured) {
     return 0;
   }
@@ -116,6 +125,7 @@ async function queueChatNudge(userId, text, type) {
 }
 
 async function placeNudgeCall(userId, userName, phone, text) {
+  if (isTestUser(userId)) return false;
   const bridgeUrl = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
   const secret = process.env.BRIDGE_SECRET;
   if (!secret || !phone) {
@@ -151,6 +161,7 @@ async function placeNudgeCall(userId, userName, phone, text) {
  * "what has nudged me lately" either way).
  */
 async function deliverNudge(userId, text, { type = 'reminder', userName = '' } = {}) {
+  if (isTestUser(userId)) return 'off';
   const prefs = (await KadeNudgePref.findOne({ userId }).lean()) || {};
   const channel = prefs[type === 'birthday' ? 'birthday' : 'reminders'] || 'chat';
   if (channel === 'off') {

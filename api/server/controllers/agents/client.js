@@ -316,6 +316,7 @@ class AgentClient extends BaseClient {
       ) {
         const desc = await describeAttachedImages(image_urls, {
           userId: this.options.req?.user?.id,
+          question: message.text || message.content,
         });
         if (desc && desc.trim()) {
           const note = `\n\n[What's in the ${image_urls.length > 1 ? 'photos' : 'photo'} they just shared (described for you, since you can't see images directly — react naturally, don't mention this note): ${desc.trim()}]`;

@@ -64,6 +64,28 @@ router.post('/nudges', async (req, res) => {
   }
 });
 
+router.post('/reminder-missed', async (req, res) => {
+  if (!authed(req, res)) return;
+  const { userId, reminderId, text, fireAt } = req.body || {};
+  if (!/^[a-f0-9]{24}$/.test(String(userId)) || !/^[a-f0-9]{12}$/.test(String(reminderId)) || typeof text !== 'string' || !text.trim() || !Number.isFinite(Date.parse(fireAt))) {
+    return res.status(400).json({ error: 'Valid user, reminder, text and time are required' });
+  }
+  try {
+    const { KadePendingNudge } = require('~/models/kadeNudge');
+    const crypto = require('crypto');
+    const _id = crypto.createHash('sha256').update(`missed-reminder:${userId}:${reminderId}`).digest('hex').slice(0, 24);
+    const when = new Date(fireAt).toLocaleString('en-US', { timeZone: 'America/Chicago' });
+    await KadePendingNudge.updateOne({ _id }, { $setOnInsert: {
+      userId, type: 'reminder', channel: 'chat',
+      text: `We could not confirm delivery of your phone reminder for ${when} Central: ${text.slice(0, 300)}`,
+    } }, { upsert: true });
+    res.json({ ok: true });
+  } catch (e) {
+    logger.warn('[kadeClock] missed-reminder receipt failed: ' + e.message);
+    res.status(500).json({ ok: false, error: 'Could not save the reminder receipt' });
+  }
+});
+
 router.post('/summary', async (req, res) => {
   if (!authed(req, res)) return;
   try {

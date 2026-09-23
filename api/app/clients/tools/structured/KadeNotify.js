@@ -426,7 +426,7 @@ class KadeNotify extends Tool {
           return 'No reminders pending. Create one with set_reminder (needs body, and either in_minutes or fire_date+fire_time).';
         }
         return rows
-          .map((rm) => `id ${rm.id}: "${rm.text}" at ${rm.fireAtCentral || rm.fireAt}`)
+          .map((rm) => `id ${rm.id}: "${rm.text}" at ${rm.fireAtCentral || rm.fireAt}${rm.deliveryStatus ? ' (delivery unconfirmed; saving a notice for your next chat)' : ''}`)
           .join('\n');
       }
       if (action === 'set_reminder') {
