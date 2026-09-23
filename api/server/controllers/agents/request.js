@@ -26,6 +26,18 @@ const { logViolation } = require('~/cache');
 const { saveMessage, getMessages, getConvo } = require('~/models');
 const { scrubMessageForTransmit } = require('~/server/utils/stripAiTells');
 
+// Agent replies bypass BaseClient's saveMessage meter and often have content
+// parts instead of a text field. Observe the final transmitted reply here.
+function logAgentReplyTells(message, req) {
+  try {
+    const line = require('~/server/utils/kadeTellMeter').measureMessage(message, {
+      agentId: req?.body?.agent_id || message?.model || null,
+      prompt: req?.body?.text || '',
+    });
+    if (line) logger.info(line);
+  } catch (_) { /* Measurement must never interrupt a reply. */ }
+}
+
 /**
  * KADE prepaid Stage B (2026-07-28): translate the balance gate's raw JSON
  * throw into a warm, hearable line before it reaches the stream. The gate
@@ -750,6 +762,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: scrubMessageForTransmit({ ...response }),
           };
+          logAgentReplyTells(finalEvent.responseMessage, req);
 
           logger.debug(`[ResumableAgentController] Emitting FINAL event`, {
             streamId,
@@ -1177,6 +1190,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
     if (!job.abortController.signal.aborted) {
       // Create a new response object with minimal copies
       const finalResponse = scrubMessageForTransmit({ ...response });
+      logAgentReplyTells(finalResponse, req);
 
       sendEvent(res, {
         final: true,

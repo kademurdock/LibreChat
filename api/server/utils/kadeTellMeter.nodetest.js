@@ -227,3 +227,12 @@ test('the house prompt is measurable by the same rule as a reply', () => {
   assert.deepStrictEqual(meter.essayVoice(''), []);
   assert.deepStrictEqual(meter.essayVoice('   '), []);
 });
+
+test('agent content parts are measured without counting tool results or user messages', () => {
+  const text = "That's not nothing. You aren't owed an explanation. And that's okay.";
+  const message = { content: [{ type: 'text', text: { value: text } }, { type: 'tool_call', text: 'irrelevant' }] };
+  assert.equal(meter.measureMessage(message), meter.measure(text));
+  assert.equal(meter.measureMessage({ ...message, isCreatedByUser: true }), null);
+  assert.equal(meter.measureMessage({ ...message, unfinished: true }), null);
+  assert.equal(meter.measureMessage({ content: [{ type: 'tool_call', text }] }), null);
+});

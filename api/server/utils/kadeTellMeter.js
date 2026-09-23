@@ -330,4 +330,15 @@ function measure(text, opts = {}) {
   }
 }
 
-module.exports = { tellsIn, summarize, measure, prose, contentWords, essayVoice };
+function measureMessage(message, opts = {}) {
+  try {
+    if (!message || message.isCreatedByUser || message.unfinished) return null;
+    const text = typeof message.text === 'string' && message.text.trim() ? message.text :
+      (Array.isArray(message.content) ? message.content : [])
+        .filter((part) => part?.type === 'text')
+        .map((part) => typeof part.text === 'string' ? part.text : part.text?.value || '').join('\n');
+    return measure(text, opts);
+  } catch (_) { return null; }
+}
+
+module.exports = { tellsIn, summarize, measure, measureMessage, prose, contentWords, essayVoice };
