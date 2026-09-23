@@ -2053,6 +2053,41 @@ router.get('/announcements', requireJwtAuth, async (req, res) => {
   }
 });
 
+/* Part 278 (Sep 23 2026), her ask: "put a thing in the app to prompt people
+ * to update if they're on an outdated version." The iPhone app asks here on
+ * launch. App Store copies compare against Apple's public lookup on the phone
+ * itself; THIS answer is for TestFlight copies, which Apple offers no lookup
+ * for. The newest TestFlight build is the newest one an ADMIN seat has run:
+ * Kade installs every build first, so a build becomes "the update" for the
+ * family once it is on her phone. Only an admin's report can raise it, so a
+ * tampered client cannot nag everyone. KADE_IOS_MIN_BUILD (optional env)
+ * marks TestFlight builds too old to work at all; the app then asks without
+ * a "Not now". Android can use the same shape later (platform=android). */
+router.get('/app-version', requireJwtAuth, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const platform = req.query.platform === 'android' ? 'android' : 'ios';
+  const channel = req.query.channel === 'appstore' ? 'appstore' : 'testflight';
+  const build = parseInt(req.query.build, 10);
+  const key = `${platform}:${channel}`;
+  try {
+    const versions = mongoose.connection.collection('kadeappversions');
+    if (req.user.role === 'ADMIN' && Number.isFinite(build) && build > 0 && build < 1000000) {
+      await versions.updateOne(
+        { _id: key },
+        { $max: { latestBuild: build }, $set: { lastAdminReportAt: new Date() } },
+        { upsert: true },
+      );
+    }
+    const doc = await versions.findOne({ _id: key });
+    const envMin = platform === 'ios' && channel === 'testflight' ? process.env.KADE_IOS_MIN_BUILD : undefined;
+    const minimumBuild = parseInt(envMin, 10) || 0;
+    return res.json({ platform, channel, latestBuild: (doc && doc.latestBuild) || 0, minimumBuild });
+  } catch (e) {
+    logger.error('[kade/app-version] failed:', e);
+    return res.status(503).json({ error: 'Could not check for updates.' });
+  }
+});
+
 router.get('/wellness', requireJwtAuth, async (req, res) => {
   try {
     if (!bridgeSecretOk(res)) return;
