@@ -63,6 +63,8 @@ function knobs() {
     foreign: num('KADE_MEDIA_FOREIGN', 0.9),
     missouri: num('KADE_MEDIA_MISSOURI', 0.75),
     home: num('KADE_MEDIA_HOME', 0.85),
+    elsewhere: num('KADE_MEDIA_ELSEWHERE', 0.85),
+    elsewhereFlag: num('KADE_MEDIA_ELSEWHERE_FLAG', 0.8),
     tape: num('KADE_MEDIA_MIN_TAPE', 0.7),
   };
 }
@@ -275,6 +277,22 @@ const VHS_Q = {
 
 const MO_RE = /\b(?:Missouri|Springfield,? M[Oo]|Joplin|Branson|Ozarks?|St\.? Louis|Kansas City|Columbia,? M[Oo]|Jefferson City|Cape Girardeau|Sedalia|Rolla|Lebanon,? M[Oo]|West Plains|Poplar Bluff|Nixa|Republic,? M[Oo]|Hannibal|Kirksville|St\.? Joseph|Independence,? M[Oo]|Lake of the Ozarks|Osage Beach|Neosho|Carthage,? M[Oo]|Bolivar,? M[Oo]|Warrensburg|El Dorado Springs|Silver Dollar City|Bass Pro|Show-Me|KSDK|KMOV|KTVI|KPLR|KDNL|KETC|WDAF|KMBC|KCTV|KSHB|KSMO|KCPT|KYTV|KY3|KOLR|KSPR|KDEB|KOZK|KODE|KSNF|KOAM|KFVS|KOMU|KRCG|KMIZ|KQTV|KTVO|KHQA|KTTS|KWTO|KGBX|KXUS|KMOX|KSHE|KCMO|KPRS)\b/;
 const NONUS_RE = /\b(?:UK|U\.K\.|British|Britain|England|English advert|Scotland|Scottish|Welsh|Ireland|Irish TV|Canada|Canadian|Australia|Australian|New Zealand|ITV|BBC|Channel 4|Channel 5|Sky One|CBC|CTV|Global TV|YTV|Teletoon|MuchMusic|Nine Network|Seven Network|Network Ten|Mexico|Mexican|Japan|Japanese|Germany|German|France|French|Spain|Spanish|Brazil|Brazilian|Italy|Italian|Netherlands|Dutch|Philippines|Filipino|India|Indian TV|Europe|European)\b/;
+/* Her part of the country besides Missouri: Arkansas and the Ozarks edges of Kansas and
+ * Oklahoma. Anything naming them is never "local to another area". */
+const AR_OZARKS_RE = /\b(?:Arkansas|Razorbacks?|Little Rock|Fayetteville|Springdale|Bentonville|Rogers,? AR|Harrison,? AR|Mountain Home|Calico Rock|Jonesboro|Fort Smith|Hot Springs|Eureka Springs|Batesville|Searcy|Conway,? AR|Pine Bluff|Texarkana|Grove,? OK|Miami,? OK|Tahlequah|Pittsburg,? KS|Coffeyville|KATV|KARK|KTHV|KLRT|KASN|KAIT|KFSM|KHBS|KHOG|KNWA|KFTA|KAFT|KETS|KTVE|KARZ)\b/i;
+const ourArea = (text) => MO_RE.test(text) || AR_OZARKS_RE.test(text);
+/* Kade, Sep 23 2026: "all the non-local to me material that is local to someone else but was
+ * never syndicated ... Like local car commercials from other states." Trial on 600 of her
+ * library items ($0.013): all 16 at 0.9 or more were local elsewhere (Louisiana furniture
+ * stores, a Colorado Springs waterbed shop, Louisiana governor races, a Scranton Fox ID
+ * montage), and so were the 0.8 to 0.9 near misses (an Indianapolis car dealer, state
+ * lotteries). Whole breaks and blocks are mixed, mostly national, and never count. */
+const ELSEWHERE_Q = {
+  type: 'noul',
+  instructions:
+    "Was the item described by `title`, `folder` and `description` made only for viewers in ONE local area: an advert for a local business such as a car dealer, furniture store, restaurant, lawyer or bank branch; a local election; local news, weather or sport; or a local TV station's own promo, ID or programme? Network and cable channel material, national brands' adverts, syndicated shows, and whole commercial breaks or programme blocks recorded off a station are NOT local. Judge what this recording is; a company history pasted into the description does not count.",
+  criteria: { true: 'Made only for one local area.', false: 'Shown nationally, a whole commercial break or block, or it does not say.' },
+};
 const SPORTS_GAME_RE = /(?:@| at | vs\.? | & ).*\b(?:college football|ncaa|nfl|mlb|nba|nhl|bowl)\b|\b(?:college football|ncaa)\b.*(?:@| at | vs)|rookie game/i;
 const LOCAL_TEAM_RE = /missouri|st\.? ?louis|saint louis|kansas city|royals|chiefs|cardinals|blues|springfield|mizzou|ozark/i;
 
@@ -304,6 +322,7 @@ function questionsFor(item) {
     if (zone !== 'local' && MO_RE.test(text)) Object.assign(q, { recorded: RECORDED_Q, madefor: MADEFOR_Q, local: LOCAL_Q, area: AREA_Q, localKind: judges.LOCAL_KIND_Q });
   }
   if (NONUS_RE.test(text)) q.foreign = FOREIGN_Q;
+  if (item.kind === 'video' && zone === 'intake' && !ourArea(text + ' ' + String(item.path || ''))) q.elsewhere = ELSEWHERE_Q;
   return Object.keys(q).length ? q : null;
 }
 
@@ -379,6 +398,10 @@ function decide(item, answers, deps = {}, k = knobs()) {
 
   const foreign = noulOf(a, 'foreign');
   if (foreign !== null && foreign >= k.foreign) out.flags.push(`Jev review: made outside the US (${two(foreign)}).`);
+  const elsewhere = noulOf(a, 'elsewhere');
+  if (elsewhere !== null && elsewhere >= k.elsewhereFlag && zone !== 'local' && !ourArea(`${item.title || ''} ${item.description || ''} ${from}`)) {
+    out.flags.push(`Space review: local to another area (${two(elsewhere)}).`);
+  }
   if (item.kind === 'video' && zone !== 'local' && SPORTS_GAME_RE.test(item.title || '') && !LOCAL_TEAM_RE.test(item.title || '') && Number(item.bytes || 0) > 3e8) {
     out.flags.push('Space review: full sports game broadcast.');
   }
@@ -500,6 +523,7 @@ function wantState(item) {
   return {
     title: String(item.title || '').slice(0, 300),
     channel: channel || '(unknown)',
+    folder: '(not filed yet)',
     description: channel ? `Posted by the YouTube channel "${channel}". No description has been read yet.` : 'No description has been read yet.',
   };
 }
@@ -512,17 +536,19 @@ function fullSportsGame(item) {
 /** The questions a queued download needs; null when a rule already decides. */
 function wantQuestions(item) {
   const text = `${item.title || ''} ${item.channel || ''}`;
-  if (MO_RE.test(text) || fullSportsGame(item)) return null;
-  return US_ABROAD_RE.test(text) ? { home: HOME_Q } : { foreign: FOREIGN_Q, home: HOME_Q };
+  if (ourArea(text) || fullSportsGame(item)) return null;
+  return US_ABROAD_RE.test(text) ? { home: HOME_Q, elsewhere: ELSEWHERE_Q } : { foreign: FOREIGN_Q, home: HOME_Q, elsewhere: ELSEWHERE_Q };
 }
 
-/** { skip: reason or null, confidence }. Missouri is always wanted. */
+/** { skip: reason or null, confidence }. Missouri, Arkansas and the Ozarks are always wanted. */
 function wantVerdict(item, answers = {}, k = knobs()) {
   const text = `${item.title || ''} ${item.channel || ''}`;
-  if (MO_RE.test(text)) return { skip: null, why: 'Missouri' };
+  if (ourArea(text)) return { skip: null, why: 'her part of the country' };
   if (fullSportsGame(item)) return { skip: 'a full sports game', confidence: 1 };
   const foreign = US_ABROAD_RE.test(text) ? null : noulOf(answers, 'foreign');
   if (foreign !== null && foreign >= k.foreign) return { skip: `made outside the US (${two(foreign)})`, confidence: foreign };
+  const elsewhere = noulOf(answers, 'elsewhere');
+  if (elsewhere !== null && elsewhere >= k.elsewhere) return { skip: `local to another area (${two(elsewhere)})`, confidence: elsewhere };
   const home = noulOf(answers, 'home');
   if (home !== null && home >= k.home) return { skip: `somebody's home movie (${two(home)})`, confidence: home };
   return { skip: null };
@@ -587,5 +613,5 @@ async function fileMedia(items, { ask = jev.ask, deps = {}, timeoutMs = 8000, co
 module.exports = {
   VERSION, knobs, decadeOf, clean, networkOf, zoneOf, folderFact, familyOf, categoryOf, stateOf, questionsFor,
   routeByKind, decide, fileMedia, KIND_Q, KIND_CRITERIA, CATEGORY_Q, VHS_Q, VHS_CRITERIA, FOREIGN_Q, MO_RE, NONUS_RE,
-  HOME_Q, wantState, wantQuestions, wantVerdict, judgeWanted, fullSportsGame,
+  HOME_Q, ELSEWHERE_Q, AR_OZARKS_RE, ourArea, wantState, wantQuestions, wantVerdict, judgeWanted, fullSportsGame,
 };

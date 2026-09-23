@@ -196,3 +196,17 @@ test('probably not wanted: a batch never throws, a failure is wanted', async () 
   assert.ok(costUSD > 0);
   assert.strictEqual(L.wantState({ title: 'x', channel: 'CBZ VHS' }).description, 'Posted by the YouTube channel "CBZ VHS". No description has been read yet.');
 });
+
+test('local to another area: skipped from downloads at 0.85, flagged on new arrivals at 0.8, never her part of the country', () => {
+  const v = (title, elsewhere) => L.wantVerdict({ title, channel: "David's TV and Commercial Archives" }, { foreign: { noul: 0.05 }, home: { noul: 0.05 }, elsewhere: { noul: elsewhere } });
+  assert.match(v('Northeast Furniture Mart ad 1993 (Vidalia, LA)', 0.95).skip, /local to another area \(0\.95\)/);
+  assert.strictEqual(v('December 1994 Ray Skillman Discount Mitsubishi commercial', 0.84).skip, null, 'below the download cut');
+  assert.strictEqual(v('Harrison, AR Pizza Hut grand opening 1992', 0.97).skip, null, 'Arkansas is hers');
+  assert.strictEqual(L.wantQuestions({ title: 'KHBS 40/29 news open 1996' }), null);
+  assert.ok(L.wantQuestions({ title: 'WOLF Fox 56 id montage 2001' }).elsewhere);
+  const intake = { kind: 'video', title: 'Waterbed Palace ad 1987 Colorado Springs', path: 'Videos/Needs Filing/Archive Intake', description: '' };
+  assert.ok(L.questionsFor(intake).elsewhere);
+  const flags = L.decide(intake, { kind: { choice: 'Commercial', confidence: 0.9 }, category: { choice: 'Furniture & Mattresses', confidence: 0.9 }, elsewhere: { noul: 0.93 } }).flags;
+  assert.ok(flags.includes('Space review: local to another area (0.93).'), flags);
+  assert.strictEqual(L.questionsFor({ kind: 'video', title: 'KY3 news open 1996', path: 'Videos/Needs Filing/Archive Intake' }).elsewhere, undefined);
+});
