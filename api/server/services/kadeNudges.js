@@ -121,6 +121,7 @@ async function sendPushToUser(userId, { title, body, url }) {
 }
 
 async function queueChatNudge(userId, text, type) {
+  if (isTestUser(userId)) return;
   await KadePendingNudge.create({ userId, text, type, channel: 'chat' });
 }
 

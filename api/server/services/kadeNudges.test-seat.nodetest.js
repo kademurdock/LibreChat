@@ -13,6 +13,7 @@ test('test seats cannot send web pushes, telephone nudges, or queued outreach', 
   for (const id of ['6a6125d73939d20b95251078', '6a69074cc74d975de21f5b2a', '6a572e3be680dcdaadca0f04', 'extra-test']) {
     assert.equal(await context.sendPushToUser(id, {}), 0);
     assert.equal(await context.placeNudgeCall(id, 'Test', 'unused', 'unused'), false);
+    assert.equal(await context.queueChatNudge(id, 'unused', 'reminder'), undefined);
     assert.equal(await context.deliverNudge(id, 'unused'), 'off');
   }
   assert.equal(context.isTestUser('family'), false);
