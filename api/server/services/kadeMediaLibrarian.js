@@ -62,6 +62,7 @@ function knobs() {
     auditCategory: num('KADE_MEDIA_AUDIT_CAT', 0.9),
     foreign: num('KADE_MEDIA_FOREIGN', 0.9),
     missouri: num('KADE_MEDIA_MISSOURI', 0.75),
+    home: num('KADE_MEDIA_HOME', 0.85),
     tape: num('KADE_MEDIA_MIN_TAPE', 0.7),
   };
 }
@@ -274,7 +275,7 @@ const VHS_Q = {
 
 const MO_RE = /\b(?:Missouri|Springfield,? M[Oo]|Joplin|Branson|Ozarks?|St\.? Louis|Kansas City|Columbia,? M[Oo]|Jefferson City|Cape Girardeau|Sedalia|Rolla|Lebanon,? M[Oo]|West Plains|Poplar Bluff|Nixa|Republic,? M[Oo]|Hannibal|Kirksville|St\.? Joseph|Independence,? M[Oo]|Lake of the Ozarks|Osage Beach|Neosho|Carthage,? M[Oo]|Bolivar,? M[Oo]|Warrensburg|El Dorado Springs|Silver Dollar City|Bass Pro|Show-Me|KSDK|KMOV|KTVI|KPLR|KDNL|KETC|WDAF|KMBC|KCTV|KSHB|KSMO|KCPT|KYTV|KY3|KOLR|KSPR|KDEB|KOZK|KODE|KSNF|KOAM|KFVS|KOMU|KRCG|KMIZ|KQTV|KTVO|KHQA|KTTS|KWTO|KGBX|KXUS|KMOX|KSHE|KCMO|KPRS)\b/;
 const NONUS_RE = /\b(?:UK|U\.K\.|British|Britain|England|English advert|Scotland|Scottish|Welsh|Ireland|Irish TV|Canada|Canadian|Australia|Australian|New Zealand|ITV|BBC|Channel 4|Channel 5|Sky One|CBC|CTV|Global TV|YTV|Teletoon|MuchMusic|Nine Network|Seven Network|Network Ten|Mexico|Mexican|Japan|Japanese|Germany|German|France|French|Spain|Spanish|Brazil|Brazilian|Italy|Italian|Netherlands|Dutch|Philippines|Filipino|India|Indian TV|Europe|European)\b/;
-const SPORTS_GAME_RE = /(?:@| at | vs\.? | & ).*(?:college football|ncaa|nfl|mlb|nba|nhl|bowl)|(?:college football|ncaa).*(?:@| at | vs)|rookie game/i;
+const SPORTS_GAME_RE = /(?:@| at | vs\.? | & ).*\b(?:college football|ncaa|nfl|mlb|nba|nhl|bowl)\b|\b(?:college football|ncaa)\b.*(?:@| at | vs)|rookie game/i;
 const LOCAL_TEAM_RE = /missouri|st\.? ?louis|saint louis|kansas city|royals|chiefs|cardinals|blues|springfield|mizzou|ozark/i;
 
 /** The state Jev reads, and which questions an item needs. */
@@ -468,6 +469,91 @@ function decide(item, answers, deps = {}, k = knobs()) {
   return out;
 }
 
+/* ── WHAT SHE PROBABLY DOES NOT WANT (Part 272, Sep 23 2026) ─────────────
+ * Kade, about batch downloads straight to the cloud: "make it skip videos I
+ * probably mostlikely wouldn't want". Her keep rules: what ran on US TV, tape
+ * openings, kids' and store-bought tapes, anything from Missouri. What she
+ * does not want: things made outside the US, other people's home movies, full
+ * sports games. TubeVault asks before it downloads, knowing only the title
+ * and the channel. A skip is never a deletion: the queue keeps the item and
+ * Retry downloads it anyway.
+ *
+ * Trial on 650 of her queued titles (live Jev, $0.017): foreign at 0.9 or more
+ * caught Nicktoons UK, Cartoon Network Australia and Canada, BBC, CITV and
+ * RTL4, and nothing American except AFN Germany, which is American TV for
+ * troops abroad and is exempt. The home-movie question found none at 0.85 in
+ * a queue of TV archives; its near misses (a Rose Parade band, a high-school
+ * game) stayed below. The sports rule skips 19 full college and NBA games in
+ * 57,413 and keeps every promo, commercial and highlight reel.
+ */
+const HOME_Q = {
+  type: 'noul',
+  instructions:
+    "Is the video described by `title` (posted by `channel`) somebody's own home recording of their family or a local event: a birthday, wedding, Christmas morning, family trip, school concert or play, recital, graduation, church service, or a kids' game? A tape of a TV broadcast, a store-bought or rented tape, a tape's opening or previews, an advert, a TV show or a film is not a home recording, even when the title says VHS.",
+  criteria: { true: "Somebody's own home recording of family or a local event.", false: 'Something shown on TV, sold on tape, or made by a company; or it does not say.' },
+};
+const WANT_EPHEMERA_RE = /commercial|advert|\bads?\b|promo|intro|opening|\bopen\b|bumper|\bIDs?\b|break|halftime|theme|highlights?|preview|trailer/i;
+const US_ABROAD_RE = /\bAFN\b|American Forces|\bAFRTS\b/i;
+
+function wantState(item) {
+  const channel = String(item.channel || '').slice(0, 120);
+  return {
+    title: String(item.title || '').slice(0, 300),
+    channel: channel || '(unknown)',
+    description: channel ? `Posted by the YouTube channel "${channel}". No description has been read yet.` : 'No description has been read yet.',
+  };
+}
+
+function fullSportsGame(item) {
+  const t = String(item.title || '');
+  return SPORTS_GAME_RE.test(t) && !LOCAL_TEAM_RE.test(t) && !WANT_EPHEMERA_RE.test(t);
+}
+
+/** The questions a queued download needs; null when a rule already decides. */
+function wantQuestions(item) {
+  const text = `${item.title || ''} ${item.channel || ''}`;
+  if (MO_RE.test(text) || fullSportsGame(item)) return null;
+  return US_ABROAD_RE.test(text) ? { home: HOME_Q } : { foreign: FOREIGN_Q, home: HOME_Q };
+}
+
+/** { skip: reason or null, confidence }. Missouri is always wanted. */
+function wantVerdict(item, answers = {}, k = knobs()) {
+  const text = `${item.title || ''} ${item.channel || ''}`;
+  if (MO_RE.test(text)) return { skip: null, why: 'Missouri' };
+  if (fullSportsGame(item)) return { skip: 'a full sports game', confidence: 1 };
+  const foreign = US_ABROAD_RE.test(text) ? null : noulOf(answers, 'foreign');
+  if (foreign !== null && foreign >= k.foreign) return { skip: `made outside the US (${two(foreign)})`, confidence: foreign };
+  const home = noulOf(answers, 'home');
+  if (home !== null && home >= k.home) return { skip: `somebody's home movie (${two(home)})`, confidence: home };
+  return { skip: null };
+}
+
+/** Judge a batch of queued downloads. Never throws; a failed item comes back wanted. */
+async function judgeWanted(items, { ask = jev.ask, timeoutMs = 8000, concurrency = 6 } = {}) {
+  const verdicts = [];
+  let inputTokens = 0;
+  const k = knobs();
+  const queue = [...items];
+  async function worker() {
+    for (let item = queue.shift(); item; item = queue.shift()) {
+      const questions = wantQuestions(item);
+      try {
+        let answers = {};
+        if (questions) {
+          const r = await ask(wantState(item), questions, timeoutMs);
+          answers = r.answers || {};
+          inputTokens += Number(r.usage && r.usage.input_tokens) || 0;
+        }
+        verdicts.push({ key: item.key, ...wantVerdict(item, answers, k) });
+      } catch (e) {
+        verdicts.push({ key: item.key, skip: null, error: String((e && e.message) || e).slice(0, 120) });
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, worker));
+  return { verdicts, costUSD: (inputTokens * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6 };
+}
+
 /**
  * Ask Jev about a batch and decide each. Never throws: an item Jev fails on
  * comes back with `error` and is left exactly where it is.
@@ -501,4 +587,5 @@ async function fileMedia(items, { ask = jev.ask, deps = {}, timeoutMs = 8000, co
 module.exports = {
   VERSION, knobs, decadeOf, clean, networkOf, zoneOf, folderFact, familyOf, categoryOf, stateOf, questionsFor,
   routeByKind, decide, fileMedia, KIND_Q, KIND_CRITERIA, CATEGORY_Q, VHS_Q, VHS_CRITERIA, FOREIGN_Q, MO_RE, NONUS_RE,
+  HOME_Q, wantState, wantQuestions, wantVerdict, judgeWanted, fullSportsGame,
 };

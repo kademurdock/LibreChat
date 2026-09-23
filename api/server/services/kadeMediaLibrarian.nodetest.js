@@ -155,3 +155,44 @@ test('fileMedia never throws: a failed item comes back with error and stays put'
   assert.strictEqual(byTitle['Boom 1999'].error, 'timeout');
   assert.ok(costUSD > 0);
 });
+
+test('probably not wanted: foreign at 0.9, AFN is American, Missouri always wanted', () => {
+  const v = (title, channel, foreign, home = 0.1) => L.wantVerdict({ title, channel }, { foreign: { noul: foreign }, home: { noul: home } });
+  assert.match(v('Nicktoons (UK) Commercial Break (December 14, 2017)', "Evan's Media Archive", 0.97).skip, /made outside the US \(0\.97\)/);
+  assert.strictEqual(v('KARD Promo Station ID 2017', "David's TV and Commercial Archives", 0.82).skip, null, 'below the cut: downloaded');
+  assert.strictEqual(v('AFN Germany promos, 7/14/1994 (partial)', 'The AVTB Archives', 0.9).skip, null, 'American Forces Network');
+  assert.strictEqual(L.wantQuestions({ title: 'AFN Germany promos/PSAs, 7/1/1994-A' }).foreign, undefined, 'not even asked');
+  assert.strictEqual(v('KY3 Springfield news open 1996', '', 0.99, 0.99).skip, null);
+  assert.strictEqual(L.wantQuestions({ title: 'KSDK Channel 5 promo 1990' }), null);
+  assert.match(v("Emma's 5th birthday party 1994", 'Our family tapes', 0.05, 0.93).skip, /home movie/);
+  assert.strictEqual(v('Norwalk High School Marching Bears - Tournament of Roses Performance - 1990', 'Random Stuff I Find on VHS', 0.02, 0.6).skip, null);
+});
+
+test('probably not wanted: full games by title, never their promos, ads or highlights', () => {
+  assert.strictEqual(L.wantVerdict({ title: 'Auburn Tigers @ Ole Miss Rebels (2006) NCAA College Football' }).skip, 'a full sports game');
+  assert.strictEqual(L.wantVerdict({ title: 'June 8, 1992 WGN Chicago Bulls vs Portland Trailblazers NBA Finals Game 3 Coverage' }).skip, 'a full sports game');
+  assert.strictEqual(L.wantVerdict({ title: '1996 CBS College Football Tennessee vs UCLA promo' }).skip, null);
+  assert.strictEqual(L.wantVerdict({ title: '1986 MacGyver & ABC NFL Monday Night Football Commercial' }).skip, null);
+  assert.strictEqual(L.wantVerdict({ title: '1988 Kansas Jayhawks vs Oklahoma Sooners NCAA Basketball Championship Game Highlights' }).skip, null);
+  assert.strictEqual(L.wantVerdict({ title: 'Chiefs vs Raiders NFL 1994' }).skip, null, 'a Missouri team');
+  assert.strictEqual(L.fullSportsGame({ title: 'GT Merchandising & Licensing/Dragonfly Productions/GoodTimes Entertainment (2003)' }), false, 'Dragonfly is not the NFL');
+});
+
+test('probably not wanted: a batch never throws, a failure is wanted', async () => {
+  const ask = async (state) => {
+    if (/boom/.test(state.title)) throw new Error('timeout');
+    return { answers: { foreign: { noul: /Canada/.test(state.title) ? 0.95 : 0.1 }, home: { noul: 0.1 } }, usage: { input_tokens: 1000 } };
+  };
+  const { verdicts, costUSD } = await L.judgeWanted([
+    { key: 'a', title: 'Cartoon Network Canada Described Video notice (2021)', channel: 'The AVTB Archives' },
+    { key: 'b', title: 'boom', channel: '' },
+    { key: 'c', title: '1996 Crest commercial', channel: 'Retro TV Commercials' },
+  ], { ask });
+  const by = Object.fromEntries(verdicts.map((v) => [v.key, v]));
+  assert.match(by.a.skip, /outside the US/);
+  assert.strictEqual(by.b.skip, null);
+  assert.ok(by.b.error);
+  assert.strictEqual(by.c.skip, null);
+  assert.ok(costUSD > 0);
+  assert.strictEqual(L.wantState({ title: 'x', channel: 'CBZ VHS' }).description, 'Posted by the YouTube channel "CBZ VHS". No description has been read yet.');
+});

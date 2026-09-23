@@ -177,7 +177,38 @@ async function undo(since) {
   return { considered: items.length, restored: r.modifiedCount || 0 };
 }
 
+/* TubeVault asks, before an Archive workflow download, whether Kade probably
+ * does not want it (Part 272). Librarian only, because it spends the Jev key;
+ * its own daily cap; a refusal or failure means TubeVault downloads as before. */
+const WANT_ENABLED = () => process.env.KADE_ARCHIVE_WANT !== '0' && jev.enabled('KADE_JEV_LIBRARY');
+const WANT_DAILY_USD = () => Math.max(0, parseFloat(process.env.KADE_ARCHIVE_WANT_DAILY_USD) || 1);
+let wantSpent = { day: '', usd: 0 };
+function wantSpentToday() {
+  if (wantSpent.day !== today()) wantSpent = { day: today(), usd: 0 };
+  return wantSpent.usd;
+}
+
 function mount(router, { requireJwtAuth, isAdmin, express }) {
+  router.post('/archive/want', requireJwtAuth, express.json({ limit: '256kb' }), async (req, res) => {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+    if (!WANT_ENABLED()) return res.status(503).json({ error: 'The check is switched off.' });
+    if (wantSpentToday() >= WANT_DAILY_USD()) return res.status(429).json({ error: "Today's limit for this check is used up; it starts again tomorrow." });
+    const items = (Array.isArray((req.body || {}).items) ? req.body.items : []).slice(0, 100)
+      .map((i) => ({ key: String((i && i.key) || '').slice(0, 80), title: String((i && i.title) || '').slice(0, 300), channel: String((i && i.channel) || '').slice(0, 120) }))
+      .filter((i) => i.key && i.title);
+    if (!items.length) return res.status(400).json({ error: 'Nothing to check.' });
+    try {
+      const { verdicts, costUSD } = await librarian.judgeWanted(items);
+      wantSpent.usd += costUSD;
+      const skipped = verdicts.filter((v) => v.skip);
+      logger.info(`[library/want] ${items.length} checked, ${skipped.length} probably unwanted, $${costUSD.toFixed(4)}${skipped.length ? ': ' + skipped.slice(0, 3).map((v) => v.skip).join('; ') : ''}`);
+      if (costUSD > 0) logKadeUsage({ userId: req.user.id, service: 'describe', quantity: items.length, unit: 'items', costUSD, metadata: { source: 'archive-want', skipped: skipped.length } }).catch?.(() => {});
+      res.json({ ok: true, items: verdicts });
+    } catch (e) {
+      logger.warn(`[library/want] ${e.message}`);
+      res.status(500).json({ error: 'Could not check.' });
+    }
+  });
   router.get('/librarian/media-sweep', requireJwtAuth, async (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
     try { res.json({ ok: true, ...(await status()) }); } catch (e) { res.status(500).json({ error: 'Could not count.' }); }
