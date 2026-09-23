@@ -100,7 +100,7 @@ function clean(desc, limit = 700) {
 const NETWORKS = [
   [/\babc family\b/i, 'ABC Family'], [/\bfox family\b/i, 'ABC Family'],
   [/\btoon disney\b/i, 'Toon Disney'], [/\b(?:disney channel|playhouse disney|disney junior|zoog disney)\b/i, 'Disney Channel'],
-  [/\bteen ?nick\b/i, 'TeenNick'], [/\bsprout\b/i, 'Sprout'],
+  [/\bteen?\s?nick\b/i, 'TeenNick'], [/\bsprout\b/i, 'Sprout'],
   [/\b(?:nick jr\.?|nick at nite|nickelodeon|nicktoons)\b/i, 'Nickelodeon'], [/\bnoggin\b/i, 'Noggin'], [/\bthe n\b/i, 'The N'],
   [/\bcartoon network\b/i, 'Cartoon Network'], [/\bcomedy central\b/i, 'Comedy Central'],
   [/\b(?:cnn headline news|headline news)\b/i, 'CNN Headline News'], [/\bcnn\b/i, 'CNN'],

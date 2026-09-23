@@ -36,6 +36,7 @@ test('networks come off the title by rule, longest name first', () => {
   assert.strictEqual(L.networkOf('Nick jr on CBS commercial breaks 2005'), 'Nickelodeon');
   assert.strictEqual(L.networkOf('ABC Family promo 2003'), 'ABC Family');
   assert.strictEqual(L.networkOf('Teennick degrassi promo 2013'), 'TeenNick');
+  assert.strictEqual(L.networkOf('Teenick Sabrina commercial breaks 2003'), 'TeenNick', 'her own spelling, one n');
   assert.strictEqual(L.networkOf('Toon Disney bumper'), 'Toon Disney');
   assert.strictEqual(L.networkOf('Playhouse Disney sign on 2007'), 'Disney Channel');
   assert.strictEqual(L.networkOf('Sprout tape commercial breaks 2015'), 'Sprout');
