@@ -1554,6 +1554,22 @@ describe('BaseClient', () => {
   });
 
   describe('sendMessage quote references', () => {
+    test.each(['voice_transcript', undefined, 'arbitrary source instructions'])(
+      'persists only recognized voice provenance without changing user text (%s)',
+      async (source) => {
+        TestClient.options.req = { body: { kadeInputSource: source } };
+        TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+        let captured;
+        await TestClient.sendMessage('Mylo is home', {
+          getReqData: (data) => { if (data.userMessage) captured = data.userMessage; },
+        });
+        const expected = source === 'voice_transcript' ? source : undefined;
+        expect(captured.kadeInputSource).toBe(expected);
+        const userSave = TestClient.saveMessageToDatabase.mock.calls.find(([msg]) => msg.isCreatedByUser);
+        expect(userSave[0].kadeInputSource).toBe(expected);
+        expect(userSave[0].text).toBe('Mylo is home');
+      },
+    );
     // The blockquote merge itself lives in AgentClient.buildMessages / prependQuotes
     // (covered by packages/api specs). BaseClient's job is to attach the normalized
     // quotes onto the user message early and keep the stored text clean.

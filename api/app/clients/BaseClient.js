@@ -398,6 +398,9 @@ class BaseClient {
      * keeping the stored `text` clean while the count stays consistent.
      */
     if (!opts.isEdited) {
+      if (this.options.req?.body?.kadeInputSource === 'voice_transcript') {
+        userMessage.kadeInputSource = 'voice_transcript';
+      }
       const referencedQuotes = getReferencedQuotes(this.options.req?.body?.quotes);
       if (referencedQuotes != null) {
         userMessage.quotes = referencedQuotes;

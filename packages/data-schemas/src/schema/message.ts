@@ -58,6 +58,10 @@ const messageSchema: Schema<IMessage> = new Schema(
     summary: {
       type: String,
     },
+    kadeInputSource: {
+      type: String,
+      enum: ['voice_transcript'],
+    },
     isCreatedByUser: {
       type: Boolean,
       required: true,

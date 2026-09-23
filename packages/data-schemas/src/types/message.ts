@@ -18,6 +18,7 @@ export interface IMessage extends Document {
   text?: string;
   summary?: string;
   isCreatedByUser: boolean;
+  kadeInputSource?: 'voice_transcript';
   isTemporary?: boolean;
   unfinished?: boolean;
   error?: boolean;

@@ -1,4 +1,5 @@
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
+import { useWatch } from 'react-hook-form';
 import { MicOff } from 'lucide-react';
 import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
 import { useLocalize, useSpeechToText, useGetAudioSettings } from '~/hooks';
@@ -22,6 +23,10 @@ export default memo(function AudioRecorder({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { speechToTextEndpoint } = useGetAudioSettings();
+  const draft = useWatch({ control: methods.control, name: 'text' });
+  useEffect(() => {
+    if (!draft?.trim()) setValue('kadeInputSource', undefined);
+  }, [draft, setValue]);
 
   const existingTextRef = useRef<string>('');
   const isSubmittingRef = useRef(isSubmitting);
@@ -47,7 +52,7 @@ export default memo(function AudioRecorder({
           isExternalSTT(speechToTextEndpoint) && existingTextRef.current
             ? `${existingTextRef.current} ${text}`
             : text;
-        const submitted = ask({ text: finalText });
+        const submitted = ask({ text: finalText, kadeInputSource: 'voice_transcript' });
         if (submitted === false) {
           return;
         }
@@ -71,6 +76,7 @@ export default memo(function AudioRecorder({
       setValue('text', newText, {
         shouldValidate: true,
       });
+      if (text.trim()) setValue('kadeInputSource', 'voice_transcript');
     },
     [setValue, speechToTextEndpoint],
   );
@@ -122,14 +128,14 @@ export default memo(function AudioRecorder({
 
   return (
     <TooltipAnchor
-      description={localize('com_ui_use_micrphone')}
+      description={localize('com_ui_dictation_hint')}
       render={
         <button
           id="audio-recorder"
           type="button"
           aria-label={localize('com_ui_use_micrphone')}
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
-          disabled={disabled}
+          disabled={disabled || isLoading === true}
           className={cn(
             'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
           )}

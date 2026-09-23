@@ -45,6 +45,7 @@ export default function useSubmitMessage() {
       const submitted = ask(
         {
           text,
+          kadeInputSource: methods.getValues('kadeInputSource'),
         },
         {
           addedConvo: addedConvo ?? undefined,
@@ -56,15 +57,7 @@ export default function useSubmitMessage() {
       // Sticky by design: the picked mode stays across turns until changed.
       methods.reset();
     },
-    [
-      ask,
-      methods,
-      addedConvo,
-      setMessages,
-      getMessages,
-      latestMessage,
-      thinkMode,
-    ],
+    [ask, methods, addedConvo, setMessages, getMessages, latestMessage, thinkMode],
   );
 
   const submitPrompt = useCallback(

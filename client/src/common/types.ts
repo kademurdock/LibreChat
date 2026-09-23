@@ -91,7 +91,7 @@ export type LocalizeFunction = (
   options?: Record<string, string | number>,
 ) => string;
 
-export type ChatFormValues = { text: string };
+export type ChatFormValues = { text: string; kadeInputSource?: 'voice_transcript' };
 
 export const mainTextareaId = 'prompt-textarea';
 export const globalAudioId = 'global-audio';
@@ -331,6 +331,7 @@ export type TGenButtonProps = {
 
 export type TAskProps = {
   text: string;
+  kadeInputSource?: 'voice_transcript';
   overrideConvoId?: string;
   overrideUserMessageId?: string;
   parentMessageId?: string | null;

@@ -8,7 +8,8 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 const GRAPH_SELECT = 'messageId parentMessageId metadata.summaryUsedTokens';
-const BODY_SELECT = 'messageId parentMessageId tokenCount isCreatedByUser text quotes';
+const BODY_SELECT =
+  'messageId parentMessageId tokenCount isCreatedByUser text quotes kadeInputSource';
 
 function textStats(messageId: string, textBytes = 5) {
   return {
@@ -32,6 +33,42 @@ describe('resolveContextProjection', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('counts speech context despite a cached plain-text count, without labeling typed turns', async () => {
+    const { createTokenCounter, projectAgentContextUsage } = jest.requireMock('@librechat/agents');
+    const counter = jest.fn(() => 99);
+    createTokenCounter.mockResolvedValueOnce(counter);
+    const graph = [
+      { messageId: 'typed', parentMessageId: null },
+      { messageId: 'message-1', parentMessageId: 'typed' },
+    ];
+    const bodies = [
+      { ...graph[0], isCreatedByUser: true, text: 'typed text', tokenCount: 5 },
+      {
+        ...graph[1],
+        isCreatedByUser: true,
+        text: 'Milo is home',
+        tokenCount: 5,
+        kadeInputSource: 'voice_transcript' as const,
+      },
+    ];
+    const getMessages = jest.fn(async (_filter: object, select?: string) =>
+      select === GRAPH_SELECT ? graph : bodies,
+    );
+    await resolveContextProjection(
+      {
+        userId: 'user-1',
+        getMessages,
+        getMessageTextStats: jest.fn(async () => [textStats('typed'), textStats('message-1')]),
+      },
+      baseParams,
+    );
+    expect(counter).toHaveBeenCalled();
+    const serialized = JSON.stringify(projectAgentContextUsage.mock.calls);
+    expect(serialized).toContain('voice message transcribed to text');
+    expect(serialized).toContain('Milo is home');
+    expect(serialized.match(/voice message transcribed to text/g)).toHaveLength(1);
   });
 
   it('returns null before tokenization when the conversation is too large', async () => {

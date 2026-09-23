@@ -261,6 +261,7 @@ export default function useChatFunctions({
   const ask: TAskFunction = (
     {
       text,
+      kadeInputSource,
       overrideConvoId,
       overrideUserMessageId,
       parentMessageId = null,
@@ -457,6 +458,9 @@ export default function useChatFunctions({
 
     const currentMsg: TMessage = {
       text,
+      kadeInputSource:
+        kadeInputSource ??
+        (isRegenerate || isContinued ? targetParentMessage?.kadeInputSource : undefined),
       sender: 'User',
       clientTimestamp: new Date().toLocaleString('sv').replace(' ', 'T'),
       isCreatedByUser: true,

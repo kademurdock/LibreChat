@@ -1,4 +1,11 @@
 {
+  "com_ui_dictate": "Dictate",
+  "com_ui_dictation_stop": "Stop and transcribe",
+  "com_ui_dictation_working": "Transcribing…",
+  "com_ui_dictation_recording": "Recording. Stop when you're done; up to two minutes per clip.",
+  "com_ui_dictation_added": "Added to your draft. Review it before sending or saving.",
+  "com_ui_dictation_error": "Couldn't transcribe that. Check microphone access and try again. Your draft is still here.",
+  "com_ui_dictation_hint": "Try Dictate if your phone's keyboard mishears you. It uses Kade-AI's voice transcription. Review names before sending.",
   "com_auth_sign_in_help": "Need help signing in?",
   "com_auth_recovery_inbox_help": "Check your inbox and spam folder. Use the newest reset email; the link lasts 15 minutes. If it expires, return to sign in and choose Forgot password again.",
   "com_auth_recovery_options": "Use your account email to recover a password. If you forgot your email, you can sign in with your linked phone number and password. For a phone-only account, a lost email inbox, or lost two-step verification codes, ask Kade for account help. Do not create a second account to recover your chats or balance.",

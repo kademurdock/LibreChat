@@ -4,12 +4,14 @@ import type { TContextProjectionRequest, TContextUsageEvent } from 'librechat-da
 import type { BaseMessage } from '@langchain/core/messages';
 import { QUOTE_MAX_COUNT, mergeQuotedText } from '~/utils/quotes';
 import { getModelMaxTokens } from '~/utils/tokens';
+import { speechContext } from '~/utils/speech';
 
 const MAX_PROJECTION_MESSAGES = 512;
 const MAX_PROJECTION_BRANCH_MESSAGES = 256;
 const MAX_PROJECTION_BRANCH_TEXT_BYTES = 512 * 1024;
 const PROJECTION_GRAPH_SELECT = 'messageId parentMessageId metadata.summaryUsedTokens';
-const PROJECTION_BODY_SELECT = 'messageId parentMessageId tokenCount isCreatedByUser text quotes';
+const PROJECTION_BODY_SELECT =
+  'messageId parentMessageId tokenCount isCreatedByUser text quotes kadeInputSource';
 
 interface ProjectionMessage {
   messageId: string;
@@ -17,6 +19,7 @@ interface ProjectionMessage {
   tokenCount?: number;
   isCreatedByUser?: boolean;
   text?: string;
+  kadeInputSource?: 'voice_transcript';
   /** Quoted excerpts merged into the model-facing text by the live path; must be
    *  included here so the context gauge counts the same prompt the model sees. */
   quotes?: string[];
@@ -97,10 +100,12 @@ function hasValidProjectionIds(params: TContextProjectionRequest): boolean {
 }
 
 function getProjectionText(message: ProjectionMessage): string | null {
+  const note = message.isCreatedByUser ? speechContext(message.kadeInputSource) : '';
+  const withSource = (text: string) => (note ? `${note}\n${text}` : text);
   const hasQuotes =
     message.isCreatedByUser === true && Array.isArray(message.quotes) && message.quotes.length > 0;
   if (!hasQuotes) {
-    return message.text ?? '';
+    return withSource(message.text ?? '');
   }
   if (message.quotes == null || message.quotes.length > QUOTE_MAX_COUNT) {
     return null;
@@ -110,7 +115,7 @@ function getProjectionText(message: ProjectionMessage): string | null {
       return null;
     }
   }
-  return mergeQuotedText(message.text ?? '', message.quotes);
+  return withSource(mergeQuotedText(message.text ?? '', message.quotes));
 }
 
 function hasExceededBranchTextLimit(branch: ProjectionMessage[]): boolean {
@@ -345,7 +350,7 @@ export async function resolveContextProjection(
      *  recount quoted messages: a text-only Save edit leaves a stale text-only
      *  `tokenCount` that omits the quote block, so trust the merged recount. */
     indexTokenCountMap[String(i)] =
-      !hasQuotes && message.tokenCount != null && message.tokenCount > 0
+      !hasQuotes && !message.kadeInputSource && message.tokenCount != null && message.tokenCount > 0
         ? message.tokenCount
         : tokenCounter(lcMessage);
   }

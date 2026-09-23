@@ -8,6 +8,7 @@ import type { TSpecialVarLabel } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
+import DictateButton from '~/components/Input/DictateButton';
 
 const inputClass = cn(
   defaultTextProps,
@@ -103,6 +104,15 @@ export default function Instructions() {
             )}
           </>
         )}
+      />
+      <DictateButton
+        onTranscript={(text) =>
+          setValue(
+            'instructions',
+            [getValues('instructions')?.trimEnd(), text].filter(Boolean).join(' '),
+            { shouldDirty: true },
+          )
+        }
       />
     </div>
   );

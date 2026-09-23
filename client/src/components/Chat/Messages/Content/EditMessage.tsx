@@ -56,6 +56,7 @@ const EditMessage = ({
       ask(
         {
           text: data.text,
+          kadeInputSource: message.kadeInputSource,
           parentMessageId,
           conversationId,
         },

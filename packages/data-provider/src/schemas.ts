@@ -759,6 +759,7 @@ export const tMessageSchema = z.object({
   /** @deprecated */
   generation: z.string().nullable().optional(),
   isCreatedByUser: z.boolean(),
+  kadeInputSource: z.literal('voice_transcript').optional(),
   isTemporary: z.boolean().optional(),
   expiredAt: z.string().nullable().optional(),
   error: z.boolean().optional(),

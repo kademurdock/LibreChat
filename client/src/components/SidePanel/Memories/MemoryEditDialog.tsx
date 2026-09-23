@@ -13,6 +13,7 @@ import type { TUserMemory } from 'librechat-data-provider';
 import { useUpdateMemoryMutation, useMemoriesQuery } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
 import MemoryUsageBadge from './MemoryUsageBadge';
+import DictateButton from '~/components/Input/DictateButton';
 
 interface MemoryEditDialogProps {
   memory: TUserMemory | null;
@@ -209,6 +210,13 @@ export default function MemoryEditDialog({
                 className="min-h-[100px] w-full resize-none rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-heavy disabled:cursor-not-allowed disabled:opacity-50"
                 rows={4}
                 disabled={!hasUpdateAccess}
+              />
+              <DictateButton
+                active={open}
+                disabled={isLoading || !hasUpdateAccess}
+                onTranscript={(text) =>
+                  setValue((current) => [current.trimEnd(), text].filter(Boolean).join(' '))
+                }
               />
             </div>
           </div>

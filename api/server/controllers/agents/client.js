@@ -40,6 +40,7 @@ const {
   countFormattedMessageTokens,
   prependFileContext,
   prependQuotes,
+  speechContext,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   collectFreshSkillPrimeNames,
@@ -438,6 +439,12 @@ class AgentClient extends BaseClient {
 
       memoryPayload.push(memoryFormattedMessage);
 
+      const sourceNote = message.isCreatedByUser ? speechContext(message.kadeInputSource) : '';
+      if (sourceNote) {
+        prependFileContext(formattedMessage, sourceNote);
+        prependFileContext(memoryFormattedMessage, sourceNote);
+      }
+
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
       /**
@@ -448,6 +455,7 @@ class AgentClient extends BaseClient {
        * copy keeps context accounting accurate (and self-heals stale counts).
        */
       const needsCanonicalTokenCount =
+        Boolean(sourceNote) ||
         !hasDbTokenCount ||
         (this.isVisionModel && (message.image_urls || message.files)) ||
         (Array.isArray(message.quotes) && message.quotes.length > 0);

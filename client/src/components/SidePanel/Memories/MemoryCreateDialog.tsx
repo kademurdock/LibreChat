@@ -11,6 +11,7 @@ import {
 } from '@librechat/client';
 import { useCreateMemoryMutation } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
+import DictateButton from '~/components/Input/DictateButton';
 
 interface MemoryCreateDialogProps {
   open: boolean;
@@ -137,6 +138,13 @@ export default function MemoryCreateDialog({
                 placeholder={localize('com_ui_enter_value')}
                 className="min-h-[100px] w-full resize-none rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-heavy"
                 rows={4}
+              />
+              <DictateButton
+                active={open}
+                disabled={isLoading || !hasCreateAccess}
+                onTranscript={(text) =>
+                  setValue((current) => [current.trimEnd(), text].filter(Boolean).join(' '))
+                }
               />
             </div>
           </div>
