@@ -107,8 +107,14 @@ function centralPrettyDate(d = new Date()) {
   }).format(d);
 }
 
+// Explicit aliases let private evaluation copies share their source's daily
+// fictional detail. Without this, a personality/memory A/B also changes the
+// character's day. Unlisted agents retain their existing deterministic seed.
+let seedAliases = {};
+try { seedAliases = JSON.parse(process.env.KADE_WORLD_SEED_ALIASES || '{}') || {}; } catch (_) { /* default seeds */ }
 function getDailySeed(agentId, dateKey) {
-  const idx = hashStr(`${agentId}::${dateKey}`) % SEED_BANK.length;
+  const identity = typeof seedAliases[agentId] === 'string' ? seedAliases[agentId] : agentId;
+  const idx = hashStr(`${identity}::${dateKey}`) % SEED_BANK.length;
   return SEED_BANK[idx];
 }
 
