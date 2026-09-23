@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 // Exercise the real recall service AND vector ranking. Only storage, embedding,
 // and ancillary services are replaced; no model calls or family data are used.
-function fixture({ shared = [], own = [], others = {}, vectors, failReads = false, diarySearch, beforeEmbed } = {}) {
+function fixture({ shared = [], own = [], others = {}, vectors, failReads = false, diarySearch, beforeEmbed, focused = false } = {}) {
   const reads = [];
   const audits = [];
   const timers = [];
@@ -60,13 +60,36 @@ function fixture({ shared = [], own = [], others = {}, vectors, failReads = fals
       agentNameOf: async () => 'Other companion', shareNotice: async () => '',
     },
     '~/models/kadeRecallAudit': { storeRecallAudit: (row) => audits.push(row) },
-  }, { KADE_MEMORY_RAG: '1', KADE_MEMORY_RAG_AGENTS: 'all', KADE_ECHOES: '0' });
+  }, { KADE_MEMORY_RAG: '1', KADE_MEMORY_RAG_AGENTS: 'all', KADE_ECHOES: '0', KADE_FOCUSED_MEMORY_AGENTS: focused ? 'companion' : '' });
   const run = () => service.getRecallTailBlock({ userId: 'seat', agentId: 'companion', userText: 'Tell me about the telescope project.', req: {} });
-  return { run, reads, audits, expire: () => { assert.ok(timers.length); timers.shift()(); }, timers };
+  return { run, reads, audits, split: () => service.getMemorySplit('seat','companion'), expire: () => { assert.ok(timers.length); timers.shift()(); }, timers };
 }
 
 const card = (key, value, agentId = 'companion', vector = [1, 0]) =>
   ({ key, value, agentId, tokenCount: 200, updated_at: '2026-09-06', vector });
+
+test('focused memory retrieves shared facts on small seats instead of pinning every worry', async () => {
+  const shared = [card('identity_name','Name is Jo.',null),card('telescope_project','Building a telescope.',null)];
+  const baseline=fixture({shared});
+  assert.equal(await baseline.split(),null);
+  const candidate=fixture({shared,focused:true});
+  const split=await candidate.split();
+  assert.match(split.pinnedBlock,/Name is Jo/);
+  assert.doesNotMatch(split.pinnedBlock,/Building a telescope/);
+  const {block}=await candidate.run();
+  assert.match(block,/Building a telescope/);
+  assert.doesNotMatch(block,/Name is Jo/);
+});
+
+test('focused recall caps at three, excludes low scores, and never asserts relevance', async () => {
+  const own=Array.from({length:5},(_,i)=>card('project_'+i,'Project '+i));
+  own.push(card('weak','An unrelated worry.','companion',[0.4,Math.sqrt(0.84)]));
+  const f=fixture({own,focused:true});
+  const {block}=await f.run();
+  assert.equal(f.audits[0].cards.length,3);
+  assert.doesNotMatch(block,/unrelated worry/);
+  assert.match(block,/may be unrelated/);
+});
 
 test('pinned facts cannot crowd a useful memory out of the top eight', async () => {
   const own = Array.from({ length: 8 }, (_, i) => card('identity_' + i, 'Pinned fact ' + i));

@@ -756,6 +756,10 @@ router.get('/voice-report', async (req, res) => {
      * "I still think / I'm not moving / I hear you, and". Everything else is
      * unclassified. Heuristic, reported with samples, never enforced. */
     let spine = null;
+    const fkNow = wordTok && allSents
+      ? Math.round(Math.max(0, 0.39 * (wordTok / allSents) + 11.8 * (sylTotal / wordTok) - 15.59) * 10) / 10
+      : null;
+    const bigNow = wordTok ? Math.round((1000 * bigWords) / wordTok) / 10 : null;
     try {
       const convoIds = [...new Set(rows.map((m) => m.conversationId).filter(Boolean))].slice(0, 200);
       const both = convoIds.length
@@ -871,11 +875,6 @@ router.get('/voice-report', async (req, res) => {
        * comment on the calculation says conversation between adults sits at
        * about grade 5 to 7. Now it lands in the log beside the Jev flags, so
        * the two can be read against each other without a JSON fetch. */
-      const fkNow =
-        wordTok && allSents
-          ? Math.round(Math.max(0, 0.39 * (wordTok / allSents) + 11.8 * (sylTotal / wordTok) - 15.59) * 10) / 10
-          : null;
-      const bigNow = wordTok ? Math.round((1000 * bigWords) / wordTok) / 10 : null;
       try {
         const judges = require('~/server/services/kadeJevJudges');
         const vf = await judges.readVoiceFlags(careTexts);

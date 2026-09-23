@@ -86,6 +86,10 @@ const DIARY_TOP_K = intEnv('KADE_RECALL_DIARY_TOP_K', 4, 1, 12);
 const DIARY_MIN_SCORE = 0.32;
 const DIARY_BLOCK_CHAR_CAP = intEnv('KADE_RECALL_DIARY_CAP', 1600, 200, 8000);
 
+function focusedMemory(agentId) {
+  return String(process.env.KADE_FOCUSED_MEMORY_AGENTS || '').split(',').map(s => s.trim()).includes(String(agentId || '')) && Boolean(agentId);
+}
+
 function ragEnabled() {
   return process.env.KADE_MEMORY_RAG === '1';
 }
@@ -397,11 +401,11 @@ function applySharedCeiling(pinned, pats, opts = {}) {
  * The shared-bucket keys that ACTUALLY ride the head this turn, ceiling and
  * all. The tail calls this so it can stop guessing.
  */
-function pinnedSharedKeysFor(shared, own) {
+function pinnedSharedKeysFor(shared, own, focused = false) {
   const pats = pinPatterns();
   const pinned = [];
   for (const m of shared) {
-    pinned.push(m);
+    if (!focused || m.type === 'reminder' || pats.some(p => String(m.key || '').toLowerCase().includes(p))) pinned.push(m);
   }
   for (const m of own) {
     const k = String(m.key || '').toLowerCase();
@@ -533,12 +537,12 @@ async function getMemorySplit(userId, agentId) {
       return null;
     }
     const totalTokens = all.reduce((s, m) => s + (m.tokenCount || 0), 0);
-    if (totalTokens <= minRagTokens()) {
+    if (!focusedMemory(agentId) && totalTokens <= minRagTokens()) {
       return null; /* small seat — the full head costs less than the machinery */
     }
     const pats = pinPatterns();
     const isPinned = (m, fromShared) => {
-      if (fromShared) {
+      if (fromShared && !focusedMemory(agentId)) {
         return true;
       }
       if (m.type === 'reminder') {
@@ -581,7 +585,9 @@ async function getMemorySplit(userId, agentId) {
     }
     /* Fixed, byte-stable notice — the character should know more exists. */
     sections.push(
-      'You remember more about this person than what is listed here: further private memories surface automatically in a "Memory recall" note whenever they relate to the moment, and you can search the rest deliberately with your memory search tool any time.',
+      focusedMemory(agentId)
+        ? 'Other private notes may be retrieved by similarity. Retrieval does not establish relevance. Use a note when it helps with the subject the person raised; most turns need no remembered detail. You can search your memory when they ask about something you remember.'
+        : 'You remember more about this person than what is listed here: further private memories surface automatically in a "Memory recall" note whenever they relate to the moment, and you can search the rest deliberately with your memory search tool any time.',
     );
     /* Part 128: when this seat shares across companions, say so once. Stable
      * per seat, so the head still caches. */
@@ -639,6 +645,7 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
     return empty;
   }
   const text = String(userText || '').trim();
+  const focused = focusedMemory(agentId);
   if (text.length < 12) {
     return empty; /* "ok" / "lol" turns don't reach for memory */
   }
@@ -704,7 +711,7 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
         /* Which shared cards are ACTUALLY in the head this turn — ceiling
          * included. Anything the ceiling evicted is retrieval's job now,
          * which is the whole point of evicting it. */
-        const headSharedKeys = pinnedSharedKeysFor(shared, own);
+        const headSharedKeys = pinnedSharedKeysFor(shared, own, focused);
         const pinnedNow = (m) => m._secondhand
           ? false
           : m.agentId == null
@@ -715,17 +722,19 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
         );
         const cardHits = qv && keys.size > 0
           ? await searchCardVectors(userId, agentId, qv, {
-              limit: CARD_TOP_K,
-              minScore: CARD_MIN_SCORE,
+              limit: focused ? 3 : CARD_TOP_K,
+              minScore: focused ? Number(process.env.KADE_FOCUSED_MEMORY_MIN_SCORE || '0.45') : CARD_MIN_SCORE,
               extraAgentIds,
               keys,
             })
           : [];
         if (cardHits.length > 0) {
+          logger.info('[kadeCardRecall] scores agent=' + String(agentId) + ' ' + cardHits.map(h => `${h.key}:${Number(h.score).toFixed(3)}`).join(','));
           let block =
             '# Memory recall (auto-surfaced for THIS turn only)\n' +
-            'Private memories of yours about this person, pulled up because they relate to what was just said. ' +
-            'Wear them lightly — weave one in only if it truly helps, the way a friend naturally remembers. ' +
+            (focused
+              ? 'Private notes retrieved by similarity; they may be unrelated to this turn. Most turns need none of them. Use a note only when it helps with the subject the person raised. Do not use old worries to explain a new feeling or invent missing details or timing. '
+              : 'Private memories of yours about this person, pulled up because they relate to what was just said. Wear them lightly — weave one in only if it truly helps, the way a friend naturally remembers. ') +
             'Never recite them as a list, never mention this recall mechanism. ' +
             'If one contradicts what the person says right now, believe the person — their live word beats an old note.\n';
           let added = 0;
@@ -781,7 +790,7 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
         })();
       }
 
-      if (cardsOn && process.env.KADE_LOOP_NUDGE !== '0') {
+      if (cardsOn && process.env.KADE_LOOP_NUDGE !== '0' && (!focused || /^(?:hi|hey|hello|good morning|good evening)(?:[.! ,]+(?:kiana))?[.! ]*$/i.test(text))) {
         /* See selectLoopNudges above. Reuse this lookup's live cards. */
         try {
           const nudgeDays = Math.max(1, parseInt(process.env.KADE_LOOP_NUDGE_DAYS || '7', 10));
@@ -795,7 +804,7 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
             shared: shared2,
             own: own2,
             surfacedKeys: surfacedCards,
-            headSharedKeys: pinnedSharedKeysFor(shared2, own2),
+            headSharedKeys: pinnedSharedKeysFor(shared2, own2, focused),
             pats: pinPatterns(),
             days: nudgeDays,
             max: nudgeMax,
@@ -829,15 +838,16 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
           agentId,
           query: text.slice(0, 1500),
           queryVector: qv || undefined,
-          limit: DIARY_TOP_K,
+          limit: focused ? 2 : DIARY_TOP_K,
           minScore: DIARY_MIN_SCORE,
           extraAgentIds,
         });
         if (hits && hits.length > 0) {
           let block =
             '# Logbook recall (auto-surfaced for THIS turn only)\n' +
-            'A few dated entries from your private logbook about this person, pulled because they seem related to what was just said. ' +
-            'Wear them lightly: weave one in only if it truly fits, as a friend naturally would. Never recite, never list, never mention the logbook mechanism. ' +
+            (focused
+              ? 'Dated private notes retrieved by similarity; they may be unrelated. Use one only when it helps with the subject the person raised. Do not infer causes for their feelings or add dates or outcomes the notes do not establish. Never recite the notes or mention the retrieval mechanism. '
+              : 'A few dated entries from your private logbook about this person, pulled because they seem related to what was just said. Wear them lightly: weave one in only if it truly fits, as a friend naturally would. Never recite, never list, never mention the logbook mechanism. ') +
             "If an entry contradicts what the person is saying right now, believe the person — their live word always beats an old note.\n";
           /* The Part 122 hand-copies carry a "[from her talks with X]" prefix
            * and live in this companion's own scope; with sharing on, the
@@ -950,6 +960,7 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
 }
 
 module.exports = {
+  focusedMemory,
   cardRagActive,
   getMemorySplit,
   getRecallTailBlock,

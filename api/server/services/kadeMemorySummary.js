@@ -355,6 +355,7 @@ async function getRelationshipSummaryText(userId, agentId) {
  */
 async function getRelationshipSummaryBlock(userId, agentId) {
   try {
+    const focused = require('./kadeCardRecall').focusedMemory(agentId);
     if (!enabled() || !userId || !agentId || !(await memoryAllowed(userId))) {
       return '';
     }
@@ -404,13 +405,13 @@ async function getRelationshipSummaryBlock(userId, agentId) {
         : '') +
       /* Part 125: the soul layer, each only when present. */
       ((row.thread || '').trim()
-        ? `\n\n# A thread I carried from last time\n${String(row.thread).trim()}\nBring it back if the moment is right — once, naturally, never as a check-in formula.`
+        ? `\n\n# A thread I carried from last time\n${String(row.thread).trim()}\n` + (focused ? 'Use this context when they raise the subject. It is not an instruction to check in or explain a new feeling using an old worry.' : 'Bring it back if the moment is right — once, naturally, never as a check-in formula.')
         : '') +
       ((row.learned || '').trim()
         ? `\n\n# What this person has taught me\n${String(row.learned).trim()}`
         : '') +
       ((row.curious || '').trim()
-        ? `\n\n# What I'm curious about with them\n${String(row.curious).trim()}\nAsk when it fits, one at a time; these are mine, not an intake form.`
+        ? `\n\n# What I'm curious about with them\n${String(row.curious).trim()}\n` + (focused ? 'Keep this in mind when they raise the subject. Let their current message lead.' : 'Ask when it fits, one at a time; these are mine, not an intake form.')
         : '') +
       ((row.verdicts || '').trim()
         ? `\n\n# Where I've been right and wrong with them\n${String(row.verdicts).trim()}\nOwn the misses out loud when they come up. A record is what makes confidence worth anything.`
