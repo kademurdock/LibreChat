@@ -548,6 +548,7 @@ function makeServer() {
       reason: allowed ? undefined : `This needs ${'$' + setAside.toFixed(2)} set aside; only ${'$' + server.remainingUSD.toFixed(2)} of today’s allowance is left.`,
       seconds,
       breakdown: { vision: value / 2, speech: value / 4, dialogue, closeLook: 0, firstLook: 0 },
+      ...(body.action === 'resume' && job.raiseTo ? { allowUpToUSD: job.raiseTo } : {}),
     };
   };
   server.handle = (method, path, body) => {
@@ -562,6 +563,7 @@ function makeServer() {
     if (route === '/library-folders') return json(200, { folders: ['Audio/Commercials'] });
     if (route === '/jobs' && method === 'GET') return json(200, { jobs: [...server.jobs.values()], remainingUSD: server.remainingUSD });
     if (route === '/uploads') {
+      if (body.resumeId && server.jobs.has(body.resumeId)) return json(200, { job: server.jobs.get(body.resumeId), chunkBytes: 8 });
       const job = server.add(jobOf({ name: body.name, bytes: body.bytes, state: 'uploading', seconds: undefined }));
       return json(200, { job, chunkBytes: 8 });
     }
@@ -599,6 +601,12 @@ function makeServer() {
         return update({ state: 'queued', version: job.version + 1 });
       case 'abandon':
         return update({ state: 'done', version: job.copies.at(-1).version, abandonable: false, resumable: false }, 200);
+      case 'rehearse':
+        return update({ state: 'queued', settings: { ...body } });
+      case 'recheck':
+        return update({ state: 'checking', recheckable: false }, 200);
+      case 'keep':
+        return update({ expiresAt: new Date(Date.parse(job.expiresAt) + 7 * 86400000).toISOString(), keepable: false }, 200);
       case 'cancel':
         return update({ cancelRequested: true }, 200);
       case 'rename':
@@ -656,7 +664,7 @@ function page() {
   return describedVideoPage('');
 }
 
-async function boot({ server = makeServer(), search = '', local = {}, confirmReply = true, promptReply = null, refresh = true, xhrRoute } = {}) {
+async function boot({ server = makeServer(), search = '', local = {}, confirmReply = true, promptReply = null, refresh = true, xhrRoute, wakeLock } = {}) {
   const html = page();
   const document = makeDocument(html);
   const t = timers();
@@ -754,7 +762,7 @@ async function boot({ server = makeServer(), search = '', local = {}, confirmRep
     static revokeObjectURL() {}
   }
   const handlers = {};
-  const navigator = { mediaSession: { metadata: null, playbackState: 'none', setActionHandler: (name, fn) => (handlers[name] = fn) } };
+  const navigator = { mediaSession: { metadata: null, playbackState: 'none', setActionHandler: (name, fn) => (handlers[name] = fn) }, ...(wakeLock ? { wakeLock } : {}) };
   const windowListeners = {};
   const window = {
     addEventListener: (type, fn) => (windowListeners[type] ||= []).push(fn),
@@ -807,7 +815,12 @@ async function boot({ server = makeServer(), search = '', local = {}, confirmRep
     await t.advance(100);
   };
   const status = () => $('status').textContent;
-  return { document, $, fire, click, choose, tick, type, open, status, server, timers: t, dialogs, localStorage, location, handlers, windowListeners, navigator };
+  const visibility = async (hidden) => {
+    document.hidden = hidden;
+    for (const listener of document.listeners.visibilitychange || []) listener();
+    await flush();
+  };
+  return { document, $, fire, click, choose, tick, type, open, status, visibility, server, timers: t, dialogs, localStorage, location, handlers, windowListeners, navigator };
 }
 
 const visible = (element) => element.offsetParent !== null;
@@ -988,6 +1001,7 @@ test('start: the confirm names the choices, price and set-aside; focus lands on 
   const { $ } = env;
   await env.timers.advance(700);
   assert.equal($('preview').hidden, true, 'a short video gets no preview button');
+  assert.equal($('rehearse').hidden, true, 'no rehearsal unless the server offers it');
   $('start').focus();
   await env.type('notes', 'A 1989 station sign-off');
   await env.click('start');
@@ -1028,6 +1042,7 @@ test('preview: try the first 3 minutes, then describe the rest', async () => {
   assert.equal($('revoice').hidden, true);
   assert.match($('version').options[0].textContent, /^Version 1 preview: Flint 1\.5×, Standard detail, 4 descriptions/);
   await env.click('finish');
+  assert.match(env.dialogs.at(-1).text, /The preview’s parts are kept and not paid for again\. About \$3\.34; \$3\.72 is set aside until it finishes, and anything unused comes back\./);
   assert.ok(server.last(/\/finish$/, 'POST'));
   await env.click('change-settings');
   assert.equal(env.document.activeElement, $('settings-heading'));
@@ -1678,4 +1693,261 @@ test('starting an upload while a finished video with notes is open clears the no
   await env.click('delete');
   assert.match(env.dialogs[0].text, /^Delete “other\.mp4”/, 'Delete names the video on screen');
   assert.ok(env.server.requests.length > renamed);
+});
+
+/* ------------------------------------------------------------------------------------------
+ * Round 2: prices on every spending button, the quote as a limit, uploads that survive the
+ * lock screen, repeats, rehearsal, keeping a copy longer, and the honest privacy line.
+ * ---------------------------------------------------------------------------------------- */
+
+test('continue and try again: the price and what is kept are in the button, its description and the confirm; Cancel sends nothing', async () => {
+  const server = makeServer();
+  const failed = server.add(doneJob({ name: 'Home video', state: 'failed', copies: [], resumable: true, done: 3, sections: 12, error: 'Scene description (Gemini) is not responding.' }));
+  let reply = false;
+  const env = await boot({ server, search: '?id=' + failed.id, confirmReply: () => reply });
+  const { $ } = env;
+  await env.timers.advance(700);
+  assert.equal(visible($('resume')), true);
+  assert.equal($('resume').textContent, 'Continue where it stopped: 9 of 12 sections left, about $0.27');
+  assert.match($('resume').getAttribute('aria-describedby'), /dv-resume-price/);
+  assert.equal($('resume-price').textContent, 'About $0.27; $0.35 is set aside until it finishes. 3 of 12 sections finished; they are kept and not paid for again.');
+  assert.equal($('estimate').textContent, 'Continue where it stopped: 9 of 12 sections left, about $0.27. Today’s allowance: $5.00 of today’s $5.00 is left.');
+  await env.click('resume');
+  assert.equal(env.dialogs.at(-1).text, 'Continue “Home video” with Oak at 1.5×? 3 of 12 sections finished; they are kept and not paid for again. About $0.27; $0.35 is set aside until it finishes, and anything unused comes back. Today’s allowance: $5.00 of today’s $5.00 is left.');
+  assert.equal(server.all(/\/resume$/).length, 0, 'dismissing the confirm spends nothing');
+  failed.done = 0;
+  await env.timers.advance(5000);
+  await env.click('refresh');
+  await env.open(failed);
+  await env.timers.advance(700);
+  assert.equal($('resume').textContent, 'Try again from the beginning, about $0.27');
+  assert.match($('resume-price').textContent, /No section had finished, so it starts again from the beginning\.$/);
+  reply = true;
+  await env.click('resume');
+  assert.match(env.dialogs.at(-1).text, /^Try “Home video” again from the beginning with Oak at 1\.5×\? No section had finished/);
+  assert.ok(server.last(/\/resume$/, 'POST'));
+  assert.equal(env.status(), 'Starting again from the beginning.');
+});
+
+test('abandon says it costs nothing and that the stopped attempt’s spend is not returned', async () => {
+  const server = makeServer();
+  const job = server.add(doneJob({ name: 'Ad', state: 'failed', resumable: true, abandonable: true, done: 1, sections: 4, version: 2, runCostUSD: 0.12 }));
+  const env = await boot({ server, search: '?id=' + job.id });
+  const { $ } = env;
+  await env.timers.advance(700);
+  assert.equal($('abandon-help').textContent, 'Going back costs nothing. The stopped attempt is discarded, and the $0.12 it already cost is not returned.');
+  assert.match($('abandon').getAttribute('aria-describedby'), /dv-abandon-help/);
+  await env.click('abandon');
+  assert.equal(env.dialogs.at(-1).text, 'Go back to version 1 of “Ad”? Version 1 stays as it was, and going back costs nothing. The stopped attempt is discarded, and the $0.12 it already cost is not returned.');
+});
+
+test('over the quote: it says so with the numbers and only carries on after a confirm, with allowUpToUSD', async () => {
+  const server = makeServer();
+  const job = server.add(
+    doneJob({
+      name: 'KOLR 10 open',
+      state: 'failed',
+      copies: [],
+      resumable: true,
+      overQuote: true,
+      done: 2,
+      sections: 4,
+      runCostUSD: 0.45,
+      estimatedUSD: 0.05,
+      raiseTo: 0.6,
+      error: 'This is costing more than quoted: $0.45 spent of about $0.05. Continue up to $0.60?',
+    }),
+  );
+  let reply = false;
+  const env = await boot({ server, search: '?id=' + job.id, confirmReply: () => reply });
+  const { $ } = env;
+  await env.timers.advance(700);
+  assert.equal($('stage').textContent, 'Stopped because it is costing more than quoted.');
+  assert.equal($('resume').hidden, true, 'plain Continue is not offered past the quote');
+  assert.equal(visible($('allow-more')), true);
+  assert.equal($('allow-more').textContent, 'Allow up to $0.60 more and continue');
+  assert.equal($('over-quote').textContent, 'This is costing more than quoted: $0.45 spent of about $0.05. It stopped so you can decide. Allowing up to $0.60 more lets it carry on. 2 of 4 sections finished; they are kept and not paid for again.');
+  assert.equal($('allow-more').getAttribute('aria-describedby'), 'dv-over-quote');
+  assert.match($('estimate').textContent, /^This is costing more than quoted: \$0\.45 spent of about \$0\.05\. Carrying on is expected to cost about \$0\.27 more, and it may spend up to \$0\.60\./);
+  await env.click('allow-more');
+  assert.equal(env.dialogs.at(-1).text, 'Let “KOLR 10 open” carry on? This is costing more than quoted: $0.45 spent of about $0.05. Carrying on is expected to cost about $0.27 more. It may spend up to $0.60 more, and it stops and asks again before going past that. 2 of 4 sections finished; they are kept and not paid for again. Today’s allowance: $5.00 of today’s $5.00 is left.');
+  assert.equal(server.all(/\/resume$/).length, 0);
+  reply = true;
+  await env.click('allow-more');
+  assert.deepEqual(server.last(/\/resume$/).body, { voice: 'warm man · oak', rate: 1.5, maxRate: 2.25, mode: 'extended', volume: 'balanced', allowUpToUSD: 0.6 });
+  assert.equal(env.status(), 'Carrying on, up to $0.60 more.');
+});
+
+test('over the quote without a server figure: the raise is the resume estimate with headroom, never past the per-run limit', async () => {
+  const server = makeServer();
+  const stopped = { state: 'failed', copies: [], resumable: true, overQuote: true, done: 1, sections: 30, runCostUSD: 2, estimatedUSD: 1.2 };
+  const film = server.add(doneJob({ name: 'Film', seconds: 5400, ...stopped }));
+  const long = server.add(doneJob({ name: 'Long film', seconds: 3 * 3600, ...stopped }));
+  const env = await boot({ server, search: '?id=' + film.id });
+  await env.timers.advance(700);
+  assert.equal(env.$('allow-more').textContent, 'Allow up to $3.67 more and continue');
+  await env.open(long);
+  await env.timers.advance(700);
+  assert.equal(env.$('allow-more').textContent, 'Allow up to $5.00 more and continue');
+});
+
+test('uploads hold the screen awake, say so once, re-acquire it, retry at once on return and carry on by themselves', async () => {
+  const server = makeServer();
+  const locks = [];
+  const wakeLock = {
+    request(type) {
+      const lock = { type, released: false, releases: 0, release() { this.released = true; this.releases++; return Promise.resolve(); } };
+      locks.push(lock);
+      return Promise.resolve(lock);
+    },
+  };
+  let mode = 'hang';
+  let release = null;
+  const parts = [];
+  const env = await boot({
+    server,
+    wakeLock,
+    xhrRoute: (path, headers, blob) => {
+      const part = Number(headers['X-Part-Number']);
+      parts.push(part);
+      const job = server.jobs.get(path.split('/')[2]);
+      const ok = () => {
+        job.uploadedBytes = Math.min(job.bytes, part * 8);
+        return { status: 200, body: job };
+      };
+      if (part < 3 || mode === 'ok') return ok();
+      if (mode === 'drop') return { error: true };
+      return new Promise((resolve) => (release = resolve));
+    },
+  });
+  const { $ } = env;
+  env.document.probeDuration = 60;
+  const file = new File(['0123456789abcdefghijklmn'], 'tape.mov', { lastModified: 9 });
+  $('file').files = [file];
+  await env.fire($('file'), 'change');
+  await env.click('upload');
+  await env.timers.advance(10);
+  assert.equal(locks.length, 1);
+  assert.equal(locks[0].type, 'screen');
+  assert.equal(env.status(), 'Uploading tape.mov. Keep this page open; the screen will stay on until the upload finishes.');
+  assert.deepEqual(parts, [1, 2, 3]);
+  locks[0].released = true;
+  await env.visibility(true);
+  await env.visibility(false);
+  assert.equal(locks.length, 2, 'the lock is asked for again when the page is visible');
+  mode = 'drop';
+  release({ error: true });
+  await flush();
+  assert.equal(env.status(), 'Connection lost, retrying…');
+  assert.equal(parts.length, 3);
+  await env.visibility(false);
+  assert.equal(parts.length, 4, 'coming back retries at once instead of waiting');
+  await env.timers.advance(200000);
+  assert.match($('upload-error').textContent, /^The upload connection keeps dropping\. It carries on by itself when you come back/);
+  assert.equal(locks[1].releases, 1, 'the lock is released when the upload stops');
+  const id = [...server.jobs.values()].find((j) => j.name === 'tape.mov').id;
+  mode = 'ok';
+  parts.length = 0;
+  await env.visibility(false);
+  await env.timers.advance(10);
+  assert.equal(server.last(/^\/uploads$/).body.resumeId, id);
+  assert.deepEqual(parts, [2, 3], 'it carries on from the last saved chunk');
+  assert.ok(server.last(new RegExp(`/jobs/${id}/prepare$`)));
+  assert.equal(locks.length, 3);
+  assert.equal(locks[2].releases, 1);
+  assert.equal($('file').value, '');
+});
+
+test('without a wake lock the page still asks her to keep it open', async () => {
+  const server = makeServer();
+  const env = await boot({ server, xhrRoute: () => new Promise(() => {}) });
+  env.document.probeDuration = 60;
+  env.$('file').files = [new File(['0123456789'], 'clip.mp4')];
+  await env.fire(env.$('file'), 'change');
+  await env.click('upload');
+  await env.timers.advance(10);
+  assert.equal(env.status(), 'Uploading clip.mp4. Keep this page open and the screen on until the upload finishes.');
+});
+
+test('a Library video she already has opens that video and says so', async () => {
+  const server = makeServer();
+  const had = server.add(doneJob({ name: 'KYTV sign-off 1989', source: 'library' }));
+  server.override((method, path) => path === '/library-imports', () => ({ status: 200, body: { ...had, existing: true } }));
+  const env = await boot({ server });
+  const { $ } = env;
+  await env.type('library', 'https://kademurdock.com/library?book=' + 'a'.repeat(24) + '&track=2', 'input');
+  await env.click('library-use');
+  await env.timers.advance(100);
+  assert.deepEqual(server.last(/^\/library-imports$/).body.track, 2);
+  assert.equal($('job-title').textContent, 'KYTV sign-off 1989');
+  assert.equal(env.status(), 'You already have this video: “KYTV sign-off 1989”, finished. It is open now; your described copy is below.');
+  assert.equal($('results').hidden, false);
+  assert.equal(server.jobs.size, 1, 'no second job was made');
+});
+
+test('free rehearsal: offered only when the server says so, free and unconfirmed, and its copy is labelled', async () => {
+  const server = makeServer();
+  server.override((method, path) => path === '/config', () => ({ status: 200, body: { ...config, rehearsal: true } }));
+  const ready = server.add(jobOf({ name: '20 second clip', seconds: 20 }));
+  const env = await boot({ server, search: '?id=' + ready.id });
+  const { $ } = env;
+  await env.timers.advance(700);
+  assert.equal(visible($('rehearse')), true);
+  assert.equal($('rehearse').textContent, 'Free rehearsal (test tone, no paid services)');
+  assert.equal(visible($('rehearse-help')), true);
+  await env.click('rehearse');
+  assert.equal(env.dialogs.length, 0, 'nothing is spent, so nothing to confirm');
+  assert.equal(server.last(/\/rehearse$/).method, 'POST');
+  assert.equal(server.all(/\/estimate$/).filter((r) => r.body.action === 'rehearse').length, 0);
+  assert.match(env.status(), /^Rehearsal started\./);
+  Object.assign(ready, { state: 'done', copies: [{ version: 1, rehearsal: true, settings: standardSettings, outputSeconds: 24, count: 2 }] });
+  await env.timers.advance(5000);
+  assert.match(env.status(), /^Rehearsal finished\./);
+  assert.match($('version').options[0].textContent, /^Version 1 rehearsal with a test tone: /);
+  assert.match($('summary').textContent, /^Version 1 is a rehearsal with a test tone, made without paid services: 2 descriptions\./);
+  assert.equal($('rehearse').hidden, true);
+});
+
+test('keep 7 more days, check again, the suggested Library shelf and the privacy line', async () => {
+  const server = makeServer();
+  const done = server.add(doneJob({ name: 'Ad', keepable: true, source: 'library', libraryPath: 'Audio/Commercials/Springfield/1996' }));
+  const env = await boot({ server, search: '?id=' + done.id });
+  const { $ } = env;
+  assert.equal(visible($('keep')), true);
+  assert.match($('expiry').textContent, /You can also press Keep 7 more days\.$/);
+  assert.equal($('folder').value, 'Audio/Commercials/Springfield/1996');
+  await env.click('library-save');
+  assert.equal(server.last(/\/library$/).body.path, 'Audio/Commercials/Springfield/1996');
+  await env.click('keep');
+  assert.ok(server.last(/\/keep$/, 'POST'));
+  assert.match(env.status(), /^Kept until .*\. That is as long as it can be kept here; download it or save it to your Library to keep it longer\.$/);
+  assert.equal($('keep').hidden, true);
+  assert.doesNotMatch($('expiry').textContent, /Keep 7 more days/);
+  const broken = server.add(jobOf({ name: 'Interrupted', state: 'failed', seconds: undefined, recheckable: true }));
+  await env.click('refresh');
+  await env.open(broken);
+  assert.equal($('stage').textContent, 'The check was interrupted before it finished.');
+  assert.equal(visible($('recheck')), true);
+  assert.equal($('resume').hidden, true);
+  await env.click('recheck');
+  assert.ok(server.last(/\/recheck$/, 'POST'));
+  assert.equal(env.status(), 'Checking the video again. Checking is free.');
+  assert.equal($('recheck').hidden, true);
+  const limits = $('limits').textContent;
+  for (const service of ['Google Gemini, through OpenRouter', 'Deepgram', 'platform voices']) assert.ok(limits.includes(service), service);
+});
+
+test('escaped and two-line WebVTT cues are read back as plain words', async () => {
+  const server = makeServer();
+  const done = server.add(doneJob({ name: 'Ad' }));
+  server.override(
+    (method, path) => /\/text\/descriptions/.test(path),
+    () => ({ status: 200, text: 'WEBVTT\r\n\r\n1\r\n00:00:05.000 --> 00:00:08.000\r\nA sign reads Meeks &amp; Sons &lt;est. 1952&gt;.\r\n\r\n2\r\n00:52.000 --> 00:55.000\r\nFrank waves\r\nfrom the porch.\r\n' }),
+  );
+  const env = await boot({ server, search: '?id=' + done.id });
+  env.$('video').currentTime = 0;
+  await env.click('next-cue');
+  assert.equal(env.status(), '0:05. A sign reads Meeks & Sons <est. 1952>.');
+  await env.click('next-cue');
+  assert.equal(env.status(), '0:52. Frank waves from the porch.');
 });

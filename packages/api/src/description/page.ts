@@ -56,13 +56,14 @@ export function describedVideoPage(sharedHead: string): string {
 <section id="dv-job-section" class="card" aria-labelledby="dv-job-title" hidden><h2 id="dv-job-title" tabindex="-1">Your video</h2>
 <p id="dv-stage"></p><progress id="dv-progress" max="100" value="0" aria-label="Progress"></progress>
 <p id="dv-eta" class="hint"></p><p id="dv-cost" class="hint"></p>
-<div class="row"><button id="dv-cancel" type="button">Cancel processing</button><button id="dv-resume" class="primary" type="button" aria-describedby="dv-resume-note" hidden>Continue where it stopped</button><button id="dv-abandon" type="button" hidden>Go back to the last finished version</button><button id="dv-rename" type="button">Rename</button><button id="dv-delete" class="danger" type="button" hidden>Delete this video and its files</button></div>
-<p id="dv-resume-note" class="hint" hidden></p>
+<div class="row"><button id="dv-cancel" type="button">Cancel processing</button><button id="dv-resume" class="primary" type="button" aria-describedby="dv-resume-price dv-resume-note" hidden>Continue where it stopped</button><button id="dv-allow-more" class="primary" type="button" aria-describedby="dv-over-quote" hidden>Allow more and continue</button><button id="dv-recheck" class="primary" type="button" aria-describedby="dv-recheck-help" hidden>Check again</button><button id="dv-abandon" type="button" aria-describedby="dv-abandon-help" hidden>Go back to the last finished version</button><button id="dv-rename" type="button">Rename</button><button id="dv-delete" class="danger" type="button" hidden>Delete this video and its files</button></div>
+<p id="dv-over-quote" hidden></p><p id="dv-resume-price" class="hint" hidden></p><p id="dv-resume-note" class="hint" hidden></p><p id="dv-abandon-help" class="hint" hidden></p>
+<p id="dv-recheck-help" class="hint" hidden>The check was interrupted before it finished. Checking again is free.</p>
 <label for="dv-progress-pref">Tell me about progress</label><select id="dv-progress-pref"><option value="section">After every section</option><option value="quarter" selected>Every quarter of the way</option><option value="end">Only when it finishes</option></select>
 </section>
 
 <section id="dv-results" class="card" aria-labelledby="dv-result-title" hidden><h2 id="dv-result-title" tabindex="-1">Your described copy</h2>
-<p id="dv-expiry"></p><p id="dv-summary"></p>
+<p id="dv-expiry"></p><button id="dv-keep" type="button" aria-describedby="dv-expiry" hidden>Keep 7 more days</button><p id="dv-summary"></p>
 <div id="dv-preview-box" hidden><p id="dv-preview-note"></p><button id="dv-finish" class="primary" type="button" aria-describedby="dv-preview-note">Describe the rest</button><button id="dv-change-settings" type="button">Change settings and try the preview again</button></div>
 <div id="dv-redo-box" hidden><button id="dv-redo" type="button" aria-describedby="dv-redo-help">Try again on the parts that could not be described</button><p id="dv-redo-help" class="hint">Only those parts are described again; everything else is reused.</p></div>
 <div id="dv-new-version" hidden><p id="dv-new-version-note"></p><button id="dv-switch-version" type="button">Switch to the new version</button></div>
@@ -173,7 +174,8 @@ export function describedVideoPage(sharedHead: string): string {
 <p id="dv-notes-help" class="hint">What the video is and who is in it. For example: a 1996 VHS opening; the man in the red sweater is Uncle Bob. Notes belong to this video only.</p>
 </fieldset>
 <p id="dv-estimate">Choose a video to see the estimated cost.</p>
-<div class="row"><button id="dv-preview" class="primary" type="button" aria-describedby="dv-estimate" hidden>Try the first 3 minutes</button><button id="dv-start" class="primary" type="button" aria-describedby="dv-estimate" hidden>Create described copy</button><button id="dv-preview-again" class="primary" type="button" aria-describedby="dv-estimate" hidden>Try the preview again with these choices</button><button id="dv-revoice" type="button" aria-describedby="dv-estimate dv-revoice-help dv-revoice-note" hidden>Make a new version with this narration</button><button id="dv-reanalyze" type="button" aria-describedby="dv-estimate" hidden>Write fresh descriptions with these choices</button></div>
+<div class="row"><button id="dv-preview" class="primary" type="button" aria-describedby="dv-estimate" hidden>Try the first 3 minutes</button><button id="dv-start" class="primary" type="button" aria-describedby="dv-estimate" hidden>Create described copy</button><button id="dv-preview-again" class="primary" type="button" aria-describedby="dv-estimate" hidden>Try the preview again with these choices</button><button id="dv-revoice" type="button" aria-describedby="dv-estimate dv-revoice-help dv-revoice-note" hidden>Make a new version with this narration</button><button id="dv-reanalyze" type="button" aria-describedby="dv-estimate" hidden>Write fresh descriptions with these choices</button><button id="dv-rehearse" type="button" aria-describedby="dv-rehearse-help" hidden>Free rehearsal (test tone, no paid services)</button></div>
+<p id="dv-rehearse-help" class="hint" hidden>Runs every step with a test tone in place of the paid services, to check that storage, the notice and the player work. Nothing is charged, it does not count toward your allowance, and the copy is labelled as a rehearsal.</p>
 <p id="dv-revoice-help" class="hint" hidden>A new version with this narration reuses the descriptions already written, so it costs only the voice. To change the detail, notes or extra passes, use Write fresh descriptions instead. Finished versions stay available until this video expires.</p>
 <p id="dv-revoice-note" class="hint" hidden></p>
 </section>
@@ -197,6 +199,8 @@ export const descriptionBrowserScript: string = String.raw`
   var script=null,scriptJob='',edits={},editing='',shortTouched={},staleDrafts=[],warnedShort={};
   var lastSpoken='',lastSpokenAt=0,errorFrom='',estimates={},estimateSeq=0,estimateTimer=null,announceNext=false,announcePrefix='',presetSeq=0,presetSig='',redoSeq=0,redoTimer=null,redoEstimate=null;
   var listedIds='',listButtons={},listStates={},lastJobs=[],cancelSeenAt=0,lastQuarter=-1;
+  var wakeLock=null,wakeWanted=false,nudge=null,pendingUpload=null,toldKeepOpen='';
+  var DEFAULT_FOLDER='Audio/Described Movies & TV/Described by Kade-AI';
   var $=function(id){return document.getElementById('dv-'+id);};
   function working(j){return !!j&&BUSY.indexOf(j.state)>=0;}
   function ended(m){return m.paused||m.ended;}
@@ -226,7 +230,14 @@ export const descriptionBrowserScript: string = String.raw`
   function money(value){return '$'+Number(value||0).toFixed(2);}
   function when(value){if(!value)return '';var d=new Date(value);return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});}
   function voiceName(voice){var name=String(voice||'').split('·').pop().trim();return name?name.charAt(0).toUpperCase()+name.slice(1):'the narrator';}
-  function wait(ms){return new Promise(function(resolve){setTimeout(resolve,ms);});}
+  function pause(ms){return new Promise(function(resolve){var id=setTimeout(finish,ms);function finish(){clearTimeout(id);if(nudge===finish)nudge=null;resolve();}nudge=finish;});}
+  async function holdScreen(){
+    wakeWanted=true;if(wakeLock&&!wakeLock.released)return true;wakeLock=null;
+    if(document.hidden||!navigator||!navigator.wakeLock||!navigator.wakeLock.request)return false;
+    try{var lock=await navigator.wakeLock.request('screen');if(!wakeWanted){letGo(lock);return false;}wakeLock=lock;return true;}catch(e){return false;}
+  }
+  function letGo(lock){try{var released=lock.release();if(released&&released.catch)released.catch(function(){});}catch(e){}}
+  function releaseScreen(){wakeWanted=false;var lock=wakeLock;wakeLock=null;if(lock&&!lock.released)letGo(lock);}
   function uuid(){return crypto.randomUUID();}
   function stored(key,fallback){try{var value=JSON.parse(localStorage.getItem(key)||'null');return value===null||value===undefined?fallback:value;}catch(e){return fallback;}}
   function store(key,value){try{localStorage.setItem(key,JSON.stringify(value));return true;}catch(e){return false;}}
@@ -281,7 +292,7 @@ export const descriptionBrowserScript: string = String.raw`
   function stateLine(j){
     if(j.cancelRequested&&working(j))return cancelStuck(j)?'Still stopping. Press Cancel again if it does not stop.':'Cancelling after the current step…';
     if(j.state==='reserving'||j.state==='queued')return waiting(j)+'.';
-    if(j.state==='failed')return 'Stopped before finishing.';
+    if(j.state==='failed')return j.overQuote?'Stopped because it is costing more than quoted.':j.recheckable?'The check was interrupted before it finished.':'Stopped before finishing.';
     if(j.state==='uploading')return uploadId===j.id?'Uploading.':'Upload not finished. Choose '+j.name+' again to carry on.';
     var stage=stageText(j);return stage?stage.replace(/\.?$/,'.'):friendly(j).charAt(0).toUpperCase()+friendly(j).slice(1)+'.';
   }
@@ -299,8 +310,26 @@ export const descriptionBrowserScript: string = String.raw`
     if(copy.failedSections)parts.push(plural(copy.failedSections,'part','parts')+' not described');
     if(copy.savedToLibrary)parts.push('saved to Library');
     if(copy.finishedAt)parts.push(when(copy.finishedAt));
-    return 'Version '+copy.version+(copy.preview?' preview':'')+': '+parts.join(', ');
+    return 'Version '+copy.version+(copy.rehearsal?' rehearsal with a test tone':copy.preview?' preview':'')+': '+parts.join(', ');
   }
+  function latestCopy(){var list=copies();return list[list.length-1];}
+  function keptText(j){
+    var done=Number(j&&j.done)||0,total=Number(j&&j.sections)||0;
+    if(!total)return 'Finished sections are kept and not paid for again.';
+    if(!done)return 'No section had finished, so it starts again from the beginning.';
+    return done+' of '+plural(total,'section','sections')+' finished; they are kept and not paid for again.';
+  }
+  function resumeName(){
+    var done=Number(job&&job.done)||0,total=Number(job&&job.sections)||0;
+    if(!done)return 'Try again from the beginning';
+    return 'Continue where it stopped'+(total>done?': '+(total-done)+' of '+plural(total,'section','sections')+' left':'');
+  }
+  function raiseTo(){
+    var e=estimates.resume;if(!e)return 0;
+    var limit=e.limitUSD||(config&&config.limitUSD)||5,z=typeof e.allowUpToUSD==='number'?e.allowUpToUSD:typeof e.approvedUSD==='number'?e.approvedUSD:e.estimateUSD*1.5+0.1;
+    return Math.min(limit,Math.round(z*100)/100);
+  }
+  function overQuoteText(j){return 'This is costing more than quoted: '+money(j.runCostUSD)+' spent of about '+money(j.estimatedUSD)+'.';}
   function renderVersions(){
     var list=copies(),select=$('version');
     var sig=JSON.stringify(list.map(function(c){return [c.version,!!c.preview,c.count,!!c.savedToLibrary,c.finishedAt,c.failedSections];}));
@@ -458,7 +487,8 @@ export const descriptionBrowserScript: string = String.raw`
     $('reanalyze').textContent=priced('reanalyze','Write fresh descriptions with these choices');
     $('finish').textContent=priced('finish','Describe the rest');
     var n=retryCount(job);$('redo').textContent=priced('redo','Try again on the '+(n===1?'part':plural(n,'part','parts'))+' that could not be described');
-    $('resume').textContent=priced('resume',job&&job.done?'Continue where it stopped':'Try again');
+    $('resume').textContent=priced('resume',resumeName());
+    renderSpendNotes();
     var text='Choose a video to see the estimated cost.';
     if(job&&working(job)&&job.state!=='checking'&&job.state!=='importing')text=costLine(job);
     else if(job&&!job.seconds)text=job.state==='uploading'||job.state==='checking'||job.state==='importing'?'The cost appears once the video is checked.':'';
@@ -479,13 +509,24 @@ export const descriptionBrowserScript: string = String.raw`
       var any=e.finish||e.preview||e.revoice||e.reanalyze||e.redo;if(any)parts.push('Today’s allowance: '+allowance(any));
       text=parts.join(' ')||'Working out the cost…';
     }
-    else if(job&&job.resumable)text=e.resume?'Continue where it stopped: about '+money(e.resume.estimateUSD)+'. Today’s allowance: '+allowance(e.resume):'Working out the cost of continuing…';
+    else if(job&&job.resumable&&job.overQuote)text=e.resume?overQuoteText(job)+' Carrying on is expected to cost about '+money(e.resume.estimateUSD)+' more, and it may spend up to '+money(raiseTo())+'. Today’s allowance: '+allowance(e.resume):overQuoteText(job)+' Working out the cost of carrying on…';
+    else if(job&&job.resumable)text=e.resume?resumeName()+', about '+money(e.resume.estimateUSD)+'. Today’s allowance: '+allowance(e.resume):'Working out the cost of continuing…';
     else if(job)text=job.costUSD?'Processing cost for this video so far: '+money(job.costUSD)+'.':'';
     if($('estimate').textContent!==text)$('estimate').textContent=text;
   }
   function costLine(j){
     if(!working(j)||j.state==='checking'||j.state==='importing')return j.costUSD?'Processing cost for this video so far: '+money(j.costUSD)+'.':'';
     return 'This run so far: '+money(j.runCostUSD)+(j.estimatedUSD?' of about '+money(j.estimatedUSD):'')+(j.setAsideUSD?' ('+money(j.setAsideUSD)+' set aside)':'')+'.'+(j.costUSD?' All versions of this video: '+money(j.costUSD)+'.':'')+' Work already sent to a service may still be charged if you cancel.';
+  }
+  function setNote(id,text){var box=$(id);box.hidden=!text;if(box.textContent!==text)box.textContent=text;}
+  function renderSpendNotes(){
+    var e=estimates.resume,resumable=!!(job&&job.resumable),over=resumable&&!!job.overQuote,z=over?raiseTo():0;
+    setNote('resume-price',resumable&&!over?(e?'About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes. ':'')+keptText(job):'');
+    setNote('over-quote',job&&job.state==='failed'&&job.overQuote?overQuoteText(job)+' It stopped so you can decide.'+(z?' Allowing up to '+money(z)+' more lets it carry on. ':' ')+keptText(job):'');
+    $('allow-more').textContent=z?'Allow up to '+money(z)+' more and continue':'Allow more and continue';
+    setNote('abandon-help',job&&job.abandonable?'Going back costs nothing. The stopped attempt is discarded'+(job.runCostUSD?', and the '+money(job.runCostUSD)+' it already cost is not returned':'')+'.':'');
+    $('redo-help').textContent='Only those parts are described again; everything else is reused and not paid for again. The current version stays available.';
+    $('preview-note').textContent=job&&job.preview?'This preview describes the first '+length(previewSeconds())+'. Describe the rest keeps the preview’s parts, so they are not paid for again.':'';
   }
   function revoiceNote(){
     if(!job||job.state!=='done'||job.preview||!job.settings)return '';
@@ -519,7 +560,11 @@ export const descriptionBrowserScript: string = String.raw`
     var cancelling=!!(job&&job.cancelRequested&&busy),stuck=cancelStuck(job);
     $('cancel').textContent=cancelling&&!stuck?'Cancelling…':'Cancel processing';
     if(cancelling&&!stuck)$('cancel').setAttribute('aria-disabled','true');else $('cancel').removeAttribute('aria-disabled');
-    $('resume').hidden=!(job&&job.resumable);
+    var over=!!(job&&job.resumable&&job.overQuote);
+    $('resume').hidden=!(job&&job.resumable)||over;$('allow-more').hidden=!over;
+    var recheck=!!(job&&job.recheckable&&state==='failed');$('recheck').hidden=!recheck;$('recheck-help').hidden=!recheck;
+    var rehearse=ready&&!!config&&!!config.rehearsal;$('rehearse').hidden=!rehearse;$('rehearse-help').hidden=!rehearse;
+    $('keep').hidden=!done||!job.keepable;
     var back=latestVersion();$('abandon').hidden=!(job&&job.abandonable&&back);$('abandon').textContent='Go back to version '+back;
     $('delete').hidden=!job||['ready','uploading','done','failed','cancelled','deleting'].indexOf(state)<0;
     $('delete').textContent=state==='deleting'?'Finish deleting':'Delete this video and its files';
@@ -528,7 +573,8 @@ export const descriptionBrowserScript: string = String.raw`
     var partReason=ready?(part().error||(tooLong()?'Choose the part to describe first; one run can describe up to '+length(config.maxMinutes*60)+'.':'')):'';
     gate('start',partReason||spendReason('start'));gate('preview',partReason||spendReason('preview'));
     gate('preview-again',part().error||spendReason('preview'));gate('revoice',spendReason('revoice'));gate('reanalyze',part().error||spendReason('reanalyze'));
-    gate('finish',spendReason('finish'));gate('redo',spendReason('redo'));gate('resume',spendReason('resume'));
+    gate('finish',spendReason('finish'));gate('redo',spendReason('redo'));gate('resume',spendReason('resume'));gate('allow-more',spendReason('resume'));
+    gate('rehearse',!config||!config.enabled?'The describer is not set up yet.':partReason);
     gate('edit-save',voicesOff?spendReason('revoice'):'');gate('edit-redo',voicesOff?spendReason('redo'):'');
     showPreset();
     renderEstimates();
@@ -539,7 +585,8 @@ export const descriptionBrowserScript: string = String.raw`
     if(bad)$('library').setAttribute('aria-invalid','true');else $('library').removeAttribute('aria-invalid');
     $('library-error').hidden=!bad;$('library-error').textContent=bad?'That isn’t a Library video link. Open the video in the Library and copy its address, or use Make a described copy on the video.':'';
   }
-  function parseVtt(text){var list=[];String(text||'').split(/\n\n+/).forEach(function(block){var m=/(\d\d):(\d\d):(\d\d)\.(\d\d\d) --> [^\n]+\n([\s\S]+)/.exec(block);if(m)list.push({at:Number(m[1])*3600+Number(m[2])*60+Number(m[3])+Number(m[4])/1000,text:m[5].trim()});});return list;}
+  function vttText(text){return text.split('\n').map(function(line){return line.trim();}).filter(Boolean).join(' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');}
+  function parseVtt(text){var list=[];String(text||'').replace(/\r\n?/g,'\n').split(/\n\n+/).forEach(function(block){var m=/(?:(\d+):)?(\d\d):(\d\d)\.(\d\d\d) --> [^\n]+\n([\s\S]+)/.exec(block);if(m)list.push({at:Number(m[1]||0)*3600+Number(m[2])*60+Number(m[3])+Number(m[4])/1000,text:vttText(m[5])});});return list;}
   function renderTranscript(text){
     var box=$('transcript'),original=false;box.textContent='';found=-1;
     if(!text){var none=document.createElement('p');none.textContent='The transcript could not be loaded. Use the download link instead.';box.appendChild(none);return;}
@@ -556,10 +603,10 @@ export const descriptionBrowserScript: string = String.raw`
   function savePosition(seconds){if(!shownId||!viewVersion)return;store(positionKey(shownId,viewVersion),Math.floor(seconds||0));}
   function renderExpiry(){
     var box=$('expiry');if(!job||!job.expiresAt||job.state!=='done'){box.textContent='';return '';}
-    var left=new Date(job.expiresAt).getTime()-Date.now(),text;
-    if(left<=0)text='This copy has reached its end date and may be deleted at any moment. Download it or save it to your Library now.';
-    else if(left<86400000)text='This copy will be deleted in about '+plural(Math.max(1,Math.round(left/3600000)),'hour','hours')+', on '+when(job.expiresAt)+'. Download it or save it to your Library to keep it.';
-    else text='Available until '+when(job.expiresAt)+'. Download it or save it to your Library to keep it longer.';
+    var left=new Date(job.expiresAt).getTime()-Date.now(),text,keep=job.keepable?' You can also press Keep 7 more days.':'';
+    if(left<=0)text='This copy has reached its end date and may be deleted at any moment. Download it or save it to your Library now.'+keep;
+    else if(left<86400000)text='This copy will be deleted in about '+plural(Math.max(1,Math.round(left/3600000)),'hour','hours')+', on '+when(job.expiresAt)+'. Download it or save it to your Library to keep it.'+keep;
+    else text='Available until '+when(job.expiresAt)+'. Download it or save it to your Library to keep it longer.'+keep;
     box.textContent=text;return left<86400000?text:'';
   }
   function shareDefaults(){
@@ -589,7 +636,7 @@ export const descriptionBrowserScript: string = String.raw`
     $('library-save-box').hidden=!config.library;
     $('library-save').textContent='Save version '+version+'’s described audio to my Library';
     gate('library-save',copy.savedToLibrary?'This version is already saved to your Library.':'');$('library-note').textContent=copy.savedToLibrary?'This version is saved to your Library.':'';
-    $('summary').textContent='Version '+version+(copy.preview?' is a preview: ':': ')+plural(copy.count||0,'description','descriptions')+'. '+(copy.range?'Describes '+clock(copy.range.start)+' to '+clock(copy.range.end)+' of the original. ':'Original length '+length(job.seconds)+'; ')+'described copy '+length(copy.outputSeconds)+'. '+(copy.skipped?plural(copy.skipped,'description was','descriptions were')+' left out; see the transcript for the reasons. ':'')+(copy.failedSections?plural(copy.failedSections,'part','parts')+' could not be described. ':'');
+    $('summary').textContent='Version '+version+(copy.rehearsal?' is a rehearsal with a test tone, made without paid services: ':copy.preview?' is a preview: ':': ')+plural(copy.count||0,'description','descriptions')+'. '+(copy.range?'Describes '+clock(copy.range.start)+' to '+clock(copy.range.end)+' of the original. ':'Original length '+length(job.seconds)+'; ')+'described copy '+length(copy.outputSeconds)+'. '+(copy.skipped?plural(copy.skipped,'description was','descriptions were')+' left out; see the transcript for the reasons. ':'')+(copy.failedSections?plural(copy.failedSections,'part','parts')+' could not be described. ':'');
     $('position-note').textContent=!same&&resumeAt?'Playback starts at '+clock(resumeAt)+', where you stopped last time.':'';
     renderExpiry();mediaMetadata();
     if(focus)$('result-title').focus();
@@ -627,7 +674,7 @@ export const descriptionBrowserScript: string = String.raw`
     var changed=shownId!==data.id,previous=changed?'':job&&job.state,lines=[];
     if(changed&&pollController){pollController.abort();pollController=null;}
     job=data;shownId=data.id;
-    if(changed){resetView();var cleared=false;if(data.settings){fillForm(data.settings);}else cleared=freshForm();if(cleared)lines.push('New video. Notes are empty and the extra passes are off.');shareDefaults();renderPart();}
+    if(changed){resetView();var cleared=false;if(data.settings){fillForm(data.settings);}else cleared=freshForm();if(cleared)lines.push('New video. Notes are empty and the extra passes are off.');shareDefaults();renderPart();$('folder').value=data.libraryPath||(config&&config.defaultLibraryPath)||DEFAULT_FOLDER;}
     if(job.cancelRequested&&!cancelSeenAt)cancelSeenAt=Date.now();if(!job.cancelRequested)cancelSeenAt=0;
     if(working(job)&&previous&&!working({state:previous}))lastQuarter=-1;
     var available=copies(),latest=latestVersion(),finishedNow=!changed&&!!previous&&previous!=='done'&&job.state==='done';
@@ -649,14 +696,14 @@ export const descriptionBrowserScript: string = String.raw`
     var name=job.name;
     if(changed){
       if(job.state==='ready'){lines.unshift(name+': checked and ready. Choose the narration, then Create described copy.');if(tooLong()){$('part').open=true;lines.push('It is '+length(job.seconds)+' long, and one run can describe up to '+length(config.maxMinutes*60)+', so choose the part to describe under Describe only part of it.');}}
-      else if(job.state==='done'){lines.unshift(name+': '+(job.preview?'preview finished.':'finished.'));var expiry=renderExpiry();if(expiry)lines.push(expiry);var draft=renderDraftNote();if(draft)lines.push(draft);}
+      else if(job.state==='done'){lines.unshift(name+': '+((latestCopy()||{}).rehearsal?'rehearsal finished.':job.preview?'preview finished.':'finished.'));var expiry=renderExpiry();if(expiry)lines.push(expiry);var draft=renderDraftNote();if(draft)lines.push(draft);}
       else lines.unshift(name+': '+stateLine(job));
       say(lines.join(' '),true);
       if(working(job))lastQuarter=Math.floor((job.progress||0)/25);
     }else if(previous!==job.state){
       if(job.state==='ready')say('Video checked. Choose the narration, then Create described copy.'+(tooLong()?' It is longer than one run can describe, so choose the part to describe.':''),true);
-      else if(job.state==='done'){renderDraftNote();say(job.preview?'Preview ready. Listen, then choose Describe the rest, or change the settings and try the preview again.':pendingSwitch?'Version '+pendingSwitch+' is ready. Press Switch to version '+pendingSwitch+' to hear it.':'Your described copy is ready.',true);}
-      else if(job.state==='failed')say(name+' stopped before finishing. '+(job.resumable?'Press Continue where it stopped to carry on.':''),true);
+      else if(job.state==='done'){renderDraftNote();var newest=latestCopy()||{};say(newest.rehearsal?'Rehearsal finished. Every step ran with a test tone and no paid services. Listen to check the player.':job.preview?'Preview ready. Listen, then choose Describe the rest, or change the settings and try the preview again.':pendingSwitch?'Version '+pendingSwitch+' is ready. Press Switch to version '+pendingSwitch+' to hear it.':'Your described copy is ready.',true);}
+      else if(job.state==='failed')say(stoppedLine(job),true);
       else if(job.state==='cancelled'){say('Cancelled. Finished sections are kept, so you can continue later.',true);land('job-title',$('cancel'));}
       else if(job.state==='running')progressSpeech(job);
       else say(stateLine(job));
@@ -677,6 +724,11 @@ export const descriptionBrowserScript: string = String.raw`
         if(!stopped&&working(job))timer=setTimeout(poll,document.hidden?20000:5000);
       }
     }
+  }
+  function stoppedLine(j){
+    if(j.overQuote)return j.name+' stopped because it is costing more than quoted: '+money(j.runCostUSD)+' spent of about '+money(j.estimatedUSD)+'. To let it carry on, press Allow more and continue; it asks before spending.';
+    if(j.recheckable)return j.name+': the check was interrupted. Press Check again; checking is free.';
+    return j.name+' stopped before finishing. '+(j.resumable?(Number(j.done)?'Press Continue where it stopped to carry on.':'Press Try again from the beginning to start over.'):'');
   }
   async function showIf(id,data,focus){if(shownId===id)await show(data,focus);}
   async function poll(){
@@ -773,7 +825,12 @@ export const descriptionBrowserScript: string = String.raw`
   };
   $('library-use').onclick=function(){
     var link=libraryLink($('library').value);if(!link){checkLibraryLink();return;}
-    act(async function(){clearError();var created=await call('/library-imports','POST',{book:link.book,track:link.track,requestId:uuid()});$('library').value='';checkLibraryLink();await show(created,true);await list();});
+    act(async function(){
+      clearError();var created=await call('/library-imports','POST',{book:link.book,track:link.track,requestId:uuid()});$('library').value='';checkLibraryLink();
+      await show(created,true);
+      if(created.existing)say('You already have this video: “'+created.name+'”, '+friendly(created)+'. It is open now'+(copies().length?'; your described copy is below.':'.'),true);
+      await list();
+    });
   };
   async function act(fn,where){if(inflight)return;inflight=true;try{await fn();}catch(e){failure(e,where);}finally{inflight=false;controls();}}
   function durationOf(file){
@@ -806,15 +863,15 @@ export const descriptionBrowserScript: string = String.raw`
       if(result.status===401&&!refreshed){refreshed=true;await refreshToken();continue;}
       var retryable=result.status===0||result.status===408||result.status===429||result.status>=500||result.status>=200&&result.status<300;
       if(!retryable){if(result.status===403)stopped=true;throw new Error(result.data&&result.data.error||'Upload did not complete. Choose the same file to carry on from where it stopped.');}
-      if(attempt>=WAITS.length)throw new Error('The upload connection keeps dropping. Choose the same file to carry on from where it stopped.');
+      if(attempt>=WAITS.length){var dropped=new Error('The upload connection keeps dropping. It carries on by itself when you come back to this page with the same file chosen, or choose the same file to carry on from where it stopped.');dropped.dropped=true;throw dropped;}
       if(!warned){warned=true;say('Connection lost, retrying…',true);}
-      await wait(WAITS[attempt++]*1000);
+      await pause(WAITS[attempt++]*1000);
       if(stopUpload){var halt=new Error('Upload stopped. Choose the same file to carry on from where it stopped.');halt.byYou=true;throw halt;}
     }
   }
-  $('upload').onclick=async function(){
+  async function upload(){
     clearError();var file=$('file').files[0];if(!file||uploading)return;
-    $('file').removeAttribute('aria-invalid');
+    $('file').removeAttribute('aria-invalid');pendingUpload=null;
     if(file.size>config.maxBytes){fileProblem('Choose a video no larger than 2 GB.');return;}
     uploading=true;stopUpload=false;controls();
     var up=null,recoveries=stored(UPLOADS_KEY,{}),key=file.name+'|'+file.size+'|'+file.lastModified,byYou=false;
@@ -833,7 +890,9 @@ export const descriptionBrowserScript: string = String.raw`
       if(created.job.state==='uploading'){
         $('upload-progress').hidden=false;$('stop-upload').hidden=false;$('upload-progress').value=0;land('stop-upload',$('upload'));
         var size=created.chunkBytes||config.chunkBytes,done=created.job.uploadedBytes||0,offset=done?Math.floor((done-1)/size)*size:0,last=-1;
-        say(offset?'Carrying on from '+Math.floor(offset/file.size*100)+' percent.':'Uploading '+file.name+'.',true);
+        var held=await holdScreen(),start=offset?'Carrying on from '+Math.floor(offset/file.size*100)+' percent.':'Uploading '+file.name+'.';
+        if(toldKeepOpen!==key){toldKeepOpen=key;start+=held?' Keep this page open; the screen will stay on until the upload finishes.':' Keep this page open and the screen on until the upload finishes.';}
+        say(start,true);
         while(offset<file.size){
           var from=offset;
           var result=await uploadPart(up.id,Math.floor(offset/size)+1,file.slice(offset,Math.min(file.size,offset+size)),function(loaded){var value=Math.floor((from+loaded)/file.size*100);$('upload-progress').value=value;if(Math.floor(value/10)!==last){last=Math.floor(value/10);if(!playing())say('Uploading: '+value+' percent.',true);}});
@@ -843,17 +902,25 @@ export const descriptionBrowserScript: string = String.raw`
         }
       }
       var prepared=await call('/jobs/'+up.id+'/prepare','POST',{});
-      delete recoveries[key];store(UPLOADS_KEY,recoveries);$('file').value='';
+      delete recoveries[key];store(UPLOADS_KEY,recoveries);$('file').value='';toldKeepOpen='';
       if(shownId===up.id)await show(prepared,true);else say('“'+up.name+'” is uploaded and being checked.',true);
       await list();
     }catch(e){
       byYou=!!e.byYou;failure(e,'upload-error');
+      if(!byYou&&(e.dropped||e.network))pendingUpload=file;
       if(up&&shownId===up.id)await call('/jobs/'+up.id).then(function(current){return showIf(up.id,current,false);}).catch(function(){});
     }finally{
+      releaseScreen();
       uploading=false;uploadId='';xhr=null;$('upload-progress').hidden=true;$('stop-upload').hidden=true;controls();
       if(byYou)land('upload',$('stop-upload'));
     }
-  };
+  }
+  $('upload').onclick=function(){upload();};
+  function carryOnUpload(){
+    if(uploading){holdScreen();if(nudge)nudge();return;}
+    var file=pendingUpload;if(!file||$('file').files[0]!==file||!config||!config.enabled)return;
+    upload();
+  }
   $('stop-upload').onclick=function(){stopUpload=true;if(xhr)xhr.abort();};
   window.addEventListener('beforeunload',function(event){if(!uploading)return;event.preventDefault();event.returnValue='';});
   function describeRun(s){return voiceName(s.voice)+' at '+s.rate+'×, '+(DETAIL_NAMES[s.detail]||s.detail)+', '+(s.mode==='extended'?'pausing the picture when needed':'keeping the original length')+', closer look '+(s.closeLook?'on':'off')+', first look '+(s.firstLook?'on':'off')+', notes: '+(s.notes||'none');}
@@ -932,7 +999,7 @@ export const descriptionBrowserScript: string = String.raw`
     act(async function(){
       clearError();var id=job.id,e=await freshEstimate('finish');
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
-      if(!confirm('Describe the rest of “'+job.name+'” with the same choices? The preview parts are reused. About '+money(e.estimateUSD)+'. Today’s allowance: '+allowance(e)+' Go ahead?'))return;
+      if(!confirm('Describe the rest of “'+job.name+'” with the same choices? The preview’s parts are kept and not paid for again. About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes, and anything unused comes back. Today’s allowance: '+allowance(e)+' Go ahead?'))return;
       var updated=await call('/jobs/'+id+'/finish','POST',{});
       await showIf(id,updated,false);say('Describing the rest. The preview parts are reused.',true);land('job-title',$('finish'));await list();
     });
@@ -942,7 +1009,7 @@ export const descriptionBrowserScript: string = String.raw`
     act(async function(){
       clearError();var id=job.id,n=retryCount(job),e=await freshEstimate('redo');
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
-      if(!confirm('Try again on the '+plural(n,'part','parts')+' of “'+job.name+'” that could not be described? Everything else is reused. About '+money(e.estimateUSD)+'. Today’s allowance: '+allowance(e)))return;
+      if(!confirm('Try again on the '+plural(n,'part','parts')+' of “'+job.name+'” that could not be described? Everything else is reused and not paid for again, and it makes version '+((job.version||1)+1)+'; version '+(job.version||1)+' stays available. About '+money(e.estimateUSD)+'. Today’s allowance: '+allowance(e)))return;
       var updated=await call('/jobs/'+id+'/redo','POST',{expectedVersion:job.version||1});
       await showIf(id,updated,false);say('Trying those parts again. The current version stays available.',true);land('job-title',$('redo'));await list();
     });
@@ -1076,16 +1143,51 @@ export const descriptionBrowserScript: string = String.raw`
     act(async function(){
       clearError();var id=job.id,body=voiceFields(),e=await freshEstimate('resume',{settings:body});
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
-      if(!confirm('Continue “'+job.name+'” with '+voiceName(body.voice)+' at '+body.rate+'×? Finished sections are reused. About '+money(e.estimateUSD)+'. Today’s allowance: '+allowance(e)))return;
+      var again=!Number(job.done);
+      if(!confirm((again?'Try “'+job.name+'” again from the beginning':'Continue “'+job.name+'”')+' with '+voiceName(body.voice)+' at '+body.rate+'×? '+keptText(job)+' About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes, and anything unused comes back. Today’s allowance: '+allowance(e)))return;
       remember();rememberVoice(body.voice);
       var updated=await call('/jobs/'+id+'/resume','POST',body);
-      await showIf(id,updated,false);say('Carrying on from where it stopped.',true);land('job-title',$('resume'));await list();
+      await showIf(id,updated,false);say(again?'Starting again from the beginning.':'Carrying on from where it stopped.',true);land('job-title',$('resume'));await list();
+    });
+  };
+  $('allow-more').onclick=function(){
+    if(!job||blocked('allow-more'))return;
+    act(async function(){
+      clearError();var id=job.id,body=voiceFields(),e=await freshEstimate('resume',{settings:body});
+      if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
+      estimates.resume=e;var z=raiseTo();
+      if(!confirm('Let “'+job.name+'” carry on? '+overQuoteText(job)+' Carrying on is expected to cost about '+money(e.estimateUSD)+' more. It may spend up to '+money(z)+' more, and it stops and asks again before going past that. '+keptText(job)+' Today’s allowance: '+allowance(e)))return;
+      body.allowUpToUSD=z;
+      var updated=await call('/jobs/'+id+'/resume','POST',body);
+      await showIf(id,updated,false);say('Carrying on, up to '+money(z)+' more.',true);land('job-title',$('allow-more'));await list();
+    });
+  };
+  $('recheck').onclick=function(){
+    if(!job)return;
+    act(async function(){
+      clearError();var id=job.id,updated=await call('/jobs/'+id+'/recheck','POST',{});
+      await showIf(id,updated,false);say('Checking the video again. Checking is free.',true);land('job-title',$('recheck'));await list();
+    });
+  };
+  $('rehearse').onclick=function(){
+    if(!job||blocked('rehearse'))return;
+    act(async function(){
+      clearError();var id=job.id,updated=await call('/jobs/'+id+'/rehearse','POST',settings());
+      await showIf(id,updated,false);say('Rehearsal started. It uses a test tone and no paid services, and you will hear when it is finished.',true);land('job-title',$('rehearse'));await list();
+    });
+  };
+  $('keep').onclick=function(){
+    if(!job)return;
+    act(async function(){
+      clearError();var id=job.id,updated=await call('/jobs/'+id+'/keep','POST',{});
+      await showIf(id,updated,false);if(shownId!==id)return;renderExpiry();
+      say('Kept until '+when(updated.expiresAt)+'.'+(updated.keepable?'':' That is as long as it can be kept here; download it or save it to your Library to keep it longer.'),true);
     });
   };
   $('abandon').onclick=function(){
     if(!job)return;var back=latestVersion();
     act(async function(){
-      var id=job.id;if(!confirm('Go back to version '+back+' of “'+job.name+'”? The stopped attempt is set aside, and version '+back+' stays as it was.'))return;
+      var id=job.id;if(!confirm('Go back to version '+back+' of “'+job.name+'”? Version '+back+' stays as it was, and going back costs nothing. The stopped attempt is discarded'+(job.runCostUSD?', and the '+money(job.runCostUSD)+' it already cost is not returned':'')+'.'))return;
       clearError();var updated=await call('/jobs/'+id+'/abandon','POST',{});
       await showIf(id,updated,false);say('Back to version '+back+'. You can make a new version again.',true);land($('results').hidden?'job-title':'result-title',$('abandon'));await list();
     });
@@ -1204,6 +1306,7 @@ export const descriptionBrowserScript: string = String.raw`
   })();
   document.addEventListener('visibilitychange',function(){
     if(document.hidden||stopped)return;
+    carryOnUpload();
     if(job&&working(job))poll();
     if(filesAt&&Date.now()-filesAt>LINK_AGE&&!$('results').hidden)files(false).catch(failure);
   });
@@ -1211,11 +1314,11 @@ export const descriptionBrowserScript: string = String.raw`
     await refreshToken();config=await call('/config');catalog=config;
     voicesOff=config.voicesAvailable===false||!(config.voices||[]).length;config.voices=config.voices||[];
     var sourceLimit=(config.maxSourceMinutes||config.maxMinutes)*60;
-    $('limits').textContent='Up to 2 GB and '+length(sourceLimit)+'. One run describes up to '+length(config.maxMinutes*60)+'; for a longer video, choose the part to describe. Any video file works: if yours is not listed, switch the file type to All files. Your video stays private to your account and goes to the description and voice services only when you choose to describe it.';
+    $('limits').textContent='Up to 2 GB and '+length(sourceLimit)+'. One run describes up to '+length(config.maxMinutes*60)+'; for a longer video, choose the part to describe. Any video file works: if yours is not listed, switch the file type to All files. Your video stays private to your account. Only when you choose to describe it does it go to three services: the picture and sound to the video model (Google Gemini, through OpenRouter) to write the descriptions, the soundtrack to Deepgram to time the dialogue, and the description text to the platform voices for the narration.';
     var perMinute=config.perMinuteUSD||{},extras=config.extrasPerMinuteUSD||{};
     if(perMinute.standard){var extra=(extras.closeLook||0)+(extras.firstLook||0);$('prices').textContent='Standard detail costs about '+Math.round(perMinute.standard*100)+' cents a minute of video'+(extra?'; the extra passes add about '+Math.round(extra*100)+' cents a minute':'')+'. Checking a video is free.';$('prices').hidden=false;}
     $('library-box').hidden=!config.library;
-    $('folder').value=config.defaultLibraryPath||'Audio/Described Movies & TV/Described by Kade-AI';
+    $('folder').value=config.defaultLibraryPath||DEFAULT_FOLDER;
     if(config.library)call('/library-folders').then(function(data){data.folders.forEach(function(path){var option=document.createElement('option');option.value=path;$('folders').appendChild(option);});}).catch(function(){});
     setSelect('progress-pref',stored(PROGRESS_KEY,'quarter'));
     if(setSelect('play-as',stored(PLAY_AS_KEY,'video')))setPlayAs($('play-as').value,true);
