@@ -1185,6 +1185,7 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
 </head><body>
 <a class="back" href="/">&larr; Back to Kade-AI</a>
 <h1>Describe</h1>
+<section class="card" aria-label="Create a described video"><h2>A video you can listen to</h2><p>Add timed spoken descriptions to an uploaded video or YouTube link, then download the described video or its audio. Currently in a private owner trial.</p><a class="btn" href="/described-video">Make a described video</a></section>
 <p class="muted">Share, pick, or paste a photo, video, PDF, Word file, or text file — I will describe it or read it to you.</p>
 <div id="status" class="status" role="status" aria-live="polite">Loading&hellip;</div>
 <div id="controls" style="display:none; margin:1rem 0;">

@@ -324,6 +324,7 @@ const startServer = async () => {
   app.use('/api/kade/spotter', routes.kadeSpotter);
   app.use('/api/kade/transcribe', routes.kadeTranscribe);
   app.use('/api/kade/describe', routes.kadeDescribe);
+  app.use('/api/kade/described-video', require('./routes/kadeDescribedVideo'));
   app.use('/api/kade/gpt-import', routes.kadeGptImport);
   app.use('/api/kade/clock', routes.kadeClock);
   app.use('/api/kade/sound-booth', routes.kadeSoundBooth);
@@ -342,6 +343,7 @@ const startServer = async () => {
   app.get('/feedback', routes.kade.feedbackFormPage); // Android's Send feedback row (Sep 23 2026)
   app.get('/notifications', routes.kade.notificationsPage);
   app.get('/describe', routes.kadeDescribe.page);
+  app.get('/described-video', require('./routes/kadeDescribedVideo').page);
   app.get('/import', routes.kadeGptImport.importPage);
   app.get('/feed-the-server', routes.kade.feedPage);
   app.get('/my-creations', routes.kade.creationsPage);

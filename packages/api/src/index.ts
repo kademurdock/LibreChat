@@ -173,3 +173,6 @@ export { songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSo
 export { tubeVaultHints, validTubeVaultItems } from './library/tubevault';
 
 export { descriptionBatchRouter } from './library/descriptions';
+
+export { createDescriptionRouter } from './description/router';
+export { describedVideoPage } from './description/page';

@@ -14,7 +14,7 @@ RUN apk add --no-cache ffmpeg
 # The bgutil plugin talks to the yt-pot sidecar service (Railway private
 # networking, env KADE_POT_URL) to mint the proof-of-origin tokens YouTube
 # demands from datacenter IPs — the 2026 self-hosted standard, no cookies.
-RUN pip3 install --no-cache-dir --break-system-packages yt-dlp bgutil-ytdlp-pot-provider
+RUN pip3 install --no-cache-dir --break-system-packages "yt-dlp[default]" bgutil-ytdlp-pot-provider
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
