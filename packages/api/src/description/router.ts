@@ -153,7 +153,7 @@ type Hooks = {
   /** Tests wrap the engine to watch what a run was asked to do. */
   describe?: (request: RunRequest) => Promise<Outcome>;
   /** Tests use a fast heartbeat and drive ticks themselves (tickMs 0). */
-  timing?: { heartbeatMs?: number; tickMs?: number };
+  timing?: { heartbeatMs?: number; tickMs?: number; wedgeMs?: number };
 };
 type Part = { number: number; etag: string; bytes: number; hash: string };
 type SourcePrivacy = { shared: boolean; grownUpsOnly: boolean; ownerIsActor: boolean };
@@ -702,6 +702,7 @@ export function createDescriptionRouter(hooks: Hooks): {
   const router = Router();
   const worker = randomUUID();
   const heartbeatMs = hooks.timing?.heartbeatMs ?? 10 * second;
+  const wedgeMs = hooks.timing?.wedgeMs ?? 2 * minute;
   const lanes = {
     check: { lock: 'video-check', states: checking, running: false },
     render: { lock: 'video', states: ['queued'], running: false },
@@ -711,6 +712,8 @@ export function createDescriptionRouter(hooks: Hooks): {
   let lastCatalog: Awaited<ReturnType<typeof voices>> | undefined;
   const inflight = new Set<Promise<void>>();
   const controllers = new Map<string, AbortController>();
+  /** Resolves when a stopped job did not wind down in time, so its lane can move on. */
+  const wedges = new Map<string, Promise<void>>();
   const samples = new Map<string, Buffer>();
   const sampleUse = new Map<string, number[]>();
   const initialize = () =>
@@ -1615,6 +1618,12 @@ export function createDescriptionRouter(hooks: Hooks): {
   }
   async function launchFor(job: Job, action: string, body: unknown, strict: boolean): Promise<Launch> {
     if (action === 'start' || action === 'preview') {
+      if (job.state === 'failed' && !job.settings)
+        throw new Problem(
+          job.checkFailure === 'transient'
+            ? 'Checking this video was interrupted. Press Check again first.'
+            : 'This video could not be checked, so it cannot be described.',
+        );
       if (job.state !== 'ready') throw new Problem('Wait for the video to finish checking.');
       const input = { ...((body as object) ?? {}), preview: action === 'preview' };
       return launchStart(job, action === 'start' ? body : input, ['ready'], job.version || 1);
@@ -2278,6 +2287,7 @@ export function createDescriptionRouter(hooks: Hooks): {
   route('post', '/jobs/:id/library', async (req, res) => {
     const job = await owned(req);
     if (!hooks.library) throw new Problem('The library is not available here.', 503);
+    if (job.state === 'deleting') throw new Problem('This video is being deleted.');
     const input = z
       .object({
         share: z.boolean().optional(),
@@ -2606,6 +2616,34 @@ export function createDescriptionRouter(hooks: Hooks): {
   }
 
   /* ---------- running a job ---------- */
+  /** A stopped job whose work never wound down: settle it, so its money and its lane are freed. */
+  async function unwedge(job: Job, reason: unknown): Promise<void> {
+    warn(line('dv.wedged', { id: job._id, reason: reason instanceof Error ? reason.constructor.name : 'unknown' }));
+    const current = await Jobs.findOne({ _id: job._id, worker }).lean().catch(() => null);
+    if (!current) return;
+    const cancelled = !!current.cancelRequested;
+    const settled = await Jobs.findOneAndUpdate(
+      { _id: job._id, worker },
+      {
+        $set: {
+          state: cancelled ? 'cancelled' : 'failed',
+          active: false,
+          stage: cancelled ? 'Cancelled' : 'Stopped before finishing',
+          error: cancelled
+            ? 'Processing stopped. Work already sent to providers may still be charged.'
+            : 'Processing stopped and did not wind down. Press Continue to try again.',
+          finishedAt: new Date(),
+          expiresAt: retain(current, 3),
+          ...(checking.includes(current.state) ? { checkFailure: 'transient' } : {}),
+        },
+        $unset: { worker: 1, lease: 1 },
+      },
+      { new: true },
+    )
+      .lean()
+      .catch(() => null);
+    if (settled) await release(settled.reservation, settled.runCost ?? 0).catch(() => {});
+  }
   /**
    * Runs one job with a lease, a heartbeat that survives a slow database for a minute,
    * cancellation and a clean temporary folder. `settle` gives back money before any notice.
@@ -2623,6 +2661,17 @@ export function createDescriptionRouter(hooks: Hooks): {
     const lock = lanes[lane].lock;
     const controller = new AbortController();
     controllers.set(job._id, controller);
+    let loose = () => {};
+    const wedge = new Promise<void>((resolve) => (loose = resolve));
+    wedges.set(job._id, wedge);
+    controller.signal.addEventListener(
+      'abort',
+      () => {
+        const watchdog = setTimeout(() => void unwedge(job, controller.signal.reason).finally(loose), wedgeMs);
+        watchdog.unref();
+      },
+      { once: true },
+    );
     const deadline = setTimeout(
       () => controller.abort(new Halt('The job exceeded its processing time limit.')),
       lane === 'render' ? 8 * hour : 2 * hour,
@@ -2743,7 +2792,8 @@ export function createDescriptionRouter(hooks: Hooks): {
     } finally {
       clearInterval(heartbeat);
       clearTimeout(deadline);
-      controllers.delete(job._id);
+      if (controllers.get(job._id) === controller) controllers.delete(job._id);
+      if (wedges.get(job._id) === wedge) wedges.delete(job._id);
       await settleOnce();
       if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {});
     }
@@ -3255,7 +3305,8 @@ export function createDescriptionRouter(hooks: Hooks): {
       }
       const work = name === 'check' ? check(job) : render(job);
       inflight.add(work);
-      await work.finally(() => inflight.delete(work));
+      const tracked = work.finally(() => inflight.delete(work));
+      await Promise.race([tracked, wedges.get(job._id) ?? tracked]);
     } catch (error) {
       warn(line('dv.lane', { lane: name, error: scrub(error instanceof Error ? error.message : 'failed') }));
     } finally {

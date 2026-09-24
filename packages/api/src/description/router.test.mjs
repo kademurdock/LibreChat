@@ -341,7 +341,7 @@ before(async () => {
       if (beforeEngine) await beforeEngine(input);
       return describeVideo(input);
     },
-    timing: { heartbeatMs: 100, tickMs: 0 },
+    timing: { heartbeatMs: 100, tickMs: 0, wedgeMs: 1500 },
   };
   service = createDescriptionRouter({
     ...hooks,
@@ -853,6 +853,8 @@ test('the free check reads a big file only at both ends, keeps a rename, and can
     assert.equal(failed.recheckable, true);
     assert.doesNotMatch(failed.error, /boom|InternalError/);
     assert.match(notices.at(-1).title, /could not be checked/);
+    const start = await call('post', `/jobs/${id}/start`, 'check-owner').send(settings).expect(409);
+    assert.match(start.body.error, /Press Check again/);
     faults.length = 0;
     storageLog.length = 0;
     await call('post', `/jobs/${id}/recheck`, 'check-owner').expect(200);
@@ -1210,6 +1212,30 @@ test('a heartbeat that fails once does not stop the job; a storage outage re-que
   await call('delete', `/jobs/${id}`, 'heartbeat-owner').expect(200);
 });
 
+test('a stopped job whose work never winds down is settled, and its money and its lane are freed', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('wedge-owner', 'wedge-upload-0000001', 30);
+  let unblock = () => {};
+  beforeEngine = () => new Promise((resolve) => (unblock = resolve));
+  try {
+    await call('post', `/jobs/${id}/start`, 'wedge-owner').send(settings).expect(202);
+    assert.ok((await held()) > 0);
+    const ticking = worker.tick();
+    await eventually(async () => assert.equal((await Jobs.findById(id).lean()).state, 'running'));
+    const pressed = (await call('post', `/jobs/${id}/cancel`, 'wedge-owner').expect(200)).body;
+    assert.equal(pressed.cancelRequested, true);
+    await ticking;
+    const job = (await call('get', `/jobs/${id}`, 'wedge-owner').expect(200)).body;
+    assert.equal(job.state, 'cancelled');
+    assert.equal(await held(), 0, 'the set-aside money came back');
+  } finally {
+    beforeEngine = null;
+    unblock();
+  }
+  await eventually(async () => assert.equal(await held(), 0));
+  await call('delete', `/jobs/${id}`, 'wedge-owner').expect(200);
+});
+
 test('concurrent paid speech requests settle their reservations without losing a charge', async () => {
   await Budgets.deleteMany({});
   const source = join(root, 'budget-source.mp4');
@@ -1226,12 +1252,24 @@ test('concurrent paid speech requests settle their reservations without losing a
   simulateConcurrentCosts = true;
   try {
     await call('post', `/jobs/${id}/start`, 'cost-owner').send(settings).expect(202);
+    const initial = (await Jobs.findById(id).lean()).reservation.cents;
     const done = await settle(id, ['done', 'failed'], 'cost-owner');
     assert.equal(done.state, 'done', done.error);
     assert.ok(Math.abs(done.costUSD - 0.02) < 1e-8, `charged ${done.costUSD}`);
     assert.ok(Math.abs(done.runCostUSD - 0.02) < 1e-8);
     assert.equal(await held(), 2);
-    assert.ok(Math.abs((await Jobs.findById(id).lean()).spend.speech - 0.02) < 1e-8);
+    const stored = await Jobs.findById(id).lean();
+    assert.ok(Math.abs(stored.spend.speech - 0.02) < 1e-8);
+    assert.ok(stored.reservation.cents > initial, 'the reservation grew for the requests in flight');
+    assert.equal((stored.reservation.cents - initial) % 25, 0, 'in 25-cent steps');
+
+    await Jobs.updateOne({ _id: id }, { $set: { state: 'ready' } });
+    await call('post', `/jobs/${id}/start`, 'cost-owner').send(settings).expect(202);
+    await Budgets.updateOne({ _id: today() }, { $set: { held: 499 } });
+    const halted = await settle(id, ['done', 'failed'], 'cost-owner');
+    assert.equal(halted.state, 'failed');
+    assert.match(halted.error, /reached its processing allowance/);
+    assert.equal(await held(), 499 - (await Jobs.findById(id).lean()).reservation.cents);
   } finally {
     simulateConcurrentCosts = false;
   }
