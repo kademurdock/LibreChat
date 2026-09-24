@@ -398,13 +398,29 @@ function boundaries(words: Word[], cuts: number[], seconds: number): Boundary[] 
   }
   for (const cut of cuts) {
     if (cut <= 0 || cut >= seconds) continue;
-    if (words.some((word) => word.start - 0.05 < cut && cut < word.end + 0.05)) continue;
-    const before = words.filter((word) => word.end <= cut).at(-1)?.end ?? 0;
-    const after = words.find((word) => word.start >= cut)?.start ?? seconds;
+    const next = firstFrom(words, cut);
+    const previous = words[next - 1];
+    const following = words[next];
+    if (previous && previous.end + 0.05 > cut) continue;
+    if (following && following.start - 0.05 < cut) continue;
+    const before = previous?.end ?? 0;
+    const after = following?.start ?? seconds;
     const score = after - before < 1.5 ? 3.5 : cut - before <= 0.6 ? 3 : 1.5;
     result.push({ point: cut, score });
   }
   return result;
+}
+
+/** Index of the first word (sorted by start) that starts at or after `time`. */
+function firstFrom(words: Word[], time: number): number {
+  let low = 0;
+  let high = words.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (words[middle].start < time) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 /**

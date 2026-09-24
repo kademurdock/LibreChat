@@ -204,14 +204,14 @@ test('extended placement narrates into the quiet stretch and freezes only for th
   assert.equal(toOutput(4, timeline), 5);
 });
 
-test('sections break in quiet moments near every 90 seconds and snap to whole frames', () => {
+test('sections break near every 90 seconds, a quiet stretch going whole to the next section, on whole frames', () => {
   const words = [];
   for (let t = 0; t < 300; t += 0.5)
     if (Math.abs(t - 88) > 1.5 && Math.abs(t - 181) > 2)
       words.push({ start: t, end: t + 0.45, word: 'x' });
   const sections = planSections(300, words);
-  assert.ok(Math.abs(sections[0].end - 88) < 1.6, `first break at ${sections[0].end}`);
-  assert.ok(Math.abs(sections[1].end - 181) < 2.1, `second break at ${sections[1].end}`);
+  assert.ok(Math.abs(sections[0].end - 86.75) < 1e-9, `first break at ${sections[0].end}`);
+  assert.ok(Math.abs(sections[1].end - 179.25) < 1e-9, `second break at ${sections[1].end}`);
   assert.equal(sections.at(-1).end, 300);
   const aligned = alignSections(sections, { num: 30000, den: 1001 }, 300);
   for (const section of aligned.slice(1))
