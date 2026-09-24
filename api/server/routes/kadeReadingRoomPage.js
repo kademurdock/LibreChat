@@ -65,7 +65,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 <body>
   <p><a class="back" href="/home" aria-label="Back to Home">&larr; Home</a></p>
   <h1 id="pageTitle">The Library</h1>
-  <p id="familyLibraryNotice">Shared shelves are for approved family library members. A public librarian conversation does not grant access to the collection.</p>
+  <p id="familyLibraryNotice" hidden>Your own uploads are here. The family's shared collection is only for family members Kade has approved. Ask Kade if you should have it.</p>
   <p id="live" class="status" role="status" aria-live="polite"></p>
   <section aria-labelledby="librarianHeading" style="padding:1rem;border:1px solid #8a919c;border-radius:14px;margin-bottom:1rem">
     <h2 id="librarianHeading">Meet Mrs. Witherspoon</h2>
@@ -157,6 +157,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <h2 id="h-review">Waiting for the librarian</h2>
       <p class="hint">You are the librarian. Approve a link and it is fetched into the collection from TubeVault's Cloud tab; approve a file and it goes into the library at once. The person who submitted it is told either way.</p>
       <ul class="plain" id="reviewList" aria-labelledby="h-review"></ul>
+      <section id="familyAccess" aria-labelledby="h-family-access" hidden></section>
     </section>
 
     <h2 id="h-donate">Donate a book</h2>
@@ -311,6 +312,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
 <script src="/assets/library/requests.js?v=20260924"></script>
 <script src="/assets/library/reader.js?v=20260924"></script>
+<script src="/assets/library/access.js?v=20260924"></script>
 <script>
 (function(){
   var token = null;
@@ -401,8 +403,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     try {
       shelfData = await api('/shelf');
       renderShelf(shelfData.mine, shelfData.borrowed);
-        me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo;
-        if (shelfData.familyLibrary === false) $('familyLibraryNotice').textContent = 'Your uploads are available here. The family collection requires library membership; ask the library owner for access.';
+      me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo;
+      $('familyLibraryNotice').hidden = shelfData.familyLibrary !== false;
+      if (librarian && window.setupLibraryAccess) window.setupLibraryAccess(api);
       var sel = $('catFilter'); var cur = sel.value; sel.innerHTML = '<option value="">Everything</option>';
       var present = {}; (shelfData.library || []).forEach(function(b){ present[b.kind !== 'text' ? b.category : 'book'] = 1; });
       Object.keys(present).forEach(function(c){ var o = document.createElement('option'); o.value = c; o.textContent = catName(c); sel.appendChild(o); });

@@ -9,7 +9,6 @@
     var next = null;
     var admin = false;
     var initialized = false;
-    var membershipLoaded = false;
     var currentId = new URLSearchParams(location.search).get('request');
     function announce(value) {
       status.textContent = value;
@@ -199,7 +198,6 @@
         initialized = true;
         if (admin) {
           scope.value = 'all';
-          addMembership();
           return load(false);
         }
       }
@@ -226,59 +224,6 @@
       document.getElementById('requestUnread').textContent = result.unread
         ? result.unread + ' request' + (result.unread === 1 ? ' has' : 's have') + ' new updates.'
         : '';
-    }
-    function addMembership() {
-      if (membershipLoaded) return;
-      membershipLoaded = true;
-      var section = element('details');
-      section.appendChild(element('summary', 'Manage family library access'));
-      section.appendChild(
-        element(
-          'p',
-          'Current family accounts keep access. New accounts need your approval for the shared shelves. This does not change access to their own uploads or make them administrators.',
-        ),
-      );
-      var users = element('ul');
-      section.appendChild(users);
-      section.appendChild(
-        button('Load accounts', async function () {
-          var result = await api('/membership');
-          users.replaceChildren();
-          result.users.forEach(function (user) {
-            var row = element('li');
-            row.appendChild(
-              element(
-                'span',
-                user.name + ' — ' + (user.member ? 'family access' : 'own uploads only') + ' ',
-              ),
-            );
-            if (!user.admin)
-              row.appendChild(
-                button(
-                  user.member ? 'Remove access for ' + user.name : 'Grant access to ' + user.name,
-                  async function () {
-                    await api('/membership', {
-                      json: { id: user.id, access: user.member ? 'none' : 'family' },
-                    });
-                    user.member = !user.member;
-                    row.replaceChildren(
-                      element(
-                        'span',
-                        user.name +
-                          ': access ' +
-                          (user.member ? 'granted' : 'removed') +
-                          '. Reload accounts to change again.',
-                      ),
-                    );
-                    announce('Library access saved for ' + user.name + '.');
-                  },
-                ),
-              );
-            users.appendChild(row);
-          });
-        }),
-      );
-      root.appendChild(section);
     }
     more.onclick = function () {
       load(true).catch(function (error) {

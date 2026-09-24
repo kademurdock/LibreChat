@@ -180,7 +180,16 @@ export { libraryRequestsDescription, libraryRequestsSchema } from './tools/regis
 export { librarianGuide } from './library/guide';
 export { libraryConsultation, libraryConsultationInstructions } from './library/consultation';
 export { readingText, readingJacket, printDisabilityNotice } from './library/text';
-export { familyLibraryMember, trustedLibraryContributor, libraryMembershipRouter } from './library/access';
+export {
+  familyLibraryMember,
+  trustedLibraryContributor,
+  libraryMembershipRouter,
+  familyLibraryAccessNote,
+  familyLibraryEmptyGuidance,
+  pendingLibraryDigest,
+  approveTrustedUploads,
+  trustedApprovalNote,
+} from './library/access';
 export { libraryToolDescription, libraryToolSchema } from './tools/registry/library';
 
 export { createDescriptionRouter } from './description/router';

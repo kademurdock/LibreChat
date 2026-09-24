@@ -5,6 +5,8 @@ const {
   libraryToolDescription,
   libraryToolSchema,
   familyLibraryMember,
+  familyLibraryAccessNote,
+  familyLibraryEmptyGuidance,
 } = require('@librechat/api');
 const { KadeBook, KadeBookText } = require('~/models/kadeBook');
 const { getUserById } = require('~/models');
@@ -24,21 +26,14 @@ class KadeLibrary extends Tool {
       if (!this.userId) return JSON.stringify({ error: 'Sign in to search the library.' });
       const user = await getUserById(this.userId, 'email role kadeAccountType kadeLibraryAccess');
       if (!user) return JSON.stringify({ error: 'Sign in to search the library.' });
-      const hiddenFrom = String(
-        process.env.KADE_LIBRARY_HIDDEN_FROM || 'kadeai.vischeck722@gmail.com',
-      )
-        .toLowerCase()
-        .split(',')
-        .map((value) => value.trim());
+      /* Family library access (Sep 24 2026) covers the review seat, KADE_LIBRARY_HIDDEN_FROM,
+       * test seats and accounts Kade has not approved: they search their own uploads only. */
       const reader = {
         id: String(this.userId),
-        child: user.kadeAccountType !== 'adult',
-        hidden:
-          !familyLibraryMember(user) ||
-          hiddenFrom.includes(String(this.userId).toLowerCase()) ||
-          hiddenFrom.includes(String(user.email || '').toLowerCase()),
+        // Unknown account types fail closed as child; the owner's untyped admin seat sees everything.
+        child: user.role !== 'ADMIN' && user.kadeAccountType !== 'adult',
+        hidden: !familyLibraryMember({ ...user, id: String(this.userId) }),
       };
-      // The existing account schema defaults to adult; unknown values fail closed.
       const result = await readLibraryCatalog(input, reader, {
         search: (pipeline) => KadeBook.aggregate(pipeline).option({ maxTimeMS: 8000 }).exec(),
         details: (filter) =>
@@ -61,9 +56,15 @@ class KadeLibrary extends Tool {
         },
       });
       logger.info(
-        `[kade_library] action=${input?.action} items=${result.items?.length ?? '-'} approximate=${result.approximate === true}`,
+        `[kade_library] action=${input?.action} items=${result.items?.length ?? '-'} approximate=${result.approximate === true}${reader.hidden ? ' own-uploads-only' : ''}`,
       );
-      return JSON.stringify({ ...result, access: reader.hidden ? 'Your own uploads only. The shared collection requires approved family library membership. Public access to this librarian does not grant access to family media.' : 'Family library membership active.' });
+      if (!reader.hidden) return JSON.stringify(result);
+      /* Said in her tool result, every time, so she never calls a closed shelf empty or broken. */
+      return JSON.stringify({
+        familyLibrary: familyLibraryAccessNote,
+        ...result,
+        ...(Array.isArray(result.items) && !result.items.length ? { guidance: familyLibraryEmptyGuidance } : {}),
+      });
     } catch (error) {
       logger.warn(`[kade_library] lookup failed: ${error.message}`);
       return JSON.stringify({
