@@ -17,6 +17,28 @@ interface FilingDependencies {
   categoryOf: (path: string, kind: string) => string;
   fileMedia: (items: FilingItem[]) => Promise<{ decisions: FilingDecision[]; costUSD: number }>;
 }
+interface FilingChange {
+  id: string;
+  title: string;
+  kind: string;
+  from: string;
+  to: string;
+  category: string;
+  oldCategory: string;
+  reason: string;
+  confidence: number;
+}
+interface FilingUnchanged {
+  id: string;
+  title: string;
+  path: string;
+  reason: string;
+}
+interface FilingPreview {
+  changes: FilingChange[];
+  skipped: FilingUnchanged[];
+  costUSD: number;
+}
 
 export function filingPreviewIds(ids: string[]): string[] {
   if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some((id) => typeof id !== 'string' || !/^[a-f0-9]{24}$/i.test(id))) {
@@ -25,11 +47,15 @@ export function filingPreviewIds(ids: string[]): string[] {
   return [...new Set(ids.map((id) => id.toLowerCase()))];
 }
 
-export async function previewLibraryFolders(items: FilingItem[], deps: FilingDependencies) {
-  const intake = items.filter((item) => deps.zoneOf(item) === 'intake');
-  const skipped = items.filter((item) => !intake.includes(item)).map((item) => ({ id: String(item._id), title: item.title, path: item.path || '', reason: 'Already filed. Use a manual folder correction if its current folder is wrong.' }));
+export async function previewLibraryFolders(items: FilingItem[], deps: FilingDependencies): Promise<FilingPreview> {
+  const intake: FilingItem[] = [];
+  const skipped: FilingUnchanged[] = [];
+  for (const item of items) {
+    if (deps.zoneOf(item) === 'intake') intake.push(item);
+    else skipped.push({ id: String(item._id), title: item.title, path: item.path || '', reason: 'Already filed. Use a manual folder correction if its current folder is wrong.' });
+  }
   const result = intake.length ? await deps.fileMedia(intake) : { decisions: [], costUSD: 0 };
-  const changes = [];
+  const changes: FilingChange[] = [];
   for (const decision of result.decisions) {
     const item = decision.item;
     if (!decision.to || decision.to === item.path || decision.error) {
