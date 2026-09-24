@@ -68,6 +68,13 @@ const AUDIO_EXT = { mp3: 'audio/mpeg', m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 
  * it to MP4 before it leaves her drive. WebM plays in Chrome and on iOS 17+. */
 const VIDEO_EXT = { mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm' };
 const MEDIA_EXT = Object.assign({}, AUDIO_EXT, VIDEO_EXT);
+/* Part 282 (Sep 23 2026): only a real media extension comes off an upload's title, and yt-dlp's
+ * stream tag (".f136") with it. Stripping "everything after the last period" had cut 905 titles
+ * since Sep 19: "1996 Chuck E. Cheese's commercial" arrived as "1996 Chuck E", "St. Louis" as "St",
+ * "Mr. Holland's Opus" as "Mr", and the librarian could not file what it could not read. */
+const bareTitle = (s) => String(s)
+  .replace(/\.([A-Za-z0-9]{2,5})$/, (whole, ext) => (MEDIA_EXT[ext.toLowerCase()] ? '' : whole))
+  .replace(/\.f\d{2,4}$/i, '');
 const mimeFor = (name, hint) => {
   const ext = String(name || '').toLowerCase().split('.').pop();
   if (MEDIA_EXT[ext]) return { ext, mime: MEDIA_EXT[ext], kind: VIDEO_EXT[ext] ? 'video' : 'audio' };
@@ -998,7 +1005,7 @@ router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' })
       if (existing && existing.state === 'ready') { out.push({ originalPath, id: String(existing._id), skipped: 'already in the library' }); continue; }
       const folder = cleanPath(f.path || '');
       const top = folder.split('/')[1] || folder.split('/')[0] || '';
-      const title = String(f.title || f.name || 'Untitled').replace(/\.[^.]+$/, '').slice(0, 200);
+      const title = bareTitle(f.title || f.name || 'Untitled').slice(0, 200) || 'Untitled';
       const meta = f.meta && typeof f.meta === 'object' ? Object.fromEntries(Object.entries(f.meta).slice(0, 20).map(([k, v]) => [String(k).slice(0, 30), String(v).slice(0, 120)])) : {};
       const doc = existing || new KadeBook({ owner: req.user.id, ownerName });
       doc.kind = m.kind;
@@ -1565,6 +1572,7 @@ router.post(['/librarian/refile-commercials', '/librarian/refile-books'], requir
   } catch (e) { logger.warn(`[library/refile] ${e.message}`); res.status(500).json({ error: 'Could not refile those commercials.' }); }
 });
 const sorter = require('./kadeReadingRoomSort');
+const { zoneOf: mediaZoneOf } = require('~/server/services/kadeMediaLibrarian');
 router.get('/librarian/inventory', requireJwtAuth, async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
   try {
@@ -1591,7 +1599,15 @@ router.post('/librarian/organize', requireJwtAuth, express.json({ limit: '1mb' }
   try { operations = reviewedLibraryMoves(req.body?.moves, CATEGORIES); }
   catch (e) { return res.status(400).json({ error: e.message }); }
   try {
-    for (const op of operations) op.updateOne.filter.$or = [{ shared: true }, { owner: req.user.id }];
+    for (const op of operations) {
+      op.updateOne.filter.$or = [{ shared: true }, { owner: req.user.id }];
+      /* Part 282: a repaired title is new evidence. An item still waiting for a folder loses the
+       * librarian's "already read" mark, so the next pass reads it again under its real name. */
+      const set = op.updateOne.update.$set;
+      if (set.title !== undefined && mediaZoneOf({ kind: op.updateOne.filter.kind, path: set.path }) === 'intake') {
+        op.updateOne.update.$unset = { 'meta.jevFiling': '', 'meta.jevFilingTries': '' };
+      }
+    }
     const result = await KadeBook.bulkWrite(operations);
     logger.info(`[library/organize] user=${req.user.id} matched=${result.matchedCount} changed=${result.modifiedCount}`);
     res.json({ ok: true, matched: result.matchedCount, changed: result.modifiedCount });
