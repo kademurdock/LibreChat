@@ -19,12 +19,6 @@ import {
   transcribe,
 } from './providers.ts';
 import { Halt } from './types.ts';
-
-const axios = createRequire(import.meta.url)('axios');
-const scratch = await mkdtemp(join(tmpdir(), 'described-prompt-test-'));
-after(async () => {
-  await rm(scratch, { recursive: true, force: true });
-});
 import {
   analysisPrompt,
   lintDescription,
@@ -40,6 +34,19 @@ import {
   transcriptText,
   webVtt,
 } from './transcript.ts';
+import {
+  chaptersFrom,
+  cleanAbout,
+  readMetadata,
+  youtubeProblem,
+  youtubeURL,
+} from './youtube.ts';
+
+const axios = createRequire(import.meta.url)('axios');
+const scratch = await mkdtemp(join(tmpdir(), 'described-prompt-test-'));
+after(async () => {
+  await rm(scratch, { recursive: true, force: true });
+});
 
 const brief = (extra = {}) => ({
   title: 'Test',
@@ -858,4 +865,89 @@ test('providers: the voice call is retried before a paid description is dropped,
   } finally {
     fake.restore();
   }
+});
+
+test('youtube: links and metadata fail with plain sentences, never a validation dump', () => {
+  assert.throws(() => youtubeURL('not a link at all'), { message: 'Enter a YouTube video link.' });
+  const live = { title: 'Sky News live', is_live: true, live_status: 'is_live' };
+  assert.throws(() => readMetadata(live, 5400, false), {
+    message: 'Choose a finished YouTube video, rather than a live or upcoming stream.',
+  });
+  assert.throws(() => readMetadata({ title: 'x', live_status: 'post_live' }, 5400, false), /still processing/);
+  assert.throws(() => readMetadata({ title: 'x' }, 5400, false), /has not published this video's length yet/);
+  assert.throws(() => readMetadata(null, 5400, false), /could not read/);
+  assert.throws(() => readMetadata({ title: 'x', duration: 60, availability: 'private' }, 5400, false), /private.*download it with TubeVault, add it to your Library, then describe it from there/);
+  const gated = { title: 'x', duration: 60, age_limit: 18, availability: 'needs_auth' };
+  assert.throws(() => readMetadata(gated, 5400, false), /age-restricted.*TubeVault/);
+  assert.equal(readMetadata(gated, 5400, true).seconds, 60, 'signed-in cookies may get through');
+  assert.throws(() => readMetadata({ title: 'x', duration: 8040 }, 5400, false), {
+    message: 'This YouTube video is 2 hours 14 minutes long, and the longest video the server can bring in is 1 hour 30 minutes.',
+  });
+});
+
+test('youtube: the title is cleaned, chapters are kept, and the uploader text loses links and plugs', () => {
+  const zwsp = String.fromCodePoint(0x200b);
+  const rtl = String.fromCodePoint(0x202e);
+  const family = ['👨', '👩', '👧'].join(String.fromCodePoint(0x200d));
+  const details = readMetadata(
+    {
+      title: `KYTV ${zwsp}Commercials${rtl}  1993 ${family}`,
+      duration: 547,
+      uploader: 'VHS Vault',
+      upload_date: '20210314',
+      description: [
+        'Recorded off KYTV channel 3 in Springfield, March 1993.',
+        '0:26 Banking services',
+        '1:11 - Branson entertainment',
+        'Subscribe for more! https://youtube.com/@vault #vhs @vault',
+        'Visit www.example.com for tapes.',
+      ].join('\n'),
+      chapters: null,
+    },
+    5400,
+    false,
+  );
+  assert.equal(details.name, `KYTV Commercials 1993 ${family}`, 'invisible characters go, emoji joiners stay');
+  assert.equal(details.about, 'Uploaded by VHS Vault on 2021-03-14. Recorded off KYTV channel 3 in Springfield, March 1993. Visit for tapes.');
+  assert.deepEqual(details.chapters, [
+    { start: 26, title: 'Banking services' },
+    { start: 71, title: 'Branson entertainment' },
+  ]);
+  const own = readMetadata(
+    {
+      title: 'x',
+      duration: 547,
+      chapters: [
+        { start_time: 0, title: 'Intro' },
+        { start_time: 441, title: 'Fast food breakfast deals' },
+        { start_time: 900, title: 'Past the end' },
+      ],
+    },
+    5400,
+    false,
+  );
+  assert.deepEqual(own.chapters, [
+    { start: 0, title: 'Intro' },
+    { start: 441, title: 'Fast food breakfast deals' },
+  ]);
+  assert.deepEqual(chaptersFrom('Only one 0:10 stamp here\n0:10 Intro', 60), []);
+  assert.equal(cleanAbout('x'.repeat(900)).length, 600);
+});
+
+test('youtube: yt-dlp errors are named, and only unambiguous ones stop the client ladder', () => {
+  const kind = (text) => youtubeProblem(text)?.kind;
+  assert.equal(kind('ERROR: [youtube] abc: Private video. Sign in if you have been granted access'), 'private');
+  assert.equal(youtubeProblem('ERROR: Private video').permanent, true);
+  assert.equal(kind('ERROR: [youtube] abc: This video has been removed by the uploader'), 'removed');
+  assert.equal(kind('This video is no longer available because the YouTube account associated with this video has been terminated.'), 'removed');
+  assert.equal(kind('Video unavailable. This video contains content from X, who has blocked it on copyright grounds'), 'copyright');
+  assert.equal(kind('ERROR: Sign in to confirm your age. This video may be inappropriate for some users.'), 'age');
+  assert.equal(youtubeProblem('Sign in to confirm your age').permanent, false);
+  assert.equal(kind("ERROR: Sign in to confirm you're not a bot"), 'bot');
+  assert.equal(kind('Join this channel to get access to members-only content like this video'), 'members');
+  assert.equal(kind('The uploader has not made this video available in your country'), 'region');
+  assert.equal(kind('ERROR: [youtube] aaaaaaaaaaa: Video unavailable'), 'unavailable');
+  assert.equal(youtubeProblem('Video unavailable').permanent, false, 'another client may still reach it');
+  assert.equal(kind('HTTP Error 503: Service Unavailable'), 'unavailable');
+  assert.equal(kind('Some brand new failure'), undefined);
 });
