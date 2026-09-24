@@ -602,7 +602,7 @@ function makeServer() {
       case 'abandon':
         return update({ state: 'done', version: job.copies.at(-1).version, abandonable: false, resumable: false }, 200);
       case 'rehearse':
-        return update({ state: 'queued', settings: { ...body } });
+        return update({ state: 'queued', settings: { ...body }, error: '' });
       case 'recheck':
         return update({ state: 'checking', recheckable: false }, 200);
       case 'keep':
@@ -824,6 +824,22 @@ async function boot({ server = makeServer(), search = '', local = {}, confirmRep
 }
 
 const visible = (element) => element.offsetParent !== null;
+/** Every text written to a live region, in order, so a test can tell what was said and how often. */
+function listen(element) {
+  const heard = [];
+  const own = Object.getOwnPropertyDescriptor(Element.prototype, 'textContent');
+  Object.defineProperty(element, 'textContent', {
+    configurable: true,
+    get() {
+      return own.get.call(this);
+    },
+    set(value) {
+      if (String(value)) heard.push(String(value));
+      own.set.call(this, value);
+    },
+  });
+  return heard;
+}
 
 /* ------------------------------------------------------------------------------------------
  * Markup: labels, headings, live regions, focus ring and narrow screens.
@@ -1762,6 +1778,7 @@ test('over the quote: it says so with the numbers and only carries on after a co
   const env = await boot({ server, search: '?id=' + job.id, confirmReply: () => reply });
   const { $ } = env;
   await env.timers.advance(700);
+  assert.equal($('error').hidden, true, 'the stop is not read twice with two different figures');
   assert.equal($('stage').textContent, 'Stopped because it is costing more than quoted.');
   assert.equal($('resume').hidden, true, 'plain Continue is not offered past the quote');
   assert.equal(visible($('allow-more')), true);
@@ -1872,17 +1889,25 @@ test('without a wake lock the page still asks her to keep it open', async () => 
 test('a Library video she already has opens that video and says so', async () => {
   const server = makeServer();
   const had = server.add(doneJob({ name: 'KYTV sign-off 1989', source: 'library' }));
-  server.override((method, path) => path === '/library-imports', () => ({ status: 200, body: { ...had, existing: true } }));
+  server.override((method, path) => path === '/library-imports', () => ({ status: 200, body: { ...had, existing: true } }), false);
   const env = await boot({ server });
   const { $ } = env;
+  const heard = listen($('status'));
   await env.type('library', 'https://kademurdock.com/library?book=' + 'a'.repeat(24) + '&track=2', 'input');
   await env.click('library-use');
   await env.timers.advance(100);
   assert.deepEqual(server.last(/^\/library-imports$/).body.track, 2);
   assert.equal($('job-title').textContent, 'KYTV sign-off 1989');
-  assert.equal(env.status(), 'You already have this video: “KYTV sign-off 1989”, finished. It is open now; your described copy is below.');
+  assert.equal(env.status(), 'You already have this video. KYTV sign-off 1989: finished. Your described copy is below.');
+  assert.equal(heard.filter((text) => text.includes('KYTV')).length, 1, 'the name and state are said once');
+  assert.equal(env.document.activeElement, $('result-title'));
   assert.equal($('results').hidden, false);
   assert.equal(server.jobs.size, 1, 'no second job was made');
+  heard.length = 0;
+  await env.type('library', 'https://kademurdock.com/library?book=' + 'a'.repeat(24) + '&track=2', 'input');
+  await env.click('library-use');
+  await env.timers.advance(100);
+  assert.deepEqual(heard, ['You already have this video. It is already open.'], 'pasting it again while it is open says so once');
 });
 
 test('free rehearsal: offered only when the server says so, free and unconfirmed, and its copy is labelled', async () => {
@@ -1900,12 +1925,78 @@ test('free rehearsal: offered only when the server says so, free and unconfirmed
   assert.equal(server.last(/\/rehearse$/).method, 'POST');
   assert.equal(server.all(/\/estimate$/).filter((r) => r.body.action === 'rehearse').length, 0);
   assert.match(env.status(), /^Rehearsal started\./);
-  Object.assign(ready, { state: 'done', copies: [{ version: 1, rehearsal: true, settings: standardSettings, outputSeconds: 24, count: 2 }] });
+  assert.equal($('rehearse').hidden, true, 'no second rehearsal while one runs');
+  const heard = listen($('status'));
+  Object.assign(ready, {
+    state: 'ready',
+    stage: 'Ready to describe',
+    progress: 0,
+    error: '',
+    copies: [{ version: 1, rehearsal: true, settings: standardSettings, outputSeconds: 24, count: 2 }],
+    lastRehearsal: { outcome: 'finished', version: 1, at: '2026-09-24T11:00:00.000Z' },
+  });
   await env.timers.advance(5000);
-  assert.match(env.status(), /^Rehearsal finished\./);
+  assert.deepEqual(heard, ['Rehearsal finished. Every step ran with a test tone and no paid services. Listen to check the player.'], 'said once, never "Video checked"');
+  assert.equal(env.document.activeElement, $('result-title'), 'focus moves to the test copy');
+  assert.equal($('results').hidden, false);
   assert.match($('version').options[0].textContent, /^Version 1 rehearsal with a test tone: /);
   assert.match($('summary').textContent, /^Version 1 is a rehearsal with a test tone, made without paid services: 2 descriptions\./);
-  assert.equal($('rehearse').hidden, true);
+  assert.equal(visible($('rehearse')), true, 'the video is ready again, so it can be rehearsed again');
+  assert.equal(visible($('start')), true);
+  const other = server.add(jobOf({ name: 'Other clip', seconds: 20 }));
+  await env.click('refresh');
+  await env.open(other);
+  await env.open(ready);
+  assert.equal(env.status(), '20 second clip: checked and ready. The rehearsal finished, and its test copy is below. Choose the narration, then Create described copy.');
+});
+
+test('a rehearsal that stops or is cancelled is said once, and focus never falls off the page', async () => {
+  const server = makeServer();
+  server.override((method, path) => path === '/config', () => ({ status: 200, body: { ...config, rehearsal: true } }));
+  const clip = server.add(jobOf({ name: 'KOLR sign-off', seconds: 20 }));
+  const env = await boot({ server, search: '?id=' + clip.id });
+  const { $ } = env;
+  await env.timers.advance(700);
+  await env.click('rehearse');
+  $('cancel').focus();
+  const heard = listen($('status'));
+  Object.assign(clip, {
+    state: 'ready',
+    error: 'The rehearsal stopped: Video storage stopped sending data.',
+    lastRehearsal: { outcome: 'stopped', version: 1, at: '2026-09-24T11:00:00.000Z' },
+  });
+  await env.timers.advance(5000);
+  assert.equal($('error').textContent, 'The rehearsal stopped: Video storage stopped sending data.', 'the alert says why');
+  assert.deepEqual(heard, [], 'and nothing else is said over it');
+  assert.equal(env.document.activeElement, $('job-title'), 'focus leaves the hidden Cancel button for the heading');
+
+  await env.click('rehearse');
+  assert.equal($('error').hidden, true);
+  server.override(
+    (method, path) => path.endsWith('/cancel'),
+    () => {
+      Object.assign(clip, { state: 'ready', error: '', lastRehearsal: { outcome: 'cancelled', version: 2, at: '2026-09-24T11:05:00.000Z' } });
+      return { status: 200, body: clip };
+    },
+  );
+  $('cancel').focus();
+  heard.length = 0;
+  await env.click('cancel');
+  assert.deepEqual(heard, ['Rehearsal cancelled. Nothing was charged, and the video is ready to describe.']);
+  assert.equal(env.document.activeElement, $('job-title'));
+  assert.equal(visible($('rehearse')), true);
+});
+
+test('with the voices down, a free rehearsal still starts: no empty voice is sent', async () => {
+  const server = makeServer();
+  server.override((method, path) => path === '/config', () => ({ status: 200, body: { ...config, rehearsal: true, voicesAvailable: false, voices: [] } }));
+  const clip = server.add(jobOf({ name: 'Clip', seconds: 20 }));
+  const env = await boot({ server, search: '?id=' + clip.id });
+  await env.timers.advance(700);
+  await env.click('rehearse');
+  const body = server.last(/\/rehearse$/).body;
+  assert.equal('voice' in body, false);
+  assert.equal(body.volume, 'balanced');
 });
 
 test('keep 7 more days, check again, the suggested Library shelf and the privacy line', async () => {
@@ -1918,10 +2009,12 @@ test('keep 7 more days, check again, the suggested Library shelf and the privacy
   assert.equal($('folder').value, 'Audio/Commercials/Springfield/1996');
   await env.click('library-save');
   assert.equal(server.last(/\/library$/).body.path, 'Audio/Commercials/Springfield/1996');
+  $('keep').focus();
   await env.click('keep');
   assert.ok(server.last(/\/keep$/, 'POST'));
   assert.match(env.status(), /^Kept until .*\. That is as long as it can be kept here; download it or save it to your Library to keep it longer\.$/);
   assert.equal($('keep').hidden, true);
+  assert.equal(env.document.activeElement, $('result-title'), 'focus leaves the hidden button for the copy’s heading');
   assert.doesNotMatch($('expiry').textContent, /Keep 7 more days/);
   const broken = server.add(jobOf({ name: 'Interrupted', state: 'failed', seconds: undefined, recheckable: true }));
   await env.click('refresh');
@@ -1950,4 +2043,124 @@ test('escaped and two-line WebVTT cues are read back as plain words', async () =
   assert.equal(env.status(), '0:05. A sign reads Meeks & Sons <est. 1952>.');
   await env.click('next-cue');
   assert.equal(env.status(), '0:52. Frank waves from the porch.');
+});
+
+test('a run that stops over its quote is said once, from one set of figures, and Continue reports what the server allowed', async () => {
+  const server = makeServer();
+  const job = server.add(doneJob({ name: 'KOLR 10 open', state: 'running', copies: [], progress: 40, runCostUSD: 0.3, estimatedUSD: 0.05 }));
+  const env = await boot({ server, search: '?id=' + job.id });
+  const { $ } = env;
+  const heard = listen($('status'));
+  const alerts = listen($('error'));
+  Object.assign(job, {
+    state: 'failed',
+    resumable: true,
+    overQuote: true,
+    done: 2,
+    sections: 4,
+    runCostUSD: 0.45,
+    raiseTo: 0.6,
+    error: 'This is costing more than quoted: $0.40 spent of about $0.05. Continue up to $0.60 more? Finished sections are kept.',
+  });
+  await env.timers.advance(5000);
+  assert.deepEqual(alerts, [], 'the server’s wording, with its own spent figure, is not read as an alert');
+  assert.deepEqual(heard, ['KOLR 10 open stopped because it is costing more than quoted: $0.45 spent of about $0.05. To let it carry on, press Allow more and continue; it asks before spending.']);
+  await env.timers.advance(700);
+  server.override(
+    (method, path) => path.endsWith('/resume'),
+    () => {
+      Object.assign(job, { state: 'queued', overQuote: false, resumable: false, approvedUSD: 0.52 });
+      return { status: 202, body: job };
+    },
+  );
+  await env.click('allow-more');
+  assert.equal(server.last(/\/resume$/).body.allowUpToUSD, 0.6);
+  assert.equal(env.status(), 'Carrying on, up to $0.52 more.', 'it names what the server really allowed');
+});
+
+/** A stalled upload of tape.mov: part 1 lands, later parts drop until `drop.on` is false. */
+async function stalledUpload(server, extra = {}) {
+  const drop = { on: true };
+  const env = await boot({
+    server,
+    ...extra,
+    xhrRoute: (path, headers) => {
+      const part = Number(headers['X-Part-Number']);
+      const job = server.jobs.get(path.split('/')[2]);
+      if (!job) return { status: 404, body: { error: 'This upload is no longer active.' } };
+      if (part >= 2 && drop.on) return { error: true };
+      job.uploadedBytes = Math.min(job.bytes, part * 8);
+      return { status: 200, body: job };
+    },
+  });
+  env.document.probeDuration = 60;
+  env.$('file').files = [new File(['0123456789abcdefghijklmn'], 'tape.mov', { lastModified: 9 })];
+  await env.fire(env.$('file'), 'change');
+  await env.click('upload');
+  await env.timers.advance(200000);
+  assert.match(env.$('upload-error').textContent, /^The upload connection keeps dropping/);
+  const id = [...server.jobs.values()].find((item) => item.name === 'tape.mov').id;
+  return { env, drop, id };
+}
+
+test('a stalled upload she deletes is forgotten: coming back to the page never sends it again', async () => {
+  const server = makeServer();
+  const { env, drop, id } = await stalledUpload(server);
+  assert.equal(env.$('job-title').textContent, 'tape.mov');
+  await env.click('delete');
+  assert.equal(server.jobs.has(id), false);
+  assert.deepEqual(JSON.parse(env.localStorage.getItem('kade-video-uploads')), {}, 'its recovery entry is gone too');
+  const sent = server.all(/^\/uploads$/).length;
+  drop.on = false;
+  await env.visibility(true);
+  await env.visibility(false);
+  await env.timers.advance(10000);
+  assert.equal(server.all(/^\/uploads$/).length, sent, 'nothing is uploaded again');
+  assert.equal(server.jobs.size, 0, 'and no new video appears');
+});
+
+test('an automatic carry-on never makes a new upload when the old one is gone; only a press of Upload does', async () => {
+  const server = makeServer();
+  const { env, drop, id } = await stalledUpload(server);
+  server.jobs.delete(id);
+  server.override(
+    (method, path, body) => path === '/uploads' && !!body.resumeId && !server.jobs.has(body.resumeId),
+    () => ({ status: 404, body: { error: 'Video upload not found.' } }),
+    false,
+  );
+  const sent = server.all(/^\/uploads$/).length;
+  drop.on = false;
+  await env.visibility(true);
+  await env.visibility(false);
+  await env.timers.advance(10000);
+  const tries = server.all(/^\/uploads$/).slice(sent);
+  assert.deepEqual(tries.map((item) => item.body.resumeId), [id], 'one try to carry on, and no fresh upload');
+  assert.equal(server.jobs.size, 0);
+  assert.equal(env.status(), 'The unfinished upload of tape.mov is no longer on Kade-AI, so it did not carry on. Press Upload and check video to send it again.');
+  await env.click('upload');
+  await env.timers.advance(10);
+  assert.equal(server.last(/^\/uploads$/).body.resumeId, undefined);
+  assert.equal(server.jobs.size, 1, 'her own press starts it again');
+});
+
+test('an upload that carries on by itself stays in the background while she plays another video', async () => {
+  const server = makeServer();
+  const ad = server.add(doneJob({ name: 'Ad' }));
+  const { env, drop, id } = await stalledUpload(server);
+  const { $ } = env;
+  await env.open(ad);
+  assert.equal($('job-title').textContent, 'Ad');
+  await env.click('play');
+  assert.equal($('video').paused, false);
+  const place = env.location.search;
+  drop.on = false;
+  await env.visibility(true);
+  await env.visibility(false);
+  await env.timers.advance(10);
+  assert.ok(server.last(new RegExp(`/jobs/${id}/prepare$`)), 'the upload finished in the background');
+  assert.equal($('video').paused, false, 'her video kept playing');
+  assert.equal($('job-title').textContent, 'Ad', 'and the page stayed on it');
+  assert.equal($('results').hidden, false);
+  assert.equal(env.location.search, place);
+  assert.equal(env.status(), '“tape.mov” is uploaded and being checked.');
 });

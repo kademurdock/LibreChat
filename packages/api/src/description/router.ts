@@ -69,6 +69,8 @@ import { settingsSchema, Halt } from './types';
 import { sampleRate } from './mix';
 
 type RunKind = 'fresh' | 'preview' | 'finish' | 'revoice' | 'correction' | 'redo' | 'rehearsal';
+/** How a rehearsal ended; every ending leaves the video ready to describe. */
+type RehearsalOutcome = 'finished' | 'stopped' | 'cancelled';
 /** Money one paid run set aside from one day's allowance, in whole cents. */
 type Run = { runId: string; day: string; cents: number };
 /** Where each section of a version is stored: manifest[i] is the version folder (0 = the old flat layout). */
@@ -190,6 +192,8 @@ type Job = {
   /** What the current run has spent (or holds for a request in flight). */
   runCost?: number;
   runKind?: RunKind;
+  /** How the latest rehearsal ended, so the page can say so when the video is ready again. */
+  lastRehearsal?: { outcome: RehearsalOutcome; version: number; at: Date };
   runEstimateUSD?: number;
   /** What she agreed this run may cost: the estimate she was shown plus headroom. */
   approvedUSD?: number;
@@ -287,6 +291,7 @@ const jobSchema = new mongoose.Schema<Job>(
     costUSD: Number,
     runCost: Number,
     runKind: String,
+    lastRehearsal: { outcome: String, version: Number, at: Date },
     runEstimateUSD: Number,
     approvedUSD: Number,
     overQuote: { spentUSD: Number, quotedUSD: Number },
@@ -472,6 +477,15 @@ function askFor(estimate: number, over: { spentUSD: number; quotedUSD: number })
     toCents(estimate * overrun * approvalRule.factor + approvalRule.extraUSD) / 100,
   );
 }
+/**
+ * The ask she is shown and the most Continue will allow: never more than today has left, so it
+ * can always be accepted, and never less than the usual approval for the rest of the work.
+ */
+const askWithin = (
+  estimate: number,
+  over: { spentUSD: number; quotedUSD: number },
+  leftUSD: number,
+): number => Math.max(approvalFor(estimate), Math.min(askFor(estimate, over), leftUSD));
 function priceFor(work: Work, settings: Settings): Price {
   const per = (seconds: number, rate: number) => (seconds / 60) * rate;
   const looked = work.looks > 0;
@@ -1189,14 +1203,22 @@ export function createDescriptionRouter(hooks: Hooks): {
   }
   const continueText =
     'Finished sections are kept. Press Continue to carry on; it also tries again on parts that could not be described.';
-  /** A rehearsal that stops for any reason leaves the video ready to describe, with the reason kept. */
-  const rehearsalStop = (error: string) =>
+  /**
+   * A rehearsal that ends for any reason leaves the video ready to describe, with the reason kept
+   * and how it ended, so the page can say "Rehearsal finished" rather than "Video checked".
+   */
+  const rehearsalStop = (
+    job: Pick<Job, 'version'>,
+    outcome: RehearsalOutcome,
+    error: string = '',
+  ) =>
     split({
       state: 'ready',
       active: true,
       stage: 'Ready to describe',
       progress: 0,
       error,
+      lastRehearsal: { outcome, version: job.version || 1, at: new Date() },
       cancelRequested: false,
       worker: undefined,
       lease: undefined,
@@ -1210,6 +1232,21 @@ export function createDescriptionRouter(hooks: Hooks): {
     });
   const rehearsing = (job: Pick<Job, 'runKind' | 'state'>) =>
     job.runKind === 'rehearsal' && busy.includes(job.state);
+  /**
+   * Erases what a rehearsal that did not finish wrote under its version: its looks, first look,
+   * sections and any half-saved copy, so no placeholder can reach a paid copy.
+   */
+  async function eraseRehearsal(job: Job): Promise<void> {
+    const version = job.version || 1;
+    if (copiesFor(job).some((copy) => copy.version === version)) return;
+    const prefix = folder(job);
+    await Promise.all([
+      erasePrefix(`${prefix}/looks/v${version}/`),
+      erasePrefix(`${prefix}/sections/v${version}/`),
+      erasePrefix(`${prefix}/copies/${version}/`),
+      erasePrefix(`${prefix}/first-look-${version}.json`),
+    ]).catch((error: Error) => hooks.log('description rehearsal cleanup: ' + error.message));
+  }
 
   /* ---------- the job as the page sees it ---------- */
   const eta = (job: Job) => {
@@ -1289,6 +1326,13 @@ export function createDescriptionRouter(hooks: Hooks): {
       preview: !!job.preview,
       libraryPath: job.source === 'library' ? describedShelf(job.sourcePath) : defaultLibraryPath,
       restarts: job.restarts ?? 0,
+      lastRehearsal: job.lastRehearsal?.outcome
+        ? {
+            outcome: job.lastRehearsal.outcome,
+            version: job.lastRehearsal.version,
+            at: job.lastRehearsal.at,
+          }
+        : undefined,
     };
   };
   const single = async (job: Job) =>
@@ -1828,8 +1872,24 @@ export function createDescriptionRouter(hooks: Hooks): {
       return 0;
     }
   }
-  /** A ready video's first copy is version 1; after a rehearsal copy it is the next number. */
-  const readyVersion = (job: Job) => (job.copies?.length ? nextVersion(job) : job.version || 1);
+  /**
+   * The ask a run that stopped over its quote names, cut to what today will have left once the
+   * run closes and the day keeps what it really spent, as the estimate for Continue does.
+   */
+  async function askAfterHalt(job: Job, over: OverQuote): Promise<number> {
+    const closing = (job.reservation?.cents ?? 0) - toCents(job.runCost ?? 0);
+    const left = await remaining().then(
+      (value) => Math.max(0, Math.round(value * 100) + closing) / 100,
+      () => jobLimit(),
+    );
+    return askWithin(restEstimate(job), over, left);
+  }
+  /**
+   * A ready video's first copy is version 1. Once any run has used a number (a rehearsal, even
+   * one that stopped), the next run takes a fresh one, so it never finds that run's looks.
+   */
+  const readyVersion = (job: Job) =>
+    job.copies?.length || job.lastVersion ? nextVersion(job) : job.version || 1;
   /**
    * A free run of the whole pipeline through real storage and the real media tools, with
    * stand-in providers. Nothing is set aside and no paid request is ever sent.
@@ -2294,7 +2354,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       const { estimateUSD, setAsideUSD, breakdown, seconds } = launch.price;
       const approvedUSD =
         input.action === 'resume' && job.state === 'failed' && job.overQuote
-          ? askFor(estimateUSD, job.overQuote)
+          ? askWithin(estimateUSD, job.overQuote, remainingUSD)
           : approvalFor(estimateUSD);
       const reason =
         estimateUSD > jobLimit()
@@ -2369,11 +2429,10 @@ export function createDescriptionRouter(hooks: Hooks): {
           'allowUpToUSD',
         );
       const left = await remaining();
-      if (allow > left + 1e-9)
-        throw new Problem(
-          `Today's processing allowance has ${money(left)} left, so up to ${money(left)} can be allowed now. It starts fresh at ${resetText()}.`,
-        );
-      launch.approvedUSD = Math.max(approvalFor(launch.price.estimateUSD), toCents(allow) / 100);
+      launch.approvedUSD = Math.max(
+        approvalFor(launch.price.estimateUSD),
+        Math.min(toCents(allow) / 100, left),
+      );
     }
     await requireVoice(launch.settings.voice);
     res.status(202).json(await single(await enqueue(req, job, launch)));
@@ -2523,7 +2582,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       return;
     }
     const now = new Date();
-    const back = rehearsing(job) ? rehearsalStop('') : undefined;
+    const back = rehearsing(job) ? rehearsalStop(job, 'cancelled') : undefined;
     const idle = await Jobs.findOneAndUpdate(
       {
         _id: job._id,
@@ -2553,6 +2612,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     if (idle) {
       await release(idle.reservation, idle.runCost ?? 0);
       await abortUpload(idle);
+      if (back) await eraseRehearsal(idle);
     } else {
       await Jobs.updateOne(
         { _id: job._id, state: { $in: [...busy, ...checking] } },
@@ -3118,7 +3178,9 @@ export function createDescriptionRouter(hooks: Hooks): {
     if (!current) return;
     const cancelled = !!current.cancelRequested;
     const back = rehearsing(current)
-      ? rehearsalStop(cancelled ? '' : 'The rehearsal stopped and did not wind down.')
+      ? cancelled
+        ? rehearsalStop(current, 'cancelled')
+        : rehearsalStop(current, 'stopped', 'The rehearsal stopped and did not wind down.')
       : undefined;
     const settled = await Jobs.findOneAndUpdate(
       { _id: job._id, worker },
@@ -3142,7 +3204,9 @@ export function createDescriptionRouter(hooks: Hooks): {
     )
       .lean()
       .catch(() => null);
-    if (settled) await release(settled.reservation, settled.runCost ?? 0).catch(() => {});
+    if (!settled) return;
+    await release(settled.reservation, settled.runCost ?? 0).catch(() => {});
+    if (back) await eraseRehearsal(settled);
   }
   /**
    * Runs one job with a lease, a heartbeat that survives a slow database for a minute,
@@ -3287,7 +3351,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         );
       const over = !cancelled && error instanceof OverQuote ? error : undefined;
       const rehearsal = lane === 'render' && job.runKind === 'rehearsal';
-      const ask = over ? askFor(restEstimate(current ?? job), over) : 0;
+      const ask = over ? await askAfterHalt(current ?? job, over) : 0;
       const message = cancelled
         ? 'Processing stopped. Work already sent to providers may still be charged.'
         : over
@@ -3308,9 +3372,11 @@ export function createDescriptionRouter(hooks: Hooks): {
           }),
         );
       const back = rehearsal
-        ? rehearsalStop(cancelled ? '' : `The rehearsal stopped: ${message}`)
+        ? cancelled
+          ? rehearsalStop(current ?? job, 'cancelled')
+          : rehearsalStop(current ?? job, 'stopped', `The rehearsal stopped: ${message}`)
         : undefined;
-      await Jobs.updateOne(
+      const ended = await Jobs.updateOne(
         { _id: job._id, worker },
         back
           ? { $set: back.set, $unset: back.unset }
@@ -3331,10 +3397,12 @@ export function createDescriptionRouter(hooks: Hooks): {
               },
               $unset: { worker: 1, lease: 1 },
             },
-      ).catch((failure: Error) =>
-        warn(line('dv.fail', { id: job._id, error: scrub(failure.message) })),
-      );
+      ).catch((failure: Error) => {
+        warn(line('dv.fail', { id: job._id, error: scrub(failure.message) }));
+        return null;
+      });
       await settleOnce();
+      if (back && ended?.matchedCount) await eraseRehearsal(current ?? job);
       if (!cancelled) {
         const name = plainName(job.name);
         if (rehearsal)
@@ -3717,7 +3785,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         };
         const copies = [...(current.copies ?? []).filter((item) => item.version !== version), copy];
         const expiresAt = retain(current, rehearsal ? 3 : 7);
-        const back = rehearsal ? rehearsalStop('') : undefined;
+        const back = rehearsal ? rehearsalStop(job, 'finished') : undefined;
         const saved = await Jobs.updateOne(
           { _id: job._id, worker, cancelRequested: false },
           back
@@ -3857,7 +3925,7 @@ export function createDescriptionRouter(hooks: Hooks): {
   }
   /** A job she cancelled whose worker died settles as cancelled, with its money returned. */
   async function settleCancelled(job: Job): Promise<void> {
-    const back = rehearsing(job) ? rehearsalStop('') : undefined;
+    const back = rehearsing(job) ? rehearsalStop(job, 'cancelled') : undefined;
     const cancelled = await Jobs.findOneAndUpdate(
       { _id: job._id, state: job.state, cancelRequested: true, updatedAt: job.updatedAt },
       back
@@ -3874,7 +3942,9 @@ export function createDescriptionRouter(hooks: Hooks): {
           },
       { new: true },
     ).lean();
-    if (cancelled) await release(cancelled.reservation, cancelled.runCost ?? 0);
+    if (!cancelled) return;
+    await release(cancelled.reservation, cancelled.runCost ?? 0);
+    if (back) await eraseRehearsal(cancelled);
   }
   /** Jobs whose worker vanished: rendering continues from its saved sections, checks restart. */
   async function sweep(lane: 'check' | 'render'): Promise<void> {
@@ -3931,6 +4001,8 @@ export function createDescriptionRouter(hooks: Hooks): {
       }
       const back = rehearsing(job)
         ? rehearsalStop(
+            job,
+            'stopped',
             'The rehearsal stopped: the server restarted three times at the same place.',
           )
         : undefined;
@@ -3955,6 +4027,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       ).lean();
       if (!failed) continue;
       await release(failed.reservation, failed.runCost ?? 0);
+      if (back) await eraseRehearsal(failed);
       warn(line('dv.fail', { id: job._id, lane: 'render', why: 'crashes', crashes }));
       if (back)
         tell(
