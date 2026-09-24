@@ -116,6 +116,32 @@ test('programming blocks, former and current, sit inside their channel (her word
   assert.strictEqual(L.blockFact(video('[Timelapse] Recreating a 2001 Nickelodeon U-Pick Live on-screen graphic', 'Videos/Needs Filing/Archive Intake')), null);
 });
 
+test('the brands and topics she named get folders, filed by rule (her word, Sep 23)', () => {
+  const to = (title, path = 'Videos/Needs Filing/Archive Intake') => L.decide(video(title, path), {}).to;
+  // Her waiting batch, with the titles the server used to cut restored.
+  assert.strictEqual(to("1996 Chuck E. Cheese's commercial"), 'Video/Commercials/Restaurants & Fast Food/Chuck E. Cheese/1990s');
+  assert.strictEqual(to('2007 Dave & Busters commercials'), "Video/Commercials/Restaurants & Fast Food/Dave & Buster's/2000s");
+  assert.strictEqual(to('1999 Yellow Pages commercials w/ Jon Lovitz'), 'Video/Commercials/Phone & Wireless/Yellow Pages/1990s');
+  assert.strictEqual(to('1988 Nissan Cash Back Close-Out commercials'), 'Video/Commercials/Cars and Trucks/Nissan/1980s');
+  assert.strictEqual(to('2004 Tennessee Tourism commercial w/ Dolly Parton'), 'Video/Commercials/Travel & Attractions/Tourism/2000s');
+  assert.strictEqual(to('2008 Holiday Inn commercials w/ Philip Baker Hall'), 'Video/Commercials/Travel & Attractions/Holiday Inn/2000s');
+  assert.strictEqual(to('January 13, 1989 Channel Surfing'), 'Video/Channels/Channel Surfing/1980s');
+  assert.strictEqual(to("1986 Shoney's commercial"), "Video/Commercials/Restaurants & Fast Food/Shoney's/1980s");
+  assert.strictEqual(to('1986 ShowBiz Pizza Place commercial'), 'Video/Commercials/Restaurants & Fast Food/Chuck E. Cheese/1980s');
+  assert.strictEqual(to('Datsun 310 ad, 1979'), 'Video/Commercials/Cars and Trucks/Nissan/1970s');
+  assert.strictEqual(L.questionsFor(video('1988 Nissan Cash Back Close-Out commercials', 'Videos/Needs Filing/Archive Intake')), null, 'Jev is not asked');
+  // Jev's kind plus a named brand: the brand's own shelf beats Jev's guess at a category.
+  const guessed = L.decide(video('Chuck E. Cheese Pizza Time 1994', 'Videos/Needs Filing/Archive Intake'), ans({ kind: ['One product advert', 0.95], category: ['Toys & Video Games', 0.9] }));
+  assert.strictEqual(guessed.to, 'Video/Commercials/Restaurants & Fast Food/Chuck E. Cheese/1990s');
+  // Her own part of the country still goes to Jev and her local shelves; a break is several brands; a venue is not an advert.
+  assert.strictEqual(L.brandFact(video('2004 Branson, Missouri Tourism commercial', 'Videos/Needs Filing/Archive Intake')), null);
+  assert.strictEqual(L.brandFact(video("2000 Cartoon Network commercial break - Chuck E Cheese, Mickey's Fruit Snacks", 'Videos/Needs Filing/Archive Intake')), null);
+  assert.strictEqual(L.brandFact(video('Live at Nissan Pavilion 1999', 'Videos/Needs Filing/Archive Intake')), null);
+  assert.strictEqual(L.brandFact(video('Holiday Inn and Shoney\'s ads 1990', 'Videos/Needs Filing/Archive Intake')), null, 'two brands: a reel');
+  assert.strictEqual(L.brandFact(video("Chuck E. Cheese's commercial 1996", 'Video/Commercials/Restaurants & Fast Food/1990s')), null, 'filed items are left to the move');
+  assert.strictEqual(L.brandOf('The Accidental Tourist (1988) Television Commercial - Movie'), null);
+});
+
 test('zones: intake, local shelves, filed, and books skipped', () => {
   assert.strictEqual(L.zoneOf(video('a', 'Videos/Needs Filing/Archive Intake')), 'intake');
   assert.strictEqual(L.zoneOf(video('a', 'Videos/Advertising/Show Promos (Review)')), 'intake');

@@ -275,6 +275,45 @@ function blockFact(item) {
   return `Video/Channels/${block.name}/${dec}`;
 }
 
+/* Part 282 (Sep 23 2026), her words: "chuck e cheese is another one that needs a folder. Dave and
+ * buster, yellow pages, [Nissan] the car, tourism, channel surfing, holliday inn, shoneys, like that
+ * old restoraunt". A brand she names gets a folder inside its product shelf, the way a programming
+ * block sits inside its channel: Restaurants & Fast Food/Chuck E. Cheese, Cars and Trucks/Nissan,
+ * Travel & Attractions/Holiday Inn, then the decade. ShowBiz Pizza Place (Chuck E. Cheese's 1980s
+ * twin, one company from 1984) and Datsun (Nissan's American name until the early 1980s) share
+ * their brand's folder. The brand's own shelf wins over Jev's guess at a category. Channel surfing
+ * recordings sit together in Channels/Channel Surfing, whatever system they were surfed on. */
+const BRANDS = [
+  [/\bchuck[\s.-]*e\.?[\s.-]*cheese(?:['’]?s)?\b|\bshow ?biz pizza\b|\bpizza time theat(?:re|er)\b/i, 'Restaurants & Fast Food', 'Chuck E. Cheese'],
+  [/\bdave\s*(?:&|and|n)\s*buster(?:['’]?s)?\b/i, 'Restaurants & Fast Food', "Dave & Buster's"],
+  [/\bshoney(?:['’]?s)?\b/i, 'Restaurants & Fast Food', "Shoney's"],
+  [/\byellow pages\b/i, 'Phone & Wireless', 'Yellow Pages'],
+  [/\bnissan\b|\bdatsun\b/i, 'Cars and Trucks', 'Nissan'],
+  [/\bholl?iday inns?\b/i, 'Travel & Attractions', 'Holiday Inn'],
+  [/\btourism\b/i, 'Travel & Attractions', 'Tourism'],
+];
+const CHANNEL_SURFING = /\bchannel[\s-]*surf(?:ing|er|s)?\b/i;
+const AD_WORDS = /\b(?:commercials?|ads?|adverts?|advertisements?|spots?|jingles?|promos?)\b/i;
+/** The one brand a title names, or null (none, or two: a reel of several). */
+function brandOf(title) {
+  const t = String(title || '');
+  const hits = BRANDS.filter(([re]) => re.test(t));
+  return hits.length === 1 ? { category: hits[0][1], name: hits[0][2] } : null;
+}
+/** An intake video that is plainly one named brand's advert, or a channel-surfing recording: its
+ * folder by rule, without asking Jev. Anything from her part of the country goes to Jev instead,
+ * because her local shelves come first; so does a commercial break, which is several brands. */
+function brandFact(item) {
+  if (item.kind !== 'video' || zoneOf(item) !== 'intake') return null;
+  const t = String(item.title || '');
+  if (ourArea(t) || /\b(?:album|soundtrack|remix|parody|ytp|fan[ -]?made|recreat\w*|mock)\b/i.test(t)) return null;
+  const dec = decadeOf(item);
+  if (CHANNEL_SURFING.test(t)) return `Video/Channels/Channel Surfing/${dec}`;
+  const brand = brandOf(t);
+  if (!brand || !AD_WORDS.test(t) || /commercial breaks?|commercial compilation|commercial collection|ad breaks?/i.test(t)) return null;
+  return `Video/Commercials/${brand.category}/${brand.name}/${dec}`;
+}
+
 /** Folder names that state a fact. Returns a path or null. Never asks Jev. */
 function folderFact(item) {
   if (item.kind !== 'audio') return null;
@@ -443,7 +482,7 @@ function stateOf(item) {
 
 function questionsFor(item) {
   const zone = zoneOf(item);
-  if (zone === 'skip' || folderFact(item) || blockFact(item)) return null;
+  if (zone === 'skip' || folderFact(item) || blockFact(item) || brandFact(item)) return null;
   const text = String(item.title || '') + ' ' + String(item.description || '');
   const q = {};
   if (item.kind === 'audio') {
@@ -480,8 +519,11 @@ function routeByKind(item, kind, category, dec, deps) {
   const root = 'Video';
   const net = networkOf(item.title);
   switch (kind) {
-    case 'One product advert':
+    case 'One product advert': {
+      const brand = brandOf(item.title);
+      if (brand) return `${root}/Commercials/${brand.category}/${brand.name}/${dec}`;
       return `${root}/Commercials/${category || 'Other Commercials'}/${dec}`;
+    }
     case 'Political advert':
       return `${root}/Commercials/Political Ads/${dec}`;
     case 'Block of several commercials':
@@ -532,6 +574,8 @@ function decide(item, answers, deps = {}, k = knobs()) {
   if (fact) return { ...out, to: fact !== from ? fact : null, why: 'folder says so', confidence: 1 };
   const block = blockFact(item);
   if (block) return { ...out, to: block !== from ? block : null, why: 'programming block named in the title', confidence: 1 };
+  const brand = brandFact(item);
+  if (brand) return { ...out, to: brand !== from ? brand : null, why: 'brand or topic with its own folder', confidence: 1 };
 
   const foreign = noulOf(a, 'foreign');
   if (foreign !== null && foreign >= k.foreign) out.flags.push(`Jev review: made outside the US (${two(foreign)}).`);
@@ -603,7 +647,7 @@ function decide(item, answers, deps = {}, k = knobs()) {
      * Martha Stewart went to Clothing). And a re-shelving needs near-certainty, because the old shelf came from
      * brand lists that are usually right. */
     if (!to && kind.choice === 'One product advert' && kind.confidence >= 0.8 && strongCat && current && strongCat !== current
-      && current !== 'Stores & Retail' && cat.confidence >= Math.max(k.auditCategory, 0.95)) {
+      && current !== 'Stores & Retail' && !brandOf(item.title) && cat.confidence >= Math.max(k.auditCategory, 0.95)) {
       to = from.replace('/Commercials/' + current, '/Commercials/' + strongCat);
       why = `product shelf: ${current} → ${strongCat}`;
     }
@@ -748,7 +792,7 @@ async function fileMedia(items, { ask = jev.ask, deps = {}, timeoutMs = 8000, co
 }
 
 module.exports = {
-  VERSION, knobs, decadeOf, clean, networkOf, zoneOf, folderFact, blockFact, blockOf, BLOCKS, familyOf, categoryOf, stateOf, questionsFor,
+  VERSION, knobs, decadeOf, clean, networkOf, zoneOf, folderFact, blockFact, blockOf, BLOCKS, brandFact, brandOf, BRANDS, familyOf, categoryOf, stateOf, questionsFor,
   routeByKind, decide, fileMedia, KIND_Q, KIND_CRITERIA, CATEGORY_Q, VHS_Q, VHS_CRITERIA, FOREIGN_Q, MO_RE, NONUS_RE,
   HOME_Q, ELSEWHERE_Q, AR_OZARKS_RE, ourArea, wantState, wantQuestions, wantVerdict, judgeWanted, fullSportsGame,
 };
