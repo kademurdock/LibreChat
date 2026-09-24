@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Analysis, Cue, Placement, SectionRecord } from './types';
+import type { Analysis, Cue, Placement, SectionRecord, Skip } from './types';
 import { cleanLabel, clip } from './text';
 import { speakable } from './prompt';
 import { toOutput } from './timing';
@@ -55,16 +55,32 @@ export const editsSchema: z.ZodType<Edit[], z.ZodTypeDef, unknown> = z
       ctx.addIssue({ code: 'custom', message: 'A description was edited more than once.' });
   });
 
-/** The script id ("section:index") the engine tags a placement with; copies made before V4 have none. */
-function placementId(placement: Placement): string | undefined {
-  const id = (placement as Placement & { id?: unknown }).id;
+/** The script id ("section:index") the engine tags a placement or a skip with; copies made before V4 have none. */
+function scriptId(item: Placement | Skip): string | undefined {
+  const id = (item as { id?: unknown }).id;
   return typeof id === 'string' ? id : undefined;
 }
 
-/** For copies without ids: same words first, else the nearest line inside the cue's window. */
-function placedFor(cue: Cue, unused: Placement[]): Placement | undefined {
-  let found = unused.findIndex((item) => item.text === cue.text || item.text === cue.shortText);
-  if (found < 0) {
+const sameWords = (item: Placement | Skip, cue: Cue) =>
+  item.text === cue.text || item.text === cue.shortText;
+
+/**
+ * For copies without ids: every cue with the same words takes its line first, then a cue left
+ * without one takes the nearest line still free inside its window.
+ */
+function placedFor(
+  cues: Cue[],
+  matched: boolean[],
+  unused: Placement[],
+): (Placement | undefined)[] {
+  const take = (found: number) => (found < 0 ? undefined : unused.splice(found, 1)[0]);
+  const same = cues.map((cue, n) =>
+    matched[n] ? undefined : take(unused.findIndex((item) => sameWords(item, cue))),
+  );
+  return same.map((placement, n) => {
+    const cue = cues[n];
+    if (placement || matched[n]) return placement;
+    let found = -1;
     let best = Infinity;
     unused.forEach((item, index) => {
       const distance = Math.abs(item.at - cue.at);
@@ -73,8 +89,8 @@ function placedFor(cue: Cue, unused: Placement[]): Placement | undefined {
         found = index;
       }
     });
-  }
-  return found < 0 ? undefined : unused.splice(found, 1)[0];
+    return take(found);
+  });
 }
 
 type Found = { placement: Placement; start: number; own: boolean };
@@ -88,36 +104,45 @@ export function scriptCues(records: SectionRecord[]): ScriptCue[] {
   const ordered = [...records].sort((a, b) => a.index - b.index);
   const starts = new Map<number, number>();
   const tagged = new Map<string, Found>();
+  const skips = new Map<string, Skip>();
   let offset = 0;
   for (const record of ordered) {
     starts.set(record.index, offset);
     for (const placement of record.placements) {
-      const id = placementId(placement);
+      const id = scriptId(placement);
       if (!id) continue;
       const own = id.split(':')[0] === String(record.index);
       const known = tagged.get(id);
       if (!known || (own && !known.own)) tagged.set(id, { placement, start: offset, own });
     }
+    for (const skip of record.skipped) {
+      const id = scriptId(skip);
+      if (id) skips.set(id, skip);
+    }
     offset += record.outputSeconds;
   }
   return ordered.flatMap((record) => {
     const start = starts.get(record.index) ?? 0;
-    const unused = record.placements.filter((item) => !placementId(item));
-    return (record.analysis?.cues ?? []).map((cue, index) => {
+    const cues = record.analysis?.cues ?? [];
+    const exact = cues.map((_cue, index) => tagged.get(`${record.index}:${index}`));
+    const fallback = placedFor(
+      cues,
+      exact.map((item) => !!item),
+      record.placements.filter((item) => !scriptId(item)),
+    );
+    return cues.map((cue, index) => {
       const id = `${record.index}:${index}`;
-      const exact = tagged.get(id);
-      const fallback = exact ? undefined : placedFor(cue, unused);
-      const placed = exact?.placement ?? fallback;
+      const placed = exact[index]?.placement ?? fallback[index];
       const left = placed
         ? undefined
-        : record.skipped.find((item) => item.text === cue.text || item.text === cue.shortText);
+        : (skips.get(id) ?? record.skipped.find((item) => !scriptId(item) && sameWords(item, cue)));
       return {
         id,
         section: record.index,
         at: record.start + cue.at,
         until: record.start + cue.until,
         outputAt: placed
-          ? (exact?.start ?? start) + placed.outputAt
+          ? (exact[index]?.start ?? start) + placed.outputAt
           : start + toOutput(cue.at, record.placements),
         text: cue.text,
         shortText: cue.shortText || clip(cue.text, 200),

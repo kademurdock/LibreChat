@@ -527,6 +527,9 @@ const workingSeconds = (seconds: number, range?: Interval) =>
 const planKey = (range?: Interval, rehearsal: boolean = false) =>
   (rehearsal ? 'rehearsal-' : '') +
   (range ? `plan-${Math.round(range.start * 1000)}-${Math.round(range.end * 1000)}` : 'plan');
+/** Where the part cut from a job's source is kept, so later runs of that part skip the re-encode. */
+const workingKey = (job: Pick<Job, 'key'>, range: Interval) =>
+  `${folder(job)}/working/${Math.round(range.start * 1000)}-${Math.round(range.end * 1000)}.mkv`;
 const sameVoice = (a: Settings, b: Settings) => voiceFields.every((key) => a[key] === b[key]);
 const doneCount = (manifest: Manifest) =>
   manifest.filter((entry) => entry !== null && entry !== undefined).length;
@@ -915,18 +918,26 @@ export function createDescriptionRouter(hooks: Hooks): {
       new PutObjectCommand({ Bucket: bucket(), Key: key, Body: body, ContentType: mime }),
       within(signal),
     );
-  async function exists(key: string, signal?: AbortSignal): Promise<boolean> {
+  /** The stored size of an object, or undefined when there is none. */
+  async function sizeOf(key: string, signal?: AbortSignal): Promise<number | undefined> {
     try {
-      await storage().send(new HeadObjectCommand({ Bucket: bucket(), Key: key }), within(signal));
-      return true;
+      const head = await storage().send(
+        new HeadObjectCommand({ Bucket: bucket(), Key: key }),
+        within(signal),
+      );
+      return head.ContentLength ?? 0;
     } catch (error) {
-      if (statusOf(error) === 404 || (error as Error).name === 'NotFound') return false;
+      if (statusOf(error) === 404 || (error as Error).name === 'NotFound') return undefined;
       throw error;
     }
   }
+  async function exists(key: string, signal?: AbortSignal): Promise<boolean> {
+    return (await sizeOf(key, signal)) !== undefined;
+  }
   /**
-   * Downloads an object, or a byte range of it written at `offset`, giving up when storage
-   * sends nothing for a minute. A whole download is checked against the expected size.
+   * Downloads an object, or a byte range of it written at `offset`. Storage has two minutes to
+   * start answering (a request may wait for a free connection), then gives up when it sends
+   * nothing for a minute. A whole download is checked against the expected size.
    */
   async function download(
     key: string,
@@ -938,7 +949,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     const combined = AbortSignal.any([signal, stall.signal]);
     let timer = setTimeout(
       () => stall.abort(new StorageStall('Video storage stopped sending data.')),
-      minute,
+      2 * minute,
     );
     const bump = () => {
       clearTimeout(timer);
@@ -1691,6 +1702,10 @@ export function createDescriptionRouter(hooks: Hooks): {
     const pending = allSections(count).filter(
       (i) => manifest[i] === null || manifest[i] === undefined,
     );
+    if (copy.spans && !pending.length)
+      throw new Problem(
+        'This preview already covers the whole video, so there is nothing more to describe.',
+      );
     const seconds = copy.spans
       ? lengths(copy.spans, pending)
       : whole - roughCover(whole, previewSeconds());
@@ -1938,6 +1953,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     }
     const { set, unset } = split({
       ...launch.patch,
+      ...(launch.from.includes('done') ? { progress: 0 } : {}),
       state: 'queued',
       active: true,
       settings,
@@ -3100,6 +3116,14 @@ export function createDescriptionRouter(hooks: Hooks): {
         await download(pictureKey, picture, signal);
         return { sound, picture };
       },
+      ...(range
+        ? {
+            keepWorking: async (file: string) => {
+              await erasePrefix(`${prefix}/working/`);
+              await putFile(workingKey(job, range), file, 'video/x-matroska', signal);
+            },
+          }
+        : {}),
     };
     return { keeper, manifest, failures, spans: () => spans };
   }
@@ -3541,9 +3565,14 @@ export function createDescriptionRouter(hooks: Hooks): {
         await checkRoom(job.bytes);
         const source = join(directory, 'source');
         await progress('Getting the video ready', Math.max(1, job.progress || 0));
-        await download(job.sourceKey || job.key, source, signal, {
-          bytes: job.sourceKey ? undefined : job.bytes,
-        });
+        const part = settings.range ? workingKey(job, settings.range) : undefined;
+        const partBytes = part ? await sizeOf(part, signal) : undefined;
+        if (part && partBytes !== undefined)
+          await download(part, source, signal, { bytes: partBytes });
+        else
+          await download(job.sourceKey || job.key, source, signal, {
+            bytes: job.sourceKey ? undefined : job.bytes,
+          });
         const state = await keeperFor(job, signal);
         const grow = async (needed: number): Promise<boolean> => {
           const room = Math.round(jobLimit() * 100) - reservation.cents;
@@ -3663,6 +3692,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           voices: Math.min(4, Math.max(1, Number(process.env.KADE_DESCRIPTION_VOICES) || 2)),
           stopAfter: job.stopAfter,
           chapters: job.chapters,
+          ...(partBytes !== undefined ? { workingCopy: true } : {}),
           sectionNotes: Object.fromEntries(
             Object.entries(job.sectionNotes ?? {}).map(([index, note]) => [Number(index), note]),
           ),
@@ -3699,9 +3729,10 @@ export function createDescriptionRouter(hooks: Hooks): {
           .sort((a, b) => a - b);
         const current = await Jobs.findOne({ _id: job._id, worker }).lean();
         if (!current) throw new Cancelled('Video processing was cancelled.');
+        const preview = job.stopAfter !== undefined && output.partial !== false;
         const copy: FinishedCopy = {
           version,
-          preview: job.stopAfter !== undefined,
+          preview,
           settings,
           outputSeconds: report.outputSeconds,
           count: report.descriptions.length,
@@ -3738,10 +3769,8 @@ export function createDescriptionRouter(hooks: Hooks): {
                 $set: {
                   state: 'done',
                   active: false,
-                  stage:
-                    job.stopAfter !== undefined
-                      ? 'Your preview is ready'
-                      : 'Your described copy is ready',
+                  stage: preview ? 'Your preview is ready' : 'Your described copy is ready',
+                  preview,
                   progress: 100,
                   outputSeconds: report.outputSeconds,
                   count: report.descriptions.length,
@@ -3762,6 +3791,7 @@ export function createDescriptionRouter(hooks: Hooks): {
                   carry: 1,
                   crashAt: 1,
                   cancelAt: 1,
+                  ...(preview ? {} : { stopAfter: 1 }),
                 },
               },
         );
