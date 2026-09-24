@@ -55,7 +55,13 @@ export const editsSchema: z.ZodType<Edit[], z.ZodTypeDef, unknown> = z
       ctx.addIssue({ code: 'custom', message: 'A description was edited more than once.' });
   });
 
-/** The placement that voiced a cue: same words first, else the nearest line inside its window. */
+/** The script id ("section:index") the engine tags a placement with; copies made before V4 have none. */
+function placementId(placement: Placement): string | undefined {
+  const id = (placement as Placement & { id?: unknown }).id;
+  return typeof id === 'string' ? id : undefined;
+}
+
+/** For copies without ids: same words first, else the nearest line inside the cue's window. */
 function placedFor(cue: Cue, unused: Placement[]): Placement | undefined {
   let found = unused.findIndex((item) => item.text === cue.text || item.text === cue.shortText);
   if (found < 0) {
@@ -71,36 +77,58 @@ function placedFor(cue: Cue, unused: Placement[]): Placement | undefined {
   return found < 0 ? undefined : unused.splice(found, 1)[0];
 }
 
-/** Every description of a copy, in order, with where it sits in the copy and whether it was voiced. */
+type Found = { placement: Placement; start: number; own: boolean };
+
+/**
+ * Every description of a copy, in order, with where it sits in the copy and whether it was
+ * voiced. A placement carries its cue's id, including a line carried into the next section, so
+ * the match is exact; older copies fall back to matching words and times within the section.
+ */
 export function scriptCues(records: SectionRecord[]): ScriptCue[] {
+  const ordered = [...records].sort((a, b) => a.index - b.index);
+  const starts = new Map<number, number>();
+  const tagged = new Map<string, Found>();
   let offset = 0;
-  return [...records]
-    .sort((a, b) => a.index - b.index)
-    .flatMap((record) => {
-      const start = offset;
-      offset += record.outputSeconds;
-      const unused = [...record.placements];
-      return (record.analysis?.cues ?? []).map((cue, index) => {
-        const placed = placedFor(cue, unused);
-        const left = placed
-          ? undefined
-          : record.skipped.find((item) => item.text === cue.text || item.text === cue.shortText);
-        return {
-          id: `${record.index}:${index}`,
-          section: record.index,
-          at: record.start + cue.at,
-          until: record.start + cue.until,
-          outputAt: start + (placed ? placed.outputAt : toOutput(cue.at, record.placements)),
-          text: cue.text,
-          shortText: cue.shortText || clip(cue.text, 200),
-          importance: cue.importance,
-          omit: false,
-          spoken: !!placed,
-          spokenText: placed?.text ?? '',
-          ...(left ? { reason: left.reason } : {}),
-        };
-      });
+  for (const record of ordered) {
+    starts.set(record.index, offset);
+    for (const placement of record.placements) {
+      const id = placementId(placement);
+      if (!id) continue;
+      const own = id.split(':')[0] === String(record.index);
+      const known = tagged.get(id);
+      if (!known || (own && !known.own)) tagged.set(id, { placement, start: offset, own });
+    }
+    offset += record.outputSeconds;
+  }
+  return ordered.flatMap((record) => {
+    const start = starts.get(record.index) ?? 0;
+    const unused = record.placements.filter((item) => !placementId(item));
+    return (record.analysis?.cues ?? []).map((cue, index) => {
+      const id = `${record.index}:${index}`;
+      const exact = tagged.get(id);
+      const fallback = exact ? undefined : placedFor(cue, unused);
+      const placed = exact?.placement ?? fallback;
+      const left = placed
+        ? undefined
+        : record.skipped.find((item) => item.text === cue.text || item.text === cue.shortText);
+      return {
+        id,
+        section: record.index,
+        at: record.start + cue.at,
+        until: record.start + cue.until,
+        outputAt: placed
+          ? (exact?.start ?? start) + placed.outputAt
+          : start + toOutput(cue.at, record.placements),
+        text: cue.text,
+        shortText: cue.shortText || clip(cue.text, 200),
+        importance: cue.importance,
+        omit: false,
+        spoken: !!placed,
+        spokenText: placed?.text ?? '',
+        ...(left ? { reason: left.reason } : {}),
+      };
     });
+  });
 }
 
 export function revise(analysis: Analysis | null, section: number, edits: Edit[]): Analysis | null {

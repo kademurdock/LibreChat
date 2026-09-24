@@ -16,7 +16,9 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createDescriptionRouter } from './router.ts';
 import { describeVideo } from './engine.ts';
-import { command } from './media.ts';
+import { command, decodeVoice } from './media.ts';
+import { sampleRate } from './mix.ts';
+import { quietSpot, rehearsalProviders } from './rehearsal.ts';
 import {
   clip,
   cleanLabel,
@@ -31,7 +33,32 @@ import {
 process.env.FFMPEG_PATH = ffmpegPath;
 process.env.FFPROBE_PATH = ffprobePath.path;
 let mongo, external, service, worker, app, Jobs, Budgets, Locks, storage, root, voiceWav;
-const objects = new Map();
+/** Like B2: every write keeps a version, and a delete without a version id only hides the file. */
+class Versioned extends Map {
+  versions = new Map();
+  add(key, entry) {
+    const list = this.versions.get(key) ?? [];
+    list.push({ id: randomUUID().replaceAll('-', ''), ...entry });
+    this.versions.set(key, list);
+  }
+  set(key, data) {
+    this.add(key, { data });
+    return super.set(key, data);
+  }
+  hide(key) {
+    this.add(key, { marker: true });
+    super.delete(key);
+  }
+  remove(key, id) {
+    const list = (this.versions.get(key) ?? []).filter((entry) => entry.id !== id);
+    if (list.length) this.versions.set(key, list);
+    else this.versions.delete(key);
+    const latest = list.at(-1);
+    if (latest && !latest.marker) super.set(key, latest.data);
+    else super.delete(key);
+  }
+}
+const objects = new Versioned();
 const uploads = new Map();
 const storageLog = [];
 /** Storage faults: { method, match, times, status } consumed one request at a time. */
@@ -51,6 +78,9 @@ let simulateConcurrentCosts = false;
 let sampleCost = 0;
 let beforeEngine = null;
 let librarySaveFails = false;
+/** When set, each look is billed this many times its $0.05 reserve. */
+let overbill = 0;
+const usageLog = [];
 const videos = new Map();
 
 const xml = (res, body, status = 200) => {
@@ -62,13 +92,55 @@ async function body(req) {
   for await (const chunk of req) chunks.push(chunk);
   return Buffer.concat(chunks);
 }
-/** A small S3-compatible store: multipart uploads, ranged get, head, put, copy, list, delete and faults. */
+/** Every version under a prefix, keys in order and each key's newest version first, five to a page. */
+function listVersions(res, url, key) {
+  const prefix = url.searchParams.get('prefix') || '';
+  const bucketName = key.replace(/^\//, '').replace(/\/$/, '');
+  const entries = [...objects.versions.entries()]
+    .filter(([name]) => name.startsWith(`/${bucketName}/${prefix}`))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .flatMap(([name, list]) =>
+      [...list]
+        .reverse()
+        .map((entry, index) => ({ ...entry, key: name.slice(bucketName.length + 2), latest: index === 0 })),
+    );
+  const keyMarker = url.searchParams.get('key-marker');
+  const versionMarker = url.searchParams.get('version-id-marker');
+  const from = keyMarker
+    ? entries.findIndex((entry) => entry.key === keyMarker && entry.id === versionMarker) + 1
+    : 0;
+  const page = entries.slice(from, from + 5);
+  const truncated = from + 5 < entries.length;
+  const last = page.at(-1);
+  const next = truncated
+    ? `<NextKeyMarker>${last.key}</NextKeyMarker><NextVersionIdMarker>${last.id}</NextVersionIdMarker>`
+    : '';
+  const items = page
+    .map((entry) =>
+      entry.marker
+        ? `<DeleteMarker><Key>${entry.key}</Key><VersionId>${entry.id}</VersionId><IsLatest>${entry.latest}</IsLatest></DeleteMarker>`
+        : `<Version><Key>${entry.key}</Key><VersionId>${entry.id}</VersionId><IsLatest>${entry.latest}</IsLatest><Size>${entry.data.length}</Size></Version>`,
+    )
+    .join('');
+  return xml(
+    res,
+    `<ListVersionsResult><Name>${bucketName}</Name><Prefix>${prefix}</Prefix><MaxKeys>5</MaxKeys><IsTruncated>${truncated}</IsTruncated>${next}${items}</ListVersionsResult>`,
+  );
+}
+/** A small S3-compatible store: multipart uploads, ranged get, head, put, copy, list, versions, delete and faults. */
 function fakeStorage() {
   return async (req, res) => {
     const url = new URL(req.url, 'http://storage.test');
     const key = decodeURIComponent(url.pathname);
     const uploadId = url.searchParams.get('uploadId');
-    storageLog.push({ method: req.method, key, range: req.headers.range, uploadId });
+    storageLog.push({
+      method: req.method,
+      key,
+      range: req.headers.range,
+      uploadId,
+      versions: url.searchParams.has('versions'),
+      versionId: url.searchParams.get('versionId'),
+    });
     if (storageHook) await storageHook({ method: req.method, key, range: req.headers.range });
     const fault = faults.find(
       (item) => item.times > 0 && item.method === req.method && item.match.test(key),
@@ -130,6 +202,7 @@ function fakeStorage() {
       res.setHeader('ETag', '"put"');
       return res.end();
     }
+    if (req.method === 'GET' && url.searchParams.has('versions')) return listVersions(res, url, key);
     if (req.method === 'GET' && url.searchParams.get('list-type') === '2') {
       const prefix = url.searchParams.get('prefix') || '';
       const bucketName = key.replace(/^\//, '').replace(/\/$/, '');
@@ -169,8 +242,10 @@ function fakeStorage() {
       return res.end(req.method === 'HEAD' ? undefined : data);
     }
     if (req.method === 'DELETE') {
+      const versionId = url.searchParams.get('versionId');
       if (uploadId) uploads.delete(uploadId);
-      else objects.delete(key);
+      else if (versionId) objects.remove(key, versionId);
+      else objects.hide(key);
       res.writeHead(204);
       return res.end();
     }
@@ -250,9 +325,11 @@ before(async () => {
     }),
     storage: () => storage,
     log: () => {},
-    usage: async () => {},
-    notify: async (owner, title, text, url) => {
-      notices.push({ owner, title, text, url });
+    usage: async (owner, job, kind, costUSD) => {
+      usageLog.push({ owner, job, kind, costUSD });
+    },
+    notify: async (owner, title, text, url, detail) => {
+      notices.push({ owner, title, text, url, detail });
       return { browser: 1, bridge: 200 };
     },
     library: {
@@ -302,6 +379,8 @@ before(async () => {
           await meter('vision', 0.2, async () => {
             throw axiosFailure(429);
           });
+        if (overbill && !look.brief.survey)
+          await meter('vision', 0.05, async () => ({ costUSD: 0.05 * overbill }));
         return {
           kind: 'other',
           setting: 'A test pattern.',
@@ -420,6 +499,9 @@ async function settle(id, states, owner = 'owner') {
   throw new Error('The job did not settle.');
 }
 const keysOf = (id) => [...objects.keys()].filter((key) => key.includes(id));
+/** Stored versions and delete markers left anywhere under a job, hidden or not. */
+const versionsOf = (id) =>
+  [...objects.versions.entries()].filter(([key]) => key.includes(id)).flatMap(([, list]) => list);
 async function eventually(check) {
   const deadline = Date.now() + 3000;
   for (;;) {
@@ -463,6 +545,9 @@ test('authentication, the private trial gate and child accounts come before any 
   assert.ok(config.perMinuteUSD.rich > config.perMinuteUSD.essential);
   assert.deepEqual(config.extrasPerMinuteUSD, { closeLook: 0.025, firstLook: 0.021 });
   assert.deepEqual(config.setAside, { factor: 1.1, extraUSD: 0.05 });
+  assert.deepEqual(config.approval, { factor: 1.5, extraUSD: 0.1 });
+  assert.deepEqual(config.keep, { days: 7, maxDays: 30 });
+  assert.equal(config.rehearsal, true, 'the administrator can rehearse for free');
   assert.equal(config.previewSeconds, 60);
   assert.equal(config.maxMinutes, 90);
   assert.equal(config.maxSourceMinutes, 360);
@@ -916,7 +1001,9 @@ test('a whole job: describe, stop, continue, library, re-voice, script, correcti
   await new Promise((resolve) => setImmediate(resolve));
   assert.match(notices.at(-1).title, /ready/);
   assert.match(notices.at(-1).text, /Kept until/);
+  assert.match(notices.at(-1).text, /Open Make a described video on the website or the app\.$/);
   assert.equal(notices.at(-1).url, `/described-video?id=${id}`);
+  assert.deepEqual(notices.at(-1).detail, { job: id, kind: 'ready' }, 'the phone push knows its job');
   await eventually(async () =>
     assert.equal((await Jobs.findById(id).lean()).lastNotice.kind, 'ready'),
   );
@@ -1057,6 +1144,7 @@ test('a whole job: describe, stop, continue, library, re-voice, script, correcti
 
   await call('delete', `/jobs/${id}`, 'film-owner').expect(200);
   assert.equal(keysOf(id).length, 0, 'every stored file of the job is gone');
+  assert.equal(versionsOf(id).length, 0, 'no older version or delete marker is left to bill');
   assert.ok(objects.has(`/test/media-library/${saveCall.id}/described.m4a`), 'the library copy stays');
 });
 const folderOf = (key) => key.replace(/\/source$/, '');
@@ -1216,6 +1304,34 @@ test('a heartbeat that fails once does not stop the job; a storage outage re-que
   assert.ok(!notices.some((item) => item.url.endsWith(id) && /stopped/.test(item.title)));
   assert.equal(await held(), 0);
   await call('delete', `/jobs/${id}`, 'heartbeat-owner').expect(200);
+});
+
+test('a heartbeat still in flight when a run ends cannot stop the next run of the same video', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('beat-owner', 'beat-upload-00000001', 150);
+  const original = Jobs.findById;
+  Jobs.findById = function (filter, projection, ...rest) {
+    const query = original.call(this, filter, projection, ...rest);
+    if (filter !== id || !projection?.cancelRequested) return query;
+    return { lean: () => new Promise((resolve) => setTimeout(() => resolve(query.lean()), 300)) };
+  };
+  try {
+    failSection = calls.analyze + 1;
+    await call('post', `/jobs/${id}/start`, 'beat-owner').send(settings).expect(202);
+    const stopped = await settle(id, ['failed', 'done'], 'beat-owner');
+    assert.equal(stopped.state, 'failed');
+    failSection = -1;
+    await call('post', `/jobs/${id}/resume`, 'beat-owner').send({}).expect(202);
+    const done = await settle(id, ['failed', 'done'], 'beat-owner');
+    assert.equal(done.state, 'done', done.error);
+  } finally {
+    Jobs.findById = original;
+    failSection = -1;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 1700));
+  assert.equal((await Jobs.findById(id).lean()).state, 'done', 'no late watchdog settles a finished run');
+  await call('delete', `/jobs/${id}`, 'beat-owner').expect(200);
+  await Budgets.deleteMany({});
 });
 
 test('a stopped job whose work never winds down is settled, and its money and its lane are freed', async () => {
@@ -1395,11 +1511,245 @@ test('expiry claims before erasing, keeps a record whose files could not be eras
   }
   assert.equal(await Jobs.findById(expiring).lean(), null);
   assert.equal(keysOf(expiring).length, 0);
+  assert.equal(versionsOf(expiring).length, 0, 'expiry leaves no version or delete marker');
   await new Promise((resolve) => setImmediate(resolve));
   const warnings = notices.filter((item) => item.url.endsWith(warned) && /removed soon/.test(item.title));
   assert.equal(warnings.length, 1);
-  assert.match(warnings[0].text, /Save it to your Library/);
+  assert.match(warnings[0].text, /Save it to your Library, or press Keep 7 more days\./);
+  assert.match(warnings[0].text, /Open Make a described video on the website or the app\.$/);
+  assert.deepEqual(warnings[0].detail, { job: warned, kind: 'expiring' });
   await call('delete', `/jobs/${warned}`, 'expiry-owner').expect(200);
+});
+
+test('the price she approves is a limit: a run billed nine times over stops and asks, and Continue can raise it once', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('quote-owner', 'quote-upload-0000001', 150);
+  const price = (await call('post', `/jobs/${id}/estimate`, 'quote-owner').send({ action: 'start', settings }).expect(200)).body;
+  assert.equal(price.approvedUSD, Math.min(5, Math.ceil((price.estimateUSD * 1.5 + 0.1) * 100 - 1e-6) / 100));
+  const usageBefore = usageLog.length;
+  overbill = 9;
+  try {
+    await call('post', `/jobs/${id}/start`, 'quote-owner').send(settings).expect(202);
+    assert.equal((await Jobs.findById(id).lean()).approvedUSD, price.approvedUSD);
+    const stopped = await settle(id, ['failed', 'done'], 'quote-owner');
+    assert.equal(stopped.state, 'failed', 'it stopped instead of finishing at nine times the price');
+    assert.equal(stopped.overQuote, true);
+    assert.equal(stopped.resumable, true);
+    assert.equal(stopped.approvedUSD, price.approvedUSD);
+    assert.ok(stopped.runCostUSD > price.approvedUSD, 'the stop came after the charges passed the approval');
+    assert.ok(stopped.runCostUSD <= price.approvedUSD + 0.45 + 1e-9, 'and no more than one request later');
+    assert.ok(
+      usageLog.slice(usageBefore).every((item) => item.costUSD === 0.45),
+      'every request it made was booked at what it cost',
+    );
+    const ask = (await call('post', `/jobs/${id}/estimate`, 'quote-owner').send({ action: 'resume' }).expect(200)).body;
+    assert.ok(ask.approvedUSD > Math.ceil((ask.estimateUSD * 1.5 + 0.1) * 100 - 1e-6) / 100, 'the ask allows for the real rate');
+    assert.ok(ask.approvedUSD <= 5);
+    const spent = `\\$${stopped.runCostUSD.toFixed(2)}`;
+    const quoted = `\\$${price.estimateUSD.toFixed(2)}`;
+    assert.match(
+      stopped.error,
+      new RegExp(`^This is costing more than quoted: ${spent} spent of about ${quoted}\\. Continue up to \\$${ask.approvedUSD.toFixed(2)} more\\? Finished sections are kept\\.$`),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    const notice = notices.at(-1);
+    assert.equal(notice.title, 'Your described video needs your OK');
+    assert.ok(notice.text.includes(stopped.error));
+    assert.match(notice.text, /Open Make a described video on the website or the app\.$/);
+    assert.ok(notice.text.length <= 300);
+    assert.deepEqual(notice.detail, { job: id, kind: 'over-quote' });
+
+    const tooMuch = await call('post', `/jobs/${id}/resume`, 'quote-owner').send({ allowUpToUSD: 5.01 }).expect(400);
+    assert.equal(tooMuch.body.field, 'allowUpToUSD');
+    assert.match(tooMuch.body.error, /up to \$5\.00 for one run/);
+    await call('post', `/jobs/${id}/resume`, 'quote-owner').send({ allowUpToUSD: 'lots' }).expect(400);
+    assert.equal((await Jobs.findById(id).lean()).state, 'failed');
+    const resumed = (await call('post', `/jobs/${id}/resume`, 'quote-owner').send({ allowUpToUSD: ask.approvedUSD }).expect(202)).body;
+    assert.equal(resumed.approvedUSD, ask.approvedUSD, 'the raised approval holds for this run');
+    assert.equal(resumed.overQuote, false);
+    assert.equal((await Jobs.findById(id).lean()).overQuote, undefined);
+    const done = await settle(id, ['failed', 'done'], 'quote-owner');
+    assert.equal(done.state, 'done', done.error);
+    assert.ok(done.runCostUSD <= ask.approvedUSD + 0.45 + 1e-9);
+  } finally {
+    overbill = 0;
+  }
+  assert.deepEqual((await Budgets.findById(today()).lean()).runs, [], 'both runs gave back what they did not spend');
+  await call('delete', `/jobs/${id}`, 'quote-owner').expect(200);
+  await Budgets.deleteMany({});
+});
+
+test('a free rehearsal runs the real pipeline and storage with stand-ins, costs nothing, and leaves the video ready', async () => {
+  await Budgets.deleteMany({});
+  await Budgets.create({ _id: today(), held: 12, runs: ['other-run'] });
+  const id = await readyJob('rehearsal-owner', 'rehearsal-upload-001', 30, { name: 'KOLR sign-off.mp4' });
+  process.env.KADE_DESCRIPTION_PUBLIC = '1';
+  try {
+    const config = await call('get', '/config', 'rehearsal-owner').set('x-role', 'user').expect(200);
+    assert.equal(config.body.rehearsal, undefined, 'only the administrator sees the rehearsal');
+    const refused = await call('post', `/jobs/${id}/rehearse`, 'rehearsal-owner').set('x-role', 'user').send({}).expect(403);
+    assert.match(refused.body.error, /administrator/);
+  } finally {
+    delete process.env.KADE_DESCRIPTION_PUBLIC;
+  }
+  const before = { ...calls, usage: usageLog.length };
+  const queued = (await call('post', `/jobs/${id}/rehearse`, 'rehearsal-owner').send({ volume: 'louder' }).expect(202)).body;
+  assert.equal(queued.setAsideUSD, 0);
+  assert.equal(queued.estimatedUSD, 0);
+  assert.deepEqual(await Budgets.findById(today()).lean().then((budget) => [budget.held, budget.runs]), [12, ['other-run']]);
+  const ready = await settle(id, ['ready', 'failed', 'done'], 'rehearsal-owner');
+  assert.equal(ready.state, 'ready', 'a rehearsal leaves the video ready to describe');
+  assert.equal(ready.error, '');
+  assert.equal(ready.costUSD, 0);
+  assert.equal(ready.copies.length, 1);
+  assert.equal(ready.copies[0].rehearsal, true);
+  assert.equal(ready.copies[0].settings.volume, 'louder');
+  assert.equal(ready.abandonable, false);
+  assert.equal(ready.keepable, false);
+  assert.deepEqual(
+    [calls.analyze, calls.transcribe, calls.synthesize, usageLog.length],
+    [before.analyze, before.transcribe, before.synthesize, before.usage],
+    'no provider and no usage was touched',
+  );
+  const budget = await Budgets.findById(today()).lean();
+  assert.deepEqual([budget.held, budget.runs], [12, ['other-run']], 'the allowance never moved');
+  await new Promise((resolve) => setImmediate(resolve));
+  const notice = notices.at(-1);
+  assert.equal(notice.title, 'Rehearsal finished');
+  assert.match(notice.text, /^KOLR sign-off: .* with 1 description\. Made with a test tone, at no cost\. Open Make a described video on the website or the app\.$/);
+  assert.deepEqual(notice.detail, { job: id, kind: 'rehearsal' });
+  const version = ready.copies[0].version;
+  const files = (await call('get', `/jobs/${id}/files?version=${version}`, 'rehearsal-owner').expect(200)).body;
+  assert.ok(files.video && files.audio && files.transcript);
+  assert.ok(objects.get(`/test/${folderOf((await Jobs.findById(id).lean()).key)}/copies/${version}/described.m4a`).length > 1000);
+  const transcript = await call('get', `/jobs/${id}/text/transcript?version=${version}`, 'rehearsal-owner').expect(200);
+  assert.match(transcript.text, /Description: Rehearsal description 1\./);
+  const script = (await call('get', `/jobs/${id}/script?version=${version}`, 'rehearsal-owner').expect(200)).body;
+  assert.deepEqual(script.cues.map((cue) => [cue.text, cue.spoken]), [['Rehearsal description 1.', true]]);
+  const shelf = await call('post', `/jobs/${id}/library`, 'rehearsal-owner').send({ version }).expect(409);
+  assert.match(shelf.body.error, /rehearsal copy/);
+
+  const price = (await call('post', `/jobs/${id}/estimate`, 'rehearsal-owner').send({ action: 'start', settings }).expect(200)).body;
+  assert.ok(price.allowed && price.breakdown.dialogue > 0, 'the paid run still pays for its own dialogue timing');
+  await call('post', `/jobs/${id}/start`, 'rehearsal-owner').send(settings).expect(202);
+  const real = await settle(id, ['done', 'failed'], 'rehearsal-owner');
+  assert.equal(real.state, 'done', real.error);
+  assert.equal(calls.transcribe - before.transcribe, 1, 'the made-up words of the rehearsal were not reused');
+  assert.deepEqual(real.copies.map((copy) => [copy.version, copy.rehearsal]), [[version, true], [version + 1, false]]);
+  assert.equal(real.version, version + 1);
+  const saved = await call('post', `/jobs/${id}/library`, 'rehearsal-owner').send({ share: false }).expect(200);
+  assert.equal(libraryCalls.at(-1).title, 'KOLR sign-off (described)', 'the first real copy is not called version 2');
+  assert.ok(saved.body.savedToLibrary);
+  await call('delete', `/jobs/${id}`, 'rehearsal-owner').expect(200);
+  assert.equal(versionsOf(id).length, 0);
+  await Budgets.deleteMany({});
+});
+
+test('a rehearsal that is cancelled or stops goes back to ready, never to a paid state', async () => {
+  const id = await readyJob('rehearsal-owner', 'rehearsal-upload-002', 30);
+  await call('post', `/jobs/${id}/rehearse`, 'rehearsal-owner').send({}).expect(202);
+  const cancelled = (await call('post', `/jobs/${id}/cancel`, 'rehearsal-owner').expect(200)).body;
+  assert.equal(cancelled.state, 'ready');
+  assert.equal(cancelled.error, '');
+  faults.push({ method: 'GET', match: new RegExp(`${id}/source$`), times: 20 });
+  try {
+    await call('post', `/jobs/${id}/rehearse`, 'rehearsal-owner').send({}).expect(202);
+    const stopped = await settle(id, ['ready', 'failed', 'done', 'cancelled'], 'rehearsal-owner');
+    assert.equal(stopped.state, 'ready');
+    assert.match(stopped.error, /^The rehearsal stopped: /);
+    assert.equal(stopped.resumable, false);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(notices.at(-1).title, 'Rehearsal stopped');
+  } finally {
+    faults.length = 0;
+  }
+  await call('delete', `/jobs/${id}`, 'rehearsal-owner').expect(200);
+});
+
+test('Keep 7 more days extends a finished copy a week at a time, up to a month from now', async () => {
+  const id = await readyJob('keep-owner', 'keep-upload-00000001', 30);
+  const early = await call('post', `/jobs/${id}/keep`, 'keep-owner').expect(409);
+  assert.match(early.body.error, /Only a finished described copy/);
+  const soon = new Date(Date.now() + 2 * 86400000);
+  await Jobs.updateOne(
+    { _id: id },
+    { $set: { state: 'done', expiresAt: soon, expiryWarned: true, copies: [{ version: 1, settings, sections: [], spans: [0, 30] }] } },
+  );
+  assert.equal((await call('get', `/jobs/${id}`, 'keep-owner').expect(200)).body.keepable, true);
+  const kept = (await call('post', `/jobs/${id}/keep`, 'keep-owner').expect(200)).body;
+  assert.equal(new Date(kept.expiresAt).getTime(), soon.getTime() + 7 * 86400000);
+  assert.equal((await Jobs.findById(id).lean()).expiryWarned, undefined, 'a new warning will come before the new date');
+  for (let i = 0; i < 5; i++) await call('post', `/jobs/${id}/keep`, 'keep-owner');
+  const capped = (await call('get', `/jobs/${id}`, 'keep-owner').expect(200)).body;
+  const left = new Date(capped.expiresAt).getTime() - Date.now();
+  assert.ok(left <= 30 * 86400000 && left > 29.9 * 86400000, 'never more than a month from now');
+  assert.equal(capped.keepable, false);
+  const refused = await call('post', `/jobs/${id}/keep`, 'keep-owner').expect(409);
+  assert.match(refused.body.error, /the longest a copy is kept/);
+  await call('delete', `/jobs/${id}`, 'keep-owner').expect(200);
+});
+
+test('a Library video she already has returns that job instead of starting another', async () => {
+  const ask = (owner, requestId, track = 3) =>
+    call('post', '/library-imports', owner).send({ requestId, book: 'a'.repeat(24), track });
+  const first = (await ask('repeat-owner', 'library-repeat-00001').expect(202)).body;
+  assert.equal(first.existing, false);
+  const retried = (await ask('repeat-owner', 'library-repeat-00001').expect(202)).body;
+  assert.equal(retried.id, first.id);
+  assert.equal(retried.existing, false, 'the same request repeated is not an earlier video');
+  const again = (await ask('repeat-owner', 'library-repeat-00002').expect(200)).body;
+  assert.equal(again.existing, true);
+  assert.equal(again.id, first.id);
+  assert.equal(again.state, 'checking');
+  const otherTrack = (await ask('repeat-owner', 'library-repeat-00003', 4).expect(202)).body;
+  assert.notEqual(otherTrack.id, first.id);
+  const otherOwner = (await ask('another-repeat-owner', 'library-repeat-00004').expect(202)).body;
+  assert.equal(otherOwner.existing, false);
+  for (const [owner, job] of [['repeat-owner', first.id], ['repeat-owner', otherTrack.id], ['another-repeat-owner', otherOwner.id]]) {
+    await call('post', `/jobs/${job}/cancel`, owner).expect(200);
+    await call('delete', `/jobs/${job}`, owner).expect(200);
+  }
+  const fresh = (await ask('repeat-owner', 'library-repeat-00005').expect(202)).body;
+  assert.equal(fresh.existing, false, 'a deleted job does not count');
+  assert.notEqual(fresh.id, first.id);
+  await call('post', `/jobs/${fresh.id}/cancel`, 'repeat-owner').expect(200);
+  await call('delete', `/jobs/${fresh.id}`, 'repeat-owner').expect(200);
+});
+
+test('delete and expiry erase every stored version and delete marker, page by page, never a Library original', async () => {
+  const id = await readyJob('version-owner', 'version-upload-00001', 30);
+  const base = `/test/${folderOf((await Jobs.findById(id).lean()).key)}`;
+  for (let i = 0; i < 4; i++) objects.set(`${base}/plan.json`, Buffer.from(`plan ${i}`));
+  for (let i = 0; i < 7; i++) objects.set(`${base}/sections/v1/${i}.flac`, Buffer.from('sound'));
+  objects.hide(`${base}/sections/v1/6.flac`);
+  const original = `media-library/${'e'.repeat(24)}/tape.mp4`;
+  objects.set(`/test/${original}`, Buffer.from('tape'));
+  objects.set(`/test/${original}`, Buffer.from('tape, second version'));
+  await Jobs.updateOne({ _id: id }, { $set: { source: 'library', sourceKey: original } });
+  assert.ok(versionsOf(id).length >= 13);
+  storageLog.length = 0;
+  await call('delete', `/jobs/${id}`, 'version-owner').expect(200);
+  assert.equal(versionsOf(id).length, 0, 'no version or delete marker is left after Delete');
+  assert.ok(storageLog.filter((item) => item.versions).length >= 3, 'the listing was read page by page');
+  const deletes = storageLog.filter((item) => item.method === 'DELETE' && !item.uploadId);
+  assert.ok(deletes.length >= 13 && deletes.every((item) => item.versionId), 'each delete names its version');
+  assert.equal(objects.versions.get(`/test/${original}`).length, 2, 'the Library original keeps every version');
+
+  const expiring = await readyJob('version-owner', 'version-upload-00002', 30);
+  const folder = `/test/${folderOf((await Jobs.findById(expiring).lean()).key)}`;
+  for (let i = 0; i < 3; i++) objects.set(`${folder}/copies/1/described.mp4`, Buffer.from(`video ${i}`));
+  objects.hide(`${folder}/copies/1/described.mp4`);
+  await Jobs.collection.updateOne({ _id: expiring }, { $set: { state: 'done', expiresAt: new Date(Date.now() - 1000) } });
+  process.env.KADE_DESCRIBED_VIDEO = '0';
+  try {
+    await worker.tick();
+  } finally {
+    delete process.env.KADE_DESCRIBED_VIDEO;
+  }
+  assert.equal(await Jobs.findById(expiring).lean(), null);
+  assert.equal(versionsOf(expiring).length, 0, 'no version or delete marker is left after expiry');
+  objects.remove(`/test/${original}`, objects.versions.get(`/test/${original}`)[0].id);
+  objects.remove(`/test/${original}`, objects.versions.get(`/test/${original}`)[0].id);
 });
 
 test('revision helpers: labels, edits, shelves and the script', () => {
@@ -1449,14 +1799,74 @@ test('revision helpers: labels, edits, shelves and the script', () => {
   assert.equal(cues[1].spoken, false);
   assert.equal(cues[2].outputAt, 75, 'the second section starts after the output of the first');
   assert.equal(cues[3].reason, 'No room.');
+
+  const tagged = (id, at, outputAt, text) => ({ ...place(at, outputAt, text), id });
+  const exact = scriptCues([
+    record(0, 0, [tagged('0:0', 5, 5, 'The host holds a folder.')], []),
+    record(1, 60, [tagged('0:1', 0, 1, 'Out.'), tagged('1:0', 20, 22, 'Left out.')], []),
+  ]);
+  assert.deepEqual(
+    exact.map((cue) => [cue.id, cue.spoken, cue.spokenText, cue.outputAt]),
+    [
+      ['0:0', true, 'The host holds a folder.', 5],
+      ['0:1', true, 'Out.', 71],
+      ['1:0', true, 'Left out.', 92],
+      ['1:1', false, '', 70 + 20],
+    ],
+    'ids match the voiced line even when names changed its words, or it was carried into the next section',
+  );
+});
+
+test('rehearsal stand-ins: fixed words, one numbered description at the first quiet spot, a local tone', async () => {
+  const paid = async () => {
+    throw new Error('A rehearsal must not use the meter.');
+  };
+  const signal = new AbortController().signal;
+  let language = '';
+  const words = await rehearsalProviders.transcribe('unused', 30, signal, paid, {
+    onLanguage: (code) => (language = code),
+  });
+  assert.equal(words.map((word) => word.word).join(' '), 'This is a rehearsal.');
+  assert.equal(language, 'en');
+  assert.deepEqual(await rehearsalProviders.transcribe('unused', 0.9, signal, paid), [
+    { start: 0.3, end: 0.6, word: 'This', speaker: 0 },
+  ]);
+  assert.equal(quietSpot([], 30), 0.5);
+  assert.equal(quietSpot([{ start: 0.3, end: 1.7, text: 'Hi.' }, { start: 9, end: 10, text: 'Bye.' }], 30), 2);
+  assert.equal(quietSpot([{ start: 0, end: 29.5, text: 'Talk.' }], 30), 29);
+  const look = (index, survey = false) => ({
+    file: 'unused',
+    seconds: 40,
+    brief: { position: { index, count: 3, start: 0, end: 40, total: 120 }, survey },
+    state: null,
+    lines: [{ start: 0.2, end: 3, text: 'Hello there.' }],
+    before: [],
+  });
+  const analysis = await rehearsalProviders.analyze(look(2), signal, paid);
+  assert.deepEqual(
+    analysis.cues.map((cue) => [cue.at, cue.until, cue.text]),
+    [[3.3, 6.3, 'Rehearsal description 3.']],
+  );
+  assert.equal((await rehearsalProviders.analyze(look(0, true), signal, paid)).cues.length, 0);
+  const file = join(root, 'rehearsal-tone.wav');
+  await rehearsalProviders.synthesize('Rehearsal description 1.', 'any voice', 'session', file, 1.5, signal, paid);
+  const pcm = await decodeVoice(file, signal);
+  assert.ok(Math.abs(pcm.length / sampleRate - (25 * 0.0625) / 1.5) < 0.05, 'as long as the words would take');
+  assert.ok(pcm.some((sample) => Math.abs(sample) > 0.1), 'an audible tone');
 });
 
 /** Loads the LibreChat wrapper with only the app-level modules stubbed; the Library model and parser are real. */
 function loadWrapper() {
   const routes = fileURLToPath(new URL('../../../../api/server/routes/', import.meta.url));
   const books = new Map();
-  const state = { hooks: null, pushes: 0, copies: [] };
+  const state = { hooks: null, pushes: 0, copies: [], posts: [], bridgeReply: { ok: true, sent: 1 } };
   const stubs = {
+    axios: {
+      post: async (url, body, options) => {
+        state.posts.push({ url, body, options });
+        return { status: 200, data: state.bridgeReply };
+      },
+    },
     '@librechat/api': {
       initializeS3: () => storage,
       describedVideoPage: () => '',
@@ -1588,9 +1998,31 @@ test('the LibreChat wrapper: library facts and privacy, one idempotent save with
     await KadeBookText.deleteMany({ book: transcript._id });
 
     const before = wrapper.state.pushes;
+    const secret = process.env.BRIDGE_SECRET;
     delete process.env.BRIDGE_SECRET;
     assert.deepEqual(await hooks.notify(String(owner), 'Title', 'Body', '/described-video'), { browser: 2, bridge: 'off' });
     assert.equal(wrapper.state.pushes - before, 1);
+    assert.equal(wrapper.state.posts.length, 0, 'no bridge secret, no phone push');
+
+    process.env.BRIDGE_SECRET = 'test-only';
+    try {
+      const job = 'b'.repeat(32);
+      const receipt = await hooks.notify(String(owner), 'Your described video is ready', 'Body', `/described-video?id=${job}`, { job, kind: 'ready' });
+      const post = wrapper.state.posts.at(-1);
+      assert.match(post.url, /\/notify$/);
+      assert.equal(post.body.route, 'described-video', 'a tap opens the described-video screen, not a new chat');
+      assert.equal(post.body.runId, job, 'the job id rides in the field the bridge accepts');
+      assert.equal(post.body.agentId, 'described-video');
+      assert.equal(post.body.requested, true);
+      assert.equal(post.options.headers['x-bridge-secret'], 'test-only');
+      assert.deepEqual(receipt, { browser: 2, bridge: 200, sent: 1 });
+      wrapper.state.bridgeReply = { ok: true, sent: 0, deferred: true, blocked: 'quiet hours (Central) — queued for morning' };
+      const deferred = await hooks.notify(String(owner), 'Title', 'Body', '/described-video', { job, kind: 'stopped' });
+      assert.deepEqual(deferred, { browser: 2, bridge: 200, sent: 0, deferred: true, blocked: 'quiet hours (Central) — queued for morning' });
+    } finally {
+      if (secret === undefined) delete process.env.BRIDGE_SECRET;
+      else process.env.BRIDGE_SECRET = secret;
+    }
   } finally {
     wrapper.restore();
   }
