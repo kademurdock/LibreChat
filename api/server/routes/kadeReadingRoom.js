@@ -1575,6 +1575,10 @@ router.post(['/librarian/refile-commercials', '/librarian/refile-books'], requir
 });
 const sorter = require('./kadeReadingRoomSort');
 const { zoneOf: mediaZoneOf } = require('~/server/services/kadeMediaLibrarian');
+/* The librarian's location doubts, as the media sweep writes them into meta.review. */
+const LOCATION_DOUBT = /(?:Space review: local to another area|Jev review: Missouri \([^)]*\), unsure if local)(?: \(\d(?:\.\d+)?\))?\.\s*/g;
+const LOCATION_DOUBT_ANY = /Space review: local to another area|unsure if local/;
+const withoutLocationDoubt = (review) => String(review || '').replace(LOCATION_DOUBT, '').trim();
 router.get('/librarian/inventory', requireJwtAuth, async (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
   try {
@@ -1611,8 +1615,22 @@ router.post('/librarian/organize', requireJwtAuth, express.json({ limit: '1mb' }
       }
     }
     const result = await KadeBook.bulkWrite(operations);
-    logger.info(`[library/organize] user=${req.user.id} matched=${result.matchedCount} changed=${result.modifiedCount}`);
-    res.json({ ok: true, matched: result.matchedCount, changed: result.modifiedCount });
+    /* Part 283 (Sep 24 2026), her words: "If it's from STL, put it in stl. I noticed there are a lot of
+     * local car dealers and stuff that don't know if they're local to here or not like don brown".
+     * A recording moved onto her own shelves (Missouri, the Ozarks) is local to here, so the
+     * librarian's location doubts come off it; any other flag stays. Don Brown Chevrolet (2244 S.
+     * Kingshighway) had been flagged "local to another area (0.89)", a deletion suggestion. */
+    const home = operations.filter((op) => mediaZoneOf({ kind: op.updateOne.filter.kind, path: op.updateOne.update.$set.path }) === 'local');
+    let cleared = 0;
+    if (home.length) {
+      const docs = await KadeBook.find({ _id: { $in: home.map((op) => op.updateOne.filter._id) }, 'meta.review': LOCATION_DOUBT_ANY }, '_id kind path meta.review').lean();
+      const fixes = docs.filter((d) => mediaZoneOf(d) === 'local').map((d) => ({
+        updateOne: { filter: { _id: d._id, 'meta.review': d.meta.review }, update: { $set: { 'meta.review': withoutLocationDoubt(d.meta.review) } } },
+      }));
+      if (fixes.length) cleared = (await KadeBook.bulkWrite(fixes)).modifiedCount || 0;
+    }
+    logger.info(`[library/organize] user=${req.user.id} matched=${result.matchedCount} changed=${result.modifiedCount} doubtsCleared=${cleared}`);
+    res.json({ ok: true, matched: result.matchedCount, changed: result.modifiedCount, doubtsCleared: cleared });
   } catch (e) { logger.warn(`[library/organize] ${e.message}`); res.status(500).json({ error: 'Could not apply the reviewed changes.' }); }
 });
 /* ── JEV FILES THE CATCH-ALL COMMERCIALS (Part 237, Sep 20 2026) ─────────
