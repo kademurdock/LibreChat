@@ -1571,9 +1571,17 @@ router.get('/librarian/inventory', requireJwtAuth, async (req, res) => {
     const after = String(req.query.after || '');
     if (after && !isId(after)) return res.status(400).json({ error: 'Invalid cursor.' });
     const limit = clampInt(req.query.limit, 1, 2000, 1000);
-    const items = await KadeBook.find({ state: 'ready', $or: [{ shared: true }, { owner: req.user.id }], ...(after ? { _id: { $gt: after } } : {}) }, '_id title author synopsis description path originalPath kind category shared owner tags meta').sort({ _id: 1 }).limit(limit + 1).lean();
+    const items = await KadeBook.find({ state: 'ready', $or: [{ shared: true }, { owner: req.user.id }], ...(after ? { _id: { $gt: after } } : {}) }, '_id title author synopsis description path originalPath kind category shared owner tags meta tracks.seconds').sort({ _id: 1 }).limit(limit + 1).lean();
     const more = items.length > limit;
     if (more) items.pop();
+    /* Part 278, continued: each item's total length, so TubeVault's "already in the
+     * library" check can tell a 90-minute described film from the 15-minute read-along
+     * cassette that shares its title. The per-track list stays out of the answer. */
+    for (const it of items) {
+      const tracks = Array.isArray(it.tracks) ? it.tracks : [];
+      it.seconds = Math.round(tracks.reduce((n, t) => n + (Number(t && t.seconds) || 0), 0));
+      delete it.tracks;
+    }
     res.json({ items, next: more ? String(items[items.length - 1]._id) : null });
   } catch (e) { logger.warn(`[library/inventory] ${e.message}`); res.status(500).json({ error: 'Could not read the catalog.' }); }
 });

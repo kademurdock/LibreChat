@@ -22,6 +22,18 @@ test('folder facts: described movies and cassettes leave Needs Filing by rule, k
   assert.strictEqual(L.categoryOf('Audio/Cassettes/Story tapes', 'audio'), 'cassette');
 });
 
+test('folder facts: both mp3 movies collections join her alphabetical described shelf (her word, Sep 23)', () => {
+  const to = (title, path) => L.decide({ kind: 'audio', title, path }, {}).to;
+  assert.strictEqual(to('101_Dalmations', 'Audio/Needs Filing/mp3 movies'), 'Audio/Described Movies & TV/Movies/0-9');
+  assert.strictEqual(to("A_Bug's_Life", 'Audio/Needs Filing/mp3 movies'), 'Audio/Described Movies & TV/Movies/A');
+  assert.strictEqual(to('Babe_Pig_in_the_City', 'Audio/Needs Filing/described movies'), 'Audio/Described Movies & TV/Movies/B');
+  assert.strictEqual(to('...And Justice for All', 'Audio/Needs Filing/MP3 Movies/extra'), 'Audio/Described Movies & TV/Movies/A');
+  assert.strictEqual(to('Ali', 'Audio/Needs Filing/described movies and TV/Movies/A'), 'Audio/Described Movies & TV/Movies/A', 'her own letter folders still win');
+  assert.strictEqual(L.questionsFor({ kind: 'audio', title: '17_Again', path: 'Audio/Needs Filing/mp3 movies' }), null, 'Jev is never asked');
+  assert.strictEqual(L.folderFact({ kind: 'audio', title: 'Zoo', path: 'Audio/Described Movies & TV/Movies/Z' }), null, 'already filed stays');
+  assert.strictEqual(L.folderFact({ kind: 'video', title: 'Zoo', path: 'Video/Needs Filing/mp3 movies' }), null, 'audio only');
+});
+
 test('zones: intake, local shelves, filed, and books skipped', () => {
   assert.strictEqual(L.zoneOf(video('a', 'Videos/Needs Filing/Archive Intake')), 'intake');
   assert.strictEqual(L.zoneOf(video('a', 'Videos/Advertising/Show Promos (Review)')), 'intake');

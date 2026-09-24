@@ -144,16 +144,28 @@ function zoneOf(item) {
   return 'filed';
 }
 
+/* Part 278, continued (Sep 23 2026), her words: "I have 2 mp3 movies collections that
+ * need batched together under descriptive video audio or something tracks." Her
+ * alphabetical collection already lives at Described Movies & TV/Movies/<letter>, so a
+ * described film that arrives without letter folders of its own joins it there, filed by
+ * the first letter or digit of its title ("101_Dalmations" under 0-9). */
+function describedShelf(title) {
+  const first = String(title || '').replace(/^[^A-Za-z0-9]+/, '').charAt(0).toUpperCase();
+  return 'Audio/Described Movies & TV/Movies/' + (/[0-9]/.test(first) ? '0-9' : /[A-Z]/.test(first) ? first : 'Other');
+}
+
 /** Folder names that state a fact. Returns a path or null. Never asks Jev. */
 function folderFact(item) {
   if (item.kind !== 'audio') return null;
   const p = String(item.path || '');
   const o = String(item.originalPath || '');
   const described = /(?:^|\/)described movies(?: and| &)? ?(?:tv|television)?(?:\/(.*))?$/i.exec(p);
-  if (described && /Needs Filing/i.test(p)) return 'Audio/Described Movies & TV' + (described[1] ? '/' + described[1] : '');
+  if (described && /Needs Filing/i.test(p)) return described[1] ? 'Audio/Described Movies & TV/' + described[1] : describedShelf(item.title);
+  // Her F:\mp3 movies folder: 612 described films in one flat folder.
+  if (/(?:^|\/)mp3 movies(?:\/|$)/i.test(p) && /Needs Filing/i.test(p)) return describedShelf(item.title);
   const tapes = /(?:^|\/)Cassette tapes(?:\/(.*))?$/i.exec(p);
   if (tapes && /Needs Filing/i.test(p)) return 'Audio/Cassettes' + (tapes[1] ? '/' + tapes[1] : '');
-  if (/Needs Filing/i.test(p) && /described (?:movie|video|tv)/i.test(o)) return 'Audio/Described Movies & TV';
+  if (/Needs Filing/i.test(p) && /described (?:movie|video|tv)/i.test(o)) return describedShelf(item.title);
   return null;
 }
 
