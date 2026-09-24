@@ -51,7 +51,13 @@ export function speakable(value: string): string {
 
 /** Words that judge character or motive rather than describe; removing them never breaks a sentence. */
 const opinions =
-  /\s*\b(?:evilly|mockingly|hysterically|blissfully|menacingly|smugly|sinisterly|maliciously|wickedly|deviously|slyly|sneakily|arrogantly|cruelly|spitefully|sarcastically|condescendingly|in (?:horror|disbelief|shock|confusion|terror|dismay|astonishment)|with (?:rage|contempt|disdain))\b/g;
+  /\s*\b(?:evilly|mockingly|hysterically|blissfully|menacingly|smugly|sinisterly|maliciously|wickedly|deviously|slyly|sneakily|arrogantly|cruelly|spitefully|sarcastically|condescendingly|happily|gleefully|joyfully|triumphantly|proudly|in (?:horror|disbelief|shock|confusion|terror|dismay|astonishment|fury|anger|rage|glee|triumph|frustration|delight|panic)|with (?:rage|contempt|disdain|glee|delight|fury))\b/g;
+/**
+ * The same kind of word before a noun ("the confused rabbit"), only after "the" or a possessive so
+ * no "a"/"an" breaks, and only in lowercase so a title such as "the Wicked Witch" stays.
+ */
+const judgingBeforeNoun =
+  /\b([Tt]he|[Hh]is|[Hh]er|[Tt]heir|[Ii]ts)\s+(?:confused|bewildered|puzzled|smug|evil|sinister|wicked|gleeful|sneaky|nasty|cruel|arrogant)\s+(?=\p{L})/gu;
 
 /**
  * A deterministic check after the model writes: judging words are removed (outside words read
@@ -62,7 +68,7 @@ export function lintDescription(value: string): { text: string; problems: string
   const reading = /\b(?:reads|read|displays)\b/i.exec(value);
   const cut = reading ? reading.index : value.length;
   const head = value.slice(0, cut);
-  const cleaned = head.replace(opinions, '');
+  const cleaned = head.replace(opinions, '').replace(judgingBeforeNoun, '$1 ');
   if (cleaned !== head) problems.push('judging words removed');
   const text = (cleaned + value.slice(cut))
     .replace(/\s+([,.!?])/g, '$1')

@@ -299,6 +299,25 @@ function joinName(text: string, name: string, label: string, labels: string[]): 
   );
 }
 
+/**
+ * Once the listener has the name linked to the label, a "label, name" or "name, label" join the
+ * model wrote again shrinks to the name alone.
+ */
+function dropJoin(text: string, name: string, label: string): string {
+  const core = labelCore(label);
+  if (!core) return text;
+  const article = '(?:the\\s+|a\\s+|an\\s+)?';
+  const said = `${escape(core).replace(/\s+/g, '\\s+')}`;
+  const spoken = `${escape(name.trim()).replace(/\s+/g, '\\s+')}`;
+  const keep = (match: string, found: string, offset: number, whole: string) =>
+    startsSentence(whole, offset) ? capitalize(found) : found;
+  return text
+    .replace(new RegExp(`${edge}${article}${said},\\s*(${spoken})${after},?`, 'giu'), keep)
+    .replace(new RegExp(`${edge}(${spoken}),\\s*${article}${said}${after},?`, 'giu'), keep)
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.!?])/g, '$1');
+}
+
 function known(people: Person[], state: Continuity | null): Person[] {
   const all: Person[] = [];
   for (const person of [...people, ...(state?.people ?? [])]) {
@@ -374,10 +393,16 @@ export function gateCues(input: {
         shortText = hideName(shortText, person.name, person.label, labels);
         continue;
       }
-      if (linked.has(key)) continue;
+      if (linked.has(key)) {
+        text = dropJoin(text, person.name, person.label);
+        shortText = dropJoin(shortText, person.name, person.label);
+        continue;
+      }
       const fullText = joinName(text, person.name, person.label, labels);
       const fullShort = joinName(shortText, person.name, person.label, labels);
-      if (fullText !== text || fullShort !== shortText) joined.push(key);
+      const voiced = (value: string) =>
+        mentionsLabel(value, person.label) && hits(value, person.name, labels).length > 0;
+      if (voiced(fullText) || voiced(fullShort)) joined.push(key);
       text = fullText;
       shortText = fullShort;
     }

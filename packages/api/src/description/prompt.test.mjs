@@ -165,6 +165,26 @@ test('ledger: a model that joins an unrevealed name to its label keeps only the 
   );
 });
 
+test('ledger: a join the model writes counts as the link, and a repeat of it shrinks to the name', () => {
+  const said = words('Leave him alone, Frank.', 14);
+  const { cues } = gateCues({
+    cues: [
+      cue(18.2, 'The flying squirrel, Frank, scowls.'),
+      cue(28.5, 'The rodents laugh as the flying squirrel, Frank, grabs a stone.'),
+      cue(35, 'Frank, the flying squirrel, takes aim.', 'Frank, the flying squirrel aims.'),
+    ],
+    people: [squirrel],
+    state: null,
+    words: said,
+    notes: '',
+    sectionStart: 0,
+  });
+  assert.equal(cues[0].text, 'The flying squirrel, Frank, scowls.');
+  assert.equal(cues[1].text, 'The rodents laugh as Frank grabs a stone.');
+  assert.equal(cues[2].text, 'Frank takes aim.');
+  assert.equal(cues[2].shortText, 'Frank aims.');
+});
+
 test('ledger: names read from the screen stay word for word and count as revealed', () => {
   const anchor = { id: 'P2', label: 'the anchor', name: 'Mary Smith', look: 'red blazer' };
   const { cues, reveals } = gateCues({
@@ -444,6 +464,15 @@ test('prompt: the lint removes judging words but never touches words read from t
     'digits outside words read from the screen',
   ]);
   assert.equal(speakable('A [loud] sign <b> & ok'), 'A loud sign b and ok');
+  assert.equal(
+    lintDescription('Apples fly past the confused rabbit. The rabbit happily hops. He clenches his fists in fury.').text,
+    'Apples fly past the rabbit. The rabbit hops. He clenches his fists.',
+  );
+  assert.equal(
+    lintDescription('The Wicked Witch hands a Happy Meal to the man. He looks confused.').text,
+    'The Wicked Witch hands a Happy Meal to the man. He looks confused.',
+    'titles stay, and a word after "looks" is not cut out of the sentence',
+  );
 });
 
 const placement = (at, text, extra = {}) => ({
