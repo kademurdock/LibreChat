@@ -584,10 +584,13 @@ async function trial(
   );
   if (!(lastValue(/^frame=(\d+)/gm, stdout.toString()) > 0))
     throw new MediaError('damaged', `no frames decoded: ${log.slice(-800)}`);
-  const found = /Multi frame detection: TFF:\s*(\d+)\s*BFF:\s*(\d+)\s*Progressive:\s*(\d+)/.exec(log);
+  const found = [
+    ...log.matchAll(/Multi frame detection: TFF:\s*(\d+)\s*BFF:\s*(\d+)\s*Progressive:\s*(\d+)/g),
+  ].pop();
   if (!found) return media;
   const [tff, bff, progressive] = found.slice(1).map(Number);
-  if (tff + bff < 10 || tff + bff <= 2 * progressive) return media;
+  const [top, other] = tff >= bff ? [tff, bff] : [bff, tff];
+  if (top < 20 || top < 4 * (other + progressive)) return media;
   return { ...media, interlaced: true, parity: tff >= bff ? 'tff' : 'bff' };
 }
 
@@ -627,9 +630,12 @@ const seekTo = (media: Media, start: number): string[] => {
 };
 const pictureClock = (media: Media, start: number) =>
   `setpts=PTS-(${anchorOf(media, start).toFixed(6)})/TB`;
+const soundTimes = (media: Media, start: number) =>
+  `asetpts=PTS-(${anchorOf(media, start).toFixed(6)})/TB`;
+const soundFill = (rate: number) => `aresample=${rate}:async=1:first_pts=0`;
 /** Puts sound on the picture's clock: late starts and holes become silence, early sound is cut. */
 const soundClock = (media: Media, start: number, rate: number = sampleRate) =>
-  `asetpts=PTS-(${anchorOf(media, start).toFixed(6)})/TB,aresample=${rate}:async=1:first_pts=0`;
+  `${soundTimes(media, start)},${soundFill(rate)}`;
 const oneSidedPan = (media: Media): string[] =>
   media.oneSided
     ? [`pan=stereo|c0=${media.oneSided === 'left' ? 'c0' : 'c1'}|c1=${media.oneSided === 'left' ? 'c0' : 'c1'}`]
@@ -640,7 +646,10 @@ const mediaOf = async (source: string, media: Media | undefined, signal: AbortSi
 
 export type Momentary = { time: number; lufs: number };
 
-/** Parses ebur128 momentary loudness printed by ametadata; `time` is the centre of each 400 ms block. */
+/**
+ * Parses ebur128 momentary loudness printed by ametadata. Each 100 ms frame's value covers the
+ * 400 ms ending with that frame; `time` is the centre of that block, and blocks not yet full are left out.
+ */
 export function momentaryBlocks(text: string): Momentary[] {
   const blocks: Momentary[] = [];
   let time = Number.NaN;
@@ -653,9 +662,9 @@ export function momentaryBlocks(text: string): Momentary[] {
     const value = /^lavfi\.r128\.M=(\S+)/.exec(line.trim());
     if (!value || !Number.isFinite(time)) continue;
     const lufs = Number(value[1]);
-    if (Number.isFinite(lufs))
+    if (Number.isFinite(lufs) && time >= 0.3 - 1e-6)
       blocks.push({
-        time: Math.round(Math.max(0, time - 0.1) * 1000) / 1000,
+        time: Math.round((time - 0.1) * 1000) / 1000,
         lufs: Math.round(lufs * 100) / 100,
       });
   }
@@ -752,14 +761,15 @@ async function soundtrackPass(
   const graph = [
     ...(hasSound
       ? [
-          `[0:a:${media.audioIndex}]${soundClock(media, 0, 48000)},asplit=2[a0][a1]`,
+          `[0:a:${media.audioIndex}]${soundTimes(media, 0)},asplit=2[a0][a1]`,
           `[a0]${[
+            soundFill(48000),
             ...stereo,
             tools.perChannel ? 'astats=measure_perchannel=RMS_level:measure_overall=none' : 'astats',
             'ebur128=peak=sample:framelog=quiet:metadata=1',
             `ametadata=mode=print:key=lavfi.r128.M:file=${momentaryFile}`,
           ].join(',')}[m]`,
-          `[a1]${[...speech, 'aresample=16000'].join(',')}[s]`,
+          `[a1]${[soundFill(48000), ...speech, 'aresample=16000'].join(',')}[s]`,
         ]
       : []),
     ...(video
@@ -1337,7 +1347,10 @@ const listFile = (files: string[]) =>
 /** Cuts text to at most `max` code points, so an emoji is never split into a broken half. */
 export const clip = (text: string, max: number): string => Array.from(text).slice(0, max).join('');
 const oneLine = (text: string) =>
-  text.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]+/g, ' ').trim();
+  text
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/g, '')
+    .replace(/[\s\u0000-\u001f\u007f]+/g, ' ')
+    .trim();
 
 /** A title of at most 200 code points that keeps a trailing " (described)". */
 export function titleTag(title: string): string {
