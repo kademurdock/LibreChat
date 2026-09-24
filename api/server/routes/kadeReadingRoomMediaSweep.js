@@ -189,6 +189,29 @@ function wantSpentToday() {
 }
 
 function mount(router, { requireJwtAuth, isAdmin, express }) {
+  router.post('/librarian/filing-preview', requireJwtAuth, express.json({ limit: '16kb' }), async (req, res) => {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+    const { filingPreviewIds, previewLibraryFolders } = require('@librechat/api');
+    let ids;
+    try { ids = filingPreviewIds(req.body?.ids); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+    if (running) return res.status(409).json({ error: 'The librarian is finishing another batch. Try again in a moment.' });
+    if (!ENABLED()) return res.status(503).json({ error: 'The librarian is switched off. Manual folder correction still works.' });
+    if (spentToday() >= DAILY_USD()) return res.status(429).json({ error: 'The librarian has reached today\'s limit. Manual folder correction still works.' });
+    running = true;
+    try {
+      const items = await KadeBook.find({ _id: { $in: ids }, state: 'ready', kind: { $in: ['video', 'audio'] }, $or: [{ shared: true }, { owner: req.user.id }] }, FIELDS + ' category').lean();
+      const rules = await deps();
+      const result = await previewLibraryFolders(items, { zoneOf: librarian.zoneOf, categoryOf: librarian.categoryOf, fileMedia: (batch) => librarian.fileMedia(batch, { deps: rules }) });
+      spent.usd += result.costUSD;
+      if (result.costUSD > 0) logKadeUsage({ userId: req.user.id, service: 'describe', quantity: items.length, unit: 'items', costUSD: result.costUSD, metadata: { source: 'filing-preview', proposed: result.changes.length } }).catch?.(() => {});
+      logger.info(`[library/filing-preview] ${items.length} reviewed, ${result.changes.length} proposed, $${result.costUSD.toFixed(4)}; no catalog writes`);
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      logger.warn(`[library/filing-preview] ${e.message}`);
+      res.status(500).json({ error: 'Could not prepare folder suggestions. No folders were changed.' });
+    } finally { running = false; }
+  });
   router.post('/archive/want', requireJwtAuth, express.json({ limit: '256kb' }), async (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
     if (!WANT_ENABLED()) return res.status(503).json({ error: 'The check is switched off.' });

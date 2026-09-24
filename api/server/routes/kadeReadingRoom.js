@@ -312,6 +312,7 @@ function summary(book, progress) {
     seconds,
     state: book.state,
     path: libraryPath(book),
+    storedPath: book.path || '',
     meta: book.meta || {},
     tags: book.tags || [],
     described: book.kind !== 'text' && (book.tracks || []).some((t) => t.description && t.description.state === 'done'),
@@ -1474,7 +1475,7 @@ router.post('/book/:id/edit', requireJwtAuth, express.json({ limit: '16kb' }), a
     if (typeof b.description === 'string') { item.description = b.description.trim().slice(0, 2000); if (item.kind !== 'text') item.synopsis = item.description; changed.push('description'); }
     if (typeof b.category === 'string' && CATEGORIES.includes(b.category) && !(b.category === 'book' && item.kind !== 'text')) { item.category = b.category; changed.push('category'); }
     if (typeof b.path === 'string') { item.path = cleanPath(b.path); changed.push('folder'); }
-    if (typeof b.path === 'string' || typeof b.title === 'string') Object.assign(item, refineMediaFiling(item) || {});
+    if (typeof b.path !== 'string' && typeof b.title === 'string') Object.assign(item, refineMediaFiling(item) || {});
     if (typeof b.shared === 'boolean' && (isAdmin(req) || b.shared === false)) { if (b.shared && item.state !== 'ready') return res.status(400).json({ error: 'Add a recording before sharing it.' }); item.shared = b.shared; if (b.shared) item.sharedAt = new Date(); changed.push(b.shared ? 'shared' : 'private'); }
     if (typeof b.grownUpsOnly === 'boolean') { item.grownUpsOnly = b.grownUpsOnly; changed.push('grown-ups'); }
     if (Array.isArray(b.tags)) { item.tags = b.tags.slice(0, 30).map((t) => String(t).slice(0, 60)); changed.push('tags'); }

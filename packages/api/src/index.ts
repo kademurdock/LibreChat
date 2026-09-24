@@ -125,6 +125,7 @@ export {
 } from './library/commercials';
 export { correctedBookShelf } from './library/books';
 export { reviewedLibraryMoves } from './library/review';
+export { filingPreviewIds, previewLibraryFolders } from './library/preview';
 
 export { openAudioArchive, AUDIO_ZIP_LIMIT, TEXT_IMPORT_LIMIT } from './library/archive';
 export { storeAudioStream } from './library/stream';
