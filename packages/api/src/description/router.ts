@@ -1171,7 +1171,8 @@ export function createDescriptionRouter(hooks: Hooks): {
   async function release(reservation: Run | undefined, spentUSD: number): Promise<void> {
     if (!reservation?.runId || reservation.settled) return;
     if (reservation.walletOwner && hooks.wallet) {
-      await hooks.wallet.settle(reservation.walletOwner, reservation.runId, spentUSD);
+      if (reservation.cents > 0)
+        await hooks.wallet.settle(reservation.walletOwner, reservation.runId, spentUSD);
       await Jobs.updateOne(
         { 'reservation.runId': reservation.runId },
         { $set: { 'reservation.settled': true } },

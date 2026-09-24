@@ -44,6 +44,16 @@ test('cancelled unstarted work returns its entire reservation, even after anothe
   await wallet.settle(owner, 'cancel', 0);
   assert.equal(await wallet.available(owner), 8);
 });
+
+test('recovery fences a reservation that arrives late, and racing reserve/refund never strands money', async () => {
+  const owner = await account(10);
+  await wallet.settle(owner, 'late-reservation', 0);
+  assert.equal(await wallet.reserve(owner, 'late-reservation', 4), false);
+  for (let i = 0; i < 20; i++) {
+    await Promise.all([wallet.reserve(owner, `race-${i}`, 4), wallet.settle(owner, `race-${i}`, 0)]);
+    assert.equal(await wallet.available(owner), 10);
+  }
+});
 test('administrators are paid by the platform; missing or empty member balances cannot start paid work', async () => {
   const owner = await account(undefined, 'ADMIN');
   assert.equal(await wallet.available(owner), null);

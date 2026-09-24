@@ -47,14 +47,27 @@ export function createDescriptionWallet(): DescriptionWallet {
     async settle(owner, run, usd) {
       const charge = credits(usd);
       const key = field(run);
-      const balance = await balances().findOne({ user: userId(owner) });
-      const held = balance?.descriptionHolds?.[run];
-      if (typeof held !== 'number' || held < 0) return;
-      // A provider overrun is a platform expense, never an extra customer debit.
-      await balances().updateOne(
-        { user: userId(owner), [key]: held },
-        { $inc: { tokenCredits: held - Math.min(held, charge) }, $set: { [key]: -1 } },
-      );
+      for (;;) {
+        const balance = await balances().findOne({ user: userId(owner) });
+        if (!balance) return;
+        const held = balance.descriptionHolds?.[run];
+        if (held === undefined) {
+          // Fence a reservation still in flight when its crashed job is recovered.
+          const closed = await balances().updateOne(
+            { user: userId(owner), [key]: { $exists: false } },
+            { $set: { [key]: -1 } },
+          );
+          if (closed.modifiedCount) return;
+          continue;
+        }
+        if (typeof held !== 'number' || held < 0) return;
+        // A provider overrun is a platform expense, never an extra customer debit.
+        const closed = await balances().updateOne(
+          { user: userId(owner), [key]: held },
+          { $inc: { tokenCredits: held - Math.min(held, charge) }, $set: { [key]: -1 } },
+        );
+        if (closed.modifiedCount) return;
+      }
     },
   };
 }
