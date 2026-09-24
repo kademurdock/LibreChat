@@ -202,8 +202,9 @@ export const descriptionBrowserScript: string = String.raw`
     $('stage').textContent=job.state==='failed'?'Stopped before finishing.':(job.stage||friendly(job));
     $('progress').value=job.progress||0;$('progress').hidden=!working(job);
     $('eta').textContent=job.etaSeconds?'About '+length(Math.max(60,Math.round(job.etaSeconds/60)*60))+' left.':'';
-    $('cost').textContent=job.costUSD?'Processing cost so far: '+money(job.costUSD)+(job.estimatedUSD?' (estimate '+money(job.estimatedUSD)+')':'')+'. Work already sent to a service may still be charged if you cancel.':'';
+    $('cost').textContent=!job.costUSD?'':working(job)?'Processing cost so far: '+money(job.costUSD)+(job.estimatedUSD?' of about '+money(job.estimatedUSD)+' estimated':'')+'. Work already sent to a service may still be charged if you cancel.':'Processing cost: '+money(job.costUSD)+'.';
     if(job.error)failure(new Error(job.error));
+    if(changed&&!working(job)&&job.state!=='ready')say(job.name+': '+friendly(job)+'.',true);
     if(job.state==='ready'){say('Video checked. Choose the narration, then Create described copy.');}
     else if(job.state==='running'){var section=/section (\d+) of (\d+)/.exec(job.stage||'');say(section?'Describing: section '+section[1]+' of '+section[2]+'.':(job.stage||'Describing.'));}
     else if(job.state!=='done')say(job.stage||friendly(job));
@@ -315,10 +316,13 @@ export const descriptionBrowserScript: string = String.raw`
   $('play').onclick=function(){var v=$('video');if(v.paused)v.play().catch(failure);else v.pause();};
   $('back').onclick=function(){var v=$('video');v.currentTime=Math.max(0,v.currentTime-10);say('At '+clock(v.currentTime)+'.',true);};
   $('forward').onclick=function(){var v=$('video');v.currentTime=Math.min(v.duration||0,v.currentTime+10);say('At '+clock(v.currentTime)+'.',true);};
-  function jump(step){var v=$('video');if(!cues.length){say('No descriptions are loaded yet.',true);return;}var now=v.currentTime,target=null;
-    if(step>0){for(var i=0;i<cues.length;i++)if(cues[i].at>now+0.6){target=cues[i];break;}}else{for(var j=cues.length-1;j>=0;j--)if(cues[j].at<now-1.2){target=cues[j];break;}}
-    if(!target){say(step>0?'That was the last description.':'That was the first description.',true);return;}
-    v.currentTime=Math.max(0,target.at-0.3);say(clock(target.at)+'. '+target.text,true);}
+  var lastJump=null;
+  function jump(step){var v=$('video');if(!cues.length){say('No descriptions are loaded yet.',true);return;}var now=v.currentTime,index=-1;
+    if(lastJump&&Math.abs(now-lastJump.time)<1)index=lastJump.index+step;
+    else if(step>0){for(var i=0;i<cues.length;i++)if(cues[i].at>now+0.05){index=i;break;}}
+    else{for(var j=cues.length-1;j>=0;j--)if(cues[j].at<now-0.5){index=j;break;}}
+    if(index<0||index>=cues.length){say(step>0?'That was the last description.':'That was the first description.',true);return;}
+    var target=cues[index];v.currentTime=Math.max(0,target.at-0.3);lastJump={index:index,time:v.currentTime};say(clock(target.at)+'. '+target.text,true);}
   $('next-cue').onclick=function(){jump(1);};$('prev-cue').onclick=function(){jump(-1);};
   document.addEventListener('visibilitychange',function(){if(!document.hidden&&job&&!stopped&&working(job))poll();});
   (async function(){try{
