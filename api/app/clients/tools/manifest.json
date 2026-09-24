@@ -125,7 +125,7 @@
   {
     "name": "Library Requests",
     "pluginKey": "kade_library_requests",
-    "description": "Save requests for books, recordings or any media, add remembered clues, and check for updates and fulfilled Library links. Optional background research uses the existing research service.",
+    "description": "Save requests for books, recordings or any media from what someone remembers, add details, and follow updates and the Library link once a request is filled. The library owner reviews and fills requests.",
     "icon": "",
     "isAuthRequired": "false",
     "authConfig": []

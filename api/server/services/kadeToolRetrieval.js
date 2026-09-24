@@ -65,8 +65,8 @@ const DEFAULT_CORE = [
 
 /** Hand-written aliases: the obvious asks, matched before any embedding. */
 const ALIASES = {
-  kade_library: [/\b(library|librarian|witherspoon|collection|catalog|books?|audiobooks?|cassettes?|commercials?)\b/i],
-  kade_library_requests: [/\b(library|librarian|witherspoon|request|requested|requests|fulfilled|find that book|find that movie)\b/i],
+  /* kade_library and kade_library_requests are deliberately absent: a tool with no alias is
+   * never deferred, so the librarian always carries her catalog and her request list (Sep 24 2026). */
   web_search: [
     /* Part 132.1 — her "Tell me about the Clancy trial. Apparently, it's all
      * over socials" turn attached NOTHING (no question mark, no alias, embed

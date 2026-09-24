@@ -174,8 +174,17 @@ export { tubeVaultHints, validTubeVaultItems } from './library/tubevault';
 
 export { descriptionBatchRouter } from './library/descriptions';
 export { readLibraryCatalog, catalogProjection, libraryAccess } from './library/catalog';
-export { libraryRequestService, libraryRequestRouter, RequestError as LibraryRequestError } from './library/requests';
-export { libraryRequestTransport } from './library/requestTransport';
+export {
+  libraryRequestService,
+  libraryRequestRouter,
+  compactRequestResult,
+  RequestError as LibraryRequestError,
+} from './library/requests';
+export {
+  createRequestNotifier,
+  libraryRequestPhoneAlert,
+  libraryResearchTransport,
+} from './library/requestTransport';
 export { libraryRequestsDescription, libraryRequestsSchema } from './tools/registry/requests';
 export { librarianGuide } from './library/guide';
 export { libraryConsultation, libraryConsultationInstructions } from './library/consultation';

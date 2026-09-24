@@ -1,18 +1,36 @@
+/* Library requests on the Library page (Sep 24 2026).
+ * Requesters: make a request, read updates, add details, cancel.
+ * The library owner: everyone's requests, status and the item that fills one, owner-paid research.
+ * Screen-reader shape: headings for the list and each request, labelled fields, the page's one
+ * live region for results, and focus moved to the request heading after every change. */
 (function () {
   'use strict';
-  window.setupLibraryRequests = function (api) {
+  window.setupLibraryRequests = function (api, say) {
     var root = document.getElementById('libraryRequests');
-    var status = document.getElementById('requestStatus');
     var list = document.getElementById('requestList');
     var scope = document.getElementById('requestScope');
     var more = document.getElementById('requestMore');
+    var panel = document.getElementById('requestDetail');
     var next = null;
     var admin = false;
     var initialized = false;
     var membershipLoaded = false;
-    var currentId = new URLSearchParams(location.search).get('request');
+    var params = new URLSearchParams(location.search);
+    var currentId = params.get('request');
+    var statusNames = {
+      requested: 'Waiting for review',
+      searching: 'Being looked for',
+      located: 'Found a possible source, not in the library yet',
+      fulfilled: 'Ready in the library',
+      unavailable: 'Could not be filled',
+    };
+    var researchChoices = {
+      quick: 'Quick, about 2 minutes',
+      standard: 'Standard, about 4 minutes',
+      deep: 'Deep, about 8 minutes',
+    };
     function announce(value) {
-      status.textContent = value;
+      say(value);
     }
     function element(tag, value) {
       var node = document.createElement(tag);
@@ -35,197 +53,394 @@
       };
       return node;
     }
-    function field(parent, label, control) {
-      var wrapper = element('label', label);
-      wrapper.className = 'field';
-      wrapper.appendChild(control);
-      parent.appendChild(wrapper);
+    function field(parent, label, control, id) {
+      var name = element('label', label);
+      name.className = 'field';
+      name.htmlFor = id;
+      control.id = id;
+      parent.appendChild(name);
+      parent.appendChild(control);
       return control;
     }
-    async function save(row, action, values) {
-      var result = await api('/requests', {
-        json: Object.assign({ action: action, id: row.id, version: row.version }, values),
-      });
-      announce('Request saved.');
-      if (result.request) renderDetail(result.request);
-      await load(false);
+    function when(value) {
+      try {
+        return new Date(value).toLocaleString(undefined, {
+          month: 'long',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+      } catch (_) {
+        return '';
+      }
     }
-    function renderDetail(row) {
-      var panel = document.getElementById('requestDetail');
+    function focusHeading() {
+      var heading = document.getElementById('requestDetailHeading');
+      if (heading) heading.focus();
+    }
+    async function send(values) {
+      return api('/requests', { json: values });
+    }
+    /* After any change: show the saved request, refresh the list, and put focus on its heading. */
+    async function saved(result, message) {
+      if (result.request) render(result.request);
+      await load(false);
+      focusHeading();
+      announce(message);
+    }
+
+    function render(row) {
+      currentId = row.id;
       panel.replaceChildren();
       panel.hidden = false;
       var heading = element('h3', row.title);
+      heading.id = 'requestDetailHeading';
       heading.tabIndex = -1;
       panel.appendChild(heading);
-      panel.appendChild(
-        element(
-          'p',
-          row.status +
-            ' · ' +
-            row.media +
-            (row.requester ? ' · Requested by ' + row.requester : ''),
-        ),
-      );
-      panel.appendChild(element('p', row.clues));
+      panel.appendChild(element('p', 'Status: ' + row.statusText + '.'));
+      if (row.requester && !row.mine)
+        panel.appendChild(element('p', 'Requested by ' + row.requester + '.'));
+      if (row.requesterNote) panel.appendChild(element('p', row.requesterNote));
+      panel.appendChild(element('p', 'Kind of media: ' + row.media + '.'));
+      if (row.clues)
+        panel.appendChild(
+          element('p', (row.mine ? 'What you remember: ' : 'What they remember: ') + row.clues),
+        );
       if (row.item) {
         var link = element('a', 'Open ' + row.item.title);
         link.href = row.item.url;
-        link.className = 'act';
+        link.className = 'act primary';
         panel.appendChild(link);
       }
       if (row.availabilityNote) panel.appendChild(element('p', row.availabilityNote));
+      if (row.alert) panel.appendChild(element('p', row.alert));
+      panel.appendChild(element('h4', 'History'));
       var history = element('ol');
       row.history.forEach(function (entry) {
         history.appendChild(
           element(
             'li',
-            new Date(entry.at).toLocaleString() +
-              ' — ' +
+            when(entry.at) +
+              '. ' +
               entry.by +
               ': ' +
-              entry.note +
-              ' (' +
-              entry.status +
+              (entry.note ? entry.note + ' ' : '') +
+              '(' +
+              entry.statusText +
               ')',
           ),
         );
       });
       panel.appendChild(history);
-      if (row.research) {
-        panel.appendChild(
-          element('p', 'Research: ' + row.research.state + '. ' + (row.research.note || '')),
-        );
-        if (row.research.id)
-          panel.appendChild(
-            button('Check research progress', async function () {
-              var result = await api('/requests', {
-                json: { action: 'research_status', id: row.id },
-              });
-              renderDetail(result.request);
-              announce('Research status updated.');
-            }),
-          );
-      }
-      if (row.notification)
-        panel.appendChild(
-          element(
-            'p',
-            row.notification.note ||
-              'Phone notification: ' +
-                row.notification.state +
-                '. This update is saved in your requests.',
-          ),
-        );
-      if (row.unread)
-        panel.appendChild(
-          button('Mark this update as read', async function () {
-            await api('/requests', { json: { action: 'read', id: row.id, version: row.version } });
-            row.unread = false;
-            renderDetail(row);
-            await load(false);
-            announce('Update marked as read.');
-          }),
-        );
-      if (['fulfilled', 'unavailable', 'cancelled'].indexOf(row.status) >= 0) return;
-      var note = field(panel, 'Add clues or a note', element('textarea'));
-      note.rows = 4;
+      if (admin) research(row);
+      if (row.status === 'cancelled') return;
+      var isOpen = ['requested', 'searching', 'located'].indexOf(row.status) >= 0;
+      if (row.mine && isOpen) requesterControls(row);
+      if (admin) ownerControls(row, isOpen);
+    }
+
+    function requesterControls(row) {
+      panel.appendChild(element('h4', 'Add details'));
+      var note = field(
+        panel,
+        'New details or a message for the library owner',
+        element('textarea'),
+        'requestNote',
+      );
+      note.rows = 3;
       note.maxLength = 4000;
-      panel.appendChild(
-        button('Save note', function () {
-          return save(row, 'note', { note: note.value });
+      var row2 = element('div');
+      row2.className = 'row';
+      row2.appendChild(
+        button('Save details', async function () {
+          if (!note.value.trim()) {
+            note.focus();
+            return announce('Write the new details first.');
+          }
+          await saved(
+            await send({ action: 'note', id: row.id, version: row.version, note: note.value }),
+            'Details saved.',
+          );
         }),
       );
-      if (row.mine)
-        panel.appendChild(
-          button('Cancel this request', function () {
-            return save(row, 'cancel', { note: note.value });
-          }),
-        );
-      if (!admin) return;
+      row2.appendChild(
+        button('Cancel this request', async function () {
+          if (!window.confirm('Cancel your request for ' + row.title + '?')) return;
+          await saved(
+            await send({ action: 'cancel', id: row.id, version: row.version }),
+            'Request cancelled.',
+          );
+        }),
+      );
+      panel.appendChild(row2);
+    }
+
+    function ownerControls(row, isOpen) {
+      panel.appendChild(element('h4', 'Update this request'));
       var state = element('select');
-      ['requested', 'searching', 'located', 'fulfilled', 'unavailable'].forEach(function (value) {
-        var option = element(
-          'option',
-          {
-            requested: 'Requested',
-            searching: 'Searching',
-            located: 'Identified or found a source',
-            fulfilled: 'Added to the library',
-            unavailable: 'Unable to fill',
-          }[value],
-        );
+      (isOpen
+        ? ['requested', 'searching', 'located', 'fulfilled', 'unavailable']
+        : ['fulfilled', 'unavailable']
+      ).forEach(function (value) {
+        var option = element('option', statusNames[value]);
         option.value = value;
         state.appendChild(option);
       });
       state.value = row.status;
-      field(panel, 'Request status', state);
-      var item = field(panel, 'Library item link or ID (required when filled)', element('input'));
-      item.type = 'text';
-      panel.appendChild(
-        element(
-          'p',
-          'Add or share the item first, then paste its Library link here. A web source or an identified title alone does not fill a request.',
-        ),
+      field(panel, 'Status', state, 'requestNewStatus');
+      var finder = element('div');
+      var query = field(
+        finder,
+        'Library item that fills it: search by title, or paste its Library link',
+        element('input'),
+        'requestItemSearch',
       );
+      query.type = 'text';
+      query.autocomplete = 'off';
+      if (row.item) query.value = location.origin + row.item.url;
+      var picks = element('select');
+      var pickWrap = element('div');
+      pickWrap.hidden = true;
+      field(pickWrap, 'Matching library items', picks, 'requestItemChoice');
+      finder.appendChild(
+        button('Search the library', async function () {
+          var words = query.value.trim();
+          if (!words) {
+            query.focus();
+            return announce('Type part of the title first.');
+          }
+          var found = await api('/search?q=' + encodeURIComponent(words));
+          picks.replaceChildren();
+          (found.items || []).slice(0, 50).forEach(function (item) {
+            var option = element(
+              'option',
+              item.title +
+                (item.author ? ', ' + item.author : '') +
+                (item.path ? ', ' + item.path : '') +
+                (item.grownUpsOnly ? ', grown-ups only' : ''),
+            );
+            option.value = item.id;
+            picks.appendChild(option);
+          });
+          pickWrap.hidden = !picks.options.length;
+          if (picks.options.length) picks.focus();
+          announce(
+            picks.options.length
+              ? picks.options.length + ' matching items. Choose one, then save.'
+              : 'Nothing in the library matched. Try other words.',
+          );
+        }),
+      );
+      finder.appendChild(pickWrap);
+      panel.appendChild(finder);
+      var showFinder = function () {
+        finder.hidden = state.value !== 'fulfilled';
+      };
+      state.onchange = showFinder;
+      showFinder();
+      var note = field(
+        panel,
+        'Note for the requester (optional)',
+        element('textarea'),
+        'requestOwnerNote',
+      );
+      note.rows = 3;
+      note.maxLength = 4000;
       panel.appendChild(
-        button('Save status and notify requester', function () {
-          var id = item.value.trim();
-          if (id.indexOf('?') >= 0) {
-            try {
-              id = new URL(id, location.origin).searchParams.get('book') || '';
-            } catch (_) {
-              id = '';
+        button(row.mine ? 'Save' : 'Save and tell the requester', async function () {
+          if (state.value === row.status && !note.value.trim() && state.value !== 'fulfilled') {
+            note.focus();
+            return announce('Choose a new status or write a note first.');
+          }
+          var book = '';
+          if (state.value === 'fulfilled') {
+            book = !pickWrap.hidden && picks.value ? picks.value : query.value.trim();
+            if (!book) {
+              query.focus();
+              return announce('Find the library item that fills this request first.');
             }
           }
-          return save(row, 'update', { status: state.value, note: note.value, book: id });
+          var result = await send({
+            action: 'update',
+            id: row.id,
+            version: row.version,
+            status: state.value,
+            note: note.value,
+            book: book,
+          });
+          await saved(
+            result,
+            row.mine
+              ? 'Saved.'
+              : 'Saved. ' + (row.requester || 'The requester') + ' will get an alert.',
+          );
         }),
       );
     }
+
+    function research(row) {
+      var isOpen = ['requested', 'searching', 'located'].indexOf(row.status) >= 0;
+      if (!row.research && !isOpen) return;
+      panel.appendChild(element('h4', 'Research'));
+      var running =
+        row.research &&
+        ['done', 'failed', 'cancelled', 'unconfirmed', 'missing'].indexOf(row.research.state) < 0;
+      if (row.research) {
+        var stateLine = element('p', row.research.stateText + '. ' + (row.research.note || ''));
+        stateLine.id = 'requestResearchState';
+        panel.appendChild(stateLine);
+        if (running || row.research.state === 'done')
+          panel.appendChild(
+            button(running ? 'Check research' : 'Read the research report', async function () {
+              var result = await send({ action: 'research_status', id: row.id });
+              render(result.request);
+              if (result.research && result.research.report) {
+                showReport(result.research);
+                return;
+              }
+              focusHeading();
+              announce('Research: ' + result.request.research.stateText + '.');
+            }),
+          );
+      }
+      if (running || !isOpen) return;
+      panel.appendChild(
+        element(
+          'p',
+          'Research looks across the web for this item and where to get it. The platform pays; it never charges the requester, and it never fills the request by itself.',
+        ),
+      );
+      var depth = element('select');
+      Object.keys(researchChoices).forEach(function (value) {
+        var option = element('option', researchChoices[value]);
+        option.value = value;
+        depth.appendChild(option);
+      });
+      field(panel, 'How deep', depth, 'requestResearchDepth');
+      panel.appendChild(
+        button('Start research', async function () {
+          var quote = await send({ action: 'research', id: row.id, depth: depth.value });
+          if (!quote.quote)
+            return saved(quote, 'Research is already running. Check it in a few minutes.');
+          if (!window.confirm(quote.quote.text + ' Start it?'))
+            return announce('Research not started.');
+          var result = await send({
+            action: 'research',
+            id: row.id,
+            depth: depth.value,
+            confirmed: true,
+          });
+          var started = result.request && result.request.research;
+          await saved(
+            result,
+            started && started.state !== 'failed' && started.state !== 'unconfirmed'
+              ? 'Research started. Check it in a few minutes.'
+              : (started && started.note) || 'Research did not start.',
+          );
+        }),
+      );
+    }
+
+    /* The report goes right under the research status line, and focus goes to its heading. */
+    function showReport(result) {
+      var box = element('section');
+      box.setAttribute('aria-labelledby', 'requestReportHeading');
+      var heading = element('h5', 'Research report');
+      heading.id = 'requestReportHeading';
+      heading.tabIndex = -1;
+      box.appendChild(heading);
+      box.appendChild(
+        element('p', 'These are leads from the web, not proof that the library has it.'),
+      );
+      result.report.split(/\n{2,}/).forEach(function (part) {
+        if (part.trim()) box.appendChild(element('p', part.trim()));
+      });
+      if (result.sources && result.sources.length) {
+        box.appendChild(element('p', 'Sources:'));
+        var sources = element('ol');
+        result.sources.forEach(function (source) {
+          var item = element('li');
+          if (/^https?:\/\//i.test(source.url)) {
+            var link = element('a', source.title || source.url);
+            link.href = source.url;
+            link.rel = 'noopener noreferrer';
+            link.target = '_blank';
+            item.appendChild(link);
+          } else item.textContent = source.title;
+          sources.appendChild(item);
+        });
+        box.appendChild(sources);
+      }
+      var stateLine = document.getElementById('requestResearchState');
+      panel.insertBefore(box, stateLine ? stateLine.nextSibling : null);
+      heading.focus();
+    }
+
     async function open(id, focus) {
-      var result = await api('/requests', { json: { action: 'details', id: id } });
-      currentId = id;
-      renderDetail(result.request);
-      if (focus) document.querySelector('#requestDetail h3').focus();
+      var result = await send({ action: 'details', id: id });
+      render(result.request);
+      if (focus) focusHeading();
+    }
+    function summary(result) {
+      var parts = [];
+      if (result.review)
+        parts.push(
+          result.review +
+            (result.review === 1 ? ' request has' : ' requests have') +
+            ' something new for you to review.',
+        );
+      if (result.unread)
+        parts.push(
+          result.unread +
+            ' of your requests ' +
+            (result.unread === 1 ? 'has' : 'have') +
+            ' a new update.',
+        );
+      document.getElementById('requestSummary').textContent = parts.join(' ');
     }
     async function load(append) {
       var result = await api(
         '/requests?scope=' +
-          encodeURIComponent(scope.value) +
+          encodeURIComponent(admin ? scope.value : 'mine') +
           (append && next ? '&before=' + encodeURIComponent(next) : ''),
       );
-      admin = result.admin;
-      document.getElementById('requestAllOption').hidden = !admin;
       if (!initialized) {
         initialized = true;
+        admin = !!result.admin;
         if (admin) {
-          scope.value = 'all';
+          document.getElementById('requestScopeWrap').hidden = false;
+          document.getElementById('requestListHeading').textContent = 'Requests';
           addMembership();
           return load(false);
         }
+        if (!result.canRequest && !result.requests.length) return false;
+        if (!result.canRequest) document.getElementById('requestFormWrap').hidden = true;
       }
+      var first = null;
       if (!append) list.replaceChildren();
       result.requests.forEach(function (row) {
         var entry = element('li');
-        entry.appendChild(
-          button(
-            row.title +
-              ' — ' +
-              row.status +
-              (row.unread ? ' — new update' : '') +
-              (row.requester ? ' — ' + row.requester : ''),
-            function () {
-              return open(row.id, true);
-            },
-          ),
-        );
+        var name =
+          (row.unread ? 'New update. ' : '') +
+          row.title +
+          '. ' +
+          row.statusText +
+          (row.requester && !row.mine ? '. From ' + row.requester : '');
+        var pick = button(name, function () {
+          return open(row.id, true);
+        });
+        entry.appendChild(pick);
         list.appendChild(entry);
+        first = first || pick;
       });
-      if (!list.children.length) list.appendChild(element('li', 'No requests here yet.'));
+      if (!list.children.length)
+        list.appendChild(
+          element('li', admin ? 'No requests here.' : 'You have not made any requests yet.'),
+        );
       next = result.next;
       more.hidden = !next;
-      document.getElementById('requestUnread').textContent = result.unread
-        ? result.unread + ' request' + (result.unread === 1 ? ' has' : 's have') + ' new updates.'
-        : '';
+      summary(result);
+      return first || true;
     }
     function addMembership() {
       if (membershipLoaded) return;
@@ -281,47 +496,41 @@
       root.appendChild(section);
     }
     more.onclick = function () {
-      load(true).catch(function (error) {
-        announce(error.message);
-      });
+      load(true)
+        .then(function (first) {
+          if (first && first !== true) first.focus();
+        })
+        .catch(function (error) {
+          announce(error.message);
+        });
     };
     scope.onchange = function () {
       load(false).catch(function (error) {
         announce(error.message);
       });
     };
-    document.getElementById('requestRefresh').onclick = function () {
-      load(false)
-        .then(function () {
-          return currentId ? open(currentId, false) : null;
-        })
-        .then(function () {
-          announce('Requests refreshed.');
-        })
-        .catch(function (error) {
-          announce(error.message);
-        });
-    };
     document.getElementById('requestForm').onsubmit = async function (event) {
       event.preventDefault();
       var submit = document.getElementById('requestSubmit');
+      var title = document.getElementById('requestTitle');
+      if (!title.value.trim()) {
+        title.focus();
+        return announce('Give the request a title or a few words about it.');
+      }
       submit.disabled = true;
       try {
-        var result = await api('/requests', {
-          json: {
-            action: 'create',
-            title: document.getElementById('requestTitle').value,
-            media: document.getElementById('requestMedia').value,
-            clues: document.getElementById('requestClues').value,
-          },
+        var result = await send({
+          action: 'create',
+          title: title.value,
+          media: document.getElementById('requestMedia').value,
+          clues: document.getElementById('requestClues').value,
         });
-        document.getElementById('requestForm').reset();
-        await load(false);
-        renderDetail(result.request);
-        announce(
+        if (!result.duplicate) document.getElementById('requestForm').reset();
+        await saved(
+          result,
           result.duplicate
-            ? 'This request is already saved. Your existing request is shown below.'
-            : 'Request saved for the library owner to review. You can check for updates here or ask the librarian.',
+            ? 'You already asked for this. Your earlier request is shown; add any new details to it.'
+            : 'Request saved. You will get an alert when there is news, and it will show here.',
         );
       } catch (error) {
         announce(error.message);
@@ -329,13 +538,23 @@
         submit.disabled = false;
       }
     };
-    root.hidden = false;
     return load(false)
-      .then(function () {
-        if (currentId) return open(currentId, false);
+      .then(function (shown) {
+        if (shown === false) return; // no access and nothing requested: the section stays out of the way
+        root.hidden = false;
+        document.getElementById('requestsLink').hidden = false;
+        if (currentId)
+          return open(currentId, true).catch(function (error) {
+            announce(error.message);
+          });
+        if (location.hash === '#libraryRequests') {
+          var heading = document.getElementById('requestsHeading');
+          heading.scrollIntoView();
+          heading.focus();
+        }
       })
-      .catch(function (error) {
-        announce(error.message);
+      .catch(function () {
+        /* Requests are not answering; the rest of the Library still works, so stay quiet. */
       });
   };
 })();
