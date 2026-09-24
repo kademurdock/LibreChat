@@ -4,6 +4,7 @@ import {
   mentionsLabel,
   nameKey,
   readsName,
+  readings,
   resolvePerson,
   revealsFor,
 } from './ledger';
@@ -12,6 +13,7 @@ import { analysisSchema, contentKinds } from './types';
 import { gaps, mergeIntervals } from './timing';
 
 export type Brief = {
+  range?: { start: number; end: number };
   title: string;
   about: string;
   notes: string;
@@ -65,10 +67,17 @@ const judgingBeforeNoun =
  */
 export function lintDescription(value: string): { text: string; problems: string[] } {
   const problems: string[] = [];
-  const reading = /\b(?:reads|read|displays)\b/i.exec(value);
-  const cut = reading ? reading.index : value.length;
+  const cut = readings(value)[0]?.[0] ?? value.length;
   const head = value.slice(0, cut);
-  const cleaned = head.replace(opinions, '').replace(judgingBeforeNoun, '$1 ');
+  const cleaned = head
+    .replace(opinions, (match, offset: number) => {
+      const rest = head.slice(offset + match.length);
+      return /\bin shock\b/.test(match) || /^[-]|^\s+(?:masks?|movies?|of court)\b/.test(rest)
+        ? match
+        : '';
+    })
+    .replace(judgingBeforeNoun, '$1 ')
+    .replace(/,\s*,/g, '');
   if (cleaned !== head) problems.push('judging words removed');
   const text = (cleaned + value.slice(cut))
     .replace(/\s+([,.!?])/g, '$1')
@@ -150,6 +159,9 @@ function continuityText(state: Continuity | null): string {
   const people = state.people.map(({ id, label, name, look }) => ({ id, label, name, look }));
   const names = Object.entries(state.heard?.names ?? {});
   const planned = state.left === undefined;
+  const recent = planned
+    ? `Descriptions planned for the last clip; some may not have been heard. For continuity only, do not repeat them: ${JSON.stringify(state.recent)}`
+    : `The last descriptions actually spoken, for continuity only (do not repeat them): ${JSON.stringify(state.recent)}`;
   const parts = [
     state.kind ? `Kind of the last clip: ${state.kind}.` : '',
     state.setting ? `Where the last clip ended: ${state.setting}.` : '',
@@ -168,11 +180,7 @@ function continuityText(state: Continuity | null): string {
     state.left?.length
       ? `Descriptions from the last clip that were left out, so the listener never heard them: ${JSON.stringify(state.left)}`
       : '',
-    state.recent.length
-      ? planned
-        ? `Descriptions planned for the last clip; some may not have been heard. For continuity only, do not repeat them: ${JSON.stringify(state.recent)}`
-        : `The last descriptions actually spoken, for continuity only (do not repeat them): ${JSON.stringify(state.recent)}`
-      : '',
+    state.recent.length ? recent : '',
   ];
   return parts.filter(Boolean).join('\n');
 }
@@ -235,10 +243,13 @@ function positionText(seconds: number, brief: Brief): string {
   const position = brief.position;
   const scale = brief.slowed ? 4 : 1;
   const parts = [
-    position && position.count > 1
+    brief.range
+      ? `This is the part from ${clock(brief.range.start)} to ${clock(brief.range.end)} of a longer video. For times in the listener's notes, subtract ${clock(brief.range.start)} to place them in this part. Every time you return is in seconds from the start of THIS clip.`
+      : '',
+    position && position.count > 1 && !brief.range
       ? `This clip is part ${position.index + 1} of ${position.count}: it covers ${clock(position.start)} to ${clock(position.end)} of a video that lasts ${clock(position.total)}.`
       : '',
-    position && position.count > 1
+    position && position.count > 1 && !brief.range
       ? 'Times written in the source metadata or the notes are whole-video times. Every time you return is in seconds from the start of THIS clip.'
       : '',
     brief.cuts?.length
@@ -254,7 +265,10 @@ function positionText(seconds: number, brief: Brief): string {
   const total = position?.total ?? seconds / scale;
   if (total <= 15 && !brief.survey)
     parts.push(
-      `SHORT VIDEO: the whole video lasts only ${total.toFixed(1)} seconds, so it is most likely an ident, bumper, logo or short spot. Describe all of it in one or two cues: whose it is, what appears and how it moves, and every word shown. Start the first cue at the first frame of the logo or scene, let until run to the end of the clip, and describe over the music rather than leave it undescribed.`,
+      (brief.range
+        ? `This part lasts only ${total.toFixed(1)} seconds. If it is a complete ident, describe it as one.`
+        : `SHORT VIDEO: the whole video lasts only ${total.toFixed(1)} seconds, so it is most likely an ident, bumper, logo or short spot.`) +
+        ' Describe all of it in one or two cues: whose it is, what appears and how it moves, and every word shown. Start the first cue at the first frame of the logo or scene, let until run to the end of the clip, and describe over the music rather than leave it undescribed.',
     );
   return parts.filter(Boolean).join('\n');
 }
@@ -551,8 +565,19 @@ const mentionsName = (text: string, name: string) =>
 export function nextContinuity(
   previous: Continuity | null,
   analysis: Analysis,
-  heard?: Heard,
+  heard?: Heard | Pick<Heard, 'sectionEnd' | 'words' | 'notes'>,
 ): Continuity {
+  if (heard && !('spoken' in heard)) {
+    const result = nextContinuity(previous, analysis, {
+      ...heard,
+      spoken: analysis.cues.map((cue) => cue.text),
+      left: [],
+      sectionIndex: 0,
+    });
+    delete result.heard;
+    delete result.left;
+    return result;
+  }
   const seen: Record<string, number> = { ...(previous?.seen ?? {}) };
   const merged = mergePeople(previous?.people ?? [], analysis.people, seen, heard?.sectionIndex);
   const speakers = new Map((previous?.speakers ?? []).map((item) => [item.speaker, item]));

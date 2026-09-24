@@ -995,6 +995,22 @@ test('estimates: prices on the spend buttons, set-aside in their description, de
   assert.equal(sent.settings.closeLook, true);
 });
 
+test('balance pricing announces the approved maximum and included narration before spending', async () => {
+  const server = makeServer();
+  const ready = server.add(jobOf({ name: 'My video' }));
+  server.override((_method, path) => /\/estimate$/.test(path), () => ({ status: 200, body: {
+    estimateUSD: 0.2, approvedUSD: 0.4, setAsideUSD: 0.4, remainingUSD: 8,
+    limitUSD: null, dailyUSD: null, billingMode: 'balance', speechIncluded: true,
+    allowed: true, seconds: 600, breakdown: { vision: 0.15, dialogue: 0.05, speech: 0 },
+  } }), false);
+  const env = await boot({ server, search: '?id=' + ready.id, confirmReply: () => false });
+  await env.timers.advance(700);
+  assert.match(env.$('estimate').textContent, /Maximum charge: \$0\.40/);
+  await env.click('start');
+  assert.match(env.dialogs.at(-1).text, /Maximum charge: \$0\.40\. \$8\.00 is available in your account\. Narration is included\./);
+  assert.equal(server.all(/\/start$/).length, 0);
+});
+
 test('over the allowance: Create stays focusable, says why, and never starts', async () => {
   const server = makeServer();
   server.remainingUSD = 0.4;
@@ -1727,9 +1743,9 @@ test('continue and try again: the price and what is kept are in the button, its 
   assert.equal($('resume').textContent, 'Continue where it stopped: 9 of 12 sections left, about $0.27');
   assert.match($('resume').getAttribute('aria-describedby'), /dv-resume-price/);
   assert.equal($('resume-price').textContent, 'About $0.27; $0.35 is set aside until it finishes. 3 of 12 sections finished; they are kept and not paid for again.');
-  assert.equal($('estimate').textContent, 'Continue where it stopped: 9 of 12 sections left, about $0.27. Today’s allowance: $5.00 of today’s $5.00 is left.');
+  assert.equal($('estimate').textContent, 'Continue where it stopped: 9 of 12 sections left, about $0.27. $5.00 of today’s $5.00 is left.');
   await env.click('resume');
-  assert.equal(env.dialogs.at(-1).text, 'Continue “Home video” with Oak at 1.5×? 3 of 12 sections finished; they are kept and not paid for again. About $0.27; $0.35 is set aside until it finishes, and anything unused comes back. Today’s allowance: $5.00 of today’s $5.00 is left.');
+  assert.equal(env.dialogs.at(-1).text, 'Continue “Home video” with Oak at 1.5×? 3 of 12 sections finished; they are kept and not paid for again. About $0.27; $0.35 is set aside until it finishes, and anything unused comes back. $5.00 of today’s $5.00 is left.');
   assert.equal(server.all(/\/resume$/).length, 0, 'dismissing the confirm spends nothing');
   failed.done = 0;
   await env.timers.advance(5000);
@@ -1787,7 +1803,7 @@ test('over the quote: it says so with the numbers and only carries on after a co
   assert.equal($('allow-more').getAttribute('aria-describedby'), 'dv-over-quote');
   assert.match($('estimate').textContent, /^This is costing more than quoted: \$0\.45 spent of about \$0\.05\. Carrying on is expected to cost about \$0\.27 more, and it may spend up to \$0\.60\./);
   await env.click('allow-more');
-  assert.equal(env.dialogs.at(-1).text, 'Let “KOLR 10 open” carry on? This is costing more than quoted: $0.45 spent of about $0.05. Carrying on is expected to cost about $0.27 more. It may spend up to $0.60 more, and it stops and asks again before going past that. 2 of 4 sections finished; they are kept and not paid for again. Today’s allowance: $5.00 of today’s $5.00 is left.');
+  assert.equal(env.dialogs.at(-1).text, 'Let “KOLR 10 open” carry on? This is costing more than quoted: $0.45 spent of about $0.05. Carrying on is expected to cost about $0.27 more. It may spend up to $0.60 more, and it stops and asks again before going past that. 2 of 4 sections finished; they are kept and not paid for again. $5.00 of today’s $5.00 is left.');
   assert.equal(server.all(/\/resume$/).length, 0);
   reply = true;
   await env.click('allow-more');

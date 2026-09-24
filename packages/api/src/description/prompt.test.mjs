@@ -1269,7 +1269,8 @@ test('providers: the voice call is retried before a paid description is dropped,
     assert.equal(fake.calls.length, 2);
     assert.equal(fake.calls[1].body.input, '[clear engaged audio description] A sign reads Grand Opening and more.');
     const sent = Buffer.byteLength(fake.calls[1].body.input);
-    assert.ok(Math.abs(charges.at(-1).cost - sent * 15e-6) < 1e-12, 'Fish bills the style tag too');
+    assert.ok(sent > 0);
+    assert.equal(charges.at(-1).cost, 0, 'subscription narration is included');
   } finally {
     fake.restore();
   }

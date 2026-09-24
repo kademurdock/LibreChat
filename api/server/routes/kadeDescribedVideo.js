@@ -6,6 +6,7 @@ const {
   describedVideoPage,
   registerShutdownTask,
   createDescriptionRouter,
+  createDescriptionWallet,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -298,6 +299,7 @@ const library = {
 
 const { router, close } = createDescriptionRouter({
   auth: requireJwtAuth,
+  wallet: createDescriptionWallet(),
   actor: (req) => ({
     id: String(req.user.id || req.user._id),
     role: req.user.role,
@@ -313,7 +315,7 @@ const { router, close } = createDescriptionRouter({
       quantity: 1,
       unit: 'requests',
       costUSD,
-      metadata: { source: 'described-video', job, kind },
+      metadata: { source: 'described-video', job, kind, walletHandled: true },
     }),
   notify,
   library,

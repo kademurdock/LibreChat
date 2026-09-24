@@ -385,6 +385,7 @@ router.get('/shelf', requireJwtAuth, async (req, res) => {
     ]);
     res.json({
       librarian: isAdmin(req),
+      describedVideo: !child && (isAdmin(req) || process.env.KADE_DESCRIPTION_PUBLIC !== '0'),
       me: String(userId),
       archiveOwned: await KadeBook.countDocuments({ owner: userId, path: { $ne: '' } }),
       libraryCount,

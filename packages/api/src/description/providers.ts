@@ -26,8 +26,8 @@ export const userAgent =
 export const transcriptionPerMinute = 0.0052;
 /** Deepgram keyterm prompting, added per minute only when keyterms are sent. */
 export const keytermPerMinute = 0.0013;
-/** Fish Audio S2 is billed per UTF-8 byte; Inworld's overage price is lower, so this covers both. */
-export const speechPerByte: number = 15 / 1e6;
+/** Subscription narration is included for users; metered visual analysis and transcription remain separate. */
+export const speechPerByte: number = 0;
 /**
  * Delivery direction for the narrator. The voice proxy lifts a leading [tag] into Inworld's
  * instruction field, which Inworld does not bill, but Fish voices are billed for it as text, so
@@ -311,14 +311,11 @@ export function providerDetail(error: unknown): string {
   const cause = root(error);
   if (!axios.isAxiosError(cause)) return cause instanceof Error ? cause.message.slice(0, 300) : '';
   const body = cause.response?.data;
-  const text =
-    typeof body === 'string'
-      ? body
-      : Buffer.isBuffer(body)
-        ? body.toString('utf8', 0, 600)
-        : body instanceof ArrayBuffer
-          ? Buffer.from(body).toString('utf8', 0, 600)
-          : JSON.stringify(body ?? '');
+  let text: string;
+  if (typeof body === 'string') text = body;
+  else if (Buffer.isBuffer(body)) text = body.toString('utf8', 0, 600);
+  else if (body instanceof ArrayBuffer) text = Buffer.from(body).toString('utf8', 0, 600);
+  else text = JSON.stringify(body ?? '');
   return `${cause.response?.status ?? cause.code ?? ''} ${text}`
     .replace(
       /(sk-[\w-]{8,}|bearer\s+[\w.~+/=-]+|token\s+[\w.~+/=-]{16,}|key=[\w.~+/=-]+)/gi,

@@ -39,6 +39,7 @@ import type {
 } from './types';
 import type { Keeper, Outcome, Providers, SavedLook, Request as EngineRequest } from './engine';
 import type { Edit } from './revision';
+import type { DescriptionWallet } from './wallet';
 import {
   Plain,
   billed,
@@ -73,7 +74,7 @@ type RunKind = 'fresh' | 'preview' | 'finish' | 'revoice' | 'correction' | 'redo
 /** How a rehearsal ended; every ending leaves the video ready to describe. */
 type RehearsalOutcome = 'finished' | 'stopped' | 'cancelled';
 /** Money one paid run set aside from one day's allowance, in whole cents. */
-type Run = { runId: string; day: string; cents: number };
+type Run = { runId: string; day: string; cents: number; walletOwner?: string; settled?: boolean };
 /** Where each section of a version is stored: manifest[i] is the version folder (0 = the old flat layout). */
 type Manifest = (number | null)[];
 type FinishedCopy = {
@@ -144,6 +145,7 @@ type NoticeDetail = { job: string; kind: string };
 type RunKeeper = Keeper;
 type RunRequest = EngineRequest & { keeper: Keeper };
 type Hooks = {
+  wallet?: DescriptionWallet;
   auth: RequestHandler;
   actor: (req: Request) => Actor;
   storage: () => S3Client;
@@ -267,7 +269,7 @@ type Job = {
 type Lock = { _id: string; worker: string; until: Date };
 /** One day's allowance: cents held by open runs and spent by closed ones. */
 type Budget = { _id: string; held: number; runs: string[] };
-const run = { runId: String, day: String, cents: Number };
+const run = { runId: String, day: String, cents: Number, walletOwner: String, settled: Boolean };
 const jobSchema = new mongoose.Schema<Job>(
   {
     _id: String,
@@ -417,7 +419,7 @@ const previewSeconds = () => envNumber('KADE_DESCRIPTION_PREVIEW_SECONDS', 180, 
 /** Sources up to this size are read whole by the free check; bigger ones only at both ends. */
 const checkWholeBytes = () =>
   envNumber('KADE_DESCRIPTION_CHECK_WHOLE_MB', 256, 0.1, 4096) * 1024 ** 2;
-const jobLimit = () => envNumber('KADE_DESCRIPTION_JOB_USD', 5, 0.1, 20);
+const legacyJobLimit = () => envNumber('KADE_DESCRIPTION_JOB_USD', 5, 0.1, 20);
 const dailyLimit = () => envNumber('KADE_DESCRIPTION_DAILY_USD', 5, 0.1, 100);
 const configured = () =>
   !!(process.env.OPENROUTER_KEY && process.env.DEEPGRAM_API_KEY && bucket()) &&
@@ -431,7 +433,7 @@ const retain = (job: Pick<Job, 'expiresAt'>, days: number): Date =>
 /** Measured provider costs per minute of video (Sep 2026 samples, rounded up), for estimates only. */
 const rates = { vision: 0.021, closeLook: 0.025, firstLook: 0.021 };
 /** Fixed overhead per run: prompts and joins for a description run, a re-voice, a correction. */
-const overhead = { describe: 0.03, revoice: 0.02, correction: 0.05 };
+const overhead = { describe: 0.03, revoice: 0, correction: 0 };
 const setAsideRule = { factor: 1.1, extraUSD: 0.05 };
 /** A run stops and asks before a paid request once it has cost this much: the quote plus headroom. */
 const approvalRule = { factor: 1.5, extraUSD: 0.1 };
@@ -464,19 +466,16 @@ type Breakdown = {
 };
 type Price = { estimateUSD: number; setAsideUSD: number; breakdown: Breakdown; seconds: number };
 const setAsideFor = (estimate: number): number =>
-  Math.min(jobLimit(), toCents(estimate * setAsideRule.factor + setAsideRule.extraUSD) / 100);
+  estimate > 0 ? toCents(estimate * setAsideRule.factor + setAsideRule.extraUSD) / 100 : 0;
 const approvalFor = (estimate: number): number =>
-  Math.min(jobLimit(), toCents(estimate * approvalRule.factor + approvalRule.extraUSD) / 100);
+  estimate > 0 ? toCents(estimate * approvalRule.factor + approvalRule.extraUSD) / 100 : 0;
 /**
  * What continuing a run that went over its quote asks her to allow: the rest of the work priced
  * at the rate the stopped run really cost, with the usual headroom, never above one run's limit.
  */
 function askFor(estimate: number, over: { spentUSD: number; quotedUSD: number }): number {
   const overrun = Math.max(1, over.spentUSD / Math.max(0.01, over.quotedUSD));
-  return Math.min(
-    jobLimit(),
-    toCents(estimate * overrun * approvalRule.factor + approvalRule.extraUSD) / 100,
-  );
+  return toCents(estimate * overrun * approvalRule.factor + approvalRule.extraUSD) / 100;
 }
 /**
  * The ask she is shown and the most Continue will allow: never more than today has left, so it
@@ -810,6 +809,11 @@ export function createDescriptionRouter(hooks: Hooks): {
       initialized = undefined;
       throw error;
     }));
+  const jobLimit = () => (hooks.wallet ? Infinity : legacyJobLimit());
+  const billingMode = (req: Request) => {
+    if (!hooks.wallet) return 'allowance';
+    return hooks.actor(req).role === 'ADMIN' ? 'platform' : 'balance';
+  };
   const storage = () => hooks.storage();
   const warn = (message: string) => (hooks.warn ?? hooks.log)(message);
   /** Every storage call gives up after two minutes, and sooner when the job is stopped. */
@@ -1136,6 +1140,12 @@ export function createDescriptionRouter(hooks: Hooks): {
     );
   }
   async function takeFromDay(reservation: Run): Promise<boolean> {
+    if (reservation.walletOwner && hooks.wallet)
+      return hooks.wallet.reserve(
+        reservation.walletOwner,
+        reservation.runId,
+        reservation.cents / 100,
+      );
     await dayDocument(reservation.day);
     const taken = await Budgets.updateOne(
       { _id: reservation.day, held: { $lte: Math.round(dailyLimit() * 100) - reservation.cents } },
@@ -1159,13 +1169,22 @@ export function createDescriptionRouter(hooks: Hooks): {
    * charged above its estimate). Keyed by the run, so it happens once and never touches another run's money.
    */
   async function release(reservation: Run | undefined, spentUSD: number): Promise<void> {
-    if (!reservation?.runId) return;
+    if (!reservation?.runId || reservation.settled) return;
+    if (reservation.walletOwner && hooks.wallet) {
+      await hooks.wallet.settle(reservation.walletOwner, reservation.runId, spentUSD);
+      await Jobs.updateOne(
+        { 'reservation.runId': reservation.runId },
+        { $set: { 'reservation.settled': true } },
+      );
+      return;
+    }
     await Budgets.updateOne(
       { _id: reservation.day, runs: reservation.runId },
       { $inc: { held: toCents(spentUSD) - reservation.cents }, $pull: { runs: reservation.runId } },
     );
   }
-  async function remaining(): Promise<number> {
+  async function remaining(owner?: string): Promise<number> {
+    if (hooks.wallet && owner) return (await hooks.wallet.available(owner)) ?? Infinity;
     const budget = await Budgets.findById(today()).lean();
     return Math.max(0, Math.round(dailyLimit() * 100) - (budget?.held || 0)) / 100;
   }
@@ -1182,8 +1201,10 @@ export function createDescriptionRouter(hooks: Hooks): {
       ) / 100
     );
   }
-  async function allowanceText(setAside: number): Promise<string> {
-    const left = await remaining();
+  async function allowanceText(setAside: number, owner?: string): Promise<string> {
+    const left = await remaining(owner);
+    if (hooks.wallet)
+      return `This run needs ${money(setAside)} available in your balance; ${money(left)} is available. Narration is included. Unused reserved money is returned when the run ends.`;
     const held = await heldByOpenRuns();
     return [
       `This needs about ${money(setAside)} set aside, and ${money(left)} of today's ${money(dailyLimit())} processing allowance is left.`,
@@ -1333,7 +1354,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       queuePosition: job.state === 'queued' ? ahead?.get(job._id) : undefined,
       sourcePrivate: library ? !library.shared : undefined,
       sourceGrownUps: library ? !!library.grownUpsOnly : undefined,
-      sourceOwner: library ? (library.ownerIsActor ? 'you' : 'someone else') : undefined,
+      sourceOwner: library && (library.ownerIsActor ? 'you' : 'someone else'),
       range: job.settings?.range,
       preview: !!job.preview,
       libraryPath: job.source === 'library' ? describedShelf(job.sourcePath) : defaultLibraryPath,
@@ -1359,8 +1380,10 @@ export function createDescriptionRouter(hooks: Hooks): {
       res.status(403).json({ error: "Described video is not available on children's accounts." });
       return;
     }
-    if (actor.role !== 'ADMIN' && process.env.KADE_DESCRIPTION_PUBLIC !== '1') {
-      res.status(403).json({ error: 'Described video is currently a private owner trial.' });
+    if (actor.role !== 'ADMIN' && process.env.KADE_DESCRIPTION_PUBLIC === '0') {
+      res
+        .status(403)
+        .json({ error: 'Described video access is temporarily limited to administrators.' });
       return;
     }
     next();
@@ -1788,15 +1811,16 @@ export function createDescriptionRouter(hooks: Hooks): {
       throw new Problem('Only a stopped job can be continued.');
     if (crashLocked(job)) throw new Problem(crashText);
     const settings = settingsSchema.parse({ ...job.settings, ...voiceSchema.parse(body ?? {}) });
-    const kind: RunKind =
-      job.runKind ?? (job.revoice ? (job.reuseUnchanged ? 'correction' : 'revoice') : 'fresh');
+    const voiceKind = job.reuseUnchanged ? 'correction' : 'revoice';
+    const kind: RunKind = job.runKind ?? (job.revoice ? voiceKind : 'fresh');
     const whole = workingSeconds(job.seconds, settings.range);
     const spans = storedSpans(job, settings.range);
     const retry = new Set(job.retry ?? []);
     const manifest = (job.manifest ?? []).map((entry, i) => (retry.has(i) ? null : entry));
     const changed = !sameVoice(settings, job.settings) && doneCount(manifest) > 0;
     const redo = new Set(job.redo ?? []);
-    const scope = spans ? (kind === 'redo' ? [...redo] : inScope(spans, job.stopAfter)) : [];
+    let scope: number[] = [];
+    if (spans) scope = kind === 'redo' ? [...redo] : inScope(spans, job.stopAfter);
     const pending = scope.filter((i) => manifest[i] === null || manifest[i] === undefined);
     const firstLook =
       describing.includes(kind) && whole > 120 && (job.firstLookThrough ?? 0) < scope.length;
@@ -1894,7 +1918,7 @@ export function createDescriptionRouter(hooks: Hooks): {
    */
   async function askAfterHalt(job: Job, over: OverQuote): Promise<number> {
     const closing = (job.reservation?.cents ?? 0) - toCents(job.runCost ?? 0);
-    const left = await remaining().then(
+    const left = await remaining(job.owner).then(
       (value) => Math.max(0, Math.round(value * 100) + closing) / 100,
       () => jobLimit(),
     );
@@ -1960,6 +1984,7 @@ export function createDescriptionRouter(hooks: Hooks): {
    */
   async function enqueue(req: Request, job: Job, launch: Launch): Promise<Job> {
     const { price, settings } = launch;
+    if (launch.from.includes(job.state)) await release(job.reservation, job.runCost ?? 0);
     if (price.estimateUSD > jobLimit())
       throw new Problem(
         `This is estimated at ${money(price.estimateUSD)}, above the ${money(jobLimit())} limit for one run. Choose less detail, turn off the extra passes, or describe a shorter part.`,
@@ -1968,7 +1993,14 @@ export function createDescriptionRouter(hooks: Hooks): {
     const reservation: Run = {
       runId: randomUUID(),
       day: today(),
-      cents: rehearsal ? 0 : toCents(price.setAsideUSD),
+      cents: rehearsal
+        ? 0
+        : toCents(
+            hooks.wallet
+              ? (launch.approvedUSD ?? approvalFor(price.estimateUSD))
+              : price.setAsideUSD,
+          ),
+      ...(hooks.wallet ? { walletOwner: job.owner } : {}),
     };
     const approvedUSD = rehearsal ? 0 : (launch.approvedUSD ?? approvalFor(price.estimateUSD));
     const guard =
@@ -2009,7 +2041,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       );
     if (!rehearsal && !(await takeFromDay(reservation))) {
       await restore(claimed.reservingFrom || job.state);
-      throw new Problem(await allowanceText(price.setAsideUSD));
+      throw new Problem(await allowanceText(reservation.cents / 100, job.owner));
     }
     const { set, unset } = split({
       ...launch.patch,
@@ -2079,8 +2111,10 @@ export function createDescriptionRouter(hooks: Hooks): {
       maxMinutes: maxMinutes(),
       maxSourceMinutes: maxSourceMinutes(),
       limitUSD: jobLimit(),
-      dailyUSD: dailyLimit(),
-      remainingUSD: await remaining(),
+      dailyUSD: hooks.wallet ? null : dailyLimit(),
+      billingMode: billingMode(req),
+      speechIncluded: true,
+      remainingUSD: await remaining(hooks.actor(req).id),
       perMinuteUSD: {
         essential: perMinute('essential'),
         standard: perMinute('standard'),
@@ -2112,7 +2146,10 @@ export function createDescriptionRouter(hooks: Hooks): {
       .limit(40)
       .lean();
     const ahead = jobs.some((job) => job.state === 'queued') ? await queueAhead() : undefined;
-    res.json({ jobs: jobs.map((job) => publicJob(job, ahead)), remainingUSD: await remaining() });
+    res.json({
+      jobs: jobs.map((job) => publicJob(job, ahead)),
+      remainingUSD: await remaining(hooks.actor(req).id),
+    });
   });
   route('get', '/jobs/:id', async (req, res) => {
     res.json(await single(await owned(req)));
@@ -2364,21 +2401,26 @@ export function createDescriptionRouter(hooks: Hooks): {
       sections: input.sections,
       note: input.note,
     };
-    const remainingUSD = await remaining();
-    const limits = { remainingUSD, dailyUSD: dailyLimit(), limitUSD: jobLimit() };
+    const remainingUSD = await remaining(job.owner);
+    const limits = {
+      remainingUSD,
+      dailyUSD: hooks.wallet ? null : dailyLimit(),
+      limitUSD: jobLimit(),
+      billingMode: billingMode(req),
+      speechIncluded: true,
+    };
     try {
       const launch = await launchFor(job, input.action, body, false);
-      const { estimateUSD, setAsideUSD, breakdown, seconds } = launch.price;
+      const { estimateUSD, breakdown, seconds } = launch.price;
       const approvedUSD =
         input.action === 'resume' && job.state === 'failed' && job.overQuote
           ? askWithin(estimateUSD, job.overQuote, remainingUSD)
           : approvalFor(estimateUSD);
-      const reason =
-        estimateUSD > jobLimit()
-          ? `This is estimated at ${money(estimateUSD)}, above the ${money(jobLimit())} limit for one run.`
-          : setAsideUSD > remainingUSD
-            ? await allowanceText(setAsideUSD)
-            : undefined;
+      const setAsideUSD = hooks.wallet ? approvedUSD : launch.price.setAsideUSD;
+      let reason: string | undefined;
+      if (setAsideUSD > remainingUSD) reason = await allowanceText(setAsideUSD, job.owner);
+      if (estimateUSD > jobLimit())
+        reason = `This is estimated at ${money(estimateUSD)}, above the ${money(jobLimit())} limit for one run.`;
       res.json({
         estimateUSD,
         setAsideUSD,
@@ -2445,7 +2487,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           400,
           'allowUpToUSD',
         );
-      const left = await remaining();
+      const left = await remaining(job.owner);
       launch.approvedUSD = Math.max(
         approvalFor(launch.price.estimateUSD),
         Math.min(toCents(allow) / 100, left),
@@ -2658,6 +2700,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         'Wait for any Library save, or cancel processing and wait for it to stop, before deleting.',
       );
     try {
+      await release(deleting.reservation, deleting.runCost ?? 0);
       await abortUpload(job);
       await eraseAll(job);
     } catch (error) {
@@ -2920,7 +2963,10 @@ export function createDescriptionRouter(hooks: Hooks): {
       const reservation: Run = {
         runId: randomUUID(),
         day: today(),
-        cents: Math.max(1, toCents(Buffer.byteLength(text, 'utf8') * speechPerByte * 2)),
+        cents: hooks.wallet
+          ? 0
+          : Math.max(1, toCents(Buffer.byteLength(text, 'utf8') * speechPerByte * 2)),
+        ...(hooks.wallet ? { walletOwner: owner } : {}),
       };
       if (!(await takeFromDay(reservation)))
         throw new Problem(
@@ -3202,11 +3248,13 @@ export function createDescriptionRouter(hooks: Hooks): {
       .catch(() => null);
     if (!current) return;
     const cancelled = !!current.cancelRequested;
-    const back = rehearsing(current)
-      ? cancelled
-        ? rehearsalStop(current, 'cancelled')
-        : rehearsalStop(current, 'stopped', 'The rehearsal stopped and did not wind down.')
-      : undefined;
+    const back =
+      rehearsing(current) &&
+      rehearsalStop(
+        current,
+        cancelled ? 'cancelled' : 'stopped',
+        cancelled ? undefined : 'The rehearsal stopped and did not wind down.',
+      );
     const settled = await Jobs.findOneAndUpdate(
       { _id: job._id, worker },
       back
@@ -3377,11 +3425,11 @@ export function createDescriptionRouter(hooks: Hooks): {
       const over = !cancelled && error instanceof OverQuote ? error : undefined;
       const rehearsal = lane === 'render' && job.runKind === 'rehearsal';
       const ask = over ? await askAfterHalt(current ?? job, over) : 0;
-      const message = cancelled
-        ? 'Processing stopped. Work already sent to providers may still be charged.'
-        : over
-          ? `${over.message} Continue up to ${money(ask)} more? Finished sections are kept.`
-          : plainProblem(error, reason);
+      let message = plainProblem(error, reason);
+      if (over)
+        message = `${over.message} Continue up to ${money(ask)} more? Finished sections are kept.`;
+      if (cancelled)
+        message = 'Processing stopped. Work already sent to providers may still be charged.';
       warn(
         line('dv.fail', { id: job._id, lane, cancelled, message, detail: detail.slice(0, 800) }),
       );
@@ -3396,11 +3444,13 @@ export function createDescriptionRouter(hooks: Hooks): {
             askUSD: ask,
           }),
         );
-      const back = rehearsal
-        ? cancelled
-          ? rehearsalStop(current ?? job, 'cancelled')
-          : rehearsalStop(current ?? job, 'stopped', `The rehearsal stopped: ${message}`)
-        : undefined;
+      const back =
+        rehearsal &&
+        rehearsalStop(
+          current ?? job,
+          cancelled ? 'cancelled' : 'stopped',
+          cancelled ? undefined : `The rehearsal stopped: ${message}`,
+        );
       const ended = await Jobs.updateOne(
         { _id: job._id, worker },
         back
@@ -3686,9 +3736,13 @@ export function createDescriptionRouter(hooks: Hooks): {
             if (!Number.isFinite(reserve) || reserve < 0)
               throw new Halt('A cost estimate was invalid.');
             const charged = spend.usd - spend.pending;
-            if (charged >= approved - 1e-9) throw new OverQuote(charged, quoted);
+            if (reserve > 0 && charged >= approved - 1e-9) throw new OverQuote(charged, quoted);
             const held = reservation.cents / 100;
-            if (spend.usd + reserve > held && !(await grow(spend.usd + reserve - held)))
+            if (
+              !reservation.walletOwner &&
+              spend.usd + reserve > held &&
+              !(await grow(spend.usd + reserve - held))
+            )
               throw new Halt(
                 'The job reached its processing allowance, so no further paid requests were sent. Finished sections are kept.',
               );
@@ -3707,12 +3761,9 @@ export function createDescriptionRouter(hooks: Hooks): {
             result = await action();
           } catch (error) {
             const reported = (error as { costUSD?: unknown }).costUSD;
-            const actual =
-              typeof reported === 'number' && Number.isFinite(reported) && reported >= 0
-                ? reported
-                : billed(error)
-                  ? reserve
-                  : 0;
+            let actual = billed(error) ? reserve : 0;
+            if (typeof reported === 'number' && Number.isFinite(reported) && reported >= 0)
+              actual = reported;
             const uncertain = actual === reserve && typeof reported !== 'number';
             await settleCost(uncertain ? 'uncertain' : kind, reserve, actual);
             if (actual > 0)
@@ -3937,8 +3988,15 @@ export function createDescriptionRouter(hooks: Hooks): {
       .limit(20)
       .lean();
     for (const job of stuck) {
-      const restored = await Jobs.findOneAndUpdate(
+      const claimed = await Jobs.findOneAndUpdate(
         { _id: job._id, state: 'reserving', updatedAt: job.updatedAt },
+        { $set: { cancelRequested: true } },
+        { new: true },
+      ).lean();
+      if (!claimed) continue;
+      await release(claimed.pendingRun, 0);
+      const restored = await Jobs.findOneAndUpdate(
+        { _id: job._id, state: 'reserving', 'pendingRun.runId': claimed.pendingRun?.runId },
         {
           $set: {
             state: job.reservingFrom || (job.revoice ? 'done' : 'ready'),
@@ -3949,10 +4007,20 @@ export function createDescriptionRouter(hooks: Hooks): {
         { new: true },
       ).lean();
       if (restored) {
-        await release(job.pendingRun, 0);
         hooks.log(line('dv.reserving-restored', { id: job._id, to: restored.state }));
       }
     }
+  }
+  async function sweepSettlements(): Promise<void> {
+    if (!hooks.wallet) return;
+    const unsettled = await Jobs.find({
+      state: { $nin: [...busy, ...checking] },
+      'reservation.walletOwner': { $exists: true },
+      'reservation.settled': { $ne: true },
+    })
+      .limit(20)
+      .lean();
+    for (const job of unsettled) await release(job.reservation, job.runCost ?? 0);
   }
   /** A job she cancelled whose worker died settles as cancelled, with its money returned. */
   async function settleCancelled(job: Job): Promise<void> {
@@ -4094,6 +4162,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       ).lean();
       if (!claimed) continue;
       try {
+        await release(claimed.reservation, claimed.runCost ?? 0);
         await abortUpload(claimed);
         await eraseAll(claimed);
         await Jobs.deleteOne({ _id: job._id, state: 'deleting' });
@@ -4199,6 +4268,9 @@ export function createDescriptionRouter(hooks: Hooks): {
     if (closing || mongoose.connection.readyState !== 1) return;
     await sweepReserving().catch((error: Error) =>
       warn(line('dv.sweep', { error: scrub(error.message) })),
+    );
+    await sweepSettlements().catch((error: Error) =>
+      warn(line('dv.settlement', { error: scrub(error.message) })),
     );
     await Promise.all([runLane('check'), runLane('render')]);
   }

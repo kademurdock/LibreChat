@@ -53,9 +53,22 @@ const common: ReadonlySet<string> = new Set([
   'young',
 ]);
 const honorific =
-  '(?:mr|mrs|ms|mx|miss|dr|uncle|aunt|auntie|grandma|grandpa|coach|officer|captain|sir|saint|st)\\.?\\s+';
+  '(?:mr|mrs|ms|mx|miss|dr|sgt|sen|rev|lt|uncle|aunt|auntie|grandma|grandpa|coach|officer|captain|sir|saint|st)\\.?\\s+';
 const edge = '(?<![\\p{L}\\p{N}])';
 const after = '(?![\\p{L}\\p{N}])';
+const patterns = new Map<string, RegExp>();
+function pattern(source: string, flags: string): RegExp {
+  const key = `${flags}:${source}`;
+  let value = patterns.get(key);
+  if (!value) {
+    if (patterns.size > 1000) patterns.clear();
+    value = new RegExp(source, flags);
+    patterns.set(key, value);
+  }
+  value.lastIndex = 0;
+  return value;
+}
+const cachedPattern = pattern;
 
 /** Lowercase name key used by `Continuity.reveals` and `heard.names`. */
 export const nameKey = (name: string): string => name.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -76,6 +89,7 @@ export function tokens(value: string): string[] {
 export function near(a: string, b: string): boolean {
   if (a === b) return true;
   if (a.length < 5 || b.length < 5 || Math.abs(a.length - b.length) > 1) return false;
+  if (a[0] !== b[0] && Math.min(a.length, b.length) < 7) return false;
   let start = 0;
   while (start < a.length && start < b.length && a[start] === b[start]) start++;
   let end = 0;
@@ -88,13 +102,13 @@ export function near(a: string, b: string): boolean {
   return Math.max(a.length, b.length) - start - end <= 1;
 }
 
-type Said = { token: string; at: number; capital: boolean };
+type Said = { token: string; at: number; capital: boolean; raw: string };
 
 function said(words: Word[]): Said[] {
   const ordered = [...words].sort((a, b) => a.start - b.start);
   return ordered.flatMap((word) => {
     const capital = /^[^\p{L}]*\p{Lu}/u.test(word.word);
-    return tokens(word.word).map((token) => ({ token, at: word.start, capital }));
+    return tokens(word.word).map((token) => ({ token, at: word.start, capital, raw: word.word }));
   });
 }
 
@@ -113,7 +127,17 @@ function firstSaid(stream: Said[], parts: string[]): number | undefined {
     }
     if (!stream[i].capital) continue;
     const single = parts.length === 1 ? parts : own;
-    if (single.some((part) => near(stream[i].token, part))) return stream[i].at;
+    const modal =
+      /^(will|may)$/i.test(stream[i].token) &&
+      !/[!,]$/.test(stream[i].raw) &&
+      /^(i|you|we|he|she|they|it|be|have|not)$/i.test(stream[i + 1]?.token ?? '');
+    if (
+      !modal &&
+      single.some(
+        (part) => stream[i].token === part || (parts.length === 1 && near(stream[i].token, part)),
+      )
+    )
+      return stream[i].at;
   }
   return undefined;
 }
@@ -133,25 +157,53 @@ export function spokenReveals(words: Word[], names: string[]): Record<string, nu
 
 /** Names the listener's own notes mention; she knows them from the start. */
 export function notedNames(notes: string, names: string[]): string[] {
-  const written = tokens(notes);
-  if (!written.length) return [];
-  const has = (sequence: string[]) =>
-    written.some((_, i) => sequence.every((part, j) => written[i + j] === part));
   return names.filter((name) => {
     const parts = tokens(name);
     if (!parts.length) return false;
-    const own = distinctive(parts);
-    return has(parts) || (own.length > 0 && own.some((part) => written.includes(part)));
+    for (const hit of notes.matchAll(
+      pattern(`${edge}${escape(name).replace(/\s+/g, '\\s+')}${after}`, 'giu'),
+    )) {
+      const at = hit.index ?? 0;
+      const before = notes.slice(0, at);
+      const rest = notes.slice(at + hit[0].length);
+      if (/^may$/i.test(name) && /^\s+\d/.test(rest)) continue;
+      if (/^(will|may)$/i.test(name) && /^\s+(?:open|be|have|not|you|i|we)\b/i.test(rest)) continue;
+      if (
+        parts.some((part) => common.has(part)) ||
+        /(?:uncle|aunt|grandma|grandpa|named|called)\s+$/i.test(before) ||
+        /^\s+is\s+(?:my|the|a)\b/i.test(rest) ||
+        /^\p{Lu}/u.test(hit[0])
+      )
+        return true;
+    }
+    return false;
   });
 }
 
 /** Stretches of a description that read on-screen words aloud ("A sign reads …"). */
 export function readings(text: string): [number, number][] {
   const spans: [number, number][] = [];
-  for (const match of text.matchAll(/\b(?:reads|read|reading|displays|spells out)\b[:,]?\s*/gi)) {
+  for (const match of text.matchAll(
+    /\b(?:text|caption|sign|banner|mailbox|label|title|card|screen|lettering|logo|words)\s+(?:reads|read|reading|displays|spells out)\b[:,]?\s*/gi,
+  )) {
     const from = (match.index ?? 0) + match[0].length;
     const rest = text.slice(from);
-    const stop = rest.search(/[.!?](?=\s+[\p{Lu}"“]|\s*$)/u);
+    let stop = -1;
+    if (/^["“]/.test(rest)) {
+      const end = rest.slice(1).search(/["”]/);
+      if (end >= 0) {
+        spans.push([from, from + end + 2]);
+        continue;
+      }
+    }
+    for (const end of rest.matchAll(/[.!?](?=\s+[\p{Lu}"“]|\s*$)/gu)) {
+      const at = end.index ?? 0;
+      const prefix = rest.slice(0, at);
+      if (end[0] === '.' && /(?:\b(?:Mr|Mrs|Ms|Dr|Sgt|Sen|Rev|Lt|St|Capt)|\b[A-Z])$/i.test(prefix))
+        continue;
+      stop = at;
+      break;
+    }
     spans.push([from, stop < 0 ? text.length : from + stop + 1]);
   }
   return spans;
@@ -179,11 +231,21 @@ function hits(text: string, name: string, labels: string[] = []): Hit[] {
   const found: Hit[] = [];
   for (const pattern of [parts.map(escape).join('\\s+'), ...partial.map(escape)]) {
     for (const match of text.matchAll(
-      new RegExp(`${edge}(${honorific})?(${pattern})${after}`, 'giu'),
+      cachedPattern(`${edge}(${honorific})?(${pattern})${after}`, 'giu'),
     )) {
       const index = match.index ?? 0;
       const length = match[0].length;
       if (!/^\p{Lu}/u.test(match[2]) || overlaps(index, length)) continue;
+      const rest = text.slice(index + length);
+      if (/^\s+(?:\p{Lu}[\p{L}.']*\s+)*(?:logo|sign|shirt|store|dealership|brand)\b/u.test(rest))
+        continue;
+      if (
+        parts.length > 1 &&
+        match[2].toLowerCase() !== name.toLowerCase() &&
+        /^(?:brown|white|black|green|rose|price|will|may)$/i.test(match[2]) &&
+        /^\s+(?:boxes|cards|flowers|paint|shirt|coat|you|i)\b/i.test(rest)
+      )
+        continue;
       const hit = { index, length };
       found.push(hit);
       blocked.push(hit);
@@ -196,8 +258,8 @@ function hits(text: string, name: string, labels: string[] = []): Hit[] {
 export function readsName(text: string, name: string): boolean {
   const spans = readings(text);
   if (!spans.length) return false;
-  const pattern = new RegExp(`${edge}${escape(name.trim()).replace(/\s+/g, '\\s+')}${after}`, 'iu');
-  return spans.some(([from, to]) => pattern.test(text.slice(from, to)));
+  const regex = pattern(`${edge}${escape(name.trim()).replace(/\s+/g, '\\s+')}${after}`, 'iu');
+  return spans.some(([from, to]) => regex.test(text.slice(from, to)));
 }
 
 const labelCore = (label: string): string =>
@@ -209,7 +271,7 @@ const labelCore = (label: string): string =>
 const labelPattern = (label: string, flags: string): RegExp | undefined => {
   const core = labelCore(label);
   return core
-    ? new RegExp(`${edge}${escape(core).replace(/\s+/g, '\\s+')}${after}`, flags)
+    ? pattern(`${edge}${escape(core).replace(/\s+/g, '\\s+')}${after}`, flags)
     : undefined;
 };
 
@@ -263,10 +325,18 @@ function hideName(text: string, name: string, label: string, labels: string[]): 
     let start = hit.index;
     let end = hit.index + hit.length;
     const before = out.slice(0, start);
-    const joinedBefore = new RegExp(`(?:the\\s+|a\\s+|an\\s+)?${core},\\s*$`, 'iu').exec(before);
-    const joinedAfter = new RegExp(`^,\\s*(?:the\\s+|a\\s+|an\\s+)?${core}${after}`, 'iu').exec(
-      out.slice(end),
+    const named = pattern(`(?:the\\s+|a\\s+|an\\s+)?${core}\\s+(?:named|called)\\s*$`, 'iu').exec(
+      before,
     );
+    if (named) {
+      out = before.replace(/\s+(?:named|called)\s*$/i, '') + out.slice(end);
+      continue;
+    }
+    const joinedBefore = pattern(`(?:the\\s+|a\\s+|an\\s+)?${core},\\s*$`, 'iu').exec(before);
+    const joinedAfter = pattern(
+      `^(?:,\\s*|\\s+)(?:the\\s+|a\\s+|an\\s+)?${core}${after}`,
+      'iu',
+    ).exec(out.slice(end));
     if (joinedBefore) {
       start = before.length - joinedBefore[0].length + joinedBefore[0].indexOf(',');
       if (out[end] === ',') end++;
@@ -277,7 +347,12 @@ function hideName(text: string, name: string, label: string, labels: string[]): 
       end += joinedAfter[0].length;
       if (out[end] === ',') end++;
     }
-    out = out.slice(0, start) + labelAt(out, start, label) + out.slice(end);
+    const possessive = /^['’](?!s\b)/.test(out.slice(end));
+    out =
+      out.slice(0, start) +
+      labelAt(out, start, label) +
+      (possessive ? "'s" : '') +
+      out.slice(end + (possessive ? 1 : 0));
   }
   return out.replace(/\s{2,}/g, ' ').replace(/\s+([,.!?])/g, '$1');
 }
@@ -286,7 +361,10 @@ function hideName(text: string, name: string, label: string, labels: string[]): 
 function joinName(text: string, name: string, label: string, labels: string[]): string {
   if (mentionsLabel(text, label)) return text;
   const hit = hits(text, name, labels).find(
-    (item) => !/^['’]s\b/.test(text.slice(item.index + item.length)),
+    (item) =>
+      !/^['’]/.test(text.slice(item.index + item.length)) &&
+      !/,\s*$/.test(text.slice(0, item.index)) &&
+      !/^\s+and\b/.test(text.slice(item.index + item.length)),
   );
   if (!hit) return text;
   const end = hit.index + hit.length;
@@ -309,11 +387,11 @@ function dropJoin(text: string, name: string, label: string): string {
   const article = '(?:the\\s+|a\\s+|an\\s+)?';
   const said = `${escape(core).replace(/\s+/g, '\\s+')}`;
   const spoken = `${escape(name.trim()).replace(/\s+/g, '\\s+')}`;
-  const keep = (match: string, found: string, offset: number, whole: string) =>
+  const keep = (_match: string, found: string, offset: number, whole: string) =>
     startsSentence(whole, offset) ? capitalize(found) : found;
   return text
-    .replace(new RegExp(`${edge}${article}${said},\\s*(${spoken})${after},?`, 'giu'), keep)
-    .replace(new RegExp(`${edge}(${spoken}),\\s*${article}${said}${after},?`, 'giu'), keep)
+    .replace(pattern(`${edge}${article}${said},\\s*(${spoken})${after},?`, 'giu'), keep)
+    .replace(pattern(`${edge}(${spoken}),\\s*${article}${said}${after},?`, 'giu'), keep)
     .replace(/\s{2,}/g, ' ')
     .replace(/\s+([,.!?])/g, '$1');
 }
@@ -361,8 +439,19 @@ export function gateCues(input: {
   words: Word[];
   notes: string;
   sectionStart: number;
-}): { cues: Cue[]; reveals: Record<string, number> } {
+  reference?: Person[];
+}): {
+  cues: Cue[];
+  reveals: Record<string, number>;
+  rejoin: (placed: { cue: Cue; spoken: string }[]) => (Cue | undefined)[];
+} {
   const everyone = known(input.people, input.state);
+  for (const ref of input.reference ?? []) {
+    const same = everyone.find((person) => labelCore(person.label) === labelCore(ref.label));
+    if (same) {
+      if (!same.name) same.name = ref.name;
+    } else everyone.push({ ...ref, id: undefined });
+  }
   const people = everyone.filter((person) => person.name);
   const names = [...new Set(people.map((person) => person.name))];
   const labels = everyone.map((person) => person.label);
@@ -386,7 +475,7 @@ export function gateCues(input: {
     const joined: string[] = [];
     for (const person of people) {
       const key = nameKey(person.name);
-      if (labelCore(person.label).includes(key)) continue;
+      if (pattern(`${edge}${escape(key)}${after}`, 'iu').test(labelCore(person.label))) continue;
       const reveal = reveals[key];
       if (reveal === undefined || reveal > time + 1e-6) {
         text = hideName(text, person.name, person.label, labels);
@@ -417,7 +506,26 @@ export function gateCues(input: {
     }
     out[index] = { ...cue, text, shortText, importance };
   }
-  return { cues: out, reveals };
+  const rejoin = (placed: { cue: Cue; spoken: string }[]): (Cue | undefined)[] => {
+    const heard = new Set(Object.keys(input.state?.heard?.names ?? {}).map(nameKey));
+    return placed.map(({ cue, spoken }) => {
+      let text = cue.text,
+        shortText = cue.shortText;
+      for (const person of people) {
+        const key = nameKey(person.name);
+        if (reveals[key] === undefined || reveals[key] > input.sectionStart + cue.at) continue;
+        if (!heard.has(key) && hits(spoken, person.name, labels).length) {
+          text = joinName(text, person.name, person.label, labels);
+          shortText = joinName(shortText, person.name, person.label, labels);
+          if (mentionsLabel(text, person.label)) heard.add(key);
+        }
+      }
+      return text === cue.text && shortText === cue.shortText
+        ? undefined
+        : { ...cue, text, shortText };
+    });
+  };
+  return { cues: out, reveals, rejoin };
 }
 
 /**

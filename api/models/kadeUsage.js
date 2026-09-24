@@ -89,7 +89,11 @@ async function deductKadeCredits(userId, costUSD) {
     if (credits <= 0) return;
     await Balance.updateOne({ user: userId }, { $inc: { tokenCredits: -credits } });
   } catch (err) {
-    try { logger.warn(`[KadeUsage] credit deduct failed: ${err && err.message}`); } catch (_) { /* noop */ }
+    try {
+      logger.warn(`[KadeUsage] credit deduct failed: ${err && err.message}`);
+    } catch (_) {
+      /* noop */
+    }
   }
 }
 
@@ -103,7 +107,13 @@ async function logKadeUsage({ userId, service, quantity, unit, costUSD, metadata
     }
     const cost = typeof costUSD === 'number' ? costUSD : (RATES[service] || 0) * quantity;
     await KadeUsage.create({ user: userId, service, quantity, unit, costUSD: cost, metadata });
-    await deductKadeCredits(userId, cost);
+    if (!(
+      service === 'describe' &&
+      metadata?.source === 'described-video' &&
+      metadata?.walletHandled === true
+    )) {
+      await deductKadeCredits(userId, cost);
+    }
   } catch (err) {
     try {
       logger.warn(`[KadeUsage] failed to log ${service} usage: ${err && err.message}`);

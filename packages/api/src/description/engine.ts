@@ -190,12 +190,9 @@ export function levelsFor(plan: Plan, choice: Settings['volume']): Levels {
   if (!plan.audio || program <= -69)
     return { gain: 0, narration: -18 + preset.lift, duck: preset.duck };
   const gain = Math.min(12, 5 - peak, Math.max(-12, -20 - program));
-  const anchor =
-    dialogue !== undefined
-      ? dialogue + preset.offset
-      : lra !== undefined
-        ? program - 0.19 * (lra - 1) + preset.offset
-        : program + preset.lift;
+  let anchor = program + preset.lift;
+  if (lra !== undefined) anchor = program - 0.19 * (lra - 1) + preset.offset;
+  if (dialogue !== undefined) anchor = dialogue + preset.offset;
   return { gain, narration: Math.min(-13, Math.max(-26, anchor + gain)), duck: preset.duck };
 }
 
@@ -544,6 +541,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       title: request.title,
       about: request.about,
       notes: settings.notes,
+      range: settings.range,
       detail: settings.detail,
       rate: settings.rate,
       maxRate: settings.maxRate,
@@ -754,7 +752,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const sectionCuts = cutsIn(section);
     const incoming = carried.get(i) ?? [];
     carried.delete(i);
-    const gated = analysis
+    const gate = analysis
       ? gateCues({
           cues: snapToCuts(analysis.cues, sectionCuts),
           people: analysis.people,
@@ -762,8 +760,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           words,
           notes: settings.notes,
           sectionStart: section.start,
-        }).cues
-      : [];
+          reference: saved.firstLook?.state.people,
+        })
+      : undefined;
+    const gated = gate?.cues ?? [];
     const cues = [...incoming.map((item) => item.cue), ...gated];
     const ids = [
       ...incoming.map((item) => item.id),
@@ -865,7 +865,25 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         else failed.add(name);
       });
     }
-    const final = layout(length);
+    let final = layout(length);
+    for (let pass = 0; gate && pass < cues.length; pass++) {
+      const changes = gate.rejoin(
+        final.placed.map((item) => ({
+          cue: cues[item.index],
+          spoken: textOf(item.index, item.variant),
+        })),
+      );
+      if (!changes.some(Boolean)) break;
+      changes.forEach((change, index) => {
+        if (!change) return;
+        const cueIndex = final.placed[index].index;
+        cues[cueIndex] = change;
+        clips.delete(key(cueIndex, 'full'));
+        clips.delete(key(cueIndex, 'short'));
+      });
+      await speak(final.placed, `join-${pass}`);
+      final = layout(length);
+    }
     const skipped: (Skip & { id?: string })[] = [];
     const left: string[] = [];
     const nextCut = i + 1 < count ? cutsIn(fixed.sections[i + 1])[0] : undefined;
@@ -937,10 +955,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       words,
       notes: settings.notes,
     };
-    const continuity = analysis
-      ? nextContinuity(stateIn, analysis, heard)
-      : aligned.length
-        ? nextContinuity(stateIn, blank(stateIn), heard)
+    const continuity =
+      analysis || aligned.length
+        ? nextContinuity(stateIn, analysis ?? blank(stateIn), heard)
         : (stateIn ?? emptyContinuity);
     onPlaced?.(continuity);
     const timeline = outputTimeline(aligned.map((item) => item.placement));

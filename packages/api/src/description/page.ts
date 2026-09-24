@@ -140,7 +140,7 @@ export function describedVideoPage(sharedHead: string): string {
 <div class="row"><button id="dv-sample-play" type="button">Play a sample of this voice</button><button id="dv-sample-fast" type="button">Play the sample at the fastest speed</button></div>
 <audio id="dv-sample" controls hidden aria-label="Voice sample"></audio>
 <details id="dv-pronounce"><summary>Test how the voice says a word or name</summary>
-<label for="dv-say-text">Words to say</label><input id="dv-say-text" type="text" maxlength="200" aria-describedby="dv-say-help"><p id="dv-say-help" class="hint">Up to 200 characters, such as a name or a place. It uses a little of your allowance.</p>
+<label for="dv-say-text">Words to say</label><input id="dv-say-text" type="text" maxlength="200" aria-describedby="dv-say-help"><p id="dv-say-help" class="hint">Up to 200 characters, such as a name or a place. Narration and pronunciation samples are included.</p>
 <button id="dv-say-play" type="button">Say these words</button></details>
 <details id="dv-customize"><summary>Customize speed, detail, pauses and volume</summary>
 <div class="settings">
@@ -175,8 +175,8 @@ export function describedVideoPage(sharedHead: string): string {
 </fieldset>
 <p id="dv-estimate">Choose a video to see the estimated cost.</p>
 <div class="row"><button id="dv-preview" class="primary" type="button" aria-describedby="dv-estimate" hidden>Try the first 3 minutes</button><button id="dv-start" class="primary" type="button" aria-describedby="dv-estimate" hidden>Create described copy</button><button id="dv-preview-again" class="primary" type="button" aria-describedby="dv-estimate" hidden>Try the preview again with these choices</button><button id="dv-revoice" type="button" aria-describedby="dv-estimate dv-revoice-help dv-revoice-note" hidden>Make a new version with this narration</button><button id="dv-reanalyze" type="button" aria-describedby="dv-estimate" hidden>Write fresh descriptions with these choices</button><button id="dv-rehearse" type="button" aria-describedby="dv-rehearse-help" hidden>Free rehearsal (test tone, no paid services)</button></div>
-<p id="dv-rehearse-help" class="hint" hidden>Runs every step with a test tone in place of the paid services, to check that storage, the notice and the player work. Nothing is charged, it does not count toward your allowance, and the copy is labelled as a rehearsal.</p>
-<p id="dv-revoice-help" class="hint" hidden>A new version with this narration reuses the descriptions already written, so it costs only the voice. To change the detail, notes or extra passes, use Write fresh descriptions instead. Finished versions stay available until this video expires.</p>
+<p id="dv-rehearse-help" class="hint" hidden>Runs every step with a test tone in place of the paid services, to check that storage, the notice and the player work. Nothing is charged, and the copy is labelled as a rehearsal.</p>
+<p id="dv-revoice-help" class="hint" hidden>A new version with this narration reuses the descriptions already written, and narration is included. To change the detail, notes or extra passes, use Write fresh descriptions instead. Finished versions stay available until this video expires.</p>
 <p id="dv-revoice-note" class="hint" hidden></p>
 </section>
 
@@ -326,7 +326,7 @@ export const descriptionBrowserScript: string = String.raw`
   }
   function raiseTo(){
     var e=estimates.resume;if(!e)return 0;
-    var limit=e.limitUSD||(config&&config.limitUSD)||5,z=typeof e.allowUpToUSD==='number'?e.allowUpToUSD:typeof e.approvedUSD==='number'?e.approvedUSD:e.estimateUSD*1.5+0.1;
+    var limit=e.limitUSD||(config&&config.limitUSD)||Infinity,z=typeof e.allowUpToUSD==='number'?e.allowUpToUSD:typeof e.approvedUSD==='number'?e.approvedUSD:e.estimateUSD*1.5+0.1;
     return Math.min(limit,Math.round(z*100)/100);
   }
   function overQuoteText(j){return 'This is costing more than quoted: '+money(j.runCostUSD)+' spent of about '+money(j.estimatedUSD)+'.';}
@@ -434,7 +434,7 @@ export const descriptionBrowserScript: string = String.raw`
   }
   function mainKey(){if(!job)return '';if(job.state==='ready')return 'start';if(job.state==='done')return job.preview?'preview':'reanalyze';return job.resumable?'resume':'';}
   var LABELS={start:'Create described copy',preview:'Try the first 3 minutes',revoice:'Make a new version with this narration',reanalyze:'Write fresh descriptions',finish:'Describe the rest',redo:'Try again on the parts that could not be described',resume:'Continue where it stopped'};
-  function allowance(e){return money(e.remainingUSD)+' of today’s '+money(e.dailyUSD)+' is left.';}
+  function allowance(e){var mode=e.billingMode||(config&&config.billingMode),maximum=typeof e.approvedUSD==='number'?'Maximum charge: '+money(e.approvedUSD)+'. ':'';if(mode==='platform')return 'Admin processing is paid by the platform. Narration is included.';if(mode==='balance')return maximum+money(e.remainingUSD)+' is available in your account. Narration is included.';return money(e.remainingUSD)+' of today’s '+money(e.dailyUSD)+' is left.';}
   function refusal(e){return e.reason||('This needs '+money(e.setAsideUSD)+' set aside, and '+allowance(e));}
   function scheduleEstimates(announce,prefix){
     if(announce)announceNext=true;if(prefix)announcePrefix=prefix;
@@ -496,7 +496,7 @@ export const descriptionBrowserScript: string = String.raw`
       var p=part();
       if(p.error)text=p.error;
       else if(tooLong())text='This video is '+length(job.seconds)+' long. One run can describe up to '+length(config.maxMinutes*60)+', so choose the part to describe under Describe only part of it.';
-      else if(e.start){text='Video length: '+length(job.seconds)+(p.range?', describing '+length(p.range.end-p.range.start)+' of it':'')+'. Create described copy: about '+money(e.start.estimateUSD)+'; '+money(e.start.setAsideUSD)+' is set aside until it finishes, and anything unused comes back.'+(e.preview?' '+previewName()+': about '+money(e.preview.estimateUSD)+'.':'')+' Today’s allowance: '+allowance(e.start);if(!e.start.allowed)text+=' '+refusal(e.start);}
+      else if(e.start){text='Video length: '+length(job.seconds)+(p.range?', describing '+length(p.range.end-p.range.start)+' of it':'')+'. Create described copy: about '+money(e.start.estimateUSD)+'; '+money(e.start.setAsideUSD)+' is set aside until it finishes, and anything unused comes back.'+(e.preview?' '+previewName()+': about '+money(e.preview.estimateUSD)+'.':'')+' '+allowance(e.start);if(!e.start.allowed)text+=' '+refusal(e.start);}
       else text='Video length: '+length(job.seconds)+'. Working out the cost…';
     }
     else if(job&&job.state==='done'){
@@ -506,11 +506,11 @@ export const descriptionBrowserScript: string = String.raw`
       if(e.revoice)parts.push('Make a new version with this narration: about '+money(e.revoice.estimateUSD)+'.');
       if(e.reanalyze)parts.push('Write fresh descriptions: about '+money(e.reanalyze.estimateUSD)+'.');
       if(e.redo)parts.push('Try again on the parts that could not be described: about '+money(e.redo.estimateUSD)+'.');
-      var any=e.finish||e.preview||e.revoice||e.reanalyze||e.redo;if(any)parts.push('Today’s allowance: '+allowance(any));
+      var any=e.finish||e.preview||e.revoice||e.reanalyze||e.redo;if(any)parts.push(''+allowance(any));
       text=parts.join(' ')||'Working out the cost…';
     }
-    else if(job&&job.resumable&&job.overQuote)text=e.resume?overQuoteText(job)+' Carrying on is expected to cost about '+money(e.resume.estimateUSD)+' more, and it may spend up to '+money(raiseTo())+'. Today’s allowance: '+allowance(e.resume):overQuoteText(job)+' Working out the cost of carrying on…';
-    else if(job&&job.resumable)text=e.resume?resumeName()+', about '+money(e.resume.estimateUSD)+'. Today’s allowance: '+allowance(e.resume):'Working out the cost of continuing…';
+    else if(job&&job.resumable&&job.overQuote)text=e.resume?overQuoteText(job)+' Carrying on is expected to cost about '+money(e.resume.estimateUSD)+' more, and it may spend up to '+money(raiseTo())+'. '+allowance(e.resume):overQuoteText(job)+' Working out the cost of carrying on…';
+    else if(job&&job.resumable)text=e.resume?resumeName()+', about '+money(e.resume.estimateUSD)+'. '+allowance(e.resume):'Working out the cost of continuing…';
     else if(job)text=job.costUSD?'Processing cost for this video so far: '+money(job.costUSD)+'.':'';
     if($('estimate').textContent!==text)$('estimate').textContent=text;
   }
@@ -951,7 +951,7 @@ export const descriptionBrowserScript: string = String.raw`
       clearError();var jobId=job.id,s=settings(),e=await freshEstimate(id,{settings:s});
       if(shownId!==jobId)return;
       if(!e.allowed){say(refusal(e),true);return;}
-      var text=(preview?previewName()+' of “':'Create a described copy of “')+job.name+'”'+(s.range?', '+clock(s.range.start)+' to '+clock(s.range.end):'')+': '+describeRun(s)+'. About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes. '+(preview&&e.breakdown&&e.breakdown.dialogue>=0.05?'That includes '+money(e.breakdown.dialogue)+' to learn the dialogue of the whole '+(s.range?'part':'video')+'. ':'')+'Today’s allowance: '+allowance(e)+' Go ahead?';
+      var text=(preview?previewName()+' of “':'Create a described copy of “')+job.name+'”'+(s.range?', '+clock(s.range.start)+' to '+clock(s.range.end):'')+': '+describeRun(s)+'. About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes. '+(preview&&e.breakdown&&e.breakdown.dialogue>=0.05?'That includes '+money(e.breakdown.dialogue)+' to learn the dialogue of the whole '+(s.range?'part':'video')+'. ':'')+''+allowance(e)+' Go ahead?';
       if(!confirm(text))return;
       remember();rememberVoice(s.voice);
       var body=Object.assign({},s);if(preview)body.preview=true;
@@ -987,7 +987,7 @@ export const descriptionBrowserScript: string = String.raw`
       var e=await freshEstimate('revoice',{settings:s,edits:body.edits});
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
       var next=(job.version||1)+1;
-      if(!confirm('Make version '+next+' of “'+job.name+'”'+(list.length?' with '+plural(list.length,'correction','corrections'):' with '+voiceName(s.voice)+' at '+s.rate+'×')+'? About '+money(e.estimateUSD)+'. Today’s allowance: '+allowance(e)+(stale?' '+plural(stale,'corrected description still has','corrected descriptions still have')+' the old short version, which is used when the gap is tight.':'')+' Earlier versions stay available.'))return;
+      if(!confirm('Make version '+next+' of “'+job.name+'”'+(list.length?' with '+plural(list.length,'correction','corrections'):' with '+voiceName(s.voice)+' at '+s.rate+'×')+'? About '+money(e.estimateUSD)+'. '+allowance(e)+(stale?' '+plural(stale,'corrected description still has','corrected descriptions still have')+' the old short version, which is used when the gap is tight.':'')+' Earlier versions stay available.'))return;
       remember();rememberVoice(s.voice);
       var updated=await call('/jobs/'+id+'/revoice','POST',body);
       if(list.length){forget(draftKey(id,expected));if(shownId===id){edits={};script=null;$('edit-fields').hidden=true;$('edit-status').textContent='';renderDraftNote();}}
@@ -1002,7 +1002,7 @@ export const descriptionBrowserScript: string = String.raw`
     act(async function(){
       clearError();var id=job.id,s=settings(),e=await freshEstimate(preview?'preview':'reanalyze',{settings:s});
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
-      if(!confirm((preview?'Try the preview of “'+job.name+'” again with ':'Write fresh descriptions for “'+job.name+'” with ')+describeRun(s)+'? This pays for looking at the video and for narration again. About '+money(e.estimateUSD)+'. Today’s allowance: '+allowance(e)+' Earlier versions stay available.'))return;
+      if(!confirm((preview?'Try the preview of “'+job.name+'” again with ':'Write fresh descriptions for “'+job.name+'” with ')+describeRun(s)+'? This pays for looking at the video again. Narration is included. About '+money(e.estimateUSD)+'. '+allowance(e)+' Earlier versions stay available.'))return;
       remember();rememberVoice(s.voice);
       var body=Object.assign({},s,{expectedVersion:job.version||1});if(preview)body.preview=true;
       var updated=await call('/jobs/'+id+'/reanalyze','POST',body);
@@ -1020,7 +1020,7 @@ export const descriptionBrowserScript: string = String.raw`
     act(async function(){
       clearError();var id=job.id,e=await freshEstimate('finish');
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
-      if(!confirm('Describe the rest of “'+job.name+'” with the same choices? The preview’s parts are kept and not paid for again. About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes, and anything unused comes back. Today’s allowance: '+allowance(e)+' Go ahead?'))return;
+      if(!confirm('Describe the rest of “'+job.name+'” with the same choices? The preview’s parts are kept and not paid for again. About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes, and anything unused comes back. '+allowance(e)+' Go ahead?'))return;
       var updated=await call('/jobs/'+id+'/finish','POST',{});
       await showIf(id,updated,false);say('Describing the rest. The preview parts are reused.',true);land('job-title',$('finish'));await list();
     });
@@ -1030,7 +1030,7 @@ export const descriptionBrowserScript: string = String.raw`
     act(async function(){
       clearError();var id=job.id,n=retryCount(job),e=await freshEstimate('redo');
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
-      if(!confirm('Try again on the '+plural(n,'part','parts')+' of “'+job.name+'” that could not be described? Everything else is reused and not paid for again, and it makes version '+((job.version||1)+1)+'; version '+(job.version||1)+' stays available. About '+money(e.estimateUSD)+'. Today’s allowance: '+allowance(e)))return;
+      if(!confirm('Try again on the '+plural(n,'part','parts')+' of “'+job.name+'” that could not be described? Everything else is reused and not paid for again, and it makes version '+((job.version||1)+1)+'; version '+(job.version||1)+' stays available. About '+money(e.estimateUSD)+'. '+allowance(e)))return;
       var updated=await call('/jobs/'+id+'/redo','POST',{expectedVersion:job.version||1});
       await showIf(id,updated,false);say('Trying those parts again. The current version stays available.',true);land('job-title',$('redo'));await list();
     });
@@ -1150,7 +1150,7 @@ export const descriptionBrowserScript: string = String.raw`
     act(async function(){
       clearError();var id=job.id,note=$('edit-note').value.trim(),e=await freshEstimate('redo',{sections:[cue.section]});
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
-      if(!confirm('Describe the part around '+cueTime(cue)+' again'+(note?' with your note: '+note:'')+'? Everything else is reused. About '+money(e.estimateUSD)+'. Today’s allowance: '+allowance(e)))return;
+      if(!confirm('Describe the part around '+cueTime(cue)+' again'+(note?' with your note: '+note:'')+'? Everything else is reused. About '+money(e.estimateUSD)+'. '+allowance(e)))return;
       var body={sections:[cue.section],expectedVersion:script.version};if(note)body.note=note;
       var updated=await call('/jobs/'+id+'/redo','POST',body);
       if(shownId===id){$('edit-note').value='';script=null;$('edit-fields').hidden=true;}
@@ -1165,7 +1165,7 @@ export const descriptionBrowserScript: string = String.raw`
       clearError();var id=job.id,body=voiceFields(),e=await freshEstimate('resume',{settings:body});
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
       var again=!Number(job.done);
-      if(!confirm((again?'Try “'+job.name+'” again from the beginning':'Continue “'+job.name+'”')+' with '+voiceName(body.voice)+' at '+body.rate+'×? '+keptText(job)+' About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes, and anything unused comes back. Today’s allowance: '+allowance(e)))return;
+      if(!confirm((again?'Try “'+job.name+'” again from the beginning':'Continue “'+job.name+'”')+' with '+voiceName(body.voice)+' at '+body.rate+'×? '+keptText(job)+' About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes, and anything unused comes back. '+allowance(e)))return;
       remember();rememberVoice(body.voice);
       var updated=await call('/jobs/'+id+'/resume','POST',body);
       await showIf(id,updated,false);say(again?'Starting again from the beginning.':'Carrying on from where it stopped.',true);land('job-title',$('resume'));await list();
@@ -1177,7 +1177,7 @@ export const descriptionBrowserScript: string = String.raw`
       clearError();var id=job.id,body=voiceFields(),e=await freshEstimate('resume',{settings:body});
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
       estimates.resume=e;var z=raiseTo();
-      if(!confirm('Let “'+job.name+'” carry on? '+overQuoteText(job)+' Carrying on is expected to cost about '+money(e.estimateUSD)+' more. It may spend up to '+money(z)+' more, and it stops and asks again before going past that. '+keptText(job)+' Today’s allowance: '+allowance(e)))return;
+      if(!confirm('Let “'+job.name+'” carry on? '+overQuoteText(job)+' Carrying on is expected to cost about '+money(e.estimateUSD)+' more. It may spend up to '+money(z)+' more, and it stops and asks again before going past that. '+keptText(job)+' '+allowance(e)))return;
       body.allowUpToUSD=z;
       var updated=await call('/jobs/'+id+'/resume','POST',body);
       await showIf(id,updated,false);say('Carrying on, up to '+money(typeof updated.approvedUSD==='number'?updated.approvedUSD:z)+' more.',true);land('job-title',$('allow-more'));await list();

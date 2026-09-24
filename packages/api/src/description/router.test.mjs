@@ -16,6 +16,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createDescriptionRouter } from './router.ts';
 import { describeVideo } from './engine.ts';
+import { createDescriptionWallet } from './wallet.ts';
 import { command, decodeVoice } from './media.ts';
 import { sampleRate } from './mix.ts';
 import { quietSpot, rehearsalProviders } from './rehearsal.ts';
@@ -32,6 +33,8 @@ import {
 } from './revision.ts';
 
 process.env.FFMPEG_PATH = ffmpegPath;
+let walletMode = false;
+const billing = createDescriptionWallet();
 process.env.FFPROBE_PATH = ffprobePath.path;
 let mongo, external, service, worker, app, Jobs, Budgets, Locks, storage, root, voiceWav;
 /** Like B2: every write keeps a version, and a delete without a version id only hides the file. */
@@ -319,6 +322,7 @@ before(async () => {
     credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
   });
   const hooks = {
+    get wallet() { return walletMode ? billing : undefined; },
     auth: (req, res, next) => (req.headers['x-user'] ? next() : res.sendStatus(401)),
     actor: (req) => ({
       id: String(req.headers['x-user']),
@@ -428,6 +432,7 @@ before(async () => {
   };
   service = createDescriptionRouter({
     ...hooks,
+    get wallet() { return walletMode ? billing : undefined; },
     usage: async () => {
       throw new Error('Route tests make no paid calls.');
     },
@@ -563,9 +568,12 @@ test('a Deepgram account problem reaches her in words that name it', async () =>
   }
 });
 
-test('authentication, the private trial gate and child accounts come before any job data', async () => {
+test('authenticated adult testers have access; authentication and child restrictions still apply', async () => {
   await request(app).get('/jobs').expect(401);
+  await call('get', '/jobs').set('x-role', 'user').expect(200);
+  process.env.KADE_DESCRIPTION_PUBLIC = '0';
   await call('get', '/jobs').set('x-role', 'user').expect(403);
+  delete process.env.KADE_DESCRIPTION_PUBLIC;
   const child = await call('get', '/jobs').set('x-child', '1').expect(403);
   assert.match(child.body.error, /children/);
   const config = (await call('get', '/config').expect(200)).body;
@@ -574,7 +582,7 @@ test('authentication, the private trial gate and child accounts come before any 
   assert.deepEqual(config.voices, ['Voice 1', 'clear woman · flint']);
   assert.equal(config.defaultVoice, 'clear woman · flint');
   assert.equal(config.categories[0].name, 'Test');
-  assert.ok(config.perMinuteUSD.rich > config.perMinuteUSD.essential);
+  assert.equal(config.perMinuteUSD.rich, config.perMinuteUSD.essential, 'extra narration is included');
   assert.deepEqual(config.extrasPerMinuteUSD, { closeLook: 0.025, firstLook: 0.021 });
   assert.deepEqual(config.setAside, { factor: 1.1, extraUSD: 0.05 });
   assert.deepEqual(config.approval, { factor: 1.5, extraUSD: 0.1 });
@@ -719,7 +727,7 @@ test('money: each run sets aside its own whole cents, matching the estimate, and
   assert.equal(listed.runCostUSD, 0);
   assert.equal(listed.queuePosition, 0);
 
-  const second = await readyJob('another-owner', 'paid-upload-00000002', 3000);
+  const second = await readyJob('another-owner', 'paid-upload-00000002', 5400);
   const check = (await call('post', `/jobs/${second}/estimate`, 'another-owner').send({ action: 'start', settings }).expect(200)).body;
   assert.equal(check.allowed, false);
   assert.match(check.reason, /allowance is left/);
@@ -1371,7 +1379,7 @@ test('Continue can change the voice: finished sections are voiced again from the
         .send({ action: 'resume', settings: { voice: 'clear woman · flint' } })
         .expect(200)
     ).body;
-    assert.ok(priced.breakdown.speech > 0);
+    assert.equal(priced.breakdown.speech, 0, 'narration is included');
     await call('post', `/jobs/${id}/resume`, 'voice-owner').send({ voice: 'clear woman · flint' }).expect(202);
     const finished = await settle(id, ['failed', 'done'], 'voice-owner');
     assert.equal(finished.state, 'done', finished.error);
@@ -2071,6 +2079,7 @@ function loadWrapper() {
       },
     },
     '@librechat/api': {
+      createDescriptionWallet,
       initializeS3: () => storage,
       describedVideoPage: () => '',
       registerShutdownTask: () => {},
@@ -2373,4 +2382,80 @@ test('over the quote on a day already partly used: the ask fits what is left, an
   assert.deepEqual((await Budgets.findById(today()).lean()).runs, [], 'both runs gave back what they did not spend');
   await call('delete', `/jobs/${id}`, 'quote-owner').expect(200);
   await Budgets.deleteMany({});
+});
+
+
+test('beta members use only their own balance, included speech, and an uncapped accepted price', async () => {
+  walletMode = true;
+  const user = new mongoose.Types.ObjectId();
+  const owner = String(user);
+  try {
+    await mongoose.connection.collection('users').insertOne({ _id: user, role: 'USER' });
+    await mongoose.connection.collection('balances').insertOne({ user, tokenCredits: 20e6 });
+    const config = (await call('get', '/config', owner).set('x-role', 'user').expect(200)).body;
+    assert.equal(config.billingMode, 'balance');
+    assert.equal(config.limitUSD, null);
+    assert.equal(config.dailyUSD, null);
+    assert.equal(config.remainingUSD, 20);
+    assert.equal(config.speechIncluded, true);
+    const id = await readyJob(owner, 'wallet-long-000001', 5000);
+    const rich = { ...settings, detail: 'rich', firstLook: true, closeLook: true };
+    const quote = (await call('post', `/jobs/${id}/estimate`, owner).set('x-role', 'user').send({ action: 'start', settings: rich }).expect(200)).body;
+    assert.ok(quote.estimateUSD > 5);
+    assert.equal(quote.allowed, true);
+    assert.equal(quote.breakdown.speech, 0);
+    assert.equal(quote.setAsideUSD, quote.approvedUSD);
+    await Promise.all(Array.from({ length: 5 }, () => call('post', `/jobs/${id}/start`, owner).set('x-role', 'user').send(rich)));
+    assert.ok(Math.abs(await billing.available(owner) - (20 - quote.approvedUSD)) < 1e-8);
+    await call('get', `/jobs/${id}`, String(new mongoose.Types.ObjectId())).set('x-role', 'user').expect(404);
+    await call('post', `/jobs/${id}/cancel`, owner).expect(200);
+    await call('post', `/jobs/${id}/cancel`, owner).expect(200);
+    assert.equal(await billing.available(owner), 20);
+    await call('delete', `/jobs/${id}`, owner).expect(200);
+    const short = await readyJob(owner, 'wallet-short-00001', 10);
+    await mongoose.connection.collection('balances').updateOne({ user }, { $set: { tokenCredits: 0 } });
+    const noMoney = (await call('post', `/jobs/${short}/estimate`, owner).set('x-role', 'user').send({ action: 'start', settings }).expect(200)).body;
+    assert.equal(noMoney.allowed, false);
+    const before = calls.analyze;
+    await call('post', `/jobs/${short}/start`, owner).send(settings).expect(409);
+    assert.equal(calls.analyze, before);
+    await mongoose.connection.collection('balances').updateOne({ user }, { $set: { tokenCredits: 1e6 } });
+    const price = (await call('post', `/jobs/${short}/estimate`, owner).send({ action: 'start', settings }).expect(200)).body;
+    overbill = 100;
+    await call('post', `/jobs/${short}/start`, owner).send(settings).expect(202);
+    await settle(short, ['failed', 'done'], owner);
+    assert.ok(await billing.available(owner) >= 1 - price.approvedUSD - 1e-8);
+    await call('delete', `/jobs/${short}`, owner).expect(200);
+  } finally { overbill = 0; walletMode = false; }
+});
+
+test('wallet refunds survive a restart after completion or midway through reserving, and before deletion', async () => {
+  walletMode = true;
+  const user = new mongoose.Types.ObjectId();
+  const owner = String(user);
+  const balances = mongoose.connection.collection('balances');
+  try {
+    await mongoose.connection.collection('users').insertOne({ _id: user, role: 'USER' });
+    await balances.insertOne({ user, tokenCredits: 10e6 });
+    for (const state of ['done', 'reserving', 'deleting']) {
+      const id = await readyJob(owner, randomUUID(), 10);
+      const reservation = { runId: randomUUID(), walletOwner: owner, day: today(), cents: 200 };
+      await billing.reserve(owner, reservation.runId, 2);
+      assert.equal(await billing.available(owner), state === 'done' ? 8 : 7.6);
+      const pending = state === 'reserving';
+      await Jobs.collection.updateOne({ _id: id }, { $set: {
+        state, active: false, runCost: state === 'done' ? 0.4 : 0,
+        [pending ? 'pendingRun' : 'reservation']: reservation,
+        ...(pending ? { reservingFrom: 'ready' } : {}), ...stale,
+      } });
+      if (state === 'deleting') await call('delete', `/jobs/${id}`, owner).expect(200);
+      else {
+        await worker.tick();
+        await worker.tick();
+        assert.equal((await Jobs.findById(id).lean()).state, pending ? 'ready' : 'done');
+        await call('delete', `/jobs/${id}`, owner).expect(200);
+      }
+      assert.equal(await billing.available(owner), 9.6);
+    }
+  } finally { walletMode = false; }
 });

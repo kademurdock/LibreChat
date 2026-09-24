@@ -179,3 +179,5 @@ export { libraryToolDescription, libraryToolSchema } from './tools/registry/libr
 
 export { createDescriptionRouter } from './description/router';
 export { describedVideoPage } from './description/page';
+
+export { createDescriptionWallet } from './description/wallet';

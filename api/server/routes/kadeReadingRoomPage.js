@@ -309,7 +309,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   }
 
   /* ── shelf ─────────────────────────────────────────────────────────── */
-  var shelfData = null, me = '', librarian = false;
+  var shelfData = null, me = '', librarian = false, describedVideo = false;
   function canManage(b){ return b && (librarian || (me && b.owner === me)); }
   function bookLi(b, where){
     var li = document.createElement('li');
@@ -377,7 +377,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     try {
       shelfData = await api('/shelf');
       renderShelf(shelfData.mine, shelfData.borrowed);
-      me = shelfData.me || me; librarian = !!shelfData.librarian;
+      me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo;
       var sel = $('catFilter'); var cur = sel.value; sel.innerHTML = '<option value="">Everything</option>';
       var present = {}; (shelfData.library || []).forEach(function(b){ present[b.kind !== 'text' ? b.category : 'book'] = 1; });
       Object.keys(present).forEach(function(c){ var o = document.createElement('option'); o.value = c; o.textContent = catName(c); sel.appendChild(o); });
@@ -1057,7 +1057,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var wrap = $('descWrap');
     if (!t || !/^video\\//.test(t.mime || '')) { wrap.hidden = true; return; }
     wrap.hidden = false;
-    $('descCopyWrap').hidden = !librarian;
+    $('descCopyWrap').hidden = !describedVideo;
     $('descCopy').href = '/described-video?book=' + encodeURIComponent(book.id) + '&track=' + pos.s;
     var d = t.description;
     $('descScenes').innerHTML = ''; $('descText').textContent = ''; descSpoken = {};
@@ -1236,7 +1236,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   async function openBook(id){
     try {
       book = await api('/book/' + id);
-      if (!me) { try { var sh = await api('/shelf'); me = sh.me || ''; librarian = !!sh.librarian; } catch(e2) {} }
+      if (!me) { try { var sh = await api('/shelf'); me = sh.me || ''; librarian = !!sh.librarian; describedVideo = !!sh.describedVideo; } catch(e2) {} }
     } catch(e) { say('Could not open that: ' + e.message); location.search = ''; return; }
     $('shelf').classList.add('hidden'); $('player').classList.remove('hidden');
     $('pageTitle').textContent = 'The Library';
