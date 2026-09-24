@@ -1543,7 +1543,12 @@ test('a longer voice than expected switches to the short text, and a lost short 
 });
 
 test('the plan measures the dialogue on its own and sets the narrator against it', async () => {
-  const f = await fixture('dialogue-level', 20, true, "volume='if(between(t,5,15),0.3,1)':eval=frame");
+  const f = await fixture(
+    'dialogue-level',
+    20,
+    true,
+    "volume='if(between(t,5,15),0.3,1)':eval=frame",
+  );
   const words = Array.from({ length: 19 }, (_, i) => ({
     word: 'talk',
     start: 5.3 + i * 0.5,
@@ -1554,10 +1559,7 @@ test('the plan measures the dialogue on its own and sets the narrator against it
   const { loudness } = kept.plans[0];
   const music = -21.7;
   const expected = music + 20 * Math.log10(0.3);
-  assert.ok(
-    Math.abs(loudness.dialogue - expected) < 1.5,
-    `dialogue ${loudness.dialogue} LUFS`,
-  );
+  assert.ok(Math.abs(loudness.dialogue - expected) < 1.5, `dialogue ${loudness.dialogue} LUFS`);
   assert.ok(loudness.dialogue < loudness.program - 5, 'the music does not set the narrator level');
   assert.ok(Number.isFinite(loudness.lra));
   const { gain, narration } = result.report.loudness;
