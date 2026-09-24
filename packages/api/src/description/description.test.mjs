@@ -1622,15 +1622,19 @@ test('each look is told where it sits, the chapters, scene cuts, language and a 
   const f = await fixture('brief', 20);
   const { keeper } = keeperFor(savedPlan(20, [10], { cuts: [2, 12.5], language: 'es' }));
   const seen = [];
-  const backend = providers(f.voice, [], []);
+  const backend = providers(f.voice, [], (look) =>
+    look.brief.position.index === 1 ? [{ ...cue, at: 2, until: 6, pauseAt: 2 }] : [],
+  );
   const analyze = backend.analyze;
   backend.analyze = async (look) => {
     seen.push(look);
     return analyze(look);
   };
-  await run(f, [], [], {
+  const log = [];
+  const result = await run(f, [], [], {
     providers: backend,
     keeper,
+    log,
     chapters: [
       { start: 0, title: 'Intro' },
       { start: 11, title: 'Ad' },
@@ -1648,6 +1652,8 @@ test('each look is told where it sits, the chapters, scene cuts, language and a 
   assert.equal(seen[1].brief.sectionNote, 'The man in the hat is Uncle Bob.');
   assert.equal(seen[0].brief.sectionNote, undefined);
   assert.ok(seen[0].brief.secondsPerByte > 0);
+  assert.equal(result.report.descriptions[0].at, 12.5, 'moved forward onto the scene cut');
+  assert.ok(log.includes('Section 2 of 2 (0:10 to 0:20) started.'));
 });
 
 test('speech recognition gets key terms and reports the dialogue language', async () => {

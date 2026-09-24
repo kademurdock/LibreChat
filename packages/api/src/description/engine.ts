@@ -65,7 +65,7 @@ import {
   snapToCuts,
   toOutput,
 } from './timing';
-import { buildReport, captionTrack, descriptionTrack, transcriptText } from './transcript';
+import { buildReport, captionTrack, clock, descriptionTrack, transcriptText } from './transcript';
 import { nextContinuity } from './prompt';
 import { gateCues } from './ledger';
 import { Halt } from './types';
@@ -1022,6 +1022,8 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       continue;
     }
     await progress(`Watching section ${i + 1} of ${count}`, share(i, 0));
+    const section = fixed.sections[i];
+    log(`Section ${i + 1} of ${count} (${clock(section.start)} to ${clock(section.end)}) started.`);
     const looked: Looked = ahead?.index === i ? await ahead.promise : await look(i, state);
     ahead = null;
     if (looked.fatal) throw looked.fatal;
