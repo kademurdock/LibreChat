@@ -229,6 +229,9 @@ function labelHits(text: string, label: string): Hit[] {
 export const capitalize = (value: string): string =>
   value ? value[0].toUpperCase() + value.slice(1) : value;
 
+/** A visual label ("the host", "a woman in red") rather than a name or an id. */
+export const looksLikeLabel = (who: string): boolean => /^(?:the|a|an)\s+\S/i.test(who.trim());
+
 const startsSentence = (text: string, index: number) =>
   index === 0 || /[.!?]["'”’)]?\s+$/.test(text.slice(0, index));
 
@@ -396,7 +399,7 @@ export function speakerAt(continuity: Continuity, speaker: number, at: number): 
   const fallback = `Speaker ${speaker + 1}`;
   const entry = continuity.speakers.find((item) => item.speaker === speaker);
   const person = entry ? resolvePerson(entry.who, continuity.people) : undefined;
-  if (!person) return fallback;
+  if (!person) return entry && looksLikeLabel(entry.who) ? capitalize(entry.who.trim()) : fallback;
   const reveal = person.name ? continuity.reveals?.[nameKey(person.name)] : undefined;
   if (person.name && reveal !== undefined && reveal <= at + 1e-6) return person.name;
   return capitalize(person.label) || fallback;

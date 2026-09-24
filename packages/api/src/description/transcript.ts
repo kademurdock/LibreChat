@@ -11,7 +11,15 @@ import type {
   Settings,
   Word,
 } from './types';
-import { capitalize, nameKey, readsName, resolvePerson, revealsFor, speakerAt } from './ledger';
+import {
+  capitalize,
+  looksLikeLabel,
+  nameKey,
+  readsName,
+  resolvePerson,
+  revealsFor,
+  speakerAt,
+} from './ledger';
 import { toOutput } from './timing';
 
 /** 83.4 -> "1:23"; 3723 -> "1:02:03". */
@@ -283,6 +291,7 @@ function agreedSpeakers(records: SectionRecord[]): Continuity['speakers'] {
     for (const item of record.analysis?.speakers ?? []) {
       const person = resolvePerson(item.who, record.continuity.people);
       if (person) own.set(item.speaker, personKey(person));
+      else if (looksLikeLabel(item.who)) own.set(item.speaker, item.who.trim().toLowerCase());
     }
     for (const [speaker, key] of own) {
       const counts = tally.get(speaker) ?? new Map<string, number>();

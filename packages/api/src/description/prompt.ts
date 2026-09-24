@@ -1,5 +1,6 @@
 import type { Analysis, Chapter, Continuity, Cue, Line, Person, Settings, Word } from './types';
 import {
+  looksLikeLabel,
   mentionsLabel,
   nameKey,
   readsName,
@@ -596,7 +597,7 @@ export function nextContinuity(
       const person = hidden.get(nameKey(item.who));
       return person ? { ...item, who: person.id ?? person.label } : item;
     })
-    .filter((item) => resolvePerson(item.who, people));
+    .filter((item) => resolvePerson(item.who, people) || looksLikeLabel(item.who));
   const labels = [...(previous?.heard?.labels ?? [])];
   const linked: Record<string, string> = { ...(previous?.heard?.names ?? {}) };
   for (const person of people) {

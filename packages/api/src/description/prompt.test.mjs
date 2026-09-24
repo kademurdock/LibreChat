@@ -547,6 +547,38 @@ test('report: speakers are named only after the film reveals the name, and only 
     { ...sampleReportRecord(), end: 60 },
   ], words('Hello there.', 1), undefined);
   assert.equal(single.dialogue[0].who, 'Speaker 1', 'one guess alone is not printed as fact');
+  const host = (index, start) => ({
+    ...sampleReportRecord(),
+    index,
+    start,
+    end: start + 30,
+    outputSeconds: 30,
+    analysis: analysis([], { speakers: [{ speaker: 0, who: 'the host' }, { speaker: 1, who: 'Frank' }] }),
+    continuity: { kind: '', setting: '', people: [], speakers: [], recent: [] },
+  });
+  const labelled = buildReport('Host', plan, levels, settings, [host(0, 0), host(1, 30)], [
+    ...words('Hello.', 1),
+    ...words('Hi.', 2, 0.5, 1),
+  ]);
+  assert.deepEqual(
+    labelled.dialogue.map((line) => line.who),
+    ['The host', 'Speaker 2'],
+    'a visual label agreed twice is printed; a bare name with no person behind it is not',
+  );
+});
+
+test('continuity: a voice matched to a bare, unrevealed name is dropped, one matched to a visual label is kept', () => {
+  const state = nextContinuity(
+    null,
+    analysis([], {
+      speakers: [
+        { speaker: 0, who: 'the host' },
+        { speaker: 1, who: 'Frank' },
+      ],
+    }),
+    heard(0, 30),
+  );
+  assert.deepEqual(state.speakers, [{ speaker: 0, who: 'the host' }]);
 });
 
 function sampleReportRecord() {
