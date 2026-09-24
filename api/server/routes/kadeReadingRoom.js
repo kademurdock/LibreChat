@@ -15,6 +15,7 @@
  *   POST   /upload                      multipart field `book` (zip/epub/txt/docx/html)
  *   GET    /book/:id                    jacket, chapters, skipped list, my progress, bookmarks
  *   GET    /book/:id/text/:s/:c         one chunk's words (+ prev/next positions)
+ *   GET    /book/:id/passages/:s        a reading-view page: ?from=&count= chunks, cleaned for the screen
  *   GET    /book/:id/audio/:s/:c        that chunk spoken — WAV, streamed from the proxy
  *   POST   /book/:id/progress           { s, c, voice, speed, finished }
  *   GET    /book/:id/bookmarks
@@ -46,7 +47,7 @@ const { requireJwtAuth } = require('~/server/middleware');
 const { tubeVaultHints, validTubeVaultItems } = require('@librechat/api');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, CATEGORIES } = require('~/models/kadeBook');
-const { parseBook, PARSER_VERSION } = require('./kadeReadingRoomParse');
+const { parseBook, PARSER_VERSION, NOTICE_REASONS } = require('./kadeReadingRoomParse');
 
 /* ── the media library on B2 (Part 181 continued) ──────────────────────────
  * Audio donations do not pass through this server: the phone or the browser
@@ -626,9 +627,10 @@ router.get('/book/:id', requireJwtAuth, async (req, res) => {
       ...summary(book, progress),
       tracks,
       librarian: book.librarian && book.librarian.state ? book.librarian : null,
-      jacket: book.jacket,
+      jacket: require('@librechat/api').readingJacket(book.jacket || ''),
+      language: book.language || 'en',
       chapters: (book.sections || []).map((s, i) => ({ s: i, title: s.title, chunks: s.chunkCount, chars: s.chars, kind: s.kind })),
-      skipped: (book.skipped || []).map((s, i) => ({ k: i, title: s.title, reason: s.reason, chunks: s.chunkCount, chars: s.chars })),
+      skipped: (book.skipped || []).map((s, i) => ({ k: i, title: s.title, reason: s.reason, chunks: s.chunkCount, chars: s.chars })).filter((s) => !noticeHidden(req, book, s.k)),
       bookmarks: bookmarks.map((b) => ({ id: String(b._id), s: b.s, c: b.c, pos: b.pos || 0, note: b.note, snippet: b.snippet, sectionTitle: b.sectionTitle, createdAt: b.createdAt })),
       mine: String(book.owner) === String(req.user.id),
       defaultVoice: DEFAULT_VOICE(),
@@ -648,8 +650,16 @@ async function chunkAt(book, s, c, skipped) {
   const counts = skipped ? (book.skipped || []).map((x) => x.chunkCount) : (book.sections || []).map((x) => x.chunkCount);
   const next = c + 1 < sec.chunks.length ? { s, c: c + 1 } : s + 1 < counts.length ? { s: s + 1, c: 0 } : null;
   const prev = c > 0 ? { s, c: c - 1 } : s > 0 ? { s: s - 1, c: Math.max(0, (counts[s - 1] || 1) - 1) } : null;
+  // Jackets cut before Sep 24 2026 still end with the old Bookshare line; heard and seen as the neutral one.
   const words = meta?.kind === 'jacket' ? require('@librechat/api').readingJacket(sec.chunks[c]) : sec.chunks[c];
   return { text: words, title: meta ? meta.title : '', s, c, count: sec.chunks.length, next, prev };
+}
+/* Sep 24 2026: an accessible edition's notice can name the person who
+ * downloaded the file. Only the uploader and the librarian see or hear it in
+ * Skipped parts; everyone else has the jacket's one neutral sentence. */
+function noticeHidden(req, book, k) {
+  if (String(book.owner) === String(req.user.id) || isAdmin(req)) return false;
+  return NOTICE_REASONS.has(((book.skipped || [])[k] || {}).reason);
 }
 
 router.get('/book/:id/text/:s/:c', requireJwtAuth, async (req, res) => {
@@ -659,12 +669,37 @@ router.get('/book/:id/text/:s/:c', requireJwtAuth, async (req, res) => {
     const skipped = req.query.skipped === '1';
     const s = clampInt(req.params.s, 0, 100000, 0);
     const c = clampInt(req.params.c, 0, 100000, 0);
+    if (skipped && noticeHidden(req, book, s)) return res.status(404).json({ error: 'Past the end of the book.' });
     const chunk = await chunkAt(book, s, c, skipped);
     if (!chunk) return res.status(404).json({ error: 'Past the end of the book.' });
+    // what the screen shows: the passage without the voices' steering (narration keeps it)
     res.json({ ...chunk, text: require('@librechat/api').readingText(chunk.text) });
   } catch (e) {
     logger.error('[reading-room/text] error:', e);
     res.status(500).json({ error: 'Could not read that part.' });
+  }
+});
+
+/* ── the reading view (Sep 24 2026) ────────────────────────────────────────
+ * Her ask: a view for low-vision and sighted readers following a book while
+ * it is narrated. One page of a section per request (the route above is one
+ * passage), cleaned the same way; positions match the narration's, so an
+ * emptied passage keeps its slot. */
+router.get('/book/:id/passages/:s', requireJwtAuth, async (req, res) => {
+  try {
+    const book = await openBook(req, req.params.id);
+    if (!book || isMedia(book)) return res.status(404).json({ error: 'No such book on your shelf.' });
+    const s = clampInt(req.params.s, 0, 100000, 0);
+    const from = clampInt(req.query.from, 0, 100000, 0);
+    const count = clampInt(req.query.count, 1, 60, 40);
+    const meta = (book.sections || [])[s];
+    const text = meta ? await KadeBookText.findOne({ book: book._id }, { sections: { $slice: [s, 1] } }).lean() : null;
+    const chunks = (text && text.sections && text.sections[0] && text.sections[0].chunks) || [];
+    if (!meta || from >= chunks.length) return res.status(404).json({ error: 'Past the end of the book.' });
+    res.json({ s, title: meta.title || '', from, total: chunks.length, passages: require('@librechat/api').readingPassages(chunks, meta.kind, from, count) });
+  } catch (e) {
+    logger.error('[reading-room/passages] error:', e);
+    res.status(500).json({ error: 'Could not load that page of the book.' });
   }
 });
 
@@ -677,6 +712,7 @@ router.get('/book/:id/audio/:s/:c', requireJwtAuth, async (req, res) => {
     const skipped = req.query.skipped === '1';
     const s = clampInt(req.params.s, 0, 100000, 0);
     const c = clampInt(req.params.c, 0, 100000, 0);
+    if (skipped && noticeHidden(req, book, s)) return res.status(404).json({ error: 'Past the end of the book.' });
     const chunk = await chunkAt(book, s, c, skipped);
     if (!chunk) return res.status(404).json({ error: 'Past the end of the book.' });
     const voice = String(req.query.voice || DEFAULT_VOICE()).slice(0, 120);
@@ -781,7 +817,7 @@ router.post('/book/:id/bookmarks', requireJwtAuth, express.json({ limit: '4kb' }
     const row = await KadeReadingBookmark.create({
       user: req.user.id, book: book._id, s, c, pos,
       note: String(b.note || '').slice(0, 400),
-      snippet: chunk.text.slice(0, 120),
+      snippet: require('@librechat/api').readingText(chunk.text).slice(0, 120),
       sectionTitle: chunk.title,
     });
     res.json({ ok: true, bookmark: { id: String(row._id), s, c, pos, note: row.note, snippet: row.snippet, sectionTitle: row.sectionTitle, createdAt: row.createdAt } });

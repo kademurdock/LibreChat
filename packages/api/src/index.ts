@@ -179,7 +179,7 @@ export { libraryRequestTransport } from './library/requestTransport';
 export { libraryRequestsDescription, libraryRequestsSchema } from './tools/registry/requests';
 export { librarianGuide } from './library/guide';
 export { libraryConsultation, libraryConsultationInstructions } from './library/consultation';
-export { readingText, readingJacket, printDisabilityNotice } from './library/text';
+export { readingText, readingJacket, readingPassages, printDisabilityNotice } from './library/text';
 export { familyLibraryMember, trustedLibraryContributor, libraryMembershipRouter } from './library/access';
 export { libraryToolDescription, libraryToolSchema } from './tools/registry/library';
 

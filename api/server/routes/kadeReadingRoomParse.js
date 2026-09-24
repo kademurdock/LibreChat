@@ -43,7 +43,9 @@ const BLOCK_TAGS = new Set([
 const HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hd']);
 /** Bump when the parser learns something that changes sections/chunks; books
  * stamped with an older number are re-read from their stored original the
- * next time someone opens them (kadeReadingRoom.js reparseIfStale). */
+ * next time someone opens them (kadeReadingRoom.js reparseIfStale).
+ * 4 (Sep 24 2026): accessibility notices from any source are skipped, and the
+ * jacket's notice is the one source-neutral sentence. */
 const PARSER_VERSION = 4;
 /* Sep 12 2026, her Narnia omnibus: Bookshare's DAISY carried the whole
  * seven-book collection as THREE <level2>s with an NCX of ten entries, and
@@ -277,6 +279,20 @@ const COPYRIGHT_RE = /all rights reserved|isbn[\s:-]*\d|library of congress|prin
 const CONTENTS_RE = /^(table of )?contents$/i;
 const PRAISE_RE = /^(praise for|also by|other (books|titles) by|books by|by the same author|about the publisher|newsletter sign|sign up for|a note about the type)/i;
 const PUBLISHER_JUNK_RE = /thank you for (downloading|purchasing|buying|reading)|click here to sign up|join our mailing list|sign up (for|at) (our )?(e-?)?newsletter|visit us online to sign up|e-?book(s)? newsletter/i;
+/* Sep 24 2026, her word: "Doesn't matter where the epub etc came from." An
+ * accessible edition from anywhere (Bookshare, NNELS, CELA, a school's
+ * Section 121 copy) can open with a notice about who may read it. Bookshare's
+ * is caught by its own shape; this is the source-neutral net: a front-matter
+ * section titled like a notice (or untitled) that speaks of print
+ * disabilities, or the laws that allow such copies, AND of who the copy is
+ * for. The jacket then carries the one neutral sentence instead. */
+const ACCESS_NOTICE_RE = /print[\s-]*disab(?:ilit|led)|disabilit(?:y|ies) that affects? reading|(?:section|§)\s*121\b|chafee amendment|marrakesh treaty/i;
+const ACCESS_TERMS_RE = /produced|provided|distributed|made available|solely|exclusive|eligible|authori[sz]ed|qualif(?:y|ied)|restrict|may not|must not|do not (?:copy|distribute|share|pass)/i;
+const NOTICE_TITLE_RE = /notice|copyright|accessib|disabilit|terms|licen[cs]e|permitted use|about this (?:edition|format|file)/i;
+/** Skip reasons that are an accessible edition's notice (they can name the
+ * person who downloaded the file; kadeReadingRoom.js shows them only to the
+ * uploader and the librarian). */
+const NOTICE_REASONS = new Set(['bookshare-notice', 'accessibility-notice']);
 
 function classify(sections) {
   const kept = [];
@@ -287,7 +303,7 @@ function classify(sections) {
     const chars = text.length;
     let reason = null;
     if (s.notice || (NOTICE_RE.test(text) && /bookshare/i.test(text))) reason = 'bookshare-notice';
-    else if (!bodyStarted && i < 12 && /notice|copyright|accessib|disabilit|terms|license/i.test(s.title) && /(?:bona fide |qualifying |eligible )?print disabilit/i.test(text) && /produced|provided|distributed|solely|exclusively|eligible|authorized/i.test(text)) reason = 'accessibility-notice';
+    else if (!bodyStarted && i < 12 && chars < 4000 && (!s.title || s.untitled || NOTICE_TITLE_RE.test(s.title)) && ACCESS_NOTICE_RE.test(text) && ACCESS_TERMS_RE.test(text)) reason = 'accessibility-notice';
     else if (s.kind === 'toc') reason = 'contents';
     else if (chars < 12 && !s.title) reason = 'blank';
     else if (chars < 12 && s.title && /^(cover|title page|copyright page|half title|frontispiece)$/i.test(s.title)) reason = 'blank';
@@ -328,6 +344,7 @@ function buildJacket(meta, sections, totalChars) {
   if (meta.synopsis) lines.push(squash(meta.synopsis).replace(/([a-z])\.([A-Z])/g, '$1. $2'));
   const chapters = sections.length;
   lines.push(`${chapters} ${chapters === 1 ? 'section' : 'sections'}, about ${listenEstimate(totalChars)} of listening.`);
+  // the same words as printDisabilityNotice in packages/api/src/library/text.ts
   if (meta.source === 'bookshare' || meta.printDisabilityNotice) lines.push('This book was produced for people with bona fide print disabilities.');
   return lines.join(' ');
 }
@@ -620,9 +637,9 @@ function finish({ meta, sections }) {
     return { title: title || (chunks[0] ? chunks[0].slice(0, 60) : 'Untitled section'), chunks, chars: chunks.reduce((n, c) => n + c.length, 0), kind: s.kind };
   }).filter((s) => s.chunks.length);
   const totalChars = outSections.reduce((n, s) => n + s.chars, 0);
-  const jacket = buildJacket({ ...meta, printDisabilityNotice: skipped.some((section) => section.reason === 'bookshare-notice' || section.reason === 'accessibility-notice') }, outSections, totalChars);
+  const jacket = buildJacket({ ...meta, printDisabilityNotice: skipped.some((section) => NOTICE_REASONS.has(section.reason)) }, outSections, totalChars);
   const jacketChunks = chunkParagraphs(jacket.split(/(?<=[.!?])\s+(?=[A-Z0-9])/));
-  const skippedOut = skipped.map((s) => ({ title: s.title || (s.reason === 'bookshare-notice' ? 'Bookshare notice' : 'Untitled'), reason: s.reason, chunks: chunkParagraphs(s.paras), chars: s.paras.join(' ').length }));
+  const skippedOut = skipped.map((s) => ({ title: s.title || (NOTICE_REASONS.has(s.reason) ? 'Accessibility notice' : 'Untitled'), reason: s.reason, chunks: chunkParagraphs(s.paras), chars: s.paras.join(' ').length }));
   return {
     meta,
     jacket,
@@ -643,5 +660,6 @@ module.exports = {
   listenEstimate,
   CHUNK_TARGET,
   PARSER_VERSION,
+  NOTICE_REASONS,
   _internals: { decodeEntities, squash, hardSplit, NOTICE_RE, COPYRIGHT_RE },
 };

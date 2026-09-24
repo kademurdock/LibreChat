@@ -223,8 +223,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <button class="act quiet" id="reportBtn" type="button">Suggest a different shelf</button>
     </div>
     <div class="now" id="nowText" aria-label="Now reading"></div>
-    <button class="act" id="readingViewBtn" type="button" hidden>Open reading view</button>
-    <p class="hint" id="readingViewHint" hidden>Adjust text size, colors, spacing and line width. Read at your own pace while narration continues, or follow the current passages.</p>
+    <button class="act" id="readingViewBtn" type="button" style="margin-top:.6rem" hidden>Open reading view</button>
     <details id="descWrap" hidden><summary id="descSummary">Video description</summary>
       <p class="hint" id="descHint">A described-video track written by the library's eyes: what is on screen, scene by scene. One run serves everyone.</p>
       <div class="row">
@@ -282,7 +281,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <ul class="plain" id="bookmarkList"><li class="muted">None yet.</li></ul>
     </details>
     <details id="skippedWrap"><summary id="skippedSummary">Skipped parts</summary>
-      <p class="hint">Front matter the room skips on its own: the Bookshare notice, the copyright page, the contents list, publisher sign-up pages. Play any of them here.</p>
+      <p class="hint">Front matter the library skips on its own: the copyright page, the contents list, publisher sign-up pages. Play any of them here.</p>
       <ul class="plain" id="skippedList"></ul>
     </details>
     <details id="editWrap" class="hidden"><summary>Edit this item</summary>
@@ -746,7 +745,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   var isVideoTrack = function(){ return book && book.tracks && book.tracks[pos.s] && /^video\\//.test(book.tracks[pos.s].mime || ''); };
   var queue = []; // collection playback: item ids still to play
   var autoplayNext = false;
-  var libraryReader = window.createLibraryReader({ api: api, book: function(){ return book; }, position: function(){ return pos; }, isPlaying: function(){ return playing; }, play: play, pause: pause });
+  /* Sep 24 2026: the reading view (client/public/assets/library/reader.js) reads the
+     same book beside the narration; it keeps its own place and marks the narrated passage. */
+  var libraryReader = window.createLibraryReader({ api: api, book: function(){ return book; }, position: function(){ return pos; }, isPlaying: function(){ return playing; }, play: play, pause: pause, person: function(){ return me; } });
   $('readingViewBtn').onclick = function(){ libraryReader.open(); };
 
   function chapterTitle(s){ var ch = isAudio() ? book.tracks[s] : book.chapters[s]; return ch ? ch.title : ''; }
@@ -780,7 +781,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function prevPos(p){ if (p.c > 0) return { s: p.s, c: p.c - 1 }; if (p.s > 0) { var ch = book.chapters[p.s - 1]; return { s: p.s - 1, c: Math.max(0, ch.chunks - 1) }; } return null; }
   async function showText(p){
     var requestedBook = book.id;
-    try { var j = await api('/book/' + requestedBook + '/text/' + p.s + '/' + p.c); if (requestedBook === book.id && p.s === pos.s && p.c === pos.c) { $('nowText').textContent = j.text; libraryReader.narrationChanged(p); } } catch(e) {}
+    libraryReader.narrationChanged(p);
+    try { var j = await api('/book/' + requestedBook + '/text/' + p.s + '/' + p.c); if (requestedBook === book.id && p.s === pos.s && p.c === pos.c) $('nowText').textContent = j.text; } catch(e) {}
   }
   var pipe = null; // { nextStart, sources[], markers[] }
   function parseWavHeader(u8){
@@ -886,13 +888,13 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (pipe) { pipe.sources.forEach(function(src){ try { src.onended = null; src.stop(); } catch(e) {} }); }
     pipe = null;
   }
-  function finishBook(){ stopScheduled(); playing = false; $('playBtn').textContent = 'Play'; say('The end. ' + book.title + ' is finished.'); api('/book/' + book.id + '/progress', { json: { s: pos.s, c: pos.c, finished: true } }).catch(function(){}); }
+  function finishBook(){ stopScheduled(); playing = false; $('playBtn').textContent = 'Play'; libraryReader.playback(); say('The end. ' + book.title + ' is finished.'); api('/book/' + book.id + '/progress', { json: { s: pos.s, c: pos.c, finished: true } }).catch(function(){}); }
   function play(){
     if (!book) return;
     if (isAudio()) { fileAudio.play().then(function(){ playing = true; $('playBtn').textContent = 'Pause'; updateSession(); }).catch(function(e){ say('Could not play: ' + e.message); }); return; }
     stopScheduled();
     ensureCtx();
-    playing = true; ended = false; $('playBtn').textContent = 'Pause';
+    playing = true; ended = false; $('playBtn').textContent = 'Pause'; libraryReader.playback();
     var t = playToken;
     showText(pos);
     cursorTimer = setInterval(updateCursor, 200);
@@ -1014,7 +1016,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (libraryReader.isOpen()) return;
     if (!book || $('player').classList.contains('hidden')) return;
     var tag = (ev.target && ev.target.tagName) || '';
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY') return;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    // Space presses the focused button, link or summary; the arrows still move through the book
+    if (ev.code === 'Space' && (tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY')) return;
     if (ev.code === 'Space') { ev.preventDefault(); playing ? pause() : play(); }
     else if (ev.key === 'ArrowLeft') { ev.preventDefault(); ev.shiftKey ? prevSection() : back(); }
     else if (ev.key === 'ArrowRight') { ev.preventDefault(); ev.shiftKey ? nextSection() : forward(); }
@@ -1043,7 +1047,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     $('skippedSummary').textContent = 'Skipped parts (' + book.skipped.length + ')';
     book.skipped.forEach(function(sk){
       var li = document.createElement('li');
-      var why = { 'bookshare-notice': 'Bookshare notice', copyright: 'copyright page', contents: 'contents list', publisher: 'publisher page', 'front-matter': 'front matter', 'back-matter': 'back matter' }[sk.reason] || sk.reason;
+      var why = { 'bookshare-notice': 'accessibility notice', 'accessibility-notice': 'accessibility notice', copyright: 'copyright page', contents: 'contents list', publisher: 'publisher page', 'front-matter': 'front matter', 'back-matter': 'back matter' }[sk.reason] || sk.reason;
       li.innerHTML = '<span class="t">' + esc(sk.title) + ' <span class="muted">(' + esc(why) + ')</span></span>';
       var b = document.createElement('button'); b.className = 'act quiet'; b.type = 'button'; b.textContent = 'Play it';
       b.setAttribute('aria-label', 'Play the skipped part: ' + sk.title);
@@ -1279,7 +1283,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (book.ownerName && !book.mine) bits.push('donated by ' + book.ownerName);
     $('bookMeta').textContent = bits.join(' · ');
     $('jacketLine').textContent = book.kind !== 'text' ? (book.description || '') : '';
-    $('readingViewBtn').hidden = isAudio(); $('readingViewHint').hidden = isAudio();
+    $('readingViewBtn').hidden = isAudio();
     var sel = $('chapterSel'); sel.innerHTML = '';
     var list = isAudio() ? book.tracks : book.chapters;
     list.forEach(function(ch, i){ var o = document.createElement('option'); o.value = i; o.textContent = (i + 1) + '. ' + ch.title + (isAudio() && ch.seconds ? ' (' + clock(ch.seconds) + ')' : ''); sel.appendChild(o); });

@@ -141,6 +141,27 @@ test('accessibility notices from other sources stay out of the narrated book', a
   assert.ok(parsed.sections.slice(1).flatMap(section => section.chunks).join(' ').includes('lighthouse'));
 });
 
+test('an untitled notice from any source is skipped; the jacket names no source and no reader', async () => {
+  const epubNotice = '<html><body><p>This accessible format is made available under Section 121 exclusively for persons with print disabilities. It may not be copied or distributed.</p><h1>Chapter One</h1><p>' + 'The lighthouse shone over the water. '.repeat(40) + '</p></body></html>';
+  const parsed = await parseBook(Buffer.from(epubNotice), 'nnels.html');
+  assert.deepEqual(parsed.skipped.map((s) => [s.title, s.reason]), [['Accessibility notice', 'accessibility-notice']]);
+  assert.deepEqual(parsed.sections.map((s) => s.title), ['About this book', 'Chapter One']);
+  assert.ok(parsed.jacket.endsWith('This book was produced for people with bona fide print disabilities.'), parsed.jacket);
+  // Bookshare's own notice: the same neutral line, nothing about Bookshare or who downloaded it
+  const daisy = await parseBook(Buffer.from(dtbook(`<frontmatter>${NOTICE}</frontmatter><bodymatter><level1><h1>Chapter 1</h1><p>${'It was a bright cold day. '.repeat(80)}</p></level1></bodymatter>`)), 'b.xml');
+  const heard = daisy.sections.flatMap((s) => s.chunks).join(' ');
+  assert.ok(heard.includes('This book was produced for people with bona fide print disabilities.'));
+  assert.ok(!/bookshare|kade murdock|pass this book on|fingerprint/i.test(heard), heard.slice(0, 300));
+});
+
+test('a book that only talks about print disabilities keeps its words', async () => {
+  const intro = '<html><body><h1>Introduction</h1><p>Readers with print disabilities were provided almost nothing in 1930. This is their story.</p><h1>Chapter 1</h1><p>' + 'The first talking books arrived. '.repeat(60) + '</p><h1>Chapter 2</h1><p>Some copies were made available only to people with print disabilities, and that was the law. ' + 'Records spun on. '.repeat(60) + '</p></body></html>';
+  const parsed = await parseBook(Buffer.from(intro), 'history.html');
+  assert.deepEqual(parsed.skipped, []);
+  assert.deepEqual(parsed.sections.map((s) => s.title), ['About this book', 'Introduction', 'Chapter 1', 'Chapter 2']);
+  assert.ok(!parsed.jacket.includes('bona fide'), 'no notice line for a book that had no notice');
+});
+
 test('a book with no headings still gets navigable parts, and number-only headings fold into the next', async () => {
   const p = (n) => `<p>${('Sentence number ' + n + ' goes here. ').repeat(40)}</p>`;
   const xml = dtbook(`<frontmatter>${NOTICE}</frontmatter><bodymatter><level1>${p(1)}</level1><level1>${p(2)}</level1><level1><h1>4</h1></level1><level1><h1>Triumphs</h1>${p(3)}</level1></bodymatter>`);

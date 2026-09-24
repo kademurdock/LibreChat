@@ -24,7 +24,7 @@ test('reading speech forwards each delivery choice and defaults unsupported valu
 });
 
 test('generated library browser script parses after template expansion', () => {
-  const context={require:()=>({SHARED_HEAD:''}),module:{exports:{}}};
+  const context={require:()=>({SHARED_HEAD:'',librarianGuide:{chatUrl:'/c/new?endpoint=agents'}}),module:{exports:{}}};
   vm.runInNewContext(fs.readFileSync(require.resolve('./kadeReadingRoomPage'),'utf8'),context);
   const html=context.module.exports.readingRoomHtml;
   for (const match of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) new vm.Script(match[1]);
