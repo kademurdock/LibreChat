@@ -68,13 +68,15 @@ const AUDIO_EXT = { mp3: 'audio/mpeg', m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 
  * it to MP4 before it leaves her drive. WebM plays in Chrome and on iOS 17+. */
 const VIDEO_EXT = { mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm' };
 const MEDIA_EXT = Object.assign({}, AUDIO_EXT, VIDEO_EXT);
-/* Part 282 (Sep 23 2026): only a real media extension comes off an upload's title, and yt-dlp's
- * stream tag (".f136") with it. Stripping "everything after the last period" had cut 905 titles
- * since Sep 19: "1996 Chuck E. Cheese's commercial" arrived as "1996 Chuck E", "St. Louis" as "St",
- * "Mr. Holland's Opus" as "Mr", and the librarian could not file what it could not read. */
+/* Part 282 (Sep 23 2026): only a real media extension comes off an upload's title, with the
+ * download leftovers a pushed file name can carry: yt-dlp's stream tag (".f136"), its ".temp" and
+ * ".part" files, and an inner video extension ("LSU ads 1989.wmv.mp4"). Stripping "everything after
+ * the last period" had cut 905 titles since Sep 19: "1996 Chuck E. Cheese's commercial" arrived as
+ * "1996 Chuck E", "St. Louis" as "St", "Mr. Holland's Opus" as "Mr", and the librarian could not
+ * file what it could not read. */
 const bareTitle = (s) => String(s)
   .replace(/\.([A-Za-z0-9]{2,5})$/, (whole, ext) => (MEDIA_EXT[ext.toLowerCase()] ? '' : whole))
-  .replace(/\.f\d{2,4}$/i, '');
+  .replace(/(?:\.(?:f\d{2,4}|temp|part|ytdl|wmv|avi|mkv|flv|mpe?g|3gp|vob))+$/i, '');
 const mimeFor = (name, hint) => {
   const ext = String(name || '').toLowerCase().split('.').pop();
   if (MEDIA_EXT[ext]) return { ext, mime: MEDIA_EXT[ext], kind: VIDEO_EXT[ext] ? 'video' : 'audio' };
