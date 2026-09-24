@@ -1,6 +1,30 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { gateCues, near, notedNames, readings, speakerAt, spokenReveals } from './ledger.ts';
+import {
+  analyze,
+  attempt,
+  backoff,
+  billed,
+  failureClass,
+  keytermsFor,
+  providerDetail,
+  providerProblem,
+  steps,
+  synthesize,
+  transcribe,
+} from './providers.ts';
+import { Halt } from './types.ts';
+
+const axios = createRequire(import.meta.url)('axios');
+const scratch = await mkdtemp(join(tmpdir(), 'described-prompt-test-'));
+after(async () => {
+  await rm(scratch, { recursive: true, force: true });
+});
 import {
   analysisPrompt,
   lintDescription,
@@ -564,4 +588,274 @@ test('transcript: plural counts, grouped reasons with original times, language a
   const one = transcriptText({ ...report, descriptions: report.descriptions.slice(0, 1), preview: false, range: undefined, language: 'en' });
   assert.match(one, /Original length 1 minute\. Described version 1 minute 3 seconds\. 1 description\./);
   assert.doesNotMatch(one, /Dialogue language|preview/);
+});
+
+const httpError = (status, data = {}, headers = {}) =>
+  new axios.AxiosError(`Request failed with status code ${status}`, 'ERR_BAD_RESPONSE', {}, {}, {
+    status,
+    statusText: '',
+    headers,
+    data,
+    config: {},
+  });
+const networkError = (code) => new axios.AxiosError('network', code, {}, {});
+
+test('providers: failures are classed, billed only when they may have been, and named plainly', () => {
+  assert.equal(failureClass(httpError(503)), 'transient');
+  assert.equal(failureClass(httpError(429)), 'transient');
+  assert.equal(failureClass(httpError(402)), 'transient');
+  assert.equal(failureClass(httpError(400)), 'input');
+  assert.equal(failureClass(httpError(413)), 'input');
+  assert.equal(failureClass(new Error('wrapped', { cause: httpError(422) })), 'input');
+  assert.equal(failureClass(Object.assign(new Error('This file has no picture.'), { detail: 'x' })), 'input');
+  assert.equal(failureClass(new SyntaxError('bad json')), 'transient');
+  assert.equal(billed(httpError(429)), false);
+  assert.equal(billed(httpError(400)), false);
+  assert.equal(billed(httpError(502)), true);
+  assert.equal(billed(networkError('ECONNREFUSED')), false);
+  assert.equal(billed(networkError('ECONNABORTED')), true, 'a timeout may still be charged');
+  assert.equal(billed(new Halt('stop')), false);
+  assert.equal(billed(new SyntaxError('bad json')), true);
+  assert.equal(
+    providerProblem(httpError(402), 'Dialogue timing (Deepgram)'),
+    'Dialogue timing (Deepgram) needs its account balance topped up (HTTP 402).',
+  );
+  assert.equal(
+    providerProblem(httpError(404), 'The video model'),
+    'The video model could not find the model or address it was sent to (HTTP 404).',
+  );
+  assert.equal(providerProblem(networkError('ECONNABORTED'), 'The video model'), 'The video model took too long to answer.');
+  assert.equal(
+    providerProblem(Object.assign(new Error('This file has no picture.'), { detail: '/tmp/x: bad' }), 'The video model'),
+    'This file has no picture.',
+    'a media problem is not blamed on the model',
+  );
+  assert.equal(providerProblem(new TypeError('boom at C:\\tmp\\x'), 'The video model'), 'The video model sent a reply the server could not read.');
+  assert.equal(
+    providerDetail(httpError(404, { error: { message: 'No endpoints found for model. key=sk-or-v1-abcdef123456' } })),
+    '404 {"error":{"message":"No endpoints found for model. [hidden]"}}',
+  );
+});
+
+test('providers: waits follow Retry-After, grow with jitter, and stop when the job is cancelled', async () => {
+  assert.equal(backoff(5000, () => 0.5)(1, httpError(503)), 5000);
+  assert.equal(backoff(5000, () => 0.5)(2, httpError(503)), 15000);
+  assert.equal(backoff(5000, () => 0)(3, httpError(503)), 45000 * 0.75);
+  assert.equal(backoff(5000, () => 0.5)(1, httpError(429, {}, { 'retry-after': '12' })), 12000);
+  assert.equal(backoff(5000, () => 0.5)(1, httpError(429, {}, { 'retry-after': '600' })), 60000);
+  assert.equal(steps([5000, 20000])(1, httpError(503)), 5000);
+  assert.equal(steps([5000, 20000])(2, httpError(503)), 20000);
+  assert.equal(steps([5000, 20000])(2, httpError(503, {}, { 'retry-after': '1' })), 1000);
+  const stop = new AbortController();
+  let calls = 0;
+  const started = Date.now();
+  const running = attempt(
+    3,
+    stop.signal,
+    async () => {
+      calls++;
+      throw httpError(503);
+    },
+    undefined,
+    () => 30000,
+  );
+  setTimeout(() => stop.abort(new Error('cancelled')), 50);
+  await assert.rejects(running, /cancelled/);
+  assert.equal(calls, 1);
+  assert.ok(Date.now() - started < 5000, 'a cancel does not wait out the retry delay');
+});
+
+test('providers: keyterms come from her notes, call letters, chapters and sentence-case titles only', () => {
+  assert.deepEqual(
+    keytermsFor({
+      title: 'KYTV Channel 3 NBC Springfield Mo Commercials & Promos Back In March 1993',
+      notes: 'Uncle Bob is the man in the red cap. The anchor is Mary Smith.',
+      about: 'WOW!! Check out my channel for MORE Great Stuff from Branson.\nCall sign: KSPR\nWatch KOLR-TV too.',
+      chapters: [
+        { start: 26, title: 'Banking services' },
+        { start: 71, title: 'Branson entertainment' },
+      ],
+    }),
+    ['Uncle Bob', 'Mary Smith', 'KSPR', 'KOLR-TV', 'KYTV', 'NBC', 'Banking', 'Branson'],
+  );
+  assert.deepEqual(
+    keytermsFor({ title: 'Big Buck Bunny excerpt with test dialogue', notes: '', about: '' }),
+    ['Big Buck Bunny'],
+  );
+  assert.deepEqual(keytermsFor({ title: 'VID_20240101 HD', notes: '', about: 'Lots of Words Here' }), []);
+});
+
+function fakeAxios(handler) {
+  const calls = [];
+  const previous = axios.defaults.adapter;
+  axios.defaults.adapter = async (config) => {
+    config.data?.destroy?.();
+    const call = { url: config.url, body: typeof config.data === 'string' ? JSON.parse(config.data) : undefined, config };
+    calls.push(call);
+    const reply = await handler(call, calls.length);
+    if (reply instanceof Error) throw reply;
+    return { status: 200, statusText: 'OK', headers: reply.headers ?? {}, data: reply.data, config };
+  };
+  return { calls, restore: () => (axios.defaults.adapter = previous) };
+}
+const charges = [];
+const meter = async (kind, reserve, action) => {
+  const outcome = await action();
+  charges.push({ kind, reserve, cost: outcome.costUSD });
+};
+const signal = new AbortController().signal;
+const reply = (content, extra = {}) => ({
+  data: {
+    provider: 'Google AI Studio',
+    service_tier: 'flex',
+    choices: [{ finish_reason: 'stop', message: { content }, ...extra }],
+    usage: { cost: 0.0042, completion_tokens: 900, completion_tokens_details: { reasoning_tokens: 400 } },
+  },
+});
+const replyBody = JSON.stringify({
+  kind: 'other',
+  setting: 'a kitchen',
+  people: [],
+  speakers: [],
+  cues: [{ at: 1, until: 4, pauseAt: 1, text: 'A cook flips a pancake.', shortText: 'A cook flips.', who: [], importance: 2 }],
+  protectedSounds: [],
+});
+
+test('providers: the vision request uses the flex-eligible model, pinned reasoning and no temperature', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  delete process.env.KADE_DESCRIPTION_MODEL;
+  const file = join(scratch, 'clip.mp4');
+  await writeFile(file, Buffer.from('not really a video'));
+  const log = [];
+  const fake = fakeAxios(() => reply(replyBody));
+  try {
+    const result = await analyze(
+      { file, seconds: 10, brief: brief(), state: null, lines: [], before: [], log: (line) => log.push(line) },
+      signal,
+      meter,
+    );
+    assert.equal(result.cues[0].text, 'A cook flips a pancake.');
+    const body = fake.calls[0].body;
+    assert.equal(body.model, 'google/gemini-3.8-flash:floor');
+    assert.deepEqual(body.reasoning, { effort: 'medium' });
+    assert.equal(body.temperature, undefined);
+    assert.equal(body.max_tokens, 12000);
+    assert.deepEqual(Object.keys(body.messages[0].content[0]), ['type', 'video_url']);
+    assert.deepEqual(Object.keys(body.messages[0].content[0].video_url), ['url']);
+    assert.equal(body.response_format.type, 'json_schema');
+    assert.match(log[0], /tier flex, provider Google AI Studio, finish stop, output 900 tokens \(400 reasoning\), \$0\.0042/);
+    await analyze({ file, seconds: 40, brief: brief({ survey: true, slowed: true }), state: null, lines: [], before: [] }, signal, meter);
+    assert.deepEqual(fake.calls[1].body.reasoning, { effort: 'low' });
+    assert.equal(fake.calls[1].body.max_tokens, 24000);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: a refused clip is not retried, and its known cost is booked instead of the reserve', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const file = join(scratch, 'refused.mp4');
+  await writeFile(file, Buffer.from('clip'));
+  charges.length = 0;
+  const fake = fakeAxios(() => reply('', { finish_reason: 'content_filter', native_finish_reason: 'SAFETY' }));
+  try {
+    const failure = await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter).catch((error) => error);
+    assert.equal(failureClass(failure), 'refused');
+    assert.equal(providerProblem(failure, 'The video model'), 'The video model declined to describe this part.');
+    assert.equal(fake.calls.length, 1);
+    assert.deepEqual(charges.map((charge) => charge.cost), [0.0042]);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: a reply cut off for length is retried once on the standard tier asking for fewer cues', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const file = join(scratch, 'long.mp4');
+  await writeFile(file, Buffer.from('clip'));
+  const fake = fakeAxios((_call, n) =>
+    n === 1 ? reply('{"cues":[', { finish_reason: 'length' }) : reply(replyBody),
+  );
+  try {
+    const result = await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter);
+    assert.equal(result.cues.length, 1);
+    assert.equal(fake.calls.length, 2);
+    assert.equal(fake.calls[1].body.model, 'google/gemini-3.8-flash');
+    assert.equal(fake.calls[1].body.response_format.type, 'json_schema');
+    assert.match(fake.calls[1].body.messages[0].content[1].text, /Give about half as many cues/);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: Deepgram gets keyterms and filler words, reports the language, and failures name it', async () => {
+  process.env.DEEPGRAM_API_KEY = 'test-key';
+  const file = join(scratch, 'dialogue.m4a');
+  await writeFile(file, Buffer.from('audio'));
+  const deepgram = {
+    metadata: { duration: 60 },
+    results: {
+      channels: [
+        {
+          detected_language: 'es',
+          language_confidence: 0.93,
+          alternatives: [{ words: [{ word: 'um', punctuated_word: 'Um,', start: 1, end: 1.3, speaker: 0 }, { word: 'hola', punctuated_word: 'Hola.', start: 1.4, end: 1.8, speaker: 0 }] }],
+        },
+      ],
+    },
+  };
+  charges.length = 0;
+  let language;
+  let fake = fakeAxios((_call, n) => (n === 1 ? httpError(400, { err_msg: 'bad keyterm' }) : { data: deepgram }));
+  try {
+    const words = await transcribe(file, 60, signal, meter, {
+      keyterms: ['KY3', 'Uncle Bob'],
+      onLanguage: (code) => (language = code),
+    });
+    const first = new URL(fake.calls[0].url);
+    assert.deepEqual(first.searchParams.getAll('keyterm'), ['KY3', 'Uncle Bob']);
+    assert.equal(first.searchParams.get('filler_words'), 'true');
+    assert.equal(first.searchParams.get('detect_language'), 'true');
+    assert.deepEqual(new URL(fake.calls[1].url).searchParams.getAll('keyterm'), [], 'retried without keyterms');
+    assert.deepEqual(words.map((word) => word.word), ['Um,', 'Hola.'], 'fillers stay in the timing words');
+    assert.equal(language, 'es');
+    assert.ok(Math.abs(charges.at(-1).cost - 0.0052) < 1e-9);
+  } finally {
+    fake.restore();
+  }
+  fake = fakeAxios(() => ({ data: deepgram }));
+  try {
+    await transcribe(file, 60, signal, meter, { keyterms: ['KY3'] });
+    assert.ok(Math.abs(charges.at(-1).cost - 0.0065) < 1e-9, 'keyterms add their per-minute price');
+  } finally {
+    fake.restore();
+  }
+  fake = fakeAxios(() => httpError(402, { err_code: 'ASR_PAYMENT_REQUIRED' }));
+  try {
+    const failure = await transcribe(file, 60, signal, meter).catch((error) => error);
+    assert.equal(failure.message, 'Dialogue timing (Deepgram) needs its account balance topped up (HTTP 402).');
+    assert.equal(providerProblem(failure, 'The video model'), failure.message);
+    assert.equal(billed(failure), false);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: the voice call is retried before a paid description is dropped, and the style tag is not billed', async () => {
+  const file = join(scratch, 'voice.wav');
+  charges.length = 0;
+  const fake = fakeAxios((_call, n) =>
+    n === 1
+      ? httpError(503, {}, { 'retry-after': '0' })
+      : { data: new Uint8Array(400).buffer, headers: { 'content-type': 'audio/wav' } },
+  );
+  try {
+    await synthesize('A sign reads [Grand Opening] & more.', 'Voice 1', 'session', file, 1.5, signal, meter);
+    assert.equal(fake.calls.length, 2);
+    assert.equal(fake.calls[1].body.input, '[clear engaged audio description] A sign reads Grand Opening and more.');
+    const spoken = Buffer.byteLength('A sign reads Grand Opening and more.');
+    assert.ok(Math.abs(charges.at(-1).cost - spoken * 15e-6) < 1e-12);
+  } finally {
+    fake.restore();
+  }
 });
