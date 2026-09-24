@@ -98,19 +98,108 @@ function clean(desc, limit = 700) {
   return out.join(' ').replace(/\s+/g, ' ').trim().slice(0, limit);
 }
 
-/* The channel folders that exist, and the words a title uses for them. Order
- * matters: the longer name is tried first (ABC Family before ABC). */
-const NETWORKS = [
+/* Part 281 (Sep 23 2026). Her words: "We need a nick jr disney jr categories for the sorter",
+ * then "Nickelo zone or whatever is a former block. I wonder if we should look up wikepedia or
+ * something lists of former blocks on some channels to help with sorting." Every programming
+ * block, current or former, is a folder inside the channel that aired it, as Playhouse Disney
+ * already was: Nickelodeon/SNICK, Cartoon Network/Toonami, FOX/Fox Kids. The list comes from
+ * Wikipedia's "List of programming blocks by name", "List of animated programming blocks" and the
+ * block articles (Nickel-O-Zone 1998-2000 on Nickelodeon, SNICK 1992-2004, Disney's One Too on
+ * UPN 1999-2003), checked against the titles in her library. Order matters: the more specific
+ * name first ("Nick Jr on CBS" before "Nick Jr", "Cartoon Cartoon Fridays" before "Cartoon
+ * Cartoons"). Left out on purpose: TEENick (her one-n "Teenick" titles file under the TeenNick
+ * channel), The Disney Afternoon (syndicated, so no channel folder), PTV (too common a word) and
+ * Qubo (a block on NBC but also a channel of its own). Noggin is a channel, listed here so it
+ * keeps its priority over a Nick Jr mention. TubeVault's broadcast_filing.py repeats this table;
+ * change both together. */
+const BLOCKS = [
   [/\bnoggin on nick(?:elodeon)?\b/i, 'Nickelodeon/Noggin on Nick'],
-  // Part 281: kids' blocks are folders inside the channel that aired them, as Playhouse Disney is.
   [/\bnick(?:elodeon)? ?jr\.? on cbs\b/i, 'CBS/Nick Jr on CBS'],
-  [/\babc family\b/i, 'ABC Family'], [/\bfox family\b/i, 'ABC Family'],
+  [/\bnick on cbs\b/i, 'CBS/Nick on CBS'],
+  [/\bdiscovery kids on nbc\b/i, 'NBC/Discovery Kids on NBC'],
+  [/\bdisney'?s one too\b/i, "UPN/Disney's One Too"],
+  [/\bone saturday mornings?\b/i, 'ABC/One Saturday Morning'],
+  [/\bjetix\b(?=.*\babc family\b)|\babc family\b.*\bjetix\b/i, 'ABC Family/Jetix'],
+  [/\bjetix\b/i, 'Toon Disney/Jetix'],
+  [/\bcartoon cartoon fridays?\b/i, 'Cartoon Network/Cartoon Cartoon Fridays'],
+  [/\btoonami midnight run\b/i, 'Cartoon Network/Toonami Midnight Run'],
   [/\bplayhouse disney\b/i, 'Disney Channel/Playhouse Disney'],
-  [/\btoon disney\b/i, 'Toon Disney'], [/\bdisney ?(?:jr|junior)\b/i, 'Disney Channel/Disney Junior'],
-  [/\b(?:disney channel|zoog disney)\b/i, 'Disney Channel'],
+  [/\bdisney ?(?:jr|junior)\b/i, 'Disney Channel/Disney Junior'],
+  [/\bzoog(?: ?disney)?\b/i, 'Disney Channel/Zoog Disney'],
+  [/\bvault disney\b/i, 'Disney Channel/Vault Disney'],
+  [/\bdisney replay\b/i, 'Disney Channel/Disney Replay'],
+  [/\bnoggin\b/i, 'Noggin'],
+  [/\bnick ?(?:jr|junior)\b/i, 'Nickelodeon/Nick Jr'],
+  [/\bnick[ -]?(?:at|@)[ -]?nite\b/i, 'Nickelodeon/Nick at Nite'],
+  [/\bsnick\b/i, 'Nickelodeon/SNICK'],
+  [/\bnickel[ -]?o[ -]?zone\b/i, 'Nickelodeon/Nickel-O-Zone'],
+  [/\bnick in the afternoon\b/i, 'Nickelodeon/Nick in the Afternoon'],
+  [/\bu-?pick live\b/i, 'Nickelodeon/U-Pick Live'],
+  [/\bnick studio 10\b/i, 'Nickelodeon/Nick Studio 10'],
+  [/\bnicktoons\b/i, 'Nickelodeon/Nicktoons'],
+  [/\bthe splat\b/i, 'TeenNick/The Splat'],
+  [/\bnick ?rewind\b/i, 'TeenNick/NickRewind'],
+  [/\b'?90s are all that\b/i, "TeenNick/The '90s Are All That"],
+  [/\badult swim\b/i, 'Cartoon Network/Adult Swim'],
+  [/\btoonami\b/i, 'Cartoon Network/Toonami'],
+  [/\bcartoon cartoons?\b/i, 'Cartoon Network/Cartoon Cartoons'],
+  [/\bmiguzi\b/i, 'Cartoon Network/Miguzi'],
+  [/\btickle u\b/i, 'Cartoon Network/Tickle U'],
+  [/\bacme night\b/i, 'Cartoon Network/ACME Night'],
+  [/\bjbvo\b|\bjohnny bravo video\b/i, 'Cartoon Network/JBVO'],
+  [/\bhigh noon toons\b/i, 'Cartoon Network/High Noon Toons'],
+  [/\bfox kids\b/i, 'FOX/Fox Kids'],
+  [/\bfox ?box\b/i, 'FOX/FoxBox'],
+  [/\b4 ?kids ?tv\b/i, 'FOX/4Kids TV'],
+  [/\bkids'? ?wb\b/i, "The WB/Kids' WB"],
+  [/\babc kids\b/i, 'ABC/ABC Kids'],
+  [/\bupn kids\b/i, 'UPN/UPN Kids'],
+  [/\btnbc\b/i, 'NBC/TNBC'],
+  [/\bsecret slumber party\b/i, 'CBS/KOL Secret Slumber Party'],
+  [/\bcookie jar tv\b/i, 'CBS/Cookie Jar TV'],
+  [/\bpbs kids go\b/i, 'PBS/PBS Kids Go'],
+  [/\bbookworm bunch\b/i, 'PBS/PBS Kids Bookworm Bunch'],
+  [/\bpbs kids\b/i, 'PBS/PBS Kids'],
+  [/\bready,? set,? learn\b/i, 'The Learning Channel/Ready Set Learn'],
+  [/\b(?:usa )?cartoon express\b/i, 'USA Network/USA Cartoon Express'],
+  [/\baction extreme team\b/i, 'USA Network/Action Extreme Team'],
+  [/\bgsn kids'? zone\b/i, "GSN/Kids' Zone"],
+];
+/* A recording of two things stays on the channel: the block paired with another name
+ * ("Cartoon Network & Adult Swim", "Toonami ⧸ CN", "Flintstone, Toonami, Scooby-Doo"), the
+ * handoff between them ("Nickelodeon sign off, Nick Jr sign on", "Cartoon Network to Adult Swim
+ * Transition"), or two blocks named ("Kids WB vs Fox Kids"). ⧸ is how a downloaded title spells /. */
+const PAIR_BEFORE = /(?:[&+/⧸／]|\band|\bvs\.?|[a-z]\s*,)\s*$/i;
+const PAIR_AFTER = /^\.?\s*(?:[&+/⧸／]|and\b|vs\b|,\s*[a-z])/i;
+const HANDOFF = /\btransition\b|\bsign ?off\b.*\bsign ?on\b|\bsign ?on\b.*\bsign ?off\b/i;
+/** The block a title names, or null: { name, host, mixed }. The table's order decides between names. */
+function blockOf(title) {
+  const t = String(title || '');
+  const hits = [];
+  for (const [re, name] of BLOCKS) {
+    const m = re.exec(t);
+    if (!m) continue;
+    const start = m.index;
+    const end = start + m[0].length;
+    // "Toonami" inside "Toonami Midnight Run" is the same block, found once.
+    if (!hits.some((h) => start < h.end && end > h.start)) hits.push({ name, start, end });
+  }
+  if (!hits.length) return null;
+  const [first] = hits;
+  const blocks = new Set(hits.map((h) => h.name).filter((n) => n.includes('/')));
+  const mixed = blocks.size > 1 || HANDOFF.test(t) || PAIR_BEFORE.test(t.slice(0, first.start)) || PAIR_AFTER.test(t.slice(first.end));
+  return { name: first.name, host: first.name.split('/')[0], mixed };
+}
+const BLOCK_FIRST = new RegExp(`^(?:\\W|\\d)*(?:${BLOCKS.map(([re]) => re.source).join('|')})`, 'i');
+
+/* The channel folders that exist, and the words a title uses for them. Order
+ * matters: the longer name is tried first (ABC Family before ABC). A block named in
+ * the title (BLOCKS, above) wins over its channel. */
+const NETWORKS = [
+  [/\babc family\b/i, 'ABC Family'], [/\bfox family\b/i, 'ABC Family'],
+  [/\btoon disney\b/i, 'Toon Disney'], [/\bdisney channel\b/i, 'Disney Channel'],
   [/\bteen?\s?nick\b/i, 'TeenNick'], [/\bsprout\b/i, 'Sprout'],
-  [/\bnoggin\b/i, 'Noggin'], [/\bnick ?(?:jr|junior)\b/i, 'Nickelodeon/Nick Jr'],
-  [/\b(?:nick at nite|nickelodeon|nicktoons)\b/i, 'Nickelodeon'], [/\bthe n\b/i, 'The N'],
+  [/\bnickelodeon\b/i, 'Nickelodeon'], [/\bthe n\b/i, 'The N'],
   [/\bcartoon network\b/i, 'Cartoon Network'], [/\bcomedy central\b/i, 'Comedy Central'],
   [/\b(?:cnn headline news|headline news)\b/i, 'CNN Headline News'], [/\bcnn\b/i, 'CNN'],
   [/\bdiscovery kids\b/i, 'Discovery Kids'], [/\bdiscovery channel\b/i, 'Discovery Channel'],
@@ -125,11 +214,13 @@ const NETWORKS = [
   [/\b(?:game show network|gsn)\b/i, 'GSN'], [/\blifetime\b/i, 'Lifetime'], [/\bbravo\b/i, 'Bravo'], [/\bbet\b/i, 'BET'],
   [/\bhbo\b/i, 'HBO'], [/\bshowtime\b/i, 'Showtime'], [/\bcinemax\b/i, 'Cinemax'], [/\bstarz\b/i, 'Starz'],
   [/\bthe movie channel\b/i, 'The Movie Channel'], [/\btnn\b/i, 'TNN'], [/\b(?:prevue|tv guide channel)\b/i, 'Prevue & TV Guide Channel'],
-  [/\bqvc\b/i, 'QVC'], [/\bhsn\b/i, 'HSN'], [/\bupn\b/i, 'UPN'], [/\b(?:the wb|kids'? ?wb)\b/i, 'The WB'], [/\bthe cw\b/i, 'The CW'],
+  [/\bqvc\b/i, 'QVC'], [/\bhsn\b/i, 'HSN'], [/\bupn\b/i, 'UPN'], [/\bthe wb\b/i, 'The WB'], [/\bthe cw\b/i, 'The CW'],
   [/\bpbs\b/i, 'PBS'], [/\bcbs\b/i, 'CBS'], [/\bnbc\b/i, 'NBC'], [/\bfox\b/i, 'FOX'], [/\babc\b/i, 'ABC'],
 ];
 function networkOf(title) {
   const t = String(title || '');
+  const block = blockOf(t);
+  if (block) return block.mixed ? block.host : block.name;
   for (const [re, name] of NETWORKS) if (re.test(t)) return name;
   return null;
 }
@@ -161,34 +252,27 @@ function describedShelf(title) {
 /* Part 281 (Sep 23 2026), her word: "We need a nick jr disney jr categories for the sorter
  * I'm seeing a lot of stuff like that in the can't find a folder batch." Titles such as "Nick
  * jr yo gabba gabba curriculum board fall 2012" sat in Archive Intake because Jev was unsure
- * what KIND of clip a curriculum board is. A title that names a kids' block and is plainly the
- * block's own presentation (it starts with the block's name, or is a bumper, intro, promo,
- * curriculum board, sign-off or commercial break) needs no judgement: it files by rule into
- * the block's folder, the same rule TubeVault's broadcast_filing.children_broadcast applies. A
- * show's own episode ("Dora the Explorer episode") is not named by a block and stays Jev's. */
-const KIDS_BLOCKS = [
-  [/\bnoggin on nick(?:elodeon)?\b/i, 'Nickelodeon/Noggin on Nick'],
-  [/\bnick(?:elodeon)? ?jr\.? on cbs\b/i, 'CBS/Nick Jr on CBS'],
-  [/\bplayhouse disney\b/i, 'Disney Channel/Playhouse Disney'],
-  [/\bdisney ?(?:jr|junior)\b/i, 'Disney Channel/Disney Junior'],
-  [/\bnoggin\b/i, 'Noggin'],
-  [/\bnick ?(?:jr|junior)\b/i, 'Nickelodeon/Nick Jr'],
-];
-const BLOCK_FIRST = /^(?:\W|\d)*(?:noggin|playhouse disney|disney ?(?:jr|junior)|nick(?:elodeon)? ?(?:jr|junior))\b/i;
+ * what KIND of clip a curriculum board is. A title that names a programming block (BLOCKS, with
+ * the networks) and is plainly the block's own presentation (it starts with the block's name, or
+ * is a bumper, intro, promo, curriculum board, sign-off or commercial break) needs no judgement:
+ * it files by rule into the block's folder, the same rule TubeVault's
+ * broadcast_filing.children_broadcast applies. A show's own episode ("Dora the Explorer episode")
+ * is not named by a block and stays Jev's, and so does a recording that mixes the block with
+ * its channel. */
 const PRESENTATION = /\b(?:bumpers?|promos?|intros?|theme|credits|idents?|continuity|sign ?offs?|sign ?ons?|originals?|logos?|curriculum boards?|commercial breaks?)\b/i;
 function blockFact(item) {
   if (item.kind !== 'video' || zoneOf(item) !== 'intake') return null;
   const t = String(item.title || '');
-  const hit = KIDS_BLOCKS.find(([re]) => re.test(t));
-  if (!hit) return null;
-  if (/\b(?:album|soundtrack|remix|parody|ytp|fan[ -]?made|recreation|mock|vhs|dvd)\b/i.test(t)) return null;
+  const block = blockOf(t);
+  if (!block || block.mixed) return null;
+  if (/\b(?:album|soundtrack|remix|parody|ytp|fan[ -]?made|recreat\w*|mock|vhs|dvd)\b/i.test(t)) return null;
   if (!BLOCK_FIRST.test(t) && !PRESENTATION.test(t)) return null;
   const dec = decadeOf(item);
   if (/commercial breaks?|commercial compilation|commercial collection|ad breaks?/i.test(t) || (BLOCK_FIRST.test(t) && /\bcommercials\b/i.test(t))) {
-    return `Video/Commercials/Commercial Breaks/${hit[1]}/${dec}`;
+    return `Video/Commercials/Commercial Breaks/${block.name}/${dec}`;
   }
   if (/\b(?:ads?|advertisements?|commercials?)\b/i.test(t) && !/\b(?:promos?|bumpers?|idents?|continuity)\b/i.test(t)) return null;
-  return `Video/Channels/${hit[1]}/${dec}`;
+  return `Video/Channels/${block.name}/${dec}`;
 }
 
 /** Folder names that state a fact. Returns a path or null. Never asks Jev. */
@@ -447,7 +531,7 @@ function decide(item, answers, deps = {}, k = knobs()) {
   const fact = folderFact(item);
   if (fact) return { ...out, to: fact !== from ? fact : null, why: 'folder says so', confidence: 1 };
   const block = blockFact(item);
-  if (block) return { ...out, to: block !== from ? block : null, why: 'kids block named in the title', confidence: 1 };
+  if (block) return { ...out, to: block !== from ? block : null, why: 'programming block named in the title', confidence: 1 };
 
   const foreign = noulOf(a, 'foreign');
   if (foreign !== null && foreign >= k.foreign) out.flags.push(`Jev review: made outside the US (${two(foreign)}).`);
@@ -664,7 +748,7 @@ async function fileMedia(items, { ask = jev.ask, deps = {}, timeoutMs = 8000, co
 }
 
 module.exports = {
-  VERSION, knobs, decadeOf, clean, networkOf, zoneOf, folderFact, blockFact, familyOf, categoryOf, stateOf, questionsFor,
+  VERSION, knobs, decadeOf, clean, networkOf, zoneOf, folderFact, blockFact, blockOf, BLOCKS, familyOf, categoryOf, stateOf, questionsFor,
   routeByKind, decide, fileMedia, KIND_Q, KIND_CRITERIA, CATEGORY_Q, VHS_Q, VHS_CRITERIA, FOREIGN_Q, MO_RE, NONUS_RE,
   HOME_Q, ELSEWHERE_Q, AR_OZARKS_RE, ourArea, wantState, wantQuestions, wantVerdict, judgeWanted, fullSportsGame,
 };

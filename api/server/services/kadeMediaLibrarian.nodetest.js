@@ -62,7 +62,58 @@ test('kids blocks: Nick Jr and Disney Junior have their own folders, filed by ru
   assert.strictEqual(to('Noggin Nick Jr bumper 2007'), 'Video/Channels/Noggin/2000s');
   assert.strictEqual(L.networkOf('Nick Jr. Face promo'), 'Nickelodeon/Nick Jr');
   assert.strictEqual(L.networkOf('Disney Junior promo'), 'Disney Channel/Disney Junior');
-  assert.strictEqual(L.networkOf('Nickelodeon SNICK promo'), 'Nickelodeon');
+  assert.strictEqual(L.networkOf('Nickelodeon SNICK promo'), 'Nickelodeon/SNICK', 'a block wins over its channel');
+});
+
+test('programming blocks, former and current, sit inside their channel (her word, Sep 23)', () => {
+  const to = (title, path = 'Videos/Needs Filing/Archive Intake') => L.decide(video(title, path), {}).to;
+  // Titles as they are in her library.
+  assert.strictEqual(to('Nickel-O-Zone Promo： The Wild Thornberrys (1998)'), 'Video/Channels/Nickelodeon/Nickel-O-Zone/1990s');
+  assert.strictEqual(to('Nick In the Afternoon bumper, 1998'), 'Video/Channels/Nickelodeon/Nick in the Afternoon/1990s');
+  assert.strictEqual(to('SNICK Screenbug #1 (1993)'), 'Video/Channels/Nickelodeon/SNICK/1990s');
+  assert.strictEqual(to('Toonami - October 1999 Promos & Bumps'), 'Video/Channels/Cartoon Network/Toonami/1990s');
+  assert.strictEqual(to('Toonami Midnight Run - 7⧸25⧸1999 Promos & Bumps'), 'Video/Channels/Cartoon Network/Toonami Midnight Run/1990s');
+  assert.strictEqual(to('[adult swim] bumps (August 26, 2016)'), 'Video/Channels/Cartoon Network/Adult Swim/2010s');
+  assert.strictEqual(to('Cartoon Cartoon Fridays - 6⧸11⧸1999 Host Segments & Promos'), 'Video/Channels/Cartoon Network/Cartoon Cartoon Fridays/1990s');
+  assert.strictEqual(to('Zoog Disney (1999) Bumper - Disney Channel - Website'), 'Video/Channels/Disney Channel/Zoog Disney/1990s');
+  assert.strictEqual(to('Vault Disney (1998) Bumper - Disney Channel - Cinderella'), 'Video/Channels/Disney Channel/Vault Disney/1990s');
+  assert.strictEqual(to('Fox Box ｜ Bumper ｜ 2003 ｜ Totally Tuned In'), 'Video/Channels/FOX/FoxBox/2000s');
+  assert.strictEqual(to('Various FOX Kids Bumpers (1995)'), 'Video/Channels/FOX/Fox Kids/1990s');
+  assert.strictEqual(to('4KidsTV Split Screen Credits (November 17, 2007)'), 'Video/Channels/FOX/4Kids TV/2000s');
+  assert.strictEqual(to("Kids' WB Snow Jam bumpers (2000)"), "Video/Channels/The WB/Kids' WB/2000s");
+  assert.strictEqual(to('One Saturday Morning Commercials (05⧸01⧸1999)'), 'Video/Commercials/Commercial Breaks/ABC/One Saturday Morning/1990s');
+  assert.strictEqual(to('Jetix on ABC Family Commercial Break (July 29, 2005)'), 'Video/Commercials/Commercial Breaks/ABC Family/Jetix/2000s');
+  assert.strictEqual(to('Jetix Split Screen Credits (April 30, 2005)'), 'Video/Channels/Toon Disney/Jetix/2000s');
+  assert.strictEqual(to('Bookworm Bunch credits： George Shrinks (Season 2)'), 'Video/Channels/PBS/PBS Kids Bookworm Bunch/Undated');
+  assert.strictEqual(to('PBS Kids GO! Interstitials (May 25, 2011)'), 'Video/Channels/PBS/PBS Kids Go/2010s');
+  assert.strictEqual(to('GSN Kids Zone promo, 1997'), "Video/Channels/GSN/Kids' Zone/1990s");
+  assert.strictEqual(to('USA Cartoon Express intro, 1985'), 'Video/Channels/USA Network/USA Cartoon Express/1980s');
+  assert.strictEqual(to('NickRewind Sign Off (March 18, 2019)'), 'Video/Channels/TeenNick/NickRewind/2010s');
+  assert.strictEqual(L.networkOf('Nick at Nite promo, 1985'), 'Nickelodeon/Nick at Nite');
+  assert.strictEqual(L.networkOf('Nick-at-Nite promo'), 'Nickelodeon/Nick at Nite');
+  assert.strictEqual(L.networkOf('Friday Night Nicktoons Opening (2002-2004)'), 'Nickelodeon/Nicktoons');
+  assert.strictEqual(L.networkOf('Disney One Saturday Mornings (1999) Television Commercial - ABC'), 'ABC/One Saturday Morning');
+  // A recording of the block and something else stays on the channel.
+  assert.strictEqual(L.networkOf('Cartoon Network & Adult Swim - 8⧸12⧸2003 promos, commercials, and bumpers'), 'Cartoon Network');
+  assert.strictEqual(L.networkOf('Toonami ⧸ Adult Swim - May 2005 Promos & Bumps'), 'Cartoon Network');
+  assert.strictEqual(L.networkOf('(May 19-20, 2002) Adult Swim⧸Cartoon Network Commercials'), 'Cartoon Network');
+  assert.strictEqual(L.networkOf('Cartoon Network to Adult Swim Transition (2008-2010)'), 'Cartoon Network');
+  assert.strictEqual(L.networkOf('Christmas commercial break 2000 - Flintstone, Toonami, Scooby-Doo'), 'Cartoon Network');
+  assert.strictEqual(L.networkOf('Toon Disney and Jetix Commercials (March 2, 2005)'), 'Toon Disney');
+  assert.strictEqual(L.networkOf('Nickelodeon & Nick At Nite Promo’s Back In July Of 1992'), 'Nickelodeon');
+  assert.strictEqual(L.networkOf('Nickelodeon sign off nick jr sign on 1999'), 'Nickelodeon');
+  assert.strictEqual(L.networkOf('Pokemon & Digimon 1999 Commercial Break ｜ Kids WB vs Fox Kids'), 'FOX', 'two blocks: the first one\'s channel');
+  assert.strictEqual(L.blockFact(video('Cartoon Network ⧸ Adult Swim - December 2006 Promos & Bumps', 'Videos/Needs Filing/Archive Intake')), null, 'mixed: Jev decides');
+  // Commas and dates are not pairs.
+  assert.strictEqual(L.networkOf('Toonami, 1999'), 'Cartoon Network/Toonami');
+  assert.strictEqual(L.networkOf('Adult Swim - 7⧸10⧸2003 promos, commercials & bumpers'), 'Cartoon Network/Adult Swim');
+  // A channel with no block stays the channel; TEENick is not a block here; Snickers is not SNICK.
+  assert.strictEqual(L.networkOf('Cartoon Network promo 1998'), 'Cartoon Network');
+  assert.strictEqual(L.networkOf('Teenick Sabrina commercial breaks 2003'), 'TeenNick', 'her one-n spelling files under the channel');
+  assert.strictEqual(L.networkOf('Snickers commercial 1996'), null);
+  // A single advert or a fan recreation still waits for Jev.
+  assert.strictEqual(L.blockFact(video('Toonami action figure commercial 2001', 'Videos/Needs Filing/Archive Intake')), null);
+  assert.strictEqual(L.blockFact(video('[Timelapse] Recreating a 2001 Nickelodeon U-Pick Live on-screen graphic', 'Videos/Needs Filing/Archive Intake')), null);
 });
 
 test('zones: intake, local shelves, filed, and books skipped', () => {
