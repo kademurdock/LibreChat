@@ -38,7 +38,8 @@ test('networks come off the title by rule, longest name first', () => {
   assert.strictEqual(L.networkOf('Teennick degrassi promo 2013'), 'TeenNick');
   assert.strictEqual(L.networkOf('Teenick Sabrina commercial breaks 2003'), 'TeenNick', 'her own spelling, one n');
   assert.strictEqual(L.networkOf('Toon Disney bumper'), 'Toon Disney');
-  assert.strictEqual(L.networkOf('Playhouse Disney sign on 2007'), 'Disney Channel');
+  assert.strictEqual(L.networkOf('Playhouse Disney sign on 2007'), 'Disney Channel/Playhouse Disney');
+  assert.strictEqual(L.networkOf('Noggin Nick Jr bumper 2007'), 'Noggin');
   assert.strictEqual(L.networkOf('Sprout tape commercial breaks 2015'), 'Sprout');
   assert.strictEqual(L.networkOf('1999 Dodge commercial'), null);
 });
@@ -62,6 +63,15 @@ test('intake: Jev decides the shelf; the network and decade come from rules', ()
   assert.strictEqual(show.to, 'Video/TV Shows/Bear in the Big Blue House/Intros & Credits/2000s');
   const brandless = L.decide(video('Mystery spot 1988', 'Videos/Needs Filing/Archive Intake'), ans({ kind: ['One product advert', 0.9], category: ['Toys & Video Games', 0.4] }));
   assert.strictEqual(brandless.to, 'Video/Commercials/Other Commercials/1980s', 'an advert with no sure shelf still leaves intake');
+});
+
+test('an identified channel is a useful shelf when the show dictionary has no match', () => {
+  const item = video('Noggin Connie the cow ending 2004', 'Videos/Needs Filing/Archive Intake');
+  const a = ans({ kind: ['Episode or clip of a TV programme', 0.91] });
+  assert.strictEqual(L.decide(item, a).to, 'Video/Channels/Noggin/2000s');
+  assert.strictEqual(L.decide({ ...item, title: 'Playhouse Disney Stanley horsepower' }, a).to, 'Video/Channels/Disney Channel/Playhouse Disney/Undated');
+  assert.strictEqual(L.decide({ ...item, title: 'Unidentified episode' }, a).to, 'Video/TV Shows/Assorted (One-Offs)/Undated');
+  assert.strictEqual(L.routeByKind({ ...item, title: 'Playhouse Disney commercial breaks 2001' }, 'Block of several commercials', null, '2000s', {}), 'Video/Commercials/Commercial Breaks/Disney Channel/Playhouse Disney/2000s');
 });
 
 test('Missouri comes first, to the right local shelf, with tags', () => {

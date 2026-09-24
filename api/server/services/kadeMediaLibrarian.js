@@ -102,9 +102,10 @@ function clean(desc, limit = 700) {
  * matters: the longer name is tried first (ABC Family before ABC). */
 const NETWORKS = [
   [/\babc family\b/i, 'ABC Family'], [/\bfox family\b/i, 'ABC Family'],
-  [/\btoon disney\b/i, 'Toon Disney'], [/\b(?:disney channel|playhouse disney|disney junior|zoog disney)\b/i, 'Disney Channel'],
+  [/\bplayhouse disney\b/i, 'Disney Channel/Playhouse Disney'],
+  [/\btoon disney\b/i, 'Toon Disney'], [/\b(?:disney channel|disney junior|zoog disney)\b/i, 'Disney Channel'],
   [/\bteen?\s?nick\b/i, 'TeenNick'], [/\bsprout\b/i, 'Sprout'],
-  [/\b(?:nick jr\.?|nick at nite|nickelodeon|nicktoons)\b/i, 'Nickelodeon'], [/\bnoggin\b/i, 'Noggin'], [/\bthe n\b/i, 'The N'],
+  [/\bnoggin\b/i, 'Noggin'], [/\b(?:nick jr\.?|nick at nite|nickelodeon|nicktoons)\b/i, 'Nickelodeon'], [/\bthe n\b/i, 'The N'],
   [/\bcartoon network\b/i, 'Cartoon Network'], [/\bcomedy central\b/i, 'Comedy Central'],
   [/\b(?:cnn headline news|headline news)\b/i, 'CNN Headline News'], [/\bcnn\b/i, 'CNN'],
   [/\bdiscovery kids\b/i, 'Discovery Kids'], [/\bdiscovery channel\b/i, 'Discovery Channel'],
@@ -364,7 +365,7 @@ function routeByKind(item, kind, category, dec, deps) {
       return net ? `${root}/Channels/${net}/${dec}` : `${root}/Station IDs & Sign-offs/${dec}`;
     case 'Episode or clip of a TV programme': {
       const show = deps.broadcastShelf ? deps.broadcastShelf(item.title || '', (item.meta || {}).franchise || '') : null;
-      return show ? `${root}/${show}/${dec}` : `${root}/TV Shows/Assorted (One-Offs)/${dec}`;
+      return show ? `${root}/${show}/${dec}` : net ? `${root}/Channels/${net}/${dec}` : `${root}/TV Shows/Assorted (One-Offs)/${dec}`;
     }
     case 'News or special report':
       return net ? `${root}/Channels/${net}/${dec}` : `${root}/TV Shows/Assorted (One-Offs)/${dec}`;
