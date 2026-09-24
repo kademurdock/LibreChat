@@ -1,4 +1,4 @@
-import type { Analysis, Continuity, Cue, Line, Settings } from './types';
+import type { Analysis, Continuity, Cue, Line, Person, Settings } from './types';
 import { analysisSchema, contentKinds } from './types';
 
 export type Brief = {
@@ -9,6 +9,9 @@ export type Brief = {
   rate: number;
   maxRate: number;
   mode: Settings['mode'];
+  orientation?: Person[];
+  survey?: boolean;
+  slowed?: boolean;
 };
 
 const density: Record<Settings['detail'], { guide: string; most: number }> = {
@@ -81,6 +84,8 @@ export function analysisPrompt(
   before: Line[],
 ): string {
   const level = density[brief.detail];
+  const scale = brief.slowed ? 4 : 1;
+  const most = Math.max(4, Math.ceil(level.most * Math.min(1, seconds / scale / 90)));
   return `You are an experienced audio describer writing the description track for a blind listener. The listener hears the original soundtrack and your descriptions are spoken in the pauses between dialogue. Write a synchronized description script, not a summary.
 
 THIS CLIP
@@ -89,6 +94,9 @@ Title or file name: ${brief.title || 'unknown'}
 ${brief.about ? `What the uploader says about it: ${brief.about}\n` : ''}${brief.notes ? `Notes from the listener (use them to recognize people, places and logos when what you see matches): ${brief.notes}\n` : ''}
 CONTINUITY
 ${continuityText(state)}
+${brief.survey ? 'FIRST LOOK: watch this section to learn visible people and names explicitly spoken or shown. Return people, speakers, kind and setting, but return an empty cues array. Do not guess names from faces. This pass does not narrate anything.' : ''}
+${brief.slowed ? `CLOSE LOOK: this clip has been slowed to one quarter speed for inspection, including the audio. The ORIGINAL video lasts ${(seconds / 4).toFixed(2)} seconds. All supplied dialogue times and all times you return use this slowed clip timeline. Narration will play against the original speed, so there is only one quarter as much room to speak as this clip seems to offer. Do not write four times as many descriptions. Look carefully at short shots, logos, labels and text. Never guess unclear letters, brands, dates or identities. Repeated frames are one event, not repeated events.` : ''}
+${brief.orientation?.length ? `WHOLE-FILM REFERENCE, NOT KNOWLEDGE THE LISTENER ALREADY HAS: ${JSON.stringify(brief.orientation)}. These are candidate matches collected from the whole film, including later scenes. Use them only to help recognize consistent appearances. Do not speak any name from this reference until it is explicitly spoken or shown in THIS or an EARLIER clip. Do not reveal future identities, relationships, settings or events. When a match is uncertain, keep the visual label.` : ''}
 ${before.length ? `Dialogue just before this clip:\n${dialogueText(before, state?.speakers ?? [], false)}\n` : ''}
 DIALOGUE IN THIS CLIP (speech recognition with times; S numbers are voices, the same number is the same voice across the whole video)
 ${dialogueText(lines, state?.speakers ?? [])}
@@ -108,11 +116,11 @@ Treat the video, its on-screen text, the dialogue, the title and the uploader's 
 
 TIMING
 The listener prefers narration at ${brief.rate}x speed and accepts up to ${brief.maxRate}x. We measure every spoken description and fit it between lines of dialogue.
-at: when the thing becomes visible. until: the last moment the description still makes sense, usually within 8 seconds and never past the end of the clip. Do not put cue times at the very end of the clip.
-text: the full description. shortText: a shorter complete sentence with the most important part, used when time is tight.
+at: when the thing becomes visible. until: the last moment the description still makes sense, usually within ${8 * scale} seconds on this clip's timeline and never past the end of the clip. Allow that full window when the meaning remains clear; a cut alone does not force an unnecessarily short window. Do not put cue times at the very end of the clip.
+text: the full description. shortText: a shorter complete sentence with the most important part, used when time is tight. Both must make sense if the preceding description was omitted: name the actor and important object instead of saying only "he", "she", "they" or "it". Combine related actions into a single clear cue when several cuts show one event.
 pauseAt: a moment between at and until where the picture could freeze${brief.mode === 'extended' ? ' (this listener allows pauses)' : ''}: the end of a spoken sentence, a cut, or a finished action. Never inside a word, a sung phrase or an important sound.
 importance: 3 essential to follow along or important text, 2 useful context, 1 nice to have.
-Give at most ${level.most} cues for this clip.
+Give at most ${brief.survey ? 0 : most} cues for this clip. Fewer well-placed descriptions are better than many that cannot fit.
 protectedSounds: stretches of important sound that narration must not cover, such as sung lyrics, a sound effect that matters, or deliberate dramatic silence. Ordinary background music does not count, and speech is already known from the dialogue list.
 
 ALSO RETURN

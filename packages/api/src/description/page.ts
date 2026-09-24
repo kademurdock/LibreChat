@@ -10,6 +10,8 @@ const speedOptions = (selected: number) =>
 export function describedVideoPage(sharedHead: string): string {
   return `<!doctype html><html lang="en"><head><title>Make a described video — Kade-AI</title>${sharedHead}
 <style>
+  *,*::before,*::after{box-sizing:border-box}
+  details{margin:.7rem 0} summary{cursor:pointer;min-height:44px;padding:.4rem 0}
   [hidden]{display:none!important} main{max-width:780px;margin:auto} h1{font-size:2rem}
   label,.label{display:block;font-weight:650;margin-top:1rem}
   select,input,button,textarea{font:inherit}
@@ -75,12 +77,16 @@ export function describedVideoPage(sharedHead: string): string {
 <label for="dv-mode">When a description cannot fit between lines</label><select id="dv-mode" aria-describedby="dv-mode-help"><option value="extended">Pause the picture and sound, describe, then carry on</option><option value="standard">Keep the original length and leave that description out</option></select>
 <p id="dv-mode-help" class="hint">Pausing makes the copy a little longer. Minor details are left out rather than pausing for them.</p>
 <label for="dv-volume">Narrator volume</label><select id="dv-volume"><option value="softer">Softer: about as loud as the dialogue</option><option value="balanced" selected>Balanced: a little above the dialogue</option><option value="louder">Louder: well above, with the video turned further down</option></select>
+<label class="check"><input id="dv-close-look" type="checkbox"> Take a closer look at fast scenes, text and logos</label>
+<p class="hint">Inspects a slower, larger copy. The finished video keeps its normal pace. Costs more and takes longer.</p>
+<label class="check"><input id="dv-first-look" type="checkbox"> Look through the whole film first to learn who is who</label>
+<p class="hint">An extra pass for consistent names and appearances. Names are still introduced only when the film reveals them. Adds processing time and cost.</p>
 <label for="dv-notes">Notes for the describer (optional)</label><textarea id="dv-notes" maxlength="600" aria-describedby="dv-notes-help"></textarea>
 <p id="dv-notes-help" class="hint">What the video is and who is in it. For example: a 1996 VHS opening; the man in the red sweater is Uncle Bob.</p>
 </fieldset>
 <p id="dv-estimate">Choose a video to see the estimated cost.</p>
-<div class="row"><button id="dv-start" class="primary" type="button" disabled>Create described copy</button><button id="dv-revoice" type="button" hidden>Make a new version with this narration</button></div>
-<p id="dv-revoice-help" class="hint" hidden>A new version reuses the descriptions already written, so it costs only the voice. How much to describe and the notes stay as they were. The new version replaces the current one when it finishes.</p>
+<div class="row"><button id="dv-start" class="primary" type="button" disabled>Create described copy</button><button id="dv-revoice" type="button" hidden>Make a new version with this narration</button><button id="dv-reanalyze" type="button" hidden>Write fresh descriptions with these choices</button></div>
+<p id="dv-revoice-help" class="hint" hidden>A new version reuses the descriptions already written, so it costs only the voice. To change the detail, notes or inspection choices, use Write fresh descriptions instead. Finished versions stay available until this video expires. Corrections rebuild only the affected sections when the narration settings stay the same.</p>
 </section>
 
 <section id="dv-job-section" class="card" aria-labelledby="dv-job-title" hidden><h2 id="dv-job-title">Your video</h2>
@@ -90,6 +96,7 @@ export function describedVideoPage(sharedHead: string): string {
 </section>
 
 <section id="dv-results" class="card" aria-labelledby="dv-result-title" hidden><h2 id="dv-result-title" tabindex="-1">Your described copy</h2><p id="dv-summary"></p>
+<label for="dv-version">Finished version</label><select id="dv-version"></select>
 <video id="dv-video" controls preload="metadata" playsinline aria-label="Video with audio description"></video>
 <div class="row" role="group" aria-label="Player">
 <button id="dv-back" type="button">Back 10 seconds</button><button id="dv-play" type="button">Play</button><button id="dv-forward" type="button">Forward 10 seconds</button>
@@ -98,9 +105,23 @@ export function describedVideoPage(sharedHead: string): string {
 <p class="hint">This speeds up the picture, the soundtrack and the narration together.</p>
 <h3>Downloads</h3>
 <p class="row"><a id="dv-video-download" class="download">Described video (MP4)</a><a id="dv-audio-download" class="download">Described audio (M4A)</a><a id="dv-transcript-download" class="download">Described transcript (text)</a><a id="dv-captions-download" class="download">Captions (WebVTT)</a><a id="dv-descriptions-download" class="download">Descriptions (WebVTT)</a><a id="dv-script-download" class="download">Timing report (JSON)</a></p>
+<details id="dv-editor"><summary>Correct a description and make a new version</summary>
+<p>Correct the full and short wording, or leave a description out. Timing stays attached to the same scene. Changes are saved as a draft on this browser until you make the new version.</p>
+<button id="dv-edit-load" type="button">Open the latest script</button>
+<fieldset id="dv-edit-fields" hidden style="border:0;padding:0"><legend>Your script changes</legend>
+<label for="dv-edit-cue">Description to correct</label><select id="dv-edit-cue"></select>
+<button id="dv-edit-listen" type="button">Listen around this description</button>
+<label for="dv-edit-text">Full description</label><textarea id="dv-edit-text" maxlength="420"></textarea>
+<label for="dv-edit-short">Short version for a tight gap</label><textarea id="dv-edit-short" maxlength="200"></textarea>
+<label class="check"><input id="dv-edit-omit" type="checkbox"> Leave this description out</label>
+<p id="dv-edit-status" role="status"></p>
+<button id="dv-edit-save" type="button">Make a new version with my corrections</button>
+<button id="dv-edit-reset" type="button">Discard draft changes</button>
+</fieldset></details>
 <details id="dv-transcript-box"><summary>Read the described transcript</summary><pre id="dv-transcript" tabindex="0" aria-label="Described transcript"></pre></details>
 <details><summary>Listen to the audio copy</summary><audio id="dv-audio" controls preload="none" aria-label="Soundtrack with audio description"></audio></details>
 <div id="dv-library-save-box" hidden><h3>Keep it in your Library</h3>
+<label for="dv-folder">Library folder</label><input id="dv-folder" type="text" list="dv-folders" maxlength="400" aria-describedby="dv-folder-help"><datalist id="dv-folders"></datalist><p id="dv-folder-help" class="hint">Choose an existing folder or type a new folder path, such as Audio/Commercials/1996.</p>
 <label class="check"><input id="dv-share" type="checkbox" checked> Share it with the family</label>
 <button id="dv-library-save" type="button">Save the described audio to my Library</button><p id="dv-library-note" class="hint"></p></div>
 <button id="dv-refresh-files" type="button">Refresh playback and download links</button><p class="hint">Finished copies are kept for seven days; download yours or save it to the Library to keep it.</p>
@@ -114,7 +135,7 @@ export const descriptionBrowserScript: string = String.raw`
 (function(){
   'use strict';
   var token='', job=null, catalog={}, timer=null, xhr=null, uploading=false, loadedFiles='', stopped=false, config=null;
-  var lastSpoken='', lastSpokenAt=0, cues=[], trackUrls=[];
+  var lastSpoken='', lastSpokenAt=0, cues=[], trackUrls=[], viewVersion=0, fileRequest=0, script=null, edits={}, editing='', scriptJob='';
   var $=function(id){return document.getElementById('dv-'+id);};
   var active=function(j){return j&&['uploading','checking','importing','ready','reserving','queued','running','deleting'].indexOf(j.state)>=0;};
   var working=function(j){return j&&['checking','importing','reserving','queued','running'].indexOf(j.state)>=0;};
@@ -146,11 +167,13 @@ export const descriptionBrowserScript: string = String.raw`
     var data=await response.json().catch(function(){return null;});if(!response.ok||!data){if(response.status===403)stopped=true;throw new Error(data&&data.error||'The request did not complete. Please refresh the page.');}return data;
   }
   function remember(){try{localStorage.setItem('kade-description-settings',JSON.stringify(settings()));}catch(e){}}
-  function settings(){return {voice:$('voice').value,rate:Number($('rate').value),maxRate:Number($('max-rate').value),mode:$('mode').value,detail:$('detail').value,volume:$('volume').value,notes:$('notes').value.trim()};}
+  function settings(){return {voice:$('voice').value,rate:Number($('rate').value),maxRate:Number($('max-rate').value),mode:$('mode').value,detail:$('detail').value,volume:$('volume').value,notes:$('notes').value.trim(),closeLook:$('close-look').checked,firstLook:$('first-look').checked};}
   function estimate(){
     if(!job||!job.seconds||!config)return;
-    var perMinute=(config.perMinuteUSD||{})[$('detail').value]||0.05;var cost=Math.ceil((job.seconds/60*perMinute+0.03)*100)/100;
-    $('estimate').textContent=job.state==='done'?'A new version costs about '+money(Math.ceil((job.seconds/60*perMinute*0.5+0.02)*100)/100)+', the voice only.':'Video length: '+length(job.seconds)+'. Estimated cost: about '+money(cost)+'. Today\'s processing allowance has '+money(config.remainingUSD)+' of '+money(config.dailyUSD)+' left.';
+    var perMinute=(config.perMinuteUSD||{})[$('detail').value]||0.05;var cost=Math.ceil((job.seconds/60*(perMinute+($('close-look').checked?0.066:0)+($('first-look').checked?0.022:0))+0.03)*100)/100;
+    if(job.state==='ready'&&cost>config.limitUSD){$('estimate').textContent='This setup is estimated at '+money(cost)+', above the '+money(config.limitUSD)+' limit for one run. Choose less detail, turn off the extra inspection passes, or use a shorter video.';$('start').disabled=true;return;}
+    if(job.state==='done')$('reanalyze').disabled=cost>config.limitUSD;
+    $('estimate').textContent=job.state==='done'?'Reusing the script costs about '+money(Math.ceil((job.seconds/60*perMinute*0.5+0.02)*100)/100)+'. Fresh descriptions with these choices cost about '+money(cost)+(cost>config.limitUSD?', above the '+money(config.limitUSD)+' limit for one run. Turn off the extra passes, choose less detail or use a shorter video.':'.'):'Video length: '+length(job.seconds)+'. Estimated cost: about '+money(cost)+'. Today\'s processing allowance has '+money(config.remainingUSD)+' of '+money(config.dailyUSD)+' left.';
   }
   function controls(){
     var busy=working(job), ready=job&&job.state==='ready', done=job&&job.state==='done';
@@ -162,41 +185,47 @@ export const descriptionBrowserScript: string = String.raw`
     $('import').disabled=uploading||off||!$('youtube').value.trim();
     $('library-use').disabled=uploading||off||!libraryLink($('library').value);
     $('settings').disabled=!config||(!!busy&&!ready);
-    ['detail','notes'].forEach(function(id){$(id).disabled=!!done;});
+    ['detail','notes','close-look','first-look'].forEach(function(id){$(id).disabled=false;});
+    $('reanalyze').hidden=!done;$('reanalyze').disabled=!done;
     $('start').hidden=!!done;$('start').disabled=!ready||Number($('max-rate').value)<Number($('rate').value);
     $('revoice').hidden=!done;$('revoice-help').hidden=!done;$('revoice').disabled=!done||Number($('max-rate').value)<Number($('rate').value);
     $('cancel').hidden=!busy;$('cancel').disabled=!!(job&&job.cancelRequested);
     $('resume').hidden=!(job&&job.resumable);$('resume').textContent=job&&job.done?'Continue where it stopped':'Try again';
     $('delete').hidden=!job||['ready','uploading','done','failed','cancelled'].indexOf(job.state)<0;
     $('rename').hidden=!job;
+    $('edit-load').disabled=!done; $('edit-save').disabled=!done;
     estimate();
   }
   function libraryLink(value){try{var url=new URL(value.trim(),location.origin);var book=url.searchParams.get('book');if(!book||!/^[a-f0-9]{24}$/.test(book))return null;return {book:book,track:Math.max(0,Number(url.searchParams.get('track'))||0)};}catch(e){return null;}}
   function parseVtt(text){var list=[];text.split(/\n\n+/).forEach(function(block){var m=/(\d\d):(\d\d):(\d\d)\.(\d\d\d) --> [^\n]+\n([\s\S]+)/.exec(block);if(m)list.push({at:Number(m[1])*3600+Number(m[2])*60+Number(m[3])+Number(m[4])/1000,text:m[5].trim()});});return list;}
-  async function track(kind,label,show){
-    var text=await call('/jobs/'+job.id+'/text/'+kind,'GET',undefined,false,'text');
-    var url=URL.createObjectURL(new Blob([text],{type:'text/vtt'}));trackUrls.push(url);
-    var el=document.createElement('track');el.kind=kind==='descriptions'?'descriptions':'captions';el.label=label;el.srclang='en';el.src=url;$('video').appendChild(el);
-    if(kind==='descriptions')cues=parseVtt(text);
-    return el;
-  }
+  function copies(){return job&&(job.copies||[]).length?job.copies:job&&job.state==='done'?[{version:job.version||1,outputSeconds:job.outputSeconds,count:job.descriptions,skipped:job.skipped,failedSections:job.failedSections,savedToLibrary:job.savedToLibrary}]:[];}
+  function viewedCopy(){return copies().filter(function(copy){return copy.version===viewVersion;})[0];}
   async function files(focus){
-    if(!job||job.state!=='done')return;
-    var result=await call('/jobs/'+job.id+'/files');
-    trackUrls.forEach(function(url){URL.revokeObjectURL(url);});trackUrls=[];
+    var copy=viewedCopy();if(!copy)return;
+    var id=job.id,version=viewVersion,request=++fileRequest,base='/jobs/'+id,query='?version='+version;
+    var result=await call(base+'/files'+query);
+    var texts=await Promise.all(['descriptions','captions','transcript'].map(function(kind){return result[kind]?call(base+'/text/'+kind+query,'GET',undefined,false,'text').catch(function(){return ''; }):Promise.resolve('');}));
+    if(request!==fileRequest||!job||job.id!==id||viewVersion!==version)return;
+    trackUrls.forEach(function(url){URL.revokeObjectURL(url);});trackUrls=[];cues=[];lastJump=null;
     Array.prototype.slice.call($('video').querySelectorAll('track')).forEach(function(el){el.remove();});
+    var resumeAt=loadedFiles===id+'/'+version?$('video').currentTime:0;
+    $('video').onloadedmetadata=function(){if(resumeAt)$('video').currentTime=Math.min(resumeAt,$('video').duration||resumeAt);$('video').playbackRate=Number($('playback-rate').value);};
+    $('audio').onloadedmetadata=function(){$('audio').playbackRate=Number($('playback-rate').value);};
     $('video').src=result.video;$('audio').src=result.audio;
-    [['video','video'],['audio','audio'],['transcript','transcript'],['captions','captions'],['descriptions','descriptions'],['script','script']].forEach(function(pair){var link=$(pair[0]+'-download');link.hidden=!result[pair[1]+'Download'];if(result[pair[1]+'Download'])link.href=result[pair[1]+'Download'];});
-    $('results').hidden=false;loadedFiles=job.id;
+    ['video','audio','transcript','captions','descriptions','script'].forEach(function(kind){var link=$(kind+'-download');link.hidden=!result[kind+'Download'];if(result[kind+'Download'])link.href=result[kind+'Download'];});
+    ['descriptions','captions'].forEach(function(kind,index){if(!texts[index])return;var url=URL.createObjectURL(new Blob([texts[index]],{type:'text/vtt'}));trackUrls.push(url);var track=document.createElement('track');track.kind=kind;track.label=kind==='descriptions'?'Audio descriptions':'Dialogue captions';track.srclang='en';track.src=url;$('video').appendChild(track);});
+    cues=parseVtt(texts[0]);$('transcript').textContent=texts[2]||'The transcript could not be loaded. Use the download link instead.';
+    $('results').hidden=false;loadedFiles=id+'/'+version;
     $('library-save-box').hidden=!config.library;
-    $('library-save').disabled=!!job.savedToLibrary;$('library-note').textContent=job.savedToLibrary?'Saved to your Library.':'';
-    await Promise.all([result.descriptions?track('descriptions','Audio descriptions'):null,result.captions?track('captions','Dialogue captions'):null]).catch(function(){});
-    if(result.transcript)call('/jobs/'+job.id+'/text/transcript','GET',undefined,false,'text').then(function(text){$('transcript').textContent=text;}).catch(function(){$('transcript').textContent='The transcript could not be loaded. Use the download link instead.';});
+    $('library-save').disabled=!!copy.savedToLibrary;$('library-note').textContent=copy.savedToLibrary?'This version is saved to your Library.':'';
+    $('summary').textContent='Version '+version+': '+(copy.count||0)+' descriptions. Original length '+length(job.seconds)+'; described copy '+length(copy.outputSeconds)+'. '+(copy.skipped?copy.skipped+' descriptions were left out; see the transcript for the reasons. ':'')+(copy.failedSections?copy.failedSections+' sections could not be described. ':'')+'Available until '+when(job.expiresAt)+'.';
     if(focus)$('result-title').focus();
   }
   async function show(data,focus){
     var changed=!job||job.id!==data.id;var previous=job&&job.state;job=data;
-    if(changed){$('video').pause();$('audio').pause();$('results').hidden=true;loadedFiles='';cues=[];$('transcript').textContent='';}
+    if(changed){++fileRequest;$('video').pause();$('audio').pause();$('results').hidden=true;loadedFiles='';cues=[];lastJump=null;viewVersion=0;$('transcript').textContent='';script=null;edits={};editing='';scriptJob='';$('edit-fields').hidden=true;}
+    if((changed||!previous)&&job.settings){var saved=job.settings;[['voice','voice'],['rate','rate'],['maxRate','max-rate'],['mode','mode'],['detail','detail'],['volume','volume'],['notes','notes']].forEach(function(pair){if(saved[pair[0]]!==undefined)$(pair[1]).value=String(saved[pair[0]]);});$('close-look').checked=!!saved.closeLook;$('first-look').checked=!!saved.firstLook;describeVoice();}
+    var available=copies();if(available.length){if(!viewVersion||(job.state==='done'&&previous!=='done'))viewVersion=available[available.length-1].version;$('version').textContent='';available.forEach(function(copy){var option=document.createElement('option');option.value=copy.version;option.textContent='Version '+copy.version+(copy.finishedAt?' — '+when(copy.finishedAt):'');$('version').appendChild(option);});$('version').value=String(viewVersion);}
     var url=new URL(location.href);url.searchParams.set('id',job.id);url.searchParams.delete('book');url.searchParams.delete('track');history.replaceState(null,'',url);
     $('job-section').hidden=false;$('job-title').textContent=job.name;
     $('stage').textContent=job.state==='failed'?'Stopped before finishing.':(job.stage||friendly(job));
@@ -206,12 +235,11 @@ export const descriptionBrowserScript: string = String.raw`
     if(job.error)failure(new Error(job.error));
     if(changed&&!working(job)&&job.state!=='ready')say(job.name+': '+friendly(job)+'.',true);
     if(job.state==='ready'){say('Video checked. Choose the narration, then Create described copy.');}
-    else if(job.state==='running'){var section=/section (\d+) of (\d+)/.exec(job.stage||'');say(section?'Describing: section '+section[1]+' of '+section[2]+'.':(job.stage||'Describing.'));}
+    else if(job.state==='running'){var section=/section (\d+) of (\d+)/.exec(job.stage||'');say(section?((job.stage||'').indexOf('First look:')===0?'First look: section ':'Describing: section ')+section[1]+' of '+section[2]+'.':(job.stage||'Describing.'));}
     else if(job.state!=='done')say(job.stage||friendly(job));
-    if(job.state==='done'){
-      $('summary').textContent=job.descriptions+' descriptions. Original length '+length(job.seconds)+'; described copy '+length(job.outputSeconds)+'. '+(job.skipped?job.skipped+' descriptions did not fit and are listed at the end of the transcript. ':'')+(job.failedSections?job.failedSections+' parts could not be described; the transcript says which. ':'')+(job.version>1?'This is version '+job.version+'.':'');
-      if(previous&&previous!=='done')say('Your described copy is ready.',true);
-      if(loadedFiles!==job.id)await files(focus||(!!previous&&previous!=='done'));
+    if(available.length){
+      if(job.state==='done'&&previous&&previous!=='done')say('Your described copy is ready.',true);
+      if(loadedFiles!==job.id+'/'+viewVersion)await files(focus||(!!previous&&previous!=='done'&&job.state==='done'));
     }
     controls();
     if(job.state==='ready'&&previous!=='ready'&&focus)$('voice').focus();
@@ -220,7 +248,7 @@ export const descriptionBrowserScript: string = String.raw`
   }
   async function poll(){if(!job||stopped)return;try{await show(await call('/jobs/'+job.id),false);}catch(e){failure(e);if(!stopped)timer=setTimeout(poll,20000);}}
   async function list(){
-    var data=await call('/jobs');$('history').textContent='';
+    var data=await call('/jobs');if(typeof data.remainingUSD==='number')config.remainingUSD=data.remainingUSD;$('history').textContent='';
     if(!data.jobs.length){var empty=document.createElement('li');empty.textContent='No videos yet.';$('history').appendChild(empty);}
     data.jobs.forEach(function(item){var li=document.createElement('li');var button=document.createElement('button');button.type='button';button.textContent=item.name+', '+friendly(item)+(item.seconds?', '+length(item.seconds):'')+(item.createdAt?', '+when(item.createdAt):'');if(job&&job.id===item.id)button.setAttribute('aria-current','true');button.onclick=function(){clearError();call('/jobs/'+item.id).then(function(current){return show(current,true);}).catch(failure);};li.appendChild(button);$('history').appendChild(li);});
     return data.jobs;
@@ -236,13 +264,13 @@ export const descriptionBrowserScript: string = String.raw`
   $('file').addEventListener('change',controls);
   $('youtube').addEventListener('input',controls);
   $('library').addEventListener('input',controls);
-  ['voice','rate','max-rate','mode','detail','volume','notes'].forEach(function(id){$(id).addEventListener('change',function(){
+  ['voice','rate','max-rate','mode','detail','volume','notes','close-look','first-look'].forEach(function(id){$(id).addEventListener('change',function(){
     if(id==='rate'&&Number($('max-rate').value)<Number($('rate').value))$('max-rate').value=$('rate').value;
     if(id==='max-rate'&&Number($('max-rate').value)<Number($('rate').value))$('rate').value=$('max-rate').value;
     describeVoice();$('sample').hidden=true;remember();controls();
   });});
   $('sample-play').onclick=async function(){
-    clearError();$('sample-play').disabled=true;say('Making a sample of '+$('voice').value+'.',true);
+    clearError();$('sample-play').disabled=true;$('video').pause();$('audio').pause();say('Making a sample of '+$('voice').value+'.',true);
     try{var blob=await call('/sample','POST',{voice:$('voice').value,rate:Number($('rate').value)},false,'blob');var audio=$('sample');if(audio.src)URL.revokeObjectURL(audio.src);audio.src=URL.createObjectURL(blob);audio.hidden=false;await audio.play().catch(function(){});say('Playing the sample.',true);}
     catch(e){failure(e);}finally{$('sample-play').disabled=false;}
   };
@@ -297,22 +325,56 @@ export const descriptionBrowserScript: string = String.raw`
   };
   $('stop-upload').onclick=function(){if(xhr)xhr.abort();};
   $('start').onclick=async function(){clearError();$('start').disabled=true;try{remember();await show(await call('/jobs/'+job.id+'/start','POST',settings()),false);say('Started. You can leave this page; the job keeps going, and you will get a notice when it is done.',true);await list();}catch(e){failure(e);controls();}};
-  $('revoice').onclick=async function(){
-    if(!job)return;var s=settings();
-    if(!confirm('Make a new version of "'+job.name+'" with '+s.voice+' at '+s.rate+'×? It replaces the current copy when it finishes, so download the current one first if you want to keep it.'))return;
-    clearError();$('revoice').disabled=true;try{remember();await show(await call('/jobs/'+job.id+'/revoice','POST',s),false);$('results').hidden=true;loadedFiles='';say('Making the new version.',true);await list();}catch(e){failure(e);controls();}
+  async function remake(withEdits){
+    if(!job)return;var s=settings(),id=job.id;
+    if(withEdits){saveEdit();var changed=Object.keys(edits).map(function(key){return edits[key];});if(!changed.length){say('No changes yet.',true);return;}s.edits=changed;s.expectedVersion=script.version;}
+    else s.expectedVersion=job.version||1;
+    if(!confirm('Make a new version of "'+job.name+'"'+(withEdits?' with '+s.edits.length+' corrected descriptions':' with this narration')+'? Previous finished versions will stay available. Processing uses your allowance.'))return;
+    clearError();$('revoice').disabled=true;$('edit-save').disabled=true;
+    try{remember();var updated=await call('/jobs/'+id+'/revoice','POST',s);if(withEdits){try{localStorage.removeItem('kade-description-draft:'+id+':'+script.version);}catch(e){}edits={};script=null;$('edit-fields').hidden=true;}if(job&&job.id===id)await show(updated,false);say('Making the new version. You can still play the earlier copy below.',true);await list();}catch(e){failure(e);controls();}
+  }
+  $('revoice').onclick=function(){remake(false);};
+  $('reanalyze').onclick=async function(){
+    if(!job||!confirm('Write fresh descriptions using these choices? This pays for visual analysis and narration again. Earlier finished versions stay available.'))return;
+    clearError();var id=job.id,s=settings();s.expectedVersion=job.version||1;$('reanalyze').disabled=true;
+    try{remember();var updated=await call('/jobs/'+id+'/reanalyze','POST',s);if(job&&job.id===id){script=null;edits={};$('edit-fields').hidden=true;await show(updated,false);}await list();say('Writing fresh descriptions. Earlier versions are still available below.',true);}catch(e){failure(e);controls();}
   };
+  function saveEdit(){
+    if(!script||!editing||!job||job.id!==scriptJob)return;
+    var original=script.cues.filter(function(cue){return cue.id===editing;})[0];if(!original)return;
+    var value={id:editing,text:$('edit-text').value.trim(),shortText:$('edit-short').value.trim(),omit:$('edit-omit').checked};
+    if(value.text===original.text&&value.shortText===original.shortText&&!value.omit)delete edits[editing];else edits[editing]=value;
+    var kept=true;try{localStorage.setItem('kade-description-draft:'+job.id+':'+script.version,JSON.stringify(edits));}catch(e){kept=false;}
+    var message=Object.keys(edits).length+' descriptions changed in your draft.'+(kept?'':' This browser cannot save the draft; keep this page open until you submit it.');if($('edit-status').textContent!==message)$('edit-status').textContent=message;
+  }
+  function editCue(){editing=$('edit-cue').value;var original=script.cues.filter(function(cue){return cue.id===editing;})[0];if(!original)return;var value=edits[editing]||original;$('edit-text').value=value.text;$('edit-short').value=value.shortText;$('edit-omit').checked=!!value.omit;}
+  $('edit-load').onclick=async function(){
+    clearError();if(!job)return;var id=job.id;$('edit-load').disabled=true;
+    try{var result=await call('/jobs/'+id+'/script');if(!job||job.id!==id)return;script=result;scriptJob=id;edits={};try{edits=JSON.parse(localStorage.getItem('kade-description-draft:'+id+':'+script.version)||'{}');if(!edits||typeof edits!=='object'||Array.isArray(edits))edits={};}catch(e){}
+      viewVersion=script.version;$('version').value=String(viewVersion);await files(false);$('edit-cue').textContent='';script.cues.forEach(function(cue){var option=document.createElement('option');option.value=cue.id;option.textContent=clock(cue.at)+' — '+cue.text;$('edit-cue').appendChild(option);});
+      $('edit-fields').hidden=!script.cues.length;if(!script.cues.length){say('There are no descriptions to edit in this copy.',true);return;}editCue();$('edit-status').textContent=Object.keys(edits).length+' descriptions changed in your draft.';$('edit-cue').focus();
+    }catch(e){failure(e);}finally{controls();}
+  };
+  $('edit-cue').onchange=function(){saveEdit();editCue();};
+  ['edit-text','edit-short','edit-omit'].forEach(function(id){$(id).addEventListener('input',saveEdit);});
+  $('edit-listen').onclick=async function(){if(viewVersion!==script.version){viewVersion=script.version;$('version').value=String(viewVersion);await files(false);}var cue=script.cues.filter(function(item){return item.id===editing;})[0];if(cue){$('video').currentTime=Math.max(0,cue.outputAt-3);$('video').play().catch(failure);}};
+  $('edit-save').onclick=function(){remake(true);};
+  $('edit-reset').onclick=function(){if(!confirm('Discard your draft corrections?'))return;edits={};editCue();saveEdit();};
+  $('version').onchange=function(){viewVersion=Number(this.value);$('video').pause();$('audio').pause();files(false).catch(failure);};
   $('resume').onclick=async function(){if(!job)return;clearError();$('resume').disabled=true;try{await show(await call('/jobs/'+job.id+'/resume','POST',{}),false);say('Carrying on from where it stopped.',true);await list();}catch(e){failure(e);}finally{$('resume').disabled=false;controls();}};
   $('cancel').onclick=async function(){if(!job)return;if(!confirm('Cancel processing "'+job.name+'"? Finished sections are kept, so you can continue later.'))return;clearError();$('cancel').disabled=true;try{await show(await call('/jobs/'+job.id+'/cancel','POST',{}),false);await list();}catch(e){failure(e);controls();}};
   $('rename').onclick=async function(){if(!job)return;var name=prompt('New name for this video',job.name);if(!name||!name.trim()||name.trim()===job.name)return;clearError();try{await show(await call('/jobs/'+job.id+'/rename','POST',{name:name.trim()}),false);loadedFiles='';if(job.state==='done')await files(false);await list();say('Renamed to '+job.name+'.',true);}catch(e){failure(e);}};
   $('delete').onclick=async function(){if(!job)return;if(!confirm('Delete "'+job.name+'" and all its files? This cannot be undone.'))return;clearError();$('delete').disabled=true;try{await call('/jobs/'+job.id,'DELETE');job=null;$('job-section').hidden=true;$('results').hidden=true;$('video').pause();$('audio').pause();history.replaceState(null,'',location.pathname);await list();say('Deleted.',true);controls();}catch(e){failure(e);}finally{$('delete').disabled=false;}};
-  $('library-save').onclick=async function(){if(!job)return;clearError();$('library-save').disabled=true;try{var saved=await call('/jobs/'+job.id+'/library','POST',{share:$('share').checked});job.savedToLibrary=saved.savedToLibrary;$('library-note').textContent='Saved to your Library'+(saved.path?' in '+saved.path:'')+'.';say($('library-note').textContent,true);}catch(e){failure(e);$('library-save').disabled=false;}};
+  $('library-save').onclick=async function(){
+    if(!job)return;clearError();var id=job.id,version=viewVersion;$('library-save').disabled=true;
+    try{var saved=await call('/jobs/'+id+'/library','POST',{share:$('share').checked,path:$('folder').value.trim(),version:version});if(!job||job.id!==id)return;var copy=copies().filter(function(item){return item.version===version;})[0];if(copy)copy.savedToLibrary=saved.savedToLibrary;if(viewVersion!==version)return;$('library-note').textContent='Saved to your Library'+(saved.path?' in '+saved.path:'')+'.';say($('library-note').textContent,true);}catch(e){failure(e);if(job&&job.id===id&&viewVersion===version)$('library-save').disabled=false;}
+  };
   $('refresh').onclick=function(){clearError();list().then(function(){if(job)return poll();}).catch(failure);};
-  $('refresh-files').onclick=function(){loadedFiles='';files(false).catch(failure);};
+  $('refresh-files').onclick=function(){refreshedErrorKey='';files(false).catch(failure);};
   $('playback-rate').onchange=function(){var rate=Number(this.value);$('video').playbackRate=rate;$('audio').playbackRate=rate;};
-  $('video').onplay=function(){$('audio').pause();$('play').textContent='Pause';};$('video').onpause=function(){$('play').textContent='Play';};
-  $('audio').onplay=function(){$('video').pause();};
-  var expired=false;$('video').onerror=function(){if(expired||!job)return;expired=true;loadedFiles='';files(false).then(function(){expired=false;}).catch(failure);};
+  $('video').onplay=function(){$('sample').pause();$('audio').pause();$('play').textContent='Pause';};$('video').onpause=function(){$('play').textContent='Play';};
+  $('audio').onplay=function(){$('sample').pause();$('video').pause();};
+  var refreshedErrorKey='';$('video').onerror=function(){if(!job)return;var key=job.id+'/'+viewVersion;if(refreshedErrorKey===key){failure(new Error('Playback could not start. Try the audio copy or download the video.'));return;}refreshedErrorKey=key;files(false).catch(failure);};
   $('play').onclick=function(){var v=$('video');if(v.paused)v.play().catch(failure);else v.pause();};
   $('back').onclick=function(){var v=$('video');v.currentTime=Math.max(0,v.currentTime-10);say('At '+clock(v.currentTime)+'.',true);};
   $('forward').onclick=function(){var v=$('video');v.currentTime=Math.min(v.duration||0,v.currentTime+10);say('At '+clock(v.currentTime)+'.',true);};
@@ -329,8 +391,10 @@ export const descriptionBrowserScript: string = String.raw`
     await refreshToken();config=await call('/config');catalog=config;
     $('limits').textContent='Up to '+config.maxMinutes+' minutes and 2 GB. Your video stays private to your account and goes to the description and voice services only when you choose Create described copy.';
     $('library-box').hidden=!config.library;
+    $('folder').value=config.defaultLibraryPath||'Audio/Described Movies & TV/Described by Kade-AI';
+    if(config.library)call('/library-folders').then(function(data){data.folders.forEach(function(path){var option=document.createElement('option');option.value=path;$('folders').appendChild(option);});}).catch(function(){});
     fillVoices();
-    try{var saved=JSON.parse(localStorage.getItem('kade-description-settings')||'null');if(saved){if(config.voices.indexOf(saved.voice)>=0)$('voice').value=saved.voice;[['rate','rate'],['maxRate','max-rate'],['mode','mode'],['detail','detail'],['volume','volume']].forEach(function(pair){var el=$(pair[1]);if(Array.prototype.some.call(el.options,function(option){return option.value===String(saved[pair[0]]);}))el.value=String(saved[pair[0]]);});}}catch(e){}
+    try{var saved=JSON.parse(localStorage.getItem('kade-description-settings')||'null');if(saved){$('close-look').checked=!!saved.closeLook;$('first-look').checked=!!saved.firstLook;if(config.voices.indexOf(saved.voice)>=0)$('voice').value=saved.voice;[['rate','rate'],['maxRate','max-rate'],['mode','mode'],['detail','detail'],['volume','volume']].forEach(function(pair){var el=$(pair[1]);if(Array.prototype.some.call(el.options,function(option){return option.value===String(saved[pair[0]]);}))el.value=String(saved[pair[0]]);});}}catch(e){}
     describeVoice();$('refresh').disabled=false;
     var jobs=await list();var params=new URLSearchParams(location.search);var selected=params.get('id');
     var current=jobs.filter(function(item){return item.id===selected;})[0]||jobs.filter(function(item){return working(item);})[0];

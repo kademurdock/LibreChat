@@ -207,6 +207,7 @@ export async function sectionClip(
   start: number,
   seconds: number,
   signal: AbortSignal,
+  closeLook: boolean = false,
 ): Promise<string> {
   const video = join(directory, 'analysis.mp4');
   await command(
@@ -215,16 +216,19 @@ export async function sectionClip(
       ...quiet,
       '-ss',
       start.toFixed(6),
-      '-i',
-      source,
       '-t',
       seconds.toFixed(6),
+      '-i',
+      source,
       '-map',
       '0:v:0',
       '-map',
       '0:a:0?',
       '-vf',
-      "scale=w='min(960,iw)':h=-2,fps=3",
+      closeLook
+        ? "scale=w='min(1440,iw)':h=-2,fps=4,setpts=4*(PTS-STARTPTS)"
+        : "scale=w='min(960,iw)':h=-2,fps=3",
+      ...(closeLook ? ['-af', 'atempo=0.5,atempo=0.5'] : []),
       '-c:v',
       'libx264',
       '-preset',

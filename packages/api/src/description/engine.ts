@@ -72,6 +72,7 @@ export const productionProviders: Providers = { transcribe, analyze, synthesize 
 export type SectionFiles = { sound: string; picture?: string };
 /** What an earlier run left behind: the plan, the dialogue, finished sections, or analyses to reuse. */
 export type Saved = {
+  firstLook?: { through: number; state: Continuity };
   plan?: Plan;
   words?: Word[];
   records: SectionRecord[];
@@ -79,6 +80,7 @@ export type Saved = {
 };
 /** Persistence for long jobs, so a restart continues instead of starting over. */
 export type Keeper = {
+  keepFirstLook?: (look: { through: number; state: Continuity }) => Promise<void>;
   saved: Saved;
   keepPlan: (plan: Plan, words: Word[]) => Promise<void>;
   keepSection: (record: SectionRecord, files: SectionFiles) => Promise<void>;
@@ -218,9 +220,13 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     words.filter((word) => word.start >= section.start && word.start < section.end);
   let voiceFailures = 0;
 
-  async function look(i: number, state: Continuity | null): Promise<Looked> {
+  async function look(
+    i: number,
+    state: Continuity | null,
+    survey: boolean = false,
+  ): Promise<Looked> {
     const reused = keeper.saved.analyses?.[i];
-    if (reused !== undefined) return { analysis: reused };
+    if (!survey && reused !== undefined) return { analysis: reused };
     const section = fixed.sections[i];
     const dir = join(directory, `section-${i}`);
     try {
@@ -231,14 +237,25 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         section.start,
         section.end - section.start,
         signal,
+        !!settings.closeLook && !survey,
       );
+      const scale = settings.closeLook && !survey ? 4 : 1;
       const analysis = await providers.analyze(
         {
           file: clip,
-          seconds: section.end - section.start,
-          brief,
+          seconds: (section.end - section.start) * scale,
+          brief: {
+            ...brief,
+            survey,
+            slowed: scale > 1,
+            orientation: survey ? undefined : keeper.saved.firstLook?.state.people,
+          },
           state,
-          lines: linesFrom(inSection(section), section.start),
+          lines: linesFrom(inSection(section), section.start).map((line) => ({
+            ...line,
+            start: line.start * scale,
+            end: line.end * scale,
+          })),
           before: linesFrom(
             words.filter((word) => word.start >= section.start - 15 && word.start < section.start),
             section.start - 15,
@@ -248,7 +265,24 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         meter,
       );
       await rm(clip, { force: true });
-      return { analysis };
+      return {
+        analysis:
+          scale === 1
+            ? analysis
+            : {
+                ...analysis,
+                cues: analysis.cues.map((cue) => ({
+                  ...cue,
+                  at: cue.at / scale,
+                  until: cue.until / scale,
+                  pauseAt: cue.pauseAt === undefined ? undefined : cue.pauseAt / scale,
+                })),
+                protectedSounds: analysis.protectedSounds.map((span) => ({
+                  start: span.start / scale,
+                  end: span.end / scale,
+                })),
+              },
+      };
     } catch (error) {
       if (signal.aborted || error instanceof Halt) return { analysis: null, fatal: error as Error };
       const failure = providerProblem(error, 'The video model');
@@ -471,6 +505,21 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     return record;
   }
 
+  if (settings.firstLook && !keeper.saved.analyses) {
+    let first = keeper.saved.firstLook ?? { through: 0, state: emptyContinuity };
+    for (let i = first.through; i < count; i++) {
+      await progress(`First look: section ${i + 1} of ${count}`, 4);
+      const result = await look(i, first.state, true);
+      if (result.fatal) throw result.fatal;
+      if (!result.analysis)
+        throw new Error(
+          result.failure || 'The first look could not finish. Continue to retry this section.',
+        );
+      first = { through: i + 1, state: nextContinuity(first.state, result.analysis) };
+      await keeper.keepFirstLook?.(first);
+      keeper.saved.firstLook = first;
+    }
+  }
   const saved = new Map(keeper.saved.records.map((record) => [record.index, record]));
   const records: SectionRecord[] = [];
   let state: Continuity | null = null;
@@ -554,7 +603,6 @@ export function buildReport(
 ): Report {
   const ordered = [...records].sort((a, b) => a.index - b.index);
   const last = ordered[ordered.length - 1]?.continuity ?? emptyContinuity;
-  const names = new Map(last.speakers.map((item) => [item.speaker, item.who]));
   const report: Report = {
     version: 2,
     title,
@@ -573,6 +621,7 @@ export function buildReport(
   };
   let offset = 0;
   for (const record of ordered) {
+    const names = new Map(record.continuity.speakers.map((item) => [item.speaker, item.who]));
     report.descriptions.push(
       ...record.placements.map((item) => ({
         ...item,

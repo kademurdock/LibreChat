@@ -57,6 +57,11 @@ async function notify(userId, title, body, url) {
 }
 
 const library = {
+  folders: async (req) => {
+    const { KadeBook } = require('~/models/kadeBook');
+    const owner = String(req.user.id || req.user._id);
+    return KadeBook.distinct('path', { owner, state: 'ready', path: { $ne: '' } });
+  },
   open: async (req, bookId, index) => {
     const { _internals } = require('./kadeReadingRoom');
     const book = await _internals.openBook(req, bookId);
@@ -72,7 +77,7 @@ const library = {
       about: String(book.description || '').slice(0, 1500),
     };
   },
-  save: async ({ owner, title, seconds, bytes, share, kind, copy }) => {
+  save: async ({ owner, title, seconds, bytes, share, kind, path = SHELF, copy }) => {
     const { KadeBook } = require('~/models/kadeBook');
     const { User } = require('~/db/models');
     const { _internals } = require('./kadeReadingRoom');
@@ -88,7 +93,7 @@ const library = {
       ownerName: String((user && (user.name || user.username)) || '').split(' ')[0] || 'someone',
       kind: 'audio',
       category: categoryFor(kind, seconds),
-      path: SHELF,
+      path,
       title,
       originalName: `${title}.m4a`,
       fileBytes: bytes,
@@ -98,8 +103,8 @@ const library = {
     });
     _internals.refreshListen(book);
     await book.save();
-    logger.info(`[described-video] saved ${id} to ${SHELF}${share ? ' (shared)' : ''}`);
-    return { id: String(id), path: SHELF };
+    logger.info(`[described-video] saved ${id} to ${path}${share ? ' (shared)' : ''}`);
+    return { id: String(id), path };
   },
 };
 

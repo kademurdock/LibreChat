@@ -16,6 +16,17 @@
 
 Re-voicing a finished copy reuses the saved script and dialogue: only speech and mixing are paid. Voice samples (`POST /sample`) are cached per voice and speed and limited to 40 an hour.
 
+## Website corrections and inspection
+
+- `GET /jobs/:id/script` returns the latest finished script, its version, and stable section/cue IDs for that version. `POST /jobs/:id/revoice` accepts `expectedVersion` and a bounded `edits` array (full text, short text, or omission). Stale versions and unknown/duplicate IDs are rejected. Original cue timing is preserved. When voice, speed, mode and volume stay the same, unaffected sections reuse their rendered media. Browser drafts are local to the job and script version.
+- Finished outputs are published under `copies/<version>/` and advertised only when every output has been saved. Previous finished versions remain accessible during processing, after cancellation and after failure through `files?version=N` and `text/<kind>?version=N`. Legacy copies in the job root still work. Cancelling a new attempt does not shorten an older copy's retention.
+- `POST /jobs/:id/reanalyze` writes fresh descriptions with new notes/detail/inspection settings while retaining earlier outputs. It reuses dialogue timing and soundtrack measurements. Script revisions remain tied to the latest analysis; earlier outputs can be played, but their old editable scripts are not yet separately restorable.
+- Optional `closeLook` creates a 1440-pixel maximum analysis copy at quarter speed, sampling four source frames per second. Dialogue and model times use the slowed timeline; cues and protected sounds are converted back to source time before placement. Narration density/windows use original runtime. The final video's normal speed is unaffected. This improves temporal coverage but does not guarantee tiny or blurred text is readable.
+- Optional `firstLook` surveys every section before narration, checkpointing each completed section in `first-look-<analysis version>.json`. The resulting people/appearance reference is separate from current narrative continuity. The prompt prohibits revealing names before they are spoken/shown; this is a model instruction, not a guarantee against spoilers or misidentification. Re-voicing skips this pass.
+- `GET /library-folders` suggests the owner's existing folders. Saving accepts a validated logical Library `path`, `share`, and finished `version`. The original default shelf remains the default. Concurrent saves are gated for ten minutes and deletions wait for a save to finish. Each version may be saved once.
+- Extra inspection is included in estimates. New runs estimated above the configured per-run cap are rejected before provider calls. Reservation and settlement updates are serialized while paid provider requests may run concurrently.
+- Opening a job restores its settings. Playback link refresh preserves position, stale file responses cannot replace another video's player, and an unsupported video cannot trigger an endless automatic refresh loop.
+
 ## Operation
 
 - JWT auth and owner checks on every route under `/api/kade/described-video`. ADMIN only unless `KADE_DESCRIPTION_PUBLIC=1`.
@@ -23,7 +34,7 @@ Re-voicing a finished copy reuses the saved script and dialogue: only speech and
 - Money: starting sets aside about 1.25× the estimate from that day's allowance; a job may grow its reservation up to the per-job cap if it needs more, and unused money returns when it ends. Defaults: `KADE_DESCRIPTION_JOB_USD=5`, `KADE_DESCRIPTION_DAILY_USD=5`. Prices used: Deepgram $0.0052/min, speech $15 per million UTF-8 bytes (Fish's price; Inworld is lower), vision from OpenRouter's reported cost.
 - `KADE_DESCRIPTION_MODEL` (default `google/gemini-3.8-flash`), `KADE_DESCRIPTION_MAX_MINUTES` (90), `KADE_DESCRIPTION_VOICES` (parallel voice requests, default 2), `KADE_DESCRIBED_VIDEO=0` stops new work.
 - YouTube: the Clubhouse jukebox's ladder (four player clients, two passes), the PO-token sidecar via `KADE_POT_URL`, optional `KADE_YT_COOKIES`; prefers H.264/AAC at 720p.
-- Storage: everything for a job lives under `described-video/<owner>/<job>/` (source, `plan.json`, `sections/`, outputs) and is erased on delete or expiry (ready and stopped jobs after 3 days, finished copies after 7). A Library source is read in place and never deleted. "Save to my Library" copies the M4A to `media-library/<book>/` on the shelf `Audio/Described Movies & TV/Described by Kade-AI`.
+- Storage: everything for a job lives under `described-video/<owner>/<job>/` (source, plan, first-look checkpoints, sections, versioned outputs) and is erased on delete or expiry (ready and stopped jobs after 3 days, or the existing finished-copy expiry if later; finished jobs after 7). A Library source is read in place and never deleted. "Save to my Library" copies the selected version's M4A to `media-library/<book>/` under the chosen logical folder.
 - Gemini quirk: an integer `enum` in the response schema empties every cue object, so `importance` is a plain integer. An all-empty reply is retried once in plain JSON mode.
 
 ## Verification

@@ -34,11 +34,54 @@ import { storeAudioStream } from '../library/stream';
 import { settingsSchema, Halt } from './types';
 import { spokenLength } from './transcript';
 import { sampleRate } from './mix';
+import { defaultLibraryPath, editsSchema, libraryPathSchema, revise, scriptCues } from './revision';
+import type { Edit } from './revision';
+import type { Continuity } from './types';
+
+type FinishedCopy = {
+  version: number;
+  legacy?: boolean;
+  settings?: Settings;
+  outputSeconds?: number;
+  count?: number;
+  skipped?: number;
+  failedSections?: number;
+  savedToLibrary?: string;
+  finishedAt?: Date;
+};
+function copiesFor(job: Job): FinishedCopy[] {
+  if (job.copies?.length) return job.copies;
+  if (job.state !== 'done') return [];
+  return [
+    {
+      version: job.version || 1,
+      legacy: true,
+      settings: job.settings,
+      outputSeconds: job.outputSeconds,
+      count: job.count,
+      skipped: job.skipped,
+      failedSections: job.failedSections,
+      savedToLibrary: job.savedToLibrary,
+      finishedAt: job.finishedAt,
+    },
+  ];
+}
+function selectCopy(job: Job, value?: string): FinishedCopy {
+  const copies = copiesFor(job);
+  const copy = value
+    ? copies.find((item) => String(item.version) === value)
+    : copies[copies.length - 1];
+  if (!copy) throw new Error('That finished version is not available.');
+  return copy;
+}
+const copyFolder = (job: Job, copy: FinishedCopy): string =>
+  copy.legacy ? folder(job) : `${folder(job)}/copies/${copy.version}`;
 
 type Actor = { id: string; role?: string };
 /** A library track the owner may describe, found and checked by the library's own access rules. */
 type LibrarySource = { key: string; bytes: number; title: string; about: string };
 type LibraryHooks = {
+  folders?: (req: Request) => Promise<string[]>;
   open: (req: Request, book: string, track: number) => Promise<LibrarySource>;
   save: (input: {
     owner: string;
@@ -47,6 +90,7 @@ type LibraryHooks = {
     bytes: number;
     share: boolean;
     kind: string;
+    path: string;
     copy: (target: string) => Promise<void>;
   }) => Promise<{ id: string; path: string }>;
 };
@@ -102,8 +146,13 @@ type Job = {
   resumes?: number;
   version?: number;
   revoice?: boolean;
+  edits?: Edit[];
+  reuseUnchanged?: boolean;
+  firstLookVersion?: number;
+  copies?: FinishedCopy[];
   kind?: string;
   savedToLibrary?: string;
+  librarySaving?: Date;
   uploadId?: string;
   uploadedBytes: number;
   parts: Part[];
@@ -151,8 +200,13 @@ const jobSchema = new mongoose.Schema<Job>(
     resumes: Number,
     version: Number,
     revoice: Boolean,
+    edits: mongoose.Schema.Types.Mixed,
+    reuseUnchanged: Boolean,
+    firstLookVersion: Number,
+    copies: [mongoose.Schema.Types.Mixed],
     kind: String,
     savedToLibrary: String,
+    librarySaving: Date,
     uploadId: String,
     uploadedBytes: { type: Number, default: 0 },
     parts: [{ number: Number, etag: String, bytes: Number, hash: String, _id: false }],
@@ -186,6 +240,8 @@ const busy = ['reserving', 'queued', 'running'];
 const chunkBytes = 8 * 1024 ** 2;
 const maxUnfinished = 10;
 const day = 86400000;
+const retain = (job: Job, days: number): Date =>
+  new Date(Math.max(new Date(job.expiresAt).getTime(), Date.now() + days * day));
 const bucket = () => process.env.KADE_MEDIA_BUCKET || process.env.AWS_BUCKET_NAME || '';
 const maxMinutes = () =>
   Math.min(180, Math.max(1, Number(process.env.KADE_DESCRIPTION_MAX_MINUTES) || 90));
@@ -208,6 +264,12 @@ export const descriptionEstimate = (
   detail: Settings['detail'] = 'standard',
 ): number =>
   cents((seconds / 60) * (0.022 + speechPerMinute(detail) + transcriptionPerMinute) + 0.03);
+const enhancedEstimate = (seconds: number, settings: Settings): number =>
+  cents(
+    descriptionEstimate(seconds, settings.detail) +
+      (seconds / 60) * (settings.closeLook ? 0.066 : 0) +
+      (seconds / 60) * (settings.firstLook ? 0.022 : 0),
+  );
 const revoiceEstimate = (seconds: number, detail: Settings['detail']) =>
   cents((seconds / 60) * speechPerMinute(detail) + 0.02);
 export function descriptionJobId(owner: string, id: string): string {
@@ -322,7 +384,9 @@ export function createDescriptionRouter(hooks: Hooks): {
     settings: job.settings,
     costUSD: job.costUSD,
     limitUSD: job.reserved ?? job.limitUSD,
-    estimatedUSD: job.seconds ? descriptionEstimate(job.seconds, job.settings?.detail) : undefined,
+    estimatedUSD: !job.seconds
+      ? undefined
+      : enhancedEstimate(job.seconds, job.settings ?? settingsSchema.parse({ voice: 'estimate' })),
     outputSeconds: job.outputSeconds,
     descriptions: job.count,
     skipped: job.skipped,
@@ -330,6 +394,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     sections: job.sections,
     done: job.done,
     resumable: ['failed', 'cancelled'].includes(job.state) && !!job.settings && !!job.seconds,
+    copies: copiesFor(job),
     version: job.version || 1,
     kind: job.kind,
     savedToLibrary: job.savedToLibrary,
@@ -519,15 +584,32 @@ export function createDescriptionRouter(hooks: Hooks): {
     settings: Settings,
     estimate: number,
     patch: Partial<Job>,
+    expectedVersion?: number,
   ): Promise<Job> {
     const job = await owned(req);
     const date = today();
+    if (estimate > jobLimit())
+      throw new Error(
+        `This setup is estimated at $${estimate.toFixed(2)}, above the $${jobLimit().toFixed(2)} limit for one run. Choose less detail, turn off the extra inspection passes, or use a shorter video.`,
+      );
     const claimed = await Jobs.findOneAndUpdate(
-      { _id: job._id, state: { $in: from } },
+      {
+        _id: job._id,
+        state: { $in: from },
+        ...(expectedVersion === undefined
+          ? {}
+          : { version: expectedVersion === 1 ? { $in: [1, null] } : expectedVersion }),
+      },
       { $set: { state: 'reserving', cancelRequested: false } },
       { new: true },
     ).lean();
-    if (!claimed) return owned(req);
+    if (!claimed) {
+      if (expectedVersion !== undefined)
+        throw new Error(
+          'This video changed in another tab. Reopen it before making a new version.',
+        );
+      return owned(req);
+    }
     const amount = Math.min(jobLimit(), cents(Math.max(0.1, estimate * 1.25 + 0.05)));
     if (!(await setAside(claimed, amount, date))) {
       await Jobs.updateOne({ _id: job._id, state: 'reserving' }, { $set: { state: job.state } });
@@ -549,7 +631,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           runCost: 0,
           stage: 'Waiting for its turn',
           error: '',
-          expiresAt: new Date(Date.now() + 3 * day),
+          expiresAt: retain(job, 3),
         },
         $unset: { limitUSD: 1 },
       },
@@ -571,22 +653,27 @@ export function createDescriptionRouter(hooks: Hooks): {
       dailyUSD: dailyLimit(),
       remainingUSD: await remaining(),
       perMinuteUSD: {
-        essential: descriptionEstimate(60, 'essential') - 0.03,
-        standard: descriptionEstimate(60, 'standard') - 0.03,
-        rich: descriptionEstimate(60, 'rich') - 0.03,
+        essential: 0.022 + speechPerMinute('essential') + transcriptionPerMinute,
+        standard: 0.022 + speechPerMinute('standard') + transcriptionPerMinute,
+        rich: 0.022 + speechPerMinute('rich') + transcriptionPerMinute,
       },
       library: !!hooks.library,
+      defaultLibraryPath,
       defaultVoice:
         catalog.voices.find((voice) => /^clear woman . flint$/.test(voice)) || catalog.voices[0],
       ...catalog,
     });
+  });
+  route('get', '/library-folders', async (req, res) => {
+    const folders = (await hooks.library?.folders?.(req)) ?? [];
+    res.json({ folders: [...new Set([defaultLibraryPath, ...folders])].sort() });
   });
   route('get', '/jobs', async (req, res) => {
     const jobs = await Jobs.find({ owner: hooks.actor(req).id })
       .sort({ createdAt: -1 })
       .limit(40)
       .lean();
-    res.json({ jobs: jobs.map(publicJob) });
+    res.json({ jobs: jobs.map(publicJob), remainingUSD: await remaining() });
   });
   route('get', '/jobs/:id', async (req, res) => {
     res.json(publicJob(await owned(req)));
@@ -758,7 +845,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       req,
       ['ready'],
       settings,
-      descriptionEstimate(job.seconds, settings.detail),
+      enhancedEstimate(job.seconds, settings),
       {
         startedAt: new Date(),
         revoice: false,
@@ -784,9 +871,56 @@ export function createDescriptionRouter(hooks: Hooks): {
     });
     res.status(202).json(publicJob(queued));
   });
+  route('get', '/jobs/:id/script', async (req, res) => {
+    const job = await owned(req);
+    if (job.state !== 'done')
+      throw new Error('Wait for the current version to finish before editing its script.');
+    const stored = await loadStored(job);
+    res.json({
+      version: job.version || 1,
+      cues: scriptCues(stored.records.map((item) => item.record)),
+    });
+  });
+  route('post', '/jobs/:id/reanalyze', async (req, res) => {
+    if (!configured()) throw new Error('Video description is not available.');
+    const job = await owned(req);
+    if (job.state !== 'done' || !job.seconds)
+      throw new Error('Wait for this video to finish before describing it again.');
+    const expectedVersion = z.number().int().positive().parse(req.body?.expectedVersion);
+    if (expectedVersion !== (job.version || 1))
+      throw new Error('This video has a newer version. Reopen it before describing it again.');
+    const settings = settingsSchema.parse(req.body);
+    if (!(await voices()).voices.includes(settings.voice))
+      throw new Error('Choose an existing platform voice.');
+    const version = (job.version || 1) + 1;
+    const queued = await enqueue(
+      req,
+      ['done'],
+      settings,
+      enhancedEstimate(job.seconds, settings),
+      {
+        version,
+        firstLookVersion: version,
+        revoice: false,
+        reuseUnchanged: false,
+        edits: [],
+        ...(!job.copies?.length ? { copies: copiesFor(job) } : {}),
+        done: 0,
+        resumes: 0,
+        cancelRequested: false,
+        savedToLibrary: '',
+      },
+      expectedVersion,
+    );
+    res.status(202).json(publicJob(queued));
+  });
   route('post', '/jobs/:id/revoice', async (req, res) => {
     const job = await owned(req);
     if (busy.includes(job.state)) {
+      if (req.body?.expectedVersion !== undefined)
+        throw new Error(
+          'A new version is already running. Your draft has been kept; reopen the script when it finishes.',
+        );
       res.json(publicJob(job));
       return;
     }
@@ -796,22 +930,55 @@ export function createDescriptionRouter(hooks: Hooks): {
       ...req.body,
       detail: job.settings.detail,
       notes: job.settings.notes,
+      firstLook: job.settings.firstLook,
+      closeLook: job.settings.closeLook,
     });
     if (!(await voices()).voices.includes(settings.voice))
       throw new Error('Choose an existing platform voice.');
+    const edits = editsSchema.parse(req.body?.edits ?? []);
+    const expectedVersion = z.number().int().positive().optional().parse(req.body?.expectedVersion);
+    if (edits.length && expectedVersion === undefined)
+      throw new Error('Reopen the script before saving changes.');
+    if (expectedVersion !== undefined && expectedVersion !== (job.version || 1))
+      throw new Error('This script is out of date. Reopen it to edit the latest version.');
+    if (edits.length) {
+      const stored = await loadStored(job);
+      const known = new Set(
+        scriptCues(stored.records.map((item) => item.record)).map((cue) => cue.id),
+      );
+      if (edits.some((edit) => !known.has(edit.id)))
+        throw new Error('A description no longer exists. Reopen the script.');
+    }
+    const reuseUnchanged =
+      edits.length > 0 &&
+      (['voice', 'rate', 'maxRate', 'mode', 'volume'] as const).every(
+        (key) => settings[key] === job.settings?.[key],
+      );
     const queued = await enqueue(
       req,
       ['done'],
       settings,
-      revoiceEstimate(job.seconds, settings.detail),
+      reuseUnchanged
+        ? cents(
+            edits.reduce(
+              (sum, edit) =>
+                sum + Buffer.byteLength(edit.text + edit.shortText, 'utf8') * speechPerByte,
+              0,
+            ) + 0.05,
+          )
+        : revoiceEstimate(job.seconds, settings.detail),
       {
         revoice: true,
+        edits,
+        reuseUnchanged,
+        ...(!job.copies?.length ? { copies: copiesFor(job) } : {}),
         version: (job.version || 1) + 1,
         done: 0,
         cancelRequested: false,
         resumes: 0,
         savedToLibrary: '',
       },
+      expectedVersion ?? (job.version || 1),
     );
     res.status(202).json(publicJob(queued));
   });
@@ -842,7 +1009,7 @@ export function createDescriptionRouter(hooks: Hooks): {
             active: false,
             cancelRequested: true,
             stage: 'Cancelled',
-            expiresAt: new Date(Date.now() + 3 * day),
+            expiresAt: retain(job, 3),
           },
         },
         { new: true },
@@ -860,11 +1027,21 @@ export function createDescriptionRouter(hooks: Hooks): {
   route('delete', '/jobs/:id', async (req, res) => {
     const job = await owned(req);
     const deleting = await Jobs.findOneAndUpdate(
-      { _id: job._id, state: { $in: [...terminal, 'ready', 'uploading', 'deleting'] } },
+      {
+        _id: job._id,
+        state: { $in: [...terminal, 'ready', 'uploading', 'deleting'] },
+        $or: [
+          { librarySaving: { $exists: false } },
+          { librarySaving: { $lt: new Date(Date.now() - 10 * 60000) } },
+        ],
+      },
       { $set: { state: 'deleting', active: false } },
       { new: true },
     ).lean();
-    if (!deleting) throw new Error('Cancel processing and wait for it to stop before deleting.');
+    if (!deleting)
+      throw new Error(
+        'Wait for any Library save, or cancel processing and wait for it to stop, before deleting.',
+      );
     await abortUpload(job);
     await eraseAll(job);
     await Jobs.deleteOne({ _id: job._id, owner: job.owner });
@@ -872,11 +1049,14 @@ export function createDescriptionRouter(hooks: Hooks): {
   });
   route('get', '/jobs/:id/files', async (req, res) => {
     const job = await owned(req);
-    if (job.state !== 'done') throw new Error('The described copy is not ready yet.');
+    const copy = selectCopy(
+      job,
+      typeof req.query.version === 'string' ? req.query.version : undefined,
+    );
     const base = plainName(job.name);
     const result: Record<string, string> = {};
     for (const item of outputs) {
-      const key = `${folder(job)}/${item.file}`;
+      const key = `${copyFolder(job, copy)}/${item.file}`;
       if (!['video', 'audio', 'script'].includes(item.kind) && !(await exists(key))) continue;
       const name = `${base} (${item.label}).${item.ext}`;
       const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
@@ -900,56 +1080,97 @@ export function createDescriptionRouter(hooks: Hooks): {
     const item = outputs.find(
       (entry) => entry.kind === req.params.kind && entry.ext !== 'mp4' && entry.ext !== 'm4a',
     );
-    if (!item || job.state !== 'done') throw new Error('That text is not available.');
-    const text = await readText(`${folder(job)}/${item.file}`);
+    if (!item) throw new Error('That text is not available.');
+    const copy = selectCopy(
+      job,
+      typeof req.query.version === 'string' ? req.query.version : undefined,
+    );
+    const text = await readText(`${copyFolder(job, copy)}/${item.file}`);
     if (text === null) throw new Error('That text is not available for this copy.');
     res.type(item.mime).send(text);
   });
   route('post', '/jobs/:id/library', async (req, res) => {
     const job = await owned(req);
     if (!hooks.library) throw new Error('The library is not available here.');
-    if (job.state !== 'done') throw new Error('The described copy is not ready yet.');
-    if (job.savedToLibrary) {
-      res.json({ ...publicJob(job), path: '' });
+    const copy = selectCopy(
+      job,
+      req.body?.version === undefined ? undefined : String(req.body.version),
+    );
+    if (copy.savedToLibrary) {
+      res.json({ ...publicJob(job), savedToLibrary: copy.savedToLibrary, path: '' });
       return;
     }
     const share = z.boolean().default(true).parse(req.body?.share);
-    const source = `${folder(job)}/described.m4a`;
-    const head = await storage().send(new HeadObjectCommand({ Bucket: bucket(), Key: source }));
-    const saved = await hooks.library.save({
-      owner: job.owner,
-      title: `${plainName(job.name)} (described)`,
-      seconds: job.outputSeconds || job.seconds || 0,
-      bytes: head.ContentLength || 0,
-      share,
-      kind: job.kind || '',
-      copy: async (target) => {
-        const copied = await storage()
-          .send(
-            new CopyObjectCommand({
-              Bucket: bucket(),
-              Key: target,
-              CopySource: `${bucket()}/${source.split('/').map(encodeURIComponent).join('/')}`,
-              ContentType: 'audio/mp4',
-              MetadataDirective: 'REPLACE',
-            }),
-          )
-          .then(() => true)
-          .catch((error: Error) => {
-            hooks.log('description library copy: ' + error.message);
-            return false;
-          });
-        if (copied) return;
-        const output = await storage().send(
-          new GetObjectCommand({ Bucket: bucket(), Key: source }),
-        );
-        if (!(output.Body instanceof Readable))
-          throw new Error('The described audio could not be read.');
-        await storeAudioStream(storage(), bucket(), target, output.Body, 'audio/mp4');
+    const path = libraryPathSchema.parse(req.body?.path ?? defaultLibraryPath);
+    const source = `${copyFolder(job, copy)}/described.m4a`;
+    const savingAt = new Date();
+    const held = await Jobs.updateOne(
+      {
+        _id: job._id,
+        state: { $ne: 'deleting' },
+        $or: [
+          { librarySaving: { $exists: false } },
+          { librarySaving: { $lt: new Date(Date.now() - 10 * 60000) } },
+        ],
       },
-    });
-    await Jobs.updateOne({ _id: job._id }, { $set: { savedToLibrary: saved.id } });
-    res.json({ ...publicJob(await owned(req)), path: saved.path });
+      { $set: { librarySaving: savingAt } },
+    );
+    if (!held.modifiedCount)
+      throw new Error('A Library save is already in progress. Wait a moment, then refresh.');
+    try {
+      const fresh = selectCopy(await owned(req), String(copy.version));
+      if (fresh.savedToLibrary) {
+        res.json({ ...publicJob(job), savedToLibrary: fresh.savedToLibrary, path: '' });
+        return;
+      }
+      const head = await storage().send(new HeadObjectCommand({ Bucket: bucket(), Key: source }));
+      const saved = await hooks.library.save({
+        owner: job.owner,
+        title: `${plainName(job.name)} (described)`,
+        seconds: copy.outputSeconds || job.seconds || 0,
+        bytes: head.ContentLength || 0,
+        share,
+        path,
+        kind: job.kind || '',
+        copy: async (target) => {
+          const copied = await storage()
+            .send(
+              new CopyObjectCommand({
+                Bucket: bucket(),
+                Key: target,
+                CopySource: `${bucket()}/${source.split('/').map(encodeURIComponent).join('/')}`,
+                ContentType: 'audio/mp4',
+                MetadataDirective: 'REPLACE',
+              }),
+            )
+            .then(() => true)
+            .catch((error: Error) => {
+              hooks.log('description library copy: ' + error.message);
+              return false;
+            });
+          if (copied) return;
+          const output = await storage().send(
+            new GetObjectCommand({ Bucket: bucket(), Key: source }),
+          );
+          if (!(output.Body instanceof Readable))
+            throw new Error('The described audio could not be read.');
+          await storeAudioStream(storage(), bucket(), target, output.Body, 'audio/mp4');
+        },
+      });
+      if (job.copies?.length)
+        await Jobs.updateOne(
+          { _id: job._id, 'copies.version': copy.version },
+          { $set: { 'copies.$.savedToLibrary': saved.id } },
+        );
+      if (copy.version === (job.version || 1))
+        await Jobs.updateOne({ _id: job._id }, { $set: { savedToLibrary: saved.id } });
+      res.json({ ...publicJob(await owned(req)), savedToLibrary: saved.id, path: saved.path });
+    } finally {
+      await Jobs.updateOne(
+        { _id: job._id, librarySaving: savingAt },
+        { $unset: { librarySaving: 1 } },
+      );
+    }
   });
   route('post', '/sample', async (req, res) => {
     const owner = hooks.actor(req).id;
@@ -994,21 +1215,41 @@ export function createDescriptionRouter(hooks: Hooks): {
 
   function keeperFor(
     job: Job,
-    stored: { plan?: { plan: Plan; words: Word[] }; records: StoredSection[] },
+    stored: {
+      plan?: { plan: Plan; words: Word[] };
+      records: StoredSection[];
+      firstLook?: { through: number; state: Continuity };
+    },
   ): Keeper {
     const prefix = folder(job);
     const version = job.version || 1;
     const analyses: (Analysis | null)[] = [];
     if (job.revoice)
-      for (const item of stored.records) analyses[item.record.index] = item.record.analysis;
+      for (const item of stored.records)
+        analyses[item.record.index] =
+          item.version === version
+            ? item.record.analysis
+            : revise(item.record.analysis, item.record.index, job.edits ?? []);
     return {
       saved: {
+        firstLook: stored.firstLook,
         plan: stored.plan?.plan,
         words: stored.plan?.words,
         records: stored.records
-          .filter((item) => item.version === version)
+          .filter(
+            (item) =>
+              item.version === version ||
+              (job.reuseUnchanged &&
+                !(job.edits ?? []).some((edit) => edit.id.startsWith(`${item.record.index}:`))),
+          )
           .map((item) => item.record),
         analyses: job.revoice ? analyses : undefined,
+      },
+      keepFirstLook: async (firstLook) => {
+        await putText(
+          `${prefix}/first-look-${job.firstLookVersion || 1}.json`,
+          JSON.stringify(firstLook),
+        );
       },
       keepPlan: async (plan, words) => {
         await putText(`${prefix}/plan.json`, JSON.stringify({ plan, words }));
@@ -1049,7 +1290,14 @@ export function createDescriptionRouter(hooks: Hooks): {
       const text = await readText(`${prefix}/sections/${i}.json`);
       if (text) records.push(JSON.parse(text) as StoredSection);
     }
-    return { plan: JSON.parse(planText) as { plan: Plan; words: Word[] }, records };
+    const firstLook = await readText(`${prefix}/first-look-${job.firstLookVersion || 1}.json`);
+    return {
+      plan: JSON.parse(planText) as { plan: Plan; words: Word[] },
+      records,
+      firstLook: firstLook
+        ? (JSON.parse(firstLook) as { through: number; state: Continuity })
+        : undefined,
+    };
   }
 
   /** Runs one job with a lease, heartbeat, cancellation and a clean temporary folder. */
@@ -1134,7 +1382,7 @@ export function createDescriptionRouter(hooks: Hooks): {
               ? 'Processing stopped. Work already sent to providers may still be charged.'
               : message,
             finishedAt: new Date(),
-            expiresAt: new Date(Date.now() + 3 * day),
+            expiresAt: retain(job, 3),
           },
           $unset: { worker: 1, lease: 1 },
         },
@@ -1204,7 +1452,7 @@ export function createDescriptionRouter(hooks: Hooks): {
             seconds: media.seconds,
             stage: 'Ready to describe',
             progress: 0,
-            expiresAt: new Date(Date.now() + 3 * day),
+            expiresAt: retain(job, 3),
           },
           $unset: { worker: 1, lease: 1 },
         },
@@ -1240,22 +1488,31 @@ export function createDescriptionRouter(hooks: Hooks): {
         job.reserved = reserved() + amount;
         return true;
       };
+      let accounting = Promise.resolve();
+      const account = (action: () => Promise<void>): Promise<void> => {
+        const next = accounting.then(action);
+        accounting = next.catch(() => {});
+        return next;
+      };
       const meter: Meter = async (kind, reserve, action) => {
-        signal.throwIfAborted();
-        if (!Number.isFinite(reserve) || reserve < 0)
-          throw new Halt('A cost estimate was invalid.');
-        const spent = job.runCost ?? 0;
-        if (spent + reserve > reserved() && !(await grow(spent + reserve - reserved())))
-          throw new Halt(
-            'The job reached its processing allowance, so no further paid requests were sent. Finished sections are kept.',
+        await account(async () => {
+          signal.throwIfAborted();
+          if (!Number.isFinite(reserve) || reserve < 0)
+            throw new Halt('A cost estimate was invalid.');
+          const spent = job.runCost ?? 0;
+          if (spent + reserve > reserved() && !(await grow(spent + reserve - reserved())))
+            throw new Halt(
+              'The job reached its processing allowance, so no further paid requests were sent. Finished sections are kept.',
+            );
+          job.runCost = spent + reserve;
+          job.costUSD += reserve;
+          const held = await Jobs.updateOne(
+            { _id: job._id, worker, cancelRequested: false },
+            { $set: { runCost: job.runCost, costUSD: job.costUSD } },
           );
-        job.runCost = spent + reserve;
-        job.costUSD += reserve;
-        const held = await Jobs.updateOne(
-          { _id: job._id, worker, cancelRequested: false },
-          { $set: { runCost: job.runCost, costUSD: job.costUSD } },
-        );
-        if (!held.matchedCount) throw new Halt('Processing stopped before the next paid request.');
+          if (!held.matchedCount)
+            throw new Halt('Processing stopped before the next paid request.');
+        });
         let result: { costUSD: number };
         try {
           result = await action();
@@ -1263,12 +1520,14 @@ export function createDescriptionRouter(hooks: Hooks): {
           await hooks.usage(job.owner, job._id, `${kind}-uncertain`, reserve).catch(() => {});
           throw error;
         }
-        job.runCost = Math.max(0, job.runCost - reserve + result.costUSD);
-        job.costUSD = Math.max(0, job.costUSD - reserve + result.costUSD);
-        await Jobs.updateOne(
-          { _id: job._id, worker },
-          { $set: { runCost: job.runCost, costUSD: job.costUSD } },
-        );
+        await account(async () => {
+          job.runCost = Math.max(0, (job.runCost ?? 0) - reserve + result.costUSD);
+          job.costUSD = Math.max(0, job.costUSD - reserve + result.costUSD);
+          await Jobs.updateOne(
+            { _id: job._id, worker },
+            { $set: { runCost: job.runCost, costUSD: job.costUSD } },
+          );
+        });
         await hooks
           .usage(job.owner, job._id, kind, result.costUSD)
           .catch((error: Error) => hooks.log('description usage: ' + error.message));
@@ -1300,7 +1559,11 @@ export function createDescriptionRouter(hooks: Hooks): {
         signal.throwIfAborted();
         if ((await stat(files[item.file])).size > 6 * 1024 ** 3)
           throw new Error('The described copy exceeded the storage limit.');
-        await putFile(`${folder(job)}/${item.file}`, files[item.file], item.mime);
+        await putFile(
+          `${folder(job)}/copies/${job.version || 1}/${item.file}`,
+          files[item.file],
+          item.mime,
+        );
       }
       signal.throwIfAborted();
       const report = output.report;
@@ -1319,6 +1582,17 @@ export function createDescriptionRouter(hooks: Hooks): {
             kind: report.kind,
             finishedAt: new Date(),
             expiresAt: new Date(Date.now() + 7 * day),
+          },
+          $push: {
+            copies: {
+              version: job.version || 1,
+              settings,
+              outputSeconds: report.outputSeconds,
+              count: report.descriptions.length,
+              skipped: report.skipped.length,
+              failedSections: report.failedSections.length,
+              finishedAt: new Date(),
+            },
           },
           $unset: { worker: 1, lease: 1 },
         },
@@ -1390,7 +1664,7 @@ export function createDescriptionRouter(hooks: Hooks): {
             error:
               'The server restarted several times during this job. Finished sections are kept; continue it from the page.',
             finishedAt: new Date(),
-            expiresAt: new Date(Date.now() + 3 * day),
+            expiresAt: retain(job, 3),
           },
           $unset: { worker: 1, lease: 1 },
         },

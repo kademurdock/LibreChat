@@ -24,6 +24,7 @@ const notices = [];
 const libraryCalls = [];
 const calls = { analyze: 0, transcribe: 0, synthesize: 0 };
 let failSection = -1;
+let simulateConcurrentCosts = false;
 
 const xml = (res, body, status = 200) => {
   res.writeHead(status, { 'Content-Type': 'application/xml' });
@@ -191,6 +192,7 @@ before(async () => {
       notices.push({ owner, title, text, url });
     },
     library: {
+      folders: async () => ['Audio/Commercials/1996'],
       open: async (_req, book, track) => {
         if (book !== 'a'.repeat(24)) throw new Error('That library video was not found.');
         return {
@@ -203,7 +205,7 @@ before(async () => {
       save: async (input) => {
         libraryCalls.push(input);
         await input.copy('media-library/new-book/described.m4a');
-        return { id: 'b'.repeat(24), path: 'Audio/Described Movies & TV/Described by Kade-AI' };
+        return { id: 'b'.repeat(24), path: input.path };
       },
     },
     providers: {
@@ -233,11 +235,32 @@ before(async () => {
               shortText: 'Cue.',
               importance: 3,
             },
-          ],
+          ].concat(
+            simulateConcurrentCosts
+              ? [
+                  {
+                    at: 5,
+                    until: 9,
+                    pauseAt: 5,
+                    text: 'Another test shape moves.',
+                    shortText: 'The shape moves.',
+                    importance: 2,
+                  },
+                ]
+              : [],
+          ),
         };
       },
-      synthesize: async (_text, _voice, _session, file) => {
+      synthesize: async (_text, _voice, _session, file, _speed, _signal, meter) => {
         calls.synthesize++;
+        if (simulateConcurrentCosts) {
+          await meter('speech', 0.3, async () => {
+            await new Promise((resolve) => setTimeout(resolve, 75));
+            await copyFile(voiceWav, file);
+            return { costUSD: 0.01 };
+          });
+          return;
+        }
         await copyFile(voiceWav, file);
       },
     },
@@ -325,6 +348,11 @@ test('concurrent starts set money aside once; the daily allowance blocks what it
   await call('post', `/jobs/${id}/start`)
     .send({ ...settings, voice: 'invented' })
     .expect(409);
+  const expensive = await call('post', `/jobs/${id}/start`)
+    .send({ ...settings, closeLook: true, firstLook: true })
+    .expect(409);
+  assert.match(expensive.body.error, /above the.*limit/);
+  assert.equal((await Jobs.findById(id)).state, 'ready');
   const starts = await Promise.all(
     Array.from({ length: 12 }, () => call('post', `/jobs/${id}/start`).send(settings)),
   );
@@ -501,11 +529,14 @@ test('a whole job: check, describe, stop halfway, continue from saved sections, 
   await call('get', `/jobs/${id}/text/transcript`, 'another-owner').expect(409);
 
   const saved = await call('post', `/jobs/${id}/library`, 'film-owner')
-    .send({ share: false })
+    .send({ share: false, path: 'Audio/Commercials/1996' })
     .expect(200);
   assert.equal(saved.body.savedToLibrary, 'b'.repeat(24));
   assert.equal(libraryCalls[0].title, 'My film (described)');
   assert.equal(libraryCalls[0].share, false);
+  assert.equal(libraryCalls[0].path, 'Audio/Commercials/1996');
+  const folders = await call('get', '/library-folders', 'film-owner').expect(200);
+  assert.ok(folders.body.folders.includes('Audio/Commercials/1996'));
   assert.ok(objects.has('/test/media-library/new-book/described.m4a'));
 
   const analyzed = calls.analyze;
@@ -520,6 +551,85 @@ test('a whole job: check, describe, stop halfway, continue from saved sections, 
   assert.equal(revoiced.settings.rate, 2);
   assert.equal(revoiced.savedToLibrary, '');
 
+  const originalTranscript = await call(
+    'get',
+    `/jobs/${id}/text/transcript?version=1`,
+    'film-owner',
+  ).expect(200);
+  assert.equal(
+    originalTranscript.text,
+    transcript.text,
+    'the previous finished version remains unchanged',
+  );
+  await call('get', `/jobs/${id}/files?version=99`, 'film-owner').expect(409);
+  await call('get', `/jobs/${id}/script`, 'another-owner').expect(409);
+  const script = (await call('get', `/jobs/${id}/script`, 'film-owner').expect(200)).body;
+  assert.equal(script.version, 2);
+  assert.equal(script.cues.length, 2);
+  const correction = {
+    ...script.cues[0],
+    text: 'Pat holds a blue folder.',
+    shortText: 'Pat holds a folder.',
+    omit: false,
+  };
+  await call('post', `/jobs/${id}/revoice`, 'film-owner')
+    .send({ ...revoiced.settings, expectedVersion: 1, edits: [correction] })
+    .expect(409);
+  await call('post', `/jobs/${id}/revoice`, 'film-owner')
+    .send({ ...revoiced.settings, expectedVersion: 2, edits: [{ ...correction, id: '99:99' }] })
+    .expect(409);
+  const voicedBefore = calls.synthesize;
+  await call('post', `/jobs/${id}/revoice`, 'film-owner')
+    .send({ ...revoiced.settings, expectedVersion: 2, edits: [correction] })
+    .expect(202);
+  await call('get', `/jobs/${id}/files?version=2`, 'film-owner').expect(200);
+  const corrected = await settle(id, ['done', 'failed'], 'film-owner');
+  assert.equal(corrected.state, 'done', corrected.error);
+  assert.equal(corrected.version, 3);
+  assert.equal(calls.analyze, analyzed, 'correction does not analyze the video again');
+  assert.equal(calls.synthesize - voicedBefore, 1, 'only the changed section is voiced again');
+  const revisedTranscript = await call('get', `/jobs/${id}/text/transcript`, 'film-owner').expect(
+    200,
+  );
+  assert.match(revisedTranscript.text, /Pat holds a blue folder/);
+  assert.doesNotMatch(originalTranscript.text, /Pat holds a blue folder/);
+  await call('post', `/jobs/${id}/library`, 'film-owner')
+    .send({ path: 'Audio/../Video' })
+    .expect(400);
+  const expiry = new Date(corrected.expiresAt).getTime();
+  const beforeFresh = calls.analyze;
+  await call('post', `/jobs/${id}/reanalyze`, 'film-owner')
+    .send({
+      ...corrected.settings,
+      expectedVersion: 3,
+      firstLook: true,
+      notes: 'The host is Robin.',
+    })
+    .expect(202);
+  await call('get', `/jobs/${id}/files?version=3`, 'film-owner').expect(200);
+  const fresh = await settle(id, ['done', 'failed'], 'film-owner');
+  assert.equal(fresh.state, 'done', fresh.error);
+  assert.equal(fresh.version, 4);
+  assert.equal(
+    calls.analyze - beforeFresh,
+    4,
+    'two first-look sections and two fresh descriptions',
+  );
+  assert.equal(calls.transcribe, 1, 'fresh descriptions reuse the whole-film transcript');
+  assert.equal(fresh.settings.notes, 'The host is Robin.');
+  assert.ok([...objects.keys()].some((key) => key.endsWith(`${id}/first-look-4.json`)));
+  await call('post', `/jobs/${id}/revoice`, 'film-owner')
+    .send({ ...fresh.settings, expectedVersion: 4 })
+    .expect(202);
+  await call('post', `/jobs/${id}/cancel`, 'film-owner').expect(200);
+  const cancelled = await settle(id, ['cancelled', 'failed', 'done'], 'film-owner');
+  assert.ok(cancelled.copies.some((copy) => copy.version === 3));
+  assert.ok(
+    new Date(cancelled.expiresAt).getTime() >= expiry,
+    'a cancelled new version does not shorten retention of finished copies',
+  );
+  await call('get', `/jobs/${id}/files?version=3`, 'film-owner').expect(200);
+
   const sample = await call('post', '/sample', 'film-owner')
     .send({ voice: 'Voice 1', rate: 2 })
     .expect(200);
@@ -533,6 +643,45 @@ test('a whole job: check, describe, stop halfway, continue from saved sections, 
     'every stored file of the job is gone',
   );
   assert.ok(objects.has('/test/media-library/new-book/described.m4a'), 'the library copy stays');
+});
+
+test('concurrent paid speech requests settle their reservations without losing a charge', async () => {
+  await Budgets.deleteMany({});
+  const source = join(root, 'budget-source.mp4');
+  await command(
+    ffmpegPath,
+    [
+      '-nostdin',
+      '-v',
+      'error',
+      '-y',
+      '-i',
+      join(root, 'source.mp4'),
+      '-t',
+      '9',
+      '-c',
+      'copy',
+      source,
+    ],
+    new AbortController().signal,
+  );
+  const bytes = await readFile(source);
+  const id = await upload('cost-owner', 'concurrent-costs-0001', bytes.length);
+  const document = await Jobs.findById(id).lean();
+  objects.set(`/test/${document.key}`, bytes);
+  await Jobs.updateOne({ _id: id }, { $set: { state: 'ready', seconds: 9 } });
+  simulateConcurrentCosts = true;
+  try {
+    await call('post', `/jobs/${id}/start`, 'cost-owner').send(settings).expect(202);
+    const done = await settle(id, ['done', 'failed'], 'cost-owner');
+    assert.equal(done.state, 'done', done.error);
+    assert.ok(Math.abs(done.costUSD - 0.02) < 1e-8, `charged ${done.costUSD}`);
+    const budget = await Budgets.findById(new Date().toISOString().slice(0, 10));
+    assert.ok(Math.abs(budget.reserved - 0.02) < 1e-8, `reserved ${budget.reserved}`);
+  } finally {
+    simulateConcurrentCosts = false;
+  }
+  await call('delete', `/jobs/${id}`, 'cost-owner').expect(200);
 });
 
 test('a cancelled job can be continued and goes back in the queue', async () => {

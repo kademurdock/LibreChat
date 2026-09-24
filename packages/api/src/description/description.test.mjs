@@ -18,10 +18,11 @@ import {
 } from './timing.ts';
 import { duckCurve, level, loudness, pauseProgram, sampleRate, trimSilence } from './mix.ts';
 import { describeVideo, levelsFor, alignSections } from './engine.ts';
-import { readAnalysis, nextContinuity } from './prompt.ts';
-import { command, probe, frameRate } from './media.ts';
+import { readAnalysis, nextContinuity, analysisPrompt } from './prompt.ts';
+import { command, probe, frameRate, sectionClip } from './media.ts';
 import { transcriptText, clock } from './transcript.ts';
-import { settingsSchema } from './types.ts';
+import { settingsSchema, Halt } from './types.ts';
+import { editsSchema, revise, libraryPathSchema } from './revision.ts';
 import { youtubeURL } from './youtube.ts';
 
 process.env.FFMPEG_PATH = ffmpegPath;
@@ -275,6 +276,127 @@ test('rate settings reject inverted limits and preserve pitch with chained time-
   assert.equal(tempoFilters(3), 'atempo=2,atempo=1.500000');
   assert.throws(() => tempoFilters(NaN));
   assert.equal(clock(3723.4), '1:02:03');
+});
+
+test('script edits reject duplicate IDs and empty speech, preserve timing, and allow omissions', () => {
+  const edit = { id: '0:0', text: 'Pat holds a folder.', shortText: 'Pat holds it.', omit: false };
+  assert.equal(editsSchema.safeParse([edit, edit]).success, false);
+  assert.equal(editsSchema.safeParse([{ ...edit, text: '' }]).success, false);
+  const analysis = {
+    kind: 'other',
+    setting: '',
+    people: [],
+    speakers: [],
+    cues: [cue],
+    protectedSounds: [],
+  };
+  const updated = revise(analysis, 0, [edit]);
+  assert.equal(updated.cues[0].at, cue.at);
+  assert.equal(updated.cues[0].until, cue.until);
+  assert.equal(updated.cues[0].text, edit.text);
+  assert.equal(revise(analysis, 0, [{ ...edit, omit: true }]).cues.length, 0);
+  assert.equal(analysis.cues.length, 1, 'the original script remains intact');
+  assert.equal(libraryPathSchema.parse(' Audio\\Commercials\\1996 '), 'Audio/Commercials/1996');
+  for (const path of ['', '/', 'Audio/../Other', 'Audio//Other', 'Audio/\nOther'])
+    assert.equal(libraryPathSchema.safeParse(path).success, false);
+});
+
+test('close look slows the entire clip and maps descriptions back onto the original timeline', async () => {
+  const f = await fixture('close-look');
+  const slowed = await sectionClip(f.file, f.dir, 0, 9, signal, true);
+  const inspected = await probe(slowed, signal);
+  assert.ok(
+    inspected.seconds > 35 && inspected.seconds < 37,
+    `slowed duration ${inspected.seconds}`,
+  );
+  const result = await run(
+    f,
+    [],
+    (look) => {
+      assert.equal(look.brief.slowed, true);
+      assert.ok(look.seconds > 35);
+      return [{ ...cue, at: 4, until: 24, pauseAt: 4 }];
+    },
+    { settings: { ...settings, closeLook: true } },
+  );
+  assert.ok(result.report.descriptions[0].at >= 1 && result.report.descriptions[0].at < 2);
+  assert.ok(Math.abs(result.report.outputSeconds - 9) < 0.2);
+});
+
+test('whole-film first look checkpoints, resumes, and finishes before any narration', async () => {
+  const f = await fixture('first-look');
+  const state = { kind: '', setting: '', people: [], speakers: [], recent: [] };
+  const keeper = {
+    saved: {
+      plan: {
+        version: 2,
+        seconds: 9,
+        audio: true,
+        fps: { num: 30, den: 1 },
+        loudness: { program: -20, peak: -2 },
+        sections: [
+          { start: 0, end: 4.5 },
+          { start: 4.5, end: 9 },
+        ],
+      },
+      words: [],
+      records: [],
+    },
+    keepPlan: async () => {},
+    keepSection: async () => {},
+    keepFirstLook: async (value) => {
+      keeper.saved.firstLook = value;
+    },
+    restore: async () => {
+      throw Error('No stored render');
+    },
+  };
+  let surveys = 0,
+    fail = true,
+    voiced = 0;
+  const backend = providers(f.voice, [], [cue]);
+  const analyze = backend.analyze;
+  backend.analyze = async (look) => {
+    if (look.brief.survey) {
+      surveys++;
+      assert.equal(voiced, 0);
+      if (fail && surveys === 2) throw new Halt('Test interruption');
+      return {
+        ...state,
+        cues: [],
+        protectedSounds: [],
+        people: [{ label: 'the host', name: 'Pat', look: 'blue shirt' }],
+      };
+    }
+    assert.equal(keeper.saved.firstLook.through, 2);
+    assert.equal(look.brief.orientation[0].name, 'Pat');
+    assert.equal(
+      look.state?.people.some((person) => person.name === 'Pat') || false,
+      false,
+      'future names are not seeded into current continuity',
+    );
+    const prompt = analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before);
+    assert.match(prompt, /Do not speak any name from this reference until/);
+    return analyze(look);
+  };
+  const synthesize = backend.synthesize;
+  backend.synthesize = async (...args) => {
+    voiced++;
+    return synthesize(...args);
+  };
+  await assert.rejects(
+    run(f, [], [], { settings: { ...settings, firstLook: true }, keeper, providers: backend }),
+    /Test interruption/,
+  );
+  assert.equal(keeper.saved.firstLook.through, 1);
+  fail = false;
+  const result = await run(f, [], [], {
+    settings: { ...settings, firstLook: true },
+    keeper,
+    providers: backend,
+  });
+  assert.equal(surveys, 3, 'the first completed survey section was not repeated');
+  assert.ok(result.report.descriptions.length > 0);
 });
 
 async function fixture(name, seconds = 9, audio = true) {

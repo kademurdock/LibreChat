@@ -13,6 +13,8 @@ export type Settings = {
   detail: (typeof detailLevels)[number];
   volume: (typeof volumeLevels)[number];
   notes: string;
+  closeLook?: boolean;
+  firstLook?: boolean;
 };
 export const settingsSchema: z.ZodType<Settings, z.ZodTypeDef, unknown> = z
   .object({
@@ -22,6 +24,8 @@ export const settingsSchema: z.ZodType<Settings, z.ZodTypeDef, unknown> = z
     mode: z.enum(['standard', 'extended']).default('extended'),
     detail: z.enum(detailLevels).default('standard'),
     volume: z.enum(volumeLevels).default('balanced'),
+    closeLook: z.boolean().default(false),
+    firstLook: z.boolean().default(false),
     notes: z
       .string()
       .max(600)
