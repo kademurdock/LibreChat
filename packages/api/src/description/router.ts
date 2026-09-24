@@ -23,7 +23,7 @@ import {
   CreateMultipartUploadCommand,
   CompleteMultipartUploadCommand,
 } from '@aws-sdk/client-s3';
-import type { Request, RequestHandler } from 'express';
+import type { Request, RequestHandler, ErrorRequestHandler } from 'express';
 import type { S3Client, CompletedPart } from '@aws-sdk/client-s3';
 import type {
   Analysis,
@@ -2460,6 +2460,19 @@ export function createDescriptionRouter(hooks: Hooks): {
     }
     res.type('audio/wav').send(audio);
   });
+
+  /** Body-parser refusals (an oversized chunk, unreadable JSON) answer in words, not an HTML page. */
+  const bodyProblem: ErrorRequestHandler = (error: { status?: number; type?: string }, _req, res, next) => {
+    if (res.headersSent) return next(error);
+    const status = error.status === 413 ? 413 : 400;
+    res.status(status).json({
+      error:
+        status === 413
+          ? 'That piece of the upload was too large. Reload the page and choose the file again.'
+          : 'The request could not be read. Reload the page and try again.',
+    });
+  };
+  router.use(bodyProblem);
 
   /* ---------- per-version section storage ---------- */
   const sectionKey = (job: Job, version: number, index: number, ext: string) =>

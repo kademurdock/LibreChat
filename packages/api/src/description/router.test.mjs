@@ -507,6 +507,8 @@ test('chunk uploads resume, verify repeated bytes, assemble once, and tolerate a
       .set('X-Part-Number', String(number))
       .send(data);
   await put('another-owner', 1, chunk).expect(404);
+  const oversized = await put('chunk-owner', 1, Buffer.alloc(bytes + 1024)).expect(413);
+  assert.match(oversized.body.error, /too large/);
   await put('chunk-owner', 2, Buffer.from('end')).expect(409);
   await put('chunk-owner', 1, chunk).expect(200);
   await put('chunk-owner', 1, chunk).expect(200);
