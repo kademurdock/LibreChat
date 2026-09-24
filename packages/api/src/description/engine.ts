@@ -364,7 +364,12 @@ type Looked = {
   failureClass?: FailureClass;
   fatal?: Error;
 };
-type Carried = { cue: Cue; clips: Map<Variant, Voiced> };
+type Carried = { id: string; cue: Cue; clips: Map<Variant, Voiced> };
+/**
+ * A placement tagged with the script id of its description ("section:index" in the section's
+ * analysis), so the script can say which descriptions were actually spoken.
+ */
+type Tagged = Placement & { id?: string };
 const emptyContinuity: Continuity = { kind: '', setting: '', people: [], speakers: [], recent: [] };
 const blank = (state: Continuity | null): Analysis => ({
   kind: state?.kind ?? '',
@@ -728,6 +733,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         }).cues
       : [];
     const cues = [...incoming.map((item) => item.cue), ...gated];
+    const ids = [
+      ...incoming.map((item) => item.id),
+      ...gated.map((_cue, index) => `${i}:${index}`),
+    ];
     const protectedSounds = analysis?.protectedSounds ?? [];
     const blocked = mergeIntervals(
       [
@@ -846,6 +855,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         carried.set(i + 1, [
           ...(carried.get(i + 1) ?? []),
           {
+            id: ids[item.index],
             cue: { ...cue, at: 0, until: Math.min(8, cue.until - seconds), pauseAt: 0 },
             clips: kept,
           },
@@ -861,7 +871,8 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     }
     const placed = final.placed.flatMap((item) => {
       const clip = clips.get(key(item.index, item.variant));
-      return clip ? [{ placement: item.placement, clip }] : [];
+      const placement: Tagged = { ...item.placement, id: ids[item.index] };
+      return clip ? [{ placement, clip }] : [];
     });
     clips.clear();
     const sourceFrames = copyVideo ? 0 : frameOf(section.end, fps) - frameOf(section.start, fps);

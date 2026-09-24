@@ -1175,7 +1175,11 @@ test('long videos: continuity, a section that failed on a passing error is tried
   );
   assert.equal(seen[3].state.people[0].label, 'the square', 'the retry keeps its continuity');
   assert.equal(first.report.failedSections.length, 0);
-  assert.equal(first.report.descriptions.length, 3);
+  assert.deepEqual(
+    first.report.descriptions.map((item) => item.id),
+    ['0:0', '1:0', '2:0'],
+    'each spoken description names its cue in the script',
+  );
   assert.deepEqual(
     kept.records.map((record) => record.index),
     [0, 2, 1],
@@ -1727,6 +1731,7 @@ test('a description left out at a section end is carried into the next section',
   assert.equal(result.report.skipped.length, 0);
   assert.equal(result.report.descriptions.length, 1);
   assert.ok(Math.abs(result.report.descriptions[0].at - 10.1) < 0.01);
+  assert.equal(result.report.descriptions[0].id, '0:0', 'it keeps its place in the script');
 });
 
 test('a still picture spanning several sections is looked at once', async () => {
