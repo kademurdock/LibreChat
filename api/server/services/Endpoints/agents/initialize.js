@@ -676,6 +676,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   // action tools skipped and resource-scoped tools running without their
   // configured resources.
   const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
+  if (subagentsCapabilityEnabled) {
+    const { libraryConsultation, libraryConsultationInstructions } = require('@librechat/api');
+    primaryConfig.subagents = libraryConsultation(primaryConfig.id, primaryConfig.subagents);
+    if (primaryConfig.subagents?.enabled) {
+      primaryConfig.instructions = (primaryConfig.instructions || '') + libraryConsultationInstructions;
+    }
+  }
   /** Track skipped ids locally so repeated failures short-circuit within
    *  the subagent loading loop. Seeded from the discovery helper's skip
    *  list so agents that already failed handoff loading don't get retried. */
@@ -714,14 +721,14 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         skippedAgentIds.add(agentId);
         return null;
       }
-      const userId = req.user?.id;
+      const userId = req.kadeOnBehalfOf?.id || req.user?.id;
       if (!userId) {
         skippedAgentIds.add(agentId);
         return null;
       }
       const hasAccess = await checkPermission({
         userId,
-        role: req.user?.role,
+        role: req.kadeOnBehalfOf ? (req.kadeOnBehalfOf.role || 'USER') : req.user?.role,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         requiredPermission: PermissionBits.VIEW,

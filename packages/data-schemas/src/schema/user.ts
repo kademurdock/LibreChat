@@ -159,6 +159,7 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       enum: ['adult', 'child'],
       default: 'adult',
     },
+    kadeLibraryAccess: { type: String, enum: ['family', 'none'] },
     /**
      * Kade-AI (Part 143, Sep 8 2026): ten digits somebody can sign in with
      * instead of an email address. Her words: "not everyone has both, one, or

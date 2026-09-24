@@ -57,3 +57,5 @@ export { createAgentTaskModel } from './models/agentTask';
 export type { IAgentTask, AgentTaskStatus } from './models/agentTask';
 export { dropSupersededTenantIndexes, dropSupersededPromptGroupIndexes } from './migrations';
 export * from './memory/policy';
+export { createLibraryRequestModel } from './models/libraryRequest';
+export type { ILibraryRequest, LibraryRequestStatus } from './models/libraryRequest';

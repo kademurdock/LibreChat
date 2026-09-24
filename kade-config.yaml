@@ -38,7 +38,8 @@ endpoints:
   # KEPT: deferred_tools (tool-loading plumbing, left on deliberately),
   #   file_search (RAG), web_search, actions (Forge's proxy actions),
   #   context (read uploaded files as plain text), tools (all kade_* tools).
-  # REMOVED July 4: artifacts, subagents, skills, chain, ocr — all unused on a
+  # Subagents restored September 24 for librarian consultation and agent collaboration.
+  # REMOVED July 4: artifacts, skills, chain, ocr — all unused on a
   #   blind-first platform (no code-artifact/subagent/OCR use). execute_code was
   #   already removed July 2 (hosted Code Interpreter closed signups).
   # RESTORE any one: add its string back below + redeploy LibreChat.
@@ -51,6 +52,7 @@ endpoints:
     recursionLimit: 14
     maxRecursionLimit: 1000
     capabilities:
+      - "subagents"
       - "deferred_tools"
       - "file_search"
       - "web_search"

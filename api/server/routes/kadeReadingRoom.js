@@ -233,6 +233,7 @@ const trackKey = (bookId, ext) => `${MEDIA_PREFIX()}/${bookId}/${Date.now().toSt
  * EMPTY library: the shared shelf and every audio item are simply absent for
  * them. Comma-separated emails or user ids in KADE_LIBRARY_HIDDEN_FROM. */
 function libraryHiddenFrom(req) {
+  if (!require('@librechat/api').familyLibraryMember(req.user)) return true;
   const list = String(process.env.KADE_LIBRARY_HIDDEN_FROM || 'kadeai.vischeck722@gmail.com').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
   const email = String((req.user && req.user.email) || '').toLowerCase();
   const id = String((req.user && req.user.id) || '').toLowerCase();
@@ -252,6 +253,10 @@ function refreshListen(item) {
 
 const router = express.Router();
 router.get('/guide', requireJwtAuth, (_req, res) => res.json(require('@librechat/api').librarianGuide));
+const { requests: libraryRequests, requestReader } = require('~/server/services/kadeLibraryRequests');
+router.use('/requests', express.json({ limit: '12kb' }), require('@librechat/api').libraryRequestRouter(
+  libraryRequests, requireJwtAuth, (req) => requestReader(req.user?.id),
+));
 
 const MAX_UPLOAD_BYTES = AUDIO_ZIP_LIMIT;
 const bookTemp = require('node:fs/promises');
@@ -293,6 +298,30 @@ async function isChild(req) {
   }
 }
 const isAdmin = (req) => req.user && req.user.role === 'ADMIN';
+const canPublish = (req) => isAdmin(req) || (require('@librechat/api').familyLibraryMember(req.user) && require('@librechat/api').trustedLibraryContributor(String(req.user?.id)));
+router.use('/membership', express.json({ limit: '2kb' }), require('@librechat/api').libraryMembershipRouter({
+  auth: requireJwtAuth,
+  admin: (req, res, next) => isAdmin(req) ? next() : res.status(403).json({ error: 'Only the library owner manages family access.' }),
+  users: async () => {
+    const { User } = require('~/db/models');
+    const users = await User.find({}, '_id name username role kadeLibraryAccess').sort({ name: 1 }).lean();
+    return users.map((user) => ({ id: String(user._id), name: user.name || user.username || 'Account', member: require('@librechat/api').familyLibraryMember(user), admin: user.role === 'ADMIN' }));
+  },
+  update: async (id, access) => {
+    const { User } = require('~/db/models');
+    const result = await User.updateOne({ _id: id, role: { $ne: 'ADMIN' } }, { $set: { kadeLibraryAccess: access } });
+    return result.matchedCount > 0;
+  },
+  approveUploads: async (id, apply) => {
+    const ready = await KadeBook.find({ owner: id, state: 'ready' }).select('_id shared').lean();
+    const pending = { user: id, type: 'submission', status: 'pending', book: { $in: ready.map((book) => book._id) } };
+    const counts = { books: ready.filter((book) => !book.shared).length, submissions: await KadeLibrarySubmission.countDocuments(pending) };
+    if (!apply) return counts;
+    await KadeBook.updateMany({ owner: id, state: 'ready', shared: { $ne: true } }, { $set: { shared: true, sharedAt: new Date() } });
+    await KadeLibrarySubmission.updateMany(pending, { $set: { status: 'approved', decidedAt: new Date(), decisionNote: 'Approved by the library owner’s trusted contributor rule.' } });
+    return counts;
+  },
+}));
 
 /** Can this reader open this book? Owner, admin, or it is in the library and
  * not hidden from a child. Returns the book or null (404 either way). */
@@ -385,6 +414,7 @@ router.get('/shelf', requireJwtAuth, async (req, res) => {
     ]);
     res.json({
       librarian: isAdmin(req),
+      familyLibrary: !hidden,
       describedVideo: !child && (isAdmin(req) || process.env.KADE_DESCRIPTION_PUBLIC !== '0'),
       me: String(userId),
       archiveOwned: await KadeBook.countDocuments({ owner: userId, path: { $ne: '' } }),
@@ -459,7 +489,7 @@ async function importUploadedBook(req, res) {
             kind: 'audio', category: 'audiobook', path: 'Audio/Audiobooks',
             title: daisy.title || f.originalname.replace(/\.zip$/i, ''), author: daisy.author,
             format: daisy.format, originalName: f.originalname, fileBytes: f.size,
-            shared: isAdmin(req) && (req.body || {}).private !== '1',
+            shared: canPublish(req) && (req.body || {}).private !== '1',
             grownUpsOnly: (req.body || {}).grownUpsOnly === '1', state: 'ready',
             tracks: daisy.clips.map((clip) => ({ ...uploaded.get(clip.path), title: clip.title,
               originalName: clip.path, clipBegin: clip.clipBegin, clipEnd: clip.clipEnd,
@@ -503,7 +533,7 @@ async function importUploadedBook(req, res) {
       ...(req.importBookId ? { _id: new mongoose.Types.ObjectId(req.importBookId) } : {}),
       owner: req.user.id,
       ownerName,
-      shared: isAdmin(req) && (req.body || {}).private !== '1',
+      shared: canPublish(req) && (req.body || {}).private !== '1',
       title: parsed.meta.title || String(f.originalname || 'Untitled').replace(/\.[^.]+$/, ''),
       author: parsed.meta.author || '',
       publisher: parsed.meta.sourcePublisher || (parsed.meta.publisher && !/bookshare/i.test(parsed.meta.publisher) ? parsed.meta.publisher : ''),
@@ -618,7 +648,8 @@ async function chunkAt(book, s, c, skipped) {
   const counts = skipped ? (book.skipped || []).map((x) => x.chunkCount) : (book.sections || []).map((x) => x.chunkCount);
   const next = c + 1 < sec.chunks.length ? { s, c: c + 1 } : s + 1 < counts.length ? { s: s + 1, c: 0 } : null;
   const prev = c > 0 ? { s, c: c - 1 } : s > 0 ? { s: s - 1, c: Math.max(0, (counts[s - 1] || 1) - 1) } : null;
-  return { text: sec.chunks[c], title: meta ? meta.title : '', s, c, count: sec.chunks.length, next, prev };
+  const words = meta?.kind === 'jacket' ? require('@librechat/api').readingJacket(sec.chunks[c]) : sec.chunks[c];
+  return { text: words, title: meta ? meta.title : '', s, c, count: sec.chunks.length, next, prev };
 }
 
 router.get('/book/:id/text/:s/:c', requireJwtAuth, async (req, res) => {
@@ -630,7 +661,7 @@ router.get('/book/:id/text/:s/:c', requireJwtAuth, async (req, res) => {
     const c = clampInt(req.params.c, 0, 100000, 0);
     const chunk = await chunkAt(book, s, c, skipped);
     if (!chunk) return res.status(404).json({ error: 'Past the end of the book.' });
-    res.json(chunk);
+    res.json({ ...chunk, text: require('@librechat/api').readingText(chunk.text) });
   } catch (e) {
     logger.error('[reading-room/text] error:', e);
     res.status(500).json({ error: 'Could not read that part.' });
@@ -782,7 +813,7 @@ router.post('/media/new', requireJwtAuth, express.json({ limit: '8kb' }), async 
     const item = await KadeBook.create({
       kind: 'audio',
       category,
-      shared: isAdmin(req) && b.private !== true,
+      shared: canPublish(req) && b.private !== true,
       owner: req.user.id,
       ownerName,
       title,
@@ -995,7 +1026,7 @@ router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' })
     const b = req.body || {};
     const files = Array.isArray(b.files) ? b.files.slice(0, 50) : [];
     if (!files.length) return res.status(400).json({ error: 'No files listed.' });
-    const shared = b.private === true ? false : isAdmin(req); // anyone else's push lands on their own shelf until the librarian approves
+    const shared = b.private === true ? false : canPublish(req);
     const ownerName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
     const out = [];
     for (const f of files) {
@@ -1381,9 +1412,14 @@ router.post('/submissions', requireJwtAuth, express.json({ limit: '8kb' }), asyn
     const open = await KadeLibrarySubmission.countDocuments({ user: req.user.id, status: 'pending' });
     if (open >= 50) return res.status(400).json({ error: 'You have fifty submissions waiting already — give the librarian a minute.' });
     const userName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
-    const s = await KadeLibrarySubmission.create({ user: req.user.id, userName, url, title, note, book });
+    const approved = canPublish(req);
+    if (approved && book && !(await KadeBook.exists({ _id: book, owner: req.user.id, state: 'ready' }))) return res.status(409).json({ error: 'Finish uploading this item before submitting it to the library.' });
+    const s = await KadeLibrarySubmission.create({ user: req.user.id, userName, url, title, note, book,
+      ...(approved ? { status: 'approved', decidedAt: new Date(), decisionNote: 'Automatically approved by the library owner’s trusted contributor rule.' } : {}),
+    });
+    if (approved && book) await KadeBook.updateOne({ _id: book, owner: req.user.id, state: 'ready' }, { $set: { shared: true, sharedAt: new Date() } });
     logger.info(`[library/submissions] ${userName} submitted ${url || 'file ' + book} "${title}"`);
-    notifyLibrarians(`${userName} submitted something for the family library${title ? `: "${title}"` : ''}${url ? ` (${url})` : ' (a file)'}. Open the Library page to approve or decline it.`);
+    if (!approved) notifyLibrarians(`${userName} submitted something for the family library${title ? `: "${title}"` : ''}${url ? ` (${url})` : ' (a file)'}. Open the Library page to approve or decline it.`);
     res.json({ ok: true, submission: subOut(s.toObject()) });
   } catch (e) {
     logger.error('[library/submissions] error:', e);
@@ -1487,7 +1523,7 @@ router.post('/book/:id/edit', requireJwtAuth, express.json({ limit: '16kb' }), a
     if (typeof b.category === 'string' && CATEGORIES.includes(b.category) && !(b.category === 'book' && item.kind !== 'text')) { item.category = b.category; changed.push('category'); }
     if (typeof b.path === 'string') { item.path = cleanPath(b.path); changed.push('folder'); }
     if (typeof b.path !== 'string' && typeof b.title === 'string') Object.assign(item, refineMediaFiling(item) || {});
-    if (typeof b.shared === 'boolean' && (isAdmin(req) || b.shared === false)) { if (b.shared && item.state !== 'ready') return res.status(400).json({ error: 'Add a recording before sharing it.' }); item.shared = b.shared; if (b.shared) item.sharedAt = new Date(); changed.push(b.shared ? 'shared' : 'private'); }
+    if (typeof b.shared === 'boolean' && (canPublish(req) || b.shared === false)) { if (b.shared && item.state !== 'ready') return res.status(400).json({ error: 'Add a recording before sharing it.' }); item.shared = b.shared; if (b.shared) item.sharedAt = new Date(); changed.push(b.shared ? 'shared' : 'private'); }
     if (typeof b.grownUpsOnly === 'boolean') { item.grownUpsOnly = b.grownUpsOnly; changed.push('grown-ups'); }
     if (Array.isArray(b.tags)) { item.tags = b.tags.slice(0, 30).map((t) => String(t).slice(0, 60)); changed.push('tags'); }
     if (Array.isArray(b.trackTitles) && item.tracks) b.trackTitles.forEach((t, i) => { if (item.tracks[i] && typeof t === 'string' && t.trim()) item.tracks[i].title = t.trim().slice(0, 200); });
@@ -1532,7 +1568,7 @@ router.post('/archive/batch', requireJwtAuth, express.json({ limit: '64kb' }), a
     const action = String(b.action || '');
     let r;
     if (action === 'move') r = await KadeBook.updateMany(q, { $set: { path: cleanPath(b.to) } });
-    else if (action === 'share') { if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian puts things in the public library — use "Submit this for the library".' }); r = await KadeBook.updateMany({ ...q, state: 'ready' }, { $set: { shared: true, sharedAt: new Date() } }); }
+    else if (action === 'share') { if (!canPublish(req)) return res.status(403).json({ error: 'Use "Submit this for the library" for approval.' }); r = await KadeBook.updateMany({ ...q, state: 'ready' }, { $set: { shared: true, sharedAt: new Date() } }); }
     else if (action === 'unshare') r = await KadeBook.updateMany(q, { $set: { shared: false } });
     else if (action === 'grownups') r = await KadeBook.updateMany(q, { $set: { grownUpsOnly: b.value !== false } });
     else if (action === 'category' && CATEGORIES.includes(String(b.value))) r = await KadeBook.updateMany({ ...q, kind: { $ne: 'text' } }, { $set: { category: String(b.value) } });
@@ -2058,7 +2094,7 @@ router.post('/book/:id/share', requireJwtAuth, express.json({ limit: '2kb' }), a
     /* Her rule: the private shelf needs nobody's approval; the PUBLIC library
      * needs the librarian's. Anyone but the librarian asking to share is
      * making a submission. */
-    if (b.shared === true && !isAdmin(req) && !book.shared) {
+    if (b.shared === true && !canPublish(req) && !book.shared) {
       const userName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
       const open = await KadeLibrarySubmission.findOne({ book: book._id, user: req.user.id, status: 'pending', type: 'submission' }).lean();
       if (!open) {

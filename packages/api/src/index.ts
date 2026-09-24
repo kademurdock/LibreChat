@@ -173,8 +173,14 @@ export { songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSo
 export { tubeVaultHints, validTubeVaultItems } from './library/tubevault';
 
 export { descriptionBatchRouter } from './library/descriptions';
-export { readLibraryCatalog, catalogProjection } from './library/catalog';
+export { readLibraryCatalog, catalogProjection, libraryAccess } from './library/catalog';
+export { libraryRequestService, libraryRequestRouter, RequestError as LibraryRequestError } from './library/requests';
+export { libraryRequestTransport } from './library/requestTransport';
+export { libraryRequestsDescription, libraryRequestsSchema } from './tools/registry/requests';
 export { librarianGuide } from './library/guide';
+export { libraryConsultation, libraryConsultationInstructions } from './library/consultation';
+export { readingText, readingJacket, printDisabilityNotice } from './library/text';
+export { familyLibraryMember, trustedLibraryContributor, libraryMembershipRouter } from './library/access';
 export { libraryToolDescription, libraryToolSchema } from './tools/registry/library';
 
 export { createDescriptionRouter } from './description/router';

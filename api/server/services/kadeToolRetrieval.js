@@ -65,6 +65,8 @@ const DEFAULT_CORE = [
 
 /** Hand-written aliases: the obvious asks, matched before any embedding. */
 const ALIASES = {
+  kade_library: [/\b(library|librarian|witherspoon|collection|catalog|books?|audiobooks?|cassettes?|commercials?)\b/i],
+  kade_library_requests: [/\b(library|librarian|witherspoon|request|requested|requests|fulfilled|find that book|find that movie)\b/i],
   web_search: [
     /* Part 132.1 — her "Tell me about the Clancy trial. Apparently, it's all
      * over socials" turn attached NOTHING (no question mark, no alias, embed

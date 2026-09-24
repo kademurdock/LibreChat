@@ -4,6 +4,7 @@ const {
   catalogProjection,
   libraryToolDescription,
   libraryToolSchema,
+  familyLibraryMember,
 } = require('@librechat/api');
 const { KadeBook, KadeBookText } = require('~/models/kadeBook');
 const { getUserById } = require('~/models');
@@ -21,7 +22,7 @@ class KadeLibrary extends Tool {
   async _call(input) {
     try {
       if (!this.userId) return JSON.stringify({ error: 'Sign in to search the library.' });
-      const user = await getUserById(this.userId, 'email kadeAccountType');
+      const user = await getUserById(this.userId, 'email role kadeAccountType kadeLibraryAccess');
       if (!user) return JSON.stringify({ error: 'Sign in to search the library.' });
       const hiddenFrom = String(
         process.env.KADE_LIBRARY_HIDDEN_FROM || 'kadeai.vischeck722@gmail.com',
@@ -33,6 +34,7 @@ class KadeLibrary extends Tool {
         id: String(this.userId),
         child: user.kadeAccountType !== 'adult',
         hidden:
+          !familyLibraryMember(user) ||
           hiddenFrom.includes(String(this.userId).toLowerCase()) ||
           hiddenFrom.includes(String(user.email || '').toLowerCase()),
       };
@@ -61,7 +63,7 @@ class KadeLibrary extends Tool {
       logger.info(
         `[kade_library] action=${input?.action} items=${result.items?.length ?? '-'} approximate=${result.approximate === true}`,
       );
-      return JSON.stringify(result);
+      return JSON.stringify({ ...result, access: reader.hidden ? 'Your own uploads only. The shared collection requires approved family library membership. Public access to this librarian does not grant access to family media.' : 'Family library membership active.' });
     } catch (error) {
       logger.warn(`[kade_library] lookup failed: ${error.message}`);
       return JSON.stringify({

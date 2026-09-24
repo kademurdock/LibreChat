@@ -65,12 +65,32 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 <body>
   <p><a class="back" href="/home" aria-label="Back to Home">&larr; Home</a></p>
   <h1 id="pageTitle">The Library</h1>
+  <p id="familyLibraryNotice">Shared shelves are for approved family library members. A public librarian conversation does not grant access to the collection.</p>
   <p id="live" class="status" role="status" aria-live="polite"></p>
   <section aria-labelledby="librarianHeading" style="padding:1rem;border:1px solid #8a919c;border-radius:14px;margin-bottom:1rem">
     <h2 id="librarianHeading">Meet Mrs. Witherspoon</h2>
     <p>Looking for a half-remembered book, commercial, radio show or tape? Tell Olivia what you remember, or talk with her about something in the collection.</p>
     <a class="act primary" id="talkLibrarian" href="${require('@librechat/api').librarianGuide.chatUrl}">Talk to the Librarian</a>
-    <p class="hint">Opens a conversation with Mrs. Witherspoon. Speak or type using the website's usual voice and chat controls.</p>
+    <p class="hint">Speak or type using the usual voice and chat controls. You can also ask her to save a library request from whatever you remember.</p>
+    <p><a href="#libraryRequests">Library requests and updates</a></p>
+  </section>
+
+  <section id="libraryRequests" aria-labelledby="requestsHeading" hidden>
+    <h2 id="requestsHeading">Library requests</h2>
+    <p>Request any kind of media, even if you only remember a few details. The library owner can review your request and let you know when it is available. Requests are visible to you and the library owner.</p>
+    <p id="requestUnread"></p><p id="requestStatus" role="status"></p>
+    <details><summary>Make a request here</summary>
+      <form id="requestForm">
+        <label class="field" for="requestTitle">Title or a short description</label><input id="requestTitle" type="text" maxlength="240" required>
+        <label class="field" for="requestMedia">Kind of media or preferred format</label><input id="requestMedia" type="text" maxlength="60" placeholder="Book, audiobook, radio, video, or anything else">
+        <label class="field" for="requestClues">What do you remember?</label><textarea id="requestClues" rows="4" maxlength="4000"></textarea>
+        <button id="requestSubmit" class="act" type="submit">Save library request</button>
+      </form>
+    </details>
+    <label for="requestScope">Show requests</label><select id="requestScope"><option value="mine">My requests</option><option id="requestAllOption" value="all" hidden>Everyone's requests</option></select>
+    <button id="requestRefresh" class="act quiet" type="button">Refresh requests</button>
+    <ul class="plain" id="requestList"></ul><button id="requestMore" class="act quiet" type="button" hidden>More requests</button>
+    <section id="requestDetail" aria-label="Request details" hidden></section>
   </section>
 
   <section id="shelf">
@@ -86,8 +106,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     <ul class="plain" id="searchList" aria-labelledby="h-search"></ul>
     <button class="act quiet" id="searchMore" type="button" hidden>More search results</button>
 
-    <h2 id="h-archive">Browse the library</h2><label for="libraryScope">Show</label><select id="libraryScope"><option value="public">Public library</option><option value="mine">Your uploads</option></select>
-    <p class="hint">Books, Audio, and Videos. Your uploads stay yours to manage; only shared items appear in the public library.</p>
+    <h2 id="h-archive">Browse the library</h2><label for="libraryScope">Show</label><select id="libraryScope"><option value="public">Family library</option><option value="mine">Your uploads</option></select>
+    <p class="hint">Books, Audio, and Videos. Your uploads stay yours to manage; only shared items appear in the family library.</p>
     <section aria-labelledby="h-local" style="padding:1rem;border:1px solid var(--border);border-radius:14px;background:linear-gradient(120deg,rgba(41,130,112,.16),rgba(70,100,160,.1))">
       <h3 id="h-local">Springfield, the Ozarks &amp; Missouri</h3>
       <p class="hint">Local television, hometown businesses and Missouri memories. Start here, or explore favorite ads and shows from everywhere.</p>
@@ -203,6 +223,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <button class="act quiet" id="reportBtn" type="button">Suggest a different shelf</button>
     </div>
     <div class="now" id="nowText" aria-label="Now reading"></div>
+    <button class="act" id="readingViewBtn" type="button" hidden>Open reading view</button>
+    <p class="hint" id="readingViewHint" hidden>Adjust text size, colors, spacing and line width. Read at your own pace while narration continues, or follow the current passages.</p>
     <details id="descWrap" hidden><summary id="descSummary">Video description</summary>
       <p class="hint" id="descHint">A described-video track written by the library's eyes: what is on screen, scene by scene. One run serves everyone.</p>
       <div class="row">
@@ -287,6 +309,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
   </section>
 
+<script src="/assets/library/requests.js?v=20260924"></script>
+<script src="/assets/library/reader.js?v=20260924"></script>
 <script>
 (function(){
   var token = null;
@@ -377,7 +401,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     try {
       shelfData = await api('/shelf');
       renderShelf(shelfData.mine, shelfData.borrowed);
-      me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo;
+        me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo;
+        if (shelfData.familyLibrary === false) $('familyLibraryNotice').textContent = 'Your uploads are available here. The family collection requires library membership; ask the library owner for access.';
       var sel = $('catFilter'); var cur = sel.value; sel.innerHTML = '<option value="">Everything</option>';
       var present = {}; (shelfData.library || []).forEach(function(b){ present[b.kind !== 'text' ? b.category : 'book'] = 1; });
       Object.keys(present).forEach(function(c){ var o = document.createElement('option'); o.value = c; o.textContent = catName(c); sel.appendChild(o); });
@@ -721,6 +746,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   var isVideoTrack = function(){ return book && book.tracks && book.tracks[pos.s] && /^video\\//.test(book.tracks[pos.s].mime || ''); };
   var queue = []; // collection playback: item ids still to play
   var autoplayNext = false;
+  var libraryReader = window.createLibraryReader({ api: api, book: function(){ return book; }, position: function(){ return pos; }, isPlaying: function(){ return playing; }, play: play, pause: pause });
+  $('readingViewBtn').onclick = function(){ libraryReader.open(); };
 
   function chapterTitle(s){ var ch = isAudio() ? book.tracks[s] : book.chapters[s]; return ch ? ch.title : ''; }
   function announcePosition(prefix){
@@ -752,7 +779,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function nextPos(p){ var ch = book.chapters[p.s]; if (!ch) return null; if (p.c + 1 < ch.chunks) return { s: p.s, c: p.c + 1 }; if (p.s + 1 < book.chapters.length) return { s: p.s + 1, c: 0 }; return null; }
   function prevPos(p){ if (p.c > 0) return { s: p.s, c: p.c - 1 }; if (p.s > 0) { var ch = book.chapters[p.s - 1]; return { s: p.s - 1, c: Math.max(0, ch.chunks - 1) }; } return null; }
   async function showText(p){
-    try { var j = await api('/book/' + book.id + '/text/' + p.s + '/' + p.c); if (p.s === pos.s && p.c === pos.c) $('nowText').textContent = j.text; } catch(e) {}
+    var requestedBook = book.id;
+    try { var j = await api('/book/' + requestedBook + '/text/' + p.s + '/' + p.c); if (requestedBook === book.id && p.s === pos.s && p.c === pos.c) { $('nowText').textContent = j.text; libraryReader.narrationChanged(p); } } catch(e) {}
   }
   var pipe = null; // { nextStart, sources[], markers[] }
   function parseWavHeader(u8){
@@ -873,6 +901,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   }
   function pause(){
     playing = false; $('playBtn').textContent = 'Play';
+    libraryReader.playback();
     if (descAudio) { try { descAudio.pause(); } catch(e) {} descAudio = null; descPausedFor = null; }
     if (isAudio()) { fileAudio.pause(); saveProgress(true); updateSession(); return; }
     stopScheduled(); saveProgress(true); updateSession();
@@ -982,9 +1011,10 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   followStyle();
   $('speedSel').onchange = function(){ speed = parseFloat(this.value) || 1; if (isAudio()) fileAudio.playbackRate = speed; else { cache = {}; var was = playing; if (was) pause(); if (was) play(); } saveProgress(true); };
   document.addEventListener('keydown', function(ev){
+    if (libraryReader.isOpen()) return;
     if (!book || $('player').classList.contains('hidden')) return;
     var tag = (ev.target && ev.target.tagName) || '';
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY') return;
     if (ev.code === 'Space') { ev.preventDefault(); playing ? pause() : play(); }
     else if (ev.key === 'ArrowLeft') { ev.preventDefault(); ev.shiftKey ? prevSection() : back(); }
     else if (ev.key === 'ArrowRight') { ev.preventDefault(); ev.shiftKey ? nextSection() : forward(); }
@@ -1249,6 +1279,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (book.ownerName && !book.mine) bits.push('donated by ' + book.ownerName);
     $('bookMeta').textContent = bits.join(' · ');
     $('jacketLine').textContent = book.kind !== 'text' ? (book.description || '') : '';
+    $('readingViewBtn').hidden = isAudio(); $('readingViewHint').hidden = isAudio();
     var sel = $('chapterSel'); sel.innerHTML = '';
     var list = isAudio() ? book.tracks : book.chapters;
     list.forEach(function(ch, i){ var o = document.createElement('option'); o.value = i; o.textContent = (i + 1) + '. ' + ch.title + (isAudio() && ch.seconds ? ' (' + clock(ch.seconds) + ')' : ''); sel.appendChild(o); });
@@ -1269,6 +1300,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   (async function(){
     token = await getToken();
     if (!token) { say('Please sign in first.'); location.href = '/login?redirect=' + encodeURIComponent(location.pathname + location.search); return; }
+    window.setupLibraryRequests(api);
     var qs = new URLSearchParams(location.search);
     var id = qs.get('book'); var coll = qs.get('collection');
     if (qs.get('q')) queue = qs.get('q').split(',').filter(Boolean);

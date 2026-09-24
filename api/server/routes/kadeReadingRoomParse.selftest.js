@@ -126,9 +126,19 @@ test('the jacket reads like NLS: title, author, publisher and year, synopsis, le
   const jacket = buildJacket(meta, [{}, {}, {}], 300000);
   assert.ok(jacket.startsWith('Thug Notes. By Sparky Sweets. Published by Vintage, 2015. A guide to literature. You\'ll laugh.'), jacket);
   assert.ok(jacket.includes('3 sections, about 5 hours of listening.'), jacket);
-  assert.ok(jacket.includes('From Bookshare'));
+  assert.ok(jacket.includes('This book was produced for people with bona fide print disabilities.'));
+  assert.ok(!jacket.includes('Bookshare'));
   assert.equal(listenEstimate(45 * 1000), '45 minutes');
   assert.equal(listenEstimate(61 * 1000), '1 hour and 1 minute');
+});
+
+test('accessibility notices from other sources stay out of the narrated book', async () => {
+  const markup = '<html><body><h1>Accessibility notice</h1><p>This book is provided exclusively for people with bona fide print disabilities. Authorized readers only.</p><h1>Chapter One</h1><p>' + 'The lighthouse shone over the water. '.repeat(40) + '</p></body></html>';
+  const parsed = await parseBook(Buffer.from(markup), 'book.html');
+  assert.ok(parsed.skipped.some(section => section.reason === 'accessibility-notice'));
+  assert.ok(parsed.jacket.includes('This book was produced for people with bona fide print disabilities.'));
+  assert.ok(!parsed.sections.slice(1).flatMap(section => section.chunks).join(' ').includes('Authorized readers'));
+  assert.ok(parsed.sections.slice(1).flatMap(section => section.chunks).join(' ').includes('lighthouse'));
 });
 
 test('a book with no headings still gets navigable parts, and number-only headings fold into the next', async () => {

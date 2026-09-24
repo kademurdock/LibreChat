@@ -3,6 +3,7 @@ import { geminiToolkit } from '~/tools/toolkits/gemini';
 import { oaiToolkit } from '~/tools/toolkits/oai';
 import { falStudioSchema, falNarrationInstructions } from './fal';
 import { libraryToolDescription, libraryToolSchema } from './library';
+import { libraryRequestsDescription, libraryRequestsSchema } from './requests';
 export { falStudioSchema, falNarrationInstructions } from './fal';
 
 /** Extended JSON Schema type that includes standard validation keywords */
@@ -1160,6 +1161,12 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     name: 'kade_library',
     description: libraryToolDescription,
     schema: libraryToolSchema,
+    toolType: 'builtin',
+  },
+  kade_library_requests: {
+    name: 'kade_library_requests',
+    description: libraryRequestsDescription,
+    schema: libraryRequestsSchema,
     toolType: 'builtin',
   },
   kade_location: {

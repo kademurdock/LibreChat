@@ -123,6 +123,14 @@
     "authConfig": []
   },
   {
+    "name": "Library Requests",
+    "pluginKey": "kade_library_requests",
+    "description": "Save requests for books, recordings or any media, add remembered clues, and check for updates and fulfilled Library links. Optional background research uses the existing research service.",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Library Catalog",
     "pluginKey": "kade_library",
     "description": "Find books, recordings, commercials and videos in the collection from titles, keywords or remembered details. Inspect matching items and open their Library pages.",

@@ -44,7 +44,7 @@ const HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hd']);
 /** Bump when the parser learns something that changes sections/chunks; books
  * stamped with an older number are re-read from their stored original the
  * next time someone opens them (kadeReadingRoom.js reparseIfStale). */
-const PARSER_VERSION = 3;
+const PARSER_VERSION = 4;
 /* Sep 12 2026, her Narnia omnibus: Bookshare's DAISY carried the whole
  * seven-book collection as THREE <level2>s with an NCX of ten entries, and
  * every real chapter lived in a paragraph CLASS instead ("CN" Chapter One,
@@ -287,6 +287,7 @@ function classify(sections) {
     const chars = text.length;
     let reason = null;
     if (s.notice || (NOTICE_RE.test(text) && /bookshare/i.test(text))) reason = 'bookshare-notice';
+    else if (!bodyStarted && i < 12 && /notice|copyright|accessib|disabilit|terms|license/i.test(s.title) && /(?:bona fide |qualifying |eligible )?print disabilit/i.test(text) && /produced|provided|distributed|solely|exclusively|eligible|authorized/i.test(text)) reason = 'accessibility-notice';
     else if (s.kind === 'toc') reason = 'contents';
     else if (chars < 12 && !s.title) reason = 'blank';
     else if (chars < 12 && s.title && /^(cover|title page|copyright page|half title|frontispiece)$/i.test(s.title)) reason = 'blank';
@@ -327,7 +328,7 @@ function buildJacket(meta, sections, totalChars) {
   if (meta.synopsis) lines.push(squash(meta.synopsis).replace(/([a-z])\.([A-Z])/g, '$1. $2'));
   const chapters = sections.length;
   lines.push(`${chapters} ${chapters === 1 ? 'section' : 'sections'}, about ${listenEstimate(totalChars)} of listening.`);
-  if (meta.source === 'bookshare') lines.push('From Bookshare, for people with print disabilities. Please do not pass this book on.');
+  if (meta.source === 'bookshare' || meta.printDisabilityNotice) lines.push('This book was produced for people with bona fide print disabilities.');
   return lines.join(' ');
 }
 
@@ -619,7 +620,7 @@ function finish({ meta, sections }) {
     return { title: title || (chunks[0] ? chunks[0].slice(0, 60) : 'Untitled section'), chunks, chars: chunks.reduce((n, c) => n + c.length, 0), kind: s.kind };
   }).filter((s) => s.chunks.length);
   const totalChars = outSections.reduce((n, s) => n + s.chars, 0);
-  const jacket = buildJacket(meta, outSections, totalChars);
+  const jacket = buildJacket({ ...meta, printDisabilityNotice: skipped.some((section) => section.reason === 'bookshare-notice' || section.reason === 'accessibility-notice') }, outSections, totalChars);
   const jacketChunks = chunkParagraphs(jacket.split(/(?<=[.!?])\s+(?=[A-Z0-9])/));
   const skippedOut = skipped.map((s) => ({ title: s.title || (s.reason === 'bookshare-notice' ? 'Bookshare notice' : 'Untitled'), reason: s.reason, chunks: chunkParagraphs(s.paras), chars: s.paras.join(' ').length }));
   return {
