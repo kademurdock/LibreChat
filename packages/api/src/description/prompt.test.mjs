@@ -3,8 +3,20 @@ import test, { after } from 'node:test';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { gateCues, near, notedNames, readings, speakerAt, spokenReveals } from './ledger.ts';
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import ffmpegPath from 'ffmpeg-static';
+import ffprobePath from 'ffprobe-static';
+import {
+  gateCues,
+  near,
+  notedNames,
+  readings,
+  readsName,
+  speakerAt,
+  spokenReveals,
+} from './ledger.ts';
+import { describeVideo } from './engine.ts';
+import { command } from './media.ts';
 import {
   analyze,
   attempt,
@@ -18,7 +30,7 @@ import {
   synthesize,
   transcribe,
 } from './providers.ts';
-import { Halt } from './types.ts';
+import { Halt, settingsSchema } from './types.ts';
 import {
   analysisPrompt,
   lintDescription,
@@ -42,6 +54,9 @@ import {
   youtubeURL,
 } from './youtube.ts';
 
+process.env.FFMPEG_PATH = ffmpegPath;
+process.env.FFPROBE_PATH = ffprobePath.path;
+process.env.KADE_DESCRIPTION_RETRY_SECONDS = '0';
 const axios = createRequire(import.meta.url)('axios');
 const scratch = await mkdtemp(join(tmpdir(), 'described-prompt-test-'));
 after(async () => {
@@ -260,6 +275,219 @@ test('ledger: a speaker is printed by name only once the name is revealed, else 
   assert.equal(speakerAt(continuity, 2, 20), 'Speaker 3');
 });
 
+test('ledger: a name caption after a title such as Sgt. is read word for word and reveals the name', () => {
+  const officer = { id: 'P1', label: 'the officer', name: 'Mike Jones', look: '' };
+  const gate = (cues) =>
+    gateCues({ cues, people: [officer], state: null, words: [], notes: '', sectionStart: 0 });
+  const read = gate([
+    cue(1, 'A caption reads: Sgt. Mike Jones, Springfield Police.'),
+    cue(6, 'Mike Jones points at the map.'),
+  ]);
+  assert.equal(read.cues[0].text, 'A caption reads: Sgt. Mike Jones, Springfield Police.');
+  assert.deepEqual(read.reveals, { 'mike jones': 1 });
+  assert.equal(read.cues[1].text, 'The officer, Mike Jones, points at the map.');
+  const shouted = gate([cue(1, 'Text reads: SGT. MIKE JONES, SPRINGFIELD POLICE.')]);
+  assert.equal(shouted.cues[0].text, 'Text reads: SGT. MIKE JONES, SPRINGFIELD POLICE.');
+  assert.deepEqual(shouted.reveals, { 'mike jones': 1 });
+  assert.equal(gate([cue(1, 'Sgt. Mike Jones waves.')]).cues[0].text, 'The officer waves.');
+  const initials = 'Text reads: J. R. Ewing, Ewing Oil. A man waves.';
+  assert.deepEqual(
+    readings(initials).map(([from, to]) => initials.slice(from, to)),
+    ['J. R. Ewing, Ewing Oil.'],
+  );
+});
+
+test('ledger: a short name whose letters appear inside the label is still hidden and joined', () => {
+  const customer = { id: 'P1', label: 'the customer', name: 'Tom', look: '' };
+  const gate = (people, cues, said = []) =>
+    gateCues({ cues, people, state: null, words: said, notes: '', sectionStart: 0 });
+  const early = gate(
+    [customer],
+    [cue(1, 'Tom pays at the counter.'), cue(3, 'The customer, Tom, pays.')],
+  );
+  assert.equal(early.cues[0].text, 'The customer pays at the counter.');
+  assert.equal(early.cues[1].text, 'The customer pays.');
+  const later = gate([customer], [cue(10, 'Tom pays at the counter.')], words('Thanks, Tom!', 5));
+  assert.equal(later.cues[0].text, 'The customer, Tom, pays at the counter.');
+  const bearded = { id: 'P2', label: 'the bearded man', name: 'Ed', look: '' };
+  assert.equal(
+    gate([bearded], [cue(1, 'Ed shakes hands with the girl.')]).cues[0].text,
+    'The bearded man shakes hands with the girl.',
+  );
+});
+
+test('ledger: only a lead-in to words on screen counts as reading them, not "reads" as an ordinary verb', () => {
+  assert.equal(readsName('A girl reads a comic book while Frank washes the car.', 'Frank'), false);
+  assert.equal(readsName('A man in reading glasses nods while Frank laughs.', 'Frank'), false);
+  assert.equal(readsName('The store window displays toys, and Frank walks past.', 'Frank'), false);
+  assert.equal(readsName('The mailbox reads Frank Miller.', 'Frank Miller'), true);
+  assert.equal(readsName("A sign reads: Frank's Hardware.", 'Frank'), true);
+  assert.equal(readsName('A banner reading "Welcome Frank" hangs over the door.', 'Frank'), true);
+  const farmer = { id: 'P1', label: 'the man in the flannel shirt', name: 'Frank Miller', look: '' };
+  const { cues, reveals } = gateCues({
+    cues: [
+      cue(1, 'A girl reads a comic book on the porch while Frank Miller washes the truck.'),
+      cue(4, 'The mailbox reads Frank Miller.'),
+    ],
+    people: [farmer],
+    state: null,
+    words: [],
+    notes: '',
+    sectionStart: 0,
+  });
+  assert.equal(
+    cues[0].text,
+    'A girl reads a comic book on the porch while the man in the flannel shirt washes the truck.',
+  );
+  assert.equal(cues[1].text, 'The mailbox reads Frank Miller.');
+  assert.deepEqual(reveals, { 'frank miller': 4 });
+  assert.equal(
+    lintDescription('A girl reads a comic book and grins evilly.').text,
+    'A girl reads a comic book and grins.',
+  );
+});
+
+test('ledger: ordinary words and dates in her notes do not reveal a name', () => {
+  assert.deepEqual(notedNames('We will open presents. Read the price cards.', ['Will', 'Bob Price']), []);
+  assert.deepEqual(notedNames('Taped in May 1988 off KY3', ['May']), []);
+  assert.deepEqual(notedNames('Christmas tape with holly and lights.', ['Holly']), []);
+  assert.deepEqual(notedNames('Grandma Rose and Uncle Will', ['Will', 'Rose']), ['Will', 'Rose']);
+  assert.deepEqual(notedNames('uncle bob is the man in red', ['Uncle Bob']), ['Uncle Bob']);
+  assert.deepEqual(notedNames('bob is my uncle', ['Bob']), ['Bob'], 'notes typed all in lowercase still count');
+});
+
+test('ledger: a capital at the start of a sentence or a near spelling is not taken for a name', () => {
+  assert.deepEqual(spokenReveals(words('Will you marry me? I will.'), ['Will']), {});
+  assert.deepEqual(spokenReveals(words('Turned out he was right.'), ['Will Turner']), {});
+  assert.deepEqual(spokenReveals(words('May I help you? You may.'), ['May']), {});
+  assert.deepEqual(spokenReveals(words('Will! Come here.'), ['Will']), { will: 0 });
+  assert.deepEqual(spokenReveals(words('Harry is late.'), ['Harry']), { harry: 0 });
+  assert.deepEqual(spokenReveals(words('Harry, come here.'), ['Barry']), {});
+  assert.equal(near('katherine', 'catherine'), true);
+  assert.equal(near('jenny', 'penny'), false);
+});
+
+test('ledger: brand names, lists and possessives are not taken for a person', () => {
+  const gate = (people, cues, said = []) =>
+    gateCues({ cues, people, state: null, words: said, notes: '', sectionStart: 0 });
+  const anchor = { id: 'P1', label: 'the anchorman', name: 'Ron Brown', look: '' };
+  const brown = gate(
+    [anchor],
+    [cue(5, 'Brown boxes are stacked by the door.'), cue(8, 'Ron Brown waves.')],
+    words('Good evening, I am Ron Brown.'),
+  );
+  assert.equal(brown.cues[0].text, 'Brown boxes are stacked by the door.');
+  assert.equal(brown.cues[1].text, 'The anchorman, Ron Brown, waves.');
+  const dealer = { id: 'P2', label: 'the man in the suit', name: 'Jim Butler', look: '' };
+  const logo = 'A Jim Butler Chevrolet logo spins.';
+  assert.equal(gate([dealer], [cue(1, logo)]).cues[0].text, logo);
+  assert.equal(gate([dealer], [cue(8, logo)], words('I am Jim Butler.', 6)).cues[0].text, logo);
+  const bill = { id: 'P3', label: 'the tall man', name: 'Bill', look: '' };
+  const named = gate(
+    [bill],
+    [cue(1, 'A tall man named Bill unloads hay.'), cue(2, 'Bill the tall man waves.')],
+  );
+  assert.equal(named.cues[0].text, 'A tall man unloads hay.');
+  assert.equal(named.cues[1].text, 'The tall man waves.');
+  const james = { id: 'P4', label: 'the tall man', name: 'James', look: '' };
+  assert.equal(gate([james], [cue(1, "James' truck pulls up.")]).cues[0].text, "The tall man's truck pulls up.");
+  assert.equal(
+    gate([james], [cue(8, "James' truck pulls up.")], words('Hi James!', 5)).cues[0].text,
+    "James' truck pulls up.",
+  );
+  const grace = { id: 'P5', label: 'the woman in the apron', name: 'Grace', look: '' };
+  const list = gate(
+    [grace],
+    [cue(8, 'Bill, Grace and a boy sit.'), cue(9, 'Grace pours tea.')],
+    words('Thanks, Grace!', 5),
+  );
+  assert.equal(list.cues[0].text, 'Bill, Grace and a boy sit.');
+  assert.equal(list.cues[1].text, 'The woman in the apron, Grace, pours tea.');
+});
+
+test('ledger: when the description that joins a name is left out, the next one heard gets the join', () => {
+  const tall = { id: 'P1', label: 'the tall man', name: 'Bill', look: '' };
+  const state = {
+    kind: '',
+    setting: '',
+    people: [tall],
+    speakers: [],
+    recent: [],
+    heard: { labels: ['the tall man'], names: {} },
+  };
+  const gate = gateCues({
+    cues: [
+      cue(1, 'Bill waves at the girl.', 'Bill waves.', { importance: 1 }),
+      cue(7, 'Bill sits on the porch step.', 'Bill sits.'),
+    ],
+    people: [],
+    state,
+    words: words('Hi Bill! Come and sit with me.', 0.2),
+    notes: '',
+    sectionStart: 0,
+  });
+  const [first, second] = gate.cues;
+  assert.equal(first.text, 'The tall man, Bill, waves at the girl.');
+  assert.equal(second.text, 'Bill sits on the porch step.');
+  assert.deepEqual(gate.rejoin([{ cue: second, spoken: second.shortText }]), [
+    { ...second, text: 'The tall man, Bill, sits on the porch step.', shortText: 'The tall man, Bill, sits.' },
+  ]);
+  assert.deepEqual(
+    gate.rejoin([
+      { cue: first, spoken: first.text },
+      { cue: second, spoken: second.text },
+    ]),
+    [undefined, undefined],
+    'nothing changes when the join is heard',
+  );
+});
+
+test('ledger: names from the first look are hidden too, with the label of the person they belong to', () => {
+  const reference = [{ id: 'P1', label: 'the man in the flannel shirt', name: 'Frank', look: '' }];
+  const flannel = { id: 'P1', label: 'the man in the flannel shirt', name: '', look: '' };
+  const apron = { id: 'P1', label: 'the woman in the apron', name: '', look: '' };
+  const gate = (people, cues, said = []) =>
+    gateCues({ cues, people, reference, state: null, words: said, notes: '', sectionStart: 0 });
+  const slip = 'Frank carries a ladder to the barn.';
+  const hidden = 'The man in the flannel shirt carries a ladder to the barn.';
+  assert.equal(gate([flannel], [cue(1, slip)]).cues[0].text, hidden);
+  assert.equal(gate([apron], [cue(1, slip)]).cues[0].text, hidden, 'never matched by id');
+  const revealed = gate(
+    [flannel],
+    [cue(8, 'Frank carries a ladder.'), cue(9, 'Frank climbs it.')],
+    words('Hey, Frank!', 5),
+  );
+  assert.equal(revealed.cues[0].text, 'The man in the flannel shirt, Frank, carries a ladder.');
+  assert.equal(revealed.cues[1].text, 'Frank climbs it.');
+  assert.equal(revealed.reveals.frank, 5.5);
+});
+
+test('ledger: the gate compiles its patterns once per call, not for every cue, person and label', () => {
+  const people = Array.from({ length: 80 }, (_, i) => ({
+    id: `P${i + 1}`,
+    label: `the extra in coat ${i + 1}`,
+    name: i % 2 ? '' : `Name${String.fromCharCode(65 + (i % 26))}${i}`,
+    look: '',
+  }));
+  const cues = Array.from({ length: 48 }, (_, i) =>
+    cue(i, `${people[(i * 2) % 80].name || 'Someone'} waves at the extra in coat ${i + 1}.`),
+  );
+  const Native = RegExp;
+  let compiled = 0;
+  globalThis.RegExp = class extends Native {
+    constructor(source, flags) {
+      super(source, flags);
+      if (typeof source === 'string') compiled++;
+    }
+  };
+  try {
+    gateCues({ cues, people, state: null, words: [], notes: '', sectionStart: 0 });
+  } finally {
+    globalThis.RegExp = Native;
+  }
+  assert.ok(compiled < 1000, `${compiled} patterns compiled`);
+});
+
 const analysis = (people, extra = {}) => ({
   kind: 'film or TV',
   setting: 'a meadow',
@@ -351,6 +579,34 @@ test('continuity: names nobody has said yet are blanked, and the heard ledger re
   assert.match(analysisPrompt(60, brief(), first, [], []), /left out, so the listener never heard them/);
 });
 
+test('continuity: the look-ahead forgets names the listener cannot know by the end of the section', () => {
+  const frank = { id: 'P1', label: 'the man in the flannel shirt', name: 'Frank', look: '' };
+  const planned = analysis([frank], {
+    speakers: [{ speaker: 0, who: 'Frank' }],
+    cues: [cue(2, 'The man in the flannel shirt waves.')],
+  });
+  const ahead = nextContinuity(null, planned, { sectionEnd: 30, words: words('Morning.', 3), notes: '' });
+  assert.equal(ahead.people[0].name, '');
+  assert.deepEqual(ahead.speakers, [{ speaker: 0, who: 'P1' }]);
+  assert.deepEqual(ahead.recent, ['The man in the flannel shirt waves.']);
+  assert.equal(ahead.left, undefined);
+  const prompt = analysisPrompt(30, brief(), ahead, [{ start: 1, end: 2, text: 'Hi.', speaker: 0 }], []);
+  assert.match(prompt, /S0 \(the man in the flannel shirt\): Hi\./);
+  assert.doesNotMatch(prompt, /Frank/);
+  const said = nextContinuity(null, planned, {
+    sectionEnd: 30,
+    words: words('Morning, Frank.', 3),
+    notes: '',
+  });
+  assert.equal(said.people[0].name, 'Frank');
+  const read = nextContinuity(
+    null,
+    analysis([frank], { cues: [cue(2, 'A caption reads Frank Hill, KY3 News.')] }),
+    { sectionEnd: 30, words: [], notes: '' },
+  );
+  assert.equal(read.people[0].name, 'Frank', 'a caption the model plans to read gives the name');
+});
+
 test('prompt: ROOM TO SPEAK lists the quiet stretches with word budgets at her usual speed', () => {
   const lines = [
     { start: 4.3, end: 8.5, text: 'Hello there.', speaker: 0 },
@@ -418,6 +674,23 @@ test('prompt: position, chapters, cuts and language are given in clip time, and 
   assert.doesNotMatch(survey, /read from the screen in one of your cues/);
 });
 
+test('prompt: a part of a longer video is called a part, and her note times are placed in it', () => {
+  const part = (count) =>
+    brief({
+      position: { index: 0, count, start: 0, end: 12, total: 12 },
+      range: { start: 3600, end: 3612 },
+    });
+  const one = analysisPrompt(12, part(1), null, [], []);
+  assert.doesNotMatch(one, /whole video lasts only/);
+  assert.match(one, /This is the part from 1:00:00 to 1:00:12 of a longer video/);
+  assert.match(one, /subtract 1:00:00/);
+  assert.match(one, /This part lasts only 12\.0 seconds\. If it is a complete ident/);
+  const three = analysisPrompt(12, part(3), null, [], []);
+  assert.doesNotMatch(three, /whole-video times|a video that lasts/);
+  assert.match(three, /part from 1:00:00 to 1:00:12/);
+  assert.match(three, /Every time you return is in seconds from the start of THIS clip/);
+});
+
 test('prompt: a reply in the wrong shape throws so it is retried, one wrapper level is unwrapped', () => {
   const body = {
     kind: 'other',
@@ -444,7 +717,7 @@ test('prompt: a reply in the wrong shape throws so it is retried, one wrapper le
   assert.equal(readAnalysis('{"cues":[]}', 10, 'standard').cues.length, 0);
   const wrapped = readAnalysis(JSON.stringify({ result: body }), 10, 'standard');
   assert.equal(wrapped.cues.length, 1);
-  assert.equal(wrapped.cues[0].text, 'The cook grins and recoils.');
+  assert.equal(wrapped.cues[0].text, 'The cook grins and recoils in shock.');
   assert.deepEqual(wrapped.cues[0].who, ['P4']);
   assert.equal(wrapped.people[0].id, 'P4');
 });
@@ -473,6 +746,48 @@ test('prompt: the lint removes judging words but never touches words read from t
     'The Wicked Witch hands a Happy Meal to the man. He looks confused.',
     'titles stay, and a word after "looks" is not cut out of the sentence',
   );
+});
+
+test('prompt: the lint keeps reaction words that describe a thing, and leaves no stray commas', () => {
+  for (const text of [
+    'Two boys in horror masks jump out from behind a hedge.',
+    'A woman in horror-movie makeup screams at a door.',
+    'A mechanic holds up a box in shock-proof packaging.',
+    'The driver sits on the curb in shock as paramedics arrive.',
+    'A clerk stamps a form with contempt of court printed on it.',
+  ])
+    assert.equal(lintDescription(text).text, text);
+  assert.equal(lintDescription('A woman stares in horror at the fire.').text, 'A woman stares at the fire.');
+  assert.equal(lintDescription('The fox, slyly, grabs the hen.').text, 'The fox grabs the hen.');
+  assert.equal(lintDescription('The fox grins evilly.').text, 'The fox grins.');
+  assert.equal(
+    lintDescription('The driver, in horror, backs away from the car.').text,
+    'The driver backs away from the car.',
+  );
+  const reply = readAnalysis(
+    JSON.stringify({
+      kind: 'other',
+      setting: '',
+      people: [],
+      speakers: [],
+      cues: [
+        {
+          at: 1,
+          until: 4,
+          pauseAt: 1,
+          text: 'Two boys in horror masks jump out from behind a hedge.',
+          shortText: 'Boys in horror masks jump out.',
+          who: [],
+          importance: 2,
+        },
+      ],
+      protectedSounds: [],
+    }),
+    10,
+    'standard',
+  );
+  assert.equal(reply.cues[0].text, 'Two boys in horror masks jump out from behind a hedge.');
+  assert.equal(reply.cues[0].shortText, 'Boys in horror masks jump out.');
 });
 
 const placement = (at, text, extra = {}) => ({
@@ -1043,4 +1358,182 @@ test('youtube: yt-dlp errors are named, and only unambiguous ones stop the clien
   assert.equal(youtubeProblem('Video unavailable').permanent, false, 'another client may still reach it');
   assert.equal(kind('HTTP Error 503: Service Unavailable'), 'unavailable');
   assert.equal(kind('Some brand new failure'), undefined);
+});
+
+async function footage(name, seconds) {
+  const dir = join(scratch, name);
+  await mkdir(dir, { recursive: true });
+  const file = join(dir, 'source.mp4');
+  const lavfi = (source) => ['-f', 'lavfi', '-i', source];
+  await command(
+    ffmpegPath,
+    [
+      '-nostdin',
+      '-v',
+      'error',
+      '-y',
+      ...lavfi(`testsrc2=size=160x120:rate=30:duration=${seconds}`),
+      ...lavfi(`sine=frequency=220:sample_rate=48000:duration=${seconds}`),
+      ...['-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', file],
+    ],
+    signal,
+  );
+  const voice = join(dir, 'voice.wav');
+  await command(
+    ffmpegPath,
+    ['-nostdin', '-v', 'error', '-y', ...lavfi('sine=frequency=660:sample_rate=24000:duration=2'), voice],
+    signal,
+  );
+  return { file, voice, work: join(dir, 'work') };
+}
+function savedKeeper(sections, said = []) {
+  const plan = {
+    version: 2,
+    seconds: sections.at(-1).end,
+    audio: true,
+    fps: { num: 30, den: 1 },
+    loudness: { program: -20, peak: -2 },
+    sections,
+  };
+  const keeper = {
+    saved: { plan, words: said, records: [] },
+    keepPlan: async () => {},
+    keepLook: async () => {},
+    keepSection: async () => {},
+    keepFirstLook: async (value) => {
+      keeper.saved.firstLook = value;
+    },
+    restore: async () => {
+      throw new Error('No stored render');
+    },
+  };
+  return keeper;
+}
+async function describe(f, analyze, keeper, extra = {}) {
+  const said = [];
+  await mkdir(f.work, { recursive: true });
+  const outcome = await describeVideo({
+    source: f.file,
+    directory: f.work,
+    title: 'Home video',
+    about: '',
+    settings: settingsSchema.parse({ voice: 'Voice 1', mode: 'standard', ...extra }),
+    session: 'names-test',
+    signal,
+    meter: async (_kind, _reserve, action) => {
+      await action();
+    },
+    progress: async () => {},
+    providers: {
+      transcribe: async () => keeper.saved.words,
+      analyze: async (look) => ({
+        kind: 'home video',
+        setting: 'a farm',
+        people: [],
+        speakers: [],
+        protectedSounds: [],
+        cues: [],
+        ...analyze(look),
+      }),
+      synthesize: async (text, _voice, _session, file) => {
+        said.push(text);
+        await copyFile(f.voice, file);
+      },
+    },
+    keeper,
+  });
+  return { said, report: outcome.report };
+}
+const flannel = { id: 'P1', label: 'the man in the flannel shirt', look: 'red flannel shirt' };
+
+test('engine: a name learned in the first look stays hidden when the model slips, even on another id', async () => {
+  const f = await footage('first-look-names', 130);
+  const keeper = savedKeeper([
+    { start: 0, end: 65 },
+    { start: 65, end: 130 },
+  ]);
+  const { said } = await describe(
+    f,
+    (look) => {
+      if (look.brief.survey) return { people: [{ ...flannel, name: 'Frank' }] };
+      const first = look.brief.position.index === 0;
+      const text = first ? 'Frank carries a ladder to the barn.' : 'Frank climbs the ladder.';
+      return {
+        people: [first ? { id: 'P1', label: 'the woman in the apron', name: '', look: '' } : { ...flannel, name: '' }],
+        cues: [{ at: 5, until: 12, pauseAt: 5, text, shortText: text, importance: 3 }],
+      };
+    },
+    keeper,
+    { firstLook: true },
+  );
+  assert.equal(keeper.saved.firstLook.through, 2);
+  assert.deepEqual(said, [
+    'The man in the flannel shirt carries a ladder to the barn.',
+    'The man in the flannel shirt climbs the ladder.',
+  ]);
+});
+
+test('engine: the next look is not told a name the listener has not heard', async () => {
+  const f = await footage('look-ahead-names', 20);
+  const keeper = savedKeeper(
+    [
+      { start: 0, end: 10 },
+      { start: 10, end: 20 },
+    ],
+    [{ word: 'Morning.', start: 12, end: 12.6, speaker: 0 }],
+  );
+  const seen = new Map();
+  await describe(
+    f,
+    (look) => {
+      const index = look.brief.position.index;
+      seen.set(index, {
+        state: look.state,
+        prompt: analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before),
+      });
+      const text = 'The man in the flannel shirt waves.';
+      return {
+        people: index === 0 ? [{ ...flannel, name: 'Frank' }] : [],
+        speakers: index === 0 ? [{ speaker: 0, who: 'P1' }] : [],
+        cues: [{ at: 1, until: 5, pauseAt: 1, text, shortText: text, importance: 3 }],
+      };
+    },
+    keeper,
+  );
+  const next = seen.get(1);
+  assert.equal(next.state.people.find((person) => person.id === 'P1')?.name, '');
+  assert.match(next.prompt, /S0 \(the man in the flannel shirt\): Morning\./);
+  assert.doesNotMatch(next.prompt, /Frank/);
+});
+
+test('engine: when the description that joins a name is left out, the next one heard carries the join', async () => {
+  const f = await footage('join-placed', 20);
+  const keeper = savedKeeper(
+    [{ start: 0, end: 20 }],
+    words('Hi Bill! Come and sit with me on the porch for a while, it is cool out here.', 0.2, 0.3),
+  );
+  const { said, report } = await describe(
+    f,
+    () => ({
+      people: [{ id: 'P1', label: 'the tall man', name: 'Bill', look: '' }],
+      cues: [
+        { at: 1, until: 5, pauseAt: 1, text: 'Bill waves at the girl.', shortText: 'Bill waves.', importance: 1 },
+        {
+          at: 8,
+          until: 12,
+          pauseAt: 8,
+          text: 'Bill sits on the porch step.',
+          shortText: 'Bill sits.',
+          importance: 2,
+        },
+      ],
+    }),
+    keeper,
+  );
+  assert.deepEqual(
+    report.descriptions.map((item) => item.text),
+    ['The tall man, Bill, sits on the porch step.'],
+  );
+  assert.equal(report.skipped[0]?.text, 'The tall man, Bill, waves at the girl.');
+  assert.ok(said.includes('The tall man, Bill, sits on the porch step.'), said.join(' | '));
 });
