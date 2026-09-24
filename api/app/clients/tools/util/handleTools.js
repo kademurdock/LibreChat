@@ -53,6 +53,7 @@ const {
   KadeFeedback,
   KadeMessage,
   KadeHelp,
+  KadeLibrary,
   OpenWeather,
   StructuredSD,
   StructuredACS,
@@ -231,6 +232,7 @@ const loadTools = async ({
     kade_feedback: KadeFeedback,
     kade_message: KadeMessage,
     kade_help: KadeHelp,
+    kade_library: KadeLibrary,
     calculator: Calculator,
     google: GoogleSearchAPI,
     open_weather: OpenWeather,
@@ -323,6 +325,7 @@ const loadTools = async ({
     options.req?.user?.username;
 
   const toolOptions = {
+    kade_library: { req: options.req },
     flux: imageGenOptions,
     fal_studio: { req: options.req },
     kade_phone_call: {

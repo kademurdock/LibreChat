@@ -4,6 +4,8 @@ import { createFaceSheetRig } from './face-sheet-rig.mjs';
 // Regions inside one sheet panel, 0..1: the brow-to-chin oval, the mouth, the eyes.
 // Registered by eye against each character's own sheets, Sep 19 2026.
 const SHEETS = {
+  witherspoon: { expressions: '/assets/characters/witherspoon/expressions.webp', mouths: '/assets/characters/witherspoon/mouths.webp',
+    face: [0.29, 0.23, 0.44, 0.49], mouth: [0.38, 0.50, 0.26, 0.19], eyes: [0.30, 0.32, 0.41, 0.15] },
   kiana: { expressions: '/assets/characters/kiana/expressions.webp', mouths: '/assets/characters/kiana/mouths.webp',
     face: [0.34, 0.17, 0.5, 0.56], mouth: [0.43, 0.46, 0.31, 0.2], eyes: [0.36, 0.27, 0.44, 0.15] },
   della: { expressions: '/assets/characters/della/expressions.webp', mouths: '/assets/characters/della/mouths.webp',
@@ -16,6 +18,8 @@ const SHEETS = {
     face: [0.28, 0.24, 0.52, 0.5], mouth: [0.41, 0.47, 0.27, 0.22], eyes: [0.34, 0.31, 0.42, 0.13] },
 };
 export const HARLEY_ID = 'agent_d26Mtu8mgOzkVGQECqO1a';
+export const WITHERSPOON_ID = 'agent_o7TKU3lK0Euo0MKgpNpvZ';
+export const WITHERSPOON_PORTRAIT_FILE = 'agent-agent_o7TKU3lK0Euo0MKgpNpvZ-avatar-1790252530815.png';
 export const HARLEY_PORTRAIT_FILE = 'agent-agent_d26Mtu8mgOzkVGQECqO1a-avatar-1789921519491.png';
 export const KIANA_ID = 'agent_6llV0eMu4fmIaj8f2x1Sb';
 export const KIANA_PORTRAIT_FILE = 'agent-agent_6llV0eMu4fmIaj8f2x1Sb-avatar-1789863013865.png';
@@ -30,6 +34,8 @@ export function hasPreparedPortrait(id, url) {
 export function preparedPortrait(id, url) {
   try {
     const file = new URL(url, 'https://local.invalid').pathname.split('/').pop();
+    if (id === WITHERSPOON_ID && file === WITHERSPOON_PORTRAIT_FILE)
+      return { portrait: '/assets/characters/witherspoon/portrait.png', sheet: SHEETS.witherspoon };
     if (id === HARLEY_ID && file === HARLEY_PORTRAIT_FILE)
       return { portrait: '/assets/characters/harley/portrait.png', sheet: SHEETS.harley };
     if (id === LILLY_ID && file === LILLY_PORTRAIT_FILE)

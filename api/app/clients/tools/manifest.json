@@ -123,6 +123,14 @@
     "authConfig": []
   },
   {
+    "name": "Library Catalog",
+    "pluginKey": "kade_library",
+    "description": "Find books, recordings, commercials and videos in the collection from titles, keywords or remembered details. Inspect matching items and open their Library pages.",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Wikipedia",
     "pluginKey": "kade_wikipedia",
     "description": "Looks things up on Wikipedia — people, places, history, science — so answers come from the encyclopedia instead of memory. Free. It only knows what Wikipedia knows. Try: \"who was Bass Reeves?\"",

@@ -7,6 +7,12 @@ const test = require('node:test');
 const assert = require('node:assert');
 const R = require('./kadeToolRetrieval.js');
 
+test('library tool stays attached for follow-ups without search keywords', async () => {
+  R._resetForTests();
+  const result = await R.selectTools({ tools: [{ name: 'kade_library', description: 'Catalog' }, { name: 'kade_help', description: 'Help' }], text: 'Tell me more about the second one.', agentId: 'librarian' });
+  assert.ok(result.keep.has('kade_library'));
+});
+
 const T = (names) => names.map((name) => ({ name, description: `${name} does ${name} things` }));
 const KIANA = [
   'context', 'flux', 'kade_phone_call', 'kade_notify', 'kade_weather', 'kade_wikipedia', 'kade_joke',

@@ -251,6 +251,7 @@ function refreshListen(item) {
 }
 
 const router = express.Router();
+router.get('/guide', requireJwtAuth, (_req, res) => res.json(require('@librechat/api').librarianGuide));
 
 const MAX_UPLOAD_BYTES = AUDIO_ZIP_LIMIT;
 const bookTemp = require('node:fs/promises');

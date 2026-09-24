@@ -24,12 +24,13 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 <style>
   .hidden { display:none !important; }
   .row { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
-  button.act { font:inherit; font-weight:700; padding:.8rem 1.1rem; border-radius:12px; border:1px solid #1d55d0; background:#fff; color:#1d55d0; cursor:pointer; min-height:48px; }
-  button.act.primary { background:#1f7a49; border-color:#1f7a49; color:#fff; }
-  button.act.quiet { border-color:#8a919c; color:inherit; font-weight:600; }
+  button.act, a.act { font:inherit; font-weight:700; padding:.8rem 1.1rem; border-radius:12px; border:1px solid #1d55d0; background:#fff; color:#1d55d0; cursor:pointer; min-height:48px; }
+  a.act { display:inline-block; text-decoration:none; }
+  button.act.primary, a.act.primary { background:#1f7a49; border-color:#1f7a49; color:#fff; }
+  button.act.quiet, a.act.quiet { border-color:#8a919c; color:inherit; font-weight:600; }
   button.act.big { font-size:1.25rem; padding:1rem 1.4rem; min-width:9rem; }
   button.act[disabled] { opacity:.55; cursor:default; }
-  button.act:focus-visible, select:focus-visible, input:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
+  button.act:focus-visible, a.act:focus-visible, select:focus-visible, input:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   .controls { display:grid; grid-template-columns:1fr 1fr 1fr; gap:.5rem; margin:.8rem 0; }
   .controls .wide { grid-column:1 / -1; }
   label.field { display:block; font-weight:600; margin:.7rem 0 .25rem; }
@@ -46,8 +47,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   details { margin:.8rem 0; }
   summary { cursor:pointer; font-weight:600; padding:.3rem 0; }
   @media (prefers-color-scheme: dark) {
-    button.act { background:#1e2127; color:#9ec2ff; border-color:#4a78d8; }
-    button.act.primary { background:#1f7a49; color:#fff; border-color:#1f7a49; }
+    button.act, a.act { background:#1e2127; color:#9ec2ff; border-color:#4a78d8; }
+    button.act.primary, a.act.primary { background:#1f7a49; color:#fff; border-color:#1f7a49; }
     select, input[type=text], input[type=file], textarea, .now { background:#1e2127; color:inherit; border-color:#2c2f37; }
   }
   @media (max-width: 480px) { .controls { grid-template-columns:1fr 1fr; } }
@@ -65,6 +66,12 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   <p><a class="back" href="/home" aria-label="Back to Home">&larr; Home</a></p>
   <h1 id="pageTitle">The Library</h1>
   <p id="live" class="status" role="status" aria-live="polite"></p>
+  <section aria-labelledby="librarianHeading" style="padding:1rem;border:1px solid #8a919c;border-radius:14px;margin-bottom:1rem">
+    <h2 id="librarianHeading">Meet Mrs. Witherspoon</h2>
+    <p>Looking for a half-remembered book, commercial, radio show or tape? Tell Olivia what you remember, or talk with her about something in the collection.</p>
+    <a class="act primary" id="talkLibrarian" href="${require('@librechat/api').librarianGuide.chatUrl}">Talk to the Librarian</a>
+    <p class="hint">Opens a conversation with Mrs. Witherspoon. Speak or type using the website's usual voice and chat controls.</p>
+  </section>
 
   <section id="shelf">
     <img src="/assets/library/reading-alcove.webp" alt="" aria-hidden="true" width="1440" height="481" style="width:100%;height:auto;max-height:220px;object-fit:cover;border-radius:18px" loading="lazy">
@@ -175,6 +182,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   <section id="player" class="hidden">
     <p><button class="act quiet" id="backToShelf" type="button">&larr; Back to the shelf</button></p>
     <h2 id="bookTitle"></h2>
+    <p><a class="act quiet" id="askLibrarian" href="${require('@librechat/api').librarianGuide.chatUrl}">Ask Mrs. Witherspoon about this item</a></p>
     <p class="meta" id="bookMeta"></p>
     <p class="hint" id="jacketLine"></p>
     <div class="controls" role="group" aria-label="Playback">
@@ -284,6 +292,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   var token = null;
   var API = '/api/kade/reading-room';
   var TTS_BASE = 'https://inworld-tts-proxy-production.up.railway.app';
+  var librarianChatUrl = ${JSON.stringify(require('@librechat/api').librarianGuide.chatUrl)};
   var $ = function(id){ return document.getElementById(id); };
   var live = $('live');
   function say(t){ live.textContent = ''; setTimeout(function(){ live.textContent = t; }, 30); }
@@ -1232,6 +1241,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     $('shelf').classList.add('hidden'); $('player').classList.remove('hidden');
     $('pageTitle').textContent = 'The Library';
     $('bookTitle').textContent = book.title;
+    $('askLibrarian').href = librarianChatUrl + '&prompt=' + encodeURIComponent('Tell me about the Library item with catalog ID ' + book.id + '.');
     var bits = [];
     if (book.author) bits.push('by ' + book.author);
     if (book.kind !== 'text') bits.push(catName(book.category));

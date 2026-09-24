@@ -23,6 +23,7 @@ const { logger } = require('@librechat/data-schemas');
 // from the key. A mismatch here is a silent 404, not an error anyone sees.
 const HELP_TOPICS = [
   { key: 'home', path: '/help', label: 'Help home — overview of every section' },
+  { key: 'library', path: '/help/library', label: 'The Library — books, recordings, playback, searching and talking to Mrs. Witherspoon' },
   { key: 'starthere', path: '/help/start-here', label: 'Start Here — brand new to AI in general' },
   {
     key: 'quickstart',

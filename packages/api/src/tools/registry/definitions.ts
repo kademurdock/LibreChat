@@ -2,6 +2,7 @@ import { WebSearchToolDefinition, CalculatorToolDefinition } from '@librechat/ag
 import { geminiToolkit } from '~/tools/toolkits/gemini';
 import { oaiToolkit } from '~/tools/toolkits/oai';
 import { falStudioSchema, falNarrationInstructions } from './fal';
+import { libraryToolDescription, libraryToolSchema } from './library';
 export { falStudioSchema, falNarrationInstructions } from './fal';
 
 /** Extended JSON Schema type that includes standard validation keywords */
@@ -122,7 +123,7 @@ export const kadeHelpSchema: ExtendedJsonSchema = {
   properties: {
     topic: {
       type: 'string',
-      enum: ['home', 'starthere', 'quickstart', 'faq', 'whatsnew', 'voice', 'phone', 'describe', 'characters', 'rooms', 'games', 'build', 'memory', 'images', 'audio', 'temporary', 'cheatsheet', 'tokens', 'costs', 'donate', 'accessibility', 'troubleshooting', "iphone", "android", "createacharacter", "privacy", "work", "projects", "clubhouse", 'notifications'],
+      enum: ['home', 'library', 'starthere', 'quickstart', 'faq', 'whatsnew', 'voice', 'phone', 'describe', 'characters', 'rooms', 'games', 'build', 'memory', 'images', 'audio', 'temporary', 'cheatsheet', 'tokens', 'costs', 'donate', 'accessibility', 'troubleshooting', "iphone", "android", "createacharacter", "privacy", "work", "projects", "clubhouse", 'notifications'],
       description:
         'Which help page to pull — pick the closest match to what the user is actually asking. If genuinely unsure, use "faq" or "home". Topics: home = Help home — overview of every section; starthere = Start Here — brand new to AI in general; quickstart = Your First Five Minutes — first-time orientation; faq = Questions & Answers — general FAQ; whatsnew = What\'s New — recent features and changes, dated; voice = Talking & Listening — voice input/output, in-app calls basics; phone = Phone Calls — the real phone number, calls FOR you, deep think, family check-in calls; describe = Describe My World — photo/document/video description; characters = Characters & the Marketplace; rooms = The Debate Room; games = The Game Parlor; build = Build Your Own Character; memory = What It Remembers — memory cards, forgetting, consolidation; images = Making Pictures; audio = Making Audio & Voices; temporary = Starting Over & Private/Temporary Chats; cheatsheet = The Cheat Sheet — quick command reference; tokens = What Are Tokens?; costs = What This Costs Kade; donate = Usage & Balance — credit, usage and top-ups; accessibility = Accessibility Tips; troubleshooting = When Something Breaks / how to report a bug; iphone = The iPhone app — installation and current controls; android = The Android app — installation and updates; createacharacter = Create a character with guided questions; privacy = Privacy, saved data and administrator access; work = Check a saved reply, interrupted request or coding job; projects = Project instructions, text documents and versions; clubhouse = Live voice rooms, shared music and companion guests; notifications = Notifications & Reminders — push setup, reminder delivery choices, agent check-ins.',
     },
@@ -1153,6 +1154,12 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       "Look up a page from Kade-AI's own help center so you can answer questions about the SITE ITSELF accurately — how a feature works, what something costs, accessibility tips, troubleshooting, what's new — instead of guessing or relying on stale training knowledge. Use this whenever someone asks how to use something here, what a feature does or costs, what changed recently, or says something isn't working. Returns the real current page text, cleaned up for reading aloud — put it in your own words for the user rather than reciting it verbatim, unless they specifically want the exact wording.",
     schema: kadeHelpSchema,
+    toolType: 'builtin',
+  },
+  kade_library: {
+    name: 'kade_library',
+    description: libraryToolDescription,
+    schema: libraryToolSchema,
     toolType: 'builtin',
   },
   kade_location: {
