@@ -101,6 +101,7 @@ function clean(desc, limit = 700) {
 /* The channel folders that exist, and the words a title uses for them. Order
  * matters: the longer name is tried first (ABC Family before ABC). */
 const NETWORKS = [
+  [/\bnoggin on nick(?:elodeon)?\b/i, 'Nickelodeon/Noggin on Nick'],
   [/\babc family\b/i, 'ABC Family'], [/\bfox family\b/i, 'ABC Family'],
   [/\bplayhouse disney\b/i, 'Disney Channel/Playhouse Disney'],
   [/\btoon disney\b/i, 'Toon Disney'], [/\b(?:disney channel|disney junior|zoog disney)\b/i, 'Disney Channel'],
