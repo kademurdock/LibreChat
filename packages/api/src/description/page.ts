@@ -823,7 +823,9 @@ export const descriptionBrowserScript: string = String.raw`
       if(seconds>limit){fileProblem('This video is '+length(seconds)+' long; the longest that can be checked is '+length(limit)+'.');return;}
       var saved=recoveries&&recoveries[key]||{},requestId=saved.requestId||uuid();
       var match=lastJobs.filter(function(item){return item.state==='uploading'&&item.bytes===file.size&&(item.id===saved.jobId||item.name===file.name);})[0];
-      var created=await call('/uploads','POST',{requestId:requestId,name:file.name,bytes:file.size,resumeId:saved.jobId||(match&&match.id)||undefined});
+      var resumeId=saved.jobId||(match&&match.id)||undefined,created;
+      try{created=await call('/uploads','POST',{requestId:requestId,name:file.name,bytes:file.size,resumeId:resumeId});}
+      catch(e){if(!resumeId||e.network||e.status>=500||e.auth)throw e;delete recoveries[key];store(UPLOADS_KEY,recoveries);requestId=uuid();created=await call('/uploads','POST',{requestId:requestId,name:file.name,bytes:file.size});}
       if(['failed','cancelled','done'].indexOf(created.job.state)>=0){requestId=uuid();created=await call('/uploads','POST',{requestId:requestId,name:file.name,bytes:file.size});}
       up={id:created.job.id,name:created.job.name};uploadId=up.id;recoveries[key]={requestId:requestId,jobId:up.id};store(UPLOADS_KEY,recoveries);
       await show(created.job,false);
@@ -833,7 +835,7 @@ export const descriptionBrowserScript: string = String.raw`
         say(offset?'Carrying on from '+Math.floor(offset/file.size*100)+' percent.':'Uploading '+file.name+'.',true);
         while(offset<file.size){
           var from=offset;
-          var result=await uploadPart(up.id,Math.floor(offset/size)+1,file.slice(offset,Math.min(file.size,offset+size)),function(loaded){var value=Math.floor((from+loaded)/file.size*100);$('upload-progress').value=value;if(Math.floor(value/10)!==last){last=Math.floor(value/10);say('Uploading: '+value+' percent.',true);}});
+          var result=await uploadPart(up.id,Math.floor(offset/size)+1,file.slice(offset,Math.min(file.size,offset+size)),function(loaded){var value=Math.floor((from+loaded)/file.size*100);$('upload-progress').value=value;if(Math.floor(value/10)!==last){last=Math.floor(value/10);if(!playing())say('Uploading: '+value+' percent.',true);}});
           if(result.id&&result.id!==up.id)throw new Error('The server answered for a different upload, so this one stopped. Choose the same file to carry on.');
           if(shownId===up.id)job=result;
           offset+=size;

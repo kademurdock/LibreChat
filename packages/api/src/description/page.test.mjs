@@ -1585,3 +1585,97 @@ test('intro prices and limits come from the server’s figures', async () => {
   assert.match(env.$('limits').textContent, /^Up to 2 GB and 6 hours\. One run describes up to 1 hour 30 minutes;/);
   assert.equal(env.status(), 'Choose a video to get started.');
 });
+
+test('a running version shows this run’s cost against this run’s estimate, and all versions separately', async () => {
+  const server = makeServer();
+  const running = server.add(doneJob({ name: 'Film', state: 'running', stage: 'Watching section 3 of 20', progress: 15, costUSD: 3.23, runCostUSD: 0.21, estimatedUSD: 0.79, setAsideUSD: 0.92 }));
+  const env = await boot({ server, search: '?id=' + running.id });
+  const line = 'This run so far: $0.21 of about $0.79 ($0.92 set aside). All versions of this video: $3.23. Work already sent to a service may still be charged if you cancel.';
+  assert.equal(env.$('cost').textContent, line);
+  assert.equal(env.$('estimate').textContent, line);
+  assert.equal(env.$('results').hidden, false, 'the earlier copy stays playable while the new version runs');
+});
+
+test('when the file links fail, the buttons still update and polling carries on', async () => {
+  const server = makeServer();
+  const ready = server.add(jobOf({ name: 'Ready one' }));
+  const running = server.add(doneJob({ name: 'Re-voicing', state: 'running', stage: 'Watching section 1 of 9' }));
+  const env = await boot({ server, search: '?id=' + ready.id });
+  const { $ } = env;
+  server.override((method, path) => /\/files\?/.test(path), () => ({ status: 502, body: { error: 'Bad gateway' } }));
+  await env.open(running);
+  assert.equal($('start').hidden, true);
+  assert.equal($('cancel').hidden, false);
+  assert.equal($('settings').disabled, true);
+  assert.equal(env.document.activeElement, $('job-title'));
+  const polls = server.all(new RegExp('^/jobs/' + running.id + '$')).length;
+  await env.timers.advance(5000);
+  assert.equal(server.all(new RegExp('^/jobs/' + running.id + '$')).length, polls + 1);
+});
+
+test('a forced message that repeats is cleared and written again, so it is heard twice', async () => {
+  const server = makeServer();
+  const done = server.add(doneJob({ name: 'Ad' }));
+  const env = await boot({ server, search: '?id=' + done.id });
+  const { $ } = env;
+  $('video').currentTime = 100;
+  await env.click('next-cue');
+  assert.equal(env.status(), 'That was the last description.');
+  await env.click('next-cue');
+  assert.equal(env.status(), '');
+  await env.timers.advance(100);
+  assert.equal(env.status(), 'That was the last description.');
+});
+
+test('upload: a refusal from the server is final and not retried', async () => {
+  const server = makeServer();
+  const env = await boot({ server, xhrRoute: () => ({ status: 409, body: { error: 'Choose the original file to resume this upload.' } }) });
+  const { $ } = env;
+  $('file').files = [new File(['0123456789'], 'clip.mp4')];
+  await env.fire($('file'), 'change');
+  await env.click('upload');
+  await env.timers.advance(5000);
+  assert.equal(server.requests.filter((r) => r.method === 'XHR').length, 1);
+  assert.equal($('upload-error').textContent, 'Choose the original file to resume this upload.');
+  assert.equal($('upload-error').hidden, false);
+  assert.equal($('upload').disabled, false);
+});
+
+test('upload: a recovery entry for an upload that is gone starts a fresh one instead of failing forever', async () => {
+  const server = makeServer();
+  const file = new File(['0123456789'], 'clip.mp4', { lastModified: 3 });
+  const key = 'clip.mp4|10|3';
+  server.override((method, path, body) => path === '/uploads' && !!body.resumeId, () => ({ status: 404, body: { error: 'That video was not found.' } }));
+  const env = await boot({ server, local: { 'kade-video-uploads': JSON.stringify({ [key]: { requestId: 'old', jobId: 'f'.repeat(24) } }) } });
+  env.$('file').files = [file];
+  await env.fire(env.$('file'), 'change');
+  await env.click('upload');
+  await env.timers.advance(5000);
+  const uploads = server.all(/^\/uploads$/);
+  assert.equal(uploads.length, 2);
+  assert.equal(uploads[1].body.resumeId, undefined);
+  assert.notEqual(uploads[1].body.requestId, 'old');
+  assert.equal(env.$('error').hidden, true);
+  assert.ok(server.last(/\/prepare$/));
+});
+
+test('starting an upload while a finished video with notes is open clears the notes', async () => {
+  const server = makeServer();
+  const done = server.add(doneJob({ name: 'Uncle Bob birthday tape', settings: { notes: 'Uncle Bob wears red', closeLook: true } }));
+  const env = await boot({ server, search: '?id=' + done.id, xhrRoute: () => new Promise(() => {}) });
+  const { $ } = env;
+  assert.equal($('notes').value, 'Uncle Bob wears red');
+  $('file').files = [new File(['0123456789'], 'other.mp4')];
+  await env.fire($('file'), 'change');
+  await env.click('upload');
+  await env.timers.advance(5000);
+  assert.equal($('job-title').textContent, 'other.mp4');
+  assert.equal($('notes').value, '');
+  assert.equal($('close-look').checked, false);
+  assert.equal(visible($('rename')), true);
+  env.dialogs.length = 0;
+  const renamed = env.server.requests.length;
+  await env.click('delete');
+  assert.match(env.dialogs[0].text, /^Delete “other\.mp4”/, 'Delete names the video on screen');
+  assert.ok(env.server.requests.length > renamed);
+});
