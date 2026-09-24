@@ -40,6 +40,7 @@ import type {
 import type { Keeper, Outcome, Providers, SavedLook, Request as EngineRequest } from './engine';
 import type { Edit } from './revision';
 import {
+  Plain,
   billed,
   voices,
   voiceBase,
@@ -661,7 +662,7 @@ const scrub = (message: string) =>
 function plainProblem(error: unknown, reason: unknown): string {
   if (reason instanceof Halt) return reason.message;
   if (error instanceof Halt || error instanceof Problem) return error.message;
-  if (error instanceof MediaError) return scrub(error.message);
+  if (error instanceof MediaError || error instanceof Plain) return scrub(error.message);
   if (axios.isAxiosError(error)) return providerProblem(error, serviceFor(error));
   if (!(error instanceof Error)) return 'Processing stopped unexpectedly.';
   if ((error as { code?: string }).code === 'ENOSPC')

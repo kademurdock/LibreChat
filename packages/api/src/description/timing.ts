@@ -96,7 +96,8 @@ const breathPoint = (end: number, next: number) => end + Math.min(0.2, Math.max(
  * Picks where the picture may freeze for a description that cannot fit: the model's own
  * suggestion when it is clear of speech and important sound (moved onto a nearby scene cut, or
  * into the middle of a short breath), otherwise the best nearby break, preferring the end of a
- * sentence, a longer breath and a scene cut.
+ * sentence, a longer breath and a scene cut. `earliest` keeps the freeze clear of the section
+ * start, so the soundtrack has room to fade before it stops.
  */
 export function pausePoint(
   cue: Cue,
@@ -104,19 +105,21 @@ export function pausePoint(
   hard: Interval[],
   seconds: number,
   cuts: number[] = [],
+  earliest: number = 0.02,
 ): number {
   const latest = Math.min(seconds - 0.05, cue.until + 4);
-  const target = Math.min(Math.max(cue.pauseAt ?? cue.at, cue.at), latest);
+  const target = Math.min(Math.max(cue.pauseAt ?? cue.at, cue.at, earliest), latest);
   const ordered = [...words].sort((a, b) => a.start - b.start);
   const speaking = (point: number) =>
     ordered.some((word) => word.start - 0.03 < point && point < word.end + 0.03);
-  const allowed = (point: number) => point >= cue.at && point <= latest && !inside(point, hard);
+  const allowed = (point: number) =>
+    point >= cue.at && point >= earliest && point <= latest && !inside(point, hard);
   const clear = (point: number) => allowed(point) && !speaking(point);
   if (!speaking(target) && !inside(target, hard)) {
     const cut = cuts
       .filter((time) => Math.abs(time - target) <= 0.5 && clear(time))
       .sort((a, b) => Math.abs(a - target) - Math.abs(b - target))[0];
-    if (cut !== undefined) return Math.max(0.02, cut);
+    if (cut !== undefined) return cut;
     const before = ordered.filter((word) => word.end <= target).at(-1);
     const after = ordered.find((word) => word.start >= target);
     if (before && after) {
@@ -124,7 +127,7 @@ export function pausePoint(
       const point = Math.min(Math.max(target, before.end + edge), after.start - edge);
       if (allowed(point)) return point;
     }
-    return Math.max(0.02, target);
+    return target;
   }
   const candidates: { point: number; score: number }[] = [
     ...ordered.map((word, i) => {
@@ -146,7 +149,7 @@ export function pausePoint(
     null,
   );
   if (best) return best.point;
-  let point = Math.max(0.02, target);
+  let point = target;
   for (const span of mergeIntervals([...words, ...hard], seconds).filter((s) => s.end > point))
     if (span.start < point + 0.01) point = span.end + 0.01;
   return Math.min(point, seconds - 0.02);
@@ -274,6 +277,8 @@ export function arrange(input: {
   cuts?: number[];
   /** A text already voiced for a cue whose measured length is close to its estimate: try it first. */
   prefer?: (index: number) => Variant | undefined;
+  /** The earliest a freeze may start, clear of the section start. */
+  earliest?: number;
 }): Arrangement {
   const { cues, settings, seconds } = input;
   const order = cues
@@ -351,7 +356,14 @@ export function arrange(input: {
     }
     const full = lengths(index).full;
     if (!chosen && settings.mode === 'extended' && cue.importance >= 2 && full !== undefined) {
-      const point = pausePoint(cue, input.words, [...input.hard, ...spans], seconds, input.cuts);
+      const point = pausePoint(
+        cue,
+        input.words,
+        [...input.hard, ...spans],
+        seconds,
+        input.cuts,
+        input.earliest,
+      );
       chosen = {
         index,
         variant: 'full',

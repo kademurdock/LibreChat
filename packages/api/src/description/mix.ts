@@ -199,8 +199,8 @@ export function pauseProgram(
   return out;
 }
 
-/** A stretch of narration in output seconds, the soundtrack gain under it, and its release. */
-export type Duck = Interval & { gain: number; release?: number };
+/** A stretch of narration in output seconds, the soundtrack gain under it, and its own ramps. */
+export type Duck = Interval & { gain: number; attack?: number; release?: number };
 
 /**
  * Multiplies interleaved samples by the ducking gain: it eases down before each narration, holds
@@ -222,7 +222,7 @@ export function applyDuck(
       const up = Math.min(frames, Math.max(down, Math.round(span.end * sampleRate)));
       return {
         gain: Math.max(0, span.gain),
-        from: Math.max(0, Math.round((span.start - attack) * sampleRate)),
+        from: Math.max(0, Math.round((span.start - (span.attack ?? attack)) * sampleRate)),
         down,
         up,
         to: Math.min(frames, Math.round((span.end + (span.release ?? release)) * sampleRate)),

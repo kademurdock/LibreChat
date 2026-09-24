@@ -1763,7 +1763,7 @@ test('a description left out at a section end is carried into the next section',
   );
   assert.equal(result.report.skipped.length, 0);
   assert.equal(result.report.descriptions.length, 1);
-  assert.ok(Math.abs(result.report.descriptions[0].at - 10.1) < 0.01);
+  assert.ok(Math.abs(result.report.descriptions[0].at - 10.25) < 0.01);
   const next = kept.records.find((record) => record.index === 1);
   assert.equal(next.placements[0].id, '0:0', 'it keeps its place in the script');
 });
@@ -1909,12 +1909,35 @@ test('a section the tools cannot read fails at once with a plain reason, without
   backend.analyze = async (look) => {
     if (look.brief.position.index !== 1) return analyze(look);
     tries++;
-    throw new MediaError('damaged', '/tmp/secret/section-1 log', 'This part of the video could not be read.');
+    throw new MediaError(
+      'damaged',
+      '/tmp/secret/section-1 log',
+      'This part of the video could not be read.',
+    );
   };
   const result = await run(f, [], [], { providers: backend, keeper });
   assert.equal(tries, 1);
   assert.equal(result.report.failedSections[0].reason, 'This part of the video could not be read.');
   assert.equal(kept.records.find((record) => record.index === 1).failureClass, 'input');
+});
+
+test('a section whose clip hit a full disk is tried again at the end of the run', async () => {
+  const f = await fixture('disk-full', 20);
+  const { keeper, kept } = keeperFor(savedPlan(20, [6.5, 13]));
+  const backend = providers(f.voice, [], [{ ...cue, at: 1, until: 5 }]);
+  const analyze = backend.analyze;
+  let tries = 0;
+  backend.analyze = async (look) => {
+    if (look.brief.position.index === 1 && ++tries === 1)
+      throw new MediaError('disk', 'exit 1: No space left on device');
+    return analyze(look);
+  };
+  const result = await run(f, [], [], { providers: backend, keeper });
+  assert.equal(tries, 2);
+  assert.equal(result.report.failedSections.length, 0);
+  const record = kept.records.find((item) => item.index === 1);
+  assert.equal(record.failure, undefined);
+  assert.equal(record.failureClass, undefined);
 });
 
 test('an account problem with the video model stops the job at once', async () => {
@@ -1943,4 +1966,163 @@ test('saved looks are reused instead of paying again', async () => {
   const result = await run(f, [], [], { providers: backend, keeper });
   assert.equal(backend.calls.analyze, 1);
   assert.equal(result.report.descriptions.length, 2);
+});
+
+/** A source with its own soundtrack expression and frame rate, and a fake voice of a given length. */
+async function synthetic(name, seconds, audio, rate = '30', voiceSeconds = 3) {
+  const dir = join(root, name);
+  await mkdir(dir);
+  const file = join(dir, 'source.mp4');
+  await command(
+    ffmpegPath,
+    [
+      '-nostdin',
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      `testsrc2=size=160x120:rate=${rate}:duration=${seconds}`,
+      '-f',
+      'lavfi',
+      '-i',
+      `aevalsrc='${audio}':s=48000:d=${seconds}`,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      file,
+    ],
+    signal,
+  );
+  const voice = join(dir, 'voice.wav');
+  await command(
+    ffmpegPath,
+    [
+      '-nostdin',
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      `sine=frequency=660:sample_rate=24000:duration=${voiceSeconds}`,
+      voice,
+    ],
+    signal,
+  );
+  return { dir, file, voice, work: join(dir, 'work') };
+}
+
+test('dialogue loudness counts the blocks centred in speech, not a sting just after it', () => {
+  const blocks = [];
+  for (let i = 9; i <= 41; i++) blocks.push({ time: i / 10, lufs: -20 });
+  for (const time of [4.2, 4.3, 4.4]) blocks.push({ time, lufs: -3 });
+  const heard = dialogueLoudness(blocks, [{ start: 1.03, end: 4.03, word: 'x' }], 8);
+  assert.ok(heard < -19.5, `the dialogue read ${heard.toFixed(1)} LUFS`);
+});
+
+test('a protected sting keeps its full level from its first moment to its last', async () => {
+  const beds = [
+    ['sting-quiet', { program: -20, peak: -2 }],
+    ['sting-loud', { program: -30, peak: -20 }],
+  ];
+  const dips = [];
+  for (const [name, loudness] of beds) {
+    const f = await synthetic(
+      name,
+      14,
+      '0.1*sin(2*PI*440*t)+0.1*between(t,6,8)*sin(2*PI*2000*t)',
+      '30',
+      4.5,
+    );
+    const { keeper } = keeperFor(savedPlan(14, [], { loudness }));
+    const backend = providers(
+      f.voice,
+      [],
+      [
+        { ...cue, at: 2, until: 6, pauseAt: 2 },
+        { ...cue, at: 8, until: 13.5, pauseAt: 8 },
+      ],
+    );
+    const analyze = backend.analyze;
+    backend.analyze = async (look) => ({
+      ...(await analyze(look)),
+      protectedSounds: [{ start: 6, end: 8 }],
+    });
+    const result = await run(f, [], [], { providers: backend, keeper });
+    const [a, b] = result.report.descriptions;
+    assert.ok(a.outputAt + a.duration > 5.7, `the first line ends at ${a.outputAt + a.duration}`);
+    assert.ok(b.outputAt < 8.2, `the second line starts at ${b.outputAt}`);
+    dips.push(a.dip);
+    const pcm = await decode(join(f.work, 'section-0', 'sound.flac'));
+    const reference = tone(pcm, 7, 0.01, 2000);
+    let worst = 0;
+    let at = 0;
+    for (let k = 0; k < 200; k++) {
+      const heard = dB(tone(pcm, 6 + k / 100, 0.01, 2000), reference);
+      if (heard < worst) [worst, at] = [heard, 6 + k / 100];
+    }
+    assert.ok(worst > -0.5, `dip ${a.dip} dB: the sting read ${worst.toFixed(1)} dB at ${at} s`);
+  }
+  assert.ok(dips[0] < 0 && dips[1] <= -19, `dips ${dips.join(', ')}`);
+});
+
+test('a freeze at the start of a later section keeps the join from clicking', async () => {
+  const hello = [{ start: 0.45, end: 0.95, word: 'Hello' }];
+  const early = pausePoint({ ...cue, at: 0, until: 3, pauseAt: 0 }, hello, [], 75, [0], 0.1);
+  assert.ok(early >= 0.1, `froze at ${early}`);
+  const fps = { num: 24000, den: 1001 };
+  const boundary = (240 * fps.den) / fps.num;
+  const f = await synthetic('start-freeze', 20, '0.125*sin(2*PI*440*t)', '24000/1001');
+  const words = Array.from({ length: 50 }, (_, i) => ({
+    word: 'talk',
+    start: boundary + 0.45 + i / 10,
+    end: boundary + 0.55 + i / 10,
+  }));
+  const { keeper } = keeperFor(savedPlan(20, [boundary], { fps }), words);
+  const result = await run(
+    f,
+    words,
+    (look) => (look.brief.position.index === 0 ? [] : [{ ...cue, at: 0, until: 3, pauseAt: 0 }]),
+    { keeper, settings: { ...settings, mode: 'extended' } },
+  );
+  const placed = result.report.descriptions[0];
+  assert.ok(placed.inserted);
+  assert.ok(placed.pauseAt - boundary >= 0.035, `froze ${placed.pauseAt - boundary} s in`);
+  const first = await decode(join(f.work, 'section-0', 'sound.flac'));
+  const second = await decode(join(f.work, 'section-1', 'sound.flac'));
+  const change = dB(
+    tone(second, 0, 0.04, 440),
+    tone(first, first.length / 48000 - 0.04, 0.04, 440),
+  );
+  assert.ok(Math.abs(change) < 1, `the soundtrack changes ${change.toFixed(1)} dB at the join`);
+});
+
+test('the first line of a section eases the soundtrack down as slowly as any other line', async () => {
+  const f = await fixture('first-line', 20);
+  const { keeper } = keeperFor(savedPlan(20, [10]));
+  const result = await run(
+    f,
+    [],
+    (look) => (look.brief.position.index === 0 ? [] : [{ ...cue, at: 0, until: 5, pauseAt: 0 }]),
+    { keeper },
+  );
+  const line = result.report.descriptions[0];
+  assert.ok(line.outputAt >= 10.25 - 1e-6, `the line starts at ${line.outputAt}`);
+  const pcm = await decode(join(f.work, 'section-1', 'sound.flac'));
+  const reference = tone(pcm, 7, 0.1);
+  const dip = dB(tone(pcm, line.outputAt - 10 + 1, 0.1), reference);
+  const eased = dB(tone(pcm, 0.08, 0.04), reference);
+  assert.ok(
+    dip < -3 && eased > dip / 2,
+    `${eased.toFixed(1)} dB 0.1 s in, ${dip.toFixed(1)} dB under the line`,
+  );
 });

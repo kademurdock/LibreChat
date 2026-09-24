@@ -5,6 +5,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import type { Analysis, Chapter, Continuity, FailureClass, Line, Meter, Word } from './types';
 import type { Brief } from './prompt';
 import { analysisFormat, analysisPrompt, readAnalysis, speakable } from './prompt';
+import { MediaError } from './media';
 import { Halt } from './types';
 
 /**
@@ -29,7 +30,8 @@ export const keytermPerMinute = 0.0013;
 export const speechPerByte: number = 15 / 1e6;
 /**
  * Delivery direction for the narrator. The voice proxy lifts a leading [tag] into Inworld's
- * instruction field, which Inworld does not bill, so only the spoken words are counted.
+ * instruction field, which Inworld does not bill, but Fish voices are billed for it as text, so
+ * it is counted with the spoken words.
  */
 const direction = '[clear engaged audio description] ';
 const dialogueService = 'Dialogue timing (Deepgram)';
@@ -87,34 +89,55 @@ export type VoiceCatalog = {
   categories?: { name: string; voices: string[] }[];
 };
 let catalog: { at: number; data: VoiceCatalog } | undefined;
-/** The voice catalog, cached for five minutes; when a refresh fails the last good copy is used. */
+let pending: Promise<VoiceCatalog> | undefined;
+let hung: { at: number; error: unknown } | undefined;
+/**
+ * The voice catalog, cached for five minutes. An old copy answers at once while one shared
+ * request refreshes it; with no copy yet, a proxy that did not answer is not waited on again
+ * for a minute.
+ */
 export async function voices(): Promise<VoiceCatalog> {
   if (catalog && Date.now() - catalog.at < 300000) return catalog.data;
-  try {
-    const response = await axios.get<VoiceCatalog>(`${voiceBase()}/voices.json`, {
-      timeout: 15000,
-      maxRedirects: 0,
-      maxContentLength: 4 * 1024 ** 2,
-      headers: { 'User-Agent': userAgent },
-    });
-    const data = z
-      .object({
-        voices: z.array(z.string().min(1).max(120)).max(3000),
-        describe: z.record(z.string()).optional(),
-        categories: z
-          .array(z.object({ name: z.string().max(120), voices: z.array(z.string().max(120)) }))
-          .max(200)
-          .optional()
-          .catch(undefined),
-      })
-      .parse(response.data);
-    catalog = { at: Date.now(), data };
-    return data;
-  } catch (error) {
-    if (!catalog) throw error;
-    catalog = { at: Date.now() - 240000, data: catalog.data };
+  if (catalog) {
+    refreshVoices().catch(() => {});
     return catalog.data;
   }
+  if (hung && Date.now() - hung.at < 60000) throw hung.error;
+  return refreshVoices();
+}
+function refreshVoices(): Promise<VoiceCatalog> {
+  pending ??= fetchVoices()
+    .catch((error: unknown) => {
+      if (catalog) catalog = { at: Date.now() - 240000, data: catalog.data };
+      else if (isTimeout(error)) hung = { at: Date.now(), error };
+      throw error;
+    })
+    .finally(() => {
+      pending = undefined;
+    });
+  return pending;
+}
+async function fetchVoices(): Promise<VoiceCatalog> {
+  const response = await axios.get<VoiceCatalog>(`${voiceBase()}/voices.json`, {
+    timeout: 15000,
+    maxRedirects: 0,
+    maxContentLength: 4 * 1024 ** 2,
+    headers: { 'User-Agent': userAgent },
+  });
+  const data = z
+    .object({
+      voices: z.array(z.string().min(1).max(120)).max(3000),
+      describe: z.record(z.string()).optional(),
+      categories: z
+        .array(z.object({ name: z.string().max(120), voices: z.array(z.string().max(120)) }))
+        .max(200)
+        .optional()
+        .catch(undefined),
+    })
+    .parse(response.data);
+  catalog = { at: Date.now(), data };
+  hung = undefined;
+  return data;
 }
 
 /** The video model declined a clip (a safety filter); the same clip will be declined again. */
@@ -124,7 +147,7 @@ class CutOff extends SyntaxError {}
 /** The voice service answered, but not with audio; worth one more try. */
 class Unplayable extends Error {}
 /** A failure whose message is already a plain sentence for Kade (the provider error is its cause). */
-class Plain extends Error {}
+export class Plain extends Error {}
 
 const statusOf = (error: unknown): number | undefined =>
   axios.isAxiosError(error) ? error.response?.status : undefined;
@@ -221,6 +244,8 @@ export function providerProblem(error: unknown, service: string): string {
   if (error instanceof Plain || error instanceof Unplayable) return error.message;
   const cause = root(error);
   if (cause instanceof Refusal) return `${service} declined to describe this scene.`;
+  if (cause instanceof CutOff)
+    return `${service} had too much to say about this part to fit in one reply. Describe this part again with less detail, or without the closer look.`;
   if (
     cause instanceof Error &&
     !axios.isAxiosError(cause) &&
@@ -245,12 +270,16 @@ export function providerProblem(error: unknown, service: string): string {
 
 /**
  * Why a step failed: `refused` (the model declined this content), `input` (this clip or request
- * cannot work as it is), or `transient` (worth trying again later, including account problems
+ * cannot work as it is, including a reply still cut off after the shorter retry), or `transient`
+ * (worth trying again later, including a full disk, a crashed media tool, and account problems
  * that stop the job until they are fixed).
  */
 export function failureClass(error: unknown): FailureClass {
   const cause = root(error);
   if (cause instanceof Refusal) return 'refused';
+  if (cause instanceof CutOff) return 'input';
+  if (cause instanceof MediaError && (cause.kind === 'disk' || cause.kind === 'tools'))
+    return 'transient';
   const status = statusOf(cause);
   if (status === 400 || status === 413 || status === 422) return 'input';
   if (
@@ -630,7 +659,7 @@ export async function synthesize(
   const words = speakable(text);
   if (!words) throw new Plain('There was nothing to say for this description.');
   const input = direction + words;
-  const cost = Buffer.byteLength(words, 'utf8') * speechPerByte;
+  const cost = Buffer.byteLength(input, 'utf8') * speechPerByte;
   await attempt(
     3,
     signal,
