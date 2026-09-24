@@ -1004,7 +1004,10 @@ test('a whole job: describe, stop, continue, library, re-voice, script, correcti
   assert.doesNotMatch(revisedTranscript.text, /[[\]<>]/);
   const stored = await Jobs.findById(id).lean();
   assert.deepEqual(stored.copies.at(-1).sections, [3, 2], 'the unedited section is read from version 2');
-  await call('post', `/jobs/${id}/library`, 'film-owner').send({ path: 'Audio/../Video' }).expect(400);
+  const dots = await call('post', `/jobs/${id}/library`, 'film-owner').send({ path: 'Audio/../Video' }).expect(400);
+  assert.equal(dots.body.field, 'path');
+  const broken = await call('post', `/jobs/${id}/library`, 'film-owner').send({ path: 'Audio/\nVideo' }).expect(400);
+  assert.match(broken.body.error, /line breaks/);
 
   const expiry = new Date(corrected.expiresAt).getTime();
   const beforeFresh = calls.analyze;

@@ -2304,10 +2304,12 @@ export function createDescriptionRouter(hooks: Hooks): {
     const restricted = !!privacy && (!privacy.shared || !privacy.ownerIsActor);
     const share =
       hooks.actor(req).role === 'ADMIN' ? (input.share ?? !restricted) : false;
-    const typed = libraryPathSchema.parse(
+    const typed = libraryPathSchema.safeParse(
       input.path ?? (job.source === 'library' ? describedShelf(job.sourcePath) : defaultLibraryPath),
     );
-    const path = matchFolder(typed, (await hooks.library.folders?.(req).catch(() => [])) ?? []);
+    if (!typed.success)
+      throw new Problem(typed.error.issues[0]?.message ?? fieldHelp.path, 400, 'path');
+    const path = matchFolder(typed.data, (await hooks.library.folders?.(req).catch(() => [])) ?? []);
     const source = `${copyFolder(job, copy)}/described.m4a`;
     const savingAt = new Date();
     const pending = (job.copies?.length ? copy.libraryPending : job.libraryPending) ||

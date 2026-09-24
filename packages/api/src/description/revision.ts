@@ -19,6 +19,7 @@ export type ScriptCue = Edit & {
 };
 
 const breaking = /[\p{Cc}\u{2028}\u{2029}]/gu;
+const controls = /[\p{Cc}\u{2028}\u{2029}]/u;
 const hidden = /[\u{202A}-\u{202E}\u{2066}-\u{2069}\u{200B}\u{FEFF}\u{00AD}]/gu;
 const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
@@ -148,6 +149,7 @@ export const defaultLibraryPath = 'Audio/Described Movies & TV/Described by Kade
 export const libraryPathSchema: z.ZodType<string, z.ZodTypeDef, unknown> = z
   .string()
   .max(400)
+  .refine((value) => !controls.test(value), 'Choose a folder name without line breaks.')
   .transform((value) =>
     value
       .replace(/\\/g, '/')
