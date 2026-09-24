@@ -655,11 +655,17 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     return guards;
   }
 
-  async function render(i: number, looked: Looked, stateIn: Continuity | null): Promise<SectionRecord> {
+  async function render(
+    i: number,
+    looked: Looked,
+    stateIn: Continuity | null,
+    late: boolean = false,
+  ): Promise<SectionRecord> {
     const section = fixed.sections[i];
     const seconds = section.end - section.start;
     const dir = join(directory, `section-${i}`);
     const began = Date.now();
+    const at = (part: number) => (late ? 92 : share(i, part));
     await mkdir(dir, { recursive: true });
     const sectionWords = inSection(section).map((word) => ({
       ...word,
@@ -690,7 +696,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       ],
       seconds,
     );
-    await progress(`Voicing section ${i + 1} of ${count}`, share(i, 0.3));
+    await progress(`Voicing section ${i + 1} of ${count}`, at(0.3));
     const key = (index: number, variant: Variant) => `${index}:${variant}`;
     const clips = new Map<string, Voiced>();
     incoming.forEach((item, index) =>
@@ -776,7 +782,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const left: string[] = [];
     for (const item of final.left) {
       const cue = cues[item.index];
-      const voiceLost = failed.has(key(item.index, 'full')) || failed.has(key(item.index, 'short'));
+      const voiceLost =
+        failed.has(key(item.index, 'short')) ||
+        (failed.has(key(item.index, 'full')) && !clips.has(key(item.index, 'short')));
       const carry =
         !voiceLost &&
         item.reason !== 'priority' &&
@@ -823,7 +831,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       })
       .sort((a, b) => a.placement.at - b.placement.at || a.placement.pauseAt - b.placement.pauseAt);
     const timeline = outputTimeline(aligned.map((item) => item.placement));
-    await progress(`Mixing section ${i + 1} of ${count}`, share(i, 0.75));
+    await progress(`Mixing section ${i + 1} of ${count}`, at(0.75));
     const pauses = timeline.filter((item) => item.pause > 0);
     const pausedFrames = pauses.reduce(
       (sum, item) => sum + Math.round((item.pause * fps.num) / fps.den),
@@ -1048,7 +1056,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     log(`Section ${item.index + 1} of ${count}: trying again after a passing provider error.`);
     const looked = await look(item.index, item.state);
     if (looked.fatal) throw looked.fatal;
-    records.set(item.index, await render(item.index, looked, item.state));
+    records.set(item.index, await render(item.index, looked, item.state, true));
   }
 
   const ordered = [...records.values()].sort((a, b) => a.index - b.index);

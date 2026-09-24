@@ -792,7 +792,7 @@ async function run(f, words, cues, overrides = {}) {
     session: 'synthetic-test',
     signal,
     meter,
-    progress,
+    progress: overrides.progress || progress,
     providers: backend,
     keeper: overrides.keeper,
     stopAfter: overrides.stopAfter,
@@ -1415,6 +1415,36 @@ test('only the text that will be heard is voiced, and the measured speed is kept
   assert.ok(Math.abs(measured - 0.0625) < 0.005, `measured ${measured} s per byte`);
 });
 
+test('a longer voice than expected switches to the short text, and a lost short voice is the reason given', async () => {
+  const f = await fixture('switch', 9);
+  const short = 'The square moves.';
+  const full = 'A red square slides across the room fast.';
+  const backend = providers(f.voice, [], []);
+  backend.transcribe = async () => [
+    { word: 'a', start: 0, end: 1 },
+    { word: 'b', start: 3.02, end: 9 },
+  ];
+  backend.analyze = async () => ({
+    kind: 'other',
+    setting: '',
+    people: [],
+    speakers: [],
+    protectedSounds: [],
+    cues: [{ at: 1, until: 2.9, text: full, shortText: short, importance: 3 }],
+  });
+  const tried = [];
+  const slow = measuredVoice();
+  backend.synthesize = async (text, voice, session, file, speed, ...rest) => {
+    tried.push(text);
+    if (text === short) throw new Error('The selected voice did not return playable audio.');
+    return slow.synthesize(text + ' '.repeat(Buffer.byteLength(text) / 2), voice, session, file, speed, ...rest);
+  };
+  const result = await run(f, [], [], { providers: backend });
+  assert.deepEqual(tried, [full, short, short]);
+  assert.equal(result.report.descriptions.length, 0);
+  assert.match(result.report.skipped[0].reason, /voice service/);
+});
+
 test('a preview renders the first sections only, and finishing reuses them', async () => {
   const f = await fixture('preview', 20);
   const plan = savedPlan(20, [6.5, 13]);
@@ -1659,7 +1689,18 @@ test('a section still failing after its retry is kept as failed, marked as a pas
     tries++;
     throw httpError(503);
   };
-  const result = await run(f, [], [], { providers: backend, keeper });
+  const values = [];
+  const result = await run(f, [], [], {
+    providers: backend,
+    keeper,
+    progress: async (_stage, value) => {
+      values.push(value);
+    },
+  });
+  assert.ok(
+    values.every((value, i) => i === 0 || value >= values[i - 1]),
+    `progress never goes back: ${values.map((value) => Math.round(value)).join(', ')}`,
+  );
   assert.equal(tries, 2);
   assert.equal(result.report.failedSections.length, 1);
   assert.equal(kept.records.find((record) => record.index === 1).failureClass, 'transient');
