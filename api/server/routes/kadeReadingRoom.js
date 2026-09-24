@@ -71,7 +71,7 @@ const MEDIA_EXT = Object.assign({}, AUDIO_EXT, VIDEO_EXT);
 /* Part 282 (Sep 23 2026): only a real media extension comes off an upload's title, with the
  * download leftovers a pushed file name can carry: yt-dlp's stream tag (".f136"), its ".temp" and
  * ".part" files, and an inner video extension ("LSU ads 1989.wmv.mp4"). Stripping "everything after
- * the last period" had cut 905 titles since Sep 19: "1996 Chuck E. Cheese's commercial" arrived as
+ * the last period" had cut 870 titles since Sep 19: "1996 Chuck E. Cheese's commercial" arrived as
  * "1996 Chuck E", "St. Louis" as "St", "Mr. Holland's Opus" as "Mr", and the librarian could not
  * file what it could not read. */
 const bareTitle = (s) => String(s)
