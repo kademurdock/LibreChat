@@ -637,7 +637,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       const failure =
         error instanceof MediaError ? error.message : providerProblem(error, 'The video model');
       if (accountProblem(error)) return { analysis: null, failure, fatal: new Error(failure) };
-      const kind: FailureClass = error instanceof MediaError ? 'input' : failureClass(error);
+      const kind: FailureClass = failureClass(error);
       log(`Section ${i + 1} of ${count} could not be described (${kind}): ${failure}`);
       return { analysis: null, failure, failureClass: kind };
     }

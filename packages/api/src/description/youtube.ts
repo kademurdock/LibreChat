@@ -274,6 +274,19 @@ export function cleanAbout(description: string): string {
   return cut(cleanLabel(kept), 600);
 }
 
+/** Bytes of the files in a folder; a file yt-dlp renames or removes while it is counted is skipped. */
+export async function folderBytes(
+  directory: string,
+  list: (path: string) => Promise<string[]> = readdir,
+): Promise<number> {
+  let bytes = 0;
+  for (const file of await list(directory)) {
+    const size = await stat(join(directory, file)).catch(() => null);
+    if (size?.isFile()) bytes += size.size;
+  }
+  return bytes;
+}
+
 export type YouTubeDetails = { name: string; seconds: number; about: string; chapters: Chapter[] };
 
 /**
@@ -373,17 +386,14 @@ export async function importYouTube(
   let oversize = false;
   const combined = AbortSignal.any([signal, local.signal]);
   const monitor = setInterval(() => {
-    void (async () => {
-      let bytes = 0;
-      for (const file of await readdir(directory)) {
-        const size = await stat(join(directory, file));
-        if (size.isFile()) bytes += size.size;
-      }
-      if (bytes > 4 * 1024 ** 3 && !oversize) {
+    void folderBytes(directory).then(
+      (bytes) => {
+        if (bytes <= 4 * 1024 ** 3 || oversize) return;
         oversize = true;
         local.abort(new Error('YouTube video exceeds the download limit.'));
-      }
-    })().catch(() => local.abort());
+      },
+      () => {},
+    );
   }, 2000);
   monitor.unref();
   const tooLarge =

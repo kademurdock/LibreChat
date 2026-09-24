@@ -1917,6 +1917,25 @@ test('a section the tools cannot read fails at once with a plain reason, without
   assert.equal(kept.records.find((record) => record.index === 1).failureClass, 'input');
 });
 
+test('a section whose clip hit a full disk is tried again at the end of the run', async () => {
+  const f = await fixture('disk-full', 20);
+  const { keeper, kept } = keeperFor(savedPlan(20, [6.5, 13]));
+  const backend = providers(f.voice, [], [{ ...cue, at: 1, until: 5 }]);
+  const analyze = backend.analyze;
+  let tries = 0;
+  backend.analyze = async (look) => {
+    if (look.brief.position.index === 1 && ++tries === 1)
+      throw new MediaError('disk', 'exit 1: No space left on device');
+    return analyze(look);
+  };
+  const result = await run(f, [], [], { providers: backend, keeper });
+  assert.equal(tries, 2);
+  assert.equal(result.report.failedSections.length, 0);
+  const record = kept.records.find((item) => item.index === 1);
+  assert.equal(record.failure, undefined);
+  assert.equal(record.failureClass, undefined);
+});
+
 test('an account problem with the video model stops the job at once', async () => {
   const f = await fixture('account', 20);
   const { keeper, kept } = keeperFor(savedPlan(20, [6.5, 13]));

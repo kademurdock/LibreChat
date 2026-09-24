@@ -19,6 +19,7 @@ import { describeVideo } from './engine.ts';
 import { command, decodeVoice } from './media.ts';
 import { sampleRate } from './mix.ts';
 import { quietSpot, rehearsalProviders } from './rehearsal.ts';
+import { transcribe } from './providers.ts';
 import {
   clip,
   cleanLabel,
@@ -74,6 +75,7 @@ let storageHook = null;
 let refuseSection = -1;
 process.env.KADE_DESCRIPTION_RETRY_SECONDS = '0';
 let voicesDown = false;
+let realTranscribe = false;
 let simulateConcurrentCosts = false;
 let sampleCost = 0;
 let beforeEngine = null;
@@ -367,7 +369,8 @@ before(async () => {
       },
     },
     providers: {
-      transcribe: async () => {
+      transcribe: async (file, seconds, signal, meter) => {
+        if (realTranscribe) return transcribe(file, seconds, signal, meter);
         calls.transcribe++;
         return [{ start: 0.2, end: 0.9, word: 'Hello.', speaker: 0 }];
       },
@@ -528,6 +531,35 @@ test('the page still opens when the voice list cannot be fetched', async () => {
     await call('delete', `/jobs/${id}`, 'voiceless-owner').expect(200);
   } finally {
     voicesDown = false;
+  }
+});
+
+test('a Deepgram account problem reaches her in words that name it', async () => {
+  const axios = createRequire(import.meta.url)('axios');
+  const previous = axios.defaults.adapter;
+  axios.defaults.adapter = async (config) => {
+    if (!/deepgram\.com/.test(config.url)) return axios.getAdapter(previous)(config);
+    config.data?.destroy?.();
+    throw new axios.AxiosError('Request failed with status code 402', 'ERR_BAD_REQUEST', config, {}, {
+      status: 402,
+      statusText: '',
+      headers: {},
+      data: {},
+      config,
+    });
+  };
+  realTranscribe = true;
+  try {
+    const id = await readyJob('deepgram-owner', 'deepgram-upload-01', 30);
+    await call('post', `/jobs/${id}/start`, 'deepgram-owner').send(settings).expect(202);
+    const stopped = await settle(id, ['failed', 'done'], 'deepgram-owner');
+    assert.equal(stopped.state, 'failed');
+    assert.equal(stopped.error, 'Dialogue timing (Deepgram) needs its account balance topped up (HTTP 402).');
+    assert.match(notices.filter((notice) => notice.owner === 'deepgram-owner').at(-1).text, /topped up/);
+    await call('delete', `/jobs/${id}`, 'deepgram-owner').expect(200);
+  } finally {
+    realTranscribe = false;
+    axios.defaults.adapter = previous;
   }
 });
 

@@ -941,7 +941,7 @@ test('providers: Deepgram gets keyterms and filler words, reports the language, 
   }
 });
 
-test('providers: the voice call is retried before a paid description is dropped, and the style tag is not billed', async () => {
+test('providers: the voice call is retried before a paid description is dropped, and everything sent is booked', async () => {
   const file = join(scratch, 'voice.wav');
   charges.length = 0;
   const fake = fakeAxios((_call, n) =>
@@ -953,8 +953,8 @@ test('providers: the voice call is retried before a paid description is dropped,
     await synthesize('A sign reads [Grand Opening] & more.', 'Voice 1', 'session', file, 1.5, signal, meter);
     assert.equal(fake.calls.length, 2);
     assert.equal(fake.calls[1].body.input, '[clear engaged audio description] A sign reads Grand Opening and more.');
-    const spoken = Buffer.byteLength('A sign reads Grand Opening and more.');
-    assert.ok(Math.abs(charges.at(-1).cost - spoken * 15e-6) < 1e-12);
+    const sent = Buffer.byteLength(fake.calls[1].body.input);
+    assert.ok(Math.abs(charges.at(-1).cost - sent * 15e-6) < 1e-12, 'Fish bills the style tag too');
   } finally {
     fake.restore();
   }
