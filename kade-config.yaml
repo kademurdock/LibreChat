@@ -38,7 +38,18 @@ endpoints:
   # KEPT: deferred_tools (tool-loading plumbing, left on deliberately),
   #   file_search (RAG), web_search, actions (Forge's proxy actions),
   #   context (read uploaded files as plain text), tools (all kade_* tools).
-  # Subagents restored September 24 for librarian consultation and agent collaboration.
+  # RESTORED Sep 24 2026: subagents, for Library consultation (Kiana and the
+  #   others can ask Mrs. Witherspoon on library-shaped turns; see
+  #   packages/api/src/library/consultation.ts) and for agent pairs Kade sets
+  #   up in the builder. What switching it on changes: every agent's builder
+  #   gets a Subagents section under Advanced (on, allow self, pick agents);
+  #   any agent record that still has subagents switched on from before July 4
+  #   gets its spawn tool back; "allow self" starts on in the builder, so turn
+  #   it off for a plain pair. A consulted agent runs with the person's own
+  #   access and its own round limit (recursionLimit below fences only the
+  #   agent the person is talking to).
+  #   Librarian consultation alone can be switched off with the env
+  #   KADE_LIBRARY_CONSULTATION=0 without touching this list.
   # REMOVED July 4: artifacts, skills, chain, ocr — all unused on a
   #   blind-first platform (no code-artifact/subagent/OCR use). execute_code was
   #   already removed July 2 (hosted Code Interpreter closed signups).

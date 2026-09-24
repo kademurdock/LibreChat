@@ -343,6 +343,9 @@ type RunAgent = Omit<Agent, 'tools'> & {
   subagentAgentConfigs?: RunAgent[];
   /** Source subagent spawning configuration (enabled / allowSelf / agent_ids). */
   subagents?: AgentSubagentsConfig;
+  /** KADE Sep 24 2026: model rounds this agent gets when it runs as another
+   *  agent's subagent (the SDK default is 25). Set for the consulted librarian. */
+  subagentMaxTurns?: number;
 };
 
 function isNonEmptyString(value: unknown): value is string {
@@ -846,6 +849,7 @@ function buildSubagentConfigs(
         child.description ??
         `Delegate a subtask to the ${child.name ?? child.id} agent in an isolated context.`,
       agentInputs: childInputs,
+      ...(child.subagentMaxTurns != null && { maxTurns: child.subagentMaxTurns }),
     });
   }
 

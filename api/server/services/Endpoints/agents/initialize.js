@@ -15,6 +15,7 @@ const {
   buildAgentContextAttachmentsByAgentId,
 } = require('@librechat/api');
 const {
+  SystemRoles,
   ResourceType,
   EModelEndpoint,
   PermissionBits,
@@ -43,8 +44,29 @@ const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
+const { applyKadeAudience } = require('./build');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
+
+/**
+ * KADE 2026-07-09: models with no OpenRouter host that accepts a `tools`
+ * param at all (see the note inside createToolLoader). Extend with env
+ * KADE_NO_TOOLS_MODELS (comma-separated).
+ * @param {string | undefined} model
+ * @returns {boolean}
+ */
+function isToollessModel(model) {
+  const NO_TOOLS_MODELS = new Set(
+    [
+      'minimax/minimax-m2-her',
+      ...String(process.env.KADE_NO_TOOLS_MODELS || '')
+        .split(',')
+        .map((m) => m.trim())
+        .filter(Boolean),
+    ].map((m) => m.toLowerCase()),
+  );
+  return NO_TOOLS_MODELS.has(String(model || '').toLowerCase());
+}
 
 /**
  * Creates a tool loader function for the agent.
@@ -52,8 +74,11 @@ const db = require('~/models');
  * @param {string | null} [streamId] - The stream ID for resumable mode
  * @param {boolean} [definitionsOnly=false] - When true, returns only serializable
  *   tool definitions without creating full tool instances (for event-driven mode)
+ * @param {((tools: string[]) => string[]) | null} [narrow] - KADE Sep 24 2026: a
+ *   consultation child's tool filter. When set, the agent's own tools are
+ *   narrowed by it, nothing is auto-injected and tool retrieval is skipped.
  */
-function createToolLoader(signal, streamId = null, definitionsOnly = false) {
+function createToolLoader(signal, streamId = null, definitionsOnly = false, narrow = null) {
   /**
    * @param {object} params
    * @param {ServerRequest} params.req
@@ -105,16 +130,8 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
     // (a hard "this model truly cannot call tools" fallback). Keep them in
     // sync: a model belongs in EITHER reframe TOOL_SHIM_MODELS OR here, never
     // both (being here strips tools before reframe ever sees them).
-    const NO_TOOLS_MODELS = new Set(
-      [
-        'minimax/minimax-m2-her',
-        ...String(process.env.KADE_NO_TOOLS_MODELS || '')
-          .split(',')
-          .map((m) => m.trim())
-          .filter(Boolean),
-      ].map((m) => m.toLowerCase()),
-    );
-    const toolless = NO_TOOLS_MODELS.has(String(model || '').toLowerCase());
+    // (The list itself lives in isToollessModel, shared with the consultation gate.)
+    const toolless = isToollessModel(model);
     /* KADE 2026-07-13: kade_message (family message-taking) rides the same
      * auto-injection — every agent can take "tell Skylee..." messages.
      * KADE 2026-08-07: kade_memory_search joins on her fleet-roll word — the
@@ -149,7 +166,9 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
     ];
     const withFeedback = toolless
       ? []
-      : [..._tools, ...autoTools.filter((t) => !_tools.includes(t))];
+      : narrow
+        ? narrow(_tools)
+        : [..._tools, ...autoTools.filter((t) => !_tools.includes(t))];
     const selectedTools =
       req.body?.kadeToolPolicy === 'morning-brief'
         ? withFeedback.filter(require('@librechat/api').isBriefToolAllowed)
@@ -172,8 +191,9 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
        * prefix only ever grows. Kill switch KADE_TOOLS_RAG=0. Agents with
        * action tools (Forge) and turns without user text are never touched.
        * Everything about it lives in services/kadeToolRetrieval.js. */
-      const ragPool =
-        loaded && Array.isArray(loaded.toolDefinitions) && loaded.toolDefinitions.length > 0
+      const ragPool = narrow
+        ? null /* a consultation child's short list is already the whole job */
+        : loaded && Array.isArray(loaded.toolDefinitions) && loaded.toolDefinitions.length > 0
           ? loaded.toolDefinitions /* event-driven mode: what the model binds */
           : loaded && Array.isArray(loaded.tools) && loaded.tools.length > 0
             ? loaded.tools
@@ -322,7 +342,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         res,
         signal,
         streamId,
-        toolNames,
+        /** KADE Sep 24 2026: a consulted librarian runs only her read-only
+         *  tools, whatever tool name her model produces. */
+        toolNames: ctx.kadeConsultation
+          ? require('@librechat/api').consultationToolsFor(toolNames)
+          : toolNames,
         agent: ctx.agent,
         toolRegistry: ctx.toolRegistry,
         mcpAvailableTools: ctx.mcpAvailableTools,
@@ -424,6 +448,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   /** Event-driven mode: only load tool definitions, not full instances */
   const loadTools = createToolLoader(signal, streamId, true);
+  /** The consulted librarian's loader: her read-only tools only (Sep 24 2026). */
+  const loadConsultationTools = createToolLoader(signal, streamId, true, (tools) =>
+    require('@librechat/api').consultationToolsFor(tools),
+  );
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string} */
@@ -528,6 +556,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *  custom-endpoint agents reflect configured rates (mirrors the AgentClient
    *  spending path, which reads the same config). */
   usageCost.endpointTokenConfig = primaryConfig.endpointTokenConfig;
+  /** Tool retrieval's no-web note describes the PRIMARY agent's tools; handoff
+   *  and subagent loads below run the same loader and would overwrite it with
+   *  their own selection. Restored before the client is built. */
+  const primaryToolRagNote = req._kadeToolRagNote;
 
   logger.debug(
     `[initializeClient] Storing tool context for ${primaryConfig.id}: ${primaryConfig.toolDefinitions?.length ?? 0} tools, registry size: ${primaryConfig.toolRegistry?.size ?? '0'}`,
@@ -676,11 +708,31 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   // action tools skipped and resource-scoped tools running without their
   // configured resources.
   const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
+  /** KADE Sep 24 2026 — LIBRARY CONSULTATION (her ask: "my default agent Kiana
+   *  can consult with the librarian about whatever"). On a library-shaped turn,
+   *  and for the rest of that conversation, the talking agent's subagent tool
+   *  offers Mrs. Witherspoon; she is loaded below by loadAgentById with the
+   *  consultation profile. Never on the librarian herself. Everything about
+   *  when and why lives in packages/api/src/library/consultation.ts. */
   if (subagentsCapabilityEnabled) {
-    const { libraryConsultation, libraryConsultationInstructions } = require('@librechat/api');
-    primaryConfig.subagents = libraryConsultation(primaryConfig.id, primaryConfig.subagents);
-    if (primaryConfig.subagents?.enabled) {
-      primaryConfig.instructions = (primaryConfig.instructions || '') + libraryConsultationInstructions;
+    try {
+      const { wantsLibraryConsultation, libraryConsultation } = require('@librechat/api');
+      const gate = wantsLibraryConsultation({
+        agentId: primaryConfig.id,
+        text: req.body?.text,
+        conversationId,
+        instructions: primaryAgent.instructions,
+        ephemeral: isEphemeralAgentId(primaryConfig.id),
+        toolless: isToollessModel(primaryConfig.model_parameters?.model ?? primaryConfig.model),
+        morningBrief: req.body?.kadeToolPolicy === 'morning-brief',
+        configured: primaryConfig.subagents,
+      });
+      if (gate.attach) {
+        primaryConfig.subagents = libraryConsultation(primaryConfig.id, primaryConfig.subagents);
+        logger.info(`[kadeConsult] agent=${primaryConfig.id} librarian=offered reason=${gate.reason}`);
+      }
+    } catch (consultError) {
+      logger.warn('[kadeConsult] skipped (turn runs without it): ' + consultError?.message);
     }
   }
   /** Track skipped ids locally so repeated failures short-circuit within
@@ -721,6 +773,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         skippedAgentIds.add(agentId);
         return null;
       }
+      /** KADE Sep 24 2026: on the voice lane the signed-in seat is the service
+       *  account and req.kadeOnBehalfOf names the person really talking; the
+       *  child runs for that person, so that person must be able to view it.
+       *  Their role is not resolved on that lane, so the check runs as USER. */
       const userId = req.kadeOnBehalfOf?.id || req.user?.id;
       if (!userId) {
         skippedAgentIds.add(agentId);
@@ -728,7 +784,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       }
       const hasAccess = await checkPermission({
         userId,
-        role: req.kadeOnBehalfOf ? (req.kadeOnBehalfOf.role || 'USER') : req.user?.role,
+        role: req.kadeOnBehalfOf?.id ? SystemRoles.USER : req.user?.role,
         resourceType: ResourceType.AGENT,
         resourceId: agent._id,
         requiredPermission: PermissionBits.VIEW,
@@ -754,6 +810,25 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         skippedAgentIds.add(agentId);
         return null;
       }
+      /** KADE Sep 24 2026: a child loaded here never passes through build.js,
+       *  so it would run without the notes every direct chat carries (a child
+       *  account's clean-content note above all). Same notes, same rules. The
+       *  consulted librarian additionally gets the consultation profile: her
+       *  persona without voice markup plus the consultation note, read-only
+       *  tools, none of the person's files, no subagents of her own and a
+       *  short round limit (packages/api/src/library/consultation.ts). */
+      const api = require('@librechat/api');
+      const consulting = api.isLibraryConsultant(agentId);
+      if (consulting) {
+        agent.instructions = api.withoutPerformance(agent.instructions);
+      }
+      applyKadeAudience(req)(agent);
+      if (consulting) {
+        agent.instructions = api.consultationInstructions(
+          agent.instructions,
+          primaryConfig.name ?? primaryAgent.name,
+        );
+      }
       const scopedSkillIds = resolveAgentScopedSkillIds({
         agent,
         accessibleSkillIds,
@@ -771,10 +846,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           req,
           res,
           agent,
-          loadTools,
-          requestFiles,
-          conversationId,
-          parentMessageId,
+          loadTools: consulting ? loadConsultationTools : loadTools,
+          requestFiles: consulting ? [] : requestFiles,
+          conversationId: consulting ? null : conversationId,
+          parentMessageId: consulting ? null : parentMessageId,
           endpointOption: { ...endpointOption, endpoint: EModelEndpoint.agents },
           allowedProviders,
           accessibleSkillIds: scopedSkillIds,
@@ -813,8 +888,20 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           getSkillByName: skillDbMethods.getSkillByName,
         },
       );
+      if (consulting) {
+        /** What the calling agent reads about her in the subagent tool, in
+         *  place of her public description; and no recursion from her. */
+        config.description = api.consultationDescription();
+        config.subagents = undefined;
+        config.subagentMaxTurns = api.CONSULTATION_MAX_TURNS;
+      }
       agentConfigs.set(agentId, config);
-      agentToolContexts.set(agentId, buildAgentToolContext({ agent, config }));
+      agentToolContexts.set(
+        agentId,
+        consulting
+          ? { ...buildAgentToolContext({ agent, config }), kadeConsultation: true }
+          : buildAgentToolContext({ agent, config }),
+      );
       return config;
     } catch (err) {
       logger.error(`[processAgent] Error processing subagent ${agentId}:`, err);
@@ -1053,6 +1140,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       byAgentId: endpointTokenConfigByAgentId,
       fallback: usageCost.endpointTokenConfig,
     });
+
+  req._kadeToolRagNote = primaryToolRagNote;
 
   const client = new AgentClient({
     req,

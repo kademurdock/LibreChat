@@ -1013,6 +1013,28 @@ describe('subagentConfigs', () => {
     expect(configs[1].type).toBe('agent_child');
   });
 
+  it('caps a child at its subagentMaxTurns and leaves other children at the SDK default', async () => {
+    const librarian = makeAgent({ id: 'agent_librarian', subagentMaxTurns: 6 });
+    const helper = makeAgent({ id: 'agent_helper' });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: {
+            enabled: true,
+            allowSelf: false,
+            agent_ids: ['agent_librarian', 'agent_helper'],
+          },
+          subagentAgentConfigs: [librarian, helper],
+        }),
+      ],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs.map((config) => [config.type, config.maxTurns])).toEqual([
+      ['agent_librarian', 6],
+      ['agent_helper', undefined],
+    ]);
+  });
+
   it('skips a child that points at the parent itself', async () => {
     const self = makeAgent({ id: 'agent_1' });
     const agents = await callAndCapture({
