@@ -715,6 +715,8 @@ router.get('/book/:id/audio/:s/:c', requireJwtAuth, async (req, res) => {
     if (skipped && noticeHidden(req, book, s)) return res.status(404).json({ error: 'Past the end of the book.' });
     const chunk = await chunkAt(book, s, c, skipped);
     if (!chunk) return res.status(404).json({ error: 'Past the end of the book.' });
+    // an old jacket's lone "Please do not pass this book on." cleans to nothing: skip it
+    if (!String(chunk.text || '').trim()) return res.status(204).end();
     const voice = String(req.query.voice || DEFAULT_VOICE()).slice(0, 120);
     const speed = Math.max(0.5, Math.min(1.5, parseFloat(req.query.speed) || 1));
     const delivery = ['STABLE', 'BALANCED', 'CREATIVE'].includes(req.query.delivery) ? req.query.delivery : 'STABLE';

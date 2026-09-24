@@ -162,6 +162,39 @@ test('a book that only talks about print disabilities keeps its words', async ()
   assert.ok(!parsed.jacket.includes('bona fide'), 'no notice line for a book that had no notice');
 });
 
+test('an opening or an author note about print disabilities is the book, not a notice', async () => {
+  const opening = 'When I lost my sight at nine, the library was the first place that gave me back a book. Talking books were produced on records then, and only readers with print disabilities could borrow them. My mother drove forty miles each month so I would not run out. ';
+  // an untitled opening long enough to become "Part 1"
+  const memoir = await parseBook(Buffer.from('<html><body><p>' + opening.repeat(3) + '</p><h1>Chapter 1</h1><p>' + 'The rest of the story goes on. '.repeat(80) + '</p></body></html>'), 'memoir.html');
+  assert.deepEqual(memoir.skipped, []);
+  assert.deepEqual(memoir.sections.map((s) => s.title), ['About this book', 'Part 1', 'Chapter 1']);
+  assert.ok(!memoir.jacket.includes('bona fide'));
+  // titled like a notice, but it is the author speaking
+  const note = await parseBook(Buffer.from('<html><body><h1>A note on accessibility</h1><p>This edition was produced with the help of volunteers who have print disabilities themselves.</p><h1>Chapter 1</h1><p>' + 'Story. '.repeat(400) + '</p></body></html>'), 'note.html');
+  assert.deepEqual(note.skipped, []);
+  assert.ok(note.sections.flatMap((s) => s.chunks).join(' ').includes('volunteers who have print disabilities'));
+  // a text file with no headings is one section: the whole book stays
+  const txt = await parseBook(Buffer.from(opening.repeat(4) + '\n\n' + 'The rest of the story goes on and on for many pages. '.repeat(200)), 'memoir.txt');
+  assert.deepEqual(txt.skipped, []);
+  assert.ok(txt.stats.chars > 11000, 'the book was kept: ' + txt.stats.chars);
+  assert.ok(!txt.jacket.includes('bona fide'));
+  const letter = await parseBook(Buffer.from('The song was downloaded by Grandpa on a slow modem, and he played it for weeks.\n\n' + 'The rest of the story goes on. '.repeat(100)), 'letter.txt');
+  assert.deepEqual(letter.skipped, []);
+  assert.ok(letter.sections.flatMap((s) => s.chunks).join(' ').includes('The song was downloaded by Grandpa'));
+});
+
+test('a notice pasted above a text file with no headings leaves only its own paragraphs', async () => {
+  const story = 'The rest of the story goes on and on for many pages. '.repeat(200);
+  const bookshare = await parseBook(Buffer.from('This accessible media has been made available to people with bona fide print disabilities. Bookshare distributes this.\n\nThis material was downloaded by Some Reader and is digitally fingerprinted.\n\nBEGIN CONTENT\n\n' + story), 'bs.txt');
+  assert.deepEqual(bookshare.skipped.map((s) => s.reason), ['bookshare-notice']);
+  assert.ok(bookshare.stats.chars > 10000, 'the book was kept: ' + bookshare.stats.chars);
+  assert.ok(!/some reader|fingerprint|begin content/i.test(bookshare.sections.flatMap((s) => s.chunks).join(' ')));
+  const other = await parseBook(Buffer.from('This accessible format is made available under Section 121 exclusively for persons with print disabilities. It may not be copied or distributed.\n\n' + story), 'other.txt');
+  assert.deepEqual(other.skipped.map((s) => s.reason), ['accessibility-notice']);
+  assert.ok(other.stats.chars > 10000);
+  assert.ok(other.jacket.endsWith('This book was produced for people with bona fide print disabilities.'));
+});
+
 test('a book with no headings still gets navigable parts, and number-only headings fold into the next', async () => {
   const p = (n) => `<p>${('Sentence number ' + n + ' goes here. ').repeat(40)}</p>`;
   const xml = dtbook(`<frontmatter>${NOTICE}</frontmatter><bodymatter><level1>${p(1)}</level1><level1>${p(2)}</level1><level1><h1>4</h1></level1><level1><h1>Triumphs</h1>${p(3)}</level1></bodymatter>`);

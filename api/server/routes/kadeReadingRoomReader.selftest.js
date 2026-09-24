@@ -112,6 +112,30 @@ test('the reading view gets a page of a chapter in one request, capped, in narra
   assert.equal((await passagesHandler(null, stored)(0, {})).status, 404);
 });
 
+test('a passage that cleans to nothing is skipped, never sent to the voice as bare steering', async () => {
+  const start = routeSource.indexOf("router.get('/book/:id/audio/:s/:c'");
+  const end = routeSource.indexOf("router.post('/book/:id/progress'", start);
+  let handler;
+  const sent = [];
+  const context = {
+    router: { get: (_p, _auth, fn) => { handler = fn; } }, requireJwtAuth: () => {},
+    openBook: async () => ({ _id: 'b', kind: 'text' }), noticeHidden: () => false,
+    clampInt: (v, lo, hi, dflt) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt; },
+    // an old jacket's last chunk, "Please do not pass this book on.", after readingJacket
+    chunkAt: async () => ({ text: '', title: 'About this book', s: 0, c: 3, count: 4, next: null, prev: null }),
+    axios: { post: async (...a) => { sent.push(a); throw new Error('the voice was called'); } },
+    DEFAULT_VOICE: () => 'v', STEER: () => '%%%calm%%%', PROXY_BASE: () => 'http://proxy', Date,
+    logger: { error: (m, e) => { throw new Error(String(e || m)); }, warn: () => {}, info: () => {} },
+  };
+  vm.runInNewContext(routeSource.slice(start, end), context);
+  let status = 0, ended = false;
+  await handler({ params: { id: 'b', s: '0', c: '3' }, query: {}, user: { id: 'u' }, on: () => {} },
+    { status(n) { status = n; return this; }, json() { return this; }, end() { ended = true; }, setHeader() {} });
+  assert.equal(status, 204);
+  assert.ok(ended);
+  assert.equal(sent.length, 0);
+});
+
 test('an accessible edition notice is for the uploader and the librarian only', () => {
   const start = routeSource.indexOf('function noticeHidden(');
   const end = routeSource.indexOf('\n}\n', start) + 3;

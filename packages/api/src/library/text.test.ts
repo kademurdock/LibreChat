@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { Types } from 'mongoose';
+import { readLibraryCatalog } from './catalog';
+import type { CatalogItem, LibraryDependencies } from './catalog';
 import { printDisabilityNotice, readingJacket, readingPassages, readingText } from './text';
 
 /* Run from the repo root:
@@ -63,4 +66,38 @@ test('a reading page is the stored passages, cleaned, with positions kept', () =
   assert.deepEqual(readingPassages(jacket, 'jacket', 0, 5), [`A book. ${printDisabilityNotice}`, '']);
   // Only the jacket is rewritten; a novel quoting the sentence keeps it.
   assert.deepEqual(readingPassages(['Please do not pass this book on.'], 'section', 0, 1), ['Please do not pass this book on.']);
+});
+
+test('the librarian reads an old jacket the way the reader sees it', async () => {
+  const id = new Types.ObjectId();
+  const oldJacket = 'Thug Notes. By Sparky Sweets. From Bookshare, for people with print disabilities. Please do not pass this book on.';
+  const item: CatalogItem = {
+    _id: id,
+    owner: new Types.ObjectId(),
+    state: 'ready',
+    kind: 'text',
+    title: 'Thug Notes',
+    jacket: oldJacket,
+    sections: [
+      { title: 'About this book', chunkCount: 1, kind: 'jacket' },
+      { title: 'Chapter 1', chunkCount: 1, kind: 'section' },
+    ],
+  };
+  const chunks = [[oldJacket], ['Please do not pass this book on.']];
+  const deps: LibraryDependencies = {
+    search: async () => [],
+    details: async () => item,
+    passage: async (_id, section, chunk) => ({ text: chunks[section][chunk], title: '', chunks: 1, sections: 2 }),
+  };
+  const reader = { id: String(new Types.ObjectId()), child: false, hidden: false };
+  const details = await readLibraryCatalog({ action: 'details', id: String(id) }, reader, deps);
+  assert.ok('jacket' in details);
+  assert.equal(details.jacket, `Thug Notes. By Sparky Sweets. ${printDisabilityNotice}`);
+  const jacket = await readLibraryCatalog({ action: 'passage', id: String(id), section: 0, chunk: 0 }, reader, deps);
+  assert.ok('text' in jacket);
+  assert.ok(!/bookshare|pass this book on/i.test(jacket.text || ''), jacket.text);
+  // a novel quoting the sentence keeps it
+  const story = await readLibraryCatalog({ action: 'passage', id: String(id), section: 1, chunk: 0 }, reader, deps);
+  assert.ok('text' in story);
+  assert.equal(story.text, 'Please do not pass this book on.');
 });

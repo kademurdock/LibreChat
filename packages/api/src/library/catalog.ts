@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import type { FilterQuery, PipelineStage } from 'mongoose';
+import { readingJacket, readingText } from './text';
 
 interface Scene {
   t?: number;
@@ -8,6 +9,7 @@ interface Scene {
 interface Section {
   title?: string;
   chunkCount?: number;
+  kind?: string;
 }
 interface Track {
   title?: string;
@@ -385,14 +387,18 @@ export async function readLibraryCatalog(
       };
     const passage = await deps.passage(id, section, chunk);
     if (!passage) return { error: 'That passage is unavailable.' };
+    // what a reader would see: an old jacket's notice as the neutral line, no voice steering
+    const words = readingText(
+      item.sections?.[section]?.kind === 'jacket' ? readingJacket(passage.text) : passage.text,
+    );
     return {
       id,
       title: clean(item.title, 240),
       section,
       chunk,
       sectionTitle: passage.title,
-      text: clean(passage.text, 6000),
-      truncated: passage.text.length > 6000,
+      text: clean(words, 6000),
+      truncated: words.length > 6000,
       next:
         chunk + 1 < passage.chunks
           ? { section, chunk: chunk + 1 }
@@ -409,7 +415,8 @@ export async function readLibraryCatalog(
     publisher: clean(item.publisher, 200),
     language: clean(item.language, 80),
     isbn: clean(item.isbn, 80),
-    jacket: clean(item.jacket, 2000),
+    // jackets cut before Sep 24 2026 still end with the old Bookshare line
+    jacket: clean(readingJacket(item.jacket ?? ''), 2000),
     sourceUrl: publicUrl(item.meta?.sourceUrl),
     sources: (item.librarian?.sources || [])
       .slice(0, 8)

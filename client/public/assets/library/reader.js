@@ -194,12 +194,41 @@
 
   window.createLibraryReader = function (options) {
     var dialog = null, $ = function (id) { return dialog.querySelector('#' + id); };
-    var prefs = null, prefsKey = '', opener = null, oldOverflow = '';
+    var prefs = null, prefsKey = '', pending = {}, opener = null, oldOverflow = '';
     var page = null; // { id, s, from, total, rows: { c: element } }
     var marked = null, following = false, generation = 0;
 
     function media(q) { try { return window.matchMedia(q).matches; } catch (_) { return false; } }
-    function save() { try { localStorage.setItem(prefsKey, JSON.stringify(prefs)); } catch (_) { /* this visit only */ } }
+    function person() { return String((options.person && options.person()) || ''); }
+    /** Saved under the person's own key. Before the page knows who is
+     * reading (the shelf has not answered yet) choices last this visit only,
+     * then land under that person once it does; never under a key everyone
+     * on the device would share. */
+    function write() { try { localStorage.setItem(prefsKey, JSON.stringify(prefs)); } catch (_) { /* this visit only */ } }
+    /** Once the page knows who is reading, file this visit's choices under
+     * them: their earlier choices stay, the ones made meanwhile win. */
+    function settle() {
+      if (prefsKey) return true;
+      if (!person()) return false;
+      prefsKey = STORE + ':' + person();
+      var mine = pending, earlier = readJson(prefsKey);
+      pending = {};
+      if (earlier) {
+        prefs = normalize(earlier, seed(sitePrefs()));
+        Object.keys(mine).forEach(function (key) { prefs[key] = mine[key]; });
+        apply();
+      }
+      if (Object.keys(mine).length) write();
+      return true;
+    }
+    /** `changed`: the setting just chosen; none means all of them (Reset). */
+    function save(changed) {
+      if (!prefsKey) {
+        if (changed) pending[changed] = prefs[changed];
+        else pending = normalize(prefs);
+      }
+      if (settle()) write();
+    }
     function apply() {
       var theme = prefs.colors === 'page' ? (media('(prefers-color-scheme: dark)') ? 'pageDark' : 'pageLight') : prefs.colors;
       var colors = THEMES[theme] || THEMES.pageLight;
@@ -214,10 +243,12 @@
       $('lrFollow').checked = prefs.follow;
     }
     function loadPrefs() {
-      var person = String((options.person && options.person()) || 'anyone');
-      prefsKey = STORE + ':' + person;
+      // opened before the page knew who is reading: this visit's choices carry on
+      if (prefs && !prefsKey) { settle(); apply(); return; }
+      prefsKey = person() ? STORE + ':' + person() : '';
+      pending = {};
       var saved = null;
-      try { saved = JSON.parse(localStorage.getItem(prefsKey) || 'null'); } catch (_) { saved = null; }
+      if (prefsKey) try { saved = JSON.parse(localStorage.getItem(prefsKey) || 'null'); } catch (_) { saved = null; }
       prefs = saved ? normalize(saved, seed(sitePrefs())) : seed(sitePrefs());
       apply();
     }
@@ -235,15 +266,22 @@
       var r = el.getBoundingClientRect();
       return r.bottom > 0 && r.top < viewHeight();
     }
-    /** Bring a passage to the middle of the screen, unless it already sits
-     * comfortably in view: text moves only when the reader would run out. */
+    /** Where a passage should sit when it is brought into view: the middle of
+     * the screen, or its first line at the top when it is too tall for that
+     * (large text, a zoomed page), so reading along starts at its start. */
+    function placement(el) {
+      var bar = dialog.querySelector('.lr-bar');
+      var covered = bar && getComputedStyle(bar).position === 'sticky' ? Math.max(0, bar.getBoundingClientRect().bottom) : 0;
+      return { covered: covered, block: el.getBoundingClientRect().height > (viewHeight() - covered) * 0.75 ? 'start' : 'center' };
+    }
+    /** Bring a passage into view, unless it already sits comfortably there:
+     * text moves only when the reader would run out. */
     function reveal(el) {
       if (!el || !el.scrollIntoView) return;
       var r = el.getBoundingClientRect(), h = viewHeight();
-      var bar = dialog.querySelector('.lr-bar');
-      var covered = bar && getComputedStyle(bar).position === 'sticky' ? bar.getBoundingClientRect().bottom : 0;
-      if (r.top >= Math.max(h * 0.1, covered) && r.bottom <= h * 0.85) return;
-      el.scrollIntoView({ block: 'center', behavior: media('(prefers-reduced-motion: reduce)') ? 'auto' : 'smooth' });
+      var where = placement(el);
+      if (r.top >= Math.max(h * 0.1, where.covered) && r.bottom <= h * 0.85) return;
+      el.scrollIntoView({ block: where.block, behavior: media('(prefers-reduced-motion: reduce)') ? 'auto' : 'smooth' });
     }
     /** Mark the narrated passage when it is on this page. */
     function mark(position) {
@@ -279,6 +317,11 @@
         var heading = $('lrHeading');
         var text = $('lrText');
         heading.textContent = pageHeading(title, from, j.total);
+        // A reader resting on a passage of the old page (after "Show where
+        // the narration is") keeps focus in the view when the narration turns
+        // the page: it goes to the new page's heading, a short line, rather
+        // than a passage a screen reader would read over the narration.
+        var hadFocus = text.contains(document.activeElement);
         text.replaceChildren();
         if (book.language) text.lang = book.language; else text.removeAttribute('lang');
         var rows = {};
@@ -297,9 +340,12 @@
         updateNav();
         var here = mark(options.position());
         following = !!here;
-        if (focus === 'passage' && rows[c]) { rows[c].focus({ preventScroll: true }); rows[c].scrollIntoView({ block: 'center' }); }
+        if (focus === 'passage' && rows[c]) { rows[c].focus({ preventScroll: true }); rows[c].scrollIntoView({ block: placement(rows[c]).block }); }
         else if (focus === 'heading') { heading.focus({ preventScroll: true }); heading.scrollIntoView({ block: 'start' }); }
-        else if (here) reveal(here);
+        else {
+          if (hadFocus) heading.focus({ preventScroll: true });
+          if (here) reveal(here);
+        }
       } catch (_) {
         if (token === generation) say('This page did not load. Check your connection, then try again.');
       } finally {
@@ -320,10 +366,10 @@
 
     function wire() {
       SETTINGS.forEach(function (s) {
-        $('lr-' + s.key).addEventListener('change', function () { prefs[s.key] = this.value; apply(); save(); });
+        $('lr-' + s.key).addEventListener('change', function () { prefs[s.key] = this.value; apply(); save(s.key); });
       });
       // takes effect from the next passage; "Show where the narration is" rejoins it
-      $('lrFollow').addEventListener('change', function () { prefs.follow = this.checked; save(); });
+      $('lrFollow').addEventListener('change', function () { prefs.follow = this.checked; save('follow'); });
       $('lrReset').addEventListener('click', function () {
         var follow = prefs.follow;
         prefs = seed(sitePrefs()); prefs.follow = follow;

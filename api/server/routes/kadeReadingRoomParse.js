@@ -282,13 +282,23 @@ const PUBLISHER_JUNK_RE = /thank you for (downloading|purchasing|buying|reading)
 /* Sep 24 2026, her word: "Doesn't matter where the epub etc came from." An
  * accessible edition from anywhere (Bookshare, NNELS, CELA, a school's
  * Section 121 copy) can open with a notice about who may read it. Bookshare's
- * is caught by its own shape; this is the source-neutral net: a front-matter
- * section titled like a notice (or untitled) that speaks of print
- * disabilities, or the laws that allow such copies, AND of who the copy is
- * for. The jacket then carries the one neutral sentence instead. */
+ * is caught by its own shape; this is the source-neutral net: a short
+ * front-matter section titled like a notice (or untitled) with a notice's
+ * shape, not just its words: print disabilities (or the laws that allow such
+ * copies), a sentence about THIS copy, and a rule about who may have it.
+ * A memoir that mentions talking books, or an author's note on accessibility,
+ * has the words but not the rule, and keeps its text. The jacket then
+ * carries the one neutral sentence instead. */
 const ACCESS_NOTICE_RE = /print[\s-]*disab(?:ilit|led)|disabilit(?:y|ies) that affects? reading|(?:section|§)\s*121\b|chafee amendment|marrakesh treaty/i;
-const ACCESS_TERMS_RE = /produced|provided|distributed|made available|solely|exclusive|eligible|authori[sz]ed|qualif(?:y|ied)|restrict|may not|must not|do not (?:copy|distribute|share|pass)/i;
+const ACCESS_COPY_RE = /\bthis (?:(?:accessible|digital|electronic|alternate|alternative|special|braille|audio|large[- ]print) )?(?:book|edition|copy|file|format|title|material|media|publication|e-?book|version|work|document)\b/i;
+const ACCESS_RULE_RE = /\b(?:solely|exclusively|only) (?:for|to|by) (?:the )?(?:use (?:of|by) )?(?:persons|people|readers|individuals|users|patrons|students|members|those|eligible|qualified|authori[sz]ed)\b|\bmay not be (?:copied|distributed|shared|reproduced|transferred|sold|resold|redistributed|given)|\bmust not be\b|\b(?:do|does) not (?:copy|distribute|share|pass|redistribute|give)\b|\b(?:authori[sz]ed|eligible|qualified|registered) (?:users|readers|persons|individuals|people|patrons|members)\b|\b(?:unauthori[sz]ed|further) (?:copying|distribution|reproduction|sharing)\b/i;
 const NOTICE_TITLE_RE = /notice|copyright|accessib|disabilit|terms|licen[cs]e|permitted use|about this (?:edition|format|file)/i;
+/** A notice about who may have this accessible copy (any source). */
+function accessNoticeShape(text) {
+  return ACCESS_NOTICE_RE.test(text) && ACCESS_COPY_RE.test(text) && ACCESS_RULE_RE.test(text);
+}
+/** Bookshare's own notice as it appears pasted into a text export. */
+const BOOKSHARE_PARA_RE = /^begin content\.?$|digitally fingerprinted|this accessible media|bookshare (?:distributes|agreement|web site|membership)/i;
 /** Skip reasons that are an accessible edition's notice (they can name the
  * person who downloaded the file; kadeReadingRoom.js shows them only to the
  * uploader and the librarian). */
@@ -302,8 +312,9 @@ function classify(sections) {
     const text = s.paras.join('\n');
     const chars = text.length;
     let reason = null;
-    if (s.notice || (NOTICE_RE.test(text) && /bookshare/i.test(text))) reason = 'bookshare-notice';
-    else if (!bodyStarted && i < 12 && chars < 4000 && (!s.title || s.untitled || NOTICE_TITLE_RE.test(s.title)) && ACCESS_NOTICE_RE.test(text) && ACCESS_TERMS_RE.test(text)) reason = 'accessibility-notice';
+    if (s.notice && s.accessNotice) reason = 'accessibility-notice';
+    else if (s.notice || (NOTICE_RE.test(text) && /bookshare/i.test(text))) reason = 'bookshare-notice';
+    else if (!bodyStarted && i < 12 && chars < 4000 && (!s.title || (s.untitled && chars < 2500) || NOTICE_TITLE_RE.test(s.title)) && accessNoticeShape(text)) reason = 'accessibility-notice';
     else if (s.kind === 'toc') reason = 'contents';
     else if (chars < 12 && !s.title) reason = 'blank';
     else if (chars < 12 && s.title && /^(cover|title page|copyright page|half title|frontispiece)$/i.test(s.title)) reason = 'blank';
@@ -507,14 +518,34 @@ function readPlainText(text, filename) {
   let cur = { title: '', paras: [], kind: 'section', notice: false, ids: [] };
   sections.push(cur);
   for (const p of paras) {
-    if (p.length < 80 && (/^(chapter|part|book|prologue|epilogue)\b/i.test(p) || (p === p.toUpperCase() && /[A-Z]/.test(p) && p.split(' ').length <= 8))) {
+    // "BEGIN CONTENT" is the end of a pasted notice, not a heading
+    if (p.length < 80 && !/^begin content\.?$/i.test(p) && (/^(chapter|part|book|prologue|epilogue)\b/i.test(p) || (p === p.toUpperCase() && /[A-Z]/.test(p) && p.split(' ').length <= 8))) {
       if (cur.paras.length === 0 && !cur.title) cur.title = p;
       else { cur = { title: p, paras: [], kind: 'section', notice: false, ids: [] }; sections.push(cur); }
     } else cur.paras.push(p);
   }
-  // a Bookshare notice pasted into a txt export
+  // A notice pasted at the top of a txt export: only its own paragraphs (up
+  // to "BEGIN CONTENT", within the first 4000 characters) leave the book. A
+  // file with no headings is one section, and an opening that merely
+  // mentions print disabilities is the book, not a notice.
   const first = sections[0];
-  if (first && NOTICE_RE.test(first.paras.join('\n'))) first.notice = true;
+  let end = -1;
+  let bookshare = false;
+  for (let i = 0, chars = 0; first && i < first.paras.length; i++) {
+    chars += first.paras[i].length;
+    if (chars > 4000) break;
+    const para = first.paras[i];
+    const own = BOOKSHARE_PARA_RE.test(para) || (NOTICE_RE.test(para) && /bookshare/i.test(para));
+    if (own || accessNoticeShape(para)) { end = i; bookshare = bookshare || own; }
+    if (/begin content/i.test(para)) { if (end >= 0) end = i; break; }
+  }
+  if (end >= 0) {
+    const rest = first.paras.slice(end + 1);
+    const notice = { title: '', paras: first.paras.slice(0, end + 1), kind: 'section', notice: true, accessNotice: !bookshare, ids: [] };
+    first.paras = rest;
+    sections.unshift(notice);
+    if (!first.paras.length) { notice.title = first.title; sections.splice(1, 1); }
+  }
   return { meta, sections };
 }
 
