@@ -59,14 +59,7 @@ const outputThreads = (complex: boolean = false): string[] => [
 ];
 
 export type MediaProblem =
-  | 'damaged'
-  | 'no-video'
-  | 'cover-art'
-  | 'too-short'
-  | 'format'
-  | 'too-detailed'
-  | 'disk'
-  | 'tools';
+  'damaged' | 'no-video' | 'cover-art' | 'too-short' | 'format' | 'too-detailed' | 'disk' | 'tools';
 const plainWords: Record<MediaProblem, string> = {
   damaged:
     'This video file is incomplete or damaged. It may not have finished copying. Export or download it again.',
@@ -285,7 +278,8 @@ const seconds = (value: string | undefined): number | null => {
   return value !== undefined && value !== '' && Number.isFinite(parsed) ? parsed : null;
 };
 const describedTitle = /descri(bed|ption)|\bdvs\b|narrat/i;
-const englishLike = (language: string) => (['eng', 'en'].includes(language) ? 2 : language === 'und' || !language ? 1 : 0);
+const englishLike = (language: string) =>
+  ['eng', 'en'].includes(language) ? 2 : language === 'und' || !language ? 1 : 0;
 const centred = /^(3\.[01]|4\.[01]|5\.|6\.[01]|7\.|hexagonal|octagonal)/;
 /** Channel layouts with a front centre (dialogue) channel. */
 const hasCentre = (layout: string) =>
@@ -383,7 +377,12 @@ async function inspect(file: string, signal: AbortSignal): Promise<Inspection> {
   const videoStart = seconds(video.start_time) ?? 0;
   const formatStart = Math.min(seconds(data.format?.start_time) ?? videoStart, videoStart);
   const durations = streams.map((stream) => seconds(stream.duration) ?? 0);
-  const total = seconds(data.format?.duration) ?? (Math.max(0, ...durations) || null);
+  const whole = seconds(data.format?.duration) ?? (Math.max(0, ...durations) || null);
+  /** Length on the picture's clock: a video that starts after the sound has that much less. */
+  const total =
+    whole === null
+      ? null
+      : Math.max(0, (seconds(data.format?.start_time) ?? videoStart) + whole - videoStart);
   const order = video.field_order ?? '';
   const interlaced = ['tt', 'bb', 'tb', 'bt'].includes(order);
   return {
@@ -642,7 +641,9 @@ const soundClock = (media: Media, start: number, rate: number = sampleRate) =>
   `${soundTimes(media, start)},${soundFill(rate)}`;
 const oneSidedPan = (media: Media): string[] =>
   media.oneSided
-    ? [`pan=stereo|c0=${media.oneSided === 'left' ? 'c0' : 'c1'}|c1=${media.oneSided === 'left' ? 'c0' : 'c1'}`]
+    ? [
+        `pan=stereo|c0=${media.oneSided === 'left' ? 'c0' : 'c1'}|c1=${media.oneSided === 'left' ? 'c0' : 'c1'}`,
+      ]
     : [];
 
 const mediaOf = async (source: string, media: Media | undefined, signal: AbortSignal) =>
@@ -708,7 +709,10 @@ export function liveChannel(levels: number[]): 'left' | 'right' | undefined {
  * Scene cuts and still stretches (freezes of 5 s or more) from what scdet and freezedetect print;
  * a still that runs to the end closes at `end`.
  */
-export function pictureEvents(printed: string, end: number): { cuts: number[]; stills: Interval[] } {
+export function pictureEvents(
+  printed: string,
+  end: number,
+): { cuts: number[]; stills: Interval[] } {
   const round = (value: number) => Math.round(value * 1000) / 1000;
   const values = (key: string) =>
     [...printed.matchAll(new RegExp(`lavfi\\.${key}[:=]\\s*(-?[\\d.]+)`, 'g'))]
@@ -774,7 +778,9 @@ async function soundtrackPass(
           `[a0]${[
             soundFill(48000),
             ...stereo,
-            tools.perChannel ? 'astats=measure_perchannel=RMS_level:measure_overall=none' : 'astats',
+            tools.perChannel
+              ? 'astats=measure_perchannel=RMS_level:measure_overall=none'
+              : 'astats',
             'ebur128=peak=sample:framelog=quiet:metadata=1',
             `ametadata=mode=print:key=lavfi.r128.M:file=${momentaryFile}`,
           ].join(',')}[m]`,
@@ -872,7 +878,8 @@ export async function soundtrack(
   const tools = await capabilities();
   const first = await soundtrackPass(source, directory, signal, info, tools, true);
   const { levels, ...result } = first;
-  const live = info.oneSided || info.centre || (info.channels ?? 2) !== 2 ? undefined : liveChannel(levels);
+  const live =
+    info.oneSided || info.centre || (info.channels ?? 2) !== 2 ? undefined : liveChannel(levels);
   if (!live) return info.oneSided ? { ...result, oneSided: info.oneSided } : result;
   const again = await soundtrackPass(
     source,
@@ -1425,7 +1432,10 @@ export function chapterMetadata(chapters: Chapter[], total: number): string | nu
   const list = chapters
     .filter((item) => Number.isFinite(item.start) && item.start >= 0 && item.start < total - 0.5)
     .sort((a, b) => a.start - b.start)
-    .filter((item, i, all) => i === 0 || Math.round(item.start * 1000) !== Math.round(all[i - 1].start * 1000));
+    .filter(
+      (item, i, all) =>
+        i === 0 || Math.round(item.start * 1000) !== Math.round(all[i - 1].start * 1000),
+    );
   if (!list.length) return null;
   return [
     ';FFMETADATA1',

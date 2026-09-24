@@ -178,7 +178,9 @@ function hits(text: string, name: string, labels: string[] = []): Hit[] {
     blocked.some((hit) => index < hit.index + hit.length && index + length > hit.index);
   const found: Hit[] = [];
   for (const pattern of [parts.map(escape).join('\\s+'), ...partial.map(escape)]) {
-    for (const match of text.matchAll(new RegExp(`${edge}(${honorific})?(${pattern})${after}`, 'giu'))) {
+    for (const match of text.matchAll(
+      new RegExp(`${edge}(${honorific})?(${pattern})${after}`, 'giu'),
+    )) {
       const index = match.index ?? 0;
       const length = match[0].length;
       if (!/^\p{Lu}/u.test(match[2]) || overlaps(index, length)) continue;
@@ -283,7 +285,9 @@ function hideName(text: string, name: string, label: string, labels: string[]): 
 /** Joins "label, name" at the first use of a name the listener has not had linked to a person. */
 function joinName(text: string, name: string, label: string, labels: string[]): string {
   if (mentionsLabel(text, label)) return text;
-  const hit = hits(text, name, labels).find((item) => !/^['’]s\b/.test(text.slice(item.index + item.length)));
+  const hit = hits(text, name, labels).find(
+    (item) => !/^['’]s\b/.test(text.slice(item.index + item.length)),
+  );
   if (!hit) return text;
   const end = hit.index + hit.length;
   const rest = text.slice(end);

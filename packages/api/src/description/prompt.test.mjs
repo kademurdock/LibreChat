@@ -790,7 +790,7 @@ const replyBody = JSON.stringify({
 
 test('providers: the vision request uses the flex-eligible model, pinned reasoning and no temperature', async () => {
   process.env.OPENROUTER_KEY = 'test-key';
-  delete process.env.KADE_DESCRIPTION_MODEL;
+  process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash:floor';
   const file = join(scratch, 'clip.mp4');
   await writeFile(file, Buffer.from('not really a video'));
   const log = [];
@@ -814,7 +814,11 @@ test('providers: the vision request uses the flex-eligible model, pinned reasoni
     await analyze({ file, seconds: 40, brief: brief({ survey: true, slowed: true }), state: null, lines: [], before: [] }, signal, meter);
     assert.deepEqual(fake.calls[1].body.reasoning, { effort: 'low' });
     assert.equal(fake.calls[1].body.max_tokens, 24000);
+    delete process.env.KADE_DESCRIPTION_MODEL;
+    await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter);
+    assert.equal(fake.calls[2].body.model, 'google/gemini-3.8-flash');
   } finally {
+    delete process.env.KADE_DESCRIPTION_MODEL;
     fake.restore();
   }
 });

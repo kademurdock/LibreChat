@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import type { Analysis, Cue, Placement, SectionRecord } from './types';
+import { cleanLabel, clip } from './text';
+import { speakable } from './prompt';
 import { toOutput } from './timing';
 
 export type Edit = { id: string; text: string; shortText: string; omit: boolean };
@@ -18,39 +20,9 @@ export type ScriptCue = Edit & {
   reason?: string;
 };
 
-const breaking = /[\p{Cc}\u{2028}\u{2029}]/gu;
+export { cleanLabel, clip } from './text';
+
 const controls = /[\p{Cc}\u{2028}\u{2029}]/u;
-const hidden = /[\u{202A}-\u{202E}\u{2066}-\u{2069}\u{200B}\u{FEFF}\u{00AD}]/gu;
-const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
-
-/**
- * Text as NVDA should hear it: NFC, line breaks and control characters turned into spaces,
- * bidi controls, zero-width spaces and soft hyphens removed, spaces collapsed. Zero-width
- * joiners stay, because emoji sequences and some scripts need them.
- */
-export function cleanLabel(value: string): string {
-  return value
-    .replace(loneSurrogate, '')
-    .normalize('NFC')
-    .replace(breaking, ' ')
-    .replace(hidden, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/** Cuts to at most `max` characters without splitting an emoji or other two-unit character. */
-export function clip(value: string, max: number): string {
-  return Array.from(value).slice(0, max).join('');
-}
-
-/** V4-SEAM: replace with ./prompt speakable (package P exports the model's own speech cleaning). */
-function speakable(value: string): string {
-  return value
-    .replace(/[[\]{}()*_#~`|<>]/g, ' ')
-    .replace(/&/g, ' and ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
 /** Typed text made safe to voice: no brackets the voice engine reads as tags, no line breaks. */
 export function cleanSpoken(value: string): string {

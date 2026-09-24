@@ -1909,7 +1909,7 @@ test('a section the tools cannot read fails at once with a plain reason, without
   backend.analyze = async (look) => {
     if (look.brief.position.index !== 1) return analyze(look);
     tries++;
-    throw new MediaError('This part of the video could not be read.', '/tmp/secret/section-1 log');
+    throw new MediaError('damaged', '/tmp/secret/section-1 log', 'This part of the video could not be read.');
   };
   const result = await run(f, [], [], { providers: backend, keeper });
   assert.equal(tries, 1);

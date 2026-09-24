@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { readdir, stat, writeFile } from 'node:fs/promises';
 import type { Chapter } from './types';
 import { spokenLength } from './transcript';
-import { cleanLabel } from './prompt';
+import { cleanLabel } from './text';
 import { command } from './media';
 
 export function youtubeURL(value: string): string {
@@ -28,7 +28,8 @@ export function youtubeURL(value: string): string {
   return `https://www.youtube.com/watch?v=${id}`;
 }
 
-const viaLibrary = 'download it with TubeVault, add it to your Library, then describe it from there';
+const viaLibrary =
+  'download it with TubeVault, add it to your Library, then describe it from there';
 
 export type YouTubeProblem = {
   kind: string;
@@ -53,7 +54,8 @@ const problems: (YouTubeProblem & { pattern: RegExp })[] = [
   },
   {
     kind: 'removed',
-    pattern: /has been removed|been terminated|account .{0,40}closed|video has been deleted|no longer available/i,
+    pattern:
+      /has been removed|been terminated|account .{0,40}closed|video has been deleted|no longer available/i,
     permanent: true,
     message: 'This YouTube video has been removed, or its channel was closed.',
   },
@@ -71,7 +73,8 @@ const problems: (YouTubeProblem & { pattern: RegExp })[] = [
   },
   {
     kind: 'region',
-    pattern: /not made this video available in your country|blocked it in your country|not available in your country|geo.?restrict/i,
+    pattern:
+      /not made this video available in your country|blocked it in your country|not available in your country|geo.?restrict/i,
     permanent: false,
     message: `YouTube does not offer this video in the server's country. To describe it, ${viaLibrary}.`,
   },
@@ -92,7 +95,9 @@ const problems: (YouTubeProblem & { pattern: RegExp })[] = [
 /** Names what yt-dlp's error text means, or undefined when it is not recognised. */
 export function youtubeProblem(text: string): YouTubeProblem | undefined {
   const found = problems.find((problem) => problem.pattern.test(text));
-  return found ? { kind: found.kind, message: found.message, permanent: found.permanent } : undefined;
+  return found
+    ? { kind: found.kind, message: found.message, permanent: found.permanent }
+    : undefined;
 }
 
 const errorText = (error: unknown) => {
@@ -263,9 +268,7 @@ export function cleanAbout(description: string): string {
     .split(/\r?\n/)
     .filter((line) => !chapterLine.test(line) && !boilerplate.test(line))
     .map((line) =>
-      line
-        .replace(/https?:\/\/\S+|www\.\S+/gi, ' ')
-        .replace(/(^|\s)[@#][\p{L}\p{N}_.-]+/gu, '$1'),
+      line.replace(/https?:\/\/\S+|www\.\S+/gi, ' ').replace(/(^|\s)[@#][\p{L}\p{N}_.-]+/gu, '$1'),
     )
     .join(' ');
   return cut(cleanLabel(kept), 600);
@@ -280,11 +283,15 @@ export type YouTubeDetails = { name: string; seconds: number; about: string; cha
 export function readMetadata(json: unknown, maxSeconds: number, cookies: boolean): YouTubeDetails {
   const parsed = metadataSchema.safeParse(json);
   if (!parsed.success)
-    throw new Error('YouTube sent details the server could not read. Try again later, or upload the file instead.');
+    throw new Error(
+      'YouTube sent details the server could not read. Try again later, or upload the file instead.',
+    );
   const data = parsed.data;
   const live = data.live_status ?? '';
   if (live === 'post_live')
-    throw new Error('This stream has just ended and YouTube is still processing it. Try again later.');
+    throw new Error(
+      'This stream has just ended and YouTube is still processing it. Try again later.',
+    );
   if (data.is_live || live === 'is_live' || live === 'is_upcoming')
     throw new Error('Choose a finished YouTube video, rather than a live or upcoming stream.');
   const availability = data.availability ?? '';
@@ -292,12 +299,16 @@ export function readMetadata(json: unknown, maxSeconds: number, cookies: boolean
   if (availability === 'private') throw named('private video');
   if (availability === 'subscriber_only') throw named('members-only');
   if (availability === 'premium_only')
-    throw new Error(`This YouTube video needs a YouTube Premium account. If you can watch it, ${viaLibrary}.`);
+    throw new Error(
+      `This YouTube video needs a YouTube Premium account. If you can watch it, ${viaLibrary}.`,
+    );
   if (!cookies && (availability === 'needs_auth' || (data.age_limit ?? 0) >= 18))
     throw named('confirm your age');
   const seconds = data.duration ?? 0;
   if (!(seconds > 0))
-    throw new Error("YouTube has not published this video's length yet. Try again after it has finished processing.");
+    throw new Error(
+      "YouTube has not published this video's length yet. Try again after it has finished processing.",
+    );
   if (seconds > maxSeconds)
     throw new Error(
       `This YouTube video is ${spokenLength(seconds)} long, and the longest video the server can bring in is ${spokenLength(maxSeconds)}.`,
@@ -352,7 +363,9 @@ export async function importYouTube(
   try {
     json = JSON.parse(raw.toString());
   } catch {
-    throw new Error('YouTube sent details the server could not read. Try again later, or upload the file instead.');
+    throw new Error(
+      'YouTube sent details the server could not read. Try again later, or upload the file instead.',
+    );
   }
   const details = readMetadata(json, maxSeconds, !!(process.env.KADE_YT_COOKIES || '').trim());
   const height = details.seconds > 6000 ? 480 : 720;

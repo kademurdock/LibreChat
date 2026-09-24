@@ -401,6 +401,9 @@ const clamp = (value: number, low: number, high: number) => Math.min(high, Math.
 const bytes = (text: string) => Buffer.byteLength(text, 'utf8');
 const seconds1 = (value: number) => `${value.toFixed(1)} s`;
 
+/** Deepgram key terms cost extra per minute, so they run only when KADE_DESCRIPTION_KEYTERMS=1. */
+const keytermsWanted = (): boolean => process.env.KADE_DESCRIPTION_KEYTERMS === '1';
+
 export async function describeVideo(request: Request): Promise<Outcome> {
   const { directory, settings, signal, progress, meter } = request;
   const providers = request.providers ?? productionProviders;
@@ -424,12 +427,14 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     let language: string | undefined;
     words = sound
       ? await providers.transcribe(sound.dialogue, media.seconds, signal, meter, {
-          keyterms: keytermsFor({
-            title: request.title,
-            notes: settings.notes,
-            about: request.about,
-            chapters,
-          }),
+          keyterms: keytermsWanted()
+            ? keytermsFor({
+                title: request.title,
+                notes: settings.notes,
+                about: request.about,
+                chapters,
+              })
+            : [],
           onLanguage: (code) => {
             language = code;
           },

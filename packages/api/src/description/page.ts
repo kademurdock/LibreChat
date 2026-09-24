@@ -1,7 +1,8 @@
 const speeds = [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3];
 /** Words a minute at 1×, measured on the platform voices (126–185, median about 150). */
 const wordsPerMinute = 145;
-const pace = (value: number): string => `roughly ${Math.round((wordsPerMinute * value) / 10) * 10} words a minute`;
+const pace = (value: number): string =>
+  `roughly ${Math.round((wordsPerMinute * value) / 10) * 10} words a minute`;
 const speedOptions = (selected: number): string =>
   speeds
     .map(

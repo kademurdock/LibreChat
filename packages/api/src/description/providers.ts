@@ -8,11 +8,12 @@ import { analysisFormat, analysisPrompt, readAnalysis, speakable } from './promp
 import { Halt } from './types';
 
 /**
- * `:floor` lets OpenRouter pick the cheapest endpoint, including Google's flex tier at half the
- * standard price; queued background jobs can wait for it. KADE_DESCRIPTION_MODEL overrides.
+ * The standard tier by default. `google/gemini-3.8-flash:floor` in KADE_DESCRIPTION_MODEL lets
+ * OpenRouter pick the cheapest endpoint, including Google's flex tier at about half the price,
+ * where a queued background job may wait longer; retries then use the standard tier.
  */
 export const visionModel = (): string =>
-  process.env.KADE_DESCRIPTION_MODEL || 'google/gemini-3.8-flash:floor';
+  process.env.KADE_DESCRIPTION_MODEL || 'google/gemini-3.8-flash';
 /** The same model without the price-sorted variant, for a retry that should not queue on flex. */
 export const standardModel = (model: string): string => model.replace(/:floor$/, '');
 export const voiceBase = (): string =>
@@ -176,7 +177,10 @@ export const steps =
   (waits: number[]): Wait =>
   (attempt, error) => {
     const asked = retryAfter(error);
-    return Math.min(60000, asked !== undefined ? asked * 1000 : waits[Math.min(attempt, waits.length) - 1]);
+    return Math.min(
+      60000,
+      asked !== undefined ? asked * 1000 : waits[Math.min(attempt, waits.length) - 1],
+    );
   };
 
 const pause = (ms: number, signal: AbortSignal) =>
@@ -234,7 +238,9 @@ export function providerProblem(error: unknown, service: string): string {
   if (status === 413) return `${service} said the clip was too large (HTTP 413).`;
   if (status === 429) return `${service} is busy right now (HTTP 429).`;
   if (status) return `${service} did not complete the request (HTTP ${status}).`;
-  return isTimeout(cause) ? `${service} took too long to answer.` : `${service} could not be reached.`;
+  return isTimeout(cause)
+    ? `${service} took too long to answer.`
+    : `${service} could not be reached.`;
 }
 
 /**
@@ -285,7 +291,10 @@ export function providerDetail(error: unknown): string {
           ? Buffer.from(body).toString('utf8', 0, 600)
           : JSON.stringify(body ?? '');
   return `${cause.response?.status ?? cause.code ?? ''} ${text}`
-    .replace(/(sk-[\w-]{8,}|bearer\s+[\w.~+/=-]+|token\s+[\w.~+/=-]{16,}|key=[\w.~+/=-]+)/gi, '[hidden]')
+    .replace(
+      /(sk-[\w-]{8,}|bearer\s+[\w.~+/=-]+|token\s+[\w.~+/=-]{16,}|key=[\w.~+/=-]+)/gi,
+      '[hidden]',
+    )
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 300);
@@ -423,7 +432,8 @@ export async function transcribe(
               end: word.end,
               speaker: word.speaker,
             }));
-          const sure = channel.language_confidence === undefined || channel.language_confidence >= 0.5;
+          const sure =
+            channel.language_confidence === undefined || channel.language_confidence >= 0.5;
           language = channel.detected_language && sure ? channel.detected_language : undefined;
           const heard = data.metadata?.duration ?? seconds;
           return { costUSD: (heard / 60) * perMinute };

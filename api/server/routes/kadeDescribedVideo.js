@@ -30,7 +30,10 @@ function categoryFor(kind, seconds) {
 }
 const refused = (message, status) => Object.assign(new Error(message), { status });
 /** Cuts by characters, never through the middle of an emoji. */
-const cut = (value, max) => Array.from(String(value || '')).slice(0, max).join('');
+const cut = (value, max) =>
+  Array.from(String(value || ''))
+    .slice(0, max)
+    .join('');
 
 /* Same delivery as the Sound Booth's "your song is ready": a requested phone push through the
  * bridge, plus a browser push for anyone who turned those on. Returns what happened, for the log. */
@@ -94,7 +97,16 @@ function catalogFacts(book) {
 }
 
 /** The described transcript as a readable Library text item beside the audio, found by the same search. */
-async function saveTranscript({ id, owner, ownerName, title, path, share, grownUpsOnly, transcript }) {
+async function saveTranscript({
+  id,
+  owner,
+  ownerName,
+  title,
+  path,
+  share,
+  grownUpsOnly,
+  transcript,
+}) {
   const { KadeBook, KadeBookText } = require('~/models/kadeBook');
   const { parseBook, PARSER_VERSION } = require('./kadeReadingRoomParse');
   const textId = new mongoose.Types.ObjectId(
@@ -206,7 +218,8 @@ const library = {
     const user = await User.findById(owner, 'name username')
       .lean()
       .catch(() => null);
-    const ownerName = String((user && (user.name || user.username)) || '').split(' ')[0] || 'someone';
+    const ownerName =
+      String((user && (user.name || user.username)) || '').split(' ')[0] || 'someone';
     const source =
       sourceBook && mongoose.Types.ObjectId.isValid(sourceBook)
         ? await KadeBook.findById(sourceBook, 'meta tags author copyrightYear')
@@ -251,9 +264,10 @@ const library = {
       return { id: String(id), path };
     }
     if (source)
-      await KadeBook.updateOne({ _id: sourceBook }, { $set: { 'meta.describedCopy': String(id) } }).catch(
-        (e) => logger.warn(`[described-video] link to the original: ${e.message}`),
-      );
+      await KadeBook.updateOne(
+        { _id: sourceBook },
+        { $set: { 'meta.describedCopy': String(id) } },
+      ).catch((e) => logger.warn(`[described-video] link to the original: ${e.message}`));
     if (transcript)
       await saveTranscript({
         id,

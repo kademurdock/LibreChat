@@ -45,6 +45,7 @@ let failSection = -1;
 let failLaterSections = false;
 let storageHook = null;
 let refuseSection = -1;
+process.env.KADE_DESCRIPTION_RETRY_SECONDS = '0';
 let voicesDown = false;
 let simulateConcurrentCosts = false;
 let sampleCost = 0;
@@ -297,7 +298,7 @@ before(async () => {
         calls.analyze++;
         if (failSection === calls.analyze || (failLaterSections && look.state))
           throw axiosFailure(402);
-        if (refuseSection === calls.analyze)
+        if (refuseSection === look.brief.position?.index && !look.brief.survey)
           await meter('vision', 0.2, async () => {
             throw axiosFailure(429);
           });
@@ -928,7 +929,7 @@ test('a whole job: describe, stop, continue, library, re-voice, script, correcti
   assert.match(decodeURIComponent(files.videoDownload), /My film \(described\)\.mp4/);
   const transcript = await call('get', `/jobs/${id}/text/transcript`, 'film-owner').expect(200);
   assert.match(transcript.text, /Description: Section cue/);
-  assert.match(transcript.text, /the host: Hello\./);
+  assert.match(transcript.text, /The host: Hello\./);
   await call('get', `/jobs/${id}/text/transcript`, 'another-owner').expect(404);
 
   const saved = await call('post', `/jobs/${id}/library`, 'film-owner')
@@ -1100,7 +1101,7 @@ test('a preview renders a marked copy, then Describe the rest finishes the same 
 test('failed paid requests that were not billed cost nothing, and redo describes only the failed parts', async () => {
   await Budgets.deleteMany({});
   const id = await readyJob('redo-owner', 'redo-upload-00000001', 150);
-  refuseSection = calls.analyze + 2;
+  refuseSection = 1;
   await call('post', `/jobs/${id}/start`, 'redo-owner').send(settings).expect(202);
   const done = await settle(id, ['done', 'failed'], 'redo-owner');
   refuseSection = -1;

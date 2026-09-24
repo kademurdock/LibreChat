@@ -49,18 +49,6 @@ export function speakable(value: string): string {
     .trim();
 }
 
-/**
- * Cleans a name, title or folder part for storage and screen readers: NFC, no control, bidi or
- * zero-width characters (joiners that emoji and some scripts need are kept), one space, trimmed.
- */
-export function cleanLabel(value: string): string {
-  return value
-    .normalize('NFC')
-    .replace(/[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069\u200B\uFEFF\u00AD]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 /** Words that judge character or motive rather than describe; removing them never breaks a sentence. */
 const opinions =
   /\s*\b(?:evilly|mockingly|hysterically|blissfully|menacingly|smugly|sinisterly|maliciously|wickedly|deviously|slyly|sneakily|arrogantly|cruelly|spitefully|sarcastically|condescendingly|in (?:horror|disbelief|shock|confusion|terror|dismay|astonishment)|with (?:rage|contempt|disdain))\b/g;
@@ -76,8 +64,12 @@ export function lintDescription(value: string): { text: string; problems: string
   const head = value.slice(0, cut);
   const cleaned = head.replace(opinions, '');
   if (cleaned !== head) problems.push('judging words removed');
-  const text = (cleaned + value.slice(cut)).replace(/\s+([,.!?])/g, '$1').replace(/\s+/g, ' ').trim();
-  if (/\b(?:we|you) (?:can )?(?:see|hear|watch)\b/i.test(head)) problems.push('says "we see" or "we hear"');
+  const text = (cleaned + value.slice(cut))
+    .replace(/\s+([,.!?])/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (/\b(?:we|you) (?:can )?(?:see|hear|watch)\b/i.test(head))
+    problems.push('says "we see" or "we hear"');
   if (/\bthe camera\b/i.test(head)) problems.push('mentions the camera');
   if (/^(?:he|she|they|it|his|her|their)\b/i.test(text)) problems.push('starts with a pronoun');
   if (/\d/.test(head)) problems.push('digits outside words read from the screen');
@@ -108,8 +100,8 @@ const density: Record<Settings['detail'], { guide: string; most: number; fill: s
 const kindGuide = [
   'Commercial or promo: name the brand and product first, then what is shown. Read the price, phone number, address, city, dates and web address when they are clear and not spoken aloud. Put the closing card in one importance 3 cue timed to that card, with pauseAt on it.',
   'Logo, ident or bumper: say whose logo it is, then its shapes, colors and motion in the order they happen, then its words exactly. List only the signature sting, chime or sung words in protectedSounds, not the whole music bed, and describe the ident over its music when there is no other room. If pauses are allowed, put pauseAt on the final logo card. Give a year, version or nickname only when the screen shows it.',
-  'VHS opening, previews or trailer: name each studio or distributor logo and each preview title card as shown. For a warning screen, say what it is and how it looks and read its heading, reading the rest only when there is room. Treat each preview as its own short programme. Mention snow, rolling or a blue screen once, when it hides or changes the picture, and never read the player\'s own on-screen display.',
-  'Local TV, news, station break or sign-on: read call letters, channel numbers, network logos, name captions and location text when they first appear, describe the ID animation and the network bug, and summarize crawls and tickers once. Name a place or landmark only when text, dialogue or the listener\'s notes name it.',
+  "VHS opening, previews or trailer: name each studio or distributor logo and each preview title card as shown. For a warning screen, say what it is and how it looks and read its heading, reading the rest only when there is room. Treat each preview as its own short programme. Mention snow, rolling or a blue screen once, when it hides or changes the picture, and never read the player's own on-screen display.",
+  "Local TV, news, station break or sign-on: read call letters, channel numbers, network logos, name captions and location text when they first appear, describe the ID animation and the network bug, and summarize crawls and tickers once. Name a place or landmark only when text, dialogue or the listener's notes name it.",
   'Music video: describe the performers, the setting, dancing and the visual story. Describe during instrumental stretches and avoid covering sung words.',
   'Talk, interview or podcast: read name captions and titles the first time they appear, and describe charts, pictures and places that nobody explains out loud. Keep it sparse.',
   'How-to or tutorial: describe the steps shown that the speaker does not say, and read measurements and labels on screen.',
@@ -120,7 +112,9 @@ const kindGuide = [
 /** Words a listener hears per second at 1x, from the measured voice speed when there is one. */
 const bytesPerWord = 6;
 const wordsPerSecond = (brief: Brief) =>
-  brief.secondsPerByte && brief.secondsPerByte > 0 ? 1 / (brief.secondsPerByte * bytesPerWord) : 2.6;
+  brief.secondsPerByte && brief.secondsPerByte > 0
+    ? 1 / (brief.secondsPerByte * bytesPerWord)
+    : 2.6;
 
 function speakerName(who: string, people: Person[]): string {
   const person = resolvePerson(who, people);
@@ -512,10 +506,12 @@ function mergePeople(
 }
 
 /** Drops unnamed extras nobody's voice is matched to, least recently seen first. */
-function evict(people: Person[], speakers: Continuity['speakers'], seen: Record<string, number>): Person[] {
-  const mapped = new Set(
-    speakers.flatMap((item) => resolvePerson(item.who, people)?.id ?? []),
-  );
+function evict(
+  people: Person[],
+  speakers: Continuity['speakers'],
+  seen: Record<string, number>,
+): Person[] {
+  const mapped = new Set(speakers.flatMap((item) => resolvePerson(item.who, people)?.id ?? []));
   const order = new Map(people.map((person, index) => [person.id ?? '', index]));
   const spare = people
     .filter((person) => !person.name && !mapped.has(person.id ?? ''))
@@ -524,14 +520,19 @@ function evict(people: Person[], speakers: Continuity['speakers'], seen: Record<
         (seen[a.id ?? ''] ?? -1) - (seen[b.id ?? ''] ?? -1) ||
         (order.get(a.id ?? '') ?? 0) - (order.get(b.id ?? '') ?? 0),
     );
-  const drop = new Set(spare.slice(0, Math.max(0, people.length - peopleKept)).map((person) => person.id));
+  const drop = new Set(
+    spare.slice(0, Math.max(0, people.length - peopleKept)).map((person) => person.id),
+  );
   const kept = people.filter((person) => !drop.has(person.id));
   return kept.slice(-peopleMost);
 }
 
 const mentionsName = (text: string, name: string) =>
   new RegExp(
-    `(?<![\\p{L}\\p{N}])${name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')}(?![\\p{L}\\p{N}])`,
+    `(?<![\\p{L}\\p{N}])${name
+      .trim()
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/\s+/g, '\\s+')}(?![\\p{L}\\p{N}])`,
     'iu',
   ).test(text);
 
