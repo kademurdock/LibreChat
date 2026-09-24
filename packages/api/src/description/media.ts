@@ -173,7 +173,8 @@ export async function execute(
       output.push(buffer);
     });
     child.stderr.on('data', (buffer: Buffer) => {
-      log = (log + buffer.toString()).slice(-logBytes);
+      log += buffer.toString();
+      if (log.length > 2 * logBytes) log = log.slice(-logBytes);
     });
     child.on('close', (code) =>
       done(
@@ -285,7 +286,10 @@ const seconds = (value: string | undefined): number | null => {
 };
 const describedTitle = /descri(bed|ption)|\bdvs\b|narrat/i;
 const englishLike = (language: string) => (['eng', 'en'].includes(language) ? 2 : language === 'und' || !language ? 1 : 0);
-const surround = /^(3\.|4\.[01]|5\.|6\.|7\.|hexagonal|octagonal)/;
+const centred = /^(3\.[01]|4\.[01]|5\.|6\.[01]|7\.|hexagonal|octagonal)/;
+/** Channel layouts with a front centre (dialogue) channel. */
+const hasCentre = (layout: string) =>
+  centred.test(layout) && !['3.0(back)', '6.0(front)', '6.1(front)'].includes(layout);
 
 /**
  * Picks the audio track to describe against: skips commentary and description tracks, then
@@ -406,7 +410,7 @@ async function inspect(file: string, signal: AbortSignal): Promise<Inspection> {
       ...(track
         ? {
             channels: track.channels ?? 0,
-            centre: (track.channels ?? 0) >= 3 && surround.test(track.channel_layout ?? ''),
+            centre: hasCentre(track.channel_layout ?? ''),
           }
         : {}),
       ...(audio.described ? { describedAudio: true } : {}),
@@ -700,28 +704,25 @@ export function liveChannel(levels: number[]): 'left' | 'right' | undefined {
   return undefined;
 }
 
-/** Scene cuts and still stretches (freezes of 5 s or more) from scdet and freezedetect logs. */
-export function pictureEvents(log: string, end: number): { cuts: number[]; stills: Interval[] } {
+/**
+ * Scene cuts and still stretches (freezes of 5 s or more) from what scdet and freezedetect print;
+ * a still that runs to the end closes at `end`.
+ */
+export function pictureEvents(printed: string, end: number): { cuts: number[]; stills: Interval[] } {
   const round = (value: number) => Math.round(value * 1000) / 1000;
-  const cuts = [
-    ...new Set(
-      [...log.matchAll(/lavfi\.scd\.time: (-?[\d.]+)/g)]
-        .map((match) => round(Number(match[1])))
-        .filter((value) => Number.isFinite(value) && value > 0),
-    ),
-  ].sort((a, b) => a - b);
-  const stills: Interval[] = [];
-  let open: number | null = null;
-  for (const match of log.matchAll(/lavfi\.freezedetect\.freeze_(start|end): (-?[\d.]+)/g)) {
-    const value = Number(match[2]);
-    if (match[1] === 'start') open = value;
-    else if (open !== null) {
-      stills.push({ start: round(Math.max(0, open)), end: round(value) });
-      open = null;
-    }
-  }
-  if (open !== null && Number.isFinite(end) && end > open)
-    stills.push({ start: round(Math.max(0, open)), end: round(end) });
+  const values = (key: string) =>
+    [...printed.matchAll(new RegExp(`lavfi\\.${key}[:=]\\s*(-?[\\d.]+)`, 'g'))]
+      .map((match) => Number(match[1]))
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b);
+  const cuts = [...new Set(values('scd\\.time').map(round))].filter((value) => value > 0);
+  const ends = values('freezedetect\\.freeze_end');
+  const stills: Interval[] = values('freezedetect\\.freeze_start').flatMap((start) => {
+    const stop = ends.find((value) => value > start) ?? end;
+    return Number.isFinite(stop) && stop > start
+      ? [{ start: round(Math.max(0, start)), end: round(stop) }]
+      : [];
+  });
   return { cuts, stills };
 }
 
@@ -753,9 +754,17 @@ async function soundtrackPass(
   const speech = media.centre
     ? ['pan=mono|c0=FC+0.3*FL+0.3*FR']
     : [...stereo, 'pan=mono|c0=0.5*c0+0.5*c1'];
+  const printed = ['cuts.txt', 'still-start.txt', 'still-end.txt'];
+  const print = (key: string, file: string) => `metadata=mode=print:key=lavfi.${key}:file=${file}`;
   const scan = [
-    ...(tools.scdet ? ['scdet=threshold=10'] : []),
-    ...(tools.freezedetect ? ['freezedetect=n=0.003:d=5'] : []),
+    ...(tools.scdet ? ['scdet=threshold=10', print('scd.time', printed[0])] : []),
+    ...(tools.freezedetect
+      ? [
+          'freezedetect=n=0.003:d=5',
+          print('freezedetect.freeze_start', printed[1]),
+          print('freezedetect.freeze_end', printed[2]),
+        ]
+      : []),
   ];
   const video = watch && scan.length > 0;
   const graph = [
@@ -817,10 +826,17 @@ async function soundtrackPass(
     signal,
     undefined,
     32 * 1024 ** 2,
-    { cwd: directory, logBytes: 4 * 1024 ** 2 },
+    { cwd: directory, logBytes: 1024 ** 2 },
   );
-  const picture = video ? pictureEvents(log, media.seconds) : null;
-  const events = picture ? { cuts: picture.cuts, stills: picture.stills } : {};
+  const texts = await Promise.all(
+    printed.map(async (name) => {
+      const path = join(directory, name);
+      const text = await readFile(path, 'utf8').catch(() => '');
+      await rm(path, { force: true });
+      return text;
+    }),
+  );
+  const events = video ? pictureEvents(texts.join('\n'), media.seconds) : {};
   if (!hasSound) return { dialogue: '', program: -70, peak: -70, levels: [], ...events };
   const summary = log.slice(log.lastIndexOf('Summary:'));
   const program = Number(/I:\s*(-?[\d.]+|-inf) LUFS/.exec(summary)?.[1]);

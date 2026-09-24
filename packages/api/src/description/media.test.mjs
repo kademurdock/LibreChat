@@ -17,6 +17,9 @@ import * as media from './media.ts';
 process.env.FFMPEG_PATH = ffmpegPath;
 process.env.FFPROBE_PATH = ffprobePath.path;
 const signal = new AbortController().signal;
+/** Everything the media module logs during this run, whichever test triggers it. */
+const logged = [];
+const log = (line) => logged.push(line);
 const root = await mkdtemp(join(tmpdir(), 'kade-media-'));
 after(() => rm(root, { recursive: true, force: true }));
 
@@ -32,10 +35,17 @@ const sound = (seconds, shift = 0, bed = 220, right = true) => {
 const lavfi = (graph) => ['-f', 'lavfi', '-i', graph];
 const h264 = ['-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-g', '30'];
 
-async function make(name, args) {
-  const file = join(root, name);
-  await media.command(ffmpegPath, ['-nostdin', '-v', 'error', '-y', ...args, file], signal);
-  return file;
+const made = new Map();
+/** Generates a fixture once per run, so tests can share it in any order. */
+function make(name, args) {
+  if (!made.has(name))
+    made.set(
+      name,
+      media
+        .command(ffmpegPath, ['-nostdin', '-v', 'error', '-y', ...args, join(root, name)], signal)
+        .then(() => join(root, name)),
+    );
+  return made.get(name);
 }
 /**
  * Picture and sound made separately, each with its events moved earlier by its own delay, then
@@ -68,6 +78,13 @@ async function joined(name, { seconds = 10, videoDelay = 0, audioDelay = 0, soun
     ...codecs,
   ]);
 }
+const xvidFixture = () =>
+  make('xvid.avi', [
+    ...lavfi(picture('320x240', 30, 4)),
+    ...lavfi(sound(4)),
+    ...['-c:v', 'mpeg4', '-vtag', 'XVID', '-bf', '2', '-q:v', '4', '-g', '300', '-c:a', 'libmp3lame'],
+  ]);
+const lateTs = () => joined('late.ts', { audioDelay: 0.8, codecs: [...h264, '-c:a', 'aac', '-f', 'mpegts'] });
 async function distinctFrames(file, count) {
   const out = await media.command(
     ffmpegPath,
@@ -227,7 +244,7 @@ test('sound and picture share the picture clock in every container, from any sta
   const fixtures = {
     'late.mp4': await late('late.mp4', [...h264, '-c:a', 'aac']),
     'late.mkv': await late('late.mkv', [...h264, '-c:a', 'aac']),
-    'late.ts': await late('late.ts', [...h264, '-c:a', 'aac', '-f', 'mpegts']),
+    'late.ts': await lateTs(),
     'late.mpg': await late('late.mpg', ['-c:v', 'mpeg2video', '-b:v', '2M', '-c:a', 'mp2', '-f', 'vob']),
     'early.ts': await joined('early.ts', {
       videoDelay: 0.5,
@@ -268,7 +285,7 @@ test('AVI and FLV openings keep their first second of picture and sound', async 
   const D = 4;
   const base = [...lavfi(picture('320x240', 30, D)), ...lavfi(sound(D))];
   const files = {
-    'xvid.avi': await make('xvid.avi', [...base, '-c:v', 'mpeg4', '-vtag', 'XVID', '-bf', '2', '-q:v', '4', '-g', '300', '-c:a', 'libmp3lame']),
+    'xvid.avi': await xvidFixture(),
     'h264.avi': await make('h264.avi', [...base, '-c:v', 'libx264', '-preset', 'fast', '-bf', '3', '-pix_fmt', 'yuv420p', '-c:a', 'libmp3lame']),
     'old.flv': await make('old.flv', [...base, '-c:v', 'flv', '-b:v', '800k', '-c:a', 'libmp3lame', '-ar', '44100']),
   };
@@ -287,7 +304,7 @@ test('AVI and FLV openings keep their first second of picture and sound', async 
 
 test('normalize makes a working copy, and cuts a part accurately when asked', async () => {
   const dir = await folder('normalize');
-  const xvid = join(root, 'xvid.avi');
+  const xvid = await xvidFixture();
   const working = await media.normalize(xvid, dir, signal);
   assert.match(working.file, /working\.mkv$/);
   assert.match(working.media.format, /matroska/);
@@ -307,7 +324,7 @@ test('normalize makes a working copy, and cuts a part accurately when asked', as
   near(bursts(mono(laterSound)), [1.5], 0.03, 'its sound');
 
   const partDir = await folder('normalize-range');
-  const ts = join(root, 'late.ts');
+  const ts = await lateTs();
   const cut = await media.normalize(ts, partDir, signal, { start: 5, end: 9 });
   assert.ok(Math.abs(cut.media.seconds - 4) < 0.1, `part length ${cut.media.seconds}`);
   assert.equal(media.copyable(cut.media), true);
@@ -332,6 +349,19 @@ test('normalize makes a working copy, and cuts a part accurately when asked', as
     media.normalize(ts, await folder('normalize-outside'), signal, { start: 20, end: 30 }),
     (error) => error instanceof media.MediaError && error.message === 'The part to describe is outside the video.',
   );
+
+  const lpcm = await make('lpcm.vob', [...lavfi(picture('320x240', 30, 3)), ...lavfi(sound(3)), '-c:v', 'mpeg2video', '-c:a', 'pcm_dvd', '-f', 'vob']);
+  const dvdDir = await folder('normalize-lpcm');
+  const dvd = await media.normalize(lpcm, dvdDir, signal, undefined, log);
+  assert.match(dvd.file, /working\.mkv$/, 'DVD LPCM sound, which MKV cannot hold, is converted to FLAC');
+  const dvdSound = mono(await media.sectionSound(dvd.file, dvdDir, 0, 2 * 48000, true, signal, dvd.media));
+  near(bursts(dvdSound), [1.5], 0.03, 'DVD sound after conversion');
+  assert.equal(logged.some((line) => /original file/.test(line)), false);
+
+  const silent = await make('silent.mp4', [...lavfi(picture('320x240', 30, 2)), ...h264]);
+  const quiet = await media.normalize(silent, await folder('normalize-silent'), signal);
+  assert.equal(quiet.media.audio, false);
+  assert.equal(quiet.media.audioIndex, null);
 });
 
 test('odd, anamorphic, interlaced, 4:2:2 and HDR sources become square 8-bit pictures', async () => {
@@ -562,7 +592,7 @@ test('the soundtrack pass also finds cuts, still pictures, momentary loudness an
   );
   assert.deepEqual(
     media.pictureEvents(
-      '[scdet @ 1] lavfi.scd.score: 21.3, lavfi.scd.time: 4\n[freezedetect @ 2] lavfi.freezedetect.freeze_start: 4.2\n[freezedetect @ 2] lavfi.freezedetect.freeze_duration: 5\n[freezedetect @ 2] lavfi.freezedetect.freeze_end: 9.2\n[freezedetect @ 2] lavfi.freezedetect.freeze_start: 20\n',
+      'frame:120  pts:61440   pts_time:4\nlavfi.scd.time=4\nframe:0    pts:0 pts_time:4.2\nlavfi.freezedetect.freeze_start=4.2\nframe:1 pts:1 pts_time:20\nlavfi.freezedetect.freeze_start=20\nframe:9 pts:9 pts_time:9.2\nlavfi.freezedetect.freeze_end=9.2\n',
       30,
     ),
     { cuts: [4], stills: [{ start: 4.2, end: 9.2 }, { start: 20, end: 30 }] },
@@ -670,10 +700,10 @@ test('media tools run with a thread cap and lowered priority, and fail in plain 
 });
 
 test('the ffmpeg capability check is logged once and missing filters degrade', async () => {
-  const lines = [];
-  const tools = await media.capabilities((line) => lines.push(line));
-  await media.capabilities((line) => lines.push(line));
-  assert.equal(lines.length, 1);
+  const tools = await media.capabilities(log);
+  await media.capabilities(log);
+  const lines = logged.filter((line) => line.startsWith('Media tools:'));
+  assert.equal(lines.length, 1, 'logged once per process');
   assert.match(lines[0], /^Media tools: ffmpeg version .*; missing: none$/);
   assert.equal(tools.bwdif && tools.scdet && tools.freezedetect && tools.zscale && tools.limiterLatency, true);
   const plain = { ...tools, bwdif: false, zscale: false };
