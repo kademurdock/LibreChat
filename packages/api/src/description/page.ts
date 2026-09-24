@@ -61,11 +61,11 @@ export const descriptionBrowserScript: string = String.raw`
   function clearError(){$('error').hidden=true;$('error').textContent='';}
   function duration(seconds){var n=Math.round(seconds||0);return Math.floor(n/60)+' minutes '+(n%60)+' seconds';}
   function money(value){return '$'+Number(value||0).toFixed(2);}
-  async function refreshToken(){var response=await fetch('/api/auth/refresh',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'});if(!response.ok)throw new Error('Please sign in to continue.');var data=await response.json();if(!data.token)throw new Error('Please sign in to continue.');token=data.token;}
+  async function refreshToken(){var response=await fetch('/api/auth/refresh',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'});if(!response.ok)throw new Error('Please sign in to continue.');var data=await response.json().catch(function(){return null;});if(!data||!data.token)throw new Error('Please sign in to continue.');token=data.token;}
   async function api(path,method,body,retry){
     var response=await fetch('/api/kade/described-video'+path,{method:method||'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
     if(response.status===401&&!retry){await refreshToken();return api(path,method,body,true);}
-    var data=await response.json();if(!response.ok){if(response.status===403)stopped=true;throw new Error(data.error||'The request did not complete.');}return data;
+    var data=await response.json().catch(function(){return null;});if(!response.ok||!data){if(response.status===403)stopped=true;throw new Error(data&&data.error||'The request did not complete. Please refresh the page.');}return data;
   }
   function remember(){try{localStorage.setItem('kade-description-settings',JSON.stringify({voice:$('voice').value,rate:$('rate').value,maxRate:$('max-rate').value,mode:$('mode').value}));}catch(e){}}
   function settings(){return {voice:$('voice').value,rate:Number($('rate').value),maxRate:Number($('max-rate').value),mode:$('mode').value};}
