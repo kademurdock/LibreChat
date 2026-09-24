@@ -18,6 +18,7 @@ import {
   libraryMembershipRouter,
   libraryReviewSeat,
   libraryTestSeat,
+  ownUploadsOnlyNote,
   pendingLibraryDigest,
   trustedApprovalNote,
   trustedLibraryContributor,
@@ -37,7 +38,7 @@ const DESTINY = '6aa0b852f3d755d203f9cdd1'; // the newest family account on Sep 
 const VISCHECK = '6a6125d73939d20b95251078'; // App Review and screenshots
 const EVALCLEAN = '6a572e3be680dcdaadca0f04';
 const EVALFIXTURE = '6a69074cc74d975de21f5b2a';
-const TEST_GUEST = '6a3f47e79be0146175d0e3e7';
+const EARLY = '6a3f47e79be0146175d0e3e7'; // an account from late June; who it is was never confirmed
 const later = (iso: string) => Types.ObjectId.createFromTime(Date.parse(iso) / 1000).toHexString();
 
 function withEnv(values: Record<string, string | undefined>, run: () => void) {
@@ -92,11 +93,19 @@ test('the App Review seat never sees the family library, whatever is set', () =>
 
 test('test seats start without family access; Kade can still grant one on purpose', () => {
   withEnv({ NOTIFY_TEST_USER_IDS: DESTINY }, () => {
-    for (const id of [EVALCLEAN, EVALFIXTURE, TEST_GUEST, DESTINY]) {
+    for (const id of [EVALCLEAN, EVALFIXTURE, DESTINY]) {
       assert.equal(libraryTestSeat({ id }), true, id);
       assert.equal(familyLibraryMember({ id }), false, id);
       assert.equal(familyLibraryMember({ id, kadeLibraryAccess: 'family' }), true, id);
     }
+    // Test Guest is known by name; an unconfirmed id never shuts anyone out.
+    for (const seat of [{ id: EARLY, name: 'Test Guest' }, { id: EARLY, username: 'testguest' }]) {
+      assert.equal(libraryTestSeat(seat), true);
+      assert.equal(familyLibraryMember(seat), false);
+      assert.equal(familyLibraryMember({ ...seat, kadeLibraryAccess: 'family' }), true);
+    }
+    assert.equal(libraryTestSeat({ id: EARLY, name: 'Holly' }), false);
+    assert.equal(familyLibraryMember({ id: EARLY, name: 'Holly' }), true);
     assert.equal(libraryTestSeat({ id: AMBER_A }), false);
   });
 });
@@ -135,7 +144,8 @@ test('the owner sees every account in one plain sentence, and fixed accounts hav
     assert.equal(view({ id: EVALCLEAN, name: 'tester' }).status, 'No family access. Test account.');
     assert.equal(view({ id: later('2026-10-01T00:00:00Z'), username: 'stranger' }).status, 'No family access yet. New account.');
     assert.equal(view({ id: later('2026-10-01T00:00:00Z'), name: 'Cousin', kadeLibraryAccess: 'family' }).status, 'Has family access. You turned it on.');
-    assert.equal(view({ id: TEST_GUEST }).name, 'Unnamed account');
+    assert.equal(view({ id: EARLY }).name, 'Unnamed account');
+    assert.equal(view({ id: EARLY, name: 'Test Guest' }).status, 'No family access. Test account.');
   });
 });
 
@@ -148,6 +158,12 @@ test("the librarian's words for a closed shelf are plain and name no age rule", 
   assert.match(familyLibraryAccessNote, /own uploads/);
   assert.match(familyLibraryAccessNote, /Do not say the library does not have it/);
   assert.match(familyLibraryEmptyGuidance, /not proof the library lacks/);
+});
+
+test('the App Review seat is never told a closed collection exists', () => {
+  assert.match(ownUploadsOnlyNote, /only its own uploads/);
+  assert.match(ownUploadsOnlyNote, /Do not say the catalog failed/);
+  assert.doesNotMatch(ownUploadsOnlyNote, /family|Kade|approv|access|shared|child|grown|filter|subscription|membership/i);
 });
 
 test('one digest sentence for everything waiting, never one per item', () => {

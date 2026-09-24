@@ -158,7 +158,11 @@ function nudgeStore(rows) {
   let next = 1;
   return {
     rows,
-    async updateMany(filter, update) { for (const row of rows.filter((r) => matches(r, filter))) Object.assign(row, update.$set); },
+    async updateMany(filter, update) {
+      const hit = rows.filter((r) => matches(r, filter));
+      for (const row of hit) Object.assign(row, update.$set);
+      return { modifiedCount: hit.length };
+    },
     async updateOne(filter, update) { const row = rows.find((r) => matches(r, filter)); if (row) Object.assign(row, update.$set); },
     async findOne(filter) { return rows.find((r) => matches(r, filter)) || null; },
     async deleteOne(filter) { const i = rows.findIndex((r) => matches(r, filter)); if (i >= 0) rows.splice(i, 1); },
@@ -176,9 +180,12 @@ test("Kade gets one waiting library note, rewritten in place, never one per item
     legacy('Karen says "C" is on the wrong shelf. Open the Library page to move it or leave it.'),
     legacy('Reminder: call Holly at five'),
   ]);
+  const timers = [];
   const c = {
     process: { env: {} },
     logger,
+    mongoose: { connection: { readyState: 0, once() {} } },
+    setTimeout: (fn) => { timers.push(fn); return { unref() {} }; },
     KadeBook: {},
     KadeLibrarySubmission: {},
     require: (name) => {
@@ -207,7 +214,13 @@ test("Kade gets one waiting library note, rewritten in place, never one per item
   await c.refreshLibrarianDigest();
   assert.equal(waiting().length, 0, 'no second note within six hours');
 
-  store.rows.find((r) => r.type === 'library-digest').createdAt = new Date(Date.now() - 7 * 3600000);
+  // Written 8 hours ago but heard a minute ago: still quiet.
+  store.rows.find((r) => r.type === 'library-digest').createdAt = new Date(Date.now() - 8 * 3600000);
+  store.rows.find((r) => r.type === 'library-digest').deliveredAt = new Date(Date.now() - 60000);
+  await c.refreshLibrarianDigest();
+  assert.equal(waiting().length, 0, 'quiet time runs from when she heard it');
+
+  store.rows.find((r) => r.type === 'library-digest').deliveredAt = new Date(Date.now() - 7 * 3600000);
   await c.refreshLibrarianDigest({ create: false });
   assert.equal(waiting().length, 0, 'a decision never starts a new note');
   await c.refreshLibrarianDigest();
@@ -216,4 +229,65 @@ test("Kade gets one waiting library note, rewritten in place, never one per item
   text = '';
   await c.refreshLibrarianDigest({ create: false });
   assert.equal(waiting().length, 0, 'nothing waiting, so the note goes');
+});
+
+test('at startup the old per-item notes fold into one digest without waiting for a new request', async () => {
+  const text = 'Waiting for your yes or no on the Library page: Amber uploaded 60 books.';
+  const legacy = (t) => ({ _id: t, userId: 'kade', type: 'reminder', channel: 'chat', deliveredAt: null, createdAt: new Date(), text: t });
+  const store = nudgeStore([
+    legacy('Amber submitted something for the family library: "A" (a file). Open the Library page to approve or decline it.'),
+    legacy('Amber submitted something for the family library: "B" (a file). Open the Library page to approve or decline it.'),
+  ]);
+  const timers = [];
+  let onOpen = null;
+  const c = {
+    process: { env: {} },
+    logger,
+    mongoose: { connection: { readyState: 0, once: (event, fn) => { if (event === 'open') onOpen = fn; } } },
+    setTimeout: (fn) => { timers.push(fn); return { unref() {} }; },
+    KadeBook: {},
+    KadeLibrarySubmission: {},
+    require: (name) => {
+      if (name === '@librechat/api') return { pendingLibraryDigest: async () => text };
+      if (name === '~/models/kadeNudge') return { KadePendingNudge: store };
+      if (name === '~/db/models') return { User: { find: () => ({ lean: async () => [{ _id: 'kade' }] }) } };
+      return require(name);
+    },
+  };
+  vm.runInNewContext(slice('const LIBRARY_DIGEST = ', "router.post('/submissions'"), c);
+  assert.equal(typeof onOpen, 'function', 'waits for the database');
+  assert.equal(timers.length, 0);
+  onOpen();
+  assert.equal(timers.length, 1);
+  timers[0]();
+  await c.refreshLibrarianDigest({ create: false }); // queued after the startup run
+  const open = store.rows.filter((r) => r.deliveredAt == null);
+  assert.equal(open.length, 1, 'one note left');
+  assert.equal(open[0].type, 'library-digest');
+  assert.equal(open[0].text, text);
+  // Nothing left to fold: a later refresh that may not start a note does not start one.
+  open[0].deliveredAt = new Date(Date.now() - 7 * 3600000);
+  await c.refreshLibrarianDigest({ create: false });
+  assert.equal(store.rows.filter((r) => r.deliveredAt == null).length, 0);
+
+  // Already connected: the run is scheduled straight away.
+  const later = [];
+  c.setTimeout = (fn) => { later.push(fn); return {}; };
+  c.refreshLibrarianDigestOnStartup({ readyState: 1, once() { throw new Error('not needed'); } });
+  assert.equal(later.length, 1);
+});
+
+test('the shelf tells a restricted reader about the family collection, but not the App Review seat', () => {
+  const line = slice('familyLibrary: hidden &&', String.fromCharCode(10));
+  const shelfFlag = (hidden, user) =>
+    vm.runInNewContext(`({ ${line} })`, {
+      hidden,
+      req: { user },
+      require: () => ({ libraryReviewSeat: (u) => u.id === 'review' }),
+    }).familyLibrary;
+  assert.equal(shelfFlag(false, { id: 'fam' }), true);
+  assert.equal(shelfFlag(true, { id: 'stranger' }), false, 'the page shows the ask-Kade notice');
+  assert.equal(shelfFlag(true, { id: 'review' }), null, 'the review seat hears nothing');
+  const page = fs.readFileSync(require.resolve('./kadeReadingRoomPage'), 'utf8');
+  assert.match(page, /\$\('familyLibraryNotice'\)\.hidden = shelfData\.familyLibrary !== false;/);
 });

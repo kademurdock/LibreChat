@@ -436,7 +436,8 @@ router.get('/shelf', requireJwtAuth, async (req, res) => {
     ]);
     res.json({
       librarian: isAdmin(req),
-      familyLibrary: !hidden,
+      // null for the App Review seat: its empty shelf stays silent, with no "ask Kade" notice.
+      familyLibrary: hidden && require('@librechat/api').libraryReviewSeat(req.user) ? null : !hidden,
       describedVideo: !child && (isAdmin(req) || process.env.KADE_DESCRIPTION_PUBLIC !== '0'),
       me: String(userId),
       archiveOwned: await KadeBook.countDocuments({ owner: userId, path: { $ne: '' } }),
@@ -1434,15 +1435,17 @@ function refreshLibrarianDigest({ create = true } = {}) {
       const text = await pendingLibraryDigest({ books: KadeBook, submissions: KadeLibrarySubmission });
       const admins = await User.find({ role: 'ADMIN' }, '_id').lean();
       for (const a of admins) {
-        await KadePendingNudge.updateMany({ userId: a._id, deliveredAt: null, type: 'reminder', text: LEGACY_LIBRARY_NOTE }, { $set: { deliveredAt: new Date() } });
+        const legacy = await KadePendingNudge.updateMany({ userId: a._id, deliveredAt: null, type: 'reminder', text: LEGACY_LIBRARY_NOTE }, { $set: { deliveredAt: new Date() } });
         const waiting = await KadePendingNudge.findOne({ userId: a._id, type: LIBRARY_DIGEST, deliveredAt: null });
         if (waiting) {
           if (!text) await KadePendingNudge.deleteOne({ _id: waiting._id, deliveredAt: null });
           else if (waiting.text !== text) await KadePendingNudge.updateOne({ _id: waiting._id, deliveredAt: null }, { $set: { text } });
           continue;
         }
-        if (!create || !text) continue;
-        if (await KadePendingNudge.exists({ userId: a._id, type: LIBRARY_DIGEST, createdAt: { $gt: new Date(Date.now() - LIBRARY_DIGEST_GAP_MS()) } })) continue;
+        // Folded per-item notes are replaced by one digest, even on a refresh that would not start one.
+        if (!(create || (legacy && legacy.modifiedCount > 0)) || !text) continue;
+        // The quiet time runs from when she heard the last one, not from when it was written.
+        if (await KadePendingNudge.exists({ userId: a._id, type: LIBRARY_DIGEST, deliveredAt: { $gt: new Date(Date.now() - LIBRARY_DIGEST_GAP_MS()) } })) continue;
         await KadePendingNudge.create({ userId: a._id, text, type: LIBRARY_DIGEST, channel: 'chat' });
       }
     } catch (e) {
@@ -1451,6 +1454,18 @@ function refreshLibrarianDigest({ create = true } = {}) {
   });
   return digestRun;
 }
+/* Once at startup: the per-item notes queued before this code shipped fold into
+ * one digest right away. Trusted uploads never refresh, so without this they
+ * would keep reaching Kade five a turn until someone else's request came in. */
+function refreshLibrarianDigestOnStartup(connection = mongoose.connection) {
+  const run = () => {
+    const timer = setTimeout(() => refreshLibrarianDigest({ create: false }), 15000);
+    if (timer && timer.unref) timer.unref();
+  };
+  if (connection.readyState === 1) run();
+  else connection.once('open', run);
+}
+refreshLibrarianDigestOnStartup();
 
 router.post('/submissions', requireJwtAuth, express.json({ limit: '8kb' }), async (req, res) => {
   try {

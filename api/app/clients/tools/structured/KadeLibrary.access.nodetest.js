@@ -21,6 +21,8 @@ function loadTool({ user, result }) {
       familyLibraryMember: (u) => u.role === 'ADMIN' || u.kadeLibraryAccess === 'family',
       familyLibraryAccessNote: 'NOTE: family members Kade has approved.',
       familyLibraryEmptyGuidance: 'EMPTY: needs Kade.',
+      libraryReviewSeat: (u) => String(u.id) === 'review',
+      ownUploadsOnlyNote: 'OWN: only its own uploads.',
     },
     '~/models/kadeBook': { KadeBook: {}, KadeBookText: {} },
     '~/models': {
@@ -78,4 +80,25 @@ test('on the voice lane the person on the line is the reader, not the service se
   await new Tool({ req: { user: { id: 'kade-service', role: 'ADMIN' }, kadeOnBehalfOf: { id: 'amber' } } })._call({ action: 'search', queries: ['x'] });
   assert.equal(seen.lookedUp, 'amber');
   assert.equal(seen.reader.id, 'amber');
+});
+
+test('the App Review seat hears only that its library holds its own uploads', async () => {
+  const result = { items: [], guidance: 'Try shorter words.' };
+  const { Tool, seen } = loadTool({ user: { _id: 'review', email: 'kadeai.vischeck722@gmail.com' }, result });
+  const out = JSON.parse(await new Tool({ req: { user: { id: 'review' } } })._call({ action: 'search', queries: ['making out'] }));
+  assert.equal(seen.reader.hidden, true);
+  assert.equal(out.library, 'OWN: only its own uploads.');
+  assert.equal(out.familyLibrary, undefined);
+  assert.equal(out.guidance, 'Try shorter words.');
+  assert.doesNotMatch(JSON.stringify(out), /Kade|family/);
+});
+
+test('a voice turn whose caller could not be identified searches nothing, not the service seat', async () => {
+  const { Tool, seen } = loadTool({ user: { _id: 'kade-service', role: 'ADMIN' }, result: { items: [{ id: 'a' }] } });
+  const req = { user: { id: 'kade-service', role: 'ADMIN' }, body: { kadeOnBehalfOf: 'unknown@example.com' }, kadeOnBehalfOfUnresolved: true };
+  const out = JSON.parse(await new Tool({ req })._call({ action: 'search', queries: ['x'] }));
+  assert.match(out.error, /could not tell whose account/);
+  assert.match(out.error, /Do not say the library lacks the item/);
+  assert.equal(seen.lookedUp, undefined);
+  assert.equal(seen.reader, undefined);
 });

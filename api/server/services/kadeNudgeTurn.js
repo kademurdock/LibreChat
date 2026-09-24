@@ -11,7 +11,8 @@
  *
  * Pickup marks the notes delivered, so a turn that is not the person's own
  * must not take them: the voice lane signs in as Kade's service seat while
- * acting for a family member (req.kadeOnBehalfOf), and a hidden run (a
+ * acting for a family member (req.kadeOnBehalfOf, or kadeOnBehalfOfUnresolved
+ * when the bridge named someone the lookup could not find), and a hidden run (a
  * consultation or any server-built turn) sets req.kadeHiddenRun.
  */
 
@@ -19,6 +20,8 @@
 function ownsNudgePickup(req) {
   if (!req || !req.user || !req.user.id) return false;
   if (req.kadeHiddenRun === true) return false;
+  // The voice lane named someone on the line but the lookup failed: not Kade's turn either.
+  if (req.kadeOnBehalfOfUnresolved === true) return false;
   const actingFor = req.kadeOnBehalfOf && req.kadeOnBehalfOf.id;
   return !actingFor || String(actingFor) === String(req.user.id);
 }

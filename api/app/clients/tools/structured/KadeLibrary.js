@@ -7,6 +7,8 @@ const {
   familyLibraryMember,
   familyLibraryAccessNote,
   familyLibraryEmptyGuidance,
+  libraryReviewSeat,
+  ownUploadsOnlyNote,
 } = require('@librechat/api');
 const { KadeBook, KadeBookText } = require('~/models/kadeBook');
 const { getUserById } = require('~/models');
@@ -19,12 +21,22 @@ class KadeLibrary extends Tool {
     this.description = libraryToolDescription;
     this.schema = libraryToolSchema;
     this.userId = options.req?.kadeOnBehalfOf?.id || options.req?.user?.id;
+    /* The voice lane named someone on the line but the lookup failed: searching as the
+     * service seat would open Kade's whole library to them, so nothing is searched. */
+    this.unresolvedCaller = options.req?.kadeOnBehalfOfUnresolved === true;
   }
 
   async _call(input) {
     try {
+      if (this.unresolvedCaller) {
+        logger.warn('[kade_library] caller on the voice lane could not be identified; not searching');
+        return JSON.stringify({
+          error:
+            'The library could not tell whose account this call belongs to, so it did not search. Tell them to try again in a moment or ask from the app. Do not say the library lacks the item.',
+        });
+      }
       if (!this.userId) return JSON.stringify({ error: 'Sign in to search the library.' });
-      const user = await getUserById(this.userId, 'email role kadeAccountType kadeLibraryAccess');
+      const user = await getUserById(this.userId, 'name username email role kadeAccountType kadeLibraryAccess');
       if (!user) return JSON.stringify({ error: 'Sign in to search the library.' });
       /* Family library access (Sep 24 2026) covers the review seat, KADE_LIBRARY_HIDDEN_FROM,
        * test seats and accounts Kade has not approved: they search their own uploads only. */
@@ -59,6 +71,8 @@ class KadeLibrary extends Tool {
         `[kade_library] action=${input?.action} items=${result.items?.length ?? '-'} approximate=${result.approximate === true}${reader.hidden ? ' own-uploads-only' : ''}`,
       );
       if (!reader.hidden) return JSON.stringify(result);
+      // The App Review seat keeps a silent own-uploads shelf: no word of a collection it cannot open.
+      if (libraryReviewSeat({ ...user, id: String(this.userId) })) return JSON.stringify({ library: ownUploadsOnlyNote, ...result });
       /* Said in her tool result, every time, so she never calls a closed shelf empty or broken. */
       return JSON.stringify({
         familyLibrary: familyLibraryAccessNote,

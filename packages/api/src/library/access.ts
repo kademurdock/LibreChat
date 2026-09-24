@@ -31,6 +31,8 @@ export interface LibraryAccount {
   email?: string;
   role?: string;
   kadeLibraryAccess?: string;
+  name?: string;
+  username?: string;
 }
 
 /** Every family account on the platform was made before this moment (the Sep 24 account list's
@@ -41,14 +43,19 @@ export const FAMILY_LIBRARY_CUTOFF: string = '2026-09-24T20:32:09Z';
  * empty family library whatever else changes, so no grant reaches it. */
 const REVIEW_SEAT = '6a6125d73939d20b95251078';
 
-/** Test seats: tester (evalclean), Party Test (evalfixture), Test Guest, plus the review seat. The
- * same ids kadeNudges keeps away from real notifications. Kade can still grant one deliberately. */
-const TEST_SEATS = [
-  REVIEW_SEAT,
-  '6a572e3be680dcdaadca0f04',
-  '6a69074cc74d975de21f5b2a',
-  '6a3f47e79be0146175d0e3e7',
-];
+/** Test seats by id: tester (evalclean), Party Test (evalfixture) and the review seat, the ids
+ * kadeNudges keeps away from real notifications. Kade can still grant one deliberately. */
+const TEST_SEATS = [REVIEW_SEAT, '6a572e3be680dcdaadca0f04', '6a69074cc74d975de21f5b2a'];
+
+/** Test seats known only by their account name (Kade's notes call it "Test Guest"; no one has
+ * confirmed its id, and a wrong id would quietly shut a real family member out). */
+const TEST_SEAT_NAMES = ['testguest'];
+
+function seatName(value: string | undefined): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+}
 
 const OBJECT_ID = /^[a-f\d]{24}$/i;
 
@@ -77,7 +84,12 @@ export function libraryReviewSeat(user: LibraryAccount | null | undefined): bool
 export function libraryTestSeat(user: LibraryAccount | null | undefined): boolean {
   if (!user) return false;
   const id = accountId(user);
-  return TEST_SEATS.includes(id) || listFromEnv(process.env.NOTIFY_TEST_USER_IDS).includes(id);
+  return (
+    TEST_SEATS.includes(id) ||
+    listFromEnv(process.env.NOTIFY_TEST_USER_IDS).includes(id) ||
+    TEST_SEAT_NAMES.includes(seatName(user.name)) ||
+    TEST_SEAT_NAMES.includes(seatName(user.username))
+  );
 }
 
 function createdBeforeCutoff(id: string): boolean {
@@ -120,12 +132,15 @@ export const familyLibraryEmptyGuidance: string =
   "Nothing matched among this person's own uploads. The shared collection is closed to this account, so more searches will not find it there. " +
   "Explain that the family collection needs Kade's approval for their account; this is not proof the library lacks the item.";
 
+/** For the App Review and screenshot seat instead of the two notes above: it keeps Part 288's
+ * silent empty shelf, so a reviewer is never told that a collection exists it cannot open. */
+export const ownUploadsOnlyNote: string =
+  "This account's library holds only its own uploads. If they look for something that is not among them, say it is not in their library yet. " +
+  'Do not say the catalog failed.';
+
 /* ── the owner's view ─────────────────────────────────────────────────── */
 
-export interface LibraryAccountRow extends LibraryAccount {
-  name?: string;
-  username?: string;
-}
+export type LibraryAccountRow = LibraryAccount;
 
 export interface LibraryAccountView {
   id: string;

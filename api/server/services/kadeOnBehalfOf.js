@@ -58,9 +58,15 @@ async function resolveKadeOnBehalfOf(req, _res, next) {
         `[kadeOnBehalfOf] admin ${req.user.id} voice-turn acting for ${u.email} (${req.kadeOnBehalfOf.id}) on Kade tools`,
       );
     } else {
+      // Sep 24 2026: tools that read shared or private things (kade_library) and the
+      // waiting-notes pickup check this and fail closed instead of acting as Kade.
+      req.kadeOnBehalfOfUnresolved = true;
       logger.warn(`[kadeOnBehalfOf] no user found for "${email}" — tools stay on the service account`);
     }
   } catch (e) {
+    if (req.user && req.user.role === SystemRoles.ADMIN) {
+      req.kadeOnBehalfOfUnresolved = true;
+    }
     logger.warn(`[kadeOnBehalfOf] resolve failed (non-fatal): ${e.message}`);
   }
   return next();
