@@ -139,6 +139,16 @@ test('ledger: a model that joins an unrevealed name to its label keeps only the 
   });
   assert.equal(cues[0].text, 'The flying squirrel snarls.');
   assert.equal(cues[1].text, 'A rabbit sees the flying squirrel above him.');
+  const mascot = { id: 'P5', label: 'the Chuck E. Cheese mascot', name: 'Chuck E. Cheese', look: '' };
+  const shown = gateCues({
+    cues: [cue(1, 'The Chuck E. Cheese mascot waves.')],
+    people: [mascot],
+    state: null,
+    words: [],
+    notes: '',
+    sectionStart: 0,
+  });
+  assert.equal(shown.cues[0].text, 'The Chuck E. Cheese mascot waves.', 'a name inside the label is left alone');
 });
 
 test('ledger: names read from the screen stay word for word and count as revealed', () => {
@@ -649,6 +659,7 @@ test('providers: waits follow Retry-After, grow with jitter, and stop when the j
   assert.equal(backoff(5000, () => 0.5)(2, httpError(503)), 15000);
   assert.equal(backoff(5000, () => 0)(3, httpError(503)), 45000 * 0.75);
   assert.equal(backoff(5000, () => 0.5)(1, httpError(429, {}, { 'retry-after': '12' })), 12000);
+  assert.equal(backoff(5000, () => 0)(1, httpError(429, {}, { 'retry-after': '12' })), 12000, 'never sooner than asked');
   assert.equal(backoff(5000, () => 0.5)(1, httpError(429, {}, { 'retry-after': '600' })), 60000);
   assert.equal(steps([5000, 20000])(1, httpError(503)), 5000);
   assert.equal(steps([5000, 20000])(2, httpError(503)), 20000);
@@ -768,7 +779,7 @@ test('providers: a refused clip is not retried, and its known cost is booked ins
   try {
     const failure = await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter).catch((error) => error);
     assert.equal(failureClass(failure), 'refused');
-    assert.equal(providerProblem(failure, 'The video model'), 'The video model declined to describe this part.');
+    assert.equal(providerProblem(failure, 'The video model'), 'The video model declined to describe this scene.');
     assert.equal(fake.calls.length, 1);
     assert.deepEqual(charges.map((charge) => charge.cost), [0.0042]);
   } finally {

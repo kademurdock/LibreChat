@@ -328,7 +328,10 @@ people: everyone who appears in THIS clip, new or returning, each with id, label
 speakers: each S number you can match to a person because you see that person speak or the dialogue makes it certain, given as that person's id. Leave out any match you are unsure of.
 
 Return only JSON in this shape:
-{"kind":"film or TV","setting":"a diner at night","people":[{"id":"P1","label":"the gray-haired man","name":"","look":"gray hair, green apron"}],"speakers":[{"speaker":0,"who":"P1"}],"cues":[{"at":1.2,"until":6,"pauseAt":3.4,"text":"A gray-haired man in a green apron wipes the counter.","shortText":"A gray-haired man wipes the counter.","who":["P1"],"importance":3}],"protectedSounds":[{"start":10,"end":12}]}`;
+{"kind":"film or TV","setting":"a diner at night","people":[{"id":"P1","label":"the gray-haired man","name":"","look":"gray hair, green apron"}],"speakers":[{"speaker":0,"who":"P1"}],"cues":[{"at":1.2,"until":6,"pauseAt":3.4,"text":"A gray-haired man in a green apron wipes the counter.","shortText":"A gray-haired man wipes the counter.","who":["P1"],"importance":3}],"protectedSounds":[{"start":10,"end":12}]}`.replace(
+    /\n{3,}/g,
+    '\n\n',
+  );
 }
 
 /** The subset of JSON Schema used for the model's structured reply. */

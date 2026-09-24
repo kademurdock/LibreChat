@@ -341,6 +341,7 @@ export function gateCues(input: {
     const joined: string[] = [];
     for (const person of people) {
       const key = nameKey(person.name);
+      if (labelCore(person.label).includes(key)) continue;
       const reveal = reveals[key];
       if (reveal === undefined || reveal > time + 1e-6) {
         text = hideName(text, person.name, person.label);

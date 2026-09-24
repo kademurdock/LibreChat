@@ -168,8 +168,8 @@ export const backoff =
   (base: number, random: () => number = Math.random): Wait =>
   (attempt, error) => {
     const asked = retryAfter(error);
-    const wait = asked !== undefined ? asked * 1000 : base * 3 ** (attempt - 1);
-    return Math.min(60000, wait) * (0.75 + random() * 0.5);
+    if (asked !== undefined) return Math.min(60000, asked * 1000);
+    return Math.min(60000, base * 3 ** (attempt - 1)) * (0.75 + random() * 0.5);
   };
 /** Fixed waits, one per retry, unless the provider's Retry-After asks for something else. */
 export const steps =
@@ -216,7 +216,7 @@ export async function attempt<T>(
 export function providerProblem(error: unknown, service: string): string {
   if (error instanceof Plain || error instanceof Unplayable) return error.message;
   const cause = root(error);
-  if (cause instanceof Refusal) return `${service} declined to describe this part.`;
+  if (cause instanceof Refusal) return `${service} declined to describe this scene.`;
   if (
     cause instanceof Error &&
     !axios.isAxiosError(cause) &&
@@ -498,7 +498,7 @@ type Choice = z.infer<typeof modelSchema>['choices'][number];
 function replyOf(choice: Choice | undefined, look: Look): Analysis {
   const native = (choice?.native_finish_reason ?? '').toUpperCase();
   if (choice?.finish_reason === 'content_filter' || declined.has(native))
-    throw new Refusal('The video model declined to describe this part.');
+    throw new Refusal('The video model declined to describe this scene.');
   if (choice?.finish_reason === 'length' || native === 'MAX_TOKENS')
     throw new CutOff('The visual description came back cut off.');
   if (!choice?.message.content || (choice.finish_reason && choice.finish_reason !== 'stop'))
