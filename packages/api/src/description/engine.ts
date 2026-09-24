@@ -1,9 +1,12 @@
-import { join } from 'node:path';
+import axios from 'axios';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { isAbsolute, join, relative } from 'node:path';
 import type {
   Analysis,
+  Chapter,
   Continuity,
   Cue,
+  FailureClass,
   Interval,
   Levels,
   Meter,
@@ -16,13 +19,17 @@ import type {
   Skip,
   Word,
 } from './types';
-import type { Freeze, Rational } from './media';
+import type { Freeze, Media, Rational } from './media';
+import type { Leftover, Variant } from './timing';
+import type { Brief, Heard } from './prompt';
+import type { Duck, Pause } from './mix';
 import type { Look } from './providers';
 import {
   assemble,
   copyable,
   decodeVoice,
-  probe,
+  MediaError,
+  normalize,
   saveSound,
   sectionClip,
   sectionPicture,
@@ -31,31 +38,48 @@ import {
   stretch,
 } from './media';
 import {
-  fitCue,
-  pauseCue,
-  pausePoint,
-  toOutput,
-  planSections,
-  mergeIntervals,
-  outputTimeline,
-} from './timing';
+  analyze,
+  failureClass,
+  keytermsFor,
+  linesFrom,
+  providerProblem,
+  synthesize,
+  transcribe,
+} from './providers';
 import {
   decibels,
-  duckCurve,
+  duckDepth,
   level,
   mix,
   pauseProgram,
   pcmSeconds,
   sampleRate,
+  shortTermMax,
   trimSilence,
 } from './mix';
-import { analyze, linesFrom, providerProblem, synthesize, transcribe } from './providers';
-import { captionTrack, descriptionTrack, transcriptText } from './transcript';
+import {
+  arrange,
+  mergeIntervals,
+  outputTimeline,
+  planSections,
+  snapToCuts,
+  toOutput,
+} from './timing';
+import { buildReport, captionTrack, descriptionTrack, transcriptText } from './transcript';
 import { nextContinuity } from './prompt';
+import { gateCues } from './ledger';
 import { Halt } from './types';
 
+export { buildReport } from './transcript';
+
 export type Providers = {
-  transcribe: (file: string, seconds: number, signal: AbortSignal, meter: Meter) => Promise<Word[]>;
+  transcribe: (
+    file: string,
+    seconds: number,
+    signal: AbortSignal,
+    meter: Meter,
+    hints?: { keyterms?: string[]; onLanguage?: (code: string) => void },
+  ) => Promise<Word[]>;
   analyze: (look: Look, signal: AbortSignal, meter: Meter) => Promise<Analysis>;
   synthesize: (
     text: string,
@@ -70,19 +94,27 @@ export type Providers = {
 export const productionProviders: Providers = { transcribe, analyze, synthesize };
 
 export type SectionFiles = { sound: string; picture?: string };
+/** A paid look at one section that has not been rendered yet. */
+export type SavedLook = { analysis: Analysis | null; failure?: string; failureClass?: FailureClass };
 /** What an earlier run left behind: the plan, the dialogue, finished sections, or analyses to reuse. */
 export type Saved = {
   firstLook?: { through: number; state: Continuity };
   plan?: Plan;
   words?: Word[];
+  /** Finished sections, reused as they are. */
   records: SectionRecord[];
-  analyses?: (Analysis | null)[];
+  /** Re-voicing or redoing: analyses to voice again; undefined means look again. */
+  analyses?: (Analysis | null | undefined)[];
+  /** Paid looks of this version that were not rendered yet. */
+  looks?: (SavedLook | undefined)[];
 };
 /** Persistence for long jobs, so a restart continues instead of starting over. */
 export type Keeper = {
-  keepFirstLook?: (look: { through: number; state: Continuity }) => Promise<void>;
   saved: Saved;
+  keepFirstLook?: (look: { through: number; state: Continuity }) => Promise<void>;
   keepPlan: (plan: Plan, words: Word[]) => Promise<void>;
+  /** Called right after every paid look, including the one made ahead of time. */
+  keepLook?: (index: number, look: SavedLook) => Promise<void>;
   keepSection: (record: SectionRecord, files: SectionFiles) => Promise<void>;
   restore: (index: number, directory: string) => Promise<SectionFiles>;
 };
@@ -108,33 +140,137 @@ export type Request = {
   providers?: Providers;
   keeper?: Keeper;
   voices?: number;
+  /** Preview: render only the sections that start before this time (working-source seconds). */
+  stopAfter?: number;
+  /** Chapters of the whole source, in source seconds. */
+  chapters?: Chapter[];
+  /** Redo: an extra note from the listener for particular sections. */
+  sectionNotes?: Record<number, string>;
+  /** Section timings, failures and retries, for the server log. */
+  log?: (message: string) => void;
 };
 export type Outcome = {
   video: string;
   audio: string;
   files: { report: string; transcript: string; descriptions: string; captions: string };
   report: Report;
+  /** True when a preview left later sections for another run. */
+  partial: boolean;
 };
 
-const volume: Record<Settings['volume'], { lift: number; duck: number }> = {
-  softer: { lift: 0, duck: -6 },
-  balanced: { lift: 2, duck: -8 },
-  louder: { lift: 5, duck: -11 },
+type Preset = { lift: number; offset: number; duck: number; depth: number; floor: number };
+/**
+ * `offset` places the narrator against the dialogue; `lift` is the older rule against the whole
+ * soundtrack, kept for plans measured before dialogue loudness existed. `depth` scales the
+ * per-line dip and `floor` is the least room (LU) the narrator keeps above the soundtrack.
+ */
+const presets: Record<Settings['volume'], Preset> = {
+  softer: { lift: 0, offset: -2, duck: -6, depth: 0.7, floor: 8 },
+  balanced: { lift: 2, offset: 1, duck: -8, depth: 1, floor: 10 },
+  louder: { lift: 5, offset: 4, duck: -11, depth: 1.3, floor: 12 },
 };
 
 /**
- * Evens out the finished copy: the soundtrack is brought toward -20 LUFS (never more than
- * 6 dB into the peak limiter), and the narrator sits just above it.
+ * Evens out the finished copy: the soundtrack is brought toward -20 LUFS (never more than 6 dB
+ * into the peak limiter), and the narrator is set against the dialogue. Without a dialogue
+ * measurement it falls back to the programme level lowered for a wide loudness range (EBU TR 084
+ * Annex B), and without that to the programme level itself.
  */
 export function levelsFor(plan: Plan, choice: Settings['volume']): Levels {
-  const { lift, duck } = volume[choice];
-  if (!plan.audio || plan.loudness.program <= -69) return { gain: 0, narration: -18 + lift, duck };
-  const gain = Math.min(12, 5 - plan.loudness.peak, Math.max(-12, -20 - plan.loudness.program));
-  return {
-    gain,
-    narration: Math.min(-13, Math.max(-26, plan.loudness.program + gain + lift)),
-    duck,
-  };
+  const preset = presets[choice];
+  const { program, peak, dialogue, lra } = plan.loudness;
+  if (!plan.audio || program <= -69) return { gain: 0, narration: -18 + preset.lift, duck: preset.duck };
+  const gain = Math.min(12, 5 - peak, Math.max(-12, -20 - program));
+  const anchor =
+    dialogue !== undefined
+      ? dialogue + preset.offset
+      : lra !== undefined
+        ? program - 0.19 * (lra - 1) + preset.offset
+        : program + preset.lift;
+  return { gain, narration: Math.min(-13, Math.max(-26, anchor + gain)), duck: preset.duck };
+}
+
+type Block = { time: number; lufs: number };
+const power = (lufs: number) => 10 ** (lufs / 10);
+const meanLevel = (blocks: Block[]) =>
+  10 * Math.log10(blocks.reduce((sum, block) => sum + power(block.lufs), 0) / blocks.length);
+
+/**
+ * Loudness of the dialogue alone: the power mean of the 400 ms momentary blocks centred inside
+ * recognised speech, with the usual -70 LUFS and relative gates. Undefined when there is too
+ * little speech to trust. A block's `time` is taken as its last 100 ms step.
+ */
+export function dialogueLoudness(
+  momentary: Block[],
+  words: Word[],
+  seconds: number,
+): number | undefined {
+  const spans = mergeIntervals(words, seconds, 0.1);
+  const speech = spans.reduce((sum, span) => sum + span.end - span.start, 0);
+  if (speech < Math.max(3, Math.min(30, seconds * 0.1))) return undefined;
+  const ordered = [...momentary].sort((a, b) => a.time - b.time);
+  const heard: Block[] = [];
+  let k = 0;
+  for (const block of ordered) {
+    const centre = block.time - 0.1;
+    while (k < spans.length && spans[k].end < centre) k++;
+    if (k < spans.length && spans[k].start <= centre && block.lufs > -70) heard.push(block);
+  }
+  if (heard.length < 5) return undefined;
+  const gate = meanLevel(heard) - 10;
+  const kept = heard.filter((block) => block.lufs > gate);
+  return kept.length ? meanLevel(kept) : undefined;
+}
+
+/**
+ * The peak that sets how far the soundtrack may be raised. A click or pop shorter than half a
+ * second no longer decides it: the sample peak counts only up to 12 dB above the loudest
+ * sustained momentary loudness, and the limiter takes care of anything sharper.
+ */
+export function steadyPeak(peak: number, momentary?: Block[]): number {
+  const levels = (momentary ?? [])
+    .map((block) => block.lufs)
+    .filter((value) => Number.isFinite(value) && value > -70)
+    .sort((a, b) => b - a);
+  if (!levels.length) return peak;
+  const top = levels[Math.min(levels.length - 1, Math.max(4, Math.floor(levels.length * 0.001)))];
+  return Math.min(peak, top + 12);
+}
+
+/** Chapters moved onto the working copy's clock: those inside the part, plus the one it starts in. */
+export function workingChapters(
+  chapters: Chapter[],
+  range: Interval | undefined,
+  seconds: number,
+): Chapter[] {
+  const ordered = [...chapters]
+    .filter((item) => Number.isFinite(item.start) && item.title)
+    .sort((a, b) => a.start - b.start);
+  if (!range) return ordered.filter((item) => item.start >= 0 && item.start < seconds);
+  const current = ordered.filter((item) => item.start <= range.start).at(-1);
+  return [
+    ...(current ? [{ start: 0, title: current.title }] : []),
+    ...ordered
+      .filter((item) => item.start > range.start && item.start < range.end)
+      .map((item) => ({ start: item.start - range.start, title: item.title })),
+  ];
+}
+
+/** Chapter times in the described copy, after the frozen pauses; later sections are dropped. */
+export function outputChapters(chapters: Chapter[], records: SectionRecord[]): Chapter[] {
+  const ordered = [...records].sort((a, b) => a.index - b.index);
+  const result: Chapter[] = [];
+  let offset = 0;
+  for (const record of ordered) {
+    for (const chapter of chapters)
+      if (chapter.start >= record.start && chapter.start < record.end)
+        result.push({
+          start: offset + toOutput(chapter.start - record.start, record.placements),
+          title: chapter.title,
+        });
+    offset += record.outputSeconds;
+  }
+  return result;
 }
 
 const frameOf = (seconds: number, fps: Rational) => Math.round((seconds * fps.num) / fps.den);
@@ -145,6 +281,28 @@ export function alignSections(sections: Interval[], fps: Rational, seconds: numb
   const cuts = [0, ...sections.slice(1).map((item) => secondsOf(frameOf(item.start, fps), fps))];
   const unique = cuts.filter((cut, i) => i === 0 || cut - cuts[i - 1] >= 1);
   return unique.map((start, i) => ({ start, end: unique[i + 1] ?? seconds }));
+}
+
+/**
+ * Picks the frame to freeze on: of the two frames around the pause point, the one that stays
+ * inside the breath (20 ms after the word, 30 ms before the next), nearest the breath's middle.
+ */
+export function freezeFrame(point: number, words: Word[], fps: Rational, frames: number): number {
+  const exact = (point * fps.num) / fps.den;
+  const options = [Math.floor(exact), Math.ceil(exact)].map((frame) =>
+    Math.min(frames - 1, Math.max(0, frame)),
+  );
+  const before = words.filter((word) => word.end <= point + 1e-6).at(-1)?.end;
+  const after = words.find((word) => word.start >= point - 1e-6)?.start;
+  const middle = before !== undefined && after !== undefined ? (before + after) / 2 : point;
+  const low = (before ?? -Infinity) + 0.02;
+  const high = (after ?? Infinity) - 0.03;
+  const distance = (frame: number) => Math.abs(secondsOf(frame, fps) - middle);
+  const fitting = options.filter((frame) => {
+    const time = secondsOf(frame, fps);
+    return time >= low && time <= high;
+  });
+  return (fitting.length ? fitting : options).sort((a, b) => distance(a) - distance(b))[0];
 }
 
 async function pool<T, R>(
@@ -171,144 +329,293 @@ async function pool<T, R>(
   return results;
 }
 
+const wait = (milliseconds: number, signal: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', stop);
+      resolve();
+    }, milliseconds);
+    const stop = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    signal.addEventListener('abort', stop, { once: true });
+  });
+
+/** How long a section that failed on a passing provider error waits before its second try. */
+const lookRetryMilliseconds = () => {
+  const seconds = Number(process.env.KADE_DESCRIPTION_RETRY_SECONDS);
+  return (Number.isFinite(seconds) && seconds >= 0 ? seconds : 60) * 1000;
+};
+const voiceRetryMilliseconds = 1500;
+/** Narration length per UTF-8 byte at 1x before this job's own clips have been measured. */
+const seedSecondsPerByte = 0.0625;
+
 type Voiced = { pcm: Float32Array; base: number };
-type Looked = { analysis: Analysis | null; failure?: string; fatal?: Error };
+type Looked = { analysis: Analysis | null; failure?: string; failureClass?: FailureClass; fatal?: Error };
+type Carried = { cue: Cue; clips: Map<Variant, Voiced> };
 const emptyContinuity: Continuity = { kind: '', setting: '', people: [], speakers: [], recent: [] };
+const blank = (state: Continuity | null): Analysis => ({
+  kind: state?.kind ?? '',
+  setting: state?.setting ?? '',
+  people: [],
+  speakers: [],
+  cues: [],
+  protectedSounds: [],
+});
+const leftReasons: Record<Leftover | 'voice', string> = {
+  room: 'No gap was long enough at the fastest narration speed chosen.',
+  minor: 'Left out rather than pausing the video for a minor detail.',
+  priority: 'Left out to make room for a more important description.',
+  voice: 'The voice service did not return this description.',
+};
 /** Account problems (bad key, empty balance) stop the job instead of skipping a section. */
-const permanent = (problem: string) => /HTTP (401|402|403)\)/.test(problem);
+const accountProblem = (error: unknown) =>
+  axios.isAxiosError(error) && [401, 402, 403].includes(error.response?.status ?? 0);
+const within = (directory: string, file: string) => {
+  const path = relative(directory, file);
+  return !!path && !path.startsWith('..') && !isAbsolute(path);
+};
+const sameRange = (a?: Interval, b?: Interval) =>
+  (!a && !b) || (!!a && !!b && Math.abs(a.start - b.start) < 1e-6 && Math.abs(a.end - b.end) < 1e-6);
+const overlap = (a: Interval, b: Interval) =>
+  Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
+const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
+const bytes = (text: string) => Buffer.byteLength(text, 'utf8');
+const seconds1 = (value: number) => `${value.toFixed(1)} s`;
 
 export async function describeVideo(request: Request): Promise<Outcome> {
-  const { source, directory, settings, signal, progress, meter } = request;
+  const { directory, settings, signal, progress, meter } = request;
   const providers = request.providers ?? productionProviders;
   const keeper = request.keeper ?? localKeeper();
-  const media = await probe(source, signal);
-  let plan = keeper.saved.plan;
-  let words = keeper.saved.words ?? [];
+  const log = request.log ?? (() => {});
+  const working = await normalize(request.source, directory, signal, settings.range);
+  if (working.file !== request.source && within(directory, request.source))
+    await rm(request.source, { force: true });
+  const source = working.file;
+  const chapters = workingChapters(request.chapters ?? [], settings.range, working.media.seconds);
+  const reusable = !!keeper.saved.plan && sameRange(keeper.saved.plan.range, settings.range);
+  if (keeper.saved.plan && !reusable) log('The saved plan was for another part of the video.');
+  const saved: Saved = reusable ? keeper.saved : { records: [] };
+  let plan = saved.plan;
+  let words = saved.words ?? [];
   if (!plan) {
+    const media = working.media;
     await progress('Measuring the soundtrack', 1);
-    const sound = media.audio ? await soundtrack(source, directory, signal) : null;
+    const sound = media.audio ? await soundtrack(source, directory, signal, media) : null;
     await progress('Finding the dialogue', 3);
-    words = sound ? await providers.transcribe(sound.dialogue, media.seconds, signal, meter) : [];
+    let language: string | undefined;
+    words = sound
+      ? await providers.transcribe(sound.dialogue, media.seconds, signal, meter, {
+          keyterms: keytermsFor({
+            title: request.title,
+            notes: settings.notes,
+            about: request.about,
+            chapters,
+          }),
+          onLanguage: (code) => {
+            language = code;
+          },
+        })
+      : [];
     if (sound) await rm(sound.dialogue, { force: true });
+    const dialogue = sound?.momentary
+      ? dialogueLoudness(sound.momentary, words, media.seconds)
+      : undefined;
+    const sections = planSections(media.seconds, words, 90, 60, 120, {
+      cuts: sound?.cuts,
+      chapters: chapters.map((item) => item.start),
+    });
     plan = {
       version: 2,
       seconds: media.seconds,
       audio: media.audio,
       fps: media.fps,
-      loudness: { program: sound?.program ?? -70, peak: sound?.peak ?? -70 },
-      sections: alignSections(planSections(media.seconds, words), media.fps, media.seconds),
+      loudness: {
+        program: sound?.program ?? -70,
+        peak: sound ? steadyPeak(sound.peak, sound.momentary) : -70,
+        ...(dialogue !== undefined ? { dialogue } : {}),
+        ...(sound?.lra !== undefined ? { lra: sound.lra } : {}),
+      },
+      sections: alignSections(sections, media.fps, media.seconds),
+      ...(settings.range ? { range: settings.range } : {}),
+      ...(sound?.cuts?.length ? { cuts: sound.cuts } : {}),
+      ...(sound?.stills?.length ? { stills: sound.stills } : {}),
+      ...(language ? { language } : {}),
+      ...(sound?.oneSided ? { oneSided: sound.oneSided } : {}),
     };
     await keeper.keepPlan(plan, words);
   }
-  const fixed = plan;
+  const fixed: Plan = plan;
+  const media: Media = { ...working.media, ...(fixed.oneSided ? { oneSided: fixed.oneSided } : {}) };
   const count = fixed.sections.length;
+  const limit = request.stopAfter;
+  const active =
+    limit === undefined
+      ? count
+      : Math.max(1, fixed.sections.filter((section) => section.start < limit).length);
+  const partial = active < count;
   const fps = fixed.fps;
   const copyVideo = settings.mode === 'standard' && copyable(media);
   const levels = levelsFor(fixed, settings.volume);
+  const preset = presets[settings.volume];
   const native = Math.min(1.5, settings.rate);
-  const brief = {
-    title: request.title,
-    about: request.about,
-    notes: settings.notes,
-    detail: settings.detail,
-    rate: settings.rate,
-    maxRate: settings.maxRate,
-    mode: settings.mode,
-  };
-  const share = (i: number, part: number) => 5 + ((i + part) / count) * 87;
+  const surveyed = !!settings.firstLook && !saved.analyses && fixed.seconds > 120 && count > 1;
+  const surveyShare = surveyed ? 6 : 0;
+  const share = (i: number, part: number) =>
+    5 + surveyShare + ((i + part) / active) * (87 - surveyShare);
   const inSection = (section: Interval) =>
     words.filter((word) => word.start >= section.start && word.start < section.end);
+  const cutsIn = (section: Interval) =>
+    (fixed.cuts ?? [])
+      .filter((time) => time >= section.start && time < section.end)
+      .map((time) => time - section.start);
+  const stills = fixed.stills ?? [];
+  const seen = { main: new Set<number>(), survey: new Set<number>() };
+  const stillOf = (section: Interval) =>
+    stills.findIndex((still) => overlap(still, section) >= 0.95 * (section.end - section.start));
+  const markSeen = (section: Interval, set: Set<number>) =>
+    stills.forEach((still, k) => {
+      if (overlap(still, section) >= 2) set.add(k);
+    });
+  const prior = fixed.secondsPerByte ?? seedSecondsPerByte;
+  const measured = { bytes: 0, seconds: 0 };
+  let secondsPerByte = prior;
+  let keptSecondsPerByte = fixed.secondsPerByte;
   let voiceFailures = 0;
+  const carried = new Map<number, Carried[]>();
+  const safely = async (action: () => Promise<void> | undefined, what: string) => {
+    try {
+      await action();
+    } catch (error) {
+      log(`${what} could not be saved: ${error instanceof Error ? error.message : 'unknown error'}`);
+    }
+  };
 
-  async function look(
-    i: number,
-    state: Continuity | null,
-    survey: boolean = false,
-  ): Promise<Looked> {
-    const reused = keeper.saved.analyses?.[i];
-    if (!survey && reused !== undefined) return { analysis: reused };
+  const briefFor = (i: number, survey: boolean, scale: number): Brief => {
     const section = fixed.sections[i];
+    const cuts = cutsIn(section);
+    const note = request.sectionNotes?.[i];
+    return {
+      title: request.title,
+      about: request.about,
+      notes: settings.notes,
+      detail: settings.detail,
+      rate: settings.rate,
+      maxRate: settings.maxRate,
+      mode: settings.mode,
+      survey,
+      slowed: scale > 1,
+      orientation: survey ? undefined : saved.firstLook?.state.people,
+      position: { index: i, count, start: section.start, end: section.end, total: fixed.seconds },
+      ...(chapters.length ? { chapters } : {}),
+      ...(cuts.length ? { cuts: cuts.map((time) => time * scale) } : {}),
+      ...(fixed.language ? { language: fixed.language } : {}),
+      secondsPerByte,
+      ...(note ? { sectionNote: note } : {}),
+    };
+  };
+
+  /** Maps a close look's slowed timeline back to the section and restores its minimum window. */
+  const toSection = (analysis: Analysis, scale: number, seconds: number): Analysis => {
+    if (scale === 1) return analysis;
+    return {
+      ...analysis,
+      cues: analysis.cues.map((cue) => {
+        const at = cue.at / scale;
+        return {
+          ...cue,
+          at,
+          until: Math.max(cue.until / scale, Math.min(seconds, at + 1.5)),
+          pauseAt: cue.pauseAt === undefined ? undefined : cue.pauseAt / scale,
+        };
+      }),
+      protectedSounds: analysis.protectedSounds.map((span) => ({
+        start: span.start / scale,
+        end: span.end / scale,
+      })),
+    };
+  };
+
+  async function look(i: number, state: Continuity | null, survey: boolean = false): Promise<Looked> {
+    const section = fixed.sections[i];
+    if (!survey) {
+      const reused = saved.analyses?.[i];
+      if (reused !== undefined) return { analysis: reused };
+      const kept = saved.looks?.[i];
+      if (kept?.analysis) {
+        markSeen(section, seen.main);
+        return { analysis: kept.analysis };
+      }
+      if (kept?.failure && kept.failureClass && kept.failureClass !== 'transient')
+        return { analysis: null, failure: kept.failure, failureClass: kept.failureClass };
+    }
+    const still = stillOf(section);
+    if (still >= 0 && (survey ? seen.survey : seen.main).has(still)) {
+      log(`Section ${i + 1} of ${count} shows the same still picture as before; not looked at again.`);
+      return { analysis: blank(state) };
+    }
+    const seconds = section.end - section.start;
     const dir = join(directory, `section-${i}`);
+    const began = Date.now();
     try {
       await mkdir(dir, { recursive: true });
-      const clip = await sectionClip(
-        source,
-        dir,
-        section.start,
-        section.end - section.start,
-        signal,
-        !!settings.closeLook && !survey,
-      );
       const scale = settings.closeLook && !survey ? 4 : 1;
-      const analysis = await providers.analyze(
-        {
-          file: clip,
-          seconds: (section.end - section.start) * scale,
-          brief: {
-            ...brief,
-            survey,
-            slowed: scale > 1,
-            orientation: survey ? undefined : keeper.saved.firstLook?.state.people,
+      const clip = await sectionClip(source, dir, section.start, seconds, signal, scale > 1, media);
+      let analysis: Analysis;
+      try {
+        analysis = await providers.analyze(
+          {
+            file: clip,
+            seconds: seconds * scale,
+            brief: briefFor(i, survey, scale),
+            state,
+            lines: linesFrom(inSection(section), section.start).map((line) => ({
+              ...line,
+              start: line.start * scale,
+              end: line.end * scale,
+            })),
+            before: linesFrom(
+              words.filter((word) => word.start >= section.start - 15 && word.start < section.start),
+              section.start - 15,
+            ).slice(-4),
           },
-          state,
-          lines: linesFrom(inSection(section), section.start).map((line) => ({
-            ...line,
-            start: line.start * scale,
-            end: line.end * scale,
-          })),
-          before: linesFrom(
-            words.filter((word) => word.start >= section.start - 15 && word.start < section.start),
-            section.start - 15,
-          ).slice(-4),
-        },
-        signal,
-        meter,
+          signal,
+          meter,
+        );
+      } finally {
+        await rm(clip, { force: true });
+      }
+      const result = toSection(analysis, scale, seconds);
+      markSeen(section, survey ? seen.survey : seen.main);
+      log(
+        `Section ${i + 1} of ${count}: ${survey ? 'first look' : 'looked'} in ${seconds1((Date.now() - began) / 1000)}.`,
       );
-      await rm(clip, { force: true });
-      return {
-        analysis:
-          scale === 1
-            ? analysis
-            : {
-                ...analysis,
-                cues: analysis.cues.map((cue) => ({
-                  ...cue,
-                  at: cue.at / scale,
-                  until: cue.until / scale,
-                  pauseAt: cue.pauseAt === undefined ? undefined : cue.pauseAt / scale,
-                })),
-                protectedSounds: analysis.protectedSounds.map((span) => ({
-                  start: span.start / scale,
-                  end: span.end / scale,
-                })),
-              },
-      };
+      if (!survey) await safely(() => keeper.keepLook?.(i, { analysis: result }), `The look at section ${i + 1}`);
+      return { analysis: result };
     } catch (error) {
       if (signal.aborted || error instanceof Halt) return { analysis: null, fatal: error as Error };
-      const failure = providerProblem(error, 'The video model');
-      return {
-        analysis: null,
-        failure,
-        fatal: permanent(failure) ? new Error(failure) : undefined,
-      };
+      const failure =
+        error instanceof MediaError ? error.message : providerProblem(error, 'The video model');
+      if (accountProblem(error)) return { analysis: null, failure, fatal: new Error(failure) };
+      const kind: FailureClass = error instanceof MediaError ? 'input' : failureClass(error);
+      log(`Section ${i + 1} of ${count} could not be described (${kind}): ${failure}`);
+      return { analysis: null, failure, failureClass: kind };
     }
   }
 
   async function voice(text: string, file: string): Promise<Voiced | null> {
     try {
-      await providers.synthesize(
-        text,
-        settings.voice,
-        request.session,
-        file,
-        native,
-        signal,
-        meter,
-      );
+      await providers.synthesize(text, settings.voice, request.session, file, native, signal, meter);
       const pcm = trimSilence(await decodeVoice(file, signal));
-      await rm(file, { force: true });
       voiceFailures = 0;
-      return pcm.length > sampleRate * 0.2 ? { pcm, base: pcmSeconds(pcm) * native } : null;
+      if (pcm.length <= sampleRate * 0.2) return null;
+      const base = pcmSeconds(pcm) * native;
+      measured.bytes += bytes(text);
+      measured.seconds += base;
+      secondsPerByte = (prior * 200 + measured.seconds) / (200 + measured.bytes);
+      return { pcm, base };
     } catch (error) {
       if (signal.aborted || error instanceof Halt) throw error;
       if (++voiceFailures >= 6)
@@ -316,121 +623,205 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           `${providerProblem(error, 'The voice service')} Six descriptions in a row could not be voiced.`,
         );
       return null;
+    } finally {
+      await rm(file, { force: true });
     }
   }
 
-  async function place(
-    cues: Cue[],
-    voiced: (Voiced | null)[],
-    sectionWords: Word[],
-    protectedSounds: Interval[],
-    seconds: number,
-    dir: string,
-    offset: number,
-  ) {
-    const blocked = mergeIntervals(
-      [
-        ...mergeIntervals(sectionWords, seconds, 0.22),
-        ...mergeIntervals(protectedSounds, seconds, 0.1),
-      ],
-      seconds,
-    );
-    const hard: Interval[] = [...protectedSounds];
-    const placed: { placement: Placement; clip: Voiced }[] = [];
-    const skipped: Skip[] = [];
-    const order = cues
-      .map((cue, index) => ({ cue, index }))
-      .sort((a, b) => b.cue.importance - a.cue.importance || a.cue.at - b.cue.at);
-    for (const { cue, index } of order) {
-      const full = voiced[index];
-      if (!full) {
-        skipped.push({
-          at: cue.at + offset,
-          text: cue.text,
-          reason: 'The voice service did not return this description.',
-        });
-        continue;
-      }
-      let clip = full;
-      let placement = fitCue(cue, cue.text, full.base, settings, blocked, seconds);
-      if (!placement && cue.shortText && cue.shortText !== cue.text) {
-        const short = await voice(cue.shortText, join(dir, `short-${index}.wav`));
-        const fitted = short && fitCue(cue, cue.shortText, short.base, settings, blocked, seconds);
-        if (short && fitted) {
-          placement = { ...fitted, shortened: true };
-          clip = short;
-        }
-      }
-      if (!placement && settings.mode === 'extended' && cue.importance === 1) {
-        skipped.push({
-          at: cue.at + offset,
-          text: cue.text,
-          reason: 'Left out rather than pausing the video for a minor detail.',
-        });
-        continue;
-      }
-      if (!placement && settings.mode === 'extended') {
-        const point = pausePoint(cue, sectionWords, hard, seconds);
-        placement = pauseCue(cue, cue.text, full.base, settings, point, blocked);
-        clip = full;
-      }
-      if (!placement) {
-        skipped.push({
-          at: cue.at + offset,
-          text: cue.text,
-          reason: 'No gap was long enough at the fastest narration speed chosen.',
-        });
-        continue;
-      }
-      const span = placement.pause
-        ? { start: placement.at - 0.05, end: placement.pauseAt + 0.05 }
-        : { start: placement.at, end: placement.at + placement.duration + 0.1 };
-      blocked.push(span);
-      hard.push(span);
-      placed.push({ placement, clip });
+  const records = new Map<number, SectionRecord>();
+  const savedRecords = new Map(saved.records.map((record) => [record.index, record]));
+  const neighbour = (index: number) => records.get(index) ?? savedRecords.get(index);
+  const spoken = (record: SectionRecord) =>
+    record.placements.map((item) => ({ start: item.outputAt, end: item.outputAt + item.duration }));
+
+  /**
+   * Keeps room at section joins: the soundtrack must be back up before a section ends, and a
+   * description may not start right after one that ended at the end of the previous section.
+   */
+  function edgeGuards(i: number, seconds: number): Interval[] {
+    const guards: Interval[] = [];
+    if (i > 0) {
+      const previous = neighbour(i - 1);
+      const tail = previous
+        ? spoken(previous).reduce((gap, span) => Math.min(gap, previous.outputSeconds - span.end), Infinity)
+        : Infinity;
+      guards.push({ start: 0, end: Math.max(0.1, 0.35 - tail) });
     }
-    return { placed, skipped };
+    if (i < count - 1) {
+      const next = neighbour(i + 1);
+      const head = next ? spoken(next).reduce((gap, span) => Math.min(gap, span.start), Infinity) : Infinity;
+      guards.push({ start: seconds - Math.max(0.25, 0.35 - head), end: seconds });
+    }
+    return guards;
   }
 
-  async function render(i: number, looked: Looked, continuity: Continuity): Promise<SectionRecord> {
+  async function render(i: number, looked: Looked, stateIn: Continuity | null): Promise<SectionRecord> {
     const section = fixed.sections[i];
     const seconds = section.end - section.start;
     const dir = join(directory, `section-${i}`);
+    const began = Date.now();
     await mkdir(dir, { recursive: true });
     const sectionWords = inSection(section).map((word) => ({
       ...word,
       start: word.start - section.start,
       end: Math.min(seconds, word.end - section.start),
     }));
-    const cues = looked.analysis?.cues ?? [];
-    await progress(`Voicing section ${i + 1} of ${count}`, share(i, 0.3));
-    const voiced = await pool(cues, request.voices ?? 2, (cue, j) =>
-      voice(cue.text, join(dir, `voice-${j}.wav`)),
-    );
-    const { placed, skipped } = await place(
-      cues,
-      voiced,
-      sectionWords,
-      looked.analysis?.protectedSounds ?? [],
+    const analysis = looked.analysis;
+    const sectionCuts = cutsIn(section);
+    const incoming = carried.get(i) ?? [];
+    carried.delete(i);
+    const gated = analysis
+      ? gateCues({
+          cues: snapToCuts(analysis.cues, sectionCuts),
+          people: analysis.people,
+          state: stateIn,
+          words,
+          notes: settings.notes,
+          sectionStart: section.start,
+        }).cues
+      : [];
+    const cues = [...incoming.map((item) => item.cue), ...gated];
+    const protectedSounds = analysis?.protectedSounds ?? [];
+    const blocked = mergeIntervals(
+      [
+        ...mergeIntervals(sectionWords, seconds, 0.22),
+        ...mergeIntervals(protectedSounds, seconds, 0.1),
+        ...edgeGuards(i, seconds),
+      ],
       seconds,
-      dir,
-      section.start,
     );
-    const sourceFrames = copyVideo ? 0 : frameOf(section.end, fps) - frameOf(section.start, fps);
-    const aligned = placed.map(({ placement, clip }) => {
-      if (!placement.pause || copyVideo) return { placement, clip };
-      let frame = Math.min(sourceFrames - 1, Math.max(0, frameOf(placement.pauseAt, fps)));
-      if (secondsOf(frame, fps) < placement.at && placement.pauseAt > placement.at)
-        frame = Math.min(sourceFrames - 1, Math.ceil((placement.at * fps.num) / fps.den));
-      const pauseAt = secondsOf(frame, fps);
-      const pause = secondsOf(Math.max(1, Math.ceil((placement.pause * fps.num) / fps.den)), fps);
-      const at =
-        placement.pauseAt === placement.at || pauseAt < placement.at ? pauseAt : placement.at;
-      return { placement: { ...placement, at, pauseAt, pause }, clip };
+    await progress(`Voicing section ${i + 1} of ${count}`, share(i, 0.3));
+    const key = (index: number, variant: Variant) => `${index}:${variant}`;
+    const clips = new Map<string, Voiced>();
+    incoming.forEach((item, index) =>
+      item.clips.forEach((clip, variant) => clips.set(key(index, variant), clip)),
+    );
+    const failing = new Set<string>();
+    const failed = new Set<string>();
+    const textOf = (index: number, variant: Variant) =>
+      variant === 'full' ? cues[index].text : cues[index].shortText;
+    const estimate = (index: number, variant: Variant) => bytes(textOf(index, variant)) * secondsPerByte;
+    const length = (index: number, variant: Variant) => clips.get(key(index, variant))?.base;
+    const ratio = (index: number) => {
+      const variant = (['full', 'short'] as const).find((item) => clips.has(key(index, item)));
+      return variant ? (length(index, variant) ?? 0) / estimate(index, variant) : undefined;
+    };
+    const layout = (
+      measure: (index: number, variant: Variant) => number | undefined,
+      prefer?: (index: number) => Variant | undefined,
+    ) =>
+      arrange({
+        cues,
+        length: measure,
+        settings,
+        blocked,
+        hard: protectedSounds,
+        words: sectionWords,
+        seconds,
+        cuts: sectionCuts,
+        prefer,
+      });
+    const speak = async (wanted: { index: number; variant: Variant }[], suffix: string) => {
+      const names = wanted.map((item) => key(item.index, item.variant));
+      const fresh = wanted.filter(
+        (_item, n) =>
+          !clips.has(names[n]) &&
+          !failing.has(names[n]) &&
+          !failed.has(names[n]) &&
+          names.indexOf(names[n]) === n,
+      );
+      await pool(fresh, request.voices ?? 2, async (item, n) => {
+        const name = key(item.index, item.variant);
+        const clip = await voice(textOf(item.index, item.variant), join(dir, `voice-${n}${suffix}.wav`));
+        if (clip) clips.set(name, clip);
+        else failing.add(name);
+      });
+    };
+    const planned = layout(estimate);
+    const hopeful = layout((index, variant) => estimate(index, variant) * 0.8);
+    const unplanned = new Set(planned.left.map((item) => item.index));
+    await speak(
+      [...planned.placed, ...hopeful.placed.filter((item) => unplanned.has(item.index))],
+      'a',
+    );
+    const corrected = layout(
+      (index, variant) => {
+        if (failed.has(key(index, variant))) return undefined;
+        return length(index, variant) ?? estimate(index, variant) * (ratio(index) ?? 1);
+      },
+      (index) => {
+        const off = ratio(index);
+        if (off === undefined || Math.abs(off - 1) > 0.1) return undefined;
+        return clips.has(key(index, 'full')) ? 'full' : 'short';
+      },
+    );
+    await speak(corrected.placed, 'b');
+    if (failing.size) {
+      log(`Section ${i + 1} of ${count}: trying ${failing.size} dropped voice clip(s) once more.`);
+      await wait(voiceRetryMilliseconds, signal);
+      const retry = [...failing].map((name) => {
+        const [index, variant] = name.split(':');
+        return { index: Number(index), variant: variant as Variant };
+      });
+      await pool(retry, 1, async (item, n) => {
+        const name = key(item.index, item.variant);
+        const clip = await voice(textOf(item.index, item.variant), join(dir, `retry-${n}.wav`));
+        failing.delete(name);
+        if (clip) clips.set(name, clip);
+        else failed.add(name);
+      });
+    }
+    const final = layout(length);
+    const skipped: Skip[] = [];
+    const left: string[] = [];
+    for (const item of final.left) {
+      const cue = cues[item.index];
+      const voiceLost = failed.has(key(item.index, 'full')) || failed.has(key(item.index, 'short'));
+      const carry =
+        !voiceLost &&
+        item.reason !== 'priority' &&
+        cue.until - seconds >= 0.5 &&
+        i + 1 < active &&
+        !savedRecords.has(i + 1) &&
+        !records.has(i + 1);
+      if (carry) {
+        const kept = new Map<Variant, Voiced>();
+        for (const variant of ['full', 'short'] as const) {
+          const clip = clips.get(key(item.index, variant));
+          if (clip) kept.set(variant, clip);
+        }
+        carried.set(i + 1, [
+          ...(carried.get(i + 1) ?? []),
+          { cue: { ...cue, at: 0, until: Math.min(8, cue.until - seconds), pauseAt: 0 }, clips: kept },
+        ]);
+        continue;
+      }
+      left.push(cue.text);
+      skipped.push({
+        at: cue.at + section.start,
+        text: cue.text,
+        reason: leftReasons[voiceLost ? 'voice' : item.reason],
+      });
+    }
+    const placed = final.placed.flatMap((item) => {
+      const clip = clips.get(key(item.index, item.variant));
+      return clip ? [{ placement: item.placement, clip }] : [];
     });
-    aligned.sort(
-      (a, b) => a.placement.at - b.placement.at || a.placement.pauseAt - b.placement.pauseAt,
-    );
+    clips.clear();
+    const sourceFrames = copyVideo ? 0 : frameOf(section.end, fps) - frameOf(section.start, fps);
+    const aligned = placed
+      .map(({ placement, clip }) => {
+        if (!placement.pause || copyVideo) return { placement, clip };
+        let frame = freezeFrame(placement.pauseAt, sectionWords, fps, sourceFrames);
+        if (secondsOf(frame, fps) < placement.at && placement.pauseAt > placement.at)
+          frame = Math.min(sourceFrames - 1, Math.ceil((placement.at * fps.num) / fps.den));
+        const pauseAt = secondsOf(frame, fps);
+        const pause = secondsOf(Math.max(1, Math.ceil((placement.pause * fps.num) / fps.den)), fps);
+        const at =
+          placement.pauseAt === placement.at || pauseAt < placement.at ? pauseAt : placement.at;
+        return { placement: { ...placement, at, pauseAt, pause }, clip };
+      })
+      .sort((a, b) => a.placement.at - b.placement.at || a.placement.pauseAt - b.placement.pauseAt);
     const timeline = outputTimeline(aligned.map((item) => item.placement));
     await progress(`Mixing section ${i + 1} of ${count}`, share(i, 0.75));
     const pauses = timeline.filter((item) => item.pause > 0);
@@ -444,37 +835,17 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const outputSamples = copyVideo
       ? sourceSamples
       : Math.round(secondsOf(sourceFrames + pausedFrames, fps) * sampleRate);
-    const program = await sectionSound(
-      source,
-      dir,
-      section.start,
-      sourceSamples,
-      fixed.audio,
-      signal,
-    );
-    await rm(join(dir, 'sound.f32'), { force: true });
-    const paused = pauseProgram(
-      program,
-      pauses.map((item) => ({ at: item.pauseAt, length: item.pause })),
-      outputSamples,
-    );
-    const placements: Placement[] = [];
-    const clips: { at: number; pcm: Float32Array }[] = [];
-    for (let j = 0; j < timeline.length; j++) {
-      const placement = timeline[j];
-      const sped = await stretch(aligned[j].clip.pcm, placement.rate / native, signal);
-      const pcm = level(sped, levels.narration - 3.01);
-      placements.push({ ...placement, duration: pcmSeconds(pcm) });
-      clips.push({ at: placement.outputAt, pcm });
-    }
-    const curve = duckCurve(
-      outputSamples,
-      placements.map((item) => ({ start: item.outputAt, end: item.outputAt + item.duration })),
-      decibels(levels.duck),
-    );
     const sound = join(dir, 'sound.flac');
-    await saveSound(mix(paused, decibels(levels.gain), curve, clips), sound, signal);
-    await rm(sound + '.f32', { force: true });
+    const placements = await mixSection({
+      section,
+      dir,
+      sectionWords,
+      timeline,
+      clips: aligned.map((item) => item.clip),
+      sourceSamples,
+      outputSamples,
+      sound,
+    });
     const picture = copyVideo
       ? undefined
       : await sectionPicture(
@@ -489,26 +860,134 @@ export async function describeVideo(request: Request): Promise<Outcome> {
             frames: Math.round((item.pause * fps.num) / fps.den),
           })),
           signal,
+          media,
         );
+    const heard: Heard = {
+      spoken: placements.map((item) => item.text),
+      left,
+      sectionIndex: i,
+      sectionEnd: section.end,
+      words,
+      notes: settings.notes,
+    };
+    const continuity = analysis
+      ? nextContinuity(stateIn, analysis, heard)
+      : placements.length
+        ? nextContinuity(stateIn, blank(stateIn), heard)
+        : (stateIn ?? emptyContinuity);
     const record: SectionRecord = {
       index: i,
       start: section.start,
       end: section.end,
-      analysis: looked.analysis,
-      failure: looked.failure,
+      analysis,
+      ...(looked.failure
+        ? { failure: looked.failure, failureClass: looked.failureClass ?? 'transient' }
+        : {}),
       placements,
       skipped: skipped.sort((a, b) => a.at - b.at),
       outputSeconds: outputSamples / sampleRate,
       continuity,
     };
     await keeper.keepSection(record, { sound, picture });
+    log(
+      `Section ${i + 1} of ${count}: finished in ${seconds1((Date.now() - began) / 1000)} with ${placements.length} description(s)${skipped.length ? `, ${skipped.length} left out` : ''}.`,
+    );
+    if (
+      measured.bytes &&
+      (keptSecondsPerByte === undefined ||
+        Math.abs(secondsPerByte / keptSecondsPerByte - 1) > 0.05)
+    ) {
+      keptSecondsPerByte = secondsPerByte;
+      const update = { ...fixed, secondsPerByte };
+      await safely(() => keeper.keepPlan(update, words), 'The measured narration speed');
+    }
     return record;
   }
 
-  if (settings.firstLook && !keeper.saved.analyses) {
-    let first = keeper.saved.firstLook ?? { through: 0, state: emptyContinuity };
-    for (let i = first.through; i < count; i++) {
-      await progress(`First look: section ${i + 1} of ${count}`, 4);
+  /**
+   * Builds and saves one section's sound: its own soundtrack with the pauses laid in, each line
+   * ducked by how loud the soundtrack is under it and released before the next dialogue word,
+   * and the narration on top. The large buffers live only inside this call.
+   */
+  async function mixSection(input: {
+    section: Interval;
+    dir: string;
+    sectionWords: Word[];
+    timeline: Placement[];
+    clips: Voiced[];
+    sourceSamples: number;
+    outputSamples: number;
+    sound: string;
+  }): Promise<Placement[]> {
+    const { sectionWords, timeline } = input;
+    const previousEnd = (time: number) =>
+      sectionWords.filter((word) => word.end <= time + 1e-6).at(-1)?.end ?? -Infinity;
+    const nextStart = (time: number) =>
+      sectionWords.find((word) => word.start >= time - 1e-6)?.start ?? Infinity;
+    const pauses: Pause[] = timeline
+      .filter((item) => item.pause > 0)
+      .map((item) => ({
+        at: item.pauseAt,
+        length: item.pause,
+        fadeOut: clamp(item.pauseAt - previousEnd(item.pauseAt) - 0.005, 0.01, 0.035),
+        fadeIn: clamp(nextStart(item.pauseAt) - item.pauseAt - 0.01, 0.01, 0.06),
+      }));
+    const paused = pauseProgram(
+      await sectionSound(
+        source,
+        input.dir,
+        input.section.start,
+        input.sourceSamples,
+        fixed.audio,
+        signal,
+        media,
+      ),
+      pauses,
+      input.outputSamples,
+    );
+    await rm(join(input.dir, 'sound.f32'), { force: true });
+    const dialogueStarts = sectionWords
+      .map((word) => toOutput(word.start, timeline))
+      .sort((a, b) => a - b);
+    const placements: Placement[] = [];
+    const clips: { at: number; pcm: Float32Array }[] = [];
+    const ducks: Duck[] = [];
+    for (let j = 0; j < timeline.length; j++) {
+      const placement = timeline[j];
+      const sped = await stretch(input.clips[j].pcm, placement.rate / native, signal);
+      const pcm = level(sped, levels.narration - 3.01);
+      const duration = pcmSeconds(pcm);
+      clips.push({ at: placement.outputAt, pcm });
+      const frozen = placement.pause > 0 && placement.pauseAt === placement.at;
+      if (frozen) {
+        placements.push({ ...placement, duration });
+        continue;
+      }
+      const end =
+        placement.outputAt +
+        (placement.pause > 0 ? placement.pauseAt - placement.at : duration);
+      const under = fixed.audio
+        ? shortTermMax(paused, placement.outputAt, end) + levels.gain
+        : -Infinity;
+      const dip = duckDepth(under, levels.narration, preset.depth, preset.floor);
+      const next = dialogueStarts.find((time) => time >= end - 1e-6) ?? Infinity;
+      placements.push({ ...placement, duration, dip });
+      ducks.push({
+        start: placement.outputAt,
+        end,
+        gain: decibels(dip),
+        release: clamp(next - end - 0.05, 0.15, 0.5),
+      });
+    }
+    await saveSound(mix(paused, decibels(levels.gain), ducks, clips), input.sound, signal);
+    await rm(input.sound + '.f32', { force: true });
+    return placements;
+  }
+
+  if (surveyed) {
+    let first = saved.firstLook ?? { through: 0, state: emptyContinuity };
+    for (let i = first.through; i < active; i++) {
+      await progress(`First look: section ${i + 1} of ${active}`, 4 + (i / active) * surveyShare);
       const result = await look(i, first.state, true);
       if (result.fatal) throw result.fatal;
       if (!result.analysis)
@@ -517,24 +996,25 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         );
       first = { through: i + 1, state: nextContinuity(first.state, result.analysis) };
       await keeper.keepFirstLook?.(first);
-      keeper.saved.firstLook = first;
+      saved.firstLook = first;
     }
   }
-  const saved = new Map(keeper.saved.records.map((record) => [record.index, record]));
-  const records: SectionRecord[] = [];
+
   let state: Continuity | null = null;
   let failures = 0;
-  let ahead: Promise<Looked> | null = null;
-  for (let i = 0; i < count; i++) {
+  let ahead: { index: number; promise: Promise<Looked> } | null = null;
+  const deferred: { index: number; state: Continuity | null; at: number }[] = [];
+  for (let i = 0; i < active; i++) {
     signal.throwIfAborted();
-    const done = saved.get(i);
+    const done = savedRecords.get(i);
     if (done) {
-      records.push(done);
+      records.set(i, done);
+      if (done.analysis) markSeen(fixed.sections[i], seen.main);
       state = done.continuity;
       continue;
     }
     await progress(`Watching section ${i + 1} of ${count}`, share(i, 0));
-    const looked: Looked = await (ahead ?? look(i, state));
+    const looked: Looked = ahead?.index === i ? await ahead.promise : await look(i, state);
     ahead = null;
     if (looked.fatal) throw looked.fatal;
     failures = looked.failure ? failures + 1 : 0;
@@ -542,24 +1022,41 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       throw new Error(
         `${looked.failure} Three sections in a row could not be described, so the job stopped.`,
       );
-    const continuity: Continuity = looked.analysis
-      ? nextContinuity(state, looked.analysis)
-      : (state ?? emptyContinuity);
-    if (i + 1 < count && !saved.has(i + 1)) ahead = look(i + 1, continuity);
+    const provisional = looked.analysis ? nextContinuity(state, looked.analysis) : state;
+    if (i + 1 < active && !savedRecords.has(i + 1))
+      ahead = { index: i + 1, promise: look(i + 1, provisional) };
+    if (looked.failureClass === 'transient') {
+      deferred.push({ index: i, state, at: Date.now() });
+      continue;
+    }
     try {
-      records.push(await render(i, looked, continuity));
+      const record = await render(i, looked, state);
+      records.set(i, record);
+      state = record.continuity;
     } catch (error) {
-      if (ahead) await ahead;
+      if (ahead) await ahead.promise;
       throw error;
     }
-    state = continuity;
+  }
+  for (const item of deferred) {
+    const remaining = lookRetryMilliseconds() - (Date.now() - item.at);
+    if (remaining > 0) {
+      await progress(`Waiting to try section ${item.index + 1} again`, 92);
+      await wait(remaining, signal);
+    }
+    await progress(`Trying section ${item.index + 1} again`, 92);
+    log(`Section ${item.index + 1} of ${count}: trying again after a passing provider error.`);
+    const looked = await look(item.index, item.state);
+    if (looked.fatal) throw looked.fatal;
+    records.set(item.index, await render(item.index, looked, item.state));
   }
 
+  const ordered = [...records.values()].sort((a, b) => a.index - b.index);
   await progress('Joining the finished sections', 93);
   const files = await Promise.all(
-    records.map(async (record) => {
+    ordered.map(async (record) => {
       const dir = join(directory, `section-${record.index}`);
-      if (!saved.has(record.index))
+      if (!savedRecords.has(record.index))
         return {
           sound: join(dir, 'sound.flac'),
           picture: copyVideo ? undefined : join(dir, `part-${record.index}.mp4`),
@@ -568,16 +1065,18 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       return keeper.restore(record.index, dir);
     }),
   );
-  const title = `${request.title || 'Video'} (described)`;
-  const output = await assemble(
-    directory,
-    files.map((file) => file.sound),
-    copyVideo ? null : files.map((file) => file.picture || ''),
-    source,
-    title,
-    signal,
+  const report = buildReport(
+    request.title,
+    keptSecondsPerByte === undefined ? fixed : { ...fixed, secondsPerByte: keptSecondsPerByte },
+    levels,
+    settings,
+    ordered,
+    words,
+    {
+      ...(partial ? { preview: true } : {}),
+      ...(settings.range ? { range: settings.range } : {}),
+    },
   );
-  const report = buildReport(request.title, fixed, levels, settings, records, words);
   const reportFile = join(directory, 'description.json');
   const transcript = join(directory, 'transcript.txt');
   const descriptions = join(directory, 'descriptions.vtt');
@@ -586,66 +1085,32 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   await writeFile(transcript, transcriptText(report));
   await writeFile(descriptions, descriptionTrack(report));
   await writeFile(captions, captionTrack(report));
+  if (!copyVideo && source !== request.source && within(directory, source))
+    await rm(source, { force: true });
+  const output = await assemble(
+    directory,
+    files.map((file) => file.sound),
+    copyVideo ? null : files.map((file) => file.picture || ''),
+    source,
+    `${request.title || 'Video'} (described)`,
+    signal,
+    {
+      media,
+      subtitles: [
+        ...(report.dialogue.length
+          ? [{ file: captions, language: report.language ?? fixed.language ?? 'und', title: 'Captions' }]
+          : []),
+        ...(report.descriptions.length
+          ? [{ file: descriptions, language: 'en', title: 'Audio descriptions (text)' }]
+          : []),
+      ],
+      chapters: outputChapters(chapters, ordered),
+    },
+  );
   return {
     ...output,
     files: { report: reportFile, transcript, descriptions, captions },
     report,
+    partial,
   };
-}
-
-export function buildReport(
-  title: string,
-  plan: Plan,
-  levels: Levels,
-  settings: Settings,
-  records: SectionRecord[],
-  words: Word[],
-): Report {
-  const ordered = [...records].sort((a, b) => a.index - b.index);
-  const last = ordered[ordered.length - 1]?.continuity ?? emptyContinuity;
-  const report: Report = {
-    version: 2,
-    title,
-    kind: last.kind,
-    sourceSeconds: plan.seconds,
-    outputSeconds: 0,
-    settings,
-    loudness: { ...plan.loudness, ...levels },
-    people: last.people,
-    descriptions: [],
-    skipped: [],
-    failedSections: [],
-    dialogue: [],
-    warning:
-      'AI descriptions can miss or misread visual details, and dialogue timing depends on speech recognition. Check anything important for yourself.',
-  };
-  let offset = 0;
-  for (const record of ordered) {
-    const names = new Map(record.continuity.speakers.map((item) => [item.speaker, item.who]));
-    report.descriptions.push(
-      ...record.placements.map((item) => ({
-        ...item,
-        at: item.at + record.start,
-        pauseAt: item.pauseAt + record.start,
-        outputAt: item.outputAt + offset,
-      })),
-    );
-    report.skipped.push(...record.skipped);
-    if (record.failure)
-      report.failedSections.push({ start: record.start, end: record.end, reason: record.failure });
-    const own = words.filter((word) => word.start >= record.start && word.start < record.end);
-    for (const line of linesFrom(own, record.start))
-      report.dialogue.push({
-        ...line,
-        start: toOutput(line.start, record.placements) + offset,
-        end: toOutput(line.end, record.placements) + offset,
-        who:
-          line.speaker === undefined
-            ? ''
-            : names.get(line.speaker) || `Speaker ${line.speaker + 1}`,
-      });
-    offset += record.outputSeconds;
-  }
-  report.outputSeconds = offset;
-  return report;
 }

@@ -69,6 +69,48 @@ export function loudness(samples: Float32Array, channels: 1 | 2): number {
   return level(kept.reduce((sum, value) => sum + value, 0) / kept.length);
 }
 
+/**
+ * The loudest 3-second stretch (BS.1770 short-term loudness, LUFS) of interleaved stereo between
+ * two times, or the integrated loudness of that stretch when it is shorter than 3 seconds.
+ */
+export function shortTermMax(samples: Float32Array, from: number, to: number): number {
+  const frames = Math.floor(samples.length / 2);
+  const first = Math.max(0, Math.round(from * sampleRate));
+  const last = Math.min(frames, Math.round(to * sampleRate));
+  if (last - first < sampleRate * 0.1) return -Infinity;
+  const window = sampleRate * 3;
+  if (last - first < window) return loudness(samples.subarray(first * 2, last * 2), 2);
+  const settle = Math.max(0, first - Math.round(sampleRate * 0.5));
+  const slice = samples.subarray(settle * 2, last * 2);
+  const sums = [0, 1].map((channel) => {
+    const power = weighted(slice, 2, channel);
+    const prefix = new Float64Array(power.length + 1);
+    for (let i = 0; i < power.length; i++) prefix[i + 1] = prefix[i] + power[i];
+    return prefix;
+  });
+  const hop = Math.round(sampleRate * 0.1);
+  let top = 0;
+  for (let start = first - settle; start + window <= last - settle; start += hop)
+    top = Math.max(
+      top,
+      sums.reduce((sum, prefix) => sum + (prefix[start + window] - prefix[start]) / window, 0),
+    );
+  return top > 0 ? -0.691 + 10 * Math.log10(top) : -Infinity;
+}
+
+/**
+ * How far to lower the soundtrack under one description (dB, 0 or negative), from the loudest
+ * 3 seconds of soundtrack under it: EBU TR 084 Method 1, with its thresholds moved 3 dB for this
+ * -20 LUFS mix, scaled by the volume choice, and deep enough that the narration stays at least
+ * `floor` LU above what remains, never more than 24 dB.
+ */
+export function duckDepth(level: number, narration: number, scale = 1, floor = 10): number {
+  if (!Number.isFinite(level)) return 0;
+  const table = level <= -43 ? 0 : level <= -30 ? -3 : level <= -20 ? -9 : -19;
+  const needed = Math.min(0, narration - floor - level);
+  return Math.max(-24, Math.min(table * scale, needed)) + 0;
+}
+
 export const decibels = (gain: number): number => 10 ** (gain / 20);
 
 /** Removes the quiet lead-in and tail that speech engines add, keeping a short natural margin. */
@@ -108,102 +150,145 @@ export function level(pcm: Float32Array, target: number): Float32Array {
   return pcm.map((value) => value * gain);
 }
 
-export type Pause = { at: number; length: number };
+/** A frozen pause in source seconds, with its own fade lengths when words sit close to it. */
+export type Pause = { at: number; length: number; fadeOut?: number; fadeIn?: number };
 export type Clip = { at: number; pcm: Float32Array };
 
 const eased = (x: number) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, x)));
 
 /**
  * Lays the section's own soundtrack onto the output timeline: silence during each frozen pause,
- * a short fade out before it and a quicker fade back in, so nothing clicks or cuts off hard.
+ * a very short fade out ending at the freeze and a quick fade back in, so nothing clicks. With
+ * no pauses the soundtrack is returned as it is, without a copy.
  */
 export function pauseProgram(
   program: Float32Array,
   pauses: Pause[],
   outputFrames: number,
-  fadeOut = 0.15,
+  fadeOut = 0.035,
   fadeIn = 0.06,
 ): Float32Array {
+  if (!pauses.length && program.length === outputFrames * 2) return program;
   const out = new Float32Array(outputFrames * 2);
   const inputFrames = program.length / 2;
   const ordered = [...pauses].sort((a, b) => a.at - b.at);
   let source = 0;
   let target = 0;
-  const copy = (until: number, fadeHead: boolean, fadeTail: boolean) => {
+  const copy = (until: number, head: number, tail: number) => {
     const frames = Math.max(0, Math.min(until, inputFrames) - source);
     const count = Math.min(frames, outputFrames - target);
-    const outLength = Math.round(fadeOut * sampleRate);
-    const inLength = Math.round(fadeIn * sampleRate);
+    const outLength = Math.round(tail * sampleRate);
+    const inLength = Math.round(head * sampleRate);
     for (let i = 0; i < count; i++) {
       let gain = 1;
-      if (fadeHead && i < inLength) gain *= eased(i / inLength);
-      if (fadeTail && count - i <= outLength) gain *= eased((count - i) / outLength);
+      if (i < inLength) gain *= eased(i / inLength);
+      if (count - i <= outLength) gain *= eased((count - i) / outLength);
       out[(target + i) * 2] = program[(source + i) * 2] * gain;
       out[(target + i) * 2 + 1] = program[(source + i) * 2 + 1] * gain;
     }
     source += frames;
     target += count;
   };
-  let resumed = false;
+  let head = 0;
   for (const pause of ordered) {
-    copy(Math.round(pause.at * sampleRate), resumed, true);
+    copy(Math.round(pause.at * sampleRate), head, pause.fadeOut ?? fadeOut);
     target = Math.min(outputFrames, target + Math.round(pause.length * sampleRate));
-    resumed = true;
+    head = pause.fadeIn ?? fadeIn;
   }
-  copy(inputFrames, resumed, false);
+  copy(inputFrames, head, 0);
   return out;
 }
 
+/** A stretch of narration in output seconds, the soundtrack gain under it, and its release. */
+export type Duck = Interval & { gain: number; release?: number };
+
 /**
- * Gain curve for the soundtrack in output time: it eases down just before each narration,
- * holds while it speaks, and eases back afterwards.
+ * Multiplies interleaved samples by the ducking gain: it eases down before each narration, holds
+ * while it speaks and eases back afterwards, taking the lowest gain where two overlap. Ramps are
+ * squeezed to fit inside the buffer, so a section always starts and ends at full level.
  */
+export function applyDuck(
+  target: Float32Array,
+  channels: number,
+  spans: Duck[],
+  attack = 0.25,
+  release = 0.5,
+): void {
+  const frames = Math.floor(target.length / channels);
+  const shaped = spans
+    .filter((span) => span.gain < 1 && span.end > span.start)
+    .map((span) => {
+      const down = Math.min(frames, Math.max(0, Math.round(span.start * sampleRate)));
+      const up = Math.min(frames, Math.max(down, Math.round(span.end * sampleRate)));
+      return {
+        gain: Math.max(0, span.gain),
+        from: Math.max(0, Math.round((span.start - attack) * sampleRate)),
+        down,
+        up,
+        to: Math.min(frames, Math.round((span.end + (span.release ?? release)) * sampleRate)),
+      };
+    })
+    .sort((a, b) => a.from - b.from);
+  let i = 0;
+  while (i < shaped.length) {
+    const group = [shaped[i]];
+    let to = shaped[i].to;
+    while (++i < shaped.length && shaped[i].from < to) {
+      group.push(shaped[i]);
+      to = Math.max(to, shaped[i].to);
+    }
+    for (let frame = group[0].from; frame < to; frame++) {
+      let gain = 1;
+      for (const span of group) {
+        if (frame < span.from || frame >= span.to) continue;
+        const depth = 1 - span.gain;
+        const value =
+          frame < span.down
+            ? 1 - depth * eased((frame - span.from) / Math.max(1, span.down - span.from))
+            : frame < span.up
+              ? span.gain
+              : span.gain + depth * eased((frame - span.up) / Math.max(1, span.to - span.up));
+        if (value < gain) gain = value;
+      }
+      if (gain === 1) continue;
+      for (let c = 0; c < channels; c++) target[frame * channels + c] *= gain;
+    }
+  }
+}
+
+/** The ducking gain as its own curve, one value per frame. */
 export function duckCurve(
   frames: number,
-  spans: Interval[],
-  duck: number,
+  spans: Duck[],
   attack = 0.25,
   release = 0.5,
 ): Float32Array {
   const curve = new Float32Array(frames).fill(1);
-  for (const span of spans) {
-    const start = Math.round((span.start - attack) * sampleRate);
-    const down = Math.round(span.start * sampleRate);
-    const up = Math.round(span.end * sampleRate);
-    const end = Math.round((span.end + release) * sampleRate);
-    for (let i = Math.max(0, start); i < Math.min(frames, end); i++) {
-      let gain = duck;
-      if (i < down) gain = 1 - (1 - duck) * eased((i - start) / Math.max(1, down - start));
-      else if (i >= up) gain = duck + (1 - duck) * eased((i - up) / Math.max(1, end - up));
-      if (gain < curve[i]) curve[i] = gain;
-    }
-  }
+  applyDuck(curve, 1, spans, attack, release);
   return curve;
 }
 
-/** Sums the paused, ducked soundtrack with centred narration clips into interleaved stereo. */
+/**
+ * Mixes in place: the paused soundtrack is scaled and ducked, and the centred narration clips
+ * are added, so a long section needs no second full-length buffer.
+ */
 export function mix(
   program: Float32Array,
   programGain: number,
-  curve: Float32Array,
+  spans: Duck[],
   clips: Clip[],
 ): Float32Array {
-  const frames = curve.length;
-  const out = new Float32Array(frames * 2);
-  for (let i = 0; i < frames; i++) {
-    const gain = programGain * curve[i];
-    out[i * 2] = (program[i * 2] || 0) * gain;
-    out[i * 2 + 1] = (program[i * 2 + 1] || 0) * gain;
-  }
+  const frames = Math.floor(program.length / 2);
+  if (programGain !== 1) for (let i = 0; i < frames * 2; i++) program[i] *= programGain;
+  applyDuck(program, 2, spans);
   for (const clip of clips) {
     const offset = Math.round(clip.at * sampleRate);
-    for (let i = 0; i < clip.pcm.length && offset + i < frames; i++) {
-      if (offset + i < 0) continue;
-      out[(offset + i) * 2] += clip.pcm[i];
-      out[(offset + i) * 2 + 1] += clip.pcm[i];
+    for (let i = Math.max(0, -offset); i < clip.pcm.length && offset + i < frames; i++) {
+      program[(offset + i) * 2] += clip.pcm[i];
+      program[(offset + i) * 2 + 1] += clip.pcm[i];
     }
   }
-  return out;
+  return program;
 }
 
 export const pcmSeconds = (pcm: Float32Array): number => pcm.length / sampleRate;
