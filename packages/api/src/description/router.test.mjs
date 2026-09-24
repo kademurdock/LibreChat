@@ -2230,3 +2230,147 @@ test('the LibreChat wrapper: library facts and privacy, one idempotent save with
     wrapper.restore();
   }
 });
+
+/** Stored keys and versions under a job's folder, relative to it. */
+const storedUnder = (prefix) =>
+  [...objects.versions.keys()].filter((key) => key.startsWith(prefix)).map((key) => key.slice(prefix.length));
+const rehearsalLeftovers = (prefix, version) =>
+  storedUnder(prefix).filter((key) =>
+    [`looks/v${version}/`, `sections/v${version}/`, `copies/${version}/`, `first-look-${version}.json`].some((start) =>
+      key.startsWith(start),
+    ),
+  );
+
+test('a rehearsal that stops leaves nothing a paid run can reuse: its looks and first look are erased and the paid run takes a new version', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('rehearsal-owner', 'rehearsal-upload-003', 150);
+  const prefix = `/test/${folderOf((await Jobs.findById(id).lean()).key)}/`;
+  const written = new Set();
+  storageHook = ({ method, key }) => {
+    if ((method === 'PUT' || method === 'POST') && key.startsWith(prefix)) written.add(key.slice(prefix.length));
+  };
+  faults.push(
+    { method: 'PUT', match: new RegExp(`${id}/copies/1/described`), times: 1000 },
+    { method: 'POST', match: new RegExp(`${id}/copies/1/described`), times: 1000 },
+  );
+  let stopped;
+  try {
+    await call('post', `/jobs/${id}/rehearse`, 'rehearsal-owner').send({ firstLook: true }).expect(202);
+    stopped = await settle(id, ['ready', 'failed', 'done', 'cancelled'], 'rehearsal-owner');
+  } finally {
+    faults.length = 0;
+    storageHook = null;
+  }
+  assert.equal(stopped.state, 'ready');
+  assert.match(stopped.error, /^The rehearsal stopped: /);
+  assert.equal(stopped.copies.length, 0);
+  assert.deepEqual([stopped.lastRehearsal.outcome, stopped.lastRehearsal.version], ['stopped', 1]);
+  assert.ok([...written].some((key) => key.startsWith('looks/v1/')), 'the rehearsal kept its looks while it ran');
+  assert.ok(written.has('first-look-1.json'), 'and its first look');
+  await eventually(() => assert.deepEqual(rehearsalLeftovers(prefix, 1), [], 'every stored version of them is erased'));
+
+  const seen = [];
+  beforeEngine = (input) => {
+    seen.push({ firstLook: input.keeper.saved.firstLook, looks: [...input.keeper.saved.looks] });
+  };
+  const before = calls.analyze;
+  try {
+    await call('post', `/jobs/${id}/start`, 'rehearsal-owner').send({ ...settings, firstLook: true, preview: true }).expect(202);
+    const preview = await settle(id, ['done', 'failed'], 'rehearsal-owner');
+    assert.equal(preview.state, 'done', preview.error);
+    assert.equal(preview.version, 2, 'the paid run never takes the number the rehearsal wrote under');
+    await call('post', `/jobs/${id}/finish`, 'rehearsal-owner').send({}).expect(202);
+    const done = await settle(id, ['done', 'failed'], 'rehearsal-owner');
+    assert.equal(done.state, 'done', done.error);
+    assert.equal(done.version, 2);
+    assert.ok(!seen[0].firstLook, 'the paid first look starts fresh instead of from the rehearsal survey');
+    for (const pass of seen)
+      assert.ok(
+        pass.looks.every((look) => !look || !/Rehearsal/.test(JSON.stringify(look))),
+        'no rehearsal look is handed to a paid pass',
+      );
+    const script = (await call('get', `/jobs/${id}/script`, 'rehearsal-owner').expect(200)).body;
+    assert.ok(script.cues.length > 0);
+    assert.ok(
+      script.cues.every((cue) => /^Section cue \d+\.$/.test(cue.text)),
+      JSON.stringify(script.cues.map((cue) => cue.text)),
+    );
+    assert.ok(calls.analyze - before >= done.sections, 'every section was looked at by a paid call');
+  } finally {
+    beforeEngine = null;
+  }
+  await call('delete', `/jobs/${id}`, 'rehearsal-owner').expect(200);
+  await Budgets.deleteMany({});
+});
+
+test('a rehearsal cancelled while it runs erases what it wrote and says it was cancelled', async () => {
+  const id = await readyJob('rehearsal-owner', 'rehearsal-upload-004', 150);
+  const prefix = `/test/${folderOf((await Jobs.findById(id).lean()).key)}/`;
+  let asked = false;
+  storageHook = async ({ method, key }) => {
+    if (asked || method !== 'PUT' || !key.startsWith(prefix + 'looks/v1/')) return;
+    asked = true;
+    await call('post', `/jobs/${id}/cancel`, 'rehearsal-owner').expect(200);
+  };
+  let back;
+  try {
+    await call('post', `/jobs/${id}/rehearse`, 'rehearsal-owner').send({ firstLook: true }).expect(202);
+    back = await settle(id, ['ready', 'failed', 'done', 'cancelled'], 'rehearsal-owner');
+  } finally {
+    storageHook = null;
+  }
+  assert.ok(asked, 'the cancel came while the rehearsal was looking');
+  assert.equal(back.state, 'ready');
+  assert.equal(back.error, '');
+  assert.deepEqual([back.lastRehearsal.outcome, back.lastRehearsal.version], ['cancelled', 1]);
+  await eventually(() => assert.deepEqual(rehearsalLeftovers(prefix, 1), []));
+  const price = (await call('post', `/jobs/${id}/estimate`, 'rehearsal-owner').send({ action: 'start', settings }).expect(200)).body;
+  assert.equal(price.allowed, true);
+  await call('delete', `/jobs/${id}`, 'rehearsal-owner').expect(200);
+});
+
+test('over the quote on a day already partly used: the ask fits what is left, and Continue never refuses a larger ask', async () => {
+  await Budgets.deleteMany({});
+  await Budgets.create({ _id: today(), held: 430, runs: [] });
+  const id = await readyJob('quote-owner', 'quote-upload-0000002', 150);
+  const approval = (usd) => Math.min(5, Math.ceil((usd * 1.5 + 0.1) * 100 - 1e-6) / 100);
+  overbill = 9;
+  try {
+    await call('post', `/jobs/${id}/start`, 'quote-owner').send(settings).expect(202);
+    const stopped = await settle(id, ['failed', 'done'], 'quote-owner');
+    assert.equal(stopped.overQuote, true, stopped.error);
+    const over = (await Jobs.findById(id).lean()).overQuote;
+    const ask = (await call('post', `/jobs/${id}/estimate`, 'quote-owner').send({ action: 'resume' }).expect(200)).body;
+    const rate = Math.max(1, over.spentUSD / Math.max(0.01, over.quotedUSD));
+    const full = Math.min(5, Math.ceil((ask.estimateUSD * rate * 1.5 + 0.1) * 100 - 1e-6) / 100);
+    assert.ok(ask.remainingUSD < full, 'today has less left than the full ask');
+    assert.ok(ask.setAsideUSD <= ask.remainingUSD, 'but enough for the set-aside');
+    assert.equal(ask.allowed, true, 'so carrying on is offered');
+    assert.equal(ask.approvedUSD, Math.max(approval(ask.estimateUSD), ask.remainingUSD), 'and the ask is cut to what is left');
+    assert.match(
+      stopped.error,
+      new RegExp(`Continue up to \\$${ask.approvedUSD.toFixed(2)} more\\?`),
+      'the stop names the same ask as the estimate',
+    );
+
+    const heldThen = await held();
+    await Budgets.updateOne({ _id: today() }, { $set: { held: 500 - Math.round(ask.setAsideUSD * 100) + 1 } });
+    const short = (await call('post', `/jobs/${id}/estimate`, 'quote-owner').send({ action: 'resume' }).expect(200)).body;
+    assert.equal(short.allowed, false, 'when the set-aside does not fit, the estimate says so');
+    const refused = await call('post', `/jobs/${id}/resume`, 'quote-owner').send({ allowUpToUSD: short.approvedUSD }).expect(409);
+    assert.equal(refused.body.error, short.reason, 'and Continue refuses with the same words');
+    assert.equal((await Jobs.findById(id).lean()).state, 'failed');
+
+    await Budgets.updateOne({ _id: today() }, { $set: { held: heldThen } });
+    overbill = 0;
+    const resumed = (await call('post', `/jobs/${id}/resume`, 'quote-owner').send({ allowUpToUSD: full }).expect(202)).body;
+    assert.equal(resumed.approvedUSD, ask.approvedUSD, 'an ask above what is left is cut to it, not refused');
+    const done = await settle(id, ['failed', 'done'], 'quote-owner');
+    assert.equal(done.state, 'done', done.error);
+  } finally {
+    overbill = 0;
+  }
+  assert.deepEqual((await Budgets.findById(today()).lean()).runs, [], 'both runs gave back what they did not spend');
+  await call('delete', `/jobs/${id}`, 'quote-owner').expect(200);
+  await Budgets.deleteMany({});
+});

@@ -199,7 +199,7 @@ export const descriptionBrowserScript: string = String.raw`
   var script=null,scriptJob='',edits={},editing='',shortTouched={},staleDrafts=[],warnedShort={};
   var lastSpoken='',lastSpokenAt=0,errorFrom='',estimates={},estimateSeq=0,estimateTimer=null,announceNext=false,announcePrefix='',presetSeq=0,presetSig='',redoSeq=0,redoTimer=null,redoEstimate=null;
   var listedIds='',listButtons={},listStates={},lastJobs=[],cancelSeenAt=0,lastQuarter=-1;
-  var wakeLock=null,wakeWanted=false,nudge=null,pendingUpload=null,toldKeepOpen='';
+  var wakeLock=null,wakeWanted=false,nudge=null,pendingUpload=null,pendingJob='',toldKeepOpen='';
   var DEFAULT_FOLDER='Audio/Described Movies & TV/Described by Kade-AI';
   var $=function(id){return document.getElementById('dv-'+id);};
   function working(j){return !!j&&BUSY.indexOf(j.state)>=0;}
@@ -670,14 +670,21 @@ export const descriptionBrowserScript: string = String.raw`
     var quarter=Math.floor((j.progress||0)/25);if(lastQuarter<0){lastQuarter=quarter;return;}
     if(quarter>lastQuarter&&quarter<4){lastQuarter=quarter;say('Describing: '+quarter*25+' percent done'+(j.etaSeconds?', about '+length(Math.max(60,Math.round(j.etaSeconds/60)*60))+' left':'')+'.');}
   }
-  async function show(data,focus){
-    var changed=shownId!==data.id,previous=changed?'':job&&job.state,lines=[];
+  function rehearsalEnd(j,old){var r=j&&j.lastRehearsal,was=old&&old.lastRehearsal;return r&&r.outcome&&(!was||was.at!==r.at)?r.outcome:'';}
+  function rehearsalLine(outcome){
+    if(outcome==='finished')return 'Rehearsal finished. Every step ran with a test tone and no paid services. Listen to check the player.';
+    if(outcome==='cancelled')return 'Rehearsal cancelled. Nothing was charged, and the video is ready to describe.';
+    return job.error?'':'The rehearsal stopped. The video is still ready to describe.';
+  }
+  async function show(data,focus,opening){
+    var changed=shownId!==data.id,before=changed?null:job,previous=changed?'':job&&job.state,lines=[];
     if(changed&&pollController){pollController.abort();pollController=null;}
     job=data;shownId=data.id;
     if(changed){resetView();var cleared=false;if(data.settings){fillForm(data.settings);}else cleared=freshForm();if(cleared)lines.push('New video. Notes are empty and the extra passes are off.');shareDefaults();renderPart();$('folder').value=data.libraryPath||(config&&config.defaultLibraryPath)||DEFAULT_FOLDER;}
     if(job.cancelRequested&&!cancelSeenAt)cancelSeenAt=Date.now();if(!job.cancelRequested)cancelSeenAt=0;
     if(working(job)&&previous&&!working({state:previous}))lastQuarter=-1;
-    var available=copies(),latest=latestVersion(),finishedNow=!changed&&!!previous&&previous!=='done'&&job.state==='done';
+    var rehearsed=previous&&working({state:previous})&&job.state==='ready'?rehearsalEnd(job,before):'';
+    var available=copies(),latest=latestVersion(),finishedNow=!changed&&!!previous&&(previous!=='done'&&job.state==='done'||rehearsed==='finished');
     if(available.length){
       if(!viewVersion||!available.some(function(c){return c.version===viewVersion;}))viewVersion=latest;
       else if(latest!==viewVersion&&latest!==lastLatest){if(playing()||inField()||viewVersion!==lastLatest)pendingSwitch=latest;else viewVersion=latest;}
@@ -691,17 +698,21 @@ export const descriptionBrowserScript: string = String.raw`
     $('progress').value=job.progress||0;$('progress').hidden=!working(job);
     $('eta').textContent=job.etaSeconds&&working(job)?'About '+length(Math.max(60,Math.round(job.etaSeconds/60)*60))+' left.':'';
     $('cost').textContent=costLine(job);
-    if(job.error){if(errorFrom!=='job'||$('error').textContent!==job.error)failure(new Error(job.error),'','job');}
+    var quoteStop=job.state==='failed'&&!!job.overQuote;
+    if(job.error&&!quoteStop){if(errorFrom!=='job'||$('error').textContent!==job.error)failure(new Error(job.error),'','job');}
     else if(errorFrom==='job')clearError();
     var name=job.name;
     if(changed){
-      if(job.state==='ready'){lines.unshift(name+': checked and ready. Choose the narration, then Create described copy.');if(tooLong()){$('part').open=true;lines.push('It is '+length(job.seconds)+' long, and one run can describe up to '+length(config.maxMinutes*60)+', so choose the part to describe under Describe only part of it.');}}
+      if(job.state==='ready'){var trial=!!job.lastRehearsal&&job.lastRehearsal.outcome==='finished'&&!!(latestCopy()||{}).rehearsal;lines.unshift(name+': checked and ready.'+(trial?' The rehearsal finished, and its test copy is below.':'')+' Choose the narration, then Create described copy.');if(tooLong()){$('part').open=true;lines.push('It is '+length(job.seconds)+' long, and one run can describe up to '+length(config.maxMinutes*60)+', so choose the part to describe under Describe only part of it.');}}
       else if(job.state==='done'){lines.unshift(name+': '+((latestCopy()||{}).rehearsal?'rehearsal finished.':job.preview?'preview finished.':'finished.'));var expiry=renderExpiry();if(expiry)lines.push(expiry);var draft=renderDraftNote();if(draft)lines.push(draft);}
       else lines.unshift(name+': '+stateLine(job));
+      if(opening){lines.unshift(opening);if(available.some(function(c){return !c.rehearsal;}))lines.splice(2,0,'Your described copy is below.');}
       say(lines.join(' '),true);
       if(working(job))lastQuarter=Math.floor((job.progress||0)/25);
-    }else if(previous!==job.state){
-      if(job.state==='ready')say('Video checked. Choose the narration, then Create described copy.'+(tooLong()?' It is longer than one run can describe, so choose the part to describe.':''),true);
+    }else if(opening)say(opening+' It is already open.',true);
+    else if(previous!==job.state){
+      if(rehearsed){var ending=rehearsalLine(rehearsed);if(ending)say(ending,true);}
+      else if(job.state==='ready')say('Video checked. Choose the narration, then Create described copy.'+(tooLong()?' It is longer than one run can describe, so choose the part to describe.':''),true);
       else if(job.state==='done'){renderDraftNote();var newest=latestCopy()||{};say(newest.rehearsal?'Rehearsal finished. Every step ran with a test tone and no paid services. Listen to check the player.':job.preview?'Preview ready. Listen, then choose Describe the rest, or change the settings and try the preview again.':pendingSwitch?'Version '+pendingSwitch+' is ready. Press Switch to version '+pendingSwitch+' to hear it.':'Your described copy is ready.',true);}
       else if(job.state==='failed')say(stoppedLine(job),true);
       else if(job.state==='cancelled'){say('Cancelled. Finished sections are kept, so you can continue later.',true);land('job-title',$('cancel'));}
@@ -718,6 +729,7 @@ export const descriptionBrowserScript: string = String.raw`
       if(shownId===data.id){
         if(!available.length){$('results').hidden=true;$('skip').hidden=true;}
         controls();
+        if(rehearsed)land('job-title',$('cancel'));
         if(changed||previous!==job.state)scheduleEstimates(false);
         if(focus&&!resultFocus)$(job.state==='ready'?'settings-heading':'job-title').focus();
         if(timer)clearTimeout(timer);timer=null;
@@ -827,8 +839,7 @@ export const descriptionBrowserScript: string = String.raw`
     var link=libraryLink($('library').value);if(!link){checkLibraryLink();return;}
     act(async function(){
       clearError();var created=await call('/library-imports','POST',{book:link.book,track:link.track,requestId:uuid()});$('library').value='';checkLibraryLink();
-      await show(created,true);
-      if(created.existing)say('You already have this video: “'+created.name+'”, '+friendly(created)+'. It is open now'+(copies().length?'; your described copy is below.':'.'),true);
+      await show(created,true,created.existing?'You already have this video.':'');
       await list();
     });
   };
@@ -869,30 +880,40 @@ export const descriptionBrowserScript: string = String.raw`
       if(stopUpload){var halt=new Error('Upload stopped. Choose the same file to carry on from where it stopped.');halt.byYou=true;throw halt;}
     }
   }
-  async function upload(){
-    clearError();var file=$('file').files[0];if(!file||uploading)return;
-    $('file').removeAttribute('aria-invalid');pendingUpload=null;
+  function uploadGone(file){say('The unfinished upload of '+file.name+' is no longer on Kade-AI, so it did not carry on. Press Upload and check video to send it again.');}
+  function forgetUpload(gone){
+    var recoveries=stored(UPLOADS_KEY,{})||{},dropped=false;
+    Object.keys(recoveries).forEach(function(key){if(recoveries[key]&&recoveries[key].jobId===gone.id){delete recoveries[key];dropped=true;}});
+    if(dropped)store(UPLOADS_KEY,recoveries);
+    var file=pendingUpload;
+    if(!file||!(pendingJob===gone.id||gone.state==='uploading'&&gone.name===file.name&&gone.bytes===file.size))return;
+    pendingUpload=null;pendingJob='';if($('file').files[0]===file)$('file').value='';
+  }
+  async function upload(auto){
+    var file=$('file').files[0];if(!file||uploading)return;
+    if(auto){$('upload-error').hidden=true;$('upload-error').textContent='';}else clearError();
+    $('file').removeAttribute('aria-invalid');pendingUpload=null;pendingJob='';
     if(file.size>config.maxBytes){fileProblem('Choose a video no larger than 2 GB.');return;}
     uploading=true;stopUpload=false;controls();
     var up=null,recoveries=stored(UPLOADS_KEY,{}),key=file.name+'|'+file.size+'|'+file.lastModified,byYou=false;
     try{
-      say('Checking the length of '+file.name+'.',true);
+      if(!auto)say('Checking the length of '+file.name+'.',true);
       var seconds=await durationOf(file),limit=((config.maxSourceMinutes||config.maxMinutes)*60);
       if(seconds>limit){fileProblem('This video is '+length(seconds)+' long; the longest that can be checked is '+length(limit)+'.');return;}
       var saved=recoveries&&recoveries[key]||{},requestId=saved.requestId||uuid();
       var match=lastJobs.filter(function(item){return item.state==='uploading'&&item.bytes===file.size&&(item.id===saved.jobId||item.name===file.name);})[0];
       var resumeId=saved.jobId||(match&&match.id)||undefined,created;
       try{created=await call('/uploads','POST',{requestId:requestId,name:file.name,bytes:file.size,resumeId:resumeId});}
-      catch(e){if(!resumeId||e.network||e.status>=500||e.auth)throw e;delete recoveries[key];store(UPLOADS_KEY,recoveries);requestId=uuid();created=await call('/uploads','POST',{requestId:requestId,name:file.name,bytes:file.size});}
-      if(['failed','cancelled','done'].indexOf(created.job.state)>=0){requestId=uuid();created=await call('/uploads','POST',{requestId:requestId,name:file.name,bytes:file.size});}
+      catch(e){if(!resumeId||e.network||e.status>=500||e.auth)throw e;delete recoveries[key];store(UPLOADS_KEY,recoveries);if(auto){uploadGone(file);return;}requestId=uuid();created=await call('/uploads','POST',{requestId:requestId,name:file.name,bytes:file.size});}
+      if(['failed','cancelled','done'].indexOf(created.job.state)>=0){if(auto){delete recoveries[key];store(UPLOADS_KEY,recoveries);uploadGone(file);return;}requestId=uuid();created=await call('/uploads','POST',{requestId:requestId,name:file.name,bytes:file.size});}
       up={id:created.job.id,name:created.job.name};uploadId=up.id;recoveries[key]={requestId:requestId,jobId:up.id};store(UPLOADS_KEY,recoveries);
-      await show(created.job,false);
+      if(!auto||!shownId||shownId===up.id)await show(created.job,false);
       if(created.job.state==='uploading'){
-        $('upload-progress').hidden=false;$('stop-upload').hidden=false;$('upload-progress').value=0;land('stop-upload',$('upload'));
+        $('upload-progress').hidden=false;$('stop-upload').hidden=false;$('upload-progress').value=0;if(!auto)land('stop-upload',$('upload'));
         var size=created.chunkBytes||config.chunkBytes,done=created.job.uploadedBytes||0,offset=done?Math.floor((done-1)/size)*size:0,last=-1;
-        var held=await holdScreen(),start=offset?'Carrying on from '+Math.floor(offset/file.size*100)+' percent.':'Uploading '+file.name+'.';
+        var held=await holdScreen(),start=offset?'Carrying on'+(auto?' with '+file.name:'')+' from '+Math.floor(offset/file.size*100)+' percent.':'Uploading '+file.name+'.';
         if(toldKeepOpen!==key){toldKeepOpen=key;start+=held?' Keep this page open; the screen will stay on until the upload finishes.':' Keep this page open and the screen on until the upload finishes.';}
-        say(start,true);
+        say(start,!auto);
         while(offset<file.size){
           var from=offset;
           var result=await uploadPart(up.id,Math.floor(offset/size)+1,file.slice(offset,Math.min(file.size,offset+size)),function(loaded){var value=Math.floor((from+loaded)/file.size*100);$('upload-progress').value=value;if(Math.floor(value/10)!==last){last=Math.floor(value/10);if(!playing())say('Uploading: '+value+' percent.',true);}});
@@ -907,7 +928,7 @@ export const descriptionBrowserScript: string = String.raw`
       await list();
     }catch(e){
       byYou=!!e.byYou;failure(e,'upload-error');
-      if(!byYou&&(e.dropped||e.network))pendingUpload=file;
+      if(!byYou&&(e.dropped||e.network)){pendingUpload=file;pendingJob=up?up.id:'';}
       if(up&&shownId===up.id)await call('/jobs/'+up.id).then(function(current){return showIf(up.id,current,false);}).catch(function(){});
     }finally{
       releaseScreen();
@@ -919,7 +940,7 @@ export const descriptionBrowserScript: string = String.raw`
   function carryOnUpload(){
     if(uploading){holdScreen();if(nudge)nudge();return;}
     var file=pendingUpload;if(!file||$('file').files[0]!==file||!config||!config.enabled)return;
-    upload();
+    upload(true);
   }
   $('stop-upload').onclick=function(){stopUpload=true;if(xhr)xhr.abort();};
   window.addEventListener('beforeunload',function(event){if(!uploading)return;event.preventDefault();event.returnValue='';});
@@ -1159,7 +1180,7 @@ export const descriptionBrowserScript: string = String.raw`
       if(!confirm('Let “'+job.name+'” carry on? '+overQuoteText(job)+' Carrying on is expected to cost about '+money(e.estimateUSD)+' more. It may spend up to '+money(z)+' more, and it stops and asks again before going past that. '+keptText(job)+' Today’s allowance: '+allowance(e)))return;
       body.allowUpToUSD=z;
       var updated=await call('/jobs/'+id+'/resume','POST',body);
-      await showIf(id,updated,false);say('Carrying on, up to '+money(z)+' more.',true);land('job-title',$('allow-more'));await list();
+      await showIf(id,updated,false);say('Carrying on, up to '+money(typeof updated.approvedUSD==='number'?updated.approvedUSD:z)+' more.',true);land('job-title',$('allow-more'));await list();
     });
   };
   $('recheck').onclick=function(){
@@ -1172,7 +1193,8 @@ export const descriptionBrowserScript: string = String.raw`
   $('rehearse').onclick=function(){
     if(!job||blocked('rehearse'))return;
     act(async function(){
-      clearError();var id=job.id,updated=await call('/jobs/'+id+'/rehearse','POST',settings());
+      clearError();var id=job.id,body=settings();if(!body.voice)delete body.voice;
+      var updated=await call('/jobs/'+id+'/rehearse','POST',body);
       await showIf(id,updated,false);say('Rehearsal started. It uses a test tone and no paid services, and you will hear when it is finished.',true);land('job-title',$('rehearse'));await list();
     });
   };
@@ -1182,6 +1204,7 @@ export const descriptionBrowserScript: string = String.raw`
       clearError();var id=job.id,updated=await call('/jobs/'+id+'/keep','POST',{});
       await showIf(id,updated,false);if(shownId!==id)return;renderExpiry();
       say('Kept until '+when(updated.expiresAt)+'.'+(updated.keepable?'':' That is as long as it can be kept here; download it or save it to your Library to keep it longer.'),true);
+      land('result-title',$('keep'));
     });
   };
   $('abandon').onclick=function(){
@@ -1198,8 +1221,8 @@ export const descriptionBrowserScript: string = String.raw`
       var id=job.id;if(!confirm('Cancel processing “'+job.name+'”? Finished sections are kept, so you can continue later.'))return;
       clearError();var updated=await call('/jobs/'+id+'/cancel','POST',{});
       await showIf(id,updated,false);
-      say(updated.state==='cancelled'?'Cancelled. Finished sections are kept, so you can continue later.':'Cancelling. Finished sections are kept; you can continue later.',true);
-      if(updated.state==='cancelled')land('job-title',$('cancel'));
+      if(updated.state!=='ready')say(updated.state==='cancelled'?'Cancelled. Finished sections are kept, so you can continue later.':'Cancelling. Finished sections are kept; you can continue later.',true);
+      if(!working(updated))land('job-title',$('cancel'));
       await list();
     });
   };
@@ -1214,9 +1237,9 @@ export const descriptionBrowserScript: string = String.raw`
   $('delete').onclick=function(){
     if(!job)return;
     act(async function(){
-      var id=job.id,count=copies().length;
+      var id=job.id,gone=job,count=copies().length;
       if(!confirm('Delete “'+job.name+'” and all its files'+(count?', including '+plural(count,'finished version','finished versions'):'')+'? This cannot be undone.'))return;
-      clearError();await call('/jobs/'+id,'DELETE');
+      clearError();await call('/jobs/'+id,'DELETE');forgetUpload(gone);
       if(shownId===id){job=null;shownId='';resetView();if(timer)clearTimeout(timer);timer=null;$('job-section').hidden=true;history.replaceState(null,'',location.pathname);pageTitle();}
       await list();say('Deleted.',true);land('history-heading',$('delete'));
     });
