@@ -36,8 +36,11 @@ const cut = (value, max) =>
     .join('');
 
 /* Same delivery as the Sound Booth's "your song is ready": a requested phone push through the
- * bridge, plus a browser push for anyone who turned those on. Returns what happened, for the log. */
-async function notify(userId, title, body, url) {
+ * bridge, plus a browser push for anyone who turned those on. `route` makes the bridge send a
+ * KADE_ROUTE push, so a tap on the phone opens the described-video screen instead of a new chat;
+ * the job id travels as runId, which the bridge accepts (today it forwards runId only for
+ * agent-work pushes). Returns what happened, including the bridge's receipt, for the log. */
+async function notify(userId, title, body, url, detail = {}) {
   const result = { browser: 0, bridge: 'off' };
   try {
     const { sendPushToUser } = require('~/server/services/kadeNudges');
@@ -61,13 +64,20 @@ async function notify(userId, title, body, url) {
         body,
         requested: true,
         urgent: false,
+        route: 'described-video',
+        ...(detail.job ? { runId: detail.job } : {}),
       },
       {
         headers: { 'x-bridge-secret': process.env.BRIDGE_SECRET, 'User-Agent': UA },
         timeout: 20000,
       },
     );
+    const receipt = response.data || {};
     result.bridge = response.status;
+    result.sent = Number(receipt.sent) || 0;
+    if (receipt.deferred === true) result.deferred = true;
+    const blocked = receipt.blocked || receipt.error || receipt.note;
+    if (blocked) result.blocked = String(blocked).slice(0, 120);
   } catch (e) {
     result.bridge = `failed ${(e.response && e.response.status) || e.code || 'network'}`;
   }
