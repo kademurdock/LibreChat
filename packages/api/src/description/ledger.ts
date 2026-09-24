@@ -165,12 +165,15 @@ type Hit = { index: number; length: number };
  * Where a name appears in a description, outside the words it reads from the screen: the whole
  * name, or for a longer name any distinctive part of it, capitalised, with an optional title.
  */
-function hits(text: string, name: string): Hit[] {
+function hits(text: string, name: string, labels: string[] = []): Hit[] {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return [];
   const partial =
     parts.length > 1 ? parts.filter((part) => distinctive(tokens(part)).length > 0) : [];
-  const blocked: Hit[] = readings(text).map(([from, to]) => ({ index: from, length: to - from }));
+  const blocked: Hit[] = [
+    ...readings(text).map(([from, to]) => ({ index: from, length: to - from })),
+    ...labels.flatMap((label) => labelHits(text, label)),
+  ];
   const overlaps = (index: number, length: number) =>
     blocked.some((hit) => index < hit.index + hit.length && index + length > hit.index);
   const found: Hit[] = [];
@@ -187,7 +190,7 @@ function hits(text: string, name: string): Hit[] {
   return found.sort((a, b) => a.index - b.index);
 }
 
-/** True when the name, or a distinctive part of it, is read aloud from the screen in this text. */
+/** True when the whole name is read aloud from the screen in this text. */
 export function readsName(text: string, name: string): boolean {
   const spans = readings(text);
   if (!spans.length) return false;
@@ -201,11 +204,26 @@ const labelCore = (label: string): string =>
     .trim()
     .toLowerCase();
 
+const labelPattern = (label: string, flags: string): RegExp | undefined => {
+  const core = labelCore(label);
+  return core
+    ? new RegExp(`${edge}${escape(core).replace(/\s+/g, '\\s+')}${after}`, flags)
+    : undefined;
+};
+
 /** True when a spoken text uses this person's label (with any article). */
 export function mentionsLabel(text: string, label: string): boolean {
-  const core = labelCore(label);
-  if (!core) return false;
-  return new RegExp(`${edge}${escape(core).replace(/\s+/g, '\\s+')}${after}`, 'iu').test(text);
+  return labelPattern(label, 'iu')?.test(text) ?? false;
+}
+
+/** Where a label appears in a text, so a name inside another person's label is left alone. */
+function labelHits(text: string, label: string): Hit[] {
+  const pattern = labelPattern(label, 'giu');
+  if (!pattern) return [];
+  return [...text.matchAll(pattern)].map((match) => ({
+    index: match.index ?? 0,
+    length: match[0].length,
+  }));
 }
 
 export const capitalize = (value: string): string =>
@@ -233,10 +251,10 @@ export function resolvePerson(who: string, people: Person[]): Person | undefined
 }
 
 /** Replaces every use of a name the listener cannot know yet with the person's label. */
-function hideName(text: string, name: string, label: string): string {
+function hideName(text: string, name: string, label: string, labels: string[]): string {
   let out = text;
   const core = escape(labelCore(label)).replace(/\s+/g, '\\s+');
-  for (const hit of hits(out, name).reverse()) {
+  for (const hit of hits(out, name, labels).reverse()) {
     let start = hit.index;
     let end = hit.index + hit.length;
     const before = out.slice(0, start);
@@ -260,9 +278,9 @@ function hideName(text: string, name: string, label: string): string {
 }
 
 /** Joins "label, name" at the first use of a name the listener has not had linked to a person. */
-function joinName(text: string, name: string, label: string): string {
+function joinName(text: string, name: string, label: string, labels: string[]): string {
   if (mentionsLabel(text, label)) return text;
-  const hit = hits(text, name).find((item) => !/^['’]s\b/.test(text.slice(item.index + item.length)));
+  const hit = hits(text, name, labels).find((item) => !/^['’]s\b/.test(text.slice(item.index + item.length)));
   if (!hit) return text;
   const end = hit.index + hit.length;
   const rest = text.slice(end);
@@ -321,6 +339,7 @@ export function gateCues(input: {
   const everyone = known(input.people, input.state);
   const people = everyone.filter((person) => person.name);
   const names = [...new Set(people.map((person) => person.name))];
+  const labels = everyone.map((person) => person.label);
   const reveals = revealsFor(names, input.words, input.notes, input.state?.reveals);
   const linked = new Set(Object.keys(input.state?.heard?.names ?? {}).map(nameKey));
   const heardLabels = input.state?.heard?.labels ?? [];
@@ -344,13 +363,13 @@ export function gateCues(input: {
       if (labelCore(person.label).includes(key)) continue;
       const reveal = reveals[key];
       if (reveal === undefined || reveal > time + 1e-6) {
-        text = hideName(text, person.name, person.label);
-        shortText = hideName(shortText, person.name, person.label);
+        text = hideName(text, person.name, person.label, labels);
+        shortText = hideName(shortText, person.name, person.label, labels);
         continue;
       }
       if (linked.has(key)) continue;
-      const fullText = joinName(text, person.name, person.label);
-      const fullShort = joinName(shortText, person.name, person.label);
+      const fullText = joinName(text, person.name, person.label, labels);
+      const fullShort = joinName(shortText, person.name, person.label, labels);
       if (fullText !== text || fullShort !== shortText) joined.push(key);
       text = fullText;
       shortText = fullShort;

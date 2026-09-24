@@ -149,6 +149,20 @@ test('ledger: a model that joins an unrevealed name to its label keeps only the 
     sectionStart: 0,
   });
   assert.equal(shown.cues[0].text, 'The Chuck E. Cheese mascot waves.', 'a name inside the label is left alone');
+  const clerk = { id: 'P6', label: "the man in the Frank's Pizza shirt", name: '', look: '' };
+  const other = gateCues({
+    cues: [cue(1, "The man in the Frank's Pizza shirt hands Frank a box.")],
+    people: [clerk, squirrel],
+    state: null,
+    words: [],
+    notes: '',
+    sectionStart: 0,
+  });
+  assert.equal(
+    other.cues[0].text,
+    "The man in the Frank's Pizza shirt hands the flying squirrel a box.",
+    "a name inside someone else's label is left alone",
+  );
 });
 
 test('ledger: names read from the screen stay word for word and count as revealed', () => {
