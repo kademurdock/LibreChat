@@ -85,6 +85,32 @@ const xvidFixture = () =>
     ...['-c:v', 'mpeg4', '-vtag', 'XVID', '-bf', '2', '-q:v', '4', '-g', '300', '-c:a', 'libmp3lame'],
   ]);
 const lateTs = () => joined('late.ts', { audioDelay: 0.8, codecs: [...h264, '-c:a', 'aac', '-f', 'mpegts'] });
+/**
+ * An over-the-air style TS in three 4 s parts joined by stream copy: 5.1 AC-3 at 720x480, then
+ * stereo AC-3 at 44.1 kHz and 1280x720, then 5.1 again. Each part has a burst 1 s in; the first
+ * part turns blue from 2 s to 3 s, so it has scene cuts before any switch.
+ */
+async function switching() {
+  const parts = [
+    { size: '720x480', layout: '5.1', rate: 48000, blue: true },
+    { size: '1280x720', layout: 'stereo', rate: 44100 },
+    { size: '720x480', layout: '5.1', rate: 48000 },
+  ];
+  const files = [];
+  for (const [i, part] of parts.entries()) {
+    const blue = part.blue ? ",drawbox=x=0:y=0:w=iw:h=ih:color=blue:t=fill:enable='between(t,2,3)'" : '';
+    files.push(
+      await make(`switch-${i}.ts`, [
+        ...lavfi(`testsrc2=s=${part.size}:r=30:d=4${blue}`),
+        ...lavfi(`aevalsrc='0.1*sin(2*PI*220*t)+0.5*sin(2*PI*2000*t)*between(t,1,1.2)':c=${part.layout}:s=${part.rate}:d=4`),
+        ...['-c:v', 'mpeg2video', '-b:v', '3M', '-g', '15', '-c:a', 'ac3', '-f', 'mpegts'],
+      ]),
+    );
+  }
+  const list = join(root, 'switch.txt');
+  await writeFile(list, files.map((file) => `file '${file.replace(/\\/g, '/')}'`).join('\n'));
+  return make('switch.ts', ['-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-f', 'mpegts']);
+}
 async function distinctFrames(file, count) {
   const out = await media.command(
     ffmpegPath,
@@ -364,6 +390,25 @@ test('normalize makes a working copy, and cuts a part accurately when asked', as
   assert.equal(quiet.media.audioIndex, null);
 });
 
+test('a picture size or sound format change mid-file keeps every read on the picture clock', async () => {
+  const file = await switching();
+  const dir = await folder('switching');
+  const working = await media.normalize(file, dir, signal);
+  assert.ok(Math.abs(working.media.seconds - 12) < 0.1, `length ${working.media.seconds}`);
+  const whole = await media.soundtrack(working.file, dir, signal, working.media);
+  const dialogue = await plainPcm(whole.dialogue);
+  const heard = dialogue.length / 48000;
+  assert.ok(Math.abs(heard - working.media.seconds) < 0.1, `dialogue copy is ${heard} s`);
+  near(bursts(dialogue), [1, 5, 9], 0.05, 'dialogue copy across the switches');
+  assert.ok(whole.momentary[0].lufs > -70, `first momentary block ${whole.momentary[0].lufs}`);
+  assert.ok(whole.cuts.some((t) => Math.abs(t - 2) < 0.1), `cut before the first switch: ${whole.cuts}`);
+  const pcm = mono(await media.sectionSound(working.file, dir, 2, 8 * 48000, true, signal, working.media));
+  near(bursts(pcm), [3, 7], 0.03, 'section sound across the switches');
+  const clip = await plainPcm(await media.sectionClip(working.file, dir, 2, 8, signal, false, working.media));
+  assert.ok(Math.abs(clip.length / 48000 - 8) < 0.1, `analysis clip sound is ${clip.length / 48000} s`);
+  near(bursts(clip), [3, 7], 0.05, 'analysis clip sound');
+});
+
 test('odd, anamorphic, interlaced, 4:2:2 and HDR sources become square 8-bit pictures', async () => {
   const tools = await media.capabilities();
   const sources = [
@@ -459,7 +504,19 @@ test('the free check refuses what cannot be described, in plain words', async ()
       return true;
     });
   }
-  const short = await make('short.mp4', [...lavfi('testsrc2=s=160x120:r=30:d=0.3'), ...h264]);
+  const installed = process.env.FFPROBE_PATH;
+  process.env.FFPROBE_PATH = join(root, 'nowhere', 'ffprobe.exe');
+  try {
+    await assert.rejects(media.probe(whole, signal), (error) => {
+      assert.ok(error instanceof media.MediaError);
+      assert.equal(error.kind, 'tools', `a missing ffprobe is not blamed on the file: ${error.detail}`);
+      assert.equal(error.message, 'The video tools could not process part of this video.');
+      return true;
+    });
+  } finally {
+    process.env.FFPROBE_PATH = installed;
+  }
+  const short =await make('short.mp4', [...lavfi('testsrc2=s=160x120:r=30:d=0.3'), ...h264]);
   assert.ok((await media.probe(short, signal)).seconds < 0.5, 'a 0.3 s bumper is accepted');
   const piped = join(root, 'piped.webm');
   const webm = await media.command(
@@ -585,6 +642,18 @@ test('the soundtrack pass also finds cuts, still pictures, momentary loudness an
   assert.ok(loudAt(3) - loudAt(9) > 12, 'momentary follows the level');
   assert.ok(Number.isFinite(result.lra) && result.lra > 5, `LRA ${result.lra}`);
 
+  process.env.KADE_DESCRIPTION_SCAN_TIMEOUT_MS = '1';
+  try {
+    const hurried = await media.soundtrack(file, await folder('scenes-hurried'), signal, info);
+    assert.equal(hurried.cuts, undefined, 'a picture scan that runs out of time finds no cuts');
+    assert.equal(hurried.stills, undefined);
+    assert.ok(Math.abs(hurried.program - result.program) < 0.1, `loudness still measured: ${hurried.program}`);
+    assert.ok(Math.abs(hurried.momentary.length - result.momentary.length) <= 1);
+    near(bursts(await plainPcm(hurried.dialogue)), bursts(await plainPcm(result.dialogue)), 0.01, 'dialogue copy still made');
+  } finally {
+    delete process.env.KADE_DESCRIPTION_SCAN_TIMEOUT_MS;
+  }
+
   assert.deepEqual(
     media.momentaryBlocks('frame:0    pts:0       pts_time:0\nlavfi.r128.M=-120.691\nframe:5    pts:24000   pts_time:0.5\nlavfi.r128.M=-23.456\n'),
     [{ time: 0.4, lufs: -23.46 }],
@@ -655,9 +724,12 @@ test('assemble adds text tracks, chapters and a whole title, and keeps a late pi
   assert.deepEqual(texts.map((s) => s.codec_name), ['mov_text', 'mov_text']);
   assert.deepEqual(texts.map((s) => s.tags.language), ['eng', 'eng']);
   assert.deepEqual(texts.map((s) => s.tags.handler_name), ['Captions', 'Audio descriptions (text)']);
-  for (const out of [output.video, output.audio]) {
+  const lead = info.videoStart - info.formatStart;
+  for (const [out, shift] of [[output.video, lead], [output.audio, 0]]) {
     const data = await probeJson(out, 'chapter=start_time:chapter_tags=title:format_tags=title', ['-show_chapters']);
     assert.deepEqual(data.chapters.map((c) => c.tags.title), ['Opening', 'Ad = one; two #1']);
+    const second = Number(data.chapters[1].start_time);
+    assert.ok(Math.abs(second - (3 + shift)) < 0.01, `${out} second chapter at ${second}, picture starts ${shift}`);
     const tag = data.format.tags.title;
     assert.ok(tag.endsWith(' (described)') && !tag.includes('�') && Array.from(tag).length <= 200, tag);
   }
@@ -669,6 +741,37 @@ test('assemble adds text tracks, chapters and a whole title, and keeps a late pi
   assert.equal(media.titleTag('Tape\u200b 3\n (described)'), 'Tape 3 (described)');
   assert.equal(media.chapterMetadata([{ start: 5, title: 'x' }], 4), null);
   assert.match(media.chapterMetadata([{ start: 0, title: 'a=b;c#d\\e' }], 10), /title=a\\=b\\;c\\#d\\\\e\n/);
+});
+
+test('a copied picture stops where the new soundtrack stops, and none of the original tags come along', async () => {
+  const file = await make('phone.mov', [
+    ...lavfi(picture('320x240', 30, 30)),
+    ...lavfi(sound(30)),
+    ...h264,
+    '-c:a',
+    'aac',
+    '-metadata',
+    'location=+37.2090-093.2923/',
+    '-metadata',
+    'comment=Birthday at home',
+  ]);
+  const dir = await folder('copy-preview');
+  const working = await media.normalize(file, dir, signal);
+  assert.equal(media.copyable(working.media), true);
+  const flac = join(dir, 'sound.flac');
+  await media.saveSound(await media.sectionSound(working.file, dir, 0, 10 * 48000, true, signal, working.media), flac, signal);
+  const descriptions = join(dir, 'descriptions.vtt');
+  await writeFile(descriptions, 'WEBVTT\n\n00:01.000 --> 00:04.000\nA white flash.\n');
+  const output = await media.assemble(dir, [flac], null, working.file, 'Birthday (described)', signal, {
+    media: working.media,
+    subtitles: [{ file: descriptions, language: 'en', title: 'Audio descriptions (text)' }],
+  });
+  const data = await probeJson(output.video, 'format=duration:format_tags:stream=codec_type,duration');
+  const lengths = [data.format.duration, ...data.streams.filter((s) => s.codec_type !== 'subtitle').map((s) => s.duration)];
+  assert.ok(lengths.every((value) => Math.abs(Number(value) - 10) < 0.1), `described copy lengths ${lengths}`);
+  const tags = Object.keys(data.format.tags);
+  assert.ok(tags.includes('title'), `tags ${tags}`);
+  assert.deepEqual(tags.filter((key) => /location|comment/i.test(key)), [], 'no place or comment from the original');
 });
 
 test('media tools run with a thread cap and lowered priority, and fail in plain words', async () => {
@@ -697,6 +800,20 @@ test('media tools run with a thread cap and lowered priority, and fail in plain 
   const running = media.execute(ffmpegPath, ['-v', 'error', '-re', ...lavfi('testsrc2=d=30'), '-f', 'null', '-'], controller.signal);
   controller.abort();
   await assert.rejects(running, (error) => error.name === 'AbortError', 'cancelling stays a cancellation');
+  await assert.rejects(
+    media.execute(ffmpegPath, ['-v', 'error', '-re', ...lavfi('testsrc2=d=5'), '-f', 'null', '-'], signal, undefined, undefined, { timeoutMs: 300 }),
+    (error) => {
+      assert.ok(error instanceof media.MediaError);
+      assert.equal(error.message, 'This video took too long to prepare. Describe a shorter part, or a lower-resolution copy.');
+      return true;
+    },
+    'a tool that runs past its time limit says so',
+  );
+  const film = { seconds: 5400, width: 1920, height: 1080, fps: { num: 30, den: 1 } };
+  assert.equal(media.workLimit({ ...film, seconds: 60 }), 60 * 60e3, 'at least an hour');
+  assert.equal(media.workLimit(film), 5400 * 1.5e3, 'a 90-minute 1080p film gets half as long again as its length');
+  assert.equal(media.workLimit({ ...film, width: 3840, height: 2160 }), 4 * 5400 * 1.5e3, '4K gets four times that');
+  assert.equal(media.workLimit(film, 600), 60 * 60e3, 'a short part of a long film');
 });
 
 test('the ffmpeg capability check is logged once and missing filters degrade', async () => {

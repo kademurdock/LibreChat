@@ -99,7 +99,9 @@ export function mediaProblem(log: string): MediaProblem {
   return 'tools';
 }
 
-export type ExecuteOptions = { cwd?: string; logBytes?: number };
+export type ExecuteOptions = { cwd?: string; logBytes?: number; timeoutMs?: number };
+const tooLong =
+  'This video took too long to prepare. Describe a shorter part, or a lower-resolution copy.';
 
 export async function command(
   bin: string,
@@ -133,6 +135,7 @@ export async function execute(
   options: ExecuteOptions = {},
 ): Promise<{ stdout: Buffer; log: string }> {
   const logBytes = options.logBytes ?? 12000;
+  const limit = options.timeoutMs ?? 60 * 60 * 1000;
   return new Promise((resolvePromise, reject) => {
     const child = spawn(bin, args, {
       windowsHide: true,
@@ -145,7 +148,11 @@ export async function execute(
     let bytes = 0;
     let log = '';
     let settled = false;
-    const timer = setTimeout(() => child.kill('SIGKILL'), 60 * 60 * 1000);
+    let late = false;
+    const timer = setTimeout(() => {
+      late = true;
+      child.kill('SIGKILL');
+    }, limit);
     const done = (error?: Error) => {
       if (settled) return;
       settled = true;
@@ -169,13 +176,11 @@ export async function execute(
       log += buffer.toString();
       if (log.length > 2 * logBytes) log = log.slice(-logBytes);
     });
-    child.on('close', (code) =>
-      done(
-        code === 0
-          ? undefined
-          : new MediaError(mediaProblem(log), `exit ${code}: ${log.slice(-800)}`),
-      ),
-    );
+    child.on('close', (code) => {
+      if (code === 0) return done();
+      if (late) return done(new MediaError('tools', `timed out after ${limit} ms`, tooLong));
+      done(new MediaError(mediaProblem(log), `exit ${code}: ${log.slice(-800)}`));
+    });
     child.stdin.on('error', () => {});
     child.stdin.end(input);
   });
@@ -349,7 +354,7 @@ async function inspect(file: string, signal: AbortSignal): Promise<Inspection> {
       4 * 1024 ** 2,
     );
   } catch (error) {
-    if (error instanceof MediaError && error.kind === 'tools')
+    if (error instanceof MediaError && error.kind === 'tools' && error.detail.startsWith('exit '))
       throw new MediaError('damaged', error.detail);
     throw error;
   }
@@ -624,6 +629,23 @@ export async function probe(file: string, signal: AbortSignal): Promise<Media> {
 export const copyable = (media: Media): boolean =>
   media.codec === 'h264' && ['yuv420p', 'yuvj420p'].includes(media.pixels) && media.width <= 1920;
 
+/**
+ * How long one pass over `seconds` of the video may run: half as long again as its length for
+ * 1080p30, more for larger or faster pictures, and never less than an hour.
+ */
+export function workLimit(
+  media: Pick<Media, 'seconds' | 'width' | 'height' | 'fps'>,
+  seconds: number = media.seconds,
+): number {
+  const load = (media.width * media.height * (media.fps.num / media.fps.den)) / (1920 * 1080 * 30);
+  return Math.max(60 * 60e3, seconds * 1.5e3 * Math.max(1, load));
+}
+/** The picture scan is optional, so it gets an hour (KADE_DESCRIPTION_SCAN_TIMEOUT_MS) and is then left out. */
+const scanLimit = (): number => {
+  const value = Number.parseInt(process.env.KADE_DESCRIPTION_SCAN_TIMEOUT_MS || '', 10);
+  return Number.isFinite(value) && value > 0 ? value : 60 * 60e3;
+};
+
 const anchorOf = (media: Media, start: number) => media.videoStart + start;
 /** Seeks so the read starts at picture time `start`; no seek at all for the opening. */
 const seekTo = (media: Media, start: number): string[] => {
@@ -743,57 +765,31 @@ export type Soundtrack = {
   oneSided?: 'left' | 'right';
 };
 
-async function soundtrackPass(
+async function soundPass(
   source: string,
   directory: string,
   signal: AbortSignal,
   media: Media,
   tools: Capabilities,
-  watch: boolean,
 ): Promise<Soundtrack & { levels: number[] }> {
-  const hasSound = media.audioIndex !== null;
+  if (media.audioIndex === null) return { dialogue: '', program: -70, peak: -70, levels: [] };
   const dialogue = join(directory, 'dialogue.m4a');
   const momentaryFile = 'momentary.txt';
   const stereo = ['aformat=channel_layouts=stereo', ...oneSidedPan(media)];
   const speech = media.centre
     ? ['pan=mono|c0=FC+0.3*FL+0.3*FR']
     : [...stereo, 'pan=mono|c0=0.5*c0+0.5*c1'];
-  const printed = ['cuts.txt', 'still-start.txt', 'still-end.txt'];
-  const print = (key: string, file: string) => `metadata=mode=print:key=lavfi.${key}:file=${file}`;
-  const scan = [
-    ...(tools.scdet ? ['scdet=threshold=10', print('scd.time', printed[0])] : []),
-    ...(tools.freezedetect
-      ? [
-          'freezedetect=n=0.003:d=5',
-          print('freezedetect.freeze_start', printed[1]),
-          print('freezedetect.freeze_end', printed[2]),
-        ]
-      : []),
-  ];
-  const video = watch && scan.length > 0;
   const graph = [
-    ...(hasSound
-      ? [
-          `[0:a:${media.audioIndex}]${soundTimes(media, 0)},asplit=2[a0][a1]`,
-          `[a0]${[
-            soundFill(48000),
-            ...stereo,
-            tools.perChannel
-              ? 'astats=measure_perchannel=RMS_level:measure_overall=none'
-              : 'astats',
-            'ebur128=peak=sample:framelog=quiet:metadata=1',
-            `ametadata=mode=print:key=lavfi.r128.M:file=${momentaryFile}`,
-          ].join(',')}[m]`,
-          `[a1]${[soundFill(48000), ...speech, 'aresample=16000'].join(',')}[s]`,
-        ]
-      : []),
-    ...(video
-      ? [
-          `[0:v:${media.videoIndex ?? 0}]${pictureClock(media, 0)},scale=160:-2,${scan.join(',')}[v]`,
-        ]
-      : []),
+    `[0:a:${media.audioIndex}]${soundTimes(media, 0)},asplit=2[a0][a1]`,
+    `[a0]${[
+      soundFill(48000),
+      ...stereo,
+      tools.perChannel ? 'astats=measure_perchannel=RMS_level:measure_overall=none' : 'astats',
+      'ebur128=peak=sample:framelog=quiet:metadata=1',
+      `ametadata=mode=print:key=lavfi.r128.M:file=${momentaryFile}`,
+    ].join(',')}[m]`,
+    `[a1]${[soundFill(48000), ...speech, 'aresample=16000'].join(',')}[s]`,
   ];
-  if (!graph.length) return { dialogue: '', program: -70, peak: -70, levels: [] };
   const { log } = await execute(
     ffmpeg(),
     [
@@ -802,48 +798,33 @@ async function soundtrackPass(
       'file,pipe',
       ...sourceOnly,
       ...inputThreads(),
-      ...(video ? ['-skip_loop_filter', 'all'] : []),
       '-copyts',
       '-i',
       resolve(source),
       '-filter_complex',
       graph.join(';'),
-      ...(hasSound ? ['-map', '[m]'] : []),
-      ...(video ? ['-map', '[v]'] : []),
+      '-map',
+      '[m]',
       ...outputThreads(true),
       '-f',
       'null',
       '-',
-      ...(hasSound
-        ? [
-            '-map',
-            '[s]',
-            '-c:a',
-            'aac',
-            '-b:a',
-            '48k',
-            ...outputThreads(true),
-            '-movflags',
-            '+faststart',
-            resolve(dialogue),
-          ]
-        : []),
+      '-map',
+      '[s]',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '48k',
+      ...outputThreads(true),
+      '-movflags',
+      '+faststart',
+      resolve(dialogue),
     ],
     signal,
     undefined,
     32 * 1024 ** 2,
-    { cwd: directory, logBytes: 1024 ** 2 },
+    { cwd: directory, logBytes: 1024 ** 2, timeoutMs: workLimit(media) },
   );
-  const texts = await Promise.all(
-    printed.map(async (name) => {
-      const path = join(directory, name);
-      const text = await readFile(path, 'utf8').catch(() => '');
-      await rm(path, { force: true });
-      return text;
-    }),
-  );
-  const events = video ? pictureEvents(texts.join('\n'), media.seconds) : {};
-  if (!hasSound) return { dialogue: '', program: -70, peak: -70, levels: [], ...events };
   const summary = log.slice(log.lastIndexOf('Summary:'));
   const program = Number(/I:\s*(-?[\d.]+|-inf) LUFS/.exec(summary)?.[1]);
   const peak = Number(/Peak:\s*(-?[\d.]+|-inf) dBFS/.exec(summary)?.[1]);
@@ -857,16 +838,84 @@ async function soundtrackPass(
     peak: Number.isFinite(peak) ? peak : -70,
     ...(Number.isFinite(lra) ? { lra } : {}),
     momentary,
-    ...events,
     levels: channelLevels(log),
   };
 }
 
 /**
- * One pass over the whole source on the picture's clock: the soundtrack's loudness (integrated,
- * peak, range and momentary blocks), the mono copy speech recognition reads (centre channel first
- * for surround), a small picture scan for scene cuts and still stretches, and a check for
- * captures with sound on one channel only (measured again with that channel on both sides).
+ * Scene cuts and still stretches from a small fixed-size copy of the whole picture, so a change
+ * of picture size never restarts the scan. Optional: a scan that fails or runs out of time finds
+ * nothing, and only cancelling stops the job.
+ */
+async function pictureScan(
+  source: string,
+  directory: string,
+  signal: AbortSignal,
+  media: Media,
+  tools: Capabilities,
+): Promise<Pick<Soundtrack, 'cuts' | 'stills'>> {
+  const printed = ['cuts.txt', 'still-start.txt', 'still-end.txt'];
+  const print = (key: string, file: string) => `metadata=mode=print:key=lavfi.${key}:file=${file}`;
+  const scan = [
+    ...(tools.scdet ? ['scdet=threshold=10', print('scd.time', printed[0])] : []),
+    ...(tools.freezedetect
+      ? [
+          'freezedetect=n=0.003:d=5',
+          print('freezedetect.freeze_start', printed[1]),
+          print('freezedetect.freeze_end', printed[2]),
+        ]
+      : []),
+  ];
+  if (!scan.length) return {};
+  const finished = await execute(
+    ffmpeg(),
+    [
+      ...quiet,
+      ...sourceOnly,
+      ...inputThreads(),
+      '-skip_loop_filter',
+      'all',
+      '-reinit_filter:v',
+      '0',
+      '-copyts',
+      '-i',
+      resolve(source),
+      '-map',
+      `0:v:${media.videoIndex ?? 0}`,
+      '-vf',
+      [pictureClock(media, 0), 'scale=160:90', 'setsar=1', ...scan].join(','),
+      ...outputThreads(),
+      '-f',
+      'null',
+      '-',
+    ],
+    signal,
+    undefined,
+    32 * 1024 ** 2,
+    { cwd: directory, timeoutMs: scanLimit() },
+  ).then(
+    () => true,
+    (error: unknown) => {
+      if (signal.aborted) throw error;
+      return false;
+    },
+  );
+  const texts = await Promise.all(
+    printed.map(async (name) => {
+      const path = join(directory, name);
+      const text = await readFile(path, 'utf8').catch(() => '');
+      await rm(path, { force: true });
+      return text;
+    }),
+  );
+  return finished ? pictureEvents(texts.join('\n'), media.seconds) : {};
+}
+
+/**
+ * The whole soundtrack on the picture's clock: its loudness (integrated, peak, range and momentary
+ * blocks), the mono copy speech recognition reads (centre channel first for surround), a check for
+ * captures with sound on one channel only (measured again with that channel on both sides), and a
+ * separate picture scan for scene cuts and still stretches, which also runs when there is no sound.
  */
 export async function soundtrack(
   source: string,
@@ -876,26 +925,15 @@ export async function soundtrack(
 ): Promise<Soundtrack> {
   const info = await mediaOf(source, media, signal);
   const tools = await capabilities();
-  const first = await soundtrackPass(source, directory, signal, info, tools, true);
-  const { levels, ...result } = first;
+  const { levels, ...result } = await soundPass(source, directory, signal, info, tools);
+  const events = await pictureScan(source, directory, signal, info, tools);
   const live =
     info.oneSided || info.centre || (info.channels ?? 2) !== 2 ? undefined : liveChannel(levels);
-  if (!live) return info.oneSided ? { ...result, oneSided: info.oneSided } : result;
-  const again = await soundtrackPass(
-    source,
-    directory,
-    signal,
-    { ...info, oneSided: live },
-    tools,
-    false,
-  );
-  const { levels: _unused, cuts: _cuts, stills: _stills, ...measured } = again;
-  return {
-    ...measured,
-    ...(result.cuts ? { cuts: result.cuts } : {}),
-    ...(result.stills ? { stills: result.stills } : {}),
-    oneSided: live,
-  };
+  if (!live)
+    return { ...result, ...events, ...(info.oneSided ? { oneSided: info.oneSided } : {}) };
+  const again = await soundPass(source, directory, signal, { ...info, oneSided: live }, tools);
+  const { levels: _unused, ...measured } = again;
+  return { ...measured, ...events, oneSided: live };
 }
 
 const clipLimit = 40 * 1024 ** 2;
@@ -1221,9 +1259,11 @@ export async function sectionPicture(
 }
 
 /**
- * Makes the working copy every later step reads. Without a range: the chosen picture and sound
- * tracks remuxed with generated timestamps (MKV, or MP4 for rotated phone video), which fixes
- * AVI/FLV openings and MPEG-PS/TS drift; the original is used if the remux fails. With a range:
+ * Makes the working copy every later step reads. Without a range: the chosen picture track
+ * remuxed with generated timestamps (MKV, or MP4 for rotated phone video), which fixes AVI/FLV
+ * openings and MPEG-PS/TS drift, and the chosen sound track encoded at one fixed rate and channel
+ * count, so a broadcast that switches between 5.1 and stereo reads as one steady soundtrack; the
+ * original is used if the remux fails. With a range:
  * an accurate cut re-timed to start at 0, re-encoded as square-pixel progressive 8-bit H.264 of
  * at most 1920 px with FLAC sound. Returns the working file's media.
  */
@@ -1257,13 +1297,23 @@ export async function normalize(
     '-c:v',
     'copy',
   ];
+  const steady = (channels: number) => [
+    ...(rotated ? ['-c:a', 'aac', '-b:a', '256k'] : ['-c:a', 'flac', '-sample_fmt', 's16']),
+    '-ar',
+    '48000',
+    '-ac',
+    String(channels),
+  ];
+  const channels = original.channels || 2;
   const attempts = [
-    [...base, '-c:a', 'copy', file],
-    [...base, ...(rotated ? ['-c:a', 'aac', '-b:a', '256k'] : ['-c:a', 'flac']), file],
+    [...base, ...steady(channels), file],
+    ...(channels === 2 ? [] : [[...base, ...steady(2), file]]),
   ];
   for (const args of attempts) {
     try {
-      await command(ffmpeg(), args, signal);
+      await execute(ffmpeg(), args, signal, undefined, undefined, {
+        timeoutMs: workLimit(original),
+      });
       const working = (await examine(file, signal)).media;
       if (
         working.seconds < original.seconds - Math.max(1, original.seconds * 0.02) ||
@@ -1316,7 +1366,7 @@ async function cut(
     `trim=end=${length}`,
   ];
   const sound = [soundClock(original, start, 48000), `atrim=end=${length}`];
-  await command(
+  await execute(
     ffmpeg(),
     [
       ...quiet,
@@ -1352,6 +1402,9 @@ async function cut(
       file,
     ],
     signal,
+    undefined,
+    undefined,
+    { timeoutMs: workLimit(original, end - start) },
   );
   const working = (await examine(file, signal)).media;
   return {
@@ -1455,8 +1508,9 @@ export type AssembleOptions = { media?: Media; subtitles?: Subtitle[]; chapters?
 
 /**
  * Joins the finished sections: one AAC soundtrack for both files, and either the original
- * picture untouched or the re-encoded sections with their pauses. Optional text tracks go into
- * the MP4 as mov_text, and chapters (output times) into both files.
+ * picture untouched (ending where the new soundtrack ends, so a preview is only as long as its
+ * sound) or the re-encoded sections with their pauses. Optional text tracks go into the MP4 as
+ * mov_text, and chapters (output times) into both files. The only file-wide tag is the title.
  */
 export async function assemble(
   directory: string,
@@ -1493,9 +1547,9 @@ export async function assemble(
     ],
     signal,
   );
-  const metadata = options.chapters?.length
-    ? chapterMetadata(options.chapters, await lengthOf(audio, signal))
-    : null;
+  const copy = !pictures;
+  const soundLength = copy || options.chapters?.length ? await lengthOf(audio, signal) : 0;
+  const metadata = options.chapters?.length ? chapterMetadata(options.chapters, soundLength) : null;
   const chapters = metadata ? join(directory, 'chapters.txt') : null;
   if (chapters && metadata) {
     await writeFile(chapters, metadata);
@@ -1522,13 +1576,14 @@ export async function assemble(
     );
     await rename(marked, audio);
   }
-  const copy = !pictures;
   const picture = pictures ? join(directory, 'pictures.txt') : source;
   if (pictures) await writeFile(picture, listFile(pictures));
   const media = options.media;
   const offset =
     copy && media ? Math.max(0, media.videoStart - (media.formatStart ?? media.videoStart)) : 0;
   const shift = offset > 0.0005 ? ['-itsoffset', offset.toFixed(6)] : [];
+  const end =
+    copy && Number.isFinite(soundLength) ? ['-t', (offset + soundLength).toFixed(6)] : [];
   const subtitles = options.subtitles ?? [];
   await command(
     ffmpeg(),
@@ -1541,7 +1596,7 @@ export async function assemble(
       '-i',
       audio,
       ...subtitles.flatMap((item) => [...shift, '-i', item.file]),
-      ...(chapters ? ['-i', chapters] : []),
+      ...(chapters ? [...shift, '-i', chapters] : []),
       '-map',
       `0:v:${copy ? (media?.videoIndex ?? 0) : 0}`,
       '-map',
@@ -1562,7 +1617,10 @@ export async function assemble(
         `-metadata:s:s:${i}`,
         `title=${oneLine(item.title)}`,
       ]),
+      '-map_metadata:g',
+      '-1',
       ...tag,
+      ...end,
       '-movflags',
       '+faststart',
       video,
