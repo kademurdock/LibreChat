@@ -34,6 +34,37 @@ test('folder facts: both mp3 movies collections join her alphabetical described 
   assert.strictEqual(L.folderFact({ kind: 'video', title: 'Zoo', path: 'Video/Needs Filing/mp3 movies' }), null, 'audio only');
 });
 
+test('kids blocks: Nick Jr and Disney Junior have their own folders, filed by rule (her word, Sep 23)', () => {
+  const to = (title, path = 'Videos/Needs Filing/Archive Intake') => L.decide(video(title, path), {}).to;
+  // The seven that sat in Archive Intake for want of a confident kind.
+  assert.strictEqual(to('Nick jr yo gabba gabba curriculum board fall 2012'), 'Video/Channels/Nickelodeon/Nick Jr/2010s');
+  assert.strictEqual(to('Nick jr backyardigans curriculum board 2012'), 'Video/Channels/Nickelodeon/Nick Jr/2010s');
+  assert.strictEqual(to('Nick jr toot and puddle curriculum board 2012'), 'Video/Channels/Nickelodeon/Nick Jr/2010s');
+  assert.strictEqual(to('Nick jr face little bill intro 2004'), 'Video/Channels/Nickelodeon/Nick Jr/2000s');
+  assert.strictEqual(to('1993 Nick Jr'), 'Video/Channels/Nickelodeon/Nick Jr/1990s');
+  assert.strictEqual(to('Nick jr sign off commercial breaks  September 2015'), 'Video/Commercials/Commercial Breaks/Nickelodeon/Nick Jr/2010s');
+  assert.strictEqual(to('Nick jr on CBS piper commercial breaks 2005 pt1'), 'Video/Commercials/Commercial Breaks/CBS/Nick Jr on CBS/2000s');
+  // Disney Junior, however it is spelled.
+  assert.strictEqual(to('Disney Junior bumper 2013'), 'Video/Channels/Disney Channel/Disney Junior/2010s');
+  assert.strictEqual(to('Disney Jr. promo Sofia the First 2014'), 'Video/Channels/Disney Channel/Disney Junior/2010s');
+  assert.strictEqual(to('DisneyJr commercial breaks 2012'), 'Video/Commercials/Commercial Breaks/Disney Channel/Disney Junior/2010s');
+  assert.strictEqual(to('NickJr Face bumper'), 'Video/Channels/Nickelodeon/Nick Jr/Undated');
+  // Jev is never asked about a block's own presentation...
+  assert.strictEqual(L.questionsFor(video('Nick jr yo gabba gabba curriculum board fall 2012', 'Videos/Needs Filing/Archive Intake')), null);
+  // ...but a single advert, a fan remake, audio, or a show merely mentioning the block stay with the rules they had.
+  assert.strictEqual(L.blockFact(video('Nick Jr magazine commercial 1999', 'Videos/Needs Filing/Archive Intake')), null);
+  assert.strictEqual(L.blockFact(video('Nick Jr bumper recreation', 'Videos/Needs Filing/Archive Intake')), null);
+  assert.strictEqual(L.blockFact({ kind: 'audio', title: 'Nick Jr theme', path: 'Audio/Needs Filing' }), null);
+  assert.strictEqual(L.blockFact(video('Blues clues episode as seen on nick jr', 'Videos/Needs Filing/Archive Intake')), null);
+  // Filed items are left alone by this rule; only intake is filed by it.
+  assert.strictEqual(L.blockFact(video('Nick Jr bumper 1998', 'Video/Channels/Nickelodeon/1990s')), null);
+  // Noggin keeps its priority over a Nick Jr mention.
+  assert.strictEqual(to('Noggin Nick Jr bumper 2007'), 'Video/Channels/Noggin/2000s');
+  assert.strictEqual(L.networkOf('Nick Jr. Face promo'), 'Nickelodeon/Nick Jr');
+  assert.strictEqual(L.networkOf('Disney Junior promo'), 'Disney Channel/Disney Junior');
+  assert.strictEqual(L.networkOf('Nickelodeon SNICK promo'), 'Nickelodeon');
+});
+
 test('zones: intake, local shelves, filed, and books skipped', () => {
   assert.strictEqual(L.zoneOf(video('a', 'Videos/Needs Filing/Archive Intake')), 'intake');
   assert.strictEqual(L.zoneOf(video('a', 'Videos/Advertising/Show Promos (Review)')), 'intake');
@@ -45,7 +76,7 @@ test('zones: intake, local shelves, filed, and books skipped', () => {
 });
 
 test('networks come off the title by rule, longest name first', () => {
-  assert.strictEqual(L.networkOf('Nick jr on CBS commercial breaks 2005'), 'Nickelodeon');
+  assert.strictEqual(L.networkOf('Nick jr on CBS commercial breaks 2005'), 'CBS/Nick Jr on CBS', 'a block that aired on CBS sits under CBS');
   assert.strictEqual(L.networkOf('ABC Family promo 2003'), 'ABC Family');
   assert.strictEqual(L.networkOf('Teennick degrassi promo 2013'), 'TeenNick');
   assert.strictEqual(L.networkOf('Teenick Sabrina commercial breaks 2003'), 'TeenNick', 'her own spelling, one n');
@@ -68,10 +99,10 @@ test('intake: Jev decides the shelf; the network and decade come from rules', ()
   assert.strictEqual(brk.to, 'Video/Commercials/Commercial Breaks/Noggin/2000s');
   const ad = L.decide(video('1999 Jeep Cherokee commercial', 'Videos/Needs Filing/Archive Intake'), ans({ kind: ['One product advert', 1], category: ['Cars and Trucks', 0.98] }));
   assert.strictEqual(ad.to, 'Video/Commercials/Cars and Trucks/1990s');
-  const unsure = L.decide(video('Playhouse Disney clay role polie olie intro', 'Videos/Needs Filing/Archive Intake'), ans({ kind: ['Promo for a TV programme or channel', 0.44] }));
+  const unsure = L.decide(video('Rolie polie olie clay piece', 'Videos/Needs Filing/Archive Intake'), ans({ kind: ['Promo for a TV programme or channel', 0.44] }));
   assert.strictEqual(unsure.to, null, 'under the floor it stays for a person');
   const promo = L.decide(video('Nick jr backyardigans is next 2012', 'Videos/Needs Filing/Archive Intake'), ans({ kind: ['Promo for a TV programme or channel', 0.95] }));
-  assert.strictEqual(promo.to, 'Video/Channels/Nickelodeon/2010s');
+  assert.strictEqual(promo.to, 'Video/Channels/Nickelodeon/Nick Jr/2010s');
   const show = L.decide(video('Bear in the big blue house intro 2001', 'Videos/Needs Filing/Archive Intake'), ans({ kind: ['Episode or clip of a TV programme', 0.9] }), { broadcastShelf: () => 'TV Shows/Bear in the Big Blue House/Intros & Credits' });
   assert.strictEqual(show.to, 'Video/TV Shows/Bear in the Big Blue House/Intros & Credits/2000s');
   const brandless = L.decide(video('Mystery spot 1988', 'Videos/Needs Filing/Archive Intake'), ans({ kind: ['One product advert', 0.9], category: ['Toys & Video Games', 0.4] }));
@@ -166,14 +197,19 @@ test('the description Jev reads drops headers, links and disclaimers', () => {
 });
 
 test('fileMedia never throws: a failed item comes back with error and stays put', async () => {
-  const items = [video('Noggin commercial breaks 2004', 'Videos/Needs Filing/Archive Intake', { _id: 'a' }), video('Boom 1999', 'Videos/Needs Filing/Archive Intake', { _id: 'b' })];
+  const items = [video('Nickelodeon commercial breaks 2004', 'Videos/Needs Filing/Archive Intake', { _id: 'a' }), video('Boom 1999', 'Videos/Needs Filing/Archive Intake', { _id: 'b' }),
+    video('Noggin commercial breaks 2004', 'Videos/Needs Filing/Archive Intake', { _id: 'c' })];
+  const asked = [];
   const ask = async (state) => {
+    asked.push(state.title);
     if (state.title.startsWith('Boom')) throw new Error('timeout');
     return { answers: ans({ kind: ['Block of several commercials', 1] }), usage: { input_tokens: 1000 } };
   };
   const { decisions, costUSD } = await L.fileMedia(items, { ask });
   const byTitle = Object.fromEntries(decisions.map((d) => [d.item.title, d]));
-  assert.strictEqual(byTitle['Noggin commercial breaks 2004'].to, 'Video/Commercials/Commercial Breaks/Noggin/2000s');
+  assert.strictEqual(byTitle['Nickelodeon commercial breaks 2004'].to, 'Video/Commercials/Commercial Breaks/Nickelodeon/2000s');
+  assert.strictEqual(byTitle['Noggin commercial breaks 2004'].to, 'Video/Commercials/Commercial Breaks/Noggin/2000s', 'a kids block files by rule');
+  assert.ok(!asked.includes('Noggin commercial breaks 2004'), 'and Jev is not asked about it');
   assert.strictEqual(byTitle['Boom 1999'].to, null);
   assert.strictEqual(byTitle['Boom 1999'].error, 'timeout');
   assert.ok(costUSD > 0);

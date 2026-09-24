@@ -102,11 +102,15 @@ function clean(desc, limit = 700) {
  * matters: the longer name is tried first (ABC Family before ABC). */
 const NETWORKS = [
   [/\bnoggin on nick(?:elodeon)?\b/i, 'Nickelodeon/Noggin on Nick'],
+  // Part 281: kids' blocks are folders inside the channel that aired them, as Playhouse Disney is.
+  [/\bnick(?:elodeon)? ?jr\.? on cbs\b/i, 'CBS/Nick Jr on CBS'],
   [/\babc family\b/i, 'ABC Family'], [/\bfox family\b/i, 'ABC Family'],
   [/\bplayhouse disney\b/i, 'Disney Channel/Playhouse Disney'],
-  [/\btoon disney\b/i, 'Toon Disney'], [/\b(?:disney channel|disney junior|zoog disney)\b/i, 'Disney Channel'],
+  [/\btoon disney\b/i, 'Toon Disney'], [/\bdisney ?(?:jr|junior)\b/i, 'Disney Channel/Disney Junior'],
+  [/\b(?:disney channel|zoog disney)\b/i, 'Disney Channel'],
   [/\bteen?\s?nick\b/i, 'TeenNick'], [/\bsprout\b/i, 'Sprout'],
-  [/\bnoggin\b/i, 'Noggin'], [/\b(?:nick jr\.?|nick at nite|nickelodeon|nicktoons)\b/i, 'Nickelodeon'], [/\bthe n\b/i, 'The N'],
+  [/\bnoggin\b/i, 'Noggin'], [/\bnick ?(?:jr|junior)\b/i, 'Nickelodeon/Nick Jr'],
+  [/\b(?:nick at nite|nickelodeon|nicktoons)\b/i, 'Nickelodeon'], [/\bthe n\b/i, 'The N'],
   [/\bcartoon network\b/i, 'Cartoon Network'], [/\bcomedy central\b/i, 'Comedy Central'],
   [/\b(?:cnn headline news|headline news)\b/i, 'CNN Headline News'], [/\bcnn\b/i, 'CNN'],
   [/\bdiscovery kids\b/i, 'Discovery Kids'], [/\bdiscovery channel\b/i, 'Discovery Channel'],
@@ -152,6 +156,39 @@ function zoneOf(item) {
 function describedShelf(title) {
   const first = String(title || '').replace(/^[^A-Za-z0-9]+/, '').charAt(0).toUpperCase();
   return 'Audio/Described Movies & TV/Movies/' + (/[0-9]/.test(first) ? '0-9' : /[A-Z]/.test(first) ? first : 'Other');
+}
+
+/* Part 281 (Sep 23 2026), her word: "We need a nick jr disney jr categories for the sorter
+ * I'm seeing a lot of stuff like that in the can't find a folder batch." Titles such as "Nick
+ * jr yo gabba gabba curriculum board fall 2012" sat in Archive Intake because Jev was unsure
+ * what KIND of clip a curriculum board is. A title that names a kids' block and is plainly the
+ * block's own presentation (it starts with the block's name, or is a bumper, intro, promo,
+ * curriculum board, sign-off or commercial break) needs no judgement: it files by rule into
+ * the block's folder, the same rule TubeVault's broadcast_filing.children_broadcast applies. A
+ * show's own episode ("Dora the Explorer episode") is not named by a block and stays Jev's. */
+const KIDS_BLOCKS = [
+  [/\bnoggin on nick(?:elodeon)?\b/i, 'Nickelodeon/Noggin on Nick'],
+  [/\bnick(?:elodeon)? ?jr\.? on cbs\b/i, 'CBS/Nick Jr on CBS'],
+  [/\bplayhouse disney\b/i, 'Disney Channel/Playhouse Disney'],
+  [/\bdisney ?(?:jr|junior)\b/i, 'Disney Channel/Disney Junior'],
+  [/\bnoggin\b/i, 'Noggin'],
+  [/\bnick ?(?:jr|junior)\b/i, 'Nickelodeon/Nick Jr'],
+];
+const BLOCK_FIRST = /^(?:\W|\d)*(?:noggin|playhouse disney|disney ?(?:jr|junior)|nick(?:elodeon)? ?(?:jr|junior))\b/i;
+const PRESENTATION = /\b(?:bumpers?|promos?|intros?|theme|credits|idents?|continuity|sign ?offs?|sign ?ons?|originals?|logos?|curriculum boards?|commercial breaks?)\b/i;
+function blockFact(item) {
+  if (item.kind !== 'video' || zoneOf(item) !== 'intake') return null;
+  const t = String(item.title || '');
+  const hit = KIDS_BLOCKS.find(([re]) => re.test(t));
+  if (!hit) return null;
+  if (/\b(?:album|soundtrack|remix|parody|ytp|fan[ -]?made|recreation|mock|vhs|dvd)\b/i.test(t)) return null;
+  if (!BLOCK_FIRST.test(t) && !PRESENTATION.test(t)) return null;
+  const dec = decadeOf(item);
+  if (/commercial breaks?|commercial compilation|commercial collection|ad breaks?/i.test(t) || (BLOCK_FIRST.test(t) && /\bcommercials\b/i.test(t))) {
+    return `Video/Commercials/Commercial Breaks/${hit[1]}/${dec}`;
+  }
+  if (/\b(?:ads?|advertisements?|commercials?)\b/i.test(t) && !/\b(?:promos?|bumpers?|idents?|continuity)\b/i.test(t)) return null;
+  return `Video/Channels/${hit[1]}/${dec}`;
 }
 
 /** Folder names that state a fact. Returns a path or null. Never asks Jev. */
@@ -322,7 +359,7 @@ function stateOf(item) {
 
 function questionsFor(item) {
   const zone = zoneOf(item);
-  if (zone === 'skip' || folderFact(item)) return null;
+  if (zone === 'skip' || folderFact(item) || blockFact(item)) return null;
   const text = String(item.title || '') + ' ' + String(item.description || '');
   const q = {};
   if (item.kind === 'audio') {
@@ -409,6 +446,8 @@ function decide(item, answers, deps = {}, k = knobs()) {
   const dec = decadeOf(item);
   const fact = folderFact(item);
   if (fact) return { ...out, to: fact !== from ? fact : null, why: 'folder says so', confidence: 1 };
+  const block = blockFact(item);
+  if (block) return { ...out, to: block !== from ? block : null, why: 'kids block named in the title', confidence: 1 };
 
   const foreign = noulOf(a, 'foreign');
   if (foreign !== null && foreign >= k.foreign) out.flags.push(`Jev review: made outside the US (${two(foreign)}).`);
@@ -625,7 +664,7 @@ async function fileMedia(items, { ask = jev.ask, deps = {}, timeoutMs = 8000, co
 }
 
 module.exports = {
-  VERSION, knobs, decadeOf, clean, networkOf, zoneOf, folderFact, familyOf, categoryOf, stateOf, questionsFor,
+  VERSION, knobs, decadeOf, clean, networkOf, zoneOf, folderFact, blockFact, familyOf, categoryOf, stateOf, questionsFor,
   routeByKind, decide, fileMedia, KIND_Q, KIND_CRITERIA, CATEGORY_Q, VHS_Q, VHS_CRITERIA, FOREIGN_Q, MO_RE, NONUS_RE,
   HOME_Q, ELSEWHERE_Q, AR_OZARKS_RE, ourArea, wantState, wantQuestions, wantVerdict, judgeWanted, fullSportsGame,
 };
