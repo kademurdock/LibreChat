@@ -376,12 +376,27 @@ test('descriptions are spoken in the order their events happen', () => {
     ordered.map((item) => item.index),
     [1, 0],
   );
-  assert.ok(ordered[1].placement.at >= ordered[0].placement.at + ordered[0].placement.duration + 0.35 - 1e-9);
+  assert.ok(
+    ordered[1].placement.at >=
+      ordered[0].placement.at + ordered[0].placement.duration + 0.35 - 1e-9,
+  );
 });
 
 test('a minor description gives way to a later, more important one', () => {
-  const minor = { at: 1, until: 9, text: 'Rain streaks the window.', shortText: 'It rains.', importance: 1 };
-  const key = { at: 3, until: 5.5, text: 'A price reads 9.99.', shortText: 'It costs 9.99.', importance: 3 };
+  const minor = {
+    at: 1,
+    until: 9,
+    text: 'Rain streaks the window.',
+    shortText: 'It rains.',
+    importance: 1,
+  };
+  const key = {
+    at: 3,
+    until: 5.5,
+    text: 'A price reads 9.99.',
+    shortText: 'It costs 9.99.',
+    importance: 3,
+  };
   const shortened = arrange({
     cues: [minor, key],
     length: (index, variant) => (index === 0 ? (variant === 'full' ? 6 : 2) : 1.5),
@@ -423,12 +438,20 @@ test('the short text wins over the full text squeezed toward the fastest speed',
   assert.equal(short.variant, 'short');
   assert.ok(short.placement.rate <= 1.8 + 1e-9);
   const fast = run(6, 5.4);
-  assert.equal(fast.variant, 'full', 'full text at up to the fastest speed when the short one is no better');
+  assert.equal(
+    fast.variant,
+    'full',
+    'full text at up to the fastest speed when the short one is no better',
+  );
   assert.ok(fast.placement.rate > 1.8);
 });
 
 test('extended mode pauses for important descriptions and leaves minor ones out', () => {
-  const words = Array.from({ length: 100 }, (_, i) => ({ start: i / 10, end: (i + 1) / 10, word: 'w' }));
+  const words = Array.from({ length: 100 }, (_, i) => ({
+    start: i / 10,
+    end: (i + 1) / 10,
+    word: 'w',
+  }));
   const { placed, left } = arrange({
     cues: [
       { ...cue, at: 2, until: 3, importance: 2 },
@@ -450,7 +473,10 @@ test('a pause near the section end freezes the last frame instead of running pas
   const extended = { ...settings, mode: 'extended', rate: 1 };
   const placed = pauseCue(cue, cue.text, 3, extended, 7.3, [], 9);
   assert.ok(placed.inserted);
-  assert.ok(placed.pauseAt <= 9 - 0.05 + 1e-9, `narration over the soundtrack stops at ${placed.pauseAt}`);
+  assert.ok(
+    placed.pauseAt <= 9 - 0.05 + 1e-9,
+    `narration over the soundtrack stops at ${placed.pauseAt}`,
+  );
   assert.ok(Math.abs(placed.pause - (3 - (placed.pauseAt - 7.3) + 0.35)) < 1e-9);
   const open = pauseCue(cue, cue.text, 3, extended, 2, []);
   assert.equal(open.pause, 0, 'without a section length nothing changes');
@@ -471,7 +497,18 @@ test('freeze points sit inside the breath and prefer a nearby scene cut', () => 
   assert.equal(at(4.5, [4.8]), 4.8, 'moved onto a scene cut close by');
   assert.ok(Math.abs(at(1.5) - 3.2) < 1e-9, 'inside a word: the best breath nearby, 0.2 s in');
   assert.equal(at(1.5, [2.1]), 2.1, 'or a scene cut between words');
-  assert.equal(freezeFrame(2.125, [{ start: 1.35, end: 2, word: 'there.' }, { start: 2.25, end: 2.6, word: 'Now' }], { num: 30, den: 1 }, 300), 64);
+  assert.equal(
+    freezeFrame(
+      2.125,
+      [
+        { start: 1.35, end: 2, word: 'there.' },
+        { start: 2.25, end: 2.6, word: 'Now' },
+      ],
+      { num: 30, den: 1 },
+      300,
+    ),
+    64,
+  );
 });
 
 test('descriptions move forward onto a scene cut, never back', () => {
@@ -499,7 +536,11 @@ test('sections end at a sentence, keep quiet stretches whole, and prefer scene c
     assert.equal(before.word, 'end.', `cut after "${before.word}" at ${section.end}`);
     assert.ok(section.end < 86 || section.end > 92, 'the quiet stretch stays whole');
   }
-  const flat = Array.from({ length: 600 }, (_, i) => ({ start: i * 0.5, end: i * 0.5 + 0.15, word: 'x' }));
+  const flat = Array.from({ length: 600 }, (_, i) => ({
+    start: i * 0.5,
+    end: i * 0.5 + 0.15,
+    word: 'x',
+  }));
   const cut = planSections(300, flat, 90, 60, 120, { cuts: [97.2] });
   assert.equal(cut[0].end, 97.2);
   const chapter = planSections(300, flat, 90, 60, 120, { chapters: [104] });
@@ -522,7 +563,10 @@ test('ducking ramps fit inside the section, and each line has its own depth and 
     { start: 1, end: 1.5, gain: 0.5 },
     { start: 1.2, end: 1.4, gain: 0.25 },
   ]);
-  assert.ok(Math.abs(both[Math.round(1.3 * sampleRate)] - 0.25) < 1e-6, 'overlaps take the deeper dip');
+  assert.ok(
+    Math.abs(both[Math.round(1.3 * sampleRate)] - 0.25) < 1e-6,
+    'overlaps take the deeper dip',
+  );
 });
 
 test('the dip under a line follows how loud the soundtrack is there (EBU TR 084)', () => {
@@ -546,7 +590,11 @@ test('the dip under a line follows how loud the soundtrack is there (EBU TR 084)
 
 test('pauses fade only inside the breath, and a section without pauses is mixed in place', () => {
   const program = sine(2, 220, 0.5, 2);
-  const out = pauseProgram(program, [{ at: 1, length: 0.5, fadeOut: 0.01, fadeIn: 0.02 }], sampleRate * 2.5);
+  const out = pauseProgram(
+    program,
+    [{ at: 1, length: 0.5, fadeOut: 0.01, fadeIn: 0.02 }],
+    sampleRate * 2.5,
+  );
   let before = 0;
   for (let i = Math.round(0.97 * sampleRate); i < Math.round(0.985 * sampleRate); i++)
     before = Math.max(before, Math.abs(out[i * 2]));
@@ -606,11 +654,22 @@ test('chapters follow the part being described and the pauses added to it', () =
     { index: 0, start: 0, end: 60, outputSeconds: 62, placements: [{ pauseAt: 10, pause: 2 }] },
     { index: 1, start: 60, end: 120, outputSeconds: 60, placements: [] },
   ];
-  assert.deepEqual(outputChapters([{ start: 5, title: 'X' }, { start: 30, title: 'Y' }, { start: 90, title: 'Z' }, { start: 130, title: 'Later' }], records), [
-    { start: 5, title: 'X' },
-    { start: 32, title: 'Y' },
-    { start: 92, title: 'Z' },
-  ]);
+  assert.deepEqual(
+    outputChapters(
+      [
+        { start: 5, title: 'X' },
+        { start: 30, title: 'Y' },
+        { start: 90, title: 'Z' },
+        { start: 130, title: 'Later' },
+      ],
+      records,
+    ),
+    [
+      { start: 5, title: 'X' },
+      { start: 32, title: 'Y' },
+      { start: 92, title: 'Z' },
+    ],
+  );
 });
 
 test('close look slows the entire clip and maps descriptions back onto the original timeline', async () => {
@@ -804,13 +863,19 @@ async function run(f, words, cues, overrides = {}) {
 }
 /** An HTTP error shaped the way axios reports one. */
 const httpError = (status) =>
-  new AxiosError(`Request failed with status code ${status}`, 'ERR_BAD_RESPONSE', undefined, undefined, {
-    status,
-    statusText: '',
-    headers: {},
-    config: { headers: {} },
-    data: {},
-  });
+  new AxiosError(
+    `Request failed with status code ${status}`,
+    'ERR_BAD_RESPONSE',
+    undefined,
+    undefined,
+    {
+      status,
+      statusText: '',
+      headers: {},
+      config: { headers: {} },
+      data: {},
+    },
+  );
 /** A plan as a keeper would hand it back, cut at the given whole-frame times. */
 function savedPlan(seconds, cuts, extra = {}) {
   const points = [0, ...cuts, seconds];
@@ -873,7 +938,22 @@ function measuredVoice() {
 async function decode(file) {
   const raw = await command(
     ffmpegPath,
-    ['-nostdin', '-v', 'error', '-i', file, '-map', '0:a:0', '-ar', '48000', '-ac', '1', '-f', 'f32le', 'pipe:1'],
+    [
+      '-nostdin',
+      '-v',
+      'error',
+      '-i',
+      file,
+      '-map',
+      '0:a:0',
+      '-ar',
+      '48000',
+      '-ac',
+      '1',
+      '-f',
+      'f32le',
+      'pipe:1',
+    ],
     signal,
     undefined,
     256 * 1024 ** 2,
@@ -1313,7 +1393,10 @@ test('a description near the end of a section in pause mode is never cut off', a
   );
   const placed = result.report.descriptions[0];
   const end = placed.outputAt + placed.duration;
-  assert.ok(end <= result.report.outputSeconds + 1e-6, `ends ${end} of ${result.report.outputSeconds}`);
+  assert.ok(
+    end <= result.report.outputSeconds + 1e-6,
+    `ends ${end} of ${result.report.outputSeconds}`,
+  );
   const pcm = await decode(result.audio);
   assert.ok(pcm.length / 48000 >= end - 0.05, 'the file holds the whole narration');
   assert.ok(tone(pcm, end - 0.25, 0.1, 660) > 0.01, 'the last words are still there');
@@ -1342,15 +1425,22 @@ test('section joins keep the soundtrack level and space the descriptions apart',
   const reference = tone(pcm, 3, 0.1);
   const before = dB(tone(pcm, 9.98, 0.02), reference);
   const after = dB(tone(pcm, 10.0, 0.02), reference);
-  assert.ok(before > -1.5 && after > -1.5, `join: ${before.toFixed(1)} dB then ${after.toFixed(1)} dB`);
+  assert.ok(
+    before > -1.5 && after > -1.5,
+    `join: ${before.toFixed(1)} dB then ${after.toFixed(1)} dB`,
+  );
 });
 
 test('each line is ducked by how loud the soundtrack is under it, and the dip is saved', async () => {
   const f = await fixture('per-line', 12, true, "volume='if(lt(t,6),0.02,1)':eval=frame");
-  const result = await run(f, [], [
-    { ...cue, at: 1, until: 5.5 },
-    { ...cue, at: 7, until: 11.5 },
-  ]);
+  const result = await run(
+    f,
+    [],
+    [
+      { ...cue, at: 1, until: 5.5 },
+      { ...cue, at: 7, until: 11.5 },
+    ],
+  );
   const [quiet, loud] = result.report.descriptions;
   assert.equal(quiet.dip, 0, 'nothing to duck under a near-silent bed');
   assert.ok(loud.dip <= -8, `loud bed dipped ${loud.dip} dB`);
@@ -1437,7 +1527,14 @@ test('a longer voice than expected switches to the short text, and a lost short 
   backend.synthesize = async (text, voice, session, file, speed, ...rest) => {
     tried.push(text);
     if (text === short) throw new Error('The selected voice did not return playable audio.');
-    return slow.synthesize(text + ' '.repeat(Buffer.byteLength(text) / 2), voice, session, file, speed, ...rest);
+    return slow.synthesize(
+      text + ' '.repeat(Buffer.byteLength(text) / 2),
+      voice,
+      session,
+      file,
+      speed,
+      ...rest,
+    );
   };
   const result = await run(f, [], [], { providers: backend });
   assert.deepEqual(tried, [full, short, short]);
@@ -1544,8 +1641,14 @@ test('names the listener has not heard yet are replaced before anything is voice
   };
   await run(f, [], [], { providers: backend });
   assert.ok(said.length > 0);
-  assert.ok(said.every((text) => !/\bPat\b/.test(text)), said.join(' | '));
-  assert.ok(said.some((text) => /^The host waves/.test(text)), said.join(' | '));
+  assert.ok(
+    said.every((text) => !/\bPat\b/.test(text)),
+    said.join(' | '),
+  );
+  assert.ok(
+    said.some((text) => /^The host waves/.test(text)),
+    said.join(' | '),
+  );
 });
 
 test('continuity records what was actually heard and what was left out', async () => {
@@ -1615,7 +1718,11 @@ test('a still picture spanning several sections is looked at once', async () => 
   const second = keeperFor(savedPlan(20, [6.5, 13], { stills: [{ start: 8, end: 20 }] }));
   const lateBackend = providers(late.voice, [], []);
   await run(late, [], [], { providers: lateBackend, keeper: second.keeper });
-  assert.equal(lateBackend.calls.analyze, 2, 'a section that is mostly moving picture is still looked at');
+  assert.equal(
+    lateBackend.calls.analyze,
+    2,
+    'a section that is mostly moving picture is still looked at',
+  );
 });
 
 test('each look is told where it sits, the chapters, scene cuts, language and a note for it', async () => {
@@ -1710,7 +1817,10 @@ test('a section still failing after its retry is kept as failed, marked as a pas
   assert.equal(tries, 2);
   assert.equal(result.report.failedSections.length, 1);
   assert.equal(kept.records.find((record) => record.index === 1).failureClass, 'transient');
-  assert.match(await readFile(result.files.transcript, 'utf8'), /Parts that could not be described/);
+  assert.match(
+    await readFile(result.files.transcript, 'utf8'),
+    /Parts that could not be described/,
+  );
 });
 
 test('three sections in a row failing stops the job without saving them as finished', async () => {

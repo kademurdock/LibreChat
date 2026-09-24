@@ -1,6 +1,6 @@
 import axios from 'axios';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import type {
   Analysis,
   Chapter,
@@ -38,15 +38,6 @@ import {
   stretch,
 } from './media';
 import {
-  analyze,
-  failureClass,
-  keytermsFor,
-  linesFrom,
-  providerProblem,
-  synthesize,
-  transcribe,
-} from './providers';
-import {
   decibels,
   duckDepth,
   level,
@@ -57,6 +48,15 @@ import {
   shortTermMax,
   trimSilence,
 } from './mix';
+import {
+  analyze,
+  failureClass,
+  keytermsFor,
+  linesFrom,
+  providerProblem,
+  synthesize,
+  transcribe,
+} from './providers';
 import {
   arrange,
   mergeIntervals,
@@ -95,7 +95,11 @@ export const productionProviders: Providers = { transcribe, analyze, synthesize 
 
 export type SectionFiles = { sound: string; picture?: string };
 /** A paid look at one section that has not been rendered yet. */
-export type SavedLook = { analysis: Analysis | null; failure?: string; failureClass?: FailureClass };
+export type SavedLook = {
+  analysis: Analysis | null;
+  failure?: string;
+  failureClass?: FailureClass;
+};
 /** What an earlier run left behind: the plan, the dialogue, finished sections, or analyses to reuse. */
 export type Saved = {
   firstLook?: { through: number; state: Continuity };
@@ -179,7 +183,8 @@ const presets: Record<Settings['volume'], Preset> = {
 export function levelsFor(plan: Plan, choice: Settings['volume']): Levels {
   const preset = presets[choice];
   const { program, peak, dialogue, lra } = plan.loudness;
-  if (!plan.audio || program <= -69) return { gain: 0, narration: -18 + preset.lift, duck: preset.duck };
+  if (!plan.audio || program <= -69)
+    return { gain: 0, narration: -18 + preset.lift, duck: preset.duck };
   const gain = Math.min(12, 5 - peak, Math.max(-12, -20 - program));
   const anchor =
     dialogue !== undefined
@@ -353,7 +358,12 @@ const voiceRetryMilliseconds = 1500;
 const seedSecondsPerByte = 0.0625;
 
 type Voiced = { pcm: Float32Array; base: number };
-type Looked = { analysis: Analysis | null; failure?: string; failureClass?: FailureClass; fatal?: Error };
+type Looked = {
+  analysis: Analysis | null;
+  failure?: string;
+  failureClass?: FailureClass;
+  fatal?: Error;
+};
 type Carried = { cue: Cue; clips: Map<Variant, Voiced> };
 const emptyContinuity: Continuity = { kind: '', setting: '', people: [], speakers: [], recent: [] };
 const blank = (state: Continuity | null): Analysis => ({
@@ -378,7 +388,8 @@ const within = (directory: string, file: string) => {
   return !!path && !path.startsWith('..') && !isAbsolute(path);
 };
 const sameRange = (a?: Interval, b?: Interval) =>
-  (!a && !b) || (!!a && !!b && Math.abs(a.start - b.start) < 1e-6 && Math.abs(a.end - b.end) < 1e-6);
+  (!a && !b) ||
+  (!!a && !!b && Math.abs(a.start - b.start) < 1e-6 && Math.abs(a.end - b.end) < 1e-6);
 const overlap = (a: Interval, b: Interval) =>
   Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
@@ -448,7 +459,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     await keeper.keepPlan(plan, words);
   }
   const fixed: Plan = plan;
-  const media: Media = { ...working.media, ...(fixed.oneSided ? { oneSided: fixed.oneSided } : {}) };
+  const media: Media = {
+    ...working.media,
+    ...(fixed.oneSided ? { oneSided: fixed.oneSided } : {}),
+  };
   const count = fixed.sections.length;
   const limit = request.stopAfter;
   const active =
@@ -489,7 +503,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     try {
       await action();
     } catch (error) {
-      log(`${what} could not be saved: ${error instanceof Error ? error.message : 'unknown error'}`);
+      log(
+        `${what} could not be saved: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
     }
   };
 
@@ -538,7 +554,11 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     };
   };
 
-  async function look(i: number, state: Continuity | null, survey: boolean = false): Promise<Looked> {
+  async function look(
+    i: number,
+    state: Continuity | null,
+    survey: boolean = false,
+  ): Promise<Looked> {
     const section = fixed.sections[i];
     if (!survey) {
       const reused = saved.analyses?.[i];
@@ -553,7 +573,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     }
     const still = stillOf(section);
     if (still >= 0 && (survey ? seen.survey : seen.main).has(still)) {
-      log(`Section ${i + 1} of ${count} shows the same still picture as before; not looked at again.`);
+      log(
+        `Section ${i + 1} of ${count} shows the same still picture as before; not looked at again.`,
+      );
       return { analysis: blank(state) };
     }
     const seconds = section.end - section.start;
@@ -577,7 +599,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
               end: line.end * scale,
             })),
             before: linesFrom(
-              words.filter((word) => word.start >= section.start - 15 && word.start < section.start),
+              words.filter(
+                (word) => word.start >= section.start - 15 && word.start < section.start,
+              ),
               section.start - 15,
             ).slice(-4),
           },
@@ -592,7 +616,11 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       log(
         `Section ${i + 1} of ${count}: ${survey ? 'first look' : 'looked'} in ${seconds1((Date.now() - began) / 1000)}.`,
       );
-      if (!survey) await safely(() => keeper.keepLook?.(i, { analysis: result }), `The look at section ${i + 1}`);
+      if (!survey)
+        await safely(
+          () => keeper.keepLook?.(i, { analysis: result }),
+          `The look at section ${i + 1}`,
+        );
       return { analysis: result };
     } catch (error) {
       if (signal.aborted || error instanceof Halt) return { analysis: null, fatal: error as Error };
@@ -607,7 +635,15 @@ export async function describeVideo(request: Request): Promise<Outcome> {
 
   async function voice(text: string, file: string): Promise<Voiced | null> {
     try {
-      await providers.synthesize(text, settings.voice, request.session, file, native, signal, meter);
+      await providers.synthesize(
+        text,
+        settings.voice,
+        request.session,
+        file,
+        native,
+        signal,
+        meter,
+      );
       const pcm = trimSilence(await decodeVoice(file, signal));
       voiceFailures = 0;
       if (pcm.length <= sampleRate * 0.2) return null;
@@ -643,13 +679,18 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     if (i > 0) {
       const previous = neighbour(i - 1);
       const tail = previous
-        ? spoken(previous).reduce((gap, span) => Math.min(gap, previous.outputSeconds - span.end), Infinity)
+        ? spoken(previous).reduce(
+            (gap, span) => Math.min(gap, previous.outputSeconds - span.end),
+            Infinity,
+          )
         : Infinity;
       guards.push({ start: 0, end: Math.max(0.1, 0.35 - tail) });
     }
     if (i < count - 1) {
       const next = neighbour(i + 1);
-      const head = next ? spoken(next).reduce((gap, span) => Math.min(gap, span.start), Infinity) : Infinity;
+      const head = next
+        ? spoken(next).reduce((gap, span) => Math.min(gap, span.start), Infinity)
+        : Infinity;
       guards.push({ start: seconds - Math.max(0.25, 0.35 - head), end: seconds });
     }
     return guards;
@@ -706,7 +747,8 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const failed = new Set<string>();
     const textOf = (index: number, variant: Variant) =>
       variant === 'full' ? cues[index].text : cues[index].shortText;
-    const estimate = (index: number, variant: Variant) => bytes(textOf(index, variant)) * secondsPerByte;
+    const estimate = (index: number, variant: Variant) =>
+      bytes(textOf(index, variant)) * secondsPerByte;
     const length = (index: number, variant: Variant) => clips.get(key(index, variant))?.base;
     const ratio = (index: number) => {
       const variant = (['full', 'short'] as const).find((item) => clips.has(key(index, item)));
@@ -738,7 +780,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       );
       await pool(fresh, request.voices ?? 2, async (item, n) => {
         const name = key(item.index, item.variant);
-        const clip = await voice(textOf(item.index, item.variant), join(dir, `voice-${n}${suffix}.wav`));
+        const clip = await voice(
+          textOf(item.index, item.variant),
+          join(dir, `voice-${n}${suffix}.wav`),
+        );
         if (clip) clips.set(name, clip);
         else failing.add(name);
       });
@@ -800,7 +845,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         }
         carried.set(i + 1, [
           ...(carried.get(i + 1) ?? []),
-          { cue: { ...cue, at: 0, until: Math.min(8, cue.until - seconds), pauseAt: 0 }, clips: kept },
+          {
+            cue: { ...cue, at: 0, until: Math.min(8, cue.until - seconds), pauseAt: 0 },
+            clips: kept,
+          },
         ]);
         continue;
       }
@@ -902,8 +950,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     );
     if (
       measured.bytes &&
-      (keptSecondsPerByte === undefined ||
-        Math.abs(secondsPerByte / keptSecondsPerByte - 1) > 0.05)
+      (keptSecondsPerByte === undefined || Math.abs(secondsPerByte / keptSecondsPerByte - 1) > 0.05)
     ) {
       keptSecondsPerByte = secondsPerByte;
       const update = { ...fixed, secondsPerByte };
@@ -972,8 +1019,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         continue;
       }
       const end =
-        placement.outputAt +
-        (placement.pause > 0 ? placement.pauseAt - placement.at : duration);
+        placement.outputAt + (placement.pause > 0 ? placement.pauseAt - placement.at : duration);
       const under = fixed.audio
         ? shortTermMax(paused, placement.outputAt, end) + levels.gain
         : -Infinity;
@@ -1108,7 +1154,13 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       media,
       subtitles: [
         ...(report.dialogue.length
-          ? [{ file: captions, language: report.language ?? fixed.language ?? 'und', title: 'Captions' }]
+          ? [
+              {
+                file: captions,
+                language: report.language ?? fixed.language ?? 'und',
+                title: 'Captions',
+              },
+            ]
           : []),
         ...(report.descriptions.length
           ? [{ file: descriptions, language: 'en', title: 'Audio descriptions (text)' }]

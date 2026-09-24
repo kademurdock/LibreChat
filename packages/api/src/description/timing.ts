@@ -139,8 +139,7 @@ export function pausePoint(
     .filter((item) => allowed(item.point))
     .map((item) => ({
       point: item.point,
-      score:
-        item.score - Math.abs(item.point - target) * 0.8 - Math.max(0, item.point - cue.until),
+      score: item.score - Math.abs(item.point - target) * 0.8 - Math.max(0, item.point - cue.until),
     }));
   const best = candidates.reduce<{ point: number; score: number } | null>(
     (top, item) => (!top || item.score > top.score ? item : top),
@@ -283,7 +282,8 @@ export function arrange(input: {
   const lengths = (index: number): Partial<Record<Variant, number>> => {
     const cue = cues[index];
     const full = input.length(index, 'full');
-    const short = cue.shortText && cue.shortText !== cue.text ? input.length(index, 'short') : undefined;
+    const short =
+      cue.shortText && cue.shortText !== cue.text ? input.length(index, 'short') : undefined;
     return {
       ...(full !== undefined && full > 0 ? { full } : {}),
       ...(short !== undefined && short > 0 ? { short } : {}),
@@ -355,7 +355,15 @@ export function arrange(input: {
       chosen = {
         index,
         variant: 'full',
-        placement: pauseCue(cue, cue.text, full, settings, point, [...input.blocked, ...spans], seconds),
+        placement: pauseCue(
+          cue,
+          cue.text,
+          full,
+          settings,
+          point,
+          [...input.blocked, ...spans],
+          seconds,
+        ),
       };
     }
     if (!chosen) {
