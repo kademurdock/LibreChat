@@ -392,7 +392,10 @@ test('prompt: position, chapters, cuts and language are given in clip time, and 
   const ident = analysisPrompt(8, brief(), null, [], []);
   assert.match(ident, /SHORT VIDEO: the whole video lasts only 8\.0 seconds/);
   assert.doesNotMatch(analysisPrompt(8, brief({ language: 'en-US' }), null, [], []), /dialogue is in/);
-  assert.doesNotMatch(analysisPrompt(8, brief({ survey: true }), null, [], []), /ROOM TO SPEAK|SHORT VIDEO/);
+  const survey = analysisPrompt(8, brief({ survey: true }), null, [], []);
+  assert.doesNotMatch(survey, /ROOM TO SPEAK|SHORT VIDEO/);
+  assert.match(survey, /Record a person's name only when it is spoken in the dialogue or shown on screen/);
+  assert.doesNotMatch(survey, /read from the screen in one of your cues/);
 });
 
 test('prompt: a reply in the wrong shape throws so it is retried, one wrapper level is unwrapped', () => {
