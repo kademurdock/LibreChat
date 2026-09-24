@@ -10,6 +10,8 @@ import mongoose from 'mongoose';
 import request from 'supertest';
 import ffmpegPath from 'ffmpeg-static';
 import ffprobePath from 'ffprobe-static';
+import Module, { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { S3Client } from '@aws-sdk/client-s3';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createDescriptionRouter } from './router.ts';
@@ -1403,4 +1405,149 @@ test('revision helpers: labels, edits, shelves and the script', () => {
   assert.equal(cues[1].spoken, false);
   assert.equal(cues[2].outputAt, 75, 'the second section starts after the output of the first');
   assert.equal(cues[3].reason, 'No room.');
+});
+
+/** Loads the LibreChat wrapper with only the app-level modules stubbed; the Library model and parser are real. */
+function loadWrapper() {
+  const routes = fileURLToPath(new URL('../../../../api/server/routes/', import.meta.url));
+  const books = new Map();
+  const state = { hooks: null, pushes: 0, copies: [] };
+  const stubs = {
+    '@librechat/api': {
+      initializeS3: () => storage,
+      describedVideoPage: () => '',
+      registerShutdownTask: () => {},
+      createDescriptionRouter: (hooks) => {
+        state.hooks = hooks;
+        return { router: express.Router(), close: async () => {}, tick: async () => {} };
+      },
+    },
+    '@librechat/data-schemas': { logger: { info() {}, warn() {}, error() {} } },
+    '~/server/middleware': { requireJwtAuth: (_req, _res, next) => next() },
+    '~/models/kadeUsage': { logKadeUsage: async () => {} },
+    './kadePages': { SHARED_HEAD: '' },
+    '~/db/models': { User: { findById: () => ({ lean: async () => ({ name: 'Kade Murdock' }) }) } },
+    '~/server/services/kadeNudges': {
+      sendPushToUser: async () => {
+        state.pushes++;
+        return 2;
+      },
+    },
+    './kadeReadingRoom': {
+      _internals: {
+        openBook: async (_req, id) => books.get(id) ?? null,
+        refreshListen: (book) => {
+          book.stats = { ...(book.stats ?? {}), listen: '1 recording' };
+        },
+      },
+    },
+  };
+  const original = Module._load;
+  Module._load = function (request, parent, isMain) {
+    if (request in stubs) return stubs[request];
+    if (request === '~/models/kadeBook') return original.call(this, join(routes, '../../models/kadeBook.js'), parent, isMain);
+    return original.call(this, request, parent, isMain);
+  };
+  const signals = { SIGTERM: process.listeners('SIGTERM'), SIGINT: process.listeners('SIGINT') };
+  createRequire(import.meta.url)(join(routes, 'kadeDescribedVideo.js'));
+  const restore = () => {
+    Module._load = original;
+    for (const [name, before] of Object.entries(signals))
+      for (const listener of process.listeners(name))
+        if (!before.includes(listener)) process.removeListener(name, listener);
+  };
+  return { state, books, restore, model: createRequire(import.meta.url)(join(routes, '../../models/kadeBook.js')) };
+}
+
+test('the LibreChat wrapper: library facts and privacy, one idempotent save with a transcript, children refused', async () => {
+  const wrapper = loadWrapper();
+  try {
+    const { hooks } = wrapper.state;
+    const { KadeBook, KadeBookText } = wrapper.model;
+    const owner = new mongoose.Types.ObjectId();
+    assert.equal(hooks.actor({ user: { id: 'u1', role: 'ADMIN', kadeAccountType: 'child' } }).child, true);
+    assert.equal(hooks.actor({ user: { id: 'u1', role: 'ADMIN' } }).child, false);
+    const original = await KadeBook.create({
+      owner: new mongoose.Types.ObjectId(),
+      kind: 'video',
+      category: 'vhs',
+      path: 'Video/Ozarks (Springfield Area)/Station IDs & Sign-offs/1990s',
+      title: 'KOLR 10 sign-off',
+      meta: { year: 1993, callSign: 'KOLR', network: 'CBS', market: 'Springfield MO' },
+      tags: ['sign-off'],
+      shared: false,
+      grownUpsOnly: true,
+      librarian: { identified: 'KOLR-TV 10 sign-off, 1993', confidence: 'high' },
+      tracks: [{ key: 'media-library/x/tape.mp4', bytes: 5, mime: 'video/mp4' }],
+    });
+    const lean = original.toObject();
+    wrapper.books.set(String(original._id), { ...lean, title: 'x'.repeat(199) + '😀😀' });
+    const req = { user: { id: String(owner), role: 'ADMIN' } };
+    const opened = await hooks.library.open(req, String(original._id), 0);
+    assert.equal(opened.shared, false);
+    assert.equal(opened.grownUpsOnly, true);
+    assert.equal(opened.ownerIsActor, false);
+    assert.equal(Array.from(opened.title).length, 200);
+    assert.ok(!/[\uD800-\uDBFF]$/.test(opened.title), 'no half emoji at the end');
+    assert.match(opened.context, /Station: KOLR, CBS/);
+    assert.match(opened.context, /Market: Springfield MO/);
+    assert.match(opened.context, /librarian identified it as: KOLR-TV 10 sign-off/);
+    wrapper.books.set('low', { ...lean, librarian: { identified: 'A guess', confidence: 'low' } });
+    assert.doesNotMatch((await hooks.library.open(req, 'low', 0)).context, /A guess/);
+    await assert.rejects(hooks.library.open(req, 'missing', 0), (error) => error.status === 404);
+    wrapper.books.set('audio', { ...lean, tracks: [{ key: 'k', mime: 'audio/mp4' }] });
+    await assert.rejects(hooks.library.open(req, 'audio', 0), (error) => error.status === 400);
+
+    const id = new mongoose.Types.ObjectId().toString();
+    let copies = 0;
+    const input = {
+      id,
+      owner: String(owner),
+      title: 'KOLR 10 sign-off (described)',
+      seconds: 42,
+      bytes: 5,
+      share: false,
+      grownUpsOnly: true,
+      kind: 'logo, ident or bumper',
+      path: 'Audio/Ozarks (Springfield Area)/Station IDs & Sign-offs/1990s',
+      transcript: 'KOLR 10 sign-off (described) described transcript\n\n0:02 Description: The KOLR 10 logo spins.\n',
+      sourceBook: String(original._id),
+      sourceTrack: 0,
+      description: 'The 1993 sign-off.',
+      copy: async () => {
+        copies++;
+      },
+    };
+    const saved = await hooks.library.save(input);
+    assert.equal(saved.id, id);
+    const book = await KadeBook.findById(id).lean();
+    assert.equal(book.grownUpsOnly, true);
+    assert.equal(book.shared, false);
+    assert.equal(book.sharedAt, undefined);
+    assert.equal(book.category, 'vhs');
+    assert.equal(book.meta.callSign, 'KOLR');
+    assert.deepEqual(book.meta.describedFrom, { book: String(original._id), track: 0 });
+    assert.deepEqual(book.tags, ['sign-off']);
+    assert.match(book.description, /^The 1993 sign-off\.\n\nAudio-described copy made by Kade-AI\.$/);
+    assert.equal(book.tracks[0].key, `media-library/${id}/described.m4a`);
+    assert.equal((await KadeBook.findById(original._id).lean()).meta.describedCopy, id);
+    const transcript = await KadeBook.findOne({ 'meta.describedTranscriptOf': id }).lean();
+    assert.equal(transcript.kind, 'text');
+    assert.equal(transcript.title, 'KOLR 10 sign-off (described), transcript');
+    assert.equal(transcript.grownUpsOnly, true);
+    assert.equal(transcript.path, input.path);
+    assert.ok(await KadeBookText.exists({ book: transcript._id }));
+    assert.deepEqual(await hooks.library.save(input), { id, path: input.path }, 'a retry finds the saved book');
+    assert.equal(copies, 1, 'and does not copy the audio again');
+    assert.equal(await KadeBook.countDocuments({ 'meta.describedTranscriptOf': id }), 1);
+    await KadeBook.deleteMany({ _id: { $in: [original._id, id, transcript._id] } });
+    await KadeBookText.deleteMany({ book: transcript._id });
+
+    const before = wrapper.state.pushes;
+    delete process.env.BRIDGE_SECRET;
+    assert.deepEqual(await hooks.notify(String(owner), 'Title', 'Body', '/described-video'), { browser: 2, bridge: 'off' });
+    assert.equal(wrapper.state.pushes - before, 1);
+  } finally {
+    wrapper.restore();
+  }
 });

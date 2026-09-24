@@ -120,6 +120,7 @@ type LibraryHooks = {
     path: string;
     transcript?: string;
     sourceBook?: string;
+    sourceTrack?: number;
     description?: string;
     copy: (target: string) => Promise<void>;
   }) => Promise<{ id: string; path: string }>;
@@ -993,13 +994,15 @@ export function createDescriptionRouter(hooks: Hooks): {
     );
     return taken.modifiedCount > 0;
   }
-  /** Gives back what a run did not spend. Keyed by the run, so it happens once and never touches another run's money. */
+  /**
+   * Closes a run: the day keeps exactly what it spent (more than was set aside, if a provider
+   * charged above its estimate). Keyed by the run, so it happens once and never touches another run's money.
+   */
   async function release(reservation: Run | undefined, spentUSD: number): Promise<void> {
     if (!reservation?.runId) return;
-    const back = Math.max(0, reservation.cents - Math.min(reservation.cents, toCents(spentUSD)));
     await Budgets.updateOne(
       { _id: reservation.day, runs: reservation.runId },
-      { $inc: { held: -back }, $pull: { runs: reservation.runId } },
+      { $inc: { held: toCents(spentUSD) - reservation.cents }, $pull: { runs: reservation.runId } },
     );
   }
   async function remaining(): Promise<number> {
@@ -2338,6 +2341,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         kind: copy.kind || job.kind || '',
         transcript: (await readText(`${copyFolder(job, copy)}/transcript.txt`)) ?? undefined,
         sourceBook: job.library?.book,
+        sourceTrack: job.library?.track,
         description: job.about ? clip(job.about, 1900) : undefined,
         copy: async (target) => {
           const copied = await storage()
@@ -2509,7 +2513,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         const source = fromCarry ?? (redo.has(i) ? undefined : base.get(i));
         if (!source) continue;
         if (source.analysis) {
-          analyses[i] = revise(source.analysis, i, edits);
+          analyses[i] = fromCarry ? source.analysis : revise(source.analysis, i, edits);
           continue;
         }
         if (source.failure && !(fromCarry && retryable(fromCarry)))
