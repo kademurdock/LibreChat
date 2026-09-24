@@ -203,7 +203,8 @@ const meanLevel = (blocks: Block[]) =>
 /**
  * Loudness of the dialogue alone: the power mean of the 400 ms momentary blocks centred inside
  * recognised speech, with the usual -70 LUFS and relative gates. Undefined when there is too
- * little speech to trust. A block's `time` is taken as its last 100 ms step.
+ * little speech to trust. A block's `time` is the centre of its 400 ms window, as
+ * `momentaryBlocks` in media.ts reports it.
  */
 export function dialogueLoudness(
   momentary: Block[],
@@ -217,7 +218,7 @@ export function dialogueLoudness(
   const heard: Block[] = [];
   let k = 0;
   for (const block of ordered) {
-    const centre = block.time - 0.1;
+    const centre = block.time;
     while (k < spans.length && spans[k].end < centre) k++;
     if (k < spans.length && spans[k].start <= centre && block.lufs > -70) heard.push(block);
   }
@@ -694,7 +695,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
             Infinity,
           )
         : Infinity;
-      guards.push({ start: 0, end: Math.max(0.1, 0.35 - tail) });
+      guards.push({ start: 0, end: Math.max(0.25, 0.35 - tail) });
     }
     if (i < count - 1) {
       const next = neighbour(i + 1);
@@ -768,6 +769,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       const variant = (['full', 'short'] as const).find((item) => clips.has(key(index, item)));
       return variant ? (length(index, variant) ?? 0) / estimate(index, variant) : undefined;
     };
+    const earliest = i > 0 ? edgeGuards(i, seconds)[0].end : undefined;
     const layout = (
       measure: (index: number, variant: Variant) => number | undefined,
       prefer?: (index: number) => Variant | undefined,
@@ -782,6 +784,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         seconds,
         cuts: sectionCuts,
         prefer,
+        earliest,
       });
     const speak = async (wanted: { index: number; variant: Variant }[], suffix: string) => {
       const names = wanted.map((item) => key(item.index, item.variant));
@@ -912,6 +915,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       section,
       dir,
       sectionWords,
+      protectedSounds,
       timeline,
       clips: aligned.map((item) => item.clip),
       sourceSamples,
@@ -977,13 +981,15 @@ export async function describeVideo(request: Request): Promise<Outcome> {
 
   /**
    * Builds and saves one section's sound: its own soundtrack with the pauses laid in, each line
-   * ducked by how loud the soundtrack is under it and released before the next dialogue word,
-   * and the narration on top. The large buffers live only inside this call.
+   * ducked by how loud the soundtrack is under it, lowered only after a protected sound ends and
+   * released before the next dialogue word or protected sound, and the narration on top. The
+   * large buffers live only inside this call.
    */
   async function mixSection(input: {
     section: Interval;
     dir: string;
     sectionWords: Word[];
+    protectedSounds: Interval[];
     timeline: Placement[];
     clips: Voiced[];
     sourceSamples: number;
@@ -1017,9 +1023,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       input.outputSamples,
     );
     await rm(join(input.dir, 'sound.f32'), { force: true });
-    const dialogueStarts = sectionWords
-      .map((word) => toOutput(word.start, timeline))
+    const guarded = [...sectionWords, ...input.protectedSounds]
+      .map((span) => toOutput(span.start, timeline))
       .sort((a, b) => a - b);
+    const protectedEnds = input.protectedSounds.map((span) => toOutput(span.end, timeline));
     const placements: Placement[] = [];
     const clips: { at: number; pcm: Float32Array }[] = [];
     const ducks: Duck[] = [];
@@ -1040,12 +1047,16 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         ? shortTermMax(paused, placement.outputAt, end) + levels.gain
         : -Infinity;
       const dip = duckDepth(under, levels.narration, preset.depth, preset.floor);
-      const next = dialogueStarts.find((time) => time >= end - 1e-6) ?? Infinity;
+      const next = guarded.find((time) => time >= end - 1e-6) ?? Infinity;
+      const held = protectedEnds
+        .filter((time) => time <= placement.outputAt + 1e-6)
+        .reduce((latest, time) => Math.max(latest, time), -Infinity);
       placements.push({ ...placement, duration, dip });
       ducks.push({
         start: placement.outputAt,
         end,
         gain: decibels(dip),
+        attack: clamp(placement.outputAt - held - 0.05, 0.05, 0.25),
         release: clamp(next - end - 0.05, 0.15, 0.5),
       });
     }
