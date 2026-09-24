@@ -1,32 +1,44 @@
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { writeFile, stat } from 'node:fs/promises';
-import type { Placement } from './types';
+import { readFile, stat, writeFile } from 'node:fs/promises';
+import { sampleRate } from './mix';
 import { tempoFilters } from './timing';
 
-export const sampleRate = 48000;
-export const ffmpeg = () => process.env.FFMPEG_PATH || 'ffmpeg';
-export const ffprobe = () => process.env.FFPROBE_PATH || 'ffprobe';
+export const ffmpeg = (): string => process.env.FFMPEG_PATH || 'ffmpeg';
+export const ffprobe = (): string => process.env.FFPROBE_PATH || 'ffprobe';
+const quiet = ['-nostdin', '-hide_banner', '-v', 'error', '-y', '-protocol_whitelist', 'file,pipe'];
+
 export async function command(
   bin: string,
   args: string[],
   signal: AbortSignal,
   input?: Buffer,
-  maxBytes = 32 * 1024 ** 2,
+  maxBytes: number = 32 * 1024 ** 2,
 ): Promise<Buffer> {
+  return (await execute(bin, args, signal, input, maxBytes)).stdout;
+}
+
+/** Runs a media tool and keeps the tail of its log as well as its output. */
+export async function execute(
+  bin: string,
+  args: string[],
+  signal: AbortSignal,
+  input?: Buffer,
+  maxBytes: number = 32 * 1024 ** 2,
+): Promise<{ stdout: Buffer; log: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, { windowsHide: true, signal, stdio: ['pipe', 'pipe', 'pipe'] });
     const output: Buffer[] = [];
     let bytes = 0;
-    let errorText = '';
+    let log = '';
     let settled = false;
-    const timer = setTimeout(() => child.kill('SIGKILL'), 30 * 60 * 1000);
+    const timer = setTimeout(() => child.kill('SIGKILL'), 60 * 60 * 1000);
     const done = (error?: Error) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       if (error) reject(error);
-      else resolve(Buffer.concat(output));
+      else resolve({ stdout: Buffer.concat(output), log });
     };
     child.on('error', done);
     child.stdout.on('data', (buffer: Buffer) => {
@@ -39,13 +51,11 @@ export async function command(
       output.push(buffer);
     });
     child.stderr.on('data', (buffer: Buffer) => {
-      errorText = (errorText + buffer.toString()).slice(-3000);
+      log = (log + buffer.toString()).slice(-12000);
     });
     child.on('close', (code) =>
       done(
-        code === 0
-          ? undefined
-          : new Error(`Media processing failed (${code}): ${errorText.slice(-800)}`),
+        code === 0 ? undefined : new Error(`Media processing failed (${code}): ${log.slice(-800)}`),
       ),
     );
     child.stdin.on('error', () => {});
@@ -53,14 +63,52 @@ export async function command(
   });
 }
 
-type Probe = {
-  format?: { duration?: string };
-  streams?: { codec_type?: string; width?: number; height?: number }[];
+export type Rational = { num: number; den: number };
+export type Media = {
+  seconds: number;
+  audio: boolean;
+  width: number;
+  height: number;
+  fps: Rational;
+  codec: string;
+  pixels: string;
 };
-export async function probe(
-  file: string,
-  signal: AbortSignal,
-): Promise<{ seconds: number; audio: boolean }> {
+type ProbeStream = {
+  codec_type?: string;
+  codec_name?: string;
+  width?: number;
+  height?: number;
+  pix_fmt?: string;
+  avg_frame_rate?: string;
+  r_frame_rate?: string;
+};
+type Probe = { format?: { duration?: string }; streams?: ProbeStream[] };
+
+function rational(value: string | undefined): Rational | null {
+  const [num, den] = String(value || '')
+    .split('/')
+    .map(Number);
+  if (!num || !den || !Number.isFinite(num / den)) return null;
+  const rate = num / den;
+  return rate >= 5 && rate <= 61 ? { num, den } : null;
+}
+
+/** Chooses a steady output frame rate close to the source, never above 60. */
+export function frameRate(stream: ProbeStream): Rational {
+  const direct = rational(stream.r_frame_rate) || rational(stream.avg_frame_rate);
+  if (direct) return direct;
+  const [num, den] = String(stream.r_frame_rate || '')
+    .split('/')
+    .map(Number);
+  if (num && den && num / den > 61) {
+    let divisor = 2;
+    while (num / den / divisor > 61) divisor++;
+    return { num, den: den * divisor };
+  }
+  return { num: 30, den: 1 };
+}
+
+export async function probe(file: string, signal: AbortSignal): Promise<Media> {
   const raw = await command(
     ffprobe(),
     [
@@ -69,7 +117,7 @@ export async function probe(
       '-protocol_whitelist',
       'file,pipe',
       '-show_entries',
-      'format=duration:stream=codec_type,width,height',
+      'format=duration:stream=codec_type,codec_name,width,height,pix_fmt,avg_frame_rate,r_frame_rate',
       '-of',
       'json',
       file,
@@ -80,40 +128,97 @@ export async function probe(
   );
   const data: Probe = JSON.parse(raw.toString());
   const seconds = Number(data.format?.duration);
-  if (
-    !data.streams?.some((stream) => stream.codec_type === 'video' && (stream.width || 0) > 0) ||
-    !Number.isFinite(seconds) ||
-    seconds < 0.5
-  )
+  const video = data.streams?.find(
+    (stream) => stream.codec_type === 'video' && (stream.width || 0) > 0,
+  );
+  if (!video || !Number.isFinite(seconds) || seconds < 0.5)
     throw new Error('This file does not contain a playable video.');
-  return { seconds, audio: data.streams.some((stream) => stream.codec_type === 'audio') };
+  return {
+    seconds,
+    audio: !!data.streams?.some((stream) => stream.codec_type === 'audio'),
+    width: video.width || 0,
+    height: video.height || 0,
+    fps: frameRate(video),
+    codec: video.codec_name || '',
+    pixels: video.pix_fmt || '',
+  };
 }
 
-export async function segment(
+/** True when the original picture can be kept as it is, with only the soundtrack replaced. */
+export const copyable = (media: Media): boolean =>
+  media.codec === 'h264' && ['yuv420p', 'yuvj420p'].includes(media.pixels) && media.width <= 1920;
+
+/**
+ * One pass over the whole soundtrack: measures its loudness and peak, and writes the small mono
+ * copy that speech recognition reads.
+ */
+export async function soundtrack(
   source: string,
   directory: string,
-  offset: number,
-  seconds: number,
-  hasAudio: boolean,
   signal: AbortSignal,
-): Promise<{ video: string; audio: string }> {
-  const video = join(directory, 'analysis.mp4');
-  const audio = join(directory, 'dialogue.flac');
-  await command(
+): Promise<{ dialogue: string; program: number; peak: number }> {
+  const dialogue = join(directory, 'dialogue.m4a');
+  const { log } = await execute(
     ffmpeg(),
     [
       '-nostdin',
+      '-hide_banner',
+      '-nostats',
       '-v',
-      'error',
+      'info',
       '-y',
       '-protocol_whitelist',
       'file,pipe',
+      '-i',
+      source,
+      '-filter_complex',
+      '[0:a:0]aresample=48000,aformat=channel_layouts=stereo,asplit=2[l][d];[l]ebur128=peak=sample:framelog=quiet[m];[d]aresample=16000,pan=mono|c0=0.5*c0+0.5*c1[s]',
+      '-map',
+      '[m]',
+      '-f',
+      'null',
+      '-',
+      '-map',
+      '[s]',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '48k',
+      '-movflags',
+      '+faststart',
+      dialogue,
+    ],
+    signal,
+  );
+  const summary = log.slice(log.lastIndexOf('Summary:'));
+  const program = Number(/I:\s*(-?[\d.]+|-inf) LUFS/.exec(summary)?.[1]);
+  const peak = Number(/Peak:\s*(-?[\d.]+|-inf) dBFS/.exec(summary)?.[1]);
+  return {
+    dialogue,
+    program: Number.isFinite(program) ? program : -70,
+    peak: Number.isFinite(peak) ? peak : -70,
+  };
+}
+
+/** A small copy of one section, with sound, for the vision model to watch and hear. */
+export async function sectionClip(
+  source: string,
+  directory: string,
+  start: number,
+  seconds: number,
+  signal: AbortSignal,
+): Promise<string> {
+  const video = join(directory, 'analysis.mp4');
+  await command(
+    ffmpeg(),
+    [
+      ...quiet,
       '-ss',
-      String(offset),
+      start.toFixed(6),
       '-i',
       source,
       '-t',
-      String(seconds),
+      seconds.toFixed(6),
       '-map',
       '0:v:0',
       '-map',
@@ -125,7 +230,7 @@ export async function segment(
       '-preset',
       'veryfast',
       '-crf',
-      '27',
+      '28',
       '-c:a',
       'aac',
       '-ac',
@@ -138,263 +243,268 @@ export async function segment(
     ],
     signal,
   );
-  if ((await stat(video)).size > 28 * 1024 ** 2)
+  if ((await stat(video)).size > 40 * 1024 ** 2)
     throw new Error('A video section is too large to analyze.');
-  if (hasAudio)
-    await command(
-      ffmpeg(),
-      [
-        '-nostdin',
-        '-v',
-        'error',
-        '-y',
-        '-protocol_whitelist',
-        'file,pipe',
-        '-ss',
-        String(offset),
-        '-i',
-        source,
-        '-t',
-        String(seconds),
-        '-vn',
-        '-ac',
-        '1',
-        '-ar',
-        '16000',
-        '-c:a',
-        'flac',
-        audio,
-      ],
-      signal,
-    );
-  return { video, audio };
+  return video;
 }
 
-export async function decodeVoice(file: string, signal: AbortSignal): Promise<Buffer> {
-  return command(
-    ffmpeg(),
-    [
-      '-nostdin',
-      '-v',
-      'error',
-      '-protocol_whitelist',
-      'file,pipe',
-      '-i',
-      file,
-      '-vn',
-      '-af',
-      'loudnorm=I=-18:TP=-2:LRA=7',
-      '-ar',
-      String(sampleRate),
-      '-ac',
-      '1',
-      '-f',
-      's16le',
-      'pipe:1',
-    ],
-    signal,
-    undefined,
-    8 * 1024 ** 2,
-  );
-}
-export async function accelerate(pcm: Buffer, rate: number, signal: AbortSignal): Promise<Buffer> {
-  return command(
-    ffmpeg(),
-    [
-      '-nostdin',
-      '-v',
-      'error',
-      '-f',
-      's16le',
-      '-ar',
-      String(sampleRate),
-      '-ac',
-      '1',
-      '-i',
-      'pipe:0',
-      '-af',
-      tempoFilters(rate),
-      '-f',
-      's16le',
-      '-ar',
-      String(sampleRate),
-      '-ac',
-      '1',
-      'pipe:1',
-    ],
-    signal,
-    pcm,
-    8 * 1024 ** 2,
-  );
-}
-export const pcmSeconds = (pcm: Buffer): number => pcm.length / (sampleRate * 2);
+const floats = (buffer: Buffer): Float32Array =>
+  new Float32Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+const bytes = (pcm: Float32Array): Buffer =>
+  Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength);
 
-export async function renderSegment(
+/** The section's own soundtrack as 48 kHz interleaved stereo, exactly `frames` long. */
+export async function sectionSound(
   source: string,
   directory: string,
-  index: number,
-  offset: number,
-  seconds: number,
+  start: number,
+  frames: number,
   hasAudio: boolean,
-  placements: Placement[],
-  clips: Buffer[],
   signal: AbortSignal,
-): Promise<string> {
-  const inserts = placements.filter((cue) => cue.inserted);
-  const total = seconds + inserts.reduce((sum, cue) => sum + cue.duration + 0.16, 0);
-  const narration = Buffer.alloc(Math.ceil(total * sampleRate) * 2);
-  placements.forEach((cue, i) =>
-    clips[i].copy(narration, Math.round(cue.outputAt * sampleRate) * 2),
-  );
-  const pcmFile = join(directory, 'narration.pcm');
-  await writeFile(pcmFile, narration);
-  const args = [
-    '-nostdin',
-    '-v',
-    'error',
-    '-y',
-    '-protocol_whitelist',
-    'file,pipe',
-    '-ss',
-    String(offset),
-    '-t',
-    String(seconds),
-    '-i',
-    source,
-  ];
-  if (!hasAudio)
-    args.push('-f', 'lavfi', '-t', String(seconds), '-i', 'anullsrc=r=48000:cl=stereo');
-  const voiceIndex = hasAudio ? 1 : 2;
-  args.push('-f', 's16le', '-ar', String(sampleRate), '-ac', '1', '-i', pcmFile);
-  const filters: string[] = [];
-  filters.push(
-    `[0:v:0]scale=w='min(1280,iw)':h=-2,setsar=1,fps=30,format=yuv420p,setpts=PTS-STARTPTS[video]`,
-  );
-  filters.push(
-    `[${hasAudio ? '0:a:0' : '1:a:0'}]aresample=48000,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS,apad,atrim=duration=${seconds}[original]`,
-  );
-  const slices: { from: number; to: number; pause: number }[] = [];
-  let cursor = 0;
-  for (const cue of inserts) {
-    const last = slices[slices.length - 1];
-    if (last && Math.abs(last.to - cue.at) < 0.001) {
-      last.pause += cue.duration + 0.16;
-      continue;
-    }
-    slices.push({ from: cursor, to: cue.at, pause: cue.duration + 0.16 });
-    cursor = cue.at;
-  }
-  if (cursor < seconds) slices.push({ from: cursor, to: seconds, pause: 0 });
-  const count = slices.length;
-  filters.push(`[video]split=${count}${slices.map((_, i) => `[v${i}]`).join('')}`);
-  filters.push(`[original]asplit=${count}${slices.map((_, i) => `[a${i}]`).join('')}`);
-  slices.forEach((slice, i) => {
-    filters.push(
-      `[v${i}]trim=start=${slice.from}:end=${slice.to},setpts=PTS-STARTPTS${slice.pause ? `,tpad=stop_mode=clone:stop_duration=${slice.pause}` : ''}[sv${i}]`,
-    );
-    filters.push(
-      `[a${i}]atrim=start=${slice.from}:end=${slice.to},asetpts=PTS-STARTPTS${slice.pause ? `,apad=pad_dur=${slice.pause}` : ''}[sa${i}]`,
-    );
-  });
-  filters.push(
-    `${slices.map((_, i) => `[sv${i}][sa${i}]`).join('')}concat=n=${count}:v=1:a=1[outv][base]`,
-  );
-  const active =
-    placements
-      .map(
-        (cue) =>
-          `between(t,${Math.max(0, cue.outputAt - 0.03).toFixed(4)},${(cue.outputAt + cue.duration + 0.03).toFixed(4)})`,
-      )
-      .join('+') || '0';
-  filters.push(`[base]volume='if(gt(${active},0),0.45,1)':eval=frame[ducked]`);
-  filters.push(`[${voiceIndex}:a]aformat=channel_layouts=stereo[voice]`);
-  filters.push(
-    '[ducked][voice]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=0:latency=1[outa]',
-  );
-  const graph = join(directory, 'mix.txt');
-  await writeFile(graph, filters.join(';\n'));
-  const output = join(directory, `part-${index}.mp4`);
-  args.push(
-    '-filter_complex_script',
-    graph,
-    '-map',
-    '[outv]',
-    '-map',
-    '[outa]',
-    '-c:v',
-    'libx264',
-    '-preset',
-    'veryfast',
-    '-crf',
-    '21',
-    '-threads',
-    '2',
-    '-c:a',
-    'aac',
-    '-b:a',
-    '192k',
-    '-t',
-    String(total),
-    '-movflags',
-    '+faststart',
-    output,
-  );
-  await command(ffmpeg(), args, signal);
-  return output;
-}
-
-export async function joinSegments(
-  files: string[],
-  directory: string,
-  signal: AbortSignal,
-): Promise<{ video: string; audio: string }> {
-  const list = join(directory, 'parts.txt');
-  await writeFile(
-    list,
-    files.map((file) => `file '${file.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`).join('\n'),
-  );
-  const video = join(directory, 'described.mp4');
-  const audio = join(directory, 'described.m4a');
+): Promise<Float32Array> {
+  const out = new Float32Array(frames * 2);
+  if (!hasAudio) return out;
+  const file = join(directory, 'sound.f32');
   await command(
     ffmpeg(),
     [
-      '-nostdin',
-      '-v',
-      'error',
-      '-y',
+      ...quiet,
+      '-ss',
+      start.toFixed(6),
+      '-i',
+      source,
+      '-t',
+      (frames / sampleRate + 0.1).toFixed(6),
+      '-map',
+      '0:a:0',
+      '-af',
+      `aresample=${sampleRate}:first_pts=0,aformat=sample_fmts=flt:channel_layouts=stereo`,
+      '-f',
+      'f32le',
+      file,
+    ],
+    signal,
+  );
+  const decoded = floats(await readFile(file));
+  out.set(decoded.subarray(0, Math.min(decoded.length, out.length)));
+  return out;
+}
+
+export async function decodeVoice(file: string, signal: AbortSignal): Promise<Float32Array> {
+  return floats(
+    await command(
+      ffmpeg(),
+      [...quiet, '-i', file, '-vn', '-ar', String(sampleRate), '-ac', '1', '-f', 'f32le', 'pipe:1'],
+      signal,
+      undefined,
+      64 * 1024 ** 2,
+    ),
+  );
+}
+
+/** Speeds narration up with pitch kept. */
+export async function stretch(
+  pcm: Float32Array,
+  factor: number,
+  signal: AbortSignal,
+): Promise<Float32Array> {
+  if (Math.abs(factor - 1) < 0.005) return pcm;
+  const raw = ['-f', 'f32le', '-ar', String(sampleRate), '-ac', '1'];
+  return floats(
+    await command(
+      ffmpeg(),
+      [...quiet, ...raw, '-i', 'pipe:0', '-af', tempoFilters(factor), ...raw, 'pipe:1'],
+      signal,
+      bytes(pcm),
+      64 * 1024 ** 2,
+    ),
+  );
+}
+
+/** Limits peaks to -1 dBFS and stores a mixed section losslessly. */
+export async function saveSound(
+  pcm: Float32Array,
+  file: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const raw = join(file + '.f32');
+  await writeFile(raw, bytes(pcm));
+  await command(
+    ffmpeg(),
+    [
+      ...quiet,
+      '-f',
+      'f32le',
+      '-ar',
+      String(sampleRate),
+      '-ac',
+      '2',
+      '-i',
+      raw,
+      '-af',
+      'alimiter=limit=0.891:attack=5:release=80:level=false:latency=true',
+      '-c:a',
+      'flac',
+      '-sample_fmt',
+      's32',
+      file,
+    ],
+    signal,
+  );
+}
+
+/** Frozen-picture pauses for one section, in frames of the output rate. */
+export type Freeze = { frame: number; frames: number };
+
+/**
+ * Re-encodes one section's picture on the output frame grid, holding the picture still for
+ * each pause. The section is exactly `frames + pauses` frames long, so sections line up with
+ * their soundtrack no matter how many are joined.
+ */
+export async function sectionPicture(
+  source: string,
+  directory: string,
+  index: number,
+  start: number,
+  frames: number,
+  fps: Rational,
+  freezes: Freeze[],
+  signal: AbortSignal,
+): Promise<string> {
+  const merged = freezes
+    .filter((item) => item.frames > 0)
+    .map((item) => ({ frame: Math.min(frames, Math.max(0, item.frame)), frames: item.frames }))
+    .sort((a, b) => a.frame - b.frame)
+    .reduce<Freeze[]>((list, item) => {
+      const last = list[list.length - 1];
+      if (last && last.frame === item.frame) last.frames += item.frames;
+      else list.push({ ...item });
+      return list;
+    }, []);
+  const lead = merged[0]?.frame === 0 ? merged.shift()!.frames : 0;
+  const cuts = [0, ...merged.map((item) => item.frame), frames];
+  const count = cuts.length - 1;
+  const rate = `${fps.num}/${fps.den}`;
+  const filters = [
+    `[0:v:0]fps=${rate}:start_time=0,scale=w='min(1280,iw)':h=-2:flags=bicubic,setsar=1,format=yuv420p,trim=end_frame=${frames}[base]`,
+    `[base]split=${count}${cuts
+      .slice(1)
+      .map((_, i) => `[v${i}]`)
+      .join('')}`,
+    ...cuts.slice(1).map((end, i) => {
+      const pads = [
+        i === 0 && lead ? `tpad=start_mode=clone:start=${lead}` : '',
+        merged[i] ? `tpad=stop_mode=clone:stop=${merged[i].frames}` : '',
+      ].filter(Boolean);
+      return `[v${i}]trim=start_frame=${cuts[i]}:end_frame=${end},setpts=PTS-STARTPTS${pads.length ? ',' + pads.join(',') : ''}[s${i}]`;
+    }),
+    `${cuts
+      .slice(1)
+      .map((_, i) => `[s${i}]`)
+      .join('')}concat=n=${count}:v=1:a=0[out]`,
+  ];
+  const graph = join(directory, 'picture.txt');
+  await writeFile(graph, filters.join(';\n'));
+  const output = join(directory, `part-${index}.mp4`);
+  const total = frames + lead + merged.reduce((sum, item) => sum + item.frames, 0);
+  await command(
+    ffmpeg(),
+    [
+      ...quiet,
+      '-ss',
+      start.toFixed(6),
+      '-t',
+      ((frames * fps.den) / fps.num + 1).toFixed(6),
+      '-i',
+      source,
+      '-filter_complex_script',
+      graph,
+      '-map',
+      '[out]',
+      '-an',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+      '-crf',
+      '22',
+      '-threads',
+      '2',
+      '-r',
+      rate,
+      '-frames:v',
+      String(total),
+      '-movflags',
+      '+faststart',
+      output,
+    ],
+    signal,
+  );
+  return output;
+}
+
+const listFile = (files: string[]) =>
+  files.map((file) => `file '${file.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`).join('\n');
+
+/**
+ * Joins the finished sections: one AAC soundtrack for both files, and either the original
+ * picture untouched or the re-encoded sections with their pauses.
+ */
+export async function assemble(
+  directory: string,
+  sounds: string[],
+  pictures: string[] | null,
+  source: string,
+  title: string,
+  signal: AbortSignal,
+): Promise<{ video: string; audio: string }> {
+  const soundList = join(directory, 'sounds.txt');
+  await writeFile(soundList, listFile(sounds));
+  const audio = join(directory, 'described.m4a');
+  const video = join(directory, 'described.mp4');
+  const tag = ['-metadata', `title=${title.replace(/[\r\n]/g, ' ').slice(0, 200)}`];
+  await command(
+    ffmpeg(),
+    [
+      ...quiet,
       '-f',
       'concat',
       '-safe',
       '0',
       '-i',
-      list,
-      '-map',
-      '0:v:0',
-      '-map',
-      '0:a:0',
-      '-c',
-      'copy',
-      '-movflags',
-      '+faststart',
-      video,
-    ],
-    signal,
-  );
-  await command(
-    ffmpeg(),
-    [
-      '-nostdin',
-      '-v',
-      'error',
-      '-y',
-      '-i',
-      video,
-      '-vn',
+      soundList,
       '-c:a',
-      'copy',
+      'aac',
+      '-b:a',
+      '160k',
+      ...tag,
       '-movflags',
       '+faststart',
       audio,
+    ],
+    signal,
+  );
+  const picture = pictures ? join(directory, 'pictures.txt') : source;
+  if (pictures) await writeFile(picture, listFile(pictures));
+  await command(
+    ffmpeg(),
+    [
+      ...quiet,
+      ...(pictures ? ['-f', 'concat', '-safe', '0'] : []),
+      '-i',
+      picture,
+      '-i',
+      audio,
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
+      '-c',
+      'copy',
+      ...tag,
+      '-movflags',
+      '+faststart',
+      video,
     ],
     signal,
   );

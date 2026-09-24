@@ -203,6 +203,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         <label class="field" style="margin:0" id="descModeWrap" hidden><input type="checkbox" id="descMode"> Play with descriptions (pauses to describe each scene)</label>
       </div>
       <p id="descStatus" class="hint"></p>
+      <p class="hint" id="descCopyWrap" hidden><a id="descCopy" href="/described-video">Make a described copy: narration mixed into the video, with the audio to download</a></p>
       <p id="descText"></p>
       <ol class="scenes" id="descScenes"></ol>
     </details>
@@ -1047,6 +1048,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var wrap = $('descWrap');
     if (!t || !/^video\\//.test(t.mime || '')) { wrap.hidden = true; return; }
     wrap.hidden = false;
+    $('descCopyWrap').hidden = !librarian;
+    $('descCopy').href = '/described-video?book=' + encodeURIComponent(book.id) + '&track=' + pos.s;
     var d = t.description;
     $('descScenes').innerHTML = ''; $('descText').textContent = ''; descSpoken = {};
     if (d && d.state === 'done') {

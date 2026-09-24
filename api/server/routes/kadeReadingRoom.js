@@ -2116,4 +2116,4 @@ const { readingRoomHtml } = require('./kadeReadingRoomPage');
 router.page = (_req, res) => res.type('html').send(readingRoomHtml);
 
 module.exports = router;
-module.exports._internals = { summary, chunkAt, openBook };
+module.exports._internals = { summary, chunkAt, openBook, refreshListen };
