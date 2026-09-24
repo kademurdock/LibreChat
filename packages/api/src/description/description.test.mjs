@@ -1175,8 +1175,11 @@ test('long videos: continuity, a section that failed on a passing error is tried
   );
   assert.equal(seen[3].state.people[0].label, 'the square', 'the retry keeps its continuity');
   assert.equal(first.report.failedSections.length, 0);
+  assert.equal(first.report.descriptions.length, 3);
   assert.deepEqual(
-    first.report.descriptions.map((item) => item.id),
+    [...kept.records]
+      .sort((a, b) => a.index - b.index)
+      .flatMap((record) => record.placements.map((item) => item.id)),
     ['0:0', '1:0', '2:0'],
     'each spoken description names its cue in the script',
   );
@@ -1617,7 +1620,7 @@ test('a preview renders the first sections only, and finishing reuses them', asy
   });
   assert.equal(finish.calls.analyze, 1, 'only the rest was looked at');
   assert.equal(whole.partial, false);
-  assert.equal(whole.report.preview, undefined);
+  assert.ok(!whole.report.preview);
   assert.equal(whole.report.descriptions.length, 3);
   assert.ok(Math.abs(whole.report.outputSeconds - 20) < 0.05);
 });
@@ -1751,7 +1754,7 @@ test('a description left out at a section end is carried into the next section',
     start: 4 + i * 0.5,
     end: 4.45 + i * 0.5,
   }));
-  const { keeper } = keeperFor(savedPlan(20, [10]), words);
+  const { keeper, kept } = keeperFor(savedPlan(20, [10]), words);
   const result = await run(
     f,
     [],
@@ -1761,7 +1764,8 @@ test('a description left out at a section end is carried into the next section',
   assert.equal(result.report.skipped.length, 0);
   assert.equal(result.report.descriptions.length, 1);
   assert.ok(Math.abs(result.report.descriptions[0].at - 10.1) < 0.01);
-  assert.equal(result.report.descriptions[0].id, '0:0', 'it keeps its place in the script');
+  const next = kept.records.find((record) => record.index === 1);
+  assert.equal(next.placements[0].id, '0:0', 'it keeps its place in the script');
 });
 
 test('a still picture spanning several sections is looked at once', async () => {
