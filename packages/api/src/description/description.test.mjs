@@ -1570,6 +1570,36 @@ test('the plan measures the dialogue on its own and sets the narrator against it
   assert.ok(Math.abs(narration - Math.max(-26, loudness.dialogue + gain + 1)) < 1e-9);
 });
 
+test('a capture with sound on one side only is heard in both ears', async () => {
+  const f = await fixture('one-sided', 9, true, 'pan=stereo|c0=c0|c1=0*c0');
+  const { keeper } = keeperFor({ ...savedPlan(9, []), oneSided: 'left' });
+  const result = await run(f, [], [], { keeper });
+  const right = await command(
+    ffmpegPath,
+    [
+      '-nostdin',
+      '-v',
+      'error',
+      '-i',
+      result.audio,
+      '-af',
+      'pan=mono|c0=c1',
+      '-ar',
+      '48000',
+      '-f',
+      'f32le',
+      'pipe:1',
+    ],
+    signal,
+    undefined,
+    64 * 1024 ** 2,
+  );
+  const pcm = new Float32Array(
+    right.buffer.slice(right.byteOffset, right.byteOffset + right.byteLength),
+  );
+  assert.ok(tone(pcm, 4, 0.5) > 0.01, 'the live left channel is copied to the right');
+});
+
 test('a preview renders the first sections only, and finishing reuses them', async () => {
   const f = await fixture('preview', 20);
   const plan = savedPlan(20, [6.5, 13]);
