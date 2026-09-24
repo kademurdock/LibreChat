@@ -44,7 +44,8 @@ import { readAnalysis, nextContinuity, analysisPrompt } from './prompt.ts';
 import { command, probe, frameRate, sectionClip, MediaError } from './media.ts';
 import { transcriptText, clock } from './transcript.ts';
 import { settingsSchema, Halt } from './types.ts';
-import { editsSchema, revise, libraryPathSchema } from './revision.ts';
+import { editsSchema, revise, scriptCues, libraryPathSchema } from './revision.ts';
+import { Refusal } from './providers.ts';
 import { youtubeURL } from './youtube.ts';
 
 process.env.FFMPEG_PATH = ffmpegPath;
@@ -857,6 +858,7 @@ async function run(f, words, cues, overrides = {}) {
     stopAfter: overrides.stopAfter,
     chapters: overrides.chapters,
     sectionNotes: overrides.sectionNotes,
+    workingCopy: overrides.workingCopy,
     log: overrides.log ? (line) => overrides.log.push(line) : undefined,
   });
   return { ...result, backend };
@@ -1712,60 +1714,88 @@ test('names the listener has not heard yet are replaced before anything is voice
   );
 });
 
-test('continuity records what was actually heard and what was left out', async () => {
-  const f = await fixture('heard', 20);
-  const { keeper, kept } = keeperFor(savedPlan(20, [10]), [{ word: 'Talk.', start: 4.2, end: 10 }]);
+test('continuity records what was actually heard and what was left out, and the next look is told', async () => {
+  const f = await fixture('heard', 30);
+  const { keeper, kept } = keeperFor(savedPlan(30, [10, 20]), [
+    { word: 'Talk.', start: 4.2, end: 10 },
+  ]);
   const voice = measuredVoice();
   const backend = providers(f.voice, [], []);
   backend.synthesize = voice.synthesize;
   const shortText = 'The square moves.';
   const left =
     'A blue circle spins and bounces from one corner of the screen to the other, then back again.';
-  backend.analyze = async (look) => ({
-    kind: 'other',
-    setting: 'A test pattern.',
-    people: [],
-    speakers: [],
-    protectedSounds: [],
-    cues:
-      look.brief.position.index === 0
-        ? [
-            {
-              at: 1,
-              until: 4,
-              text: 'A red square moves slowly and steadily across the whole of the room, from the left wall all the way to the right.',
-              shortText,
-              importance: 3,
-            },
-            { at: 1.5, until: 3.9, text: left, shortText: left, importance: 3 },
-          ]
-        : [],
-  });
+  const seen = [];
+  backend.analyze = async (look) => {
+    seen.push(look);
+    return {
+      kind: 'other',
+      setting: 'A test pattern.',
+      people: [],
+      speakers: [],
+      protectedSounds: [],
+      cues:
+        look.brief.position.index === 0
+          ? [
+              {
+                at: 1,
+                until: 4,
+                text: 'A red square moves slowly and steadily across the whole of the room, from the left wall all the way to the right.',
+                shortText,
+                importance: 3,
+              },
+              { at: 1.5, until: 3.9, text: left, shortText: left, importance: 3 },
+            ]
+          : [],
+    };
+  };
   await run(f, [], [], { providers: backend, keeper });
   const first = kept.records.find((record) => record.index === 0);
   assert.deepEqual(first.continuity.recent, [shortText]);
   assert.deepEqual(first.continuity.left, [left]);
+  const next = seen.find((look) => look.brief.position.index === 1);
+  assert.deepEqual(next.state.left, [left], 'the next look knows what was never heard');
+  assert.deepEqual(next.state.recent, [shortText], 'and what was actually spoken');
 });
 
-test('a description left out at a section end is carried into the next section', async () => {
+test('a description left out at a section end is carried into the next section, unless the shot ends there', async () => {
   const f = await fixture('carry', 20);
   const words = Array.from({ length: 12 }, (_, i) => ({
     word: 'talk',
     start: 4 + i * 0.5,
     end: 4.45 + i * 0.5,
   }));
+  const reply = (look) =>
+    look.brief.position.index === 0
+      ? readAnalysis(
+          JSON.stringify({
+            kind: 'other',
+            setting: '',
+            people: [],
+            speakers: [],
+            protectedSounds: [],
+            cues: [{ ...cue, at: 5, until: 12.5 }],
+          }),
+          look.seconds,
+          look.brief.detail,
+        ).cues
+      : [];
   const { keeper, kept } = keeperFor(savedPlan(20, [10]), words);
-  const result = await run(
-    f,
-    [],
-    (look) => (look.brief.position.index === 0 ? [{ ...cue, at: 5, until: 12.5 }] : []),
-    { keeper },
-  );
+  const result = await run(f, [], reply, { keeper });
   assert.equal(result.report.skipped.length, 0);
   assert.equal(result.report.descriptions.length, 1);
   assert.ok(Math.abs(result.report.descriptions[0].at - 10.1) < 0.01);
   const next = kept.records.find((record) => record.index === 1);
   assert.equal(next.placements[0].id, '0:0', 'it keeps its place in the script');
+
+  const cut = keeperFor(savedPlan(20, [10], { cuts: [10] }), words);
+  const joined = await run(f, [], reply, { keeper: cut.keeper });
+  assert.equal(
+    joined.report.descriptions.length,
+    0,
+    'the old shot is not described over the new one',
+  );
+  assert.equal(joined.report.skipped.length, 1);
 });
 
 test('a still picture spanning several sections is looked at once', async () => {
@@ -1943,4 +1973,315 @@ test('saved looks are reused instead of paying again', async () => {
   const result = await run(f, [], [], { providers: backend, keeper });
   assert.equal(backend.calls.analyze, 1);
   assert.equal(result.report.descriptions.length, 2);
+});
+
+test('a section the first look is refused is skipped there, and the job still finishes', async () => {
+  const f = await fixture('first-look-refused', 130);
+  const { keeper, kept } = keeperFor(savedPlan(130, [45, 90]));
+  const checkpoints = [];
+  keeper.keepFirstLook = async (value) => {
+    checkpoints.push(value.through);
+  };
+  const backend = providers(f.voice, [], [{ ...cue, at: 1, until: 5 }]);
+  const analyze = backend.analyze;
+  backend.analyze = async (look) => {
+    if (look.brief.position.index === 1) throw new Refusal('Declined.');
+    return analyze(look);
+  };
+  const log = [];
+  await run(f, [], [], {
+    providers: backend,
+    keeper,
+    log,
+    settings: { ...settings, firstLook: true },
+  });
+  assert.deepEqual(
+    [...kept.records]
+      .sort((a, b) => a.index - b.index)
+      .map((record) => [record.index, record.failureClass ?? 'ok']),
+    [
+      [0, 'ok'],
+      [1, 'refused'],
+      [2, 'ok'],
+    ],
+  );
+  assert.equal(checkpoints.at(-1), 3, 'the first look went on past the refused section');
+  assert.ok(log.some((line) => /First look skipped section 2 of 3 \(refused\)/.test(line)));
+});
+
+test('three failures in a row means three paid looks side by side, not parts already done or reused', async () => {
+  const f = await fixture('in-a-row', 25);
+  const plan = savedPlan(25, [5, 10, 15, 20]);
+  const first = keeperFor(plan);
+  await run(f, [], [], { keeper: first.keeper });
+  const refused = providers(f.voice, [], []);
+  refused.analyze = async () => {
+    refused.calls.analyze++;
+    throw new Refusal('Declined.');
+  };
+  const redo = await run(f, [], [], {
+    providers: refused,
+    keeper: {
+      ...first.keeper,
+      saved: {
+        plan,
+        words: [],
+        records: first.kept.records.filter((record) => [1, 3].includes(record.index)),
+        analyses: [],
+      },
+    },
+  });
+  assert.equal(redo.report.failedSections.length, 3, 'a redo of parts 1, 3 and 5 finishes');
+  assert.equal(refused.calls.analyze, 3);
+
+  const analysis = {
+    kind: 'other',
+    setting: '',
+    people: [],
+    speakers: [],
+    protectedSounds: [],
+    cues: [{ ...cue, at: 1, until: 4 }],
+  };
+  const gap = { analysis: null, failure: 'Declined.', failureClass: 'refused' };
+  const idle = providers(f.voice, [], []);
+  const revoiced = await run(f, [], [], {
+    providers: idle,
+    keeper: keeperFor(plan, [], {
+      analyses: [analysis, undefined, undefined, undefined, analysis],
+      looks: [undefined, gap, gap, gap, undefined],
+    }).keeper,
+  });
+  assert.equal(idle.calls.analyze, 0);
+  assert.equal(revoiced.report.failedSections.length, 3, 'a re-voice keeps the gaps and finishes');
+});
+
+test('a re-voice keeps a gap the copy already had, without looking at the picture again', async () => {
+  const f = await fixture('revoice-gap', 20);
+  const analysis = {
+    kind: 'other',
+    setting: '',
+    people: [],
+    speakers: [],
+    protectedSounds: [],
+    cues: [{ ...cue, at: 1, until: 5 }],
+  };
+  for (const [name, gap, failing] of [
+    ['passing', { analysis: null, failure: 'busy', failureClass: 'transient' }, false],
+    ['older copy', { analysis: null, failure: 'busy' }, false],
+    ['account', { analysis: null, failure: 'busy', failureClass: 'transient' }, true],
+  ]) {
+    const backend = providers(f.voice, [], [cue]);
+    if (failing)
+      backend.analyze = async () => {
+        backend.calls.analyze++;
+        throw httpError(402);
+      };
+    const { keeper, kept } = keeperFor(savedPlan(20, [10]), [], {
+      analyses: [analysis, undefined],
+      looks: [undefined, gap],
+    });
+    const log = [];
+    const result = await run(f, [], [], { providers: backend, keeper, log });
+    assert.equal(backend.calls.analyze, 0, name);
+    assert.equal(result.report.failedSections.length, 1, name);
+    assert.equal(kept.records.find((record) => record.index === 1).failure, 'busy', name);
+    assert.ok(!log.some((line) => /trying again/.test(line)), name);
+  }
+});
+
+test('a part cut from a long source is kept after the first run and not cut again', async () => {
+  const f = await fixture('working-part', 20);
+  await mkdir(f.work, { recursive: true });
+  const part = { start: 5, end: 12 };
+  const stored = join(f.dir, 'kept-working.mkv');
+  let keptCopies = 0;
+  const { keeper, kept } = keeperFor(undefined);
+  keeper.keepWorking = async (file) => {
+    keptCopies++;
+    await copyFile(file, stored);
+  };
+  const downloaded = join(f.work, 'source');
+  await copyFile(f.file, downloaded);
+  const partSettings = { ...settings, range: part };
+  await run(f, [], [cue], { keeper, source: downloaded, settings: partSettings });
+  assert.equal(keptCopies, 1);
+  await copyFile(stored, downloaded);
+  const again = await run(f, [], [cue], {
+    keeper: { ...keeper, saved: { plan: kept.plans[0], words: [], records: [] } },
+    source: downloaded,
+    settings: partSettings,
+    workingCopy: true,
+  });
+  assert.equal(keptCopies, 1, 'the kept copy is not stored again');
+  assert.deepEqual(again.report.range, part);
+  assert.ok(Math.abs(again.report.outputSeconds - 7) < 0.1);
+  assert.equal(
+    await videoHash(again.video),
+    await videoHash(stored),
+    'the picture was not encoded again',
+  );
+});
+
+test('the engine hands its log to the video model and to the working copy', async () => {
+  const f = await fixture('logged', 6);
+  const source = join(f.dir, 'described-track.mkv');
+  await command(
+    ffmpegPath,
+    [
+      '-nostdin',
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc2=size=160x120:rate=30:duration=6',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=220:sample_rate=48000:duration=6',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440:sample_rate=48000:duration=6',
+      '-map',
+      '0:v',
+      '-map',
+      '1:a',
+      '-map',
+      '2:a',
+      '-metadata:s:a:1',
+      'title=Audio description',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      source,
+    ],
+    signal,
+  );
+  const types = [];
+  const backend = providers(f.voice, [], [cue]);
+  const analyze = backend.analyze;
+  backend.analyze = async (look) => {
+    types.push(typeof look.log);
+    look.log?.('vision: probe');
+    return analyze(look);
+  };
+  const log = [];
+  await run(f, [], [], { providers: backend, log, source });
+  assert.deepEqual(types, ['function']);
+  assert.ok(log.includes('vision: probe'));
+  assert.ok(log.some((line) => /audio description track/.test(line)));
+});
+
+test('close look tells the model the scene cuts at their times in the slowed clip', async () => {
+  const f = await fixture('close-cuts', 20);
+  const { keeper } = keeperFor(savedPlan(20, [10], { cuts: [2, 12.5] }));
+  const told = [];
+  const backend = providers(f.voice, [], []);
+  const analyze = backend.analyze;
+  backend.analyze = async (look) => {
+    told.push({
+      index: look.brief.position.index,
+      cuts: look.brief.cuts,
+      prompt: analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before),
+    });
+    return analyze(look);
+  };
+  await run(f, [], [], { providers: backend, keeper, settings: { ...settings, closeLook: true } });
+  const [first, second] = told.sort((a, b) => a.index - b.index);
+  assert.deepEqual(first.cuts, [2]);
+  assert.deepEqual(second.cuts, [2.5]);
+  assert.match(first.prompt, /in seconds of this clip: 8\.0\./);
+  assert.match(second.prompt, /in seconds of this clip: 10\.0\./);
+});
+
+test('a description left out after its name was hidden still has its reason in the script', async () => {
+  const f = await fixture('skip-ids');
+  const backend = providers(f.voice, [{ word: 'talk', start: 0, end: 9 }], []);
+  backend.analyze = async () => ({
+    kind: 'other',
+    setting: '',
+    people: [{ label: 'the host', name: 'Pat', look: 'blue shirt' }],
+    speakers: [],
+    protectedSounds: [],
+    cues: [
+      {
+        ...cue,
+        at: 1,
+        until: 5,
+        text: 'Pat lifts a very large blue box.',
+        shortText: 'Pat lifts a box.',
+      },
+    ],
+  });
+  const { keeper, kept } = keeperFor(undefined);
+  await run(f, [], [], { providers: backend, keeper });
+  assert.equal(kept.records[0].skipped[0].id, '0:0');
+  const [line] = scriptCues(kept.records);
+  assert.equal(line.spoken, false);
+  assert.match(line.reason, /No gap/);
+});
+
+test('joining a long copy restores its saved sections a few at a time', async () => {
+  const f = await fixture('restore-pool', 40);
+  const sound = join(f.dir, 'second.flac');
+  await command(
+    ffmpegPath,
+    [
+      '-nostdin',
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=220:sample_rate=48000:duration=1',
+      '-ac',
+      '2',
+      '-c:a',
+      'flac',
+      '-sample_fmt',
+      's32',
+      sound,
+    ],
+    signal,
+  );
+  const plan = savedPlan(
+    40,
+    Array.from({ length: 39 }, (_, i) => i + 1),
+  );
+  const records = plan.sections.map((section, index) => ({
+    index,
+    start: section.start,
+    end: section.end,
+    analysis: null,
+    placements: [],
+    skipped: [],
+    outputSeconds: 1,
+    continuity: { kind: '', setting: '', people: [], speakers: [], recent: [] },
+  }));
+  let open = 0;
+  let peak = 0;
+  let restored = 0;
+  const { keeper } = keeperFor(plan, [], { records });
+  keeper.restore = async (index, directory) => {
+    open++;
+    peak = Math.max(peak, open);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const file = join(directory, 'sound.flac');
+    await copyFile(sound, file);
+    open--;
+    restored++;
+    return { sound: file };
+  };
+  const result = await run(f, [], [], { keeper });
+  assert.equal(restored, 40);
+  assert.ok(peak <= 4, `${peak} restores at once`);
+  assert.ok(Math.abs(result.report.outputSeconds - 40) < 0.1);
 });

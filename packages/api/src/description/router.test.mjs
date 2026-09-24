@@ -1169,8 +1169,27 @@ test('a preview renders a marked copy, then Describe the rest finishes the same 
   const rest = (await call('post', `/jobs/${id}/estimate`, 'preview-owner').send({ action: 'finish' }).expect(200)).body;
   assert.equal(rest.allowed, true);
   assert.equal(rest.breakdown.dialogue, 0, 'the dialogue is not paid for twice');
-  await call('post', `/jobs/${id}/finish`, 'preview-owner').send({}).expect(202);
-  const finished = await settle(id, ['done', 'failed'], 'preview-owner');
+  let started;
+  beforeEngine = async () => {
+    const job = await Jobs.findById(id).lean();
+    started = { progress: job.progress, runFrom: job.runFrom };
+  };
+  let finished;
+  try {
+    const queued = await call('post', `/jobs/${id}/finish`, 'preview-owner').send({}).expect(202);
+    assert.equal(
+      queued.body.progress,
+      0,
+      'the finished preview does not leave the new run at 100 percent',
+    );
+    finished = await settle(id, ['done', 'failed'], 'preview-owner');
+  } finally {
+    beforeEngine = null;
+  }
+  assert.ok(
+    started.progress < 25 && started.runFrom < 25,
+    `the run started at ${started.progress} percent`,
+  );
   assert.equal(finished.state, 'done', finished.error);
   assert.equal(finished.version, 1, 'the same version is finished');
   assert.equal(finished.finishable, false);
@@ -1184,6 +1203,66 @@ test('a preview renders a marked copy, then Describe the rest finishes the same 
   await call('post', `/jobs/${id}/finish`, 'preview-owner').send({}).expect(409);
   assert.equal(await held(), 0);
   await call('delete', `/jobs/${id}`, 'preview-owner').expect(200);
+});
+
+test('a preview that turns out to cover the whole video is kept as the finished copy', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('whole-owner', 'whole-preview-upload1', 100);
+  await call('post', `/jobs/${id}/start`, 'whole-owner')
+    .send({ ...settings, preview: true })
+    .expect(202);
+  assert.equal((await Jobs.findById(id).lean()).stopAfter, 60);
+  const done = await settle(id, ['done', 'failed'], 'whole-owner');
+  assert.equal(done.state, 'done', done.error);
+  assert.equal(done.preview, false);
+  assert.equal(done.finishable, false);
+  assert.equal(done.stage, 'Your described copy is ready');
+  assert.deepEqual(
+    done.copies.map((copy) => [copy.version, copy.preview]),
+    [[1, false]],
+  );
+  assert.equal((await Jobs.findById(id).lean()).stopAfter, undefined);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(notices.at(-1).title, 'Your described video is ready');
+  await call('post', `/jobs/${id}/finish`, 'whole-owner').send({}).expect(409);
+  await Jobs.updateOne({ _id: id }, { $set: { preview: true, 'copies.0.preview': true } });
+  const covered = await call('post', `/jobs/${id}/finish`, 'whole-owner').send({}).expect(409);
+  assert.match(
+    covered.body.error,
+    /already covers the whole video/,
+    'a copy stored with the old label is not finished again',
+  );
+  await call('delete', `/jobs/${id}`, 'whole-owner').expect(200);
+});
+
+test('a part of a long video is cut once: later runs download the kept part, not the whole source', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('part-owner', 'part-upload-000000001', 150);
+  await call('post', `/jobs/${id}/start`, 'part-owner')
+    .send({ ...settings, range: { start: 10, end: 100 } })
+    .expect(202);
+  const done = await settle(id, ['done', 'failed'], 'part-owner');
+  assert.equal(done.state, 'done', done.error);
+  assert.ok(!requests.at(-1).workingCopy);
+  const job = await Jobs.findById(id).lean();
+  const kept = `/test/${folderOf(job.key)}/working/10000-100000.mkv`;
+  assert.ok(objects.has(kept), 'the cut part is kept');
+  storageLog.length = 0;
+  await call('post', `/jobs/${id}/revoice`, 'part-owner')
+    .send({ rate: 2, maxRate: 2.5 })
+    .expect(202);
+  const revoiced = await settle(id, ['done', 'failed'], 'part-owner');
+  assert.equal(revoiced.state, 'done', revoiced.error);
+  assert.equal(requests.at(-1).workingCopy, true);
+  const reads = storageLog.filter((item) => item.method === 'GET');
+  assert.ok(reads.some((item) => item.key === kept));
+  assert.ok(
+    !reads.some((item) => item.key === `/test/${job.key}`),
+    'the whole source was not downloaded again',
+  );
+  assert.ok(Math.abs(revoiced.outputSeconds - 90) < 0.5);
+  await call('delete', `/jobs/${id}`, 'part-owner').expect(200);
+  assert.equal(keysOf(id).length, 0);
 });
 
 test('failed paid requests that were not billed cost nothing, and redo describes only the failed parts', async () => {
@@ -1205,9 +1284,12 @@ test('failed paid requests that were not billed cost nothing, and redo describes
   assert.ok(redoPrice.seconds > 0 && redoPrice.seconds < 150, 'the default is the part that failed');
 
   requests.length = 0;
+  const lookedBefore = calls.analyze;
   await call('post', `/jobs/${id}/revoice`, 'redo-owner').send({ rate: 2, maxRate: 2.5 }).expect(202);
   const revoiced = await settle(id, ['done', 'failed'], 'redo-owner');
   assert.equal(revoiced.state, 'done', revoiced.error);
+  assert.equal(calls.analyze, lookedBefore, 'a re-voice never pays to look at the picture again');
+  assert.equal(revoiced.failedSections, 1, 'and keeps the gap for a redo');
   const carried = requests.at(-1).keeper.saved;
   assert.ok(carried.analyses[0], 'the described section is voiced again');
   assert.equal(carried.analyses[1], undefined);
@@ -1815,6 +1897,95 @@ test('revision helpers: labels, edits, shelves and the script', () => {
     ],
     'ids match the voiced line even when names changed its words, or it was carried into the next section',
   );
+});
+
+test('the script never gives one description the line another one spoke, and keeps every reason', () => {
+  const room = 'No gap was long enough at the fastest narration speed chosen.';
+  const record = (index, start, cues, placements, skipped) => ({
+    index,
+    start,
+    end: start + 10,
+    analysis: { kind: 'other', setting: '', people: [], speakers: [], protectedSounds: [], cues },
+    placements,
+    skipped,
+    outputSeconds: 10,
+    continuity: { kind: '', setting: '', people: [], speakers: [], recent: [] },
+  });
+  const line = (at, text, id) => ({
+    at,
+    outputAt: at,
+    duration: 1,
+    rate: 1.5,
+    text,
+    pauseAt: at,
+    pause: 0,
+    inserted: false,
+    shortened: false,
+    importance: 3,
+    ...(id ? { id } : {}),
+  });
+  const door = {
+    at: 5,
+    until: 9,
+    text: 'A woman opens the door.',
+    shortText: 'A door opens.',
+    importance: 2,
+  };
+  const logo = {
+    at: 6,
+    until: 8,
+    text: 'A red logo appears.',
+    shortText: 'A logo.',
+    importance: 3,
+  };
+  const truck = {
+    at: 8,
+    until: 10,
+    text: 'The truck drives off.',
+    shortText: 'It drives off.',
+    importance: 2,
+  };
+  const view = (cues) =>
+    cues.map((cue) => [cue.id, cue.spoken, cue.spokenText, cue.outputAt, cue.reason]);
+
+  const older = scriptCues([
+    record(0, 0, [door, logo], [line(6.2, logo.text)], [{ at: 5, text: door.text, reason: room }]),
+  ]);
+  assert.deepEqual(
+    view(older),
+    [
+      ['0:0', false, '', 5, room],
+      ['0:1', true, logo.text, 6.2, undefined],
+    ],
+    'a copy without ids: a left-out description does not take the next line spoken near it',
+  );
+
+  const carried = scriptCues([
+    record(0, 0, [door, truck], [line(5, door.text, '0:0')], []),
+    record(
+      1,
+      10,
+      [{ ...logo, at: 0.5, until: 3 }],
+      [line(0.1, truck.text, '0:1')],
+      [{ at: 10.5, text: logo.text, reason: room, id: '1:0' }],
+    ),
+  ]);
+  assert.deepEqual(view(carried), [
+    ['0:0', true, door.text, 5, undefined],
+    ['0:1', true, truck.text, 10.1, undefined],
+    ['1:0', false, '', 10.5, room],
+  ]);
+
+  const hidden = scriptCues([
+    record(
+      0,
+      0,
+      [{ ...door, text: 'Pat opens the door.', shortText: 'Pat opens it.' }],
+      [],
+      [{ at: 5, text: 'The host opens the door.', reason: room, id: '0:0' }],
+    ),
+  ]);
+  assert.equal(hidden[0].reason, room, 'the reason survives a name being hidden');
 });
 
 test('rehearsal stand-ins: fixed words, one numbered description at the first quiet spot, a local tone', async () => {

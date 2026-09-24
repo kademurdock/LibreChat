@@ -121,6 +121,8 @@ export type Keeper = {
   keepLook?: (index: number, look: SavedLook) => Promise<void>;
   keepSection: (record: SectionRecord, files: SectionFiles) => Promise<void>;
   restore: (index: number, directory: string) => Promise<SectionFiles>;
+  /** Stores the part cut from the source, so later runs of the same part skip the re-encode. */
+  keepWorking?: (file: string) => Promise<void>;
 };
 export const localKeeper = (): Keeper => ({
   saved: { records: [] },
@@ -150,6 +152,8 @@ export type Request = {
   chapters?: Chapter[];
   /** Redo: an extra note from the listener for particular sections. */
   sectionNotes?: Record<number, string>;
+  /** The source is already this part, as kept by an earlier run, so it is not cut again. */
+  workingCopy?: boolean;
   /** Section timings, failures and retries, for the server log. */
   log?: (message: string) => void;
 };
@@ -363,6 +367,8 @@ type Looked = {
   failure?: string;
   failureClass?: FailureClass;
   fatal?: Error;
+  /** A failure kept from the copy being voiced again: final, and never paid for in this run. */
+  reused?: boolean;
 };
 type Carried = { id: string; cue: Cue; clips: Map<Variant, Voiced> };
 /**
@@ -409,7 +415,26 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   const providers = request.providers ?? productionProviders;
   const keeper = request.keeper ?? localKeeper();
   const log = request.log ?? (() => {});
-  const working = await normalize(request.source, directory, signal, settings.range);
+  const safely = async (action: () => Promise<void> | undefined, what: string) => {
+    try {
+      await action();
+    } catch (error) {
+      log(
+        `${what} could not be saved: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
+  };
+  const working = await normalize(
+    request.source,
+    directory,
+    signal,
+    request.workingCopy ? undefined : settings.range,
+    log,
+  );
+  const keptWorking =
+    settings.range && !request.workingCopy
+      ? safely(() => keeper.keepWorking?.(working.file), 'The cut part of the video')
+      : undefined;
   if (working.file !== request.source && within(directory, request.source))
     await rm(request.source, { force: true });
   const source = working.file;
@@ -509,15 +534,6 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   let keptSecondsPerByte = fixed.secondsPerByte;
   let voiceFailures = 0;
   const carried = new Map<number, Carried[]>();
-  const safely = async (action: () => Promise<void> | undefined, what: string) => {
-    try {
-      await action();
-    } catch (error) {
-      log(
-        `${what} could not be saved: ${error instanceof Error ? error.message : 'unknown error'}`,
-      );
-    }
-  };
 
   const briefFor = (i: number, survey: boolean, scale: number): Brief => {
     const section = fixed.sections[i];
@@ -536,7 +552,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       orientation: survey ? undefined : saved.firstLook?.state.people,
       position: { index: i, count, start: section.start, end: section.end, total: fixed.seconds },
       ...(chapters.length ? { chapters } : {}),
-      ...(cuts.length ? { cuts: cuts.map((time) => time * scale) } : {}),
+      ...(cuts.length ? { cuts } : {}),
       ...(fixed.language ? { language: fixed.language } : {}),
       secondsPerByte,
       ...(note ? { sectionNote: note } : {}),
@@ -578,8 +594,16 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         markSeen(section, seen.main);
         return { analysis: kept.analysis };
       }
-      if (kept?.failure && kept.failureClass && kept.failureClass !== 'transient')
-        return { analysis: null, failure: kept.failure, failureClass: kept.failureClass };
+      if (
+        kept?.failure &&
+        (saved.analyses || (kept.failureClass && kept.failureClass !== 'transient'))
+      )
+        return {
+          analysis: null,
+          failure: kept.failure,
+          failureClass: kept.failureClass ?? 'transient',
+          reused: true,
+        };
     }
     const still = stillOf(section);
     if (still >= 0 && (survey ? seen.survey : seen.main).has(still)) {
@@ -614,6 +638,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
               ),
               section.start - 15,
             ).slice(-4),
+            log,
           },
           signal,
           meter,
@@ -711,6 +736,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     looked: Looked,
     stateIn: Continuity | null,
     late: boolean = false,
+    onPlaced?: (continuity: Continuity) => void,
   ): Promise<SectionRecord> {
     const section = fixed.sections[i];
     const seconds = section.end - section.start;
@@ -837,17 +863,22 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       });
     }
     const final = layout(length);
-    const skipped: Skip[] = [];
+    const skipped: (Skip & { id?: string })[] = [];
     const left: string[] = [];
+    const nextCut = i + 1 < count ? cutsIn(fixed.sections[i + 1])[0] : undefined;
     for (const item of final.left) {
       const cue = cues[item.index];
       const voiceLost =
         failed.has(key(item.index, 'short')) ||
         (failed.has(key(item.index, 'full')) && !clips.has(key(item.index, 'short')));
+      const shotEnds = (fixed.cuts ?? []).some(
+        (time) => time > section.start + cue.at + 0.05 && time <= section.end + 0.3,
+      );
       const carry =
         !voiceLost &&
         item.reason !== 'priority' &&
-        cue.until - seconds >= 0.5 &&
+        cue.until >= seconds - 0.25 &&
+        !shotEnds &&
         i + 1 < active &&
         !savedRecords.has(i + 1) &&
         !records.has(i + 1);
@@ -861,7 +892,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           ...(carried.get(i + 1) ?? []),
           {
             id: ids[item.index],
-            cue: { ...cue, at: 0, until: Math.min(8, cue.until - seconds), pauseAt: 0 },
+            cue: { ...cue, at: 0, until: Math.min(4, nextCut ?? 4), pauseAt: 0 },
             clips: kept,
           },
         ]);
@@ -872,6 +903,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         at: cue.at + section.start,
         text: cue.text,
         reason: leftReasons[voiceLost ? 'voice' : item.reason],
+        id: ids[item.index],
       });
     }
     const placed = final.placed.flatMap((item) => {
@@ -894,6 +926,20 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         return { placement: { ...placement, at, pauseAt, pause }, clip };
       })
       .sort((a, b) => a.placement.at - b.placement.at || a.placement.pauseAt - b.placement.pauseAt);
+    const heard: Heard = {
+      spoken: aligned.map((item) => item.placement.text),
+      left,
+      sectionIndex: i,
+      sectionEnd: section.end,
+      words,
+      notes: settings.notes,
+    };
+    const continuity = analysis
+      ? nextContinuity(stateIn, analysis, heard)
+      : aligned.length
+        ? nextContinuity(stateIn, blank(stateIn), heard)
+        : (stateIn ?? emptyContinuity);
+    onPlaced?.(continuity);
     const timeline = outputTimeline(aligned.map((item) => item.placement));
     await progress(`Mixing section ${i + 1} of ${count}`, at(0.75));
     const pauses = timeline.filter((item) => item.pause > 0);
@@ -934,19 +980,6 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           signal,
           media,
         );
-    const heard: Heard = {
-      spoken: placements.map((item) => item.text),
-      left,
-      sectionIndex: i,
-      sectionEnd: section.end,
-      words,
-      notes: settings.notes,
-    };
-    const continuity = analysis
-      ? nextContinuity(stateIn, analysis, heard)
-      : placements.length
-        ? nextContinuity(stateIn, blank(stateIn), heard)
-        : (stateIn ?? emptyContinuity);
     const record: SectionRecord = {
       index: i,
       start: section.start,
@@ -1061,10 +1094,13 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       const result = await look(i, first.state, true);
       if (result.fatal) throw result.fatal;
       if (!result.analysis)
-        throw new Error(
-          result.failure || 'The first look could not finish. Continue to retry this section.',
+        log(
+          `First look skipped section ${i + 1} of ${active} (${result.failureClass ?? 'unknown'}): ${result.failure ?? 'no reply'}`,
         );
-      first = { through: i + 1, state: nextContinuity(first.state, result.analysis) };
+      first = {
+        through: i + 1,
+        state: result.analysis ? nextContinuity(first.state, result.analysis) : first.state,
+      };
       await keeper.keepFirstLook?.(first);
       saved.firstLook = first;
     }
@@ -1072,7 +1108,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
 
   let state: Continuity | null = null;
   let failures = 0;
-  let ahead: { index: number; promise: Promise<Looked> } | null = null;
+  const ahead = new Map<number, Promise<Looked>>();
   const deferred: { index: number; state: Continuity | null; at: number }[] = [];
   for (let i = 0; i < active; i++) {
     signal.throwIfAborted();
@@ -1081,32 +1117,36 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       records.set(i, done);
       if (done.analysis) markSeen(fixed.sections[i], seen.main);
       state = done.continuity;
+      failures = 0;
       continue;
     }
     await progress(`Watching section ${i + 1} of ${count}`, share(i, 0));
     const section = fixed.sections[i];
     log(`Section ${i + 1} of ${count} (${clock(section.start)} to ${clock(section.end)}) started.`);
-    const looked: Looked = ahead?.index === i ? await ahead.promise : await look(i, state);
-    ahead = null;
+    const looked: Looked = (await ahead.get(i)) ?? (await look(i, state));
+    ahead.delete(i);
     if (looked.fatal) throw looked.fatal;
-    failures = looked.failure ? failures + 1 : 0;
+    failures = looked.failure && !looked.reused ? failures + 1 : 0;
     if (failures >= 3)
       throw new Error(
         `${looked.failure} Three sections in a row could not be described, so the job stopped.`,
       );
-    const provisional = looked.analysis ? nextContinuity(state, looked.analysis) : state;
-    if (i + 1 < active && !savedRecords.has(i + 1))
-      ahead = { index: i + 1, promise: look(i + 1, provisional) };
-    if (looked.failureClass === 'transient') {
+    const lookAhead = (from: Continuity | null) => {
+      if (i + 1 < active && !savedRecords.has(i + 1)) ahead.set(i + 1, look(i + 1, from));
+    };
+    if (!looked.analysis) lookAhead(state);
+    if (looked.failureClass === 'transient' && !looked.reused) {
       deferred.push({ index: i, state, at: Date.now() });
       continue;
     }
     try {
-      const record = await render(i, looked, state);
+      const record = await render(i, looked, state, false, (continuity) => {
+        if (looked.analysis) lookAhead(continuity);
+      });
       records.set(i, record);
       state = record.continuity;
     } catch (error) {
-      if (ahead) await ahead.promise;
+      await Promise.all(ahead.values());
       throw error;
     }
   }
@@ -1123,20 +1163,19 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     records.set(item.index, await render(item.index, looked, item.state, true));
   }
 
+  await keptWorking;
   const ordered = [...records.values()].sort((a, b) => a.index - b.index);
   await progress('Joining the finished sections', 93);
-  const files = await Promise.all(
-    ordered.map(async (record) => {
-      const dir = join(directory, `section-${record.index}`);
-      if (!savedRecords.has(record.index))
-        return {
-          sound: join(dir, 'sound.flac'),
-          picture: copyVideo ? undefined : join(dir, `part-${record.index}.mp4`),
-        };
-      await mkdir(dir, { recursive: true });
-      return keeper.restore(record.index, dir);
-    }),
-  );
+  const files = await pool(ordered, 4, async (record) => {
+    const dir = join(directory, `section-${record.index}`);
+    if (!savedRecords.has(record.index))
+      return {
+        sound: join(dir, 'sound.flac'),
+        picture: copyVideo ? undefined : join(dir, `part-${record.index}.mp4`),
+      };
+    await mkdir(dir, { recursive: true });
+    return keeper.restore(record.index, dir);
+  });
   const report = buildReport(
     request.title,
     keptSecondsPerByte === undefined ? fixed : { ...fixed, secondsPerByte: keptSecondsPerByte },
