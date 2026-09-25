@@ -72,25 +72,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     <p>Looking for a half-remembered book, commercial, radio show or tape? Tell Olivia what you remember, or talk with her about something in the collection.</p>
     <a class="act primary" id="talkLibrarian" href="${require('@librechat/api').librarianGuide.chatUrl}">Talk to the Librarian</a>
     <p class="hint">Speak or type using the usual voice and chat controls. You can also ask her to save a library request from whatever you remember.</p>
-    <p><a href="#libraryRequests">Library requests and updates</a></p>
-  </section>
-
-  <section id="libraryRequests" aria-labelledby="requestsHeading" hidden>
-    <h2 id="requestsHeading">Library requests</h2>
-    <p>Request any kind of media, even if you only remember a few details. The library owner can review your request and let you know when it is available. Requests are visible to you and the library owner.</p>
-    <p id="requestUnread"></p><p id="requestStatus" role="status"></p>
-    <details><summary>Make a request here</summary>
-      <form id="requestForm">
-        <label class="field" for="requestTitle">Title or a short description</label><input id="requestTitle" type="text" maxlength="240" required>
-        <label class="field" for="requestMedia">Kind of media or preferred format</label><input id="requestMedia" type="text" maxlength="60" placeholder="Book, audiobook, radio, video, or anything else">
-        <label class="field" for="requestClues">What do you remember?</label><textarea id="requestClues" rows="4" maxlength="4000"></textarea>
-        <button id="requestSubmit" class="act" type="submit">Save library request</button>
-      </form>
-    </details>
-    <label for="requestScope">Show requests</label><select id="requestScope"><option value="mine">My requests</option><option id="requestAllOption" value="all" hidden>Everyone's requests</option></select>
-    <button id="requestRefresh" class="act quiet" type="button">Refresh requests</button>
-    <ul class="plain" id="requestList"></ul><button id="requestMore" class="act quiet" type="button" hidden>More requests</button>
-    <section id="requestDetail" aria-label="Request details" hidden></section>
+    <p id="requestsLink" hidden><a href="/library#libraryRequests">Library requests and updates</a></p>
   </section>
 
   <section id="shelf">
@@ -150,6 +132,25 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     </div>
     <h2 id="h-mysubs">Your submissions</h2>
     <ul class="plain" id="mySubs" aria-labelledby="h-mysubs"><li class="muted">Loading…</li></ul>
+    <section id="libraryRequests" aria-labelledby="requestsHeading" hidden>
+      <h2 id="requestsHeading" tabindex="-1">Library requests</h2>
+      <p>Ask for any book, recording, video or anything else for the family library, even if you only remember a little about it. You can also just tell Mrs. Witherspoon. The library owner reviews every request, and you get an alert with a link when yours is filled. Only you and the library owner see your requests.</p>
+      <p id="requestSummary"></p>
+      <details id="requestFormWrap"><summary>Make a request</summary>
+        <form id="requestForm">
+          <label class="field" for="requestTitle">Title, or a few words about it</label><input id="requestTitle" type="text" maxlength="240" autocomplete="off">
+          <label class="field" for="requestMedia">Kind of media or format (optional)</label><input id="requestMedia" type="text" maxlength="60" autocomplete="off" aria-describedby="requestMediaHint">
+          <p class="hint" id="requestMediaHint">For example: book, audiobook, radio show, commercial, movie or music.</p>
+          <label class="field" for="requestClues">What do you remember? (optional)</label><textarea id="requestClues" rows="4" maxlength="4000"></textarea>
+          <button id="requestSubmit" class="act primary" type="submit">Save request</button>
+        </form>
+      </details>
+      <div id="requestScopeWrap" hidden><label class="field" for="requestScope">Show</label><select id="requestScope"><option value="open">Everyone's open requests</option><option value="all">Everyone's requests</option><option value="mine">My requests</option></select></div>
+      <h3 id="requestListHeading">Your requests</h3>
+      <ul class="plain" id="requestList" aria-labelledby="requestListHeading"></ul>
+      <button id="requestMore" class="act quiet" type="button" hidden>More requests</button>
+      <section id="requestDetail" aria-labelledby="requestDetailHeading" hidden></section>
+    </section>
     <section id="reviewWrap" hidden>
       <h2 id="h-sort">The librarian's sorting</h2>
       <p class="hint" id="sortStatus">Books arrive without folders; the librarian files them under Books and a shelf (Romance, Urban fiction, Humor and jokes, Self-help…) on her own, a batch every few minutes. Press to do a batch now.</p>
@@ -310,7 +311,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
   </section>
 
-<script src="/assets/library/requests.js?v=20260924"></script>
+<script src="/assets/library/requests.js?v=20260924b"></script>
 <script src="/assets/library/reader.js?v=20260924"></script>
 <script src="/assets/library/access.js?v=20260924"></script>
 <script>
@@ -1303,11 +1304,10 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   (async function(){
     token = await getToken();
     if (!token) { say('Please sign in first.'); location.href = '/login?redirect=' + encodeURIComponent(location.pathname + location.search); return; }
-    window.setupLibraryRequests(api);
     var qs = new URLSearchParams(location.search);
     var id = qs.get('book'); var coll = qs.get('collection');
     if (qs.get('q')) queue = qs.get('q').split(',').filter(Boolean);
-    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); loadArchive(undefined, 0); loadCollections(); loadSubmissions(); }
+    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); loadArchive(undefined, 0); loadCollections(); loadSubmissions(); if (window.setupLibraryRequests) window.setupLibraryRequests(api, say); }
   })();
 })();
 </script>

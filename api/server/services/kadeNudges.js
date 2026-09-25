@@ -431,6 +431,7 @@ function startDueTimeReporter() {
 }
 
 module.exports = {
+  isTestUser,
   isPushConfigured,
   deliverNudge,
   sendPushToUser,
