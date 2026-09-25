@@ -20,6 +20,7 @@ const { splitSpeakScript, saySplit, previewExcerpt } = require('./kadeSoundBooth
 /* Part 126: the person reads and writes a SCREENPLAY; the engine reads XML. */
 const { screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREENPLAY_HELP } = require('./kadeSoundBoothScreenplay');
 const carry = require('./kadeSoundBoothCarry');
+const songPaste = require('./kadeSoundBoothPaste');
 const chain = require('./kadeSoundBoothChain');
 
 const router = express.Router();
@@ -33,6 +34,17 @@ const musicReferenceHooks = {
     return [...projects.map(p => p.options.reference_voice_url), ...assets.flatMap(a => [a.url, a.metadata?.wavUrl])].filter(Boolean);
   },
 };
+/* Sep 25 2026: a song pasted whole from ChatGPT ("Lyrics Box", "Tag Box",
+ * "Negative Tag Box") is sorted before any render route reads it -- YuE2's
+ * below and Lyria's further down -- so the engine gets the direction and the
+ * words and never the negative tags. The web page sorts a paste the moment it
+ * lands; this is for the phone and for a paste rendered straight away. Auth
+ * stays with the render routes themselves. */
+router.post('/render', express.json({ limit: '128kb' }), (req, _res, next) => {
+  const applied = songPaste.applySongPasteToBody(req.body);
+  if (applied) req.songPaste = applied;
+  next();
+});
 router.use(createLyricsRouter(musicReferenceHooks));
 router.use(createYueRouter({
   auth: requireJwtAuth,
@@ -818,7 +830,7 @@ const GUIDE = {
       cost: yueCost,
       bestFor: ['songs with your own lyrics', 'a cover with a different style and arrangement', 'a new arrangement from a composition score'],
       notFor: ['saved singer personas or voice cloning', 'guaranteeing an exact transcription of the source melody'],
-      howToWrite: ['Describe the new style, instruments and singing voice in Music direction.', 'Put exact words under Lyrics, with [Verse] and [Chorus] tags. Use Transcribe reference lyrics after importing a cover to get an editable draft, then correct anything it misheard.', 'For a cover, import one source recording up to six minutes. The worker transcribes its melody, then makes a new arrangement. Listen for transcription errors; the source is kept intact.'],
+      howToWrite: ['Describe the new style, instruments and singing voice in Music direction.', 'Put exact words under Lyrics, with [Verse] and [Chorus] tags. Use Transcribe reference lyrics after importing a cover to get an editable draft, then correct anything it misheard.', 'For a cover, import one source recording up to six minutes. The worker transcribes its melody, then makes a new arrangement. Listen for transcription errors; the source is kept intact.', 'Pasting a finished song laid out as Lyrics Box, Tag Box and Negative Tag Box? Paste it whole into Music direction. The booth puts the Lyrics Box under Lyrics and the Tag Box in Music direction, and leaves the Negative Tag Box out: YuE2 has no place for things to avoid, and naming them tends to add them.'],
       settings: [
         { key: 'lyrics', label: 'Lyrics', hint: 'The words to sing. Use [Verse] and [Chorus] tags, or choose Write my song idea to draft them.', kind: 'text' },
         { key: 'reference_voice_url', label: 'Recording to cover (optional)', hint: 'Import one song, up to six minutes. YuE2 uses its melody for a new arrangement; this does not clone the original singer. Add the words you want under Lyrics.', kind: 'clip', max: 1 },
@@ -847,6 +859,7 @@ const GUIDE = {
         'Then the mood in two or three plain adjectives, and last the technical line: a BPM number, the key, and how long. "Around 70 BPM, in D minor, a two-minute song." It reads the length from your words, so always say how long.',
         'Your own lyrics go in the Your own lyrics box, not in the brief. The booth sends them under a "Lyrics:" heading, the way the engine expects; put [Verse 1], [Chorus] and [Bridge] on their own lines above each section, and (parentheses) around echoes and backing vocals. If you leave the box empty and ask for a singer, it writes the words itself.',
         'For no singing, turn on No singing. The booth adds the one line the engine wants, "Instrumental only, no vocals."',
+        'Pasting a finished song laid out as Lyrics Box, Tag Box and Negative Tag Box? Paste it whole into Music direction. The booth puts the Lyrics Box in Your own lyrics and the Tag Box in Music direction, and leaves the Negative Tag Box out: this engine has no place for things to avoid, and naming them tends to add them.',
         'The words it sang come back cleaned of its own markers and are kept with the project as the words it sang, separate from the description of the music. Every take is a new performance -- there is no seed here, so the same brief twice gives you two different records, which is a reason to render twice when you like where it is going.',
       ],
       settings: [
@@ -1233,7 +1246,8 @@ async function notifyDraft(userId, ok) {
 router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), (req, res) => {
   const b = req.body || {};
   const deep = b.background === true && b.mode === 'write' && ['lyria', 'yue2'].includes(b.engine) && String(b.text || '').trim().length >= 3;
-  if (!deep) return scriptHandler(req, res);
+  /* A pasted three-box song needs no writer, so it is answered at once. */
+  if (!deep || songPaste.splitSongPaste(b.text)) return scriptHandler(req, res);
   sweepScriptJobs();
   const userId = String(req.user.id);
   for (const job of scriptJobs.values()) {
@@ -1271,11 +1285,47 @@ router.get('/script/job/:id', requireJwtAuth, (req, res) => {
   return res.json({ state: 'working', seconds: Math.round((Date.now() - job.started) / 1000) });
 });
 
+/* Sep 25 2026: a song pasted whole from ChatGPT's three boxes is already
+ * written. It is sorted here with no model call, no charge and no draft
+ * counted against the day, and handed back in the same "direction, then
+ * Lyrics:" shape both screens already split into their two boxes. The
+ * Negative Tag Box goes nowhere (see kadeSoundBoothPaste.js). */
+function songPasteScriptResult(engine, mode, pasted, b) {
+  const draft = songPaste.songPasteDraft(pasted);
+  const before = typeof b.lyrics === 'string' ? b.lyrics.trim() : '';
+  const lyricsReplaced = !!pasted.lyrics && !!before && before !== pasted.lyrics.trim();
+  const direction = pasted.tags.replace(/\s+/g, ' ').trim();
+  const readback = (direction.match(/^(?:[^.!?]+[.!?]){1,2}/) || [direction])[0].trim().slice(0, 400);
+  const problem = engine === 'lyria'
+    ? checkMusic(pasted.tags, pasted.lyrics)
+    : !pasted.lyrics ? 'YuE2 will not sing without words, and the paste had no Lyrics Box. Add the words under Lyrics before you generate.' : null;
+  return {
+    engine,
+    mode,
+    script: draft,
+    screenplay: draft,
+    readback,
+    estimate: engine === 'yue2' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor('lyria', pasted.tags),
+    problem,
+    repairs: [],
+    mismatch: null,
+    pasted: true,
+    note: songPaste.songPasteNote(pasted, { lyricsReplaced }) + ' Nothing was sent to the writer, and nothing was charged.',
+  };
+}
+
 async function scriptHandler(req, res) {
   try {
     const b = req.body || {};
     const engine = ['seed', 'lyria', 'yue2'].includes(b.engine) ? b.engine : 'scenema';
     const mode = b.mode === 'write' ? 'write' : 'format';
+    if (engine === 'lyria' || engine === 'yue2') {
+      const pasted = songPaste.splitSongPaste(b.text);
+      if (pasted) {
+        logger.info(`[soundbooth/script] ${engine}/${mode} user=${req.user.id} pasted song sorted without the writer: boxes=${pasted.boxes.join(',')}`);
+        return res.json(songPasteScriptResult(engine, mode, pasted, b));
+      }
+    }
     const text = String(b.text || '').trim().slice(0, 6000);
     if (text.length < 3) {
       return res.status(400).json({
@@ -1578,7 +1628,10 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       ? previewExcerpt(script, { maxWords: 40 }).prompt : script;
     const estimate = estimateFor(engine, quoteScript);
     if (editing) { estimate.audioSeconds = b.gen_seconds || null; estimate.spoken = 'AuK will edit your imported recording and save a new take. GPU time is billed; the cost depends on recording length and startup. ' + estimate.spoken; }
-    return res.json({ ok: true, estimate, preview: b.preview === true, note: fitNote, script: fitNote ? script : undefined });
+    /* A pasted song is said to have been sorted before anything is spent. */
+    const pasteNote = req.songPaste && req.songPaste.note;
+    if (pasteNote) estimate.spoken = pasteNote + ' ' + estimate.spoken;
+    return res.json({ ok: true, estimate, preview: b.preview === true, note: [pasteNote, fitNote].filter(Boolean).join(' ') || null, script: fitNote ? script : undefined });
   }
 
   let project = null;
@@ -2032,9 +2085,10 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         bytes: buffer.length,
         lyrics: opts.keep_lyrics === false ? null : lyricsClean || null,
         costUSD,
-        spoken: lyricsClean
+        note: (req.songPaste && req.songPaste.note) || null,
+        spoken: ((req.songPaste && req.songPaste.note) ? req.songPaste.note + ' ' : '') + (lyricsClean
           ? 'The song is made, and it wrote words for it. They are saved with the recording.'
-          : 'The song is made.',
+          : 'The song is made.'),
       });
     }
 

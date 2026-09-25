@@ -18,6 +18,11 @@
  * auto-plays.
  * -------------------------------------------------------------------------- */
 const { SHARED_HEAD } = require('./kadePages');
+/* Sep 25 2026: the three-box paste splitter, as source text, so the page runs
+ * the very functions the server runs (see kadeSoundBoothPaste.js). Spliced in
+ * by interpolation, so none of it passes through this file's template-literal
+ * escaping. */
+const { PAGE_SOURCE: SONG_PASTE_SOURCE } = require('./kadeSoundBoothPaste');
 
 const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth — Kade-AI</title>${SHARED_HEAD}
 <style>
@@ -503,6 +508,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('script').focus();
     }
     document.getElementById('btnMake').onclick = function(){ makeScript(state.input === 'brief' ? 'write' : 'format'); };
+    ${SONG_PASTE_SOURCE || ''}
     var writingUndo=null, writingLyrics;
     function changeWriting(value){
       var box=document.getElementById('script');
@@ -589,7 +595,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
          * has no Lyrics heading and stays whole; only YuE2 insists on words. */
         if(engine==='yue2'||engine==='lyria'){var split=result.split(/\\nLyrics:\\s*/i);if(split.length<2){if(engine==='yue2')throw new Error('The writer did not provide separate lyrics. Your idea is kept; try again or add your lyrics in song settings.');}else{writingLyrics=state.values.lyrics||'';state.values.lyrics=split.slice(1).join('\\n').trim();result=split[0].trim();renderSettings();}}
         changeWriting(result);document.getElementById('readback').textContent=r.data.readback||'';
-        say('Draft ready in the editor. You can change it or undo. No audio has been generated.');
+        say((r.data.note?r.data.note+' ':'')+'Draft ready in the editor. You can change it or undo. No audio has been generated.');
       } catch(e){say(e.message||'The writing desk could not finish. Your text is kept.',true);}
       finally {state.writing=false;box.readOnly=false;this.disabled=false;this.textContent=label;document.getElementById('btnInspire').disabled=false;updateRenderControls();}
     };
@@ -601,6 +607,26 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     },800);
 
     document.getElementById('script').addEventListener('input', function(){ state.pendingRender=null; document.getElementById('btnRender').textContent=renderLabel(); });
+    /* Sep 25 2026: a song pasted whole from ChatGPT (Lyrics Box, Tag Box,
+     * Negative Tag Box) is sorted the moment it lands: the Tag Box becomes the
+     * Music direction, the Lyrics Box goes to the lyrics box, and the negative
+     * tags go nowhere, because neither music engine has a place for them. No
+     * writer is asked, nothing is charged, and Undo puts back what was there. */
+    document.getElementById('script').addEventListener('paste', function(e){
+      if((state.engine!=='lyria'&&state.engine!=='yue2')||busy()||typeof splitSongPaste!=='function')return;
+      var clip=e.clipboardData||window.clipboardData;var text=clip&&clip.getData?clip.getData('text'):'';
+      var pasted=splitSongPaste(text);
+      if(!pasted)return;
+      e.preventDefault();
+      var before=(state.values.lyrics||'').trim();
+      writingLyrics=state.values.lyrics||'';
+      if(pasted.lyrics)state.values.lyrics=pasted.lyrics;
+      renderSettings();
+      changeWriting(pasted.tags);
+      document.getElementById('readback').textContent='';
+      state.pendingRender=null;document.getElementById('btnRender').textContent=renderLabel();
+      say(songPasteNote(pasted,{lyricsReplaced:!!pasted.lyrics&&!!before&&before!==pasted.lyrics.trim()})+' Undo restores what was there. Nothing has been generated.');
+    });
 
     async function doRender(preview){
       if(state.writing || !referenceReady())return;

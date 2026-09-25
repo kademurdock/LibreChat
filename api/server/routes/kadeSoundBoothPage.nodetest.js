@@ -46,3 +46,21 @@ test('the library card shows the words it sang apart from the description', () =
   assert.match(html, /<summary>Words it sang<\/summary>/);
   assert.match(html, /p\.sungLyrics \?/);
 });
+
+test('the paste splitter the server runs is spliced into the page, byte for byte', () => {
+  const { PAGE_SOURCE } = require('./kadeSoundBoothPaste');
+  assert.ok(html.includes(PAGE_SOURCE), 'the same source text, untouched by template escaping');
+  assert.match(html, /addEventListener\('paste'/);
+  /* The page's own copy, run as the browser would run it. */
+  const main = scripts.find((s) => s.includes('function splitSongPaste('));
+  const start = main.indexOf('function songPasteHeading(');
+  const end = main.indexOf('var writingUndo=');
+  const ctx = {};
+  const F = '`'.repeat(3);
+  vm.runInNewContext(main.slice(start, end) + '\nthis.out = splitSongPaste(input);', Object.assign(ctx, {
+    input: ['Lyrics Box', F, '[Verse 1]\nsoup at midnight', F, 'Tag Box', F, 'pop-punk, 172 BPM', F, 'Negative Tag Box', F, 'no autotune', F].join('\r\n'),
+  }));
+  assert.equal(ctx.out.lyrics, '[Verse 1]\nsoup at midnight');
+  assert.equal(ctx.out.tags, 'pop-punk, 172 BPM');
+  assert.equal(ctx.out.negative, 'no autotune');
+});

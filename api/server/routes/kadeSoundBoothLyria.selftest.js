@@ -39,7 +39,13 @@ function loadBooth({ saved, usage, assets }) {
     if (name === '@librechat/api') {
       const api = {
         needsRefresh: () => false,
-        createYueRouter: () => require('express').Router(),
+        /* Stands in for YuE2's router: its /render takes engine yue2 and hands
+         * back the body it was given, so the paste sorting can be seen. */
+        createYueRouter: () => {
+          const yue = require('express').Router();
+          yue.post('/render', require('express').json(), (req, res, next) => (req.body && req.body.engine === 'yue2' ? res.json({ yueSaw: req.body }) : next()));
+          return yue;
+        },
         yueConfigured: () => false,
         getNewS3URL: async (u) => u,
         saveBufferToS3: async ({ buffer, fileName }) => {
@@ -463,6 +469,51 @@ test('the music lane: real store, stub Google, every branch that can cost money'
       await new Promise((r) => deskServer.close(r));
       delete process.env.KADE_LLM_GATEWAY_URL; delete process.env.REFRAME_PROXY_SECRET;
     }
+  });
+
+  /* Sep 25 2026: a song pasted whole from ChatGPT's three boxes. Invented
+   * words, in the prompt's OUTPUT FORMAT; nobody's real lyrics. */
+  const F = '`'.repeat(3);
+  const PASTE_LYRICS = '[Verse 1]\nThe vending machine ate my last two quarters\n\n[Chorus]\nTomato soup at midnight (at midnight)';
+  const PASTE_TAGS = 'Early-2000s pop-punk, 172 BPM, bratty tenor lead, palm-muted guitars, gang vocals on the chorus';
+  const PASTE = ['**Lyrics Box**', '', F, PASTE_LYRICS, F, '', 'Tag Box:', '', F, PASTE_TAGS, F, '', 'Negative Tag Box', '', F, 'no autotune, no ballad tempo', F].join('\r\n');
+
+  await t.test('a pasted three-box song is sorted by the desk with no model call, even on the deep lane', async () => {
+    delete process.env.KADE_LLM_GATEWAY_URL; delete process.env.REFRAME_PROXY_SECRET; delete process.env.OPENROUTER_KEY;
+    const r = await call('/script', { engine: 'lyria', mode: 'write', background: true, text: PASTE });
+    assert.equal(r.status, 200, 'answered at once, not queued as a writing job: ' + JSON.stringify(r.data));
+    assert.equal(r.data.script, PASTE_TAGS + '\n\nLyrics:\n' + PASTE_LYRICS);
+    assert.equal(r.data.pasted, true);
+    assert.doesNotMatch(r.data.script, /autotune|Tag Box|```/);
+    assert.match(r.data.note, /Negative Tag Box was left out/);
+    assert.match(r.data.note, /nothing was charged/);
+    assert.equal(r.data.problem, null);
+    const y = await call('/script', { engine: 'yue2', mode: 'format', text: PASTE, lyrics: '[Verse]\nolder words' });
+    assert.equal(y.status, 200);
+    assert.match(y.data.note, /replaced what was in the lyrics box/);
+  });
+
+  await t.test('a pasted three-box song rendered straight away reaches Lyria as direction plus words, never the negative tags', async () => {
+    reply = { status: 200, body: { candidates: [{ content: { parts: [
+      { inlineData: { mimeType: 'audio/mpeg', data: FAKE_MP3 } },
+    ] } }] } };
+    const quote = await call('/render', { engine: 'lyria', script: PASTE, estimateOnly: true });
+    assert.equal(quote.status, 200);
+    assert.match(quote.data.estimate.spoken, /^Your pasted song was sorted/);
+    const r = await call('/render', { engine: 'lyria', script: PASTE });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const sent = seen.at(-1).body.contents[0].parts[0].text;
+    assert.equal(sent, PASTE_TAGS + '\n\nLyrics:\n' + PASTE_LYRICS);
+    assert.match(r.data.spoken, /Negative Tag Box was left out/);
+    const p = await Project.findById(r.data.projectId);
+    assert.equal(p.script, PASTE_TAGS, 'the project keeps the direction, not the whole paste');
+    assert.equal(p.options.lyrics, PASTE_LYRICS);
+
+    const y = await call('/render', { engine: 'yue2', script: PASTE, lyrics: '' });
+    assert.equal(y.status, 200);
+    assert.equal(y.data.yueSaw.script, PASTE_TAGS, "YuE2's router is handed the sorted body too");
+    assert.equal(y.data.yueSaw.lyrics, PASTE_LYRICS);
+    assert.doesNotMatch(JSON.stringify(y.data.yueSaw), /autotune/);
   });
 
   await t.test('THE WALL: a hyphenated model id is caught and named in plain words', async () => {
