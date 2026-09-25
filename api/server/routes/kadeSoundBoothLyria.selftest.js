@@ -37,7 +37,7 @@ function loadBooth({ saved, usage, assets }) {
   const localRequire = (name) => {
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '@librechat/api') {
-      return {
+      const api = {
         needsRefresh: () => false,
         createYueRouter: () => require('express').Router(),
         yueConfigured: () => false,
@@ -46,8 +46,29 @@ function loadBooth({ saved, usage, assets }) {
           saved.push({ bytes: buffer.length, fileName });
           return 'https://storage.example/' + fileName;
         },
+        /* Sep 25 2026: the booth grew these since this harness was written, and
+         * without them it no longer loaded at all. Inert stand-ins: nothing in
+         * this file exercises the writing desk's model, YuE2 or Stable Audio. */
+        writingCost: () => ({ costUSD: 0, measured: false }),
+        musicWritingSettings: () => ({}),
+        musicWritingPrompt: async (system) => system,
+        yueStyles: {},
+        yueStylesEnabled: () => false,
+        yueCost: 'test price',
+        effectsGuide: { name: 'Stable Audio', settings: [], howToWrite: [] },
+        effectsConfigured: () => false,
+        notifyMusic: async () => ({ accepted: false }),
       };
+      return new Proxy(api, {
+        get(target, key) {
+          if (key in target) return target[key];
+          if (/^create\w*Router$/.test(String(key))) return () => require('express').Router();
+          return undefined;
+        },
+      });
     }
+    if (name === '~/server/services/kadeJevJudges') return {};
+    if (name === '~/models') return { getAgent: async () => null };
     if (name === '~/server/middleware') {
       return { requireJwtAuth: (req, _res, next) => { req.user = { id: String(module.__user) }; next(); } };
     }
@@ -175,6 +196,16 @@ test("cleanLyrics strips the engine's markers and speaks section tags, for the r
   assert.equal(pure.cleanLyrics('plain words, no markers'), 'plain words, no markers');
 });
 
+test('a sung-words readback is told apart from a real one-line description', () => {
+  const f = pure.readbackIsSungWords;
+  assert.equal(f('A slow soul record, Rhodes first, about two minutes.', ''), false);
+  assert.equal(f('', 'anything'), false);
+  assert.equal(f('line one\nline two\nline three', ''), true, 'a lyric sheet is many lines');
+  assert.equal(f('People look at these walls and they see a trap.', 'People look at these walls and they see a trap.\nI chose this.'), true,
+    'the start of the saved sung words, even flattened to one line');
+  assert.equal(f('People', 'People look at these walls'), false, 'too short to call');
+});
+
 /* ---------------- the render lane, against a stub Google ------------------ */
 test('the music lane: real store, stub Google, every branch that can cost money', async (t) => {
   const mongo = await MongoMemoryServer.create();
@@ -275,14 +306,57 @@ test('the music lane: real store, stub Google, every branch that can cost money'
       { text: '[[A0]]\n[[B1]]\n[:] People look at these walls and they see a trap.\n[:] I chose this.' },
       { inlineData: { mimeType: 'audio/mpeg', data: FAKE_MP3 } },
     ] } }] } };
-    const r = await call('/render', { engine: 'lyria', script: brief });
+    const description = 'A slow soul record with a woman singing close, about two minutes.';
+    const r = await call('/render', { engine: 'lyria', script: brief, readback: description });
     assert.equal(r.status, 200);
     assert.equal(r.data.lyrics, 'People look at these walls and they see a trap.\nI chose this.');
     const p = await Project.findById(r.data.projectId);
-    assert.equal(p.readback, 'People look at these walls and they see a trap.\nI chose this.');
+    /* Sep 25 2026: the words it sang are the words it sang, and the
+     * description stays the description ("what you will hear" on the phone). */
+    assert.equal(p.sungLyrics, 'People look at these walls and they see a trap.\nI chose this.');
+    assert.equal(p.readback, description, 'the sung words never overwrite the description');
     assert.match(assets.at(-1).metadata.lyrics, /\[\[A0\]\]/, 'the raw text keeps the markers');
     assert.equal(assets.at(-1).metadata.lyricsClean, r.data.lyrics);
     assert.match(assets.at(-1).metadata.wirePrompt, /^A slow soul record/);
+  });
+
+  await t.test('No singing: a sung-words readback is not carried into the next take, and it sang nothing', async () => {
+    reply = { status: 200, body: { candidates: [{ content: { parts: [
+      { text: 'Verse one: the road\nout of Missouri\nand back' },
+      { inlineData: { mimeType: 'audio/mpeg', data: FAKE_MP3 } },
+    ] } }] } };
+    const sung = await call('/render', { engine: 'lyria', script: brief });
+    assert.equal(sung.status, 200);
+    let p = await Project.findById(sung.data.projectId);
+    assert.equal(p.sungLyrics, 'Verse one: the road\nout of Missouri\nand back');
+    assert.equal(p.readback, '');
+    /* A screen from before the fix still holds the old lyric sheet in its
+     * read-back line and sends it back with the next render. */
+    const again = await call('/render', {
+      engine: 'lyria', script: brief, instrumental: true, projectId: String(p._id),
+      readback: 'Verse one: the road\nout of Missouri\nand back',
+    });
+    assert.equal(again.status, 200);
+    p = await Project.findById(sung.data.projectId);
+    assert.equal(p.readback, '', 'the lyric sheet is not the description of an instrumental');
+    assert.equal(p.sungLyrics, '', 'an instrumental take sang nothing, whatever text came back');
+    assert.match(seen.at(-1).body.contents[0].parts[0].text, /Instrumental only, no vocals\.$/);
+  });
+
+  await t.test('a row saved before the fix shows its sung words as sung words, not as "what you will hear"', async () => {
+    const sheet = 'It was a long road\nand a longer night\nso we sang anyway';
+    const old = await Project.create({ user: booth.__user, engine: 'lyria', title: 'Old', script: brief, readback: sheet, state: 'done' });
+    const v = pure.projectView(old.toObject());
+    assert.equal(v.readback, '');
+    assert.equal(v.sungLyrics, sheet);
+    const instr = await Project.create({ user: booth.__user, engine: 'lyria', title: 'Old instrumental', script: brief, readback: sheet, options: { instrumental: true }, state: 'done' });
+    const vi = pure.projectView(instr.toObject());
+    assert.equal(vi.readback, '');
+    assert.equal(vi.sungLyrics, '', 'an instrumental project does not claim words it no longer sings');
+    const fine = pure.projectView({ _id: old._id, engine: 'lyria', readback: 'A slow soul record, about two minutes.', options: {} });
+    assert.equal(fine.readback, 'A slow soul record, about two minutes.', 'a real one-line description is untouched');
+    const yue = pure.projectView({ _id: old._id, engine: 'yue2', readback: sheet, options: {} });
+    assert.equal(yue.readback, sheet, 'other engines are not second-guessed');
   });
 
   await t.test('a refusal hands back what it said, not "no clip"', async () => {

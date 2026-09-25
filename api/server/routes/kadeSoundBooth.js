@@ -342,6 +342,26 @@ function withInstrumentalLine(brief) {
   return b + '\n\n' + LYRIA_INSTRUMENTAL_LINE;
 }
 
+/* Sep 25 2026, her words: "with lyria it's putting lyrics in a style
+ * description I think". It was: every sung Lyria take wrote the words it sang
+ * into `readback`, the slot every screen reads as "what you will hear" (the
+ * phone says exactly that), and the render after it carried the sheet forward
+ * even with No singing on. The words now live in `sungLyrics`.
+ *
+ * This tells a sung-words readback from a real one, so the ones already saved
+ * stop showing and stop being carried forward. A real readback is one line:
+ * the desk collapses its whitespace, and so does every other path that writes
+ * one. A lyric sheet is many lines (13 to 19 in the rows saved before this
+ * fix). A readback that is the start of the saved sung words is caught too. */
+function readbackIsSungWords(readback, sungLyrics) {
+  const r = String(readback || '').trim();
+  if (!r) return false;
+  if ((r.match(/\n/g) || []).length >= 2) return true;
+  const flat = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+  const sung = flat(sungLyrics);
+  return !!sung && flat(r).length >= 20 && sung.startsWith(flat(r));
+}
+
 /* What Lyria hands back as "lyrics" carries its own structure markers --
  * [[A0]] [[B1]] section ids and a [:] at the head of every sung line (read
  * off the Part 175 render). Saved raw into readback, VoiceOver reads
@@ -789,7 +809,7 @@ const GUIDE = {
         'Then the mood in two or three plain adjectives, and last the technical line: a BPM number, the key, and how long. "Around 70 BPM, in D minor, a two-minute song." It reads the length from your words, so always say how long.',
         'Your own lyrics go in the Your own lyrics box, not in the brief. The booth sends them under a "Lyrics:" heading, the way the engine expects; put [Verse 1], [Chorus] and [Bridge] on their own lines above each section, and (parentheses) around echoes and backing vocals. If you leave the box empty and ask for a singer, it writes the words itself.',
         'For no singing, turn on No singing. The booth adds the one line the engine wants, "Instrumental only, no vocals."',
-        'The words it wrote come back cleaned of its own markers, so the read-back is the song and nothing else. Every take is a new performance -- there is no seed here, so the same brief twice gives you two different records, which is a reason to render twice when you like where it is going.',
+        'The words it sang come back cleaned of its own markers and are kept with the project as the words it sang, separate from the description of the music. Every take is a new performance -- there is no seed here, so the same brief twice gives you two different records, which is a reason to render twice when you like where it is going.',
       ],
       settings: [
         { key: 'instrumental', label: 'No singing', hint: 'Keeps it instrumental. Leave it off if you want a singer, and describe the voice in your brief.', kind: 'toggle', default: false },
@@ -1086,6 +1106,11 @@ async function takesFor(projects, userId) {
 }
 
 function projectView(p) {
+  /* Sep 25 2026: a Lyria row saved before sungLyrics existed keeps the sung
+   * words in `readback`. Show them as what they are, never as "what you will
+   * hear"; on an instrumental project they describe a take it no longer sings,
+   * so they are not shown as its words either. */
+  const oldSungReadback = p.engine === 'lyria' && readbackIsSungWords(p.readback, p.sungLyrics);
   return {
     id: String(p._id),
     title: p.title,
@@ -1102,7 +1127,9 @@ function projectView(p) {
       : p.engine === 'seed'
       ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
       : 'AuK — one actor performing' + ((p.options || {}).reference_voice_url ? ', cloning a clip' : ', voice from the description') + (Number.isInteger(p.voiceSeed) ? `, voice ${p.voiceSeed}` : ''),
-    readback: p.readback,
+    readback: oldSungReadback ? '' : p.readback,
+    /* Lyria: the words the latest take sang ("Words it sang" on the web). */
+    sungLyrics: p.sungLyrics || (oldSungReadback && !(p.options || {}).instrumental ? p.readback : '') || '',
     options: p.engine === 'stable' ? { ...p.options, soundModel: p.options?.soundModel || '3_small_sfx' } : p.options || {},
     /* Where this one could go next, so a client never has to know the rules. */
     carryTo: carry.destinationsFor(p.engine),
@@ -1618,7 +1645,11 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     project.mode = mode;
     project.sourceText = String(b.sourceText || project.sourceText || '').slice(0, 8000);
     project.script = script; // Keep the entire accepted script so resume compares the same work.
-    project.readback = String(editing ? script : b.readback || project.readback || '').slice(0, 600);
+    let readback = String(editing ? script : b.readback || project.readback || '');
+    /* Sep 25 2026: sung words are never carried forward as the description --
+     * least of all into a take with No singing on. */
+    if (engine === 'lyria' && readbackIsSungWords(readback, project.sungLyrics)) readback = '';
+    project.readback = readback.slice(0, 600);
     project.options = opts;
     project.lastRenderAt = new Date();
     project.lastError = undefined;
@@ -1946,7 +1977,11 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       }
       project.state = 'done';
       project.costUSD = (project.costUSD || 0) + costUSD;
-      if (opts.keep_lyrics !== false && lyricsClean) project.readback = lyricsClean.slice(0, 600);
+      /* Sep 25 2026: the words it sang are kept as the words it sang. They
+       * used to overwrite `readback` -- "what you will hear" -- and stay
+       * there through every instrumental take after. An instrumental take
+       * sang nothing, whatever text came back with it. */
+      project.sungLyrics = opts.keep_lyrics === false || opts.instrumental ? '' : lyricsClean.slice(0, 8000);
       if (assetId) project.assets = [...(project.assets || []), assetId].slice(-20);
       await project.save();
       await notifyMusic(String(req.user.id), project.title, 1, 1, false).catch(error => logger.warn('[soundbooth/music] Lyria notification failed: ' + error.message));
@@ -2632,5 +2667,5 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE };
+module.exports._internals = { readbackIsSungWords, projectView, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE };
 

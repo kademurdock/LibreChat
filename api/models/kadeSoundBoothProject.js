@@ -46,6 +46,13 @@ const kadeSoundBoothProjectSchema = new mongoose.Schema(
     /** The plain-English read-back the model wrote, so she can hear the plan
      * again without spending anything. */
     readback: { type: String, default: '' },
+    /** Lyria only (Sep 25 2026): the words the latest take actually sang, as
+     * Lyria handed them back, cleaned of its markers. These used to be written
+     * into `readback`, which every screen reads as "what you will hear", so a
+     * lyric sheet sat where the description of the music belongs and stayed
+     * there through later instrumental takes. Empty for an instrumental take
+     * or when "Keep the words it wrote" is off. */
+    sungLyrics: { type: String, default: '' },
     options: { type: mongoose.Schema.Types.Mixed, default: {} },
     /** Bridge job ids, newest last. Scenema only. */
     jobs: { type: [String], default: [] },
