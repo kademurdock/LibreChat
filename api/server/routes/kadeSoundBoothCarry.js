@@ -123,6 +123,25 @@ function splitLyricsBlock(brief) {
   };
 }
 
+/* Sep 25 2026: a carry with "rewrite the description" ticked saved the
+ * literal text "[object Object]" as a Lyria direction (the route handed a
+ * model reply object where a string belonged). One saved row still holds it.
+ * A script is read as text whatever shape it arrives in, and that string is
+ * never treated as somebody's description. */
+function isBrokenScript(text) {
+  return /^\s*\[object \w+\]\s*$/.test(String(text || ''));
+}
+
+function scriptText(value) {
+  let text = '';
+  if (typeof value === 'string') {
+    text = value;
+  } else if (value && typeof value === 'object' && typeof value.text === 'string') {
+    text = value.text;
+  }
+  return isBrokenScript(text) ? '' : text;
+}
+
 /** True when this text carries section tags -- [Verse 1], [Chorus] and so on.
  *  Both music engines read them, which is why they move across untouched. */
 const SECTION_TAG =
@@ -188,7 +207,12 @@ function carryOver(project, to, helpers = {}) {
   const options = {};
 
   /* ---- the script ------------------------------------------------------ */
-  let script = String(project.script || '');
+  let script = scriptText(project.script);
+  if (!script && isBrokenScript(project.script)) {
+    notes.push(
+      'The description on that project was damaged by an old bug and read "[object Object]", so it was left empty. Write one, or ask the desk, before you generate.',
+    );
+  }
   let lyrics = typeof oldOpts.lyrics === 'string' ? oldOpts.lyrics.trim() : '';
 
   if (src.script === 'brief') {
@@ -332,6 +356,8 @@ module.exports = {
   canCarry,
   carryOver,
   splitLyricsBlock,
+  scriptText,
+  isBrokenScript,
   hasSectionTags,
   SHARED_KNOBS,
 };

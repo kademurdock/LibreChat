@@ -436,7 +436,9 @@ READBACK: one or two plain sentences saying what a listener will hear -- who is 
 }
 
 function splitScriptAndReadback(raw) {
-  const text = String(raw || '').trim();
+  /* A callModel reply is { text, ... }; taking the object whole once saved
+   * "[object Object]" as a script (Sep 25 2026). Read its text either way. */
+  const text = String((raw && typeof raw === 'object' ? raw.text : raw) || '').trim();
   const idx = text.lastIndexOf('READBACK:');
   if (idx === -1) return { script: stripFence(text), readback: '' };
   return {
@@ -2414,16 +2416,24 @@ router.post('/projects/:id/carry', requireJwtAuth, express.json({ limit: '16kb' 
      * and they already carried across exactly. */
     if ((req.body || {}).rewrite === true && String(draft.script || '').trim()) {
       try {
-        const raw = await callModel({
+        /* Sep 25 2026: callModel answers { text, usage, costUSD }. Handing the
+         * whole object on saved the literal "[object Object]" as the Lyria
+         * direction and then told her the desk had rewritten it. */
+        const reply = await callModel({
           system: systemPrompt({ engine: to, mode: 'format' }),
           user: `This was written for ${carry.ENGINES[source.engine].label} and is moving to ${carry.ENGINES[to].label}. Keep what it asks for and put it in the format below.\n\n${draft.script.slice(0, 6000)}`,
           maxTokens: 2000,
         });
-        const split = splitScriptAndReadback(raw);
-        if (split.script) {
-          draft.script = split.script;
+        const split = splitScriptAndReadback(reply.text);
+        /* The words already carried across exactly; a Lyrics block the desk
+         * added to the description would be a second, unasked-for copy. */
+        const rewritten = (draft.options || {}).lyrics ? carry.splitLyricsBlock(split.script).prose : split.script;
+        if (rewritten && !carry.isBrokenScript(rewritten)) {
+          draft.script = rewritten;
           draft.readback = split.readback;
           notes.push('The desk rewrote the description in the new engine\u2019s format. Your lyrics were not sent to it.');
+        } else {
+          notes.push('The desk did not return a usable description, so it came across as it was. You can still edit it by hand.');
         }
       } catch (error) {
         logger.warn('[soundbooth/carry] rewrite skipped: ' + (error && error.message));

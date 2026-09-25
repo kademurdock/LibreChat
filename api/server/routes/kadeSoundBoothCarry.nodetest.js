@@ -198,3 +198,28 @@ test('a rewrite is advised exactly when the two grammars differ', () => {
     }
   }
 });
+
+/* Sep 25 2026: the carry route's rewrite once saved "[object Object]" as a
+ * Lyria direction. A script is read as text whatever shape it arrives in, and
+ * the broken string is never carried on as somebody's description. */
+test('a script arriving as a model reply object is read as its text', () => {
+  assert.strictEqual(carry.scriptText({ text: 'A warm neo-soul groove.', usage: {} }), 'A warm neo-soul groove.');
+  assert.strictEqual(carry.scriptText('plain words'), 'plain words');
+  assert.strictEqual(carry.scriptText(undefined), '');
+  assert.strictEqual(carry.scriptText({ usage: {} }), '', 'an object with no text is nothing, not "[object Object]"');
+  const out = carry.carryOver({ ...YUE, script: { text: 'A warm neo-soul groove.' } }, 'lyria');
+  assert.strictEqual(out.draft.script, 'A warm neo-soul groove.');
+  assert.doesNotMatch(JSON.stringify(out.draft), /object Object/);
+});
+
+test('the damaged "[object Object]" row carries on empty and says why', () => {
+  assert.strictEqual(carry.isBrokenScript('[object Object]'), true);
+  assert.strictEqual(carry.isBrokenScript(' [object Object] '), true);
+  assert.strictEqual(carry.isBrokenScript('A song about an [object] on the porch'), false);
+  const damaged = { _id: 'bad1', engine: 'lyria', title: 'Neo-soul (on Lyria)', script: '[object Object]', options: { lyrics: LYRICS } };
+  const out = carry.carryOver(damaged, 'yue2');
+  assert.strictEqual(out.ok, true);
+  assert.strictEqual(out.draft.script, '');
+  assert.strictEqual(out.draft.options.lyrics, LYRICS, 'the words still come across whole');
+  assert.ok(out.notes.some((n) => /damaged by an old bug/.test(n)));
+});

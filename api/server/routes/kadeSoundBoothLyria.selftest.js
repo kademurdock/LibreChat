@@ -424,6 +424,47 @@ test('the music lane: real store, stub Google, every branch that can cost money'
     assert.equal(saved.length, before);
   });
 
+  await t.test('carry with "rewrite the description" saves the desk\'s words, never "[object Object]"', async () => {
+    /* A stub writing desk: the booth's callModel posts OpenAI-shaped chat and
+     * answers { text, usage, ... }. The carry route used to hand that whole
+     * object to the script splitter. */
+    let deskReply = 'A modern neo-soul R&B song from the 2020s, Rhodes and a round bass.\n\nLyrics:\n[Verse 1]\na copy the desk added\nREADBACK: A slow neo-soul song with a warm singer, about three minutes.';
+    const desk = express();
+    desk.use(express.json());
+    desk.post('/chat/completions', (req, res) => res.json({ choices: [{ message: { content: deskReply } }], usage: { prompt_tokens: 10, completion_tokens: 20 } }));
+    const deskServer = desk.listen(0, '127.0.0.1');
+    await new Promise((r) => deskServer.on('listening', r));
+    process.env.KADE_LLM_GATEWAY_URL = 'http://127.0.0.1:' + deskServer.address().port + '/chat/completions';
+    process.env.REFRAME_PROXY_SECRET = 'test-only-secret';
+    try {
+      const words = '[Verse 1]\nher own carried words\n[Chorus]\nsinging them back';
+      const source = await Project.create({
+        user: booth.__user, engine: 'yue2', title: 'A modern neo-soul R&B song', state: 'done',
+        script: 'neo-soul, R&B, warm female vocal, Rhodes', options: { lyrics: words, seed: 7 },
+      });
+      const r = await call('/projects/' + source._id + '/carry', { engine: 'lyria', rewrite: true });
+      assert.equal(r.status, 200, JSON.stringify(r.data));
+      const made = await Project.findById(r.data.project.id);
+      assert.notEqual(made.script, '[object Object]');
+      assert.equal(made.script, 'A modern neo-soul R&B song from the 2020s, Rhodes and a round bass.',
+        'the rewritten description, without a second copy of the words');
+      assert.equal(made.readback, 'A slow neo-soul song with a warm singer, about three minutes.');
+      assert.equal(made.options.lyrics, words, 'her words came across exactly');
+      assert.ok(r.data.notes.some((n) => /desk rewrote the description/.test(n)));
+
+      deskReply = '';
+      const r2 = await call('/projects/' + source._id + '/carry', { engine: 'lyria', rewrite: true });
+      assert.equal(r2.status, 200);
+      const made2 = await Project.findById(r2.data.project.id);
+      assert.equal(made2.script, 'neo-soul, R&B, warm female vocal, Rhodes', 'an empty reply leaves the carried description');
+      assert.ok(!r2.data.notes.some((n) => /desk rewrote/.test(n)), 'and does not claim a rewrite');
+    } finally {
+      deskServer.closeAllConnections();
+      await new Promise((r) => deskServer.close(r));
+      delete process.env.KADE_LLM_GATEWAY_URL; delete process.env.REFRAME_PROXY_SECRET;
+    }
+  });
+
   await t.test('THE WALL: a hyphenated model id is caught and named in plain words', async () => {
     /* This is the whole reason the normalizer exists, so it is proven end to
      * end: force the bad id past the normalizer's front door and confirm the
