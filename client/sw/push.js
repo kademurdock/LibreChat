@@ -14,9 +14,12 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || '',
     data: { url: data.url || '/' },
-    /* icon/badge reuse the PWA's own assets so nudges look native */
-    icon: '/assets/icon-192x192.png',
-    badge: '/assets/favicon-32x32.png',
+    /* icon/badge reuse the PWA's own assets so nudges look native.
+     * KADE Sep 25 2026: the brass-dots install icon, and the braille K
+     * (dots 1 and 3) as a transparent mask, because Android draws a badge
+     * from its alpha channel only. The old files stay on disk. */
+    icon: '/assets/art/icon-brass-dots-192.png',
+    badge: '/assets/art/icon-brass-dots-badge-96.png',
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });

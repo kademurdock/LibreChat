@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { describedVideoPage } from './page.ts';
+import { boothArtCheck, boothArtFallback, boothPicture, describedVideoPage, descriptionBrowserScript } from './page.ts';
 
 /* ------------------------------------------------------------------------------------------
  * A small DOM built from Node built-ins. It parses the page's own HTML, so the tests exercise
@@ -60,6 +61,9 @@ class Element {
   }
   set id(value) {
     this.setAttribute('id', value);
+  }
+  get className() {
+    return this.getAttribute('class') || '';
   }
   setAttribute(name, value) {
     this.attributes.set(name, String(value));
@@ -980,6 +984,264 @@ test('markup: focus ring, narrow screens, upload types, volume and speed wording
   assert.match(html, /<option value="2.25" selected>2.25×, roughly 330 words a minute<\/option>/);
   assert.match(html, /Take a closer look at fast scenes, text and logos \(costs more\)/);
   assert.match(html, /<legend>Extra passes \(cost more\)<\/legend>/);
+});
+
+/* ------------------------------------------------------------------------------------------
+ * The projection booth picture: real alt text in its own place, no new stops, no words block.
+ * ---------------------------------------------------------------------------------------- */
+
+/** The lead's shared description for plan Picture 127, true to every crop (no headphones: the short banner crops them out). */
+const BOOTH_WORDS =
+  'A projection booth at dusk: an old film projector with two reels shines a beam through a wall opening into a small theater with red seats, beside stacked film cans, a microphone and a desk lamp.';
+
+/** The old "Pictures on this page" block: <div class="kade-pictures">. Kade asked for real alt text instead. */
+function picturesBlock(root) {
+  const found = [];
+  walk(root, (node) => {
+    if (node.getAttribute('class') === 'kade-pictures') found.push(node);
+  });
+  return found;
+}
+
+/** Everything a Tab press or a screen reader's focus can land on. */
+function focusStops(root) {
+  const stops = [];
+  walk(root, (node) => {
+    const name = node.localName;
+    const stop =
+      (name === 'a' && node.hasAttribute('href')) ||
+      ['button', 'select', 'textarea', 'summary', 'iframe'].includes(name) ||
+      (name === 'input' && node.getAttribute('type') !== 'hidden') ||
+      (['video', 'audio'].includes(name) && node.hasAttribute('controls')) ||
+      node.hasAttribute('tabindex') ||
+      node.hasAttribute('contenteditable');
+    if (stop) stops.push(node.id || `${name}:${node.textContent.trim()}`);
+  });
+  return stops;
+}
+
+/** The picture and every element around it, up to the parsed root. */
+function pictureAndWrappers(img) {
+  const chain = [];
+  for (let node = img; node && node.localName !== '#root'; node = node.parent) chain.push(node);
+  return chain;
+}
+
+/** Runs the head's failed-load script against a stand-in document and returns what it registered. */
+function fallbackListeners() {
+  const registered = [];
+  const document = { addEventListener: (type, handler, capture) => registered.push({ type, handler, capture }) };
+  new Function('document', boothArtFallback)(document);
+  return registered;
+}
+
+test('pictures: the booth header says itself as alt text, in its own place after the status, with its space reserved', () => {
+  const html = page();
+  const document = makeDocument(html);
+  const main = document.root.querySelectorAll('main')[0];
+  const images = document.root.querySelectorAll('img');
+  assert.equal(images.length, 1, 'one picture on the page');
+  const [img] = images;
+  const art = img.parent;
+  assert.equal(art.getAttribute('class'), 'dv-art');
+  assert.equal(art.parent, main);
+  assert.deepEqual(art.children, [img], 'the box holds only the picture');
+  assert.equal(art.textContent, '', 'no words inside the picture box');
+
+  /* Real alt text on the picture itself, exactly the lead's words, and nothing that could hide it from a screen reader. */
+  assert.equal(img.getAttribute('alt'), BOOTH_WORDS);
+  assert.equal(boothPicture.description, BOOTH_WORDS);
+  assert.equal(boothPicture.file, 'room-describer-booth.png');
+  assert.equal(html.split(BOOTH_WORDS).length, 2, 'the words are in the page once, as the alt text');
+  for (const node of pictureAndWrappers(img)) {
+    assert.equal(node.hasAttribute('aria-hidden'), false, `no aria-hidden on ${node.localName}${node.id ? '#' + node.id : ''}`);
+    assert.equal(['presentation', 'none'].includes(node.getAttribute('role')), false, `no presentational role on ${node.localName}`);
+    assert.equal(node.hasAttribute('hidden'), false, `${node.localName} is not hidden when the page loads`);
+    assert.equal(node.hasAttribute('inert'), false, `${node.localName} is not inert`);
+  }
+  assert.doesNotMatch(html, /<div class="dv-art"[^>]*aria-hidden|<img[^>]*aria-hidden/, 'aria-hidden nowhere on the picture or its box');
+  assert.equal(img.getAttribute('width'), '1536');
+  assert.equal(img.getAttribute('height'), '512');
+  assert.equal(img.getAttribute('loading'), 'lazy');
+  assert.equal(img.getAttribute('fetchpriority'), 'low');
+  assert.equal(img.getAttribute('decoding'), 'async');
+  for (const name of ['tabindex', 'role', 'title', 'usemap', 'ismap', 'longdesc', 'aria-label', 'aria-labelledby', 'aria-describedby', 'aria-details', 'aria-live', 'onerror', 'onload'])
+    assert.equal(img.hasAttribute(name) || art.hasAttribute(name), false, `no ${name}`);
+  assert.equal(img.getAttribute('src'), '/assets/art/room-describer-booth-1536.webp');
+  assert.equal(img.getAttribute('srcset'), '/assets/art/room-describer-booth-768.webp 768w, /assets/art/room-describer-booth-1536.webp 1536w');
+  assert.doesNotMatch(html, /["' ]\/art\//, 'every picture is linked as /assets/art/…, never /art/…');
+  assert.ok(BOOTH_WORDS.split(/\s+/).length <= 40, 'forty words or fewer');
+  assert.doesNotMatch(BOOTH_WORDS, /image of|picture of/i);
+  assert.doesNotMatch(BOOTH_WORDS, /headphones/, 'nothing a crop can cut out');
+
+  /* Reading order stays heading, intro, then status; the picture comes after the whole opening group, before Your video. */
+  const order = main.children.map((node) => node.id || node.getAttribute('class') || node.localName);
+  assert.deepEqual(order.slice(0, 11), ['back', 'eyebrow', 'h1', 'p', 'dv-prices', 'dv-status', 'dv-error', 'dv-signin', 'dv-skip', 'dv-art', 'dv-job-section']);
+  assert.equal(main.children[3].textContent.startsWith('Keep the actors, music and sound.'), true);
+
+  /* No "Pictures on this page" block, no extra heading, and Your videos is the last thing on the page again. */
+  assert.deepEqual(picturesBlock(document.root), []);
+  assert.doesNotMatch(html, /kade-pictures|Pictures on this page/);
+  assert.equal(main.children.at(-1).getAttribute('aria-labelledby'), 'dv-history-heading');
+  const headings = [];
+  walk(main, (node) => {
+    if (/^h[1-6]$/.test(node.localName)) headings.push(node.textContent);
+  });
+  assert.equal(headings.at(-1), 'Your videos');
+  assert.deepEqual(
+    document.body.children.map((node) => node.localName),
+    ['main', 'script'],
+  );
+
+  /* Shown only on wide, tall screens at ordinary text size, never under forced colours or more contrast. Where CSS hides
+   * the box (display:none) the picture is out of the accessibility tree too, so it stays silent there. */
+  const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.match(style, /\.dv-art\{display:none\}/);
+  const shown = style.match(/@media screen and \(min-width:([\d.]+)em\) and \(min-height:([\d.]+)em\) and \(forced-colors:none\) and \(prefers-contrast:no-preference\)\{([\s\S]*?)\n  \}/);
+  assert.ok(shown, 'one guarded rule shows the picture');
+  assert.ok(Number(shown[1]) >= 40, 'hidden on narrow screens and when zoom or bigger text narrows the page');
+  assert.ok(Number(shown[2]) >= 30, 'hidden on short screens such as a phone on its side');
+  assert.equal(style.split('.dv-art{display:block').length, 2, 'displayed in one place only');
+  assert.ok(shown[3].includes('.dv-art{display:block'), 'displayed only inside the guarded rule');
+  assert.match(shown[3], /--dv-art-h:min\(220px,24vh\)/, 'never taller than a quarter of the screen');
+  assert.match(shown[3], /main\{[^}]*padding-top:calc\(var\(--dv-art-h\) \+ 1rem\)/, 'its space is reserved above the page');
+  assert.match(shown[3], /\.dv-art\{[^}]*height:var\(--dv-art-h\)/);
+  assert.match(shown[3], /\.dv-art\{[^}]*background:linear-gradient\(/, 'a dusk backing shows if the file is missing');
+  assert.match(shown[3], /pointer-events:none/);
+  assert.match(style, /@media \(prefers-reduced-data:reduce\)\{main\{padding-top:0\} \.dv-art\{display:none\}\}/);
+  /* The head check's step-aside class hides the picture and gives back its space, beating the guarded rule on specificity. */
+  assert.match(style, /\n  \.dv-art-off main\{padding-top:0\} \.dv-art-off \.dv-art\{display:none\}\n/);
+  /* No Invert Colors rule at all: WebKit may match it under Smart Invert, which would turn the painting into a negative. */
+  assert.doesNotMatch(html, /inverted-colors/);
+  assert.doesNotMatch(style, /invert\(/);
+
+  /* A failed load hides only the picture: the box keeps its size and backing, and CSS never hides the picture itself. */
+  assert.match(style, /\[hidden\]\{display:none!important\}/, 'the hidden attribute means display:none, beating .dv-art img{display:block}');
+  assert.doesNotMatch(style, /\.dv-art img\{[^}]*(?:display:none|visibility|opacity:0)/, 'no rule anywhere hides a picture that loaded');
+  assert.equal(style.split('.dv-art img{').length, 2, 'one rule styles the picture, inside the guarded block');
+
+  /* The files it points at stay small. They live in client/public/assets/art, which post-build copies into dist,
+   * so /assets/art/… ships inside dist; client/public/art itself is never served. */
+  for (const size of [768, 1536]) {
+    const bytes = readFileSync(new URL(`../../../../client/public/assets/art/room-describer-booth-${size}.webp`, import.meta.url));
+    assert.equal(bytes.subarray(0, 4).toString('latin1'), 'RIFF');
+    assert.equal(bytes.subarray(8, 12).toString('latin1'), 'WEBP');
+    assert.ok(bytes.length <= 150 * 1024, `${size} file is ${bytes.length} bytes`);
+  }
+});
+
+test('pictures: a picture that fails to load is hidden, so its alt text is never read for a missing picture', () => {
+  const html = page();
+  /* In the head, before the picture's markup, so no failure can happen before the listener is there. */
+  const tag = `<script>${boothArtCheck}${boothArtFallback}</script>`;
+  assert.equal(html.split(tag).length, 2);
+  assert.ok(html.indexOf(tag) < html.indexOf('</head>'));
+  assert.ok(html.indexOf('</head>') < html.indexOf('<div class="dv-art"'));
+
+  const registered = fallbackListeners();
+  assert.equal(registered.length, 1, 'one listener');
+  assert.equal(registered[0].type, 'error');
+  assert.equal(registered[0].capture, true, 'capture phase, because image errors do not bubble');
+  const onError = registered[0].handler;
+
+  const document = makeDocument(html);
+  const img = document.root.querySelectorAll('img')[0];
+  const art = img.parent;
+  const stopsBefore = focusStops(document.root);
+  let stopped = false;
+  const event = (target) => ({ target, stopPropagation: () => (stopped = true), stopImmediatePropagation: () => (stopped = true), preventDefault: () => (stopped = true) });
+
+  /* Errors from anything else are left alone: the player's own error handling still runs. */
+  const video = document.getElementById('dv-video');
+  onError(event(video));
+  assert.equal(video.hidden, false);
+  const stray = document.createElement('img');
+  document.getElementById('dv-results').appendChild(stray);
+  onError(event(stray));
+  assert.equal(stray.hidden, false, 'only the booth picture is hidden, never another image');
+  onError(event(null));
+  onError(event({}));
+  assert.equal(img.hidden, false);
+
+  /* The booth picture fails: hidden (display:none), so no broken-image mark and nothing read; the box stays. */
+  onError(event(img));
+  assert.equal(img.hidden, true);
+  assert.equal(img.getAttribute('hidden'), '');
+  assert.equal(art.hidden, false, 'the box keeps its reserved space and dusk backing');
+  assert.equal(art.hasAttribute('aria-hidden'), false);
+  assert.equal(img.hasAttribute('aria-hidden'), false, 'hidden, not aria-hidden');
+  assert.equal(img.getAttribute('alt'), BOOTH_WORDS, 'the words stay on the picture for a later reload');
+  assert.equal(stopped, false, 'never stops or cancels the event');
+  assert.deepEqual(focusStops(document.root), stopsBefore, 'a failed load adds or removes no stops');
+  assert.doesNotMatch(boothArtFallback, /stopPropagation|stopImmediatePropagation|preventDefault/);
+  assert.doesNotMatch(boothArtFallback, /\balt\b|setAttribute|removeAttribute|innerHTML|textContent|aria-|role|tabindex|focus/, 'it only hides the picture');
+});
+
+test('pictures: no new focus stops, the player is untouched', () => {
+  const html = page();
+  const document = makeDocument(html);
+  const art = document.root.querySelectorAll('img')[0].parent;
+  assert.deepEqual(focusStops(art), []);
+  const without = html.replace(/<div class="dv-art"[\s\S]*?<\/div>\n/, '');
+  assert.notEqual(without, html);
+  assert.ok(focusStops(document.root).length >= 60, 'the stop counter sees the page’s controls');
+  assert.deepEqual(focusStops(makeDocument(html).root), focusStops(makeDocument(without).root), 'the same Tab stops as before the picture');
+
+  /* The player and captions are exactly as they were, and no picture sits in or over the results. */
+  const results = document.getElementById('dv-results');
+  assert.equal(results.querySelectorAll('img').length, 0);
+  assert.ok(
+    html.includes(
+      '<video id="dv-video" controls preload="metadata" playsinline aria-label="Video with audio description"></video>\n<div id="dv-caption" class="caption" aria-hidden="true"></div>\n<audio id="dv-audio" controls preload="metadata" aria-label="Soundtrack with audio description" hidden></audio>',
+    ),
+  );
+  assert.equal(document.getElementById('dv-video').hasAttribute('poster'), false);
+  const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.doesNotMatch(style, /z-index/);
+  assert.equal(/dv-art|kade-pictures|Pictures on this page/.test(descriptionBrowserScript), false, 'the page script never moves, shows or reads the picture');
+  assert.equal(/kade-pictures|Pictures on this page/.test(boothArtCheck + boothArtFallback), false);
+});
+
+test('pictures: data saving and very large text hide the banner before it is parsed, once per load', () => {
+  const html = page();
+  /* In the head, after the style, so the class is on <html> before the lazy picture is ever laid out. */
+  const tag = `<script>${boothArtCheck}${boothArtFallback}</script>`;
+  assert.equal(html.split(tag).length, 2);
+  assert.ok(html.indexOf('</style>') < html.indexOf(tag));
+  assert.ok(html.indexOf(tag) < html.indexOf('</head>'));
+  assert.ok(html.indexOf('</head>') < html.indexOf('<div class="dv-art"'));
+  assert.doesNotMatch(boothArtCheck, /resize|orientation|matchMedia|setTimeout|setInterval|addEventListener|innerHTML|textContent/, 'it runs once and never touches the words');
+
+  const run = ({ connection, fontSize, throws = false } = {}) => {
+    const added = [];
+    const documentElement = { classList: { add: (name) => added.push(name) } };
+    const document = { documentElement };
+    const navigator = connection === undefined ? {} : { connection };
+    const getComputedStyle = (element) => {
+      assert.equal(element, documentElement, 'reads the root text size');
+      if (throws) throw new Error('no styles yet');
+      return { fontSize };
+    };
+    new Function('document', 'navigator', 'getComputedStyle', boothArtCheck)(document, navigator, getComputedStyle);
+    return added;
+  };
+  assert.deepEqual(run({ fontSize: '16px' }), [], 'ordinary text, no Data Saver: the banner may show');
+  assert.deepEqual(run({ connection: null, fontSize: '16px' }), []);
+  assert.deepEqual(run({ connection: { saveData: false }, fontSize: '20px' }), [], '20px is not above 20px');
+  assert.deepEqual(run({ connection: { saveData: true }, fontSize: '16px' }), ['dv-art-off'], 'Data Saver');
+  assert.deepEqual(run({ fontSize: '20.5px' }), ['dv-art-off'], 'text above 20px');
+  assert.deepEqual(run({ fontSize: '24px' }), ['dv-art-off'], "Chrome's Very large text");
+  assert.deepEqual(run({ connection: { saveData: true }, fontSize: '24px' }), ['dv-art-off'], 'one class, added once');
+  assert.deepEqual(run({ fontSize: '16px', throws: true }), [], 'a failure leaves the page as it was');
+  assert.deepEqual(run({ connection: { saveData: true }, throws: true }), ['dv-art-off'], 'Data Saver is read before the text size');
+
+  /* The page still boots with the checks in place: the real page script runs after them in the same order. */
+  const document = makeDocument(html);
+  const scripts = [];
+  walk(document.root, (node) => {
+    if (node.localName === 'script') scripts.push(node.parent.localName);
+  });
+  assert.deepEqual(scripts, ['head', 'body']);
 });
 
 /* ------------------------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import { TranslationKeys, useLocalize } from '~/hooks';
 import SocialLoginRender from './SocialLoginRender';
 import { BlinkAnimation } from './BlinkAnimation';
+import { HouseAtDuskPicture } from './HouseAtDusk';
 import { Banner } from '../Banners';
 import Footer from './Footer';
 
@@ -27,6 +28,11 @@ function AuthLayout({
   const localize = useLocalize();
 
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
+  /* KADE Sep 25 2026: the house on the hill, sign-in and registration only (not 2FA).
+   * The page decides this, never the screen: the painting (and its alt text)
+   * hides itself where it must. */
+  const showHouse =
+    !pathname.includes('2fa') && (pathname.includes('login') || pathname.includes('register'));
   const DisplayError = () => {
     if (hasStartupConfigError) {
       return (
@@ -66,8 +72,9 @@ function AuthLayout({
       <header>
         <BlinkAnimation active={isFetching}>
           <div className="mt-6 h-10 w-full bg-cover">
+            {/* KADE Sep 25 2026: the two-dot mark (braille K) replaces the LibreChat logo. */}
             <img
-              src="assets/logo.svg"
+              src="/assets/art/kade-braille-mark-navy-v1.svg"
               className="h-full w-full object-contain"
               alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
             />
@@ -79,8 +86,10 @@ function AuthLayout({
         <ThemeSelector />
       </div>
 
-      <main className="flex flex-grow items-center justify-center">
-        <div className="w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
+      <main className="relative flex flex-grow flex-col items-center justify-center">
+        {/* max-w-full: a column cannot shrink the 370 px card, so this keeps the
+            whole form on screen at 320 px and at 400 % zoom (no sideways scroll). */}
+        <div className="kade-auth-card relative w-authPageWidth max-w-full overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
           {!hasStartupConfigError && !isFetching && header && (
             <h1
               className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
@@ -95,6 +104,11 @@ function AuthLayout({
               <SocialLoginRender startupConfig={startupConfig} />
             )}
         </div>
+        {/* The painting comes after the card in reading order (Kade: real alt
+            text, no extra block), so the email box is always met first. CSS
+            alone shows it behind the card on computers and as the band above
+            the card on phones. */}
+        {showHouse && <HouseAtDuskPicture />}
       </main>
       <Footer startupConfig={startupConfig} />
     </div>

@@ -12,6 +12,37 @@ const speedOptions = (selected: number): string =>
     .join('');
 const uploadTypes =
   'video/*,.mkv,.avi,.mov,.mp4,.webm,.m4v,.wmv,.mpg,.mpeg,.ts,.mts,.m2ts,.vob,.dv,.3gp,.flv,.mxf,.mod,.tod';
+/**
+ * The projection booth header (plan Picture 127, art_ready/manifest.json "room-describer-booth.png").
+ * The words are the lead's shared description, true to every crop, and they are the picture's own alt text, read in
+ * its place after the status: no separate block of picture words (Kade: real alt text, not a list of words).
+ * The WebP files live in client/public/assets/art and are linked as /assets/art/…, like every web picture:
+ * post-build copies public/assets into dist, so that path ships inside dist.
+ */
+export const boothPicture: { readonly file: string; readonly description: string } = {
+  file: 'room-describer-booth.png',
+  description:
+    'A projection booth at dusk: an old film projector with two reels shines a beam through a wall opening into a small theater with red seats, beside stacked film cans, a microphone and a desk lamp.',
+};
+const altText = (words: string): string =>
+  words.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+/**
+ * Runs in the head, before the picture's markup is parsed, so no load failure is missed. A picture that fails to load
+ * is hidden (the page's [hidden] rule is display:none), so a screen reader never reads its alt text for a missing
+ * picture and nothing shows a broken-image mark; the box keeps its reserved space and dusk backing.
+ * Error events do not bubble, so it listens in the capture phase; it never stops the event, so the player's own
+ * error handling is untouched.
+ */
+export const boothArtFallback: string =
+  "document.addEventListener('error',function(event){var img=event.target;if(img&&img.localName==='img'&&img.parentNode&&img.parentNode.className==='dv-art')img.hidden=true},true);";
+/**
+ * Runs in the head, before the picture's markup is parsed, so a hidden banner is never downloaded.
+ * Data Saver (navigator.connection.saveData, Chrome and Android; CSS prefers-reduced-data is not shipped anywhere yet)
+ * and a browser default text size above 20px (Chrome's "Very large" is 24px) both hide the banner and give back its
+ * reserved space. It runs once per page load: nothing changes on resize, rotation or zoom.
+ */
+export const boothArtCheck: string =
+  "(function(){try{var root=document.documentElement,connection=navigator.connection;if((connection&&connection.saveData)||parseFloat(getComputedStyle(root).fontSize)>20)root.classList.add('dv-art-off')}catch(error){}})();";
 
 export function describedVideoPage(sharedHead: string): string {
   return `<!doctype html><html lang="en"><head><title>Make a described video — Kade-AI</title>${sharedHead}
@@ -50,7 +81,15 @@ export function describedVideoPage(sharedHead: string): string {
   button[aria-pressed=true]{border-color:#174ab0;border-width:2px}
   @media(max-width:560px){.settings{grid-template-columns:1fr} h1{font-size:1.6rem}}
   @media(prefers-color-scheme:dark){.eyebrow{color:#b7d1ff} button.danger,.field-error{color:#ff9b93;border-color:#ff9b93} :focus-visible{outline-color:#9cc2ff;box-shadow:0 0 0 3px #14161a}}
-</style></head><body><main>
+  .dv-art{display:none}
+  @media screen and (min-width:46em) and (min-height:34em) and (forced-colors:none) and (prefers-contrast:no-preference){
+    main{--dv-art-h:min(220px,24vh);position:relative;padding-top:calc(var(--dv-art-h) + 1rem)}
+    .dv-art{display:block;position:absolute;top:0;left:0;right:0;height:var(--dv-art-h);overflow:hidden;border-radius:12px;background:linear-gradient(160deg,#1c2640,#33304a 55%,#5a4330);pointer-events:none;user-select:none}
+    .dv-art img{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 45%;color:transparent}
+  }
+  @media (prefers-reduced-data:reduce){main{padding-top:0} .dv-art{display:none}}
+  .dv-art-off main{padding-top:0} .dv-art-off .dv-art{display:none}
+</style><script>${boothArtCheck}${boothArtFallback}</script></head><body><main>
 <a class="back" href="/describe">Back to Describe</a><p class="eyebrow">Kade-AI · Audio description</p>
 <h1>Make a described video</h1>
 <p>Keep the actors, music and sound. A narrator describes what happens on screen in the pauses. Then watch it here, download the video or the audio, or read the whole thing as a described transcript.</p>
@@ -58,6 +97,7 @@ export function describedVideoPage(sharedHead: string): string {
 <div id="dv-status" class="status" role="status" aria-live="polite">Signing you in…</div>
 <p id="dv-error" role="alert" hidden></p><p id="dv-signin" hidden><a href="/login">Sign in to Kade-AI</a>, then come back to this page.</p>
 <p id="dv-skip" hidden><a href="#dv-result-title">Go to your described copy</a></p>
+<div class="dv-art"><img src="/assets/art/room-describer-booth-1536.webp" srcset="/assets/art/room-describer-booth-768.webp 768w, /assets/art/room-describer-booth-1536.webp 1536w" sizes="(min-width:820px) 780px, calc(100vw - 40px)" width="1536" height="512" alt="${altText(boothPicture.description)}" loading="lazy" decoding="async" fetchpriority="low" draggable="false"></div>
 
 <section id="dv-job-section" class="card" aria-labelledby="dv-job-title" hidden><h2 id="dv-job-title" tabindex="-1">Your video</h2>
 <p id="dv-stage"></p><progress id="dv-progress" max="100" value="0" aria-label="Progress"></progress>

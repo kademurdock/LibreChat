@@ -20,6 +20,43 @@
  * -------------------------------------------------------------------------- */
 const { SHARED_HEAD } = require('./kadePages');
 
+/* PICTURES (Sep 25 2026 art batch: plan Pictures 44 and 50, plus the old
+ * reading-alcove banner). Her rule: a picture's words are real alt text on
+ * the <img> itself, read in the picture's own place, and nothing more: no
+ * aria-hidden, no extra heading, no live region, no focus stop, no sound, no
+ * motion. Each alt is the blind-checked sentence in client/public/assets/art/
+ * art-manifest.json, word for word (kadeArtManifest.nodetest.js holds them
+ * together). A picture with no source yet, one that failed to load, and one a
+ * screen hides are all display:none, so a screen reader never meets a missing
+ * picture. Shelf crops are 16:9 so everything an alt names stays in the
+ * frame. All art ships in client/public/assets/art (inside dist) and is
+ * linked as /assets/art/<file>. */
+const ALCOVE_ART = {
+  src: '/assets/library/reading-alcove.webp',
+  alt: 'A cozy reading room at dusk: dark blue bookshelves holding books, film reels and a cassette radio, a lit lamp, a green armchair with an orange pillow and knit throw, and a window onto a lake at sunset.',
+};
+const SHELF_ART = {
+  radio: {
+    file: 'shelf-radio',
+    alt: 'An old wooden cathedral radio glowing on a kitchen table with a red checked runner, beside an enamel coffee pot, a mug, daisies and an oil lamp, with a full moon over the lake outside.',
+  },
+  music: {
+    file: 'shelf-music',
+    alt: 'A cabin music corner at dusk: a fiddle, a banjo and a mandolin hang above a record player and two crates of records, with a fringed lamp, a rocking chair and a lake sunset through the window.',
+  },
+};
+const ART_DIR = '/assets/art/';
+/* When a picture steps aside: contrast settings, a narrow or zoomed window
+ * (em-based, so a larger default text size trips it sooner), short landscape
+ * phones, and data saving. The CSS hides the picture box under this query and
+ * the script never starts a download while it matches. Data Saver
+ * (navigator.connection.saveData) and very large default text (root font size
+ * over 20px) are checked by the tiny head script, which marks <html> with
+ * kade-art-off before the body is laid out. A picture that steps aside is
+ * silent on that screen; where it shows, its alt is read in its place. */
+const ART_HIDDEN_WHEN = '(forced-colors: active), (prefers-contrast: more), (max-width: 22.5em), (max-height: 30em), (prefers-reduced-data: reduce)';
+const ART_OFF_SCRIPT = "(function(){try{var d=document.documentElement,c=navigator.connection,off=!!(c&&c.saveData);if(parseFloat(getComputedStyle(d).fontSize)>20)off=true;if(off)d.classList.add('kade-art-off')}catch(e){}})();";
+
 const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library — Kade-AI</title>${SHARED_HEAD}
 <style>
   .hidden { display:none !important; }
@@ -61,7 +98,16 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   ol.scenes { padding-left:1.2rem; } ol.scenes li { margin:.3rem 0; }
   ol.scenes li.now { font-weight:700; }
   .pager { display:flex; gap:.5rem; align-items:center; margin:.5rem 0; }
-</style></head>
+  .kade-art { display:block; position:relative; overflow:hidden; border-radius:18px; background:linear-gradient(160deg,#1c2640,#33304a 55%,#5a4330); pointer-events:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  .kade-art img { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; display:block; color:transparent; }
+  .kade-art.art-failed img, .kade-art img:not([src]) { display:none; }
+  .kade-art[hidden] { display:none !important; }
+  .alcove-art { width:100%; aspect-ratio:1440 / 481; max-height:220px; margin:0 0 .6rem; }
+  .shelf-art { width:100%; max-width:392px; width:min(100%, calc(min(220px, 25vh) * 16 / 9)); aspect-ratio:16 / 9; margin:.8rem auto .3rem; }
+  @media ${ART_HIDDEN_WHEN} { .kade-art { display:none !important; } }
+  .kade-art-off .kade-art { display:none !important; }
+</style>
+<script>${ART_OFF_SCRIPT}</script></head>
 <body>
   <p><a class="back" href="/home" aria-label="Back to Home">&larr; Home</a></p>
   <h1 id="pageTitle">The Library</h1>
@@ -76,7 +122,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   </section>
 
   <section id="shelf">
-    <img src="/assets/library/reading-alcove.webp" alt="" aria-hidden="true" width="1440" height="481" style="width:100%;height:auto;max-height:220px;object-fit:cover;border-radius:18px" loading="lazy">
+    <div class="kade-art alcove-art"><img id="alcoveArt" alt="${ALCOVE_ART.alt}" width="1440" height="481" loading="lazy" decoding="async" draggable="false"></div>
     <p class="muted">The family library: books read aloud by a voice you choose, the archive of television, commercials, tapes and radio, recordings and videos the family has donated, and playlists. Your shelf is yours; put something in the library and everyone can check it out.</p>
 
     <h2 id="h-search">Find something</h2>
@@ -101,6 +147,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         <button type="button" class="act quiet" data-folder="Audio">Radio, tapes &amp; audio</button>
       </div>
     </section>
+    <div class="kade-art shelf-art" id="shelfArtBox" hidden><img id="shelfArt" alt="" width="1152" height="648" loading="lazy" fetchpriority="low" decoding="async" draggable="false"></div>
     <nav class="crumbs" id="crumbs" aria-label="Where you are in the archive"></nav>
     <ul class="plain" id="archiveList" aria-labelledby="h-archive"><li class="muted">Loading…</li></ul>
     <div class="pager" id="archivePager" hidden><button class="act quiet" id="pagePrev" type="button">Previous page</button><span id="pageInfo"></span><button class="act quiet" id="pageNext" type="button">Next page</button></div>
@@ -446,6 +493,72 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
   /* the archive */
   var archivePath = '', archivePage = 0;
+
+  /* pictures (Sep 25 2026 art batch): the reading-alcove banner on the shelf
+     screen, and a still picture over the Radio and Music shelves that changes
+     only when the folder view changes, in the same step as the list; its alt
+     changes with its source. Nothing here moves focus or speaks: the alt is
+     read only when a screen reader reaches the picture. A picture steps aside,
+     and never starts a download, under the contrast, zoom, landscape,
+     data-saving and large-text rules; one that fails to load keeps its box and
+     shows the plain dusk gradient behind it, and the CSS takes the img itself
+     away so no missing picture is announced. */
+  var SHELF_ART = ${JSON.stringify(SHELF_ART)};
+  var ART_DIR = ${JSON.stringify(ART_DIR)};
+  var artHiddenWhen = null;
+  try { artHiddenWhen = window.matchMedia ? window.matchMedia(${JSON.stringify(ART_HIDDEN_WHEN)}) : null; } catch(e) {}
+  var shelfArtKey = '';
+  function artAllowed(){
+    try { if (document.documentElement.classList.contains('kade-art-off')) return false; } catch(e) {}
+    try { if (navigator.connection && navigator.connection.saveData) return false; } catch(e) {}
+    return !(artHiddenWhen && artHiddenWhen.matches);
+  }
+  /* start a download only while the picture may show; tried again when the screen changes */
+  function fillArt(img){
+    var want = img.getAttribute('data-src');
+    if (!want || img.getAttribute('src') === want || img.parentNode.hidden || !artAllowed()) return;
+    var set = img.getAttribute('data-srcset');
+    if (set) img.srcset = set;
+    img.src = want;
+  }
+  function watchArt(img){
+    img.addEventListener('error', function(){ if (this.getAttribute('src')) this.parentNode.classList.add('art-failed'); });
+    img.addEventListener('load', function(){ this.parentNode.classList.remove('art-failed'); });
+  }
+  function shelfArtFor(path){
+    var parts = String(path || '').split('/');
+    if (String(parts[0]).toLowerCase() !== 'audio' || !parts[1]) return '';
+    var words = parts[1].toLowerCase().split(/[^a-z0-9]+/);
+    if (words.indexOf('radio') !== -1) return 'radio';
+    if (words.indexOf('music') !== -1) return 'music';
+    return '';
+  }
+  function showShelfArt(path){
+    var key = shelfArtFor(path);
+    if (key === shelfArtKey) return;
+    shelfArtKey = key;
+    var img = $('shelfArt'), box = $('shelfArtBox');
+    box.classList.remove('art-failed');
+    img.removeAttribute('srcset'); img.removeAttribute('src');
+    if (key) {
+      var f = ART_DIR + SHELF_ART[key].file;
+      img.alt = SHELF_ART[key].alt;
+      img.sizes = '(max-width: 480px) calc(100vw - 2.5rem), 392px';
+      img.setAttribute('data-srcset', f + '-768.webp 768w, ' + f + '-1152.webp 1152w');
+      img.setAttribute('data-src', f + '-768.webp');
+      box.hidden = false;
+      fillArt(img);
+    } else {
+      img.removeAttribute('data-srcset'); img.removeAttribute('data-src');
+      img.alt = '';
+      box.hidden = true;
+    }
+  }
+  function refillArt(){ fillArt($('alcoveArt')); fillArt($('shelfArt')); }
+  watchArt($('alcoveArt')); watchArt($('shelfArt'));
+  $('alcoveArt').setAttribute('data-src', ${JSON.stringify(ALCOVE_ART.src)});
+  fillArt($('alcoveArt'));
+  if (artHiddenWhen) { if (artHiddenWhen.addEventListener) artHiddenWhen.addEventListener('change', refillArt); else if (artHiddenWhen.addListener) artHiddenWhen.addListener(refillArt); }
   $('libraryScope').onchange = function(){ searchRun++; $('searchList').innerHTML = ''; $('searchMore').hidden = true; loadArchive('', 0); };
   async function loadArchive(path, page){
     archivePath = path || ''; archivePage = page || 0;
@@ -461,6 +574,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         if (i === parts.length - 1) { b.setAttribute('aria-current', 'location'); }
         b.onclick = function(){ loadArchive(target, 0); }; crumbs.appendChild(b);
       });
+      showShelfArt(archivePath);
       ul.innerHTML = '';
       if (!j.folders.length && !j.items.length) { ul.innerHTML = '<li class="muted">' + (archivePath ? 'This folder is empty.' : 'No items in this view yet. Add a file below, or choose another view.') + '</li>'; }
       j.folders.forEach(function(f){
@@ -1350,4 +1464,4 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 </script>
 </body></html>`;
 
-module.exports = { readingRoomHtml };
+module.exports = { readingRoomHtml, ALCOVE_ART, SHELF_ART, ART_DIR, ART_HIDDEN_WHEN };

@@ -162,29 +162,35 @@ export default defineConfig(({ command }) => ({
         display: 'standalone',
         background_color: '#0b0612',
         theme_color: '#5b1042',
+        /** KADE Sep 25 2026: the braille K (dots 1 and 3) replaces the old badge. */
         icons: [
           {
-            src: 'assets/favicon-32x32.png',
+            src: 'assets/art/kade-braille-mark-32.png',
             sizes: '32x32',
             type: 'image/png',
           },
           {
-            src: 'assets/favicon-16x16.png',
+            src: 'assets/art/kade-braille-mark-16.png',
             sizes: '16x16',
             type: 'image/png',
           },
           {
-            src: 'assets/apple-touch-icon-180x180.png',
+            src: 'assets/art/icon-brass-dots-180.png',
             sizes: '180x180',
             type: 'image/png',
           },
           {
-            src: 'assets/icon-192x192.png',
+            src: 'assets/art/icon-brass-dots-192.png',
             sizes: '192x192',
             type: 'image/png',
           },
           {
-            src: 'assets/maskable-icon.png',
+            src: 'assets/art/icon-brass-dots-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+          },
+          {
+            src: 'assets/art/icon-brass-dots-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
