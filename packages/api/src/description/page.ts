@@ -125,7 +125,7 @@ export function describedVideoPage(sharedHead: string): string {
 <button id="dv-prev-cue" type="button">Previous description</button><button id="dv-next-cue" type="button">Next description</button><button id="dv-read-cue" type="button">Read the current description</button><button id="dv-correct-cue" type="button">Correct this description</button></div>
 <p id="dv-position-note" class="hint"></p>
 <label for="dv-playback-rate">Playback speed for everything</label><select id="dv-playback-rate" aria-describedby="dv-playback-help"><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2×</option></select>
-<p id="dv-playback-help" class="hint">This speeds up the picture, the soundtrack and the narration together.</p>
+<p id="dv-playback-help" class="hint">This speeds up the picture, the soundtrack and the narration together. Your choice is remembered for your account on every device.</p>
 <h3>Downloads</h3>
 <p class="row"><a id="dv-video-download" class="download">Described video (MP4)</a><a id="dv-audio-download" class="download">Described audio (M4A)</a><a id="dv-transcript-download" class="download">Described transcript (text)</a><a id="dv-captions-download" class="download">Captions (WebVTT)</a><a id="dv-descriptions-download" class="download">Descriptions (WebVTT)</a><a id="dv-script-download" class="download">Timing report (JSON)</a></p>
 <details id="dv-transcript-box"><summary>Read the described transcript</summary><h3>Described transcript</h3>
@@ -206,7 +206,7 @@ export function describedVideoPage(sharedHead: string): string {
 <div><label for="dv-rate">Usual narration speed</label><select id="dv-rate">${speedOptions(1.5)}</select></div>
 <div><label for="dv-max-rate">Fastest it may go to fit a gap</label><select id="dv-max-rate">${speedOptions(2.25)}</select></div>
 </div>
-<p class="hint">Only the narrator speeds up; dialogue keeps its own pace, and the voice keeps its pitch. Word rates differ a little from voice to voice.</p>
+<p class="hint">Only the narrator speeds up; dialogue keeps its own pace, and the voice keeps its pitch. Word rates differ a little from voice to voice. Your speeds are remembered for your account on every device.</p>
 <label for="dv-detail">How much to describe</label><select id="dv-detail" aria-describedby="dv-detail-help">
 <option value="essential">Essentials only: key actions, scene changes and on-screen text</option>
 <option value="standard" selected>Standard: essentials plus people, places and expressions</option>
@@ -247,6 +247,7 @@ export const descriptionBrowserScript: string = String.raw`
 (function(){
   'use strict';
   var SETTINGS_KEY='kade-description-settings',MOVED_KEY='kade-description-default-moved',UPLOADS_KEY='kade-video-uploads',PROGRESS_KEY='kade-description-progress',PLAY_AS_KEY='kade-description-play-as',READ_CAPTIONS_KEY='kade-description-read-captions';
+  var PLAYBACK_KEY='kade-description-playback-rate',SPEEDS_MOVED_KEY='kade-description-speeds-moved';
   var LINK_AGE=5.5*3600*1000,BASE_TITLE='Make a described video — Kade-AI';
   var FORM_DEFAULTS={rate:1.5,maxRate:2.25,mode:'extended',detail:'standard',volume:'balanced'};
   var PRESETS={commercials:{detail:'rich',mode:'standard',closeLook:true,firstLook:false},cartoon:{detail:'rich',mode:'standard',closeLook:false,firstLook:false},tv:{detail:'standard',mode:'standard',closeLook:false,firstLook:false},film:{detail:'standard',mode:'extended',closeLook:false}};
@@ -259,6 +260,7 @@ export const descriptionBrowserScript: string = String.raw`
   var lastSpoken='',lastSpokenAt=0,errorFrom='',estimates={},estimateSeq=0,estimateTimer=null,announceNext=false,announcePrefix='',presetSeq=0,presetSig='',redoSeq=0,redoTimer=null,redoEstimate=null;
   var listedIds='',listButtons={},listStates={},lastJobs=[],cancelSeenAt=0,lastQuarter=-1;
   var wakeLock=null,wakeWanted=false,nudge=null,pendingUpload=null,pendingJob='',toldKeepOpen='';
+  var speedTimer=null,speedPending={},speedSeq=0;
   var DEFAULT_FOLDER='Audio/Described Movies & TV/Described by Kade-AI';
   var $=function(id){return document.getElementById('dv-'+id);};
   function working(j){return !!j&&BUSY.indexOf(j.state)>=0;}
@@ -397,10 +399,21 @@ export const descriptionBrowserScript: string = String.raw`
     var pending=pendingSwitch&&pendingSwitch!==viewVersion;$('new-version').hidden=!pending;
     if(pending){$('new-version-note').textContent='Version '+pendingSwitch+' is ready. You are still on version '+viewVersion+'.';$('switch-version').textContent='Switch to version '+pendingSwitch;}
   }
-  function defaults(){var saved=stored(SETTINGS_KEY,{});var out={};Object.keys(FORM_DEFAULTS).forEach(function(key){out[key]=saved&&saved[key]!==undefined?saved[key]:FORM_DEFAULTS[key];});return out;}
-  /** Speeds, pauses, detail and volume stay with this browser; the voice for new videos is her default on the server. */
+  /** A speed she keeps on the server (web and iPhone share it), or null when she never chose one. */
+  function serverSpeed(key){var s=config&&config.speeds,value=s&&s[key];return typeof value==='number'&&isFinite(value)?value:null;}
+  /** Her speeds on the server win, then what this browser remembered, then the usual defaults. */
+  function defaults(){var saved=stored(SETTINGS_KEY,{});var out={};Object.keys(FORM_DEFAULTS).forEach(function(key){var mine=serverSpeed(key);out[key]=mine!==null?mine:saved&&saved[key]!==undefined?saved[key]:FORM_DEFAULTS[key];});if(Number(out.maxRate)<Number(out.rate))out.maxRate=out.rate;return out;}
+  /** Pauses, detail and volume stay with this browser; speeds also go to the server as she changes them; the voice for new videos is her default on the server. */
   function remember(){var s=settings();store(SETTINGS_KEY,{rate:s.rate,maxRate:s.maxRate,mode:s.mode,detail:s.detail,volume:s.volume});}
   function setSelect(id,value){if(value===undefined||value===null)return false;var select=$(id);var ok=Array.prototype.some.call(select.options,function(option){return option.value===String(value);});if(ok)select.value=String(value);return ok;}
+  /** A speed chosen on another device that this list lacks is added in order, so both show the same speed. */
+  function setSpeed(id,value){
+    var n=Number(value);if(value===undefined||value===null||value===''||!isFinite(n)||n<=0)return false;
+    if(setSelect(id,n))return true;
+    var select=$(id),option=document.createElement('option'),list=Array.prototype.slice.call(select.options);
+    option.value=String(n);option.textContent=n+'×';list.push(option);list.sort(function(a,b){return Number(a.value)-Number(b.value);});
+    select.textContent='';list.forEach(function(item){select.appendChild(item);});select.value=String(n);return true;
+  }
   function parseClock(text){
     var value=String(text||'').trim();if(!value)return null;
     var parts=value.split(':');if(parts.length>3||!parts.every(function(part,i){return i===parts.length-1?/^\d+(\.\d+)?$/.test(part):/^\d+$/.test(part);}))return NaN;
@@ -553,7 +566,7 @@ export const descriptionBrowserScript: string = String.raw`
     say(voiceName(v)+' chosen.'+(isFish(v)&&config.fishNote?' '+config.fishNote:''),true);
   }
   function setVoice(voice){if(voicesOff||!listed(voice))return false;$('voice').value=voice;renderVoice();return true;}
-  function applyPrefs(prefs){if(prefs)['defaultVoice','myDefaultVoice','houseVoice','favorites','recent','suggested','maxFavorites'].forEach(function(key){if(prefs[key]!==undefined)config[key]=prefs[key];});}
+  function applyPrefs(prefs){if(prefs)['defaultVoice','myDefaultVoice','houseVoice','favorites','recent','suggested','maxFavorites','speeds'].forEach(function(key){if(prefs[key]!==undefined)config[key]=prefs[key];});}
   function noteRecent(v){if(config&&v)config.recent=[v].concat((config.recent||[]).filter(function(item){return item!==v;})).slice(0,8);}
   function pickerProblem(e){if(e&&(e.auth||e.network))failure(e);else say(e&&e.message||'That did not work. Try again.',true);}
   async function toggleFavorite(v){
@@ -570,8 +583,33 @@ export const descriptionBrowserScript: string = String.raw`
     if(voicesOff||config.myDefaultVoice||!listed(old)||old==='clear woman · flint'||stored(MOVED_KEY,false))return;
     try{applyPrefs(await call('/prefs/default','POST',{voice:old}));store(MOVED_KEY,true);}catch(e){}
   }
+  /** Once per browser: the speeds this browser remembered go to the server, unless she already keeps speeds there or they are only the usual defaults. */
+  async function migrateSpeeds(){
+    var s=config&&config.speeds,old=stored(SETTINGS_KEY,{})||{},body={};
+    if(!s||serverSpeed('rate')!==null||serverSpeed('maxRate')!==null||stored(SPEEDS_MOVED_KEY,false))return;
+    [['rate',Number(old.rate)],['maxRate',Number(old.maxRate)]].forEach(function(pair){if(pair[1]>=1&&pair[1]<=3)body[pair[0]]=pair[1];});
+    if((body.rate===undefined||body.rate===FORM_DEFAULTS.rate)&&(body.maxRate===undefined||body.maxRate===FORM_DEFAULTS.maxRate))return;
+    try{applyPrefs(await call('/prefs/speeds','POST',body));store(SPEEDS_MOVED_KEY,true);}catch(e){}
+  }
+  /** A speed she changes is kept for her account at once, a moment after she stops changing it; a failed save keeps this browser's choice quietly. */
+  function saveSpeeds(fields){
+    if(!config)return;config.speeds=Object.assign({},config.speeds||{},fields);
+    Object.keys(fields).forEach(function(key){speedPending[key]=fields[key];});
+    clearTimeout(speedTimer);speedTimer=setTimeout(sendSpeeds,600);
+  }
+  async function sendSpeeds(){
+    speedTimer=null;var body=speedPending,seq=++speedSeq;speedPending={};if(!Object.keys(body).length)return;
+    try{var prefs=await call('/prefs/speeds','POST',body);if(seq===speedSeq)applyPrefs(prefs);}catch(e){}
+  }
+  /** Playback speed: hers on the server, then this browser's, then 1×; the players follow it. */
+  function applyPlayback(){
+    var value=serverSpeed('playbackRate'),local=Number(stored(PLAYBACK_KEY,0));
+    if(value===null&&local>=0.5&&local<=3)value=local;
+    if(value===null||!setSpeed('playback-rate',value))return;
+    var rate=Number($('playback-rate').value);$('video').playbackRate=rate;$('audio').playbackRate=rate;
+  }
   function fillForm(saved){
-    setVoice(saved.voice);[['rate','rate'],['maxRate','max-rate'],['mode','mode'],['detail','detail'],['volume','volume']].forEach(function(pair){setSelect(pair[1],saved[pair[0]]);});
+    setVoice(saved.voice);setSpeed('rate',saved.rate);setSpeed('max-rate',saved.maxRate);[['mode','mode'],['detail','detail'],['volume','volume']].forEach(function(pair){setSelect(pair[1],saved[pair[0]]);});
     $('notes').value=saved.notes||'';$('close-look').checked=!!saved.closeLook;$('first-look').checked=!!saved.firstLook;
     $('part-from').value=saved.range?clock(saved.range.start):'';$('part-to').value=saved.range?clock(saved.range.end):'';$('part').open=!!saved.range;
   }
@@ -942,10 +980,12 @@ export const descriptionBrowserScript: string = String.raw`
     return jobs;
   }
   function onSettingsChange(id){
-    if(id==='rate'&&Number($('max-rate').value)<Number($('rate').value))$('max-rate').value=$('rate').value;
-    if(id==='max-rate'&&Number($('max-rate').value)<Number($('rate').value))$('rate').value=$('max-rate').value;
+    var moved='';
+    if(id==='rate'&&Number($('max-rate').value)<Number($('rate').value)){$('max-rate').value=$('rate').value;moved='max-rate';}
+    if(id==='max-rate'&&Number($('max-rate').value)<Number($('rate').value)){$('rate').value=$('max-rate').value;moved='rate';}
     if(id==='voice'){describeVoice();$('sample').hidden=true;}
     if(['voice','rate','max-rate','mode','detail','volume'].indexOf(id)>=0)remember();
+    if(id==='rate'||id==='max-rate'){var speeds={};[id,moved].forEach(function(which){if(which)speeds[which==='rate'?'rate':'maxRate']=Number($(which).value);});saveSpeeds(speeds);}
     var p=renderPart();controls();
     if(id==='notes')return;
     var prefix='';
@@ -1441,7 +1481,7 @@ export const descriptionBrowserScript: string = String.raw`
     if(!filesAt||Date.now()-filesAt<LINK_AGE)return;event.preventDefault();
     files(false).then(function(){location.href=$(kind+'-download').href;}).catch(failure);
   });});
-  $('playback-rate').onchange=function(){var rate=Number(this.value);$('video').playbackRate=rate;$('audio').playbackRate=rate;};
+  $('playback-rate').onchange=function(){var rate=Number(this.value);$('video').playbackRate=rate;$('audio').playbackRate=rate;store(PLAYBACK_KEY,rate);saveSpeeds({playbackRate:rate});};
   function setPlayAs(value,quiet,away){
     var audio=value==='audio',from=audio?$('video'):$('audio'),to=media(),at=from.currentTime;
     if(!ended(from))from.pause();$('video').hidden=audio;$('audio').hidden=!audio;$('caption').hidden=audio;
@@ -1539,7 +1579,7 @@ export const descriptionBrowserScript: string = String.raw`
     if(config.library)call('/library-folders').then(function(data){data.folders.forEach(function(path){var option=document.createElement('option');option.value=path;$('folders').appendChild(option);});}).catch(function(){});
     setSelect('progress-pref',stored(PROGRESS_KEY,'quarter'));
     if(setSelect('play-as',stored(PLAY_AS_KEY,'video')))setPlayAs($('play-as').value,true);
-    await migrateDefault();freshForm();renderVoice();$('refresh').disabled=false;
+    await migrateDefault();await migrateSpeeds();freshForm();applyPlayback();renderVoice();$('refresh').disabled=false;
     if(voicesOff)say('Narrator voices are unavailable right now. You can still play and download finished copies.',true);
     var jobs=await list(),params=new URLSearchParams(location.search),selected=params.get('id');
     var current=jobs.filter(function(item){return item.id===selected;})[0]||jobs.filter(function(item){return working(item);})[0];

@@ -518,7 +518,7 @@ function makeServer() {
     overrides: [],
     remainingUSD: 5,
     /** Her narrator choices as the server keeps them (see /prefs in router.ts). */
-    prefs: { myDefaultVoice: null, favorites: [], recent: [], suggested: ['clear woman · flint', 'warm man · oak'], curate: false },
+    prefs: { myDefaultVoice: null, favorites: [], recent: [], suggested: ['clear woman · flint', 'warm man · oak'], curate: false, speeds: { rate: null, maxRate: null, playbackRate: null } },
     add(job) {
       this.jobs.set(job.id, job);
       return job;
@@ -580,6 +580,7 @@ function makeServer() {
       favorites: [...server.prefs.favorites],
       recent: [...server.prefs.recent],
       maxFavorites: 12,
+      speeds: { ...server.prefs.speeds },
     });
     if (route === '/config')
       return json(200, { ...config, ...view(), suggested: [...server.prefs.suggested], ...(server.prefs.curate ? { curate: true } : {}), remainingUSD: server.remainingUSD });
@@ -592,6 +593,13 @@ function makeServer() {
       const kept = server.prefs.favorites.filter((voice) => voice !== body.voice);
       if (body.favorite && kept.length >= 12) return json(409, { error: 'You can keep up to 12 favourite narrators. Remove one first.', field: 'voice' });
       server.prefs.favorites = body.favorite ? [...kept, body.voice] : kept;
+      return json(200, view());
+    }
+    if (route === '/prefs/speeds') {
+      const speeds = { ...server.prefs.speeds };
+      for (const key of ['rate', 'maxRate', 'playbackRate']) if (body[key] !== undefined) speeds[key] = Math.round(body[key] * 100) / 100;
+      if (speeds.rate !== null && speeds.maxRate !== null && speeds.maxRate < speeds.rate) speeds.maxRate = speeds.rate;
+      server.prefs.speeds = speeds;
       return json(200, view());
     }
     if (route === '/prefs/suggested') {
@@ -2200,6 +2208,99 @@ test('narrator default: this browser’s remembered voice is carried to the serv
   assert.equal(flint.server.all(/^\/prefs\/default$/).length, 0, 'the old default was never her choice');
   const gone = await boot({ local: { 'kade-description-settings': JSON.stringify({ voice: 'retired · quill' }) } });
   assert.equal(gone.server.all(/^\/prefs\/default$/).length, 0);
+});
+
+test('speeds: hers on the server win over this browser, the players follow her playback speed, and nothing is carried over', async () => {
+  const server = makeServer();
+  server.prefs.speeds = { rate: 2.5, maxRate: 3, playbackRate: 1.5 };
+  const env = await boot({
+    server,
+    local: { 'kade-description-settings': JSON.stringify({ rate: 2, maxRate: 2.25 }), 'kade-description-playback-rate': '1.25' },
+  });
+  const { $ } = env;
+  assert.equal($('rate').value, '2.5');
+  assert.equal($('max-rate').value, '3');
+  assert.equal($('playback-rate').value, '1.5');
+  assert.equal($('video').playbackRate, 1.5);
+  assert.equal($('audio').playbackRate, 1.5);
+  assert.equal(server.all(/^\/prefs\/speeds$/).length, 0, 'she already keeps speeds, so nothing is carried over');
+  assert.match($('playback-help').textContent, /Your choice is remembered for your account on every device\.$/);
+  assert.match(env.document.getElementById('dv-customize').textContent, /Your speeds are remembered for your account on every device\./);
+
+  const other = makeServer();
+  other.prefs.speeds = { rate: 2, maxRate: null, playbackRate: 2.5 };
+  const phone = await boot({ server: other, local: { 'kade-description-settings': JSON.stringify({ rate: 1.25, maxRate: 1.75 }) } });
+  assert.equal(phone.$('rate').value, '2');
+  assert.equal(phone.$('max-rate').value, '2', 'this browser’s slower fastest speed is lifted to her usual one, as a run requires');
+  assert.equal(phone.$('playback-rate').value, '2.5', 'a playback speed chosen on the iPhone is added to the list');
+  assert.deepEqual(phone.$('playback-rate').options.map((option) => option.value), ['1', '1.25', '1.5', '1.75', '2', '2.5']);
+  assert.equal(phone.$('playback-rate').options.at(-1).textContent, '2.5×');
+  assert.equal(phone.$('video').playbackRate, 2.5);
+});
+
+test('speeds: a change is saved for her account a moment after she stops, with any speed the page moved to match', async () => {
+  const server = makeServer();
+  const ready = server.add(jobOf({ name: 'Tape' }));
+  const env = await boot({ server });
+  const { $ } = env;
+  assert.equal(server.all(/^\/prefs\/speeds$/).length, 0, 'the usual defaults are not saved as her choice');
+  await env.open(ready);
+  await env.choose('rate', '2');
+  await env.timers.advance(300);
+  await env.choose('rate', '2.5');
+  await env.timers.advance(300);
+  assert.equal(server.all(/^\/prefs\/speeds$/).length, 0, 'not while she is still choosing');
+  await env.timers.advance(300);
+  assert.deepEqual(server.all(/^\/prefs\/speeds$/).map((r) => r.body), [{ rate: 2.5, maxRate: 2.5 }], 'one save, with the fastest speed the page lifted');
+  assert.equal(JSON.parse(env.localStorage.getItem('kade-description-settings')).rate, 2.5, 'this browser remembers it too');
+
+  await env.choose('max-rate', '1.75');
+  await env.timers.advance(600);
+  assert.deepEqual(server.last(/^\/prefs\/speeds$/).body, { maxRate: 1.75, rate: 1.75 }, 'a lower fastest speed brings the usual one down with it');
+  assert.deepEqual(server.prefs.speeds, { rate: 1.75, maxRate: 1.75, playbackRate: null });
+
+  await env.choose('playback-rate', '1.25');
+  assert.equal($('video').playbackRate, 1.25);
+  await env.timers.advance(600);
+  assert.deepEqual(server.last(/^\/prefs\/speeds$/).body, { playbackRate: 1.25 });
+  assert.equal(env.localStorage.getItem('kade-description-playback-rate'), '1.25');
+
+  const heard = listen($('status'));
+  server.override((method, path) => path === '/prefs/speeds', () => ({ status: 500, body: { error: 'Kade-AI had a problem.' } }));
+  await env.choose('playback-rate', '2');
+  await env.timers.advance(600);
+  assert.equal(server.all(/^\/prefs\/speeds$/).length, 4);
+  assert.deepEqual(heard, [], 'a failed save says nothing');
+  assert.equal($('error').hidden, true);
+  assert.equal($('playback-rate').value, '2', 'her choice stays');
+  assert.equal($('video').playbackRate, 2);
+  assert.equal(env.localStorage.getItem('kade-description-playback-rate'), '2');
+});
+
+test('speeds: this browser’s remembered speeds are carried to the server once; the usual defaults are not', async () => {
+  const settings = JSON.stringify({ rate: 2, maxRate: 2.5, mode: 'standard' });
+  const first = await boot({ local: { 'kade-description-settings': settings } });
+  assert.deepEqual(first.server.all(/^\/prefs\/speeds$/).map((r) => r.body), [{ rate: 2, maxRate: 2.5 }]);
+  assert.deepEqual(first.server.prefs.speeds, { rate: 2, maxRate: 2.5, playbackRate: null });
+  assert.equal(first.localStorage.getItem('kade-description-speeds-moved'), 'true');
+  assert.equal(first.$('rate').value, '2');
+  assert.equal(first.$('max-rate').value, '2.5');
+  const again = await boot({ local: { 'kade-description-settings': settings, 'kade-description-speeds-moved': 'true' } });
+  assert.equal(again.server.all(/^\/prefs\/speeds$/).length, 0, 'carried once per browser');
+  assert.equal(again.$('rate').value, '2', 'this browser still remembers them');
+  const usual = await boot({ local: { 'kade-description-settings': JSON.stringify({ rate: 1.5, maxRate: 2.25 }) } });
+  assert.equal(usual.server.all(/^\/prefs\/speeds$/).length, 0, 'the usual defaults were never her choice');
+  const fresh = await boot();
+  assert.equal(fresh.server.all(/^\/prefs\/speeds$/).length, 0);
+  assert.equal(fresh.$('rate').value, '1.5');
+  assert.equal(fresh.$('max-rate').value, '2.25');
+  assert.equal(fresh.$('playback-rate').value, '1');
+  const failing = makeServer();
+  failing.override((method, path) => path === '/prefs/speeds', () => ({ status: 500, body: { error: 'down' } }));
+  const later = await boot({ server: failing, local: { 'kade-description-settings': settings } });
+  assert.equal(later.localStorage.getItem('kade-description-speeds-moved'), null, 'a failed carry-over is tried again next time');
+  assert.equal(later.$('rate').value, '2');
+  assert.equal(later.$('error').hidden, true);
 });
 
 test('voice picker: without Web Audio a sample still plays on one unlocked audio element, and a busy hour quiets the list once', async () => {

@@ -766,6 +766,79 @@ test('narrators: a run that names no voice starts with her default, or the house
   }
 });
 
+const noSpeeds = { rate: null, maxRate: null, playbackRate: null };
+
+test('speeds: nothing until she chooses; each speed saves on its own and follows her to /config and /prefs', async () => {
+  const speeds = (body, owner = 'speeds-a') => call('post', '/prefs/speeds', owner).send(body);
+  assert.deepEqual((await call('get', '/config', 'speeds-a').expect(200)).body.speeds, noSpeeds, 'a new person has chosen nothing');
+  assert.deepEqual((await call('get', '/prefs', 'speeds-a').expect(200)).body.speeds, noSpeeds);
+
+  const first = (await speeds({ rate: 1.75, maxRate: 2.5 }).expect(200)).body;
+  assert.deepEqual(first.speeds, { rate: 1.75, maxRate: 2.5, playbackRate: null });
+  assert.equal(first.defaultVoice, dory, 'the answer is the same prefs view as the other prefs routes');
+  assert.deepEqual(first.favorites, []);
+  const played = (await speeds({ playbackRate: 1.25 }).expect(200)).body;
+  assert.deepEqual(played.speeds, { rate: 1.75, maxRate: 2.5, playbackRate: 1.25 }, 'a partial update keeps the other speeds');
+  const usual = (await speeds({ rate: 2 }).expect(200)).body;
+  assert.deepEqual(usual.speeds, { rate: 2, maxRate: 2.5, playbackRate: 1.25 });
+  assert.deepEqual((await call('get', '/config', 'speeds-a').expect(200)).body.speeds, usual.speeds, 'the website and the iPhone read the same speeds');
+  assert.deepEqual((await call('get', '/prefs', 'speeds-a').expect(200)).body.speeds, usual.speeds);
+  assert.deepEqual((await call('get', '/config', 'speeds-b').expect(200)).body.speeds, noSpeeds, 'speeds are per person');
+  const row = await prefsRow('speeds-a');
+  assert.deepEqual([row.rate, row.maxRate, row.playbackRate], [2, 2.5, 1.25]);
+
+  const rounded = (await speeds({ rate: 1.333333, playbackRate: 0.5 }).expect(200)).body;
+  assert.deepEqual(rounded.speeds, { rate: 1.33, maxRate: 2.5, playbackRate: 0.5 }, 'rounded to two decimals; half speed is a playback choice');
+  const alone = (await speeds({ rate: 2.25 }, 'speeds-c').expect(200)).body;
+  assert.deepEqual(alone.speeds, { rate: 2.25, maxRate: null, playbackRate: null }, 'no fastest speed is invented for her');
+  await call('post', '/prefs/speeds', 'speeds-a').set('x-child', '1').send({ rate: 2 }).expect(403);
+});
+
+test('speeds: the fastest is lifted to the usual one; out-of-range and empty requests are refused and change nothing', async () => {
+  const speeds = (body) => call('post', '/prefs/speeds', 'speeds-d').send(body);
+  await speeds({ rate: 1.5, maxRate: 2.25, playbackRate: 1 }).expect(200);
+  assert.deepEqual((await speeds({ rate: 3 }).expect(200)).body.speeds, { rate: 3, maxRate: 3, playbackRate: 1 }, 'a faster usual speed lifts the fastest');
+  assert.deepEqual((await speeds({ maxRate: 2 }).expect(200)).body.speeds, { rate: 3, maxRate: 3, playbackRate: 1 }, 'a fastest below the usual is lifted back to it');
+  assert.deepEqual((await speeds({ rate: 2, maxRate: 1.5 }).expect(200)).body.speeds, { rate: 2, maxRate: 2, playbackRate: 1 }, 'both in one request');
+  assert.deepEqual((await speeds({ maxRate: 2.5 }).expect(200)).body.speeds, { rate: 2, maxRate: 2.5, playbackRate: 1 });
+
+  const refused = async (body, field, pattern) => {
+    const answer = (await speeds(body).expect(400)).body;
+    assert.equal(answer.field, field, JSON.stringify(body));
+    assert.match(answer.error, pattern);
+  };
+  await refused({ rate: 0.9 }, 'rate', /narration speed from 1 to 3/);
+  await refused({ rate: 3.5 }, 'rate', /narration speed from 1 to 3/);
+  await refused({ maxRate: 0 }, 'maxRate', /fastest speed from 1 to 3/);
+  await refused({ maxRate: 4, rate: 2 }, 'maxRate', /fastest speed/);
+  await refused({ playbackRate: 0.4 }, 'playbackRate', /playback speed from 0\.5 to 3/);
+  await refused({ playbackRate: 3.25 }, 'playbackRate', /playback speed/);
+  await refused({ rate: '2' }, 'rate', /narration speed/);
+  await refused({ playbackRate: null }, 'playbackRate', /playback speed/);
+  await refused({}, undefined, /^Choose a speed to remember\.$/);
+  await refused({ voice: 'Voice 1' }, undefined, /^Choose a speed to remember\.$/);
+  assert.deepEqual((await call('get', '/prefs', 'speeds-d').expect(200)).body.speeds, { rate: 2, maxRate: 2.5, playbackRate: 1 }, 'refusals change nothing');
+});
+
+test('speeds: every narrator-choice answer carries them, and voice choices never touch them', async () => {
+  const owner = 'speeds-e';
+  const saved = { rate: 1.75, maxRate: 2.25, playbackRate: 1.5 };
+  await call('post', '/prefs/speeds', owner).send(saved).expect(200);
+  assert.deepEqual((await call('post', '/prefs/default', owner).send({ voice: 'Voice 1' }).expect(200)).body.speeds, saved);
+  assert.deepEqual((await call('post', '/prefs/favorites', owner).send({ voice: 'Voice 1', favorite: true }).expect(200)).body.speeds, saved);
+  try {
+    const curated = (await call('post', '/prefs/suggested', owner).send({ voice: dory, suggested: true }).expect(200)).body;
+    assert.deepEqual(curated.speeds, saved);
+    assert.deepEqual(curated.suggested, [flint, dory], 'the curated list is still answered');
+  } finally {
+    await mongoose.models.KadeDescriptionPrefs.deleteOne({ _id: '__describing__' });
+  }
+  const after = (await call('post', '/prefs/speeds', owner).send({ playbackRate: 2 }).expect(200)).body;
+  assert.equal(after.myDefaultVoice, 'Voice 1', 'saving a speed keeps her default voice');
+  assert.deepEqual(after.favorites, ['Voice 1']);
+  assert.deepEqual(after.speeds, { ...saved, playbackRate: 2 });
+});
+
 test('uploads are idempotent, owners are isolated, a rename keeps recovery, and up to ten can wait', async () => {
   const id = await upload('owner', 'idempotent-upload-0001');
   assert.equal(await upload('owner', 'idempotent-upload-0001'), id);
