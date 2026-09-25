@@ -714,6 +714,7 @@ const fieldHelp: Record<string, string> = {
   voice: 'Choose one of the listed voices.',
   rate: 'Choose a narration speed from 1 to 3 times.',
   maxRate: 'Choose a fastest speed from 1 to 3 times, at least your usual speed.',
+  playbackRate: 'Choose a playback speed from 0.5 to 3 times.',
   mode: 'Choose one of the listed options.',
   detail: 'Choose one of the listed options.',
   volume: 'Choose one of the listed options.',
@@ -847,7 +848,26 @@ type NarrationPrefs = {
   suggested?: string[];
   /** On the house row: the admin has changed the list, so the seed no longer applies. */
   curated?: boolean;
+  /** Her speeds, kept here so the website and the iPhone agree; absent until she chooses. */
+  rate?: number;
+  maxRate?: number;
+  playbackRate?: number;
 };
+/** Speeds she may keep: narration as a job allows, playback as the players allow; at least one. */
+const speedsSchema = z
+  .object({
+    rate: z.number().min(1).max(3).optional(),
+    maxRate: z.number().min(1).max(3).optional(),
+    playbackRate: z.number().min(0.5).max(3).optional(),
+  })
+  .refine(
+    (value) =>
+      value.rate !== undefined || value.maxRate !== undefined || value.playbackRate !== undefined,
+    'Choose a speed to remember.',
+  );
+const speedKeys = ['rate', 'maxRate', 'playbackRate'] as const;
+const speedOf = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
 
 export function createDescriptionRouter(hooks: Hooks): {
   router: Router;
@@ -882,6 +902,9 @@ export function createDescriptionRouter(hooks: Hooks): {
           recent: [String],
           suggested: [String],
           curated: Boolean,
+          rate: Number,
+          maxRate: Number,
+          playbackRate: Number,
         },
         { timestamps: { createdAt: false, updatedAt: true } },
       ),
@@ -1634,6 +1657,12 @@ export function createDescriptionRouter(hooks: Hooks): {
       favorites: listedAll(catalog, prefs.favorites ?? []),
       recent: listedAll(catalog, prefs.recent ?? []).slice(0, maxRecent),
       maxFavorites,
+      /** `null` for a speed she never chose, so each app falls back to its own default. */
+      speeds: {
+        rate: speedOf(prefs.rate),
+        maxRate: speedOf(prefs.maxRate),
+        playbackRate: speedOf(prefs.playbackRate),
+      },
     };
   }
   /** A run that started: its voice moves to the front of her Recently used list. */
@@ -2379,6 +2408,28 @@ export function createDescriptionRouter(hooks: Hooks): {
     }
     res.json(await prefsView(owner, catalog));
   });
+  /** Her usual, fastest and playback speeds, each saved on its own as she changes it on any device. */
+  route('post', '/prefs/speeds', async (req, res) => {
+    const owner = hooks.actor(req).id;
+    const input = speedsSchema.parse(req.body ?? {});
+    const set: Partial<Record<(typeof speedKeys)[number], number>> = {};
+    for (const key of speedKeys) {
+      const value = input[key];
+      if (value !== undefined) set[key] = Math.round(value * 100) / 100;
+    }
+    await Prefs.updateOne({ _id: owner }, { $set: set }, { upsert: true });
+    /* The fastest speed never sits below the usual one, whichever device changed which. */
+    await Prefs.updateOne(
+      {
+        _id: owner,
+        rate: { $type: 'number' },
+        maxRate: { $type: 'number' },
+        $expr: { $lt: ['$maxRate', '$rate'] },
+      },
+      [{ $set: { maxRate: '$rate' } }],
+    );
+    res.json(await prefsView(owner, await voiceCatalog()));
+  });
   /** Kade curates Good for describing by ear; the first change starts from the seed list. */
   route('post', '/prefs/suggested', async (req, res) => {
     if (hooks.actor(req).role !== 'ADMIN')
@@ -2408,7 +2459,10 @@ export function createDescriptionRouter(hooks: Hooks): {
       { $set: { suggested: next, curated: true } },
       { upsert: true },
     );
-    res.json({ suggested: await suggestedList(catalog) });
+    res.json({
+      ...(await prefsView(hooks.actor(req).id, catalog)),
+      suggested: await suggestedList(catalog),
+    });
   });
   route('get', '/library-folders', async (req, res) => {
     const folders = (await hooks.library?.folders?.(req)) ?? [];
