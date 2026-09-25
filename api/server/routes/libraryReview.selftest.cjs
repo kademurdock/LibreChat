@@ -9,7 +9,7 @@ const context = {
  requireJwtAuth(){}, isAdmin:r=>r.user.role==='ADMIN', isId:s=>/^[a-f0-9]{24}$/.test(s),
  clampInt:(v,min,max,d)=>Number(v)||d, express:{json:()=>()=>{}}, logger:{warn(){},info(){}},
  KadeBook:{find(query,fields){calls.push({query,fields});return {sort(){return this},limit(){return this},async lean(){return rows.slice()}}},async bulkWrite(ops){calls.push(ops);return {matchedCount:0,modifiedCount:0}}},
- reviewedLibraryMoves:()=>[{updateOne:{filter:{title:'expected'},update:{$set:{path:'Videos/Commercials'}}}}], CATEGORIES:[]
+ mediaZoneOf:()=>'intake', reviewedLibraryMoves:()=>[{updateOne:{filter:{title:'expected'},update:{$set:{path:'Videos/Commercials'}}}}], CATEGORIES:[]
 };
 vm.runInNewContext(source.slice(start,end),context);
 const response=()=>({code:200,status(c){this.code=c;return this},json(body){this.body=body;return this}});

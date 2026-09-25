@@ -622,14 +622,20 @@ class AgentClient extends BaseClient {
      * context and get relayed naturally by the character (reminders the user
      * asked for, birthday wishes, etc.). Marked delivered on pickup. Fail-soft:
      * a nudge-store hiccup must never break a chat turn. One-shot per turn =
-     * genuinely volatile = stays in the dynamic tail. */
+     * genuinely volatile = stays in the dynamic tail.
+     *
+     * Sep 24 2026 (the approval flood, services/kadeNudgeTurn.js): the block
+     * used to say "deliver these near the START of your reply"; two librarian
+     * replies opened with an approval pile and skipped the catalog search they
+     * were asked for. The person's message comes first now, tools included.
+     * The notes ride only the agent the person is talking to, and a turn run
+     * for someone else or a hidden run (req.kadeHiddenRun) never takes them. */
+    let nudgeTurnContext;
     try {
-      const { takePendingChatNudges } = require('~/server/services/kadeNudges');
-      const pendingNudges = await takePendingChatNudges(this.options.req.user.id);
-      if (pendingNudges.length > 0) {
-        const nudgeLines = pendingNudges.map((n) => `- ${n.text}`).join('\n');
-        const nudgeBlock = `# Waiting nudges for this user\nDeliver these naturally near the START of your reply (in character, briefly — do not read them like a list robot):\n${nudgeLines}`;
-        volatileTurnContext = nudgeBlock;
+      const { ownsNudgePickup, waitingNotesBlock } = require('~/server/services/kadeNudgeTurn');
+      if (ownsNudgePickup(this.options.req)) {
+        const { takePendingChatNudges } = require('~/server/services/kadeNudges');
+        nudgeTurnContext = waitingNotesBlock(await takePendingChatNudges(this.options.req.user.id));
       }
     } catch (nudgeError) {
       logger.warn('[AgentClient] pending-nudge pickup failed (non-fatal):', nudgeError.message);
@@ -890,6 +896,9 @@ class AgentClient extends BaseClient {
         agent.instructions = headParts.filter(Boolean).join('\n\n');
         if (volatileTurnContext && memoryEligible) {
           agentRunContextParts.push(volatileTurnContext);
+        }
+        if (nudgeTurnContext && agentId === this.options.agent.id) {
+          agentRunContextParts.push(nudgeTurnContext);
         }
         /** KADE Sep 5 2026 (Part 132.1, her "Clancy trial" turn): when tool
          * retrieval left web_search OFF this turn, say so in the tail. Without

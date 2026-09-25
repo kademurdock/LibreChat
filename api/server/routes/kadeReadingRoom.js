@@ -229,15 +229,13 @@ async function deleteKeys(keys) {
 }
 const trackKey = (bookId, ext) => `${MEDIA_PREFIX()}/${bookId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-/** The App Store reviewer's seat, and any other account that must see an
- * EMPTY library: the shared shelf and every audio item are simply absent for
- * them. Comma-separated emails or user ids in KADE_LIBRARY_HIDDEN_FROM. */
+/** Accounts that must see an EMPTY family library: the App Store reviewer's
+ * seat (and anything else in KADE_LIBRARY_HIDDEN_FROM), test seats, and every
+ * account Kade has not given family library access (Sep 24 2026, see
+ * packages/api library/access.ts). The shared shelf and everyone else's items
+ * are simply absent for them; their own uploads work as before. */
 function libraryHiddenFrom(req) {
-  if (!require('@librechat/api').familyLibraryMember(req.user)) return true;
-  const list = String(process.env.KADE_LIBRARY_HIDDEN_FROM || 'kadeai.vischeck722@gmail.com').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
-  const email = String((req.user && req.user.email) || '').toLowerCase();
-  const id = String((req.user && req.user.id) || '').toLowerCase();
-  return list.includes(email) || list.includes(id);
+  return !require('@librechat/api').familyLibraryMember(req.user);
 }
 function listenClock(seconds) {
   const h = Math.floor(seconds / 3600);
@@ -298,29 +296,53 @@ async function isChild(req) {
   }
 }
 const isAdmin = (req) => req.user && req.user.role === 'ADMIN';
-const canPublish = (req) => isAdmin(req) || (require('@librechat/api').familyLibraryMember(req.user) && require('@librechat/api').trustedLibraryContributor(String(req.user?.id)));
+/** Who puts an upload straight into the family library, no approval step: the
+ * librarian, and a trusted uploader (Amber A, Kade's word, Sep 24 2026) while
+ * she has family access. Everyone else's upload lands on their own shelf. */
+const canPublish = (req) => {
+  const { familyLibraryMember, trustedLibraryContributor } = require('@librechat/api');
+  return isAdmin(req) || (trustedLibraryContributor(String(req.user?.id)) && familyLibraryMember(req.user));
+};
+/** A trusted uploader sharing her own items answers her own waiting requests
+ * for them: mark those approved, so they leave Kade's queue and digest. */
+async function settleTrustedSubmissions(req, bookIds) {
+  if (isAdmin(req) || !bookIds.length) return;
+  await KadeLibrarySubmission.updateMany(
+    { user: req.user.id, book: { $in: bookIds }, type: { $ne: 'report' }, status: 'pending' },
+    { $set: { status: 'approved', decidedAt: new Date(), decisionNote: require('@librechat/api').trustedApprovalNote } },
+  );
+  refreshLibrarianDigest({ create: false });
+}
+/* Family library access, owner only (Sep 24 2026). The Library page's
+ * "Family library access" section (client/public/assets/library/access.js). */
 router.use('/membership', express.json({ limit: '2kb' }), require('@librechat/api').libraryMembershipRouter({
   auth: requireJwtAuth,
-  admin: (req, res, next) => isAdmin(req) ? next() : res.status(403).json({ error: 'Only the library owner manages family access.' }),
-  users: async () => {
+  owner: (req, res, next) => (isAdmin(req) ? next() : res.status(403).json({ error: 'Only the library owner manages family access.' })),
+  accounts: async () => {
     const { User } = require('~/db/models');
-    const users = await User.find({}, '_id name username role kadeLibraryAccess').sort({ name: 1 }).lean();
-    return users.map((user) => ({ id: String(user._id), name: user.name || user.username || 'Account', member: require('@librechat/api').familyLibraryMember(user), admin: user.role === 'ADMIN' }));
+    return User.find({}, '_id name username email role kadeLibraryAccess').limit(2000).lean();
   },
-  update: async (id, access) => {
+  account: async (id) => {
     const { User } = require('~/db/models');
-    const result = await User.updateOne({ _id: id, role: { $ne: 'ADMIN' } }, { $set: { kadeLibraryAccess: access } });
-    return result.matchedCount > 0;
+    return User.findById(id, '_id name username email role kadeLibraryAccess').lean();
   },
-  approveUploads: async (id, apply) => {
-    const ready = await KadeBook.find({ owner: id, state: 'ready' }).select('_id shared').lean();
-    const pending = { user: id, type: 'submission', status: 'pending', book: { $in: ready.map((book) => book._id) } };
-    const counts = { books: ready.filter((book) => !book.shared).length, submissions: await KadeLibrarySubmission.countDocuments(pending) };
-    if (!apply) return counts;
-    await KadeBook.updateMany({ owner: id, state: 'ready', shared: { $ne: true } }, { $set: { shared: true, sharedAt: new Date() } });
-    await KadeLibrarySubmission.updateMany(pending, { $set: { status: 'approved', decidedAt: new Date(), decisionNote: 'Approved by the library owner’s trusted contributor rule.' } });
-    return counts;
+  setAccess: async (id, access) => {
+    const { User } = require('~/db/models');
+    return User.findOneAndUpdate({ _id: id, role: { $ne: 'ADMIN' } }, { $set: { kadeLibraryAccess: access } }, { new: true, projection: '_id name username email role kadeLibraryAccess' }).lean();
   },
+  approveUploads: async (contributor, apply, decidedBy) => {
+    const receipt = await require('@librechat/api').approveTrustedUploads({ books: KadeBook, submissions: KadeLibrarySubmission }, { contributor, decidedBy, apply });
+    if (apply) {
+      logger.info(`[library/membership] receipt ${JSON.stringify({ ...receipt, approved: receipt.approved.map((item) => item.id) })}`);
+      await refreshLibrarianDigest({ create: false });
+      if (receipt.approved.length) {
+        const n = receipt.approved.length;
+        notifyUser(contributor, `Kade approved your ${n} earlier library upload${n === 1 ? '' : 's'}. ${n === 1 ? 'It is' : 'They are'} in the family library now, and anything you upload from now on goes straight in.`);
+      }
+    }
+    return receipt;
+  },
+  log: (message) => logger.info(`[library/membership] ${message}`),
 }));
 
 /** Can this reader open this book? Owner, admin, or it is in the library and
@@ -414,7 +436,8 @@ router.get('/shelf', requireJwtAuth, async (req, res) => {
     ]);
     res.json({
       librarian: isAdmin(req),
-      familyLibrary: !hidden,
+      // null for the App Review seat: its empty shelf stays silent, with no "ask Kade" notice.
+      familyLibrary: hidden && require('@librechat/api').libraryReviewSeat(req.user) ? null : !hidden,
       describedVideo: !child && (isAdmin(req) || process.env.KADE_DESCRIPTION_PUBLIC !== '0'),
       me: String(userId),
       archiveOwned: await KadeBook.countDocuments({ owner: userId, path: { $ne: '' } }),
@@ -456,6 +479,8 @@ router.post('/upload', requireJwtAuth, async (req, res, next) => {
 
 async function importUploadedBook(req, res) {
   const f = req.file;
+  /* The librarian's and a trusted uploader's books go straight into the family library. */
+  const publish = canPublish(req) && (req.body || {}).private !== '1';
   try {
     if (!f || !f.path || !f.size) return res.status(400).json({ error: 'No book arrived. Pick a file and try again.' });
     const ext = String(f.originalname || '').toLowerCase().split('.').pop();
@@ -489,7 +514,7 @@ async function importUploadedBook(req, res) {
             kind: 'audio', category: 'audiobook', path: 'Audio/Audiobooks',
             title: daisy.title || f.originalname.replace(/\.zip$/i, ''), author: daisy.author,
             format: daisy.format, originalName: f.originalname, fileBytes: f.size,
-            shared: canPublish(req) && (req.body || {}).private !== '1',
+            shared: publish, ...(publish ? { sharedAt: new Date() } : {}),
             grownUpsOnly: (req.body || {}).grownUpsOnly === '1', state: 'ready',
             tracks: daisy.clips.map((clip) => ({ ...uploaded.get(clip.path), title: clip.title,
               originalName: clip.path, clipBegin: clip.clipBegin, clipEnd: clip.clipEnd,
@@ -533,7 +558,8 @@ async function importUploadedBook(req, res) {
       ...(req.importBookId ? { _id: new mongoose.Types.ObjectId(req.importBookId) } : {}),
       owner: req.user.id,
       ownerName,
-      shared: canPublish(req) && (req.body || {}).private !== '1',
+      shared: publish,
+      ...(publish ? { sharedAt: new Date() } : {}),
       title: parsed.meta.title || String(f.originalname || 'Untitled').replace(/\.[^.]+$/, ''),
       author: parsed.meta.author || '',
       publisher: parsed.meta.sourcePublisher || (parsed.meta.publisher && !/bookshare/i.test(parsed.meta.publisher) ? parsed.meta.publisher : ''),
@@ -570,7 +596,8 @@ async function importUploadedBook(req, res) {
 
 router.use('/imports', express.json({ limit: '8kb' }), bookImportRouter({
   auth: requireJwtAuth,
-  actor: req => ({ id: String(req.user.id), name: req.user.name, username: req.user.username, email: req.user.email, role: req.user.role }),
+  // kadeLibraryAccess rides the job so the finished import is shared (or not) by the uploader's own access
+  actor: req => ({ id: String(req.user.id), name: req.user.name, username: req.user.username, email: req.user.email, role: req.user.role, kadeLibraryAccess: req.user.kadeLibraryAccess }),
   sign: (key, bytes) => signPut(key, 'application/octet-stream', bytes),
   head: headObject,
   download: async key => {
@@ -1370,7 +1397,7 @@ router.post('/book/:id/report', requireJwtAuth, express.json({ limit: '4kb' }), 
     }
     const s = await KadeLibrarySubmission.create({ user: req.user.id, userName, type: 'report', book: book._id, title: book.title, note, suggestedPath, suggestedCategory });
     logger.info(`[library/report] ${userName} says "${book.title}" belongs in ${suggestedPath || suggestedCategory || '(see note)'}`);
-    notifyLibrarians(`${userName} says "${book.title}" is on the wrong shelf${suggestedPath ? ` — suggests ${suggestedPath}` : ''}${suggestedCategory ? ` (${suggestedCategory})` : ''}. Open the Library page to move it or leave it.`);
+    refreshLibrarianDigest();
     res.json({ ok: true, applied: false, submission: subOut(s.toObject()) });
   } catch (e) {
     logger.error('[library/report] error:', e);
@@ -1386,15 +1413,59 @@ async function notifyUser(userId, text, userName) {
     logger.warn(`[library/submissions] notify failed: ${e.message}`);
   }
 }
-async function notifyLibrarians(text) {
-  try {
-    const { User } = require('~/db/models');
-    const admins = await User.find({ role: 'ADMIN' }, '_id name').lean();
-    for (const a of admins) await notifyUser(a._id, text, a.name);
-  } catch (e) {
-    logger.warn(`[library/submissions] admin notify failed: ${e.message}`);
-  }
+/* THE LIBRARIAN'S DIGEST (Sep 24 2026). Every upload, request and shelf report
+ * used to queue its own chat note for Kade; Amber bulk-uploading Bookshare
+ * books buried two librarian replies under an approval pile, and neither reply
+ * ran the catalog search it was asked for. Now each admin has at most ONE
+ * waiting note that says what is waiting, rewritten in place while it waits
+ * and removed once nothing does; after one is picked up, the next is not made
+ * for LIBRARY_DIGEST_HOURS (6). Chat only, never a phone push or call.
+ * Trusted uploads never reach it: they are not waiting for anyone. */
+const LIBRARY_DIGEST = 'library-digest';
+const LIBRARY_DIGEST_GAP_MS = () => Math.max(0, parseFloat(process.env.KADE_LIBRARY_DIGEST_HOURS) || 6) * 3600000;
+/** The old one-per-item notes, folded into the digest the first time it runs. */
+const LEGACY_LIBRARY_NOTE = /Open the Library page to (?:approve or decline it|move it or leave it)\.$/;
+let digestRun = Promise.resolve();
+function refreshLibrarianDigest({ create = true } = {}) {
+  digestRun = digestRun.then(async () => {
+    try {
+      const { pendingLibraryDigest } = require('@librechat/api');
+      const { KadePendingNudge } = require('~/models/kadeNudge');
+      const { User } = require('~/db/models');
+      const text = await pendingLibraryDigest({ books: KadeBook, submissions: KadeLibrarySubmission });
+      const admins = await User.find({ role: 'ADMIN' }, '_id').lean();
+      for (const a of admins) {
+        const legacy = await KadePendingNudge.updateMany({ userId: a._id, deliveredAt: null, type: 'reminder', text: LEGACY_LIBRARY_NOTE }, { $set: { deliveredAt: new Date() } });
+        const waiting = await KadePendingNudge.findOne({ userId: a._id, type: LIBRARY_DIGEST, deliveredAt: null });
+        if (waiting) {
+          if (!text) await KadePendingNudge.deleteOne({ _id: waiting._id, deliveredAt: null });
+          else if (waiting.text !== text) await KadePendingNudge.updateOne({ _id: waiting._id, deliveredAt: null }, { $set: { text } });
+          continue;
+        }
+        // Folded per-item notes are replaced by one digest, even on a refresh that would not start one.
+        if (!(create || (legacy && legacy.modifiedCount > 0)) || !text) continue;
+        // The quiet time runs from when she heard the last one, not from when it was written.
+        if (await KadePendingNudge.exists({ userId: a._id, type: LIBRARY_DIGEST, deliveredAt: { $gt: new Date(Date.now() - LIBRARY_DIGEST_GAP_MS()) } })) continue;
+        await KadePendingNudge.create({ userId: a._id, text, type: LIBRARY_DIGEST, channel: 'chat' });
+      }
+    } catch (e) {
+      logger.warn(`[library/digest] refresh failed: ${e.message}`);
+    }
+  });
+  return digestRun;
 }
+/* Once at startup: the per-item notes queued before this code shipped fold into
+ * one digest right away. Trusted uploads never refresh, so without this they
+ * would keep reaching Kade five a turn until someone else's request came in. */
+function refreshLibrarianDigestOnStartup(connection = mongoose.connection) {
+  const run = () => {
+    const timer = setTimeout(() => refreshLibrarianDigest({ create: false }), 15000);
+    if (timer && timer.unref) timer.unref();
+  };
+  if (connection.readyState === 1) run();
+  else connection.once('open', run);
+}
+refreshLibrarianDigestOnStartup();
 
 router.post('/submissions', requireJwtAuth, express.json({ limit: '8kb' }), async (req, res) => {
   try {
@@ -1402,24 +1473,29 @@ router.post('/submissions', requireJwtAuth, express.json({ limit: '8kb' }), asyn
     const url = String(b.url || '').trim().slice(0, 2000);
     const title = String(b.title || '').trim().slice(0, 300);
     const note = String(b.note || '').trim().slice(0, 2000);
-    let book = null;
+    let book = null, item = null;
     if (b.book && isId(b.book)) {
-      const item = await KadeBook.findOne({ _id: b.book, owner: req.user.id }).lean();
+      item = await KadeBook.findOne({ _id: b.book, owner: req.user.id }).lean();
       if (item) book = item._id;
     }
     if (!url && !book) return res.status(400).json({ error: 'Give a link, or donate a file first and submit that.' });
     if (url && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'That does not look like a link. It should start with http.' });
-    const open = await KadeLibrarySubmission.countDocuments({ user: req.user.id, status: 'pending' });
-    if (open >= 50) return res.status(400).json({ error: 'You have fifty submissions waiting already — give the librarian a minute.' });
+    /* A trusted uploader's own FILE goes straight in (Sep 24 2026): shared now
+     * if it is finished, or already shared and going in when its upload lands.
+     * A link still waits for Kade, since approving one sends it to TubeVault. */
+    const approved = !!item && (item.state === 'ready' || item.shared === true) && canPublish(req);
+    if (!approved) {
+      const open = await KadeLibrarySubmission.countDocuments({ user: req.user.id, status: 'pending' });
+      if (open >= 50) return res.status(400).json({ error: 'You have fifty submissions waiting already — give the librarian a minute.' });
+    }
     const userName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
-    const approved = canPublish(req);
-    if (approved && book && !(await KadeBook.exists({ _id: book, owner: req.user.id, state: 'ready' }))) return res.status(409).json({ error: 'Finish uploading this item before submitting it to the library.' });
+    if (approved) await settleTrustedSubmissions(req, [book]);
     const s = await KadeLibrarySubmission.create({ user: req.user.id, userName, url, title, note, book,
-      ...(approved ? { status: 'approved', decidedAt: new Date(), decisionNote: 'Automatically approved by the library owner’s trusted contributor rule.' } : {}),
+      ...(approved ? { status: 'approved', decidedAt: new Date(), decisionNote: isAdmin(req) ? '' : require('@librechat/api').trustedApprovalNote } : {}),
     });
-    if (approved && book) await KadeBook.updateOne({ _id: book, owner: req.user.id, state: 'ready' }, { $set: { shared: true, sharedAt: new Date() } });
-    logger.info(`[library/submissions] ${userName} submitted ${url || 'file ' + book} "${title}"`);
-    if (!approved) notifyLibrarians(`${userName} submitted something for the family library${title ? `: "${title}"` : ''}${url ? ` (${url})` : ' (a file)'}. Open the Library page to approve or decline it.`);
+    if (approved && !item.shared) await KadeBook.updateOne({ _id: book, owner: req.user.id, state: 'ready' }, { $set: { shared: true, sharedAt: new Date() } });
+    logger.info(`[library/submissions] ${userName} submitted ${url || 'file ' + book} "${title}"${approved ? ' (shared at once)' : ''}`);
+    if (!approved) refreshLibrarianDigest();
     res.json({ ok: true, submission: subOut(s.toObject()) });
   } catch (e) {
     logger.error('[library/submissions] error:', e);
@@ -1473,6 +1549,7 @@ router.post('/submissions/:id/decide', requireJwtAuth, express.json({ limit: '4k
       ? `Your library submission "${what}" was approved${s.url ? ' — it will be fetched into the collection' : ' and is in the family library now'}.${s.decisionNote ? ' The librarian says: ' + s.decisionNote : ''}`
       : `Your library submission "${what}" was not added this time.${s.decisionNote ? ' The librarian says: ' + s.decisionNote : ''}`, s.userName);
     logger.info(`[library/submissions] ${status}: "${what}" from ${s.userName}`);
+    refreshLibrarianDigest({ create: false });
     res.json({ ok: true, submission: subOut(s.toObject()) });
   } catch (e) {
     logger.error('[library/submissions/decide] error:', e);
@@ -1496,6 +1573,7 @@ router.delete('/submissions/:id', requireJwtAuth, async (req, res) => {
     if (!isId(req.params.id)) return res.status(404).json({ error: 'No such submission.' });
     const q = isAdmin(req) ? { _id: req.params.id } : { _id: req.params.id, user: req.user.id, status: 'pending' };
     const r = await KadeLibrarySubmission.deleteOne(q);
+    if (r.deletedCount) refreshLibrarianDigest({ create: false });
     res.json({ ok: true, removed: r.deletedCount || 0 });
   } catch (e) {
     res.status(500).json({ error: 'Could not withdraw it.' });
@@ -1528,6 +1606,7 @@ router.post('/book/:id/edit', requireJwtAuth, express.json({ limit: '16kb' }), a
     if (Array.isArray(b.tags)) { item.tags = b.tags.slice(0, 30).map((t) => String(t).slice(0, 60)); changed.push('tags'); }
     if (Array.isArray(b.trackTitles) && item.tracks) b.trackTitles.forEach((t, i) => { if (item.tracks[i] && typeof t === 'string' && t.trim()) item.tracks[i].title = t.trim().slice(0, 200); });
     await item.save();
+    if (b.shared === true && item.shared) await settleTrustedSubmissions(req, [item._id]);
     logger.info(`[library/edit] user=${req.user.id} "${item.title}" ${changed.join(',') || 'nothing'}`);
     res.json({ ok: true, item: summary(item.toObject(), null) });
   } catch (e) {
@@ -1568,7 +1647,7 @@ router.post('/archive/batch', requireJwtAuth, express.json({ limit: '64kb' }), a
     const action = String(b.action || '');
     let r;
     if (action === 'move') r = await KadeBook.updateMany(q, { $set: { path: cleanPath(b.to) } });
-    else if (action === 'share') { if (!canPublish(req)) return res.status(403).json({ error: 'Use "Submit this for the library" for approval.' }); r = await KadeBook.updateMany({ ...q, state: 'ready' }, { $set: { shared: true, sharedAt: new Date() } }); }
+    else if (action === 'share') { if (!canPublish(req)) return res.status(403).json({ error: 'Only the librarian puts things in the family library. Use "Submit this for the library" instead.' }); r = await KadeBook.updateMany({ ...q, state: 'ready' }, { $set: { shared: true, sharedAt: new Date() } }); if (!isAdmin(req)) await settleTrustedSubmissions(req, (await KadeBook.find({ ...q, state: 'ready' }, '_id').lean()).map((it) => it._id)); }
     else if (action === 'unshare') r = await KadeBook.updateMany(q, { $set: { shared: false } });
     else if (action === 'grownups') r = await KadeBook.updateMany(q, { $set: { grownUpsOnly: b.value !== false } });
     else if (action === 'category' && CATEGORIES.includes(String(b.value))) r = await KadeBook.updateMany({ ...q, kind: { $ne: 'text' } }, { $set: { category: String(b.value) } });
@@ -2017,7 +2096,11 @@ router.get('/collections/:id', requireJwtAuth, async (req, res) => {
     if (!c) return res.status(404).json({ error: 'No such collection.' });
     const child = await isChild(req);
     const ids = c.items.map((i) => i.book);
-    const books = ids.length ? await KadeBook.find({ _id: { $in: ids }, state: 'ready', ...(child ? { grownUpsOnly: { $ne: true } } : {}) }).lean() : [];
+    /* Only items this reader could open on their own: theirs, or shared with a
+     * family member. A collection must not carry someone's private item, or the
+     * family shelf, to an account without access (Sep 24 2026). */
+    const visible = isAdmin(req) ? {} : { $or: [{ owner: req.user.id }, ...(libraryHiddenFrom(req) ? [] : [{ shared: true }])] };
+    const books = ids.length ? await KadeBook.find({ _id: { $in: ids }, state: 'ready', ...visible, ...(child ? { grownUpsOnly: { $ne: true } } : {}) }).lean() : [];
     const byId = {}; for (const bk of books) byId[String(bk._id)] = bk;
     const items = c.items.map((i, n) => {
       const bk = byId[String(i.book)];
@@ -2099,7 +2182,7 @@ router.post('/book/:id/share', requireJwtAuth, express.json({ limit: '2kb' }), a
       const open = await KadeLibrarySubmission.findOne({ book: book._id, user: req.user.id, status: 'pending', type: 'submission' }).lean();
       if (!open) {
         await KadeLibrarySubmission.create({ user: req.user.id, userName, type: 'submission', book: book._id, title: book.title, note: String(b.note || '').slice(0, 2000) });
-        notifyLibrarians(`${userName} asks for "${book.title}" to go in the family library. Open the Library page to approve or decline it.`);
+        refreshLibrarianDigest();
       }
       if (typeof b.grownUpsOnly === 'boolean') { book.grownUpsOnly = b.grownUpsOnly; await book.save(); }
       return res.json({ ok: true, pending: true, book: summary(book.toObject(), null) });
@@ -2111,6 +2194,7 @@ router.post('/book/:id/share', requireJwtAuth, express.json({ limit: '2kb' }), a
     }
     if (typeof b.grownUpsOnly === 'boolean') book.grownUpsOnly = b.grownUpsOnly;
     await book.save();
+    if (b.shared === true) await settleTrustedSubmissions(req, [book._id]);
     logger.info(`[reading-room/share] user=${req.user.id} "${book.title}" shared=${book.shared} grownUpsOnly=${book.grownUpsOnly}`);
     res.json({ ok: true, book: summary(book.toObject(), null) });
   } catch (e) {

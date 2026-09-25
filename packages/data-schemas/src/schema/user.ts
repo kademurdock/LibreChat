@@ -159,6 +159,7 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       enum: ['adult', 'child'],
       default: 'adult',
     },
+    /** Kade-AI (Sep 24 2026): the shared family library. Unset = the rule in packages/api library/access.ts; 'family' or 'none' is Kade's own choice. */
     kadeLibraryAccess: { type: String, enum: ['family', 'none'] },
     /**
      * Kade-AI (Part 143, Sep 8 2026): ten digits somebody can sign in with

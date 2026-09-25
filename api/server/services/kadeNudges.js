@@ -190,9 +190,15 @@ async function deliverNudge(userId, text, { type = 'reminder', userName = '' } =
   return 'chat';
 }
 
-/** ---- next-chat pickup (called from the agent controller) ---- */
-async function takePendingChatNudges(userId, limit = 5) {
-  const pending = await KadePendingNudge.find({ userId, channel: 'chat', deliveredAt: null })
+/** ---- next-chat pickup (called from the agent controller) ----
+ * exceptTypes leaves those notes waiting (the phone lane skips the Library
+ * digest, which is for Kade's chat only). */
+async function takePendingChatNudges(userId, limit = 5, { exceptTypes } = {}) {
+  const filter = { userId, channel: 'chat', deliveredAt: null };
+  if (Array.isArray(exceptTypes) && exceptTypes.length) {
+    filter.type = { $nin: exceptTypes };
+  }
+  const pending = await KadePendingNudge.find(filter)
     .sort({ createdAt: 1 })
     .limit(limit)
     .lean();

@@ -2593,7 +2593,8 @@ router.get('/call-memories', async (req, res) => {
        * legs skip it: an unheard voicemail must not eat someone's messages. */
       if (String(req.query.nudges || '') !== '1') { throw { skip: true }; }
       const { takePendingChatNudges } = require('~/server/services/kadeNudges');
-      const pending = await takePendingChatNudges(uid);
+      // The Library digest is chat only: a phone call never takes it (Sep 24 2026).
+      const pending = await takePendingChatNudges(uid, 5, { exceptTypes: ['library-digest'] });
       if (pending.length > 0) {
         const lines = pending.map((n) => `- ${n.text}`).join('\n');
         text +=
