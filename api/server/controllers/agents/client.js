@@ -21,6 +21,8 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  prepareTokenSpend,
+  bulkWriteTransactions,
   sendEvent,
   computeUsageCostUSD,
   aggregateEmittedUsage,
@@ -1566,6 +1568,38 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * KADE Part 291 (Kade: "Yes, I do want double on voice"): the account a turn's usage lands
+   * on. A voice turn runs on the service seat; with KADE_VOICE_BILL_REAL=1, kadeOnBehalfOf sets
+   * req.kadeBillTo to the non-admin caller, so the real transaction is billed to them at the
+   * platform multiplier. Kade's own calls, unknown emails and unlinked callers have no
+   * kadeBillTo and stay on her seat, as before.
+   * @returns {string | undefined}
+   */
+  kadeUsageUser() {
+    return this.options.req?.kadeBillTo ?? this.user ?? this.options.req?.user?.id;
+  }
+
+  /**
+   * KADE Part 291 review (F10, F13): the writers this turn's usage goes through. A voice turn
+   * billed to its caller (req.kadeBillTo) draws the caller's wallet with an $inc and no floor, so
+   * a debt left by phone minutes posted after hang-up is never forgiven, and a first-time caller
+   * is seeded with the normal start balance instead of a $0 record (kadeRealCost.voiceWalletUpdate).
+   * Every other turn keeps db.updateBalance exactly as before.
+   * @param {AppConfig['balance']} [balance]
+   */
+  kadeUsageDeps(balance) {
+    const updateBalance = this.options.req?.kadeBillTo
+      ? require('~/server/services/kadeRealCost').voiceWalletUpdate({ balanceConfig: balance })
+      : db.updateBalance;
+    return {
+      spendTokens: db.spendTokens,
+      spendStructuredTokens: db.spendStructuredTokens,
+      pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+      bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance },
+    };
+  }
+
+  /**
    * @param {Object} params
    * @param {string} [params.model]
    * @param {string} [params.context='message']
@@ -1581,18 +1615,14 @@ class AgentClient extends BaseClient {
     collectedUsage = this.collectedUsage,
   }) {
     const result = await recordCollectedUsage(
+      this.kadeUsageDeps(balance),
       {
-        spendTokens: db.spendTokens,
-        spendStructuredTokens: db.spendStructuredTokens,
-        pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
-        bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
-      },
-      {
-        user: this.user ?? this.options.req.user?.id,
+        user: this.kadeUsageUser(),
         conversationId: this.conversationId,
         collectedUsage,
         model: model ?? this.model ?? this.options.agent.model_parameters.model,
-        context,
+        /* KADE Part 291: voice rows stay apart from typed chat on the funding page. */
+        context: this.options.req?.kadeBillTo && context === 'message' ? 'voice' : context,
         messageId: this.responseMessageId,
         balance,
         transactions,
@@ -1644,10 +1674,14 @@ class AgentClient extends BaseClient {
         seq: this.collectedUsage.length,
         /** Price with the SUBAGENT's own endpoint token config (its endpoint may
          *  differ from the parent's); `usage.agentId` is tagged by the sink. */
+        /* KADE Part 291: the administrator's gauge shows real provider cost (see initialize.js). */
         cost: includeCost
           ? computeUsageCostUSD(
               usage,
-              { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+              require('~/server/services/kadeRealCost').gaugePricing(
+                this.options.req?.user?.role,
+                db,
+              ),
               this.resolveAgentEndpointTokenConfig(usage),
             )
           : undefined,
@@ -1716,7 +1750,9 @@ class AgentClient extends BaseClient {
     const appConfig = this.options.req.config;
     let balanceConfig = getBalanceConfig(appConfig);
     // KADE prepaid Stage A: admin (Kade) never draws down or gets capped.
-    if (this.options?.req?.user?.role === 'ADMIN') { balanceConfig = { ...balanceConfig, enabled: false }; }
+    // Part 291: a voice turn billed to its caller (req.kadeBillTo) draws down the CALLER's wallet.
+    // The pre-turn check stays off for the service seat (BaseClient), so a call is never cut mid-turn.
+    if (this.options?.req?.user?.role === 'ADMIN' && !this.options.req.kadeBillTo) { balanceConfig = { ...balanceConfig, enabled: false }; }
     const transactionsConfig = getTransactionsConfig(appConfig);
     try {
       if (!abortController) {
@@ -2465,14 +2501,36 @@ class AgentClient extends BaseClient {
     context = 'message',
   }) {
     try {
+      /* KADE Part 291 review (F10): the estimated-usage fallback for a voice turn billed to its
+       * caller writes the same rows spendTokens would (prompt, completion, reasoning), through the
+       * caller's no-floor wallet writer instead of updateBalance's clamp at zero. */
+      if (this.options.req?.kadeBillTo) {
+        const pricing = { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier };
+        const txData = {
+          model,
+          balance,
+          user: this.kadeUsageUser(),
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          endpointTokenConfig: this.options.endpointTokenConfig,
+          context: context === 'message' ? 'voice' : context,
+        };
+        const docs = prepareTokenSpend(txData, { promptTokens, completionTokens }, pricing);
+        const reasoning = usage && typeof usage === 'object' ? usage.reasoning_tokens : undefined;
+        if (typeof reasoning === 'number') {
+          docs.push(...prepareTokenSpend({ ...txData, context: 'reasoning' }, { completionTokens: reasoning }, pricing));
+        }
+        await bulkWriteTransactions({ user: txData.user, docs }, this.kadeUsageDeps(balance).bulkWriteOps);
+        return;
+      }
       await db.spendTokens(
         {
           model,
-          context,
+          context: this.options.req?.kadeBillTo && context === 'message' ? 'voice' : context,
           balance,
           messageId: this.responseMessageId,
           conversationId: this.conversationId,
-          user: this.user ?? this.options.req.user?.id,
+          user: this.kadeUsageUser(),
           endpointTokenConfig: this.options.endpointTokenConfig,
         },
         { promptTokens, completionTokens },
@@ -2491,7 +2549,7 @@ class AgentClient extends BaseClient {
             context: 'reasoning',
             messageId: this.responseMessageId,
             conversationId: this.conversationId,
-            user: this.user ?? this.options.req.user?.id,
+            user: this.kadeUsageUser(),
             endpointTokenConfig: this.options.endpointTokenConfig,
           },
           { completionTokens: usage.reasoning_tokens },

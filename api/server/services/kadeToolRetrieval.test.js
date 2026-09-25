@@ -298,3 +298,23 @@ test('Part 214: casual asks for news attach the news tool, small talk does not',
   for (const chat of ['anything good for dinner?', 'my day was long', "what's new with you", 'something is going on with my knee'])
     assert.ok(!R.keywordHits(chat, ['kade_news', 'web_search']).has('kade_news'), chat);
 });
+test('Part 291: money-with-Kade asks attach kade_funding_balance; chatter does not', async () => {
+  const names = [...KIANA, 'kade_funding_balance'];
+  for (const text of [
+    'how much do I owe Kade?',
+    'what have I cost Kade so far',
+    'am I paid up with Kade',
+    'I want to pay her back',
+    'how much have I paid back',
+    'is my tab square yet',
+  ]) {
+    R._resetForTests();
+    const r = await R.selectTools({ tools: T(names), text, agentId: 'a', conversationId: null, embed: async () => null });
+    assert.ok(r.keep.has('kade_funding_balance'), text);
+  }
+  for (const chat of ['night night, love you', 'Owen is coming over later', 'what should I cook tonight']) {
+    R._resetForTests();
+    const r = await R.selectTools({ tools: T(names), text: chat, agentId: 'a', conversationId: null, embed: fakeEmbed(names) });
+    assert.ok(!r.keep.has('kade_funding_balance'), chat);
+  }
+});

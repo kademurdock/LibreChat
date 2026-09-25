@@ -2655,9 +2655,11 @@ describe('KADE Part 131: fleet models bill at their real stickers, times the pla
   it('deepseek-v4.1-flash has its own row and does not fall onto v4-flash or a generic rate', () => {
     expect(getValueKey('deepseek/deepseek-v4.1-flash')).toBe('deepseek-v4.1-flash');
     expect(getValueKey('deepseek/deepseek-v4-flash')).toBe('deepseek-v4-flash');
-    expect(getMultiplier({ model: 'deepseek/deepseek-v4.1-flash', tokenType: 'prompt' })).toBe(0.15);
-    expect(getMultiplier({ model: 'deepseek/deepseek-v4.1-flash', tokenType: 'completion' })).toBe(0.6);
-    expect(getCacheMultiplier({ model: 'deepseek/deepseek-v4.1-flash', cacheType: 'read' })).toBe(0.0042);
+    /* Part 291: the real billed price (Together, first in reframe's host order), not the list. */
+    expect(getMultiplier({ model: 'deepseek/deepseek-v4.1-flash', tokenType: 'prompt' })).toBe(0.3);
+    expect(getMultiplier({ model: 'deepseek/deepseek-v4.1-flash', tokenType: 'completion' })).toBe(1.2);
+    expect(getCacheMultiplier({ model: 'deepseek/deepseek-v4.1-flash', cacheType: 'read' })).toBe(0.006);
+    expect(getCacheMultiplier({ model: 'deepseek/deepseek-v4.1-flash', cacheType: 'write' })).toBe(0.3);
   });
   it('grok-4.20 and grok-4.3 no longer fall onto the grok-4 row', () => {
     expect(getValueKey('x-ai/grok-4.20')).toBe('grok-4.20');

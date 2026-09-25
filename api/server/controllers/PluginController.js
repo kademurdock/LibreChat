@@ -4,6 +4,16 @@ const { getCachedTools, setCachedTools } = require('~/server/services/Config');
 const { availableTools, toolkits } = require('~/app/clients/tools');
 const { getAppConfig } = require('~/server/services/Config');
 
+/** KADE Part 291: the App Review seat never sees the funding tool (it is about repaying Kade outside the app). */
+const hiddenFromSeat = (plugin, req) => {
+  if (!plugin || plugin.pluginKey !== 'kade_funding_balance') return false;
+  try {
+    return require('~/server/services/kadeFunding').isReviewSeat(req.user);
+  } catch (_) {
+    return true;
+  }
+};
+
 const getAvailablePluginsController = async (req, res) => {
   try {
     const appConfig =
@@ -22,6 +32,9 @@ const getAvailablePluginsController = async (req, res) => {
     /** includedTools takes precedence — filteredTools ignored when both are set. */
     const plugins = [];
     for (const plugin of uniquePlugins) {
+      if (hiddenFromSeat(plugin, req)) {
+        continue;
+      }
       if (includeSet.size > 0) {
         if (!includeSet.has(plugin.pluginKey)) {
           continue;
@@ -68,6 +81,9 @@ const getAvailableTools = async (req, res) => {
 
     const toolsOutput = [];
     for (const plugin of uniquePlugins) {
+      if (hiddenFromSeat(plugin, req)) {
+        continue;
+      }
       const isToolDefined = toolDefKeys?.has(plugin.pluginKey) === true;
       const isToolkit =
         plugin.toolkit === true &&

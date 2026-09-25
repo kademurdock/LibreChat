@@ -300,8 +300,13 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     /* KADE Sep 19 2026 (Part 213): the fleet moved to deepseek/deepseek-v4.1-flash.
      * 'v4.1' does not match the 'v4-flash' row above, so without its own row it
      * would fall to a generic rate: the Aug 28 and Sep 5 hole a third time.
-     * OpenRouter list price; the pinned US hosts run 0.14/0.42 to 0.30/1.20. */
-    'deepseek-v4.1-flash': { prompt: 0.15, completion: 0.6 },
+     * OpenRouter list price; the pinned US hosts run 0.14/0.42 to 0.30/1.20.
+     * KADE Sep 25 2026 (Part 291): the REAL billed price, not the list. Reframe pins
+     * Together first (deepseek.js), which served 119 of 119 streamed turns Sep 23-25, and
+     * OpenRouter's own cost fields on 22 calls there read 0.30 in / 1.20 out / 0.006 cached.
+     * At list the 2x platform factor charged families about 1x real. Rows stay REAL;
+     * the 2x comes only from KADE_BILLING_MULTIPLIER. */
+    'deepseek-v4.1-flash': { prompt: 0.3, completion: 1.2 },
     'gemini-3.1-flash-lite': { prompt: 0.25, completion: 1.5 },
     qwen: { prompt: 0.08, completion: 0.33 },
     'qwen2.5': { prompt: 0.08, completion: 0.33 },
@@ -340,7 +345,9 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'grok-4.20': { write: 1.25, read: 0.2 },
   'grok-4.3': { write: 1.25, read: 0.2 },
   'glm-5.3-flash': { write: 0.15, read: 0.03 },
-  'deepseek-v4.1-flash': { write: 0.15, read: 0.0042 },
+  /* Part 291: Together's cached read ($0.006/M, from OpenRouter's cost fields); no separate
+   * write charge (cache_write_tokens 0 on every call), so write = the prompt rate. */
+  'deepseek-v4.1-flash': { write: 0.3, read: 0.006 },
   'claude-3.7-sonnet': { write: 3.75, read: 0.3 },
   'claude-3-7-sonnet': { write: 3.75, read: 0.3 },
   'claude-3.5-sonnet': { write: 3.75, read: 0.3 },

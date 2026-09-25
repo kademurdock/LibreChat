@@ -66,6 +66,24 @@ const phoneCallJsonSchema = {
 };
 
 /**
+ * Picks the character for a handed-off call from agents whose name matches.
+ * Only an agent the caller owns or a public one is ever returned: an exact
+ * name before a partial one, and within each, the caller's own before a
+ * public one (oldest first, as the list comes). Null when none may be used,
+ * which reads to the model exactly like "no such character".
+ */
+function pickCallAgent(candidates, { callAs, userId, publicIds }) {
+  const wanted = String(callAs || '').trim().toLowerCase();
+  const open = new Set((publicIds || []).map((id) => String(id)));
+  const mine = (a) => !!userId && a.author != null && String(a.author) === String(userId);
+  const isPublic = (a) => a._id != null && open.has(String(a._id));
+  const named = (a) => wanted && String(a.name || '').toLowerCase().includes(wanted);
+  const usable = (candidates || []).filter((a) => named(a) && (mine(a) || isPublic(a)));
+  const exact = usable.filter((a) => String(a.name || '').toLowerCase() === wanted);
+  return exact.find(mine) || exact.find(isPublic) || usable.find(mine) || usable.find(isPublic) || null;
+}
+
+/**
  * KadePhoneCall — places a real outbound phone call through the kade-ai-bridge.
  * The bridge runs the live conversation (streaming voice pipeline), enforces
  * caps (15 min hard limit, 4/user/day), records for QA, discloses AI +
@@ -81,6 +99,14 @@ class KadePhoneCall extends Tool {
     this.agentId = fields.agentId;
     this.agentName = fields.agentName || 'Kiana';
     this.isAdmin = fields.req?.user?.role === 'ADMIN';
+    // Whose agents a handed-off call may use: the person really on the line
+    // on a phone turn (the tool itself runs on the service seat), else the user.
+    this.callerId = String(fields.req?.kadeOnBehalfOf?.id || fields.userId || '');
+    // Part 291 (Sep 25 2026): who the call is FOR, so its bill, its daily cap and its result go to
+    // them. On a phone or app-voice turn the tool runs on Kade's service seat and handleTools'
+    // loader always sets userId to that seat, so handleTools passes the person on the line as
+    // actingUserId (req.kadeOnBehalfOf, else the signed-in user). Unknown callers stay on the seat.
+    this.actingUserId = String(fields.actingUserId || fields.req?.kadeOnBehalfOf?.id || fields.userId || '');
     this.name = 'kade_phone_call';
     this.description =
       'Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user. ' +
@@ -106,7 +132,7 @@ class KadePhoneCall extends Tool {
     }
     const { action, to_number, purpose, callee_name, call_sid } = data || {};
     if (action === 'check_result') {
-      const uid = String(this.userId || '');
+      const uid = this.actingUserId;
       const lastCheck = _lastChecked.get(uid) || 0;
       if (Date.now() - lastCheck < 15000) {
         return (
@@ -166,12 +192,7 @@ class KadePhoneCall extends Tool {
         );
       }
       try {
-        const mongoose = require('mongoose');
-        const AgentModel = mongoose.models.Agent;
-        const esc = callAs.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const found =
-          (await AgentModel.findOne({ name: new RegExp('^' + esc + '$', 'i') }).lean()) ||
-          (await AgentModel.findOne({ name: new RegExp(esc, 'i') }).lean());
+        const found = await this._findCallAgent(callAs);
         if (!found) {
           return `I couldn't find a character named "${callAs}" — check the name and try again.`;
         }
@@ -182,7 +203,7 @@ class KadePhoneCall extends Tool {
         return `Couldn't look up "${callAs}" right now — try again in a moment.`;
       }
     }
-    const uidPlace = String(this.userId || '');
+    const uidPlace = this.actingUserId;
     if (Date.now() - (_lastPlaced.get(uidPlace) || 0) < 30000) {
       return (
         'STOP: you already placed a call moments ago — do NOT dial again. ' +
@@ -196,7 +217,8 @@ class KadePhoneCall extends Tool {
           to: to_number,
           purpose,
           calleeName: callee_name,
-          userId: String(this.userId || ''),
+          // The bridge bills the call (real Twilio cost) and counts the daily cap by this id.
+          userId: uidPlace,
           userName: this.userName,
           agentId: callAgentId,
           agentName: callAgentName,
@@ -217,6 +239,40 @@ class KadePhoneCall extends Tool {
       logger.warn(`[KadePhoneCall] call failed: ${msg}`);
       return `Could not place the call: ${msg}`;
     }
+  }
+
+  /**
+   * The character Kiana hands a call to, by name, among the agents the person
+   * asking may use: their own, or a public one (Sep 25 2026, Part 291 — the
+   * old lookup took any agent with the name, so "have Lilly call me" reached
+   * Skylee's private Lilly for everyone). On a phone turn the tool runs on
+   * the service seat, so the person really on the line (req.kadeOnBehalfOf)
+   * is the one whose agents count.
+   */
+  async _findCallAgent(callAs) {
+    const mongoose = require('mongoose');
+    const { ResourceType, PermissionBits } = require('librechat-data-provider');
+    const { findPubliclyAccessibleResources } = require('~/server/services/PermissionService');
+    const AgentModel = mongoose.models.Agent;
+    const userId = this.callerId;
+    // Same public set the Parlor seats and the Clubhouse guests use; it comes
+    // back empty on an ACL error, which leaves only the caller's own agents.
+    const publicIds =
+      (await findPubliclyAccessibleResources({
+        resourceType: ResourceType.AGENT,
+        requiredPermissions: PermissionBits.VIEW,
+      })) || [];
+    const allowed = [{ _id: { $in: publicIds } }];
+    if (userId) allowed.push({ author: userId });
+    const esc = callAs.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Oldest first, the order the old findOne gave within each kind of match.
+    const candidates = await AgentModel.find(
+      { name: new RegExp(esc, 'i'), $or: allowed },
+      { _id: 1, id: 1, name: 1, author: 1 },
+    )
+      .sort({ _id: 1 })
+      .lean();
+    return pickCallAgent(candidates || [], { callAs, userId, publicIds });
   }
 
   async _wellness(action, data) {
@@ -285,5 +341,7 @@ class KadePhoneCall extends Tool {
     }
   }
 }
+
+KadePhoneCall.pickCallAgent = pickCallAgent;
 
 module.exports = KadePhoneCall;

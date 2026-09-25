@@ -123,6 +123,14 @@
     "authConfig": []
   },
   {
+    "name": "What I've Cost Kade",
+    "pluginKey": "kade_funding_balance",
+    "description": "Tells you what your use of Kade-AI has really cost Kade, what you've paid her back, and the difference. Only your own figures. Try: \"how much do I owe Kade?\"",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Library Requests",
     "pluginKey": "kade_library_requests",
     "description": "Save requests for books, recordings or any media from what someone remembers, add details, and follow updates and the Library link once a request is filled. The library owner reviews and fills requests.",

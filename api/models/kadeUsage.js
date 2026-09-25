@@ -42,6 +42,9 @@ const RATES = {
   // family ever gets close, flip this to 10 / 1e6 and every page picks it
   // up automatically (costs are computed at write time; old rows keep the
   // cost they were written with, by design -- see schema comment above).
+  // Sep 25 2026 (Part 291): her receipts correct the plan to $25 of credit at $10 per
+  // million characters, about 2.5M characters a month, not 25M. Speech stays free to
+  // users; the meter's numbers live in server/services/kadeSpeechMeter.js (env).
   tts: 0,
   // phone / fal_video / fal_image events always arrive with an explicit
   // costUSD (bridge posts real Twilio price; FalAI computes per-second fal

@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function load(findOne) {
+function load(findOne, env = {}) {
   const module = { exports: {} };
   const stubs = {
     mongoose: { models: { User: { findOne: (query) => ({ lean: async () => findOne(query) }) } } },
@@ -17,6 +17,7 @@ function load(findOne) {
     module,
     require: (name) => stubs[name],
     String,
+    process: { env },
   });
   return module.exports.resolveKadeOnBehalfOf;
 }
@@ -54,4 +55,78 @@ test('a lookup error is marked unresolved too', async () => {
   });
   const req = await run(resolve, { user: { id: 'kade', role: 'ADMIN' }, body: { kadeOnBehalfOf: 'amber@example.com' } });
   assert.equal(req.kadeOnBehalfOfUnresolved, true);
+});
+
+/* Part 291: KADE_VOICE_BILL_REAL=1 bills a voice turn to the real caller (req.kadeBillTo). */
+const PEOPLE = {
+  'amber@example.com': { _id: 'amber', name: 'Amber', email: 'amber@example.com', role: 'USER' },
+  'kade@example.com': { _id: 'kade', name: 'Kade', email: 'kade@example.com', role: 'ADMIN' },
+  'old@example.com': { _id: 'old', name: 'Old Row', email: 'old@example.com' },
+};
+const lookup = (query) => query.email.$in.map((e) => PEOPLE[e]).find(Boolean) || null;
+const ADMIN_SEAT = { id: 'kade', role: 'ADMIN' };
+
+test('switch off (the default): nobody gets kadeBillTo, the caller is still resolved for tools', async () => {
+  for (const env of [{}, { KADE_VOICE_BILL_REAL: '0' }, { KADE_VOICE_BILL_REAL: 'true' }]) {
+    const resolve = load(lookup, env);
+    const req = await run(resolve, { user: ADMIN_SEAT, body: { kadeOnBehalfOf: 'amber@example.com' } });
+    assert.equal(req.kadeOnBehalfOf.id, 'amber');
+    assert.equal(req.kadeBillTo, undefined);
+  }
+});
+
+/** A caller-started call turn, as the proxy's call lane sends it (review F11). */
+const callTurn = (email) => ({ kadeOnBehalfOf: email, kadeBillCaller: true });
+
+test('switch on: a family caller is billed; Kade, unknown emails, unlinked callers and member seats are not', async () => {
+  const resolve = load(lookup, { KADE_VOICE_BILL_REAL: '1' });
+  const family = await run(resolve, { user: ADMIN_SEAT, body: callTurn('Amber@Example.com') });
+  assert.equal(family.kadeBillTo, 'amber');
+  assert.equal(family.kadeOnBehalfOf.role, 'USER');
+  // A row with no role field is an ordinary user.
+  const noRole = await run(resolve, { user: ADMIN_SEAT, body: callTurn('old@example.com') });
+  assert.equal(noRole.kadeBillTo, 'old');
+  // Kade calling herself stays on her own exempt seat.
+  const kade = await run(resolve, { user: ADMIN_SEAT, body: callTurn('kade@example.com') });
+  assert.equal(kade.kadeOnBehalfOf.id, 'kade');
+  assert.equal(kade.kadeBillTo, undefined);
+  // An email nobody owns stays on Kade's seat.
+  const unknown = await run(resolve, { user: ADMIN_SEAT, body: callTurn('nobody@example.com') });
+  assert.equal(unknown.kadeBillTo, undefined);
+  assert.equal(unknown.kadeOnBehalfOfUnresolved, true);
+  // An unlinked phone caller sends no email at all.
+  const unlinked = await run(resolve, { user: ADMIN_SEAT, body: { kadeBillCaller: true } });
+  assert.equal(unlinked.kadeBillTo, undefined);
+  // A non-admin seat cannot move its bill onto someone else.
+  const member = await run(resolve, { user: { id: 'holly', role: 'USER' }, body: callTurn('amber@example.com') });
+  assert.equal(member.kadeBillTo, undefined);
+  assert.equal(member.kadeOnBehalfOf, undefined);
+});
+
+test('switch on: an ask that names a person but is not a caller-started call turn is never billed (F11)', async () => {
+  const resolve = load(lookup, { KADE_VOICE_BILL_REAL: '1' });
+  // Kiana's friend text, a dry-run preview, a brief, an outbound call: kadeOnBehalfOf, no flag.
+  for (const body of [
+    { kadeOnBehalfOf: 'amber@example.com' },
+    { kadeOnBehalfOf: 'amber@example.com', kadeBillCaller: false },
+    // Only the boolean true counts, never a truthy look-alike.
+    { kadeOnBehalfOf: 'amber@example.com', kadeBillCaller: 'true' },
+    { kadeOnBehalfOf: 'amber@example.com', kadeBillCaller: 1 },
+    { kadeOnBehalfOf: 'amber@example.com', billCaller: true },
+  ]) {
+    const req = await run(resolve, { user: ADMIN_SEAT, body });
+    assert.equal(req.kadeOnBehalfOf.id, 'amber', 'tools still act as the person');
+    assert.equal(req.kadeBillTo, undefined, JSON.stringify(body));
+  }
+  // Switch off: even a flagged call turn is not billed.
+  const off = await run(load(lookup, {}), { user: ADMIN_SEAT, body: callTurn('amber@example.com') });
+  assert.equal(off.kadeBillTo, undefined);
+});
+
+test("switch on: a lookup error leaves the turn on Kade's seat", async () => {
+  const resolve = load(() => {
+    throw new Error('database away');
+  }, { KADE_VOICE_BILL_REAL: '1' });
+  const req = await run(resolve, { user: ADMIN_SEAT, body: callTurn('amber@example.com') });
+  assert.equal(req.kadeBillTo, undefined);
 });

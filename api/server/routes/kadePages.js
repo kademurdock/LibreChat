@@ -315,11 +315,13 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
       document.getElementById('m_total').innerHTML = '<strong>'+money(m.totalUSD)+'</strong>';
       /* KADE Part 131: her ask -- "you have cost the server this much since the
        * first of the month." Charged / multiplier + extras, from /my-cost. */
-      try { var cr = await apiGet('/api/kade/my-cost', token); if (cr.ok) { var cj = await cr.json(); document.getElementById('m_cost').textContent = money(cj.totalUSD) + (cj.multiplier && cj.multiplier !== 1 ? ' (balances are charged ' + cj.multiplier + '\u00d7 real model cost to help cover the rest of the platform)' : ''); } else { document.getElementById('m_cost').textContent = '\u2014'; } } catch(e) { document.getElementById('m_cost').textContent = '\u2014'; }
+      /* KADE Part 291: priceFactor is this person's own factor; the administrator's is 1 (she pays
+       * the providers and is never charged), so the multiplier note is only for people it applies to. */
+      try { var cr = await apiGet('/api/kade/my-cost', token); if (cr.ok) { var cj = await cr.json(); document.getElementById('m_cost').textContent = money(cj.totalUSD) + (cj.multiplier && cj.multiplier !== 1 && cj.priceFactor !== 1 ? ' (balances are charged ' + cj.multiplier + '\u00d7 real model cost to help cover the rest of the platform)' : ''); } else { document.getElementById('m_cost').textContent = '\u2014'; } } catch(e) { document.getElementById('m_cost').textContent = '\u2014'; }
       document.getElementById('a_total').textContent = money((d.allTime||{}).totalUSD);
       const a = d.allTime || {};
       document.getElementById('qty').textContent =
-        'All time, you have used about ' + num(a.tts_chars) + ' characters of voice (roughly ' + listenTime(a.tts_chars) + ' of listening \u2014 included free with Kade\u0027s voice plan), ' +
+        'All time, you have used about ' + num(a.tts_chars) + ' characters of voice (roughly ' + listenTime(a.tts_chars) + ' of listening \u2014 included free with Kade\u2019s voice plan), ' +
         num(a.flux_images) + ' generated images, ' + num(a.tavily_searches) + ' web searches, and ' +
         num(a.phone_minutes) + ' minutes of phone calls.';
       status.hidden = true;
@@ -342,14 +344,48 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
       <h2 style="margin-top:0">This month &mdash; the books <span class="muted" id="books_since"></span></h2>
       <p id="books_line" aria-live="polite">Loading the books&hellip;</p>
       <dl class="kv" id="books_users"></dl>
-      <p class="muted" style="font-size:.85rem">"Cost the server" = charged model spend divided by the multiplier, plus phone/image/video at real prices. The bridge closes the books on the 1st and pushes Kade one line.</p>
+      <p class="muted" style="font-size:.85rem">"Cost the server" = the real provider price of each meter row, plus phone, image and video at real prices. A voice call is counted once, in the meter rows of the seat it ran on (yours for most calls); the voice call estimate a caller was charged is in their "charged" figure, not in "cost the server". The bridge closes the books on the 1st and pushes Kade one line.</p>
+    </div>
+    <!-- KADE Sep 25 2026 (Part 291): the funding ledger. Her words: "the difference between the
+         record of them paying me back and what it cost me to actually fund them." -->
+    <div class="card" id="fund_card" aria-labelledby="fund_head">
+      <h2 id="fund_head" style="margin-top:0">Funding &mdash; what each person really cost you, and what they paid back</h2>
+      <p class="muted" style="font-size:.9rem;margin:.2rem 0 .6rem">Really cost = the provider fees their use ran up: chat at the real model price, plus pictures, video, phone and the rest at their real price. Paid back = only what you record here. Credit you add with a +$5 button is kept as a grant and never counts as paid back. Fixed monthly bills are not split per person.</p>
+      <p id="fund_line" role="status" aria-live="polite">Loading the funding figures&hellip;</p>
+      <dl class="kv" id="fund_people"></dl>
+      <h3 style="font-size:1.05rem;margin:1rem 0 .4rem">Record a repayment</h3>
+      <div style="display:grid;gap:.7rem;max-width:26rem">
+        <div>
+          <label for="rp_user" style="display:block;font-weight:600;margin-bottom:.2rem">Who paid you back</label>
+          <select id="rp_user" style="width:100%;padding:.6rem;border:1px solid #b9c0cb;border-radius:8px;font:inherit"></select>
+        </div>
+        <div>
+          <label for="rp_usd" style="display:block;font-weight:600;margin-bottom:.2rem">Amount in dollars</label>
+          <input id="rp_usd" type="text" inputmode="decimal" autocomplete="off" style="width:100%;padding:.6rem;border:1px solid #b9c0cb;border-radius:8px;font:inherit">
+        </div>
+        <div>
+          <label for="rp_at" style="display:block;font-weight:600;margin-bottom:.2rem">Day they paid</label>
+          <input id="rp_at" type="date" style="width:100%;padding:.6rem;border:1px solid #b9c0cb;border-radius:8px;font:inherit">
+        </div>
+        <div>
+          <label for="rp_note" style="display:block;font-weight:600;margin-bottom:.2rem">Note (optional)</label>
+          <input id="rp_note" type="text" maxlength="280" autocomplete="off" style="width:100%;padding:.6rem;border:1px solid #b9c0cb;border-radius:8px;font:inherit">
+        </div>
+        <button type="button" id="rp_btn" style="font:inherit;font-weight:600;padding:.7rem 1rem;border-radius:10px;border:1px solid #1f7a49;background:#1f7a49;color:#fff;cursor:pointer">Record repayment</button>
+        <p id="rp_status" role="status" aria-live="polite" tabindex="-1" class="muted" style="margin:.2rem 0 0"></p>
+      </div>
+      <h3 style="font-size:1.05rem;margin:1rem 0 .4rem">Repayments on record</h3>
+      <ul id="rp_list" style="padding-left:1.2rem"></ul>
+      <p class="muted" id="rp_empty" hidden>No repayments recorded yet.</p>
     </div>
     <div class="card">
       <h2 style="margin-top:0">Totals <span class="muted" id="winlabel"></span></h2>
       <dl class="kv">
-        <dt>LLM (chat) spend — all time</dt><dd id="t_llm">$0.00</dd>
-        <dt>Extra services (voice/image/search) — all time</dt><dd id="t_extra">$0.00</dd>
-        <dt><strong>Grand total spent — all time</strong></dt><dd id="t_grand"><strong>$0.00</strong></dd>
+        <dt>LLM (chat): real cost to you, all time</dt><dd id="t_llm">$0.00</dd>
+        <dt>LLM (chat): charged to other people's balances, all time</dt><dd id="t_llm_charged">$0.00</dd>
+        <dt>Extra services (phone minutes, speech, pictures, video, search), all time</dt><dd id="t_extra">$0.00</dd>
+        <dt>Voice call estimates, all time (the same calls are in the chat cost above, so they are not added again)</dt><dd id="t_voice_est">$0.00</dd>
+        <dt><strong>Grand total real cost, all time</strong></dt><dd id="t_grand"><strong>$0.00</strong></dd>
         <dt>Total remaining balance (all users)</dt><dd id="t_bal">$0.00</dd>
       </dl>
     </div>
@@ -365,13 +401,14 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
     </div>
 
     <div class="card" id="inworld_card" hidden>
-      <h2 style="margin-top:0">Voice pool &mdash; Inworld <span class="muted">(your founder plan)</span></h2>
+      <h2 style="margin-top:0">Speech credit &mdash; Inworld <span class="muted">(your plan&rsquo;s monthly credit)</span></h2>
       <dl class="kv">
         <dt>Used this month, site + apps</dt><dd id="iw_used">&mdash;</dd>
-        <dt>Included in your plan</dt><dd id="iw_incl">&mdash;</dd>
+        <dt>Monthly speech credit</dt><dd id="iw_incl">&mdash;</dd>
         <dt>Left before overage</dt><dd id="iw_left">&mdash;</dd>
+        <dt>Past the credit</dt><dd id="iw_over">&mdash;</dd>
       </dl>
-      <p class="muted" style="font-size:.85rem;margin-top:.5rem">Family voice is free to them &mdash; it comes out of this monthly pool, which renews with your plan. Overage would bill $10 per million characters. Phone-call voice runs through the bridge and is not in this count; the Inworld console has the true account-wide number.</p>
+      <p class="muted" style="font-size:.85rem;margin-top:.5rem">This is the monthly speech credit of your Inworld plan, and it renews each month. Spoken replies stay free to the family; they come out of this credit. Speech past the credit is billed at the overage rate above. Phone-call speech is not counted here yet, and Fish voices are counted in with Inworld, so the Inworld console has the true account-wide number.</p>
     </div>
 
     <div class="card">
@@ -426,9 +463,14 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
       const d = await r.json();
       const t = d.totals || {};
       document.getElementById('winlabel').textContent = '(window = last ' + d.windowDays + ' days)';
-      document.getElementById('t_llm').textContent = money(t.llmSpendUSD.allTime);
-      document.getElementById('t_extra').textContent = money(t.extraSpendUSD.allTime);
-      document.getElementById('t_grand').innerHTML = '<strong>'+money(t.grandSpendUSD.allTime)+'</strong>';
+      /* KADE Part 291: real provider cost first; what balances were charged stays beside it. */
+      document.getElementById('t_llm').textContent = money(t.llmRealUSD ? t.llmRealUSD.allTime : t.llmSpendUSD.allTime);
+      /* Part 291 review (F36, F14): charged = other people's balances only; voice estimates are
+       * shown on their own line and left out of the grand total (their turns are in the chat cost). */
+      document.getElementById('t_llm_charged').textContent = money((t.llmChargedUSD || t.llmSpendUSD).allTime);
+      document.getElementById('t_extra').textContent = money((t.extraRealUSD || t.extraSpendUSD).allTime);
+      document.getElementById('t_voice_est').textContent = money(t.voiceEstimateUSD ? t.voiceEstimateUSD.allTime : 0);
+      document.getElementById('t_grand').innerHTML = '<strong>'+money((t.grandRealUSD || t.grandSpendUSD).allTime)+'</strong>';
       document.getElementById('t_bal').textContent = money(t.balanceUSD);
 
       /* KADE Part 131: the books card. */
@@ -440,10 +482,136 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
           document.getElementById('books_since').textContent = since ? '(since ' + since + ')' : '';
           document.getElementById('books_line').textContent = (bj.books && bj.books.now && bj.books.now.spoken) ? bj.books.now.spoken : ('Multiplier in force: ' + bj.multiplier + '. The bridge did not answer for the provider side.');
           var bu = document.getElementById('books_users'); bu.innerHTML = '';
-          (bj.users || []).forEach(function(u){ var dt=document.createElement('dt'); dt.textContent = u.name + (u.role==='ADMIN'?' (admin)':''); var dd=document.createElement('dd'); dd.textContent = 'cost the server ' + money(u.totalUSD) + ' \u2014 charged ' + money(u.chargedModelUSD + u.extrasUSD) + ', ' + num(u.turns) + ' meter rows'; bu.appendChild(dt); bu.appendChild(dd); });
+          (bj.users || []).forEach(function(u){ var dt=document.createElement('dt'); dt.textContent = u.name + (u.role==='ADMIN'?' (admin)':''); var dd=document.createElement('dd'); dd.textContent = 'cost the server ' + money(u.totalUSD) + ' \u2014 ' + (u.role==='ADMIN' ? 'paid by you' : 'charged ' + money(u.chargedModelUSD + u.extrasUSD) + (u.voiceEstimateUSD >= 0.01 ? ', including a voice call estimate of ' + money(u.voiceEstimateUSD) : '')) + ', ' + num(u.turns) + ' meter rows'; bu.appendChild(dt); bu.appendChild(dd); });
           if (bj.totalUSD != null) { var dt2=document.createElement('dt'); dt2.innerHTML='<strong>Everyone</strong>'; var dd2=document.createElement('dd'); dd2.innerHTML='<strong>cost the server '+money(bj.totalUSD)+'</strong>'; bu.appendChild(dt2); bu.appendChild(dd2); }
         } else { document.getElementById('books_line').textContent = 'The books did not load.'; }
       } catch(e) { document.getElementById('books_line').textContent = 'The books did not load.'; }
+
+      /* KADE Part 291: the Funding card. Everything a person typed is set with textContent, never
+       * as HTML. The Record button is never disabled: a second press while saving says so, and each
+       * submit carries one clientKey so a double tap records once. */
+      function fundKey(){ try { if (window.crypto && crypto.randomUUID) { return crypto.randomUUID(); } } catch(e) {} return 'k' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10); }
+      function fundDay(iso){ return iso ? new Date(iso).toLocaleDateString('en-US', {timeZone:'America/Chicago', month:'long', day:'numeric', year:'numeric'}) : ''; }
+      function fundWord(p){ if (p.differenceUSD > 0) { return 'you have covered ' + money(p.differenceUSD) + ' more than they paid back'; } if (p.differenceUSD < 0) { return 'they are ' + money(-p.differenceUSD) + ' ahead'; } return 'even'; }
+      var rpKey = fundKey();
+      var rpBusy = false;
+      async function loadRepayments(){
+        var ul = document.getElementById('rp_list');
+        var empty = document.getElementById('rp_empty');
+        try {
+          var lr = await apiGet('/api/kade/funding/ledger', token);
+          if (!lr.ok) { ul.textContent = ''; empty.hidden = false; empty.textContent = 'The repayments did not load.'; return; }
+          var lj = await lr.json();
+          var list = lj.entries || [];
+          ul.textContent = '';
+          empty.textContent = 'No repayments recorded yet.';
+          empty.hidden = list.length > 0;
+          list.forEach(function(e){
+            var li = document.createElement('li');
+            var day = fundDay(e.at);
+            var what = money(e.usd) + ' from ' + (e.name || 'someone') + (day ? ' on ' + day : '');
+            var span = document.createElement('span');
+            span.textContent = what + (e.note ? ' (' + e.note + ')' : '') + (e.voidedAt ? '. Removed.' : '');
+            li.appendChild(span);
+            li.appendChild(document.createTextNode(' '));
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = e.voidedAt ? 'Put it back' : 'Remove';
+            b.setAttribute('aria-label', (e.voidedAt ? 'Put back ' : 'Remove ') + what);
+            b.style.cssText = 'font:inherit;padding:.25rem .6rem;border-radius:8px;border:1px solid #1d55d0;background:transparent;color:inherit;cursor:pointer';
+            b.dataset.id = String(e.id);
+            b.addEventListener('click', async function(){
+              var st = document.getElementById('rp_status');
+              if (!e.voidedAt && !window.confirm('Remove ' + what + '? It stays on record and can be put back.')) { return; }
+              var id = String(e.id);
+              var said;
+              st.textContent = e.voidedAt ? 'Putting it back…' : 'Removing…';
+              try {
+                var vr = await apiPost('/api/kade/funding/repayments/' + encodeURIComponent(e.id) + (e.voidedAt ? '/restore' : '/void'), token, {});
+                var vj = await vr.json().catch(function(){ return {}; });
+                said = vr.ok ? ((e.voidedAt ? 'Put back. ' : 'Removed. ') + (vj.spoken || '')) : (vj.error || 'That did not save. Try again.');
+              } catch(err) { said = 'That did not save. Try again.'; }
+              /* Review F29: the rebuild below destroys the button she pressed, which would drop her
+               * focus to the top of the page. Put it on the rebuilt button for the same entry (it now
+               * reads the other way round), or on the status line if that entry did not come back,
+               * then say the result in the status region. */
+              await loadFunding();
+              var again = null;
+              var rebuilt = document.getElementById('rp_list').querySelectorAll('button');
+              for (var i = 0; i < rebuilt.length; i++) { if (rebuilt[i].dataset.id === id) { again = rebuilt[i]; break; } }
+              if (again) { again.focus(); } else { st.focus(); }
+              st.textContent = said;
+            });
+            li.appendChild(b);
+            ul.appendChild(li);
+          });
+        } catch(e) { ul.textContent = ''; empty.hidden = false; empty.textContent = 'The repayments did not load.'; }
+      }
+      async function loadFunding(){
+        var line = document.getElementById('fund_line');
+        var dl = document.getElementById('fund_people');
+        try {
+          var pr = await apiGet('/api/kade/funding/people', token);
+          if (!pr.ok) { line.textContent = 'The funding figures did not load.'; }
+          else {
+            var pj = await pr.json();
+            line.textContent = pj.spoken || '';
+            dl.textContent = '';
+            (pj.people || []).filter(function(p){ return !p.admin; }).forEach(function(p){
+              var dt = document.createElement('dt');
+              dt.textContent = p.name || 'Someone';
+              var dd = document.createElement('dd');
+              var parts = (p.breakdown || []).filter(function(f){ return f.realUSD >= 0.01; }).slice(0, 3).map(function(f){ return f.label + ' ' + money(f.realUSD); });
+              dd.textContent = 'really cost ' + money(p.realCostUSD) + (parts.length ? ' (' + parts.join(', ') + ')' : '') + ' · paid back ' + money(p.paidBackUSD) + ' · ' + fundWord(p);
+              dl.appendChild(dt);
+              dl.appendChild(dd);
+            });
+          }
+        } catch(e) { line.textContent = 'The funding figures did not load.'; }
+        await loadRepayments();
+      }
+      (function(){
+        var sel = document.getElementById('rp_user');
+        var first = document.createElement('option');
+        first.value = '';
+        first.textContent = 'Choose a person';
+        sel.appendChild(first);
+        (d.perUser || []).filter(function(u){ return u.role !== 'ADMIN' && u.userId; }).slice().sort(function(a, b){ return String(a.name || '').localeCompare(String(b.name || '')); }).forEach(function(u){
+          var o = document.createElement('option');
+          o.value = u.userId;
+          o.textContent = u.name || u.email || u.userId;
+          sel.appendChild(o);
+        });
+        var today = new Date().toLocaleDateString('en-CA', {timeZone:'America/Chicago'});
+        var at = document.getElementById('rp_at');
+        at.value = today;
+        at.max = today;
+        document.getElementById('rp_btn').addEventListener('click', async function(){
+          var st = document.getElementById('rp_status');
+          if (rpBusy) { st.textContent = 'Still saving the last one.'; return; }
+          var userId = sel.value;
+          var amount = document.getElementById('rp_usd').value.trim();
+          if (!userId) { st.textContent = 'Choose who paid you back.'; sel.focus(); return; }
+          if (!amount) { st.textContent = 'Type the amount they paid, like 30.'; document.getElementById('rp_usd').focus(); return; }
+          rpBusy = true;
+          st.textContent = 'Saving…';
+          try {
+            var resp = await apiPost('/api/kade/funding/repayments', token, { userId: userId, usd: amount, at: at.value, note: document.getElementById('rp_note').value.trim(), clientKey: rpKey });
+            var j = await resp.json().catch(function(){ return {}; });
+            if (resp.ok && j.ok) {
+              st.textContent = j.duplicate ? 'That one was already recorded.' : (j.spoken || 'Recorded.');
+              rpKey = fundKey();
+              document.getElementById('rp_usd').value = '';
+              document.getElementById('rp_note').value = '';
+              loadFunding();
+            } else {
+              st.textContent = (j && j.error) || 'That did not save. Try again.';
+            }
+          } catch(e) { st.textContent = 'That did not save. Try again.'; }
+          rpBusy = false;
+        });
+      })();
+      loadFunding();
 
       const tw = d.twilio;
       if (tw) {
@@ -486,9 +654,14 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
       if (iw && iw.includedChars) {
         var iwUsed = iw.monthChars || 0;
         var iwPct = Math.round(iwUsed * 100 / iw.includedChars);
-        document.getElementById('iw_used').textContent = num(iwUsed) + ' characters \u2014 about ' + listenTime(iwUsed) + ' of speech, ' + iwPct + '% of the pool';
+        document.getElementById('iw_used').textContent = num(iwUsed) + ' characters \u2014 about ' + listenTime(iwUsed) + ' of speech, ' + iwPct + '% of the credit';
         document.getElementById('iw_incl').textContent = num(iw.includedChars) + ' characters a month';
         document.getElementById('iw_left').textContent = num(Math.max(0, iw.includedChars - iwUsed)) + ' characters';
+        /* Part 291: the overage rate comes from the server (KADE_INWORLD_USD_PER_M). */
+        var iwRate = money(iw.overagePerMillionUSD || 10) + ' per million characters';
+        document.getElementById('iw_over').textContent = (iw.overageChars > 0)
+          ? num(iw.overageChars) + ' characters over, about ' + money(iw.overageUSD || 0) + ' at ' + iwRate
+          : 'Nothing over yet. Overage is ' + iwRate + '.';
         document.getElementById('inworld_card').hidden = false;
       }
 
@@ -510,7 +683,7 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
         return '<section class="card">'+
           '<h3 style="margin:.1rem 0 .5rem;font-size:1.05rem">'+(u.name||'')+(u.role==='ADMIN'?' <span class="muted">(admin)</span>':'')+'</h3>'+
           '<dl class="kv">'+
-          '<dt>Chat (LLM), all time</dt><dd>'+money(u.llmSpendUSD.allTime)+'</dd>'+
+          '<dt>Chat (LLM): real cost to you, all time</dt><dd>'+money((u.llmRealUSD || u.llmSpendUSD).allTime)+(u.role==='ADMIN' ? '' : ' (charged to their balance '+money(u.llmSpendUSD.allTime)+')')+'</dd>'+
           '<dt>Voice, all time</dt><dd>'+num(svcQty(u,'tts'))+' chars \u00b7 ~'+listenTime(svcQty(u,'tts'))+'</dd>'+
           '<dt>Images</dt><dd>'+num(svcQty(u,'flux'))+'</dd>'+
           '<dt>Searches <span class="muted">(platform tally of tool calls)</span></dt><dd>'+num(svcQty(u,'tavily'))+'</dd>'+

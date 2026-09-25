@@ -174,12 +174,28 @@ function createToolLoader(
        * or direct-file describe via the bridge's Gemini lane. Caps live
        * server-side (MEDIA_DAILY_CAP per user, 10-min window). */
       'kade_media',
+      /* KADE 2026-09-25 (Part 291): the funding lookup to every seat, her words: "if a user asks
+       * an agent, they should look the difference up." Read-only; the tool answers only the
+       * asker's own figures (Kade may name anyone) and attaches per turn by keyword.
+       * Review F22: never for the App Review seat (signed in, or a voice caller acting as it),
+       * and dropped even from an agent that lists it itself, so its description (paying Kade
+       * back) never reaches that model. If the check itself fails, the tool is left out. */
+      'kade_funding_balance',
     ];
-    const withFeedback = toolless
+    let fundingHidden = true;
+    try {
+      fundingHidden = require('~/app/clients/tools/structured/KadeFundingBalance').hiddenFor(req);
+    } catch (e) {
+      logger.warn(`[kade_funding_balance] review-seat check failed, tool left out: ${e.message}`);
+    }
+    const offered = toolless
       ? []
       : narrow
         ? narrow(_tools)
         : [..._tools, ...autoTools.filter((t) => !_tools.includes(t))];
+    const withFeedback = fundingHidden
+      ? offered.filter((t) => t !== 'kade_funding_balance')
+      : offered;
     const selectedTools =
       req.body?.kadeToolPolicy === 'morning-brief'
         ? withFeedback.filter(require('@librechat/api').isBriefToolAllowed)
@@ -404,9 +420,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *  the gauge sums real costs instead of re-deriving from base rates.
    *  `endpointTokenConfig` is filled in once `primaryConfig` resolves below so
    *  custom-endpoint agents price with their configured rates, not defaults. */
+  /* KADE Sep 25 2026 (Part 291), her words: "I should get the cost I will actually pay the
+   * server, where everyone else gets the balance thing." For the administrator the gauge divides
+   * the platform factor back out (real provider cost); everyone else keeps db's own pricing.
+   * Recorded transaction rows are priced elsewhere and are untouched. */
   const usageCost = {
     enabled: appConfig?.interfaceConfig?.contextCost === true,
-    pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+    pricing: require('~/server/services/kadeRealCost').gaugePricing(req.user?.role, db),
   };
 
   /** Latest visible context snapshot + every emitted usage payload for this

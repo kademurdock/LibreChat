@@ -170,6 +170,12 @@ const ALIASES = {
   kade_feedback: [
     /\b(tell kade|bug|broken|glitch|feature (request|idea)|feedback|report (this|that|it)|not working|didn'?t work)\b/i,
   ],
+  /* Part 291 (Sep 25 2026): money between a person and Kade ("how much do I owe Kade?"). With no
+   * alias the tool would ride every turn; these are the ways people ask. */
+  kade_funding_balance: [
+    /\b(?:owe|owes|owing|owed|in debt|paid (?:\w+ )?back|pay(?:ing)? (?:\w+ )?back|repa(?:y|id|ying|yment|yments)|reimburs\w*|paid up|squared? up|settled? up|even with (?:kade|her|you))\b/i,
+    /\b(?:what|how much) (?:have|has|did|do|does) (?:i|my \w+) (?:cost|spent|spend|used?)\b|\bcost(?:ing|s)? (?:kade|her) (?:money|anything|so much)\b|\b(?:my|the) (?:tab|debt)\b|\bfund(?:ed|ing|s)? (?:me|us|my)\b/i,
+  ],
 };
 
 /** The tail line for a turn where web_search was left off (Part 132.1). */

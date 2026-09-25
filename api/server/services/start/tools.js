@@ -8,6 +8,12 @@ const { Tools, ImageVisionTool } = require('librechat-data-provider');
 const { getToolkitKey, oaiToolkit, geminiToolkit } = require('@librechat/api');
 const { toolkits } = require('~/app/clients/tools/manifest');
 
+/* KADE Sep 25 2026 (Part 291 review F26): test files live beside the tools they test in
+ * tools/structured (KadeHelp.test.js, KadeNotify.timefix.test.js and the .nodetest.js files). The
+ * loader require()d every .js file, so each boot ran those node:test suites inside the live server,
+ * printing TAP to the logs and sometimes setting a failing exit code. They are never loaded now. */
+const TEST_FILE = /\.(node)?test\.js$|\.selftest\.js$|\.spec\.js$/;
+
 /**
  * Loads and formats tools from the specified tool directory.
  *
@@ -37,7 +43,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
 
   for (const file of files) {
     const filePath = path.join(directory, file);
-    if (!file.endsWith('.js') || (filter.has(file) && included.size === 0)) {
+    if (!file.endsWith('.js') || TEST_FILE.test(file) || (filter.has(file) && included.size === 0)) {
       continue;
     }
 

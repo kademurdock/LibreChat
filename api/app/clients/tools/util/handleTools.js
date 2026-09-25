@@ -55,6 +55,7 @@ const {
   KadeHelp,
   KadeLibrary,
   KadeLibraryRequests,
+  KadeFundingBalance,
   OpenWeather,
   StructuredSD,
   StructuredACS,
@@ -235,6 +236,7 @@ const loadTools = async ({
     kade_help: KadeHelp,
     kade_library: KadeLibrary,
     kade_library_requests: KadeLibraryRequests,
+    kade_funding_balance: KadeFundingBalance,
     calculator: Calculator,
     google: GoogleSearchAPI,
     open_weather: OpenWeather,
@@ -329,10 +331,16 @@ const loadTools = async ({
   const toolOptions = {
     kade_library: { req: options.req },
     kade_library_requests: { req: options.req },
+    /* Part 291: reads the asker from req (voice caller or signed-in person), never userId. */
+    kade_funding_balance: { req: options.req },
     flux: imageGenOptions,
     fal_studio: { req: options.req },
     kade_phone_call: {
       req: options.req,
+      /* Part 291: the person on the line owns the call's bill, cap and result. Not `userId`:
+       * loadToolWithAuth always sets userId to the signed-in seat (Kade's service seat on
+       * phone turns), so the acting person rides in its own field. */
+      actingUserId: kadeActingUserId,
       userName: kadeActingUserName,
       agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,

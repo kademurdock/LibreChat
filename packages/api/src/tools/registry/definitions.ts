@@ -4,7 +4,9 @@ import { oaiToolkit } from '~/tools/toolkits/oai';
 import { falStudioSchema, falNarrationInstructions } from './fal';
 import { libraryToolDescription, libraryToolSchema } from './library';
 import { libraryRequestsDescription, libraryRequestsSchema } from './requests';
+import { fundingToolDescription, fundingToolSchema } from './funding';
 export { falStudioSchema, falNarrationInstructions } from './fal';
+export { fundingToolDescription, fundingToolSchema } from './funding';
 
 /** Extended JSON Schema type that includes standard validation keywords */
 export type ExtendedJsonSchema = {
@@ -1167,6 +1169,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     name: 'kade_library_requests',
     description: libraryRequestsDescription,
     schema: libraryRequestsSchema,
+    toolType: 'builtin',
+  },
+  /* KADE Sep 25 2026 (Part 291): "how much do I owe Kade?" */
+  kade_funding_balance: {
+    name: 'kade_funding_balance',
+    description: fundingToolDescription,
+    schema: fundingToolSchema,
     toolType: 'builtin',
   },
   kade_location: {
