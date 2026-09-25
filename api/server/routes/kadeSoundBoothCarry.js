@@ -142,6 +142,14 @@ function scriptText(value) {
   return isBrokenScript(text) ? '' : text;
 }
 
+/* YuE2 saves its style line with a trained style's trigger in front
+ * ("kdsona, in the style of kdsona."), a made-up word only that style's LoRA
+ * knows. On any other engine it is noise at the head of the description, and
+ * the trained style itself is already reported as left behind. */
+function stripTrainedLead(script) {
+  return String(script || '').replace(/^\s*(kd[a-z0-9]+), in the style of \1\.\s*/i, '');
+}
+
 /** True when this text carries section tags -- [Verse 1], [Chorus] and so on.
  *  Both music engines read them, which is why they move across untouched. */
 const SECTION_TAG =
@@ -214,6 +222,9 @@ function carryOver(project, to, helpers = {}) {
     );
   }
   let lyrics = typeof oldOpts.lyrics === 'string' ? oldOpts.lyrics.trim() : '';
+  if (from === 'yue2') {
+    script = stripTrainedLead(script);
+  }
 
   if (src.script === 'brief') {
     /* Lyria keeps the words inside the brief. Pull them out so the other
@@ -358,6 +369,7 @@ module.exports = {
   splitLyricsBlock,
   scriptText,
   isBrokenScript,
+  stripTrainedLead,
   hasSectionTags,
   SHARED_KNOBS,
 };

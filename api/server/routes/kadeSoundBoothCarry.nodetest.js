@@ -223,3 +223,14 @@ test('the damaged "[object Object]" row carries on empty and says why', () => {
   assert.strictEqual(out.draft.options.lyrics, LYRICS, 'the words still come across whole');
   assert.ok(out.notes.some((n) => /damaged by an old bug/.test(n)));
 });
+
+test("a YuE2 trained style's trigger words do not ride into another engine's description", () => {
+  assert.strictEqual(
+    carry.stripTrainedLead('kdsona, in the style of kdsona. English, female lead vocal. A modern neo-soul song.'),
+    'English, female lead vocal. A modern neo-soul song.',
+  );
+  assert.strictEqual(carry.stripTrainedLead('A song in the style of 1970s soul.'), 'A song in the style of 1970s soul.');
+  const out = carry.carryOver({ ...YUE, script: 'kdkids, in the style of kdkids. English, children\'s choir. Bright folk.', options: { ...(YUE.options || {}), band: 'kids' } }, 'lyria');
+  assert.strictEqual(out.draft.script, "English, children's choir. Bright folk.");
+  assert.ok(out.notes.some((n) => /trained style/.test(n)), 'and the style itself is still said to be left behind');
+});
