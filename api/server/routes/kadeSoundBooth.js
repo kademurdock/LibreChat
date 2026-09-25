@@ -126,6 +126,14 @@ const MAX_SCENEMA_CHARS = 4000; // the bridge's own cap; mirrored so we fail ear
 const MAX_SEED_CHARS = 2048; // Seed Audio's hard cap per clip
 const SEED_USD_PER_MIN = 0.1875; // fal's listed price, read Sep 2 2026 (Part 119.2)
 const MAX_LYRIA_CHARS = 3000; // the brief, not the lyrics; Lyria reads a description
+/* Sep 25 2026: the words have their own cap, the same 8,000 YuE2 and a carry
+ * already use. A 45-65 line song with section tags runs about 2,000-4,000
+ * characters; the old render cut Your own lyrics at 4,000 without saying so,
+ * and a desk draft that left them inside the brief hit the 3,000 brief cap.
+ * Google documents no character cap for lyria-3.5, only a 131,072-token input
+ * limit (models page, read Sep 25 2026); the whole wire prompt here is at most
+ * about 11,000 characters, a few thousand tokens. */
+const MAX_LYRIA_LYRICS_CHARS = 8000;
 const LYRIA_USD_PER_SONG = 0.08; // Google bills Lyria 3.5 PER SONG, not per minute
 
 /* ---------- the model id, and the wall everybody walks into ------------------
@@ -340,6 +348,25 @@ function withInstrumentalLine(brief) {
   const b = String(brief || '').trimEnd();
   if (/instrumental only,? no vocals/i.test(b)) return b;
   return b + '\n\n' + LYRIA_INSTRUMENTAL_LINE;
+}
+
+/* The whole wire prompt: brief, the person's words under "Lyrics:", then the
+ * instrumental line last so it wins if both were set.
+ *
+ * Sep 25 2026: exactly ONE Lyrics block. A desk draft used to leave its words
+ * under "Lyrics:" inside the brief on both screens; with the lyrics box also
+ * filled, Lyria got two Lyrics blocks. When the box has words, the box wins
+ * and the brief's block is taken out. When the box is empty, a Lyrics block in
+ * the brief goes as it always did. */
+function lyriaWirePrompt(script, { lyrics, instrumental } = {}) {
+  let brief = String(script || '');
+  if (String(lyrics || '').trim()) {
+    const inBrief = carry.splitLyricsBlock(brief);
+    if (inBrief.lyrics) brief = inBrief.prose;
+    brief = withLyricsBlock(brief, lyrics);
+  }
+  if (instrumental) brief = withInstrumentalLine(brief);
+  return brief;
 }
 
 /* Sep 25 2026, her words: "with lyria it's putting lyrics in a style
@@ -659,7 +686,7 @@ function checkSeed(script) {
   return null;
 }
 
-function checkMusic(script) {
+function checkMusic(script, lyrics) {
   const s = String(script || '').trim();
   if (!s) return 'There is nothing to make yet. Describe the piece of music you want.';
   if (s.includes('%%%')) {
@@ -668,8 +695,17 @@ function checkMusic(script) {
   if (/<speak/i.test(s)) {
     return 'That is an AuK speech script, not a music brief. Lyria reads a description of a piece of music. Switch engines, or describe the music you want.';
   }
-  if (s.length > MAX_LYRIA_CHARS) {
-    return `That brief is ${s.length} characters; Lyria tops out at ${MAX_LYRIA_CHARS} here. Tighten it - the description should be rich, but it is still a description.`;
+  /* Sep 25 2026: the brief cap is for the description. Words left under a
+   * "Lyrics:" heading in the brief (an older draft, or the phone before its
+   * next build) are measured against the lyrics cap instead, so a full song
+   * is not refused by a cap sized for a paragraph. */
+  const inBrief = carry.splitLyricsBlock(s);
+  if (inBrief.prose.length > MAX_LYRIA_CHARS) {
+    return `That brief is ${inBrief.prose.length} characters; Lyria tops out at ${MAX_LYRIA_CHARS} here. Tighten it - the description should be rich, but it is still a description.`;
+  }
+  const words = String(lyrics || '').trim() || inBrief.lyrics;
+  if (words.length > MAX_LYRIA_LYRICS_CHARS) {
+    return `Those lyrics are ${words.length} characters; the booth sends Lyria at most ${MAX_LYRIA_LYRICS_CHARS}. Cut a verse or a repeated chorus and try again.`;
   }
   return null;
 }
@@ -1529,7 +1565,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   }
   const problem = editing ? null :
     engine === 'lyria'
-      ? checkMusic(script)
+      ? checkMusic(script, b.lyrics)
       : engine === 'seed'
         ? checkSeed(script)
         : checkScenema(script, { allowLong: true, allowEmpty: b.preview === true });
@@ -1560,7 +1596,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     /* Lyria's three knobs. It has no clips, no seed and no voice presets, so
      * nothing else on this list means anything to it. */
     if (b.instrumental === true) opts.instrumental = true;
-    if (typeof b.lyrics === 'string' && b.lyrics.trim()) opts.lyrics = b.lyrics.trim().slice(0, 4000);
+    if (typeof b.lyrics === 'string' && b.lyrics.trim()) opts.lyrics = b.lyrics.trim().slice(0, MAX_LYRIA_LYRICS_CHARS);
     if (b.keep_lyrics === false) opts.keep_lyrics = false;
     if (Number.isInteger(b.seed) && b.seed >= 0) opts.seed = b.seed;
     /* AuK's pace: 1.5 is the ENGINE'S normal (its README: "accounts for
@@ -1858,9 +1894,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       /* Part 179: the wire prompt in the shape Google's guide asks for -- the
        * brief, then the person's words under "Lyrics:", then the exact
        * instrumental line last so it wins if both were set. */
-      let brief = script;
-      if (opts.lyrics) brief = withLyricsBlock(brief, opts.lyrics);
-      if (opts.instrumental) brief = withInstrumentalLine(brief);
+      const brief = lyriaWirePrompt(script, opts);
 
       let r;
       try {
@@ -1968,7 +2002,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
             instrumental: !!opts.instrumental,
             lyrics: opts.keep_lyrics === false ? undefined : lyricText || undefined,
             lyricsClean: opts.keep_lyrics === false ? undefined : lyricsClean || undefined,
-            wirePrompt: brief.slice(0, 4000),
+            wirePrompt: brief.slice(0, 12000),
           },
         });
         if (asset && asset._id) assetId = String(asset._id);
@@ -2661,11 +2695,11 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
     lyricWritingModel,
     model: MODEL,
     moods: Object.entries(MOODS).map(([k, v]) => ({ key: k, label: v.label })),
-    limits: { scenemaChars: MAX_SCENEMA_CHARS, seedChars: MAX_SEED_CHARS, lyriaChars: MAX_LYRIA_CHARS, scriptsPerDay: SCRIPT_DAILY_CAP },
+    limits: { scenemaChars: MAX_SCENEMA_CHARS, seedChars: MAX_SEED_CHARS, lyriaChars: MAX_LYRIA_CHARS, lyriaLyricsChars: MAX_LYRIA_LYRICS_CHARS, scriptsPerDay: SCRIPT_DAILY_CAP },
   });
 });
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { readbackIsSungWords, projectView, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE };
+module.exports._internals = { readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE };
 

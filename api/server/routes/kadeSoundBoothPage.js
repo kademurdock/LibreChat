@@ -584,7 +584,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(state.engine!==engine || box.value!==original || state.quoteRevision!==revision){say('Your editor or settings changed while the draft was being written. Your current text is kept.',true);return;}
         var result=r.data.screenplay||r.data.script;
         if(!result)throw new Error('The writing desk returned no draft. Your text is kept.');
-        if(engine==='yue2'){var split=result.split(/\\nLyrics:\\s*/i);if(split.length<2)throw new Error('The writer did not provide separate lyrics. Your idea is kept; try again or add your lyrics in song settings.');writingLyrics=state.values.lyrics||'';state.values.lyrics=split.slice(1).join('\\n');result=split[0];renderSettings();}
+        /* Sep 25 2026: a Lyria draft is split the same way, so its words land in
+         * Your own lyrics instead of inside the Music direction. An instrumental
+         * has no Lyrics heading and stays whole; only YuE2 insists on words. */
+        if(engine==='yue2'||engine==='lyria'){var split=result.split(/\\nLyrics:\\s*/i);if(split.length<2){if(engine==='yue2')throw new Error('The writer did not provide separate lyrics. Your idea is kept; try again or add your lyrics in song settings.');}else{writingLyrics=state.values.lyrics||'';state.values.lyrics=split.slice(1).join('\\n').trim();result=split[0].trim();renderSettings();}}
         changeWriting(result);document.getElementById('readback').textContent=r.data.readback||'';
         say('Draft ready in the editor. You can change it or undo. No audio has been generated.');
       } catch(e){say(e.message||'The writing desk could not finish. Your text is kept.',true);}

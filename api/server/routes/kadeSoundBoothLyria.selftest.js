@@ -206,6 +206,37 @@ test('a sung-words readback is told apart from a real one-line description', () 
   assert.equal(f('People', 'People look at these walls'), false, 'too short to call');
 });
 
+/* Sep 25 2026: a desk draft for Lyria used to keep its words under "Lyrics:"
+ * inside the brief. The wire prompt must carry exactly one Lyrics block, and a
+ * full song must not be refused by a cap sized for a paragraph. */
+const SONG_60 = Array.from({ length: 60 }, (_, i) =>
+  (i % 8 === 0 ? `[${i % 16 === 0 ? 'Verse' : 'Chorus'} ${Math.floor(i / 8) + 1}]\n` : '') +
+  `Line ${i + 1} of the song about the road and the river and the town`).join('\n');
+
+test('one Lyrics block on the wire: the lyrics box wins over a block left in the brief', () => {
+  const draft = 'A 1970s soul song, Rhodes and brushed drums.\n\nLyrics:\n[Verse 1]\nthe desk words';
+  const both = pure.lyriaWirePrompt(draft, { lyrics: '[Verse 1]\nher own words' });
+  assert.equal(both.match(/^Lyrics:/gim).length, 1);
+  assert.match(both, /her own words/);
+  assert.doesNotMatch(both, /the desk words/);
+  assert.equal(both, 'A 1970s soul song, Rhodes and brushed drums.\n\nLyrics:\n[Verse 1]\nher own words');
+  assert.equal(pure.lyriaWirePrompt(draft, { lyrics: '' }), draft, 'no box words: the block in the brief goes as it always did');
+  const inst = pure.lyriaWirePrompt(draft, { lyrics: 'x y z', instrumental: true });
+  assert.match(inst, /Instrumental only, no vocals\.$/);
+  assert.equal(inst.match(/^Lyrics:/gim).length, 1);
+});
+
+test('a 60-line song fits: the brief cap measures the description, the words have their own', () => {
+  assert.ok(SONG_60.length > 3000 && SONG_60.length < pure.MAX_LYRIA_LYRICS_CHARS, `song is ${SONG_60.length} characters`);
+  const direction = 'Early-2000s pop-punk, 172 BPM, bratty tenor lead, palm-muted guitars. '.repeat(10).trim();
+  assert.equal(pure.checkMusic(direction, SONG_60), null, 'words in the lyrics box');
+  assert.equal(pure.checkMusic(direction + '\n\nLyrics:\n' + SONG_60), null, 'words still inside the brief');
+  assert.match(pure.checkMusic('x'.repeat(pure.MAX_LYRIA_CHARS + 1) + '\n\nLyrics:\n' + SONG_60), /That brief is 3001 characters/);
+  assert.match(pure.checkMusic(direction, 'la '.repeat(3000)), /Those lyrics are \d+ characters.*8000/);
+  const wire = pure.lyriaWirePrompt('d'.repeat(pure.MAX_LYRIA_CHARS), { lyrics: 'w'.repeat(pure.MAX_LYRIA_LYRICS_CHARS), instrumental: true });
+  assert.ok(wire.length < 11100, `the largest wire prompt is ${wire.length} characters`);
+});
+
 /* ---------------- the render lane, against a stub Google ------------------ */
 test('the music lane: real store, stub Google, every branch that can cost money', async (t) => {
   const mongo = await MongoMemoryServer.create();
@@ -299,6 +330,20 @@ test('the music lane: real store, stub Google, every branch that can cost money'
     assert.match(sent, /Instrumental only, no vocals\.$/);
     assert.doesNotMatch(sent, /Sing these exact lyrics/);
     assert.ok(sent.indexOf('Lyrics:') < sent.indexOf('Instrumental only'), 'the instrumental line comes last, so it wins');
+  });
+
+  await t.test('a long song in the lyrics box goes whole, once, even when the brief kept a desk Lyrics block', async () => {
+    reply = { status: 200, body: { candidates: [{ content: { parts: [
+      { inlineData: { mimeType: 'audio/mpeg', data: FAKE_MP3 } },
+    ] } }] } };
+    const long = SONG_60 + '\n[Outro]\n' + 'and the river keeps the town\n'.repeat(40).trim();
+    assert.ok(long.length > 4000, 'longer than the old silent 4,000 cut');
+    const r = await call('/render', { engine: 'lyria', script: brief + '\n\nLyrics:\n[Verse 1]\nan older desk draft', lyrics: long });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const sent = seen.at(-1).body.contents[0].parts[0].text;
+    assert.equal(sent.match(/^Lyrics:/gim).length, 1, 'exactly one Lyrics block');
+    assert.doesNotMatch(sent, /older desk draft/);
+    assert.ok(sent.endsWith(long), 'every line of the song, none cut');
   });
 
   await t.test('the words come back clean for the read-back, raw for the record', async () => {
