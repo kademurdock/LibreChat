@@ -132,11 +132,20 @@ async function scribeLyrics(buffer: Buffer, mime: string, seconds: number): Prom
   };
 }
 
+/** Where an imported cover came from, when it was not a file (Part 293: a YouTube link). */
+export type MusicReferenceSource = {
+  site: 'youtube';
+  title: string;
+  seconds?: number;
+  link?: string;
+  id?: string;
+};
 type Reference = {
   user: string;
   key: string;
   url: string;
   seconds?: number;
+  source?: MusicReferenceSource;
   transcript?: Transcript;
   transcriptVersion?: string;
   leaseUntil?: Date;
@@ -146,6 +155,7 @@ const schema = new mongoose.Schema<Reference>({
   key: String,
   url: String,
   seconds: Number,
+  source: mongoose.Schema.Types.Mixed,
   transcript: mongoose.Schema.Types.Mixed,
   transcriptVersion: String,
   leaseUntil: Date,
@@ -164,6 +174,7 @@ export async function registerMusicReference(
   user: string,
   url: string,
   seconds?: number | null,
+  source?: MusicReferenceSource | null,
 ): Promise<void> {
   await References.updateOne(
     { user, key: identity(url) },
@@ -173,6 +184,7 @@ export async function registerMusicReference(
         ...(typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0
           ? { seconds }
           : {}),
+        ...(source ? { source } : {}),
       },
     },
     { upsert: true },

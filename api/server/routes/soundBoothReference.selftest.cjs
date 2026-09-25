@@ -31,17 +31,18 @@ console.log('Reference validation passed: missing expected references stop befor
   let handler, duration = 433.1, stores = 0, registeredSeconds;
   const audio = Buffer.from('original audio');
   const context = {
-    router: { post(_route, ...handlers) { handler = handlers.at(-1); } },
+    router: { post(route, ...handlers) { if (route === '/reference') handler = handlers.at(-1); }, use() {} },
     requireJwtAuth() {}, refUpload: { single() {} },
     REF_EXT: { 'audio/mpeg': 'mp3' }, ENGINE_REF_FORMATS: { seed: { exts: ['mp3'] }, scenema: { exts: ['mp3'] } },
-    require: () => ({ durationOf: async () => duration }),
+    require: (name) => (name === './kadeSoundBoothLink' ? { createReferenceLinkRouter: () => null } : { durationOf: async () => duration }),
     musicReferenceError: compiled.exports.musicReferenceError,
     saveBufferToS3: async ({ buffer }) => { assert.equal(buffer, audio); stores++; return 'https://assets.test/reference.mp3'; },
     registerMusicReference: async (_user, _url, seconds) => { registeredSeconds = seconds; },
     logger: { warn() {}, info() {}, error() {} },
   };
   const uploadStart = source.indexOf("router.post('/reference',");
-  const uploadEnd = source.indexOf("router.post('/suggest',", uploadStart);
+  // The shared storage tail and the YouTube link route (Part 293) sit between /reference and /idea.
+  const uploadEnd = source.indexOf('/* ============================ POST /idea', uploadStart);
   vm.runInNewContext(source.slice(uploadStart, uploadEnd), context);
   async function upload(engine) {
     let code = 200, body;
