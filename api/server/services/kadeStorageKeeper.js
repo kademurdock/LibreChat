@@ -166,9 +166,14 @@ async function runOnce({ s3, bucket, reason = 'daily' }) {
       const cancelled = await abortUploads(client, name, plan.aborts);
       report.done = { deleted: removed.deleted, aborted: cancelled.aborted, bytes: removed.bytes + cancelled.bytes, failed: removed.failed + cancelled.failed };
     }
-    logger.info(`[storage-keeper] ${reason} pass (${mode}): listed ${versions.length} versions, ${uploads.length} unfinished uploads; ` +
-      `${mode === 'on' ? 'removed' : 'would remove'} ${Object.entries(report.totals).map(([k, v]) => `${k} ${v.count} (${v.gb} GB)`).join(', ') || 'nothing'}` +
-      `${report.refused ? ` REFUSED: ${report.refused}` : ''}; ${report.waiting.hiddenLibraryGb} GB of deleted Library files still inside their 30 days`);
+    // Short lines: the log service cuts long ones, and these are what a session without an admin sign-in can read.
+    logger.info(`[storage-keeper] ${reason} pass (${mode}): ${versions.length} versions, ${uploads.length} unfinished uploads, ${gb(report.listed.bytes)} GB`);
+    for (const [kind, total] of Object.entries(report.totals)) {
+      logger.info(`[storage-keeper] ${mode === 'on' ? 'removed' : 'would remove'} ${kind}: ${total.count}, ${total.gb} GB`);
+    }
+    logger.info(`[storage-keeper] waiting out 30 days: ${report.waiting.hiddenLibraryCount} deleted Library files, ${report.waiting.hiddenLibraryGb} GB`);
+    if (mode === 'on') logger.info(`[storage-keeper] done: ${report.done.deleted} removed, ${report.done.aborted} uploads cancelled, ${gb(report.done.bytes)} GB, ${report.done.failed} failed`);
+    if (report.refused) logger.warn(`[storage-keeper] REFUSED: ${report.refused}`);
   } catch (e) {
     report.error = String(e && e.message ? e.message : e).slice(0, 400);
     logger.warn(`[storage-keeper] ${reason} pass failed: ${report.error}`);
