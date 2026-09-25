@@ -30,6 +30,19 @@ const AI_TELL_SENTENCE_BANS = [
   /\bi\s+(?:can(?:'|no)?t|am unable to)\s+browse[^.!?]*[.!?]/gi,
   /\bi\s+(?:sincerely\s+|deeply\s+)?apologize(?:\s+for[^.!?]*)?[.!?]/gi,
   /\b(?:my\s+apologies|i'?m\s+(?:so\s+|really\s+)?sorry\s+for\s+(?:the\s+)?(?:confusion|any confusion|the mix-?up))[^.!?]*[.!?]/gi,
+  /* Part 292 (Sep 25 2026), her ear: "College essay crap." The two most
+   * frequent essay shapes in 45 real casual replies on her seat were a label
+   * sentence standing on its own ("That's the whole design.", "That's the
+   * trap.": 22 times in 15 replies) and a "Same X, different Y." fragment.
+   * Both only name what the sentences before them already said, so the reply
+   * stands without them. Whole sentences only, never the last words of a
+   * longer one, and only with a period: "That's the spirit!" and "That's the
+   * one?" are people talking. "the whole X" takes any noun; without "whole",
+   * only nouns that label a situation. The never-empty guard in scrubCore
+   * keeps a one-sentence reply intact. */
+  /(?:^|(?<=[.!?]["”’)]?\s+)|(?<=%{3}\s?))that['’]s\s+the\s+(?:whole|entire)\s+[a-z]+(?:\s+[a-z]+)?\.[ \t]*/gi,
+  /(?:^|(?<=[.!?]["”’)]?\s+)|(?<=%{3}\s?))that['’]s\s+the\s+(?:real\s+|actual\s+|exact\s+)?(?:trick|trap|loop|move|register|design|game|catch|tell|pattern|kicker|magic|genius|beauty|hook|engine|mechanism|math|whole\s+thing)\.[ \t]*/gi,
+  /(?:^|(?<=[.!?]["”’)]?\s+)|(?<=%{3}\s?))same\s+[a-z]+(?:\s+[a-z]+)?,\s+(?:different|opposite|new|other)\s+[a-z]+(?:\s+[a-z]+)?\.[ \t]*/gi,
 ];
 const AI_TELL_PHRASE_BANS = [
   /\bit['’]s\s+(?:worth\s+noting|important\s+to\s+(?:note|remember|mention|consider))\s+that\s+/gi,
@@ -44,6 +57,10 @@ const AI_TELL_PHRASE_BANS = [
   /\bin\s+(?:conclusion|summary),?\s+/gi,
   /\bto\s+sum\s+up,?\s+/gi,
   /\bin\s+today['’]s\s+(?:world|fast-?paced\s+world|digital\s+age),?\s+/gi,
+  /* Part 292: the build-up before a point ("Here's the thing:", "Here's my
+   * read --"). Only with the colon or dash that makes it a lead-in; the point
+   * after it stands alone and is recapitalised. */
+  /\bhere['’]s\s+(?:the\s+thing|the\s+deal|the\s+kicker|the\s+catch|my\s+(?:read|take)|what\s+(?:i\s+think|gets\s+me|kills\s+me|matters))\s*(?::|\s[—–-]{1,2})\s*/gi,
 ];
 const AI_TELL_TRAIL_BANS = [
   /\s*(?:i\s+)?hope\s+(?:this|that)\s+(?:helps?|is\s+helpful|gives\s+you[^.!?]*)!?[.!?]?\s*$/i,
