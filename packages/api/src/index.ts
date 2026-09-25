@@ -188,7 +188,7 @@ export {
 export { libraryRequestsDescription, libraryRequestsSchema } from './tools/registry/requests';
 export { librarianGuide } from './library/guide';
 export { libraryConsultation, libraryConsultationInstructions } from './library/consultation';
-export { readingText, readingJacket, printDisabilityNotice } from './library/text';
+export { readingText, readingJacket, readingPassages, printDisabilityNotice } from './library/text';
 export {
   familyLibraryMember,
   trustedLibraryContributor,
