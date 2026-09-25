@@ -781,7 +781,13 @@ router.get('/wall', requireJwtAuth, async (req, res) => {
       .limit(200)
       .populate('user', 'name username')
       .lean();
-    const assets = await Promise.all(docs.map((d) => assetView(d, { withOwner: true })));
+    /* Part 293: grown-ups may now get explicit songs from the Sound Booth desk.
+     * The child account and the App Review seat never see a shared asset whose
+     * title, prompt or lyrics carry an explicit word; everyone else sees the
+     * wall exactly as before. */
+    const { wallViewerRestricted, filterWallAssets } = require('~/server/utils/kadeSongAudience');
+    const visible = filterWallAssets(docs, await wallViewerRestricted(req.user));
+    const assets = await Promise.all(visible.map((d) => assetView(d, { withOwner: true })));
     return res.json({ count: assets.length, assets });
   } catch (error) {
     logger.error('[/api/kade/wall] error:', error);
