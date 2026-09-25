@@ -1,31 +1,67 @@
 import { z } from 'zod';
 import { join } from 'node:path';
-import { readdir, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import type { Chapter } from './types';
 import { spokenLength } from './transcript';
 import { cleanLabel } from './text';
 import { command, ffmpeg } from './media';
 
-export function youtubeURL(value: string): string {
+/** One YouTube video as its id and plain watch link, or why the text is not one. */
+export type YouTubeLink =
+  | { id: string; url: string }
+  | { problem: 'not-link' | 'not-youtube' | 'not-video' };
+
+const youtubeHosts = [
+  'youtube.com',
+  'www.youtube.com',
+  'm.youtube.com',
+  'music.youtube.com',
+  'youtube-nocookie.com',
+  'www.youtube-nocookie.com',
+];
+
+/**
+ * Reads a pasted link as one YouTube video. Watch, youtu.be, Shorts, embed, live, mobile and
+ * YouTube Music links all come back as https://www.youtube.com/watch?v=ID, so a playlist, radio
+ * mix or start time riding on the link (list=, index=, start_radio=, t=) is dropped and exactly
+ * one video is ever fetched. A link pasted without https:// is read as if it had it.
+ */
+export function readYouTubeLink(value: string): YouTubeLink {
+  const text = String(value ?? '').trim();
   let url: URL;
   try {
-    url = new URL(value.trim());
+    url = new URL(/^[a-z][a-z\d+.-]*:/i.test(text) ? text : `https://${text}`);
   } catch {
-    throw new Error('Enter a YouTube video link.');
+    return { problem: 'not-link' };
   }
-  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.port)
-    throw new Error('Enter a YouTube video link.');
-  let id: string | null = null;
-  if (url.hostname === 'youtu.be') id = url.pathname.split('/')[1];
   if (
-    ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com'].includes(url.hostname)
-  ) {
-    if (url.pathname === '/watch') id = url.searchParams.get('v');
-    else if (/^\/(shorts|embed|live)\//.test(url.pathname)) id = url.pathname.split('/')[2];
-  }
-  if (!id || !/^[a-zA-Z0-9_-]{11}$/.test(id))
-    throw new Error('Enter a single YouTube video link, not a channel or playlist.');
-  return `https://www.youtube.com/watch?v=${id}`;
+    !text ||
+    !['https:', 'http:'].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.port
+  )
+    return { problem: 'not-link' };
+  const host = url.hostname.toLowerCase();
+  let id: string | null | undefined = null;
+  if (host === 'youtu.be' || host === 'www.youtu.be') id = url.pathname.split('/')[1];
+  else if (youtubeHosts.includes(host)) {
+    if (url.pathname === '/watch' || url.pathname === '/watch/') id = url.searchParams.get('v');
+    else if (/^\/(shorts|embed|live|v)\//.test(url.pathname)) id = url.pathname.split('/')[2];
+  } else return { problem: 'not-youtube' };
+  if (!id || !/^[a-zA-Z0-9_-]{11}$/.test(id)) return { problem: 'not-video' };
+  return { id, url: `https://www.youtube.com/watch?v=${id}` };
+}
+
+export function youtubeURL(value: string): string {
+  const link = readYouTubeLink(value);
+  if ('url' in link) return link.url;
+  throw new Error(
+    link.problem === 'not-link'
+      ? 'Enter a YouTube video link.'
+      : 'Enter a single YouTube video link, not a channel or playlist.',
+  );
 }
 
 const viaLibrary =
@@ -107,8 +143,14 @@ const errorText = (error: unknown) => {
 };
 const reason = (error: unknown) => errorText(error).replace(/\s+/g, ' ').trim().slice(-300);
 
-/** A named YouTube failure that should reach Kade as it is. */
-class Refused extends Error {}
+/** A named YouTube failure that should reach Kade as it is. `kind` is youtubeProblem's name. */
+class Refused extends Error {
+  readonly kind?: string;
+  constructor(message: string, kind?: string) {
+    super(message);
+    this.kind = kind;
+  }
+}
 
 /**
  * YouTube walls off datacenter addresses, and which player client gets through shifts over
@@ -153,6 +195,8 @@ const settled: ReadonlySet<string> = new Set(['unavailable', 'age', 'members', '
 /**
  * Runs yt-dlp down the ladder. A permanent answer (private, removed, copyright) stops at once;
  * when every client in the first pass gives the same named answer, the second pass is skipped.
+ * `seen.error` keeps the last client's failure, so a climb cut short by a deadline can still
+ * say what YouTube was answering (the bot wall, usually).
  */
 async function climb(
   args: string[],
@@ -160,6 +204,7 @@ async function climb(
   signal: AbortSignal,
   maxBytes: number,
   log: (message: string) => void,
+  seen?: { error?: unknown },
 ): Promise<Buffer> {
   const binary = process.env.YT_DLP_PATH || 'yt-dlp';
   const common = [
@@ -186,7 +231,7 @@ async function climb(
         settled.has(answers[0] ?? '') &&
         answers.every((kind) => kind === answers[0]);
       const problem = agreed ? youtubeProblem(errorText(last)) : undefined;
-      if (problem) throw new Refused(problem.message);
+      if (problem) throw new Refused(problem.message, problem.kind);
       await wait(3000, signal);
     }
     for (let i = 0; i < ladder.length; i++) {
@@ -204,13 +249,14 @@ async function climb(
         return output;
       } catch (error) {
         signal.throwIfAborted();
+        if (seen) seen.error = error;
         last = error;
         const problem = youtubeProblem(errorText(error));
         if (!pass) answers.push(problem?.kind);
         log(
           `youtube: client ${pass * ladder.length + i + 1} of ${ladder.length * 2} failed (${problem?.kind ?? 'unrecognised'}): ${reason(error)}`,
         );
-        if (problem?.permanent) throw new Refused(problem.message);
+        if (problem?.permanent) throw new Refused(problem.message, problem.kind);
       }
     }
   }
@@ -289,11 +335,12 @@ export async function folderBytes(
 
 /**
  * yt-dlp reads `--ffmpeg-location ffmpeg` as a path in its working folder, finds nothing, and
- * quietly downloads picture and sound as separate files. Only a real path is passed on.
+ * quietly downloads picture and sound as separate files. Only a real path is passed on: one with
+ * a folder in it, the same test the Clubhouse link lane uses (a bare name means "on the PATH").
  */
 export function ffmpegLocation(): string[] {
-  const path = process.env.FFMPEG_PATH || '';
-  return path.trim() ? ['--ffmpeg-location', path] : [];
+  const path = (process.env.FFMPEG_PATH || '').trim();
+  return /[\\/]/.test(path) ? ['--ffmpeg-location', path] : [];
 }
 
 /** A finished part file yt-dlp leaves when it cannot merge: youtube.f136.mp4, youtube.f251.webm. */
@@ -499,5 +546,267 @@ export async function importYouTube(
     );
   } finally {
     clearInterval(monitor);
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * AUDIO ONLY, for the Sound Booth's YuE2 covers (Part 293, Sep 25 2026, her ask: "The soundbooth
+ * needs a youtube paste link in the yue2 workflow so people can cover songs from youtube videos.")
+ *
+ * The same ladder, cookies and PO-token sidecar as the describer above (not a third copy of the
+ * Clubhouse's): the length is read from the metadata BEFORE anything is downloaded, then only the
+ * sound is fetched and turned into an MP3 with the server's own ffmpeg. MP3 because every reader
+ * of a cover takes it: the YuE2 worker, the lyric transcriber, the website player and the iPhone.
+ * Failures come back as a `kind`, never as the describer's sentences, so the booth says them in
+ * its own words. Everything lands in one temporary folder that is removed on every path.
+ * ------------------------------------------------------------------------------------------- */
+
+/** Why a YouTube audio import stopped. The caller turns the kind into words. */
+export type YouTubeAudioKind =
+  | 'not-link'
+  | 'not-youtube'
+  | 'not-video'
+  | 'private'
+  | 'copyright'
+  | 'removed'
+  | 'age'
+  | 'members'
+  | 'region'
+  | 'bot'
+  | 'unavailable'
+  | 'premium'
+  | 'live'
+  | 'processing'
+  | 'no-length'
+  | 'too-long'
+  | 'too-large'
+  | 'timeout'
+  | 'unreadable'
+  | 'tools'
+  | 'failed';
+
+/** A YouTube audio import that stopped. `message` is detail for the server log only. */
+export class YouTubeAudioError extends Error {
+  readonly kind: YouTubeAudioKind;
+  /** The video's length, for a video that is too long. */
+  readonly seconds: number | undefined;
+  constructor(kind: YouTubeAudioKind, detail: string = '', seconds?: number) {
+    super(detail || kind);
+    this.name = 'YouTubeAudioError';
+    this.kind = kind;
+    this.seconds = seconds;
+  }
+}
+
+export type YouTubeAudioDetails = { title: string; seconds: number; uploader: string };
+
+/** Reads yt-dlp's metadata and decides, before any download, whether the sound can come in. */
+export function readAudioMetadata(
+  json: unknown,
+  maxSeconds: number,
+  cookies: boolean,
+): YouTubeAudioDetails {
+  const parsed = metadataSchema.safeParse(json);
+  if (!parsed.success) throw new YouTubeAudioError('unreadable');
+  const data = parsed.data;
+  const live = data.live_status ?? '';
+  if (live === 'post_live') throw new YouTubeAudioError('processing');
+  if (data.is_live || live === 'is_live' || live === 'is_upcoming')
+    throw new YouTubeAudioError('live');
+  const availability = data.availability ?? '';
+  if (availability === 'private') throw new YouTubeAudioError('private');
+  if (availability === 'subscriber_only') throw new YouTubeAudioError('members');
+  if (availability === 'premium_only') throw new YouTubeAudioError('premium');
+  if (!cookies && (availability === 'needs_auth' || (data.age_limit ?? 0) >= 18))
+    throw new YouTubeAudioError('age');
+  const seconds = data.duration ?? 0;
+  if (!(seconds > 0)) throw new YouTubeAudioError('no-length');
+  if (seconds > maxSeconds) throw new YouTubeAudioError('too-long', `${seconds} s`, seconds);
+  return {
+    title: cut(cleanLabel(data.title), 200) || 'YouTube video',
+    seconds,
+    uploader: data.uploader ? cut(cleanLabel(data.uploader), 120) : '',
+  };
+}
+
+const audioKinds: ReadonlySet<string> = new Set([
+  'private',
+  'copyright',
+  'removed',
+  'age',
+  'members',
+  'region',
+  'bot',
+  'unavailable',
+]);
+/** What a walled server sees when youtubeProblem has no name for it. */
+const walled = /HTTP Error 403|No video formats|Requested format is not available|--cookies/i;
+
+/** A failed or cut-short climb as a kind. When the deadline cut it, the last answer names it. */
+function audioFailure(
+  error: unknown,
+  signal: AbortSignal,
+  seen: { error?: unknown },
+): YouTubeAudioError {
+  if (error instanceof YouTubeAudioError) return error;
+  const cause = signal.aborted && seen.error !== undefined ? seen.error : error;
+  const named =
+    error instanceof Refused && error.kind ? error.kind : youtubeProblem(errorText(cause))?.kind;
+  if (named && audioKinds.has(named))
+    return new YouTubeAudioError(named as YouTubeAudioKind, reason(cause));
+  if (signal.aborted) return new YouTubeAudioError('timeout', reason(cause));
+  if (/ENOENT/.test(errorText(error))) return new YouTubeAudioError('tools', reason(error));
+  if (walled.test(errorText(cause))) return new YouTubeAudioError('bot', reason(cause));
+  return new YouTubeAudioError('failed', reason(cause));
+}
+
+/** Sound only: YouTube's AAC stream when there is one, any audio stream, then a small video. */
+const audioFormat = 'ba[acodec^=mp4a]/ba/b[height<=360]/b';
+
+export type YouTubeAudioOptions = {
+  /** The longest video accepted, read from the metadata before any download. */
+  maxSeconds: number;
+  /** The largest MP3 handed back. */
+  maxBytes: number;
+  /** The caller's deadline and hang-up; aborting it stops yt-dlp and ffmpeg at once. */
+  signal: AbortSignal;
+  log?: (message: string) => void;
+  /** How long the metadata pass may take (45 s by default), so the download keeps its share. */
+  metadataMs?: number;
+  /** MP3 bit rate, 192k by default: six minutes is about 8.6 MB. */
+  bitrate?: string;
+  /** Folder for the temporary folder (the system temp folder by default). */
+  tmp?: string;
+};
+
+export type YouTubeAudio = {
+  buffer: Buffer;
+  title: string;
+  /** The video's length from YouTube. */
+  seconds: number;
+  uploader: string;
+  id: string;
+  /** The plain watch link that was fetched. */
+  link: string;
+};
+
+/**
+ * One YouTube video's sound as an MP3, or a YouTubeAudioError. The length is checked before the
+ * download; a video over `maxSeconds` is refused with its length, and nothing is fetched.
+ */
+export async function youtubeAudio(
+  value: string,
+  options: YouTubeAudioOptions,
+): Promise<YouTubeAudio> {
+  const found = readYouTubeLink(value);
+  if (!('url' in found)) throw new YouTubeAudioError(found.problem);
+  const { signal, maxSeconds, maxBytes } = options;
+  const log = options.log ?? (() => {});
+  if (signal.aborted) throw new YouTubeAudioError('timeout', 'stopped before it started');
+  const directory = await mkdtemp(join(options.tmp ?? tmpdir(), 'kade-ytaudio-'));
+  const seen: { error?: unknown } = {};
+  try {
+    const metaSignal = AbortSignal.any([signal, AbortSignal.timeout(options.metadataMs ?? 45000)]);
+    let raw: Buffer;
+    try {
+      raw = await climb(
+        ['--dump-single-json', '--skip-download', '--', found.url],
+        directory,
+        metaSignal,
+        16 * 1024 ** 2,
+        log,
+        seen,
+      );
+    } catch (error) {
+      throw audioFailure(error, metaSignal, seen);
+    }
+    let json: unknown;
+    try {
+      json = JSON.parse(raw.toString());
+    } catch {
+      throw new YouTubeAudioError('unreadable', 'metadata was not JSON');
+    }
+    const details = readAudioMetadata(json, maxSeconds, !!(process.env.KADE_YT_COOKIES || '').trim());
+    let printed: string;
+    try {
+      printed = (
+        await climb(
+          [
+            '--max-filesize',
+            String(Math.max(3 * maxBytes, 64 * 1024 ** 2)),
+            '--match-filter',
+            `duration <= ${Math.floor(maxSeconds)} & !is_live`,
+            '-f',
+            audioFormat,
+            ...ffmpegLocation(),
+            '-o',
+            join(directory, 'source.%(ext)s'),
+            '--',
+            found.url,
+          ],
+          directory,
+          signal,
+          1024 * 1024,
+          log,
+          seen,
+        )
+      ).toString();
+    } catch (error) {
+      throw audioFailure(error, signal, seen);
+    }
+    const tail = printed.replace(/\s+/g, ' ').trim().slice(-300);
+    // Over --max-filesize or outside the filter, yt-dlp skips the file and still exits 0.
+    if (/larger than max-filesize/i.test(printed)) throw new YouTubeAudioError('too-large', tail);
+    const names = (await readdir(directory)).sort();
+    const source = names.find((name) => /^source\.[a-z\d]+$/i.test(name));
+    if (!source)
+      throw new YouTubeAudioError(
+        'failed',
+        `no audio file; files [${names.filter((name) => name.startsWith('source')).join(', ')}]; yt-dlp said: ${tail}`,
+      );
+    const output = join(directory, 'cover.mp3');
+    try {
+      await command(
+        ffmpeg(),
+        [
+          '-nostdin',
+          '-hide_banner',
+          '-v',
+          'error',
+          '-y',
+          '-i',
+          join(directory, source),
+          '-map',
+          '0:a:0',
+          '-vn',
+          '-map_metadata',
+          '-1',
+          '-c:a',
+          'libmp3lame',
+          '-b:a',
+          options.bitrate ?? '192k',
+          output,
+        ],
+        signal,
+      );
+    } catch (error) {
+      if (signal.aborted) throw new YouTubeAudioError('timeout', 'ffmpeg: ' + reason(error));
+      if (/ENOENT/.test(errorText(error)))
+        throw new YouTubeAudioError('tools', 'ffmpeg: ' + reason(error));
+      throw new YouTubeAudioError('failed', 'ffmpeg: ' + reason(error));
+    }
+    const bytes = (await stat(output)).size;
+    if (bytes > maxBytes) throw new YouTubeAudioError('too-large', `${bytes} bytes as MP3`);
+    if (bytes < 1000) throw new YouTubeAudioError('failed', 'ffmpeg made an empty MP3');
+    return {
+      buffer: await readFile(output),
+      title: details.title,
+      seconds: details.seconds,
+      uploader: details.uploader,
+      id: found.id,
+      link: found.url,
+    };
+  } finally {
+    await rm(directory, { recursive: true, force: true }).catch(() => {});
   }
 }

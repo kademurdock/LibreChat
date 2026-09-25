@@ -205,5 +205,8 @@ export { libraryToolDescription, libraryToolSchema } from './tools/registry/libr
 
 export { createDescriptionRouter } from './description/router';
 export { describedVideoPage } from './description/page';
+/* Part 293: the describer's yt-dlp ladder, sound only, for the Sound Booth's YuE2 covers. */
+export { youtubeAudio, readYouTubeLink, YouTubeAudioError } from './description/youtube';
+export type { YouTubeAudio, YouTubeAudioKind, YouTubeLink } from './description/youtube';
 
 export { createDescriptionWallet } from './description/wallet';
