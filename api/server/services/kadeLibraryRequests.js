@@ -69,6 +69,15 @@ async function chatNews(userId, text) {
   await KadePendingNudge.create({ userId, text, type: 'library-request', channel: 'chat' });
 }
 
+/** They read an outcome on the page or with the librarian: rewrite the waiting line without it, or
+ * withdraw it. Never creates a line. */
+async function rewriteNews(userId, text) {
+  const { KadePendingNudge } = require('~/models/kadeNudge');
+  const waiting = { userId, type: 'library-request', channel: 'chat', deliveredAt: null };
+  if (text) await KadePendingNudge.updateOne(waiting, { $set: { text: text.slice(0, 900) } });
+  else await KadePendingNudge.deleteMany(waiting);
+}
+
 const digestHours = Number(process.env.KADE_LIBRARY_REQUEST_DIGEST_HOURS);
 const requests = libraryRequestService(
   {
@@ -91,6 +100,7 @@ const requests = libraryRequestService(
         }),
       chat: chatNews,
     }),
+    news: rewriteNews,
     announce: async (text) => {
       const { User } = require('~/db/models');
       const admins = await User.find({ role: 'ADMIN' }, '_id name').lean();

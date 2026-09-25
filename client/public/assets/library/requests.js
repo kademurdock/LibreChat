@@ -15,6 +15,7 @@
     var admin = false;
     var initialized = false;
     var membershipLoaded = false;
+    var counts = { unread: 0, review: 0 };
     var params = new URLSearchParams(location.search);
     var currentId = params.get('request');
     var statusNames = {
@@ -158,7 +159,7 @@
             return announce('Write the new details first.');
           }
           await saved(
-            await send({ action: 'note', id: row.id, version: row.version, note: note.value }),
+            await send({ action: 'note', id: row.id, note: note.value }),
             'Details saved.',
           );
         }),
@@ -166,10 +167,7 @@
       row2.appendChild(
         button('Cancel this request', async function () {
           if (!window.confirm('Cancel your request for ' + row.title + '?')) return;
-          await saved(
-            await send({ action: 'cancel', id: row.id, version: row.version }),
-            'Request cancelled.',
-          );
+          await saved(await send({ action: 'cancel', id: row.id }), 'Request cancelled.');
         }),
       );
       panel.appendChild(row2);
@@ -260,14 +258,35 @@
               return announce('Find the library item that fills this request first.');
             }
           }
-          var result = await send({
-            action: 'update',
-            id: row.id,
-            version: row.version,
-            status: state.value,
-            note: note.value,
-            book: book,
-          });
+          var result;
+          try {
+            result = await send({
+              action: 'update',
+              id: row.id,
+              version: row.version,
+              status: state.value,
+              note: note.value,
+              book: book,
+            });
+          } catch (error) {
+            if (!/^This request changed/.test(error.message)) throw error;
+            /* Someone changed it meanwhile: show the new version, keep what she typed. */
+            var typed = { status: state.value, note: note.value, item: query.value };
+            await open(row.id, false);
+            var status = document.getElementById('requestNewStatus');
+            var ownerNote = document.getElementById('requestOwnerNote');
+            var item = document.getElementById('requestItemSearch');
+            if (status && status.querySelector('option[value="' + typed.status + '"]')) {
+              status.value = typed.status;
+              if (status.onchange) status.onchange();
+            }
+            if (ownerNote) ownerNote.value = typed.note;
+            if (item && typed.item) item.value = typed.item;
+            focusHeading();
+            return announce(
+              'This request changed while you were working. Your note is kept. Check the new status and save again.',
+            );
+          }
           await saved(
             result,
             row.mine
@@ -379,9 +398,21 @@
     async function open(id, focus) {
       var result = await send({ action: 'details', id: id });
       render(result.request);
+      if (result.request.unread) markRead(result.request);
       if (focus) focusHeading();
     }
+    /* Opening a request reads its update: drop "New update." from its list entry and the count,
+     * without reloading the list or moving focus. */
+    function markRead(row) {
+      var pick = list.querySelector('button[data-request="' + row.id + '"]');
+      if (pick && pick.textContent.indexOf('New update. ') === 0)
+        pick.textContent = pick.textContent.slice('New update. '.length);
+      if (row.mine && counts.unread) counts.unread--;
+      else if (!row.mine && counts.review) counts.review--;
+      summary(counts);
+    }
     function summary(result) {
+      counts = { unread: result.unread || 0, review: result.review || 0 };
       var parts = [];
       if (result.review)
         parts.push(
@@ -429,6 +460,7 @@
         var pick = button(name, function () {
           return open(row.id, true);
         });
+        pick.setAttribute('data-request', row.id);
         entry.appendChild(pick);
         list.appendChild(entry);
         first = first || pick;

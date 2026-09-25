@@ -63,12 +63,18 @@ const later = (ms: number) => {
 const notices: { notice: RequestNotice; to: string }[] = [];
 let notifyFails = false;
 const announcements: string[] = [];
+let announceFails = false;
+let readerFails = false;
+const newsCalls: { owner: string; text: string | null }[] = [];
 let researchStarts = 0;
 let researchRefuses = false;
 const deps: RequestDependencies = {
   requests: rows,
   state,
-  reader: async (id) => actors.get(id) || null,
+  reader: async (id) => {
+    if (readerFails) throw new Error('Database blip');
+    return actors.get(id) || null;
+  },
   book: async (id, reader) => {
     const item = await books.findOne({ ...libraryAccess(reader), _id: id }).lean();
     return item ? { id: String(item._id), title: item.title || '' } : null;
@@ -79,6 +85,7 @@ const deps: RequestDependencies = {
     return { state: 'sent' };
   },
   announce: async (text) => {
+    if (announceFails) throw new Error('Nudge store down');
     announcements.push(text);
   },
   startResearch: async () => {
@@ -94,6 +101,9 @@ const deps: RequestDependencies = {
     report: 'A possible title was identified; a library copy exists elsewhere.',
     sources: [{ title: 'Catalog record', url: 'https://example.org/record' }],
   }),
+  news: async (owner, text) => {
+    newsCalls.push({ owner, text });
+  },
   now: () => new Date(Date.now() + offset),
 };
 const service: RequestService = libraryRequestService(deps);
@@ -395,12 +405,40 @@ test('research is the owner’s choice, quoted first, started once, and never fi
   const row = await create('Find a half remembered book');
   await rejects({ action: 'research', id: row.id, confirmed: true }, member, 403);
   await rejects({ action: 'research_status', id: row.id }, member, 403);
+  // Saying yes before hearing a price starts nothing: the first call is always a quote.
+  const skipped = await service.run(
+    { action: 'research', id: row.id, depth: 'deep', confirmed: true },
+    owner,
+  );
+  assert.equal(researchStarts, 0);
+  assert.equal(skipped.quote?.depth, 'deep');
+  assert.match(skipped.guidance || '', /Nothing has started/);
   const quote = await service.run({ action: 'research', id: row.id }, owner);
   assert.equal(researchStarts, 0);
   assert.equal(quote.quote?.depth, 'quick');
-  assert.match(quote.quote?.text || '', /paid by the platform/);
+  assert.equal(quote.quote?.maxCents, 75);
+  assert.match(
+    quote.quote?.text || '',
+    /The platform pays: usually 3 to 6 cents, and never more than about 75 cents/,
+  );
+  assert.match(quote.quote?.text || '', /daily research limit/);
   assert.match(quote.guidance || '', /confirmed true/);
+  // A yes to the quick price does not pay for a deeper run.
+  const deeper = await service.run(
+    { action: 'research', id: row.id, depth: 'standard', confirmed: true },
+    owner,
+  );
+  assert.equal(researchStarts, 0);
+  assert.equal(deeper.quote?.depth, 'standard');
   await rejects({ action: 'research', id: row.id, depth: 'endless', confirmed: true }, owner, 400);
+  for (const depth of ['constructor', 'toString', '__proto__'])
+    await rejects({ action: 'research', id: row.id, depth, confirmed: true }, owner, 400);
+  // An old quote has gone stale.
+  await service.run({ action: 'research', id: row.id }, owner);
+  later(16 * 60 * 1000);
+  const stale = await service.run({ action: 'research', id: row.id, confirmed: true }, owner);
+  assert.equal(researchStarts, 0);
+  assert.ok(stale.quote);
   await Promise.allSettled(
     Array.from({ length: 4 }, () =>
       service.run({ action: 'research', id: row.id, confirmed: true }, owner),
@@ -416,14 +454,26 @@ test('research is the owner’s choice, quoted first, started once, and never fi
   assert.equal(seen.research, undefined, 'the requester never sees research notes');
   assert.equal(seen.status, 'requested');
 
+  // The stale quote above was replaced by the fresh one; one quote pays for one start.
+  const again = await service.run({ action: 'research', id: row.id, confirmed: true }, owner);
+  assert.ok(again.quote || /already running/.test(again.guidance || ''));
+  assert.equal(researchStarts, 1);
+
   const refused = await create('Research the desk refuses');
+  await service.run({ action: 'research', id: refused.id }, owner);
   researchRefuses = true;
   const result = await service.run({ action: 'research', id: refused.id, confirmed: true }, owner);
   researchRefuses = false;
   assert.equal(result.request?.research?.state, 'failed');
   assert.match(result.guidance || '', /daily research cap/);
+  const unquoted = await service.run(
+    { action: 'research', id: refused.id, confirmed: true },
+    owner,
+  );
+  assert.ok(unquoted.quote, 'a new try needs the price said again');
   const retried = await service.run({ action: 'research', id: refused.id, confirmed: true }, owner);
   assert.equal(retried.request?.research?.state, 'queued', 'a refused start can be tried again');
+  assert.equal(researchStarts, 3);
 });
 
 test('non-members cannot request shared media and are not shown inaccessible links', async () => {
@@ -532,6 +582,10 @@ test('the tool reply is compact and the notice text is plain', () => {
   assert.equal(notice.title, 'Library request update');
   assert.equal(notice.url, '/library?request=abc#libraryRequests');
   assert.match(notice.body, /^"Frog and Toad" could not be filled\. Open Library requests/);
+  assert.equal(
+    notice.phoneBody,
+    '"Frog and Toad" could not be filled. Ask Mrs. Witherspoon about it, or open Library requests on the website.',
+  );
   assert.ok(notice.chat);
 });
 
@@ -568,7 +622,14 @@ test('request titles quoted into alerts and the owner digest cannot carry tags o
 });
 
 test('the notifier reports what actually reached the person', async () => {
-  const notice: RequestNotice = { owner: 'o', title: 't', body: 'b', url: '/u', chat: 'news' };
+  const notice: RequestNotice = {
+    owner: 'o',
+    title: 't',
+    body: 'b',
+    phoneBody: 'p',
+    url: '/u',
+    chat: 'news',
+  };
   const chats: string[] = [];
   const channels = (sent: number, deferred = false, browsers = 0, down = false) =>
     createRequestNotifier({
@@ -593,6 +654,136 @@ test('the notifier reports what actually reached the person', async () => {
   assert.match(saved.note || '', /next conversation/);
   assert.equal((await channels(0, false, 0, true)(notice, owner)).state, 'unconfirmed');
   assert.equal(chats.length, 4);
+});
+
+test('alerts describe the library’s change, never the requester’s own edits made meanwhile', async () => {
+  await flushAlerts();
+  const reader = actor('Edit reader');
+  enrol(reader);
+  // Kade starts looking, then they cancel inside the settling minute: no alert about a withdrawn ask.
+  const withdrawn = await create('Probe three', reader);
+  await service.run({ action: 'update', id: withdrawn.id, status: 'searching' }, owner);
+  await service.run({ action: 'cancel', id: withdrawn.id }, reader);
+  const mark = notices.length;
+  await flushAlerts();
+  assert.equal(notices.slice(mark).filter((entry) => entry.to === reader.id).length, 0);
+  assert.equal((await rows.findById(withdrawn.id).lean())?.notification?.state, 'skipped');
+  const card = (await service.run({ action: 'details', id: withdrawn.id }, owner)).request!;
+  assert.match(card.alert || '', /cancelled the request first/);
+
+  // Kade starts looking, then they add a note: the alert is about her change, not their note.
+  const noted = await create('Probe four', reader);
+  await service.run({ action: 'update', id: noted.id, status: 'searching' }, owner);
+  await service.run({ action: 'note', id: noted.id, note: 'It had a banjo.' }, reader);
+  const unread = await rows.findById(noted.id).lean();
+  assert.ok(
+    unread && unread.seenVersion < unread.version,
+    'their note does not mark her change read',
+  );
+  await flushAlerts();
+  const sent = notices.slice(mark).filter((entry) => entry.to === reader.id);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].notice.body, /^"Probe four": being looked for\./);
+  assert.doesNotMatch(sent[0].notice.body, /new note/);
+
+  // An update that changes nothing is refused instead of sending an empty alert.
+  await rejects(
+    { action: 'update', id: noted.id, status: 'searching' },
+    owner,
+    400,
+    /new status or write a note/,
+  );
+
+  // A fill names the item as the Library lists it, and the phone alert points where the app can go.
+  const filled = await create('Half remembered radio', reader);
+  await service.run(
+    { action: 'update', id: filled.id, status: 'fulfilled', book: String(shared) },
+    owner,
+  );
+  await rejects(
+    { action: 'update', id: filled.id, status: 'fulfilled', book: String(shared) },
+    owner,
+    400,
+    /new status or write a note/,
+  );
+  await flushAlerts();
+  const ready = notices.filter((entry) => entry.to === reader.id).pop()!.notice;
+  assert.equal(ready.title, 'Your library request is ready');
+  assert.match(
+    ready.body,
+    /"Half remembered radio" is ready in the library as "Ready shared radio"/,
+  );
+  assert.match(
+    ready.phoneBody,
+    /Search the Library for it, or ask Mrs\. Witherspoon for the link\.$/,
+  );
+  assert.doesNotMatch(ready.phoneBody, /Library page/);
+  assert.match(ready.body, /Library page to find the link\.$/);
+});
+
+test('reading an outcome rewrites or withdraws the waiting conversation line', async () => {
+  await flushAlerts();
+  const reader = actor('Line reader');
+  enrol(reader);
+  const first = await create('Line first', reader);
+  const second = await create('Line second', reader);
+  await service.run(
+    { action: 'update', id: first.id, status: 'fulfilled', book: String(shared) },
+    owner,
+  );
+  await service.run(
+    { action: 'update', id: second.id, status: 'unavailable', note: 'Out of print.' },
+    owner,
+  );
+  await flushAlerts();
+  const mark = newsCalls.length;
+  await service.run({ action: 'details', id: first.id }, reader);
+  assert.equal(newsCalls.length, mark + 1);
+  assert.equal(newsCalls[mark].owner, reader.id);
+  assert.match(newsCalls[mark].text || '', /"Line second" could not be filled/);
+  assert.doesNotMatch(newsCalls[mark].text || '', /Line first/);
+  await service.run({ action: 'details', id: second.id }, reader);
+  assert.equal(newsCalls[mark + 1].text, null, 'nothing unread is left, so the line is withdrawn');
+  await service.run({ action: 'details', id: second.id }, reader);
+  assert.equal(newsCalls.length, mark + 2, 'reading it again changes nothing');
+});
+
+test('an alert or digest that fails before delivery is tried again, never lost', async () => {
+  await flushAlerts();
+  const reader = actor('Retry reader');
+  enrol(reader);
+  const row = await create('Retry alert', reader);
+  await service.run({ action: 'update', id: row.id, status: 'searching' }, owner);
+  const mark = notices.length;
+  readerFails = true;
+  try {
+    await flushAlerts();
+  } finally {
+    readerFails = false;
+  }
+  assert.equal((await rows.findById(row.id).lean())?.notification?.state, 'pending');
+  await flushAlerts();
+  assert.equal(notices.slice(mark).filter((entry) => entry.to === reader.id).length, 1);
+
+  offset = 0;
+  await rows.updateMany({ digestedAt: { $exists: false } }, { $set: { digestedAt: new Date() } });
+  await state.deleteMany({});
+  const heard = announcements.length;
+  const waiting = await create('Undelivered digest', member);
+  later(11 * 60 * 1000);
+  announceFails = true;
+  try {
+    await assert.rejects(service.digest(), /Nudge store down/);
+  } finally {
+    announceFails = false;
+  }
+  assert.equal((await rows.findById(waiting.id).lean())?.digestedAt, undefined);
+  assert.equal(await service.digest(), 1, 'the window was given back');
+  assert.equal(announcements.length, heard + 1);
+  // Inside the new window a pass is a plain read, and nothing is sent.
+  await create('Inside the window', member);
+  later(11 * 60 * 1000);
+  assert.equal(await service.digest(), 0);
 });
 
 test('the page route lists, refuses bad bodies, and maps errors to plain words', async () => {

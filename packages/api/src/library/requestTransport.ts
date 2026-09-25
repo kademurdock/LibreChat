@@ -56,7 +56,7 @@ export async function libraryRequestPhoneAlert(
       agentId: 'library-requests',
       agentName: 'The Library',
       title: notice.title,
-      body: notice.body,
+      body: notice.phoneBody,
       requested: true,
       urgent: false,
       route: 'library',

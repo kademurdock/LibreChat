@@ -36,8 +36,21 @@ export interface ILibraryRequest {
     note?: string;
     costUsd?: number;
   };
-  /** The requester's alert for a change someone else made. */
-  notification?: { version: number; state: string; at: Date; note?: string; claim?: string };
+  /** The last price the owner was told; research starts only against a fresh quote for its depth. */
+  researchQuote?: { depth: string; maxCents: number; at: Date };
+  /** The requester's alert for a change someone else made. `from` is the status before the first
+   * change still waiting to go out, `status` and `item` what the library last set, so the alert
+   * describes the library's change even if the requester edits the request meanwhile. */
+  notification?: {
+    version: number;
+    state: string;
+    at: Date;
+    note?: string;
+    claim?: string;
+    from?: LibraryRequestStatus;
+    status?: LibraryRequestStatus;
+    item?: string;
+  };
   /** When this request reached the library owner's digest (or was excluded from it). */
   digestedAt?: Date;
   createdAt: Date;
@@ -82,7 +95,17 @@ export function createLibraryRequestModel(mongoose: Mongoose): Model<ILibraryReq
         note: String,
         costUsd: Number,
       },
-      notification: { version: Number, state: String, at: Date, note: String, claim: String },
+      researchQuote: { depth: String, maxCents: Number, at: Date },
+      notification: {
+        version: Number,
+        state: String,
+        at: Date,
+        note: String,
+        claim: String,
+        from: String,
+        status: String,
+        item: String,
+      },
       digestedAt: Date,
     },
     { timestamps: true, versionKey: false },

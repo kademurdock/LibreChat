@@ -40,7 +40,10 @@ export interface NoticeReceipt {
 export interface RequestNotice {
   owner: string;
   title: string;
+  /** For the browser push, whose link opens the request on the Library page. */
   body: string;
+  /** For the phone app's push, which can only open the app's own Library tab. */
+  phoneBody: string;
   url: string;
   /** Set only when a request reached an outcome: news for their next conversation. */
   chat?: string;
@@ -67,6 +70,9 @@ export interface RequestDependencies {
     depth: ResearchDepth,
   ) => Promise<{ id: string; note: string }>;
   researchStatus: (by: string, id: string) => Promise<ResearchReport>;
+  /** Rewrites the requester's waiting conversation line, or withdraws it when given null. It never
+   * creates one. Called when they read an outcome, so they are not told old news later. */
+  news?: (owner: string, text: string | null) => Promise<void>;
   now?: () => Date;
 }
 export interface RequestOptions {
@@ -166,14 +172,19 @@ export const requestStatusText: Record<LibraryRequestStatus, string> = {
   cancelled: 'Cancelled',
 };
 
-/* The bridge research engine's own measurements (research.js header) were quick 3-6, standard
- * 10-20 and deep 25-45 cents a run on its earlier, pricier writer model; it now writes with a
- * cheaper one. Owner-started research is a platform expense; these are the quoted ceilings. */
-const RESEARCH: Record<ResearchDepth, { cents: number; minutes: number }> = {
-  quick: { cents: 6, minutes: 2 },
-  standard: { cents: 20, minutes: 4 },
-  deep: { cents: 45, minutes: 8 },
+/* The bridge research engine's own measurements (research.js header): quick 3-6, standard 10-20
+ * and deep 25-45 cents a run, and its hard caps keep any run under about 75 cents. Owner-started
+ * research is a platform expense. The quote gives the typical cost and that ceiling, and a start
+ * needs a fresh quote for the same depth, so the price is always said before money is spent. */
+const RESEARCH: Record<ResearchDepth, { typical: string; minutes: number }> = {
+  quick: { typical: '3 to 6', minutes: 2 },
+  standard: { typical: '10 to 20', minutes: 4 },
+  deep: { typical: '25 to 45', minutes: 8 },
 };
+const RESEARCH_MAX_CENTS = 75;
+const QUOTE_FRESH_MS = 15 * 60 * 1000;
+const isDepth = (value: string): value is ResearchDepth =>
+  Object.prototype.hasOwnProperty.call(RESEARCH, value);
 const RESEARCH_FINISHED = ['done', 'failed', 'cancelled', 'unconfirmed', 'missing'];
 const RESEARCH_WORDS: Record<string, string> = {
   starting: 'Starting',
@@ -251,8 +262,15 @@ export class ResearchError extends Error {
   }
 }
 
-/** True when the latest history entry changed the status, false for a note on an unchanged one. */
+/** The status the library's waiting change set. The requester may have edited the request since, so
+ * the alert describes the library's own change, never theirs. */
+const shownStatus = (row: ILibraryRequest): LibraryRequestStatus =>
+  row.notification?.status || row.status;
+/** True when the library's waiting change moved the status, false when it only added a note. */
 function statusJustChanged(row: ILibraryRequest): boolean {
+  const notification = row.notification;
+  if (notification?.status && notification.from) return notification.status !== notification.from;
+  // Older rows without the recorded change: read the history.
   const entries = row.history || [];
   const last = entries[entries.length - 1];
   const before = entries[entries.length - 2];
@@ -260,16 +278,38 @@ function statusJustChanged(row: ILibraryRequest): boolean {
 }
 const isOutcome = (row: ILibraryRequest): boolean =>
   row.status === 'fulfilled' || row.status === 'unavailable';
-function outcomeLine(row: ILibraryRequest): string {
+function outcomeLine(row: ILibraryRequest, status: LibraryRequestStatus = row.status): string {
   const name = '"' + quoted(row.title, 60) + '"';
-  if (row.status === 'fulfilled') return name + ' is ready in the library';
-  if (row.status === 'unavailable') return name + ' could not be filled';
-  return name + ': ' + requestStatusText[row.status].toLowerCase();
+  if (status === 'fulfilled') {
+    // The item's own title is what a search in the Library finds.
+    const item = quoted(row.notification?.item || '', 60);
+    return (
+      name +
+      ' is ready in the library' +
+      (item && item.toLowerCase() !== quoted(row.title, 60).toLowerCase()
+        ? ' as "' + item + '"'
+        : '')
+    );
+  }
+  if (status === 'unavailable') return name + ' could not be filled';
+  return name + ': ' + requestStatusText[status].toLowerCase();
 }
 function noticeLine(row: ILibraryRequest): string {
   if (!statusJustChanged(row))
     return '"' + quoted(row.title, 60) + '" has a new note from the library';
-  return outcomeLine(row);
+  return outcomeLine(row, shownStatus(row));
+}
+/** The conversation line for every outcome the requester has not read yet. */
+function newsText(outcomes: ILibraryRequest[]): string {
+  return (
+    'Library request news for this person: ' +
+    outcomes
+      .slice(0, 3)
+      .map((row) => outcomeLine(row))
+      .join('; ') +
+    (outcomes.length > 3 ? ', and more' : '') +
+    '. The link and any note are in Library requests on the Library page, and Mrs. Witherspoon can open it with them.'
+  );
 }
 /** Builds the one alert a requester gets for every change waiting for them. When the batch holds an
  * outcome, the chat line covers every outcome they have not read yet (unread), so the one waiting
@@ -279,8 +319,8 @@ export function requestNotice(
   batch: ILibraryRequest[],
   unread: ILibraryRequest[] = batch.filter(isOutcome),
 ): RequestNotice {
-  const ready = batch.some((row) => row.status === 'fulfilled' && statusJustChanged(row));
-  const lines = batch.slice(0, 3).map(noticeLine);
+  const ready = batch.some((row) => shownStatus(row) === 'fulfilled' && statusJustChanged(row));
+  const lines = batch.slice(0, 3).map(noticeLine).join('; ');
   const more = batch.length > 3 ? ', and ' + (batch.length - 3) + ' more' : '';
   const outcomes = batch.some((row) => isOutcome(row) && statusJustChanged(row))
     ? unread.filter(isOutcome)
@@ -296,20 +336,22 @@ export function requestNotice(
           ? 'Library requests are ready'
           : 'Library request updates',
     body:
-      lines.join('; ') +
+      lines +
       more +
       '. Open Library requests on the Library page' +
       (ready ? ' to find the link.' : ' for details.'),
+    // The app's Library tab has no request list, so the phone alert points where the app can go.
+    phoneBody:
+      lines +
+      more +
+      (ready
+        ? '. Search the Library for it, or ask Mrs. Witherspoon for the link.'
+        : '. Ask Mrs. Witherspoon about it, or open Library requests on the website.'),
     url:
       batch.length === 1
         ? '/library?request=' + batch[0]._id + '#libraryRequests'
         : '/library#libraryRequests',
-    chat: outcomes.length
-      ? 'Library request news for this person: ' +
-        outcomes.slice(0, 3).map(outcomeLine).join('; ') +
-        (outcomes.length > 3 ? ', and more' : '') +
-        '. The link and any note are in Library requests on the Library page, and Mrs. Witherspoon can open it with them.'
-      : undefined,
+    chat: outcomes.length ? newsText(outcomes) : undefined,
   };
 }
 function digestText(rows: ILibraryRequest[], count: number): string {
@@ -360,6 +402,7 @@ export function libraryRequestService(
       saved: 'No alert reached a phone or browser. The update is saved in their request list.',
       off: 'This account does not get alerts.',
       unconfirmed: 'The alert could not be confirmed. The update is saved in their request list.',
+      skipped: 'No alert went out: the requester cancelled the request first.',
     };
     return (
       (words[notification.state] || 'Alert status unknown.') +
@@ -538,12 +581,30 @@ export function libraryRequestService(
   async function details(input: RequestInput, actor: RequestActor): Promise<RequestResult> {
     const row = await find(input, actor);
     const card = await present(row, actor, new Map());
-    if (row.owner === actor.id && row.seenVersion < row.version)
+    if (row.owner === actor.id && row.seenVersion < row.version) {
       await rows.updateOne(
         { _id: row._id, owner: actor.id },
         { $max: { seenVersion: row.version } },
       );
-    else if (actor.admin && row.owner !== actor.id && row.reviewedVersion < row.version)
+      // They have now read this outcome: the line waiting for their next conversation drops it.
+      if (isOutcome(row) && deps.news) {
+        try {
+          const rest = await rows
+            .find({
+              owner: actor.id,
+              _id: { $ne: row._id },
+              status: { $in: ['fulfilled', 'unavailable'] },
+              $expr: { $lt: ['$seenVersion', '$version'] },
+            })
+            .sort({ _id: -1 })
+            .limit(10)
+            .lean();
+          await deps.news(actor.id, rest.length ? newsText(rest) : null);
+        } catch {
+          // Old news in a later conversation is harmless; opening the request must still work.
+        }
+      }
+    } else if (actor.admin && row.owner !== actor.id && row.reviewedVersion < row.version)
       await rows.updateOne({ _id: row._id }, { $max: { reviewedVersion: row.version } });
     return { request: card };
   }
@@ -562,6 +623,7 @@ export function libraryRequestService(
         throw new RequestError('This request changed. Open it again before saving.', 409);
       let status: LibraryRequestStatus = row.status;
       let book: string | undefined;
+      let itemTitle: string | undefined;
       let entry = note;
       if (input.action === 'cancel') {
         if (!mine) throw new RequestError('Only the person who made a request can cancel it.', 403);
@@ -601,8 +663,12 @@ export function libraryRequestService(
                 why,
             );
           }
+          itemTitle = item.title;
           entry = note || 'Added "' + item.title + '" to the library.';
         }
+        // Nothing new would still bump the version and send the requester an empty alert.
+        if (status === row.status && !note && !(book && book !== row.book))
+          throw new RequestError('Choose a new status or write a note first.');
       } else {
         // note
         if (closed(row.status) && !actor.admin)
@@ -613,6 +679,17 @@ export function libraryRequestService(
       const now = clock();
       const version = row.version + 1;
       const byOther = !mine;
+      const waiting = row.notification?.state === 'pending' ? row.notification : null;
+      const shownItem = itemTitle || (status === 'fulfilled' ? row.notification?.item : undefined);
+      const notification = {
+        version,
+        state: 'pending',
+        at: now,
+        // Several library changes inside the settling minute become one alert about all of them.
+        from: waiting?.from || row.status,
+        status,
+        ...(shownItem ? { item: shownItem } : {}),
+      };
       const saved = await rows
         .findOneAndUpdate(
           {
@@ -627,8 +704,15 @@ export function libraryRequestService(
               version,
               ...(book ? { book } : {}),
               ...(byOther
-                ? { notification: { version, state: 'pending', at: now } }
-                : { seenVersion: version }),
+                ? { notification }
+                : {
+                    // Their own change counts as read only if they had read everything before it.
+                    seenVersion: row.seenVersion >= row.version ? version : row.seenVersion,
+                    // Cancelling inside the settling minute: no alert about a request they withdrew.
+                    ...(waiting && status === 'cancelled'
+                      ? { 'notification.state': 'skipped' }
+                      : {}),
+                  }),
               ...(actor.admin ? { reviewedVersion: version } : {}),
             },
             ...(closed(status) ? { $unset: { activeKey: 1 } } : {}),
@@ -667,8 +751,8 @@ export function libraryRequestService(
       throw new RequestError('Only the library owner can start research on a request.', 403);
     const row = await find(input, actor);
     if (closed(row.status)) throw new RequestError('Research is only for open requests.');
-    const depth = (input.depth || 'quick') as ResearchDepth;
-    if (!RESEARCH[depth]) throw new RequestError('Choose quick, standard or deep research.');
+    const depth = input.depth || 'quick';
+    if (!isDepth(depth)) throw new RequestError('Choose quick, standard or deep research.');
     const readers = new Map<string, RequestActor | null>();
     if (row.research && !RESEARCH_FINISHED.includes(row.research.state))
       return {
@@ -676,35 +760,56 @@ export function libraryRequestService(
         guidance:
           'Research is already running for this request. Check it with research_status instead of starting another.',
       };
-    const { cents, minutes } = RESEARCH[depth];
+    const { typical, minutes } = RESEARCH[depth];
     const quote = {
       depth,
-      maxCents: cents,
+      maxCents: RESEARCH_MAX_CENTS,
       minutes,
       text:
         depth[0].toUpperCase() +
         depth.slice(1) +
-        " research sends this request's title and remembered details to the web research service, takes about " +
+        " research sends this request's title and remembered details to the web research service and takes about " +
         minutes +
-        ' minutes, and is paid by the platform, usually well under ' +
-        cents +
-        ' cents.',
+        ' minutes. The platform pays: usually ' +
+        typical +
+        ' cents, and never more than about ' +
+        RESEARCH_MAX_CENTS +
+        " cents, the research desk's hard limit. It counts toward your daily research limit, normally 8 runs.",
     };
-    if (input.confirmed !== true)
+    const now = clock();
+    const freshSince = new Date(now.getTime() - QUOTE_FRESH_MS);
+    const priced =
+      row.researchQuote?.depth === depth && row.researchQuote.at.getTime() >= freshSince.getTime();
+    if (input.confirmed !== true || !priced) {
+      // The price she hears is recorded, and only a start at that depth soon after it can spend.
+      await rows.updateOne(
+        { _id: row._id },
+        { $set: { researchQuote: { depth, maxCents: RESEARCH_MAX_CENTS, at: now } } },
+      );
       return {
         request: await present(row, actor, readers),
         quote,
         guidance:
-          'Nothing has started. Tell the library owner this price, ask whether to start, and call research again with confirmed true only after a clear yes.',
+          input.confirmed === true
+            ? 'Nothing has started: she has not been told the price for ' +
+              depth +
+              ' research yet. Tell her this price first, and call research again with confirmed true only after a clear yes.'
+            : 'Nothing has started. Tell the library owner this price, ask whether to start, and call research again with confirmed true only after a clear yes.',
       };
-    const now = clock();
+    }
+    // One quote pays for one start: the claim takes the quote with it.
     const claimed = await rows.updateOne(
       {
         _id: row._id,
         status: { $in: OPEN },
+        'researchQuote.depth': depth,
+        'researchQuote.at': { $gte: freshSince },
         $or: [{ research: { $exists: false } }, { 'research.state': { $in: RESEARCH_FINISHED } }],
       },
-      { $set: { research: { state: 'starting', depth, by: actor.id, at: now } } },
+      {
+        $set: { research: { state: 'starting', depth, by: actor.id, at: now } },
+        $unset: { researchQuote: 1 },
+      },
     );
     if (!claimed.modifiedCount)
       throw new RequestError('This request changed. Open it again before starting research.', 409);
@@ -860,7 +965,20 @@ export function libraryRequestService(
         .sort({ _id: -1 })
         .lean();
       if (!batch.length) continue;
-      const requester = await deps.reader(first.owner);
+      let requester: RequestActor | null;
+      try {
+        requester = await deps.reader(first.owner);
+      } catch {
+        // Nothing was sent: put the alert back to wait for the next pass.
+        await rows.updateMany(
+          { owner: first.owner, 'notification.state': 'sending', 'notification.claim': claim },
+          {
+            $set: { 'notification.state': 'pending', 'notification.at': clock() },
+            $unset: { 'notification.claim': 1 },
+          },
+        );
+        continue;
+      }
       let receipt: NoticeReceipt;
       if (!requester) receipt = { state: 'saved', note: 'The account was not found.' };
       else if (requester.testSeat) receipt = { state: 'off' };
@@ -907,6 +1025,9 @@ export function libraryRequestService(
     const oldest = waiting[0].createdAt.getTime();
     const newest = waiting[waiting.length - 1].createdAt.getTime();
     if (newest > now.getTime() - quiet && oldest > now.getTime() - maxWait) return 0;
+    // Inside the gap nothing is due; checking first avoids a failing upsert on every pass.
+    const last = await deps.state.findById('digest').lean();
+    if (last?.at && last.at.getTime() > now.getTime() - gap) return 0;
     try {
       const slot = await deps.state
         .findOneAndUpdate(
@@ -927,12 +1048,22 @@ export function libraryRequestService(
     const fresh = { _id: { $in: ids }, status: { $ne: 'cancelled' as LibraryRequestStatus } };
     const count = await rows.countDocuments(fresh);
     const first = await rows.find(fresh).sort({ _id: 1 }).limit(3).lean();
+    if (count) {
+      try {
+        await deps.announce(digestText(first, count));
+      } catch (error) {
+        // Not delivered: give the window back so a later pass sends it, and mark nothing.
+        await deps.state.updateOne(
+          { _id: 'digest', at: now },
+          last?.at ? { $set: { at: last.at } } : { $unset: { at: 1 } },
+        );
+        throw error;
+      }
+    }
     await rows.updateMany(
       { _id: { $in: ids }, digestedAt: { $exists: false } },
       { $set: { digestedAt: now } },
     );
-    if (!count) return 0;
-    await deps.announce(digestText(first, count));
     return count;
   }
 
