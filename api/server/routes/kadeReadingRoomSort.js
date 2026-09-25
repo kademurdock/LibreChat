@@ -133,7 +133,8 @@ async function sortOnce({ force = false, userId = null } = {}) {
   try {
     const spent = await spentToday();
     if (spent >= DAILY_USD()) return 0;
-    const books = await KadeBook.find({ kind: 'text', state: 'ready', $or: [{ path: '' }, { path: { $exists: false } }] }, '_id title author copyrightYear synopsis owner').sort({ createdAt: 1 }).limit(BATCH()).lean();
+    // A shortcut (the one-file rule, Sep 25 2026) stays where it was put, so it is never shelved here.
+    const books = await KadeBook.find({ kind: 'text', state: 'ready', shortcutOf: { $exists: false }, $or: [{ path: '' }, { path: { $exists: false } }] }, '_id title author copyrightYear synopsis owner').sort({ createdAt: 1 }).limit(BATCH()).lean();
     if (!books.length) return 0;
     const { out, costUSD } = await classify(books);
     let filed = 0;
@@ -143,7 +144,7 @@ async function sortOnce({ force = false, userId = null } = {}) {
       if (!c) continue;
       const set = { path: `Books/${c.shelf}` };
       if (c.adult) set.grownUpsOnly = true;
-      await KadeBook.updateOne({ _id: b._id, $or: [{ path: '' }, { path: { $exists: false } }] }, { $set: set, $addToSet: { tags: c.shelf } });
+      await KadeBook.updateOne({ _id: b._id, shortcutOf: { $exists: false }, $or: [{ path: '' }, { path: { $exists: false } }] }, { $set: set, $addToSet: { tags: c.shelf } });
       filed++;
     }
     logKadeUsage({ userId: userId || books[0].owner, service: 'describe', quantity: filed, unit: 'items', costUSD, metadata: { source: 'librarian-sort', model: MODEL(), books: filed } });
@@ -168,7 +169,7 @@ function startSortSweep() {
 }
 
 async function unsortedCount() {
-  return KadeBook.countDocuments({ kind: 'text', state: 'ready', $or: [{ path: '' }, { path: { $exists: false } }] });
+  return KadeBook.countDocuments({ kind: 'text', state: 'ready', shortcutOf: { $exists: false }, $or: [{ path: '' }, { path: { $exists: false } }] });
 }
 
 module.exports = { sortOnce, startSortSweep, unsortedCount, SHELVES, ENABLED };

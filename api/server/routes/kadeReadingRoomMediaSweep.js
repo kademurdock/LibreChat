@@ -45,8 +45,16 @@ const SINCE = () => {
   return Number.isFinite(d.getTime()) ? d : new Date('2026-09-23T00:00:00Z');
 };
 const INTAKE_RE = /(?:^|\/)(?:Needs Filing|Archive Intake|Found Media|Broadcast Presentation|Advertising)(?:\/|$)|\(Review\)/i;
-const FIELDS = '_id kind title author path originalPath description meta tags createdAt tracks.bytes owner';
+const FIELDS = '_id kind title author path originalPath description meta tags createdAt tracks.bytes owner fileCheck.state fileCheck.of';
 const UNREAD = { 'meta.jevFiling': { $exists: false }, 'meta.jevFilingTries': { $not: { $gte: 3 } } };
+/* Sep 25 2026, the one-file rule (services/kadeLibraryFiles.js): a shortcut stays in the folder it was
+ * put in, so the sweep never moves one; and a new upload the verifier has not compared yet (it runs
+ * every 2 minutes) waits for it, up to an hour, so its duplicate flag is the exact one. */
+const VERIFIER_WAIT_MS = 60 * 60 * 1000;
+const FILE_RULES = () => ({
+  shortcutOf: { $exists: false },
+  $nor: [{ 'fileCheck.state': 'pending', 'fileCheck.at': { $gt: new Date(Date.now() - VERIFIER_WAIT_MS) } }],
+});
 
 let spent = { day: '', usd: 0 };
 let running = false;
@@ -77,16 +85,25 @@ function bytesOf(item) {
   return (item.tracks || []).reduce((n, t) => n + (Number(t && t.bytes) || 0), 0);
 }
 
-/** An older ready item with the same title, kind and size: this one is the copy. */
-async function identicalCopy(item) {
-  const bytes = bytesOf(item);
-  if (!bytes || !item.title || !(new Date(item.createdAt) >= SINCE())) return false;
-  const other = await KadeBook.findOne({ _id: { $lt: item._id }, title: item.title, kind: item.kind, state: 'ready', 'tracks.bytes': (item.tracks || [])[0]?.bytes }, '_id tracks.bytes').lean();
-  return !!other && bytesOf(other) === bytes;
+/** Kade (Sep 25 2026): "it HAS to be the exact same file for a dupe flag". Only the verifier's
+ * finding counts (the whole item the same bytes, track for track, as a stored copy), never a title
+ * and a size; and "another is kept" is written only while that other copy is really kept: it still
+ * exists, is ready, is the same owner's, and is not itself marked as the extra copy. `kept` is the
+ * set of such copies (keptCopies). */
+function identicalCopy(item, kept) {
+  const check = item && item.fileCheck;
+  return !!(check && check.state === 'duplicate' && check.of && kept && kept.has(`${String(check.of)}|${String(item.owner)}`));
+}
+/** The copies the duplicate marks among `items` point at that are still kept (see identicalCopy). */
+async function keptCopies(items) {
+  const ids = [...new Set((items || []).filter((i) => i && i.fileCheck && i.fileCheck.state === 'duplicate' && i.fileCheck.of).map((i) => String(i.fileCheck.of)))];
+  if (!ids.length) return new Set();
+  const rows = await KadeBook.find({ _id: { $in: ids }, state: 'ready', 'fileCheck.state': { $ne: 'duplicate' } }, '_id owner').lean();
+  return new Set(rows.map((r) => `${String(r._id)}|${String(r.owner)}`));
 }
 
 async function pick(limit) {
-  const base = { kind: { $in: ['video', 'audio'] }, state: 'ready', ...UNREAD };
+  const base = { kind: { $in: ['video', 'audio'] }, state: 'ready', ...UNREAD, ...FILE_RULES() };
   const fresh = await KadeBook.find({ ...base, $or: [{ createdAt: { $gte: SINCE() } }, { path: INTAKE_RE }] }, FIELDS).sort({ createdAt: -1 }).limit(limit).lean();
   const marked = fresh.map((i) => ({ ...i, _fresh: new Date(i.createdAt) >= SINCE() }));
   if (fresh.length >= limit || auditDone) return marked;
@@ -107,6 +124,7 @@ async function sweepOnce({ limit = BATCH(), userId = null } = {}) {
     const items = await pick(limit);
     if (!items.length) return (lastPass = { ran: true, read: 0, at: new Date() });
     const byId = new Map(items.map((i) => [String(i._id), i]));
+    const kept = await keptCopies(items);
     const { decisions, costUSD } = await librarian.fileMedia(items.map((i) => ({ ...i, bytes: bytesOf(i) })), { deps: await deps() });
     spent.usd += costUSD;
     const ops = [];
@@ -120,7 +138,7 @@ async function sweepOnce({ limit = BATCH(), userId = null } = {}) {
         continue;
       }
       const flags = [...d.flags];
-      if (item._fresh && (await identicalCopy(item))) flags.push('Space review: identical copy, another is kept.');
+      if (identicalCopy(item, kept)) flags.push('Space review: identical copy, another is kept.');
       const zone = librarian.zoneOf(item);
       const apply = !!d.to && (zone === 'intake' || item._fresh || AUDIT_APPLY() || d.why === 'folder says so');
       const record = { v: librarian.VERSION, at: new Date(), zone, from, why: d.why || '', confidence: Number((d.confidence || 0).toFixed(3)) };
@@ -258,4 +276,4 @@ function start() {
   logger.info(`[library/media-sweep] every ${INTERVAL_MIN()} min, ${BATCH()} items a pass, $${DAILY_USD().toFixed(2)} a day, audit ${AUDIT_APPLY() ? 'APPLIES' : 'proposes'}`);
 }
 
-module.exports = { sweepOnce, status, undo, mount, start, ENABLED, INTAKE_RE };
+module.exports = { sweepOnce, status, undo, mount, start, ENABLED, INTAKE_RE, identicalCopy, keptCopies, FILE_RULES, _pick: pick };

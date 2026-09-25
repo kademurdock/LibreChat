@@ -15,4 +15,16 @@ assert.throws(() => reviewedLibraryMoves([], categories));
 assert.throws(() => reviewedLibraryMoves(Array(501).fill(move), categories));
 const audio = reviewedLibraryMoves([{ ...move, kind: 'audio', to: 'Audio/Radio', category: 'radio' }], categories)[0];
 assert.equal(audio.updateOne.update.$set.path, 'Audio/Radio');
-console.log('Reviewed library move validation passed; stale records require matching title, kind and folder.');
+// Sep 25 2026: organize can re-author a book, with the same stale-row check (the current author must match).
+const book = { id: 'a86361e21d1ae398df897a2c', from: 'Books/bookshare', title: 'Abundance 6484147', kind: 'text', to: 'Books/Nonfiction — History & society', category: 'book', newTitle: 'Abundance', author: '', newAuthor: ' Ezra Klein, Derek Thompson ' };
+const authored = reviewedLibraryMoves([book], ['book', 'other'])[0].updateOne;
+assert.deepEqual(authored.filter, { _id: book.id, path: book.from, title: book.title, kind: 'text', state: 'ready', author: '' });
+assert.deepEqual(authored.update.$set, { path: book.to, category: 'book', title: 'Abundance', author: 'Ezra Klein, Derek Thompson' });
+const { author: _current, ...noCurrent } = book;
+assert.throws(() => reviewedLibraryMoves([noCurrent], ['book']), /current author/);
+assert.throws(() => reviewedLibraryMoves([{ ...book, newAuthor: '  ' }], ['book']));
+assert.throws(() => reviewedLibraryMoves([{ ...book, newAuthor: 'a'.repeat(201) }], ['book']));
+assert.throws(() => reviewedLibraryMoves([{ ...book, newAuthor: 'Bad' + String.fromCharCode(10) + 'Name' }], ['book']));
+const { newAuthor: _new, author: _old, ...plain } = book;
+assert.equal('author' in reviewedLibraryMoves([plain], ['book'])[0].updateOne.filter, false, 'a move without newAuthor never reads the author');
+console.log('Reviewed library move validation passed; stale records require matching title, kind and folder, and a repaired author must name the current one.');

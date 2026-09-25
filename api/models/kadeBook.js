@@ -58,6 +58,12 @@ const track = {
   seconds: { type: Number, default: 0 },
   mime: { type: String, default: 'audio/mpeg' },
   originalName: { type: String, default: '' },
+  /** Sep 25 2026, the one-file rule (services/kadeLibraryFiles.js): the SHA-256 of the stored
+   * object, computed by the server from the stored bytes, and B2's ETag (the MD5 for a single-part
+   * upload, which only ever proves two files DIFFERENT). Two tracks hold the same file only when
+   * byte count and SHA-256 both match. */
+  sha256: { type: String, default: '' },
+  etag: { type: String, default: '' },
   /** Part 181 continued — the AI video description ("a blind VDS type thing"):
    * scenes with a time in seconds and what is on screen, plus a summary. */
   description: {
@@ -125,6 +131,31 @@ const kadeBookSchema = new mongoose.Schema(
     /** The file as uploaded, on B2, so a better parser later can re-read it. */
     fileUrl: { type: String, default: '' },
     fileBytes: { type: Number, default: 0 },
+    /** Sep 25 2026, the one-file rule: the stored original's SHA-256 and key (a text book's
+     * original, an audiobook ZIP). `fileKey` is what reference counting reads before a delete. */
+    fileSha256: { type: String, default: '' },
+    fileKey: { type: String, default: '' },
+    /** A SHORTCUT: this row keeps its own title, folder, owner and sharing, and reads the file of
+     * the row it points at (Kade: "If there was some reason a file needed to be in multiple
+     * collections, it can be a shortcut to the same file"). */
+    shortcutOf: { type: mongoose.Schema.Types.ObjectId, ref: 'KadeBook', default: undefined },
+    /** A copy folded into its keeper (state 'merged'): hidden, and old links forward to the keeper
+     * for 30 days, then the row goes. */
+    mergedInto: { type: mongoose.Schema.Types.ObjectId, ref: 'KadeBook', default: undefined },
+    mergedAt: { type: Date },
+    /** The verifier's bookkeeping for a new upload: '' | pending | unique | duplicate (report mode:
+     * the whole item is the same file as its owner's copy `of`, which stays) | shares-tracks (only
+     * some tracks are stored elsewhere) | linked | folded | kept | unchecked (the check failed
+     * MAX_TRIES times). `tries`, `next` and `error` pace the retries of a check that failed. Never
+     * sent to clients. */
+    fileCheck: {
+      state: { type: String, default: '' },
+      of: { type: mongoose.Schema.Types.ObjectId },
+      at: { type: Date },
+      tries: { type: Number },
+      next: { type: Date },
+      error: { type: String },
+    },
     /** Which parser cut the sections. Older than the code's PARSER_VERSION
      * means "re-read the original on next open" (Sep 12 2026). */
     parserVersion: { type: Number, default: 1 },
@@ -142,7 +173,9 @@ const kadeBookSchema = new mongoose.Schema(
     sharedAt: { type: Date },
     /** Hidden from child accounts (never announced to them — rule 8). */
     grownUpsOnly: { type: Boolean, default: false },
-    state: { type: String, enum: ['ready', 'failed', 'pending'], default: 'ready' },
+    /** 'merged': folded into `mergedInto` by the one-file rule. Every list reads state 'ready',
+     * so a folded copy disappears from all of them without another filter. */
+    state: { type: String, enum: ['ready', 'failed', 'pending', 'merged'], default: 'ready' },
     error: { type: String },
   },
   { timestamps: true },
@@ -155,6 +188,16 @@ kadeBookSchema.index({ shared: 1, path: 1, title: 1 });
  * spot an identical copy by title, on the database the family chat shares. */
 kadeBookSchema.index({ createdAt: -1 });
 kadeBookSchema.index({ title: 1 });
+/* Sep 25 2026, the one-file rule: find stored files of one size, one hash, one key; shortcuts of a
+ * keeper; new uploads waiting to be checked; folded copies past their 30 days. */
+kadeBookSchema.index({ 'tracks.bytes': 1 });
+kadeBookSchema.index({ 'tracks.sha256': 1, 'tracks.bytes': 1 }, { partialFilterExpression: { 'tracks.sha256': { $gt: '' } } });
+kadeBookSchema.index({ 'tracks.key': 1 });
+kadeBookSchema.index({ fileSha256: 1, fileBytes: 1 }, { partialFilterExpression: { fileSha256: { $gt: '' } } });
+kadeBookSchema.index({ fileKey: 1 }, { partialFilterExpression: { fileKey: { $gt: '' } } });
+kadeBookSchema.index({ shortcutOf: 1 }, { partialFilterExpression: { shortcutOf: { $exists: true } } });
+kadeBookSchema.index({ 'fileCheck.state': 1, _id: 1 }, { partialFilterExpression: { 'fileCheck.state': 'pending' } });
+kadeBookSchema.index({ state: 1, mergedAt: 1 }, { partialFilterExpression: { state: 'merged' } });
 
 /** Part 181 continued — COLLECTIONS ("playlists of vids or audio or whatever,
  * like collections you have organised your way from stuff in the cloud").
@@ -261,4 +304,23 @@ const kadeLibrarySubmissionSchema = new mongoose.Schema(
 kadeLibrarySubmissionSchema.index({ status: 1, createdAt: -1 });
 const KadeLibrarySubmission = mongoose.models.KadeLibrarySubmission || mongoose.model('KadeLibrarySubmission', kadeLibrarySubmissionSchema, 'kadelibrarysubmissions');
 
-module.exports = { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, KadeLibrarySubmission, CATEGORIES };
+/** Sep 25 2026, the one-file rule: one receipt per duplicate group folded by the librarian's merge
+ * (or by the same-text book merge), so every fold can be put back for 30 days
+ * (POST /librarian/duplicates/undo). `entries` holds, per folded row, what it was and every
+ * reference that moved; `keeperBefore` what the keeper looked like before it took the copy's work. */
+const kadeLibraryFoldSchema = new mongoose.Schema(
+  {
+    kind: { type: String, enum: ['file', 'text'], default: 'file' },
+    group: { type: String, default: '' },
+    keeper: { type: mongoose.Schema.Types.ObjectId, ref: 'KadeBook', index: true },
+    entries: { type: mongoose.Schema.Types.Mixed, default: [] },
+    keeperBefore: { type: mongoose.Schema.Types.Mixed, default: {} },
+    by: { type: String, default: '' },
+    undoneAt: { type: Date },
+  },
+  { timestamps: true },
+);
+kadeLibraryFoldSchema.index({ createdAt: -1 });
+const KadeLibraryFold = mongoose.models.KadeLibraryFold || mongoose.model('KadeLibraryFold', kadeLibraryFoldSchema, 'kadelibraryfolds');
+
+module.exports = { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, KadeLibrarySubmission, KadeLibraryFold, CATEGORIES };

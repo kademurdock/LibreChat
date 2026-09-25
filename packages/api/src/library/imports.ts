@@ -11,11 +11,13 @@ import type { Request, RequestHandler } from 'express';
 import type { Model } from 'mongoose';
 
 type Actor = { id: string; name?: string; username?: string; email?: string; role?: string };
-type Result = { book?: object; skipped?: object[]; jacket?: string; error?: string; ok?: boolean };
+type Result = { book?: object; skipped?: object[]; jacket?: string; error?: string; ok?: boolean; duplicate?: boolean; same?: string };
 type Job = {
   _id: string; owner: string; actor: Actor; fileName: string; bytes: number; key: string;
   private: boolean; grownUpsOnly: boolean; state: string; result?: Result; error?: string;
   lease?: Date; worker?: string; slot?: number; createdAt: Date; updatedAt: Date;
+  /** SHA-256 of the stored bytes, taken by the server as they download (the one-file rule). */
+  sha256?: string;
 };
 type Dependencies = {
   auth: RequestHandler; actor: (req: Request) => Actor;
@@ -25,8 +27,13 @@ type Dependencies = {
   remove: (key: string) => Promise<void>;
   existing: (id: string, owner: string) => Promise<Result | null>;
   importFile: (job: Job, path: string, directory: string) => Promise<Result>;
+  /** Sep 25 2026, the one-file rule: a client that sends the file's SHA-256 may hear, before any
+   * byte moves, that a copy it can already open is exactly this file. Answers only for such a copy;
+   * the hash is the client's word, so it never links or changes anything. */
+  precheck?: (actor: Actor, sha256: string, bytes: number) => Promise<Result | null>;
   log: (message: string) => void;
 };
+const SHA256 = /^[a-f0-9]{64}$/;
 
 export function validateImport(fileName: unknown, bytes: unknown): { fileName: string; bytes: number } {
   if (typeof fileName !== 'string' || !fileName || fileName.length > 240 || /[\r\n\0]/.test(fileName)) throw new Error('Invalid book filename.');
@@ -50,7 +57,7 @@ export function bookImportRouter(deps: Dependencies): Router {
   const schema = new Schema<Job>({
     _id: String, owner: { type: String, index: true }, actor: Schema.Types.Mixed,
     fileName: String, bytes: Number, key: String, private: Boolean, grownUpsOnly: Boolean,
-    slot: Number, state: String, result: Schema.Types.Mixed, error: String, lease: Date, worker: String,
+    slot: Number, state: String, result: Schema.Types.Mixed, error: String, lease: Date, worker: String, sha256: String,
   }, { timestamps: true });
   schema.index({ owner: 1, slot: 1 }, { unique: true, partialFilterExpression: { slot: { $type: 'number' } } });
   const jobs = (mongoose.models.KadeBookImport || mongoose.model<Job>('KadeBookImport', schema)) as Model<Job>;
@@ -63,7 +70,7 @@ export function bookImportRouter(deps: Dependencies): Router {
   async function run(id: string): Promise<void> {
     if (active.has(id) || active.size >= 2) return;
     active.add(id);
-    let owner = ''; let directory = ''; let heartbeat: NodeJS.Timeout | undefined;
+    let owner = ''; let directory = ''; let sha256 = ''; let heartbeat: NodeJS.Timeout | undefined;
     try {
       const current = await jobs.findById(id).lean();
       if (!current || owners.has(current.owner)) return;
@@ -78,16 +85,19 @@ export function bookImportRouter(deps: Dependencies): Router {
         directory = await mkdtemp(join(tmpdir(), 'kade-direct-book-'));
         const path = join(directory, 'source');
         let received = 0;
+        const hash = createHash('sha256');
         const limit = new Transform({ transform(chunk: Buffer, _encoding, done) {
           received += chunk.length;
+          hash.update(chunk);
           done(received > job.bytes ? new Error('Stored book exceeds the declared size.') : null, chunk);
         } });
         await pipeline(await deps.download(job.key), limit, createWriteStream(path));
         if (received !== job.bytes) throw new Error('Stored book is incomplete.');
-        result = await deps.importFile(job, path, directory);
+        sha256 = hash.digest('hex');
+        result = await deps.importFile({ ...job, sha256 }, path, directory);
         if (!result.book) throw new Error(result.error || 'The book could not be imported.');
       }
-      await jobs.updateOne({ _id: id, worker }, { $set: { state: 'ready', result, error: '' }, $unset: { lease: 1, slot: 1 } });
+      await jobs.updateOne({ _id: id, worker }, { $set: { state: 'ready', result, error: '', ...(sha256 ? { sha256 } : {}) }, $unset: { lease: 1, slot: 1 } });
       await deps.remove(job.key).catch(e => deps.log('import cleanup: ' + e.message));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Book import failed.';
@@ -135,6 +145,20 @@ export function bookImportRouter(deps: Dependencies): Router {
       if (job.state === 'ready' && !(await deps.existing(id, actor.id))) {
         await jobs.updateOne({ _id: id, state: 'ready' }, { $set: { state: 'uploading', error: '' }, $unset: { result: 1 } });
         job.state = 'uploading'; delete job.result;
+      }
+      /* The one-file rule (Sep 25 2026): a copy this person can already open is exactly this file,
+       * so nothing is uploaded or imported and the receipt names that copy. The id always comes back
+       * (the iPhone decodes it as required). */
+      const claimed = typeof req.body.sha256 === 'string' && SHA256.test(req.body.sha256) ? req.body.sha256 : '';
+      if (claimed && deps.precheck && (job.state === 'uploading' || job.state === 'failed')) {
+        const known = await deps.precheck(actor, claimed, input.bytes);
+        if (known && known.book) {
+          const settled = await jobs.updateOne({ _id: id, state: job.state }, { $set: { state: 'ready', result: known, error: '' }, $unset: { lease: 1, slot: 1 } });
+          if (settled.modifiedCount) {
+            await deps.remove(job.key).catch(e => deps.log('import precheck cleanup: ' + e.message));
+            return res.json({ id, state: 'ready', result: known, uploadRequired: false });
+          }
+        }
       }
       // A lost PUT receipt is recoverable without resending a multi-gigabyte ZIP.
       if (job.state === 'uploading' || job.state === 'failed') {

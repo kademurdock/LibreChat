@@ -51,14 +51,26 @@ class KadeLibrary extends Tool {
         details: (filter) =>
           KadeBook.findOne(filter).select(catalogProjection).maxTimeMS(8000).lean(),
         passage: async (id, section, chunk) => {
-          const document = await KadeBookText.findOne({ book: id })
+          /* The one-file rule (Sep 25 2026): a shortcut reads its keeper's words, and only while
+           * this reader could open that file (a shortcut is never more open than its file). */
+          let book = await KadeBook.findById(id).select('shortcutOf owner sections').maxTimeMS(8000).lean();
+          let fileId = id;
+          if (book && book.shortcutOf) {
+            const file = await KadeBook.findById(book.shortcutOf).select('owner shared grownUpsOnly state sections').maxTimeMS(8000).lean();
+            const { canOpen } = require('~/server/services/kadeLibraryFilesPlan');
+            if (!file || file.state !== 'ready') return null;
+            if (String(file.owner) !== String(book.owner) && !canOpen({ ...reader, admin: user.role === 'ADMIN' }, file)) return null;
+            if (reader.child && file.grownUpsOnly) return null;
+            fileId = file._id;
+            book = file;
+          }
+          const document = await KadeBookText.findOne({ book: fileId })
             .select({ sections: { $slice: [section, 1] } })
             .maxTimeMS(8000)
             .lean();
           const part = document?.sections?.[0];
           const text = part?.chunks?.[chunk];
           if (typeof text !== 'string') return null;
-          const book = await KadeBook.findById(id).select('sections').lean();
           return {
             text,
             title: book?.sections?.[section]?.title || '',

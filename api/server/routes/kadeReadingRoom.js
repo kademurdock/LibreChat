@@ -47,7 +47,7 @@ const { descriptionBatchRouter, bookImportRouter, saveBufferToS3, openAudioArchi
 const { requireJwtAuth } = require('~/server/middleware');
 const { tubeVaultHints, validTubeVaultItems } = require('@librechat/api');
 const { logKadeUsage } = require('~/models/kadeUsage');
-const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, CATEGORIES } = require('~/models/kadeBook');
+const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, KadeLibraryFold, CATEGORIES } = require('~/models/kadeBook');
 const { parseBook, PARSER_VERSION, NOTICE_REASONS } = require('./kadeReadingRoomParse');
 
 /* ── the media library on B2 (Part 181 continued) ──────────────────────────
@@ -165,14 +165,17 @@ function keyFromFileUrl(fileUrl) {
 const reparsing = new Set();
 async function reparseIfStale(book) {
   if (!book || book.kind !== 'text' || (book.parserVersion || 1) >= PARSER_VERSION) return book;
-  const id = String(book._id);
+  /* Sep 25 2026: a shortcut reads its keeper's text, so the keeper is re-read once and every
+   * shortcut to it takes the new cut (and its readers' places). */
+  const fileId = book.fileId || book._id;
+  const id = String(fileId);
   if (reparsing.has(id)) return book;
   reparsing.add(id);
   const t0 = Date.now();
   try {
-    const key = keyFromFileUrl(book.fileUrl);
+    const key = book.fileKey || keyFromFileUrl(book.fileUrl);
     if (!key) {
-      await KadeBook.updateOne({ _id: book._id }, { $set: { parserVersion: PARSER_VERSION } });
+      await KadeBook.updateMany({ $or: [{ _id: fileId }, { shortcutOf: fileId }] }, { $set: { parserVersion: PARSER_VERSION } });
       logger.info(`[reading-room/reparse] book=${id} "${book.title}" has no stored original; kept as cut`);
       return book;
     }
@@ -191,7 +194,7 @@ async function reparseIfStale(book) {
       const last = Math.max(0, counts.length - 1);
       return { s: last, c: Math.max(0, (counts[last] || 1) - 1) };
     };
-    await KadeBookText.updateOne({ book: book._id }, { $set: { sections: parsed.sections.map((x) => ({ chunks: x.chunks })), skipped: parsed.skipped.map((x) => ({ chunks: x.chunks })) } }, { upsert: true });
+    await KadeBookText.updateOne({ book: fileId }, { $set: { sections: parsed.sections.map((x) => ({ chunks: x.chunks })), skipped: parsed.skipped.map((x) => ({ chunks: x.chunks })) } }, { upsert: true });
     const set = {
       parserVersion: PARSER_VERSION,
       jacket: parsed.jacket,
@@ -199,13 +202,16 @@ async function reparseIfStale(book) {
       skipped: parsed.skipped.map((x) => ({ title: x.title, reason: x.reason, chunkCount: x.chunks.length, chars: x.chars })),
       stats: { chunks: parsed.stats.chunks, chars: parsed.stats.chars, listen: parsed.stats.listen },
     };
-    await KadeBook.updateOne({ _id: book._id }, { $set: set });
-    const rows = await KadeReadingProgress.find({ book: book._id }).lean();
+    await KadeBook.updateOne({ _id: fileId }, { $set: set });
+    const shortcutIds = (await KadeBook.find({ shortcutOf: fileId }, '_id').lean()).map((r) => r._id);
+    if (shortcutIds.length) await KadeBook.updateMany({ _id: { $in: shortcutIds } }, { $set: set });
+    const readers = { $in: [fileId, ...shortcutIds] };
+    const rows = await KadeReadingProgress.find({ book: readers }).lean();
     for (const r of rows) {
       const to = unflat(newCounts, flat(oldCounts, r.s || 0, r.c || 0));
       await KadeReadingProgress.updateOne({ _id: r._id }, { $set: { s: to.s, c: to.c } });
     }
-    const marks = await KadeReadingBookmark.find({ book: book._id }).lean();
+    const marks = await KadeReadingBookmark.find({ book: readers }).lean();
     for (const m of marks) {
       const to = unflat(newCounts, flat(oldCounts, m.s || 0, m.c || 0));
       await KadeReadingBookmark.updateOne({ _id: m._id }, { $set: { s: to.s, c: to.c } });
@@ -214,7 +220,7 @@ async function reparseIfStale(book) {
     return Object.assign({}, book, set);
   } catch (e) {
     logger.warn(`[reading-room/reparse] book=${id} "${book.title}" failed (${e.message}); kept as cut`);
-    await KadeBook.updateOne({ _id: book._id }, { $set: { parserVersion: PARSER_VERSION } }).catch(() => {});
+    await KadeBook.updateMany({ $or: [{ _id: fileId }, { shortcutOf: fileId }] }, { $set: { parserVersion: PARSER_VERSION } }).catch(() => {});
     return book;
   } finally {
     reparsing.delete(id);
@@ -257,6 +263,50 @@ const { requests: libraryRequests, requestReader } = require('~/server/services/
 router.use('/requests', express.json({ limit: '12kb' }), require('@librechat/api').libraryRequestRouter(
   libraryRequests, requireJwtAuth, (req) => requestReader(req.user?.id),
 ));
+
+/* ── THE ONE-FILE RULE (Sep 25 2026) ──────────────────────────────────────
+ * Kade: "I need this to be a safeguard for dupes on all library media, where like, it HAS to be the
+ * exact same file for a dupe flag, and then it only keeps one of them. If there was some reason a
+ * file needed to be in multiple collections, it can be a shortcut to the same file."
+ * Same file = same byte count and the same SHA-256, computed here from the stored bytes. The rules
+ * are in services/kadeLibraryFilesPlan.js, the storage side in services/kadeLibraryFiles.js.
+ * KADE_LIBRARY_FILES: report (default: hash and flag), on (a new copy is kept once), off. */
+const { createLibraryFiles, sha256OfFile, sha256OfBuffer, MODE: filesMode } = require('~/server/services/kadeLibraryFiles');
+const filesPlan = require('~/server/services/kadeLibraryFilesPlan');
+const { opsOrAdmin } = require('~/server/middleware/kadeOpsSecret');
+/** The reader shape the one-file rule asks "could they open it?" with (as requestReader returns). */
+const readerFor = async (req) => ({ id: String(req.user.id), admin: isAdmin(req), child: await isChild(req), hidden: libraryHiddenFrom(req) });
+/** New stored bytes wait for the verifier (every 2 minutes), unless the rule is off. */
+const pendingCheck = () => (filesMode() === 'off' ? {} : { fileCheck: { state: 'pending', at: new Date() } });
+const libraryFiles = createLibraryFiles({
+  models: {
+    KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, Receipts: KadeLibraryFold,
+    get KadeLibrarySubmission() { return require('~/models/kadeBook').KadeLibrarySubmission; },
+    get Requests() { return mongoose.models.KadeMediaRequest; },
+    get DescriptionJobs() { return mongoose.models.KadeDescriptionJob; },
+  },
+  s3, bucket: MEDIA_BUCKET, deleteKeys, readerOf: requestReader, keyFromFileUrl, prefix: MEDIA_PREFIX,
+  notify: (id, text) => notifyUser(id, text), where: (row) => libraryPath(row), log: (message) => logger.info(message),
+});
+/** "Already in the library: ..." for a stored copy this reader can open (never any other). */
+const alreadyAnswer = (req, twin, same = 'file') => ({
+  ok: true, duplicate: true, same,
+  book: summary(twin, null), skipped: twin.skipped || [], jacket: twin.jacket || '',
+  message: same === 'file'
+    ? filesPlan.alreadyLine(twin, twin.shared ? libraryPath(twin) : '', { own: String(twin.owner) === String(req.user.id) && !twin.shared })
+    : `Already in the library: "${twin.title}"${twin.author ? ` by ${twin.author}` : ''}. It has exactly the same text, so nothing new was added.`,
+});
+/** A row older than `fileKey` names its stored original only in fileUrl: write the key on it before
+ * another row shares that original, so reference counting sees both rows (releaseKeys also reads
+ * fileUrl, and POST /librarian/files/etags fills every row). Returns the key. */
+async function ensureFileKey(row) {
+  const key = (row && (row.fileKey || keyFromFileUrl(row.fileUrl))) || '';
+  if (key && !row.fileKey) {
+    await KadeBook.updateOne({ _id: row._id, $or: [{ fileKey: '' }, { fileKey: { $exists: false } }] }, { $set: { fileKey: key } })
+      .catch((e) => logger.warn(`[library/files] fileKey not written on ${row._id}: ${e.message}`));
+  }
+  return key;
+}
 
 const MAX_UPLOAD_BYTES = AUDIO_ZIP_LIMIT;
 const bookTemp = require('node:fs/promises');
@@ -348,17 +398,27 @@ router.use('/membership', express.json({ limit: '2kb' }), require('@librechat/ap
 }));
 
 /** Can this reader open this book? Owner, admin, or it is in the library and
- * not hidden from a child. Returns the book or null (404 either way). */
+ * not hidden from a child. Returns the book or null (404 either way).
+ * Sep 25 2026, the one-file rule: a copy folded into its keeper (state 'merged')
+ * forwards to the keeper for 30 days (at most 3 hops), and the keeper is judged
+ * on its own; a shortcut comes back with its keeper's file overlaid (`fileId`). */
 async function openBook(req, id) {
-  if (!isId(id)) return null;
-  const book = await KadeBook.findById(id).lean();
-  if (!book) return null;
+  let book = null;
+  for (let hops = 0; ; hops++) {
+    if (!isId(id)) return null;
+    book = await KadeBook.findById(id).lean();
+    if (!book) return null;
+    if (book.state !== 'merged') break;
+    if (!book.mergedInto || hops >= 3) return null;
+    id = book.mergedInto;
+  }
   const mine = String(book.owner) === String(req.user.id);
   if (book.state !== 'ready' && !mine) return null;
-  if (mine || isAdmin(req)) return book;
-  if (!book.shared || libraryHiddenFrom(req)) return null;
-  if (book.grownUpsOnly && (await isChild(req))) return null;
-  return book;
+  if (!(mine || isAdmin(req))) {
+    if (!book.shared || libraryHiddenFrom(req)) return null;
+    if (book.grownUpsOnly && (await isChild(req))) return null;
+  }
+  return book.shortcutOf ? libraryFiles.withFile(book, await readerFor(req)) : book;
 }
 
 function summary(book, progress) {
@@ -390,6 +450,8 @@ function summary(book, progress) {
     owner: String(book.owner),
     shared: !!book.shared,
     grownUpsOnly: !!book.grownUpsOnly,
+    /** A shortcut to another item's file (the one-file rule), or null. */
+    shortcutOf: book.shortcutOf ? String(book.shortcutOf) : null,
     sections: total,
     chunks: book.stats ? book.stats.chunks : 0,
     listen: book.stats ? book.stats.listen : '',
@@ -442,7 +504,7 @@ router.get('/shelf', requireJwtAuth, async (req, res) => {
       familyLibrary: hidden && require('@librechat/api').libraryReviewSeat(req.user) ? null : !hidden,
       describedVideo: !child && (isAdmin(req) || process.env.KADE_DESCRIPTION_PUBLIC !== '0'),
       me: String(userId),
-      archiveOwned: await KadeBook.countDocuments({ owner: userId, path: { $ne: '' } }),
+      archiveOwned: await KadeBook.countDocuments({ owner: userId, path: { $ne: '' }, state: { $ne: 'merged' } }),
       libraryCount,
       libraryFiled,
       mine: mine.map((b) => summary(b, progByBook[String(b._id)])),
@@ -450,6 +512,9 @@ router.get('/shelf', requireJwtAuth, async (req, res) => {
       library: library.filter((b) => !borrowedSet.has(String(b._id))).map((b) => summary(b, progByBook[String(b._id)] || null)),
       categories: CATEGORIES,
       defaultVoice: DEFAULT_VOICE(),
+      // The one-file rule's mode: the web page hashes a file before sending it only when 'on' (the
+      // only mode that uses a client's hash); otherwise the server compares the stored bytes after.
+      filesMode: filesMode(),
     });
   } catch (e) {
     logger.error('[reading-room/shelf] error:', e);
@@ -483,14 +548,10 @@ router.post('/upload', requireJwtAuth, async (req, res, next) => {
  * nothing compared the text (each resent ZIP was a few bytes different). A text book whose
  * chunks match, one for one, a book this person can already open is not saved again; the
  * receipt names the copy already on the shelves. */
-/** The words of a book, without the spoken jacket (it carries the title, which uploads may differ on). */
+/** The words of a book, without the spoken jacket (it carries the title, which uploads may differ on).
+ * One definition, shared with the same-text book merge (services/kadeLibraryFilesPlan.js). */
 function bookTextDigest(sections, kinds) {
-  const hash = createHash('sha256');
-  (sections || []).forEach((section, i) => {
-    if (kinds[i] === 'jacket') return;
-    hash.update(JSON.stringify(section.chunks || [])).update('\n');
-  });
-  return hash.digest('hex');
+  return filesPlan.bookTextDigest(sections, kinds);
 }
 
 async function identicalBook(req, parsed) {
@@ -519,6 +580,32 @@ async function importUploadedBook(req, res) {
       return res.status(400).json({ error: "I can't read that kind of file. Bookshare's DAISY zip, an EPUB, a text file, a Word file, or an HTML page all work." });
     }
     const t0 = Date.now();
+    /* The one-file rule (Sep 25 2026): the server holds these bytes, so it hashes them here (the
+     * import lane already hashed them on the way down). A copy the uploader can open that is exactly
+     * this file answers "already in the library"; any other stored copy is only a silent link. */
+    const mode = filesMode();
+    let fileSha256 = '';
+    let stored = null;
+    try {
+      fileSha256 = filesPlan.SHA256.test(String(req.fileSha256 || '')) ? String(req.fileSha256) : (await sha256OfFile(f.path)).sha256;
+      stored = mode === 'off' ? null : await libraryFiles.storedTwin(await readerFor(req), fileSha256, f.size);
+    } catch (e) {
+      // The guard never stops an upload: without the check the book is stored as it always was.
+      logger.warn(`[reading-room/upload] same-file check skipped (${e.message})`);
+    }
+    if (stored && stored.canOpen && mode === 'on') {
+      logger.info(`[reading-room/upload] same file user=${req.user.id} name=${String(f.originalname || '?').slice(0, 80)} matches ${stored.twin._id}`);
+      return res.json(alreadyAnswer(req, stored.twin, 'file'));
+    }
+    const sameOriginal = !!stored && stored.twin.fileSha256 === fileSha256 && Number(stored.twin.fileBytes) === Number(f.size);
+    const storedOriginal = stored && !stored.canOpen && mode === 'on' && sameOriginal ? stored.twin : null;
+    /* Report mode marks the new book as the extra copy only when 'on' mode would keep it once: the
+     * whole original is the uploader's own stored copy, ready, not itself the marked one, and at
+     * least as open as this upload (filesPlan.reportState). Anything else waits for the verifier. */
+    const askedGrownUps = String((req.body || {}).grownUpsOnly || '') === '1' || (req.body || {}).grownUpsOnly === true;
+    const flagged = stored && mode === 'report'
+      && filesPlan.reportState({ item: { owner: req.user.id, shared: publish, grownUpsOnly: askedGrownUps, path: '' }, twin: stored.twin, canOpen: stored.canOpen, whole: sameOriginal }) === 'duplicate'
+      ? { fileCheck: { state: 'duplicate', of: stored.twin._id, at: new Date() } } : null;
     if (ext === 'zip') {
       let archive;
       try { archive = await openAudioArchive(f.path); }
@@ -533,29 +620,39 @@ async function importUploadedBook(req, res) {
             const media = mimeFor(clip.path);
             if (!media) throw new Error('This audio format is not supported.');
             if (media.ext === 'mp4') media.mime = 'audio/mp4';
+            // Someone else's copy of this very ZIP already stores this clip: share it, upload nothing.
+            const reuse = storedOriginal && (storedOriginal.tracks || []).find((t) => t && t.key && t.originalName === clip.path);
+            if (reuse) { uploaded.set(clip.path, { key: reuse.key, bytes: reuse.bytes, mime: reuse.mime, sha256: reuse.sha256 || '', linked: true }); continue; }
             const key = req.importBookId ? `${MEDIA_PREFIX()}/${id}/import-${uploaded.size}.${media.ext}` : trackKey(id, media.ext);
             uploaded.set(clip.path, { key, bytes: archive.bytes(clip.path), mime: media.mime });
             const client = s3();
             if (!client || !MEDIA_BUCKET()) throw new Error('Audio storage is unavailable.');
-            await storeAudioStream(client, MEDIA_BUCKET(), key, await archive.stream(clip.path), media.mime);
+            const storedClip = await storeAudioStream(client, MEDIA_BUCKET(), key, await archive.stream(clip.path), media.mime);
+            if (storedClip && storedClip.sha256) uploaded.get(clip.path).sha256 = storedClip.sha256;
           }
+          const clipTrack = (clip) => {
+            const { linked: _linked, ...track } = uploaded.get(clip.path);
+            return track;
+          };
           const book = new KadeBook({ _id: id, owner: req.user.id,
             ownerName: String(req.user.name || req.user.username || '').split(' ')[0] || 'someone',
             kind: 'audio', category: 'audiobook', path: 'Audio/Audiobooks',
             title: daisy.title || f.originalname.replace(/\.zip$/i, ''), author: daisy.author,
-            format: daisy.format, originalName: f.originalname, fileBytes: f.size,
+            format: daisy.format, originalName: f.originalname, fileBytes: f.size, fileSha256,
             shared: publish, ...(publish ? { sharedAt: new Date() } : {}),
             grownUpsOnly: (req.body || {}).grownUpsOnly === '1', state: 'ready',
-            tracks: daisy.clips.map((clip) => ({ ...uploaded.get(clip.path), title: clip.title,
+            ...(flagged || pendingCheck()),
+            tracks: daisy.clips.map((clip) => ({ ...clipTrack(clip), title: clip.title,
               originalName: clip.path, clipBegin: clip.clipBegin, clipEnd: clip.clipEnd,
               seconds: clip.clipEnd === undefined ? 0 : clip.clipEnd - clip.clipBegin })),
           });
           refreshListen(book);
           await book.save();
-          logger.info(`[reading-room/upload] audio ZIP ${id}: ${book.tracks.length} sections, ${uploaded.size} files`);
+          logger.info(`[reading-room/upload] audio ZIP ${id}: ${book.tracks.length} sections, ${uploaded.size} files${storedOriginal ? ' (stored bytes shared)' : ''}`);
           return res.json({ ok: true, book: summary(book.toObject(), null), skipped: [], jacket: '' });
         } catch (e) {
-          await deleteKeys([...uploaded.values()].map((x) => x.key)).catch(() => {});
+          // Never a shared clip: another row still plays it.
+          await deleteKeys([...uploaded.values()].filter((x) => !x.linked).map((x) => x.key)).catch(() => {});
           logger.warn(`[reading-room/upload] audio ZIP failed: ${e.message}`);
           return res.status(400).json({ error: `The audio ZIP did not save. ${e.message}` });
         } finally { archive.close(); }
@@ -576,17 +673,25 @@ async function importUploadedBook(req, res) {
     const twin = await identicalBook(req, parsed);
     if (twin) {
       logger.info(`[reading-room/upload] duplicate user=${req.user.id} name=${String(f.originalname || '?').slice(0, 80)} matches ${twin._id} "${twin.title}"`);
-      return res.json({ ok: true, duplicate: true, book: summary(twin, null), skipped: twin.skipped || [], jacket: twin.jacket || '' });
+      return res.json(alreadyAnswer(req, twin, 'text'));
     }
     const grownUpsOnly = String((req.body || {}).grownUpsOnly || '') === '1' || (req.body || {}).grownUpsOnly === true;
     let fileUrl = '';
-    try {
-      if (typeof saveBufferToS3 === 'function') {
-        const fileName = req.importBookId ? `book-${req.importBookId}.${ext || 'bin'}` : `book-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext || 'bin'}`;
-        fileUrl = (await saveBufferToS3({ userId: String(req.user.id), buffer: f.buffer, fileName, basePath: 'books' })) || '';
+    let fileKey = '';
+    if (storedOriginal && (storedOriginal.fileKey || storedOriginal.fileUrl)) {
+      // Someone else's stored original is exactly this file: this book reads its own parsed text and shares the bytes.
+      fileUrl = storedOriginal.fileUrl || '';
+      fileKey = await ensureFileKey(storedOriginal);
+    } else {
+      try {
+        if (typeof saveBufferToS3 === 'function') {
+          const fileName = req.importBookId ? `book-${req.importBookId}.${ext || 'bin'}` : `book-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext || 'bin'}`;
+          fileUrl = (await saveBufferToS3({ userId: String(req.user.id), buffer: f.buffer, fileName, basePath: 'books' })) || '';
+          fileKey = keyFromFileUrl(fileUrl);
+        }
+      } catch (e) {
+        logger.warn(`[reading-room/upload] original not stored (${e.message}); the parsed text is enough to read`);
       }
-    } catch (e) {
-      logger.warn(`[reading-room/upload] original not stored (${e.message}); the parsed text is enough to read`);
     }
     const ownerName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
     const book = new KadeBook({
@@ -607,7 +712,10 @@ async function importUploadedBook(req, res) {
       format: parsed.meta.format || ext,
       originalName: String(f.originalname || '').slice(0, 200),
       fileUrl,
+      fileKey,
       fileBytes: f.buffer.length,
+      fileSha256,
+      ...(flagged || {}),
       jacket: parsed.jacket,
       sections: parsed.sections.map((s) => ({ title: s.title, chunkCount: s.chunks.length, chars: s.chars, kind: s.kind })),
       skipped: parsed.skipped.map((s) => ({ title: s.title, reason: s.reason, chunkCount: s.chunks.length, chars: s.chars })),
@@ -642,13 +750,24 @@ router.use('/imports', express.json({ limit: '8kb' }), bookImportRouter({
   },
   remove: key => deleteKeys([key]),
   existing: async (id, owner) => {
-    const book = await KadeBook.findOne({ _id: id, owner, state: 'ready' }).lean();
-    return book ? { ok: true, book: summary(book, null), skipped: book.skipped || [], jacket: book.jacket || '' } : null;
+    const book = await KadeBook.findOne({ _id: id, owner, state: { $in: ['ready', 'merged'] } }).lean();
+    // A book folded into its keeper (the one-file rule) answers with the keeper for its 30 days.
+    const shown = book && book.state === 'merged' ? await KadeBook.findOne({ _id: book.mergedInto, state: 'ready' }).lean() : book;
+    return shown ? { ok: true, ...(shown !== book ? { duplicate: true, same: 'file' } : {}), book: summary(shown, null), skipped: shown.skipped || [], jacket: shown.jacket || '' } : null;
+  },
+  /* The one-file rule: a client-sent SHA-256 is only checked against copies this person can open,
+   * and only answers; it never links or changes a row. */
+  precheck: async (actor, sha256, bytes) => {
+    if (filesMode() !== 'on') return null;
+    const found = await libraryFiles.storedTwin(await requestReader(actor.id), sha256, bytes);
+    if (!found || !found.canOpen) return null;
+    logger.info(`[reading-room/import] user=${actor.id} precheck: same file as ${found.twin._id}`);
+    return alreadyAnswer({ user: { id: actor.id } }, found.twin, 'file');
   },
   importFile: async (job, path, directory) => {
     let result;
     const response = { status() { return this; }, json(value) { result = value; return this; } };
-    await importUploadedBook({ user: job.actor, importBookId: job._id, bookUploadDirectory: directory,
+    await importUploadedBook({ user: job.actor, importBookId: job._id, bookUploadDirectory: directory, fileSha256: job.sha256 || '',
       file: { path, size: job.bytes, originalname: job.fileName },
       body: { private: job.private ? '1' : '0', grownUpsOnly: job.grownUpsOnly ? '1' : '0' } }, response);
     return result || { error: 'The import did not return a result.' };
@@ -703,7 +822,8 @@ router.get('/book/:id', requireJwtAuth, async (req, res) => {
 });
 
 async function chunkAt(book, s, c, skipped) {
-  const text = await KadeBookText.findOne({ book: book._id }, skipped ? { skipped: { $slice: [s, 1] } } : { sections: { $slice: [s, 1] } }).lean();
+  // A shortcut reads its keeper's words (`fileId`, the one-file rule).
+  const text = await KadeBookText.findOne({ book: book.fileId || book._id }, skipped ? { skipped: { $slice: [s, 1] } } : { sections: { $slice: [s, 1] } }).lean();
   const list = skipped ? (text && text.skipped) || [] : (text && text.sections) || [];
   const sec = list[0];
   if (!sec || !sec.chunks || c >= sec.chunks.length) return null;
@@ -754,7 +874,7 @@ router.get('/book/:id/passages/:s', requireJwtAuth, async (req, res) => {
     const from = clampInt(req.query.from, 0, 100000, 0);
     const count = clampInt(req.query.count, 1, 60, 40);
     const meta = (book.sections || [])[s];
-    const text = meta ? await KadeBookText.findOne({ book: book._id }, { sections: { $slice: [s, 1] } }).lean() : null;
+    const text = meta ? await KadeBookText.findOne({ book: book.fileId || book._id }, { sections: { $slice: [s, 1] } }).lean() : null;
     const chunks = (text && text.sections && text.sections[0] && text.sections[0].chunks) || [];
     if (!meta || from >= chunks.length) return res.status(404).json({ error: 'Past the end of the book.' });
     res.json({ s, title: meta.title || '', from, total: chunks.length, passages: require('@librechat/api').readingPassages(chunks, meta.kind, from, count) });
@@ -943,6 +1063,14 @@ async function ownAudio(req, id) {
 }
 const isMedia = (b) => b && (b.kind === 'audio' || b.kind === 'video');
 
+/** A client-claimed SHA-256 (the one-file rule, KADE_LIBRARY_FILES=on): only a stored copy this
+ * person can already open answers, and nothing is linked or changed on the client's word. */
+async function claimedTwin(req, sha256, bytes) {
+  if (filesMode() !== 'on' || !filesPlan.SHA256.test(String(sha256 || '')) || !(bytes > 0)) return null;
+  const found = await libraryFiles.storedTwin(await readerFor(req), String(sha256), bytes);
+  return found && found.canOpen ? found.twin : null;
+}
+
 /** Step 1 of a direct upload: a signed PUT the client sends the bytes to. */
 router.post('/media/:id/track/presign', requireJwtAuth, express.json({ limit: '4kb' }), async (req, res) => {
   try {
@@ -954,6 +1082,21 @@ router.post('/media/:id/track/presign', requireJwtAuth, express.json({ limit: '4
     const bytes = Math.max(0, parseInt(b.bytes, 10) || 0);
     if (!bytes || bytes > MAX_TRACK_BYTES) return res.status(400).json({ error: 'One file is over 20 GB — split it into parts.' });
     if ((item.tracks || []).length >= 200) return res.status(400).json({ error: 'Two hundred parts is the limit for one item.' });
+    if (item.shortcutOf) return res.status(400).json({ error: 'This is a shortcut to another item. Add parts on the original.' });
+    /* The one-file rule: a part that is exactly a stored file is always accepted (the verifier points
+     * it at the stored bytes after, so a cassette whose side A is on another tape can still get its
+     * side B). Only a brand-new, empty donation whose one file would be a whole copy of a one-file
+     * item they can open is skipped: nothing is sent, the empty item goes, and she is told so. */
+    const empty = !(item.tracks || []).length && item.state === 'pending' && String(item.owner) === String(req.user.id);
+    const twin = b.sha256 && empty ? await claimedTwin(req, b.sha256, bytes) : null;
+    if (twin && twin.kind !== 'text' && (twin.tracks || []).length === 1) {
+      await KadeBook.deleteOne({ _id: item._id, state: 'pending', tracks: { $size: 0 } });
+      logger.info(`[reading-room/media] user=${req.user.id} empty donation ${item._id} removed: its one file is ${twin._id}`);
+      return res.json({
+        ...alreadyAnswer(req, twin, 'file'), existing: summary(twin, null), removed: String(item._id),
+        message: filesPlan.nothingUploadedLine(twin, twin.shared ? libraryPath(twin) : '', { own: String(twin.owner) === String(req.user.id) && !twin.shared, started: item.title }),
+      });
+    }
     const key = trackKey(item._id, m.ext);
     if (b.multipart === true && bytes > MULTIPART_ABOVE) {
       const uploadId = await createMultipart(key, m.mime);
@@ -997,9 +1140,11 @@ router.post('/media/:id/track/done', requireJwtAuth, express.json({ limit: '64kb
       seconds: Math.max(0, parseFloat(b.seconds) || 0),
       mime: MEDIA_EXT[ext] || head.ContentType || 'audio/mpeg',
       originalName: String(b.originalName || '').slice(0, 200),
+      etag: String(head.ETag || '').replace(/"/g, ''),
     });
     if (VIDEO_EXT[ext] && item.kind !== 'video') item.kind = 'video';
     item.state = 'ready';
+    Object.assign(item, pendingCheck()); // the one-file rule's verifier compares it within 2 minutes
     refreshListen(item);
     await item.save();
     logger.info(`[reading-room/media] user=${req.user.id} "${item.title}" +track ${key} ${head.ContentLength || '?'}B (${item.tracks.length} total)`);
@@ -1026,15 +1171,18 @@ router.post('/media/:id/track/upload', requireJwtAuth, (req, res, next) => {
     const m = mimeFor(f.originalname, f.mimetype);
     if (!m) return res.status(400).json({ error: 'That is not an audio or video file. MP3, M4A, M4B, AAC, WAV, OGG, FLAC, MP4, M4V, MOV or WebM all work.' });
     const mime = m.mime;
+    if (item.shortcutOf) return res.status(400).json({ error: 'This is a shortcut to another item. Add parts on the original.' });
     const key = trackKey(item._id, m.ext);
     await putBuffer(key, f.buffer, mime);
     item.tracks.push({
       title: String((req.body || {}).title || '').trim().slice(0, 200) || `Part ${item.tracks.length + 1}`,
       key, bytes: f.buffer.length, seconds: Math.max(0, parseFloat((req.body || {}).seconds) || 0), mime,
       originalName: String(f.originalname || '').slice(0, 200),
+      sha256: sha256OfBuffer(f.buffer), // the server holds these bytes: the one-file rule's hash costs no read
     });
     if (m.kind === 'video') item.kind = 'video';
     item.state = 'ready';
+    Object.assign(item, pendingCheck());
     refreshListen(item);
     await item.save();
     logger.info(`[reading-room/media] user=${req.user.id} "${item.title}" +track(server) ${key} ${f.buffer.length}B`);
@@ -1051,11 +1199,17 @@ router.post('/media/:id/track/:t/remove', requireJwtAuth, async (req, res) => {
     if (!item) return res.status(404).json({ error: 'No such donation.' });
     const t = clampInt(req.params.t, 0, 10000, -1);
     if (t < 0 || t >= item.tracks.length) return res.status(404).json({ error: 'No such part.' });
+    if (item.shortcutOf) return res.status(400).json({ error: 'This is a shortcut to another item. Change its parts on the original.' });
     const [gone] = item.tracks.splice(t, 1);
     if (!item.tracks.length) { item.state = 'pending'; item.shared = false; }
     refreshListen(item);
     await item.save();
-    deleteKeys([gone.key]).catch(() => {});
+    /* Only when no other row (a link, a folded copy) still lists the file. A shortcut to this item
+     * never keeps a removed part alive: it plays the item's current parts, never its own old copy. */
+    const pointers = (await KadeBook.find({ shortcutOf: item._id }, '_id').lean()).map((r) => r._id);
+    /* Their own track lists drop the part too, so no row goes on listing bytes that are about to go. */
+    if (pointers.length && gone.key) await KadeBook.updateMany({ _id: { $in: pointers } }, { $pull: { tracks: { key: gone.key } } }).catch(() => {});
+    libraryFiles.releaseKeys([gone.key], { except: pointers }).catch(() => {});
     res.json({ ok: true, item: summary(item.toObject(), null) });
   } catch (e) {
     res.status(500).json({ error: 'Could not remove that part.' });
@@ -1137,6 +1291,14 @@ router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' })
       // a real document, not lean(): a pending row from an earlier try is reused and saved below
       const existing = await KadeBook.findOne({ owner: req.user.id, originalPath });
       if (existing && existing.state === 'ready') { out.push({ originalPath, id: String(existing._id), skipped: 'already in the library' }); continue; }
+      /* The one-file rule: the push tool sends each file's SHA-256. Exactly this file is already a
+       * copy this person can open, so it is not sent again (only such a copy is ever named). */
+      const twin = f.sha256 && bytes ? await claimedTwin(req, f.sha256, bytes) : null;
+      if (twin) {
+        if (existing && existing.state === 'pending' && !(existing.tracks || []).length) await KadeBook.deleteOne({ _id: existing._id, state: 'pending' });
+        out.push({ originalPath, id: String(twin._id), skipped: 'already in the library', same: 'file', title: twin.title, path: libraryPath(twin) });
+        continue;
+      }
       const folder = cleanPath(f.path || '');
       const top = folder.split('/')[1] || folder.split('/')[0] || '';
       const title = bareTitle(f.title || f.name || 'Untitled').slice(0, 200) || 'Untitled';
@@ -1194,9 +1356,10 @@ router.post('/archive/done', requireJwtAuth, express.json({ limit: '512kb' }), a
         if (f.multipart && f.multipart.uploadId && Array.isArray(f.multipart.parts)) await completeMultipart(key, f.multipart.uploadId, f.multipart.parts);
         const head = await headObject(key);
         const ext = key.split('.').pop();
-        item.tracks = [{ title: item.title, key, bytes: Number(head.ContentLength) || 0, seconds: Math.max(0, parseFloat(f.seconds) || 0), mime: MEDIA_EXT[ext] || head.ContentType || 'video/mp4', originalName: String(f.originalName || '').slice(0, 200) }];
+        item.tracks = [{ title: item.title, key, bytes: Number(head.ContentLength) || 0, seconds: Math.max(0, parseFloat(f.seconds) || 0), mime: MEDIA_EXT[ext] || head.ContentType || 'video/mp4', originalName: String(f.originalName || '').slice(0, 200), etag: String(head.ETag || '').replace(/"/g, '') }];
         if (VIDEO_EXT[ext]) item.kind = 'video';
         item.state = 'ready';
+        Object.assign(item, pendingCheck()); // the one-file rule's verifier compares it (kicked below)
         Object.assign(item, refineMediaFiling(item, true) || {});
         refreshListen(item);
         await item.save();
@@ -1207,6 +1370,7 @@ router.post('/archive/done', requireJwtAuth, express.json({ limit: '512kb' }), a
       }
     }
     res.json({ ok: true, files: out });
+    if (out.some((o) => o.ok)) void libraryFiles.verifyPass({ limit: 50 }).catch(() => {});
   } catch (e) {
     logger.error(`[library/archive/done] error: ${e.message}`);
     res.status(500).json({ error: 'Could not record those uploads.' });
@@ -1284,7 +1448,7 @@ router.get('/book/:id/describe/:t/estimate', requireJwtAuth, async (req, res) =>
     if (!book || !isMedia(book) || !(book.tracks || [])[t]) return res.status(404).json({ error: 'No such recording.' });
     const tr = book.tracks[t];
     const est = describer.estimate(tr.seconds || 0);
-    res.json({ ok: true, enabled: describer.ENABLED(), ...est, hasSeconds: !!tr.seconds, queued: describer.queued(), progress: describer.progressOf(String(book._id), t), state: (tr.description || {}).state || '' });
+    res.json({ ok: true, enabled: describer.ENABLED(), ...est, hasSeconds: !!tr.seconds, queued: describer.queued(), progress: describer.progressOf(String(book.fileId || book._id), t), state: (tr.description || {}).state || '' });
   } catch (e) {
     res.status(500).json({ error: 'Could not estimate.' });
   }
@@ -1301,10 +1465,12 @@ router.post('/book/:id/describe/:t', requireJwtAuth, async (req, res) => {
     if (!/^video\//.test(tr.mime || '')) return res.status(400).json({ error: 'That is a sound recording — there is nothing to see in it.' });
     const d = tr.description || {};
     if (d.state === 'done' && req.query.again !== '1') return res.json({ ok: true, state: 'done', description: d });
-    if (d.state === 'working') return res.json({ ok: true, state: 'working', progress: describer.progressOf(String(book._id), t) });
+    if (d.state === 'working') return res.json({ ok: true, state: 'working', progress: describer.progressOf(String(book.fileId || book._id), t) });
     const signedUrl = await signGet(tr.key, tr.mime);
-    await KadeBook.updateOne({ _id: book._id }, { $set: { [`tracks.${t}.description.state`]: 'working', [`tracks.${t}.description.error`]: '' } });
-    const bookId = String(book._id);
+    /* The one-file rule: a shortcut's description is written on the file it reads (`fileId`), so one
+     * run serves every shortcut; each shortcut's own copy of the track list is kept in step. */
+    const bookId = String(book.fileId || book._id);
+    await KadeBook.updateOne({ _id: bookId }, { $set: { [`tracks.${t}.description.state`]: 'working', [`tracks.${t}.description.error`]: '' } });
     const position = describer.enqueue({
       bookId, t, userId: req.user.id, signedUrl, mime: tr.mime, title: book.title, category: book.category,
       onDone: async (err, result) => {
@@ -1315,6 +1481,7 @@ router.post('/book/:id/describe/:t', requireJwtAuth, async (req, res) => {
         const set = { [`tracks.${t}.description`]: { summary: result.summary, scenes: result.scenes, model: result.model, costUSD: result.costUSD, frames: result.frames, state: 'done', error: '', at: new Date() } };
         if (result.seconds && !tr.seconds) set[`tracks.${t}.seconds`] = result.seconds;
         await KadeBook.updateOne({ _id: bookId }, { $set: set });
+        await KadeBook.updateMany({ shortcutOf: bookId, [`tracks.${t}.key`]: tr.key }, { $set: { [`tracks.${t}.description`]: set[`tracks.${t}.description`] } }).catch(() => {});
       },
     });
     logger.info(`[library/describe] user=${req.user.id} queued "${book.title}" track ${t} (position ${position})`);
@@ -1331,7 +1498,7 @@ router.get('/book/:id/describe/:t', requireJwtAuth, async (req, res) => {
     const t = clampInt(req.params.t, 0, 10000, 0);
     if (!book || !isMedia(book) || !(book.tracks || [])[t]) return res.status(404).json({ error: 'No such recording.' });
     const d = book.tracks[t].description || {};
-    res.json({ ok: true, state: d.state || '', progress: describer.progressOf(String(book._id), t), description: d.state ? d : null });
+    res.json({ ok: true, state: d.state || '', progress: describer.progressOf(String(book.fileId || book._id), t), description: d.state ? d : null });
   } catch (e) {
     res.status(500).json({ error: 'Could not read the description.' });
   }
@@ -1391,7 +1558,7 @@ router.post('/book/:id/recap/:t', requireJwtAuth, express.json({ limit: '4kb' })
     const cached = (tr.recaps || []).find((r) => Math.abs(r.to - to) < 20 && Math.abs(r.from - from) < 20);
     if (cached) return res.json({ ok: true, state: 'done', recap: cached });
     const signedUrl = await signGet(tr.key, tr.mime);
-    const bookId = String(book._id);
+    const bookId = String(book.fileId || book._id); // a shortcut's recaps live on its file
     const position = describer.enqueue({
       bookId, t, from, to, userId: req.user.id, signedUrl, mime: tr.mime, title: book.title, category: book.category,
       onDone: async (err, result) => {
@@ -1416,7 +1583,8 @@ router.get('/book/:id/recap/:t', requireJwtAuth, async (req, res) => {
     const from = parseFloat(req.query.from) || 0;
     const recaps = book.tracks[t].recaps || [];
     const hit = recaps.find((r) => Math.abs(r.to - to) < 20 && Math.abs(r.from - from) < 20);
-    res.json({ ok: true, state: hit ? 'done' : (describer.progressOf(String(book._id), t) ? 'working' : ''), progress: describer.progressOf(String(book._id), t), recap: hit || null });
+    const fileId = String(book.fileId || book._id);
+    res.json({ ok: true, state: hit ? 'done' : (describer.progressOf(fileId, t) ? 'working' : ''), progress: describer.progressOf(fileId, t), recap: hit || null });
   } catch (e) {
     res.status(500).json({ error: 'Could not read the recap.' });
   }
@@ -1679,6 +1847,8 @@ router.post('/book/:id/edit', requireJwtAuth, express.json({ limit: '16kb' }), a
     if (Array.isArray(b.trackTitles) && item.tracks) b.trackTitles.forEach((t, i) => { if (item.tracks[i] && typeof t === 'string' && t.trim()) item.tracks[i].title = t.trim().slice(0, 200); });
     await item.save();
     if (b.shared === true && item.shared) await settleTrustedSubmissions(req, [item._id]);
+    // The one-file rule: a file marked grown-ups only takes its shortcuts with it (rule 8).
+    if (b.grownUpsOnly === true) await libraryFiles.propagateGrownUps([item._id]);
     logger.info(`[library/edit] user=${req.user.id} "${item.title}" ${changed.join(',') || 'nothing'}`);
     res.json({ ok: true, item: summary(item.toObject(), null) });
   } catch (e) {
@@ -1721,15 +1891,30 @@ router.post('/archive/batch', requireJwtAuth, express.json({ limit: '64kb' }), a
     if (action === 'move') r = await KadeBook.updateMany(q, { $set: { path: cleanPath(b.to) } });
     else if (action === 'share') { if (!canPublish(req)) return res.status(403).json({ error: 'Only the librarian puts things in the family library. Use "Submit this for the library" instead.' }); r = await KadeBook.updateMany({ ...q, state: 'ready' }, { $set: { shared: true, sharedAt: new Date() } }); if (!isAdmin(req)) await settleTrustedSubmissions(req, (await KadeBook.find({ ...q, state: 'ready' }, '_id').lean()).map((it) => it._id)); }
     else if (action === 'unshare') r = await KadeBook.updateMany(q, { $set: { shared: false } });
-    else if (action === 'grownups') r = await KadeBook.updateMany(q, { $set: { grownUpsOnly: b.value !== false } });
+    else if (action === 'grownups') {
+      r = await KadeBook.updateMany(q, { $set: { grownUpsOnly: b.value !== false } });
+      if (b.value !== false) await libraryFiles.propagateGrownUps((await KadeBook.find(q, '_id').lean()).map((it) => it._id));
+    }
     else if (action === 'category' && CATEGORIES.includes(String(b.value))) r = await KadeBook.updateMany({ ...q, kind: { $ne: 'text' } }, { $set: { category: String(b.value) } });
     else if (action === 'delete') {
       const items = await KadeBook.find(q).lean();
-      const keys = items.flatMap((it) => (it.tracks || []).map((t) => t.key)).filter(Boolean);
-      const del = items.map((it) => it._id);
-      await Promise.all([KadeBookText.deleteMany({ book: { $in: del } }), KadeReadingProgress.deleteMany({ book: { $in: del } }), KadeReadingBookmark.deleteMany({ book: { $in: del } }), KadeBook.deleteMany({ _id: { $in: del } })]);
-      deleteKeys(keys).catch(() => {});
-      r = { modifiedCount: del.length };
+      const gone = new Set(items.map((it) => String(it._id)));
+      /* The one-file rule: a withdrawn file hands itself to its owner's oldest shortcut that stays
+       * (and its text with it); shortcuts other people made to it go with it; and a stored object
+       * goes only when no row left lists it. A text book's original goes too now (it used to stay on
+       * B2 for good). */
+      const promoted = new Set();
+      for (const it of items) {
+        const heir = await libraryFiles.promoteShortcuts(it, { except: gone });
+        if (heir) promoted.add(String(it._id));
+      }
+      const foreign = (await libraryFiles.foreignShortcuts(items)).filter((id) => !gone.has(String(id)));
+      const del = [...items.map((it) => it._id), ...foreign];
+      const keys = items.flatMap((it) => [...(it.tracks || []).map((t) => t.key), it.fileKey || keyFromFileUrl(it.fileUrl)]).filter(Boolean);
+      const texts = del.filter((id) => !promoted.has(String(id)));
+      await Promise.all([KadeBookText.deleteMany({ book: { $in: texts } }), KadeReadingProgress.deleteMany({ book: { $in: del } }), KadeReadingBookmark.deleteMany({ book: { $in: del } }), KadeBook.deleteMany({ _id: { $in: del } })]);
+      libraryFiles.releaseKeys(keys, { except: del }).catch(() => {});
+      r = { modifiedCount: items.length };
     } else return res.status(400).json({ error: 'Unknown action.' });
     logger.info(`[library/batch] user=${req.user.id} ${action} ${r.modifiedCount || 0}/${ids.length}`);
     res.json({ ok: true, changed: r.modifiedCount || 0 });
@@ -1774,16 +1959,25 @@ router.get('/librarian/inventory', requireJwtAuth, async (req, res) => {
     const after = String(req.query.after || '');
     if (after && !isId(after)) return res.status(400).json({ error: 'Invalid cursor.' });
     const limit = clampInt(req.query.limit, 1, 2000, 1000);
-    const items = await KadeBook.find({ state: 'ready', $or: [{ shared: true }, { owner: req.user.id }], ...(after ? { _id: { $gt: after } } : {}) }, '_id title author synopsis description path originalPath kind category shared owner tags meta tracks.seconds').sort({ _id: 1 }).limit(limit + 1).lean();
+    const items = await KadeBook.find({ state: 'ready', $or: [{ shared: true }, { owner: req.user.id }], ...(after ? { _id: { $gt: after } } : {}) }, '_id title author synopsis description path originalPath kind category shared grownUpsOnly owner tags meta tracks.seconds tracks.bytes tracks.sha256 fileBytes fileSha256 shortcutOf').sort({ _id: 1 }).limit(limit + 1).lean();
     const more = items.length > limit;
     if (more) items.pop();
     /* Part 278, continued: each item's total length, so TubeVault's "already in the
      * library" check can tell a 90-minute described film from the 15-minute read-along
      * cassette that shares its title. The per-track list stays out of the answer. */
+    /* Sep 25 2026, the one-file rule: each item's stored size and SHA-256 (the first track's, or a
+     * book's original), so TubeVault can skip exactly-the-same files locally; shortcuts say so. */
     for (const it of items) {
       const tracks = Array.isArray(it.tracks) ? it.tracks : [];
       it.seconds = Math.round(tracks.reduce((n, t) => n + (Number(t && t.seconds) || 0), 0));
+      it.bytes = tracks.length ? tracks.reduce((n, t) => n + (Number(t && t.bytes) || 0), 0) : Number(it.fileBytes) || 0;
+      it.sha256 = tracks.length === 1 ? String(tracks[0].sha256 || '') : !tracks.length ? String(it.fileSha256 || '') : '';
+      if (tracks.length > 1) it.files = tracks.map((t) => ({ bytes: Number(t && t.bytes) || 0, sha256: String((t && t.sha256) || '') }));
+      it.grownUpsOnly = !!it.grownUpsOnly;
+      it.shortcutOf = it.shortcutOf ? String(it.shortcutOf) : null;
       delete it.tracks;
+      delete it.fileBytes;
+      delete it.fileSha256;
     }
     res.json({ items, next: more ? String(items[items.length - 1]._id) : null });
   } catch (e) { logger.warn(`[library/inventory] ${e.message}`); res.status(500).json({ error: 'Could not read the catalog.' }); }
@@ -1822,6 +2016,7 @@ router.post('/librarian/organize', requireJwtAuth, express.json({ limit: '1mb' }
     res.json({ ok: true, matched: result.matchedCount, changed: result.modifiedCount, doubtsCleared: cleared });
   } catch (e) { logger.warn(`[library/organize] ${e.message}`); res.status(500).json({ error: 'Could not apply the reviewed changes.' }); }
 });
+
 /* ── JEV FILES THE CATCH-ALL COMMERCIALS (Part 237, Sep 20 2026) ─────────
  * Kade: "organise my backblaze library." Part 185 filed what its brand lists
  * could name and left 4,864 in `Commercials/Other Commercials/<decade>` with
@@ -2125,6 +2320,106 @@ mediaSweep.start();
 const storageKeeper = require('~/server/services/kadeStorageKeeper');
 storageKeeper.mount(router, { requireJwtAuth, isAdmin, express, s3, bucket: MEDIA_BUCKET });
 storageKeeper.start({ s3, bucket: MEDIA_BUCKET });
+/* The one-file rule's verifier: new uploads waiting to be compared (fileCheck.state 'pending'),
+ * every 2 minutes; it also retires folded copies after their 30 days. */
+setInterval(() => void libraryFiles.verifyPass().catch((e) => logger.warn(`[library/files] verifier: ${e.message}`)), 2 * 60 * 1000).unref();
+
+/* ── THE ONE-FILE RULE: the librarian's maintenance (Sep 25 2026) ─────────
+ * For an admin sign-in, or server to server with x-kade-ops-secret (middleware/kadeOpsSecret.js).
+ * Nothing here merges or deletes without apply:true. The order that fits today's library:
+ *   1. POST files/etags {apply}          tracks' ETags from one listing pass (no egress), and the
+ *                                        stored original's key for books older than `fileKey`
+ *   2. POST files/hash {limitGB?}        hash only files that share their exact size (daily GB cap);
+ *                                        never merges. Runs in the background; GET files/hash reads it
+ *   3. GET  duplicates                   every group with its plan and usage counts
+ *   4. POST duplicates/merge {groups?, keepers?, confirmHeld?, plans?, apply}
+ *                                        re-planned from the database; a group whose keeper changed is
+ *                                        refused; held groups only when listed in confirmHeld (plans:
+ *                                        { group: { keeper, action: 'merge'|'shortcut' } }); receipts
+ *   5. POST duplicates/undo {receiptIds | all}   within 30 days
+ *   POST books/merge {pairs:[{extra, keeper}], apply}   same text, different ZIP (Bookshare re-downloads)
+ *   POST files/unreferenced {apply}      objects no row lists; only byte-identical copies older than a
+ *                                        day may go */
+const opsLibrarian = opsOrAdmin(isAdmin);
+const opsBy = (req) => (req.kadeOps ? 'ops' : String(req.user && req.user.id));
+const bodyApply = (req) => (req.body || {}).apply === true;
+router.post('/librarian/files/etags', opsLibrarian, express.json({ limit: '2kb' }), async (req, res) => {
+  try {
+    const result = await libraryFiles.fillEtags({ apply: bodyApply(req) });
+    logger.info(`[library/files/etags] ${bodyApply(req) ? 'applied' : 'preview'} by ${opsBy(req)}: ${result.listed} objects, ${result.tracksWithoutEtag} tracks without an ETag, ${result.written} written, ${result.fileKeys.fileKeys} book keys`);
+    res.json({ ok: true, apply: bodyApply(req), mode: filesMode(), ...result });
+  } catch (e) { logger.warn(`[library/files/etags] ${e.message}`); res.status(500).json({ error: 'Could not read the storage listing.' }); }
+});
+let hashRun = { running: false };
+router.get('/librarian/files/hash', opsLibrarian, (_req, res) => res.json({ ok: true, ...hashRun, budget: libraryFiles.budget() }));
+router.post('/librarian/files/hash', opsLibrarian, express.json({ limit: '2kb' }), async (req, res) => {
+  if (hashRun.running) return res.status(409).json({ error: 'A hash pass is already running.', ...hashRun });
+  const limitGB = parseFloat((req.body || {}).limitGB);
+  const limitBytes = limitGB > 0 ? limitGB * 1024 ** 3 : Infinity;
+  hashRun = { running: true, startedAt: new Date(), limitGB: limitGB > 0 ? limitGB : null, by: opsBy(req) };
+  const run = libraryFiles.hashCollisions({ limitBytes })
+    .then((result) => { hashRun = { ...hashRun, running: false, finishedAt: new Date(), result }; logger.info(`[library/files/hash] ${JSON.stringify(result)}`); })
+    .catch((e) => { hashRun = { ...hashRun, running: false, finishedAt: new Date(), error: e.message }; logger.warn(`[library/files/hash] ${e.message}`); });
+  if ((req.body || {}).wait === true) await run;
+  res.status((req.body || {}).wait === true ? 200 : 202).json({ ok: true, ...hashRun, budget: libraryFiles.budget() });
+});
+router.get('/librarian/duplicates', opsLibrarian, async (_req, res) => {
+  try {
+    const groups = await libraryFiles.duplicateGroups();
+    const extras = groups.reduce((n, g) => n + g.rows.length - 1, 0);
+    res.json({ ok: true, mode: filesMode(), count: groups.length, held: groups.filter((g) => g.hold).length, extras, groups });
+  } catch (e) { logger.warn(`[library/duplicates] ${e.message}`); res.status(500).json({ error: 'Could not list the duplicates.' }); }
+});
+router.get('/librarian/duplicates/receipts', opsLibrarian, async (_req, res) => {
+  try {
+    const since = new Date(Date.now() - 30 * 86400000);
+    const rows = await KadeLibraryFold.find({ createdAt: { $gte: since } }, '_id kind group keeper entries.id entries.action by undoneAt createdAt').sort({ createdAt: -1 }).limit(2000).lean();
+    res.json({ ok: true, receipts: rows.map((r) => ({ id: String(r._id), kind: r.kind, group: r.group, keeper: String(r.keeper), rows: (r.entries || []).map((e) => ({ id: e.id, action: e.action })), by: r.by, undoneAt: r.undoneAt || null, createdAt: r.createdAt })) });
+  } catch (e) { res.status(500).json({ error: 'Could not read the receipts.' }); }
+});
+router.post('/librarian/duplicates/merge', opsLibrarian, express.json({ limit: '1mb' }), async (req, res) => {
+  const b = req.body || {};
+  if (b.groups !== undefined && b.groups !== 'all' && !Array.isArray(b.groups)) return res.status(400).json({ error: "groups is 'all' or a list of group ids." });
+  try {
+    const result = await libraryFiles.mergeGroups({
+      groups: b.groups === undefined ? 'all' : b.groups,
+      keepers: b.keepers && typeof b.keepers === 'object' ? b.keepers : {},
+      confirmHeld: Array.isArray(b.confirmHeld) ? b.confirmHeld : [],
+      plans: b.plans && typeof b.plans === 'object' ? b.plans : {},
+      apply: b.apply === true,
+      limit: clampInt(b.limit, 1, 2000, 300),
+      by: opsBy(req),
+    });
+    logger.info(`[library/duplicates/merge] ${b.apply === true ? 'applied' : 'preview'} by ${opsBy(req)}: ${result.applied.length} merged, ${result.preview.length} previewed, ${result.refused.length} refused${result.more ? ', more to do' : ''}`);
+    res.json({ ok: true, apply: b.apply === true, ...result });
+  } catch (e) { logger.warn(`[library/duplicates/merge] ${e.message}`); res.status(500).json({ error: 'Could not merge those duplicates.' }); }
+});
+router.post('/librarian/duplicates/undo', opsLibrarian, express.json({ limit: '256kb' }), async (req, res) => {
+  const b = req.body || {};
+  if (b.all !== true && !(Array.isArray(b.receiptIds) && b.receiptIds.length)) return res.status(400).json({ error: 'Send receiptIds, or all: true.' });
+  try {
+    const result = await libraryFiles.undoReceipts({ receiptIds: b.receiptIds || [], all: b.all === true });
+    logger.info(`[library/duplicates/undo] by ${opsBy(req)}: ${result.undone.length} receipts put back`);
+    res.json({ ok: true, ...result });
+  } catch (e) { logger.warn(`[library/duplicates/undo] ${e.message}`); res.status(500).json({ error: 'Could not undo those merges.' }); }
+});
+router.post('/librarian/books/merge', opsLibrarian, express.json({ limit: '256kb' }), async (req, res) => {
+  const b = req.body || {};
+  if (!Array.isArray(b.pairs) || !b.pairs.length || b.pairs.length > 500) return res.status(400).json({ error: 'Send 1 to 500 pairs of { extra, keeper }.' });
+  try {
+    const result = await libraryFiles.mergeBooks({ pairs: b.pairs, apply: b.apply === true, by: opsBy(req) });
+    logger.info(`[library/books/merge] ${b.apply === true ? 'applied' : 'preview'} by ${opsBy(req)}: ${result.applied.length} folded, ${result.ok.length} identical, ${result.refused.length} refused`);
+    res.json({ ok: true, apply: b.apply === true, ...result });
+  } catch (e) { logger.warn(`[library/books/merge] ${e.message}`); res.status(500).json({ error: 'Could not merge those books.' }); }
+});
+router.post('/librarian/files/unreferenced', opsLibrarian, express.json({ limit: '2kb' }), async (req, res) => {
+  try {
+    const result = await libraryFiles.unreferenced({ apply: bodyApply(req) });
+    logger.info(`[library/files/unreferenced] ${bodyApply(req) ? 'applied' : 'report'} by ${opsBy(req)}: ${result.count} unreferenced (${result.gb} GB), ${result.identical} byte-identical, ${result.deleted} removed`);
+    res.json({ ok: true, apply: bodyApply(req), ...result });
+  } catch (e) { logger.warn(`[library/files/unreferenced] ${e.message}`); res.status(500).json({ error: 'Could not read the storage listing.' }); }
+});
+
 // Part 272: her uploads public unless she says private; a one-time share, off unless switched on.
 require('~/server/services/kadeLibraryPublicDefault').start();
 
@@ -2261,6 +2556,7 @@ router.post('/book/:id/share', requireJwtAuth, express.json({ limit: '2kb' }), a
         refreshLibrarianDigest();
       }
       if (typeof b.grownUpsOnly === 'boolean') { book.grownUpsOnly = b.grownUpsOnly; await book.save(); }
+      if (b.grownUpsOnly === true) await libraryFiles.propagateGrownUps([book._id]);
       return res.json({ ok: true, pending: true, book: summary(book.toObject(), null) });
     }
     if (typeof b.shared === 'boolean') {
@@ -2270,12 +2566,55 @@ router.post('/book/:id/share', requireJwtAuth, express.json({ limit: '2kb' }), a
     }
     if (typeof b.grownUpsOnly === 'boolean') book.grownUpsOnly = b.grownUpsOnly;
     await book.save();
+    if (b.grownUpsOnly === true) await libraryFiles.propagateGrownUps([book._id]);
     if (b.shared === true) await settleTrustedSubmissions(req, [book._id]);
     logger.info(`[reading-room/share] user=${req.user.id} "${book.title}" shared=${book.shared} grownUpsOnly=${book.grownUpsOnly}`);
     res.json({ ok: true, book: summary(book.toObject(), null) });
   } catch (e) {
     logger.error('[reading-room/share] error:', e);
     res.status(500).json({ error: 'Could not change that.' });
+  }
+});
+
+/* A SHORTCUT (Sep 25 2026), Kade's words: "If there was some reason a file needed to be in multiple
+ * collections, it can be a shortcut to the same file." Anyone who can open an item may put a
+ * shortcut to it in a folder of their own: an ordinary row with its own title, folder, owner and
+ * sharing that reads the item's file (no second copy is stored). It is never more open than the
+ * file (grown-ups carries over), and it is shared only by someone who may publish. */
+router.post('/book/:id/shortcut', requireJwtAuth, express.json({ limit: '4kb' }), async (req, res) => {
+  try {
+    const book = await openBook(req, req.params.id);
+    if (!book || book.state !== 'ready') return res.status(404).json({ error: 'No such item.' });
+    const fileId = book.fileId || book._id;
+    const file = String(fileId) === String(book._id) ? book : await KadeBook.findById(fileId).lean();
+    if (!file || file.state !== 'ready') return res.status(404).json({ error: 'No such item.' });
+    // The file row learns its original's key first, so withdrawing this shortcut never counts it out.
+    const fileKey = await ensureFileKey(file);
+    const b = req.body || {};
+    const path = cleanPath(b.path);
+    if (!path) return res.status(400).json({ error: 'Say which folder the shortcut goes in.' });
+    if (String(file.owner) === String(req.user.id) && libraryPath(file) === path) return res.status(409).json({ error: 'It is already in that folder.' });
+    if (await KadeBook.exists({ owner: req.user.id, shortcutOf: fileId, path, state: 'ready' })) return res.status(409).json({ error: 'There is already a shortcut to it in that folder.' });
+    const ownerName = String(req.user.name || req.user.username || req.user.email || '').split('@')[0].split(' ')[0] || 'someone';
+    const shared = canPublish(req) && (typeof b.shared === 'boolean' ? b.shared : !!file.shared);
+    const row = await KadeBook.create({
+      kind: file.kind, category: file.category || book.category, path, source: 'shortcut',
+      title: String(b.title || '').trim().slice(0, 200) || book.title,
+      author: book.author || '', publisher: book.publisher || '', copyrightYear: book.copyrightYear || '', synopsis: book.synopsis || '',
+      description: book.description || '', language: file.language || 'en', isbn: book.isbn || '', bookshareId: book.bookshareId || '',
+      meta: book.meta || {}, tags: book.tags || [], format: file.format || '', originalName: file.originalName || '',
+      owner: req.user.id, ownerName,
+      tracks: (file.tracks || []).map(({ _id, ...t }) => t),
+      sections: file.sections || [], skipped: file.skipped || [], stats: file.stats || {}, jacket: file.jacket || '', parserVersion: file.parserVersion || 1,
+      fileUrl: file.fileUrl || '', fileKey, fileBytes: file.fileBytes || 0, fileSha256: file.fileSha256 || '',
+      shortcutOf: fileId, grownUpsOnly: !!(file.grownUpsOnly || b.grownUpsOnly === true),
+      shared, ...(shared ? { sharedAt: new Date() } : {}), state: 'ready',
+    });
+    logger.info(`[library/shortcut] user=${req.user.id} "${row.title}" in ${path} -> ${fileId}`);
+    res.json({ ok: true, item: summary(row.toObject(), null) });
+  } catch (e) {
+    logger.error('[library/shortcut] error:', e);
+    res.status(500).json({ error: 'Could not make that shortcut.' });
   }
 });
 
@@ -2295,14 +2634,28 @@ router.delete('/book/:id', requireJwtAuth, async (req, res) => {
     const book = await KadeBook.findById(req.params.id);
     if (!book) return res.status(404).json({ error: 'No such book.' });
     if (String(book.owner) !== String(req.user.id) && !isAdmin(req)) return res.status(403).json({ error: 'Only the person who donated a book can withdraw it.' });
-    if (isMedia(book)) deleteKeys((book.tracks || []).map((t) => t.key).filter(Boolean)).catch(() => {});
+    /* The one-file rule (Sep 25 2026): if the owner's own shortcuts read this item's file, the oldest
+     * takes it over (with the book text) before this row goes; shortcuts other people made to it go
+     * with it (they simply lose the pointer); and a stored object is deleted only when no row left
+     * lists it. A text book's original on B2 now goes with it too (it used to stay for good). */
+    const row = book.toObject();
+    const keys = [...(row.tracks || []).map((t) => t.key), row.fileKey || keyFromFileUrl(row.fileUrl)].filter(Boolean);
+    const promoted = await libraryFiles.promoteShortcuts(row);
+    const foreign = await libraryFiles.foreignShortcuts([row]);
     await Promise.all([
-      KadeBookText.deleteOne({ book: book._id }),
+      promoted ? null : KadeBookText.deleteOne({ book: book._id }),
       KadeReadingProgress.deleteMany({ book: book._id }),
       KadeReadingBookmark.deleteMany({ book: book._id }),
       KadeBook.deleteOne({ _id: book._id }),
+      ...(foreign.length ? [
+        KadeBookText.deleteMany({ book: { $in: foreign } }),
+        KadeReadingProgress.deleteMany({ book: { $in: foreign } }),
+        KadeReadingBookmark.deleteMany({ book: { $in: foreign } }),
+        KadeBook.deleteMany({ _id: { $in: foreign } }),
+      ] : []),
     ]);
-    logger.info(`[reading-room/delete] user=${req.user.id} withdrew "${book.title}" (${book._id})`);
+    libraryFiles.releaseKeys(keys, { except: [book._id, ...foreign] }).catch(() => {});
+    logger.info(`[reading-room/delete] user=${req.user.id} withdrew "${book.title}" (${book._id})${foreign.length ? `; ${foreign.length} shortcut(s) other people made to it went with it` : ''}`);
     res.json({ ok: true });
   } catch (e) {
     logger.error('[reading-room/delete] error:', e);
@@ -2314,4 +2667,4 @@ const { readingRoomHtml } = require('./kadeReadingRoomPage');
 router.page = (_req, res) => res.type('html').send(readingRoomHtml);
 
 module.exports = router;
-module.exports._internals = { summary, chunkAt, openBook, refreshListen };
+module.exports._internals = { summary, chunkAt, openBook, refreshListen, libraryFiles };

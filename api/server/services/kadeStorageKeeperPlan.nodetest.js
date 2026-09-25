@@ -118,3 +118,19 @@ test('a whole mixed bucket never lists a visible Library copy', () => {
   assert.ok(result.deletes.length > 0);
   assert.ok(result.deletes.every((d) => !latest.has(d.versionId)));
 });
+
+test("a withdrawn book's original waits out the same 30 days as a Library file (Sep 25 2026)", () => {
+  const kept = plan([
+    version('books/u1/book-6aa999eb.zip', 29, { isLatest: true, deleteMarker: true }),
+    version('books/u1/book-6aa999eb.zip', 40),
+  ]);
+  assert.deepStrictEqual(kept.deletes, [], 'hidden 29 days: still recoverable');
+  const gone = plan([
+    version('books/u1/book-6aa999ec.zip', 31, { isLatest: true, deleteMarker: true }),
+    version('books/u1/book-6aa999ec.zip', 40),
+  ]);
+  assert.deepStrictEqual(reasons(gone), ['books/u1/book-6aa999ec.zip:hidden-book', 'books/u1/book-6aa999ec.zip:marker']);
+  assert.deepStrictEqual(plan([version('books/u1/book-live.zip', 900, { isLatest: true })]).deletes, [], 'a visible original is never removed');
+  const other = plan([version('other/x.txt', 8, { isLatest: true, deleteMarker: true }), version('other/x.txt', 9)]);
+  assert.deepStrictEqual(reasons(other), ['other/x.txt:hidden', 'other/x.txt:marker'], 'everything else keeps its 7 days');
+});

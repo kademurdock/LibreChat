@@ -7,13 +7,16 @@ interface ReviewedMove {
   category: string;
   addTags?: string[];
   newTitle?: string;
+  /** The author as it is now, required with newAuthor so a stale row does not match. */
+  author?: string;
+  newAuthor?: string;
 }
 
 interface ReviewedOperation {
   updateOne: {
-    filter: { _id: string; path: string; title: string; kind: string; state: string };
+    filter: { _id: string; path: string; title: string; kind: string; state: string; author?: string };
     update: {
-      $set: { path: string; category: string; title?: string };
+      $set: { path: string; category: string; title?: string; author?: string };
       $addToSet?: { tags: { $each: string[] } };
     };
   };
@@ -33,11 +36,12 @@ export function reviewedLibraryMoves(moves: ReviewedMove[], categories: readonly
     const tags = move.addTags || [];
     if (!Array.isArray(tags) || tags.length > 12 || tags.some((tag) => typeof tag !== 'string' || !tag.trim() || tag.length > 80)) throw new Error('Invalid discovery tags.');
     if (move.newTitle !== undefined && (typeof move.newTitle !== 'string' || !move.newTitle.trim() || move.newTitle.length > 300)) throw new Error('Invalid repaired title.');
+    if (move.newAuthor !== undefined && (typeof move.newAuthor !== 'string' || !move.newAuthor.trim() || move.newAuthor.length > 200 || /[\x00-\x1f]/.test(move.newAuthor) || typeof move.author !== 'string')) throw new Error('Invalid repaired author; send the current author with it.');
     return {
       updateOne: {
-        filter: { _id: move.id, path: move.from, title: move.title, kind: move.kind, state: 'ready' },
+        filter: { _id: move.id, path: move.from, title: move.title, kind: move.kind, state: 'ready', ...(move.newAuthor !== undefined ? { author: move.author } : {}) },
         update: {
-          $set: { path: move.to, category: move.category, ...(move.newTitle !== undefined ? { title: move.newTitle.trim() } : {}) },
+          $set: { path: move.to, category: move.category, ...(move.newTitle !== undefined ? { title: move.newTitle.trim() } : {}), ...(move.newAuthor !== undefined ? { author: move.newAuthor.trim() } : {}) },
           ...(tags.length ? { $addToSet: { tags: { $each: [...new Set(tags.map((tag) => tag.trim()))] } } } : {}),
         },
       },

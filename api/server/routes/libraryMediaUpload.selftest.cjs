@@ -10,7 +10,8 @@ let handlers,bytes;
 const item={_id:'owned',title:'A recording',tracks:[],async save(){},toObject(){return this}};
 Object.assign(context,{router:{post(_p,...h){handlers=h}},requireJwtAuth(){},ownAudio:async()=>item,
  mimeFor:()=>({mime:'audio/mpeg',ext:'mp3',kind:'audio'}),trackKey:()=> 'test',
- putBuffer:async(_k,b)=>{bytes=b},refreshListen(){},summary:b=>b,logger:{info(){},error(){}}
+ putBuffer:async(_k,b)=>{bytes=b},refreshListen(){},summary:b=>b,logger:{info(){},error(){}},
+ sha256OfBuffer:b=>require('crypto').createHash('sha256').update(b).digest('hex'),pendingCheck:()=>({fileCheck:{state:'pending'}})
 });
 const start=source.indexOf("router.post('/media/:id/track/upload'");
 vm.runInContext(source.slice(start,source.indexOf("router.post('/media/:id/track/:t/remove'",start)),context);
@@ -19,5 +20,6 @@ vm.runInContext(source.slice(start,source.indexOf("router.post('/media/:id/track
  const response={code:200,status(n){this.code=n;return this},json(body){this.body=body;return this}};
  await handlers[1](request,response,()=>{});await handlers[2](request,response);
  assert.equal(response.code,200);assert.equal(bytes.toString(),'recording');assert.equal(item.tracks[0].bytes,9);
+ assert.equal(item.tracks[0].sha256,require('crypto').createHash('sha256').update('recording').digest('hex'));assert.equal(item.fileCheck.state,'pending');
  console.log('Individual media fallback retains its own 256 MB memory handler and accepts buffered audio without a disk path.');
 })().catch(error=>{console.error(error);process.exitCode=1});

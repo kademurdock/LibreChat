@@ -8,7 +8,8 @@
  *    leave these behind, 41 GB of them on Sep 25);
  *  - a hidden copy: B2 keeps the bytes of a deleted or replaced file as a hidden version. A
  *    Library file's hidden copy goes 30 days after it was hidden, so a mistaken delete can be
- *    recovered for a month; anything else's after 7 days;
+ *    recovered for a month (a book's stored original under books/ too, since Sep 25 2026, when
+ *    withdrawing a text book started removing its original); anything else's after 7 days;
  *  - a hide marker, once nothing is left behind it (removing one earlier would bring the file back);
  *  - scratch that should never have outlived its job (book-imports/), 14 days after upload;
  *  - an old database backup, keeping every backup for 35 days, Sunday's for 13 weeks and each
@@ -27,6 +28,8 @@ const RULES = Object.freeze({
   backupMonthlyDays: 400,
 });
 const LIBRARY = 'media-library/';
+/** Text books' stored originals: the same 30-day undo as Library media. */
+const BOOKS = 'books/';
 const SCRATCH = ['book-imports/'];
 const BACKUP = /^backup-mongodb-(\d{4})-(\d{2})-(\d{2})T[\d-]+Z\.json\.gz$/;
 
@@ -79,6 +82,7 @@ function planStorage({ versions, uploads = [], now = Date.now(), rules = RULES }
     const top = list[0];
     const visible = top.isLatest && !top.deleteMarker;
     const library = key.startsWith(LIBRARY);
+    const book = key.startsWith(BOOKS);
 
     if (visible && SCRATCH.some((prefix) => key.startsWith(prefix)) && ageDays(now, top.lastModified) > rules.scratchDays) {
       for (const v of list) push(v, 'scratch');
@@ -90,13 +94,13 @@ function planStorage({ versions, uploads = [], now = Date.now(), rules = RULES }
       continue;
     }
 
-    const hiddenDays = library ? rules.hiddenLibraryDays : rules.hiddenOtherDays;
+    const hiddenDays = library || book ? rules.hiddenLibraryDays : rules.hiddenOtherDays;
     let allOlderGo = true;
     for (let i = 1; i < list.length; i++) {
       const v = list[i];
       // A version is hidden from the moment the next one (a newer copy or a hide marker) arrived.
       const hiddenFor = ageDays(now, list[i - 1].lastModified);
-      if (hiddenFor > hiddenDays) push(v, v.deleteMarker ? 'marker' : library ? 'hidden-library' : 'hidden');
+      if (hiddenFor > hiddenDays) push(v, v.deleteMarker ? 'marker' : library ? 'hidden-library' : book ? 'hidden-book' : 'hidden');
       else {
         allOlderGo = false;
         if (library && !v.deleteMarker) {
@@ -136,4 +140,4 @@ function planStorage({ versions, uploads = [], now = Date.now(), rules = RULES }
   return { deletes, aborts, totals, waiting };
 }
 
-module.exports = { planStorage, RULES, LIBRARY, SCRATCH, BACKUP };
+module.exports = { planStorage, RULES, LIBRARY, BOOKS, SCRATCH, BACKUP };

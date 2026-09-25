@@ -14,6 +14,9 @@ const context={
  storeAudioStream:async()=>{if(fail)throw Error('storage unavailable')},s3:()=>({}),MEDIA_BUCKET:()=> 'test',
  isAdmin:r=>r.user.role==='ADMIN',canPublish:r=>r.user.role==='ADMIN'||r.user.id==='trusted',KadeBook:Book,refreshListen(){},summary:b=>b,
  deleteKeys:async keys=>{removed.push(...keys)},TEXT_IMPORT_LIMIT:256*1024**2,
+ // Sep 25 2026, the one-file rule: the server hashes the upload and asks for a stored twin (none here).
+ filesMode:()=> 'report',filesPlan:require('../services/kadeLibraryFilesPlan'),sha256OfFile:async()=>({sha256:'a'.repeat(64),bytes:300*1024**2}),
+ libraryFiles:{storedTwin:async()=>null},readerFor:async r=>({id:r.user.id}),pendingCheck:()=>({fileCheck:{state:'pending'}}),
 };
 vm.runInNewContext(source.slice(start,end),context);
 function res(){return {code:200,callbacks:{},once(n,fn){this.callbacks[n]=fn},status(n){this.code=n;return this},json(body){this.body=body;return this}}}
@@ -23,6 +26,7 @@ async function run(role,privateValue,id=role){
 }
 (async()=>{
  let response=await run('USER','0');assert.equal(response.code,200);assert.equal(saved.kind,'audio');assert.equal(saved.path,'Audio/Audiobooks');assert.equal(saved.title,'Chaos Raining');assert.equal(saved.shared,false);assert.equal(saved.grownUpsOnly,true);assert.equal(saved.fileBytes,300*1024**2);assert.equal(readBuffer,0);
+ assert.equal(saved.fileSha256,'a'.repeat(64));assert.equal(saved.fileCheck.state,'pending');
  response=await run('ADMIN','1');assert.equal(response.body.book.shared,false);
  response=await run('ADMIN','0');assert.equal(response.body.book.shared,true);assert.equal(Object.prototype.toString.call(saved.sharedAt),'[object Date]');
  // Sep 24 2026: a trusted uploader's upload goes straight into the family library unless she keeps it private.

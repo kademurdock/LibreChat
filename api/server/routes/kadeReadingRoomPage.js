@@ -336,7 +336,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   }
 
   /* ── shelf ─────────────────────────────────────────────────────────── */
-  var shelfData = null, me = '', librarian = false, describedVideo = false;
+  var shelfData = null, me = '', librarian = false, describedVideo = false, filesRule = '';
   function canManage(b){ return b && (librarian || (me && b.owner === me)); }
   function bookLi(b, where){
     var li = document.createElement('li');
@@ -404,7 +404,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     try {
       shelfData = await api('/shelf');
       renderShelf(shelfData.mine, shelfData.borrowed);
-      me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo;
+      me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo; filesRule = shelfData.filesMode || '';
       $('familyLibraryNotice').hidden = shelfData.familyLibrary !== false;
       if (librarian && window.setupLibraryAccess) window.setupLibraryAccess(api, say);
       var sel = $('catFilter'); var cur = sel.value; sel.innerHTML = '<option value="">Everything</option>';
@@ -621,13 +621,14 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (!f) { say('Pick a book file first.'); return; }
     var btn = this; btn.disabled = true; say('Reading ' + f.name + '… large audiobooks can take several minutes. Keep this page open.');
     try {
-      if (!me) { var who = await api('/shelf'); me = who.me; }
+      if (!me) { var who = await api('/shelf'); me = who.me; filesRule = who.filesMode || ''; }
       if (!me) throw new Error('Could not identify your account. Reload before uploading.');
       var keepPrivate = $('bookPrivate').checked, grown = $('bookGrownUps').checked;
       var recoveryKey = 'library-import:' + JSON.stringify([me, f.name, f.size, f.lastModified, keepPrivate, grown]);
       var requestId = localStorage.getItem(recoveryKey);
       if (!requestId) { requestId = crypto.randomUUID(); localStorage.setItem(recoveryKey, requestId); }
-      var job = await api('/imports', { json: { requestId: requestId, fileName: f.name, bytes: f.size, private: keepPrivate, grownUpsOnly: grown } });
+      var sha256 = await fileSha256(f);
+      var job = await api('/imports', { json: { requestId: requestId, fileName: f.name, bytes: f.size, private: keepPrivate, grownUpsOnly: grown, sha256: sha256 || undefined } });
       if (job.uploadRequired) {
         say('Sending ' + f.name + ' directly to storage…');
         var lastBookPercent = -1;
@@ -642,7 +643,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       }
       var j = job.result;
       if (!j || !j.book) throw new Error('The import receipt is incomplete. Select the same file to check it again.');
-      if (j.duplicate) say('Already in the library: ' + j.book.title + (j.book.author ? ' by ' + j.book.author : '') + '. It has exactly the same text, so nothing new was added.');
+      if (j.duplicate) say(j.message || (j.same === 'file'
+        ? 'Already in the library: ' + j.book.title + '. It is exactly the same file, so it is kept once.'
+        : 'Already in the library: ' + j.book.title + (j.book.author ? ' by ' + j.book.author : '') + '. It has exactly the same text, so nothing new was added.'));
       else say('Added: ' + j.book.title + (j.book.author ? ' by ' + j.book.author : '') + '. ' + (j.book.kind === 'text' ? j.book.sections : j.book.tracks) + ' sections, about ' + j.book.listen + '. ' + (j.skipped.length ? j.skipped.length + ' front-matter parts skipped.' : ''));
       $('bookFile').value = '';
       loadShelf();
@@ -681,6 +684,19 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       x.send(file);
     });
   }
+  /* The one-file rule (Sep 25 2026): the file's SHA-256, so the server can say before anything is
+     sent that exactly this file is already a copy you can open. Only when the server's rule is 'on'
+     (the only mode that uses it) and only up to 200 MB: the browser holds the whole file in memory
+     to hash it, which a phone may not survive. Otherwise no hash is sent and the server compares
+     the stored bytes after the upload. */
+  async function fileSha256(file){
+    try {
+      if (filesRule !== 'on' || !file || file.size > 200 * 1024 * 1024 || !window.crypto || !crypto.subtle) return '';
+      say('Checking whether this exact file is already in the library…');
+      var digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+      return Array.prototype.map.call(new Uint8Array(digest), function(b){ return ('0' + b.toString(16)).slice(-2); }).join('');
+    } catch(e) { return ''; }
+  }
   function fileSeconds(file){
     return new Promise(function(resolve){
       try {
@@ -700,7 +716,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var btn = this; btn.disabled = true;
     var title = $('auTrackTitle').value.trim();
     try {
-      if (!me) { var who = await api('/shelf'); me = who.me; }
+      if (!me) { var who = await api('/shelf'); me = who.me; filesRule = who.filesMode || ''; }
       if (!me) throw new Error('Could not identify your account. Reload before uploading.');
       var pendingKey = 'library-track-pending:' + me + ':' + auItem.id;
       var pending = localStorage.getItem(pendingKey);
@@ -713,7 +729,19 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       var seconds = await fileSeconds(f);
       var lastPct = -1;
       var onProgress = function(p){ var pct = Math.round(p * 10) * 10; if (pct !== lastPct && pct % 20 === 0) { lastPct = pct; say('Uploading… ' + pct + ' percent.'); } };
-      var pre = await api('/media/' + auItem.id + '/track/presign', { json: { fileName: f.name, mime: f.type, bytes: f.size, multipart: true } });
+      var sha256 = await fileSha256(f);
+      var pre = await api('/media/' + auItem.id + '/track/presign', { json: { fileName: f.name, mime: f.type, bytes: f.size, multipart: true, sha256: sha256 || undefined } });
+      if (pre.duplicate) {
+        $('auFile').value = ''; btn.disabled = false;
+        if (pre.removed) {
+          /* The empty item she had just started is gone (nothing was uploaded): close the part adder
+             and put focus somewhere real before the message is read. */
+          $('auTracks').classList.add('hidden'); auItem = null; loadShelf();
+          $('h-mine').setAttribute('tabindex','-1'); $('h-mine').focus();
+        }
+        say(pre.message || ('Nothing was uploaded: this exact file is already in the library as "' + (pre.existing || pre.book || {}).title + '".'));
+        return;
+      }
       say('Uploading ' + f.name + ' straight to storage…');
       var receipt = { key: pre.key, title: title, bytes: f.size, seconds: seconds, originalName: f.name };
       if (pre.multipart) {
