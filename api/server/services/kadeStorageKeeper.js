@@ -213,10 +213,11 @@ function mount(router, { requireJwtAuth, isAdmin, express, s3, bucket }) {
 function start({ s3, bucket }) {
   const due = async () => {
     if (MODE() === 'off') return;
-    const latest = await Report.findOne({}, 'at').sort({ at: -1 }).lean().catch(() => null);
+    const latest = await Report.findOne({}, 'at mode').sort({ at: -1 }).lean().catch(() => null);
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
-    const ranToday = latest && new Date(latest.at).toISOString().slice(0, 10) === today;
+    // A report-only pass does not stand in for the first real one on the day the keeper is turned on.
+    const ranToday = latest && new Date(latest.at).toISOString().slice(0, 10) === today && latest.mode === MODE();
     if (!latest || (!ranToday && now.getUTCHours() >= RUN_HOUR())) await runOnce({ s3, bucket, reason: latest ? 'daily' : 'first' });
   };
   setTimeout(() => void due().catch(() => {}), 10 * 60 * 1000).unref();
