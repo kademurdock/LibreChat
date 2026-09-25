@@ -107,6 +107,17 @@ Neon, fluorescent light, mirrors, ghosts, shadows, whispers, echoes, heartbeats,
 HOW TO WRITE IT DOWN
 One line, 25 to 70 words: the genre tag, a colon, the situation. No title, no instrument list, no tempo, no running time, no lyrics, no quotation of a hook. If you are told to add a craft rule, end with one short sentence that fences the writer off from the lazy version of this exact song, in the manner of "Never say the word sorry." or "Told entirely through what is on the table." or "No one raises their voice." Otherwise end after the situation. No preamble, no sign-off, nothing else.`;
 
+/* Part 293 (Sep 25 2026): Surprise me learns who is asking, like the writer.
+ * The child account, the App Review seat and anyone unknown get every pitch
+ * clean; a grown-up gets the system exactly as it was. The first sentence is
+ * untouched, so the gateway still knows the desk. */
+export const SONG_IDEA_CLEAN_NOTE: string =
+  'This idea is for someone who needs it clean: keep every pitch free of swearing, sex, drugs and gore, and keep all of its humor and edge.';
+
+export function songIdeaSystemFor(audience: 'explicit' | 'clean' | null | undefined): string {
+  return audience === 'clean' ? `${songIdeaSystem}\n\n${SONG_IDEA_CLEAN_NOTE}` : songIdeaSystem;
+}
+
 export function songIdeaRequest(sparks: SongSparks): string {
   const avoid = sparks.avoid.length ? `\n\nIdeas she has already been shown. Be nothing like any of them in situation, genre or structure:\n- ${sparks.avoid.join('\n- ')}` : '';
   return `Genre: ${sparks.sound}.\nLens: ${sparks.lens}\nTerritory (loose): ${sparks.territory}.\nCraft rule: ${sparks.rule ? 'yes, end with one' : 'no'}.\n\nThe register to hit, from her own list (never reuse these):\n- ${sparks.shelf.join('\n- ')}${avoid}\n\nWrite the one idea.`;

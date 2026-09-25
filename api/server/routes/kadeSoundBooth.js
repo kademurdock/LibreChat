@@ -10,10 +10,11 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
+const { songAudience } = require('~/server/utils/kadeSongAudience');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
 const { splitSpeakScript, saySplit, previewExcerpt } = require('./kadeSoundBoothSplit');
@@ -1258,7 +1259,12 @@ async function scriptHandler(req, res) {
 
     const started = Date.now();
     const writingSettings = musicWritingSettings({ engine, mode, patient: b.patient === true, deep: b.background === true });
-    const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode }, getAgent);
+    /* Part 293: who the song is for. A grown-up's desk is told explicit lyrics
+     * are welcome; the child, the App Review seat, the Kids choir style and
+     * anyone unknown get a clean note. Never throws; fails clean. The audit
+     * below reuses this same system prompt, so it keeps the same note. */
+    const audience = mode === 'write' && ['lyria', 'yue2'].includes(engine) ? await songAudience(req.user, { band: b.band }) : null;
+    const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode }, getAgent, audience);
     const first = await callModel({
       ...writingSettings,
       system: writingSystem,
@@ -1414,6 +1420,7 @@ async function scriptHandler(req, res) {
         mode,
         costMeasured,
         writingPersona: mode === 'write' && ['lyria', 'yue2'].includes(engine) ? lyricAgentId : undefined,
+        audience: audience || undefined,
         model: writingSettings.model || MODEL,
         ms: Date.now() - started,
         inTok: usage.prompt_tokens,
@@ -2558,11 +2565,13 @@ router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req,
   ideaCounts.set(req.user.id, used + 1);
   try {
     const seen = await ideasAlreadyShown(req.user.id);
+    /* Part 293: clean pitches for the child, the review seat and anyone unknown. */
+    const audience = await songAudience(req.user, { band: (req.body || {}).band });
     let idea = null, costUSD = 0, measured = true, tries = 0, usage = {};
     while (!idea && tries < 2) {
       tries += 1;
       const made = await callModel({
-        system: songIdeaSystem,
+        system: songIdeaSystemFor(audience),
         user: songIdeaRequest(songIdeaSparks(Math.random, seen)),
         model: lyricWritingModel,
         maxTokens: 8000,

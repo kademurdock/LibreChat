@@ -168,7 +168,7 @@ export {
   lyricWritingModel,
   lyricAgentId,
 } from './music/writing';
-export { songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf } from './music/idea';
+export { songIdeaSparks, songIdeaSystem, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf } from './music/idea';
 
 export { tubeVaultHints, validTubeVaultItems } from './library/tubevault';
 

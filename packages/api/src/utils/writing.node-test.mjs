@@ -6,8 +6,14 @@ import vm from 'node:vm';
 const source = stripTypeScriptTypes(readFileSync(new URL('./writing.ts', import.meta.url), 'utf8'));
 const hitSource = stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8')).replace('export const hitWritingSystem', 'const hitWritingSystem');
 const musicSource = hitSource + '\n' + stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8')).replace("import { hitWritingSystem } from './hitSystem';", '');
-const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
+const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+/* What the Sound Booth route needs from @librechat/api to load at all (its GUIDE reads the YuE
+ * styles when the file loads), and a stand-in for the Part 293 audience helper whose answer a
+ * test can set. */
+const bootStubs = { yueStylesEnabled: () => false, yueStyles: {} };
+const audienceStub = { answer: 'explicit', calls: [] };
+const songAudienceStub = { songAudience: async (user, options) => { audienceStub.calls.push({ user, options }); return audienceStub.answer; } };
 
 test('music drafting reads the current Lyric persona while formatting and speech stay untouched', async () => {
   const reads = [];
@@ -16,7 +22,7 @@ test('music drafting reads the current Lyric persona while formatting and speech
   const first = await musicWritingPrompt('Sound Booth format', { engine: 'yue2', mode: 'write' }, read);
   assert.ok(first.includes(instructions));
   assert.match(first, /Multisyllabic and mosaic rhymes/); assert.match(first, /Keep supplied lyrics exactly/);
-  assert.match(first, /SYNTHETIC-VOCAL HIT-WRITING SYSTEM/); assert.match(first, /THE FOURTEEN TELLS/); assert.match(first, /three verses, 45 to 60 sung lines/);
+  assert.match(first, /SYNTHETIC-VOCAL HIT-WRITING SYSTEM/); assert.match(first, /THE FOURTEEN TELLS/); assert.match(first, /about four minutes, 45 to 65 sung lines/); assert.match(first, /either three verses, or two long verses of 12 to 16 lines each/);
   assert.match(first, /a named weekday \(Tuesday above all\)/); assert.match(first, /drinks are always coffee/);
   assert.match(first, /There is no Lyrics Box, Tag Box or Negative Tag Box here/);
   assert.doesNotMatch(first, /begins with the words `Lyrics Box`|APPENDIX B: TAG BOX PRESETS|REVISION PROTOCOL|30 to 40 lines total/, 'the other product\'s output contract and short budget are not carried');
@@ -46,10 +52,11 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: 'Intimate R&B with warm piano.\nLyrics:\n[Verse]\nMy exact authored line.\nREADBACK: A quiet song.' } }], usage: { cost: 0.002 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models') return { getAgent: async filter => { assert.equal(filter.id, lyricAgentId); return { instructions }; } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
+    if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
     if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay') return localRequire(name);
     return {};
   } };
@@ -57,8 +64,13 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
   let result;
   const response = { status(code) { assert.equal(code, 200); return this; }, json(value) { result = value; return this; } };
   const request = { user: { id: 'writer-fixture' }, body: { engine: 'yue2', mode: 'write', text: 'An intimate R&B song about coming home.', lyrics: 'My exact authored line.' } };
+  audienceStub.answer = 'explicit'; audienceStub.calls.length = 0;
   await handlers.get('post/script')(request, response);
   assert.ok(requests[0].messages[0].content.includes(instructions));
+  /* Part 293: the desk asks who the song is for, and a grown-up's desk carries the explicit note. */
+  assert.equal(audienceStub.calls.length, 1); assert.equal(audienceStub.calls[0].user.id, 'writer-fixture');
+  assert.ok(requests[0].messages[0].content.includes(SONG_EXPLICIT_NOTE)); assert.ok(!requests[0].messages[0].content.includes(SONG_CLEAN_NOTE));
+  assert.equal(ledger[0].metadata.audience, 'explicit');
   assert.equal(requests[0].model, lyricWritingModel);
   assert.equal(requests[0].max_tokens, 24000);
   assert.equal(requests[0].temperature, 0.85);
@@ -83,6 +95,8 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
   assert.equal(requests[3].reasoning, undefined);
   assert.equal(requests[3].top_p, undefined);
   assert.equal(requests[3].max_tokens, 2200);
+  assert.equal(audienceStub.calls.length, 3, 'formatting her own words never asks, and never gets a note');
+  assert.doesNotMatch(requests[3].messages[0].content, /CLEAN OR EXPLICIT/);
 });
 
 test('provider cost, including free/cached calls, wins over token estimates', () => {
@@ -129,9 +143,10 @@ test('real script route accounts for the shortening call as well as the first dr
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async () => { calls++; return { data: { choices: [{ message: { content: '[Setting: A quiet room.]\nNora (calm woman) says softly: "' + 'Stay here. '.repeat(calls === 1 ? 220 : 30) + '"' } }], usage: { cost: calls === 1 ? 0.004 : 0.002 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
+    if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
     if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay') return localRequire(name);
     return {};
   } };
@@ -204,17 +219,25 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: requests.length === 1 || /supplied/.test(body.messages[1].content) ? draft : repaired } }], usage: { cost: 0.01 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models') return { getAgent: async () => ({ instructions: 'Saved Lyric persona.' }) };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
+    if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
     if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay') return localRequire(name);
     return {};
   } };
   vm.runInNewContext(readFileSync(url, 'utf8'), context);
   let result; const response = { status() { return this; }, json(value) { result = value; return this; } };
-  await handlers.get('post/script')({ user: { id: 'scan-fixture' }, body: { engine: 'yue2', mode: 'write', text: 'a folk song about a bad morning' } }, response);
+  audienceStub.answer = 'clean'; audienceStub.calls.length = 0;
+  await handlers.get('post/script')({ user: { id: 'scan-fixture' }, body: { engine: 'yue2', mode: 'write', band: 'kids', text: 'a folk song about a bad morning' } }, response);
   assert.equal(requests.length, 2, 'one draft, one audit');
+  /* Part 293: the Kids style reaches the audience check, and the audit reuses the draft's system
+   * prompt, so it carries the same clean note. */
+  assert.equal(audienceStub.calls[0].options.band, 'kids');
+  for (const call of requests) { assert.ok(call.messages[0].content.includes(SONG_CLEAN_NOTE)); assert.ok(!call.messages[0].content.includes(SONG_EXPLICIT_NOTE)); }
+  assert.equal(requests[1].messages[0].content, requests[0].messages[0].content, 'the audit sees the same system prompt');
+  audienceStub.answer = 'explicit';
   assert.match(requests[1].messages[1].content, /be the producer who decides whether it gets cut/);
   assert.match(requests[1].messages[1].content, /"I poured my coffee on a Tuesday" -- a named weekday|-- coffee/);
   assert.match(result.script, /Tang the day the fair left town/); assert.doesNotMatch(result.script, /Tuesday/);
@@ -259,8 +282,17 @@ test('Part 216: only the sung words come from a repair; direction and READBACK s
 
 test('Part 216: a song the desk sized itself must have three verses; her own length wins', () => {
   const two = 'Pop.\nLyrics:\n[Verse 1]\na\n[Chorus]\nb\n[Verse 2]\nc\n[Bridge]\nd\n[Chorus]\nb\nREADBACK: x';
-  assert.match(lyricShapeIssue(two, 'a pop song about luck'), /only two verses.*Add a \[Verse 3\]/);
+  assert.match(lyricShapeIssue(two, 'a pop song about luck'), /only two short verses.*or two long ones.*Add a \[Verse 3\]/);
   assert.equal(lyricShapeIssue(two.replace('[Bridge]', '[Verse 3]'), 'a pop song about luck'), null);
+  /* Part 293: two LONG verses (24 sung verse lines between them) are the desk's other map. */
+  const verse = n => Array.from({ length: n }, (_, i) => `line ${i + 1} of this verse`).join('\n');
+  const long = (a, b) => `Pop.\nLyrics:\n[Verse 1]\n${verse(a)}\n[Chorus]\nb\n[Verse 2]\n${verse(b)}\n[Bridge]\nd\n[Final Chorus]\nb\n\nREADBACK: x`;
+  assert.equal(lyricShapeIssue(long(12, 12), 'a pop song about luck'), null, 'two verses of twelve pass');
+  assert.equal(lyricShapeIssue(long(16, 8), 'a pop song about luck'), null, 'the total is what counts');
+  assert.match(lyricShapeIssue(long(12, 11), 'a pop song about luck'), /only two short verses/);
+  assert.match(lyricShapeIssue(long(12, 11).replace('[Verse 2]\n', '[Verse 2]\n(oh)\n(oh, oh)\n'), 'luck'), /only two short verses/, 'whole-line ad-libs are not verse lines');
+  assert.match(lyricShapeIssue(`Pop.\nLyrics:\n[Verse 1]\n${verse(30)}\n[Chorus]\nb\n\nREADBACK: x`, 'luck'), /only one verse.*Add a \[Verse 2\]/, 'one long verse is still one verse');
+  assert.equal(lyricShapeIssue(long(12, 12).replace('[Verse 2]', '[Verse 2 - Spoken]'), 'luck'), null, 'a delivery cue keeps a verse a verse');
   for (const brief of ['a short jingle', 'two verses and a chorus', 'a ninety second song', 'sixteen bars about my dog'])
     assert.equal(lyricShapeIssue(two, brief), null, brief);
   assert.equal(lyricShapeIssue('Instrumental brief. Instrumental only, no vocals.', 'surf rock'), null);
@@ -355,7 +387,8 @@ test('Part 231: Surprise me writes ideas in her format, shows her list only as a
 
 test('Part 230: the desk demands rhyme and one meter, counts syllables itself, and knows her newest pet hates', async () => {
   const prompt = await musicWritingPrompt('format', { engine: 'yue2', mode: 'write' }, async () => ({ instructions: 'persona' }));
-  assert.match(prompt, /SING-ALONG FIRST/); assert.match(prompt, /This desk under-rhymes/); assert.match(prompt, /SAY IT PLAIN IN THE CHORUS/);
+  assert.match(prompt, /SING-ALONG FIRST/); assert.match(prompt, /This desk under-rhymes/); assert.match(prompt, /THE CHORUS STATES THE HOOK\. The verses can show; the chorus TELLS/);
+  assert.doesNotMatch(prompt, /say it plain/i, 'Part 293: the old heading was sung back in a real song and is on her ban list');
   const wander = 'Pop.\n\nLyrics:\n[Verse 1]\nBar is half full and the jukebox is dying tonight again\nYou by the window\nSome fella walked in and he looked you up and he looked you down\nI got a beer\n[Chorus]\nLook at her\n\nREADBACK: x';
   const audit = lyricAuditRequest(wander, [], null);
   assert.match(audit, /SING-ALONG, the gate this desk fails most/); assert.doesNotMatch(audit, /one line rhymes with nothing/);
@@ -375,4 +408,108 @@ test('Part 231: a duet line that opens with a singer cue is a sung line, so a re
   assert.match(merged, /\[Her\] I saved you a seat by the door/);
   const audit = lyricAuditRequest(first, [], null);
   assert.match(audit, /do NOT count syllables yourself/); assert.match(audit, /not a nursery rhyme either/);
+});
+
+/* ---------------- Part 293 (Sep 25 2026): who the song is for, and her ChatGPT prompt ---------------- */
+const DESK_OPENING = "You are Lyric, working the songwriting desk in Kade-AI's Sound Booth. Your saved persona below is who you are in conversation. The HIT-WRITING SYSTEM after it is how every song at this desk is written; where the two differ about craft, the system wins. Then come the owner's desk notes and the delivery format the audio engine needs.";
+
+test('Part 293: the audience note sits after the desk notes and before the delivery contract; READBACK stays last', async () => {
+  const read = async () => ({ instructions: 'persona' });
+  const base = 'You are the script desk.\n\nAFTER the script, on a new line, output exactly:\nREADBACK: one or two plain sentences saying what a listener will hear.';
+  const request = { engine: 'yue2', mode: 'write' };
+  const before = await musicWritingPrompt(base, request, read);
+  assert.equal(await musicWritingPrompt(base, request, read, null), before, 'the kill switch (null) is the desk exactly as it was');
+  assert.equal(await musicWritingPrompt(base, request, read, undefined), before);
+  assert.doesNotMatch(before, /CLEAN OR EXPLICIT/);
+  assert.equal(before.split('\n')[0], DESK_OPENING, 'the gateway matches this opening line');
+  for (const [audience, note, other] of [['explicit', SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE], ['clean', SONG_CLEAN_NOTE, SONG_EXPLICIT_NOTE]]) {
+    const prompt = await musicWritingPrompt(base, request, read, audience);
+    assert.equal(prompt.split('\n')[0], DESK_OPENING, `${audience}: the opening line never changes`);
+    const at = prompt.indexOf(note);
+    assert.ok(at >= prompt.indexOf(musicWritingCraft) + musicWritingCraft.length, `${audience}: after the owner's desk notes`);
+    assert.ok(at < prompt.indexOf('SOUND BOOTH DELIVERY CONTRACT'), `${audience}: before the delivery contract`);
+    assert.ok(prompt.lastIndexOf('READBACK: one or two plain sentences') > prompt.indexOf('SOUND BOOTH DELIVERY CONTRACT') && prompt.endsWith(base), `${audience}: the READBACK rule stays last`);
+    assert.equal(prompt.split(note).length, 2, `${audience}: said once`);
+    assert.ok(!prompt.includes(other), `${audience}: never both`);
+    assert.equal(prompt.replace(note + '\n\n', ''), before, `${audience}: the note is the only change`);
+  }
+  assert.ok((await musicWritingPrompt(base, { engine: 'lyria', mode: 'write' }, read, 'clean')).includes(SONG_CLEAN_NOTE), 'Lyria drafts get it too');
+  assert.equal(await musicWritingPrompt('Original format', { engine: 'yue2', mode: 'format' }, read, 'explicit'), 'Original format', 'her own words: no note');
+  assert.equal(await musicWritingPrompt('Original format', { engine: 'scenema', mode: 'write' }, read, 'clean'), 'Original format', 'speech: no note');
+  for (const words of ['explicit is allowed', 'funny, filthy, horny, furious, petty, dark, cruel, sarcastic or stupid on purpose', 'write fuck, shit, bitch, asshole, damn and the rest in full', 'no asterisks, no bleeps and no "f-ing"', 'Sexual jokes, dark humor, petty insults and dumb immature jokes', 'Do not sand a line down just because a cleaner word exists', 'Do not force it into a song that does not want it', 'as punctuation or as the escalation of a joke that already works', 'A lullaby, a hymn or a sweet song usually wants none', 'If the brief asks for clean, radio or kid-friendly words, write it clean', 'Never slurs, and nothing sexual involving anyone under 18'])
+    assert.ok(SONG_EXPLICIT_NOTE.includes(words), words);
+  for (const words of ['this song must be clean', 'No swearing, no sexual content or innuendo, no drug jokes, nothing gory', 'Keep the edge and lose the words', 'instead of bleeping or starring anything out'])
+    assert.ok(SONG_CLEAN_NOTE.includes(words), words);
+  assert.match(before, /\[Solo\], \[Interlude\], \[Final Chorus\], \[Outro\]/, 'the system names the two new section tags');
+});
+
+test('Part 293: her ChatGPT prompt joins the desk notes as plain rules, with no example lines to copy', () => {
+  const at = musicWritingCraft.indexOf('WRITE IT LIKE A PERSON WROTE IT');
+  const end = musicWritingCraft.indexOf('- Do the SONG SPEC');
+  assert.ok(at > 0 && end > at, 'inside the owner notes, before the closing instruction');
+  const section = musicWritingCraft.slice(at, end);
+  for (const rule of ['Trust the listener', 'When a line lands, move on', 'Never explain a joke', 'one saying how sad the singer is', 'No lesson at the end', 'grief can stay grief, anger can stay anger', 'want the person they shouldn', 'Give the singer a personality', 'opinions, bad habits, pettiness, contradictions', 'do not have to be the good guy', 'Songs are not HR training videos', 'Every line earns its spot', 'could sit in 500 other songs', 'exists only for the rhyme', 'explains the line before it', 'only links two better lines', 'Plain words with a sharp observation beat fancy words', 'No thesaurus poetry', 'never turn a feeling into a person just to get a rhyme', 'take the premise seriously', 'Start with a believable version and escalate', 'callbacks and misdirection', 'set up an expectation and wreck it', 'Specific beats random', 'Never explain the punchline', 'a phrase, a question, a command, a ridiculous image, a repeated word or a punchline', 'Take the title from the hook or from the central joke', 'Punk and emo', 'hard consonants, specific grievances, not eyeliner and darkness', 'no vocabulary flexing and no generic bragging', 'only when something happens there', 'bodies and rooms', 'brutally clear in one sentence', 'Experimental may break the shape, never into nonsense'])
+    assert.ok(section.includes(rule), rule);
+  assert.doesNotMatch(section, /["“”]/, 'no worked example lines: the writer hands examples back');
+  assert.match(musicWritingCraft, /could another good songwriter surprise me with this\? Are there a few lines somebody would quote, caption or yell with friends the next morning\?/);
+  /* The conflicts, settled her way. */
+  assert.match(musicWritingCraft, /At most ONE deliberately unrhymed line in the whole song\. Slant rhyme counts as rhyme\. Never twist word order or grammar to land a rhyme/);
+  assert.match(musicWritingCraft, /Skip the nursery-rhyme pairs/);
+  assert.match(musicWritingCraft, /about four minutes, 45 to 65 sung lines/); assert.match(musicWritingCraft, /or two long verses of twelve to sixteen lines each, with a bridge and a final chorus/);
+  assert.match(musicWritingCraft, /Do not reach for the same shape every time: a pre-chorus only when it earns its place/); assert.match(musicWritingCraft, /\[Final Chorus\] and \[Solo\] are fine too/);
+  assert.match(musicWritingCraft, /No more than two observed details per verse, and each one something only this song could contain/);
+  assert.match(musicWritingCraft, /unless her brief names them: rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV/);
+  assert.doesNotMatch(musicWritingCraft, /what was on the plate|the chain that squeaks|kitchens|timestamps|unfinished drinks/, 'no prop list to copy');
+  assert.match(musicWritingCraft, /chooses the lead voice, its range and its delivery for this song and this genre\. There is no house voice at this desk\./);
+  assert.doesNotMatch(musicWritingCraft, /\balto\b|close to the microphone|\bbelt/i, 'the house default is never shown as something to copy');
+  assert.doesNotMatch(musicWritingCraft, /Lyrics Box|Tag Box|elite professional songwriter/, 'her ChatGPT output contract stays out');
+  const audit = lyricAuditRequest('Pop.\n\nLyrics:\n[Verse 1]\nOne line\n\nREADBACK: x', [], null);
+  assert.match(audit, /Does the last verse do new work\?/); assert.doesNotMatch(audit, /what was on the plate|the traffic was bad/);
+});
+
+async function loadIdeaModule() {
+  const strip = file => stripTypeScriptTypes(readFileSync(new URL('../music/' + file, import.meta.url), 'utf8'));
+  const shelfSource = strip('ideaShelf.ts').replace('export const ideaShelf', 'const ideaShelf');
+  const ideaSource = shelfSource + '\n' + strip('idea.ts').replace("import { ideaShelf } from './ideaShelf';", '') + '\nexport { ideaShelf };';
+  return import('data:text/javascript;base64,' + Buffer.from(ideaSource).toString('base64'));
+}
+
+test('Part 293: Surprise me keeps every pitch clean for a clean audience and is unchanged for a grown-up', async () => {
+  const idea = await loadIdeaModule();
+  const { songIdeaSystem, songIdeaSystemFor, SONG_IDEA_CLEAN_NOTE } = idea;
+  for (const audience of ['explicit', null, undefined]) assert.equal(songIdeaSystemFor(audience), songIdeaSystem, String(audience));
+  const clean = songIdeaSystemFor('clean');
+  assert.ok(clean.startsWith(songIdeaSystem) && clean.endsWith(SONG_IDEA_CLEAN_NOTE));
+  assert.ok(clean.startsWith("You are Lyric, working the songwriting desk in Kade-AI's Sound Booth."), 'the gateway still knows the desk');
+  assert.equal(SONG_IDEA_CLEAN_NOTE.match(/[.!?](?=\s|$)/g).length, 1, 'one sentence');
+  assert.match(SONG_IDEA_CLEAN_NOTE, /clean/);
+
+  /* The real /idea route asks who is asking and sends the matching system. */
+  const url = new URL('../../../../api/server/routes/kadeSoundBooth.js', import.meta.url);
+  const handlers = new Map(), requests = [];
+  const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map(method => [method, (path, ...values) => handlers.set(method + path, values.at(-1))]));
+  const multer = Object.assign(() => ({ single: () => () => {} }), { memoryStorage: () => ({}) });
+  const pitch = 'Country comedy: A man keeps a running feud with the self-checkout at the only grocery in town, and by the third verse the whole store is taking sides over one bag of onions.';
+  const context = { module: { exports: {} }, Buffer, URL, console, Date, Intl, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
+    if (name === 'express') return { Router: () => router, json: () => () => {} };
+    if (name === 'multer') return multer;
+    if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: pitch } }], usage: { cost: 0.001 } } }; } };
+    if (name === '@librechat/api') return { ...idea, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
+    if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
+    if (name === '~/models/kadeUsage') return { logKadeUsage: async () => {}, KadeUsage: { find: () => ({ sort: () => ({ limit: () => ({ select: () => ({ lean: async () => [] }) }) }) }) } };
+    if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
+    if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay') return createRequire(url)(name);
+    return {};
+  } };
+  vm.runInNewContext(readFileSync(url, 'utf8'), context);
+  let result; const response = { status() { return this; }, json(value) { result = value; return this; } };
+  audienceStub.calls.length = 0;
+  for (const [answer, user] of [['clean', 'idea-child'], ['explicit', 'idea-adult']]) {
+    audienceStub.answer = answer;
+    await handlers.get('post/idea')({ user: { id: user }, body: {} }, response);
+    assert.equal(result.idea, pitch);
+    assert.equal(requests.at(-1).messages[0].content, songIdeaSystemFor(answer), answer);
+  }
+  assert.deepEqual(audienceStub.calls.map(c => c.user.id), ['idea-child', 'idea-adult']);
+  audienceStub.answer = 'explicit';
 });
