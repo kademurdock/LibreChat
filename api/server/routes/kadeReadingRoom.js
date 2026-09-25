@@ -1982,14 +1982,16 @@ router.get('/librarian/inventory', requireJwtAuth, async (req, res) => {
     res.json({ items, next: more ? String(items[items.length - 1]._id) : null });
   } catch (e) { logger.warn(`[library/inventory] ${e.message}`); res.status(500).json({ error: 'Could not read the catalog.' }); }
 });
-router.post('/librarian/organize', requireJwtAuth, express.json({ limit: '1mb' }), async (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
+/* Part 291: Kade's maintenance tools may send reviewed moves too (x-kade-ops-secret); they act as
+ * nobody, so they reach shared rows only. */
+router.post('/librarian/organize', opsOrAdmin(isAdmin), express.json({ limit: '1mb' }), async (req, res) => {
+  if (!req.kadeOps && !isAdmin(req)) return res.status(403).json({ error: 'Only the librarian.' });
   let operations;
   try { operations = reviewedLibraryMoves(req.body?.moves, CATEGORIES); }
   catch (e) { return res.status(400).json({ error: e.message }); }
   try {
     for (const op of operations) {
-      op.updateOne.filter.$or = [{ shared: true }, { owner: req.user.id }];
+      op.updateOne.filter.$or = req.user ? [{ shared: true }, { owner: req.user.id }] : [{ shared: true }];
       /* Part 282: a repaired title is new evidence. An item still waiting for a folder loses the
        * librarian's "already read" mark, so the next pass reads it again under its real name. */
       const set = op.updateOne.update.$set;
@@ -2012,7 +2014,7 @@ router.post('/librarian/organize', requireJwtAuth, express.json({ limit: '1mb' }
       }));
       if (fixes.length) cleared = (await KadeBook.bulkWrite(fixes)).modifiedCount || 0;
     }
-    logger.info(`[library/organize] user=${req.user.id} matched=${result.matchedCount} changed=${result.modifiedCount} doubtsCleared=${cleared}`);
+    logger.info(`[library/organize] user=${req.user ? req.user.id : 'ops'} matched=${result.matchedCount} changed=${result.modifiedCount} doubtsCleared=${cleared}`);
     res.json({ ok: true, matched: result.matchedCount, changed: result.modifiedCount, doubtsCleared: cleared });
   } catch (e) { logger.warn(`[library/organize] ${e.message}`); res.status(500).json({ error: 'Could not apply the reviewed changes.' }); }
 });

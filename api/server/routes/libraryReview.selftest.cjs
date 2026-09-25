@@ -6,7 +6,7 @@ const handlers = {}, calls = [];
 const rows = [{_id:'a'}, {_id:'b'}, {_id:'c'}];
 const context = {
  router: {get:(path,...args)=>handlers[path]=args.at(-1),post:(path,...args)=>handlers[path]=args.at(-1)},
- requireJwtAuth(){}, isAdmin:r=>r.user.role==='ADMIN', isId:s=>/^[a-f0-9]{24}$/.test(s),
+ requireJwtAuth(){}, opsOrAdmin:()=>function(){}, isAdmin:r=>!!r.user&&r.user.role==='ADMIN', isId:s=>/^[a-f0-9]{24}$/.test(s),
  clampInt:(v,min,max,d)=>Number(v)||d, express:{json:()=>()=>{}}, logger:{warn(){},info(){}},
  KadeBook:{find(query,fields){calls.push({query,fields});return {sort(){return this},limit(){return this},async lean(){return rows.slice()}}},async bulkWrite(ops){calls.push(ops);return {matchedCount:0,modifiedCount:0}}},
  mediaZoneOf:()=>'intake', reviewedLibraryMoves:()=>[{updateOne:{filter:{title:'expected'},update:{$set:{path:'Videos/Commercials'}}}}], CATEGORIES:[]
@@ -18,6 +18,10 @@ const response=()=>({code:200,status(c){this.code=c;return this},json(body){this
   const res=response();await handlers[path]({user:{id:'friend',role:'USER'},query:{},body:{}},res);
   assert.equal(res.code,403);assert.equal(calls.length,0);
  }
+ // Part 291: an ops call (no signed-in user) reaches shared rows only.
+ {const res=response();await handlers['/librarian/organize']({kadeOps:true,body:{moves:[]}},res);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0][0].updateOne.filter)),{title:'expected',$or:[{shared:true}]});
+  calls.length=0;}
  let res=response();await handlers['/librarian/inventory']({user:{id:'admin',role:'ADMIN'},query:{limit:2}},res);
  assert.equal(res.body.items.length,2);assert.equal(res.body.next,'b');
  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].query)),{state:'ready',$or:[{shared:true},{owner:'admin'}]});
