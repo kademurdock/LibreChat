@@ -67,3 +67,15 @@ test('a phone call leaves the Library digest for chat; chat takes everything', a
   const kade = fs.readFileSync(require.resolve('../routes/kade.js'), 'utf8');
   assert.match(kade, /takePendingChatNudges\(uid, 5, \{ exceptTypes: \['library-digest'\] \}\)/);
 });
+
+test('a voice turn leaves the Library digest for chat, Kade on her own call included', () => {
+  const { nudgePickupOptions } = require('./kadeNudgeTurn');
+  const kade = { id: 'k', role: 'ADMIN' };
+  assert.deepEqual(nudgePickupOptions({ user: kade, kadeOnBehalfOf: { id: 'k' } }), { exceptTypes: ['library-digest'] });
+  assert.deepEqual(nudgePickupOptions({ user: kade, body: { kadeOnBehalfOf: 'kade@example.com' } }), {
+    exceptTypes: ['library-digest'],
+  });
+  assert.deepEqual(nudgePickupOptions({ user: kade, body: {} }), {});
+  const client = require('node:fs').readFileSync(require.resolve('../controllers/agents/client.js'), 'utf8');
+  assert.match(client, /takePendingChatNudges\(this\.options\.req\.user\.id, 5, nudgePickupOptions\(this\.options\.req\)\)/);
+});

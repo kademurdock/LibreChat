@@ -28,6 +28,7 @@ const {
   createRequestNotifier,
   libraryAccess,
   familyLibraryMember,
+  libraryReviewSeat,
 } = require('@librechat/api');
 const { getUserById } = require('~/models');
 const { KadeBook } = require('~/models/kadeBook');
@@ -47,13 +48,16 @@ async function requestReader(id) {
     id: String(id),
     name: user.name || user.username || 'Library reader',
     admin: user.role === 'ADMIN',
-    // The account schema defaults to adult; anything else fails closed.
-    child: user.kadeAccountType !== 'adult',
+    // The account schema defaults to adult; anything else fails closed. The owner's untyped admin
+    // seat is never a child, as in kade_library.
+    child: user.role !== 'ADMIN' && user.kadeAccountType !== 'adult',
     hidden:
       !familyLibraryMember(user) ||
       hidden.includes(String(id).toLowerCase()) ||
       hidden.includes(String(user.email || '').toLowerCase()),
     testSeat: nudges().isTestUser(String(id)),
+    // The App Review seat stays silent about a family collection (Part 288), requests included.
+    reviewSeat: libraryReviewSeat({ ...user, id: String(id) }),
   };
 }
 

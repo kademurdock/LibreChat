@@ -41,14 +41,20 @@
       var node = element('button', label);
       node.type = 'button';
       node.className = 'act quiet';
+      // aria-disabled, never disabled: Chromium drops focus to the page when a focused button is
+      // disabled, and a refusal or an error would leave NVDA on nothing (access.js does the same).
+      var busy = false;
       node.onclick = async function () {
-        node.disabled = true;
+        if (busy) return;
+        busy = true;
+        node.setAttribute('aria-disabled', 'true');
         try {
           await action();
         } catch (error) {
           announce(error.message);
         } finally {
-          node.disabled = false;
+          busy = false;
+          node.removeAttribute('aria-disabled');
         }
       };
       return node;
@@ -494,7 +500,8 @@
         title.focus();
         return announce('Give the request a title or a few words about it.');
       }
-      submit.disabled = true;
+      if (submit.getAttribute('aria-disabled') === 'true') return;
+      submit.setAttribute('aria-disabled', 'true');
       try {
         var result = await send({
           action: 'create',
@@ -512,7 +519,7 @@
       } catch (error) {
         announce(error.message);
       } finally {
-        submit.disabled = false;
+        submit.removeAttribute('aria-disabled');
       }
     };
     return load(false)

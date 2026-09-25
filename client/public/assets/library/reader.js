@@ -394,6 +394,13 @@
 
     return {
       isOpen: function () { return !!dialog && dialog.open; },
+      /** The page's one live region is inert behind the open dialog: the player's own news
+       * (a voice error, the end of the book) is said here instead. False when closed. */
+      say: function (text) {
+        if (!dialog || !dialog.open) return false;
+        say(text);
+        return true;
+      },
       /** Narration's play state changed. */
       playback: playLabel,
       /** The narration moved to `position` (the player calls this for every passage). */

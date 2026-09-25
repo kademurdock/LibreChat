@@ -71,8 +71,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     <h2 id="librarianHeading">Meet Mrs. Witherspoon</h2>
     <p>Looking for a half-remembered book, commercial, radio show or tape? Tell Olivia what you remember, or talk with her about something in the collection.</p>
     <a class="act primary" id="talkLibrarian" href="${require('@librechat/api').librarianGuide.chatUrl}">Talk to the Librarian</a>
-    <p class="hint">Speak or type using the usual voice and chat controls. You can also ask her to save a library request from whatever you remember.</p>
-    <p id="requestsLink" hidden><a href="/library#libraryRequests">Library requests and updates</a></p>
+    <p class="hint">Speak or type using the usual voice and chat controls.</p>
+    <p id="requestsLink" hidden>You can also ask her to save a library request from whatever you remember. <a href="/library#libraryRequests">Library requests and updates</a></p>
   </section>
 
   <section id="shelf">
@@ -321,7 +321,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   var librarianChatUrl = ${JSON.stringify(require('@librechat/api').librarianGuide.chatUrl)};
   var $ = function(id){ return document.getElementById(id); };
   var live = $('live');
-  function say(t){ live.textContent = ''; setTimeout(function(){ live.textContent = t; }, 30); }
+  // While the reading view (a modal dialog) is open, #live is inert; the reader says it instead.
+  function say(t){ if (libraryReader && libraryReader.say(t)) return; live.textContent = ''; setTimeout(function(){ live.textContent = t; }, 30); }
   function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function catName(c){ return {book:'Book', audiobook:'Audiobook', movie:'Movie', cassette:'Cassette', radio:'Radio', commercials:'Commercials', music:'Music', other:'Other'}[c] || c; }
   async function api(path, opts){
@@ -405,7 +406,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       renderShelf(shelfData.mine, shelfData.borrowed);
       me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo;
       $('familyLibraryNotice').hidden = shelfData.familyLibrary !== false;
-      if (librarian && window.setupLibraryAccess) window.setupLibraryAccess(api);
+      if (librarian && window.setupLibraryAccess) window.setupLibraryAccess(api, say);
       var sel = $('catFilter'); var cur = sel.value; sel.innerHTML = '<option value="">Everything</option>';
       var present = {}; (shelfData.library || []).forEach(function(b){ present[b.kind !== 'text' ? b.category : 'book'] = 1; });
       Object.keys(present).forEach(function(c){ var o = document.createElement('option'); o.value = c; o.textContent = catName(c); sel.appendChild(o); });
@@ -751,7 +752,10 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   var autoplayNext = false;
   /* Sep 24 2026: the reading view (client/public/assets/library/reader.js) reads the
      same book beside the narration; it keeps its own place and marks the narrated passage. */
-  var libraryReader = window.createLibraryReader({ api: api, book: function(){ return book; }, position: function(){ return pos; }, isPlaying: function(){ return playing; }, play: play, pause: pause, person: function(){ return me; } });
+  // A missing reader.js costs the reading view, never the whole page (its button stays hidden).
+  var libraryReader = window.createLibraryReader
+    ? window.createLibraryReader({ api: api, book: function(){ return book; }, position: function(){ return pos; }, isPlaying: function(){ return playing; }, play: play, pause: pause, person: function(){ return me; } })
+    : { open: function(){}, narrationChanged: function(){}, playback: function(){}, isOpen: function(){ return false; }, say: function(){ return false; } };
   $('readingViewBtn').onclick = function(){ libraryReader.open(); };
 
   function chapterTitle(s){ var ch = isAudio() ? book.tracks[s] : book.chapters[s]; return ch ? ch.title : ''; }
@@ -881,7 +885,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     while (pipe.markers.length && ctx.currentTime >= pipe.markers[0].at) {
       var m = pipe.markers.shift();
       if (m.end) { finishBook(); return; }
-      if (m.pos) { var changed = m.pos.s !== pos.s; pos = m.pos; showText(pos); saveProgress(); updateSession(); if (changed) announcePosition(''); }
+      if (m.pos) { var changed = m.pos.s !== pos.s; pos = m.pos; showText(pos); saveProgress(); updateSession(); if (changed && !libraryReader.isOpen()) announcePosition(''); }
     }
   }
   function stopScheduled(){
@@ -1287,7 +1291,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (book.ownerName && !book.mine) bits.push('donated by ' + book.ownerName);
     $('bookMeta').textContent = bits.join(' · ');
     $('jacketLine').textContent = book.kind !== 'text' ? (book.description || '') : '';
-    $('readingViewBtn').hidden = isAudio();
+    $('readingViewBtn').hidden = isAudio() || !window.createLibraryReader;
     var sel = $('chapterSel'); sel.innerHTML = '';
     var list = isAudio() ? book.tracks : book.chapters;
     list.forEach(function(ch, i){ var o = document.createElement('option'); o.value = i; o.textContent = (i + 1) + '. ' + ch.title + (isAudio() && ch.seconds ? ' (' + clock(ch.seconds) + ')' : ''); sel.appendChild(o); });

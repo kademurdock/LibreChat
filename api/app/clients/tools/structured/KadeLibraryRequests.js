@@ -18,12 +18,28 @@ class KadeLibraryRequests extends Tool {
     this.description = libraryRequestsDescription;
     this.schema = libraryRequestsSchema;
     this.userId = options.req?.kadeOnBehalfOf?.id || options.req?.user?.id;
+    /* The voice lane named someone on the line but the lookup failed: acting as the service
+     * seat would hand them Kade's owner powers, so nothing is read or saved (as kade_library). */
+    this.unresolvedCaller = options.req?.kadeOnBehalfOfUnresolved === true;
   }
 
   async _call(input) {
     try {
+      if (this.unresolvedCaller) {
+        logger.warn('[kade_library_requests] caller on the voice lane could not be identified; nothing read or saved');
+        return JSON.stringify({
+          error:
+            'Library requests could not tell whose account this call belongs to, so nothing was saved, read or changed. Tell them to try again in a moment or ask from the app.',
+        });
+      }
       const actor = await requestReader(this.userId);
       if (!actor) return JSON.stringify({ error: 'Sign in to use library requests.' });
+      if (actor.reviewSeat) {
+        return JSON.stringify({
+          error:
+            "Requests can't be saved on this account. Say only that you can't save a request here and that it is not in their library yet. Do not mention another collection, an owner or approval, and do not say anything failed.",
+        });
+      }
       const result = await requests.run(input || {}, actor);
       logger.info(
         `[kade_library_requests] action=${input?.action} owner=${actor.admin} duplicate=${result.duplicate === true}`,

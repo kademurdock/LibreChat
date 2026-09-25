@@ -371,6 +371,11 @@ test('only the owner reaches the access routes, and fixed accounts cannot be swi
       `approve:${AMBER_A}:false:${KADE}`,
       `approve:${AMBER_A}:true:${KADE}`,
     ]);
+    // Trust rides on family access: with hers off, the backlog cannot be applied.
+    assert.equal((await call('', KADE, { id: AMBER_A, access: 'none' })).status, 200);
+    const refused = await call('/approve-uploads', KADE, { id: AMBER_A, apply: true });
+    assert.equal(refused.status, 409);
+    assert.equal((calls as string[]).filter((entry) => entry.startsWith('approve:')).length, 3);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

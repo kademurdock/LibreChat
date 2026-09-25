@@ -25,6 +25,7 @@ const {
   AgentCapabilities,
   MAX_SUBAGENT_GRAPH_NODES,
   isEphemeralAgentId,
+  stripAgentIdSuffix,
 } = require('librechat-data-provider');
 const {
   createToolEndCallback,
@@ -739,7 +740,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         text: req.body?.text,
         conversationId,
         callerId: req.kadeOnBehalfOf?.id,
-        librarianInRun: [...agentConfigs.keys()].some((id) => isLibraryConsultant(id)),
+        // a side-by-side chat stores the added agent under '<id>____1'
+        librarianInRun: [...agentConfigs.keys()].some((id) => isLibraryConsultant(stripAgentIdSuffix(id))),
         instructions: primaryAgent.instructions,
         ephemeral: isEphemeralAgentId(primaryConfig.id),
         toolless: isToollessModel(primaryConfig.model_parameters?.model ?? primaryConfig.model),
@@ -788,7 +790,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *  failure so the caller can skip gracefully. */
   const loadAgentById = async (agentId) => {
     if (skippedAgentIds.has(agentId)) return null;
-    const existing = agentConfigs.get(agentId);
+    const existing =
+      agentConfigs.get(agentId) ||
+      (require('@librechat/api').isLibraryConsultant(agentId)
+        ? agentConfigs.get(`${agentId}____1`)
+        : undefined);
     if (existing) {
       /** KADE Sep 24 2026: the librarian already in this run as a full member
        *  (handoff target, side-by-side chat) is never reused as a consultation.
@@ -1080,19 +1086,24 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *  overlapping roots can still be revisited at deeper path depths so
    *  the depth guard observes the deepest reachable subagent path. */
   const resolveSubagentTrees = async (rootConfigs) => {
-    const pending = rootConfigs.map((cfg) => ({ cfg, depth: 0 }));
+    /** KADE Sep 24 2026: each entry carries its path. Two agents that list each
+     *  other (A → B → A) used to bounce deeper on every visit until the depth
+     *  guard threw and the whole turn failed; a child already on the path is a
+     *  cycle and is not walked again (run.ts guards the run the same way). */
+    const pending = rootConfigs.map((cfg) => ({ cfg, depth: 0, path: new Set([cfg?.id]) }));
     for (let index = 0; index < pending.length; index++) {
-      const { cfg, depth } = pending[index];
+      const { cfg, depth, path } = pending[index];
       if (!cfg?.id) continue;
       const previousDepth = maxResolvedDepthByConfigId.get(cfg.id);
       if (previousDepth != null && previousDepth >= depth) continue;
       maxResolvedDepthByConfigId.set(cfg.id, depth);
       await loadSubagentsFor(cfg, depth);
       for (const child of cfg.subagentAgentConfigs ?? []) {
+        if (!child?.id || path.has(child.id)) continue;
         const childDepth = depth + 1;
-        const previousChildDepth = child?.id ? maxResolvedDepthByConfigId.get(child.id) : undefined;
-        if (child?.id && (previousChildDepth == null || previousChildDepth < childDepth)) {
-          pending.push({ cfg: child, depth: childDepth });
+        const previousChildDepth = maxResolvedDepthByConfigId.get(child.id);
+        if (previousChildDepth == null || previousChildDepth < childDepth) {
+          pending.push({ cfg: child, depth: childDepth, path: new Set([...path, child.id]) });
         }
       }
     }

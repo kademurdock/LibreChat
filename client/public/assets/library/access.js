@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   var started = false;
-  window.setupLibraryAccess = function (api) {
+  window.setupLibraryAccess = function (api, say) {
     if (started) return;
     var root = document.getElementById('familyAccess');
     if (!root) return;
@@ -47,10 +47,16 @@
         'Family accounts from before September 24 keep the shared collection. Accounts made after that see only their own uploads until you turn family access on. Turning it off never touches anyone’s own uploads.',
       ),
     ).className = 'hint';
-    var status = element('p');
-    status.setAttribute('role', 'status');
-    root.appendChild(status);
+    /* The page's one live region (say) carries each change; a paragraph of its own would sit in
+     * browse mode repeating the last receipt. Only an older page without say gets one. */
+    var status = null;
+    if (typeof say !== 'function') {
+      status = element('p');
+      status.setAttribute('role', 'status');
+      root.appendChild(status);
+    }
     function announce(text) {
+      if (!status) return say(text);
       status.textContent = '';
       setTimeout(function () {
         status.textContent = text;

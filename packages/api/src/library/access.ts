@@ -454,6 +454,12 @@ export function libraryMembershipRouter(deps: MembershipDependencies): Router {
       return;
     }
     try {
+      // Trust rides on family access: with hers turned off, her uploads wait for a decision again.
+      const account = await deps.account(id);
+      if (!account || !familyLibraryMember(account)) {
+        res.status(409).json({ error: 'Turn on family library access for this account before approving its earlier uploads.' });
+        return;
+      }
       const receipt = await deps.approveUploads(id, apply === true, String((req as AuthedRequest).user?.id || ''));
       deps.log?.(
         `trusted backlog ${receipt.applied ? 'APPLIED' : 'preview'} for ${id}: ${receipt.approved.length} shared, ${receipt.submissionsSettled} requests settled, ${receipt.stillUploading} uploading, ${receipt.links} links left`,

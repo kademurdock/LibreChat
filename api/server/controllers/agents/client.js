@@ -632,10 +632,12 @@ class AgentClient extends BaseClient {
      * for someone else or a hidden run (req.kadeHiddenRun) never takes them. */
     let nudgeTurnContext;
     try {
-      const { ownsNudgePickup, waitingNotesBlock } = require('~/server/services/kadeNudgeTurn');
+      const { ownsNudgePickup, nudgePickupOptions, waitingNotesBlock } = require('~/server/services/kadeNudgeTurn');
       if (ownsNudgePickup(this.options.req)) {
         const { takePendingChatNudges } = require('~/server/services/kadeNudges');
-        nudgeTurnContext = waitingNotesBlock(await takePendingChatNudges(this.options.req.user.id));
+        nudgeTurnContext = waitingNotesBlock(
+          await takePendingChatNudges(this.options.req.user.id, 5, nudgePickupOptions(this.options.req)),
+        );
       }
     } catch (nudgeError) {
       logger.warn('[AgentClient] pending-nudge pickup failed (non-fatal):', nudgeError.message);

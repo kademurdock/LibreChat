@@ -712,6 +712,34 @@ describe('initializeClient — subagent loading', () => {
     expect(agentClientArgs).toBeUndefined();
   });
 
+  it('lets two agents that list each other (and a B <-> C pair below them) answer normally', async () => {
+    const B = 'agent_mutual_b';
+    const C = 'agent_mutual_c';
+    for (const id of [B, C]) {
+      await createViewableAgent(id);
+    }
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [B] },
+    });
+    const nestedConfigs = new Map([
+      [B, makeNestedSubagentConfig(B, [PRIMARY_ID, C])],
+      [C, makeNestedSubagentConfig(C, [B])],
+    ]);
+    mockInitializeAgent.mockImplementation(({ agent }) =>
+      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : nestedConfigs.get(agent.id)),
+    );
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs).toBeDefined();
+    expect(agentClientArgs.agent.subagentAgentConfigs.map((config) => config.id)).toEqual([B]);
+  });
+
   it('rejects subagent graphs that exceed MAX_SUBAGENT_GRAPH_NODES unique agents', async () => {
     const firstLevelIds = Array.from({ length: 10 }, (_, index) => `agent_graph_${index}`);
     const secondLevelIdsByParent = new Map(
@@ -1254,15 +1282,18 @@ describe('initializeClient — library consultation', () => {
     }
   });
 
+  /** A side-by-side chat stores the added agent under '<id>____1' (loadAddedAgent). */
+  const ADDED_LIBRARIAN_ID = `${LIBRARIAN_ID}____1`;
+
   it('never turns a librarian already in the run (side-by-side chat) into a consultation', async () => {
     await createLibrarian();
     const { processAddedConvo } = require('./addedConvo');
-    const sideBySide = makeConfig(LIBRARIAN_ID, {
+    const sideBySide = makeConfig(ADDED_LIBRARIAN_ID, {
       name: 'Mrs. Witherspoon',
       tools: ['kade_library'],
     });
     processAddedConvo.mockImplementationOnce(async ({ agentConfigs }) => {
-      agentConfigs.set(LIBRARIAN_ID, sideBySide);
+      agentConfigs.set(ADDED_LIBRARIAN_ID, sideBySide);
       return { userMCPAuthMap: undefined };
     });
     await runWith({
@@ -1271,16 +1302,17 @@ describe('initializeClient — library consultation', () => {
     });
 
     expect(agentClientArgs.agent.subagents).toBeUndefined();
-    expect(agentClientArgs.agentConfigs.get(LIBRARIAN_ID)).toBe(sideBySide);
+    expect(agentClientArgs.agentConfigs.get(ADDED_LIBRARIAN_ID)).toBe(sideBySide);
+    expect(agentClientArgs.agentConfigs.has(LIBRARIAN_ID)).toBe(false);
     expect(sideBySide.subagentMaxTurns).toBeUndefined();
   });
 
   it('keeps her in the run when a configured list names her while she is already there', async () => {
     await createLibrarian();
     const { processAddedConvo } = require('./addedConvo');
-    const sideBySide = makeConfig(LIBRARIAN_ID, { name: 'Mrs. Witherspoon' });
+    const sideBySide = makeConfig(ADDED_LIBRARIAN_ID, { name: 'Mrs. Witherspoon' });
     processAddedConvo.mockImplementationOnce(async ({ agentConfigs }) => {
-      agentConfigs.set(LIBRARIAN_ID, sideBySide);
+      agentConfigs.set(ADDED_LIBRARIAN_ID, sideBySide);
       return { userMCPAuthMap: undefined };
     });
     const primary = makeConfig(PRIMARY_ID, {
@@ -1289,7 +1321,7 @@ describe('initializeClient — library consultation', () => {
     await runWith({ req: makeReq('Tell me a joke'), primary });
 
     expect(agentClientArgs.agent.subagentAgentConfigs).toEqual([]);
-    expect(agentClientArgs.agentConfigs.get(LIBRARIAN_ID)).toBe(sideBySide);
+    expect(agentClientArgs.agentConfigs.get(ADDED_LIBRARIAN_ID)).toBe(sideBySide);
   });
 
   it('turns self-spawn off unless KADE_SUBAGENT_ALLOW_SELF=1', async () => {

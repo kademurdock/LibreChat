@@ -26,6 +26,13 @@ function ownsNudgePickup(req) {
   return !actingFor || String(actingFor) === String(req.user.id);
 }
 
+/** What this turn may take. The Library digest is chat only: a voice turn (the bridge names who is
+ * on the line, Kade included) leaves it for her next web or app chat, as the call-memories route does. */
+function nudgePickupOptions(req) {
+  const voiceLane = Boolean((req && req.kadeOnBehalfOf) || (req && req.body && req.body.kadeOnBehalfOf));
+  return voiceLane ? { exceptTypes: ['library-digest'] } : {};
+}
+
 /** The dynamic-tail block for the agent the person is talking to; '' when nothing waits. */
 function waitingNotesBlock(nudges) {
   const lines = (nudges || [])
@@ -42,4 +49,4 @@ function waitingNotesBlock(nudges) {
   );
 }
 
-module.exports = { ownsNudgePickup, waitingNotesBlock };
+module.exports = { ownsNudgePickup, nudgePickupOptions, waitingNotesBlock };
