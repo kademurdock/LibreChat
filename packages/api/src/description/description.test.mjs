@@ -23,6 +23,7 @@ import {
   mix,
   level,
   loudness,
+  bridgeDucks,
   duckCurve,
   duckDepth,
   sampleRate,
@@ -568,6 +569,25 @@ test('ducking ramps fit inside the section, and each line has its own depth and 
     Math.abs(both[Math.round(1.3 * sampleRate)] - 0.25) < 1e-6,
     'overlaps take the deeper dip',
   );
+});
+
+test('two descriptions close together hold the soundtrack down between them unless someone speaks', () => {
+  const frames = sampleRate * 6;
+  const at = (curve, time) => curve[Math.round(time * sampleRate)];
+  const lines = [
+    { start: 1, end: 2, gain: 0.35, release: 0.5 },
+    { start: 2.6, end: 3.6, gain: 0.35, release: 0.5 },
+  ];
+  const pumping = duckCurve(frames, lines);
+  assert.ok(at(pumping, 2.3) > 0.6, `today the soundtrack swells between them: ${at(pumping, 2.3)}`);
+  const held = duckCurve(frames, bridgeDucks(lines, []));
+  for (const time of [2.1, 2.3, 2.5]) assert.ok(Math.abs(at(held, time) - 0.35) < 1e-6, `${time}`);
+  assert.ok(at(held, 4.2) > 0.99, 'and it comes back up after the second line');
+  const deeper = duckCurve(frames, bridgeDucks([lines[0], { ...lines[1], gain: 0.11 }], []));
+  assert.ok(at(deeper, 2.45) <= 0.35 + 1e-6, 'a deeper next line never lets it swell first');
+  const talk = bridgeDucks(lines, [2.3]);
+  assert.equal(talk[0].end, 2, 'a word between them lets the dialogue come back up');
+  assert.equal(bridgeDucks([lines[0], { ...lines[1], start: 3.6, end: 4 }], [])[0].end, 2);
 });
 
 test('the dip under a line follows how loud the soundtrack is there (EBU TR 084)', () => {

@@ -724,6 +724,14 @@ test('assemble adds text tracks, chapters and a whole title, and keeps a late pi
   assert.deepEqual(texts.map((s) => s.codec_name), ['mov_text', 'mov_text']);
   assert.deepEqual(texts.map((s) => s.tags.language), ['eng', 'eng']);
   assert.deepEqual(texts.map((s) => s.tags.handler_name), ['Captions', 'Audio descriptions (text)']);
+  const shown = (await probeJson(output.video, 'stream=codec_type:stream_disposition=default')).streams;
+  assert.deepEqual(
+    shown.map((s) => [s.codec_type, s.disposition.default]), // the chapter track (data) was never on
+    [['video', 1], ['audio', 1], ['subtitle', 0], ['subtitle', 0], ['data', 0]],
+    'no text track is switched on by default, so no player shows it (and VoiceOver reads it) unasked',
+  );
+  assert.equal(await media.quietTextTracks(output.video), 0, 'running it again changes nothing');
+  assert.equal(await media.quietTextTracks(output.audio), 0, 'a file without text tracks is left alone');
   const lead = info.videoStart - info.formatStart;
   for (const [out, shift] of [[output.video, lead], [output.audio, 0]]) {
     const data = await probeJson(out, 'chapter=start_time:chapter_tags=title:format_tags=title', ['-show_chapters']);

@@ -38,6 +38,7 @@ import {
   stretch,
 } from './media';
 import {
+  bridgeDucks,
   decibels,
   duckDepth,
   level,
@@ -67,7 +68,7 @@ import {
 } from './timing';
 import { buildReport, captionTrack, clock, descriptionTrack, transcriptText } from './transcript';
 import { nextContinuity } from './prompt';
-import { gateCues } from './ledger';
+import { gateCues, recognized } from './ledger';
 import { Halt } from './types';
 
 export { buildReport } from './transcript';
@@ -650,6 +651,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       log(
         `Section ${i + 1} of ${count}: ${survey ? 'first look' : 'looked'} in ${seconds1((Date.now() - began) / 1000)}.`,
       );
+      const characters = result.people.filter(recognized).map((person) => person.name);
+      if (characters.length)
+        log(`Section ${i + 1} of ${count} recognized: ${characters.join(', ').slice(0, 100)}.`);
       if (!survey)
         await safely(
           () => keeper.keepLook?.(i, { analysis: result }),
@@ -951,6 +955,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       spoken: aligned.map((item) => item.placement.text),
       left,
       sectionIndex: i,
+      sectionStart: section.start,
       sectionEnd: section.end,
       words,
       notes: settings.notes,
@@ -1110,7 +1115,11 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         release: clamp(next - end - 0.05, 0.15, 0.5),
       });
     }
-    await saveSound(mix(paused, decibels(levels.gain), ducks, clips), input.sound, signal);
+    await saveSound(
+      mix(paused, decibels(levels.gain), bridgeDucks(ducks, guarded), clips),
+      input.sound,
+      signal,
+    );
     await rm(input.sound + '.f32', { force: true });
     return placements;
   }

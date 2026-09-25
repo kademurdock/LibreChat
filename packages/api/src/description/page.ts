@@ -38,6 +38,7 @@ export function describedVideoPage(sharedHead: string): string {
   .check input{width:auto;margin-top:.35rem;flex:none}
   progress{width:100%;height:1.25rem}
   video,audio{width:100%;max-width:100%;margin:.7rem 0} video{max-height:65vh;background:#111;border-radius:10px}
+  .caption{min-height:3.1em;margin:-.4rem 0 .7rem;padding:.3rem .6rem;border-radius:8px;font-size:1.1rem;line-height:1.4;text-align:center} .caption:not(:empty){background:#111;color:#fff}
   .transcript{max-height:28rem;overflow:auto;padding:.8rem;border:1px solid #8a929f;border-radius:8px}
   .transcript p{margin:.2rem 0}
   ul.jobs{list-style:none;padding:0;margin:.5rem 0} ul.jobs li{margin:.25rem 0} ul.jobs button{width:100%}
@@ -70,7 +71,9 @@ export function describedVideoPage(sharedHead: string): string {
 <h3>Watch or listen</h3>
 <label for="dv-version">Finished version</label><select id="dv-version"></select>
 <label for="dv-play-as">Play as</label><select id="dv-play-as"><option value="video">Video</option><option value="audio">Audio only (keeps playing with the screen locked)</option></select>
+<label class="check"><input id="dv-read-captions" type="checkbox" aria-describedby="dv-read-captions-help"> Read the captions aloud with my screen reader</label><p id="dv-read-captions-help" class="hint">Off: the captions show under the video for anyone watching with you, and screen readers stay quiet over the film. On: each caption is read as it appears.</p>
 <video id="dv-video" controls preload="metadata" playsinline aria-label="Video with audio description"></video>
+<div id="dv-caption" class="caption" aria-hidden="true"></div>
 <audio id="dv-audio" controls preload="metadata" aria-label="Soundtrack with audio description" hidden></audio>
 <div class="row" role="group" aria-label="Player">
 <button id="dv-back" type="button">Back 10 seconds</button><button id="dv-play" type="button">Play</button><button id="dv-forward" type="button">Forward 10 seconds</button>
@@ -130,6 +133,7 @@ export function describedVideoPage(sharedHead: string): string {
 <p class="hint">These choices are built into the finished copy.</p>
 <fieldset id="dv-presets"><legend>What kind of video is it?</legend>
 <label class="check"><input type="radio" name="dv-preset" id="dv-preset-commercials" value="commercials"> <span>Commercials and logos: rich detail, a closer look at text and logos, keeps the original length<span id="dv-preset-commercials-price"></span></span></label>
+<label class="check"><input type="radio" name="dv-preset" id="dv-preset-cartoon" value="cartoon"> <span>Cartoon or animation: rich detail that describes each gag over the music and sound effects, keeps the original length<span id="dv-preset-cartoon-price"></span></span></label>
 <label class="check"><input type="radio" name="dv-preset" id="dv-preset-tv" value="tv"> <span>TV show: standard detail, keeps the original length<span id="dv-preset-tv-price"></span></span></label>
 <label class="check"><input type="radio" name="dv-preset" id="dv-preset-film" value="film"> <span>Film: standard detail, pauses the picture when a description needs room; the whole-film first look is offered below<span id="dv-preset-film-price"></span></span></label>
 <label class="check"><input type="radio" name="dv-preset" id="dv-preset-custom" value="custom"> <span>My own choices (open Customize below)</span></label>
@@ -161,7 +165,7 @@ export function describedVideoPage(sharedHead: string): string {
 <label class="check"><input id="dv-close-look" type="checkbox" aria-describedby="dv-close-look-help"> Take a closer look at fast scenes, text and logos (costs more)</label>
 <p id="dv-close-look-help" class="hint">Inspects a slower, larger copy. The finished video keeps its normal pace. Takes longer.</p>
 <label class="check"><input id="dv-first-look" type="checkbox" aria-describedby="dv-first-look-help"> Look through the whole film first to learn who is who (costs more)</label>
-<p id="dv-first-look-help" class="hint">An extra pass for consistent names and appearances. Names are still introduced only when the film reveals them. Not used for videos of two minutes or less.</p>
+<p id="dv-first-look-help" class="hint">An extra pass for consistent names and appearances. People are still named only when the film reveals their names; famous cartoon, puppet and game characters are named when they appear. Not used for videos of two minutes or less.</p>
 </fieldset>
 <details id="dv-part"><summary>Describe only part of it</summary>
 <p id="dv-part-help" class="hint">Type times as hours:minutes:seconds, like 1:12:30, or minutes:seconds, like 4:05. Leave From empty to start at the beginning, or To empty to go to the end.</p>
@@ -187,15 +191,15 @@ export function describedVideoPage(sharedHead: string): string {
 export const descriptionBrowserScript: string = String.raw`
 (function(){
   'use strict';
-  var SETTINGS_KEY='kade-description-settings',RECENT_KEY='kade-description-recent-voices',UPLOADS_KEY='kade-video-uploads',PROGRESS_KEY='kade-description-progress',PLAY_AS_KEY='kade-description-play-as';
+  var SETTINGS_KEY='kade-description-settings',RECENT_KEY='kade-description-recent-voices',UPLOADS_KEY='kade-video-uploads',PROGRESS_KEY='kade-description-progress',PLAY_AS_KEY='kade-description-play-as',READ_CAPTIONS_KEY='kade-description-read-captions';
   var LINK_AGE=5.5*3600*1000,BASE_TITLE='Make a described video — Kade-AI';
   var FORM_DEFAULTS={rate:1.5,maxRate:2.25,mode:'extended',detail:'standard',volume:'balanced'};
-  var PRESETS={commercials:{detail:'rich',mode:'standard',closeLook:true,firstLook:false},tv:{detail:'standard',mode:'standard',closeLook:false,firstLook:false},film:{detail:'standard',mode:'extended',closeLook:false}};
-  var PRESET_NAMES={commercials:'Commercials and logos',tv:'TV show',film:'Film'};
+  var PRESETS={commercials:{detail:'rich',mode:'standard',closeLook:true,firstLook:false},cartoon:{detail:'rich',mode:'standard',closeLook:false,firstLook:false},tv:{detail:'standard',mode:'standard',closeLook:false,firstLook:false},film:{detail:'standard',mode:'extended',closeLook:false}};
+  var PRESET_NAMES={commercials:'Commercials and logos',cartoon:'Cartoon or animation',tv:'TV show',film:'Film'};
   var DETAIL_NAMES={essential:'Essentials only',standard:'Standard detail',rich:'Rich detail'};
   var BUSY=['checking','importing','reserving','queued','running'];
   var token='',job=null,shownId='',config=null,catalog={},timer=null,listTimer=null,pollController=null,openSeq=0,xhr=null,uploading=false,uploadId='',stopUpload=false,stopped=false,signedOutSaid=false,inflight=false,voicesOff=false;
-  var loadedFiles='',fileRequest=0,filesAt=0,viewVersion=0,versionsSig='',lastLatest=0,pendingSwitch=0,cues=[],trackUrls=[],lastJump=null,refreshedErrorKey='',found=-1,lastSaved=0;
+  var loadedFiles='',fileRequest=0,filesAt=0,viewVersion=0,versionsSig='',lastLatest=0,pendingSwitch=0,cues=[],trackUrls=[],lastJump=null,refreshedErrorKey='',found=-1,lastSaved=0,captionCues=[],captionShown='',tracksArmed=false,awayAudio=false;
   var script=null,scriptJob='',edits={},editing='',shortTouched={},staleDrafts=[],warnedShort={};
   var lastSpoken='',lastSpokenAt=0,errorFrom='',estimates={},estimateSeq=0,estimateTimer=null,announceNext=false,announcePrefix='',presetSeq=0,presetSig='',redoSeq=0,redoTimer=null,redoEstimate=null;
   var listedIds='',listButtons={},listStates={},lastJobs=[],cancelSeenAt=0,lastQuarter=-1;
@@ -377,10 +381,11 @@ export const descriptionBrowserScript: string = String.raw`
     var detail=$('detail').value,mode=$('mode').value,close=$('close-look').checked,first=$('first-look').checked;
     return Object.keys(PRESETS).filter(function(name){var p=PRESETS[name];return p.detail===detail&&p.mode===mode&&p.closeLook===close&&(p.firstLook===undefined||p.firstLook===first);})[0]||'custom';
   }
-  function showPreset(){var name=currentPreset();['commercials','tv','film','custom'].forEach(function(key){$('preset-'+key).checked=key===name;});}
+  function showPreset(){var name=currentPreset();['commercials','cartoon','tv','film','custom'].forEach(function(key){$('preset-'+key).checked=key===name;});}
   function applyPreset(name){var p=PRESETS[name];if(!p)return;setSelect('detail',p.detail);setSelect('mode',p.mode);$('close-look').checked=p.closeLook;if(p.firstLook!==undefined)$('first-look').checked=p.firstLook;}
   function presetSummary(name){
     if(name==='commercials')return 'Commercials and logos: rich detail, closer look on, keeping the original length.';
+    if(name==='cartoon')return 'Cartoon or animation: rich detail over the music and sound effects, keeping the original length.';
     if(name==='tv')return 'TV show: standard detail, keeping the original length, no extra passes.';
     return 'Film: standard detail, pausing the picture when needed. The whole-film first look is offered under Extra passes, and it is off.';
   }
@@ -434,7 +439,7 @@ export const descriptionBrowserScript: string = String.raw`
   }
   function mainKey(){if(!job)return '';if(job.state==='ready')return 'start';if(job.state==='done')return job.preview?'preview':'reanalyze';return job.resumable?'resume':'';}
   var LABELS={start:'Create described copy',preview:'Try the first 3 minutes',revoice:'Make a new version with this narration',reanalyze:'Write fresh descriptions',finish:'Describe the rest',redo:'Try again on the parts that could not be described',resume:'Continue where it stopped'};
-  function allowance(e){var mode=e.billingMode||(config&&config.billingMode),maximum=typeof e.approvedUSD==='number'?'Maximum charge: '+money(e.approvedUSD)+'. ':'';if(mode==='platform')return 'Admin processing is paid by the platform. Narration is included.';if(mode==='balance')return maximum+money(e.remainingUSD)+' is available in your account. Narration is included.';return money(e.remainingUSD)+' of today’s '+money(e.dailyUSD)+' is left.';}
+  function allowance(e){var mode=e.billingMode||(config&&config.billingMode),maximum=typeof e.approvedUSD==='number'?'Maximum charge: '+money(e.approvedUSD)+'. ':'',included=(e.dialogueIncluded||(config&&config.dialogueIncluded))?'Narration and dialogue timing are included.':'Narration is included.';if(mode==='platform')return 'Admin processing is paid by the platform. '+included;if(mode==='balance')return maximum+money(e.remainingUSD)+' is available in your account. '+included;return money(e.remainingUSD)+' of today’s '+money(e.dailyUSD)+' is left.';}
   function refusal(e){return e.reason||('This needs '+money(e.setAsideUSD)+' set aside, and '+allowance(e));}
   function scheduleEstimates(announce,prefix){
     if(announce)announceNext=true;if(prefix)announcePrefix=prefix;
@@ -458,7 +463,7 @@ export const descriptionBrowserScript: string = String.raw`
     }
   }
   async function presetPrices(){
-    var names=['commercials','tv','film'];
+    var names=['commercials','cartoon','tv','film'];
     if(!job||job.state!=='ready'||!job.seconds||part().error||tooLong()){presetSig='';names.forEach(function(name){$('preset-'+name+'-price').textContent='';});return;}
     var base=settings(),sig=job.id+'|'+JSON.stringify(base.range||null)+'|'+base.voice+'|'+base.rate;if(sig===presetSig)return;presetSig=sig;
     var seq=++presetSeq,id=job.id;
@@ -547,7 +552,7 @@ export const descriptionBrowserScript: string = String.raw`
     $('import').disabled=uploading||off||!$('youtube').value.trim();
     $('library-use').disabled=uploading||off||!libraryLink($('library').value);
     $('settings').disabled=!config||busy||state==='deleting';
-    ['detail','notes','close-look','first-look','part-from','part-to','preset-commercials','preset-tv','preset-film','preset-custom'].forEach(function(id){$(id).disabled=resumeOnly;});
+    ['detail','notes','close-look','first-look','part-from','part-to','preset-commercials','preset-cartoon','preset-tv','preset-film','preset-custom'].forEach(function(id){$(id).disabled=resumeOnly;});
     $('voice').disabled=voicesOff;$('voice-kind').disabled=voicesOff;$('sample-play').disabled=voicesOff;$('sample-fast').disabled=voicesOff;$('say-play').disabled=voicesOff;
     $('resume-note').hidden=!resumeOnly;
     if(resumeOnly){var saved=job.settings||{};$('resume-note').textContent='Continuing keeps the detail, notes and extra passes this attempt started with: '+(DETAIL_NAMES[saved.detail]||'Standard detail')+', closer look '+(saved.closeLook?'on':'off')+', first look '+(saved.firstLook?'on':'off')+'. You can change the voice, speeds, pauses and volume under Choose the narration before you continue.';}
@@ -586,7 +591,7 @@ export const descriptionBrowserScript: string = String.raw`
     $('library-error').hidden=!bad;$('library-error').textContent=bad?'That isn’t a Library video link. Open the video in the Library and copy its address, or use Make a described copy on the video.':'';
   }
   function vttText(text){return text.split('\n').map(function(line){return line.trim();}).filter(Boolean).join(' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');}
-  function parseVtt(text){var list=[];String(text||'').replace(/\r\n?/g,'\n').split(/\n\n+/).forEach(function(block){var m=/(?:(\d+):)?(\d\d):(\d\d)\.(\d\d\d) --> [^\n]+\n([\s\S]+)/.exec(block);if(m)list.push({at:Number(m[1]||0)*3600+Number(m[2])*60+Number(m[3])+Number(m[4])/1000,text:vttText(m[5])});});return list;}
+  function parseVtt(text){var list=[];String(text||'').replace(/\r\n?/g,'\n').split(/\n\n+/).forEach(function(block){var m=/(?:(\d+):)?(\d\d):(\d\d)\.(\d\d\d) --> (?:(\d+):)?(\d\d):(\d\d)\.(\d\d\d)[^\n]*\n([\s\S]+)/.exec(block);if(m)list.push({at:Number(m[1]||0)*3600+Number(m[2])*60+Number(m[3])+Number(m[4])/1000,end:Number(m[5]||0)*3600+Number(m[6])*60+Number(m[7])+Number(m[8])/1000,text:vttText(m[9])});});return list;}
   function renderTranscript(text){
     var box=$('transcript'),original=false;box.textContent='';found=-1;
     if(!text){var none=document.createElement('p');none.textContent='The transcript could not be loaded. Use the download link instead.';box.appendChild(none);return;}
@@ -624,14 +629,14 @@ export const descriptionBrowserScript: string = String.raw`
     var texts=await Promise.all(['descriptions','captions','transcript'].map(function(kind){return result[kind]?call(base+'/text/'+kind+query,'GET',undefined,false,'text').catch(function(){return '';}):Promise.resolve('');}));
     if(request!==fileRequest||shownId!==id||viewVersion!==version)return;
     filesAt=Date.now();refreshedErrorKey='';
-    trackUrls.forEach(function(url){URL.revokeObjectURL(url);});trackUrls=[];cues=[];lastJump=null;
+    trackUrls.forEach(function(url){URL.revokeObjectURL(url);});trackUrls=[];cues=[];captionCues=[];tracksArmed=true;lastJump=null;
     Array.prototype.slice.call($('video').querySelectorAll('track')).forEach(function(el){el.remove();});
     var player=media(),same=loadedFiles===id+'/'+version,resumeAt=same?player.currentTime:savedPosition(id,version),resumePlay=same&&!ended(player);
     ['video','audio'].forEach(function(name){var el=$(name);el.onloadedmetadata=function(){if(resumeAt&&el===media())el.currentTime=Math.min(resumeAt,el.duration||resumeAt);el.playbackRate=Number($('playback-rate').value);if(resumePlay&&el===media())el.play().catch(function(){});};});
     $('video').src=result.video;$('audio').src=result.audio;
     ['video','audio','transcript','captions','descriptions','script'].forEach(function(kind){var link=$(kind+'-download');link.hidden=!result[kind+'Download'];if(result[kind+'Download'])link.href=result[kind+'Download'];});
-    ['descriptions','captions'].forEach(function(kind,index){if(!texts[index])return;var url=URL.createObjectURL(new Blob([texts[index]],{type:'text/vtt'}));trackUrls.push(url);var track=document.createElement('track');track.kind=kind;track.label=kind==='descriptions'?'Audio descriptions':'Dialogue captions';track.srclang='en';track.src=url;$('video').appendChild(track);});
-    cues=parseVtt(texts[0]);renderTranscript(texts[2]);
+    ['descriptions','captions'].forEach(function(kind,index){if(!texts[index])return;var url=URL.createObjectURL(new Blob([texts[index]],{type:'text/vtt'}));trackUrls.push(url);var track=document.createElement('track');track.kind=kind;track.label=kind==='descriptions'?'Audio descriptions':'Dialogue captions';track.srclang='en';track.src=url;$('video').appendChild(track);if(track.track)track.track.mode='hidden';});
+    cues=parseVtt(texts[0]);captionCues=parseVtt(texts[1]);captionShown='';showCaption();renderTranscript(texts[2]);
     $('results').hidden=false;$('skip').hidden=false;loadedFiles=id+'/'+version;
     $('library-save-box').hidden=!config.library;
     $('library-save').textContent='Save version '+version+'’s described audio to my Library';
@@ -658,7 +663,7 @@ export const descriptionBrowserScript: string = String.raw`
   }
   function renderDraftNote(){var text=draftNotice();$('draft-note').hidden=!text;$('draft-note').textContent=text;return text;}
   function resetView(){
-    ++fileRequest;$('video').pause();$('audio').pause();$('results').hidden=true;$('skip').hidden=true;loadedFiles='';cues=[];lastJump=null;viewVersion=0;versionsSig='';lastLatest=0;pendingSwitch=0;
+    ++fileRequest;$('video').pause();$('audio').pause();$('results').hidden=true;$('skip').hidden=true;loadedFiles='';cues=[];captionCues=[];captionShown='';$('caption').textContent='';lastJump=null;viewVersion=0;versionsSig='';lastLatest=0;pendingSwitch=0;
     $('transcript').textContent='';script=null;edits={};editing='';scriptJob='';shortTouched={};warnedShort={};staleDrafts=[];$('edit-fields').hidden=true;$('stale').hidden=true;$('edit-review-list').hidden=true;$('edit-status').textContent='';
     estimates={};presetSig='';redoEstimate=null;cancelSeenAt=0;lastQuarter=-1;$('position-note').textContent='';$('new-version').hidden=true;
   }
@@ -795,7 +800,7 @@ export const descriptionBrowserScript: string = String.raw`
     scheduleEstimates(paid&&!!job&&!!job.seconds,prefix);
   }
   ['voice','rate','max-rate','mode','detail','volume','notes','close-look','first-look','part-from','part-to'].forEach(function(id){$(id).addEventListener('change',function(){onSettingsChange(id);});});
-  ['commercials','tv','film','custom'].forEach(function(name){$('preset-'+name).addEventListener('change',function(){
+  ['commercials','cartoon','tv','film','custom'].forEach(function(name){$('preset-'+name).addEventListener('change',function(){
     if(!$('preset-'+name).checked)return;
     if(name==='custom'){$('customize').open=true;say('Customize is open below the voice choices.',true);return;}
     applyPreset(name);renderPart();controls();
@@ -1263,11 +1268,11 @@ export const descriptionBrowserScript: string = String.raw`
     files(false).then(function(){location.href=$(kind+'-download').href;}).catch(failure);
   });});
   $('playback-rate').onchange=function(){var rate=Number(this.value);$('video').playbackRate=rate;$('audio').playbackRate=rate;};
-  function setPlayAs(value,quiet){
+  function setPlayAs(value,quiet,away){
     var audio=value==='audio',from=audio?$('video'):$('audio'),to=media(),at=from.currentTime;
-    if(!ended(from))from.pause();$('video').hidden=audio;$('audio').hidden=!audio;
-    if(at&&to.currentTime!==at)to.currentTime=at;$('play').textContent=ended(to)?'Play':'Pause';
-    store(PLAY_AS_KEY,value);if(!quiet)say(audio?'Playing the audio copy. It keeps playing with the screen locked.':'Playing the video.',true);
+    if(!ended(from))from.pause();$('video').hidden=audio;$('audio').hidden=!audio;$('caption').hidden=audio;
+    if(at&&to.currentTime!==at)to.currentTime=at;$('play').textContent=ended(to)?'Play':'Pause';showCaption();
+    if(!away)store(PLAY_AS_KEY,value);if(!quiet)say(audio?'Playing the audio copy. It keeps playing with the screen locked.':'Playing the video.',true);
   }
   $('play-as').onchange=function(){setPlayAs($('play-as').value,false);};
   ['video','audio'].forEach(function(name){
@@ -1278,6 +1283,20 @@ export const descriptionBrowserScript: string = String.raw`
     el.addEventListener('ended',function(){if(shownId&&viewVersion)forget(positionKey(shownId,viewVersion));});
     el.onerror=function(){if(!job||!loadedFiles)return;var key=job.id+'/'+viewVersion+'/'+name;if(refreshedErrorKey===key){failure(new Error('Playback could not start. Try the other player, or download the copy.'));return;}refreshedErrorKey=key;files(false).catch(failure);};
   });
+  /* Sep 25 2026 (Part 291), her word: captions are welcome, but VoiceOver read them over the film.
+   * The browser's own caption rendering is what a screen reader's media-descriptions feature reads,
+   * so every text track stays 'hidden' (its cues still load) and the page draws the current caption
+   * itself in #dv-caption, aria-hidden unless she ticks Read the captions aloud. A track a sighted
+   * person turns on from the player's own menu after the first play is left alone. */
+  function quietTracks(){var list=$('video').textTracks;if(!list)return;for(var i=0;i<list.length;i++)if(list[i].mode==='showing')list[i].mode='hidden';}
+  function showCaption(){var m=$('video'),now=m.currentTime,text='';if(!m.hidden)for(var i=0;i<captionCues.length;i++){var c=captionCues[i];if(c.at>now)break;if(now<c.end)text=c.text;}if(text===captionShown)return;captionShown=text;$('caption').textContent=text;}
+  function captionVoice(){var box=$('caption');if($('read-captions').checked){box.removeAttribute('aria-hidden');box.setAttribute('aria-live','polite');}else{box.removeAttribute('aria-live');box.setAttribute('aria-hidden','true');}}
+  $('video').addEventListener('timeupdate',showCaption);$('video').addEventListener('seeked',showCaption);
+  $('video').addEventListener('loadedmetadata',quietTracks);
+  $('video').addEventListener('play',function(){if(tracksArmed){tracksArmed=false;quietTracks();}});
+  if($('video').textTracks&&$('video').textTracks.addEventListener)$('video').textTracks.addEventListener('addtrack',function(){if(tracksArmed)setTimeout(quietTracks,0);});
+  $('read-captions').checked=stored(READ_CAPTIONS_KEY,false)===true;captionVoice();
+  $('read-captions').onchange=function(){store(READ_CAPTIONS_KEY,this.checked);captionVoice();};
   function seek(step){var m=media();m.currentTime=Math.max(0,Math.min(m.duration||0,m.currentTime+step));say('At '+clock(m.currentTime)+'.',true);}
   $('play').onclick=function(){var m=media();if(m.paused)m.play().catch(function(){failure(new Error('Playback could not start. Try the other player, or download the copy.'));});else m.pause();};
   $('back').onclick=function(){seek(-10);};$('forward').onclick=function(){seek(10);};
@@ -1323,12 +1342,13 @@ export const descriptionBrowserScript: string = String.raw`
   (function(){
     var session=navigator&&navigator.mediaSession;if(!session||!session.setActionHandler)return;
     var set=function(action,handler){try{session.setActionHandler(action,handler);}catch(e){}};
-    set('play',function(){media().play().catch(function(){});});set('pause',function(){media().pause();});
+    set('play',function(){if(document.hidden&&media()===$('video')&&$('video').paused&&$('audio').src){awayAudio=true;setSelect('play-as','audio');setPlayAs('audio',true,true);}media().play().catch(function(){});});set('pause',function(){media().pause();});
     set('seekbackward',function(){seek(-10);});set('seekforward',function(){seek(10);});
     set('previoustrack',function(){jump(-1);});set('nexttrack',function(){jump(1);});
   })();
   document.addEventListener('visibilitychange',function(){
     if(document.hidden||stopped)return;
+    if(awayAudio){awayAudio=false;var going=!ended($('audio'));setSelect('play-as','video');setPlayAs('video',true,true);if(going)$('video').play().catch(function(){});}
     carryOnUpload();
     if(job&&working(job))poll();
     if(filesAt&&Date.now()-filesAt>LINK_AGE&&!$('results').hidden)files(false).catch(failure);

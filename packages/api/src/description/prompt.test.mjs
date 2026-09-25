@@ -32,6 +32,7 @@ import {
 } from './providers.ts';
 import { Halt, settingsSchema } from './types.ts';
 import {
+  analysisFormat,
   analysisPrompt,
   lintDescription,
   nextContinuity,
@@ -609,7 +610,7 @@ test('continuity: the look-ahead forgets names the listener cannot know by the e
   assert.equal(read.people[0].name, 'Frank', 'a caption the model plans to read gives the name');
 });
 
-test('prompt: ROOM TO SPEAK lists the quiet stretches with word budgets at her usual speed', () => {
+test('prompt: ROOM TO SPEAK lists the stretches without dialogue with word budgets at her usual speed', () => {
   const lines = [
     { start: 4.3, end: 8.5, text: 'Hello there.', speaker: 0 },
     { start: 14.1, end: 20, text: 'Goodbye.', speaker: 1 },
@@ -618,10 +619,20 @@ test('prompt: ROOM TO SPEAK lists the quiet stretches with word budgets at her u
   assert.match(room, /0\.0 to 4\.1: about 14 words/);
   assert.match(room, /8\.7 to 13\.9: about 18 words/);
   assert.match(room, /20\.2 to 30\.0: about 36 words/);
-  assert.match(room, /about 60 percent/);
+  assert.match(
+    room,
+    /Music and sound effects may be playing there; the soundtrack is lowered under the narrator, so speak over them\./,
+  );
+  assert.match(room, /about 19 seconds of room in all\. At this level of detail, plan about 4 cues/);
+  assert.match(room, /about three quarters of the room/);
+  assert.match(room, /importance 1 cues/);
+  assert.doesNotMatch(room, /quiet stretch|percent|leave the rest for the music/);
   const measured = roomText(30, brief({ secondsPerByte: 0.125, detail: 'essential' }), lines);
   assert.match(measured, /0\.0 to 4\.1: about 7 words/, 'a slower measured voice fits fewer words');
-  assert.match(measured, /about 40 percent/);
+  assert.match(measured, /about half of the room/);
+  assert.match(measured, /plan about 2 cues/, 'essentials stay sparse');
+  assert.doesNotMatch(measured, /importance 1 cues/);
+  assert.match(roomText(30, brief({ detail: 'rich' }), lines), /plan about 6 cues/);
   const slowed = roomText(
     120,
     brief({ slowed: true }),
@@ -630,6 +641,46 @@ test('prompt: ROOM TO SPEAK lists the quiet stretches with word budgets at her u
   assert.match(slowed, /0\.0 to 16\.3: about 14 words/, 'times scale by 4, word counts do not');
   assert.match(roomText(30, brief({ detail: 'rich', mode: 'extended' }), []), /0\.0 to 30\.0/);
   assert.match(roomText(30, brief({ mode: 'extended' }), []), /allows pauses/);
+});
+
+test('prompt: a short stretch without dialogue is offered at her fastest speed, one too short is not', () => {
+  const lines = [
+    { start: 0, end: 4, text: 'One.', speaker: 0 },
+    { start: 5.24, end: 10, text: 'Two.', speaker: 0 },
+    { start: 11.2, end: 15, text: 'Three.', speaker: 0 },
+  ];
+  const room = roomText(15, brief(), lines);
+  assert.match(room, /4\.2 to 5\.0: up to 4 words at her fastest speed/, '0.8 s after the word margins');
+  assert.doesNotMatch(room, /10\.2 to 11\.0/, 'a 1.2 s gap leaves 0.76 s, too short to list');
+  const talk = roomText(15, brief(), [{ start: 0, end: 15, text: 'All talk.', speaker: 0 }]);
+  assert.match(talk, /no stretch without dialogue long enough/);
+});
+
+test('prompt: more room asks for more cues, sound effects are room, and cartoons have a guide', () => {
+  // The first section of her Looney Tunes job (Sep 25): three long speeches around a bed crash.
+  const lines = [
+    { start: 0, end: 20.4, text: 'Talk.', speaker: 0 },
+    { start: 21.9, end: 37.1, text: 'More talk.', speaker: 0 },
+    { start: 43, end: 54.3, text: 'Yet more.', speaker: 0 },
+  ];
+  const count = (detail) =>
+    Number(/plan about (\d+) cue/.exec(roomText(64, brief({ detail }), lines))[1]);
+  const [essential, standard, rich] = ['essential', 'standard', 'rich'].map(count);
+  assert.ok(essential < standard && standard < rich, `${essential} < ${standard} < ${rich}`);
+  const prompt = analysisPrompt(64, brief({ detail: 'rich' }), null, lines, []);
+  assert.match(prompt, /spoken wherever nobody is talking, over music and sound effects/);
+  assert.match(prompt, /Animation or cartoon: the comedy is in the pictures/);
+  assert.match(prompt, /Music and sound effects in general are not protected/);
+  assert.match(prompt, /never protect a whole stretch of music or action/);
+  assert.doesNotMatch(prompt, /a sound effect that matters|better than many that cannot fit/);
+  const slowed = analysisPrompt(
+    256,
+    brief({ slowed: true }),
+    null,
+    lines.map((line) => ({ ...line, start: line.start * 4, end: line.end * 4 })),
+    [],
+  );
+  assert.match(slowed, /Plan from ROOM TO SPEAK, whose word counts are already for the original speed/);
 });
 
 test('prompt: position, chapters, cuts and language are given in clip time, and metadata is fenced', () => {
@@ -1581,4 +1632,288 @@ test('engine: when the description that joins a name is left out, the next one h
   );
   assert.equal(report.skipped[0]?.text, 'The tall man, Bill, waves at the girl.');
   assert.ok(said.includes('The tall man, Bill, sits on the porch step.'), said.join(' | '));
+});
+
+// ---- Part 291: well-known fictional characters are named from their first appearance ----
+const daffy = {
+  id: 'P2',
+  label: 'the black duck',
+  name: 'Daffy Duck',
+  nameFrom: 'known',
+  look: 'black duck with an orange bill and feet',
+};
+const porky = {
+  id: 'P1',
+  label: 'the pig',
+  name: 'Porky Pig',
+  nameFrom: 'known',
+  look: 'plump pink pig in a white nightshirt and nightcap',
+};
+// Her job a395d684: Deepgram heard "Daffy" as "Gaffy" twice, so the name was never "said".
+const gaffy = [...words('April fools. Eat it, Gaffy.', 43.5), ...words("I'm gonna quit ten, Porky.", 45.1)];
+
+test('ledger: a recognized character is named from the first cue, with no label joined by code', () => {
+  const { cues, reveals } = gateCues({
+    cues: [
+      cue(20.6, 'Daffy Duck, a black cartoon duck with an orange bill, lifts the lid.', 'Daffy Duck lifts the lid.', {
+        who: ['P2'],
+      }),
+      cue(30, 'Daffy grins at Porky Pig, a plump pink pig in a nightshirt.', 'Daffy grins.', { who: ['P2', 'P1'] }),
+      cue(40, 'The bed crashes down, and Porky pokes his head through the springs.', 'The bed crashes down.', {
+        who: ['P1'],
+      }),
+    ],
+    people: [porky, daffy],
+    state: null,
+    words: gaffy,
+    notes: '',
+    sectionStart: 0,
+  });
+  assert.equal(cues[0].text, 'Daffy Duck, a black cartoon duck with an orange bill, lifts the lid.');
+  assert.equal(cues[0].shortText, 'Daffy Duck lifts the lid.');
+  assert.equal(cues[1].text, 'Daffy grins at Porky Pig, a plump pink pig in a nightshirt.');
+  assert.equal(cues[2].text, 'The bed crashes down, and Porky pokes his head through the springs.');
+  assert.equal(cues[0].importance, 3, 'the first cue about a new character is still essential');
+  assert.equal(reveals['daffy duck'], 0);
+  assert.equal(reveals['porky pig'], 0);
+});
+
+test('ledger: without the known mark the same name is still hidden until it is said', () => {
+  const unmarked = { ...daffy, nameFrom: '' };
+  const { cues, reveals } = gateCues({
+    cues: [cue(20.6, 'Daffy Duck lifts the lid.')],
+    people: [unmarked],
+    state: null,
+    words: gaffy,
+    notes: '',
+    sectionStart: 0,
+  });
+  assert.equal(cues[0].text, 'The black duck lifts the lid.', 'a misheard "Gaffy" never reveals Daffy');
+  assert.equal(reveals['daffy duck'], undefined);
+});
+
+test('ledger: KADE_DESCRIPTION_KNOWN_CHARACTERS=off restores the old gate', () => {
+  process.env.KADE_DESCRIPTION_KNOWN_CHARACTERS = 'off';
+  try {
+    const { cues } = gateCues({
+      cues: [cue(1, 'Daffy Duck lifts the lid.')],
+      people: [daffy],
+      state: null,
+      words: [],
+      notes: '',
+      sectionStart: 0,
+    });
+    assert.equal(cues[0].text, 'The black duck lifts the lid.');
+  } finally {
+    delete process.env.KADE_DESCRIPTION_KNOWN_CHARACTERS;
+  }
+});
+
+test('ledger: a recognized character in a later section is known from that section start, never joined twice', () => {
+  const state = {
+    kind: 'animation',
+    setting: 'a bedroom',
+    people: [{ id: 'P2', label: 'the black duck', name: '', look: '' }],
+    speakers: [],
+    recent: [],
+    heard: { labels: ['the black duck'], names: {} },
+  };
+  const gate = gateCues({
+    cues: [
+      cue(12.75, 'The black duck, Daffy Duck, slides open a peephole.', 'Daffy Duck slides open a peephole.', {
+        who: ['P2'],
+      }),
+      cue(22.9, 'The black duck, Daffy Duck, leaps around outside.', 'Daffy leaps around.'),
+    ],
+    people: [daffy],
+    state,
+    words: gaffy,
+    notes: '',
+    sectionStart: 64.04,
+  });
+  assert.equal(gate.cues[0].text, 'The black duck, Daffy Duck, slides open a peephole.', 'the join the model wrote stays');
+  assert.equal(gate.cues[1].text, 'Daffy Duck leaps around outside.', 'a repeat of the join shrinks to the name');
+  assert.equal(gate.reveals['daffy duck'], 64.04);
+  assert.equal(gate.cues[0].importance, 2, 'the listener already met the black duck');
+  assert.deepEqual(
+    gate.rejoin(gate.cues.map((item) => ({ cue: item, spoken: item.shortText }))),
+    [undefined, undefined],
+    'no label is ever joined to a recognized character after placement',
+  );
+});
+
+test('ledger: a character recognized in the first look may be named at once, a spoken-only name may not', () => {
+  const reference = [
+    { ...daffy, id: 'P1' },
+    { id: 'P2', label: 'the man in the flannel shirt', name: 'Frank', nameFrom: 'said', look: '' },
+  ];
+  const { cues } = gateCues({
+    cues: [cue(1, 'Daffy Duck waddles in.'), cue(2, 'Frank carries a ladder.')],
+    people: [
+      { id: 'P1', label: 'the black duck', name: '', look: '' },
+      { id: 'P2', label: 'the man in the flannel shirt', name: '', look: '' },
+    ],
+    reference,
+    state: null,
+    words: [],
+    notes: '',
+    sectionStart: 0,
+  });
+  assert.equal(cues[0].text, 'Daffy Duck waddles in.');
+  assert.equal(cues[1].text, 'The man in the flannel shirt carries a ladder.');
+});
+
+test('continuity: a recognized character keeps the name across sections, and the heard ledger links it', () => {
+  const planned = [
+    cue(20.6, 'Daffy Duck, a black cartoon duck with an orange bill, lifts the lid.'),
+    cue(54.5, 'Porky Pig dashes into his closet.'),
+  ];
+  const first = nextContinuity(
+    null,
+    analysis([porky, daffy], { kind: 'animation', cues: planned }),
+    heard(0, 64.04, {
+      sectionStart: 0,
+      spoken: ['Daffy Duck, a black cartoon duck with an orange bill, lifts the lid.'],
+      left: ['Porky Pig dashes into his closet.'],
+      words: gaffy,
+    }),
+  );
+  const duck = first.people.find((person) => person.id === 'P2');
+  assert.equal(duck.name, 'Daffy Duck');
+  assert.equal(duck.nameFrom, 'known');
+  assert.equal(first.reveals['daffy duck'], 0);
+  assert.equal(first.reveals['porky pig'], 0, 'recognized even though its only cue was left out');
+  assert.ok(first.heard.labels.includes('the black duck'), 'saying the name counts as meeting the character');
+  assert.ok(!first.heard.labels.includes('the pig'));
+  assert.deepEqual(first.heard.names, { 'Daffy Duck': 'the black duck' });
+  const prompt = analysisPrompt(58.5, brief(), first, [], []);
+  assert.match(prompt, /"name":"Daffy Duck","nameFrom":"known"/);
+  assert.match(prompt, /Daffy Duck = the black duck/);
+  const second = nextContinuity(
+    first,
+    analysis([{ id: 'P2', label: 'the black duck', name: 'Daffy Duck', nameFrom: 'known', look: '' }]),
+    heard(1, 122.6, { sectionStart: 64.04, spoken: ['Daffy hoots.'], words: gaffy }),
+  );
+  assert.equal(second.reveals['daffy duck'], 0, 'the earliest reveal is kept');
+  assert.equal(second.people.find((person) => person.id === 'P2').nameFrom, 'known');
+});
+
+test('continuity: her Looney Tunes job without the known mark still blanks Daffy, and a blanked name loses its source', () => {
+  const unmarked = { ...daffy, name: 'Daffy', nameFrom: 'said' };
+  const state = nextContinuity(
+    null,
+    analysis([{ ...porky, name: 'Porky', nameFrom: 'said' }, unmarked]),
+    heard(0, 64.04, { sectionStart: 0, spoken: ['The pig dashes into his closet.'], words: gaffy }),
+  );
+  const duck = state.people.find((person) => person.id === 'P2');
+  assert.equal(duck.name, '', 'what happened in a395d684: Gaffy never reveals Daffy');
+  assert.equal('nameFrom' in duck, false);
+  assert.equal(state.people.find((person) => person.id === 'P1').name, 'Porky', 'Porky was said at 0:46');
+});
+
+test('prompt: famous fictional characters are named on sight, real people still never from a face', () => {
+  const prompt = analysisPrompt(60, brief({ title: "Daffy Duck's Insane Pranks | Looney Tunes | Boomerang UK" }), null, [], []);
+  assert.match(prompt, /WELL-KNOWN CHARACTERS: a cartoon, animated, puppet, mascot, video game or comic character/);
+  assert.match(prompt, /recognizing a famous fictional design is not identifying a real person/);
+  assert.match(prompt, /Set nameFrom to known/);
+  assert.match(prompt, /never guess a real person's identity from their face/);
+  assert.match(prompt, /A cartoon or caricature of a real person counts as a real person/);
+  assert.match(prompt, /may confirm a well-known character whose look on screen matches\. Never use them to name a real person/);
+  assert.match(prompt, /"nameFrom":""/);
+  const survey = analysisPrompt(60, brief({ survey: true }), null, [], []);
+  assert.match(survey, /which well-known characters appear/);
+  assert.match(survey, /or when they are a well-known character as described below/);
+  const oriented = analysisPrompt(60, brief({ orientation: [daffy] }), null, [], []);
+  assert.match(oriented, /Do not speak any name from this reference until/);
+  assert.match(oriented, /The one exception is a name marked nameFrom known/);
+});
+
+test('prompt: nameFrom is a plain string in the schema, and the reply is read leniently', () => {
+  const people = analysisFormat.json_schema.schema.properties.people.items;
+  assert.deepEqual(people.properties.nameFrom, { type: 'string' });
+  assert.ok(people.required.includes('nameFrom'));
+  assert.doesNotMatch(JSON.stringify(analysisFormat), /"enum"/, 'an enum in the schema empties Gemini replies');
+  const reply = (nameFrom) =>
+    readAnalysis(
+      JSON.stringify({
+        kind: 'animation',
+        setting: 'a bedroom',
+        people: [{ id: 'P2', label: 'the black duck', name: 'Daffy Duck', ...(nameFrom === undefined ? {} : { nameFrom }), look: '' }],
+        speakers: [],
+        cues: [{ at: 1, until: 4, pauseAt: 1, text: 'Daffy Duck waves.', shortText: 'Daffy waves.', who: ['P2'], importance: 3 }],
+        protectedSounds: [],
+      }),
+      60,
+      'standard',
+    ).people[0].nameFrom;
+  assert.equal(reply(' Known '), 'known');
+  assert.equal(reply('recognized'), undefined, 'an unknown source falls back to the gate');
+  assert.equal(reply(undefined), undefined);
+});
+
+test('engine: a character recognized in section 1 is voiced by name there and in section 2', async () => {
+  const f = await footage('known-characters', 20);
+  const keeper = savedKeeper(
+    [
+      { start: 0, end: 10 },
+      { start: 10, end: 20 },
+    ],
+    [{ word: 'Gaffy!', start: 12, end: 12.6, speaker: 0 }],
+  );
+  const seen = new Map();
+  const { said, report } = await describe(f, (look) => {
+    const index = look.brief.position.index;
+    seen.set(index, analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before));
+    const text = index === 0 ? 'Daffy Duck, a black cartoon duck, lifts the lid.' : 'Daffy hoots and hops away.';
+    return {
+      kind: 'animation',
+      people: [index === 0 ? daffy : { ...daffy, look: '' }],
+      cues: [{ at: 1, until: 6, pauseAt: 1, text, shortText: text, who: ['P2'], importance: 3 }],
+    };
+  }, keeper);
+  assert.deepEqual(said, ['Daffy Duck, a black cartoon duck, lifts the lid.', 'Daffy hoots and hops away.']);
+  assert.match(seen.get(1), /"name":"Daffy Duck","nameFrom":"known"/);
+  assert.equal(report.people.find((person) => person.id === 'P2')?.name, 'Daffy Duck');
+});
+
+test('providers: the owner in a title-cased possessive title becomes a keyterm, nothing else in it does', () => {
+  assert.deepEqual(
+    keytermsFor({ title: "Daffy Duck's Insane Pranks | Looney Tunes | Boomerang UK", notes: '', about: '' }),
+    ['Daffy Duck'],
+  );
+  assert.deepEqual(keytermsFor({ title: 'Insane Pranks | Looney Tunes | Boomerang UK', notes: '', about: '' }), []);
+  assert.deepEqual(keytermsFor({ title: "The Best Of The Muppet Show's First Season", notes: '', about: '' }), [
+    'Muppet Show',
+  ]);
+});
+
+test('prompt: a known name stands only for a visibly fictional character, never a real person', () => {
+  const source = (kind, person) =>
+    readAnalysis(
+      JSON.stringify({
+        kind,
+        setting: '',
+        people: [{ id: 'P1', nameFrom: 'known', ...person }],
+        speakers: [],
+        cues: [{ at: 1, until: 4, pauseAt: 1, text: 'A figure waves.', shortText: 'A figure waves.', who: [], importance: 2 }],
+        protectedSounds: [],
+      }),
+      60,
+      'standard',
+    ).people[0].nameFrom;
+  assert.equal(source('animation', { label: 'the black duck', name: 'Daffy Duck', look: 'black duck, orange bill' }), 'known');
+  assert.equal(source('video game', { label: 'the plumber', name: 'Mario', look: 'red cap, blue overalls' }), 'known');
+  assert.equal(
+    source('commercial or promo', { label: 'the tiger', name: 'Tony the Tiger', look: 'cartoon tiger in a red scarf' }),
+    'known',
+  );
+  assert.equal(
+    source('home video', { label: 'the costumed mouse', name: 'Mickey Mouse', look: 'mascot costume with red shorts' }),
+    'known',
+  );
+  assert.equal(
+    source('commercial or promo', { label: 'the basketball player', name: 'Michael Jordan', look: 'tall man in a red jersey' }),
+    '',
+    'a real person the model thinks it recognizes still waits for the dialogue or the screen',
+  );
 });

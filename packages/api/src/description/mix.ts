@@ -256,6 +256,28 @@ export function applyDuck(
   }
 }
 
+/**
+ * Holds the soundtrack down between two descriptions that sit close together, so it does not
+ * swell for a moment and dip again. A gap is bridged only when it is shorter than `longest`
+ * seconds and no dialogue word or protected sound starts inside it (`guarded`, output seconds):
+ * the earlier line keeps its own gain up to the next line's start and then moves to the next
+ * line's gain within `glide` seconds.
+ */
+export function bridgeDucks(
+  spans: Duck[],
+  guarded: number[],
+  longest: number = 1.5,
+  glide: number = 0.25,
+): Duck[] {
+  const ordered = [...spans].sort((a, b) => a.start - b.start);
+  return ordered.map((span, i) => {
+    const next = ordered[i + 1];
+    if (!next || next.start <= span.end || next.start - span.end >= longest) return span;
+    if (guarded.some((time) => time >= span.end - 1e-6 && time <= next.start + 1e-6)) return span;
+    return { ...span, end: next.start, release: Math.min(span.release ?? glide, glide) };
+  });
+}
+
 /** The ducking gain as its own curve, one value per frame. */
 export function duckCurve(
   frames: number,

@@ -36,7 +36,7 @@ process.env.FFMPEG_PATH = ffmpegPath;
 let walletMode = false;
 const billing = createDescriptionWallet();
 process.env.FFPROBE_PATH = ffprobePath.path;
-let mongo, external, service, worker, app, Jobs, Budgets, Locks, storage, root, voiceWav;
+let mongo, external, service, worker, app, Jobs, Budgets, Locks, storage, root, voiceWav, hooks;
 /** Like B2: every write keeps a version, and a delete without a version id only hides the file. */
 class Versioned extends Map {
   versions = new Map();
@@ -85,7 +85,13 @@ let beforeEngine = null;
 let librarySaveFails = false;
 /** When set, each look is billed this many times its $0.05 reserve. */
 let overbill = 0;
+/** When set ({ started }), the next look holds a $0.35 paid request open until the job's signal aborts it. */
+let holdVision = null;
 const usageLog = [];
+/** Every line the worker logged, parsed, so a test can read the operator's view. */
+const logLines = [];
+const logged = (from, event) =>
+  logLines.slice(from).map((text) => { try { return JSON.parse(text); } catch { return null; } }).filter((entry) => entry?.event === event);
 const videos = new Map();
 
 const xml = (res, body, status = 200) => {
@@ -321,7 +327,7 @@ before(async () => {
     forcePathStyle: true,
     credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
   });
-  const hooks = {
+  hooks = {
     get wallet() { return walletMode ? billing : undefined; },
     auth: (req, res, next) => (req.headers['x-user'] ? next() : res.sendStatus(401)),
     actor: (req) => ({
@@ -330,7 +336,7 @@ before(async () => {
       child: req.headers['x-child'] === '1',
     }),
     storage: () => storage,
-    log: () => {},
+    log: (message) => logLines.push(message),
     usage: async (owner, job, kind, costUSD) => {
       usageLog.push({ owner, job, kind, costUSD });
     },
@@ -382,6 +388,20 @@ before(async () => {
         calls.analyze++;
         if (failSection === calls.analyze || (failLaterSections && look.state))
           throw axiosFailure(402);
+        if (holdVision && !look.brief.survey) {
+          const hold = holdVision;
+          holdVision = null;
+          await meter('vision', 0.35, () =>
+            new Promise((_resolve, reject) => {
+              /* What axios throws when the request's own signal aborts it. */
+              const cut = () =>
+                reject(Object.assign(new Error('canceled'), { name: 'CanceledError', isAxiosError: true, code: 'ERR_CANCELED' }));
+              if (_signal.aborted) return cut();
+              _signal.addEventListener('abort', cut, { once: true });
+              hold.started();
+            }),
+          );
+        }
         if (refuseSection === look.brief.position?.index && !look.brief.survey)
           await meter('vision', 0.2, async () => {
             throw axiosFailure(429);
@@ -2458,4 +2478,215 @@ test('wallet refunds survive a restart after completion or midway through reserv
       assert.equal(await billing.available(owner), 9.6);
     }
   } finally { walletMode = false; }
+});
+
+/** A failed assertion must not leave a queued job behind for the next test's worker to pick up. */
+const park = (id) =>
+  Jobs.updateOne(
+    { _id: id, state: { $in: ['queued', 'running'] } },
+    { $set: { state: 'failed', active: false }, $unset: { worker: 1, lease: 1 } },
+  );
+
+test('a restart that cuts off a paid request does not charge its reserve, and the next server finishes within the approval', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('restart-owner', 'restart-upload-00001', 150);
+  const doomed = createDescriptionRouter({ ...hooks, timing: { heartbeatMs: 100, tickMs: 0, wedgeMs: 1500 } });
+  await call('post', `/jobs/${id}/start`, 'restart-owner').send(settings).expect(202);
+  const approved = (await Jobs.findById(id).lean()).approvedUSD;
+  const usageBefore = usageLog.length;
+  const logsBefore = logLines.length;
+  try {
+    assert.ok(approved < 0.35, `the cut-off reserve alone is more than she approved (${approved})`);
+    let started = () => {};
+    const inFlight = new Promise((resolve) => (started = resolve));
+    holdVision = { started };
+    const running = doomed.tick();
+    await inFlight;
+    const holding = await Jobs.findById(id).lean();
+    await doomed.close();
+    await running;
+    assert.ok(Math.abs(holding.runCost - 0.35) < 1e-9, 'the reserve is held while the request is out');
+    const requeued = await Jobs.findById(id).lean();
+    assert.equal(requeued.state, 'queued');
+    assert.equal(requeued.stage, 'Continuing after a server restart');
+    assert.equal(requeued.runCost, 0, 'the request our restart cut off was not charged');
+    assert.equal(requeued.costUSD, 0);
+    assert.equal(requeued.spend?.uncertain ?? 0, 0);
+    assert.ok(!usageLog.slice(usageBefore).some((item) => item.job === id), 'nothing was booked to her');
+    const [cut] = logged(logsBefore, 'dv.paid-interrupted');
+    assert.equal(cut?.reserveUSD, 0.35, 'the operator still sees what the provider may bill');
+    assert.equal(cut.why, 'shutdown');
+    assert.equal(cut.providerMayBill, true);
+    assert.equal(cut.settled, 0);
+    assert.ok(Math.abs(holding.runPending - 0.35) < 1e-9, 'while it was out it was recorded as in flight');
+    assert.equal(requeued.runPending, 0);
+    overbill = 1;
+    const done = await settle(id, ['done', 'failed'], 'restart-owner');
+    assert.equal(done.state, 'done', done.error);
+    assert.equal(done.overQuote, false, 'the next server did not stop over the quote');
+    assert.ok(done.runCostUSD > 0 && done.runCostUSD <= approved);
+    assert.deepEqual((await Budgets.findById(today()).lean()).runs, []);
+  } finally {
+    holdVision = null;
+    overbill = 0;
+    await doomed.close();
+    await park(id);
+  }
+  await call('delete', `/jobs/${id}`, 'restart-owner').expect(200);
+  await Budgets.deleteMany({});
+});
+
+test('her cancel while a paid request is out charges nothing for it', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('cut-owner', 'cut-upload-00000001', 150);
+  await call('post', `/jobs/${id}/start`, 'cut-owner').send(settings).expect(202);
+  const usageBefore = usageLog.length;
+  const logsBefore = logLines.length;
+  try {
+    let started = () => {};
+    const inFlight = new Promise((resolve) => (started = resolve));
+    holdVision = { started };
+    const ticking = worker.tick();
+    await inFlight;
+    await call('post', `/jobs/${id}/cancel`, 'cut-owner').expect(200);
+    await ticking;
+    const job = (await call('get', `/jobs/${id}`, 'cut-owner').expect(200)).body;
+    assert.equal(job.state, 'cancelled');
+    assert.equal(job.runCostUSD, 0);
+    assert.equal(job.costUSD, 0);
+    assert.equal(await held(), 0, 'the whole set-aside came back');
+    assert.ok(!usageLog.slice(usageBefore).some((item) => item.job === id));
+    assert.equal(logged(logsBefore, 'dv.paid-interrupted')[0]?.why, 'cancel');
+  } finally {
+    holdVision = null;
+    await park(id);
+  }
+  await call('delete', `/jobs/${id}`, 'cut-owner').expect(200);
+  await Budgets.deleteMany({});
+});
+
+test('reserves a dead worker left unsettled are never charged: the next claim and a release both drop them', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('orphan-owner', 'orphan-upload-00001', 150);
+  await call('post', `/jobs/${id}/start`, 'orphan-owner').send(settings).expect(202);
+  const approved = (await Jobs.findById(id).lean()).approvedUSD;
+  /* The server died mid-request: $0.05 settled, a $0.35 vision reserve never did. */
+  await Jobs.collection.updateOne(
+    { _id: id },
+    { $set: { state: 'running', worker: 'gone', runCost: 0.4, runPending: 0.35, costUSD: 0.4, ...stale } },
+  );
+  const logsBefore = logLines.length;
+  try {
+    process.env.KADE_DESCRIBED_VIDEO = '0';
+    try {
+      await worker.tick();
+    } finally {
+      delete process.env.KADE_DESCRIBED_VIDEO;
+    }
+    assert.equal((await Jobs.findById(id).lean()).state, 'queued');
+    overbill = 1;
+    const done = await settle(id, ['done', 'failed'], 'orphan-owner');
+    assert.equal(done.state, 'done', done.error);
+    assert.ok(Math.abs(done.runCostUSD - 0.15) < 1e-9, `run cost ${done.runCostUSD} of ${approved} approved`);
+    assert.ok(Math.abs(done.costUSD - 0.15) < 1e-9);
+    assert.equal((await Jobs.findById(id).lean()).runPending, 0);
+    assert.equal(logged(logsBefore, 'dv.paid-orphaned')[0]?.reserveUSD, 0.35);
+    assert.equal(await held(), 15, 'the day keeps only what was really spent');
+  } finally {
+    overbill = 0;
+    await park(id);
+  }
+
+  const other = await readyJob('orphan-owner', 'orphan-upload-00002', 60);
+  await Budgets.updateOne({ _id: today() }, { $inc: { held: 40 }, $addToSet: { runs: 'orphan-run' } }, { upsert: true });
+  const heldBefore = await held();
+  await Jobs.collection.updateOne(
+    { _id: other },
+    {
+      $set: {
+        state: 'running',
+        worker: 'gone',
+        lease: new Date(Date.now() - 1000),
+        reservation: { runId: 'orphan-run', day: today(), cents: 40 },
+        runCost: 0.4,
+        runPending: 0.35,
+        costUSD: 0.4,
+        settings,
+      },
+    },
+  );
+  const cancelled = (await call('post', `/jobs/${other}/cancel`, 'orphan-owner').expect(200)).body;
+  assert.equal(cancelled.state, 'cancelled');
+  assert.equal(await held(), heldBefore - 35, 'the cancelled run keeps only its settled 5 cents');
+  assert.equal(cancelled.runCostUSD, 0.05);
+  assert.equal(cancelled.costUSD, 0.05);
+  for (const job of [id, other]) await call('delete', `/jobs/${job}`, 'orphan-owner').expect(200);
+  await Budgets.deleteMany({});
+});
+
+test('free dialogue: Deepgram is logged for the operator, never quoted, charged or counted against the approval', async () => {
+  const axios = createRequire(import.meta.url)('axios');
+  const previous = axios.defaults.adapter;
+  const deepgram = {
+    metadata: { duration: 30 },
+    results: { channels: [{ alternatives: [{ words: [{ word: 'hello', punctuated_word: 'Hello.', start: 0.2, end: 0.9, speaker: 0 }] }] }] },
+  };
+  axios.defaults.adapter = async (config) => {
+    if (!/deepgram\.com/.test(config.url)) return axios.getAdapter(previous)(config);
+    config.data?.destroy?.();
+    return { status: 200, statusText: 'OK', headers: {}, data: deepgram, config };
+  };
+  realTranscribe = true;
+  await Budgets.deleteMany({});
+  const run = async (name) => {
+    const id = await readyJob('dialogue-owner', name, 30);
+    const price = (await call('post', `/jobs/${id}/estimate`, 'dialogue-owner').send({ action: 'start', settings }).expect(200)).body;
+    const usageBefore = usageLog.length;
+    const logsBefore = logLines.length;
+    await call('post', `/jobs/${id}/start`, 'dialogue-owner').send(settings).expect(202);
+    try {
+      const done = await settle(id, ['done', 'failed'], 'dialogue-owner');
+      assert.equal(done.state, 'done', done.error);
+      const booked = usageLog.slice(usageBefore).filter((item) => item.job === id);
+      const stored = await Jobs.findById(id).lean();
+      return { price, done, booked, stored, logsBefore };
+    } finally {
+      await park(id);
+      await call('delete', `/jobs/${id}`, 'dialogue-owner').expect(200);
+    }
+  };
+  try {
+    const paidConfig = (await call('get', '/config', 'dialogue-owner').expect(200)).body;
+    assert.equal(paidConfig.dialogueIncluded, false);
+    const paid = await run('dialogue-paid-000001');
+    assert.ok(paid.price.breakdown.dialogue > 0);
+    assert.deepEqual(paid.booked.map((item) => item.kind), ['transcription']);
+    assert.ok(Math.abs(paid.done.runCostUSD - 0.0026) < 1e-9, 'without the flag she pays for 30 s of dialogue timing');
+    assert.equal(await held(), 1);
+    await Budgets.deleteMany({});
+
+    process.env.KADE_DESCRIPTION_FREE_DIALOGUE = '1';
+    const config = (await call('get', '/config', 'dialogue-owner').expect(200)).body;
+    assert.equal(config.dialogueIncluded, true);
+    assert.ok(
+      Math.abs(paidConfig.perMinuteUSD.standard - config.perMinuteUSD.standard - 0.0052) < 1e-9,
+      'the per-minute price drops by the Deepgram rate',
+    );
+    const free = await run('dialogue-free-000001');
+    assert.equal(free.price.breakdown.dialogue, 0);
+    assert.equal(free.price.dialogueIncluded, true);
+    assert.ok(free.price.estimateUSD <= paid.price.estimateUSD);
+    assert.equal(free.done.runCostUSD, 0, 'she is not charged');
+    assert.equal(free.done.costUSD, 0);
+    assert.equal(free.stored.spend?.transcription ?? 0, 0);
+    assert.deepEqual(free.booked.map((item) => item.kind), ['transcription-included'], 'the operator still sees it');
+    assert.ok(Math.abs(free.booked[0].costUSD - 0.0026) < 1e-9);
+    assert.ok(Math.abs(logged(free.logsBefore, 'dv.included')[0]?.costUSD - 0.0026) < 1e-9);
+    assert.equal(await held(), 0);
+  } finally {
+    delete process.env.KADE_DESCRIPTION_FREE_DIALOGUE;
+    realTranscribe = false;
+    axios.defaults.adapter = previous;
+    await Budgets.deleteMany({});
+  }
 });

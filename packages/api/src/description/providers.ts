@@ -360,11 +360,15 @@ const titleCased = (text: string) => {
 };
 const labelled =
   /^\s*(?:call (?:letters|sign)s?|station|network|brand|advertiser|market|channel|sponsor)\s*[:=]\s*(.{2,40}?)\s*$/gim;
+/** The owner in a title-cased title's possessive ("Daffy Duck's Insane Pranks"): a name, not a heading word. */
+const possessive = /\p{Lu}[\p{L}-]*(?:\s+\p{Lu}[\p{L}-]*){0,2}(?=['’]s(?![\p{L}\p{N}]))/gu;
+const owners = (title: string) =>
+  properNames([...title.matchAll(possessive)].map((match) => match[0]).join('\n'));
 
 /**
  * Up to 25 keyterms for Deepgram from high-signal sources only: her notes, chapter titles,
- * labelled library facts, call letters, and proper names in a title written in sentence case.
- * Free-form uploader text is never mined for names.
+ * labelled library facts, call letters, proper names in a title written in sentence case, and
+ * the owner of a possessive in a title-cased title. Free-form uploader text is never mined for names.
  */
 export function keytermsFor(input: {
   title: string;
@@ -382,7 +386,7 @@ export function keytermsFor(input: {
     ...signs(input.title),
     ...signs(chapters),
     ...properNames(chapters),
-    ...(titleCased(input.title) ? [] : properNames(input.title)),
+    ...(titleCased(input.title) ? owners(input.title) : properNames(input.title)),
   ];
   const seen = new Set<string>();
   const terms: string[] = [];

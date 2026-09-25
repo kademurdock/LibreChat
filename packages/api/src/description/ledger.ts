@@ -73,6 +73,16 @@ const cachedPattern = pattern;
 /** Lowercase name key used by `Continuity.reveals` and `heard.names`. */
 export const nameKey = (name: string): string => name.replace(/\s+/g, ' ').trim().toLowerCase();
 
+/**
+ * A well-known fictional character the model recognized on sight (Daffy Duck, Big Bird, Mario):
+ * named from the first appearance instead of waiting for the dialogue. Real people never
+ * qualify; that rests on the prompt, so KADE_DESCRIPTION_KNOWN_CHARACTERS=off turns it off.
+ */
+export const recognized = (person: Pick<Person, 'name' | 'nameFrom'>): boolean =>
+  person.nameFrom === 'known' &&
+  !!person.name.trim() &&
+  process.env.KADE_DESCRIPTION_KNOWN_CHARACTERS !== 'off';
+
 /** Lowercase letter-and-digit tokens; accents, a possessive 's and inner apostrophes are dropped. */
 export function tokens(value: string): string[] {
   return value
@@ -254,6 +264,11 @@ function hits(text: string, name: string, labels: string[] = []): Hit[] {
   return found.sort((a, b) => a.index - b.index);
 }
 
+/** True when a description says the name (whole, or a distinctive part of a longer name). */
+export function voicesName(text: string, name: string, labels: string[] = []): boolean {
+  return hits(text, name, labels).length > 0;
+}
+
 /** True when the whole name is read aloud from the screen in this text. */
 export function readsName(text: string, name: string): boolean {
   const spans = readings(text);
@@ -406,7 +421,11 @@ function known(people: Person[], state: Continuity | null): Person[] {
         item.label.toLowerCase() === person.label.toLowerCase(),
     );
     if (!same) all.push({ ...person });
-    else if (!same.name && person.name) same.name = person.name;
+    else if (!same.name && person.name) {
+      same.name = person.name;
+      same.nameFrom = person.nameFrom;
+    } else if (!same.nameFrom && person.name && nameKey(same.name) === nameKey(person.name))
+      same.nameFrom = person.nameFrom;
   }
   return all;
 }
@@ -430,7 +449,9 @@ export function revealsFor(
 /**
  * Replaces names the listener cannot know yet at each cue's time with the person's label
  * (capitalised at a sentence start); joins "label, name" the first time a name is voiced.
- * A name read from the screen in a cue ("A caption reads …") is revealed at that cue.
+ * A name read from the screen in a cue ("A caption reads …") is revealed at that cue. A
+ * recognized character (nameFrom "known") is revealed from the section start and introduced by
+ * name, so no label is joined to it by code.
  */
 export function gateCues(input: {
   cues: Cue[];
@@ -449,13 +470,22 @@ export function gateCues(input: {
   for (const ref of input.reference ?? []) {
     const same = everyone.find((person) => labelCore(person.label) === labelCore(ref.label));
     if (same) {
-      if (!same.name) same.name = ref.name;
+      if (!same.name) {
+        same.name = ref.name;
+        same.nameFrom = ref.nameFrom;
+      }
     } else everyone.push({ ...ref, id: undefined });
   }
   const people = everyone.filter((person) => person.name);
   const names = [...new Set(people.map((person) => person.name))];
   const labels = everyone.map((person) => person.label);
   const reveals = revealsFor(names, input.words, input.notes, input.state?.reveals);
+  for (const person of people) {
+    if (!recognized(person)) continue;
+    const key = nameKey(person.name);
+    if (reveals[key] === undefined || reveals[key] > input.sectionStart)
+      reveals[key] = input.sectionStart;
+  }
   const linked = new Set(Object.keys(input.state?.heard?.names ?? {}).map(nameKey));
   const heardLabels = input.state?.heard?.labels ?? [];
   const introduced = new Set<string>();
@@ -487,6 +517,11 @@ export function gateCues(input: {
         shortText = dropJoin(shortText, person.name, person.label);
         continue;
       }
+      if (recognized(person)) {
+        if (voicesName(text, person.name, labels) || voicesName(shortText, person.name, labels))
+          joined.push(key);
+        continue;
+      }
       const fullText = joinName(text, person.name, person.label, labels);
       const fullShort = joinName(shortText, person.name, person.label, labels);
       const voiced = (value: string) =>
@@ -514,6 +549,7 @@ export function gateCues(input: {
       for (const person of people) {
         const key = nameKey(person.name);
         if (reveals[key] === undefined || reveals[key] > input.sectionStart + cue.at) continue;
+        if (recognized(person)) continue;
         if (!heard.has(key) && hits(spoken, person.name, labels).length) {
           text = joinName(text, person.name, person.label, labels);
           shortText = joinName(shortText, person.name, person.label, labels);

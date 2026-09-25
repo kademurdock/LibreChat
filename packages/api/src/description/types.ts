@@ -66,8 +66,11 @@ export const contentKinds = [
   'other',
 ] as const;
 
-/** Where a person's name first reached the listener: spoken, shown on screen, or given in her notes. */
-export type NameSource = 'said' | 'shown' | 'notes' | '';
+/**
+ * Where a person's name came from: spoken, shown on screen, given in her notes, or known: a
+ * well-known fictional character (cartoon, puppet, mascot, game or comic) recognized on sight.
+ */
+export type NameSource = 'said' | 'shown' | 'notes' | 'known' | '';
 export type Person = {
   label: string;
   name: string;
@@ -124,7 +127,13 @@ export const analysisSchema: z.ZodType<Analysis, z.ZodTypeDef, unknown> = z.obje
       name: label(80),
       look: label(200),
       id: label(12).optional(),
-      nameFrom: z.enum(['said', 'shown', 'notes', '']).optional().catch(undefined),
+      nameFrom: z
+        .preprocess(
+          (value) => (typeof value === 'string' ? value.trim().toLowerCase() : value),
+          z.enum(['said', 'shown', 'notes', 'known', '']),
+        )
+        .optional()
+        .catch(undefined),
       nameAt: time.optional().catch(undefined),
     }),
     60,

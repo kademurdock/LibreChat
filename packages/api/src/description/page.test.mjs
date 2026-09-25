@@ -2180,3 +2180,87 @@ test('an upload that carries on by itself stays in the background while she play
   assert.equal(env.location.search, place);
   assert.equal(env.status(), '“tape.mov” is uploaded and being checked.');
 });
+
+test('free dialogue: the confirmation says dialogue timing is included, and no dialogue price is named', async () => {
+  const server = makeServer();
+  const ready = server.add(jobOf({ name: 'My video' }));
+  server.override((_method, path) => /\/estimate$/.test(path), () => ({ status: 200, body: {
+    estimateUSD: 0.15, approvedUSD: 0.33, setAsideUSD: 0.33, remainingUSD: 8,
+    limitUSD: null, dailyUSD: null, billingMode: 'balance', speechIncluded: true, dialogueIncluded: true,
+    allowed: true, seconds: 600, breakdown: { vision: 0.15, dialogue: 0, speech: 0 },
+  } }), false);
+  const env = await boot({ server, search: '?id=' + ready.id, confirmReply: () => false });
+  await env.timers.advance(700);
+  await env.click('start');
+  assert.match(env.dialogs.at(-1).text, /\$8\.00 is available in your account\. Narration and dialogue timing are included\./);
+  assert.doesNotMatch(env.dialogs.at(-1).text, /to learn the dialogue/);
+  assert.equal(server.all(/\/start$/).length, 0);
+});
+
+
+test('captions: drawn under the video, silent to screen readers unless she asks, and the choice is kept', async () => {
+  const captions = "WEBVTT\n\n1\n00:00:00.000 --> 00:00:02.670\nSpeaker 1: It's April\n1, the day of the fool.\n\n2\n00:00:05.200 --> 00:00:06.800\nIt's really funny, daddy.\n";
+  const withCaptions = (server) => {
+    server.override(
+      (method, path) => /\/files\?/.test(path),
+      () => ({ status: 200, body: { video: 'https://b2/v1.mp4', videoDownload: 'x', audio: 'https://b2/a1.m4a', audioDownload: 'x', transcript: 't', transcriptDownload: 'x', descriptions: 'd', descriptionsDownload: 'x', captions: 'c', captionsDownload: 'x', script: 's', scriptDownload: 'x', expiresAt: '2026-09-25T00:00:00Z' } }),
+      false,
+    );
+    server.override((method, path) => /\/text\/captions/.test(path), () => ({ status: 200, text: captions }), false);
+  };
+  const server = makeServer();
+  const done = server.add(doneJob({ name: 'Cartoon' }));
+  withCaptions(server);
+  const env = await boot({ server, search: '?id=' + done.id });
+  const { $ } = env;
+  const box = $('caption');
+  assert.equal(box.getAttribute('aria-hidden'), 'true', 'hidden from screen readers by default');
+  assert.equal(box.getAttribute('aria-live'), null, 'never a live region by default');
+  assert.equal($('read-captions').checked, false);
+  $('video').currentTime = 1;
+  await env.fire($('video'), 'timeupdate');
+  assert.equal(box.textContent, "Speaker 1: It's April 1, the day of the fool.");
+  $('video').currentTime = 3.5;
+  await env.fire($('video'), 'timeupdate');
+  assert.equal(box.textContent, '', 'nothing between captions');
+  $('video').currentTime = 5.5;
+  await env.fire($('video'), 'seeked');
+  assert.equal(box.textContent, "It's really funny, daddy.");
+  $('video').currentTime = 0;
+  await env.click('next-cue');
+  assert.equal(env.status(), '0:05. A red barn stands in snow.', 'description jumps still use the descriptions track');
+  await env.tick('read-captions', true);
+  assert.equal(box.getAttribute('aria-live'), 'polite');
+  assert.equal(box.getAttribute('aria-hidden'), null);
+  assert.equal(env.localStorage.getItem('kade-description-read-captions'), 'true');
+  await env.choose('play-as', 'audio');
+  assert.equal(box.hidden, true, 'no caption line for the audio copy');
+  await env.choose('play-as', 'video');
+  assert.equal(box.hidden, false);
+
+  const again = makeServer();
+  const same = again.add(doneJob({ name: 'Cartoon' }));
+  withCaptions(again);
+  const env2 = await boot({ server: again, search: '?id=' + same.id, local: { 'kade-description-read-captions': 'true' } });
+  assert.equal(env2.$('read-captions').checked, true, 'her choice is remembered');
+  assert.equal(env2.$('caption').getAttribute('aria-live'), 'polite');
+});
+
+test('lock-screen Play after the phone paused the video carries on with the audio copy, and the picture comes back on return', async () => {
+  const server = makeServer();
+  const done = server.add(doneJob({ name: 'Cartoon' }));
+  const env = await boot({ server, search: '?id=' + done.id });
+  const { $ } = env;
+  $('video').currentTime = 42;
+  $('video').paused = true;
+  await env.visibility(true);
+  env.handlers.play();
+  await env.timers.advance(10);
+  assert.equal($('play-as').value, 'audio');
+  assert.equal($('audio').currentTime, 42);
+  assert.equal(env.localStorage.getItem('kade-description-play-as'), '"video"', 'a temporary switch is not her new preference');
+  $('audio').currentTime = 50;
+  await env.visibility(false);
+  assert.equal($('play-as').value, 'video');
+  assert.equal($('video').currentTime, 50);
+});

@@ -5,8 +5,10 @@ import {
   nameKey,
   readsName,
   readings,
+  recognized,
   resolvePerson,
   revealsFor,
+  voicesName,
 } from './ledger';
 import { clock, isEnglish, languageName } from './transcript';
 import { analysisSchema, contentKinds } from './types';
@@ -91,24 +93,39 @@ export function lintDescription(value: string): { text: string; problems: string
   return { text: text || value, problems };
 }
 
-const density: Record<Settings['detail'], { guide: string; most: number; fill: string }> = {
+/**
+ * How much to describe at each level. `spacing` is the seconds of room to speak (time without
+ * dialogue, music and sound effects included) per cue the prompt asks for, and `least` the share
+ * of a cue even a short listed stretch counts for; `most` caps the cues per 90 seconds; `fill`
+ * says how much of the room to use.
+ */
+const density: Record<
+  Settings['detail'],
+  { guide: string; most: number; spacing: number; least: number; fill: string }
+> = {
   essential: {
     guide:
       'Essential detail: only what a listener needs to follow along. Key actions, who enters or leaves, scene and time changes, and important on-screen text. Short sentences. Leave quiet moments quiet when nothing new happens.',
     most: 20,
-    fill: 'Fill no more than about 40 percent of the quiet time, and leave the rest for the music and sound.',
+    spacing: 8,
+    least: 0,
+    fill: 'Use about half of the room to speak, for what matters most, and leave the rest to the soundtrack. Fewer well-placed descriptions are better than many small ones.',
   },
   standard: {
     guide:
-      'Standard detail: the essentials, plus a brief look at each person when they first appear, where each scene takes place, facial expressions that matter, and visual humor. Leave some quiet moments quiet.',
+      'Standard detail: the essentials, plus a brief look at each person when they first appear, where each scene takes place, facial expressions that matter, and visual humor. Leave a stretch undescribed only when nothing new can be seen.',
     most: 36,
-    fill: 'Fill no more than about 60 percent of the quiet time, and leave the rest for the music and sound.',
+    spacing: 4.5,
+    least: 0.5,
+    fill: 'Use about three quarters of the room to speak. Music and sound effects playing while something visible happens are room to describe, not a reason to stay silent.',
   },
   rich: {
     guide:
       'Rich detail: the listener loves visuals. After the essentials, fill the room you have with specifics: colors, clothing, hair, decor, lighting, weather, background action, logos, packaging, and memorable camera moves.',
     most: 48,
-    fill: 'You may fill most of the quiet time when there is plenty to see, but keep signature sounds and sung words clear.',
+    spacing: 3,
+    least: 1,
+    fill: 'Use nearly all of the room to speak whenever there is something to see, keeping only sung words and signature sounds clear.',
   },
 };
 
@@ -121,7 +138,8 @@ const kindGuide = [
   'Talk, interview or podcast: read name captions and titles the first time they appear, and describe charts, pictures and places that nobody explains out loud. Keep it sparse.',
   'How-to or tutorial: describe the steps shown that the speaker does not say, and read measurements and labels on screen.',
   'Video game: describe the scene, what the player does, and important on-screen text or scores.',
-  'Home video: describe who is there, where they are, and what they are doing. Read the camcorder date stamp when it first appears and whenever it changes, and use names only from the notes or the dialogue.',
+  "Home video: describe who is there, where they are, and what they are doing. Read the camcorder date stamp when it first appears and whenever it changes, and use real people's names only from the notes or the dialogue.",
+  'Animation or cartoon: the comedy is in the pictures. Describe each gag as it happens, its setup and then its payoff, over the music and sound effects, and say what makes a sound when the sound alone does not tell, such as a boxing glove on a spring. Do not spend a stretch on a sound the listener just heard, such as a scream or a laugh, while there is action to describe.',
 ].join('\n');
 
 /** Words a listener hears per second at 1x, from the measured voice speed when there is one. */
@@ -156,7 +174,13 @@ function dialogueText(lines: Line[], state: Continuity | null, timed = true): st
 
 function continuityText(state: Continuity | null): string {
   if (!state) return 'This is the beginning of the video.';
-  const people = state.people.map(({ id, label, name, look }) => ({ id, label, name, look }));
+  const people = state.people.map(({ id, label, name, look, nameFrom }) => ({
+    id,
+    label,
+    name,
+    ...(name && nameFrom ? { nameFrom } : {}),
+    look,
+  }));
   const names = Object.entries(state.heard?.names ?? {});
   const planned = state.left === undefined;
   const recent = planned
@@ -166,7 +190,7 @@ function continuityText(state: Continuity | null): string {
     state.kind ? `Kind of the last clip: ${state.kind}.` : '',
     state.setting ? `Where the last clip ended: ${state.setting}.` : '',
     people.length
-      ? `PEOPLE SO FAR (reuse these ids and keep each label exactly; an empty name means the listener has not learned it yet): ${JSON.stringify(people)}`
+      ? `PEOPLE SO FAR (reuse these ids and keep each label exactly; an empty name means the listener has not learned it yet; nameFrom known marks a well-known character you keep naming): ${JSON.stringify(people)}`
       : '',
     state.speakers.length
       ? `Speaker numbers matched so far, as guesses to check against the picture: ${state.speakers.map((item) => `S${item.speaker} = ${item.who}`).join('; ')}`
@@ -185,31 +209,64 @@ function continuityText(state: Continuity | null): string {
   return parts.filter(Boolean).join('\n');
 }
 
-/** Quiet stretches of the clip with how many words fit in each at the listener's usual speed. */
+/**
+ * The shortest stretch without dialogue worth listing, in original seconds after the 0.22 s kept
+ * clear of each word: about three words at a fastest speed of 1.75x, which placement can use.
+ */
+export const shortestRoom = 0.8;
+/** Below this many seconds a stretch's word budget is given at her fastest speed. */
+const shortRoom = 2;
+
+/**
+ * Stretches of the clip without dialogue (music and sound effects may play in them), with how
+ * many words fit in each, the room in all, and how many cues the detail level asks for there.
+ */
 export function roomText(seconds: number, brief: Brief, lines: Line[]): string {
   const scale = brief.slowed ? 4 : 1;
   const original = seconds / scale;
   const speech = lines.map((line) => ({ start: line.start / scale, end: line.end / scale }));
   const stretches = gaps(mergeIntervals(speech, original, 0.22), original).filter(
-    (stretch) => stretch.end - stretch.start >= 1,
+    (stretch) => stretch.end - stretch.start >= shortestRoom - 1e-6,
   );
-  const perSecond = wordsPerSecond(brief) * brief.rate;
-  const words = (span: { start: number; end: number }) =>
-    Math.max(1, Math.floor((span.end - span.start - 0.3) * perSecond));
+  const level = density[brief.detail];
+  const usual = wordsPerSecond(brief) * brief.rate;
+  const fastest = wordsPerSecond(brief) * brief.maxRate;
+  const words = (span: { start: number; end: number }, perSecond: number, margin: number) =>
+    Math.max(1, Math.floor((span.end - span.start - margin) * perSecond));
+  const budget = (span: { start: number; end: number }) =>
+    span.end - span.start >= shortRoom
+      ? `about ${words(span, usual, 0.3)} words`
+      : `up to ${words(span, fastest, 0.1)} words at her fastest speed`;
   const listed = stretches
     .slice(0, 40)
     .map(
       (span) =>
-        `${(span.start * scale).toFixed(1)} to ${(span.end * scale).toFixed(1)}: about ${words(span)} words`,
+        `${(span.start * scale).toFixed(1)} to ${(span.end * scale).toFixed(1)}: ${budget(span)}`,
     );
+  const room = stretches.reduce((sum, span) => sum + span.end - span.start, 0);
+  const target = Math.max(
+    1,
+    Math.round(
+      stretches.reduce(
+        (sum, span) => sum + Math.max((span.end - span.start) / level.spacing, level.least),
+        0,
+      ),
+    ),
+  );
   return [
     'ROOM TO SPEAK',
     stretches.length
-      ? `Narration can only go in these quiet stretches, listed in this clip's seconds with about how many words fit at the listener's usual speed${scale > 1 ? ' (the word counts are for the original speed)' : ''}:`
-      : 'There is no quiet stretch of a second or more in this clip, so only the most important description can be spoken.',
+      ? `Narration goes wherever nobody is talking. Music and sound effects may be playing there; the soundtrack is lowered under the narrator, so speak over them. These are the stretches without dialogue, in this clip's seconds, with about how many words fit at the listener's usual speed${scale > 1 ? ' (the word counts are for the original speed)' : ''}:`
+      : 'There is no stretch without dialogue long enough to speak in this clip, so only the most important description can be spoken.',
     ...listed,
-    'Write each text to fit the stretch where it will be spoken, and each shortText in about half that. When a stretch is short, merge what happens there into one cue instead of planning two.',
-    density[brief.detail].fill,
+    stretches.length
+      ? `That is about ${Math.round(room)} seconds of room in all. At this level of detail, plan about ${target} ${target === 1 ? 'cue' : 'cues'} across it when there is that much to see.`
+      : '',
+    'Write each text to fit the stretch where it will be spoken, and each shortText in about half that. In a stretch under about 3 seconds, merge what happens there into one cue. In a longer stretch, give each new action its own cue starting when it appears, instead of joining events seconds apart into one.',
+    level.fill,
+    brief.detail === 'essential'
+      ? ''
+      : 'After the cues that matter, you may add importance 1 cues for anything else worth seeing in a stretch still more than half empty; they are spoken only when there is room.',
     brief.mode === 'extended'
       ? 'This listener allows pauses: a description that matters may run longer than its stretch and the picture will wait for it, but prefer descriptions that fit.'
       : '',
@@ -289,7 +346,7 @@ export function analysisPrompt(
       : '',
     brief.sectionNote ? `HER NOTE FOR THIS PART (trusted): ${brief.sectionNote}` : '',
   ].filter(Boolean);
-  return `You are an experienced audio describer writing the description track for a blind listener. The listener hears the original soundtrack and your descriptions are spoken in the pauses between dialogue. Write a synchronized description script, not a summary.
+  return `You are an experienced audio describer writing the description track for a blind listener. The listener hears the original soundtrack, and your descriptions are spoken wherever nobody is talking, over music and sound effects, with the soundtrack lowered beneath them. Write a synchronized description script, not a summary.
 
 THIS CLIP
 It is ${seconds.toFixed(2)} seconds long. Every time you give is in seconds from the start of THIS clip, between 0 and ${seconds.toFixed(2)}.
@@ -297,9 +354,9 @@ ${[metadataText(seconds, brief), ...trusted, positionText(seconds, brief)].filte
 
 CONTINUITY
 ${continuityText(state)}
-${brief.survey ? 'FIRST LOOK: watch this section to learn visible people and names explicitly spoken or shown. Return people, speakers, kind and setting, but return an empty cues array. Do not guess names from faces. This pass does not narrate anything.' : ''}
-${brief.slowed ? `CLOSE LOOK: this clip has been slowed to one quarter speed for inspection, including the audio. The ORIGINAL video lasts ${(seconds / 4).toFixed(2)} seconds. All supplied dialogue times and all times you return use this slowed clip timeline. Narration will play against the original speed, so there is only one quarter as much room to speak as this clip seems to offer. Do not write four times as many descriptions. Look carefully at short shots, logos, labels and text. Repeated frames are one event, not repeated events.` : ''}
-${brief.orientation?.length ? `WHOLE-FILM REFERENCE, NOT KNOWLEDGE THE LISTENER ALREADY HAS: ${JSON.stringify(brief.orientation)}. These are candidate matches collected from the whole film, including later scenes. Use them only to help recognize consistent appearances. Do not speak any name from this reference until it is spoken in the dialogue, read from the screen in one of your cues, or given in the notes, in THIS or an EARLIER clip, and leave it out of people and speakers until then. Do not reveal future identities, relationships, settings or events. When a match is uncertain, keep the visual label.` : ''}
+${brief.survey ? 'FIRST LOOK: watch this section to learn visible people, names explicitly spoken or shown, and which well-known characters appear. Return people, speakers, kind and setting, but return an empty cues array. Do not guess the names of real people from their faces. This pass does not narrate anything.' : ''}
+${brief.slowed ? `CLOSE LOOK: this clip has been slowed to one quarter speed for inspection, including the audio. The ORIGINAL video lasts ${(seconds / 4).toFixed(2)} seconds. All supplied dialogue times and all times you return use this slowed clip timeline. Narration will play against the original speed, so there is only one quarter as much room to speak as this clip seems to offer. Plan from ROOM TO SPEAK, whose word counts are already for the original speed, and do not write four times as many descriptions. Look carefully at short shots, logos, labels and text. Repeated frames are one event, not repeated events.` : ''}
+${brief.orientation?.length ? `WHOLE-FILM REFERENCE, NOT KNOWLEDGE THE LISTENER ALREADY HAS: ${JSON.stringify(brief.orientation)}. These are candidate matches collected from the whole film, including later scenes. Use them only to help recognize consistent appearances. Do not speak any name from this reference until it is spoken in the dialogue, read from the screen in one of your cues, or given in the notes, in THIS or an EARLIER clip, and leave it out of people and speakers until then. The one exception is a name marked nameFrom known, a well-known character: name that character once they appear in THIS clip. Do not reveal future identities, relationships, settings or events. When a match is uncertain, keep the visual label.` : ''}
 ${before.length ? `Dialogue just before this clip:\n${dialogueText(before, state, false)}\n` : ''}
 DIALOGUE IN THIS CLIP (speech recognition with times; S numbers are voices as grouped by speech recognition, usually the same voice each time, but similar voices can be merged, especially across unrelated commercials)
 ${dialogueText(lines, state)}
@@ -315,9 +372,10 @@ ${kindGuide}
 PEOPLE AND NAMES
 Give every person an id. Reuse the id from PEOPLE SO FAR for someone already listed and keep that person's label exactly; give a new person the next unused number (P1, P2 and so on).
 Introduce each new person with a few words about how they look. Describe approximate age, build, hair, skin tone and clothing in neutral words, and the same way for everyone. Use neutral build words such as slim, tall or heavyset, never judgmental ones about weight or attractiveness. Do not state ethnicity, nationality, religion or gender identity unless the video or the listener's notes establish it. Mention a disability or mobility aid only when it is visible and matters to what happens.
-${brief.survey ? "Record a person's name only when it is spoken in the dialogue or shown on screen in this clip, or given in the listener's notes." : "Use a name only once it has been spoken in the dialogue, read from the screen in one of your cues, or given in the listener's notes; before that, use the same short visual label every time."} Never invent a name, and never guess a real person's identity from their face.
+${brief.survey ? "Record a person's name only when it is spoken in the dialogue or shown on screen in this clip, or given in the listener's notes, or when they are a well-known character as described below." : "Use a name only once it has been spoken in the dialogue, read from the screen in one of your cues, or given in the listener's notes; before that, use the same short visual label every time. Well-known characters, below, are the one exception."} Never invent a name, and never guess a real person's identity from their face.
 The first time you use a name, join it to the label the listener already knows: the label first, then a comma and the name. After that, use the name alone.
-The title and the source metadata may name a brand, station or programme only when a matching logo, call letters or text is at least partly visible. Never use them to name a person, or to give a year or a market the screen does not show.
+WELL-KNOWN CHARACTERS: a cartoon, animated, puppet, mascot, video game or comic character with a famous design, such as Bugs Bunny, Big Bird, Mario or SpongeBob SquarePants, is named from their first appearance, because recognizing a famous fictional design is not identifying a real person. Do this only when you are confident: the design is unmistakable and fits the show, the other characters, the voices and the source metadata. Set nameFrom to known, and start its look with what kind of character it is, such as cartoon, puppet, mascot costume or game character. The first time, give the full name followed by a few words about how the character looks; after that, use the short name the character usually goes by. If the listener already heard this character under a visual label, join the label and the name once, as above. When you are unsure, or a character only resembles a famous one, keep a visual label and leave the name empty. A performer in a character costume is named as the character, never as the performer. A cartoon or caricature of a real person counts as a real person. Never name a character whose identity the story is still hiding, such as one in a disguise that fools the audience too.
+The title and the source metadata may name a brand, station or programme only when a matching logo, call letters or text is at least partly visible, and may confirm a well-known character whose look on screen matches. Never use them to name a real person, or to give a year or a market the screen does not show.
 In a compilation of commercials, idents or clips, people in one item are different people from those in another unless it is clearly the same person.
 
 HOW TO WRITE
@@ -333,17 +391,17 @@ The cue that first introduces a person has importance 3, and its shortText keeps
 pauseAt: a moment between at and until where the picture could freeze${brief.mode === 'extended' ? ' (this listener allows pauses)' : ''}: the end of a spoken sentence, a cut, or a finished action. Never inside a word, a sung phrase or an important sound.
 importance: 3 essential to follow along or important text, 2 useful context, 1 nice to have.
 who: the ids of the people the cue mentions.
-Give at most ${brief.survey ? 0 : most} cues for this clip. Fewer well-placed descriptions are better than many that cannot fit.
-protectedSounds: stretches of important sound that narration must not cover, such as sung lyrics, a signature sting or chime, a sound effect that matters, or deliberate dramatic silence. Ordinary background music does not count, and speech is already known from the dialogue list.
+Give at most ${brief.survey ? 0 : most} cues for this clip, and never more than fit the room.
+protectedSounds: the few stretches narration must not cover: sung lyrics, a signature sting, chime or jingle, speech the dialogue list missed, deliberate dramatic silence, or a short sound whose meaning would be lost under a voice, such as a gunshot or a knock, for only the second or two it lasts. Music and sound effects in general are not protected: the soundtrack is lowered under the narrator. Describe what causes a crash or a punch just before it, or what it did right after, and never protect a whole stretch of music or action. Speech is already known from the dialogue list.
 
 ALSO RETURN
 kind: which of these best fits THIS clip: ${contentKinds.join('; ')}.
 setting: where and when the clip ends, in a few words.
-people: everyone who appears in THIS clip, new or returning, each with id, label, name and look. The name stays empty until the rule above allows it. People from earlier clips who do not appear need not be repeated.
+people: everyone who appears in THIS clip, new or returning, each with id, label, name, nameFrom and look. The name stays empty until the rules above allow it. nameFrom says how the name is known: said, shown, notes, or known for a well-known character; it is empty when the name is empty. People from earlier clips who do not appear need not be repeated.
 speakers: each S number you can match to a person because you see that person speak or the dialogue makes it certain, given as that person's id. Leave out any match you are unsure of.
 
 Return only JSON in this shape:
-{"kind":"film or TV","setting":"a diner at night","people":[{"id":"P1","label":"the gray-haired man","name":"","look":"gray hair, green apron"}],"speakers":[{"speaker":0,"who":"P1"}],"cues":[{"at":1.2,"until":6,"pauseAt":3.4,"text":"A gray-haired man in a green apron wipes the counter.","shortText":"A gray-haired man wipes the counter.","who":["P1"],"importance":3}],"protectedSounds":[{"start":10,"end":12}]}`.replace(
+{"kind":"film or TV","setting":"a diner at night","people":[{"id":"P1","label":"the gray-haired man","name":"","nameFrom":"","look":"gray hair, green apron"}],"speakers":[{"speaker":0,"who":"P1"}],"cues":[{"at":1.2,"until":6,"pauseAt":3.4,"text":"A gray-haired man in a green apron wipes the counter.","shortText":"A gray-haired man wipes the counter.","who":["P1"],"importance":3}],"protectedSounds":[{"start":10,"end":12}]}`.replace(
     /\n{3,}/g,
     '\n\n',
   );
@@ -369,7 +427,10 @@ const object = (properties: Record<string, Schema>): Schema => ({
   required: Object.keys(properties),
   additionalProperties: false,
 });
-/** Integer enums empty the whole cue object on Gemini, so importance stays a plain integer. */
+/**
+ * Integer enums empty the whole cue object on Gemini, so importance stays a plain integer and
+ * nameFrom is a plain string (its values are listed in the prompt, not as a schema enum).
+ */
 export const analysisFormat: ResponseFormat = {
   type: 'json_schema',
   json_schema: {
@@ -380,7 +441,7 @@ export const analysisFormat: ResponseFormat = {
       setting: text,
       people: {
         type: 'array',
-        items: object({ id: text, label: text, name: text, look: text }),
+        items: object({ id: text, label: text, name: text, nameFrom: text, look: text }),
       },
       speakers: { type: 'array', items: object({ speaker: { type: 'integer' }, who: text }) },
       cues: {
@@ -404,6 +465,23 @@ const personId = (value: string | undefined): string | undefined =>
   value && /^p\d{1,4}$/i.test(value) ? value.toUpperCase() : undefined;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** Words in a label or look that mark a drawn, puppet, costumed or game character. */
+const fictional =
+  /\b(?:cartoon|animated|anime|puppet|muppet|marionette|mascot|costumed?|plush|stuffed|toy|doll|figurine|cgi|claymation|drawn|sprite|pixel(?:ated)?|comic|game character)\b/i;
+const fictionalKinds: ReadonlySet<string> = new Set(['animation', 'video game']);
+
+/**
+ * A "known" name stands only for a character that is visibly fictional: in an animated or game
+ * clip, or described as a cartoon, puppet, costume or the like. Anyone else waits for the
+ * dialogue, the screen or her notes, so a misfire can never name a real person from a face.
+ */
+function checkedSource(person: Person, kind: string): Person {
+  if (person.nameFrom !== 'known') return person;
+  if (fictionalKinds.has(kind.trim().toLowerCase())) return person;
+  if (fictional.test(`${person.label} ${person.look}`)) return person;
+  return { ...person, nameFrom: '' };
+}
 
 /** The reply object that holds the cues list, one wrapper level deep at most. */
 function replyBody(raw: unknown): Record<string, unknown> {
@@ -464,7 +542,7 @@ export function readAnalysis(
       .filter((person) => person.label)
       .map(({ id, ...person }) => {
         const clean = personId(id);
-        return clean ? { ...person, id: clean } : person;
+        return checkedSource(clean ? { ...person, id: clean } : person, parsed.kind);
       }),
     speakers: parsed.speakers.filter((item) => item.who),
     cues,
@@ -481,6 +559,8 @@ export type Heard = {
   /** Descriptions planned for this section that were left out. */
   left: string[];
   sectionIndex: number;
+  /** Whole-video (working-source) seconds where this section starts; recognized characters are known from here. */
+  sectionStart?: number;
   /** Whole-video (working-source) seconds where this section ends. */
   sectionEnd: number;
   /** Whole-video words (working-source seconds). */
@@ -514,10 +594,12 @@ function mergePeople(
       [...people.values()].find((item) => item.label.toLowerCase() === label);
     const id = known?.id ?? (person.id && !people.has(person.id) ? person.id : allocate());
     people.delete(id);
+    const nameFrom = person.name ? person.nameFrom : known?.nameFrom;
     people.set(id, {
       id,
       label: known?.label || person.label,
       name: person.name || known?.name || '',
+      ...(nameFrom ? { nameFrom } : {}),
       look: person.look || known?.look || '',
     });
     if (section !== undefined) seen[id] = section;
@@ -616,13 +698,21 @@ export function nextContinuity(
     if (reveals[key] === undefined && heard.spoken.some((line) => readsName(line, name)))
       reveals[key] = heard.sectionEnd;
   }
+  const from = heard.sectionStart ?? heard.sectionEnd;
+  for (const person of people) {
+    if (!recognized(person)) continue;
+    const key = nameKey(person.name);
+    if (reveals[key] === undefined || reveals[key] > from) reveals[key] = from;
+  }
   const known: Record<string, number> = {};
   for (const [key, at] of Object.entries(reveals)) if (at <= heard.sectionEnd) known[key] = at;
   const hidden = new Map<string, Person>();
   people = people.map((person) => {
     if (!person.name || known[nameKey(person.name)] !== undefined) return person;
     hidden.set(nameKey(person.name), person);
-    return { ...person, name: '' };
+    const blanked: Person = { ...person, name: '' };
+    delete blanked.nameFrom;
+    return blanked;
   });
   speakerList = speakerList
     .map((item) => {
@@ -633,11 +723,19 @@ export function nextContinuity(
   const labels = [...(previous?.heard?.labels ?? [])];
   const linked: Record<string, string> = { ...(previous?.heard?.names ?? {}) };
   for (const person of people) {
-    const lines = heard.spoken.filter((line) => mentionsLabel(line, person.label));
+    const byName = recognized(person);
+    const lines = heard.spoken.filter(
+      (line) => mentionsLabel(line, person.label) || (byName && voicesName(line, person.name)),
+    );
     if (!lines.length) continue;
     if (!labels.some((label) => label.toLowerCase() === person.label.toLowerCase()))
       labels.push(person.label);
-    if (person.name && lines.some((line) => mentionsName(line, person.name)))
+    if (
+      person.name &&
+      lines.some((line) =>
+        byName ? voicesName(line, person.name) : mentionsName(line, person.name),
+      )
+    )
       linked[person.name] = person.label;
   }
   people = evict(people, speakerList, seen);

@@ -1,7 +1,7 @@
 import { setPriority } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import type { Chapter, Interval } from './types';
 import { tempoFilters } from './timing';
 import { sampleRate } from './mix';
@@ -1627,5 +1627,83 @@ export async function assemble(
     ],
     signal,
   );
+  if (subtitles.length) await quietTextTracks(video);
   return { video, audio };
+}
+
+type Span = { start: number; end: number };
+
+/** The child boxes of one type between two offsets of an MP4 box's bytes (content offsets). */
+function boxes(buffer: Buffer, start: number, end: number, type: string): Span[] {
+  const found: Span[] = [];
+  let at = start;
+  while (at + 8 <= end) {
+    let length = buffer.readUInt32BE(at);
+    let header = 8;
+    if (length === 1) {
+      length = Number(buffer.readBigUInt64BE(at + 8));
+      header = 16;
+    } else if (length === 0) length = end - at;
+    if (length < header || at + length > end) break;
+    if (buffer.toString('latin1', at + 4, at + 8) === type)
+      found.push({ start: at + header, end: at + length });
+    at += length;
+  }
+  return found;
+}
+
+/**
+ * Leaves every text track of an MP4 switched OFF by default. ffmpeg's MP4 muxer always enables
+ * the first text track (movenc's enable_tracks; -disposition:s 0 cannot stop it), and an enabled
+ * text track is shown by default in Files, Photos, QuickTime and Safari, where VoiceOver's Media
+ * Descriptions setting then reads it over the film (Part 291, her first real described video).
+ * Clears the "track enabled" bit (tkhd flags & 1) of each sbtl/text track in place: one byte per
+ * track, no size changes. The tracks stay listed; a person turns them on from the player's menu.
+ * Returns how many tracks it switched off.
+ */
+export async function quietTextTracks(file: string): Promise<number> {
+  const handle = await open(file, 'r+');
+  try {
+    const { size } = await handle.stat();
+    const head = Buffer.alloc(16);
+    let at = 0;
+    let moov: Span | null = null;
+    while (at + 8 <= size) {
+      await handle.read(head, 0, 16, at);
+      let length = head.readUInt32BE(0);
+      let header = 8;
+      if (length === 1) {
+        length = Number(head.readBigUInt64BE(8));
+        header = 16;
+      } else if (length === 0) length = size - at;
+      if (length < header) break;
+      if (head.toString('latin1', 4, 8) === 'moov') {
+        moov = { start: at + header, end: at + length };
+        break;
+      }
+      at += length;
+    }
+    if (!moov) return 0;
+    const box = Buffer.alloc(moov.end - moov.start);
+    await handle.read(box, 0, box.length, moov.start);
+    let changed = 0;
+    for (const trak of boxes(box, 0, box.length, 'trak')) {
+      const tkhd = boxes(box, trak.start, trak.end, 'tkhd')[0];
+      const mdia = boxes(box, trak.start, trak.end, 'mdia')[0];
+      const hdlr = mdia && boxes(box, mdia.start, mdia.end, 'hdlr')[0];
+      if (!tkhd || !hdlr) continue;
+      // hdlr: version and flags (4), pre_defined (4), then the handler type.
+      const handler = box.toString('latin1', hdlr.start + 8, hdlr.start + 12);
+      if (handler !== 'sbtl' && handler !== 'text' && handler !== 'subt') continue;
+      // tkhd: version (1), then 24 bits of flags; "enabled" is the lowest bit of the last byte.
+      const flag = tkhd.start + 3;
+      if (!(box[flag] & 1)) continue;
+      box[flag] &= 0xfe;
+      await handle.write(box, flag, 1, moov.start + flag);
+      changed++;
+    }
+    return changed;
+  } finally {
+    await handle.close();
+  }
 }

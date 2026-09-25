@@ -194,6 +194,11 @@ type Job = {
   costUSD: number;
   /** What the current run has spent (or holds for a request in flight). */
   runCost?: number;
+  /**
+   * The part of runCost held for requests still in flight. A worker that dies leaves it here;
+   * the next claim or release takes it off, so a dead run's reserves are never charged.
+   */
+  runPending?: number;
   runKind?: RunKind;
   /** How the latest rehearsal ended, so the page can say so when the video is ready again. */
   lastRehearsal?: { outcome: RehearsalOutcome; version: number; at: Date };
@@ -293,6 +298,7 @@ const jobSchema = new mongoose.Schema<Job>(
     progress: Number,
     costUSD: Number,
     runCost: Number,
+    runPending: Number,
     runKind: String,
     lastRehearsal: { outcome: String, version: Number, at: Date },
     runEstimateUSD: Number,
@@ -426,6 +432,11 @@ const configured = () =>
   process.env.KADE_DESCRIBED_VIDEO !== '0';
 const today = () => new Date().toISOString().slice(0, 10);
 const toCents = (usd: number): number => Math.max(0, Math.ceil(usd * 100 - 1e-6));
+/** What a run has truly spent: its running total less the reserves of requests that never settled. */
+const settledCost = (job: Pick<Job, 'runCost' | 'runPending'>): number =>
+  Math.max(0, (job.runCost ?? 0) - (job.runPending ?? 0));
+/** Dialogue timing (Deepgram) paid from the platform's credit: logged, never quoted or charged. */
+const freeDialogue = () => process.env.KADE_DESCRIPTION_FREE_DIALOGUE === '1';
 const money = (usd: number): string => `$${usd.toFixed(2)}`;
 const retain = (job: Pick<Job, 'expiresAt'>, days: number): Date =>
   new Date(Math.max(new Date(job.expiresAt).getTime(), Date.now() + days * day));
@@ -497,7 +508,7 @@ function priceFor(work: Work, settings: Settings): Price {
       (work.bytes === undefined
         ? per(work.voiced, speechPerMinute(settings.detail))
         : work.bytes * speechPerByte) + (looked ? 0 : work.fixed),
-    dialogue: per(work.dialogue, transcriptionPerMinute),
+    dialogue: freeDialogue() ? 0 : per(work.dialogue, transcriptionPerMinute),
   };
   const total = Object.values(breakdown).reduce((sum, value) => sum + value, 0);
   const estimateUSD = toCents(total) / 100;
@@ -637,6 +648,14 @@ class OverQuote extends Halt {
     this.quotedUSD = quotedUSD;
   }
 }
+/** Which of our own stops aborted a job's signal, for the operator's log. */
+const stopName = (reason: unknown): string => {
+  if (reason instanceof Shutdown) return 'shutdown';
+  if (reason instanceof Cancelled) return 'cancel';
+  if (reason instanceof LeaseLost) return 'lease-lost';
+  if (reason instanceof Halt) return 'halt';
+  return 'aborted';
+};
 
 const statusOf = (error: unknown) =>
   (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
@@ -1205,7 +1224,7 @@ export function createDescriptionRouter(hooks: Hooks): {
   async function allowanceText(setAside: number, owner?: string): Promise<string> {
     const left = await remaining(owner);
     if (hooks.wallet)
-      return `This run needs ${money(setAside)} available in your balance; ${money(left)} is available. Narration is included. Unused reserved money is returned when the run ends.`;
+      return `This run needs ${money(setAside)} available in your balance; ${money(left)} is available. ${freeDialogue() ? 'Narration and dialogue timing are included.' : 'Narration is included.'} Unused reserved money is returned when the run ends.`;
     const held = await heldByOpenRuns();
     return [
       `This needs about ${money(setAside)} set aside, and ${money(left)} of today's ${money(dailyLimit())} processing allowance is left.`,
@@ -1307,6 +1326,8 @@ export function createDescriptionRouter(hooks: Hooks): {
     const latest = latestCopy(job);
     const stopped = ['failed', 'cancelled'].includes(job.state);
     const library = job.source === 'library' ? job.sourcePrivacy : undefined;
+    /** A stopped run's unsettled reserves were never charged, so they are not shown as spent. */
+    const orphaned = busy.includes(job.state) ? 0 : Math.max(0, job.runPending ?? 0);
     return {
       id: job._id,
       name: job.name,
@@ -1319,8 +1340,8 @@ export function createDescriptionRouter(hooks: Hooks): {
       etaSeconds: eta(job),
       error: job.error,
       settings: job.settings,
-      costUSD: Math.round((job.costUSD || 0) * 10000) / 10000,
-      runCostUSD: Math.round((job.runCost ?? 0) * 10000) / 10000,
+      costUSD: Math.round(Math.max(0, (job.costUSD || 0) - orphaned) * 10000) / 10000,
+      runCostUSD: Math.round(Math.max(0, (job.runCost ?? 0) - orphaned) * 10000) / 10000,
       setAsideUSD: (job.reservation?.cents ?? 0) / 100,
       estimatedUSD: job.runEstimateUSD,
       approvedUSD: job.approvedUSD,
@@ -1918,7 +1939,7 @@ export function createDescriptionRouter(hooks: Hooks): {
    * run closes and the day keeps what it really spent, as the estimate for Continue does.
    */
   async function askAfterHalt(job: Job, over: OverQuote): Promise<number> {
-    const closing = (job.reservation?.cents ?? 0) - toCents(job.runCost ?? 0);
+    const closing = (job.reservation?.cents ?? 0) - toCents(settledCost(job));
     const left = await remaining(job.owner).then(
       (value) => Math.max(0, Math.round(value * 100) + closing) / 100,
       () => jobLimit(),
@@ -1985,7 +2006,7 @@ export function createDescriptionRouter(hooks: Hooks): {
    */
   async function enqueue(req: Request, job: Job, launch: Launch): Promise<Job> {
     const { price, settings } = launch;
-    if (launch.from.includes(job.state)) await release(job.reservation, job.runCost ?? 0);
+    if (launch.from.includes(job.state)) await release(job.reservation, settledCost(job));
     if (price.estimateUSD > jobLimit())
       throw new Problem(
         `This is estimated at ${money(price.estimateUSD)}, above the ${money(jobLimit())} limit for one run. Choose less detail, turn off the extra passes, or describe a shorter part.`,
@@ -2052,6 +2073,9 @@ export function createDescriptionRouter(hooks: Hooks): {
       settings,
       reservation,
       runCost: 0,
+      runPending: undefined,
+      /** A dead run's unsettled reserves leave the video's total when its next run starts. */
+      costUSD: Math.max(0, (claimed.costUSD ?? 0) - (claimed.runPending ?? 0)),
       runKind: launch.kind,
       runEstimateUSD: price.estimateUSD,
       approvedUSD,
@@ -2103,8 +2127,9 @@ export function createDescriptionRouter(hooks: Hooks): {
 
   route('get', '/config', async (req, res) => {
     const catalog = await voiceCatalog();
+    const dialogue = freeDialogue() ? 0 : transcriptionPerMinute;
     const perMinute = (detail: Settings['detail']) =>
-      Math.round((rates.vision + speechPerMinute(detail) + transcriptionPerMinute) * 10000) / 10000;
+      Math.round((rates.vision + speechPerMinute(detail) + dialogue) * 10000) / 10000;
     res.json({
       enabled: configured(),
       maxBytes: 2 * 1024 ** 3,
@@ -2115,6 +2140,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       dailyUSD: hooks.wallet ? null : dailyLimit(),
       billingMode: billingMode(req),
       speechIncluded: true,
+      dialogueIncluded: freeDialogue(),
       remainingUSD: await remaining(hooks.actor(req).id),
       perMinuteUSD: {
         essential: perMinute('essential'),
@@ -2409,6 +2435,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       limitUSD: jobLimit(),
       billingMode: billingMode(req),
       speechIncluded: true,
+      dialogueIncluded: freeDialogue(),
     };
     try {
       const launch = await launchFor(job, input.action, body, false);
@@ -2670,7 +2697,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       { new: true },
     ).lean();
     if (idle) {
-      await release(idle.reservation, idle.runCost ?? 0);
+      await release(idle.reservation, settledCost(idle));
       await abortUpload(idle);
       if (back) await eraseRehearsal(idle);
     } else {
@@ -2701,7 +2728,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         'Wait for any Library save, or cancel processing and wait for it to stop, before deleting.',
       );
     try {
-      await release(deleting.reservation, deleting.runCost ?? 0);
+      await release(deleting.reservation, settledCost(deleting));
       await abortUpload(job);
       await eraseAll(job);
     } catch (error) {
@@ -3205,6 +3232,7 @@ export function createDescriptionRouter(hooks: Hooks): {
             index: section.index,
             cues: section.analysis?.cues.length ?? 0,
             placed: section.placements.length,
+            spoken: Math.round(section.placements.reduce((sum, item) => sum + item.duration, 0) * 10) / 10,
             skipped: section.skipped.length,
             failure: section.failure ? scrub(section.failure) : undefined,
             failureClass: section.failureClass,
@@ -3279,7 +3307,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       .lean()
       .catch(() => null);
     if (!settled) return;
-    await release(settled.reservation, settled.runCost ?? 0).catch(() => {});
+    await release(settled.reservation, settledCost(settled)).catch(() => {});
     if (back) await eraseRehearsal(settled);
   }
   /**
@@ -3630,8 +3658,13 @@ export function createDescriptionRouter(hooks: Hooks): {
 
   async function render(job: Job): Promise<void> {
     const reservation = job.reservation;
-    /** `usd` counts requests in flight at their reserve; `pending` is that in-flight part. */
-    const spend = { usd: job.runCost ?? 0, pending: 0 };
+    /**
+     * `usd` counts requests in flight at their reserve; `pending` is that in-flight part. Reserves
+     * a dead worker left unsettled (`runPending`) were never charged: they are dropped here.
+     */
+    const orphaned = Math.max(0, job.runPending ?? 0);
+    const spend = { usd: settledCost(job), pending: 0 };
+    job.costUSD = Math.max(0, (job.costUSD ?? 0) - orphaned);
     const rehearsal = job.runKind === 'rehearsal';
     let notice: (() => void) | undefined;
     const settle = async () => {
@@ -3643,7 +3676,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         busy.includes(current.state)
       )
         return;
-      await release(reservation, spend.usd);
+      await release(reservation, Math.max(0, spend.usd - spend.pending));
     };
     await lease(
       job,
@@ -3659,8 +3692,25 @@ export function createDescriptionRouter(hooks: Hooks): {
           : { ...settings, firstLook: false };
         await Jobs.updateOne(
           { _id: job._id, worker },
-          { $set: { runAt: new Date(), runFrom: job.progress || 0, error: '' } },
+          {
+            $set: {
+              runAt: new Date(),
+              runFrom: job.progress || 0,
+              error: '',
+              runCost: spend.usd,
+              runPending: 0,
+              costUSD: job.costUSD,
+            },
+          },
         );
+        if (orphaned > 0)
+          hooks.log(
+            line('dv.paid-orphaned', {
+              id: job._id,
+              reserveUSD: Math.round(orphaned * 1e6) / 1e6,
+              note: 'requests in flight when the last worker stopped; not charged, the provider may still bill',
+            }),
+          );
         hooks.log(
           line('dv.claim', {
             id: job._id,
@@ -3721,17 +3771,55 @@ export function createDescriptionRouter(hooks: Hooks): {
             await Jobs.updateOne(
               { _id: job._id, worker },
               {
-                $set: { runCost: spend.usd, costUSD: job.costUSD },
+                $set: { runCost: spend.usd, runPending: spend.pending, costUSD: job.costUSD },
                 $inc: { [`spend.${kindKey}`]: actual },
               },
             );
           });
+        /**
+         * Dialogue timing paid from the platform's Deepgram credit: never quoted, never charged,
+         * never counted against her approval. Logged, and booked as `transcription-included`
+         * at list price so the operator can watch how much credit is used.
+         */
+        const includedMeter: Meter = async (kind, reserve, action) => {
+          signal.throwIfAborted();
+          if (!Number.isFinite(reserve) || reserve < 0)
+            throw new Halt('A cost estimate was invalid.');
+          let result: { costUSD: number };
+          try {
+            result = await action();
+          } catch (error) {
+            hooks.log(
+              line('dv.included-failure', {
+                id: job._id,
+                kind,
+                reserveUSD: Math.round(reserve * 1e6) / 1e6,
+                providerMayBill: billed(error),
+                interrupted: signal.aborted,
+                status: axios.isAxiosError(error) ? error.response?.status : undefined,
+              }),
+            );
+            throw error;
+          }
+          hooks.log(
+            line('dv.included', {
+              id: job._id,
+              kind,
+              costUSD: Math.round(result.costUSD * 1e6) / 1e6,
+            }),
+          );
+          await hooks
+            .usage(job.owner, job._id, `${kind}-included`, result.costUSD)
+            .catch((error: Error) => hooks.log('description usage: ' + error.message));
+        };
         /**
          * Her approval limits what the run is charged: once the settled charges reach it, no
          * further paid request starts. A reserve is only a provider's worst case, so requests in
          * flight may still hold more of the day (up to one run's limit) until they settle.
          */
         const paidMeter: Meter = async (kind, reserve, action) => {
+          if (kind === 'transcription' && freeDialogue())
+            return includedMeter(kind, reserve, action);
           await account(async () => {
             signal.throwIfAborted();
             if (!Number.isFinite(reserve) || reserve < 0)
@@ -3752,7 +3840,7 @@ export function createDescriptionRouter(hooks: Hooks): {
             job.costUSD += reserve;
             const saved = await Jobs.updateOne(
               { _id: job._id, worker, cancelRequested: false },
-              { $set: { runCost: spend.usd, costUSD: job.costUSD } },
+              { $set: { runCost: spend.usd, runPending: spend.pending, costUSD: job.costUSD } },
             );
             if (!saved.matchedCount)
               throw new Halt('Processing stopped before the next paid request.');
@@ -3762,21 +3850,35 @@ export function createDescriptionRouter(hooks: Hooks): {
             result = await action();
           } catch (error) {
             const reported = (error as { costUSD?: unknown }).costUSD;
-            let actual = billed(error) ? reserve : 0;
-            if (typeof reported === 'number' && Number.isFinite(reported) && reported >= 0)
-              actual = reported;
-            const uncertain = actual === reserve && typeof reported !== 'number';
+            const known =
+              typeof reported === 'number' && Number.isFinite(reported) && reported >= 0;
+            /**
+             * Our own stop cut this request off: a restart, a lost lease, her cancel or the time
+             * limit. What the provider may still bill for it is the platform's cost, never hers.
+             */
+            const interrupted = !known && signal.aborted;
+            let actual = 0;
+            if (known) actual = reported as number;
+            else if (!interrupted && billed(error)) actual = reserve;
+            const uncertain = !known && !interrupted && actual === reserve;
             await settleCost(uncertain ? 'uncertain' : kind, reserve, actual);
             if (actual > 0)
               await hooks
                 .usage(job.owner, job._id, uncertain ? `${kind}-uncertain` : kind, actual)
                 .catch(() => {});
             hooks.log(
-              line('dv.paid-failure', {
+              line(interrupted ? 'dv.paid-interrupted' : 'dv.paid-failure', {
                 id: job._id,
                 kind,
                 settled: actual,
                 status: axios.isAxiosError(error) ? error.response?.status : undefined,
+                ...(interrupted
+                  ? {
+                      reserveUSD: Math.round(reserve * 1e6) / 1e6,
+                      providerMayBill: billed(error),
+                      why: stopName(signal.reason),
+                    }
+                  : {}),
               }),
             );
             throw error;
@@ -4021,7 +4123,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     })
       .limit(20)
       .lean();
-    for (const job of unsettled) await release(job.reservation, job.runCost ?? 0);
+    for (const job of unsettled) await release(job.reservation, settledCost(job));
   }
   /** A job she cancelled whose worker died settles as cancelled, with its money returned. */
   async function settleCancelled(job: Job): Promise<void> {
@@ -4043,7 +4145,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       { new: true },
     ).lean();
     if (!cancelled) return;
-    await release(cancelled.reservation, cancelled.runCost ?? 0);
+    await release(cancelled.reservation, settledCost(cancelled));
     if (back) await eraseRehearsal(cancelled);
   }
   /** Jobs whose worker vanished: rendering continues from its saved sections, checks restart. */
@@ -4126,7 +4228,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         { new: true },
       ).lean();
       if (!failed) continue;
-      await release(failed.reservation, failed.runCost ?? 0);
+      await release(failed.reservation, settledCost(failed));
       if (back) await eraseRehearsal(failed);
       warn(line('dv.fail', { id: job._id, lane: 'render', why: 'crashes', crashes }));
       if (back)
@@ -4163,7 +4265,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       ).lean();
       if (!claimed) continue;
       try {
-        await release(claimed.reservation, claimed.runCost ?? 0);
+        await release(claimed.reservation, settledCost(claimed));
         await abortUpload(claimed);
         await eraseAll(claimed);
         await Jobs.deleteOne({ _id: job._id, state: 'deleting' });
