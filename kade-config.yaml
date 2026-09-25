@@ -44,12 +44,15 @@ endpoints:
   #   up in the builder. What switching it on changes: every agent's builder
   #   gets a Subagents section under Advanced (on, allow self, pick agents);
   #   any agent record that still has subagents switched on from before July 4
-  #   gets its spawn tool back; "allow self" starts on in the builder, so turn
-  #   it off for a plain pair. A consulted agent runs with the person's own
-  #   access and its own round limit (recursionLimit below fences only the
-  #   agent the person is talking to).
+  #   gets its spawn tool back. Self-spawn (an agent copying itself into a
+  #   child run) stays off whatever the builder's "allow self" says, unless
+  #   the env KADE_SUBAGENT_ALLOW_SELF=1. A consulted agent runs with the
+  #   person's own access and its own round limit (recursionLimit below
+  #   fences only the agent the person is talking to).
   #   Librarian consultation alone can be switched off with the env
-  #   KADE_LIBRARY_CONSULTATION=0 without touching this list.
+  #   KADE_LIBRARY_CONSULTATION=0 without touching this list;
+  #   KADE_LIBRARY_CONSULTATION_ALWAYS=<agent ids> offers her on every turn
+  #   of those agents; KADE_LIBRARY_CONSULTATION_PHONE=0 keeps her off calls.
   # REMOVED July 4: artifacts, skills, chain, ocr — all unused on a
   #   blind-first platform (no code-artifact/subagent/OCR use). execute_code was
   #   already removed July 2 (hosted Code Interpreter closed signups).

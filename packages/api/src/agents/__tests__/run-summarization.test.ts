@@ -1325,3 +1325,48 @@ describe('toolOutputReferences gating', () => {
     expect(callArgs).not.toHaveProperty('toolOutputReferences');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Suite: subagent result hook (KADE Sep 24 2026, library consultation)
+// ---------------------------------------------------------------------------
+describe('subagent result hook', () => {
+  type PostToolUseMatcher = {
+    pattern?: string;
+    hooks: Array<(input: Record<string, unknown>, signal: AbortSignal) => unknown>;
+  };
+
+  it('strips voice and scene markup from a subagent answer before the caller reads it', async () => {
+    const callArgs = await callAndCaptureRunConfig({
+      overrides: {
+        subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_librarian'] },
+        subagentAgentConfigs: [makeAgent({ id: 'agent_librarian' })],
+      },
+    });
+    const hooks = callArgs.hooks as {
+      getMatchers: (event: string) => PostToolUseMatcher[];
+    };
+    expect(hooks).toBeDefined();
+    const matchers = hooks.getMatchers('PostToolUse');
+    expect(matchers).toHaveLength(1);
+    const pattern = new RegExp(matchers[0].pattern ?? '');
+    expect(pattern.test('subagent')).toBe(true);
+    expect(pattern.test('kade_library')).toBe(false);
+    const hook = matchers[0].hooks[0];
+    const signal = new AbortController().signal;
+    expect(
+      await hook(
+        {
+          toolName: 'subagent',
+          toolOutput: '%%%bright%%% Found [Holes](/library/item/1). [[voice]]',
+        },
+        signal,
+      ),
+    ).toEqual({ updatedOutput: 'Found [Holes](/library/item/1).' });
+    expect(await hook({ toolName: 'subagent', toolOutput: 'Found Holes.' }, signal)).toEqual({});
+  });
+
+  it('adds no hook registry to a run without subagents', async () => {
+    const callArgs = await callAndCaptureRunConfig();
+    expect(callArgs).not.toHaveProperty('hooks');
+  });
+});

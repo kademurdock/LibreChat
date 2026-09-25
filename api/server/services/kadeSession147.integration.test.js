@@ -59,7 +59,7 @@ test('durable memory controls and shared project revisions preserve ownership, s
     const second = await request(app).get(base + '/files/' + fileId + '/2').expect(200); assert.equal(second.text, '# Revised');
     await request(app).get(base + '/files/' + fileId + '/2').set('x-test-user', other).expect(404);
     await request(app).post(base + '/files').send({ expectedRevision: 3, name: '../escape.md', content: 'bad', kind: 'document' }).expect(409);
-    assert.deepEqual(runtimeCapabilities({ tools: [{ name: 'read_file', apiKey: 'never expose' }], toolDefinitions: [{ name: 'search' }], hasDeferredTools: true }).available, ['read_file']);
+    assert.deepEqual(runtimeCapabilities({ tools: [{ name: 'read_file', apiKey: 'never expose' }], toolDefinitions: [{ name: 'search', defer_loading: true }], hasDeferredTools: true }).available, ['read_file']);
     assert.ok(!JSON.stringify(runtimeCapabilities({ tools: [{ name: 'read_file', apiKey: 'never expose' }] })).includes('never expose'));
   } finally { await mongoose.disconnect(); await mongo.stop(); }
 });

@@ -1093,7 +1093,10 @@ describe('initializeClient — library consultation', () => {
   it('runs only her read-only tools, whatever tool name her model produces', async () => {
     await createLibrarian();
     mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [] });
-    await runWith({ req: makeReq('Any audiobooks by Gary Paulsen?'), primary: makeConfig(PRIMARY_ID) });
+    await runWith({
+      req: makeReq('Any audiobooks by Gary Paulsen?'),
+      primary: makeConfig(PRIMARY_ID),
+    });
 
     await capturedToolExecuteOptions.loadTools(
       ['kade_library', 'kade_research', 'kade_call_me'],
@@ -1210,5 +1213,122 @@ describe('initializeClient — library consultation', () => {
     });
     expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
     expect(req._kadeToolRagNote).toBe('primary note');
+  });
+
+  it("loads children without tool retrieval, so the caller's retrieval state is untouched", async () => {
+    await createLibrarian();
+    const specialist = await createAgent({
+      id: SPECIALIST_ID,
+      name: 'Specialist',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['kade_weather'],
+    });
+    await grantView(specialist, reader);
+    const rag = require('~/server/services/kadeToolRetrieval');
+    const selectTools = jest
+      .spyOn(rag, 'selectTools')
+      .mockResolvedValue({ keep: new Set(['kade_weather']), reason: 'test' });
+    loadAgentTools.mockResolvedValue({ toolDefinitions: [{ name: 'kade_weather' }] });
+    try {
+      const primary = makeConfig(PRIMARY_ID, {
+        subagents: { enabled: true, allowSelf: false, agent_ids: [SPECIALIST_ID] },
+      });
+      await runWith({ req: makeReq('Any old radio shows in the library?'), primary });
+      for (const id of [SPECIALIST_ID, LIBRARIAN_ID]) {
+        const params = childParams.get(id);
+        await params.loadTools({
+          req: params.req,
+          res: {},
+          tools: params.agent.tools,
+          model: 'gpt-4',
+          agentId: id,
+          provider: 'openai',
+        });
+      }
+      expect(selectTools).not.toHaveBeenCalled();
+    } finally {
+      selectTools.mockRestore();
+      loadAgentTools.mockReset();
+    }
+  });
+
+  it('never turns a librarian already in the run (side-by-side chat) into a consultation', async () => {
+    await createLibrarian();
+    const { processAddedConvo } = require('./addedConvo');
+    const sideBySide = makeConfig(LIBRARIAN_ID, {
+      name: 'Mrs. Witherspoon',
+      tools: ['kade_library'],
+    });
+    processAddedConvo.mockImplementationOnce(async ({ agentConfigs }) => {
+      agentConfigs.set(LIBRARIAN_ID, sideBySide);
+      return { userMCPAuthMap: undefined };
+    });
+    await runWith({
+      req: makeReq('Do we have any Animorphs books?'),
+      primary: makeConfig(PRIMARY_ID),
+    });
+
+    expect(agentClientArgs.agent.subagents).toBeUndefined();
+    expect(agentClientArgs.agentConfigs.get(LIBRARIAN_ID)).toBe(sideBySide);
+    expect(sideBySide.subagentMaxTurns).toBeUndefined();
+  });
+
+  it('keeps her in the run when a configured list names her while she is already there', async () => {
+    await createLibrarian();
+    const { processAddedConvo } = require('./addedConvo');
+    const sideBySide = makeConfig(LIBRARIAN_ID, { name: 'Mrs. Witherspoon' });
+    processAddedConvo.mockImplementationOnce(async ({ agentConfigs }) => {
+      agentConfigs.set(LIBRARIAN_ID, sideBySide);
+      return { userMCPAuthMap: undefined };
+    });
+    const primary = makeConfig(PRIMARY_ID, {
+      subagents: { enabled: true, allowSelf: false, agent_ids: [LIBRARIAN_ID] },
+    });
+    await runWith({ req: makeReq('Tell me a joke'), primary });
+
+    expect(agentClientArgs.agent.subagentAgentConfigs).toEqual([]);
+    expect(agentClientArgs.agentConfigs.get(LIBRARIAN_ID)).toBe(sideBySide);
+  });
+
+  it('turns self-spawn off unless KADE_SUBAGENT_ALLOW_SELF=1', async () => {
+    const primary = () =>
+      makeConfig(PRIMARY_ID, { subagents: { enabled: true, allowSelf: true, agent_ids: [] } });
+    const first = primary();
+    await runWith({ req: makeReq('Tell me a joke'), primary: first });
+    expect(agentClientArgs.agent.subagents).toEqual({
+      enabled: true,
+      allowSelf: false,
+      agent_ids: [],
+    });
+
+    process.env.KADE_SUBAGENT_ALLOW_SELF = '1';
+    try {
+      await runWith({ req: makeReq('Tell me a joke'), primary: primary() });
+      expect(agentClientArgs.agent.subagents.allowSelf).toBe(true);
+    } finally {
+      delete process.env.KADE_SUBAGENT_ALLOW_SELF;
+    }
+  });
+
+  it('remembers a phone caller between call turns, whose conversation ids are all fresh', async () => {
+    await createLibrarian(reader);
+    const onBehalf = {
+      user: { id: serviceSeat._id.toString(), role: 'ADMIN' },
+      kadeOnBehalfOf: { id: reader._id.toString(), name: 'Reader', email: 'reader@example.com' },
+    };
+    await runWith({
+      req: makeReq('Do we have any Goosebumps books?', onBehalf),
+      primary: makeConfig(PRIMARY_ID),
+    });
+    expect(agentClientArgs.agent.subagentAgentConfigs.map((config) => config.id)).toEqual([
+      LIBRARIAN_ID,
+    ]);
+
+    await runWith({ req: makeReq('The second one', onBehalf), primary: makeConfig(PRIMARY_ID) });
+    expect(agentClientArgs.agent.subagentAgentConfigs.map((config) => config.id)).toEqual([
+      LIBRARIAN_ID,
+    ]);
   });
 });

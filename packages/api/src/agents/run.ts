@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Run, Providers, Constants } from '@librechat/agents';
+import { Run, Providers, Constants, HookRegistry } from '@librechat/agents';
 import {
   KnownEndpoints,
   EModelEndpoint,
@@ -42,6 +42,7 @@ import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
 import { isUserProvided } from '~/utils/common';
+import { plainSubagentResult } from '~/library/consultation';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -842,18 +843,44 @@ function buildSubagentConfigs(
     if (grandchildConfigs.length > 0) {
       childInputs.subagentConfigs = grandchildConfigs;
     }
-    configs.push({
+    const childConfig: SubagentConfig = {
       type: child.id,
       name: child.name ?? child.id,
       description:
         child.description ??
         `Delegate a subtask to the ${child.name ?? child.id} agent in an isolated context.`,
       agentInputs: childInputs,
-      ...(child.subagentMaxTurns != null && { maxTurns: child.subagentMaxTurns }),
-    });
+    };
+    /* Assigned, not spread, so the type check fails if the SDK drops the field. */
+    if (child.subagentMaxTurns != null) {
+      childConfig.maxTurns = child.subagentMaxTurns;
+    }
+    configs.push(childConfig);
   }
 
   return configs;
+}
+
+/**
+ * KADE Sep 24 2026 (library consultation): a consulted agent's answer comes
+ * back to the calling agent as the `subagent` tool's result. Voice steering
+ * (%%%...%%%, [[voice]]) and scene cues in it would be read as the calling
+ * character's own performance, so they are removed here, deterministically,
+ * before the calling agent sees them. Only the `subagent` tool is matched;
+ * the child's own tool calls are left alone.
+ */
+function subagentResultHooks(): HookRegistry {
+  const hooks = new HookRegistry();
+  hooks.register('PostToolUse', {
+    pattern: `^${Constants.SUBAGENT}$`,
+    hooks: [
+      (input) => {
+        const plain = plainSubagentResult(input.toolOutput);
+        return plain === undefined ? {} : { updatedOutput: plain };
+      },
+    ],
+  });
+  return hooks;
 }
 
 function buildLangfuseConfig(tenantIdInput?: unknown) {
@@ -1215,6 +1242,8 @@ export async function createRun({
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),
+    /* Only runs that can spawn a subagent carry a hook registry at all. */
+    ...(subagentBuildState.configCount > 0 && { hooks: subagentResultHooks() }),
   };
   const run = await Run.create(runConfig);
 

@@ -39,7 +39,8 @@
  * 15 seconds before the reply.
  *
  * ANOTHER PAIR (general agent-to-agent asks): in the agent builder open the
- * asking agent, Advanced, Subagents: switch it on, switch "allow self" off,
+ * asking agent, Advanced, Subagents: switch it on, switch "allow self" off
+ * (the server keeps self-spawn off anyway unless KADE_SUBAGENT_ALLOW_SELF=1),
  * add the specialist, save. The specialist's description becomes what the
  * asking agent reads about when to ask, so write it as "ask me about ...".
  * Everyone who chats with the asking agent needs view access to the
@@ -48,32 +49,61 @@
  *
  * Kill switch KADE_LIBRARY_CONSULTATION=0. KADE_LIBRARY_CONSULTATION_AGENTS
  * (comma list) limits it to those agents; KADE_LIBRARY_CONSULTATION_SKIP_AGENTS
- * leaves those out. Bare probes, tool-less models and morning briefs never
- * carry it, and neither does an agent whose Subagents switch was turned off.
+ * leaves those out; KADE_LIBRARY_CONSULTATION_ALWAYS (comma list, e.g. Kiana's
+ * id) carries it on every turn of those agents, so keyword guessing never
+ * decides whether a main character can reach her; KADE_LIBRARY_CONSULTATION_PHONE=0
+ * keeps it off the voice lane. Bare probes, tool-less models and morning
+ * briefs never carry it, and neither does an agent whose Subagents switch was
+ * turned off, nor a run that already has her in it (handoff or side-by-side).
+ *
+ * ON THE PHONE the call lane sends a fresh conversation id every turn, so a
+ * call's follow-ups ("the second one") are remembered per caller and agent
+ * for 15 minutes instead of per conversation.
  */
 import { MAX_SUBAGENTS } from 'librechat-data-provider';
 import type { AgentSubagentsConfig } from 'librechat-data-provider';
 import { librarianGuide } from './guide';
 
 /** What a consultation may use. Everything else she has stays home. */
-export const CONSULTATION_TOOLS: readonly string[] = ['kade_library', 'kade_wikipedia', 'kade_help'];
+export const CONSULTATION_TOOLS: readonly string[] = [
+  'kade_library',
+  'kade_wikipedia',
+  'kade_help',
+];
 
 /** Model rounds the consulted librarian gets before the SDK stops her. */
 export const CONSULTATION_MAX_TURNS = 6;
 
 const STICKY_TTL_MS = 48 * 60 * 60 * 1000;
+/** A phone call's follow-ups: the call lane has no lasting conversation id. */
+const CALL_STICKY_TTL_MS = 15 * 60 * 1000;
 const STICKY_MAX = 5000;
-/** `${conversationId}:${agentId}` → when the last library-shaped turn arrived */
+/** `${conversationId}:${agentId}` or `call:${callerId}:${agentId}` → when it expires */
 const sticky = new Map<string, number>();
 
+/** Springfield-market call letters the catalog shelves under (TV, then radio). */
+const LOCAL_CALL_LETTERS =
+  'ky3|kytv|kolr|kspr|kdeb|kozk|ktts|kwto|ktxr|kxus|kosp|kklh|kctg|komg|kgbx|ktoz|radiozark';
+
 /** Library-shaped words. `book` the verb (book a table) and `request` alone
- *  (feature request) are deliberately not enough. */
+ *  (feature request) are deliberately not enough. The last three patterns
+ *  are case-sensitive on purpose: "Do we have Holes?" is a title, "do we
+ *  have plans" is not. */
 const LIBRARY_TURN: readonly RegExp[] = [
-  /\b(?:librar(?:y|ies|ian)|witherspoon|bookshare|daisy books?|e-?books?|audio ?books?|catalog(?:ue)?)\b/i,
+  /\b(?:librar(?:y|ies|ian)|wh?ith?er ?spoon|olivia|mrs\.? ?w|bookshare|daisy books?|e-?books?|audio ?books?|catalog(?:ue)?|shel(?:f|ves))\b/i,
   /\bbooks\b|\b(?:a|an|the|that|this|my|your|our|his|her|their|good|great|new|old|favou?rite|kids'?|children'?s|picture|chapter|comic|library) book\b|\bbook (?:about|by|called|named|series|club|report|recommendations?)\b/i,
-  /\b(?:novels?|authors?|who wrote|written by|paperbacks?|hardbacks?|hardcovers?)\b/i,
+  /\b(?:novels?|who wrote|written by|paperbacks?|hardbacks?|hardcovers?)\b|\bauthors?\b(?! of (?:this|that|the|a|my) (?:paper|study|article|report|post|email|document|bill|law))/i,
   /\b(?:cassettes?|vhs|betamax|laserdiscs?|8-?tracks?|reel-to-reel|mixtapes?|audio ?tapes?|video ?tapes?|airchecks?|jingles|station ids?)\b/i,
-  /\b(?:commercials?|old-?time radio|radio (?:shows?|dramas?|serials?|broadcasts?|programs?|stations?)|(?:old|vintage|retro|classic|childhood|\d0'?s|'\d0'?s) (?:ads?|adverts?|advertisements?|shows?|cartoons?|movies?|films?|tv|television|radio|tapes?|recordings?))\b/i,
+  /\b(?:commercials|(?:old|tv|radio|that|this|vintage|local) commercial|commercial (?:for|about|with|where|from|jingle|break|song|tape)s?|old-?time radio|radio (?:shows?|dramas?|serials?|broadcasts?|programs?|stations?)|(?:old|vintage|retro|classic|childhood|\d0'?s|'\d0'?s) (?:ads?|adverts?|advertisements?|shows?|cartoons?|movies?|films?|tv|television|radio|tapes?|recordings?))\b/i,
+  new RegExp(
+    `\\b(?:${LOCAL_CALL_LETTERS}|newscasts?|broadcasts?|news (?:clips?|footage|reels?|from (?:the )?(?:19|20)?\\d0'?s|from \\d{4}))\\b` +
+      '|\\b(?:springfield|ozarks?)\\b[^.?!]{0,30}\\b(?:radio|tv|television|news|stations?|commercials?|ads)\\b' +
+      '|\\b(?:radio|tv|television|news|stations?|commercials?|ads)\\b[^.?!]{0,30}\\b(?:springfield|ozarks?)\\b',
+    'i',
+  ),
+  /\b(?:[Dd]o|[Dd]id|[Dd]oes) (?:we|y'?all|the library|she) (?:still )?(?:have|own|carry|got)(?: any| a copy of| the| that)? ["“']?[A-Z0-9]/,
+  /\b[Hh]ave (?:we|y'?all|you guys) got (?:any |a copy of |the )?["“']?[A-Z0-9]/,
+  /\b(?:[Aa]nything|[Ss]omething|[Ss]tuff|[Ee]verything|[Bb]ooks?|ha(?:s|ve)) (?:else )?by [A-Z]/,
   /\b(?:can'?t|cannot|don'?t|do not) remember (?:the )?(?:name|title) of\b|\bwhat was (?:the )?(?:name|title) of (?:that|the|this|a|an)\b|\b(?:trying to (?:find|remember|think of)|looking for) (?:a|an|the|that|this|some) (?:old )?(?:book|novel|movie|film|show|cartoon|song|commercial|ad|tape|recording|episode|story|series)\b/i,
   /\b(?:do|does|did) (?:we|the library|y'?all|she) (?:still )?(?:have|own|carry|keep|hold|got)\b[^.?!]{0,60}\b(?:books?|movies?|films?|shows?|episodes?|albums?|records?|songs?|tapes?|recordings?|commercials?|cartoons?|series)\b/i,
   /\b(?:request|add|get|put)\b[^.?!]{0,40}\b(?:for|to|in|into) the (?:library|collection)\b|\b(?:my|the|our|a) (?:library |media )?requests?\b[^.?!]{0,30}\b(?:filled|fulfilled|ready|added|come in|came in|arrived)\b/i,
@@ -93,6 +123,11 @@ export type ConsultationTurn = {
   morningBrief?: boolean;
   /** The agent record's own subagent settings. */
   configured?: AgentSubagentsConfig;
+  /** The voice lane's caller (req.kadeOnBehalfOf.id); set only on phone turns. */
+  callerId?: string | null;
+  /** The librarian is already a full member of this run (handoff target or
+   *  side-by-side chat); a consultation would replace her there. */
+  librarianInRun?: boolean;
   env?: Readonly<Record<string, string | undefined>>;
   now?: number;
 };
@@ -123,34 +158,41 @@ function envList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-/** A placeholder id ("new") is not a conversation; it must never pool turns. */
-function stickyKey(conversationId: string | null | undefined, agentId: string): string | null {
-  const id = String(conversationId ?? '')
+function cleanId(value: string | null | undefined): string {
+  return String(value ?? '')
     .trim()
     .toLowerCase();
-  if (!id || id === 'new' || id === 'null' || id === 'undefined') return null;
-  return `${id}:${agentId}`;
 }
 
-function stickyRemember(key: string | null, now: number): void {
-  if (!key) return;
-  if (!sticky.has(key) && sticky.size >= STICKY_MAX) {
+/** A placeholder id ("new") is not a conversation; it must never pool turns.
+ *  On the phone the caller keys it, because every call turn gets a fresh id. */
+function stickyKey(turn: ConsultationTurn): { key: string; ttl: number } | null {
+  const caller = cleanId(turn.callerId);
+  if (caller) return { key: `call:${caller}:${turn.agentId}`, ttl: CALL_STICKY_TTL_MS };
+  const id = cleanId(turn.conversationId);
+  if (!id || id === 'new' || id === 'null' || id === 'undefined') return null;
+  return { key: `${id}:${turn.agentId}`, ttl: STICKY_TTL_MS };
+}
+
+function stickyRemember(slot: { key: string; ttl: number } | null, now: number): void {
+  if (!slot) return;
+  if (!sticky.has(slot.key) && sticky.size >= STICKY_MAX) {
     let drop = Math.floor(STICKY_MAX / 5);
     for (const old of sticky.keys()) {
       if (drop-- <= 0) break;
       sticky.delete(old);
     }
   }
-  sticky.delete(key);
-  sticky.set(key, now);
+  sticky.delete(slot.key);
+  sticky.set(slot.key, now + slot.ttl);
 }
 
-function stickyActive(key: string | null, now: number): boolean {
-  if (!key) return false;
-  const at = sticky.get(key);
-  if (at === undefined) return false;
-  if (now - at > STICKY_TTL_MS) {
-    sticky.delete(key);
+function stickyActive(slot: { key: string; ttl: number } | null, now: number): boolean {
+  if (!slot) return false;
+  const until = sticky.get(slot.key);
+  if (until === undefined) return false;
+  if (now > until) {
+    sticky.delete(slot.key);
     return false;
   }
   return true;
@@ -167,18 +209,22 @@ export function wantsLibraryConsultation(turn: ConsultationTurn): ConsultationGa
   if (turn.morningBrief === true) return no('morning-brief');
   if (String(turn.instructions ?? '').includes('KADE BARE PROBE')) return no('bare-probe');
   if (turn.configured?.enabled === false) return no('disabled-in-builder');
+  if (turn.librarianInRun === true) return no('already-present');
+  if (cleanId(turn.callerId) && env.KADE_LIBRARY_CONSULTATION_PHONE === '0') return no('phone-off');
+  const always = envList(env.KADE_LIBRARY_CONSULTATION_ALWAYS).includes(turn.agentId);
   const only = envList(env.KADE_LIBRARY_CONSULTATION_AGENTS);
-  if (only.length > 0 && !only.includes(turn.agentId)) return no('not-listed');
+  if (!always && only.length > 0 && !only.includes(turn.agentId)) return no('not-listed');
   if (envList(env.KADE_LIBRARY_CONSULTATION_SKIP_AGENTS).includes(turn.agentId)) {
     return no('skip-listed');
   }
+  if (always) return { attach: true, reason: 'always' };
   const now = turn.now ?? Date.now();
-  const key = stickyKey(turn.conversationId, turn.agentId);
+  const slot = stickyKey(turn);
   if (libraryShapedTurn(turn.text)) {
-    stickyRemember(key, now);
+    stickyRemember(slot, now);
     return { attach: true, reason: 'topic' };
   }
-  if (stickyActive(key, now)) return { attach: true, reason: 'sticky' };
+  if (stickyActive(slot, now)) return { attach: true, reason: 'sticky' };
   return no('off-topic');
 }
 
@@ -231,8 +277,22 @@ export function withoutPerformance(text: string | null | undefined): string {
     .trim();
 }
 
+/**
+ * The subagent tool's result without performance markup, for the run's
+ * PostToolUse hook (packages/api/src/agents/run.ts). Undefined when there is
+ * nothing to remove, so the SDK keeps the original result untouched.
+ */
+export function plainSubagentResult(output: unknown): string | undefined {
+  if (typeof output !== 'string') return undefined;
+  const plain = withoutPerformance(output);
+  return plain === output ? undefined : plain;
+}
+
 /** Appended last to the consulted librarian's instructions. */
-export function consultationInstructions(base: string | null | undefined, callerName?: string | null): string {
+export function consultationInstructions(
+  base: string | null | undefined,
+  callerName?: string | null,
+): string {
   const name = String(callerName ?? '').trim();
   const caller = name || 'That character';
   const note = [
