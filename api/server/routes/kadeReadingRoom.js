@@ -483,9 +483,13 @@ router.post('/upload', requireJwtAuth, async (req, res, next) => {
  * nothing compared the text (each resent ZIP was a few bytes different). A text book whose
  * chunks match, one for one, a book this person can already open is not saved again; the
  * receipt names the copy already on the shelves. */
-function bookTextDigest(sections) {
+/** The words of a book, without the spoken jacket (it carries the title, which uploads may differ on). */
+function bookTextDigest(sections, kinds) {
   const hash = createHash('sha256');
-  for (const section of sections || []) hash.update(JSON.stringify(section.chunks || [])).update('\n');
+  (sections || []).forEach((section, i) => {
+    if (kinds[i] === 'jacket') return;
+    hash.update(JSON.stringify(section.chunks || [])).update('\n');
+  });
   return hash.digest('hex');
 }
 
@@ -494,11 +498,11 @@ async function identicalBook(req, parsed) {
   if (!libraryHiddenFrom(req)) visible.push({ shared: true, ...((await isChild(req)) ? { grownUpsOnly: { $ne: true } } : {}) });
   const candidates = await KadeBook.find({ kind: 'text', state: 'ready', 'stats.chars': parsed.stats.chars, 'stats.chunks': parsed.stats.chunks, $or: visible }).limit(10).lean();
   if (!candidates.length) return null;
-  const digest = bookTextDigest(parsed.sections);
+  const digest = bookTextDigest(parsed.sections, parsed.sections.map((s) => s.kind));
   for (const candidate of candidates) {
     if ((candidate.sections || []).length !== parsed.sections.length) continue;
     const text = await KadeBookText.findOne({ book: candidate._id }).lean();
-    if (text && bookTextDigest(text.sections) === digest) return candidate;
+    if (text && bookTextDigest(text.sections, candidate.sections.map((s) => s.kind)) === digest) return candidate;
   }
   return null;
 }
