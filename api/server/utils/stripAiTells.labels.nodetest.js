@@ -41,6 +41,11 @@ test('the lead-in before a point goes and the point stands', () => {
   assert.strictEqual(stripAiTells("Here's the thing: it doesn't matter who paid."), "It doesn't matter who paid.");
   assert.strictEqual(stripAiTells('So here’s the thing — the kid at your school was right.'), 'So the kid at your school was right.');
   assert.strictEqual(stripAiTells("Here's my read: he was bluffing."), 'He was bluffing.');
+  assert.strictEqual(
+    stripAiTells("Okay, so the whole trick is this: a cassette stores the sound's shape as magnetism."),
+    "Okay, a cassette stores the sound's shape as magnetism.",
+  );
+  assert.strictEqual(stripAiTells('The trick is this: salt the water first.'), 'Salt the water first.');
 });
 
 test('people talking are left alone', () => {
@@ -56,6 +61,8 @@ test('people talking are left alone', () => {
     "Here's the thing I was telling you about, the lamp.",
     "Here's what I think we should do tonight.",
     "The kicker was the ending. I didn't see it coming.",
+    'The trick is this one right here, the blue lever.',
+    'The whole thing is this big, like a shoebox.',
   ]) {
     assert.strictEqual(stripAiTells(line), line, line);
   }

@@ -61,6 +61,7 @@ const AI_TELL_PHRASE_BANS = [
    * read --"). Only with the colon or dash that makes it a lead-in; the point
    * after it stands alone and is recapitalised. */
   /\bhere['’]s\s+(?:the\s+thing|the\s+deal|the\s+kicker|the\s+catch|my\s+(?:read|take)|what\s+(?:i\s+think|gets\s+me|kills\s+me|matters))\s*(?::|\s[—–-]{1,2})\s*/gi,
+  /\b(?:so\s+)?the\s+(?:whole\s+|real\s+)?(?:trick|thing|point|secret|deal|key)\s+is\s+this\s*(?::|\s[—–-]{1,2})\s*/gi,
 ];
 const AI_TELL_TRAIL_BANS = [
   /\s*(?:i\s+)?hope\s+(?:this|that)\s+(?:helps?|is\s+helpful|gives\s+you[^.!?]*)!?[.!?]?\s*$/i,
