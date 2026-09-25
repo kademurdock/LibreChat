@@ -467,6 +467,38 @@ test('Part 293: her ChatGPT prompt joins the desk notes as plain rules, with no 
   assert.match(audit, /Does the last verse do new work\?/); assert.doesNotMatch(audit, /what was on the plate|the traffic was bad/);
 });
 
+test('Part 293: the kill scan knows the rest of her ChatGPT ban list and leaves plain speech alone', () => {
+  const flags = (line, brief = '') => lyricTells('x\nLyrics:\n' + line, brief).map(t => t.tell);
+  const tells = [
+    ["I'm breaking these chains tonight", 'a greeting-card phrase'], ['Breaking the chains she put on me', 'a greeting-card phrase'], ['This war inside my head', 'a greeting-card phrase'],
+    ['Showing off my battle scars', 'a greeting-card phrase'], ["I'm a beautiful mess", 'a greeting-card phrase'], ['Perfectly imperfect, baby', 'a greeting-card phrase'],
+    ['Picking up the shattered pieces', 'a greeting-card phrase'], ['This is my truth', 'a greeting-card phrase'], ['I finally found my voice', 'a greeting-card phrase'],
+    ['And I chose myself', 'a greeting-card phrase'], ["I'm finally free", 'a greeting-card phrase'],
+    ["Now I'm enough", 'a lesson-learned line'], ['I am enough for me', 'a lesson-learned line'], ['I survived', 'a lesson-learned line'], ['I survived it all', 'a lesson-learned line'],
+    ['Yeah, I survived the storm', 'a lesson-learned line'], ['I learned to let it go', 'a lesson-learned line'], ["I've learned how to breathe", 'a lesson-learned line'],
+    ['Now I know better', 'a lesson-learned line'], ['I finally found myself', 'a lesson-learned line'], ['Finding myself again (again)', 'a lesson-learned line'],
+    ["And I been doing it too, I'll say it plain", "the desk's own filler"], ['He showed up right on cue', "the desk's own filler"], ["And that's the wild part", "the desk's own filler"],
+    ["Now I'm sitting pretty", "the desk's own filler"], ["Sittin' pretty on a Pontiac", "the desk's own filler"],
+    ['Fighting all my demons', 'a worn image word'], ['I feel hollow', 'a worn image word'], ['The house felt hollow', 'a worn image word'], ['Stars that shimmer on the lake', 'a worn image word'],
+    ['Shimmering like gold', 'a worn image word'], ['Watch it all unfold', 'a worn image word'], ['The night is unfolding', 'a worn image word'], ["I don't want your validation", 'a worn image word'],
+    ['Good vibrations only', 'a worn image word'], ["We're on the same frequency", 'a worn image word'], ['My heartbeat is a drum', 'a worn image word'], ['The room was electric', 'a worn image word'],
+    ['Electric love', 'a worn image word'],
+    ["I don't need your money, I need your time", '"I don\'t need X, I need Y"'], ["I don't need a crown, I just want the keys", '"I don\'t need X, I need Y"'],
+    ["I ain't need no help, just need a ride", '"I don\'t need X, I need Y"'],
+  ];
+  for (const [line, tell] of tells) assert.deepEqual(flags(line), [tell], line);
+  const plainSpeech = [
+    'He plays electric guitar at the Legion', 'Paid the electric bill in quarters', 'The electric company cut us off', 'Doing the Electric Slide at the reunion',
+    'She got the electric blanket and the good pillow', 'Down in the hollow past the church', 'I would do it again in a heartbeat', 'Unfold the lawn chair, sit a spell',
+    'She unfolded the map on the hood', 'I found myself at the Waffle House at noon', "I'm enough of a fool to call", 'I survived three kids and a Buick',
+    "I don't need a medal, I don't need a prize", 'Chained the dog out by the shed', 'Sitting in the truck bed', 'He learned the hard way', 'Now they know',
+  ];
+  for (const line of plainSpeech) assert.deepEqual(flags(line), [], line);
+  assert.deepEqual(flags('The room was electric', 'an electric blues song'), [], 'a word from her brief is hers');
+  assert.deepEqual(flags('Fighting all my demons', 'a metal song about demons'), []);
+  assert.deepEqual(lyricTells('Neo-soul with electric piano, shimmering cymbals and a heartbeat kick.\nLyrics:\n[Verse 1]\nI paid the rent in quarters'), [], 'the style paragraph is never scanned');
+});
+
 async function loadIdeaModule() {
   const strip = file => stripTypeScriptTypes(readFileSync(new URL('../music/' + file, import.meta.url), 'utf8'));
   const shelfSource = strip('ideaShelf.ts').replace('export const ideaShelf', 'const ideaShelf');

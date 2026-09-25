@@ -137,6 +137,18 @@ const LYRIC_TELLS: [string, RegExp][] = [
   ['humming', /\bhumm?(?:s|ed|ing|in['’]?)?\b/i],
   ['"knowing" as a mood', /\b(?:the|a|that|this|some) knowing\b|\bknowing (?:look|smile|glance|eyes?)\b/i],
   ['a stock phrase', /\b(?:clean slate|fresh start|moving on|turn(?:ed|ing)? the page|still standing|beautiful disaster|meant to be|what we had|weight of the world)\b/i],
+  /* Part 293 (Sep 25 2026): the rest of the anti-AI list in the songwriting
+   * prompt she uses with ChatGPT, where this scan had no pattern yet. Narrowed
+   * where plain speech uses the same words: "found myself" only in the
+   * self-discovery sense (at the end of a line), "I survived" and "I'm enough"
+   * only as a declaration, "hollow" not as a place (the hollow), "unfold" not
+   * when something is unfolded (the map), "heartbeat" not "in a heartbeat",
+   * and "electric" never before an instrument or an everyday thing. */
+  ['a greeting-card phrase', /\b(?:break(?:ing|in['’]?|s)? (?:these|the|my|those) chains|war (?:inside|in) my head|battle scars?|beautiful mess|perfectly imperfect|shattered pieces|my truth|found my voice|ch(?:ose|oose|oosing) myself|finally free)\b/i],
+  ['a lesson-learned line', /\bi(?:['’]ve)? learn(?:ed|t) (?:how )?to\b|\bnow i know\b|\bi survived(?=\s*(?:[.,!?;:()—–-]|$|it all\b|the (?:storm|fire|worst)\b))|\bi(?:['’]m| am)(?: more than)? enough\b(?!\s+(?:of|to)\b)|\bf(?:ou|i)nd(?:ing)? myself(?: again)?(?=[\s.,!?;:—–-]*(?:\([^)]*\)[\s.,!?;:—–-]*)?$)/i],
+  ["the desk's own filler", /\b(?:(?:say|said|saying) it plain|on cue|the wild part|sitt?ing pretty|sittin['’]? pretty)\b/i],
+  ['a worn image word', /\bdemons\b|(?<!\b(?:the|that|this)\s)\bhollow(?:ness)?\b|\bshimmer(?:s|ed|ing)?\b|\bunfold(?:s|ed|ing)?\b(?!\s+(?:the|a|an|my|your|his|her|our|their|that|this|it|them|up)\b)|\bvalidation\b|\bvibrations?\b|\bfrequenc(?:y|ies)\b|(?<!\bin a\s)\bheartbeats?\b|\belectric\b(?!\s+(?:guitar|piano|bass|keys|keyboard|organ|slide|bill|company|co-?op|fence|chair|blanket|razor|can opener|drill|car|stove|fan|heater|meter)(?:e?s)?\b)/i],
+  ['"I don\'t need X, I need Y"', /\bi (?:don['’]?t|do not|ain['’]?t) need\b[^.!?]*?[,;:—–-]\s*(?:but )?(?:i (?:just |only |really )?|just |only )(?:need|want)\b/i],
 ];
 
 export type LyricTell = { line: string; tell: string };
