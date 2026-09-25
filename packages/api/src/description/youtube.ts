@@ -4,7 +4,7 @@ import { readdir, stat, writeFile } from 'node:fs/promises';
 import type { Chapter } from './types';
 import { spokenLength } from './transcript';
 import { cleanLabel } from './text';
-import { command } from './media';
+import { command, ffmpeg } from './media';
 
 export function youtubeURL(value: string): string {
   let url: URL;
@@ -287,6 +287,53 @@ export async function folderBytes(
   return bytes;
 }
 
+/**
+ * yt-dlp reads `--ffmpeg-location ffmpeg` as a path in its working folder, finds nothing, and
+ * quietly downloads picture and sound as separate files. Only a real path is passed on.
+ */
+export function ffmpegLocation(): string[] {
+  const path = process.env.FFMPEG_PATH || '';
+  return path.trim() ? ['--ffmpeg-location', path] : [];
+}
+
+/** A finished part file yt-dlp leaves when it cannot merge: youtube.f136.mp4, youtube.f251.webm. */
+const partFile = /^youtube\.f[\w-]+\.(?:mp4|m4a|webm|mkv|mov|3gp|opus|ogg|mp3|aac)$/i;
+
+/**
+ * The downloaded video, always youtube.mp4. When yt-dlp left the picture and the sound as two
+ * part files, they are joined here (streams copied, sound re-encoded only if MP4 refuses it).
+ * Anything else throws with what yt-dlp printed, so the log says why.
+ */
+export async function downloadedVideo(
+  directory: string,
+  printed: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const target = join(directory, 'youtube.mp4');
+  const found = await stat(target).catch(() => null);
+  if (found?.isFile()) return target;
+  const names = (await readdir(directory)).sort();
+  const parts = names.filter((name) => partFile.test(name));
+  const tail = printed.replace(/\s+/g, ' ').trim().slice(-300);
+  if (parts.length !== 2)
+    throw new Error(`no youtube.mp4; files [${names.join(', ')}]; yt-dlp said: ${tail}`);
+  const inputs = parts.flatMap((name) => ['-i', join(directory, name)]);
+  const maps = ['-map', '0:v:0?', '-map', '1:v:0?', '-map', '0:a:0?', '-map', '1:a:0?'];
+  const mux = (audio: string[]) =>
+    command(
+      ffmpeg(),
+      ['-nostdin', '-v', 'error', '-y', ...inputs, ...maps, '-c:v', 'copy', ...audio, target],
+      signal,
+    );
+  try {
+    await mux(['-c:a', 'copy']);
+  } catch {
+    signal.throwIfAborted();
+    await mux(['-c:a', 'aac', '-b:a', '192k']);
+  }
+  return target;
+}
+
 export type YouTubeDetails = { name: string; seconds: number; about: string; chapters: Chapter[] };
 
 /**
@@ -418,8 +465,7 @@ export async function importYouTube(
         'mp4',
         '--remux-video',
         'mp4',
-        '--ffmpeg-location',
-        process.env.FFMPEG_PATH || 'ffmpeg',
+        ...ffmpegLocation(),
         '-o',
         join(directory, 'youtube.%(ext)s'),
         '--',
@@ -431,7 +477,7 @@ export async function importYouTube(
       log,
     );
     if (/larger than max-filesize/i.test(output.toString())) throw new Refused(tooLarge);
-    const file = join(directory, 'youtube.mp4');
+    const file = await downloadedVideo(directory, output.toString(), combined);
     const bytes = (await stat(file)).size;
     if (bytes > 2 * 1024 ** 3) throw new Refused(tooLarge);
     return {

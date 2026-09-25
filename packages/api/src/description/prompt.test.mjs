@@ -49,6 +49,8 @@ import {
 import {
   chaptersFrom,
   cleanAbout,
+  downloadedVideo,
+  ffmpegLocation,
   readMetadata,
   youtubeProblem,
   youtubeURL,
@@ -1359,6 +1361,48 @@ test('youtube: yt-dlp errors are named, and only unambiguous ones stop the clien
   assert.equal(youtubeProblem('Video unavailable').permanent, false, 'another client may still reach it');
   assert.equal(kind('HTTP Error 503: Service Unavailable'), 'unavailable');
   assert.equal(kind('Some brand new failure'), undefined);
+});
+
+test('youtube: a bare ffmpeg name is never passed to yt-dlp, which would read it as a missing path', () => {
+  const saved = process.env.FFMPEG_PATH;
+  try {
+    delete process.env.FFMPEG_PATH;
+    assert.deepEqual(ffmpegLocation(), []);
+    process.env.FFMPEG_PATH = '/usr/local/bin/ffmpeg';
+    assert.deepEqual(ffmpegLocation(), ['--ffmpeg-location', '/usr/local/bin/ffmpeg']);
+  } finally {
+    process.env.FFMPEG_PATH = saved;
+  }
+});
+
+test('youtube: picture and sound left as separate part files are joined into youtube.mp4', async () => {
+  const dir = join(scratch, 'unmerged');
+  await mkdir(dir, { recursive: true });
+  const lavfi = (source) => ['-f', 'lavfi', '-i', source];
+  await command(
+    ffmpegPath,
+    ['-nostdin', '-v', 'error', '-y', ...lavfi('testsrc2=size=160x120:rate=30:duration=2'), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', join(dir, 'youtube.f133.mp4')],
+    new AbortController().signal,
+  );
+  await command(
+    ffmpegPath,
+    ['-nostdin', '-v', 'error', '-y', ...lavfi('sine=frequency=440:sample_rate=48000:duration=2'), '-c:a', 'libopus', join(dir, 'youtube.f251.webm')],
+    new AbortController().signal,
+  );
+  const file = await downloadedVideo(dir, '[download] Download completed', new AbortController().signal);
+  assert.equal(file, join(dir, 'youtube.mp4'));
+  const streams = JSON.parse(
+    (await command(ffprobePath.path, ['-v', 'error', '-show_streams', '-of', 'json', file], new AbortController().signal)).toString(),
+  ).streams.map((stream) => stream.codec_type);
+  assert.deepEqual(streams.sort(), ['audio', 'video']);
+  assert.equal(await downloadedVideo(dir, '', new AbortController().signal), file, 'an existing youtube.mp4 is used as it is');
+
+  const empty = join(scratch, 'filtered');
+  await mkdir(empty, { recursive: true });
+  await assert.rejects(
+    downloadedVideo(empty, '[download] Cartoon does not pass filter (duration <= 5400 & !is_live), skipping ..', new AbortController().signal),
+    /no youtube\.mp4; files \[\]; yt-dlp said: .*does not pass filter/,
+  );
 });
 
 async function footage(name, seconds) {
