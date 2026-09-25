@@ -642,7 +642,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       }
       var j = job.result;
       if (!j || !j.book) throw new Error('The import receipt is incomplete. Select the same file to check it again.');
-      say('Added: ' + j.book.title + (j.book.author ? ' by ' + j.book.author : '') + '. ' + (j.book.kind === 'text' ? j.book.sections : j.book.tracks) + ' sections, about ' + j.book.listen + '. ' + (j.skipped.length ? j.skipped.length + ' front-matter parts skipped.' : ''));
+      if (j.duplicate) say('Already in the library: ' + j.book.title + (j.book.author ? ' by ' + j.book.author : '') + '. It has exactly the same text, so nothing new was added.');
+      else say('Added: ' + j.book.title + (j.book.author ? ' by ' + j.book.author : '') + '. ' + (j.book.kind === 'text' ? j.book.sections : j.book.tracks) + ' sections, about ' + j.book.listen + '. ' + (j.skipped.length ? j.skipped.length + ' front-matter parts skipped.' : ''));
       $('bookFile').value = '';
       loadShelf();
     } catch(e) { say(e.message); }

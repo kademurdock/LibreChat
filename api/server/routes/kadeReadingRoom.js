@@ -38,6 +38,7 @@
  * (rule 8: a child account is never told it is filtered).
  * -------------------------------------------------------------------------- */
 const axios = require('axios');
+const { createHash } = require('node:crypto');
 const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
@@ -478,6 +479,30 @@ router.post('/upload', requireJwtAuth, async (req, res, next) => {
   });
 }, importUploadedBook);
 
+/* Sep 25 2026: Amber A restarted a Bookshare batch and 98 books were filed twice, because
+ * nothing compared the text (each resent ZIP was a few bytes different). A text book whose
+ * chunks match, one for one, a book this person can already open is not saved again; the
+ * receipt names the copy already on the shelves. */
+function bookTextDigest(sections) {
+  const hash = createHash('sha256');
+  for (const section of sections || []) hash.update(JSON.stringify(section.chunks || [])).update('\n');
+  return hash.digest('hex');
+}
+
+async function identicalBook(req, parsed) {
+  const visible = [{ owner: req.user.id }];
+  if (!libraryHiddenFrom(req)) visible.push({ shared: true, ...((await isChild(req)) ? { grownUpsOnly: { $ne: true } } : {}) });
+  const candidates = await KadeBook.find({ kind: 'text', state: 'ready', 'stats.chars': parsed.stats.chars, 'stats.chunks': parsed.stats.chunks, $or: visible }).limit(10).lean();
+  if (!candidates.length) return null;
+  const digest = bookTextDigest(parsed.sections);
+  for (const candidate of candidates) {
+    if ((candidate.sections || []).length !== parsed.sections.length) continue;
+    const text = await KadeBookText.findOne({ book: candidate._id }).lean();
+    if (text && bookTextDigest(text.sections) === digest) return candidate;
+  }
+  return null;
+}
+
 async function importUploadedBook(req, res) {
   const f = req.file;
   /* The librarian's and a trusted uploader's books go straight into the family library. */
@@ -543,6 +568,11 @@ async function importUploadedBook(req, res) {
     }
     if (!parsed.sections.length || parsed.stats.chars < 200) {
       return res.status(400).json({ error: 'No readable text or supported DAISY audio was found in this file.' });
+    }
+    const twin = await identicalBook(req, parsed);
+    if (twin) {
+      logger.info(`[reading-room/upload] duplicate user=${req.user.id} name=${String(f.originalname || '?').slice(0, 80)} matches ${twin._id} "${twin.title}"`);
+      return res.json({ ok: true, duplicate: true, book: summary(twin, null), skipped: twin.skipped || [], jacket: twin.jacket || '' });
     }
     const grownUpsOnly = String((req.body || {}).grownUpsOnly || '') === '1' || (req.body || {}).grownUpsOnly === true;
     let fileUrl = '';
@@ -2087,6 +2117,10 @@ sorter.startSortSweep();
 const mediaSweep = require('./kadeReadingRoomMediaSweep');
 mediaSweep.mount(router, { requireJwtAuth, isAdmin, express });
 mediaSweep.start();
+/* Sep 25 2026 (her ask): how long leftovers stay on Backblaze. Report-only until KADE_STORAGE_KEEPER=on. */
+const storageKeeper = require('~/server/services/kadeStorageKeeper');
+storageKeeper.mount(router, { requireJwtAuth, isAdmin, express, s3, bucket: MEDIA_BUCKET });
+storageKeeper.start({ s3, bucket: MEDIA_BUCKET });
 // Part 272: her uploads public unless she says private; a one-time share, off unless switched on.
 require('~/server/services/kadeLibraryPublicDefault').start();
 
