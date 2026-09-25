@@ -434,9 +434,17 @@ const config = {
   library: true,
   defaultLibraryPath: 'Audio/Described Movies & TV/Described by Kade-AI',
   defaultVoice: 'clear woman · flint',
+  houseVoice: 'clear woman · flint',
+  myDefaultVoice: null,
+  favorites: [],
+  recent: [],
+  suggested: ['clear woman · flint', 'warm man · oak'],
+  fish: ['Kade Murdock'],
+  fishNote: 'This voice sounds less natural when it is sped up, and narration usually is. For speeds above 1×, a voice under Good for describing will sound smoother.',
+  maxFavorites: 12,
   voicesAvailable: true,
-  voices: ['clear woman · flint', 'warm man · oak', 'bright girl · wren'],
-  describe: { 'clear woman · flint': 'a calm, clear narrator', 'warm man · oak': 'a warm storyteller' },
+  voices: ['clear woman · flint', 'warm man · oak', 'bright girl · wren', 'Kade Murdock'],
+  describe: { 'clear woman · flint': 'a calm, clear narrator', 'warm man · oak': 'a warm storyteller', 'Kade Murdock': 'warm and natural' },
   categories: [
     { name: 'Narrators', voices: ['clear woman · flint', 'warm man · oak'] },
     { name: 'Young', voices: ['bright girl · wren'] },
@@ -505,6 +513,8 @@ function makeServer() {
     requests: [],
     overrides: [],
     remainingUSD: 5,
+    /** Her narrator choices as the server keeps them (see /prefs in router.ts). */
+    prefs: { myDefaultVoice: null, favorites: [], recent: [], suggested: ['clear woman · flint', 'warm man · oak'], curate: false },
     add(job) {
       this.jobs.set(job.id, job);
       return job;
@@ -559,7 +569,33 @@ function makeServer() {
     }
     const [route, query = ''] = path.split('?');
     const parts = route.split('/').filter(Boolean);
-    if (route === '/config') return json(200, { ...config, remainingUSD: server.remainingUSD });
+    const view = () => ({
+      defaultVoice: server.prefs.myDefaultVoice || config.houseVoice,
+      myDefaultVoice: server.prefs.myDefaultVoice,
+      houseVoice: config.houseVoice,
+      favorites: [...server.prefs.favorites],
+      recent: [...server.prefs.recent],
+      maxFavorites: 12,
+    });
+    if (route === '/config')
+      return json(200, { ...config, ...view(), suggested: [...server.prefs.suggested], ...(server.prefs.curate ? { curate: true } : {}), remainingUSD: server.remainingUSD });
+    if (route === '/prefs/default') {
+      if (body.voice && !config.voices.includes(body.voice)) return json(400, { error: 'Choose one of the listed voices.', field: 'voice' });
+      server.prefs.myDefaultVoice = body.voice || null;
+      return json(200, view());
+    }
+    if (route === '/prefs/favorites') {
+      const kept = server.prefs.favorites.filter((voice) => voice !== body.voice);
+      if (body.favorite && kept.length >= 12) return json(409, { error: 'You can keep up to 12 favourite narrators. Remove one first.', field: 'voice' });
+      server.prefs.favorites = body.favorite ? [...kept, body.voice] : kept;
+      return json(200, view());
+    }
+    if (route === '/prefs/suggested') {
+      if (!server.prefs.curate) return json(403, { error: 'Only the administrator can change this list.' });
+      const kept = server.prefs.suggested.filter((voice) => voice !== body.voice);
+      server.prefs.suggested = body.suggested ? [...kept, body.voice] : kept;
+      return json(200, { suggested: [...server.prefs.suggested] });
+    }
     if (route === '/library-folders') return json(200, { folders: ['Audio/Commercials'] });
     if (route === '/jobs' && method === 'GET') return json(200, { jobs: [...server.jobs.values()], remainingUSD: server.remainingUSD });
     if (route === '/uploads') {
@@ -664,7 +700,39 @@ function page() {
   return describedVideoPage('');
 }
 
-async function boot({ server = makeServer(), search = '', local = {}, confirmReply = true, promptReply = null, refresh = true, xhrRoute, wakeLock } = {}) {
+/** Web Audio as the picker uses it: an AudioContext unlocked by the opening tap, one buffer source per sample. */
+function webAudio() {
+  const played = [];
+  const stopped = [];
+  class AudioContext {
+    constructor() {
+      this.state = 'suspended';
+      this.destination = {};
+    }
+    resume() {
+      this.state = 'running';
+      return Promise.resolve();
+    }
+    async decodeAudioData(buffer) {
+      return { bytes: buffer.byteLength };
+    }
+    createBufferSource() {
+      const source = {
+        connect() {},
+        start() {
+          played.push(source);
+        },
+        stop() {
+          stopped.push(source);
+        },
+      };
+      return source;
+    }
+  }
+  return { AudioContext, played, stopped };
+}
+
+async function boot({ server = makeServer(), search = '', local = {}, confirmReply = true, promptReply = null, refresh = true, xhrRoute, wakeLock, audio, device } = {}) {
   const html = page();
   const document = makeDocument(html);
   const t = timers();
@@ -762,9 +830,10 @@ async function boot({ server = makeServer(), search = '', local = {}, confirmRep
     static revokeObjectURL() {}
   }
   const handlers = {};
-  const navigator = { mediaSession: { metadata: null, playbackState: 'none', setActionHandler: (name, fn) => (handlers[name] = fn) }, ...(wakeLock ? { wakeLock } : {}) };
+  const navigator = { mediaSession: { metadata: null, playbackState: 'none', setActionHandler: (name, fn) => (handlers[name] = fn) }, ...(wakeLock ? { wakeLock } : {}), ...(device || {}) };
   const windowListeners = {};
   const window = {
+    ...(audio ? { AudioContext: audio.AudioContext } : {}),
     addEventListener: (type, fn) => (windowListeners[type] ||= []).push(fn),
     MediaMetadata: class {
       constructor(data) {
@@ -860,7 +929,7 @@ test('markup: unique ids, every control labelled, headings in order, one live re
       ids.set(id, node);
     }
     if (node.localName === 'label' && node.getAttribute('for')) labels.add(node.getAttribute('for'));
-    if (['input', 'select', 'textarea'].includes(node.localName)) controls.push(node);
+    if (['input', 'select', 'textarea'].includes(node.localName) && node.getAttribute('type') !== 'hidden') controls.push(node);
     if (/^h[1-6]$/.test(node.localName)) headings.push(Number(node.localName[1]));
     if (node.getAttribute('role') === 'status' || node.getAttribute('aria-live')) live.push(node.id);
     if (node.getAttribute('role') === 'alert') alerts.push(node.id);
@@ -882,6 +951,15 @@ test('markup: unique ids, every control labelled, headings in order, one live re
   }, 0);
   assert.deepEqual(live, ['dv-status']);
   assert.deepEqual(alerts, ['dv-error']);
+  const opener = ids.get('dv-voice-open');
+  assert.equal(opener.getAttribute('aria-haspopup'), 'listbox');
+  assert.equal(opener.getAttribute('aria-expanded'), 'false');
+  assert.equal(opener.getAttribute('aria-controls'), 'dv-voice-panel');
+  assert.equal(opener.getAttribute('aria-labelledby'), 'dv-voice-label dv-voice-open');
+  assert.equal(ids.get('dv-voice-list').getAttribute('role'), 'listbox');
+  assert.equal(ids.get('dv-voice-list').getAttribute('aria-label'), 'Narrator voices');
+  assert.equal(ids.get('dv-voice-panel').hidden, true);
+  assert.equal(ids.get('dv-voice-favorite').getAttribute('aria-pressed'), 'false');
   assert.equal(ids.get('dv-job-title').getAttribute('tabindex'), '-1');
   assert.equal(ids.get('dv-history-heading').getAttribute('tabindex'), '-1');
 });
@@ -916,6 +994,7 @@ test('notes and extra passes never carry into a new video; her saved narration d
     local: { 'kade-description-settings': JSON.stringify({ voice: 'bright girl · wren', rate: 2, maxRate: 2.5, mode: 'standard', detail: 'essential', volume: 'louder', closeLook: true, firstLook: true }) },
   });
   const { $ } = env;
+  assert.deepEqual(server.last(/^\/prefs\/default$/).body, { voice: 'bright girl · wren' }, 'the voice this browser remembered becomes her default, once');
   assert.equal($('close-look').checked, false, 'old saved closeLook is not restored on load');
   assert.equal($('first-look').checked, false);
   await env.open(a);
@@ -1584,21 +1663,369 @@ test('voices unavailable: finished copies still play and download; new narration
   const { $ } = env;
   assert.equal($('results').hidden, false);
   assert.equal($('video').src, 'https://b2/v1.mp4');
-  assert.equal($('voice').disabled, true);
+  assert.equal($('voice-open').disabled, true);
+  assert.equal($('voice-open').textContent, 'Narrator voices are unavailable right now');
+  assert.equal($('voice-default').hidden, true);
   assert.equal($('revoice').getAttribute('aria-disabled'), 'true');
   await env.click('revoice');
   assert.match(env.status(), /^Narrator voices are unavailable right now/);
   assert.equal(server.all(/\/revoice$/).length, 0);
 });
 
-test('voice picker: descriptions in the option text, kinds of voice, recently used', async () => {
-  const env = await boot({ local: { 'kade-description-recent-voices': JSON.stringify(['warm man · oak']) } });
+/* ------------------------------------------------------------------------------------------
+ * The narrator picker: laid out like the agent builder's voice library.
+ * ---------------------------------------------------------------------------------------- */
+
+const optionsOf = ($) => $('voice-list').children;
+const optionFor = ($, voice) => optionsOf($).find((b) => b.getAttribute('data-voice') === voice);
+/** A key on the focused option; the browser then fires focus on wherever focus went. */
+async function key(env, name, target = env.document.activeElement) {
+  const onList = await env.fire(env.$('voice-list'), 'keydown', { key: name, target });
+  const onPanel = await env.fire(env.$('voice-panel'), 'keydown', { key: name, target });
+  const now = env.document.activeElement;
+  if (now !== target && now.getAttribute('role') === 'option') await env.fire(now, 'focus');
+  return { defaultPrevented: onList.defaultPrevented || onPanel.defaultPrevented };
+}
+const auditions = (server) => server.all(/^\/sample$/).filter((r) => r.body.audition);
+
+test('voice picker: one button opens the list on Good for describing; only the current voice is in the Tab order, and it plays shortly after focus', async () => {
+  const server = makeServer();
+  server.prefs.favorites = ['bright girl · wren'];
+  server.prefs.recent = ['warm man · oak'];
+  const audio = webAudio();
+  const env = await boot({ server, audio });
   const { $ } = env;
-  assert.equal($('voice').options[0].textContent, 'clear woman · flint — a calm, clear narrator');
-  assert.deepEqual($('voice-kind').options.map((o) => o.textContent), ['All voices', 'Recently used', 'Narrators', 'Young']);
+  assert.equal($('voice').value, 'clear woman · flint', 'nobody chose, so the house voice reads');
+  assert.equal($('voice-open').textContent, 'clear woman · flint');
+  assert.equal($('voice-note').textContent, 'The describer’s own narrator, used until you choose a default.');
+  assert.equal($('voice-open').getAttribute('aria-expanded'), 'false');
+  assert.equal(visible($('voice-panel')), false);
+
+  await env.click('voice-open');
+  assert.equal($('voice-open').getAttribute('aria-expanded'), 'true');
+  assert.equal(visible($('voice-list')), true);
+  assert.deepEqual($('voice-kind').options.map((o) => o.textContent), [
+    'Good for describing (2)',
+    'My favourites (1)',
+    'Recently used (1)',
+    'Narrators (2)',
+    'Young (1)',
+    'All voices (4)',
+  ]);
+  assert.equal($('voice-kind').value, 'suggested');
+  assert.deepEqual(optionsOf($).map((b) => b.textContent), [
+    'clear woman · flint (used until you choose a default) — a calm, clear narrator',
+    'warm man · oak — a warm storyteller',
+  ]);
+  assert.deepEqual(optionsOf($).map((b) => [b.getAttribute('role'), b.getAttribute('aria-selected'), b.tabIndex]), [
+    ['option', 'true', 0],
+    ['option', 'false', -1],
+  ]);
+  const flint = optionFor($, 'clear woman · flint');
+  assert.equal(env.document.activeElement, flint, 'focus lands on the chosen voice');
+  assert.equal($('voice-favorite').textContent, 'Favourite: Flint');
+  assert.equal(auditions(server).length, 0, 'nothing plays the instant focus lands');
+  await env.timers.advance(260);
+  assert.deepEqual(auditions(server).at(-1).body, { voice: 'clear woman · flint', rate: 1.5, audition: true });
+  assert.equal(audio.played.length, 1);
+
+  await key(env, 'ArrowDown');
+  const oak = optionFor($, 'warm man · oak');
+  assert.equal(env.document.activeElement, oak);
+  assert.deepEqual(optionsOf($).map((b) => b.tabIndex), [-1, 0], 'roving focus: only the current option is tabbable');
+  assert.equal(audio.stopped.length, 1, 'moving on cuts the last sample off');
+  await key(env, 'ArrowDown');
+  assert.equal(env.document.activeElement, oak, 'the last option stays put');
+  await env.timers.advance(100);
+  await key(env, 'Home');
+  await key(env, 'End');
+  await env.timers.advance(260);
+  assert.deepEqual(auditions(server).map((r) => r.body.voice), ['clear woman · flint', 'warm man · oak'], 'passing quickly over a voice plays nothing for it');
+  assert.equal(audio.played.length, 2);
+
+  await env.choose('rate', '2');
+  await env.fire(oak, 'focus');
+  await env.timers.advance(260);
+  assert.deepEqual(auditions(server).at(-1).body, { voice: 'warm man · oak', rate: 2, audition: true }, 'samples play at her usual narration speed');
+  await env.fire(flint, 'focus');
+  await env.timers.advance(260);
+  assert.equal(auditions(server).length, 4);
+  await env.fire(oak, 'focus');
+  await env.timers.advance(260);
+  assert.equal(auditions(server).length, 4, 'a voice already heard at this speed replays without asking again');
+  assert.equal(audio.played.length, 5);
+
   await env.choose('voice-kind', 'kind:Young');
-  assert.deepEqual($('voice').options.map((o) => o.value), ['bright girl · wren']);
   assert.equal(env.status(), '1 voice in Young.');
+  assert.deepEqual(optionsOf($).map((b) => b.getAttribute('data-voice')), ['bright girl · wren']);
+  assert.equal(optionsOf($)[0].tabIndex, 0, 'a list without the chosen voice still has one option in the Tab order');
+  await env.choose('voice-kind', 'mine');
+  assert.deepEqual(optionsOf($).map((b) => b.textContent), ['bright girl · wren (favourite)']);
+  await env.choose('voice-kind', 'all');
+  assert.equal(optionsOf($).length, 4);
+});
+
+test('voice picker: search covers every name and description; Enter picks and closes; Escape closes and returns to the button', async () => {
+  const server = makeServer();
+  const audio = webAudio();
+  const env = await boot({ server, audio });
+  const { $ } = env;
+  await env.click('voice-open');
+  await env.choose('voice-kind', 'kind:Young');
+  await env.type('voice-filter', 'storyteller', 'input');
+  assert.deepEqual(optionsOf($).map((b) => b.getAttribute('data-voice')), ['warm man · oak'], 'search is not limited to the kind shown');
+  await env.timers.advance(520);
+  assert.equal(env.status(), '1 voice matches.');
+  await env.type('voice-filter', 'zzz', 'input');
+  assert.equal(optionsOf($).length, 0);
+  assert.equal(visible($('voice-none')), true);
+  assert.equal($('voice-none').textContent, 'No voice matches that. Try a word about the sound.');
+  assert.equal($('voice-favorite').hidden, true);
+  await env.timers.advance(520);
+  assert.equal(env.status(), 'No voice matches that. Try a word about the sound.');
+  await env.type('voice-filter', 'WREN', 'input');
+  const enter = await env.fire($('voice-filter'), 'keydown', { key: 'Enter' });
+  assert.equal(enter.defaultPrevented, true);
+  const wren = optionFor($, 'bright girl · wren');
+  assert.equal(env.document.activeElement, wren, 'Enter in the search moves into the list');
+  await env.fire(wren, 'click');
+  assert.equal($('voice').value, 'bright girl · wren');
+  assert.equal(visible($('voice-panel')), false);
+  assert.equal($('voice-open').getAttribute('aria-expanded'), 'false');
+  assert.equal(env.document.activeElement, $('voice-open'));
+  assert.equal($('voice-open').textContent, 'bright girl · wren');
+  assert.equal(env.status(), 'Wren chosen.');
+  assert.equal($('voice-description').textContent, 'One of your platform voices.');
+
+  await env.click('voice-open');
+  assert.equal($('voice-kind').value, 'kind:Young', 'reopening starts where the chosen voice lives');
+  assert.equal($('voice-filter').value, '', 'the search starts empty again');
+  assert.equal(env.document.activeElement, optionFor($, 'bright girl · wren'));
+  const heard = auditions(server).length;
+  const escape = await key(env, 'Escape');
+  assert.equal(escape.defaultPrevented, true);
+  assert.equal(visible($('voice-panel')), false);
+  assert.equal(env.document.activeElement, $('voice-open'));
+  await env.timers.advance(300);
+  assert.equal(auditions(server).length, heard, 'a closed list plays nothing');
+  await env.click('voice-open');
+  await env.click('voice-close');
+  assert.equal(visible($('voice-panel')), false);
+  assert.equal(env.document.activeElement, $('voice-open'));
+});
+
+test('voice picker: F or the Favourite button stars the voice with focus, in place; the administrator can curate Good for describing', async () => {
+  const server = makeServer();
+  server.prefs.curate = true;
+  const env = await boot({ server, audio: webAudio() });
+  const { $ } = env;
+  await env.click('voice-open');
+  await key(env, 'ArrowDown');
+  const oak = optionFor($, 'warm man · oak');
+  assert.equal($('voice-favorite').textContent, 'Favourite: Oak', 'the toggle follows the focused voice, not the chosen one');
+  assert.equal($('voice-favorite').getAttribute('aria-pressed'), 'false');
+  const star = await key(env, 'f');
+  assert.equal(star.defaultPrevented, true);
+  assert.deepEqual(server.last(/^\/prefs\/favorites$/).body, { voice: 'warm man · oak', favorite: true });
+  assert.equal(env.status(), 'Oak added to My favourites.');
+  assert.equal(env.document.activeElement, oak, 'the option with focus is not rebuilt');
+  assert.equal(oak.textContent, 'warm man · oak (favourite) — a warm storyteller');
+  assert.equal($('voice-favorite').getAttribute('aria-pressed'), 'true');
+  assert.equal($('voice-kind').options[1].textContent, 'My favourites (1)');
+  assert.equal($('voice').value, 'clear woman · flint', 'starring does not choose');
+  await env.click('voice-favorite');
+  assert.deepEqual(server.last(/^\/prefs\/favorites$/).body, { voice: 'warm man · oak', favorite: false });
+  assert.equal(env.status(), 'Oak removed from My favourites.');
+  assert.equal($('voice-favorite').getAttribute('aria-pressed'), 'false');
+
+  server.prefs.favorites = Array.from({ length: 12 }, (_, i) => `x${i}`);
+  await env.click('voice-favorite');
+  assert.equal(env.status(), 'You can keep up to 12 favourite narrators. Remove one first.');
+  assert.equal($('error').hidden, true, 'a full list is said, not shown as a page error');
+
+  assert.equal(visible($('voice-suggest')), true);
+  assert.equal($('voice-suggest').textContent, 'Good for describing: Oak');
+  assert.equal($('voice-suggest').getAttribute('aria-pressed'), 'true');
+  await env.click('voice-suggest');
+  assert.deepEqual(server.last(/^\/prefs\/suggested$/).body, { voice: 'warm man · oak', suggested: false });
+  assert.equal(env.status(), 'Oak removed from Good for describing.');
+  assert.equal($('voice-kind').options[0].textContent, 'Good for describing (1)');
+
+  const member = await boot({ audio: webAudio() });
+  await member.click('voice-open');
+  assert.equal(member.$('voice-suggest').hidden, true, 'only the administrator curates');
+});
+
+test('narrator default: new videos start with her server default, not this browser’s old voice; the button saves it and says so', async () => {
+  const server = makeServer();
+  server.prefs.myDefaultVoice = 'warm man · oak';
+  const ready = server.add(jobOf({ name: 'Tape' }));
+  const env = await boot({
+    server,
+    local: { 'kade-description-settings': JSON.stringify({ voice: 'bright girl · wren', rate: 2, maxRate: 2.5 }) },
+    audio: webAudio(),
+  });
+  const { $ } = env;
+  assert.equal(server.all(/^\/prefs\/default$/).length, 0, 'she already has a default, so nothing is carried over');
+  assert.equal($('voice').value, 'warm man · oak');
+  assert.equal($('rate').value, '2', 'speeds are still remembered in this browser');
+  assert.equal($('voice-note').textContent, 'Your new videos start with this voice.');
+  assert.equal($('voice-default').textContent, 'New videos start with this voice');
+  assert.equal($('voice-default').getAttribute('aria-disabled'), 'true');
+  await env.click('voice-default');
+  assert.equal(env.status(), 'New videos already start with Oak.');
+  assert.equal(server.all(/^\/prefs\/default$/).length, 0);
+
+  await env.click('voice-open');
+  assert.equal(optionFor($, 'warm man · oak').textContent, 'warm man · oak (your default) — a warm storyteller');
+  await env.type('voice-filter', 'wren', 'input');
+  await env.fire(optionFor($, 'bright girl · wren'), 'click');
+  assert.equal($('voice-default').textContent, 'Use this voice for new videos');
+  assert.equal($('voice-default').getAttribute('aria-disabled'), null);
+  assert.equal($('voice-note').textContent, '');
+  $('voice-default').focus();
+  await env.click('voice-default');
+  assert.deepEqual(server.last(/^\/prefs\/default$/).body, { voice: 'bright girl · wren' });
+  assert.equal(env.status(), 'New videos will start with Wren. You can still change the voice for any one video.');
+  assert.equal($('voice-default').getAttribute('aria-disabled'), 'true');
+  assert.equal(visible($('voice-default')), true, 'the button stays where her focus is');
+  assert.equal(env.document.activeElement, $('voice-default'));
+  assert.equal($('voice-note').textContent, 'Your new videos start with this voice.');
+
+  await env.open(ready);
+  await env.choose('rate', '1.5');
+  const saved = JSON.parse(env.localStorage.getItem('kade-description-settings'));
+  assert.equal(saved.rate, 1.5);
+  assert.equal(saved.voice, undefined, 'the voice is no longer kept per browser');
+  await env.click('voice-open');
+  await env.type('voice-filter', 'flint', 'input');
+  await env.fire(optionFor($, 'clear woman · flint'), 'click');
+  await env.click('start');
+  assert.equal(server.last(/\/start$/).body.voice, 'clear woman · flint');
+  await env.click('voice-open');
+  assert.equal($('voice-kind').options.map((o) => o.textContent).includes('Recently used (1)'), true, 'the run joins Recently used at once');
+});
+
+test('narrator default: the Fish note shows only while a Fish voice is chosen, and speed is never capped silently', async () => {
+  const server = makeServer();
+  const env = await boot({ server, audio: webAudio() });
+  const { $ } = env;
+  assert.doesNotMatch($('voice-note').textContent, /sped up/);
+  await env.click('voice-open');
+  await env.type('voice-filter', 'kade', 'input');
+  await env.fire(optionFor($, 'Kade Murdock'), 'click');
+  assert.equal(env.status(), `Kade Murdock chosen. ${config.fishNote}`);
+  assert.equal($('voice-note').textContent, config.fishNote);
+  assert.match($('voice-open').getAttribute('aria-describedby'), /dv-voice-note/);
+  assert.equal($('rate').value, '1.5', 'the usual speed is left as she set it');
+  await env.click('voice-open');
+  await env.choose('voice-kind', 'suggested');
+  assert.equal(optionsOf($).some((b) => /sped up/.test(b.textContent)), false, 'the note is not repeated on every option');
+  await env.fire(optionFor($, 'warm man · oak'), 'click');
+  assert.equal(env.status(), 'Oak chosen.');
+  assert.equal($('voice-note').textContent, '');
+});
+
+test('narrator default: this browser’s remembered voice is carried to the server once; the old flint default is not', async () => {
+  const first = await boot({ local: { 'kade-description-settings': JSON.stringify({ voice: 'bright girl · wren' }) } });
+  assert.deepEqual(first.server.last(/^\/prefs\/default$/).body, { voice: 'bright girl · wren' });
+  assert.equal(first.$('voice').value, 'bright girl · wren');
+  assert.equal(first.localStorage.getItem('kade-description-default-moved'), 'true');
+  const again = await boot({ local: { 'kade-description-settings': JSON.stringify({ voice: 'bright girl · wren' }), 'kade-description-default-moved': 'true' } });
+  assert.equal(again.server.all(/^\/prefs\/default$/).length, 0, 'carried once per browser');
+  assert.equal(again.$('voice').value, 'clear woman · flint');
+  const flint = await boot({ local: { 'kade-description-settings': JSON.stringify({ voice: 'clear woman · flint' }) } });
+  assert.equal(flint.server.all(/^\/prefs\/default$/).length, 0, 'the old default was never her choice');
+  const gone = await boot({ local: { 'kade-description-settings': JSON.stringify({ voice: 'retired · quill' }) } });
+  assert.equal(gone.server.all(/^\/prefs\/default$/).length, 0);
+});
+
+test('voice picker: without Web Audio a sample still plays on one unlocked audio element, and a busy hour quiets the list once', async () => {
+  const server = makeServer();
+  const env = await boot({ server });
+  const { $ } = env;
+  await env.click('voice-open');
+  await env.timers.advance(260);
+  assert.equal(auditions(server).length, 1);
+  server.override((method, path, body) => path === '/sample' && body.audition, () => ({ status: 409, body: { error: 'Voices have played a lot of samples this hour, so the list is quiet for now. Picking a voice still works, and samples come back within the hour.' } }), false);
+  await key(env, 'ArrowDown');
+  await env.timers.advance(260);
+  assert.match(env.status(), /quiet for now/);
+  const asked = auditions(server).length;
+  await key(env, 'ArrowUp');
+  await env.timers.advance(260);
+  assert.equal(auditions(server).length, asked, 'no more asking this time the list is open');
+  await env.fire(optionFor($, 'warm man · oak'), 'click');
+  assert.equal($('voice').value, 'warm man · oak', 'picking still works');
+});
+
+test('voice picker: when samples fail for any other reason, the list goes quiet and says so once, until it is opened again', async () => {
+  const server = makeServer();
+  const env = await boot({ server, audio: webAudio() });
+  const { $ } = env;
+  const heard = listen($('status'));
+  const quiet = 'Voice samples are not playing right now. Picking a voice still works.';
+  server.override((method, path, body) => path === '/sample' && body.audition, () => ({ status: 503, body: { error: 'The voice service is busy.' } }), false);
+  await env.click('voice-open');
+  await env.timers.advance(260);
+  assert.equal(auditions(server).length, 1);
+  assert.equal(env.status(), quiet);
+  for (const name of ['ArrowDown', 'ArrowUp', 'ArrowDown']) {
+    await key(env, name);
+    await env.timers.advance(260);
+  }
+  assert.equal(auditions(server).length, 1, 'no more asking this time the list is open');
+  assert.deepEqual(heard.filter((text) => text === quiet), [quiet], 'said once, not once a voice');
+  assert.ok(!heard.some((text) => /could not play/.test(text)));
+
+  await key(env, 'Escape');
+  server.overrides.length = 0;
+  server.override((method, path, body) => path === '/sample' && body.audition, () => ({ network: true }), false);
+  await env.click('voice-open');
+  await env.timers.advance(260);
+  assert.equal(auditions(server).length, 2, 'opening the list again tries again');
+  await env.timers.advance(200);
+  assert.equal(env.status(), quiet, 'a lost connection is the same quiet message');
+  await key(env, 'ArrowDown');
+  await env.timers.advance(260);
+  assert.equal(auditions(server).length, 2);
+  assert.equal(heard.filter((text) => text === quiet).length, 2, 'once for each opening');
+  await env.fire(optionFor($, 'warm man · oak'), 'click');
+  assert.equal($('voice').value, 'warm man · oak', 'picking still works');
+});
+
+test('voice picker: on an iPhone or iPad the samples play on an audio element, so the silent switch cannot mute them; the help says what to do on a phone', async () => {
+  const iPhone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1';
+  const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15';
+  /* An iPad asks for the desktop site, so it says Macintosh; its touch points give it away. */
+  for (const device of [{ userAgent: iPhone, maxTouchPoints: 5 }, { userAgent: mac, maxTouchPoints: 5 }]) {
+    const server = makeServer();
+    const audio = webAudio();
+    const env = await boot({ server, audio, device });
+    const made = [];
+    const create = env.document.createElement;
+    env.document.createElement = (tag) => {
+      const element = create.call(env.document, tag);
+      made.push(element);
+      return element;
+    };
+    await env.click('voice-open');
+    await env.timers.advance(260);
+    assert.equal(auditions(server).length, 1);
+    assert.equal(audio.played.length, 0, 'Web Audio is not used');
+    const players = made.filter((element) => element.localName === 'audio');
+    assert.equal(players.length, 1, 'one audio element, unlocked by the opening tap');
+    assert.match(players[0].src, /^blob:/);
+    assert.equal(players[0].paused, false, 'the sample plays');
+    await key(env, 'ArrowDown');
+    assert.equal(players[0].paused, true, 'moving on cuts the last sample off');
+    assert.match(env.$('voice-help').textContent, /On a phone, pick a voice, then use Play a sample of this voice\.$/);
+  }
+  const desk = webAudio();
+  const env = await boot({ audio: desk, device: { userAgent: mac, maxTouchPoints: 0 } });
+  await env.click('voice-open');
+  await env.timers.advance(260);
+  assert.equal(desk.played.length, 1, 'a Mac with a mouse keeps Web Audio');
 });
 
 test('samples: fastest speed, pronunciation words, and an honest message when the phone refuses to play', async () => {

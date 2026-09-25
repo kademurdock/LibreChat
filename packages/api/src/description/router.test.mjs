@@ -93,6 +93,14 @@ const logLines = [];
 const logged = (from, event) =>
   logLines.slice(from).map((text) => { try { return JSON.parse(text); } catch { return null; } }).filter((entry) => entry?.event === event);
 const videos = new Map();
+/** The fake proxy's list: flint (Voice 650), dory (Voice 541, Kade's professional clone), a Fish voice, and enough for the favourites cap. */
+const catalogVoices = [
+  'Voice 1',
+  'clear woman · flint',
+  'clear high-ish young woman · dory',
+  'Kade Murdock',
+  ...Array.from({ length: 12 }, (_, i) => `Voice ${i + 2}`),
+];
 
 const xml = (res, body, status = 200) => {
   res.writeHead(status, { 'Content-Type': 'application/xml' });
@@ -292,9 +300,11 @@ before(async () => {
       res.setHeader('Content-Type', 'application/json');
       res.end(
         JSON.stringify({
-          voices: ['Voice 1', 'clear woman · flint'],
+          voices: catalogVoices,
           describe: { 'Voice 1': 'Test voice' },
           categories: [{ name: 'Test', voices: ['Voice 1', 'clear woman · flint'] }],
+          renames: { 'Voice 541': 'clear high-ish young woman · dory', 'Voice 650': 'clear woman · flint', 'Voice 652': 'Kade Murdock' },
+          fish: ['Kade Murdock'],
         }),
       );
       return;
@@ -599,8 +609,8 @@ test('authenticated adult testers have access; authentication and child restrict
   const config = (await call('get', '/config').expect(200)).body;
   assert.equal(config.limitUSD, 5);
   assert.equal(config.voicesAvailable, true);
-  assert.deepEqual(config.voices, ['Voice 1', 'clear woman · flint']);
-  assert.equal(config.defaultVoice, 'clear woman · flint');
+  assert.deepEqual(config.voices, catalogVoices);
+  assert.equal(config.defaultVoice, 'clear high-ish young woman · dory', 'Kade’s professional voice reads until she chooses');
   assert.equal(config.categories[0].name, 'Test');
   assert.equal(config.perMinuteUSD.rich, config.perMinuteUSD.essential, 'extra narration is included');
   assert.deepEqual(config.extrasPerMinuteUSD, { closeLook: 0.025, firstLook: 0.021 });
@@ -612,6 +622,148 @@ test('authenticated adult testers have access; authentication and child restrict
   assert.equal(config.maxMinutes, 90);
   assert.equal(config.maxSourceMinutes, 360);
   assert.equal(config.remainingUSD, 5);
+});
+
+const dory = 'clear high-ish young woman · dory';
+const flint = 'clear woman · flint';
+const prefsRow = (owner) => mongoose.models.KadeDescriptionPrefs.findById(owner).lean();
+
+test('narrators: Kade’s professional voice reads until she chooses; her default and favourites follow her, old spellings too', async () => {
+  const fresh = (await call('get', '/config', 'narrator-a').expect(200)).body;
+  assert.equal(fresh.houseVoice, dory, 'Voice 541 is found through renames');
+  assert.equal(fresh.defaultVoice, dory);
+  assert.equal(fresh.myDefaultVoice, null);
+  assert.deepEqual(fresh.suggested, [dory, flint], 'the seed list, in order, keeping only listed Inworld voices');
+  assert.deepEqual(fresh.fish, ['Kade Murdock']);
+  assert.match(fresh.fishNote, /sped up/);
+  assert.deepEqual(fresh.favorites, []);
+  assert.deepEqual(fresh.recent, []);
+  assert.equal(fresh.maxFavorites, 12);
+  assert.equal(fresh.curate, true, 'the administrator can curate');
+  const member = (await call('get', '/config', 'narrator-a').set('x-role', 'user').expect(200)).body;
+  assert.equal(member.curate, undefined);
+  assert.deepEqual(member.suggested, [dory, flint]);
+
+  const wrong = await call('post', '/prefs/default', 'narrator-a').send({ voice: 'Not a voice' }).expect(400);
+  assert.equal(wrong.body.field, 'voice');
+  await call('post', '/prefs/default', 'narrator-a').send({}).expect(400);
+  const chosen = (await call('post', '/prefs/default', 'narrator-a').send({ voice: 'Voice 1' }).expect(200)).body;
+  assert.equal(chosen.defaultVoice, 'Voice 1');
+  assert.equal(chosen.myDefaultVoice, 'Voice 1');
+  assert.equal(chosen.houseVoice, dory);
+  assert.equal((await call('get', '/config', 'narrator-a').expect(200)).body.defaultVoice, 'Voice 1');
+  assert.equal((await call('get', '/config', 'narrator-b').expect(200)).body.defaultVoice, dory, 'another person still gets the house voice');
+  assert.equal((await call('get', '/prefs', 'narrator-a').expect(200)).body.defaultVoice, 'Voice 1');
+
+  const old = (await call('post', '/prefs/default', 'narrator-a').send({ voice: 'Voice 650' }).expect(200)).body;
+  assert.equal(old.myDefaultVoice, flint, 'an old spelling is saved and shown as its current label');
+  await call('post', '/prefs/default', 'narrator-a').send({ voice: dory }).expect(200);
+  assert.equal((await prefsRow('narrator-a')).voice, 'Voice 541', 'the stable number is stored, so a relabel cannot lose it');
+  const cleared = (await call('post', '/prefs/default', 'narrator-a').send({ voice: null }).expect(200)).body;
+  assert.equal(cleared.myDefaultVoice, null);
+  assert.equal(cleared.defaultVoice, dory);
+
+  const star = (voice, favorite = true, owner = 'narrator-a') =>
+    call('post', '/prefs/favorites', owner).send({ voice, favorite });
+  await star('Voice 1').expect(200);
+  assert.deepEqual((await star('Voice 1').expect(200)).body.favorites, ['Voice 1'], 'starred twice, kept once');
+  await star('Voice 650').expect(200);
+  assert.deepEqual((await star(flint).expect(200)).body.favorites, ['Voice 1', flint], 'two spellings of one voice are one favourite');
+  assert.deepEqual((await star(flint, false).expect(200)).body.favorites, ['Voice 1']);
+  assert.deepEqual((await prefsRow('narrator-a')).favorites, ['Voice 1'], 'un-starring removes every spelling');
+  await star('Not a voice').expect(400);
+  assert.deepEqual((await star('Not a voice', false).expect(200)).body.favorites, ['Voice 1'], 'un-starring something unknown is harmless');
+  await call('post', '/prefs/favorites', 'narrator-a').send({ voice: 'Voice 1' }).expect(400);
+
+  for (let n = 2; n <= 12; n++) await star(`Voice ${n}`).expect(200);
+  assert.equal((await call('get', '/config', 'narrator-a').expect(200)).body.favorites.length, 12);
+  const full = await star('Voice 13').expect(409);
+  assert.match(full.body.error, /up to 12 favourite narrators\. Remove one first\./);
+  assert.equal((await star('Voice 12').expect(200)).body.favorites.length, 12, 'starring one already kept is not refused');
+  await star('Voice 2', false).expect(200);
+  assert.equal((await star('Voice 13').expect(200)).body.favorites.at(-1), 'Voice 13');
+  assert.equal((await call('get', '/config', 'narrator-b').expect(200)).body.favorites.length, 0, 'favourites are per person');
+  await call('post', '/prefs/default', 'narrator-a').set('x-child', '1').send({ voice: 'Voice 1' }).expect(403);
+});
+
+test('narrators: a retired voice falls back to the house voice; old spellings in her lists map to today’s labels', async () => {
+  await mongoose.models.KadeDescriptionPrefs.collection.insertOne({
+    _id: 'stale-owner',
+    voice: 'retired · quill',
+    favorites: ['Voice 650', 'Voice 1', 'gone · wren', 'clear woman · flint'],
+    recent: ['Voice 541', 'retired · quill', dory],
+  });
+  const config = (await call('get', '/config', 'stale-owner').expect(200)).body;
+  assert.equal(config.myDefaultVoice, null);
+  assert.equal(config.defaultVoice, dory);
+  assert.deepEqual(config.favorites, [flint, 'Voice 1']);
+  assert.deepEqual(config.recent, [dory]);
+});
+
+test('narrators: KADE_DESCRIPTION_HOUSE_VOICE chooses the house voice, skipping names that are not listed', async () => {
+  try {
+    process.env.KADE_DESCRIPTION_HOUSE_VOICE = 'Voice 999';
+    assert.equal((await call('get', '/config', 'house-owner').expect(200)).body.houseVoice, flint, 'flint when nothing named is listed');
+    process.env.KADE_DESCRIPTION_HOUSE_VOICE = 'Voice 999, Voice 652';
+    const config = (await call('get', '/config', 'house-owner').expect(200)).body;
+    assert.equal(config.houseVoice, 'Kade Murdock');
+    assert.equal(config.defaultVoice, 'Kade Murdock');
+  } finally {
+    delete process.env.KADE_DESCRIPTION_HOUSE_VOICE;
+  }
+  assert.equal((await call('get', '/config', 'house-owner').expect(200)).body.houseVoice, dory);
+});
+
+test('narrators: only the administrator curates Good for describing; the first change starts from the seed, Fish voices stay off', async () => {
+  const suggest = (voice, suggested, role) => {
+    const r = call('post', '/prefs/suggested', 'curator').send({ voice, suggested });
+    return role ? r.set('x-role', role) : r;
+  };
+  try {
+    const refused = await suggest('Voice 1', true, 'user').expect(403);
+    assert.match(refused.body.error, /Only the administrator/);
+    assert.deepEqual((await suggest('Voice 1', true).expect(200)).body.suggested, [dory, flint, 'Voice 1']);
+    assert.deepEqual((await suggest('Voice 650', false).expect(200)).body.suggested, [dory, 'Voice 1'], 'an old spelling removes the voice');
+    const fish = await suggest('Kade Murdock', true).expect(400);
+    assert.match(fish.body.error, /Fish voices sound less natural sped up/);
+    await suggest('Not a voice', true).expect(400);
+    await suggest(dory, false).expect(200);
+    assert.deepEqual((await suggest('Voice 1', false).expect(200)).body.suggested, [], 'an emptied list stays empty instead of going back to the seed');
+    assert.deepEqual((await call('get', '/config', 'anyone').set('x-role', 'user').expect(200)).body.suggested, []);
+    assert.deepEqual((await suggest('Voice 541', true).expect(200)).body.suggested, [dory]);
+    assert.deepEqual((await prefsRow('__describing__')).suggested, ['Voice 541']);
+  } finally {
+    await mongoose.models.KadeDescriptionPrefs.deleteOne({ _id: '__describing__' });
+  }
+});
+
+test('narrators: a run that names no voice starts with her default, or the house voice; every run joins Recently used', async () => {
+  await Budgets.deleteMany({});
+  const { voice: _unused, ...unvoiced } = settings;
+  try {
+    await call('post', '/prefs/default', 'narrator-start').send({ voice: 'Voice 2' }).expect(200);
+    const mine = await readyJob('narrator-start', 'narrator-upload-000001', 30);
+    const started = (await call('post', `/jobs/${mine}/start`, 'narrator-start').send(unvoiced).expect(202)).body;
+    assert.equal(started.settings.voice, 'Voice 2');
+    assert.deepEqual((await call('get', '/config', 'narrator-start').expect(200)).body.recent, ['Voice 2']);
+    await call('post', `/jobs/${mine}/cancel`, 'narrator-start').expect(200);
+
+    const house = await readyJob('narrator-house', 'narrator-upload-000002', 30);
+    const housed = (await call('post', `/jobs/${house}/start`, 'narrator-house').send({ ...unvoiced, voice: '' }).expect(202)).body;
+    assert.equal(housed.settings.voice, dory, 'nobody chose, so Kade’s professional voice reads');
+    await call('post', `/jobs/${house}/cancel`, 'narrator-house').expect(200);
+
+    const spelled = await readyJob('narrator-house', 'narrator-upload-000003', 30);
+    const renamed = (await call('post', `/jobs/${spelled}/start`, 'narrator-house').send({ ...unvoiced, voice: 'Voice 650' }).expect(202)).body;
+    assert.equal(renamed.settings.voice, flint, 'an old spelling starts with the voice it now names');
+    assert.deepEqual((await call('get', '/config', 'narrator-house').expect(200)).body.recent, [flint, dory]);
+    assert.deepEqual((await prefsRow('narrator-house')).recent, ['Voice 650', 'Voice 541']);
+    await call('post', `/jobs/${spelled}/cancel`, 'narrator-house').expect(200);
+    for (const [owner, id] of [['narrator-start', mine], ['narrator-house', house], ['narrator-house', spelled]])
+      await call('delete', `/jobs/${id}`, owner).expect(200);
+  } finally {
+    await Budgets.deleteMany({});
+  }
 });
 
 test('uploads are idempotent, owners are isolated, a rename keeps recovery, and up to ten can wait', async () => {
@@ -1560,6 +1712,29 @@ test('voice samples: any short text, cached per voice, speed and text, counted i
     sampleCost = 0;
   }
   await Budgets.deleteMany({});
+});
+
+test('voice samples: the picker’s listen-as-you-move has its own hourly allowance; a voice already heard plays free', async () => {
+  await Budgets.deleteMany({});
+  process.env.KADE_DESCRIPTION_AUDITIONS_PER_HOUR = '2';
+  try {
+    const voiced = calls.synthesize;
+    const hear = (voice, extra = {}) =>
+      call('post', '/sample', 'audition-owner').send({ voice, rate: 2, audition: true, ...extra });
+    await hear('Voice 3').expect(200);
+    await hear('Voice 4').expect(200);
+    const quiet = await hear('Voice 5').expect(409);
+    assert.match(quiet.body.error, /quiet for now\. Picking a voice still works/);
+    await hear('Voice 3').expect(200);
+    assert.equal(calls.synthesize - voiced, 2, 'a voice already heard comes from the cache');
+    await call('post', '/sample', 'audition-owner').send({ voice: 'Voice 5', rate: 2 }).expect(200);
+    await hear('Voice 6', { text: 'Meeks Lumber' }).expect(200);
+    assert.equal(calls.synthesize - voiced, 4, 'typed words and the sample buttons keep their own allowance');
+    await call('post', '/sample', 'another-listener').send({ voice: 'Voice 7', rate: 2, audition: true }).expect(200);
+  } finally {
+    delete process.env.KADE_DESCRIPTION_AUDITIONS_PER_HOUR;
+    await Budgets.deleteMany({});
+  }
 });
 
 test('queue: short jobs go ahead of long ones that have not started, and each is told its place', async () => {

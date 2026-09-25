@@ -131,6 +131,50 @@ test('providers: a voice list that hangs is asked for once, remembered for a min
   }
 });
 
+test('providers: the voice list keeps old spellings and the fish.audio labels, and a bad field is dropped, not fatal', async () => {
+  process.env.KADE_TTS_PROXY_URL = 'http://voices.test';
+  const realNow = Date.now;
+  let shift = 0;
+  Date.now = () => realNow() + shift;
+  let reply = {
+    voices: ['clear woman · flint', 'clear high-ish young woman · dory', 'Kade Murdock'],
+    describe: { 'Kade Murdock': 'warm and natural' },
+    renames: { 'Voice 541': 'clear high-ish young woman · dory', 'Voice 650': 'clear woman · flint' },
+    fish: ['Kade Murdock'],
+    custom: [541],
+  };
+  const fake = fakeAxios(async () => ({ data: reply }));
+  const fresh = async () => {
+    shift += 30 * 60000; // past any copy an earlier test left, even one stamped in its own shifted time
+    await voices().catch(() => {});
+    await later(50);
+    return voices();
+  };
+  try {
+    let list = await fresh();
+    assert.deepEqual(list.renames, {
+      'Voice 541': 'clear high-ish young woman · dory',
+      'Voice 650': 'clear woman · flint',
+    });
+    assert.deepEqual(list.fish, ['Kade Murdock']);
+    assert.equal(list.custom, undefined, 'only the fields the describer reads are kept');
+
+    reply = { voices: ['Voice 1'], renames: 'not a map', fish: [42] };
+    list = await fresh();
+    assert.deepEqual(list.voices, ['Voice 1']);
+    assert.equal(list.renames, undefined);
+    assert.equal(list.fish, undefined);
+
+    reply = { voices: ['Voice 1'] };
+    list = await fresh();
+    assert.equal(list.renames, undefined, 'an older proxy without the new fields still works');
+    assert.equal(list.fish, undefined);
+  } finally {
+    Date.now = realNow;
+    fake.restore();
+  }
+});
+
 test('youtube: the size watch skips a file renamed or removed while it counts', async () => {
   const folder = await mkdtemp(join(scratch, 'download-'));
   await writeFile(join(folder, 'youtube.mp4'), Buffer.alloc(1234));

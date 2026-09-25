@@ -87,6 +87,10 @@ export type VoiceCatalog = {
   voices: string[];
   describe?: Record<string, string>;
   categories?: { name: string; voices: string[] }[];
+  /** Old spelling ("Voice 541") -> the current described label. */
+  renames?: Record<string, string>;
+  /** Labels that speak through fish.audio (they sound less natural sped up). */
+  fish?: string[];
 };
 let catalog: { at: number; data: VoiceCatalog } | undefined;
 let pending: Promise<VoiceCatalog> | undefined;
@@ -133,6 +137,8 @@ async function fetchVoices(): Promise<VoiceCatalog> {
         .max(200)
         .optional()
         .catch(undefined),
+      renames: z.record(z.string().max(160)).optional().catch(undefined),
+      fish: z.array(z.string().max(120)).max(3000).optional().catch(undefined),
     })
     .parse(response.data);
   catalog = { at: Date.now(), data };

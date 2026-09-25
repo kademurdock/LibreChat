@@ -43,6 +43,11 @@ export function describedVideoPage(sharedHead: string): string {
   .transcript p{margin:.2rem 0}
   ul.jobs{list-style:none;padding:0;margin:.5rem 0} ul.jobs li{margin:.25rem 0} ul.jobs button{width:100%}
   .eyebrow{font-size:.85rem;letter-spacing:.1em;text-transform:uppercase;color:#426494;margin:.8rem 0 0}
+  .voice-panel{margin:.5rem 0;padding:.3rem .8rem .6rem;border:1px solid #8a929f;border-radius:10px}
+  .voice-list{max-height:22rem;overflow:auto;margin:.6rem 0;padding:.2rem;border:1px solid #8a929f;border-radius:8px}
+  .voice-list [role=option]{display:block;width:100%;margin:.15rem 0;border-color:transparent}
+  .voice-list [role=option][aria-selected=true]{border-color:#174ab0;font-weight:650}
+  button[aria-pressed=true]{border-color:#174ab0;border-width:2px}
   @media(max-width:560px){.settings{grid-template-columns:1fr} h1{font-size:1.6rem}}
   @media(prefers-color-scheme:dark){.eyebrow{color:#b7d1ff} button.danger,.field-error{color:#ff9b93;border-color:#ff9b93} :focus-visible{outline-color:#9cc2ff;box-shadow:0 0 0 3px #14161a}}
 </style></head><body><main>
@@ -138,9 +143,19 @@ export function describedVideoPage(sharedHead: string): string {
 <label class="check"><input type="radio" name="dv-preset" id="dv-preset-film" value="film"> <span>Film: standard detail, pauses the picture when a description needs room; the whole-film first look is offered below<span id="dv-preset-film-price"></span></span></label>
 <label class="check"><input type="radio" name="dv-preset" id="dv-preset-custom" value="custom"> <span>My own choices (open Customize below)</span></label>
 </fieldset>
-<label for="dv-voice-kind">Kind of voice</label><select id="dv-voice-kind"><option value="all">All voices</option></select>
-<label for="dv-voice">Narrator voice</label><select id="dv-voice" aria-describedby="dv-voice-description"><option>Loading your platform voices…</option></select>
-<p id="dv-voice-description" class="hint"></p>
+<div id="dv-voice-box"><input type="hidden" id="dv-voice">
+<p class="label" id="dv-voice-label">Narrator voice</p>
+<button id="dv-voice-open" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="dv-voice-panel" aria-labelledby="dv-voice-label dv-voice-open" aria-describedby="dv-voice-description dv-voice-note">Loading your platform voices…</button>
+<p id="dv-voice-description" class="hint"></p><p id="dv-voice-note" class="hint"></p>
+<div class="row"><button id="dv-voice-default" type="button">Use this voice for new videos</button></div>
+<div id="dv-voice-panel" class="voice-panel" hidden>
+<p id="dv-voice-help" class="hint">Each voice reads a line of description shortly after you move onto it, at your usual narration speed. Enter or a click picks it. Press F to add or remove the voice you are on from My favourites. Escape closes the list. On a phone, pick a voice, then use Play a sample of this voice.</p>
+<label for="dv-voice-kind">Kind of voice</label><select id="dv-voice-kind"></select>
+<label for="dv-voice-filter">Search every voice</label><input id="dv-voice-filter" type="search" autocomplete="off" aria-describedby="dv-voice-filter-help"><p id="dv-voice-filter-help" class="hint">Names and words about the sound both work, like warm, British or narrator.</p>
+<div id="dv-voice-list" class="voice-list" role="listbox" aria-label="Narrator voices" aria-describedby="dv-voice-help"></div>
+<p id="dv-voice-none" class="hint" hidden></p>
+<div class="row"><button id="dv-voice-favorite" type="button" aria-pressed="false" hidden>Favourite</button><button id="dv-voice-suggest" type="button" aria-pressed="false" hidden>Good for describing</button><button id="dv-voice-close" type="button">Close the voice list</button></div>
+</div></div>
 <div class="row"><button id="dv-sample-play" type="button">Play a sample of this voice</button><button id="dv-sample-fast" type="button">Play the sample at the fastest speed</button></div>
 <audio id="dv-sample" controls hidden aria-label="Voice sample"></audio>
 <details id="dv-pronounce"><summary>Test how the voice says a word or name</summary>
@@ -191,7 +206,7 @@ export function describedVideoPage(sharedHead: string): string {
 export const descriptionBrowserScript: string = String.raw`
 (function(){
   'use strict';
-  var SETTINGS_KEY='kade-description-settings',RECENT_KEY='kade-description-recent-voices',UPLOADS_KEY='kade-video-uploads',PROGRESS_KEY='kade-description-progress',PLAY_AS_KEY='kade-description-play-as',READ_CAPTIONS_KEY='kade-description-read-captions';
+  var SETTINGS_KEY='kade-description-settings',MOVED_KEY='kade-description-default-moved',UPLOADS_KEY='kade-video-uploads',PROGRESS_KEY='kade-description-progress',PLAY_AS_KEY='kade-description-play-as',READ_CAPTIONS_KEY='kade-description-read-captions';
   var LINK_AGE=5.5*3600*1000,BASE_TITLE='Make a described video — Kade-AI';
   var FORM_DEFAULTS={rate:1.5,maxRate:2.25,mode:'extended',detail:'standard',volume:'balanced'};
   var PRESETS={commercials:{detail:'rich',mode:'standard',closeLook:true,firstLook:false},cartoon:{detail:'rich',mode:'standard',closeLook:false,firstLook:false},tv:{detail:'standard',mode:'standard',closeLook:false,firstLook:false},film:{detail:'standard',mode:'extended',closeLook:false}};
@@ -342,8 +357,9 @@ export const descriptionBrowserScript: string = String.raw`
     var pending=pendingSwitch&&pendingSwitch!==viewVersion;$('new-version').hidden=!pending;
     if(pending){$('new-version-note').textContent='Version '+pendingSwitch+' is ready. You are still on version '+viewVersion+'.';$('switch-version').textContent='Switch to version '+pendingSwitch;}
   }
-  function defaults(){var saved=stored(SETTINGS_KEY,{});var out={};Object.keys(FORM_DEFAULTS).forEach(function(key){out[key]=saved&&saved[key]!==undefined?saved[key]:FORM_DEFAULTS[key];});out.voice=saved&&saved.voice;return out;}
-  function remember(){var s=settings();store(SETTINGS_KEY,{voice:s.voice,rate:s.rate,maxRate:s.maxRate,mode:s.mode,detail:s.detail,volume:s.volume});}
+  function defaults(){var saved=stored(SETTINGS_KEY,{});var out={};Object.keys(FORM_DEFAULTS).forEach(function(key){out[key]=saved&&saved[key]!==undefined?saved[key]:FORM_DEFAULTS[key];});return out;}
+  /** Speeds, pauses, detail and volume stay with this browser; the voice for new videos is her default on the server. */
+  function remember(){var s=settings();store(SETTINGS_KEY,{rate:s.rate,maxRate:s.maxRate,mode:s.mode,detail:s.detail,volume:s.volume});}
   function setSelect(id,value){if(value===undefined||value===null)return false;var select=$(id);var ok=Array.prototype.some.call(select.options,function(option){return option.value===String(value);});if(ok)select.value=String(value);return ok;}
   function parseClock(text){
     var value=String(text||'').trim();if(!value)return null;
@@ -389,31 +405,131 @@ export const descriptionBrowserScript: string = String.raw`
     if(name==='tv')return 'TV show: standard detail, keeping the original length, no extra passes.';
     return 'Film: standard detail, pausing the picture when needed. The whole-film first look is offered under Extra passes, and it is off.';
   }
-  function describeVoice(){$('voice-description').textContent=voicesOff?'Narrator voices are unavailable right now. Playback and downloads still work.':(catalog.describe||{})[$('voice').value]||'One of your platform voices.';}
-  function recentVoices(){var list=stored(RECENT_KEY,[]);return Array.isArray(list)&&config?list.filter(function(voice){return config.voices.indexOf(voice)>=0;}):[];}
-  function rememberVoice(voice){store(RECENT_KEY,[voice].concat(recentVoices().filter(function(item){return item!==voice;})).slice(0,5));}
-  function voiceOption(voice){var option=document.createElement('option');option.value=voice;var about=(catalog.describe||{})[voice];option.textContent=about?voice+' — '+about:voice;return option;}
-  function fillKinds(){
-    var kinds=$('voice-kind'),keep=kinds.value||'all';kinds.textContent='';
-    var add=function(value,text){var option=document.createElement('option');option.value=value;option.textContent=text;kinds.appendChild(option);};
-    add('all','All voices');if(recentVoices().length)add('recent','Recently used');
-    (config.categories||[]).forEach(function(group){if(group.voices.some(function(voice){return config.voices.indexOf(voice)>=0;}))add('kind:'+group.name,group.name);});
-    if(!setSelect('voice-kind',keep))kinds.value='all';
+  /* Narrator picker (Sep 25 2026): laid out like the agent builder's voice library. One button opens a
+     listbox with a kind of voice and a search; only the current option is in the Tab order; each voice
+     plays a line of description shortly after it gets focus; Enter picks, Escape closes. */
+  var AUDITION_MS=250,actx=null,asrc=null,aEl=null,atimer=null,aseq=0,acache={},akeys=[],auditionsOff='',focusVoice='',filterTimer=null;
+  var SAMPLES_DOWN='Voice samples are not playing right now. Picking a voice still works.';
+  /* iPhone and iPad (Part 291 review F34): Web Audio there follows the Ring/Silent switch, so with the
+     phone on silent, as many VoiceOver users keep it, samples made no sound while the page's own sample
+     player did. Auditions use one audio element there instead, which plays through the switch. */
+  function appleTouch(){try{var ua=String(navigator&&navigator.userAgent||'');return /iP(hone|ad|od)/.test(ua)||/Macintosh/.test(ua)&&Number(navigator.maxTouchPoints)>1;}catch(e){return false;}}
+  function listed(v){return !!v&&!!config&&(config.voices||[]).indexOf(v)>=0;}
+  function isFish(v){return !!v&&!!config&&(config.fish||[]).indexOf(v)>=0;}
+  function favorite(v){return !!v&&!!config&&(config.favorites||[]).indexOf(v)>=0;}
+  function suggestedVoice(v){return !!v&&!!config&&(config.suggested||[]).indexOf(v)>=0;}
+  function voiceKinds(){
+    var out=[],add=function(value,name,vs,keep){vs=(vs||[]).filter(listed);if(vs.length||keep)out.push({value:value,name:name,voices:vs});};
+    add('suggested','Good for describing',config.suggested);add('mine','My favourites',config.favorites,true);add('recent','Recently used',config.recent);
+    (config.categories||[]).forEach(function(group){add('kind:'+group.name,group.name,group.voices);});
+    out.push({value:'all',name:'All voices',voices:config.voices||[]});return out;
   }
+  function kindFor(v){var kinds=voiceKinds();for(var i=0;i<kinds.length;i++)if(kinds[i].voices.indexOf(v)>=0)return kinds[i].value;return 'all';}
+  function kindName(){var select=$('voice-kind'),option=select.options[select.selectedIndex];return option?option.getAttribute('data-name')||option.textContent:'';}
+  function kindVoices(){var value=$('voice-kind').value,kind=voiceKinds().filter(function(k){return k.value===value;})[0];return kind?kind.voices:[];}
+  function fillKinds(keep){
+    var select=$('voice-kind');select.textContent='';
+    voiceKinds().forEach(function(k){var option=document.createElement('option');option.value=k.value;option.setAttribute('data-name',k.name);option.textContent=k.name+' ('+k.voices.length+')';select.appendChild(option);});
+    if(!setSelect('voice-kind',keep||kindFor($('voice').value)))select.value=kindFor($('voice').value);
+  }
+  function searching(){return $('voice-filter').value.trim().toLowerCase();}
+  function shownVoices(){var q=searching();if(!q)return kindVoices();return (config.voices||[]).filter(function(v){return v.toLowerCase().indexOf(q)>=0||String((config.describe||{})[v]||'').toLowerCase().indexOf(q)>=0;});}
+  function marks(v){var m=[];if(v===config.myDefaultVoice)m.push('your default');else if(!config.myDefaultVoice&&v===config.houseVoice)m.push('used until you choose a default');if(favorite(v))m.push('favourite');return m.length?' ('+m.join(', ')+')':'';}
+  function optionText(v){var about=(config.describe||{})[v];return v+marks(v)+(about?' — '+about:'');}
+  function voiceOptions(){return Array.prototype.slice.call($('voice-list').children);}
   function fillVoices(){
-    var select=$('voice'),kind=$('voice-kind').value||'all',keep=select.value;select.textContent='';
-    if(voicesOff){var none=document.createElement('option');none.value='';none.textContent='Narrator voices are unavailable right now';select.appendChild(none);return;}
-    if(kind==='recent'){recentVoices().forEach(function(voice){select.appendChild(voiceOption(voice));});}
-    else if(kind.indexOf('kind:')===0){var group=(config.categories||[]).filter(function(item){return 'kind:'+item.name===kind;})[0];(group?group.voices:[]).forEach(function(voice){if(config.voices.indexOf(voice)>=0)select.appendChild(voiceOption(voice));});}
-    else{
-      var placed={};
-      (config.categories||[]).forEach(function(group){var og=document.createElement('optgroup');og.label=group.name;group.voices.forEach(function(voice){if(config.voices.indexOf(voice)<0||placed[voice])return;placed[voice]=1;og.appendChild(voiceOption(voice));});if(og.children.length)select.appendChild(og);});
-      var rest=config.voices.filter(function(voice){return !placed[voice];});
-      if(rest.length){var og=document.createElement('optgroup');og.label='Other voices';rest.forEach(function(voice){og.appendChild(voiceOption(voice));});select.appendChild(og);}
-    }
-    if(keep)setSelect('voice',keep);
+    var list=$('voice-list'),current=$('voice').value,vs=shownVoices(),first=vs.indexOf(focusVoice)>=0?focusVoice:vs.indexOf(current)>=0?current:vs[0];list.textContent='';
+    vs.forEach(function(v){
+      var b=document.createElement('button');b.type='button';b.setAttribute('role','option');b.setAttribute('data-voice',v);b.setAttribute('aria-selected',v===current?'true':'false');b.tabIndex=v===first?0:-1;b.textContent=optionText(v);
+      b.addEventListener('focus',function(){onOption(v,b);});b.addEventListener('mouseenter',function(){audition(v);});b.addEventListener('click',function(){chooseVoice(v);});
+      list.appendChild(b);
+    });
+    focusVoice=first||'';
+    var none=$('voice-none');none.hidden=vs.length>0;
+    none.textContent=searching()?'No voice matches that. Try a word about the sound.':$('voice-kind').value==='mine'?'No favourites yet. Move onto a voice and press F, or use its Favourite button, to keep it here.':'No voices here yet.';
+    renderToggles();
   }
-  function setVoice(voice){if(voicesOff||!voice||config.voices.indexOf(voice)<0)return false;if(!setSelect('voice',voice)){$('voice-kind').value='all';fillVoices();setSelect('voice',voice);}describeVoice();return true;}
+  /** Favourite marks and counts change in place, so the option with focus is never rebuilt under her. */
+  function refreshMarks(){voiceOptions().forEach(function(b){var v=b.getAttribute('data-voice'),text=optionText(v);if(b.textContent!==text)b.textContent=text;});if(!$('voice-panel').hidden)fillKinds($('voice-kind').value);renderToggles();}
+  function renderToggles(){
+    var v=focusVoice,fav=$('voice-favorite'),sug=$('voice-suggest');
+    fav.hidden=!v;if(v){fav.setAttribute('aria-pressed',favorite(v)?'true':'false');fav.textContent='Favourite: '+voiceName(v);}
+    sug.hidden=!v||!config.curate;if(v&&config.curate){sug.setAttribute('aria-pressed',suggestedVoice(v)?'true':'false');sug.textContent='Good for describing: '+voiceName(v);}
+  }
+  function onOption(v,b){voiceOptions().forEach(function(x){x.tabIndex=x===b?0:-1;});focusVoice=v;renderToggles();audition(v);}
+  function moveTo(n){var items=voiceOptions();if(!items.length)return;n=Math.max(0,Math.min(items.length-1,n));items.forEach(function(x,k){x.tabIndex=k===n?0:-1;});items[n].focus();}
+  function unlockAudition(){
+    try{
+      var Context=appleTouch()?null:window.AudioContext||window.webkitAudioContext;
+      if(Context){if(!actx)actx=new Context();if(actx.state==='suspended'&&actx.resume){var resumed=actx.resume();if(resumed&&resumed.catch)resumed.catch(function(){});}return;}
+      if(!aEl)aEl=document.createElement('audio');var unlock=aEl.play();if(unlock&&unlock.catch)unlock.catch(function(){});
+    }catch(e){actx=null;}
+  }
+  function stopSource(){if(asrc){try{asrc.onended=null;asrc.stop();}catch(e){}asrc=null;}if(aEl&&!aEl.paused)aEl.pause();}
+  function stopAudition(){clearTimeout(atimer);atimer=null;aseq++;stopSource();}
+  function auditionRate(){var rate=Number($('rate').value)||1.5;return Math.min(3,Math.max(1,rate));}
+  function audition(v){clearTimeout(atimer);atimer=null;var seq=++aseq;stopSource();if(voicesOff||!listed(v)||auditionsOff&&!acache[v+'|'+auditionRate()])return;atimer=setTimeout(function(){atimer=null;playAudition(v,seq);},AUDITION_MS);}
+  async function playAudition(v,seq){
+    var rate=auditionRate(),key=v+'|'+rate,got=acache[key];
+    try{
+      if(!got){
+        var blob=await call('/sample','POST',{voice:v,rate:rate,audition:true},false,'blob');
+        got=actx?await actx.decodeAudioData(await blob.arrayBuffer()):URL.createObjectURL(blob);
+        acache[key]=got;akeys.push(key);if(akeys.length>40){var old=akeys.shift();if(typeof acache[old]==='string')URL.revokeObjectURL(acache[old]);delete acache[old];}
+      }
+      if(seq!==aseq||$('voice-panel').hidden)return;
+      stopSource();$('video').pause();$('audio').pause();$('sample').pause();
+      if(actx){var source=actx.createBufferSource();source.buffer=got;source.connect(actx.destination);asrc=source;source.start();}
+      else if(aEl){aEl.src=got;var started=aEl.play();if(started&&started.catch)started.catch(function(){});}
+    }catch(e){
+      if(e&&(e.auth||e.name==='AbortError'))return;
+      if(e&&e.status===409){if(!auditionsOff)say(e.message,true);auditionsOff=e.message;return;}
+      /* Part 291 review F33: any other failure quiets the list until it is opened again, said once,
+         instead of an error on every voice she moves to. */
+      if(!auditionsOff){auditionsOff=SAMPLES_DOWN;if(!$('voice-panel').hidden)say(SAMPLES_DOWN,true);}
+    }
+  }
+  function renderVoice(){
+    var v=$('voice').value,opener=$('voice-open'),make=$('voice-default');
+    if(voicesOff||!config){opener.textContent='Narrator voices are unavailable right now';$('voice-description').textContent='Narrator voices are unavailable right now. Playback and downloads still work.';$('voice-note').textContent='';make.hidden=true;return;}
+    opener.textContent=v||'Choose a narrator';
+    $('voice-description').textContent=(config.describe||{})[v]||'One of your platform voices.';
+    var notes=[];if(v&&v===config.myDefaultVoice)notes.push('Your new videos start with this voice.');else if(v&&!config.myDefaultVoice&&v===config.houseVoice)notes.push('The describer’s own narrator, used until you choose a default.');
+    if(isFish(v)&&config.fishNote)notes.push(config.fishNote);
+    $('voice-note').textContent=notes.join(' ');
+    var mine=!!v&&v===config.myDefaultVoice;make.hidden=!v;make.textContent=mine?'New videos start with this voice':'Use this voice for new videos';
+    if(mine){make.setAttribute('aria-disabled','true');make.setAttribute('data-reason','New videos already start with '+voiceName(v)+'.');}else{make.removeAttribute('aria-disabled');make.removeAttribute('data-reason');}
+  }
+  var describeVoice=renderVoice;
+  function openVoices(){
+    unlockAudition();auditionsOff='';focusVoice='';$('voice-filter').value='';
+    $('voice-panel').hidden=false;$('voice-open').setAttribute('aria-expanded','true');fillKinds();fillVoices();
+    var target=voiceOptions().filter(function(b){return b.tabIndex===0;})[0];
+    if(target){target.focus();onOption(target.getAttribute('data-voice'),target);}else $('voice-kind').focus();
+  }
+  function closeVoices(refocus){stopAudition();clearTimeout(filterTimer);$('voice-panel').hidden=true;$('voice-open').setAttribute('aria-expanded','false');if(refocus)$('voice-open').focus();}
+  function chooseVoice(v){
+    if(!listed(v))return;$('voice').value=v;closeVoices(true);renderVoice();onSettingsChange('voice');
+    say(voiceName(v)+' chosen.'+(isFish(v)&&config.fishNote?' '+config.fishNote:''),true);
+  }
+  function setVoice(voice){if(voicesOff||!listed(voice))return false;$('voice').value=voice;renderVoice();return true;}
+  function applyPrefs(prefs){if(prefs)['defaultVoice','myDefaultVoice','houseVoice','favorites','recent','suggested','maxFavorites'].forEach(function(key){if(prefs[key]!==undefined)config[key]=prefs[key];});}
+  function noteRecent(v){if(config&&v)config.recent=[v].concat((config.recent||[]).filter(function(item){return item!==v;})).slice(0,8);}
+  function pickerProblem(e){if(e&&(e.auth||e.network))failure(e);else say(e&&e.message||'That did not work. Try again.',true);}
+  async function toggleFavorite(v){
+    if(!v||voicesOff)return;var on=!favorite(v);
+    try{applyPrefs(await call('/prefs/favorites','POST',{voice:v,favorite:on}));refreshMarks();renderVoice();say(voiceName(v)+(on?' added to':' removed from')+' My favourites.',true);}catch(e){pickerProblem(e);}
+  }
+  async function toggleSuggested(v){
+    if(!v||voicesOff||!config.curate)return;var on=!suggestedVoice(v);
+    try{applyPrefs(await call('/prefs/suggested','POST',{voice:v,suggested:on}));refreshMarks();say(voiceName(v)+(on?' added to':' removed from')+' Good for describing.',true);}catch(e){pickerProblem(e);}
+  }
+  /** Once per browser: the voice this browser remembered becomes her default, unless she already has one. */
+  async function migrateDefault(){
+    var old=(stored(SETTINGS_KEY,{})||{}).voice;
+    if(voicesOff||config.myDefaultVoice||!listed(old)||old==='clear woman · flint'||stored(MOVED_KEY,false))return;
+    try{applyPrefs(await call('/prefs/default','POST',{voice:old}));store(MOVED_KEY,true);}catch(e){}
+  }
   function fillForm(saved){
     setVoice(saved.voice);[['rate','rate'],['maxRate','max-rate'],['mode','mode'],['detail','detail'],['volume','volume']].forEach(function(pair){setSelect(pair[1],saved[pair[0]]);});
     $('notes').value=saved.notes||'';$('close-look').checked=!!saved.closeLook;$('first-look').checked=!!saved.firstLook;
@@ -421,7 +537,7 @@ export const descriptionBrowserScript: string = String.raw`
   }
   function freshForm(){
     var cleared=!!$('notes').value.trim()||$('close-look').checked||$('first-look').checked||!!$('part-from').value.trim()||!!$('part-to').value.trim();
-    var saved=defaults();fillForm({voice:saved.voice||(config&&config.defaultVoice),rate:saved.rate,maxRate:saved.maxRate,mode:saved.mode,detail:saved.detail,volume:saved.volume,notes:'',closeLook:false,firstLook:false});
+    var saved=defaults();fillForm({voice:config&&config.defaultVoice,rate:saved.rate,maxRate:saved.maxRate,mode:saved.mode,detail:saved.detail,volume:saved.volume,notes:'',closeLook:false,firstLook:false});
     return cleared;
   }
   function estimateRequests(){
@@ -553,7 +669,7 @@ export const descriptionBrowserScript: string = String.raw`
     $('library-use').disabled=uploading||off||!libraryLink($('library').value);
     $('settings').disabled=!config||busy||state==='deleting';
     ['detail','notes','close-look','first-look','part-from','part-to','preset-commercials','preset-cartoon','preset-tv','preset-film','preset-custom'].forEach(function(id){$(id).disabled=resumeOnly;});
-    $('voice').disabled=voicesOff;$('voice-kind').disabled=voicesOff;$('sample-play').disabled=voicesOff;$('sample-fast').disabled=voicesOff;$('say-play').disabled=voicesOff;
+    $('voice-open').disabled=voicesOff;$('voice-default').disabled=voicesOff;$('sample-play').disabled=voicesOff;$('sample-fast').disabled=voicesOff;$('say-play').disabled=voicesOff;
     $('resume-note').hidden=!resumeOnly;
     if(resumeOnly){var saved=job.settings||{};$('resume-note').textContent='Continuing keeps the detail, notes and extra passes this attempt started with: '+(DETAIL_NAMES[saved.detail]||'Standard detail')+', closer look '+(saved.closeLook?'on':'off')+', first look '+(saved.firstLook?'on':'off')+'. You can change the voice, speeds, pauses and volume under Choose the narration before you continue.';}
     $('start').hidden=!ready;$('preview').hidden=!ready||!canPreview();
@@ -806,11 +922,29 @@ export const descriptionBrowserScript: string = String.raw`
     applyPreset(name);renderPart();controls();
     if(job&&job.seconds)scheduleEstimates(true,presetSummary(name));else say(presetSummary(name),true);
   });});
-  $('voice-kind').addEventListener('change',function(){
-    var before=$('voice').value;fillVoices();var count=$('voice').options.length;
-    if(before!==$('voice').value){describeVoice();remember();controls();}
-    say(plural(count,'voice','voices')+' in '+$('voice-kind').options[$('voice-kind').selectedIndex].textContent+'.',true);
+  $('voice-open').onclick=function(){if($('voice-panel').hidden)openVoices();else closeVoices(false);};
+  $('voice-close').onclick=function(){closeVoices(true);};
+  $('voice-kind').addEventListener('change',function(){$('voice-filter').value='';focusVoice='';fillVoices();say(plural(voiceOptions().length,'voice','voices')+' in '+kindName()+'.',true);});
+  $('voice-filter').addEventListener('input',function(){
+    focusVoice='';fillVoices();clearTimeout(filterTimer);
+    filterTimer=setTimeout(function(){var n=voiceOptions().length;say(searching()?(n?plural(n,'voice matches','voices match')+'.':'No voice matches that. Try a word about the sound.'):plural(n,'voice','voices')+' in '+kindName()+'.',true);},500);
   });
+  $('voice-filter').addEventListener('keydown',function(e){if(e.key!=='Enter'&&e.key!=='ArrowDown')return;e.preventDefault();var target=voiceOptions().filter(function(b){return b.tabIndex===0;})[0]||voiceOptions()[0];if(target)target.focus();});
+  $('voice-list').addEventListener('keydown',function(e){
+    var target=e.target;if(!target||!target.getAttribute||target.getAttribute('role')!=='option'||e.ctrlKey||e.metaKey||e.altKey)return;
+    var items=voiceOptions(),i=items.indexOf(target);
+    if(['ArrowDown','ArrowUp','Home','End'].indexOf(e.key)>=0){e.preventDefault();moveTo(e.key==='Home'?0:e.key==='End'?items.length-1:e.key==='ArrowDown'?i+1:i-1);return;}
+    if(e.key==='f'||e.key==='F'){e.preventDefault();toggleFavorite(target.getAttribute('data-voice'));}
+  });
+  $('voice-panel').addEventListener('keydown',function(e){if(e.key==='Escape'){e.preventDefault();closeVoices(true);}});
+  $('voice-box').addEventListener('focusout',function(e){var box=$('voice-box'),next=e.relatedTarget;if(!next||!box.contains||!box.contains(next))stopAudition();});
+  $('voice-favorite').onclick=function(){toggleFavorite(focusVoice);};
+  $('voice-suggest').onclick=function(){toggleSuggested(focusVoice);};
+  $('voice-default').onclick=async function(){
+    var v=$('voice').value,make=$('voice-default');if(!v||voicesOff)return;
+    if(make.getAttribute('aria-disabled')==='true'){say(make.getAttribute('data-reason'),true);return;}
+    try{applyPrefs(await call('/prefs/default','POST',{voice:v}));renderVoice();refreshMarks();say('New videos will start with '+voiceName(v)+'. You can still change the voice for any one video.',true);}catch(e){pickerProblem(e);}
+  };
   $('progress-pref').addEventListener('change',function(){store(PROGRESS_KEY,$('progress-pref').value);lastQuarter=-1;});
   $('file').addEventListener('change',function(){$('file').removeAttribute('aria-invalid');$('upload-error').hidden=true;controls();});
   $('youtube').addEventListener('input',controls);
@@ -958,7 +1092,7 @@ export const descriptionBrowserScript: string = String.raw`
       if(!e.allowed){say(refusal(e),true);return;}
       var text=(preview?previewName()+' of “':'Create a described copy of “')+job.name+'”'+(s.range?', '+clock(s.range.start)+' to '+clock(s.range.end):'')+': '+describeRun(s)+'. About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes. '+(preview&&e.breakdown&&e.breakdown.dialogue>=0.05?'That includes '+money(e.breakdown.dialogue)+' to learn the dialogue of the whole '+(s.range?'part':'video')+'. ':'')+''+allowance(e)+' Go ahead?';
       if(!confirm(text))return;
-      remember();rememberVoice(s.voice);
+      remember();noteRecent(s.voice);
       var body=Object.assign({},s);if(preview)body.preview=true;
       var updated=await call('/jobs/'+jobId+'/start','POST',body);
       await showIf(jobId,updated,false);
@@ -993,7 +1127,7 @@ export const descriptionBrowserScript: string = String.raw`
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
       var next=(job.version||1)+1;
       if(!confirm('Make version '+next+' of “'+job.name+'”'+(list.length?' with '+plural(list.length,'correction','corrections'):' with '+voiceName(s.voice)+' at '+s.rate+'×')+'? About '+money(e.estimateUSD)+'. '+allowance(e)+(stale?' '+plural(stale,'corrected description still has','corrected descriptions still have')+' the old short version, which is used when the gap is tight.':'')+' Earlier versions stay available.'))return;
-      remember();rememberVoice(s.voice);
+      remember();noteRecent(s.voice);
       var updated=await call('/jobs/'+id+'/revoice','POST',body);
       if(list.length){forget(draftKey(id,expected));if(shownId===id){edits={};script=null;$('edit-fields').hidden=true;$('edit-status').textContent='';renderDraftNote();}}
       await showIf(id,updated,false);
@@ -1008,7 +1142,7 @@ export const descriptionBrowserScript: string = String.raw`
       clearError();var id=job.id,s=settings(),e=await freshEstimate(preview?'preview':'reanalyze',{settings:s});
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
       if(!confirm((preview?'Try the preview of “'+job.name+'” again with ':'Write fresh descriptions for “'+job.name+'” with ')+describeRun(s)+'? This pays for looking at the video again. Narration is included. About '+money(e.estimateUSD)+'. '+allowance(e)+' Earlier versions stay available.'))return;
-      remember();rememberVoice(s.voice);
+      remember();noteRecent(s.voice);
       var body=Object.assign({},s,{expectedVersion:job.version||1});if(preview)body.preview=true;
       var updated=await call('/jobs/'+id+'/reanalyze','POST',body);
       if(shownId===id){script=null;edits={};$('edit-fields').hidden=true;}
@@ -1171,7 +1305,7 @@ export const descriptionBrowserScript: string = String.raw`
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
       var again=!Number(job.done);
       if(!confirm((again?'Try “'+job.name+'” again from the beginning':'Continue “'+job.name+'”')+' with '+voiceName(body.voice)+' at '+body.rate+'×? '+keptText(job)+' About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes, and anything unused comes back. '+allowance(e)))return;
-      remember();rememberVoice(body.voice);
+      remember();noteRecent(body.voice);
       var updated=await call('/jobs/'+id+'/resume','POST',body);
       await showIf(id,updated,false);say(again?'Starting again from the beginning.':'Carrying on from where it stopped.',true);land('job-title',$('resume'));await list();
     });
@@ -1365,7 +1499,7 @@ export const descriptionBrowserScript: string = String.raw`
     if(config.library)call('/library-folders').then(function(data){data.folders.forEach(function(path){var option=document.createElement('option');option.value=path;$('folders').appendChild(option);});}).catch(function(){});
     setSelect('progress-pref',stored(PROGRESS_KEY,'quarter'));
     if(setSelect('play-as',stored(PLAY_AS_KEY,'video')))setPlayAs($('play-as').value,true);
-    fillKinds();fillVoices();freshForm();describeVoice();$('refresh').disabled=false;
+    await migrateDefault();freshForm();renderVoice();$('refresh').disabled=false;
     if(voicesOff)say('Narrator voices are unavailable right now. You can still play and download finished copies.',true);
     var jobs=await list(),params=new URLSearchParams(location.search),selected=params.get('id');
     var current=jobs.filter(function(item){return item.id===selected;})[0]||jobs.filter(function(item){return working(item);})[0];

@@ -783,6 +783,72 @@ const keepable = (job: Job): boolean =>
 const sampleText =
   'A woman in a yellow raincoat hurries across the wet street, glances back once, and ducks into a small bookshop.';
 
+/* ---------- narrators: her default, favourites, recent, and the house list (Sep 25 2026) ---------- */
+const names = (value: string) =>
+  value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+/** Who reads when she has not chosen: Kade's Inworld professional clone (Voice 541), then flint. */
+const houseNarrators = () =>
+  names(process.env.KADE_DESCRIPTION_HOUSE_VOICE || 'Voice 541,Voice 650');
+/** The starting "Good for describing" list by stable catalog number, Inworld only; pruned by ear. */
+const suggestedSeed = () =>
+  names(
+    process.env.KADE_DESCRIPTION_SUGGESTED_VOICES ||
+      'Voice 541,Voice 650,Voice 645,Voice 478,Voice 82,Voice 222,Voice 280,Voice 234',
+  );
+const maxFavorites = 12;
+/** New voices the picker may play for one person in an hour while she browses (cached ones are free). */
+const auditionsPerHour = () =>
+  Math.max(1, Number(process.env.KADE_DESCRIPTION_AUDITIONS_PER_HOUR) || 150);
+const maxRecent = 8;
+/** The prefs row that holds the platform's own lists rather than one person's. */
+const houseKey = '__describing__';
+const fishNote =
+  'This voice sounds less natural when it is sped up, and narration usually is. For speeds above 1×, a voice under Good for describing will sound smoother.';
+type Catalog = { voices: string[]; renames?: Record<string, string>; fish?: string[] };
+/** The current label for a stored name: an exact label, or an old spelling ("Voice 541") renamed since. */
+function listed(catalog: Catalog, name?: string | null): string | undefined {
+  if (!name) return undefined;
+  if (catalog.voices.includes(name)) return name;
+  const renamed = catalog.renames?.[name];
+  return renamed && catalog.voices.includes(renamed) ? renamed : undefined;
+}
+const listedAll = (catalog: Catalog, list: string[]): string[] => [
+  ...new Set(list.map((name) => listed(catalog, name)).filter((v): v is string => !!v)),
+];
+/** What to store for a label: its catalog number when it has one, so a later relabel cannot lose it. */
+function stable(catalog: Catalog, label: string): string {
+  const number = Object.entries(catalog.renames ?? {}).find(
+    ([from, to]) => to === label && /^Voice \d+$/.test(from),
+  );
+  return number ? number[0] : label;
+}
+/** Every stored spelling that means this voice, so removing one removes them all. */
+function spellings(catalog: Catalog, label: string): string[] {
+  const old = Object.entries(catalog.renames ?? {})
+    .filter(([, to]) => to === label)
+    .map(([from]) => from);
+  return [...new Set([label, ...old])];
+}
+function houseVoice(catalog: Catalog): string | undefined {
+  for (const name of houseNarrators()) {
+    const label = listed(catalog, name);
+    if (label) return label;
+  }
+  return catalog.voices.find((voice) => /^clear woman . flint$/.test(voice)) || catalog.voices[0];
+}
+type NarrationPrefs = {
+  _id: string;
+  voice?: string;
+  favorites?: string[];
+  recent?: string[];
+  suggested?: string[];
+  /** On the house row: the admin has changed the list, so the seed no longer applies. */
+  curated?: boolean;
+};
+
 export function createDescriptionRouter(hooks: Hooks): {
   router: Router;
   close: () => Promise<void>;
@@ -803,6 +869,23 @@ export function createDescriptionRouter(hooks: Hooks): {
       'KadeDescriptionBudget',
       new mongoose.Schema<Budget>({ _id: String, held: Number, runs: [String] }),
     );
+  /** One row per person (her narrator choices) plus `houseKey` for the curated list. */
+  const Prefs =
+    (mongoose.models.KadeDescriptionPrefs as mongoose.Model<NarrationPrefs>) ||
+    mongoose.model<NarrationPrefs>(
+      'KadeDescriptionPrefs',
+      new mongoose.Schema<NarrationPrefs>(
+        {
+          _id: String,
+          voice: String,
+          favorites: [String],
+          recent: [String],
+          suggested: [String],
+          curated: Boolean,
+        },
+        { timestamps: { createdAt: false, updatedAt: true } },
+      ),
+    );
   const router = Router();
   const worker = randomUUID();
   const heartbeatMs = hooks.timing?.heartbeatMs ?? 10 * second;
@@ -820,6 +903,8 @@ export function createDescriptionRouter(hooks: Hooks): {
   const wedges = new Map<string, Promise<void>>();
   const samples = new Map<string, Buffer>();
   const sampleUse = new Map<string, number[]>();
+  /** Listen-as-you-move in the voice picker: many short plays while browsing, counted apart. */
+  const auditionUse = new Map<string, number[]>();
   const initialize = () =>
     (initialized ||= (async () => {
       await Jobs.collection.dropIndex('owner_1_active_1').catch(() => {});
@@ -1512,6 +1597,71 @@ export function createDescriptionRouter(hooks: Hooks): {
     if (!catalog.voices.includes(voice))
       throw new Problem('Choose one of the listed voices.', 400, 'voice');
   }
+  /** A listed voice's current label, accepting an old spelling; refuses anything else. */
+  async function narrator(voice: string): Promise<{ catalog: Catalog; label: string }> {
+    const catalog = await voiceCatalog();
+    if (!catalog.available)
+      throw new Problem(
+        'The list of voices could not be loaded right now. Try again in a minute.',
+        503,
+      );
+    const label = listed(catalog, voice);
+    if (!label) throw new Problem('Choose one of the listed voices.', 400, 'voice');
+    return { catalog, label };
+  }
+  /** Her narrator choices; a database hiccup falls back to the house voice rather than failing. */
+  const prefsOf = async (owner: string): Promise<NarrationPrefs> =>
+    (await Prefs.findById(owner)
+      .lean()
+      .catch((error: Error) => {
+        warn(line('dv.prefs', { error: scrub(error.message) }));
+        return null;
+      })) ?? { _id: owner };
+  async function suggestedList(catalog: Catalog): Promise<string[]> {
+    const house = await prefsOf(houseKey);
+    return listedAll(catalog, house.curated ? (house.suggested ?? []) : suggestedSeed()).filter(
+      (voice) => !catalog.fish?.includes(voice),
+    );
+  }
+  async function prefsView(owner: string, catalog: Catalog) {
+    const prefs = await prefsOf(owner);
+    const house = houseVoice(catalog) ?? null;
+    const mine = listed(catalog, prefs.voice) ?? null;
+    return {
+      defaultVoice: mine ?? house,
+      myDefaultVoice: mine,
+      houseVoice: house,
+      favorites: listedAll(catalog, prefs.favorites ?? []),
+      recent: listedAll(catalog, prefs.recent ?? []).slice(0, maxRecent),
+      maxFavorites,
+    };
+  }
+  /** A run that started: its voice moves to the front of her Recently used list. */
+  async function noteUse(owner: string, voice: string): Promise<void> {
+    const catalog = await voiceCatalog();
+    const label = listed(catalog, voice);
+    if (!label) return;
+    await Prefs.updateOne(
+      { _id: owner },
+      { $pull: { recent: { $in: spellings(catalog, label) } } },
+      { upsert: true },
+    );
+    await Prefs.updateOne(
+      { _id: owner },
+      { $push: { recent: { $each: [stable(catalog, label)], $position: 0, $slice: maxRecent } } },
+    );
+  }
+  /** A new video's run that names no voice starts with her default (or the house voice). */
+  async function withStartingVoice(req: Request, body: unknown): Promise<unknown> {
+    const input = (body ?? {}) as { voice?: unknown };
+    const catalog = await voiceCatalog();
+    if (typeof input.voice === 'string' && input.voice) {
+      const label = listed(catalog, input.voice);
+      return label && label !== input.voice ? { ...(body as object), voice: label } : body;
+    }
+    const view = await prefsView(hooks.actor(req).id, catalog);
+    return view.defaultVoice ? { ...((body as object) ?? {}), voice: view.defaultVoice } : body;
+  }
   const whenConfigured = () => {
     if (!configured()) throw new Problem('Video description is not available right now.', 503);
   };
@@ -2100,7 +2250,11 @@ export function createDescriptionRouter(hooks: Hooks): {
     if (!queued) {
       await release(reservation, 0);
       await restore(claimed.reservingFrom || job.state);
-    } else
+    } else {
+      if (!rehearsal)
+        await noteUse(job.owner, settings.voice).catch((error: Error) =>
+          warn(line('dv.prefs', { error: scrub(error.message) })),
+        );
       hooks.log(
         line('dv.queue', {
           id: job._id,
@@ -2112,6 +2266,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           approvedUSD,
         }),
       );
+    }
     void tick();
     return queued || owned(req);
   }
@@ -2155,13 +2310,105 @@ export function createDescriptionRouter(hooks: Hooks): {
       previewSeconds: previewSeconds(),
       library: !!hooks.library,
       defaultLibraryPath,
-      defaultVoice:
-        catalog.voices.find((voice) => /^clear woman . flint$/.test(voice)) || catalog.voices[0],
+      ...(await prefsView(hooks.actor(req).id, catalog)),
+      suggested: await suggestedList(catalog),
+      fish: catalog.fish ?? [],
+      fishNote,
+      ...(hooks.actor(req).role === 'ADMIN' ? { curate: true } : {}),
       voicesAvailable: catalog.available,
       voices: catalog.voices,
       describe: catalog.describe,
       categories: catalog.categories,
     });
+  });
+  /* ---------- narrator choices: her default, favourites and the house list ---------- */
+  route('get', '/prefs', async (req, res) => {
+    const catalog = await voiceCatalog();
+    res.json({
+      ...(await prefsView(hooks.actor(req).id, catalog)),
+      suggested: await suggestedList(catalog),
+    });
+  });
+  /** The voice her new videos start with; `null` goes back to the house voice. */
+  route('post', '/prefs/default', async (req, res) => {
+    const owner = hooks.actor(req).id;
+    const input = z
+      .object({ voice: z.string().min(1).max(120).nullable() })
+      .parse(req.body ?? {});
+    if (input.voice) {
+      const { catalog, label } = await narrator(input.voice);
+      await Prefs.updateOne(
+        { _id: owner },
+        { $set: { voice: stable(catalog, label) } },
+        { upsert: true },
+      );
+    } else await Prefs.updateOne({ _id: owner }, { $unset: { voice: 1 } });
+    res.json(await prefsView(owner, await voiceCatalog()));
+  });
+  route('post', '/prefs/favorites', async (req, res) => {
+    const owner = hooks.actor(req).id;
+    const input = z
+      .object({ voice: z.string().min(1).max(120), favorite: z.boolean() })
+      .parse(req.body ?? {});
+    const catalog = await voiceCatalog();
+    if (input.favorite) {
+      const { label } = await narrator(input.voice);
+      const same = spellings(catalog, label);
+      const kept = listedAll(catalog, (await prefsOf(owner)).favorites ?? []);
+      if (!kept.includes(label) && kept.length >= maxFavorites)
+        throw new Problem(
+          `You can keep up to ${maxFavorites} favourite narrators. Remove one first.`,
+          409,
+          'voice',
+        );
+      await Prefs.updateOne(
+        { _id: owner },
+        { $pull: { favorites: { $in: same } } },
+        { upsert: true },
+      );
+      await Prefs.updateOne(
+        { _id: owner },
+        { $push: { favorites: stable(catalog, label) } },
+      );
+    } else {
+      const label = listed(catalog, input.voice) ?? input.voice;
+      await Prefs.updateOne(
+        { _id: owner },
+        { $pull: { favorites: { $in: [...spellings(catalog, label), input.voice] } } },
+      );
+    }
+    res.json(await prefsView(owner, catalog));
+  });
+  /** Kade curates Good for describing by ear; the first change starts from the seed list. */
+  route('post', '/prefs/suggested', async (req, res) => {
+    if (hooks.actor(req).role !== 'ADMIN')
+      throw new Problem('Only the administrator can change this list.', 403);
+    const input = z
+      .object({ voice: z.string().min(1).max(120), suggested: z.boolean() })
+      .parse(req.body ?? {});
+    const catalog = await voiceCatalog();
+    const label = input.suggested
+      ? (await narrator(input.voice)).label
+      : (listed(catalog, input.voice) ?? input.voice);
+    if (input.suggested && catalog.fish?.includes(label))
+      throw new Problem(
+        'Fish voices sound less natural sped up, so Good for describing keeps to Inworld voices.',
+        400,
+        'voice',
+      );
+    const house = await prefsOf(houseKey);
+    const start = house.curated
+      ? (house.suggested ?? [])
+      : listedAll(catalog, suggestedSeed()).map((voice) => stable(catalog, voice));
+    const same = new Set([...spellings(catalog, label), input.voice]);
+    const next = start.filter((name) => !same.has(name) && listed(catalog, name) !== label);
+    if (input.suggested) next.push(stable(catalog, label));
+    await Prefs.updateOne(
+      { _id: houseKey },
+      { $set: { suggested: next, curated: true } },
+      { upsert: true },
+    );
+    res.json({ suggested: await suggestedList(catalog) });
   });
   route('get', '/library-folders', async (req, res) => {
     const folders = (await hooks.library?.folders?.(req)) ?? [];
@@ -2482,7 +2729,12 @@ export function createDescriptionRouter(hooks: Hooks): {
       return;
     }
     const preview = z.object({ preview: z.boolean().optional() }).parse(req.body ?? {}).preview;
-    const launch = await launchFor(job, preview ? 'preview' : 'start', req.body, true);
+    const launch = await launchFor(
+      job,
+      preview ? 'preview' : 'start',
+      await withStartingVoice(req, req.body),
+      true,
+    );
     await requireVoice(launch.settings.voice);
     res.status(202).json(await single(await enqueue(req, job, launch)));
   });
@@ -2976,18 +3228,26 @@ export function createDescriptionRouter(hooks: Hooks): {
         voice: z.string().min(1).max(120),
         rate: z.number().min(1).max(3),
         text: z.string().max(400).optional(),
+        /** The picker's listen-as-you-move: the usual line only, with its own hourly allowance. */
+        audition: z.boolean().optional(),
       })
       .parse(req.body);
     await requireVoice(input.voice);
+    const audition = !!input.audition && input.text === undefined;
     const text = input.text === undefined ? sampleText : clip(cleanSpoken(input.text), 200);
     if (!text) throw new Problem('Type a word or name to try.', 400, 'text');
     const rate = Math.round(input.rate * 20) / 20;
     const cacheKey = `${input.voice}|${rate}|${text}`;
     let audio = samples.get(cacheKey);
     if (!audio) {
-      const recent = (sampleUse.get(owner) || []).filter((at) => Date.now() - at < hour);
-      if (recent.length >= 40)
-        throw new Problem('That is a lot of samples for one hour. Try again a little later.');
+      const uses = audition ? auditionUse : sampleUse;
+      const recent = (uses.get(owner) || []).filter((at) => Date.now() - at < hour);
+      if (recent.length >= (audition ? auditionsPerHour() : 40))
+        throw new Problem(
+          audition
+            ? 'Voices have played a lot of samples this hour, so the list is quiet for now. Picking a voice still works, and samples come back within the hour.'
+            : 'That is a lot of samples for one hour. Try again a little later.',
+        );
       const reservation: Run = {
         runId: randomUUID(),
         day: today(),
@@ -3000,7 +3260,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         throw new Problem(
           `Today's processing allowance is used up, so voice samples are paused until it starts fresh at ${resetText()}.`,
         );
-      sampleUse.set(owner, [...recent, Date.now()]);
+      uses.set(owner, [...recent, Date.now()]);
       let spent = 0;
       const directory = await mkdtemp(join(tmpdir(), 'kade-voice-sample-'));
       try {
