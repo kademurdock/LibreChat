@@ -10,10 +10,15 @@
  * and for the Wall of Fame.
  *
  *   songAudience(user, { band })  -> 'explicit' | 'clean' | null
- *     null      KADE_SONG_EXPLICIT=0: the kill switch, the desk exactly as before (no note at all)
- *     'clean'   the App Review seat, the child account, the Kids choir style, an untyped account,
- *               and ANY failure to find out (fails closed, like kadeReadingRoom.js isChild)
+ *     'clean'    the App Review seat, the child account, the Kids choir style, an untyped account,
+ *                and ANY failure to find out (fails closed, like kadeReadingRoom.js isChild)
  *     'explicit' an account typed adult, or the admin (isKadeAdult, below)
+ *     null       a grown-up while the kill switch KADE_SONG_EXPLICIT=0 is on: the explicit
+ *                permission is withdrawn and no note is sent. The switch never touches 'clean',
+ *                so pulling it can only make a song cleaner, never less protected.
+ *
+ * The wall asks the same question (wallViewerRestricted), so the desk and the wall never
+ * disagree about an account.
  *
  * No '~' requires at the top, so node --test loads this file.
  */
@@ -43,63 +48,139 @@ async function withAccountType(user, loadUser) {
   return { ...user, kadeAccountType: stored && stored.kadeAccountType, role: (stored && stored.role) || user.role };
 }
 
-async function songAudience(user, { band, env = process.env, loadUser = loadStoredAccount, reviewSeat = isReviewSeat } = {}) {
-  if (env.KADE_SONG_EXPLICIT === '0') return null;
+/** The one rule, before any kill switch: 'explicit' only for a grown-up, 'clean' for everyone
+ *  else and for every failure. */
+async function decideAudience(user, { band, env, loadUser, reviewSeat }) {
   try {
     if (!user) return 'clean';
     if (reviewSeat(user, env)) return 'clean';
     if (isKidsBand(band)) return 'clean';
     const account = await withAccountType(user, loadUser);
-    if (account.kadeAccountType === 'child') return 'clean';
+    if (!account || account.kadeAccountType === 'child') return 'clean';
     return isKadeAdult(account) ? 'explicit' : 'clean';
   } catch (_) {
     return 'clean';
   }
 }
 
+async function songAudience(user, { band, env = process.env, loadUser = loadStoredAccount, reviewSeat = isReviewSeat } = {}) {
+  const audience = await decideAudience(user, { band, env, loadUser, reviewSeat });
+  return audience === 'explicit' && env && env.KADE_SONG_EXPLICIT === '0' ? null : audience;
+}
+
 /* ---------------------------------------------------------------------------------------------
  * The Wall of Fame (GET /api/kade/wall) returns every shared asset to every account. A grown-up's
  * explicit song shared there must not reach the child account or Apple's reviewer. A read-time
- * word check on what the wall shows and plays (title, description, prompt, the saved lyrics),
- * for those two viewers only; everyone else sees the wall exactly as before.
+ * word check on what the wall shows and plays (title, description, prompt, every text the asset
+ * keeps), for every viewer who is not a grown-up; grown-ups see the wall exactly as before.
  * ------------------------------------------------------------------------------------------- */
+
+/** Whole words: each starts after a non-letter and ends before one. */
 const EXPLICIT_WORDS = [
-  'fuck\\w*', 'motherfuck\\w*', 'f[*#@]+c?k\\w*',
-  'shit\\w*', 'bullshit\\w*', 'sh[*#@]+t\\w*',
-  'bitch\\w*', 'b[*#@]+tch\\w*',
-  'ass', 'asses', 'asshole\\w*', 'dumbass\\w*', 'jackass\\w*', 'badass\\w*', 'smartass\\w*',
+  'ass', 'asses', 'assed', 'ass(?:hat|wipe|face|clown|kisser|hole)s?',
+  '(?:bad|big|dumb|fat|half|hard|jack|kick|lard|lazy|smart|wise)ass(?:es|ed)?',
   'damn\\w*', 'goddamn\\w*', 'dammit',
-  'cunt\\w*', 'cocks?', 'cocksucker\\w*', 'dicks?', 'dickhead\\w*', 'puss(?:y|ies)',
-  'whores?', 'sluts?', 'slutty', 'bastards?', 'piss(?:ed|ing|es)?',
-  'tits', 'titties', 'boobs', 'horny', 'sex', 'sexy', 'sexual\\w*',
+  'cocks?', 'cocksucker\\w*', 'dick(?:head|wad)s?', 'puss(?:y|ies)(?!\\s*(?:cats?|willows?)\\b)',
+  'bastards?', 'piss(?:ed|ing|es)?',
+  'tits', 'titt(?:y|ies)', 'boobs', 'horny(?!\\s+toads?\\b)', 'sex(?!\\s+pistols\\b)', 'sexy', 'sexual\\w*',
   'blowjobs?', 'handjobs?', 'porn\\w*', 'dildos?', 'jizz',
+  /* Slurs stay whole words: "snigger" and "niggardly" contain one. */
   'nigg(?:a|er)s?', 'fag(?:got)?s?', 'retard(?:ed|s)?',
+  'fck\\w*', 'fkn', 'f[*#@]+c?k\\w*', 'sh[*#@!]+t\\w*', 'b[*#@!]+tch\\w*',
 ];
 const EXPLICIT_RE = new RegExp(`(?:^|[^a-z0-9])(?:${EXPLICIT_WORDS.join('|')})(?![a-z0-9])`, 'i');
 
-function hasExplicitWords(text) {
-  return EXPLICIT_RE.test(String(text || ''));
-}
+/** Hard roots, anywhere inside a word: clusterfuck, dipshit, batshit, sonofabitch, whorehouse.
+ *  The lookarounds spare the real words that contain one (shitake, Shittim wood, Scunthorpe). */
+const EXPLICIT_ROOTS = ['fuck', 'shit(?!ake|tim|tah)', '(?<!s)cunt', 'bitch', 'whore', 'slut'];
+const ROOTS_RE = new RegExp(`(?:${EXPLICIT_ROOTS.join('|')})`, 'i');
 
-/** Everything of an asset that the wall shows or a player reads out. */
-function wallAssetText(doc) {
-  const m = (doc && doc.metadata) || {};
-  return [doc && doc.description, doc && doc.prompt, m.title, m.lyrics, m.lyricsClean, m.spoken]
-    .filter((v) => typeof v === 'string' && v)
-    .join('\n');
-}
+/** "dick" only in lower case or all capitals, so Moby Dick, Dick Clark and Dickens stay. */
+const DICK_RE = /(?:^|[^A-Za-z0-9])(?:dick(?:s|less)?|DICK(?:S|LESS)?)(?![A-Za-z0-9])/;
 
-/** True for the viewers the wall filters: the App Review seat and the child account. A failed
- *  account read counts as the child (the quieter wall), like kadeReadingRoom.js isChild. */
-async function wallViewerRestricted(user, { env = process.env, loadUser = loadStoredAccount, reviewSeat = isReviewSeat } = {}) {
-  try {
-    if (!user) return true;
-    if (reviewSeat(user, env)) return true;
-    const account = await withAccountType(user, loadUser);
-    return account.kadeAccountType === 'child';
-  } catch (_) {
-    return true;
+/** Starred and symbol spellings (f***, s**t, a**hole, b***h, sh!t, a$$, motherf***er). A word with
+ *  a * @ ! or $ in it is read as a pattern, each run of symbols standing for missing letters, and
+ *  it counts when a word on this list fits the pattern. So a masked swear is caught however it is
+ *  starred, while F# minor, Ke$ha, P!nk, A$AP, *NSYNC and "Wow!!" are left alone ('#' only counts
+ *  inside the spelled-out patterns above, because keys are written F# and C#). */
+const MASKABLE = [
+  'fuck', 'fucks', 'fucked', 'fucker', 'fuckers', 'fucking', 'fuckin', 'motherfucker', 'motherfuckers', 'motherfucking',
+  'shit', 'shits', 'shitty', 'shitting', 'shithead', 'bullshit', 'bitch', 'bitches', 'bitching', 'bitchy',
+  'ass', 'asses', 'asshole', 'assholes', 'damn', 'damned', 'dammit', 'goddamn', 'goddamned',
+  'cunt', 'cunts', 'cock', 'cocks', 'dick', 'dicks', 'dickhead', 'pussy', 'whore', 'whores', 'slut', 'sluts',
+  'bastard', 'bastards', 'piss', 'pissed',
+];
+function hasMaskedWord(text) {
+  for (const raw of text.toLowerCase().match(/[a-z*@!$#]+/g) || []) {
+    const token = raw.replace(/!+$/, '');
+    if (!/[*@!$]/.test(token) || !/[a-z]/.test(token)) continue;
+    const parts = token.match(/[a-z]+|[^a-z]+/g);
+    const source = parts
+      .map((part, i) => (/[a-z]/.test(part) ? part : i > 0 && i < parts.length - 1 ? `[a-z]{1,${part.length + 1}}` : `[a-z]{${part.length}}`))
+      .join('');
+    const pattern = new RegExp(`^${source}$`);
+    if (MASKABLE.some((word) => pattern.test(word))) return true;
   }
+  return false;
+}
+
+function hasExplicitWords(text) {
+  const s = String(text || '');
+  return EXPLICIT_RE.test(s) || ROOTS_RE.test(s) || DICK_RE.test(s) || hasMaskedWord(s);
+}
+
+/** The sung lines of a desk draft that carry an explicit word: below the "Lyrics:" heading, not
+ *  section tags, not the READBACK line, each distinct line once. A clean song is held to clean
+ *  with these (kadeSoundBooth.js scriptHandler), in the shape the audit takes flagged lines. */
+function explicitSungLines(script) {
+  const text = String(script || '');
+  const at = text.search(/^\s*lyrics\s*:/im);
+  if (at === -1) return [];
+  const found = [];
+  const seen = new Set();
+  for (const raw of text.slice(at).split('\n').slice(1)) {
+    const line = raw.trim();
+    if (/^READBACK:/i.test(line)) break;
+    if (!line || /^\[[^\]]*\]$/.test(line) || seen.has(line)) continue;
+    seen.add(line);
+    if (hasExplicitWords(line)) found.push({ line, tell: 'a swear word or a sexual word, and this song has to be clean' });
+  }
+  return found;
+}
+
+/** Everything of an asset that the wall shows, a player reads out or an engine sang: the title,
+ *  description and prompt, and every text its metadata keeps. The Lyria wire prompt carries words
+ *  typed into "Your own lyrics" even when "Keep the words it wrote" is off, and a text field added
+ *  later is read without anyone remembering to list it. Links, storage keys and ids are skipped:
+ *  the random letters in them are not words anyone hears. */
+const SKIPPED_KEY = /^(?:url|key|id|_id)$|(?:Url|URL|Key|Id|ID)$/;
+function collectText(value, key, out, depth) {
+  if (value == null || depth > 4) return;
+  if (typeof value === 'string') {
+    if (value && !SKIPPED_KEY.test(key) && !/^(?:https?:)?\/\//i.test(value.trim())) out.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectText(item, key, out, depth + 1);
+    return;
+  }
+  if (typeof value === 'object' && [Object.prototype, null].includes(Object.getPrototypeOf(value)))
+    for (const [k, v] of Object.entries(value)) collectText(v, k, out, depth + 1);
+}
+function wallAssetText(doc) {
+  const out = [];
+  if (doc) {
+    for (const key of ['title', 'description', 'prompt']) collectText(doc[key], key, out, 0);
+    collectText(doc.metadata, 'metadata', out, 0);
+  }
+  return out.join('\n');
+}
+
+/** True for every viewer the wall filters: anyone who would not get 'explicit' at the desk (the
+ *  App Review seat, the child account, an untyped account, a failed read). The kill switch plays
+ *  no part: it only withdraws the desk's permission. */
+async function wallViewerRestricted(user, { env = process.env, loadUser = loadStoredAccount, reviewSeat = isReviewSeat } = {}) {
+  return (await decideAudience(user, { env, loadUser, reviewSeat })) !== 'explicit';
 }
 
 /** The wall for this viewer. Restricted viewers lose every asset whose text carries an explicit
@@ -121,6 +202,7 @@ module.exports = {
   isKidsBand,
   EXPLICIT_WORDS,
   hasExplicitWords,
+  explicitSungLines,
   wallAssetText,
   wallViewerRestricted,
   filterWallAssets,

@@ -80,7 +80,7 @@ export const musicWritingCraft: string = `DESK NOTES FROM THE OWNER (these outra
 - The music direction chooses the lead voice, its range and its delivery for this song and this genre. There is no house voice at this desk.
 - SING-ALONG FIRST. Her verdict on this desk's drafts (Sep 20 2026): "it's still not sounding like a song I would sing along to at all. It still feels like literary work." She is right, and where the system above disagrees with the rules below, these win:
   1. RHYME YOU CAN HEAR. Every verse is built in couplets (AABB) or alternating lines (ABAB, or XAXA at the very least), and the rhyming word is the LAST word of the line. Perfect rhymes and strong slant rhymes both count; a vowel that merely looks similar does not. A listener must be able to guess the last word of a line before it lands. The chorus rhymes too, and the title line has a rhyme partner. The system's advice to leave lines unrhymed and avoid tidy couplets is for a writer who over-rhymes. This desk under-rhymes. At most ONE deliberately unrhymed line in the whole song. Slant rhyme counts as rhyme. Never twist word order or grammar to land a rhyme; if a line has to bend to reach its rhyme, rewrite the line. Skip the nursery-rhyme pairs everyone has heard a thousand times.
-  2. ONE METER PER SECTION. Choose a syllable count for the verse lines and hold it within one syllable, line after line, and match it again in verse two and verse three so the same tune fits all three. Long line, short line, long line, short line is fine if it repeats exactly. A verse whose lines run 5, 12, 7 and 10 syllables cannot be sung. Do not count syllables one by one while you think; that burns the whole budget and the song comes back cut off. Pick a beat (four stresses a line is the workhorse), say each line to it once, and move on. The desk counts afterwards and will tell you which verses wander.
+  2. ONE METER PER SECTION. Choose a syllable count for the verse lines and hold it within one syllable, line after line, and match verse one's count in every verse after it so the same tune fits them all. Long line, short line, long line, short line is fine if it repeats exactly. A verse whose lines run 5, 12, 7 and 10 syllables cannot be sung. Do not count syllables one by one while you think; that burns the whole budget and the song comes back cut off. Pick a beat (four stresses a line is the workhorse), say each line to it once, and move on. The desk counts afterwards and will tell you which verses wander.
   3. THE CHORUS STATES THE HOOK. The verses can show; the chorus TELLS. It is the singer saying the feeling straight out in words a ten year old knows, short lines, the title first or last, built to be shouted by a car full of people. Four to six lines plus repeats. No chorus made of description.
   4. SONG, NOT SHORT STORY. No more than two observed details per verse, and each one something only this song could contain. Skip the props recent drafts keep reaching for, unless her brief names them: rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV. The rest is the singer talking, to someone, in plain sentences. Cut every line that only notices something unless the next line cashes it in. No understatement contests, no trailing off, no "and that's that". The opposite failure is just as dead: lines so general they could sit in a thousand songs. Plain words, exact facts. Verses this desk sizes itself run eight lines or more.
   5. LET IT BE FUN. Jokes, stories where something happens, animals, kids, bragging, nonsense syllables, call and response, a bit the crowd does. A children's song or a comedy song gets the same craft and none of the melancholy.
@@ -143,11 +143,25 @@ const LYRIC_TELLS: [string, RegExp][] = [
    * self-discovery sense (at the end of a line), "I survived" and "I'm enough"
    * only as a declaration, "hollow" not as a place (the hollow), "unfold" not
    * when something is unfolded (the map), "heartbeat" not "in a heartbeat",
-   * and "electric" never before an instrument or an everyday thing. */
+   * and "electric" never before an instrument or an everyday thing.
+   * Part 293 review: narrowed again where her own register was still hit.
+   * "I learned to" only with an abstract complement (let go, breathe, be
+   * strong) or dangling at the end of a line, never "I learned to drive in
+   * Daddy's Ford". "I'm enough" only as a declaration (end of the line, "for
+   * me", "as I am"), never "I'm enough trouble". "find myself" in the present
+   * only as a quest ("to find myself", "find myself again"), so an enjambed
+   * "Some nights I find myself" stays. "the electric" and "electric's" are the
+   * power bill, "electric blue" a colour, and pumps and lights are things.
+   * "frequency" after radio, police or scanner is a dial. "hollow" stays a
+   * place after the, that or this; after "a" when only a preposition, a
+   * comma or the end of the line follows ("a hollow by the creek", but "a
+   * hollow heart" is flagged); and after a capitalised word (Possum Hollow),
+   * which needs its own pattern without the i flag. */
   ['a greeting-card phrase', /\b(?:break(?:ing|in['’]?|s)? (?:these|the|my|those) chains|war (?:inside|in) my head|battle scars?|beautiful mess|perfectly imperfect|shattered pieces|my truth|found my voice|ch(?:ose|oose|oosing) myself|finally free)\b/i],
-  ['a lesson-learned line', /\bi(?:['’]ve)? learn(?:ed|t) (?:how )?to\b|\bnow i know\b|\bi survived(?=\s*(?:[.,!?;:()—–-]|$|it all\b|the (?:storm|fire|worst)\b))|\bi(?:['’]m| am)(?: more than)? enough\b(?!\s+(?:of|to)\b)|\bf(?:ou|i)nd(?:ing)? myself(?: again)?(?=[\s.,!?;:—–-]*(?:\([^)]*\)[\s.,!?;:—–-]*)?$)/i],
+  ['a lesson-learned line', /\bi(?:['’]ve)? learn(?:ed|t) (?:how )?to (?:let (?:it |you |them |him |her |that |this )?go|love (?:myself|me|again)|breathe|fly(?=\s*(?:[.,!?;:()—–-]|$))|stand(?: tall| on my own)?|be (?:strong|free|me|myself|okay|ok|alone|brave|enough|happy)|live (?:again|without)|walk away|move on|forgive|heal|trust (?:myself|again)|smile again|shine|rise|survive|say no)\b|\bi(?:['’]ve)? learn(?:ed|t) (?:how )?to(?=[\s.,!?;:—–-]*$)|\bnow i know\b|\bi survived(?=\s*(?:[.,!?;:()—–-]|$|it all\b|the (?:storm|fire|worst)\b))|\bi(?:['’]m| am)(?: more than| still| finally| always| already)? enough(?=\s*(?:[.,!?;:()—–-]|$)|\s+for (?:me|myself|you|anyone|them|him|her|us)\b|\s+(?:just )?as i am\b)|(?:\bfound myself|\bfinding myself|(?<=(?:\bto|\bgonna|\bgotta|['’]ll|\bwill|\bcan|\bmust|\bmight)\s)find myself|\bfind myself(?= again\b))(?: again)?(?=[\s.,!?;:—–-]*(?:\([^)]*\)[\s.,!?;:—–-]*)?$)/i],
   ["the desk's own filler", /\b(?:(?:say|said|saying) it plain|on cue|the wild part|sitt?ing pretty|sittin['’]? pretty)\b/i],
-  ['a worn image word', /\bdemons\b|(?<!\b(?:the|that|this)\s)\bhollow(?:ness)?\b|\bshimmer(?:s|ed|ing)?\b|\bunfold(?:s|ed|ing)?\b(?!\s+(?:the|a|an|my|your|his|her|our|their|that|this|it|them|up)\b)|\bvalidation\b|\bvibrations?\b|\bfrequenc(?:y|ies)\b|(?<!\bin a\s)\bheartbeats?\b|\belectric\b(?!\s+(?:guitar|piano|bass|keys|keyboard|organ|slide|bill|company|co-?op|fence|chair|blanket|razor|can opener|drill|car|stove|fan|heater|meter)(?:e?s)?\b)/i],
+  ['a worn image word', /\bdemons\b|\bshimmer(?:s|ed|ing)?\b|\bunfold(?:s|ed|ing)?\b(?!\s+(?:the|a|an|my|your|his|her|our|their|that|this|it|them|up)\b)|\bvalidation\b|\bvibrations?\b|(?<!\b(?:radio|police|scanner|cb|ham|fm|am|shortwave|short-wave|emergency|fire|weather)\s)\bfrequenc(?:y|ies)\b|(?<!\bin a\s)\bheartbeats?\b|(?<!\bthe\s)\belectric\b(?!['’]s\b)(?!\s+(?:guitar|piano|bass|keys|keyboard|organ|slide|bill|compan(?:y|ies)|co-?op|fence|chair|blanket|razor|can opener|drill|car|stove|fan|heater|meter|pump|light|blue|cart|bike|scooter|motor|mower|train|wire|line|pole|shock|heat|oven|range|dryer|avenue|eel|kettle|toothbrush|smoker|grill|saw|truck|boat)(?:e?s)?\b)|(?<=\bthe\s)electric(?=\s+(?:feeling|touch|spark|sparks|charge|current|air|night|energy|love|kiss|pulse|thrill|rush|chemistry|glow|buzz|tension|connection|moment|vibes?)\b)/i],
+  ['a worn image word', /(?<!\b(?:[Tt]he|THE|[Tt]hat|THAT|[Tt]his|THIS|[Aa])\s)(?<![A-Z][A-Za-z'’]*\s)\bHollow(?:ness)?\b|(?<!\b(?:[Tt]he|THE|[Tt]hat|THAT|[Tt]his|THIS|[Aa])\s)\b(?:hollow(?:ness)?|HOLLOW(?:NESS)?)\b|(?<=\b[Aa]\s)(?:hollow|Hollow|HOLLOW)\b(?!['’]s\b|\s+(?:by|in|on|at|past|near|under|behind|below|beyond|where|down|up|off|out|over|beside|between|to|from|with)\b|\s*[,.;:!?)—–-]|\s*$)/],
   ['"I don\'t need X, I need Y"', /\bi (?:don['’]?t|do not|ain['’]?t) need\b[^.!?]*?[,;:—–-]\s*(?:but )?(?:i (?:just |only |really )?|just |only )(?:need|want)\b/i],
 ];
 
@@ -203,14 +217,14 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
  *  instruction to add when a song the desk sized itself came back short; null
  *  when the person set the length or structure, or the shape is fine.
  *  Part 293: two LONG verses are the desk's other map (a bridge and a final
- *  chorus carry the turn), so two verses with 24 or more sung lines between
- *  them pass. Whole-line (parenthesised) ad-libs are not counted. */
+ *  chorus carry the turn), so two verses of twelve or more sung lines EACH
+ *  pass; a lopsided 16 and 8 does not (review). Whole-line (parenthesised)
+ *  ad-libs are not counted. */
 export function lyricShapeIssue(script: string, brief = ''): string | null {
   if (/\b(?:verses?|minutes?|seconds?|short|brief|quick|jingle|hook only|chorus only|one verse|two verses|bars)\b/i.test(brief)) return null;
   const at = script.search(/^\s*lyrics\s*:/im);
   if (at === -1) return null;
-  let verses = 0;
-  let verseLines = 0;
+  const lengths: number[] = [];
   let inVerse = false;
   for (const raw of script.slice(at).split('\n').slice(1)) {
     const line = raw.trim();
@@ -218,12 +232,14 @@ export function lyricShapeIssue(script: string, brief = ''): string | null {
     const tag = /^\[([^\]]*)\]$/.exec(line);
     if (tag) {
       inVerse = /^\s*verse/i.test(tag[1]);
-      if (inVerse) verses += 1;
-    } else if (inVerse && line && !/^\(.*\)$/.test(line)) verseLines += 1;
+      if (inVerse) lengths.push(0);
+    } else if (inVerse && line && !/^\(.*\)$/.test(line)) lengths[lengths.length - 1] += 1;
   }
+  const verses = lengths.length;
   if (verses === 0 || verses >= 3) return null;
-  if (verses === 2 && verseLines >= 24) return null;
-  return `The song has only ${verses === 1 ? 'one verse' : 'two short verses'} and this desk writes three verses, or two long ones of twelve to sixteen lines each. Add a [Verse ${verses + 1}] of eight to twelve sung lines in the same voice, placed after the bridge if there is one and before the final chorus, otherwise before the last chorus. It must turn the story: pay off a detail planted earlier, or say what the narrator has been avoiding. New events, not a summary.`;
+  if (verses === 2 && Math.min(...lengths) >= 12) return null;
+  const short = verses === 1 ? 'one verse' : Math.max(...lengths) >= 12 ? 'two verses, one of them short,' : 'two short verses';
+  return `The song has only ${short} and this desk writes three verses, or two long ones of twelve to sixteen lines each. Add a [Verse ${verses + 1}] of eight to twelve sung lines in the same voice, placed after the bridge if there is one and before the final chorus, otherwise before the last chorus. It must turn the story: pay off a detail planted earlier, or say what the narrator has been avoiding. New events, not a summary.`;
 }
 
 export function lyricRepairRequest(script: string, tells: LyricTell[], shape: string | null = null): string {
@@ -302,7 +318,7 @@ export function lyricMeterNote(script: string): string {
   }
   close();
   return uneven.length
-    ? `\n\nCounted by the desk (roughly), these verses cannot carry one tune: ${uneven.join('; ')}. Even each verse out so lines in the same position match within one syllable, and so verse two and verse three match verse one.`
+    ? `\n\nCounted by the desk (roughly), these verses cannot carry one tune: ${uneven.join('; ')}. Even each verse out so lines in the same position match within one syllable, and so every verse matches verse one.`
     : '';
 }
 

@@ -71,17 +71,22 @@ function sample(xs: string[], n: number, random: () => number): string[] {
   return out;
 }
 
-export function songIdeaSparks(random: () => number = Math.random, avoid: string[] = []): SongSparks {
+/* Part 293 review: for an account that needs it clean, the route passes its word check as
+ * `isClean`, and nothing drawn may fail it: not a shelf idea (two of her hundred swear or say
+ * sex), not an idea she was shown before, and never the dirty-blues genre. */
+export function songIdeaSparks(random: () => number = Math.random, avoid: string[] = [], isClean?: (text: string) => boolean): SongSparks {
   const pick = (xs: string[]): string => xs[Math.min(xs.length - 1, Math.floor(random() * xs.length))];
-  const first = pick(GENRES);
-  const second = random() < 0.3 ? pick(GENRES) : '';
+  const keep = (xs: string[]): string[] => (isClean ? xs.filter((x) => isClean(x)) : xs);
+  const genres = isClean ? keep(GENRES).filter((g) => !/\bdirty\b/i.test(g)) : GENRES;
+  const first = pick(genres);
+  const second = random() < 0.3 ? pick(genres) : '';
   return {
     sound: second && second !== first ? `${first} crossed with ${second}` : first,
     lens: pick(LENSES),
     territory: pick(TERRITORIES),
     rule: random() < 0.5,
-    shelf: sample(ideaShelf, 6, random),
-    avoid: avoid.slice(-30),
+    shelf: sample(keep(ideaShelf), 6, random),
+    avoid: keep(avoid).slice(-30),
   };
 }
 
