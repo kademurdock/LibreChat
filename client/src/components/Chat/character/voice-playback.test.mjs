@@ -85,7 +85,7 @@ test('silence, bad levels and disabled motion close mouth; seek uses current aud
 {
   const { styleAt, visemeAt } = await import('./voice-message-motion.mjs');
   const { panelRect, FACE_PANELS, MOUTH_PANELS } = await import('./face-sheet-rig.mjs');
-  const { preparedPortrait, KIANA_ID, KIANA_PORTRAIT_FILE, DELLA_ID, DELLA_PORTRAIT_FILE, LILLY_ID, LILLY_PORTRAIT_FILE, WITHERSPOON_ID, WITHERSPOON_PORTRAIT_FILE } = await import('./portrait-rig.mjs');
+  const { preparedPortrait, KIANA_ID, KIANA_PORTRAIT_FILE, DELLA_ID, DELLA_PORTRAIT_FILE, LILLY_ID, LILLY_PORTRAIT_FILE, LILLY_PUBLIC_ID, LILLY_PUBLIC_PORTRAIT_FILE, WITHERSPOON_ID, WITHERSPOON_PORTRAIT_FILE } = await import('./portrait-rig.mjs');
   test('a direction dissolves between whole faces and a laugh borrows the laughing face', () => {
     const cues = [{ at: 0, expression: 'angry', kind: 'direction' }, { at: 5, expression: 'amused', kind: 'moment' }, { at: 10, expression: 'warm', kind: 'direction' }];
     assert.deepEqual(styleAt(cues, 3).face, { from: 'neutral', to: 'angry', blend: 1 });
@@ -109,7 +109,7 @@ test('silence, bad levels and disabled motion close mouth; seek uses current aud
     const last = panelRect(8); assert.ok(Math.abs(last[0] + last[2] - 1) < 1e-9 && Math.abs(last[1] + last[3] - 1) < 1e-9);
     assert.throws(() => panelRect(9), RangeError);
     assert.equal(Object.keys(FACE_PANELS).length, 9);
-    for (const [id, file] of [[KIANA_ID, KIANA_PORTRAIT_FILE], [DELLA_ID, DELLA_PORTRAIT_FILE], [LILLY_ID, LILLY_PORTRAIT_FILE], [WITHERSPOON_ID, WITHERSPOON_PORTRAIT_FILE]]) {
+    for (const [id, file] of [[KIANA_ID, KIANA_PORTRAIT_FILE], [DELLA_ID, DELLA_PORTRAIT_FILE], [LILLY_ID, LILLY_PORTRAIT_FILE], [LILLY_PUBLIC_ID, LILLY_PUBLIC_PORTRAIT_FILE], [WITHERSPOON_ID, WITHERSPOON_PORTRAIT_FILE]]) {
       const sheet = preparedPortrait(id, '/' + file).sheet;
       assert.match(sheet.expressions, /expressions\.webp$/); assert.match(sheet.mouths, /mouths\.webp$/);
       for (const k of ['face', 'mouth', 'eyes']) { const [x, y, w, h] = sheet[k]; assert.ok(x >= 0 && y >= 0 && w > 0 && h > 0 && x + w <= 1 && y + h <= 1, id + k); }

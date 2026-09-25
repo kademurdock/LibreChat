@@ -27,6 +27,9 @@ export const DELLA_ID = 'agent_BSOLa3eNEZyjs-7abCjMt';
 export const DELLA_PORTRAIT_FILE = 'agent-agent_BSOLa3eNEZyjs-7abCjMt-avatar-1788941611099.png';
 export const LILLY_ID = 'agent_JhouuajXMYsfhCTVMQCv_';
 export const LILLY_PORTRAIT_FILE = 'agent-agent_JhouuajXMYsfhCTVMQCv_-avatar-1783012583668.png';
+// Sep 25 2026: the public Lilly everyone meets on the moving-faces shelf; the id above is Skylee's own Lilly.
+export const LILLY_PUBLIC_ID = 'agent_TOdYS8v-bRxeNw0dia_Md';
+export const LILLY_PUBLIC_PORTRAIT_FILE = 'agent-agent_TOdYS8v-bRxeNw0dia_Md-avatar-1790323412634.png';
 export function hasPreparedPortrait(id, url) {
   return !!preparedPortrait(id, url);
 }
@@ -38,7 +41,7 @@ export function preparedPortrait(id, url) {
       return { portrait: '/assets/characters/witherspoon/portrait.png', sheet: SHEETS.witherspoon };
     if (id === HARLEY_ID && file === HARLEY_PORTRAIT_FILE)
       return { portrait: '/assets/characters/harley/portrait.png', sheet: SHEETS.harley };
-    if (id === LILLY_ID && file === LILLY_PORTRAIT_FILE)
+    if ((id === LILLY_ID && file === LILLY_PORTRAIT_FILE) || (id === LILLY_PUBLIC_ID && file === LILLY_PUBLIC_PORTRAIT_FILE))
       return {
         portrait: '/assets/characters/lilly/portrait.png',
         sheet: SHEETS.lilly,

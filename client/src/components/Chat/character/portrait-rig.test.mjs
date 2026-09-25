@@ -8,6 +8,8 @@ import {
   DELLA_PORTRAIT_FILE,
   LILLY_ID,
   LILLY_PORTRAIT_FILE,
+  LILLY_PUBLIC_ID,
+  LILLY_PUBLIC_PORTRAIT_FILE,
   facialBlend,
 } from './portrait-rig.mjs';
 test('Lilly animation is bound to her original portrait with valid local regions', () => {
@@ -20,6 +22,14 @@ test('Lilly animation is bound to her original portrait with valid local regions
       assert.ok(rect[0] + rect[2] <= 1 && rect[1] + rect[3] <= 1);
     }
   }
+});
+test("the public Lilly and Skylee's Lilly share the face, each only with her own portrait file", () => {
+  const pub = preparedPortrait(LILLY_PUBLIC_ID, 'https://example.com/' + LILLY_PUBLIC_PORTRAIT_FILE + '?signed=1');
+  const own = preparedPortrait(LILLY_ID, '/' + LILLY_PORTRAIT_FILE);
+  assert.ok(pub && own);
+  assert.equal(pub.portrait, own.portrait);
+  assert.equal(preparedPortrait(LILLY_PUBLIC_ID, '/' + LILLY_PORTRAIT_FILE), null);
+  assert.equal(preparedPortrait(LILLY_ID, '/' + LILLY_PUBLIC_PORTRAIT_FILE), null);
 });
 test('Della and Kiana have separate registered facial regions and exact artwork ownership', () => {
   const k = preparedPortrait(KIANA_ID, 'https://example.com/' + KIANA_PORTRAIT_FILE);
