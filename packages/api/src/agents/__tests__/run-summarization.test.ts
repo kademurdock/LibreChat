@@ -1013,6 +1013,28 @@ describe('subagentConfigs', () => {
     expect(configs[1].type).toBe('agent_child');
   });
 
+  it('caps a child at its subagentMaxTurns and leaves other children at the SDK default', async () => {
+    const librarian = makeAgent({ id: 'agent_librarian', subagentMaxTurns: 6 });
+    const helper = makeAgent({ id: 'agent_helper' });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: {
+            enabled: true,
+            allowSelf: false,
+            agent_ids: ['agent_librarian', 'agent_helper'],
+          },
+          subagentAgentConfigs: [librarian, helper],
+        }),
+      ],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs.map((config) => [config.type, config.maxTurns])).toEqual([
+      ['agent_librarian', 6],
+      ['agent_helper', undefined],
+    ]);
+  });
+
   it('skips a child that points at the parent itself', async () => {
     const self = makeAgent({ id: 'agent_1' });
     const agents = await callAndCapture({
@@ -1301,5 +1323,50 @@ describe('toolOutputReferences gating', () => {
     const createMock = Run.create as jest.Mock;
     const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
     expect(callArgs).not.toHaveProperty('toolOutputReferences');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: subagent result hook (KADE Sep 24 2026, library consultation)
+// ---------------------------------------------------------------------------
+describe('subagent result hook', () => {
+  type PostToolUseMatcher = {
+    pattern?: string;
+    hooks: Array<(input: Record<string, unknown>, signal: AbortSignal) => unknown>;
+  };
+
+  it('strips voice and scene markup from a subagent answer before the caller reads it', async () => {
+    const callArgs = await callAndCaptureRunConfig({
+      overrides: {
+        subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_librarian'] },
+        subagentAgentConfigs: [makeAgent({ id: 'agent_librarian' })],
+      },
+    });
+    const hooks = callArgs.hooks as {
+      getMatchers: (event: string) => PostToolUseMatcher[];
+    };
+    expect(hooks).toBeDefined();
+    const matchers = hooks.getMatchers('PostToolUse');
+    expect(matchers).toHaveLength(1);
+    const pattern = new RegExp(matchers[0].pattern ?? '');
+    expect(pattern.test('subagent')).toBe(true);
+    expect(pattern.test('kade_library')).toBe(false);
+    const hook = matchers[0].hooks[0];
+    const signal = new AbortController().signal;
+    expect(
+      await hook(
+        {
+          toolName: 'subagent',
+          toolOutput: '%%%bright%%% Found [Holes](/library/item/1). [[voice]]',
+        },
+        signal,
+      ),
+    ).toEqual({ updatedOutput: 'Found [Holes](/library/item/1).' });
+    expect(await hook({ toolName: 'subagent', toolOutput: 'Found Holes.' }, signal)).toEqual({});
+  });
+
+  it('adds no hook registry to a run without subagents', async () => {
+    const callArgs = await callAndCaptureRunConfig();
+    expect(callArgs).not.toHaveProperty('hooks');
   });
 });

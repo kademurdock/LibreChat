@@ -188,4 +188,6 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
   });
 };
 
-module.exports = { buildOptions };
+/* applyKadeAudience is shared with initialize.js: subagent children are loaded
+ * there, never through buildOptions, and need the same notes (Sep 24 2026). */
+module.exports = { buildOptions, applyKadeAudience };
