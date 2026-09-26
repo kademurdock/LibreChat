@@ -105,7 +105,7 @@ function world(overrides = {}) {
   const logger = { info: (m) => w.logs.push(['info', m]), warn: (m) => w.logs.push(['warn', m]), error: (m) => w.logs.push(['error', String(m)]) };
   w.routes = loadRoutes({
     logger,
-    durationOf: async () => w.seconds,
+    durationOf: async (buffer) => (w.durationOf ? w.durationOf(buffer) : w.seconds),
     saveBufferToS3: async ({ buffer, fileName }) => { w.stored.push({ buffer, fileName }); return 'https://assets.test/audios/' + fileName; },
     registerMusicReference: async (...args) => { w.registered.push(args); },
     isReviewSeat: () => w.reviewSeat,
@@ -166,8 +166,14 @@ test('duration: the downloader refuses a long video before downloading, said lik
   const res = await w.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
   assert.equal(res.statusCode, 400);
   assert.equal(res.body.kind, 'too-long');
-  assert.match(res.body.error, /^This YouTube video is 7 minutes 13 seconds long\. Covers support up to 6 minutes\./);
+  assert.match(res.body.error, /^This YouTube video is 7 minutes 13 seconds long, and covers from YouTube must be shorter than 6 minutes\./);
   assert.equal(w.stored.length, 0);
+  // Listed at exactly six minutes: refused too, and the sentence never says "6 minutes ... up to 6 minutes".
+  const edge = world({ download: async () => { throw new FakeYouTubeError('too-long', 360); } });
+  const six = await edge.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
+  assert.equal(six.statusCode, 400);
+  assert.match(six.body.error, /^This YouTube video is 6 minutes long, and covers from YouTube must be shorter than 6 minutes\./);
+  assert.doesNotMatch(six.body.error, /up to/);
   // A measured MP3 over six minutes is refused by the shared tail, as a file would be.
   const w2 = world();
   w2.seconds = 433.1;
@@ -225,6 +231,8 @@ test('words: the bot wall, private, age-restricted and removed videos are said p
   assert.equal(link.linkStatus(new FakeYouTubeError('bot')), 503);
   assert.match(say('private'), /^This YouTube video is private/);
   assert.match(say('age'), /age-restricted/);
+  assert.equal(link.linkWords(new FakeYouTubeError('age'), { id: 'kid', kadeAccountType: 'child' }), 'This YouTube video is age-restricted, so it cannot be brought in on this account. Choose a different video.');
+  assert.equal(link.linkWords(new FakeYouTubeError('age'), { id: 'u1' }), link.WORDS.age);
   assert.match(say('removed'), /has been removed/);
   assert.match(say('not-youtube'), /^That is not a YouTube link\./);
   assert.match(say('not-video'), /channel or a playlist/);
@@ -314,4 +322,109 @@ test('deadline and hang-up: the import is stopped, answered once, and the person
   assert.ok(left.downloads[0].options.signal.aborted);
   assert.equal(left.state.running.size, 0);
   assert.equal(left.stored.length, 0);
+});
+
+test('age: a child is never carried past YouTube age gates by the server account', async () => {
+  // The fake answers like youtubeAudio: an age-restricted video is refused unless the caller allows it.
+  const ageGated = async (_url, options) => {
+    if (!options.allowAgeRestricted) throw new FakeYouTubeError('age');
+    return { buffer: Buffer.alloc(4096, 1), title: 'Grown-up Song', seconds: 200, id: 'dQw4w9WgXcQ', link: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' };
+  };
+  const child = world({ download: ageGated });
+  const res = await child.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' }, { id: 'kid', kadeAccountType: 'child' });
+  assert.equal(res.statusCode, 422);
+  // The child hears the true reason: this account, not YouTube, is what stops it.
+  assert.equal(res.body.error, link.WORDS['age-child']);
+  assert.doesNotMatch(res.body.error, /will not hand it to the server|import the file/);
+  assert.equal(res.body.kind, 'age');
+  assert.equal(child.downloads[0].options.allowAgeRestricted, false);
+  assert.equal(child.stored.length, 0);
+
+  const grownUp = world({ download: ageGated });
+  const ok = await grownUp.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' }, { id: 'u1', kadeAccountType: 'adult' });
+  assert.equal(ok.statusCode, 200);
+  // A grown-up refused by YouTube itself (server not signed in) keeps today's sentence.
+  const unsigned = world({ download: async () => { throw new FakeYouTubeError('age'); } });
+  const theirs = await unsigned.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' }, { id: 'u2' });
+  assert.equal(theirs.body.error, link.WORDS.age);
+  assert.equal(grownUp.downloads[0].options.allowAgeRestricted, true);
+  const plainAccount = world({ download: ageGated });
+  assert.equal((await plainAccount.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' })).statusCode, 200);
+});
+
+/* The real chain at the six-minute edge: the route, the real youtubeAudio (packages/api
+ * description/youtube.ts, loaded through tsx) with yt-dlp faked by a real tone, the real MP3
+ * conversion, then the real storeReference, durationOf (ffprobe) and musicReferenceError.
+ * YouTube lists whole seconds, so a listed "359" can hold up to 359.99 s of sound, and the MP3
+ * encoder adds a few hundredths more (360.04 s here). Before Part 293's review a listed 6:00 was
+ * downloaded whole and then refused with "This recording is 6 minutes 0 seconds long. Covers
+ * support up to 6 minutes." Now a listed 6:00 is refused from its metadata, and the MP3 of
+ * anything shorter is cut a tenth of a second short of the limit, so it always passes. */
+test('six-minute edge: listed at 6:00 is refused before any download; listed at 5:59 comes in and passes', async (t) => {
+  const childProcess = require('node:child_process');
+  const ffmpegPath = require('ffmpeg-static');
+  const FAKE = 'fake-yt-dlp-for-tests';
+  const saved = { spawn: childProcess.spawn, env: { ...process.env } };
+  t.after(() => {
+    childProcess.spawn = saved.spawn;
+    for (const key of ['FFMPEG_PATH', 'FFPROBE_PATH', 'YT_DLP_PATH', 'KADE_YT_COOKIES', 'KADE_POT_URL']) {
+      if (saved.env[key] === undefined) delete process.env[key];
+      else process.env[key] = saved.env[key];
+    }
+  });
+  process.env.FFMPEG_PATH = ffmpegPath;
+  process.env.FFPROBE_PATH = require('ffprobe-static').path; // read when kadeSoundBoothStitch loads
+  process.env.YT_DLP_PATH = FAKE;
+  delete process.env.KADE_YT_COOKIES;
+  delete process.env.KADE_POT_URL;
+  let runs = [];
+  let video = { title: 'Six Minutes Exactly', listed: 360, sound: 360.9 };
+  childProcess.spawn = (bin, args, options) => {
+    if (bin !== FAKE) return saved.spawn(bin, args, options);
+    runs.push(args);
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdin = { on() {}, end() {} };
+    child.kill = () => {};
+    setImmediate(async () => {
+      if (args.includes('--dump-single-json')) {
+        child.stdout.emit('data', Buffer.from(JSON.stringify({ title: video.title, duration: video.listed, uploader: 'Some Band' })));
+      } else {
+        const target = args[args.indexOf('-o') + 1].replace('%(ext)s', 'webm');
+        await new Promise((resolve, reject) => {
+          const make = saved.spawn(ffmpegPath, ['-nostdin', '-v', 'error', '-y', '-f', 'lavfi', '-i', `sine=frequency=440:sample_rate=48000:duration=${video.sound}`, '-c:a', 'libopus', target]);
+          make.on('close', (code) => (code === 0 ? resolve() : reject(new Error('fixture ffmpeg failed'))));
+        });
+      }
+      child.emit('close', 0);
+    });
+    return child;
+  };
+  const youtube = require('tsx/cjs/api').require('../../../packages/api/src/description/youtube.ts', __filename);
+  const { durationOf } = require('./kadeSoundBoothStitch');
+
+  // Listed at exactly 6:00: refused from the metadata, in words that do not contradict themselves.
+  const six = world({ durationOf, download: (url, options) => youtube.youtubeAudio(url, options) });
+  const refused = await six.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
+  assert.equal(refused.statusCode, 400);
+  assert.equal(refused.body.kind, 'too-long');
+  assert.match(refused.body.error, /^This YouTube video is 6 minutes long, and covers from YouTube must be shorter than 6 minutes\./);
+  assert.equal(runs.length, 1, 'the metadata pass only: nothing was downloaded');
+  assert.equal(six.stored.length, 0);
+
+  // Listed at 5:59 but holding 359.99 s of sound: the MP3 is cut at 359.9 s and passes the booth's check.
+  runs = [];
+  video = { title: 'Just Under Six', listed: 359, sound: 359.99 };
+  const w = world({ durationOf, download: (url, options) => youtube.youtubeAudio(url, options) });
+  const res = await w.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
+  assert.equal(res.statusCode, 200, res.body && res.body.error);
+  assert.equal(runs.length, 2, 'metadata, then one download');
+  assert.equal(runs[1][runs[1].indexOf('--match-filter') + 1], 'duration < 360 & !is_live');
+  assert.ok(res.body.seconds < 359.96 && res.body.seconds > 359.8, `measured ${res.body.seconds} s: cut just short of six minutes`);
+  assert.equal(musicReferenceError(res.body.seconds), undefined);
+  assert.equal(res.body.source.seconds, 359);
+  assert.match(res.body.spoken, /^Covering Just Under Six, 6 minutes, from YouTube\./);
+  assert.equal(w.stored.length, 1);
+  assert.equal(w.registered[0][2], res.body.seconds);
 });

@@ -21,7 +21,8 @@
  * - App Review: downloading YouTube audio is an App Store risk (guideline
  *   5.2.3), so the review seat is refused here with a neutral sentence and the
  *   guide it is served carries no link field or mention (guideFor). Child
- *   accounts may use it.
+ *   accounts may use it, but never for an age-restricted video: the server's
+ *   signed-in YouTube account brings those in for grown-ups only.
  * - One import at a time per person, a few at a time for the whole server, and
  *   a daily cap in the same shape as the booth's other caps.
  * - Log lines carry the video id and yt-dlp's reasons, never cookies.
@@ -56,6 +57,11 @@ function linkImportAvailable(user, reviewSeat, env = process.env) {
   }
 }
 
+/** A child's account, the way the describer tells (kadeDescribedVideo.js actor). */
+function isChildAccount(user) {
+  return !!user && user.kadeAccountType === 'child';
+}
+
 /** "3 minutes 12 seconds", the way musicReferenceError says a length. */
 function spokenMinutes(seconds) {
   const total = Math.max(0, Math.round(Number(seconds) || 0));
@@ -79,6 +85,7 @@ const WORDS = {
   copyright: `YouTube has blocked this video over a copyright claim, so the server cannot get it. ${FILE_INSTEAD}`,
   removed: 'This YouTube video has been removed, or its channel was closed.',
   age: `This YouTube video is age-restricted, and YouTube will not hand it to the server. ${FILE_INSTEAD}`,
+  'age-child': 'This YouTube video is age-restricted, so it cannot be brought in on this account. Choose a different video.',
   members: `This YouTube video is for channel members only. ${FILE_INSTEAD}`,
   region: `YouTube does not offer this video in the server's country. ${FILE_INSTEAD}`,
   premium: `This YouTube video needs a YouTube Premium account. ${FILE_INSTEAD}`,
@@ -100,12 +107,17 @@ const STATUS = {
   bot: 503, timeout: 504, tools: 503, unreadable: 502, failed: 502,
 };
 
-/** The words for a failed import, in the booth's voice (never the describer's). */
-function linkWords(error) {
+/**
+ * The words for a failed import, in the booth's voice (never the describer's). A video listed at
+ * exactly six minutes is refused too (YouTube's whole seconds may hide a fraction more), so the
+ * limit is said as "shorter than", never "up to".
+ */
+function linkWords(error, user) {
   const kind = error && error.kind;
   if (kind === 'too-long') {
-    return `This YouTube video is ${spokenMinutes(error.seconds)} long. Covers support up to 6 minutes. Choose a shorter video, or download the song and import an excerpt as a file; nothing is trimmed automatically.`;
+    return `This YouTube video is ${spokenMinutes(error.seconds)} long, and covers from YouTube must be shorter than 6 minutes. Choose a shorter video, or download the song and import an excerpt as a file; nothing is trimmed automatically.`;
   }
+  if (kind === 'age' && isChildAccount(user)) return WORDS['age-child'];
   return WORDS[kind] || WORDS.failed;
 }
 
@@ -153,7 +165,7 @@ function guideFor(guide, user, reviewSeat, env = process.env) {
       link: {
         site: 'youtube',
         label: 'Or paste a YouTube link',
-        hint: 'One video, up to six minutes. The server brings in only its sound. A link from a playlist or mix brings in just that one video.',
+        hint: 'One video, shorter than six minutes. The server brings in only its sound. A link from a playlist or mix brings in just that one video.',
         button: 'Import from YouTube',
         path: LINK_PATH,
         maxSeconds: COVER_MAX_SECONDS,
@@ -220,6 +232,9 @@ async function handleReferenceLink(req, res, deps, state) {
     const got = await api.youtubeAudio(link.url, {
       maxSeconds: COVER_MAX_SECONDS,
       maxBytes: COVER_MAX_BYTES,
+      /* The server's signed-in YouTube account must never carry a child past
+       * YouTube's own age gate: age-restricted videos are for grown-ups only. */
+      allowAgeRestricted: !isChildAccount(req.user),
       signal: stop.signal,
       log: (line) => logger.info(`[soundbooth/reference] link user=${userId} video=${link.id} ${line}`),
     });
@@ -237,7 +252,7 @@ async function handleReferenceLink(req, res, deps, state) {
     const kind = (error && error.kind) || 'failed';
     logger.warn(`[soundbooth/reference] link FAILED user=${userId} video=${link.id} kind=${kind} ${Date.now() - started}ms: ${String((error && error.message) || error).replace(/\s+/g, ' ').slice(0, 300)}`);
     if (res.writableEnded || res.destroyed) return undefined;
-    return res.status(linkStatus(error)).json({ error: linkWords(error), kind });
+    return res.status(linkStatus(error)).json({ error: linkWords(error, req.user), kind });
   } finally {
     clearTimeout(timer);
     res.removeListener('close', hangUp);
