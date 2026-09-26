@@ -9,6 +9,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import {
   analyze,
   billed,
+  expectedLook,
   failureClass,
   providerDetail,
   providerProblem,
@@ -675,13 +676,82 @@ test('providers: the real cost adds what the provider billed on her own key only
   assert.equal(realCost(0.036408, undefined, 0.036408), 0.036408);
   /* BYOK: cost is only OpenRouter's fee; Google's charge comes on top. */
   assert.ok(Math.abs(realCost(0.0018, true, 0.0364) - 0.0382) < 1e-12);
+  assert.equal(realCost(0.0018, true, 0), 0.0018, 'a stated charge of nothing is a price');
   /* Missing or unusable fields. */
   assert.equal(realCost(0.02), 0.02);
   assert.equal(realCost(0.02, null, null), 0.02);
-  assert.equal(realCost(0.0018, true), 0.0018);
-  assert.equal(realCost(0.0018, true, null), 0.0018);
-  assert.equal(realCost(0.0018, true, Number.NaN), 0.0018);
-  assert.equal(realCost(0.0018, true, -1), 0.0018);
+  /* BYOK without the provider's charge is no price: the fee alone (possibly waived to 0) is not booked. */
+  assert.equal(realCost(0.0018, true), undefined);
+  assert.equal(realCost(0.0018, true, null), undefined);
+  assert.equal(realCost(0, true, null), undefined);
+  assert.equal(realCost(0.0018, true, Number.NaN), undefined);
+  assert.equal(realCost(0.0018, true, -1), undefined);
+});
+
+test('providers: a BYOK reply, in-reply error or record without the provider’s charge is never booked at the fee alone; it is looked up, then booked at its expected cost', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await clip('byok-bare.mp4');
+  /* OpenRouter waived its BYOK fee and sent no upstream figure: the reply alone would say $0. */
+  const bare = { ...good.usage, cost: 0, is_byok: true, cost_details: null };
+  let record = 'priced';
+  let mode = 'reply';
+  const lookups = [];
+  const logs = [];
+  const fake = fakeAxios(({ url, config }) => {
+    if (url.includes('/generation')) {
+      lookups.push(new URL(url).searchParams.get('id'));
+      if (record === 'priced')
+        return { data: { data: { total_cost: 0.0009, is_byok: true, upstream_inference_cost: 0.05, provider_name: 'Google AI Studio' } } };
+      if (record === 'bare')
+        return { data: { data: { total_cost: 0, is_byok: true, upstream_inference_cost: null, provider_name: 'Google AI Studio' } } };
+      return httpError(config, 404, { error: { message: 'Generation not found' } });
+    }
+    if (mode === 'reply') return { headers: { 'x-generation-id': 'gen-bare' }, data: { ...good, usage: bare } };
+    return {
+      headers: { 'x-generation-id': 'gen-bare-err' },
+      data: { error: { code: 400, message: 'Invalid video' }, usage: { cost: 0, is_byok: true, cost_details: { upstream_inference_cost: null } } },
+    };
+  });
+  try {
+    let { entries, meter } = ledger();
+    const withLog = { ...look, log: (line) => logs.push(line) };
+    let result = await limited({ lookupAtMs: [10], lookupMs: 200 }, () => analyze(withLog, signal, meter));
+    assert.deepEqual(lookups, ['gen-bare'], 'the reply is looked up');
+    assert.ok(Math.abs(entries[0].costUSD - 0.0509) < 1e-12, `the record's fee plus Google's charge: ${entries[0].costUSD}`);
+    assert.equal(entries[0].uncertain, undefined);
+    assert.ok(Math.abs(result.vision[0].costUSD - 0.0509) < 1e-12);
+    assert.ok(logs.some((line) => line.includes("gave OpenRouter's fee ($0.0000) but not the provider's charge")), logs.join('\n'));
+
+    /* A BYOK record without the charge is asked for again, then the expected cost is booked as uncertain. */
+    record = 'bare';
+    lookups.length = 0;
+    ({ entries, meter } = ledger());
+    result = await limited({ lookupAtMs: [10, 20], lookupMs: 200 }, () => analyze(look, signal, meter));
+    assert.deepEqual(lookups, ['gen-bare', 'gen-bare'], 'the unpriced record is asked for again');
+    assert.equal(entries[0].uncertain, true);
+    assert.ok(entries[0].costUSD > 0.001, `never the fee alone: ${entries[0].costUSD}`);
+    assert.ok(Math.abs(entries[0].costUSD - expectedOf(entries[0].reserve)) < 1e-9, `${entries[0].costUSD} of ${entries[0].reserve}`);
+
+    /* The same for an error sent inside a 200 reply. */
+    mode = 'error';
+    lookups.length = 0;
+    ({ entries, meter } = ledger());
+    await limited({ lookupAtMs: [10, 20], lookupMs: 200 }, () => analyze(look, signal, meter).catch(() => {}));
+    assert.equal(entries.length, 1, 'an error code that blames the request is not retried');
+    assert.deepEqual(lookups, ['gen-bare-err', 'gen-bare-err']);
+    assert.equal(entries[0].costUSD, undefined, 'the fee alone is not taken as its cost');
+    assert.equal(entries[0].costFrom, undefined, 'nor is the unpriced record');
+    assert.ok(Math.abs(entries[0].expectedUSD - expectedOf(entries[0].reserve)) < 1e-9, `${entries[0].expectedUSD}`);
+
+    record = 'priced';
+    lookups.length = 0;
+    ({ entries, meter } = ledger());
+    await limited({ lookupAtMs: [10], lookupMs: 200 }, () => analyze(look, signal, meter).catch(() => {}));
+    assert.ok(Math.abs(entries[0].costUSD - 0.0509) < 1e-12, `${entries[0].costUSD}`);
+    assert.equal(entries[0].costFrom, 'generation');
+  } finally {
+    fake.restore();
+  }
 });
 
 test('providers: BYOK replies, in-reply errors and generation records are booked at the fee plus the provider’s charge, others at their cost alone', async () => {
@@ -832,6 +902,12 @@ test('providers: a close look OpenRouter never priced is booked near what close 
       `a second look is expected to reason about 16,000 tokens at high effort: ${second.expectedUSD}`,
     );
     assert.ok(second.expectedUSD > first.expectedUSD && second.expectedUSD < second.reserve / 5, `${second.expectedUSD} of ${second.reserve}`);
+    /* What the engine's re-look gate asks room for, before the second look is sent. */
+    assert.ok(Math.abs(expectedLook(look) - first.expectedUSD) < 1e-12, `${expectedLook(look)}`);
+    const ahead = expectedLook({ ...look, second: true });
+    assert.ok(Math.abs(ahead - second.expectedUSD) < 1e-12, `${ahead}`);
+    assert.ok(ahead >= 0.08 && ahead <= 0.11, `about $0.094, where such looks cost $0.086 to $0.103: ${ahead}`);
+    assert.ok(ahead > 3 * 0.019, 'more than three times the $0.019 thin look that would call for it');
   } finally {
     fake.restore();
   }

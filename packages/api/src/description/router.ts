@@ -4272,7 +4272,8 @@ export function createDescriptionRouter(hooks: Hooks): {
          * What is left of her approval, with requests still in flight counted at their full
          * reserve. That is stricter than the meter's own stop, which counts settled charges only.
          * The engine starts a second look at a section, and each retry of it, only while this
-         * covers three times what the first look really cost plus the rest of the run.
+         * covers three times what the first look really cost (or the second look's expected cost
+         * when that is more) plus the rest of the run.
          */
         const approvedRoom = () => (rehearsal ? 0 : Math.max(0, approved - spend.usd));
         const request: RunRequest = {

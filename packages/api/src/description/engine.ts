@@ -24,7 +24,7 @@ import type { Freeze, Media, Rational } from './media';
 import type { Leftover, Variant } from './timing';
 import type { Brief, Heard } from './prompt';
 import type { Duck, Pause } from './mix';
-import type { Look } from './providers';
+import type { FailedCall, Look } from './providers';
 import {
   assemble,
   copyable,
@@ -52,6 +52,8 @@ import {
 } from './mix';
 import {
   analyze,
+  billed,
+  expectedLook,
   failureClass,
   keytermsFor,
   linesFrom,
@@ -93,8 +95,19 @@ export type Providers = {
     signal: AbortSignal,
     meter: Meter,
   ) => Promise<void>;
+  /**
+   * What a look is expected to cost before it is asked (production: `expectedLook`). A second look
+   * starts only while her approval has room for at least this much of it. Absent (test
+   * providers): the first look's real cost alone is weighed.
+   */
+  expected?: (look: Look) => number;
 };
-export const productionProviders: Providers = { transcribe, analyze, synthesize };
+export const productionProviders: Providers = {
+  transcribe,
+  analyze,
+  synthesize,
+  expected: expectedLook,
+};
 
 export type SectionFiles = { sound: string; picture?: string };
 /** A paid look at one section that has not been rendered yet. */
@@ -167,8 +180,9 @@ export type Request = {
    * run has spent, with requests still in flight counted at their full reserve. That is stricter
    * than the meter, whose stop counts settled charges only. A second look at a section, and each
    * retry of it, starts only while this covers `relookMargin` times what the first look really
-   * cost plus what the sections still to look at are expected to cost. Absent: the engine knows
-   * no limit and the meter alone keeps one.
+   * cost, or the second look's own expected cost when that is more, plus what the sections still
+   * to look at are expected to cost. Absent: the engine knows no limit and the meter alone keeps
+   * one.
    */
   approvedRoom?: () => number;
   /** The run's quoted estimate (USD), shared over the sections it looks at when weighing a second look. */
@@ -391,9 +405,14 @@ export const reasoningFloor = 3000;
 /**
  * A second look, and each retry of it, starts only while what is left of her approval covers this
  * many times what the first look really cost (the second may reason far more than the first did),
- * plus what the sections still to look at are expected to cost. It is weighed on real cost, not on
- * the reserve: a Pluto close look reserves $0.38 against a $0.34 approval, yet its looks cost
- * $0.03-0.06. The meter's own stop stays the backstop, as it is for every other paid request.
+ * or the second look's own expected cost (`Providers.expected`) when that is more, plus what the
+ * sections still to look at are expected to cost. The expected cost matters because the second
+ * look thinks at high effort in 48,000 tokens: about $0.094 for a 75 s close section (real $0.086
+ * to $0.103), while a thin first look that calls for one can cost $0.019, so three times it would
+ * let through a second look that passes her approval and halts the run. It is weighed on real and
+ * expected cost, not on the reserve: a Pluto close look reserves $0.38 against a $0.34 approval,
+ * yet its looks cost $0.03-0.10. The meter's own stop stays the backstop, as it is for every other
+ * paid request.
  */
 export const relookMargin = 3;
 /** The look's own reasoning tokens (its last call wrote it); undefined when not reported. */
@@ -401,9 +420,25 @@ const reasoningOf = (analysis: Analysis): number | undefined => {
   const calls = analysis.vision ?? [];
   return calls[calls.length - 1]?.reasoningTokens;
 };
-/** What a look's paid calls really cost, retries included. */
+/** What a look's finished calls really cost, retries included (failed tries are not among them). */
 const costOf = (analysis: Analysis): number =>
   (analysis.vision ?? []).reduce((sum, call) => sum + call.costUSD, 0);
+/**
+ * What the meter books for a failed paid call (router.ts `paidMeter`): the cost it carries
+ * (`FailedCall.costUSD`); nothing when our own stop cut it off or the provider cannot have billed
+ * it; otherwise its expected cost, or its reserve when it has none, never above the reserve.
+ */
+function failedCharge(error: unknown, reserve: number, aborted: boolean): number {
+  const failed = (error ?? {}) as FailedCall;
+  const known = failed.costUSD;
+  if (typeof known === 'number' && Number.isFinite(known) && known >= 0) return known;
+  const interrupted = typeof failed.interrupted === 'boolean' ? failed.interrupted : aborted;
+  if (interrupted || !billed(error)) return 0;
+  const expected = failed.expectedUSD;
+  return typeof expected === 'number' && Number.isFinite(expected) && expected >= 0
+    ? Math.min(expected, reserve)
+    : reserve;
+}
 
 type Voiced = { pcm: Float32Array; base: number };
 type Looked = {
@@ -763,8 +798,19 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           delete first.relook;
           result = await lookAgain(i, input, first, finish);
         } else {
-          result = finish(await providers.analyze(input, signal, meter), '');
-          if (!survey) result = await lookAgain(i, input, result, finish);
+          /** What this look's failed tries were booked at, which its finished calls leave out. */
+          let failedUSD = 0;
+          const tallied: Meter = (kind, reserve, action) =>
+            meter(kind, reserve, async () => {
+              try {
+                return await action();
+              } catch (error) {
+                failedUSD += failedCharge(error, reserve, signal.aborted);
+                throw error;
+              }
+            });
+          result = finish(await providers.analyze(input, signal, tallied), '');
+          if (!survey) result = await lookAgain(i, input, result, finish, failedUSD);
         }
       } finally {
         await rm(clip, { force: true });
@@ -800,24 +846,27 @@ export async function describeVideo(request: Request): Promise<Outcome> {
    * Looks at a section once more when its first look reasoned under `reasoningFloor` tokens or
    * showed the crammed-end sign, and never when the provider did not report reasoning. The second
    * look thinks at high effort with room for 48,000 tokens and 420 s (`Look.second`), so its
-   * reserve is larger (about $0.56 for a 75 s close look), but it is weighed on real cost all the
-   * same: it, and each retry of it, starts only while what is left of the approved maximum covers
-   * `relookMargin` times what the first look really cost plus what the sections still to look at
-   * are expected to cost (their share of the quote, or the mean first look so far when that is
-   * more). It keeps the second look when that one reasoned at least the floor, otherwise whichever
-   * reasoned more (the first on a tie). Both calls go through the meter like any look, so both are
-   * charged at what they cost, and the one not kept stays in `relook.other`. The paid first look is
-   * kept, marked pending, before the second is asked, so a run that stops in between asks only the
-   * second look next time. It uses the job's own signal: only our own stop can cut it off, and the
-   * meter never bills a request our stop cut off.
+   * reserve is larger (about $0.56 for a 75 s close look), but it is weighed on real and expected
+   * cost, not on the reserve: it, and each retry of it, starts only while what is left of the
+   * approved maximum covers `relookMargin` times what the first look really cost (its failed tries
+   * included, `failedUSD`), or the second look's own expected cost (`Providers.expected`) when that
+   * is more, plus what the sections still to look at are expected to cost (their share of the
+   * quote, or the mean first look so far when that is more). It keeps the second look when that
+   * one reasoned at least the floor, otherwise whichever reasoned more (the first on a tie). Both
+   * calls go through the meter like any look, so both are charged at what they cost, and the one
+   * not kept stays in `relook.other`. The paid first look is kept, marked pending, before the
+   * second is asked, so a run that stops in between asks only the second look next time. It uses
+   * the job's own signal: only our own stop can cut it off, and the meter never bills a request
+   * our stop cut off.
    */
   async function lookAgain(
     i: number,
     input: Look,
     first: Analysis,
     finish: (analysis: Analysis, which: string) => Analysis,
+    failedUSD: number = 0,
   ): Promise<Analysis> {
-    const firstCost = costOf(first);
+    const firstCost = costOf(first) + failedUSD;
     if (first.vision?.length) firstCosts.push(firstCost);
     const thought = reasoningOf(first);
     if (thought === undefined) return first;
@@ -835,9 +884,16 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       ? firstCosts.reduce((sum, cost) => sum + cost, 0) / firstCosts.length
       : 0;
     const heldBack = later * Math.max(quotedShare, meanLook);
-    const need = relookMargin * firstCost + heldBack;
+    const margin = relookMargin * firstCost;
+    const expected = providers.expected?.({ ...input, second: true });
+    const own = typeof expected === 'number' && Number.isFinite(expected) ? expected : 0;
+    const need = Math.max(margin, own) + heldBack;
     const usd = (value: number) => `$${Math.max(0, value).toFixed(3)}`;
-    const needed = `${usd(need)} needed: ${relookMargin} times the first look's ${usd(firstCost)}${later ? ` plus ${usd(heldBack)} kept for the ${later} section${later === 1 ? '' : 's'} still to look at` : ''}`;
+    const weighed =
+      own > margin
+        ? `the second look's expected ${usd(own)} (${relookMargin} times the first look's ${usd(firstCost)} is less)`
+        : `${relookMargin} times the first look's ${usd(firstCost)}`;
+    const needed = `${usd(need)} needed: ${weighed}${later ? ` plus ${usd(heldBack)} kept for the ${later} section${later === 1 ? '' : 's'} still to look at` : ''}`;
     /** What is left of her approval when it no longer covers the need; undefined while it does. */
     const short = (): number | undefined => {
       const room = request.approvedRoom?.();

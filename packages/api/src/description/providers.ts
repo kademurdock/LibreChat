@@ -134,21 +134,23 @@ const generationSchema = z.object({
  * (two live calls on Sep 26 2026: the figures were equal), so the two are never added. With BYOK
  * (`is_byok` true: the provider bills the owner's own key, such as a Google AI Studio key) `cost`
  * is only OpenRouter's fee, and what the provider charged is `upstream_inference_cost` on top.
+ * A BYOK figure without a usable provider charge is not a price: the fee alone (possibly 0, when
+ * OpenRouter waives it) would book a call the provider billed at next to nothing, so it is
+ * undefined and the call is priced as one that reported no cost (the generation record, then the
+ * expected cost).
  */
 export function realCost(
   cost: number,
   isByok?: boolean | null,
   upstreamCost?: number | null,
-): number {
+): number | undefined {
   if (isByok !== true) return cost;
-  const upstream =
-    typeof upstreamCost === 'number' && Number.isFinite(upstreamCost) && upstreamCost > 0
-      ? upstreamCost
-      : 0;
-  return cost + upstream;
+  if (typeof upstreamCost !== 'number' || !Number.isFinite(upstreamCost) || upstreamCost < 0)
+    return undefined;
+  return cost + upstreamCost;
 }
-/** What a generation record says the call really cost (`realCost`). */
-const recordedCost = (record: z.infer<typeof generationSchema>['data']): number =>
+/** What a generation record says the call really cost (`realCost`); undefined when it cannot say. */
+const recordedCost = (record: z.infer<typeof generationSchema>['data']): number | undefined =>
   realCost(record.total_cost, record.is_byok, record.upstream_inference_cost);
 export type VoiceCatalog = {
   voices: string[];
@@ -777,6 +779,22 @@ const expectedFor = (
       1e6,
   );
 /**
+ * What a look is expected to cost before it is asked (`expectedFor` with its own `planFor`): for a
+ * second look of Road Runner's 74.5 s close section about $0.094 (such looks really cost $0.086 to
+ * $0.103), far above the thin first looks that call for one (AI Studio's 1,786-token look: $0.019).
+ * The engine's re-look gate needs at least this much room.
+ */
+export function expectedLook(look: Look): number {
+  const prompt = analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before);
+  const plan = planFor(look);
+  return expectedFor(
+    look.seconds,
+    prompt,
+    plan.reasoningTokens,
+    reserveFor(look.seconds, prompt, plan.maxTokens),
+  );
+}
+/**
  * Whether a cut-off reply's reasoning, not its answer, used up its room: it reasoned at least half
  * of what it wrote. Asking that look for fewer cues would not make room.
  */
@@ -953,7 +971,7 @@ function replyData(text: string): z.infer<typeof modelSchema> {
         : type === 'content_policy_violation' || type === 'refusal'
           ? new Refusal(`The video model declined to describe this scene: ${message}`)
           : new Upstream(message, Number.isInteger(code) && code >= 400 && code < 600 ? code : undefined)
-    ) as Error & FailedCall;
+    ) as Error & FailedCall & { thinking?: boolean };
     if (failed instanceof CutOff)
       failed.thinking = filledByReasoning(
         reply.usage?.completion_tokens_details?.reasoning_tokens,
@@ -961,12 +979,16 @@ function replyData(text: string): z.infer<typeof modelSchema> {
       );
     const cost = reply.usage?.cost;
     const upstream = reply.usage?.cost_details?.upstream_inference_cost;
-    if (typeof cost === 'number' && Number.isFinite(cost) && cost >= 0)
-      failed.costUSD = realCost(
-        cost,
-        reply.usage?.is_byok === true,
-        typeof upstream === 'number' ? upstream : undefined,
-      );
+    /** A BYOK figure without the provider's charge stays unpriced, so it is looked up (`costed`). */
+    const priced =
+      typeof cost === 'number' && Number.isFinite(cost) && cost >= 0
+        ? realCost(
+            cost,
+            reply.usage?.is_byok === true,
+            typeof upstream === 'number' ? upstream : undefined,
+          )
+        : undefined;
+    if (priced !== undefined) failed.costUSD = priced;
     throw failed;
   }
   return modelSchema.parse(json);
@@ -1043,14 +1065,16 @@ async function askModel(
 
 /**
  * OpenRouter's record of a generation, asked for at `visionLimits.lookupAtMs` after a failure (it
- * answers 404 until the record is final) and never past `visionLimits.lookupMs`. Undefined when no
- * record appeared or the key was refused; our stop ends the wait at once.
+ * answers 404 until the record is final) and never past `visionLimits.lookupMs`, with what it says
+ * the call cost (`recordedCost`). A BYOK record without the provider's charge is asked for again
+ * like a missing one. Undefined when no priced record appeared or the key was refused; our stop
+ * ends the wait at once.
  */
 async function generationRecord(
   generation: string,
   key: string,
   signal: AbortSignal,
-): Promise<z.infer<typeof generationSchema>['data'] | undefined> {
+): Promise<(z.infer<typeof generationSchema>['data'] & { costUSD: number }) | undefined> {
   const began = Date.now();
   for (const at of visionLimits.lookupAtMs) {
     if (at >= visionLimits.lookupMs) break;
@@ -1070,7 +1094,8 @@ async function generationRecord(
         },
       );
       const record = generationSchema.safeParse(response.data);
-      if (record.success) return record.data.data;
+      const costUSD = record.success ? recordedCost(record.data.data) : undefined;
+      if (record.success && costUSD !== undefined) return { ...record.data.data, costUSD };
     } catch (error) {
       if (signal.aborted) throw error;
       const status = statusOf(error);
@@ -1114,7 +1139,7 @@ async function costed(
       () => undefined,
     );
     if (record) {
-      failed.costUSD = recordedCost(record);
+      failed.costUSD = record.costUSD;
       failed.costFrom = 'generation';
       context.log?.(
         `vision: the failed request ${generation} cost $${failed.costUSD.toFixed(4)} by OpenRouter's record (provider ${record.provider_name ?? 'unknown'}${record.is_byok === true ? ', BYOK' : ''}, ${record.native_tokens_reasoning ?? '?'} reasoning tokens)`,
@@ -1143,7 +1168,7 @@ async function unreported(
     ? await generationRecord(generation, context.key, context.signal).catch(() => undefined)
     : undefined;
   if (record) {
-    const costUSD = recordedCost(record);
+    const { costUSD } = record;
     context.log?.(
       `vision: the reply ${generation} did not report its cost; $${costUSD.toFixed(4)} by OpenRouter's record`,
     );
@@ -1274,6 +1299,10 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
             usage?.cost === undefined
               ? undefined
               : realCost(usage.cost, usage.is_byok, usage.cost_details?.upstream_inference_cost);
+          if (usage?.cost !== undefined && reported === undefined)
+            look.log?.(
+              `vision: the BYOK reply gave OpenRouter's fee ($${usage.cost.toFixed(4)}) but not the provider's charge, so it is priced as a reply that reported no cost`,
+            );
           const output = usage?.completion_tokens;
           const priced =
             reported === undefined
