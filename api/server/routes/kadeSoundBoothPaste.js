@@ -60,22 +60,26 @@ function songPasteHeading(line) {
   else if (/^(?:the )?lyrics? box$/.test(words)) key = 'lyrics';
   if (!key) return null;
   const inline = colon === -1 ? '' : raw.slice(colon + 1).replace(/^[\s*_]+|[\s*_]+$/g, '');
-  return { key, inline: /^(?:```|~~~)/.test(inline) ? '' : inline };
+  return { key, inline: /^(?:`{3,}|~{3,})/.test(inline) ? '' : inline };
 }
 
 /** The body of one box. A fenced box is what sits between its fences, so any
  *  chatter after the closing fence is left out; a box whose closing fence is
  *  missing runs to the next heading; an unfenced box is kept whole. Blank
- *  edges go either way. */
+ *  edges go either way. A fence is three or more backticks or tildes: ChatGPT
+ *  fences with four when the box itself holds three, and the closing fence is
+ *  the first bare one of the same kind at least as long as the opening. */
 function songPasteBody(lines) {
-  const fence = /^\s*(?:```|~~~)[^`~]*$/;
+  const fence = /^\s*(`{3,}|~{3,})[^`~]*$/;
   let ls = lines.slice();
   while (ls.length && !ls[0].trim()) ls.shift();
-  if (ls.length && fence.test(ls[0])) {
+  const open = ls.length ? ls[0].match(fence) : null;
+  if (open) {
     ls.shift();
     let close = -1;
     for (let i = 0; i < ls.length; i++) {
-      if (fence.test(ls[i])) { close = i; break; }
+      const m = ls[i].match(/^\s*(`{3,}|~{3,})\s*$/);
+      if (m && m[1][0] === open[1][0] && m[1].length >= open[1].length) { close = i; break; }
     }
     if (close !== -1) ls = ls.slice(0, close);
   }
@@ -87,12 +91,15 @@ function songPasteBody(lines) {
 /**
  * Split a pasted three-box song. Returns null when the text is not one, so a
  * caller can do `const pasted = splitSongPaste(text); if (pasted) ...`.
+ * `before` is whatever came ahead of the first box heading: a direction she
+ * typed above the paste, or ChatGPT's opening line.
  *
- * @returns {{lyrics: string, tags: string, negative: string, boxes: string[]} | null}
+ * @returns {{lyrics: string, tags: string, negative: string, boxes: string[], before: string} | null}
  */
 function splitSongPaste(text) {
   const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
   const sections = [];
+  const ahead = [];
   let current = null;
   let startsWithHeading = false;
   let seenText = false;
@@ -101,14 +108,22 @@ function splitSongPaste(text) {
     if (h) {
       if (!seenText) startsWithHeading = true;
       seenText = true;
-      current = { key: h.key, lines: h.inline ? [h.inline] : [] };
+      current = { key: h.key, inline: !!h.inline, lines: h.inline ? [h.inline] : [] };
       sections.push(current);
       continue;
     }
     if (line.trim()) seenText = true;
     if (current) current.lines.push(line);
+    else ahead.push(line);
   }
   if (!sections.length) return null;
+  /* "**Lyrics Box:** (copy this into the lyrics field)" over a fenced block:
+   * the words after the colon are a label, not the first line of the song. */
+  for (const s of sections) {
+    if (!s.inline) continue;
+    const rest = s.lines.slice(1).filter((l) => l.trim());
+    if (rest.length && /^\s*(?:`{3,}|~{3,})/.test(rest[0])) s.lines.shift();
+  }
   const boxes = [];
   for (const s of sections) if (boxes.indexOf(s.key) === -1) boxes.push(s.key);
   /* Two different boxes anywhere is unmistakable. One box on its own counts
@@ -116,9 +131,9 @@ function splitSongPaste(text) {
    * a brief that happens to mention a "tag box" in passing is left alone. */
   if (boxes.length < 2) {
     const firstBody = sections[0].lines.filter((l) => l.trim());
-    if (!startsWithHeading || !firstBody.length || !/^\s*(?:```|~~~)/.test(firstBody[0])) return null;
+    if (!startsWithHeading || !firstBody.length || !/^\s*(?:`{3,}|~{3,})/.test(firstBody[0])) return null;
   }
-  const out = { lyrics: '', tags: '', negative: '', boxes };
+  const out = { lyrics: '', tags: '', negative: '', boxes, before: ahead.join('\n').trim() };
   for (const s of sections) {
     const body = songPasteBody(s.lines);
     if (body) out[s.key] = out[s.key] ? out[s.key] + '\n\n' + body : body;
@@ -135,50 +150,124 @@ function songPasteDraft(pasted) {
   return lyrics ? tags + '\n\nLyrics:\n' + lyrics : tags;
 }
 
-/** What to tell the person about a paste, in one or two sentences. */
-function songPasteNote(pasted, { lyricsReplaced = false } = {}) {
+/** What to tell the person about a paste, in one to three sentences.
+ *  With no options it describes the plain case: every box it had was used.
+ *  placeSongPaste passes what actually happened:
+ *    tagsUsed / lyricsUsed   whether the Tag Box and the Lyrics Box landed
+ *    lyricsReplaced          the Lyrics Box took the place of other words
+ *    instrumental            'dropped' (left out) or 'held' (kept, not sung)
+ *    directionEmpty          with no Tag Box: true when nothing is left in
+ *                            Music direction, false when hers was kept */
+function songPasteNote(pasted, opts) {
   if (!pasted) return '';
+  const o = opts || {};
+  const tagsUsed = o.tagsUsed !== undefined ? !!o.tagsUsed : !!pasted.tags;
+  const lyricsUsed = o.lyricsUsed !== undefined ? !!o.lyricsUsed : !!pasted.lyrics;
   const parts = [];
   const moved = [];
-  if (pasted.tags) moved.push('the Tag Box became the music direction');
-  if (pasted.lyrics) moved.push('the Lyrics Box became the lyrics');
+  if (tagsUsed) moved.push('the Tag Box became the music direction');
+  if (lyricsUsed) moved.push('the Lyrics Box became the lyrics');
   if (moved.length) parts.push('Your pasted song was sorted into its boxes: ' + moved.join(' and ') + '.');
-  if (lyricsReplaced) parts.push('The pasted lyrics replaced what was in the lyrics box.');
+  if (o.lyricsReplaced) parts.push('The pasted lyrics replaced what was in the lyrics box.');
+  if (o.instrumental === 'dropped') parts.push('No singing is on, so the Lyrics Box was left out.');
+  if (o.instrumental === 'held') parts.push('No singing is on, so those words will not be sung until you turn it off.');
+  if (pasted.tags && !tagsUsed) {
+    parts.push('Your music direction was kept, so the Tag Box was left out. To use its tags, paste the whole song into Music direction instead.');
+  }
+  if (!pasted.tags) {
+    parts.push(o.directionEmpty === true
+      ? 'The paste had no Tag Box, so there is no music direction yet. Describe the music before you generate.'
+      : o.directionEmpty === false
+        ? 'The paste had no Tag Box, so your music direction was kept.'
+        : 'The paste had no Tag Box.');
+  }
   if (pasted.negative) parts.push(NEGATIVE_TAGS_NOTE);
   return parts.join(' ');
 }
 
 /**
+ * Where each part of a paste goes. The server and the page both decide with
+ * this, so they cannot disagree.
+ *
+ *   field         'script' when it was pasted into Music direction, 'lyrics'
+ *                 when it was pasted into the lyrics box
+ *   direction     what Music direction holds apart from the paste
+ *   lyrics        what the lyrics box holds apart from the paste
+ *   instrumental  No singing is on
+ *   holdLyrics    the page keeps the Lyrics Box in the lyrics box even with No
+ *                 singing on (it is hidden there and never sent); the server
+ *                 leaves it out, because a body with No singing on must carry
+ *                 no words
+ *
+ * The rules:
+ *   - Pasted into Music direction, the Tag Box replaces the direction; with
+ *     no Tag Box the direction she had stays.
+ *   - Pasted into the lyrics box, the Tag Box fills Music direction only when
+ *     it is empty; a direction she wrote stays.
+ *   - The Lyrics Box wins over the lyrics box: a three-box paste is one
+ *     finished song, and its tags were written for its own words.
+ *
+ * @returns {{ script: string, lyrics: string, note: string }}
+ */
+function placeSongPaste(pasted, ctx) {
+  const c = ctx || {};
+  const direction = String(c.direction || '');
+  const lyrics = String(c.lyrics || '');
+  const tagsUsed = !!pasted.tags && (c.field !== 'lyrics' || !direction.trim());
+  const script = tagsUsed ? pasted.tags : direction;
+  const instrumental = c.instrumental === true;
+  const lyricsUsed = !!pasted.lyrics && (!instrumental || c.holdLyrics === true);
+  const lyricsReplaced = lyricsUsed && !!lyrics.trim() && lyrics.trim() !== pasted.lyrics.trim();
+  return {
+    script,
+    lyrics: lyricsUsed ? pasted.lyrics : lyrics,
+    note: songPasteNote(pasted, {
+      tagsUsed,
+      lyricsUsed,
+      lyricsReplaced,
+      instrumental: pasted.lyrics && instrumental ? (lyricsUsed ? 'held' : 'dropped') : '',
+      directionEmpty: !script.trim(),
+    }),
+  };
+}
+
+/**
  * The render-time guard. A client that does not split pastes itself (the
  * iPhone until its next build, or a person who pastes and presses Generate
- * straight away) sends the whole paste as `script`. This rewrites the body in
- * place so the engine receives only the direction and the words.
+ * straight away) sends the whole paste as `script`, or pastes it into the
+ * lyrics box. This rewrites the body in place so the engine receives only the
+ * direction and the words (see placeSongPaste for who wins). With No singing
+ * on, no words are put back into the body.
  *
- * The pasted Lyrics Box wins over the lyrics box: a three-box paste is one
- * finished song, and its tags were written for its own words.
- *
- * @returns {{ note: string, pasted: object } | null}
+ * @returns {{ note: string, pasted: object, field: string, script: string, lyrics: (string|undefined) } | null}
  */
 function applySongPasteToBody(body) {
   if (!body || typeof body !== 'object') return null;
   if (body.engine !== 'lyria' && body.engine !== 'yue2') return null;
-  if (typeof body.script !== 'string') return null;
-  const pasted = splitSongPaste(body.script);
-  if (!pasted) return null;
-  const before = typeof body.lyrics === 'string' ? body.lyrics.trim() : '';
-  body.script = pasted.tags;
-  let lyricsReplaced = false;
-  if (pasted.lyrics) {
-    lyricsReplaced = !!before && before !== pasted.lyrics.trim();
-    body.lyrics = pasted.lyrics;
+  const script = typeof body.script === 'string' ? body.script : '';
+  const lyrics = typeof body.lyrics === 'string' ? body.lyrics : '';
+  let field = 'script';
+  let pasted = splitSongPaste(script);
+  if (!pasted) {
+    field = 'lyrics';
+    pasted = splitSongPaste(lyrics);
   }
-  return { note: songPasteNote(pasted, { lyricsReplaced }), pasted };
+  if (!pasted) return null;
+  const placed = placeSongPaste(pasted, {
+    field,
+    direction: field === 'script' ? pasted.before : script,
+    lyrics: field === 'lyrics' ? pasted.before : lyrics,
+    instrumental: body.instrumental === true,
+  });
+  body.script = placed.script;
+  if (typeof body.lyrics === 'string' || placed.lyrics) body.lyrics = placed.lyrics;
+  return { note: placed.note, pasted, field, script: body.script, lyrics: body.lyrics };
 }
 
 /* The page's copy: the same functions, as source text. Only helpers that use
  * nothing from this module's scope belong here. */
 const PAGE_SOURCE =
-  [songPasteHeading, songPasteBody, splitSongPaste, songPasteDraft, songPasteNote].map(String).join('\n') +
+  [songPasteHeading, songPasteBody, splitSongPaste, songPasteDraft, songPasteNote, placeSongPaste].map(String).join('\n') +
   '\nvar NEGATIVE_TAGS_NOTE = ' + JSON.stringify(NEGATIVE_TAGS_NOTE) + ';\n';
 
 module.exports = {
@@ -188,6 +277,7 @@ module.exports = {
   splitSongPaste,
   songPasteDraft,
   songPasteNote,
+  placeSongPaste,
   applySongPasteToBody,
   PAGE_SOURCE,
 };

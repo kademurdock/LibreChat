@@ -152,4 +152,97 @@ test("the page's copy is the same code and behaves the same", () => {
   assert.equal(ctx.out.tags, TAGS);
   assert.equal(ctx.draft, TAGS + '\n\nLyrics:\n' + LYRICS);
   assert.match(ctx.note, /Negative Tag Box was left out/);
+  vm.runInNewContext(paste.PAGE_SOURCE + '\nthis.placed = placeSongPaste(splitSongPaste(input), { field: "lyrics", direction: "Her own direction.", lyrics: "" });', ctx);
+  assert.equal(ctx.placed.script, 'Her own direction.', 'the page decides with the same placement rules');
+  assert.equal(ctx.placed.lyrics, LYRICS);
+});
+
+/* ---- review fixes, Sep 25 2026 ------------------------------------------- */
+
+test('a label after the heading colon is not sung when a fenced box follows', () => {
+  const s = paste.splitSongPaste([
+    '**Lyrics Box:** (copy this into the lyrics field)', FENCE, LYRICS, FENCE,
+    '**Tag Box:** (for the style field)', '', FENCE, TAGS, FENCE,
+  ].join('\n'));
+  assert.equal(s.lyrics, LYRICS);
+  assert.equal(s.tags, TAGS);
+  assert.doesNotMatch(s.lyrics + s.tags, /copy this|style field|```/);
+  const single = paste.splitSongPaste(['Tag Box: (paste me)', FENCE, TAGS, FENCE].join('\n'));
+  assert.equal(single.tags, TAGS, 'a single labelled, fenced box is still recognised');
+  const unfenced = paste.splitSongPaste(['Lyrics Box', FENCE, LYRICS, FENCE, 'Tag Box: ' + TAGS, 'Negative Tag Box: ' + NEGATIVE].join('\n'));
+  assert.equal(unfenced.tags, TAGS, 'inline text with no fence after it is the box itself');
+  assert.equal(unfenced.negative, NEGATIVE);
+});
+
+test('fences of four or more backticks or tildes, with a three-backtick line kept inside', () => {
+  const four = '`'.repeat(4);
+  const s = paste.splitSongPaste(threeBox({ fence: four }));
+  assert.equal(s.lyrics, LYRICS);
+  assert.equal(s.tags, TAGS);
+  assert.equal(s.negative, NEGATIVE);
+  const inner = paste.splitSongPaste(['Lyrics Box', four + 'text', '[Verse 1]', FENCE, 'la la', four, 'Tag Box', '~~~~', TAGS, '~~~~'].join('\n'));
+  assert.equal(inner.lyrics, '[Verse 1]\n' + FENCE + '\nla la', 'a shorter fence inside does not close the box');
+  assert.equal(inner.tags, TAGS);
+  assert.equal(paste.splitSongPaste(['Tag Box', four, TAGS, four].join('\n')).tags, TAGS, 'a single four-backtick box counts');
+});
+
+test('what came ahead of the first heading is kept as `before`', () => {
+  assert.equal(paste.splitSongPaste(threeBox()).before, '');
+  assert.equal(paste.splitSongPaste('A 1970s soul song, Rhodes.\n\n' + threeBox()).before, 'A 1970s soul song, Rhodes.');
+});
+
+function lyricsAndNegative() {
+  return ['Lyrics Box', FENCE, LYRICS, FENCE, 'Negative Tag Box', FENCE, NEGATIVE, FENCE].join('\n');
+}
+
+test('a paste with no Tag Box keeps the direction she had', () => {
+  const typed = { engine: 'lyria', script: 'A 1970s soul song, Rhodes and brushed drums.\n\n' + lyricsAndNegative(), lyrics: '' };
+  const r = paste.applySongPasteToBody(typed);
+  assert.equal(typed.script, 'A 1970s soul song, Rhodes and brushed drums.', 'what she typed above the paste stays the direction');
+  assert.equal(typed.lyrics, LYRICS);
+  assert.match(r.note, /no Tag Box, so your music direction was kept/);
+  assert.doesNotMatch(JSON.stringify(typed), /no autotune|Lyrics Box/);
+
+  const bare = { engine: 'yue2', script: lyricsAndNegative(), lyrics: '' };
+  const b = paste.applySongPasteToBody(bare);
+  assert.equal(bare.script, '');
+  assert.match(b.note, /no Tag Box, so there is no music direction yet\. Describe the music/);
+
+  /* the page's rule: the box's own text is the direction, and it stays */
+  const placed = paste.placeSongPaste(paste.splitSongPaste(lyricsAndNegative()), { field: 'script', direction: 'Her typed direction.', lyrics: '' });
+  assert.equal(placed.script, 'Her typed direction.');
+  assert.equal(placed.lyrics, LYRICS);
+});
+
+test('a whole song pasted into the lyrics box is sorted too', () => {
+  const empty = { engine: 'lyria', script: '', lyrics: threeBox() };
+  const r = paste.applySongPasteToBody(empty);
+  assert.ok(r);
+  assert.equal(r.field, 'lyrics');
+  assert.equal(empty.lyrics, LYRICS);
+  assert.equal(empty.script, TAGS, 'an empty direction takes the Tag Box');
+  assert.doesNotMatch(JSON.stringify(empty), /no autotune|Tag Box|```/);
+
+  const mine = { engine: 'lyria', script: 'A 1970s soul song.', lyrics: threeBox({ eol: '\r\n' }) };
+  const m = paste.applySongPasteToBody(mine);
+  assert.equal(mine.script, 'A 1970s soul song.', 'a direction she wrote stays');
+  assert.equal(mine.lyrics, LYRICS);
+  assert.match(m.note, /Your music direction was kept, so the Tag Box was left out/);
+  assert.doesNotMatch(m.note, /Tag Box became the music direction/);
+
+  const both = { engine: 'lyria', script: threeBox(), lyrics: '[Verse]\nnot a paste' };
+  assert.equal(paste.applySongPasteToBody(both).field, 'script', 'a paste in Music direction is read first');
+});
+
+test('with No singing on, the render body gets no words back', () => {
+  const body = { engine: 'lyria', script: threeBox(), instrumental: true };
+  const r = paste.applySongPasteToBody(body);
+  assert.equal(body.script, TAGS);
+  assert.equal('lyrics' in body, false, 'no lyrics are put back into an instrumental body');
+  assert.match(r.note, /No singing is on, so the Lyrics Box was left out/);
+  assert.doesNotMatch(r.note, /Lyrics Box became the lyrics/);
+  /* the page holds the words in the hidden lyrics box and says so */
+  const held = paste.placeSongPaste(paste.splitSongPaste(threeBox()), { field: 'script', direction: '', lyrics: '', instrumental: true, holdLyrics: true });
+  assert.equal(held.lyrics, LYRICS);
+  assert.match(held.note, /will not be sung until you turn it off/);
 });

@@ -145,9 +145,18 @@ function scriptText(value) {
 /* YuE2 saves its style line with a trained style's trigger in front
  * ("kdsona, in the style of kdsona."), a made-up word only that style's LoRA
  * knows. On any other engine it is noise at the head of the description, and
- * the trained style itself is already reported as left behind. */
+ * the trained style itself is already reported as left behind.
+ *
+ * It can be there more than once: the saved style line already carries the
+ * trigger, so re-rendering an opened project puts it in front a second time
+ * (YuE2's input adds it to whatever style it is given). Every copy goes,
+ * wherever it sits. Only spaces after one are taken with it, so a line break
+ * that starts a "Lyrics:" heading stays where it was. */
+const TRAINED_LEAD = /\b(kd[a-z0-9]+), in the style of \1\.[ \t]*/gi;
 function stripTrainedLead(script) {
-  return String(script || '').replace(/^\s*(kd[a-z0-9]+), in the style of \1\.\s*/i, '');
+  const text = String(script || '');
+  const out = text.replace(TRAINED_LEAD, '');
+  return out === text ? text : out.replace(/^\s+/, '');
 }
 
 /** True when this text carries section tags -- [Verse 1], [Chorus] and so on.

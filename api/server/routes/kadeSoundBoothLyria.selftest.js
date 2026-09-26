@@ -516,6 +516,150 @@ test('the music lane: real store, stub Google, every branch that can cost money'
     assert.doesNotMatch(JSON.stringify(y.data.yueSaw), /autotune/);
   });
 
+  /* ---- review fixes, Sep 25 2026 ----------------------------------------- */
+  async function withDesk(answer, fn) {
+    const desk = express();
+    desk.use(express.json({ limit: '2mb' }));
+    const asked = [];
+    desk.post('/chat/completions', (req, res) => {
+      asked.push(req.body);
+      res.json({ choices: [{ message: { content: typeof answer === 'function' ? answer(req.body) : answer } }], usage: { prompt_tokens: 10, completion_tokens: 20 } });
+    });
+    const deskServer = desk.listen(0, '127.0.0.1');
+    await new Promise((r) => deskServer.on('listening', r));
+    process.env.KADE_LLM_GATEWAY_URL = 'http://127.0.0.1:' + deskServer.address().port + '/chat/completions';
+    process.env.REFRAME_PROXY_SECRET = 'test-only-secret';
+    try {
+      return await fn(asked);
+    } finally {
+      deskServer.closeAllConnections();
+      await new Promise((r) => deskServer.close(r));
+      delete process.env.KADE_LLM_GATEWAY_URL; delete process.env.REFRAME_PROXY_SECRET;
+    }
+  }
+
+  await t.test('carry to YuE2 with "rewrite": the desk\'s made-up song never lands in the style line', async () => {
+    await withDesk('Warm neo-soul, Rhodes, female vocal.\n\nLyrics:\n[Verse 1]\ninvented by the desk\nREADBACK: A warm neo-soul song.', async () => {
+      const source = await Project.create({
+        user: booth.__user, engine: 'lyria', title: 'Lyria wrote its own words', state: 'done',
+        script: 'A modern neo-soul song, Rhodes and a round bass, a woman singing close. Around 80 BPM, three minutes.', options: {},
+      });
+      const r = await call('/projects/' + source._id + '/carry', { engine: 'yue2', rewrite: true });
+      assert.equal(r.status, 200, JSON.stringify(r.data));
+      const made = await Project.findById(r.data.project.id);
+      assert.equal(made.script, 'Warm neo-soul, Rhodes, female vocal.');
+      assert.doesNotMatch(made.script, /Lyrics:|invented by the desk/);
+      assert.ok(!(made.options || {}).lyrics, 'words she did not write are not put in her Lyrics');
+      assert.ok(r.data.notes.some((n) => /desk also made up words/.test(n)), 'and she is told they were left out');
+      assert.ok(r.data.notes.some((n) => /will not sing without words/.test(n)));
+
+      /* Lyria as the destination keeps the old rule: with nothing carried, a
+       * Lyria brief keeps the desk's Lyrics block. */
+      const yue = await Project.create({ user: booth.__user, engine: 'yue2', title: 'No words yet', state: 'draft', script: 'neo-soul, Rhodes', options: {} });
+      const toLyria = await call('/projects/' + yue._id + '/carry', { engine: 'lyria', rewrite: true });
+      const lyria = await Project.findById(toLyria.data.project.id);
+      assert.match(lyria.script, /\n\nLyrics:\n\[Verse 1\]\ninvented by the desk$/);
+    });
+  });
+
+  await t.test("Lyria \"Help write\" with her own lyrics: the desk's copy is taken out and she is told", async () => {
+    const mine = '[Verse 1]\nher own words\n[Chorus]\nsinging them back';
+    await withDesk('A 1970s soul song, Rhodes and brushed drums, a woman singing close. Around 70 BPM, three minutes.\n\nLyrics:\n[Verse 1]\nHer own words,\n[Chorus]\nsinging them back (back)\nREADBACK: A slow soul song with a woman singing close.', async (asked) => {
+      const r = await call('/script', { engine: 'lyria', mode: 'write', text: 'a slow soul song for these words', lyrics: mine });
+      assert.equal(r.status, 200, JSON.stringify(r.data));
+      assert.match(asked[0].messages.map((m) => m.content).join('\n'), /THEIR EXISTING LYRICS/, 'her words were given to the desk to shape the music around');
+      assert.equal(r.data.script, 'A 1970s soul song, Rhodes and brushed drums, a woman singing close. Around 70 BPM, three minutes.');
+      assert.doesNotMatch(r.data.script, /Lyrics:/);
+      assert.match(r.data.note, /Your own lyrics were kept as you wrote them/);
+      assert.equal(r.data.readback, 'A slow soul song with a woman singing close.');
+    });
+    await withDesk('A 1970s soul song.\n\nLyrics:\n' + mine + '\nREADBACK: A soul song.', async () => {
+      const same = await call('/script', { engine: 'lyria', mode: 'write', text: 'a slow soul song for these words', lyrics: mine });
+      assert.equal(same.data.script, 'A 1970s soul song.');
+      assert.equal(same.data.note, null, 'an exact echo is taken out without a remark');
+    });
+    await withDesk('A 1970s soul song.\n\nLyrics:\n[Verse 1]\nthe desk words\nREADBACK: A soul song.', async () => {
+      const none = await call('/script', { engine: 'lyria', mode: 'write', text: 'a slow soul song' });
+      assert.match(none.data.script, /\n\nLyrics:\n\[Verse 1\]\nthe desk words$/, 'with an empty lyrics box the draft keeps its words, for the screens to split');
+    });
+  });
+
+  await t.test('a YuE2 paste with no Lyrics Box is answered as a paste, with its problem', async () => {
+    const tagsOnly = ['Tag Box', F, PASTE_TAGS, F, 'Negative Tag Box', F, 'no autotune', F].join('\n');
+    const r = await call('/script', { engine: 'yue2', mode: 'write', text: tagsOnly, lyrics: '' });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.pasted, true);
+    assert.equal(r.data.script, PASTE_TAGS, 'the Tag Box, for Music direction');
+    assert.match(r.data.problem, /paste had no Lyrics Box/);
+    const kept = await call('/script', { engine: 'yue2', mode: 'write', text: tagsOnly, lyrics: '[Verse]\nwords she already has' });
+    assert.equal(kept.data.problem, null, 'words already in the lyrics box are enough');
+  });
+
+  await t.test('a paste rendered straight away says what the sorting did, on YuE2 too, and hands back the sorted boxes', async () => {
+    const y = await call('/render', { engine: 'yue2', script: PASTE, lyrics: '' });
+    assert.equal(y.status, 200);
+    assert.match(y.data.note, /Your pasted song was sorted into its boxes/);
+    assert.match(y.data.note, /Negative Tag Box was left out/);
+    assert.deepEqual(y.data.pasteSorted, { script: PASTE_TAGS, lyrics: PASTE_LYRICS });
+
+    reply = { status: 200, body: { candidates: [{ content: { parts: [
+      { text: 'Tomato soup at midnight' },
+      { inlineData: { mimeType: 'audio/mpeg', data: FAKE_MP3 } },
+    ] } }] } };
+    const l = await call('/render', { engine: 'lyria', script: PASTE });
+    assert.equal(l.status, 200);
+    assert.equal(l.data.spoken.match(/Your pasted song was sorted/g).length, 1, 'said once, not twice');
+    assert.equal(l.data.note.match(/Your pasted song was sorted/g).length, 1);
+    assert.deepEqual(l.data.pasteSorted, { script: PASTE_TAGS, lyrics: PASTE_LYRICS });
+  });
+
+  await t.test('No singing on: a pasted Lyrics Box is not put back into the render', async () => {
+    reply = { status: 200, body: { candidates: [{ content: { parts: [
+      { inlineData: { mimeType: 'audio/mpeg', data: FAKE_MP3 } },
+    ] } }] } };
+    const r = await call('/render', { engine: 'lyria', script: PASTE, instrumental: true });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const sent = seen.at(-1).body.contents[0].parts[0].text;
+    assert.equal(sent, PASTE_TAGS + '\n\nInstrumental only, no vocals.');
+    assert.doesNotMatch(sent, /Lyrics:/);
+    assert.match(r.data.spoken, /No singing is on, so the Lyrics Box was left out/);
+    const p = await Project.findById(r.data.projectId);
+    assert.ok(!p.options.lyrics, 'no words are saved on an instrumental take');
+  });
+
+  await t.test('a whole song pasted into the lyrics box keeps the direction she wrote', async () => {
+    const r = await call('/render', { engine: 'lyria', script: 'A 1970s soul song, Rhodes and brushed drums.', lyrics: PASTE });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const sent = seen.at(-1).body.contents[0].parts[0].text;
+    assert.equal(sent, 'A 1970s soul song, Rhodes and brushed drums.\n\nLyrics:\n' + PASTE_LYRICS);
+    assert.match(r.data.note, /Your music direction was kept, so the Tag Box was left out/);
+  });
+
+  await t.test('"Help write" with a whole song in the lyrics box: sorted before the writer sees it', async () => {
+    /* No idea typed: answered as a paste, no writer, no charge. */
+    const bare = await call('/script', { engine: 'lyria', mode: 'write', text: '', lyrics: PASTE });
+    assert.equal(bare.status, 200, JSON.stringify(bare.data));
+    assert.equal(bare.data.pasted, true);
+    assert.equal(bare.data.script, PASTE_TAGS + '\n\nLyrics:\n' + PASTE_LYRICS, 'an empty direction takes the Tag Box');
+    assert.match(bare.data.note, /Nothing was sent to the writer/);
+    assert.doesNotMatch(JSON.stringify(bare.data), /no autotune|Lyrics Box\*\*/);
+
+    /* An idea typed: the writer is asked, but only with the Lyrics Box as her
+     * words, and her direction is not replaced by the Tag Box. */
+    await withDesk('A 1970s soul song, Rhodes and brushed drums.\n\nLyrics:\n[Verse 1]\nthe desk rewrote them\nREADBACK: A soul song.', async (asked) => {
+      const r = await call('/script', { engine: 'lyria', mode: 'write', text: 'a slow soul song for these words', lyrics: PASTE });
+      assert.equal(r.status, 200, JSON.stringify(r.data));
+      const sentToDesk = asked[0].messages.map((m) => m.content).join('\n');
+      assert.match(sentToDesk, /THEIR EXISTING LYRICS: Keep these words exactly[^\n]*\n\[Verse 1\]\nThe vending machine/);
+      assert.doesNotMatch(sentToDesk, /no autotune|Tag Box|Lyrics Box|```/, 'no headings, fences or negative tags reach the writer');
+      assert.equal(r.data.script, 'A 1970s soul song, Rhodes and brushed drums.', "the desk's copy of the words is taken out");
+      assert.match(r.data.note, /Your music direction was kept, so the Tag Box was left out/);
+      assert.match(r.data.note, /Negative Tag Box was left out/);
+      assert.match(r.data.note, /words from your pasted Lyrics Box were kept/);
+      assert.deepEqual(r.data.pasteSorted, { script: null, lyrics: PASTE_LYRICS });
+    });
+  });
+
   await t.test('THE WALL: a hyphenated model id is caught and named in plain words', async () => {
     /* This is the whole reason the normalizer exists, so it is proven end to
      * end: force the bad id past the normalizer's front door and confirm the

@@ -39,10 +39,34 @@ const musicReferenceHooks = {
  * below and Lyria's further down -- so the engine gets the direction and the
  * words and never the negative tags. The web page sorts a paste the moment it
  * lands; this is for the phone and for a paste rendered straight away. Auth
- * stays with the render routes themselves. */
-router.post('/render', express.json({ limit: '128kb' }), (req, _res, next) => {
+ * stays with the render routes themselves.
+ *
+ * Whatever route answers, the answer says what the sorting did (`note`, and
+ * in front of `estimate.spoken` and `spoken`) and hands back the sorted boxes
+ * (`pasteSorted`), so a phone that sent the paste unsorted can say so and put
+ * the sorted direction and words in its own fields. YuE2's router knows
+ * nothing about pastes; this is how its answer carries the note too. Adding
+ * the note is idempotent, so the Lyria route saying it itself is harmless. */
+function withSongPasteNote(data, applied) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return data;
+  const note = applied.note;
+  const says = (s) => typeof s === 'string' && s.includes(note);
+  const out = { ...data };
+  if (note && !says(out.note)) out.note = [note, out.note].filter(Boolean).join(' ');
+  if (note && out.estimate && typeof out.estimate.spoken === 'string' && !says(out.estimate.spoken)) {
+    out.estimate = { ...out.estimate, spoken: note + ' ' + out.estimate.spoken };
+  }
+  if (note && typeof out.spoken === 'string' && !says(out.spoken)) out.spoken = note + ' ' + out.spoken;
+  out.pasteSorted = { script: applied.script, lyrics: typeof applied.lyrics === 'string' ? applied.lyrics : null };
+  return out;
+}
+router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
   const applied = songPaste.applySongPasteToBody(req.body);
-  if (applied) req.songPaste = applied;
+  if (applied) {
+    req.songPaste = applied;
+    const json = res.json.bind(res);
+    res.json = (data) => json(withSongPasteNote(data, applied));
+  }
   next();
 });
 router.use(createLyricsRouter(musicReferenceHooks));
@@ -1290,40 +1314,67 @@ router.get('/script/job/:id', requireJwtAuth, (req, res) => {
  * counted against the day, and handed back in the same "direction, then
  * Lyrics:" shape both screens already split into their two boxes. The
  * Negative Tag Box goes nowhere (see kadeSoundBoothPaste.js). */
-function songPasteScriptResult(engine, mode, pasted, b) {
-  const draft = songPaste.songPasteDraft(pasted);
-  const before = typeof b.lyrics === 'string' ? b.lyrics.trim() : '';
-  const lyricsReplaced = !!pasted.lyrics && !!before && before !== pasted.lyrics.trim();
-  const direction = pasted.tags.replace(/\s+/g, ' ').trim();
+function songPasteScriptResult(engine, mode, pasted, b, field = 'script') {
+  /* Pasted as the text to write up, whatever sat above its first heading is
+   * the direction she had; pasted into the lyrics box, the text is her
+   * direction and whatever sat above the heading there is her words. The
+   * words go back to her editor, not to an engine, so with No singing on
+   * they are held there rather than dropped (the page does the same). */
+  const existingLyrics = typeof b.lyrics === 'string' ? b.lyrics : '';
+  const placed = songPaste.placeSongPaste(pasted, {
+    field,
+    direction: field === 'lyrics' ? String(b.text || '') : pasted.before,
+    lyrics: field === 'lyrics' ? pasted.before : existingLyrics,
+    instrumental: b.instrumental === true,
+    holdLyrics: true,
+  });
+  const draft = songPaste.songPasteDraft({ tags: placed.script, lyrics: pasted.lyrics ? placed.lyrics : '' });
+  const direction = placed.script.replace(/\s+/g, ' ').trim();
   const readback = (direction.match(/^(?:[^.!?]+[.!?]){1,2}/) || [direction])[0].trim().slice(0, 400);
   const problem = engine === 'lyria'
-    ? checkMusic(pasted.tags, pasted.lyrics)
-    : !pasted.lyrics ? 'YuE2 will not sing without words, and the paste had no Lyrics Box. Add the words under Lyrics before you generate.' : null;
+    ? checkMusic(placed.script, placed.lyrics)
+    : !placed.lyrics.trim() ? 'YuE2 will not sing without words, and the paste had no Lyrics Box. Add the words under Lyrics before you generate.' : null;
   return {
     engine,
     mode,
     script: draft,
     screenplay: draft,
     readback,
-    estimate: engine === 'yue2' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor('lyria', pasted.tags),
+    estimate: engine === 'yue2' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor('lyria', placed.script),
     problem,
     repairs: [],
     mismatch: null,
     pasted: true,
-    note: songPaste.songPasteNote(pasted, { lyricsReplaced }) + ' Nothing was sent to the writer, and nothing was charged.',
+    note: placed.note + ' Nothing was sent to the writer, and nothing was charged.',
   };
 }
 
 async function scriptHandler(req, res) {
   try {
-    const b = req.body || {};
+    let b = req.body || {};
     const engine = ['seed', 'lyria', 'yue2'].includes(b.engine) ? b.engine : 'scenema';
     const mode = b.mode === 'write' ? 'write' : 'format';
+    /* A whole song pasted into the lyrics box: with no idea to write up it is
+     * answered as a paste; with one, the writer gets only the Lyrics Box as her
+     * words (never the headings or the negative tags), and the answer says so
+     * and hands back the sorted words (`pasteSorted`). */
+    let lyricsPaste = null;
     if (engine === 'lyria' || engine === 'yue2') {
       const pasted = songPaste.splitSongPaste(b.text);
       if (pasted) {
         logger.info(`[soundbooth/script] ${engine}/${mode} user=${req.user.id} pasted song sorted without the writer: boxes=${pasted.boxes.join(',')}`);
         return res.json(songPasteScriptResult(engine, mode, pasted, b));
+      }
+      const pastedWords = songPaste.splitSongPaste(b.lyrics);
+      if (pastedWords) {
+        logger.info(`[soundbooth/script] ${engine}/${mode} user=${req.user.id} song pasted into the lyrics box sorted: boxes=${pastedWords.boxes.join(',')}`);
+        if (String(b.text || '').trim().length < 3) {
+          return res.json(songPasteScriptResult(engine, mode, pastedWords, b, 'lyrics'));
+        }
+        lyricsPaste = songPaste.placeSongPaste(pastedWords, {
+          field: 'lyrics', direction: String(b.text || ''), lyrics: pastedWords.before, holdLyrics: true,
+        });
+        b = { ...b, lyrics: lyricsPaste.lyrics };
       }
     }
     const text = String(b.text || '').trim().slice(0, 6000);
@@ -1463,6 +1514,26 @@ async function scriptHandler(req, res) {
     }
     if (ownsLyrics) raw = fixStageDirections(raw);
     let { script, readback } = splitScriptAndReadback(raw);
+    /* Sep 25 2026: when she gave Lyria her own words, her lyrics box keeps
+     * them. Lyric's delivery contract asks for a Lyrics: heading with the
+     * words, so the desk may hand back a copy -- sometimes reformatted -- and
+     * both screens now move a draft's Lyrics block into the lyrics box, which
+     * would quietly replace hers. Her words already go under "Lyrics:" at
+     * render (lyriaWirePrompt: the box wins), so the desk's copy is taken out
+     * here, the same rule as a carry, and she is told when it differed. */
+    let lyricsKeptNote = '';
+    if (engine === 'lyria' && typeof b.lyrics === 'string' && b.lyrics.trim()) {
+      const inDraft = carry.splitLyricsBlock(script);
+      if (inDraft.lyrics) {
+        const flat = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        script = inDraft.prose;
+        if (flat(inDraft.lyrics) !== flat(b.lyrics)) {
+          lyricsKeptNote = lyricsPaste
+            ? 'The words from your pasted Lyrics Box were kept; the copy the desk put in its draft was left out.'
+            : 'Your own lyrics were kept as you wrote them; the copy the desk put in its draft was left out.';
+        }
+      }
+    }
     if (!script) {
       return res.status(502).json({ error: 'The script desk came back empty. Try again.' });
     }
@@ -1549,6 +1620,10 @@ async function scriptHandler(req, res) {
       problem: problem || null,
       repairs,
       mismatch: mismatch ? mismatch.question : null,
+      note: [lyricsPaste && lyricsPaste.note, lyricsKeptNote].filter(Boolean).join(' ') || null,
+      /* only when a song pasted into the lyrics box was sorted: the words to
+       * put in the lyrics box (script null: the draft above is the direction) */
+      pasteSorted: lyricsPaste ? { script: null, lyrics: lyricsPaste.lyrics } : undefined,
     });
   } catch (error) {
     const status = error.status || 500;
@@ -2480,12 +2555,24 @@ router.post('/projects/:id/carry', requireJwtAuth, express.json({ limit: '16kb' 
         });
         const split = splitScriptAndReadback(reply.text);
         /* The words already carried across exactly; a Lyrics block the desk
-         * added to the description would be a second, unasked-for copy. */
-        const rewritten = (draft.options || {}).lyrics ? carry.splitLyricsBlock(split.script).prose : split.script;
+         * added to the description would be a second, unasked-for copy.
+         * YuE2 keeps words in a field of their own, and the desk's YuE2 format
+         * says "Always provide both", so with nothing carried it makes up a
+         * song. That never belongs in the style line (YuE2 would read lyrics
+         * as style, inside a 3,000-character cap), and words she did not
+         * write are not put in her Lyrics either: they are left out and she
+         * is told. Lyria keeps words inside its brief, so with nothing
+         * carried a Lyria brief keeps the desk's block, as before. */
+        const parts = carry.splitLyricsBlock(split.script);
+        const carriedWords = !!(draft.options || {}).lyrics;
+        const rewritten = carriedWords || to === 'yue2' ? parts.prose : split.script;
         if (rewritten && !carry.isBrokenScript(rewritten)) {
           draft.script = rewritten;
           draft.readback = split.readback;
           notes.push('The desk rewrote the description in the new engine\u2019s format. Your lyrics were not sent to it.');
+          if (to === 'yue2' && !carriedWords && parts.lyrics) {
+            notes.push('The desk also made up words for it. They were left out of the style and out of Lyrics, because they are not yours. Add your own words under Lyrics, or use Write my song idea to draft them.');
+          }
         } else {
           notes.push('The desk did not return a usable description, so it came across as it was. You can still edit it by hand.');
         }

@@ -234,3 +234,23 @@ test("a YuE2 trained style's trigger words do not ride into another engine's des
   assert.strictEqual(out.draft.script, "English, children's choir. Bright folk.");
   assert.ok(out.notes.some((n) => /trained style/.test(n)), 'and the style itself is still said to be left behind');
 });
+
+test('a trigger that re-rendering put in front twice is taken off every time', () => {
+  const lead = 'kdsona, in the style of kdsona. ';
+  assert.strictEqual(carry.stripTrainedLead(lead + lead + 'English, female lead vocal. Neo-soul.'), 'English, female lead vocal. Neo-soul.');
+  assert.strictEqual(carry.stripTrainedLead(lead + ' ' + lead), '');
+  const out = carry.carryOver({ ...YUE, script: lead + lead + 'Warm neo-soul, Rhodes.' }, 'lyria');
+  assert.strictEqual(out.draft.script, 'Warm neo-soul, Rhodes.');
+  assert.doesNotMatch(out.draft.script, /kdsona/);
+});
+
+test('every copy of the trigger goes, wherever it sits, and a Lyrics heading keeps its line', () => {
+  const lead = 'kdsona, in the style of kdsona. ';
+  assert.strictEqual(carry.stripTrainedLead('Warm neo-soul. ' + lead + 'Rhodes and a round bass.'), 'Warm neo-soul. Rhodes and a round bass.');
+  assert.strictEqual(carry.stripTrainedLead('KDSona, in the style of kdsona.\nEnglish, female lead vocal.'), 'English, female lead vocal.');
+  assert.strictEqual(carry.stripTrainedLead('Warm neo-soul. kdsona, in the style of kdsona.\n\nLyrics:\n[Verse 1]\nla la'), 'Warm neo-soul. \n\nLyrics:\n[Verse 1]\nla la');
+  assert.strictEqual(carry.stripTrainedLead('kdsona, in the style of kdkids. Folk.'), 'kdsona, in the style of kdkids. Folk.', 'two different words are not a trigger');
+  assert.strictEqual(carry.stripTrainedLead('the akdsona, in the style of akdsona. band'), 'the akdsona, in the style of akdsona. band', 'only a whole word starting kd');
+  const out = carry.carryOver({ ...YUE, script: lead + 'Warm neo-soul, ' + lead + 'Rhodes.' }, 'lyria');
+  assert.strictEqual(out.draft.script, 'Warm neo-soul, Rhodes.');
+});

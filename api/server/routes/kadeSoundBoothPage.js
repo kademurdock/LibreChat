@@ -516,6 +516,41 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       box.value=value;invalidateQuote();state.lastXml=null;showCode(null);
       document.getElementById('btnUndoWriting').hidden=false;box.focus();
     }
+    /* Sep 25 2026: a Lyria draft is split the same way as a YuE2 one, so its
+     * words land in Your own lyrics instead of inside the Music direction. An
+     * instrumental has no Lyrics heading and stays whole; only YuE2 insists on
+     * words. A pasted song (data.pasted) was sorted by the server, not written,
+     * so a missing Lyrics Box is its problem to say, not the writer's, and its
+     * Lyrics Box wins over the lyrics box. For Lyria her own words win over a
+     * desk draft's copy of them (the server takes that copy out; this holds if
+     * one slips through), so a desk's words only move into an empty Lyria box.
+     * Whenever the lyrics box changes, she is told. Returns the direction for
+     * the editor and what to say before "Draft ready". */
+    function sortDraft(engine, data, result){
+      var pastedDraft=!!data.pasted, lead='';
+      if(engine==='yue2'||engine==='lyria'){
+        var split=result.split(/\\nLyrics:\\s*/i);
+        if(split.length<2){
+          if(engine==='yue2'&&!pastedDraft)throw new Error('The writer did not provide separate lyrics. Your idea is kept; try again or add your lyrics in song settings.');
+        } else {
+          var deskWords=split.slice(1).join('\\n').trim(), mine=(state.values.lyrics||'').trim();
+          result=split[0].trim();
+          if(engine==='lyria'&&!pastedDraft&&mine){
+            if(deskWords!==mine)lead='Your own lyrics were kept as you wrote them; the copy the desk put in its draft was left out. ';
+          } else {
+            writingLyrics=state.values.lyrics||'';state.values.lyrics=deskWords;renderSettings();
+            if(!pastedDraft&&deskWords){
+              var box=engine==='lyria'?'Your own lyrics':'Lyrics';
+              if(!mine)lead='The words the desk wrote are now in '+box+', under Lyrics and song settings. ';
+              else if(deskWords!==mine)lead=box+' now holds the desk version of your words; Undo brings back yours. ';
+            }
+          }
+        }
+      }
+      if(data.note)lead+=data.note+' ';
+      if(pastedDraft&&data.problem)lead+='One thing to fix first: '+data.problem+' ';
+      return {result:result, lead:lead};
+    }
     document.getElementById('btnUndoWriting').onclick=function(){
       if(busy() || !writingUndo || writingUndo.engine!==state.engine)return;
       document.getElementById('script').value=writingUndo.text;if(writingUndo.lyrics!==undefined){state.values.lyrics=writingUndo.lyrics;renderSettings();}writingUndo=null;
@@ -590,12 +625,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(state.engine!==engine || box.value!==original || state.quoteRevision!==revision){say('Your editor or settings changed while the draft was being written. Your current text is kept.',true);return;}
         var result=r.data.screenplay||r.data.script;
         if(!result)throw new Error('The writing desk returned no draft. Your text is kept.');
-        /* Sep 25 2026: a Lyria draft is split the same way, so its words land in
-         * Your own lyrics instead of inside the Music direction. An instrumental
-         * has no Lyrics heading and stays whole; only YuE2 insists on words. */
-        if(engine==='yue2'||engine==='lyria'){var split=result.split(/\\nLyrics:\\s*/i);if(split.length<2){if(engine==='yue2')throw new Error('The writer did not provide separate lyrics. Your idea is kept; try again or add your lyrics in song settings.');}else{writingLyrics=state.values.lyrics||'';state.values.lyrics=split.slice(1).join('\\n').trim();result=split[0].trim();renderSettings();}}
-        changeWriting(result);document.getElementById('readback').textContent=r.data.readback||'';
-        say((r.data.note?r.data.note+' ':'')+'Draft ready in the editor. You can change it or undo. No audio has been generated.');
+        var sorted=sortDraft(engine,r.data,result);
+        changeWriting(sorted.result);document.getElementById('readback').textContent=r.data.readback||'';
+        say(sorted.lead+'Draft ready in the editor. You can change it or undo. No audio has been generated.');
       } catch(e){say(e.message||'The writing desk could not finish. Your text is kept.',true);}
       finally {state.writing=false;box.readOnly=false;this.disabled=false;this.textContent=label;document.getElementById('btnInspire').disabled=false;updateRenderControls();}
     };
@@ -611,22 +643,30 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
      * Negative Tag Box) is sorted the moment it lands: the Tag Box becomes the
      * Music direction, the Lyrics Box goes to the lyrics box, and the negative
      * tags go nowhere, because neither music engine has a place for them. No
-     * writer is asked, nothing is charged, and Undo puts back what was there. */
-    document.getElementById('script').addEventListener('paste', function(e){
+     * writer is asked, nothing is charged, and Undo puts back what was there.
+     * It is caught in the lyrics box too, where "Paste words you have already
+     * written" invites it. placeSongPaste (shared with the server) decides:
+     * a Tag Box replaces the direction only when pasted into Music direction or
+     * when the direction is empty, and a paste with no Tag Box keeps hers. */
+    function sortPastedSong(e, field){
       if((state.engine!=='lyria'&&state.engine!=='yue2')||busy()||typeof splitSongPaste!=='function')return;
       var clip=e.clipboardData||window.clipboardData;var text=clip&&clip.getData?clip.getData('text'):'';
       var pasted=splitSongPaste(text);
       if(!pasted)return;
       e.preventDefault();
-      var before=(state.values.lyrics||'').trim();
+      var box=document.getElementById('script'), direction=box.value;
+      var placed=placeSongPaste(pasted,{field:field,direction:direction,lyrics:state.values.lyrics||'',instrumental:!!state.values.instrumental,holdLyrics:true});
       writingLyrics=state.values.lyrics||'';
-      if(pasted.lyrics)state.values.lyrics=pasted.lyrics;
+      state.values.lyrics=placed.lyrics;
       renderSettings();
-      changeWriting(pasted.tags);
-      document.getElementById('readback').textContent='';
+      changeWriting(placed.script);
+      if(placed.script!==direction)document.getElementById('readback').textContent='';
       state.pendingRender=null;document.getElementById('btnRender').textContent=renderLabel();
-      say(songPasteNote(pasted,{lyricsReplaced:!!pasted.lyrics&&!!before&&before!==pasted.lyrics.trim()})+' Undo restores what was there. Nothing has been generated.');
-    });
+      if(field==='lyrics'){var words=document.getElementById('set_lyrics');if(words)words.focus();}
+      say(placed.note+' Undo restores what was there. Nothing has been generated.');
+    }
+    document.getElementById('script').addEventListener('paste', function(e){ sortPastedSong(e,'script'); });
+    document.getElementById('settings').addEventListener('paste', function(e){ if(e.target&&e.target.id==='set_lyrics')sortPastedSong(e,'lyrics'); });
 
     async function doRender(preview){
       if(state.writing || !referenceReady())return;
