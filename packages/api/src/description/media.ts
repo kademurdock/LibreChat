@@ -1873,3 +1873,112 @@ export async function quietTextTracks(file: string): Promise<number> {
     await handle.close();
   }
 }
+
+type Track = {
+  index: number;
+  codec_type?: string;
+  duration?: string;
+  tags?: { handler_name?: string; title?: string };
+};
+
+type Layout = { streams: Track[]; chapters: number };
+
+async function layout(file: string, signal: AbortSignal): Promise<Layout> {
+  const raw = await command(
+    ffprobe(),
+    [
+      '-v',
+      'error',
+      '-show_entries',
+      'stream=index,codec_type,duration:stream_tags=handler_name,title:chapter=start_time',
+      '-of',
+      'json',
+      file,
+    ],
+    signal,
+  );
+  const found = JSON.parse(raw.toString()) as { streams?: Track[]; chapters?: unknown[] };
+  return { streams: found.streams ?? [], chapters: found.chapters?.length ?? 0 };
+}
+
+/** The description lines as text, the second text track of copies finished before Part 295. */
+const descriptionText = (item: Track): boolean =>
+  item.codec_type === 'subtitle' &&
+  [item.tags?.handler_name, item.tags?.title].some((name) =>
+    /^audio descriptions/i.test(name?.trim() ?? ''),
+  );
+
+/** What a rewrite must keep: picture and sound streams (and the longest one's length), text tracks, chapters. */
+function contents(found: Layout): {
+  main: number;
+  seconds: number;
+  texts: number;
+  chapters: number;
+} {
+  const main = found.streams.filter(
+    (item) => item.codec_type === 'video' || item.codec_type === 'audio',
+  );
+  return {
+    main: main.length,
+    seconds: Math.max(0, ...main.map((item) => Number(item.duration) || 0)),
+    texts: found.streams.filter((item) => item.codec_type === 'subtitle').length,
+    chapters: found.chapters,
+  };
+}
+
+/**
+ * Copies finished before Part 295 carry a second text track, "Audio descriptions (text)": the
+ * lines the narrator already speaks, which Files, Photos or AVKit can switch on so VoiceOver reads
+ * them over the film. Writes `output` without that track by stream copy, so the picture, the
+ * sound, the dialogue captions, the chapters and the title stay exactly as they were, switches the
+ * captions off again (quietTextTracks), and checks that every picture and sound stream came
+ * through at its old length with the other text tracks and every chapter. Returns false, writing
+ * nothing, when the file has no such track.
+ */
+export async function dropDescriptionText(
+  input: string,
+  output: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const before = await layout(input, signal);
+  if (!before.streams.some(descriptionText)) return false;
+  const kept = before.streams.filter(
+    (item) => item.codec_type === 'subtitle' && !descriptionText(item),
+  );
+  await command(
+    ffmpeg(),
+    [
+      ...quiet,
+      ...sourceOnly,
+      '-i',
+      input,
+      '-map',
+      '0:v',
+      '-map',
+      '0:a',
+      ...kept.flatMap((item) => ['-map', `0:${item.index}`]),
+      '-map_chapters',
+      '0',
+      '-c',
+      'copy',
+      '-movflags',
+      '+faststart',
+      output,
+    ],
+    signal,
+  );
+  await quietTextTracks(output);
+  const was = contents(before);
+  const now = contents(await layout(output, signal));
+  if (
+    now.main !== was.main ||
+    Math.abs(now.seconds - was.seconds) > 0.1 ||
+    now.texts !== kept.length ||
+    now.chapters !== was.chapters
+  )
+    throw new MediaError(
+      'tools',
+      `rewritten copy has ${now.main} streams of ${now.seconds}s, ${now.texts} text, ${now.chapters} chapters; was ${was.main} of ${was.seconds}s, ${kept.length} text kept, ${was.chapters} chapters`,
+    );
+  return true;
+}

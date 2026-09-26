@@ -67,7 +67,7 @@ import { importYouTube, youtubeURL } from './youtube';
 import { FAMILY_PACK_NOTE, FAMILY_PACK_REFUSAL } from '../family/pack';
 import type { FamilyFeatures } from '../family/pack';
 import { rehearsalProviders } from './rehearsal';
-import { MediaError, decodeVoice, probe, stretch } from './media';
+import { MediaError, decodeVoice, dropDescriptionText, probe, stretch } from './media';
 import { clock, spokenLength } from './transcript';
 import { settingsSchema, Halt } from './types';
 import { sampleRate } from './mix';
@@ -99,6 +99,10 @@ type FinishedCopy = {
   firstLook?: number;
   /** Made by a free rehearsal: a test tone and numbered placeholder descriptions. */
   rehearsal?: boolean;
+  /** Its MP4 has no description text track: made since Part 295, or rewritten by quietOldCopy. */
+  captionsOnly?: boolean;
+  /** Its MP4's name in its folder when that is not described.mp4: quietOldCopy's rewrite. */
+  video?: string;
 };
 type Actor = { id: string; role?: string; child?: boolean };
 /** A library track the owner may describe, found and checked by the library's own access rules. */
@@ -272,6 +276,10 @@ type Job = {
   savedToLibrary?: string;
   libraryPending?: string;
   librarySaving?: Date;
+  /** quietOldCopy is rewriting one of this video's copies until then (or waits after a failure). */
+  quieting?: Date;
+  /** quietOldCopy's failures in a row; after three the copies are left as they are. */
+  quietTries?: number;
   uploadId?: string;
   uploadedBytes: number;
   parts: Part[];
@@ -364,6 +372,8 @@ const jobSchema = new mongoose.Schema<Job>(
     savedToLibrary: String,
     libraryPending: String,
     librarySaving: Date,
+    quieting: Date,
+    quietTries: Number,
     uploadId: String,
     uploadedBytes: { type: Number, default: 0 },
     parts: [{ number: Number, etag: String, bytes: Number, hash: String, _id: false }],
@@ -3127,7 +3137,8 @@ export function createDescriptionRouter(hooks: Hooks): {
     const expiresIn = 6 * 3600;
     const result: Record<string, string> = {};
     for (const item of outputs) {
-      const key = `${copyFolder(job, copy)}/${item.file}`;
+      const file = item.kind === 'video' ? (copy.video ?? item.file) : item.file;
+      const key = `${copyFolder(job, copy)}/${file}`;
       if (!['video', 'audio', 'script'].includes(item.kind) && !(await exists(key))) continue;
       const command = { Bucket: bucket(), Key: key, ResponseContentType: item.mime };
       result[item.kind] = await getSignedUrl(storage(), new GetObjectCommand(command), {
@@ -4313,6 +4324,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           spans: state.spans(),
           firstLook: job.firstLookVersion,
           ...(rehearsal ? { rehearsal: true } : {}),
+          captionsOnly: true,
         };
         const copies = [...(current.copies ?? []).filter((item) => item.version !== version), copy];
         const expiresAt = retain(current, rehearsal ? 3 : 7);
@@ -4658,6 +4670,124 @@ export function createDescriptionRouter(hooks: Hooks): {
     }
   }
 
+  /* ---------- copies made before Part 295 ---------- */
+  const quietStates = [...terminal, 'ready'];
+  /** The rewritten MP4 of a copy made before Part 295, beside its described.mp4. */
+  const quietName = 'described-captions.mp4';
+  /**
+   * A copy finished before Part 295 has a second text track in its MP4, "Audio descriptions
+   * (text)": the lines the narrator already speaks. Saved to Files or Photos, or downloaded, a
+   * player can switch it on and VoiceOver reads them over the film (her Road Runner short). When
+   * no render is waiting, the render lane takes one such copy of a video at rest, writes its MP4
+   * again without that track (dropDescriptionText: a stream copy, nothing re-encoded) as
+   * described-captions.mp4 in the same folder, free, and points the copy at it, so the next
+   * Play, Save or Download gets the new file.
+   *
+   * The original is never overwritten or deleted here. A link handed out earlier keeps reading
+   * the same bytes to the end, and the original goes when the video (or that version) does,
+   * which is also when B2 would have let go of an overwritten one. The switch is one conditional
+   * update: it lands only while the copy is still the one that was read (same version and
+   * finishing time, not replaced by a run that finished the same version meanwhile) and the video
+   * is not being deleted; otherwise the new file is erased. Copies in the old flat layout predate
+   * text tracks (Sep 24), so only copies entries are looked at, and copies made since finish
+   * marked captionsOnly: once the old ones are done this is one query that finds nothing. A video
+   * waits an hour after a failed try and is left alone after three.
+   */
+  async function quietOldCopy(): Promise<void> {
+    const now = new Date();
+    const job = await Jobs.findOneAndUpdate(
+      {
+        state: { $in: quietStates },
+        copies: { $elemMatch: { captionsOnly: { $ne: true } } },
+        quietTries: { $not: { $gte: 3 } },
+        $or: [{ quieting: { $exists: false } }, { quieting: { $lt: now } }],
+      },
+      { $set: { quieting: new Date(now.getTime() + hour) } },
+      { new: true, timestamps: false, sort: { createdAt: 1 } },
+    ).lean();
+    if (!job) return;
+    const copy = (job.copies ?? []).find((item) => !item.captionsOnly);
+    const settle = (update: mongoose.UpdateQuery<Job>) =>
+      Jobs.updateOne({ _id: job._id, state: { $ne: 'deleting' } }, update, { timestamps: false });
+    if (!copy) {
+      await settle({ $unset: { quieting: 1 } });
+      return;
+    }
+    const base = copyFolder(job, copy);
+    const original = `${base}/described.mp4`;
+    const target = `${base}/${quietName}`;
+    /** The copy as it was read: a run that finished the same version since has a new finishing time. */
+    const same = {
+      version: copy.version,
+      finishedAt: copy.finishedAt ?? { $exists: false },
+    };
+    const name = `quiet:${job._id}`;
+    const controller = new AbortController();
+    controllers.set(name, controller);
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30 * minute)]);
+    let directory: string | undefined;
+    try {
+      const bytes = await sizeOf(original, signal);
+      let changed = false;
+      if (bytes) {
+        await checkRoom(bytes);
+        directory = await mkdtemp(join(tmpdir(), 'kade-described-quiet-'));
+        const old = join(directory, 'old.mp4');
+        const fixed = join(directory, quietName);
+        await download(original, old, signal, { bytes });
+        changed = await dropDescriptionText(old, fixed, signal);
+        if (changed) await putFile(target, fixed, 'video/mp4', signal);
+      }
+      const switched = await Jobs.updateOne(
+        {
+          _id: job._id,
+          state: { $ne: 'deleting' },
+          copies: { $elemMatch: { ...same, captionsOnly: { $ne: true } } },
+        },
+        {
+          $set: {
+            'copies.$[copy].captionsOnly': true,
+            ...(changed ? { 'copies.$[copy].video': quietName } : {}),
+          },
+          $unset: { quieting: 1, quietTries: 1 },
+        },
+        {
+          timestamps: false,
+          arrayFilters: [{ 'copy.version': same.version, 'copy.finishedAt': same.finishedAt }],
+        },
+      );
+      if (!switched.matchedCount) {
+        // Replaced by a newer finish of the same version, or being deleted: the new file is nobody's.
+        if (changed) await erasePrefix(target);
+        await settle({ $unset: { quieting: 1 } });
+      }
+      hooks.log(
+        line('dv.quieted', {
+          id: job._id,
+          version: copy.version,
+          changed,
+          switched: switched.matchedCount > 0,
+        }),
+      );
+    } catch (error) {
+      if (controller.signal.aborted) {
+        await settle({ $unset: { quieting: 1 } }).catch(() => {});
+        return;
+      }
+      warn(
+        line('dv.quiet_failed', {
+          id: job._id,
+          version: copy.version,
+          error: scrub((error as Error).message || 'failed'),
+        }),
+      );
+      await settle({ $inc: { quietTries: 1 } }).catch(() => {});
+    } finally {
+      if (controllers.get(name) === controller) controllers.delete(name);
+      if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   async function runLane(name: 'check' | 'render'): Promise<void> {
     const lane = lanes[name];
     if (closing || lane.running || mongoose.connection.readyState !== 1) return;
@@ -4689,7 +4819,10 @@ export function createDescriptionRouter(hooks: Hooks): {
           sort: name === 'render' ? { priority: 1, queuedAt: 1, createdAt: 1 } : { createdAt: 1 },
         },
       ).lean();
-      if (!job) return;
+      if (!job) {
+        if (name === 'render') await quietOldCopy();
+        return;
+      }
       if (name === 'render') {
         job.state = 'running';
         await Jobs.updateOne({ _id: job._id, worker }, { $set: { state: 'running' } });

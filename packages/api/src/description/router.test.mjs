@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { before, after } from 'node:test';
 import { createServer } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm, copyFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, copyFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
@@ -18,7 +18,7 @@ import { createDescriptionRouter } from './router.ts';
 import { familyFeatures } from '../family/pack.ts';
 import { describeVideo } from './engine.ts';
 import { createDescriptionWallet } from './wallet.ts';
-import { command, decodeVoice } from './media.ts';
+import { command, decodeVoice, quietTextTracks } from './media.ts';
 import { sampleRate } from './mix.ts';
 import { quietSpot, rehearsalProviders } from './rehearsal.ts';
 import { transcribe } from './providers.ts';
@@ -3183,5 +3183,160 @@ test('free dialogue: Deepgram is logged for the operator, never quoted, charged 
     realTranscribe = false;
     axios.defaults.adapter = previous;
     await Budgets.deleteMany({});
+  }
+});
+
+test('copies made before Part 295 get an MP4 without their description text track: free, beside the original, one at a time, never twice', async () => {
+  const source = await video(4);
+  const words = join(root, 'old-captions.vtt');
+  const lines = join(root, 'old-descriptions.vtt');
+  await writeFile(words, 'WEBVTT\n\n00:00.200 --> 00:00.900\nHello.\n');
+  await writeFile(lines, 'WEBVTT\n\n00:02.000 --> 00:03.000\nA coyote paints a tunnel on a rock.\n');
+  /** An MP4 laid out as assemble wrote it until Part 295: the captions if any, then the description lines, all off. */
+  async function oldCopy(name, withCaptions) {
+    const file = join(root, name);
+    const texts = withCaptions ? [words, lines] : [lines];
+    await command(
+      ffmpegPath,
+      [
+        '-nostdin', '-v', 'error', '-y', '-i', source, ...texts.flatMap((text) => ['-i', text]),
+        '-map', '0:v', '-map', '0:a', ...texts.flatMap((_, i) => ['-map', `${i + 1}:0`]),
+        '-c:v', 'copy', '-c:a', 'copy', '-c:s', 'mov_text',
+        ...texts.flatMap((text, i) => [`-metadata:s:s:${i}`, `handler_name=${text === words ? 'Captions' : 'Audio descriptions (text)'}`]),
+        file,
+      ],
+      new AbortController().signal,
+    );
+    await quietTextTracks(file);
+    return readFile(file);
+  }
+  /** Each text track of a stored MP4: its name, and whether it is switched on. */
+  async function textTracks(key) {
+    const file = join(root, `probe-${randomUUID()}.mp4`);
+    await writeFile(file, objects.get(key));
+    const raw = await command(
+      ffprobePath.path,
+      ['-v', 'error', '-show_entries', 'stream=codec_type:stream_tags=handler_name:stream_disposition=default', '-of', 'json', file],
+      new AbortController().signal,
+    );
+    return JSON.parse(raw.toString()).streams.filter((s) => s.codec_type === 'subtitle').map((s) => [s.tags.handler_name, s.disposition.default]);
+  }
+  const dialogue = await readyJob('quiet-owner', 'quiet-upload-0000001', 4);
+  const silent = await readyJob('quiet-owner', 'quiet-upload-0000002', 4);
+  const raced = await readyJob('quiet-owner', 'quiet-upload-0000003', 4);
+  const broken = await readyJob('quiet-owner', 'quiet-upload-0000004', 4);
+  const flat = await readyJob('quiet-owner', 'quiet-upload-0000005', 4);
+  const all = [dialogue, silent, raced, broken, flat];
+  const base = async (id) => `/test/${folderOf((await Jobs.findById(id).lean()).key)}`;
+  const original = async (id, version) => `${await base(id)}/copies/${version}/described.mp4`;
+  const rewritten = async (id, version) => `${await base(id)}/copies/${version}/described-captions.mp4`;
+  const withCaptions = await oldCopy('old-dialogue.mp4', true);
+  const withoutCaptions = await oldCopy('old-silent.mp4', false);
+  objects.set(await original(dialogue, 1), withCaptions);
+  objects.set(await original(dialogue, 2), withCaptions);
+  objects.set(await original(silent, 1), withoutCaptions);
+  objects.set(await original(raced, 1), withCaptions);
+  objects.set(await original(broken, 1), Buffer.from('not a video'));
+  /* The flat layout of Sep 24 predates text tracks; this one is only there to show it is never opened. */
+  objects.set(`${await base(flat)}/described.mp4`, withCaptions);
+  const finished = new Date(Date.now() - 3 * 3600000);
+  const old = (version) => ({ version, settings, finishedAt: finished });
+  await Jobs.collection.updateOne(
+    { _id: dialogue },
+    { $set: { state: 'done', version: 2, copies: [old(1), { ...old(2), captionsOnly: true }] } },
+  );
+  await Jobs.collection.updateOne({ _id: silent }, { $set: { state: 'ready', version: 1, copies: [old(1)] } });
+  await Jobs.collection.updateOne({ _id: raced }, { $set: { state: 'done', version: 1, copies: [old(1)] } });
+  await Jobs.collection.updateOne({ _id: broken }, { $set: { state: 'failed', version: 1, copies: [old(1)] } });
+  await Jobs.collection.updateOne({ _id: flat }, { $set: { state: 'done', version: 1, copies: [] } });
+  /* Kept a week, so the day-ahead expiry warning does not touch them either. */
+  await Jobs.collection.updateMany({ owner: 'quiet-owner' }, { $set: { expiresAt: new Date(Date.now() + 7 * 86400000) } });
+  const touched = (await Jobs.findById(dialogue).lean()).updatedAt;
+  /* "Describe the rest" finishes version 1 of `raced` again while its old copy is being rewritten. */
+  const racedTarget = await rewritten(raced, 1);
+  const racedOriginal = await original(raced, 1);
+  const newer = Buffer.from('a newer finish of version 1');
+  storageHook = async ({ method, key }) => {
+    if (method !== 'PUT' || key !== racedTarget) return;
+    storageHook = null;
+    objects.set(racedOriginal, newer);
+    await Jobs.collection.updateOne(
+      { _id: raced },
+      { $set: { 'copies.0.finishedAt': new Date(), 'copies.0.captionsOnly': true } },
+    );
+  };
+  const from = logLines.length;
+  const read = () => Promise.all(all.map((id) => Jobs.findById(id).lean()));
+  try {
+    for (let i = 0; i < 60; i++) {
+      await worker.tick();
+      const [a, b, r, c] = await read();
+      if (a.copies[0].captionsOnly && b.copies[0].captionsOnly && r.copies[0].captionsOnly && !r.quieting && c.quietTries) break;
+    }
+  } finally {
+    storageHook = null;
+  }
+  const [a, b, r, c, f] = await read();
+
+  assert.equal(a.copies[0].captionsOnly, true);
+  assert.equal(a.copies[0].video, 'described-captions.mp4', 'the copy points at the new file');
+  assert.deepEqual(await textTracks(await rewritten(dialogue, 1)), [['Captions', 0]], 'the dialogue captions stay, switched off');
+  assert.equal(objects.versions.get(await original(dialogue, 1)).length, 1, 'the original is never overwritten');
+  assert.ok(objects.get(await original(dialogue, 1)).equals(withCaptions), 'so a link handed out before reads the same bytes');
+  assert.deepEqual(
+    await textTracks(await original(dialogue, 2)),
+    [['Captions', 0], ['Audio descriptions (text)', 0]],
+    'a copy marked captionsOnly is never opened',
+  );
+  assert.equal(objects.versions.get(await rewritten(dialogue, 2)), undefined);
+  assert.equal(a.copies[1].video, undefined);
+  assert.equal(a.quieting, undefined);
+  assert.equal(a.quietTries, undefined);
+  assert.equal(new Date(a.updatedAt).getTime(), new Date(touched).getTime(), 'a tab open on the video sees no change');
+
+  const files = (await call('get', `/jobs/${dialogue}/files?version=1`, 'quiet-owner').expect(200)).body;
+  assert.equal(decodeURIComponent(new URL(files.video).pathname), await rewritten(dialogue, 1));
+  assert.match(decodeURIComponent(files.videoDownload), /\(described\)\.mp4/, 'the download keeps its name');
+  const played = Buffer.from(await (await fetch(files.video)).arrayBuffer());
+  assert.ok(played.equals(objects.get(await rewritten(dialogue, 1))), 'Play and Download get the new file');
+  const later = (await call('get', `/jobs/${dialogue}/files?version=2`, 'quiet-owner').expect(200)).body;
+  assert.equal(decodeURIComponent(new URL(later.video).pathname), await original(dialogue, 2));
+
+  assert.equal(b.copies[0].video, 'described-captions.mp4');
+  assert.deepEqual(await textTracks(await rewritten(silent, 1)), [], 'a film with no dialogue keeps no text track at all');
+
+  assert.equal(r.copies[0].video, undefined, 'a copy replaced meanwhile keeps its own new MP4');
+  assert.ok(objects.get(racedOriginal).equals(newer));
+  assert.equal(objects.versions.get(racedTarget), undefined, 'and the rewrite nobody points at is erased');
+  assert.equal(r.quieting, undefined);
+
+  assert.deepEqual(
+    logged(from, 'dv.quieted')
+      .filter((entry) => all.includes(entry.id))
+      .map((entry) => [entry.id, entry.version, entry.changed, entry.switched])
+      .sort(),
+    [[dialogue, 1, true, true], [silent, 1, true, true], [raced, 1, true, false]].sort(),
+  );
+  assert.equal(c.quietTries, 1, 'a file that cannot be read counts one failure');
+  assert.ok(new Date(c.quieting).getTime() > Date.now() + 50 * 60000, 'and waits an hour');
+  const failure = logged(from, 'dv.quiet_failed').find((entry) => entry.id === broken);
+  assert.ok(failure && !/[\\/]/.test(failure.error), `a plain failure line: ${failure?.error}`);
+  assert.equal(f.quieting, undefined, 'the flat layout is never opened');
+  assert.equal(objects.versions.get(`${await base(flat)}/described.mp4`).length, 1);
+  assert.equal(usageLog.filter((entry) => all.includes(entry.job)).length, 0, 'nothing is charged');
+
+  await Jobs.collection.updateOne({ _id: broken }, { $set: { quieting: new Date(Date.now() - 1000), quietTries: 2 } });
+  for (let i = 0; i < 5; i++) await worker.tick();
+  assert.equal((await Jobs.findById(broken).lean()).quietTries, 3);
+  await Jobs.collection.updateOne({ _id: broken }, { $set: { quieting: new Date(Date.now() - 1000) } });
+  const failures = logged(from, 'dv.quiet_failed').length;
+  for (let i = 0; i < 3; i++) await worker.tick();
+  assert.equal((await Jobs.findById(broken).lean()).quietTries, 3, 'after three failures it is left as it is');
+  assert.equal(logged(from, 'dv.quiet_failed').length, failures);
+  assert.equal(objects.versions.get(await rewritten(dialogue, 1)).length, 1, 'never rewritten twice');
+
+  for (const id of all) {
+    await call('delete', `/jobs/${id}`, 'quiet-owner').expect(200);
+    assert.equal(versionsOf(id).length, 0, 'deleting the video erases the original and the rewrite');
   }
 });
