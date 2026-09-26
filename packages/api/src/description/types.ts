@@ -276,10 +276,14 @@ export type Plan = {
 };
 /** Soundtrack gain, narration loudness (LUFS, stereo) and the gain under narration. */
 export type Levels = { gain: number; narration: number; duck: number };
+/**
+ * Runs one paid request while `reserveUSD` is held. The action says what it cost; `uncertain`
+ * marks a cost the provider never reported (an expected one), which is booked apart as uncertain.
+ */
 export type Meter = (
   kind: 'vision' | 'transcription' | 'speech',
   reserveUSD: number,
-  action: () => Promise<{ costUSD: number }>,
+  action: () => Promise<{ costUSD: number; uncertain?: boolean }>,
 ) => Promise<void>;
 export type Progress = (stage: string, progress: number) => Promise<void>;
 export type Report = {

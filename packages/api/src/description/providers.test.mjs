@@ -136,15 +136,17 @@ function ledger() {
   const meter = async (kind, reserve, action) => {
     try {
       const outcome = await action();
-      entries.push({ kind, reserve, costUSD: outcome.costUSD });
+      entries.push({ kind, reserve, costUSD: outcome.costUSD, uncertain: outcome.uncertain });
     } catch (error) {
-      const { costUSD, costFrom, expectedUSD, generation } = error;
-      entries.push({ kind, reserve, error, costUSD, costFrom, expectedUSD, generation });
+      const { costUSD, costFrom, expectedUSD, generation, interrupted } = error;
+      entries.push({ kind, reserve, error, costUSD, costFrom, expectedUSD, generation, interrupted });
       throw error;
     }
   };
   return { entries, meter };
 }
+/** What a 10-second look's reserve holds beyond its expected cost at the ceiling: the margin and 6,000 reply tokens. */
+const unexpected = 0.01 + (12000 - 6000) * 7.5e-6;
 /** Shorter request and lookup limits for one test (the real ones: 300 s, and 5, 15 and 40 s within a minute). */
 async function limited(values, run) {
   const saved = { ...visionLimits, lookupAtMs: [...visionLimits.lookupAtMs] };
@@ -284,9 +286,10 @@ test('providers: a failed look OpenRouter never priced carries its expected cost
       assert.equal(entry.costUSD, undefined);
       assert.ok(entry.expectedUSD > 0.045, `a typical reply is priced in: ${entry.expectedUSD}`);
       assert.ok(
-        Math.abs(entry.reserve - entry.expectedUSD - (0.01 + (12000 - 6000) * 7.5e-6)) < 1e-9,
+        Math.abs(entry.reserve - entry.expectedUSD - unexpected) < 1e-9,
         `the expected cost is the reserve less its margin and the reply tokens a look does not usually use: ${entry.expectedUSD} of ${entry.reserve}`,
       );
+      assert.equal(entry.interrupted, false);
     }
     assert.ok(log.some((line) => line.startsWith('vision: no record of what the failed request gen-1 cost; booked at the expected $')), log.join('\n'));
   } finally {
@@ -294,7 +297,7 @@ test('providers: a failed look OpenRouter never priced carries its expected cost
   }
 });
 
-test('providers: an error OpenRouter sends inside a 200 reply is a provider failure with its message, retried unless its code blames the request', async () => {
+test('providers: an error OpenRouter sends inside a 200 reply is a provider failure with its message, retried unless its code blames the request, and looked up whatever its code', async () => {
   process.env.OPENROUTER_KEY = 'test-key';
   const look = await clip('upstream.mp4');
   let chats = 0;
@@ -342,16 +345,238 @@ test('providers: an error OpenRouter sends inside a 200 reply is a provider fail
   });
   ({ entries, meter } = ledger());
   try {
-    const failure = await analyze(look, signal, meter).catch((error) => error);
+    const failure = await limited({ lookupAtMs: [10], lookupMs: 500 }, () =>
+      analyze(look, signal, meter).catch((error) => error),
+    );
     assert.equal(chats, 1, 'a request the provider called bad is not sent again');
-    assert.equal(lookups, 0, 'nor looked up: a refusal is not billed');
     assert.equal(failureClass(failure), 'input');
-    assert.equal(billed(failure), false);
+    assert.equal(billed(failure), true, 'sent after the headers, so the provider may have charged for reading it');
+    assert.equal(lookups, 1, 'looked up, since only OpenRouter’s record can say');
     assert.equal(entries[0].generation, 'gen-bad');
-    assert.equal(entries[0].costUSD, undefined);
+    assert.equal(entries[0].costUSD, 0.02);
+    assert.equal(entries[0].costFrom, 'generation');
     assert.equal(entries[0].expectedUSD, undefined);
   } finally {
     fake.restore();
+  }
+});
+
+test('providers: the mid-stream error shape is a provider failure, never a finished reply at its reserve; its own reported cost is used, and an in-reply timeout gets one more try only', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await clip('midstream.mp4');
+  const lookups = [];
+  let chats = 0;
+  const fake = fakeAxios(({ url, config }) => {
+    if (url.includes('/generation')) {
+      lookups.push(new URL(url).searchParams.get('id'));
+      return httpError(config, 404, { error: { message: 'Generation not found' } });
+    }
+    return ++chats === 1
+      ? {
+          headers: { 'x-generation-id': 'gen-mid' },
+          data: { choices: [{ message: { content: 'partial output...' }, finish_reason: 'error', error: { code: 504, message: 'Provider timed out' } }] },
+        }
+      : {
+          headers: { 'x-generation-id': 'gen-mid-2' },
+          data: {
+            error: { code: 504, message: 'Provider timed out again', metadata: { error_type: 'timeout' } },
+            choices: [{ message: { content: '' }, finish_reason: 'error' }],
+            usage: { cost: 0.004 },
+          },
+        };
+  });
+  const { entries, meter } = ledger();
+  try {
+    const failure = await limited({ lookupAtMs: [10, 30], lookupMs: 200 }, () =>
+      analyze(look, signal, meter).catch((error) => error),
+    );
+    assert.equal(chats, 2, 'a timeout the provider reported inside its reply is tried once more, not four times');
+    assert.equal(failure.message, 'Provider timed out again');
+    assert.equal(failureClass(failure), 'transient');
+    assert.equal(entries.length, 2);
+    assert.ok(entries.every((entry) => entry.error), 'neither was read as a finished reply');
+    const [first, second] = entries;
+    assert.equal(first.generation, 'gen-mid');
+    assert.equal(first.costUSD, undefined);
+    assert.ok(Math.abs(first.reserve - first.expectedUSD - unexpected) < 1e-9, `expected, not the reserve: ${first.expectedUSD} of ${first.reserve}`);
+    assert.equal(second.costUSD, 0.004, 'the cost the reply itself reported');
+    assert.equal(second.costFrom, undefined);
+    assert.deepEqual(lookups, ['gen-mid', 'gen-mid'], 'a reply that reported its cost is not looked up');
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: a finished reply that reports no cost is priced from OpenRouter’s record, or booked as uncertain at its expected cost, never at its reserve', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await clip('costless.mp4');
+  const lookups = [];
+  let recorded = true;
+  const fake = fakeAxios(({ url, config }) => {
+    if (url.includes('/generation')) {
+      lookups.push(new URL(url).searchParams.get('id'));
+      return recorded ? recordOf(config, 0.017) : httpError(config, 404, { error: { message: 'Generation not found' } });
+    }
+    return { headers: { 'x-generation-id': 'gen-costless' }, data: { ...good, usage: undefined } };
+  });
+  try {
+    let { entries, meter } = ledger();
+    let result = await limited({ lookupAtMs: [10], lookupMs: 200 }, () => analyze(look, signal, meter));
+    assert.equal(result.cues.length, 1);
+    assert.deepEqual(entries.map((entry) => [entry.costUSD, entry.uncertain]), [[0.017, undefined]]);
+    assert.deepEqual(result.vision.map((call) => call.costUSD), [0.017]);
+    assert.deepEqual(lookups, ['gen-costless']);
+
+    recorded = false;
+    ({ entries, meter } = ledger());
+    result = await limited({ lookupAtMs: [10, 30], lookupMs: 200 }, () => analyze(look, signal, meter));
+    assert.equal(result.cues.length, 1, 'the reply is still used');
+    const [entry] = entries;
+    assert.equal(entry.uncertain, true);
+    assert.ok(Math.abs(entry.reserve - entry.costUSD - unexpected) < 1e-9, `${entry.costUSD} of ${entry.reserve}`);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: an in-reply error’s typed code decides over its number: a reply out of room is retried shorter once, a content filter’s decline is a refusal, and both are looked up', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await clip('typed.mp4');
+  const lookups = [];
+  let chats = 0;
+  let fake = fakeAxios(({ url, config }) => {
+    if (url.includes('/generation')) {
+      lookups.push(new URL(url).searchParams.get('id'));
+      return recordOf(config, 0.011);
+    }
+    return ++chats === 1
+      ? { headers: { 'x-generation-id': 'gen-long' }, data: { error: { code: 400, message: 'max tokens reached', metadata: { error_type: 'max_tokens_exceeded' } } } }
+      : { data: good };
+  });
+  let { entries, meter } = ledger();
+  try {
+    const result = await limited({ lookupAtMs: [10], lookupMs: 200 }, () => analyze(look, signal, meter));
+    assert.equal(result.cues.length, 1);
+    assert.equal(chats, 2, 'retried once, as a reply cut off at its length is');
+    assert.equal(entries[0].error.constructor.name, 'CutOff');
+    assert.match(entries[0].error.message, /max tokens reached/, 'the provider’s words stay in the log');
+    assert.equal(entries[0].costUSD, 0.011);
+    assert.equal(entries[0].costFrom, 'generation');
+    assert.deepEqual(lookups, ['gen-long']);
+    const retry = fake.calls.filter((call) => call.url.includes('chat'))[1].body;
+    assert.match(retry.messages[0].content[1].text, /Give about half as many cues/);
+  } finally {
+    fake.restore();
+  }
+
+  chats = 0;
+  lookups.length = 0;
+  fake = fakeAxios(({ url, config }) => {
+    if (url.includes('/generation')) {
+      lookups.push(new URL(url).searchParams.get('id'));
+      return recordOf(config, 0.006);
+    }
+    chats++;
+    return {
+      headers: { 'x-generation-id': 'gen-flagged' },
+      data: { error: { code: 403, message: 'Output flagged by SAFETY', metadata: { error_type: 'content_policy_violation' } } },
+    };
+  });
+  ({ entries, meter } = ledger());
+  try {
+    const failure = await limited({ lookupAtMs: [10], lookupMs: 200 }, () =>
+      analyze(look, signal, meter).catch((error) => error),
+    );
+    assert.equal(chats, 1, 'the same clip would be declined again');
+    assert.equal(failureClass(failure), 'refused');
+    assert.equal(providerProblem(failure, 'The video model'), 'The video model declined to describe this scene.');
+    assert.equal(entries[0].costUSD, 0.006);
+    assert.deepEqual(lookups, ['gen-flagged']);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: our stop while a failed request’s cost is looked up ends the wait, and the failure is still priced as its own, not our stop’s', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await clip('stopped-lookup.mp4');
+  const controller = new AbortController();
+  let lookups = 0;
+  const fake = fakeAxios(({ url, config }) => {
+    if (url.includes('/generation')) {
+      lookups++;
+      return recordOf(config, 0.02);
+    }
+    return { headers: { 'x-generation-id': 'gen-before-stop' }, data: endless() };
+  });
+  const { entries, meter } = ledger();
+  const log = [];
+  try {
+    const began = Date.now();
+    const failure = await limited({ requestMs: 200, lookupAtMs: [400, 800], lookupMs: 5000 }, () => {
+      setTimeout(() => controller.abort(new Error('shutdown')), 300);
+      return analyze({ ...look, log: (line) => log.push(line) }, controller.signal, meter).catch((error) => error);
+    });
+    assert.ok(Date.now() - began < 1500, 'the stop ended the wait for the record');
+    assert.equal(failure.code, 'ETIMEDOUT');
+    assert.equal(lookups, 0);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].interrupted, false, 'it failed before the stop');
+    assert.ok(Math.abs(entries[0].reserve - entries[0].expectedUSD - unexpected) < 1e-9);
+    assert.ok(log.some((line) => line.startsWith('vision: the job stopped before OpenRouter recorded what the failed request gen-before-stop cost')), log.join('\n'));
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: over real HTTP, our stop or the deadline ends a refused request whose error body stalls', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await clip('stalled-refusal.mp4');
+  let status = 503;
+  const server = createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.write(' ');
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const local = `http://127.0.0.1:${server.address().port}`;
+  const previous = axios.defaults.adapter;
+  const http = axios.getAdapter('http');
+  axios.defaults.adapter = (config) => http({ ...config, url: config.url.replace('https://openrouter.ai', local) });
+  const controller = new AbortController();
+  const { entries, meter } = ledger();
+  try {
+    const began = Date.now();
+    setTimeout(() => controller.abort(new Error('shutdown')), 300);
+    const failure = await Promise.race([
+      analyze(look, controller.signal, meter).catch((error) => error),
+      later(3000).then(() => 'still reading'),
+    ]);
+    assert.notEqual(failure, 'still reading', 'our stop ended it, not the connection dying minutes later');
+    assert.ok(Date.now() - began < 2000, `${Date.now() - began} ms`);
+    assert.equal(failure.response?.status, 503);
+    assert.equal(entries[0].interrupted, true);
+
+    /* No stop this time: a refusal (not retried) whose body stalls ends at the request's deadline. */
+    status = 400;
+    const deadlined = Date.now();
+    const refused = await limited({ requestMs: 300 }, () =>
+      Promise.race([
+        analyze(look, signal, meter).catch((error) => error),
+        later(3000).then(() => 'still reading'),
+      ]),
+    );
+    assert.notEqual(refused, 'still reading', 'the deadline ended it');
+    assert.ok(Date.now() - deadlined < 2000, `${Date.now() - deadlined} ms`);
+    assert.equal(refused.response?.status, 400);
+    assert.equal(failureClass(refused), 'input');
+    assert.equal(entries[1].interrupted, false);
+  } finally {
+    axios.defaults.adapter = previous;
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
   }
 });
 
@@ -377,6 +602,7 @@ test('providers: our stop while the reply is streaming ends the request at once 
     assert.equal(fake.calls.length, 1);
     assert.equal(lookups, 0);
     assert.equal(entries[0].generation, 'gen-cut', 'the operator can still look it up');
+    assert.equal(entries[0].interrupted, true);
     assert.equal(entries[0].costUSD, undefined, 'the meter treats it as ours: interrupted, nothing to her');
     assert.equal(entries[0].expectedUSD, undefined);
   } finally {

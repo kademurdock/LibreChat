@@ -4182,7 +4182,7 @@ export function createDescriptionRouter(hooks: Hooks): {
             if (!saved.matchedCount)
               throw new Halt('Processing stopped before the next paid request.');
           });
-          let result: { costUSD: number };
+          let result: { costUSD: number; uncertain?: boolean };
           try {
             result = await action();
           } catch (error) {
@@ -4193,8 +4193,12 @@ export function createDescriptionRouter(hooks: Hooks): {
             /**
              * Our own stop cut this request off: a restart, a lost lease, her cancel or the time
              * limit. What the provider may still bill for it is the platform's cost, never hers.
+             * A request that failed on its own before the stop (`FailedCall.interrupted` false,
+             * the stop cutting short only the lookup of its cost) is not ours to absorb.
              */
-            const interrupted = !known && signal.aborted;
+            const interrupted =
+              !known &&
+              (typeof failed.interrupted === 'boolean' ? failed.interrupted : signal.aborted);
             /**
              * Any other failure the provider may have billed is booked as uncertain: at the cost
              * its provider code expects (a look OpenRouter never priced, `FailedCall.expectedUSD`),
@@ -4237,14 +4241,20 @@ export function createDescriptionRouter(hooks: Hooks): {
                 reserveUSD: Math.round(reserve * 1e6) / 1e6,
                 ...(interrupted
                   ? { providerMayBill: billed(error), why: stopName(signal.reason) }
-                  : { settledBy, reason: providerDetail(error) }),
+                  : {
+                      settledBy,
+                      reason: providerDetail(error),
+                      ...(signal.aborted ? { stoppedAfter: stopName(signal.reason) } : {}),
+                    }),
               }),
             );
             throw error;
           }
-          await settleCost(kind, reserve, result.costUSD);
+          /** A cost the provider never reported (an expected one) is booked apart as uncertain. */
+          const guessed = result.uncertain === true;
+          await settleCost(guessed ? 'uncertain' : kind, reserve, result.costUSD);
           await hooks
-            .usage(job.owner, job._id, kind, result.costUSD)
+            .usage(job.owner, job._id, guessed ? `${kind}-uncertain` : kind, result.costUSD)
             .catch((error: Error) => hooks.log('description usage: ' + error.message));
         };
         const rehearsalMeter: Meter = async () => {

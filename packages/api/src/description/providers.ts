@@ -97,11 +97,19 @@ const modelSchema = z.object({
     })
     .optional(),
 });
-/** An error OpenRouter sent inside a 200 reply, after the headers had already gone out. */
+/**
+ * An error OpenRouter sent inside a 200 reply, after the headers had already gone out, with its
+ * typed code (`metadata.error_type`, which OpenRouter says to rely on over the number).
+ */
 const upstreamSchema = z.object({
   error: z.object({
     code: z.union([z.number(), z.string()]).nullable().optional().catch(undefined),
     message: z.string().nullable().optional().catch(undefined),
+    metadata: z
+      .object({ error_type: z.string().max(100).nullable().optional().catch(undefined) })
+      .nullable()
+      .optional()
+      .catch(undefined),
   }),
 });
 /** OpenRouter's record of one generation, once it is final (free to read). */
@@ -186,7 +194,8 @@ export class Plain extends Error {}
 /**
  * An error OpenRouter sent inside a 200 reply (`{"error":{"code","message"}}`), which happens when
  * the provider fails after OpenRouter has sent its headers. `status` is its code when that is an
- * HTTP-style number, and is read like an HTTP status everywhere below.
+ * HTTP-style number, and is read like an HTTP status everywhere below, except that it never proves
+ * the request went unbilled (`billed`).
  */
 class Upstream extends Error {
   readonly status?: number;
@@ -354,13 +363,14 @@ export function failureClass(error: unknown): FailureClass {
 
 /**
  * False only when the provider certainly did not charge: it refused the request before doing
- * any work (any 4xx, including 429, also as the code of an error sent inside a reply), or the
- * connection never opened. Anything else may be billed.
+ * any work (any 4xx HTTP status, including 429), or the connection never opened. Anything else
+ * may be billed, including an error sent inside a 200 reply whatever its code: the provider had
+ * already taken the request, and may charge for reading it.
  */
 export function billed(error: unknown): boolean {
   if (error instanceof Halt) return false;
   const cause = root(error);
-  if (cause instanceof Upstream) return !cause.status || cause.status >= 500;
+  if (cause instanceof Upstream) return true;
   if (!axios.isAxiosError(cause)) return true;
   const status = cause.response?.status;
   if (status) return status >= 500;
@@ -620,8 +630,8 @@ const reserveFor = (seconds: number, prompt: string, maxTokens: number): number 
 /** Output tokens, reasoning included, of a typical look: a failed call is expected to have written this many. */
 const typicalReplyTokens = 6000;
 /**
- * What a failed look call is expected to have cost when OpenRouter never said: its own clip and
- * prompt and a typical reply, never more than its reserve.
+ * What a look call is expected to have cost when OpenRouter never said: its own clip and prompt
+ * and a typical reply, never more than its reserve.
  */
 const expectedFor = (seconds: number, prompt: string, reserve: number): number =>
   Math.min(
@@ -644,17 +654,25 @@ export const visionLimits: { requestMs: number; lookupAtMs: number[]; lookupMs: 
 };
 /**
  * What a failed look request tells the meter, set on the error it throws: OpenRouter's generation
- * id, and what the request really cost from OpenRouter's record of it (`costFrom: 'generation'`,
- * possibly 0) or, when no record appeared, what it is expected to have cost (never above its reserve).
+ * id; what the request really cost, from OpenRouter's record of it (`costFrom: 'generation'`,
+ * possibly 0) or as the reply itself reported; or, when neither said, what it is expected to have
+ * cost (never above its reserve). `interrupted` says whether our own stop had already cut the
+ * request off when it failed; a stop that comes later, while its cost is being looked up, does not
+ * make the failure ours.
  */
 export type FailedCall = {
   generation?: string;
   costUSD?: number;
   costFrom?: 'generation';
   expectedUSD?: number;
+  interrupted?: boolean;
 };
 
-/** OpenRouter's generation id from a reply's headers, which arrive about 0.4 s after the request. */
+/**
+ * OpenRouter's generation id from a reply's headers, which arrive once the clip is uploaded and a
+ * provider has taken the request (5 to 53 s in, usually about 10 s, on Sep 26 2026). A request that
+ * fails before them has no id and is priced at its expected cost.
+ */
 function generationOf(headers: unknown): string | undefined {
   const value = (headers as Record<string, unknown> | undefined)?.['x-generation-id'];
   return typeof value === 'string' && /^[\w.:-]{1,200}$/.test(value) ? value : undefined;
@@ -662,27 +680,39 @@ function generationOf(headers: unknown): string | undefined {
 
 /**
  * A streamed reply body as text, at most `limit` bytes (more is the error axios gives for
- * `maxContentLength`). The request's own signal (our stop or its deadline) ends the read at once,
- * and a connection that drops mid-reply is a network failure like any other. A body that is
- * already text or already parsed is taken as it is.
+ * `maxContentLength`). The request's own signal (our stop or its deadline) ends the read at once:
+ * the read gives up without waiting for the stream to wind down, and the stream and its request
+ * (`request`, whose socket may still be open) are destroyed. That matters for a refused request,
+ * whose abort axios no longer watches, so a stalled error body would otherwise hold the read open
+ * until the connection died. A connection that drops mid-reply is a network failure like any
+ * other. A body that is already text or already parsed is taken as it is.
  */
 async function bodyOf(
   data: unknown,
   signal: AbortSignal,
   limit: number,
   config?: InternalAxiosRequestConfig,
+  request?: unknown,
 ): Promise<string> {
   if (typeof data === 'string') return data;
   if (Buffer.isBuffer(data)) return data.toString('utf8');
   if (!data || typeof data !== 'object' || !(Symbol.asyncIterator in data))
     return JSON.stringify(data ?? null);
   const stream = data as AsyncIterable<Buffer | string> & { destroy?: (error?: Error) => void };
-  const cut = () => stream.destroy?.(new axios.CanceledError(undefined, config));
-  signal.addEventListener('abort', cut, { once: true });
-  const chunks: Buffer[] = [];
-  let bytes = 0;
-  try {
-    if (signal.aborted) cut();
+  let halt: (error: Error) => void = () => {};
+  const halted = new Promise<never>((_resolve, reject) => {
+    halt = reject;
+  });
+  const cut = () => {
+    const error = new axios.CanceledError(undefined, config);
+    halt(error);
+    stream.destroy?.(error);
+    const socket = request as { destroy?: () => void } | undefined;
+    if (typeof socket?.destroy === 'function') socket.destroy();
+  };
+  const read = async (): Promise<string> => {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
     for await (const chunk of stream) {
       const part = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
       bytes += part.length;
@@ -697,13 +727,18 @@ async function bodyOf(
       }
       chunks.push(part);
     }
+    return Buffer.concat(chunks).toString('utf8');
+  };
+  signal.addEventListener('abort', cut, { once: true });
+  try {
+    if (signal.aborted) cut();
+    return await Promise.race([read(), halted]);
   } catch (error) {
     if (axios.isAxiosError(error)) throw error;
     throw axios.AxiosError.from(error, (error as { code?: string }).code || 'ERR_NETWORK', config);
   } finally {
     signal.removeEventListener('abort', cut);
   }
-  return Buffer.concat(chunks).toString('utf8');
 }
 
 /** A refused request's body (at most 64 KiB), read so the error still says what the provider said. */
@@ -711,8 +746,9 @@ async function refusalBody(
   data: unknown,
   signal: AbortSignal,
   config?: InternalAxiosRequestConfig,
+  request?: unknown,
 ): Promise<unknown> {
-  const text = (await bodyOf(data, signal, 64 * 1024, config).catch(() => '')).trim();
+  const text = (await bodyOf(data, signal, 64 * 1024, config, request).catch(() => '')).trim();
   try {
     return JSON.parse(text);
   } catch {
@@ -722,8 +758,14 @@ async function refusalBody(
 
 /**
  * OpenRouter's reply from its text: the spaces it sends to keep a slow request alive are trimmed,
- * and an error it sent inside the reply is thrown as `Upstream`. Text that is not JSON fails the
- * schema, as it did before the reply was streamed.
+ * and an error it sent inside the reply is thrown as `Upstream`, carrying the cost the reply
+ * reported, if any. That is its documented shape (an `error` object and no choices) and the
+ * mid-stream one (the error beside a choice that finished with `error`), which is never read as
+ * a finished reply. Its code came after the provider took the request, so a 4xx there does not
+ * say the request was bad: the typed code decides where it matters. `max_tokens_exceeded` is a
+ * reply that ran out of room (`CutOff`, retried shorter once, as a `length` finish is), and a
+ * content filter's decline (`content_policy_violation`, `refusal`) is a `Refusal`. Text that is
+ * not JSON fails the schema, as it did before the reply was streamed.
  */
 function replyData(text: string): z.infer<typeof modelSchema> {
   const trimmed = text.trim();
@@ -733,13 +775,29 @@ function replyData(text: string): z.infer<typeof modelSchema> {
   } catch {
     /* left as text, which the schema refuses */
   }
-  const failed = upstreamSchema.safeParse(json);
-  if (failed.success && (json as { choices?: unknown }).choices === undefined) {
-    const code = Number(failed.data.error.code);
-    throw new Upstream(
-      (failed.data.error.message || 'The provider reported an error.').slice(0, 1000),
-      Number.isInteger(code) && code >= 400 && code < 600 ? code : undefined,
-    );
+  const reply = (json && typeof json === 'object' ? json : {}) as {
+    error?: unknown;
+    choices?: unknown;
+    usage?: { cost?: unknown } | null;
+  };
+  const choice = Array.isArray(reply.choices)
+    ? (reply.choices[0] as { error?: unknown; finish_reason?: unknown } | null | undefined)
+    : undefined;
+  const said = upstreamSchema.safeParse({ error: choice?.error ?? reply.error });
+  if (said.success || choice?.finish_reason === 'error') {
+    const code = Number(said.data?.error.code);
+    const message = (said.data?.error.message || 'The provider reported an error.').slice(0, 1000);
+    const type = said.data?.error.metadata?.error_type;
+    const failed = (
+      type === 'max_tokens_exceeded'
+        ? new CutOff(`The visual description came back cut off: ${message}`)
+        : type === 'content_policy_violation' || type === 'refusal'
+          ? new Refusal(`The video model declined to describe this scene: ${message}`)
+          : new Upstream(message, Number.isInteger(code) && code >= 400 && code < 600 ? code : undefined)
+    ) as Error & FailedCall;
+    const cost = reply.usage?.cost;
+    if (typeof cost === 'number' && Number.isFinite(cost) && cost >= 0) failed.costUSD = cost;
+    throw failed;
   }
   return modelSchema.parse(json);
 }
@@ -782,14 +840,21 @@ async function askModel(
     });
     config = response.config;
     note(response.headers);
-    return replyData(await bodyOf(response.data, request.signal, replyBytes, config));
+    return replyData(
+      await bodyOf(response.data, request.signal, replyBytes, config, response.request),
+    );
   } catch (error) {
     const refused = axios.isAxiosError(error) && !!error.response;
     if (axios.isAxiosError(error)) {
       config ??= error.config;
       if (error.response) {
         note(error.response.headers);
-        error.response.data = await refusalBody(error.response.data, request.signal, config);
+        error.response.data = await refusalBody(
+          error.response.data,
+          request.signal,
+          config,
+          error.request ?? error.response.request,
+        );
       }
     }
     if (late && !signal.aborted && !refused)
@@ -844,33 +909,39 @@ async function generationRecord(
   return undefined;
 }
 
+/** What a look request needs to be priced when OpenRouter did not report its cost. */
+type Pricing = {
+  key: string;
+  signal: AbortSignal;
+  /** What the request is expected to have cost (`expectedFor`). */
+  expectedUSD: () => number;
+  log?: (message: string) => void;
+};
+
 /**
  * Gives a failed look request what the meter needs to settle it (`FailedCall`): its generation id,
- * and what it really cost by OpenRouter's record (possibly nothing) when that appears in time,
- * otherwise what it is expected to have cost. Our own stop, and a failure the provider certainly
- * did not bill, get no price: the meter settles those as it always has.
+ * whether our own stop had already cut it off, and what it really cost by OpenRouter's record
+ * (possibly nothing) when that appears in time, otherwise what it is expected to have cost. A
+ * stop that comes while the record is awaited ends the wait, and the request is still priced at
+ * its expected cost, since it failed on its own. A request our stop cut off, and a failure the
+ * provider certainly did not bill, get no price: the meter settles those as it always has.
  */
 async function costed(
   error: unknown,
   generation: string | undefined,
-  context: {
-    key: string;
-    signal: AbortSignal;
-    expectedUSD: number;
-    log?: (message: string) => void;
-  },
+  context: Pricing,
 ): Promise<unknown> {
   if (!(error instanceof Error)) return error;
   const failed = error as Error & FailedCall;
   if (generation) failed.generation = generation;
+  failed.interrupted = context.signal.aborted;
   const known =
     typeof failed.costUSD === 'number' && Number.isFinite(failed.costUSD) && failed.costUSD >= 0;
-  if (known || context.signal.aborted || !billed(error)) return error;
+  if (known || failed.interrupted || !billed(error)) return error;
   if (generation) {
     const record = await generationRecord(generation, context.key, context.signal).catch(
       () => undefined,
     );
-    if (context.signal.aborted) return error;
     if (record) {
       failed.costUSD = record.total_cost;
       failed.costFrom = 'generation';
@@ -880,11 +951,37 @@ async function costed(
       return error;
     }
   }
-  failed.expectedUSD = context.expectedUSD;
+  const expected = context.expectedUSD();
+  failed.expectedUSD = expected;
   context.log?.(
-    `vision: no record of what the failed request ${generation ?? 'without a generation id'} cost; booked at the expected $${context.expectedUSD.toFixed(4)}`,
+    `vision: ${context.signal.aborted ? 'the job stopped before OpenRouter recorded' : 'no record of'} what the failed request ${generation ?? 'without a generation id'} cost; booked at the expected $${expected.toFixed(4)}`,
   );
   return error;
+}
+
+/**
+ * The cost of a finished reply that did not report one: OpenRouter's record of its generation
+ * when that appears in time, otherwise what it is expected to have cost, marked uncertain. It is
+ * never booked at the reserve.
+ */
+async function unreported(
+  generation: string | undefined,
+  context: Pricing,
+): Promise<{ costUSD: number; uncertain?: boolean }> {
+  const record = generation
+    ? await generationRecord(generation, context.key, context.signal).catch(() => undefined)
+    : undefined;
+  if (record) {
+    context.log?.(
+      `vision: the reply ${generation} did not report its cost; $${record.total_cost.toFixed(4)} by OpenRouter's record`,
+    );
+    return { costUSD: record.total_cost };
+  }
+  const expected = context.expectedUSD();
+  context.log?.(
+    `vision: the reply ${generation ?? 'without a generation id'} did not report its cost and OpenRouter had no record of it; booked as uncertain at the expected $${expected.toFixed(4)}`,
+  );
+  return { costUSD: expected, uncertain: true };
 }
 
 function replyOf(choice: Choice | undefined, look: Look): Analysis {
@@ -900,11 +997,13 @@ function replyOf(choice: Choice | undefined, look: Look): Analysis {
 
 /**
  * Asks the video model for one clip's description. Retries rate limits, server errors and
- * unreadable replies with growing waits (at most once after a timeout, which may be billed);
- * a refusal or a bad request is not retried. The known cost is settled even when the reply
- * turns out unusable. A request that fails in a way that may be billed is priced before the
- * meter settles it: by OpenRouter's record of its generation when one appears within a minute,
- * otherwise at what such a look is expected to cost (`costed`), never at its whole reserve.
+ * unreadable replies with growing waits (at most once after a timeout, which may be billed,
+ * including a timeout the provider reported inside its reply); a refusal or a bad request is not
+ * retried. The known cost is settled even when the reply turns out unusable. A request that fails
+ * in a way that may be billed, or a reply that did not report its cost, is priced before the meter
+ * settles it: by OpenRouter's record of its generation when one appears within a minute, otherwise
+ * at what such a look is expected to cost at this run's rate (`costed`, `unreported`), never at
+ * its whole reserve.
  */
 export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Promise<Analysis> {
   const key = process.env.OPENROUTER_KEY;
@@ -913,7 +1012,12 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
   const video = (await readFile(look.file)).toString('base64');
   const maxTokens = lookTokens(look.brief);
   const reserve = reserveFor(look.seconds, prompt, maxTokens);
-  const expectedUSD = expectedFor(look.seconds, prompt, reserve);
+  const pricing: Pricing = {
+    key,
+    signal,
+    expectedUSD: () => expectedFor(look.seconds, prompt, reserve),
+    log: look.log,
+  };
   const model = visionModel();
   let result: Analysis | undefined;
   let previous: unknown;
@@ -924,7 +1028,8 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
   const retryable = (error: unknown) => {
     if (error instanceof Refusal) return false;
     if (error instanceof CutOff) return ++cutoffs <= 1;
-    if (isTimeout(error)) return ++timeouts <= 1;
+    if (isTimeout(error) || (error instanceof Upstream && [408, 504].includes(error.status ?? 0)))
+      return ++timeouts <= 1;
     return transient(error) || error instanceof z.ZodError;
   };
   await attempt(
@@ -968,20 +1073,26 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
               (id) => (generation = id),
             );
           } catch (error) {
-            throw await costed(error, generation, { key, signal, expectedUSD, log: look.log });
+            throw await costed(error, generation, pricing);
           }
           const choice = data.choices[0];
-          const cost = data.usage?.cost ?? reserve;
+          const reported = data.usage?.cost;
+          const output = data.usage?.completion_tokens;
+          const priced =
+            reported === undefined
+              ? await unreported(generation || data.id || undefined, pricing)
+              : { costUSD: reported };
+          const cost = priced.costUSD;
           calls.push(visionCall(asked, data, cost, (Date.now() - began) / 1000, generation));
           look.log?.(
-            `vision: tier ${data.service_tier ?? 'unknown'}, provider ${data.provider ?? 'unknown'}, finish ${choice?.finish_reason ?? 'none'}${choice?.native_finish_reason ? ` (${choice.native_finish_reason})` : ''}, output ${data.usage?.completion_tokens ?? '?'} tokens (${data.usage?.completion_tokens_details?.reasoning_tokens ?? '?'} reasoning), $${cost.toFixed(4)}`,
+            `vision: tier ${data.service_tier ?? 'unknown'}, provider ${data.provider ?? 'unknown'}, finish ${choice?.finish_reason ?? 'none'}${choice?.native_finish_reason ? ` (${choice.native_finish_reason})` : ''}, output ${output ?? '?'} tokens (${data.usage?.completion_tokens_details?.reasoning_tokens ?? '?'} reasoning), $${cost.toFixed(4)}`,
           );
           try {
             result = replyOf(choice, look);
           } catch (error) {
             failure = error;
           }
-          return { costUSD: cost };
+          return priced;
         });
       } catch (error) {
         previous = error;
