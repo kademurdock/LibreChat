@@ -116,7 +116,8 @@ export function describedVideoPage(sharedHead: string): string {
 <h3>Watch or listen</h3>
 <label for="dv-version">Finished version</label><select id="dv-version"></select>
 <label for="dv-play-as">Play as</label><select id="dv-play-as"><option value="video">Video</option><option value="audio">Audio only (keeps playing with the screen locked)</option></select>
-<label class="check"><input id="dv-read-captions" type="checkbox" aria-describedby="dv-read-captions-help"> Read the captions aloud with my screen reader</label><p id="dv-read-captions-help" class="hint">Off: the captions show under the video for anyone watching with you, and screen readers stay quiet over the film. On: each caption is read as it appears.</p>
+<label class="check"><input id="dv-read-captions" type="checkbox" aria-describedby="dv-read-captions-help"> Read the captions aloud with my screen reader</label><p id="dv-read-captions-help" class="hint">Off: the captions show under the video on this page for anyone watching with you (not in full screen or on a TV), and screen readers stay quiet over the film. On: each caption is read as it appears.</p>
+<label class="check"><input id="dv-player-captions" type="checkbox" aria-describedby="dv-player-captions-help"> Show captions on the picture too, for full screen and a TV</label><p id="dv-player-captions-help" class="hint">For anyone watching with you in full screen, picture in picture or on a TV, where the captions under the video do not show. A screen reader may read these over the film, so this is off each time the page opens.</p>
 <video id="dv-video" controls preload="metadata" playsinline aria-label="Video with audio description"></video>
 <div id="dv-caption" class="caption" aria-hidden="true"></div>
 <audio id="dv-audio" controls preload="metadata" aria-label="Soundtrack with audio description" hidden></audio>
@@ -830,7 +831,10 @@ export const descriptionBrowserScript: string = String.raw`
     ['video','audio'].forEach(function(name){var el=$(name);el.onloadedmetadata=function(){if(resumeAt&&el===media())el.currentTime=Math.min(resumeAt,el.duration||resumeAt);el.playbackRate=Number($('playback-rate').value);if(resumePlay&&el===media())el.play().catch(function(){});};});
     $('video').src=result.video;$('audio').src=result.audio;
     ['video','audio','transcript','captions','descriptions','script'].forEach(function(kind){var link=$(kind+'-download');link.hidden=!result[kind+'Download'];if(result[kind+'Download'])link.href=result[kind+'Download'];});
-    ['descriptions','captions'].forEach(function(kind,index){if(!texts[index])return;var url=URL.createObjectURL(new Blob([texts[index]],{type:'text/vtt'}));trackUrls.push(url);var track=document.createElement('track');track.kind=kind;track.label=kind==='descriptions'?'Audio descriptions':'Dialogue captions';track.srclang='en';track.src=url;$('video').appendChild(track);if(track.track)track.track.mode='hidden';});
+    /* Only the dialogue captions become a track. The description text is never given to the video:
+     * Safari speaks a "descriptions" track on its own when a phone has Audio Descriptions turned on,
+     * over the narrator who already says it. The description buttons read the page's own copy (cues). */
+    if(texts[1]){var url=URL.createObjectURL(new Blob([texts[1]],{type:'text/vtt'}));trackUrls.push(url);var track=document.createElement('track');track.kind='captions';track.label='Dialogue captions';track.srclang='en';track.src=url;$('video').appendChild(track);if(track.track)track.track.mode=$('player-captions').checked?'showing':'hidden';}
     cues=parseVtt(texts[0]);captionCues=parseVtt(texts[1]);captionShown='';showCaption();renderTranscript(texts[2]);
     $('results').hidden=false;$('skip').hidden=false;loadedFiles=id+'/'+version;
     $('library-save-box').hidden=!config.library;
@@ -1512,17 +1516,47 @@ export const descriptionBrowserScript: string = String.raw`
   /* Sep 25 2026 (Part 291), her word: captions are welcome, but VoiceOver read them over the film.
    * The browser's own caption rendering is what a screen reader's media-descriptions feature reads,
    * so every text track stays 'hidden' (its cues still load) and the page draws the current caption
-   * itself in #dv-caption, aria-hidden unless she ticks Read the captions aloud. A track a sighted
-   * person turns on from the player's own menu after the first play is left alone. */
-  function quietTracks(){var list=$('video').textTracks;if(!list)return;for(var i=0;i<list.length;i++)if(list[i].mode==='showing')list[i].mode='hidden';}
+   * itself in #dv-caption, aria-hidden unless she ticks Read the captions aloud. With that ticked, the
+   * page's own caption track, if a sighted person turns it on from the player's menu after the first
+   * play, is left alone. */
+  function quietTracks(){var list=$('video').textTracks;if(!list)return;for(var i=0;i<list.length;i++)if(list[i].mode==='showing'&&!onPicture(list[i]))list[i].mode='hidden';}
+  /* Sep 26 2026 (Part 295), her word: it still happened, on a Road Runner cartoon with no dialogue.
+   * The page's own track was quiet; the browser's copies of the MP4's text tracks were not. Safari
+   * lists those itself once the file loads and can turn one on from the phone's captioning settings
+   * whenever it is ready, which can be after the first play or on going full screen, and nothing
+   * turned it off again. A copy is any track that is not the page's own <track> (a copy's label comes
+   * from the file, so it is not trusted), and every copy is switched fully off, ticked or not: a copy
+   * left hidden is still the player's chosen text track, which a TV can draw, and the description
+   * text among them is what the narrator already says. Only the page's own dialogue track follows
+   * the boxes; while Read the captions aloud is off it goes back to hidden whenever it comes on.
+   * The page sets each track's mode once itself, and newer WebKit keeps that as the page's choice,
+   * but the Safari on today's phones forgets it and picks again whenever caption preferences change
+   * (a pick from a captions menu, the phone's captioning settings). So every track is put back at
+   * every chance: each change, every play, full screen in and out, and while it plays. Sighted
+   * viewers see #dv-caption under the video; in full screen, picture in picture or on a TV they
+   * tick Show captions on the picture too, which is never remembered, because a screen reader may
+   * read what the player draws. */
+  function ownTrack(){var el=$('video').querySelectorAll('track')[0];return el&&el.track||null;}
+  function onPicture(t){return t===ownTrack()&&$('player-captions').checked;}
+  function guardTracks(){
+    var list=$('video').textTracks,own=ownTrack(),free=$('read-captions').checked||$('player-captions').checked;if(!list)return;
+    for(var i=0;i<list.length;i++){var t=list[i],mine=t===own;if(mine&&free)continue;
+      if(!t.kadeSet){t.kadeSet=true;if(t.mode==='disabled')t.mode='hidden';}
+      if(!mine){if(t.mode!=='disabled')t.mode='disabled';}else if(t.mode==='showing')t.mode='hidden';}
+  }
   function showCaption(){var m=$('video'),now=m.currentTime,text='';if(!m.hidden)for(var i=0;i<captionCues.length;i++){var c=captionCues[i];if(c.at>now)break;if(now<c.end)text=c.text;}if(text===captionShown)return;captionShown=text;$('caption').textContent=text;}
   function captionVoice(){var box=$('caption');if($('read-captions').checked){box.removeAttribute('aria-hidden');box.setAttribute('aria-live','polite');}else{box.removeAttribute('aria-live');box.setAttribute('aria-hidden','true');}}
   $('video').addEventListener('timeupdate',showCaption);$('video').addEventListener('seeked',showCaption);
   $('video').addEventListener('loadedmetadata',quietTracks);
   $('video').addEventListener('play',function(){if(tracksArmed){tracksArmed=false;quietTracks();}});
   if($('video').textTracks&&$('video').textTracks.addEventListener)$('video').textTracks.addEventListener('addtrack',function(){if(tracksArmed)setTimeout(quietTracks,0);});
+  ['play','loadedmetadata','loadeddata','timeupdate','webkitbeginfullscreen','webkitendfullscreen','webkitpresentationmodechanged'].forEach(function(type){$('video').addEventListener(type,guardTracks);});
+  ['fullscreenchange','webkitfullscreenchange'].forEach(function(type){document.addEventListener(type,guardTracks);});
+  if($('video').textTracks&&$('video').textTracks.addEventListener){$('video').textTracks.addEventListener('change',guardTracks);$('video').textTracks.addEventListener('addtrack',function(){guardTracks();setTimeout(guardTracks,0);});}
   $('read-captions').checked=stored(READ_CAPTIONS_KEY,false)===true;captionVoice();
-  $('read-captions').onchange=function(){store(READ_CAPTIONS_KEY,this.checked);captionVoice();};
+  $('read-captions').onchange=function(){store(READ_CAPTIONS_KEY,this.checked);captionVoice();guardTracks();};
+  $('player-captions').checked=false;
+  $('player-captions').onchange=function(){var own=ownTrack();if(own)own.mode=this.checked?'showing':'hidden';guardTracks();};
   function seek(step){var m=media();m.currentTime=Math.max(0,Math.min(m.duration||0,m.currentTime+step));say('At '+clock(m.currentTime)+'.',true);}
   $('play').onclick=function(){var m=media();if(m.paused)m.play().catch(function(){failure(new Error('Playback could not start. Try the other player, or download the copy.'));});else m.pause();};
   $('back').onclick=function(){seek(-10);};$('forward').onclick=function(){seek(10);};

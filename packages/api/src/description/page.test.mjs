@@ -744,9 +744,59 @@ function webAudio() {
   return { AudioContext, played, stopped };
 }
 
-async function boot({ server = makeServer(), search = '', local = {}, confirmReply = true, promptReply = null, refresh = true, xhrRoute, wakeLock, audio, device } = {}) {
+/**
+ * Gives the video a TextTrackList like Safari's: <track> children appear in it as they are added,
+ * and add() stands in for the MP4's own text tracks, which Safari lists by itself. Each track keeps
+ * the modes it was given; emit() fires a list event the way the browser would.
+ */
+function fakeTextTracks(video) {
+  const list = [];
+  const listeners = {};
+  const make = (kind, label) => {
+    let mode = 'disabled';
+    return {
+      kind,
+      label,
+      language: 'en',
+      modes: [],
+      get mode() {
+        return mode;
+      },
+      set mode(value) {
+        mode = value;
+        this.modes.push(value);
+      },
+    };
+  };
+  list.addEventListener = (type, fn) => (listeners[type] ||= []).push(fn);
+  list.emit = (type, track) => (listeners[type] || []).forEach((fn) => fn({ type, track }));
+  list.add = (kind, label) => {
+    const track = make(kind, label);
+    list.push(track);
+    list.emit('addtrack', track);
+    return track;
+  };
+  const append = video.appendChild.bind(video);
+  video.appendChild = (node) => {
+    append(node);
+    if (node.localName !== 'track') return node;
+    node.track = make(node.kind, node.label);
+    list.push(node.track);
+    node.remove = () => {
+      Element.prototype.remove.call(node);
+      list.splice(list.indexOf(node.track), 1);
+    };
+    list.emit('addtrack', node.track);
+    return node;
+  };
+  video.textTracks = list;
+  return list;
+}
+
+async function boot({ server = makeServer(), search = '', local = {}, confirmReply = true, promptReply = null, refresh = true, xhrRoute, wakeLock, audio, device, textTracks = false } = {}) {
   const html = page();
   const document = makeDocument(html);
+  if (textTracks) fakeTextTracks(document.getElementById('dv-video'));
   const t = timers();
   const dialogs = [];
   const location = {
@@ -3034,6 +3084,145 @@ test('captions: drawn under the video, silent to screen readers unless she asks,
   const env2 = await boot({ server: again, search: '?id=' + same.id, local: { 'kade-description-read-captions': 'true' } });
   assert.equal(env2.$('read-captions').checked, true, 'her choice is remembered');
   assert.equal(env2.$('caption').getAttribute('aria-live'), 'polite');
+});
+
+const captionFiles = (server) => {
+  server.override(
+    (method, path) => /\/files\?/.test(path),
+    () => ({ status: 200, body: { video: 'https://b2/v1.mp4', videoDownload: 'x', audio: 'https://b2/a1.m4a', audioDownload: 'x', transcript: 't', transcriptDownload: 'x', descriptions: 'd', descriptionsDownload: 'x', captions: 'c', captionsDownload: 'x', script: 's', scriptDownload: 'x', expiresAt: '2026-09-25T00:00:00Z' } }),
+    false,
+  );
+  server.override((method, path) => /\/text\/captions/.test(path), () => ({ status: 200, text: "WEBVTT\n\n00:00:00.000 --> 00:00:02.670\nBeep beep!\n" }), false);
+};
+
+test('captions (Part 295): with Read the captions aloud off, no text track the browser turns on stays on over the film', async () => {
+  const server = makeServer();
+  const done = server.add(doneJob({ name: 'Road Runner' }));
+  captionFiles(server);
+  const env = await boot({ server, search: '?id=' + done.id, textTracks: true });
+  const { $ } = env;
+  const tracks = $('video').textTracks;
+  const own = $('video').querySelectorAll('track');
+  assert.deepEqual(own.map((el) => [el.kind, el.label]), [['captions', 'Dialogue captions']], 'the description text is never given to the video as a track');
+  assert.equal(tracks.some((t) => t.kind === 'descriptions'), false, 'nothing Safari would speak by itself');
+  assert.equal(own[0].track.mode, 'hidden');
+
+  // Safari lists the MP4's own text tracks once the file loads. It may not read their names from
+  // the file, so the description text can arrive with no label at all.
+  const inband = tracks.add('subtitles', 'Captions');
+  const words = tracks.add('subtitles', 'Audio descriptions (text)');
+  const unnamed = tracks.add('subtitles', '');
+  await env.timers.advance(10);
+  assert.equal(inband.mode, 'disabled', 'a copy of the MP4 captions goes fully off: a hidden copy is still the player\'s chosen text track');
+  assert.equal(words.mode, 'disabled', 'the description text is switched off entirely');
+  assert.equal(unnamed.mode, 'disabled', 'known by not being the page\'s own track, not by its label');
+  assert.deepEqual(inband.modes, ['hidden', 'disabled'], 'the page sets the mode itself once, which newer WebKit keeps as the page\'s choice');
+
+  // Today's Safari still forgets the page's choice and turns one on again from her captioning
+  // settings, at any moment: each must go straight back.
+  const turnedOn = async (track, happen) => {
+    track.mode = 'showing';
+    await happen();
+    return track.mode;
+  };
+  assert.equal(await turnedOn(inband, () => { tracks.emit('change'); return env.timers.advance(0); }), 'disabled', 'on a track change');
+  assert.equal(await turnedOn(words, () => { tracks.emit('change'); return env.timers.advance(0); }), 'disabled');
+  assert.equal(await turnedOn(unnamed, () => { tracks.emit('change'); return env.timers.advance(0); }), 'disabled');
+  assert.equal(await turnedOn(own[0].track, () => { tracks.emit('change'); return env.timers.advance(0); }), 'hidden', 'the page track too');
+  await env.fire($('video'), 'play');
+  assert.equal(await turnedOn(inband, () => env.fire($('video'), 'play')), 'disabled', 'on a later play, not only the first');
+  for (const event of ['webkitbeginfullscreen', 'webkitendfullscreen', 'loadeddata', 'timeupdate']) {
+    assert.equal(await turnedOn(inband, () => env.fire($('video'), event)), 'disabled', event);
+    assert.equal(await turnedOn(own[0].track, () => env.fire($('video'), event)), 'hidden', event);
+  }
+  assert.equal(
+    await turnedOn(inband, async () => {
+      for (const fn of env.document.listeners.fullscreenchange || []) fn();
+      await env.timers.advance(0);
+    }),
+    'disabled',
+    'fullscreenchange',
+  );
+
+  $('video').currentTime = 1;
+  await env.fire($('video'), 'timeupdate');
+  assert.equal($('caption').textContent, 'Beep beep!', 'sighted viewers still see the caption under the video');
+  assert.equal($('caption').getAttribute('aria-hidden'), 'true');
+});
+
+test('captions (Part 295): with Read the captions aloud on, the page caption track turned on after the first play stays on, but the MP4\'s own tracks never do', async () => {
+  const server = makeServer();
+  const done = server.add(doneJob({ name: 'Road Runner' }));
+  captionFiles(server);
+  const env = await boot({ server, search: '?id=' + done.id, textTracks: true, local: { 'kade-description-read-captions': 'true' } });
+  const { $ } = env;
+  const tracks = $('video').textTracks;
+  const own = $('video').querySelectorAll('track')[0].track;
+  const inband = tracks.add('subtitles', 'Captions');
+  const words = tracks.add('subtitles', '');
+  await env.timers.advance(10);
+  assert.equal(inband.mode, 'disabled', 'ticked or not, the MP4\'s own tracks are off');
+  assert.equal(words.mode, 'disabled');
+  await env.fire($('video'), 'play');
+  own.mode = 'showing';
+  tracks.emit('change');
+  await env.fire($('video'), 'play');
+  await env.fire($('video'), 'webkitbeginfullscreen');
+  assert.equal(own.mode, 'showing', 'a caption track someone chose is left alone');
+  // The description text with no label, picked by her captioning settings while the box is ticked.
+  words.mode = 'showing';
+  tracks.emit('change');
+  await env.timers.advance(0);
+  assert.equal(words.mode, 'disabled', 'the narrator already says the description text, named or not');
+  inband.mode = 'showing';
+  await env.fire($('video'), 'timeupdate');
+  assert.equal(inband.mode, 'disabled', 'the page track carries the same dialogue, and the box already reads it');
+  await env.tick('read-captions', false);
+  assert.equal(own.mode, 'hidden', 'turning Read the captions aloud off quiets it at once');
+});
+
+test('captions (Part 295): Show captions on the picture too puts the page captions in the player for full screen and a TV, is never remembered, and frees nothing else', async () => {
+  const server = makeServer();
+  const done = server.add(doneJob({ name: 'Cartoon' }));
+  captionFiles(server);
+  const env = await boot({ server, search: '?id=' + done.id, textTracks: true });
+  const { $ } = env;
+  const tracks = $('video').textTracks;
+  const own = $('video').querySelectorAll('track')[0].track;
+  const inband = tracks.add('subtitles', 'Captions');
+  await env.timers.advance(10);
+  assert.equal($('player-captions').checked, false, 'off each time the page opens');
+  assert.equal(own.mode, 'hidden');
+  const kept = [...env.localStorage.map.keys()].sort();
+
+  await env.tick('player-captions', true);
+  assert.equal(own.mode, 'showing', 'the player draws the dialogue captions, in full screen and on a TV too');
+  assert.deepEqual([...env.localStorage.map.keys()].sort(), kept, 'nothing remembered');
+  const moments = [
+    () => { tracks.emit('change'); return env.timers.advance(0); },
+    () => env.fire($('video'), 'play'),
+    () => env.fire($('video'), 'webkitbeginfullscreen'),
+    () => env.fire($('video'), 'webkitpresentationmodechanged'),
+    () => env.fire($('video'), 'loadedmetadata'),
+    () => env.fire($('video'), 'timeupdate'),
+  ];
+  for (const moment of moments) {
+    await moment();
+    assert.equal(own.mode, 'showing', 'a sighted viewer\'s captions stay on');
+  }
+  inband.mode = 'showing';
+  tracks.emit('change');
+  await env.timers.advance(0);
+  assert.equal(inband.mode, 'disabled', 'only the page\'s own track is let through');
+  assert.equal($('caption').getAttribute('aria-hidden'), 'true', 'the line under the video stays quiet to screen readers');
+  assert.equal($('caption').getAttribute('aria-live'), null);
+
+  await env.tick('player-captions', false);
+  assert.equal(own.mode, 'hidden', 'unticking takes them off the picture');
+  own.mode = 'showing';
+  tracks.emit('change');
+  await env.timers.advance(0);
+  assert.equal(own.mode, 'hidden', 'and the guard is back');
 });
 
 test('lock-screen Play after the phone paused the video carries on with the audio copy, and the picture comes back on return', async () => {
