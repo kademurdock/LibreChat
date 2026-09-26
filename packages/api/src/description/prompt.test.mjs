@@ -24,6 +24,8 @@ import {
   billed,
   failureClass,
   keytermsFor,
+  lookBackend,
+  lookRouting,
   providerDetail,
   providerProblem,
   speechPerByte,
@@ -1164,6 +1166,72 @@ test('prompt: a clip with a time strip says once to take cue times from it and n
   assert.doesNotMatch(analysisPrompt(40, brief({ survey: true, stamped: true }), null, lines, []), /TIME STRIP/, 'the first look writes no cues');
 });
 
+test('prompt: every text is sized to its own time, with the words per second at her usual speed', () => {
+  const lines = [{ start: 4.3, end: 8.5, text: 'Hello there.', speaker: 0 }];
+  const room = roomText(30, brief(), lines);
+  assert.match(
+    room,
+    /SIZE EVERY TEXT TO ITS OWN TIME\. A text is spoken from its at until the next cue starts or the next line of dialogue begins/,
+  );
+  assert.match(
+    room,
+    /about 3\.9 words per second: 1\.5 seconds fits about 4 words, 3 seconds fits about 10 words, 5 seconds fits about 18 words, 8 seconds fits about 30 words\./,
+  );
+  assert.match(room, /a text that does not fit is replaced by its shortText/);
+  assert.match(room, /Write each shortText in about half as many words\./);
+  assert.doesNotMatch(room, /Write each text to fit the stretch/);
+  // Her Pluto job: measured voice 0.0756 s per byte at 1x, usual speed 1.5x. The model wrote about
+  // 14.5 words for windows of about 3.1 s, and 19 of 32 lines fell back to the short text.
+  const pluto = roomText(310, brief({ detail: 'rich', slowed: true, secondsPerByte: 0.0756, maxRate: 2 }), []);
+  const perSecond = Number(/about ([\d.]+) words per second/.exec(pluto)[1]);
+  assert.equal(perSecond, 3.3);
+  assert.match(pluto, /words per second of the original speed, or a quarter of that per second of this slowed clip/);
+  const three = Number(/12 seconds of this clip fits about (\d+) words/.exec(pluto)[1]);
+  assert.ok(three <= 9, `a 3-second window gets ${three} words, well under 14.5`);
+  assert.match(pluto, /6 seconds of this clip fits about 3 words/);
+  const prompt = analysisPrompt(30, brief(), null, lines, []);
+  assert.equal(prompt.match(/SIZE EVERY TEXT/g).length, 1);
+  assert.doesNotMatch(analysisPrompt(30, brief({ survey: true }), null, lines, []), /SIZE EVERY TEXT/);
+});
+
+test('prompt: the clip that ends the video is described to its end, with the closing card and main credits', () => {
+  const lines = [{ start: 4, end: 8, text: 'Hello there.', speaker: 0 }];
+  const part = (index, extra = {}) =>
+    analysisPrompt(77, brief({ position: { index, count: 2, start: index * 80, end: index * 80 + 77, total: 158 }, ...extra }), null, lines, []);
+  const last = part(1);
+  assert.match(last, /COVER THE WHOLE CLIP: describe it in order from its first second to its last/);
+  assert.match(last, /never move an event later to fill a quiet stretch, and never stop describing before the clip ends/);
+  assert.match(last, /THE ENDING: this clip ends the video\. Describe how the story ends as fully as how it began/);
+  assert.match(last, /such as a rescue, a reunion or a happy ending/);
+  assert.match(last, /read the closing title card when one is shown, such as The End, and, when there is room, the main names in the end credits/);
+  assert.match(last, /summarize the rest of a long credit roll/);
+  assert.ok(last.indexOf('ROOM TO SPEAK') < last.indexOf('COVER THE WHOLE CLIP'));
+  assert.ok(last.indexOf('THE ENDING') < last.indexOf('WHAT TO DESCRIBE'));
+  const first = part(0);
+  assert.match(first, /COVER THE WHOLE CLIP/, 'every clip is covered to its end');
+  assert.doesNotMatch(first, /THE ENDING|closing title card when/);
+  assert.match(analysisPrompt(40, brief(), null, lines, []), /THE ENDING/, 'a video in one clip ends in it');
+  const range = analysisPrompt(40, brief({ range: { start: 60, end: 100 } }), null, lines, []);
+  assert.match(range, /This clip ends the part being described, so describe it all the way to its last second\./);
+  assert.doesNotMatch(range, /THE ENDING/, 'the film may go on after a part');
+  assert.doesNotMatch(analysisPrompt(8, brief(), null, [], []), /THE ENDING/, 'an ident has its own short rule');
+  assert.doesNotMatch(analysisPrompt(40, brief({ survey: true }), null, lines, []), /COVER THE WHOLE CLIP|THE ENDING/);
+  assert.match(last, /Animation or cartoon: .*Give the ending the same care as the opening: the last gag, how the story resolves, such as a happy ending, and then the closing title card\./);
+  assert.doesNotMatch(last, /reads:? "?The End|happy birthday|Pluto|Mickey/i, 'no example line to copy, nothing from the Pluto job');
+});
+
+test('prompt: on-screen text keeps its own rule, including writing on things in the scene', () => {
+  const prompt = analysisPrompt(40, brief({ detail: 'rich' }), null, [], []);
+  const rule = prompt.split('\n').find((line) => line.startsWith('ON-SCREEN TEXT: '));
+  assert.ok(rule, 'a line of its own that starts with the heading');
+  assert.match(rule, /read every legible word in the picture, not only titles, credits and captions/);
+  assert.match(rule, /Writing on things in the scene, such as a cake, a banner, a sign, a package or a letter, is read too, as soon as it can be read/);
+  assert.match(rule, /Text that matters to the story, such as a message, a name or a label, has importance 3\./);
+  assert.ok(prompt.indexOf('WHAT TO DESCRIBE') < prompt.indexOf(rule));
+  assert.ok(prompt.indexOf(rule) < prompt.indexOf('On-screen words get the same lead-in every time'));
+  assert.doesNotMatch(rule, /"/, 'no quoted line to copy');
+});
+
 function fakeAxios(handler) {
   const calls = [];
   const previous = axios.defaults.adapter;
@@ -1185,10 +1253,12 @@ const meter = async (kind, reserve, action) => {
 const signal = new AbortController().signal;
 const reply = (content, extra = {}) => ({
   data: {
+    id: 'gen-123',
+    model: 'google/gemini-3.8-flash-20260902',
     provider: 'Google AI Studio',
     service_tier: 'flex',
     choices: [{ finish_reason: 'stop', message: { content }, ...extra }],
-    usage: { cost: 0.0042, completion_tokens: 900, completion_tokens_details: { reasoning_tokens: 400 } },
+    usage: { cost: 0.0042, prompt_tokens: 51000, completion_tokens: 900, completion_tokens_details: { reasoning_tokens: 400 } },
   },
 });
 const replyBody = JSON.stringify({
@@ -1223,12 +1293,47 @@ test('providers: the vision request uses the flex-eligible model, pinned reasoni
     assert.deepEqual(Object.keys(body.messages[0].content[0].video_url), ['url']);
     assert.equal(body.response_format.type, 'json_schema');
     assert.match(log[0], /tier flex, provider Google AI Studio, finish stop, output 900 tokens \(400 reasoning\), \$0\.0042/);
+    assert.deepEqual(
+      body.provider,
+      {
+        order: ['google-vertex/flex', 'google-vertex/global/flex', 'google-vertex'],
+        allow_fallbacks: true,
+        max_price: { prompt: 1.5, completion: 7.5 },
+      },
+      'the flex variant starts on the Vertex flex tier, then Vertex, then anywhere',
+    );
+    assert.deepEqual(result.vision, [
+      {
+        model: 'google/gemini-3.8-flash:floor',
+        costUSD: 0.0042,
+        seconds: result.vision[0].seconds,
+        generation: 'gen-123',
+        served: 'google/gemini-3.8-flash-20260902',
+        provider: 'Google AI Studio',
+        tier: 'flex',
+        finish: 'stop',
+        promptTokens: 51000,
+        outputTokens: 900,
+        reasoningTokens: 400,
+      },
+    ]);
+    assert.ok(result.vision[0].seconds >= 0);
     await analyze({ file, seconds: 40, brief: brief({ survey: true, slowed: true }), state: null, lines: [], before: [] }, signal, meter);
     assert.deepEqual(fake.calls[1].body.reasoning, { effort: 'low' });
     assert.equal(fake.calls[1].body.max_tokens, 24000);
     delete process.env.KADE_DESCRIPTION_MODEL;
     await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter);
     assert.equal(fake.calls[2].body.model, 'google/gemini-3.8-flash');
+    assert.deepEqual(fake.calls[2].body.provider, {
+      order: ['google-vertex'],
+      allow_fallbacks: true,
+      max_price: { prompt: 1.5, completion: 7.5 },
+    }, 'every look starts on the same backend, with fallbacks allowed');
+    process.env.KADE_DESCRIPTION_MODEL = 'qwen/qwen3-vl-flash';
+    await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter);
+    assert.deepEqual(fake.calls[3].body.provider, { max_price: { prompt: 1.5, completion: 7.5 } }, 'another maker keeps OpenRouter routing');
+    assert.deepEqual(lookRouting('google/gemini-3.8-flash').order, [lookBackend]);
+    assert.equal(lookBackend, 'google-vertex');
   } finally {
     delete process.env.KADE_DESCRIPTION_MODEL;
     fake.restore();
@@ -1264,6 +1369,8 @@ test('providers: a reply cut off for length is retried once on the standard tier
     assert.equal(result.cues.length, 1);
     assert.equal(fake.calls.length, 2);
     assert.equal(fake.calls[1].body.model, 'google/gemini-3.8-flash');
+    assert.deepEqual(result.vision.map((call) => call.finish), ['length', 'stop'], 'the record keeps the cut-off call too');
+    assert.deepEqual(fake.calls[1].body.provider.order, ['google-vertex']);
     assert.equal(fake.calls[1].body.response_format.type, 'json_schema');
     assert.match(fake.calls[1].body.messages[0].content[1].text, /Give about half as many cues/);
   } finally {

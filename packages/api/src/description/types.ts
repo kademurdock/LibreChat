@@ -91,6 +91,25 @@ export type Cue = {
   /** Ids of the people this cue mentions. */
   who?: string[];
 };
+/** One paid call to the video model, as OpenRouter reported it (no request details, no secrets). */
+export type VisionCall = {
+  /** OpenRouter's generation id, for looking the call up later. */
+  generation?: string;
+  /** The model asked for, and the model version that answered. */
+  model: string;
+  served?: string;
+  /** The backend that served it, such as "Google" (google-vertex) or "Google AI Studio". */
+  provider?: string;
+  tier?: string;
+  finish?: string;
+  nativeFinish?: string;
+  promptTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  costUSD: number;
+  /** Seconds the call took. */
+  seconds: number;
+};
 export type Analysis = {
   kind: string;
   setting: string;
@@ -98,6 +117,10 @@ export type Analysis = {
   speakers: { speaker: number; who: string }[];
   cues: Cue[];
   protectedSounds: Interval[];
+  /** Every paid call behind this look, in order; the last one wrote it. */
+  vision?: VisionCall[];
+  /** Signs, found by a code check and logged, that this look's times run late (nothing changed). */
+  stretched?: string[];
 };
 
 const time = z.number().finite();

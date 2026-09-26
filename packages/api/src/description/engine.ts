@@ -64,6 +64,7 @@ import {
   outputTimeline,
   planSections,
   snapToCuts,
+  stretchSigns,
   toOutput,
 } from './timing';
 import { buildReport, captionTrack, clock, descriptionTrack, transcriptText } from './transcript';
@@ -661,7 +662,20 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       } finally {
         await rm(clip, { force: true });
       }
-      const result = toSection(analysis, scale, seconds);
+      let result = toSection(analysis, scale, seconds);
+      if (film !== undefined) {
+        const signs = stretchSigns({
+          cues: result.cues,
+          lines: linesFrom(inSection(section), section.start),
+          seconds,
+          names: result.people.flatMap((person) => [person.name, person.label]),
+          offset: film,
+        });
+        if (signs.length) {
+          result = { ...result, stretched: signs };
+          log(`Section ${i + 1} of ${count}: the look's times may run late: ${signs.join('; ')}.`);
+        }
+      }
       markSeen(section, survey ? seen.survey : seen.main);
       log(
         `Section ${i + 1} of ${count}: ${survey ? 'first look' : 'looked'} in ${seconds1((Date.now() - began) / 1000)}.`,

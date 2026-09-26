@@ -18,6 +18,7 @@ import {
   tempoFilters,
   mergeIntervals,
   outputTimeline,
+  stretchSigns,
 } from './timing.ts';
 import {
   mix,
@@ -752,6 +753,93 @@ test('look clips print the real film time of a part of a longer video, and the p
   const right = distance(engine.strip, await reference(2));
   const wrong = distance(engine.strip, await reference(0));
   assert.ok(right < wrong / 2, `the strip shows film time 0:02.0, where the part starts in the source: ${right} vs ${wrong}`);
+});
+
+test('the section record keeps which backend looked, why it stopped and the tokens it used', async () => {
+  const f = await fixture('vision-record', 9);
+  const call = { model: 'google/gemini-3.8-flash', provider: 'Google', tier: 'standard', finish: 'stop', promptTokens: 40000, outputTokens: 1800, reasoningTokens: 900, costUSD: 0.02, seconds: 30.5 };
+  const backend = providers(f.voice, [], [cue]);
+  const analyze = backend.analyze;
+  backend.analyze = async (look) => ({ ...(await analyze(look)), vision: [call] });
+  const { keeper, kept } = keeperFor(undefined);
+  await run(f, [], [], { providers: backend, keeper });
+  assert.deepEqual(kept.looks[0].look.analysis.vision, [call], 'kept with the paid look');
+  assert.deepEqual(kept.records[0].analysis.vision, [call], 'and in the section record');
+});
+
+/** Section 2 of the Pluto job (Sep 25), in section seconds: its dialogue and the model's cues. */
+const plutoLines = [
+  { start: 0.41, end: 1.92, text: "Where's Pluto?", speaker: 0 },
+  { start: 9.58, end: 10.62, text: 'There you are.', speaker: 0 },
+  { start: 11.02, end: 13.9, text: 'And now, Pluto will blow out the candles.', speaker: 0 },
+  { start: 54.75, end: 55.56, text: 'There.', speaker: 0 },
+  { start: 60.12, end: 61, text: 'Happy birthday.', speaker: 0 },
+];
+const plutoCue = (at, until, text) => ({ at, until, text, shortText: text, importance: 2 });
+const plutoCues = [
+  plutoCue(2.3, 5, 'Pluto hangs upside down from a tree branch by his tail.'),
+  plutoCue(5.13, 8, 'His tail snaps free, and he plunges downward.'),
+  plutoCue(8.25, 9.75, 'Pluto crashes onto the picnic bench, drooling at the cake.'),
+  plutoCue(14.25, 22.5, 'Pluto grins, then narrows his eyes, picturing the whole cake for himself.'),
+  plutoCue(25.5, 31.25, 'In his daydream, he chases the young mice away and gulps down the cake alone.'),
+  plutoCue(31.5, 34.75, 'Snapping back to reality, Pluto inflates his chest and blows out all the candles at once.'),
+  plutoCue(35, 37.5, 'The mice cheer and quickly slice up the entire cake, grabbing every piece.'),
+  plutoCue(37.75, 40, 'Pluto lunges for the last slice, but hands snatch it away, leaving only crumbs.'),
+  plutoCue(50, 54.5, 'Pluto checks his paws, finding a single lit candle that burns his toe until he blows it out.'),
+  plutoCue(55.75, 59, 'The young mice race away across the lawn, laughing as they leave through the front gate.'),
+  plutoCue(59.5, 65, 'Pluto creeps back toward the empty, messy picnic table.'),
+  plutoCue(66.25, 70, 'Tears well in his eyes, and Pluto weeps over the plate of crumbs.'),
+  plutoCue(76.25, 77.47, 'Enraged, he sweeps the dirty plates off the table.'),
+];
+
+test('stretch guard: the Pluto section 2 look shows late ties to dialogue and a crammed ending', () => {
+  const names = ['Pluto', 'the dog', 'the young mice'];
+  const signs = stretchSigns({ cues: plutoCues, lines: plutoLines, seconds: 77.47, names, offset: 80.75 });
+  assert.equal(signs.length, 3, signs.join('\n'));
+  assert.match(signs[0], /^a description at 112\.\d s shares words with dialogue that ended at 94\.\d s, 17\.6 s earlier$/);
+  assert.match(signs[1], /^a description at 130\.8 s shares words with dialogue that ended at 94\.\d s, 36\.1 s earlier$/);
+  assert.match(signs[2], /^the last description starts 1\.2 s before the clip ends while 10\.0 s from 120\.8 s has neither dialogue nor description$/);
+  const onTime = plutoCues.map((cue) => (/blows/.test(cue.text) ? { ...cue, at: 14.5, until: 16 } : cue));
+  assert.equal(
+    stretchSigns({ cues: onTime.slice(0, -1), lines: plutoLines, seconds: 77.47, names, offset: 80.75 }).length,
+    0,
+    'the candles right after the line about them, and no cue crammed at the end: nothing to log',
+  );
+  const later = [...plutoLines, { start: 30, end: 31, text: 'Look, he blows out the candles!', speaker: 0 }];
+  const tied = stretchSigns({ cues: plutoCues.slice(5, 6), lines: later, seconds: 77.47, names, offset: 0 });
+  assert.deepEqual(tied, [], 'a later line about the same thing is the tie, and it is close');
+  const named = [{ start: 1, end: 2, text: 'Pluto, the young mice are here.', speaker: 0 }];
+  const late = [plutoCue(30, 33, 'Pluto greets the young mice at the gate.')];
+  assert.deepEqual(stretchSigns({ cues: late, lines: named, seconds: 40, names, offset: 0 }), [], 'names alone are no tie');
+  const first = [
+    plutoCue(13.13, 15.75, 'The cake is decorated with bones and fire hydrants. Pluto leans in and sniffs it.'),
+    plutoCue(74.38, 77, 'Back under the canopy, the young mice wear paper party hats and gather around the cake.'),
+  ];
+  const opening = [{ start: 7.52, end: 12.96, text: 'Happy birthday, Pluto.', speaker: 0 }];
+  assert.deepEqual(stretchSigns({ cues: first, lines: opening, seconds: 80.75, names, offset: 0 }), [], 'section 1 was on time');
+});
+
+test('stretch guard: a late look is logged and kept in the section record, nothing else changes', async () => {
+  const f = await fixture('stretch-guard', 30);
+  const said = ['Now', 'blow', 'out', 'the', 'candles.'].map((word, i) => ({
+    word,
+    start: 1 + i * 0.4,
+    end: 1.32 + i * 0.4,
+    speaker: 0,
+  }));
+  const late = { ...cue, at: 20, until: 24, pauseAt: 20, text: 'The dog blows out all the candles.', shortText: 'The dog blows out the candles.' };
+  const { keeper, kept } = keeperFor(undefined);
+  const log = [];
+  const result = await run(f, said, [late], { keeper, log });
+  const line = log.find((entry) => /may run late/.test(entry));
+  assert.match(line ?? '', /^Section 1 of 1: the look's times may run late: a description at 20\.0 s shares words with dialogue that ended at 2\.9 s, 17\.1 s earlier\.$/);
+  assert.equal(kept.records[0].analysis.stretched.length, 1);
+  assert.equal(result.report.descriptions.length, 1, 'the description is still placed');
+  const { keeper: quiet, kept: calm } = keeperFor(undefined);
+  const quietLog = [];
+  await run(await fixture('stretch-guard-ok', 30), said, [{ ...late, at: 4, until: 8, pauseAt: 4 }], { keeper: quiet, log: quietLog });
+  assert.ok(!quietLog.some((entry) => /may run late/.test(entry)));
+  assert.equal(calm.records[0].analysis.stretched, undefined);
 });
 
 test('whole-film first look checkpoints, resumes, and finishes before any narration', async () => {

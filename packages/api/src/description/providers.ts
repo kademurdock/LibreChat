@@ -2,7 +2,16 @@ import { z } from 'zod';
 import axios from 'axios';
 import { createReadStream } from 'node:fs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
-import type { Analysis, Chapter, Continuity, FailureClass, Line, Meter, Word } from './types';
+import type {
+  Analysis,
+  Chapter,
+  Continuity,
+  FailureClass,
+  Line,
+  Meter,
+  VisionCall,
+  Word,
+} from './types';
 import type { Brief } from './prompt';
 import { analysisFormat, analysisPrompt, readAnalysis, speakable } from './prompt';
 import { MediaError } from './media';
@@ -63,6 +72,8 @@ const speechSchema = z.object({
   }),
 });
 const modelSchema = z.object({
+  id: z.string().max(200).nullable().optional().catch(undefined),
+  model: z.string().max(200).nullable().optional().catch(undefined),
   provider: z.string().nullable().optional().catch(undefined),
   service_tier: z.string().nullable().optional().catch(undefined),
   choices: z.array(
@@ -543,6 +554,36 @@ const declined: ReadonlySet<string> = new Set([
 
 type Choice = z.infer<typeof modelSchema>['choices'][number];
 
+/**
+ * The OpenRouter backend video looks try first. Checked on Sep 25 2026 against /api/v1/providers
+ * ("Google" is google-vertex, "Google AI Studio" is google-ai-studio) and the model's endpoint list
+ * (tags google-vertex/global and google-vertex/global/flex). In the Pluto run the two sections
+ * went to different backends and the second one's times drifted, so every look now starts on the
+ * same one; fallbacks stay allowed so an outage does not stop a job.
+ */
+export const lookBackend = 'google-vertex';
+/**
+ * Vertex's flex tier: the tier slug in OpenRouter's service-tier docs, then the tag its endpoint
+ * list shows. A base slug never matches a tier endpoint, so flex has to be named.
+ */
+export const lookFlex: readonly string[] = [`${lookBackend}/flex`, `${lookBackend}/global/flex`];
+export type Routing = {
+  order?: string[];
+  allow_fallbacks?: boolean;
+  max_price: { prompt: number; completion: number };
+};
+/**
+ * OpenRouter provider preferences for a look. An explicit order replaces the price sort of the
+ * `:floor` variant and drops the flex endpoints it admits, so that variant names Vertex's flex
+ * tier first. Models from other makers keep OpenRouter's own routing.
+ */
+export function lookRouting(model: string): Routing {
+  const max_price = { prompt: 1.5, completion: 7.5 };
+  if (!model.startsWith('google/')) return { max_price };
+  const order = model.endsWith(':floor') ? [...lookFlex, lookBackend] : [lookBackend];
+  return { order, allow_fallbacks: true, max_price };
+}
+
 function replyOf(choice: Choice | undefined, look: Look): Analysis {
   const native = (choice?.native_finish_reason ?? '').toUpperCase();
   if (choice?.finish_reason === 'content_filter' || declined.has(native))
@@ -573,6 +614,7 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
   let tries = 0;
   let timeouts = 0;
   let cutoffs = 0;
+  const calls: VisionCall[] = [];
   const retryable = (error: unknown) => {
     if (error instanceof Refusal) return false;
     if (error instanceof CutOff) return ++cutoffs <= 1;
@@ -590,15 +632,17 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
           ? '\n\nYour last reply was too long and was cut off. Give about half as many cues this time, and keep every text short.'
           : '';
       let failure: unknown;
+      const asked = first ? model : standardModel(model);
       try {
         await meter('vision', reserve, async () => {
+          const began = Date.now();
           const response = await axios.post(
             'https://openrouter.ai/api/v1/chat/completions',
             {
-              model: first ? model : standardModel(model),
+              model: asked,
               max_tokens: maxTokens,
               reasoning: { effort: look.brief.survey ? 'low' : 'medium' },
-              provider: { max_price: { prompt: 1.5, completion: 7.5 } },
+              provider: lookRouting(asked),
               messages: [
                 {
                   role: 'user',
@@ -623,6 +667,7 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
           const data = modelSchema.parse(response.data);
           const choice = data.choices[0];
           const cost = data.usage?.cost ?? reserve;
+          calls.push(visionCall(asked, data, cost, (Date.now() - began) / 1000));
           look.log?.(
             `vision: tier ${data.service_tier ?? 'unknown'}, provider ${data.provider ?? 'unknown'}, finish ${choice?.finish_reason ?? 'none'}${choice?.native_finish_reason ? ` (${choice.native_finish_reason})` : ''}, output ${data.usage?.completion_tokens ?? '?'} tokens (${data.usage?.completion_tokens_details?.reasoning_tokens ?? '?'} reasoning), $${cost.toFixed(4)}`,
           );
@@ -647,7 +692,29 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
     backoff(5000),
   );
   if (!result) throw new Plain('No visual description was returned.');
-  return result;
+  return { ...result, vision: calls };
+}
+
+/** What OpenRouter said about one call: backend, tier, finish reason, tokens, cost and time. */
+function visionCall(
+  model: string,
+  data: z.infer<typeof modelSchema>,
+  costUSD: number,
+  seconds: number,
+): VisionCall {
+  const choice = data.choices[0];
+  const call: VisionCall = { model, costUSD, seconds: Math.round(seconds * 10) / 10 };
+  if (data.id) call.generation = data.id;
+  if (data.model) call.served = data.model;
+  if (data.provider) call.provider = data.provider;
+  if (data.service_tier) call.tier = data.service_tier;
+  if (choice?.finish_reason) call.finish = choice.finish_reason;
+  if (choice?.native_finish_reason) call.nativeFinish = choice.native_finish_reason;
+  if (data.usage?.prompt_tokens !== undefined) call.promptTokens = data.usage.prompt_tokens;
+  if (data.usage?.completion_tokens !== undefined) call.outputTokens = data.usage.completion_tokens;
+  const reasoning = data.usage?.completion_tokens_details?.reasoning_tokens;
+  if (typeof reasoning === 'number') call.reasoningTokens = reasoning;
+  return call;
 }
 
 /**

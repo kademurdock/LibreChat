@@ -1,4 +1,4 @@
-import type { Cue, Interval, Placement, Settings, Word } from './types';
+import type { Cue, Interval, Line, Placement, Settings, Word } from './types';
 
 export function mergeIntervals(intervals: Interval[], seconds: number, padding = 0): Interval[] {
   const ordered = intervals
@@ -242,6 +242,92 @@ export function snapToCuts(cues: Cue[], cuts: number[]): Cue[] {
       pauseAt: cue.pauseAt === undefined ? undefined : Math.max(cue.pauseAt, cut),
     };
   });
+}
+
+/** A description this long after the dialogue it shares words with may be tied to a late time. */
+export const lateTie = 15;
+/** An earlier stretch this long with no dialogue and no description, while the last is crammed. */
+export const idleStretch = 8;
+/** The last description counts as crammed when it starts this close to the end of the clip. */
+export const crammedEnd = 2.5;
+
+/** Words too common to tie a description to a line of dialogue. */
+const common: ReadonlySet<string> = new Set(
+  (
+    'about after again also away back been before come could down each even from gets going gonna ' +
+    'have here hers into just know like look make more much must only onto over really right said ' +
+    'says some still take than that their them then there these they this those time under very ' +
+    'want well were what when where which while will with would yeah your yours okay'
+  ).split(' '),
+);
+
+/** Distinct content words of a text, roughly stemmed, leaving out common words and names. */
+function keywords(text: string, names: ReadonlySet<string>): Set<string> {
+  const found = new Set<string>();
+  for (const raw of text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []) {
+    let word = raw.replace(/'s$/, '').replace(/'/g, '');
+    if (word.length > 5 && word.endsWith('ing')) word = word.slice(0, -3);
+    else if (word.length > 4 && word.endsWith('ed')) word = word.slice(0, -2);
+    else if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) word = word.slice(0, -1);
+    if (word.length >= 4 && !common.has(word) && !names.has(word)) found.add(word);
+  }
+  return found;
+}
+
+const tenth = (value: number) => value.toFixed(1);
+
+/**
+ * Signs that a look's times stretched later than the events, as plain sentences (film seconds),
+ * for the log and the section record; nothing is changed or asked again. Two checks, both cheap:
+ * a description sharing two or more content words with a line of dialogue that ended `lateTie`
+ * or more seconds before it (and with no later line sharing them), and the last description
+ * crammed into the clip's final seconds while an earlier stretch of `idleStretch` seconds has
+ * neither dialogue nor any description's window. In the Pluto run both fired on section 2.
+ * `cues` and `lines` are in section seconds; `names` are the people's names and labels.
+ */
+export function stretchSigns(input: {
+  cues: Cue[];
+  lines: Line[];
+  seconds: number;
+  names: string[];
+  /** Film seconds where the section starts, for the times in the sentences. */
+  offset: number;
+}): string[] {
+  const { cues, lines, seconds, offset } = input;
+  const names = keywords(input.names.join(' '), new Set());
+  const spoken = lines.map((line) => ({ line, words: keywords(line.text, names) }));
+  const signs: string[] = [];
+  for (const cue of [...cues].sort((a, b) => a.at - b.at)) {
+    const words = keywords(cue.text, names);
+    if (words.size < 2) continue;
+    const tied = spoken.filter(
+      (item) => [...item.words].filter((word) => words.has(word)).length >= 2,
+    );
+    if (!tied.length) continue;
+    const latest = tied.reduce((a, b) => (b.line.end > a.line.end ? b : a)).line;
+    const late = cue.at - latest.end;
+    if (late < lateTie) continue;
+    signs.push(
+      `a description at ${tenth(offset + cue.at)} s shares words with dialogue that ended at ${tenth(offset + latest.end)} s, ${tenth(late)} s earlier`,
+    );
+    if (signs.length >= 3) break;
+  }
+  const ordered = [...cues].sort((a, b) => a.at - b.at);
+  const last = ordered[ordered.length - 1];
+  if (last && seconds >= 4 * idleStretch && last.at >= seconds - crammedEnd) {
+    const busy = [
+      ...lines,
+      ...ordered.slice(0, -1).map((cue) => ({ start: cue.at, end: Math.max(cue.until, cue.at + 1) })),
+    ];
+    const idle = gaps(busy, last.at)
+      .filter((span) => span.end - span.start >= idleStretch)
+      .sort((a, b) => b.end - b.start - (a.end - a.start))[0];
+    if (idle)
+      signs.push(
+        `the last description starts ${tenth(seconds - last.at)} s before the clip ends while ${tenth(idle.end - idle.start)} s from ${tenth(offset + idle.start)} s has neither dialogue nor description`,
+      );
+  }
+  return signs;
 }
 
 export type Variant = 'full' | 'short';

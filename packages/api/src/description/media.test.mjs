@@ -765,6 +765,18 @@ test('look clips: the time strip is added under the picture, and with no font th
   process.env.KADE_DESCRIPTION_FONT = own.replace(/\//g, '\\');
   try {
     assert.equal(await media.stripFont(), own.replace(/\\/g, '/'), 'a font named in the setting comes first');
+    if ((await media.capabilities()).drawtext) {
+      // A file that is not a font: ffmpeg either finds another through fontconfig and letters the
+      // band, or fails, and the look is made without the strip. Never a blank band called a strip.
+      const clean = await geometry(await media.sectionClip(file, dir, 2, 4, signal, false, info));
+      const broken = await media.lookClip(file, dir, 2, 4, signal, false, info, 82);
+      const shape = await geometry(broken.file);
+      if (broken.stamped) {
+        const frame = await gray(broken.file, shape.width, shape.height);
+        const lit = frame.subarray(clean.width * clean.height).filter((value) => value > 100).length;
+        assert.ok(shape.height > clean.height && lit > 50, `a strip that is claimed carries lettering: ${lit}`);
+      } else assert.equal(shape.height, clean.height, 'no band, nothing burned in');
+    }
     process.env.KADE_DESCRIPTION_FONT = join(dir, 'missing.ttf');
     assert.equal(await media.stripFont(), font, 'a named font that is not there falls back to the installed ones');
     process.env.KADE_DESCRIPTION_FONT = 'off';
