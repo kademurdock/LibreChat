@@ -370,6 +370,19 @@ test('normalize makes a working copy, and cuts a part accurately when asked', as
   const upright = await media.sectionPicture(phone.file, phoneDir, 0, 0, 30, phone.media.fps, [], signal, phone.media);
   const shape = await geometry(upright);
   assert.deepEqual([shape.width, shape.height], [240, 320]);
+  assert.equal(Math.abs(phone.media.rotation), 90, 'the working copy records its quarter turn');
+  assert.deepEqual([phone.media.width, phone.media.height], [320, 240], 'with its stored sides');
+  assert.deepEqual(media.shapedSize(phone.media, 960), { width: 240, height: 320 }, 'the strip is sized for the upright picture');
+  if ((await media.stripFont()) !== null && (await media.capabilities()).drawtext) {
+    // Past an hour the clock is at its longest. Sized for the stored 320x240 picture the band
+    // would be 24 px; for the upright 240x320 picture ffmpeg really letters, it is 22.
+    const stamped = await media.lookClip(phone.file, phoneDir, 0, 2, signal, false, phone.media, 3599);
+    assert.equal(stamped.stamped, true);
+    const band = Number(/^pad=w=iw:h=ih\+(\d+):/.exec(media.timeStrip({ font: '/f.ttf', film: 3599, scale: 1, seconds: 2, width: 240, height: 320 })[0])[1]);
+    assert.equal(band, 22);
+    const clip = await geometry(stamped.file);
+    assert.deepEqual([clip.width, clip.height], [240, 320 + band], 'an upright picture with the band sized for it');
+  }
 
   await assert.rejects(
     media.normalize(ts, await folder('normalize-outside'), signal, { start: 20, end: 30 }),
@@ -727,6 +740,28 @@ test('time strip: a padded band under the picture prints the real film time and 
   const tall = media.timeStrip({ font: '/f.ttf', film: 0, scale: 4, seconds: 60, width: 406, height: 720 });
   const tallSize = Number(/:fontsize=(\d+):/.exec(tall[1])[1]);
   assert.ok(tallSize * 0.62 * 28 <= 406, `a narrow portrait picture gets lettering that fits its width: ${tallSize}`);
+});
+
+test('time strip: a quarter-turned phone picture is sized upright, as ffmpeg turns it before the filters', () => {
+  const square = { num: 1, den: 1 };
+  const phone = { width: 1280, height: 720, sar: square, rotation: 90 };
+  assert.deepEqual(media.shapedSize(phone, 960), { width: 720, height: 1280 });
+  assert.deepEqual(media.shapedSize({ ...phone, rotation: -90 }, 960), { width: 720, height: 1280 });
+  assert.deepEqual(media.shapedSize({ ...phone, rotation: 270 }, 960), { width: 720, height: 1280 });
+  assert.deepEqual(media.shapedSize({ ...phone, rotation: 180 }, 960), { width: 960, height: 540 }, 'a half turn keeps the shape');
+  assert.deepEqual(media.shapedSize({ width: 1280, height: 720, sar: square }, 960), { width: 960, height: 540 });
+  assert.deepEqual(media.shapedSize({ width: 720, height: 480, sar: { num: 8, den: 9 } }, 960), { width: 640, height: 480 }, 'DVD pixels are made square');
+  const size = (strip) => Number(/:fontsize=(\d+):/.exec(strip[1])[1]);
+  const band = (strip) => Number(/^pad=w=iw:h=ih\+(\d+):/.exec(strip[0])[1]);
+  // The reviewer's check with the bundled ffmpeg: 1280x720 turned 90 degrees comes out 720x1280.
+  const upright = media.timeStrip({ font: '/f.ttf', film: 0, scale: 1, seconds: 60, ...media.shapedSize(phone, 960) });
+  assert.deepEqual([size(upright), band(upright)], [41, 70]);
+  // A small portrait phone video over an hour long: the longest clock still fits across.
+  const small = media.shapedSize({ width: 640, height: 360, sar: square, rotation: 90 }, 960);
+  assert.deepEqual(small, { width: 360, height: 640 });
+  const late = media.timeStrip({ font: '/f.ttf', film: 3590, scale: 1, seconds: 60, ...small });
+  assert.equal(stripPrints(late, 20), 'film 1:00:10.0   clip 20.0');
+  assert.ok(size(late) * 0.6 + size(late) * 0.62 * 31 <= 360, `the hour clock fits the upright width: ${size(late)}`);
 });
 
 test('look clips: the time strip is added under the picture, and with no font the clip is made without it', async () => {

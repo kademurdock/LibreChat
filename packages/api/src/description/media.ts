@@ -219,6 +219,11 @@ export type Media = {
   centre?: boolean;
   /** Another audio track is flagged or titled as audio description. */
   describedAudio?: boolean;
+  /**
+   * Display rotation in degrees from the picture's display matrix (phone video), absent when 0.
+   * `width` and `height` are the stored sides; ffmpeg turns the picture upright before any filter.
+   */
+  rotation?: number;
 };
 type Disposition = Partial<
   Record<'default' | 'attached_pic' | 'comment' | 'visual_impaired' | 'hearing_impaired', number>
@@ -390,9 +395,10 @@ async function inspect(file: string, signal: AbortSignal): Promise<Inspection> {
       : Math.max(0, (seconds(data.format?.start_time) ?? videoStart) + whole - videoStart);
   const order = video.field_order ?? '';
   const interlaced = ['tt', 'bb', 'tb', 'bt'].includes(order);
+  const rotation = (video.side_data_list ?? []).find((item) => !!item.rotation)?.rotation;
   return {
     known: order !== '' && order !== 'unknown',
-    rotated: (video.side_data_list ?? []).some((item) => !!item.rotation),
+    rotated: !!rotation,
     media: {
       seconds: total ?? Number.NaN,
       audio: audio.index !== null,
@@ -418,6 +424,7 @@ async function inspect(file: string, signal: AbortSignal): Promise<Inspection> {
           }
         : {}),
       ...(audio.described ? { describedAudio: true } : {}),
+      ...(rotation ? { rotation } : {}),
     },
   };
 }
@@ -993,11 +1000,22 @@ export function stripFont(): Promise<string | null> {
   return fontCheck.result;
 }
 
-/** The picture size `shape` gives for `width`: square pixels, even sides, the display shape. */
-function shapedSize(media: Media, width: number): { width: number; height: number } {
-  const display = (media.width * media.sar.num) / media.sar.den;
+/**
+ * The picture size `shape` gives for `width`: square pixels, even sides, the display shape. A
+ * quarter-turned phone picture reaches the filters upright, so its sides are swapped first.
+ */
+export function shapedSize(
+  media: Pick<Media, 'width' | 'height' | 'sar' | 'rotation'>,
+  width: number,
+): { width: number; height: number } {
+  // Turning a picture inverts its pixel shape too, as ffmpeg's transpose does.
+  const turned = Math.abs(Math.round(media.rotation ?? 0)) % 180 === 90;
+  const display = turned
+    ? (media.height * media.sar.den) / media.sar.num
+    : (media.width * media.sar.num) / media.sar.den;
+  const tall = turned ? media.width : media.height;
   const w = Math.max(2, Math.floor(Math.min(width, display) / 2) * 2);
-  const h = Math.max(2, Math.floor((w * media.height) / display / 2) * 2);
+  const h = Math.max(2, Math.floor((w * tall) / display / 2) * 2);
   return { width: w, height: h };
 }
 

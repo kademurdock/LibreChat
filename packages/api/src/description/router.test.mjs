@@ -1529,6 +1529,7 @@ test('a part of a long video is cut once: later runs download the kept part, not
   const done = await settle(id, ['done', 'failed'], 'part-owner');
   assert.equal(done.state, 'done', done.error);
   assert.ok(!requests.at(-1).workingCopy);
+  assert.equal(requests.at(-1).sourceSeconds, 150, 'the engine knows the whole length, to tell a part that runs to the end');
   const job = await Jobs.findById(id).lean();
   const kept = `/test/${folderOf(job.key)}/working/10000-100000.mkv`;
   assert.ok(objects.has(kept), 'the cut part is kept');

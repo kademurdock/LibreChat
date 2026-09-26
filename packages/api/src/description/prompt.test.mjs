@@ -41,6 +41,7 @@ import {
   lintDescription,
   nextContinuity,
   readAnalysis,
+  readsTimeStrip,
   roomText,
   speakable,
 } from './prompt.ts';
@@ -1153,12 +1154,13 @@ test('providers: keyterms come from her notes, call letters, chapters and senten
   assert.deepEqual(keytermsFor({ title: 'VID_20240101 HD', notes: '', about: 'Lots of Words Here' }), []);
 });
 
-test('prompt: a clip with a time strip says once to take cue times from it and never read it aloud', () => {
+test('prompt: a clip with a time strip says to take cue times from it and never read it aloud', () => {
   const lines = [{ start: 4, end: 8, text: 'Hello there.', speaker: 0 }];
   const stamped = analysisPrompt(40, brief({ slowed: true, stamped: true }), null, lines, []);
   const strip = stamped.split('\n').filter((line) => /strip/i.test(line));
-  assert.equal(strip.length, 1, 'one line about the strip');
+  assert.equal(strip.length, 2, 'the strip line, and the reminder in the on-screen text rule');
   assert.match(strip[0], /^TIME STRIP: .*real film time, then its time in this clip/);
+  assert.match(strip[1], /^ON-SCREEN TEXT: .* Never read the time strip under the picture\.$/);
   assert.match(strip[0], /Take every at, until and pauseAt from the clip time printed on the frame/);
   assert.match(strip[0], /never describe or read the strip aloud/);
   assert.ok(stamped.indexOf('TIME STRIP') < stamped.indexOf('SOURCE METADATA'), 'it sits with the clip facts');
@@ -1200,9 +1202,10 @@ test('prompt: the clip that ends the video is described to its end, with the clo
     analysisPrompt(77, brief({ position: { index, count: 2, start: index * 80, end: index * 80 + 77, total: 158 }, ...extra }), null, lines, []);
   const last = part(1);
   assert.match(last, /COVER THE WHOLE CLIP: describe it in order from its first second to its last/);
-  assert.match(last, /never move an event later to fill a quiet stretch, and never stop describing before the clip ends/);
-  assert.match(last, /THE ENDING: this clip ends the video\. Describe how the story ends as fully as how it began/);
-  assert.match(last, /such as a rescue, a reunion or a happy ending/);
+  assert.match(last, /never move an event later to fill a quiet stretch, and never leave the final seconds undescribed when something new happens there\./);
+  assert.doesNotMatch(last, /never stop describing/, 'a quiet ending may stay quiet at essential detail');
+  assert.match(last, /THE ENDING: this clip ends the video\. If the video tells a story, describe how it ends as fully as how it began, and the last thing anyone does\./);
+  assert.doesNotMatch(last, /THE ENDING: [^\n]*(?:rescue|reunion|happy ending)/, 'no resolution examples to echo, and none asked of a reel with no story');
   assert.match(last, /read the closing title card when one is shown, such as The End, and, when there is room, the main names in the end credits/);
   assert.match(last, /summarize the rest of a long credit roll/);
   assert.ok(last.indexOf('ROOM TO SPEAK') < last.indexOf('COVER THE WHOLE CLIP'));
@@ -1224,12 +1227,70 @@ test('prompt: on-screen text keeps its own rule, including writing on things in 
   const prompt = analysisPrompt(40, brief({ detail: 'rich' }), null, [], []);
   const rule = prompt.split('\n').find((line) => line.startsWith('ON-SCREEN TEXT: '));
   assert.ok(rule, 'a line of its own that starts with the heading');
-  assert.match(rule, /read every legible word in the picture, not only titles, credits and captions/);
-  assert.match(rule, /Writing on things in the scene, such as a cake, a banner, a sign, a package or a letter, is read too, as soon as it can be read/);
+  assert.match(rule, /^ON-SCREEN TEXT: this is more than titles, credits and captions\./);
+  assert.doesNotMatch(rule, /every legible word|every word/, 'scope, not quantity: long text and crawls are still summarized');
+  assert.match(rule, /Writing on things in the scene, such as a cake, a banner, a sign, a package or a letter, is read too, as soon as it can be read, by the rules below\./);
+  assert.doesNotMatch(rule, /strip/i, 'no strip, no reminder');
   assert.match(rule, /Text that matters to the story, such as a message, a name or a label, has importance 3\./);
   assert.ok(prompt.indexOf('WHAT TO DESCRIBE') < prompt.indexOf(rule));
   assert.ok(prompt.indexOf(rule) < prompt.indexOf('On-screen words get the same lead-in every time'));
   assert.doesNotMatch(rule, /"/, 'no quoted line to copy');
+});
+
+test('prompt: a part that runs to the end of the video ends with THE ENDING; a part in the middle does not', () => {
+  const lines = [{ start: 4, end: 8, text: 'Hello there.', speaker: 0 }];
+  // "10:00 to the end" of a 13:00 video, in three clips: the router keeps the range, the engine
+  // knows the part reaches the end.
+  const tail = (index, extra = {}) =>
+    analysisPrompt(
+      60,
+      brief({ range: { start: 600, end: 780 }, position: { index, count: 3, start: index * 60, end: index * 60 + 60, total: 180 }, ...extra }),
+      null,
+      lines,
+      [],
+    );
+  const ending = tail(2, { endsVideo: true });
+  assert.match(ending, /THE ENDING: this clip ends the video\./, 'the last clip of the part is the real ending');
+  assert.doesNotMatch(ending, /This clip ends the part being described/);
+  assert.match(ending, /This is the part from 10:00 to 13:00 of a longer video\./, 'the part is still described as a part');
+  assert.doesNotMatch(tail(1, { endsVideo: true }), /THE ENDING|ends the part/, 'only its last clip');
+  const middle = tail(2);
+  assert.match(middle, /This clip ends the part being described/, 'a part that stops before the end keeps the plain rule');
+  assert.doesNotMatch(middle, /THE ENDING/);
+});
+
+test('prompt: the on-screen text, coverage and level rules do not contradict each other', () => {
+  const lines = [{ start: 4, end: 8, text: 'Hello there.', speaker: 0 }];
+  for (const detail of ['essential', 'standard', 'rich']) {
+    const prompt = analysisPrompt(40, brief({ detail, stamped: true, slowed: true }), null, lines, []);
+    assert.doesNotMatch(prompt, /every legible word|read every word/, `${detail}: no absolute rule to read everything`);
+    assert.match(prompt, /summarize long text/, `${detail}: long text is still summarized`);
+    assert.match(prompt, /summarize crawls and tickers once/, `${detail}: crawls too`);
+    assert.doesNotMatch(prompt, /never stop describing/, `${detail}: quiet endings may stay quiet`);
+    assert.match(prompt, /never describe or read the strip aloud/);
+    assert.match(prompt, /Never read the time strip under the picture\./, `${detail}: the scope rule repeats the one exception`);
+  }
+  const essential = analysisPrompt(40, brief({ detail: 'essential' }), null, lines, []);
+  assert.match(essential, /Leave quiet moments quiet when nothing new happens/);
+  assert.match(essential, /never leave the final seconds undescribed when something new happens there/);
+});
+
+test('prompt: a description that reads the time strip is recognized', () => {
+  for (const text of [
+    'Text reads film 1:20.8 clip 0.0',
+    'The strip reads film 1:00:02.3.',
+    'A black band shows clip 91.0 at the bottom.',
+    'FILM 2:37.0',
+  ])
+    assert.equal(readsTimeStrip(text), true, text);
+  for (const text of [
+    'A sign reads Film Festival.',
+    'A girl holds a paper clip.',
+    'Text reads Happy Birthday.',
+    'The clip ends on a black screen.',
+    'Text reads 1:20.',
+  ])
+    assert.equal(readsTimeStrip(text), false, text);
 });
 
 function fakeAxios(handler) {

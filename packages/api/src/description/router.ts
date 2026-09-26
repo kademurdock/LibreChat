@@ -4229,6 +4229,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           stopAfter: job.stopAfter,
           chapters: job.chapters,
           ...(partBytes !== undefined ? { workingCopy: true } : {}),
+          ...(job.seconds ? { sourceSeconds: job.seconds } : {}),
           sectionNotes: Object.fromEntries(
             Object.entries(job.sectionNotes ?? {}).map(([index, note]) => [Number(index), note]),
           ),

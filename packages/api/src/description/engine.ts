@@ -68,7 +68,7 @@ import {
   toOutput,
 } from './timing';
 import { buildReport, captionTrack, clock, descriptionTrack, transcriptText } from './transcript';
-import { nextContinuity } from './prompt';
+import { nextContinuity, readsTimeStrip } from './prompt';
 import { gateCues, recognized } from './ledger';
 import { Halt } from './types';
 
@@ -156,6 +156,11 @@ export type Request = {
   sectionNotes?: Record<number, string>;
   /** The source is already this part, as kept by an earlier run, so it is not cut again. */
   workingCopy?: boolean;
+  /**
+   * Length of the whole video in source seconds. With a range, a part that runs to within half a
+   * second of it ends the video, and its last clip gets the ending rule.
+   */
+  sourceSeconds?: number;
   /** Section timings, failures and retries, for the server log. */
   log?: (message: string) => void;
 };
@@ -536,6 +541,11 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   let stripMissing = false;
   const carried = new Map<number, Carried[]>();
 
+  /** A part that runs to the end of the video: its last clip is the film's real ending. */
+  const endsVideo =
+    !!settings.range &&
+    request.sourceSeconds !== undefined &&
+    settings.range.end >= request.sourceSeconds - 0.5;
   const briefFor = (i: number, survey: boolean, scale: number): Brief => {
     const section = fixed.sections[i];
     const cuts = cutsIn(section);
@@ -545,6 +555,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       about: request.about,
       notes: settings.notes,
       range: settings.range,
+      ...(endsVideo ? { endsVideo } : {}),
       detail: settings.detail,
       rate: settings.rate,
       maxRate: settings.maxRate,
@@ -663,6 +674,17 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         await rm(clip, { force: true });
       }
       let result = toSection(analysis, scale, seconds);
+      if (stamped) {
+        const kept = result.cues.filter(
+          (cue) => !readsTimeStrip(cue.text) && !readsTimeStrip(cue.shortText),
+        );
+        if (kept.length < result.cues.length) {
+          log(
+            `Section ${i + 1} of ${count}: ${result.cues.length - kept.length} of the look's descriptions read the time strip and were left out.`,
+          );
+          result = { ...result, cues: kept };
+        }
+      }
       if (film !== undefined) {
         const signs = stretchSigns({
           cues: result.cues,

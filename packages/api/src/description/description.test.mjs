@@ -755,6 +755,41 @@ test('look clips print the real film time of a part of a longer video, and the p
   assert.ok(right < wrong / 2, `the strip shows film time 0:02.0, where the part starts in the source: ${right} vs ${wrong}`);
 });
 
+test('a part that runs to the end of the video is told so, and a description reading the time strip is left out', async () => {
+  const font = await stripFont();
+  const tools = await capabilities();
+  const briefs = [];
+  const log = [];
+  const reading = { ...cue, at: 3.5, until: 6, pauseAt: 3.5, text: 'Text reads film 0:05.5 clip 1.5', shortText: 'Text reads clip 1.5', importance: 2 };
+  const look = (brief) => {
+    briefs.push(brief);
+    return [cue, reading];
+  };
+  const tail = await run(await fixture('ends-video', 9), [], ({ brief }) => look(brief), {
+    log,
+    sourceSeconds: 9,
+    settings: { ...settings, range: { start: 2, end: 9 } },
+  });
+  assert.equal(briefs[0].endsVideo, true, 'the part reaches the end of the 9 s source');
+  const stamped = font !== null && tools.drawtext;
+  assert.equal(briefs[0].stamped === true, stamped);
+  const spoken = tail.report.descriptions.map((item) => item.text);
+  assert.ok(spoken.some((text) => /red square/.test(text)), spoken.join(' | '));
+  if (stamped) {
+    assert.ok(!spoken.some((text) => /film|clip \d/.test(text)), `the strip is never read aloud: ${spoken.join(' | ')}`);
+    assert.ok(log.some((line) => /^Section 1 of 1: 1 of the look's descriptions read the time strip and were left out\.$/.test(line)), log.join('\n'));
+  }
+  await run(await fixture('ends-video-middle', 9), [], ({ brief }) => look(brief), {
+    sourceSeconds: 9,
+    settings: { ...settings, range: { start: 1, end: 7 } },
+  });
+  assert.equal(briefs[1].endsVideo, undefined, 'a part that stops two seconds early is not the ending');
+  await run(await fixture('ends-video-unknown', 9), [], ({ brief }) => look(brief), {
+    settings: { ...settings, range: { start: 2, end: 9 } },
+  });
+  assert.equal(briefs[2].endsVideo, undefined, 'without the source length the part is not assumed to end the video');
+});
+
 test('the section record keeps which backend looked, why it stopped and the tokens it used', async () => {
   const f = await fixture('vision-record', 9);
   const call = { model: 'google/gemini-3.8-flash', provider: 'Google', tier: 'standard', finish: 'stop', promptTokens: 40000, outputTokens: 1800, reasoningTokens: 900, costUSD: 0.02, seconds: 30.5 };
@@ -1006,6 +1041,7 @@ async function run(f, words, cues, overrides = {}) {
     chapters: overrides.chapters,
     sectionNotes: overrides.sectionNotes,
     workingCopy: overrides.workingCopy,
+    sourceSeconds: overrides.sourceSeconds,
     log: overrides.log ? (line) => overrides.log.push(line) : undefined,
   });
   return { ...result, backend };
