@@ -165,6 +165,7 @@ export function describedVideoPage(sharedHead: string): string {
 <h3>Or a YouTube link</h3>
 <label for="dv-youtube">YouTube video link</label><input id="dv-youtube" type="url" inputmode="url" placeholder="https://www.youtube.com/watch?v=…" aria-describedby="dv-youtube-help" disabled>
 <p id="dv-youtube-help" class="hint">One finished video, not a channel or playlist. If YouTube refuses the server, download it and upload the file instead.</p>
+<p id="dv-youtube-lock" class="hint" hidden>Part of the Family feature pack. Ask Kade to add it to your account.</p>
 <button id="dv-import" type="button" disabled>Import YouTube video</button>
 <div id="dv-library-box" hidden><h3>Or a video from your Library</h3>
 <label for="dv-library">Library link</label><input id="dv-library" type="url" inputmode="url" placeholder="https://kademurdock.com/library?book=…" aria-describedby="dv-library-help dv-library-error">
@@ -742,8 +743,8 @@ export const descriptionBrowserScript: string = String.raw`
     $('file').disabled=uploading||off;
     $('upload').disabled=uploading||off||!$('file').files.length;
     $('upload').textContent=job&&job.state==='uploading'&&!uploading?'Resume upload and check video':'Upload and check video';
-    $('youtube').disabled=uploading||off;
-    $('import').disabled=uploading||off||!$('youtube').value.trim();
+    $('youtube').disabled=uploading||off||linkLocked();
+    $('import').disabled=uploading||off||linkLocked()||!$('youtube').value.trim();
     $('library-use').disabled=uploading||off||!libraryLink($('library').value);
     $('settings').disabled=!config||busy||state==='deleting';
     ['detail','notes','close-look','first-look','part-from','part-to','preset-commercials','preset-cartoon','preset-tv','preset-film','preset-custom'].forEach(function(id){$(id).disabled=resumeOnly;});
@@ -1044,7 +1045,18 @@ export const descriptionBrowserScript: string = String.raw`
   $('sample-play').onclick=function(){playSample(Number($('rate').value),'',$('sample-play'));};
   $('sample-fast').onclick=function(){playSample(Number($('max-rate').value),'',$('sample-fast'));};
   $('say-play').onclick=function(){var text=$('say-text').value.trim();if(!text){say('Type a word or name to hear first.',true);$('say-text').focus();return;}playSample(Number($('rate').value),text,$('say-play'));};
+  /* Part 293: without the Family feature pack (only while Kade limits links to it) the link
+   * import is greyed out, never hidden: both controls are disabled and described by the visible
+   * note, which is referenced only while it shows (a hidden note would still be read). */
+  function linkLocked(){return !!(config&&config.linkImport&&config.linkImport.available===false);}
+  function showLinkLock(){
+    var locked=linkLocked();$('youtube-lock').hidden=!locked;
+    if(locked&&config.linkImport.locked)$('youtube-lock').textContent=config.linkImport.locked+'. Ask Kade to add it to your account.';
+    $('youtube').setAttribute('aria-describedby',locked?'dv-youtube-help dv-youtube-lock':'dv-youtube-help');
+    if(locked)$('import').setAttribute('aria-describedby','dv-youtube-lock');else $('import').removeAttribute('aria-describedby');
+  }
   $('import').onclick=function(){
+    if(linkLocked()){say($('youtube-lock').textContent,true);return;}
     var url=$('youtube').value.trim();if(!url)return;
     act(async function(){
       clearError();var key='kade-youtube-import:'+url,id;try{id=sessionStorage.getItem(key);}catch(e){}
@@ -1574,7 +1586,7 @@ export const descriptionBrowserScript: string = String.raw`
     $('limits').textContent='Up to 2 GB and '+length(sourceLimit)+'. One run describes up to '+length(config.maxMinutes*60)+'; for a longer video, choose the part to describe. Any video file works: if yours is not listed, switch the file type to All files. Your video stays private to your account. Only when you choose to describe it does it go to three services: the picture and sound to the video model (Google Gemini, through OpenRouter) to write the descriptions, the soundtrack to Deepgram to time the dialogue, and the description text to the platform voices for the narration.';
     var perMinute=config.perMinuteUSD||{},extras=config.extrasPerMinuteUSD||{};
     if(perMinute.standard){var extra=(extras.closeLook||0)+(extras.firstLook||0);$('prices').textContent='Standard detail costs about '+Math.round(perMinute.standard*100)+' cents a minute of video'+(extra?'; the extra passes add about '+Math.round(extra*100)+' cents a minute':'')+'. Checking a video is free.';$('prices').hidden=false;}
-    $('library-box').hidden=!config.library;
+    $('library-box').hidden=!config.library;showLinkLock();
     $('folder').value=config.defaultLibraryPath||DEFAULT_FOLDER;
     if(config.library)call('/library-folders').then(function(data){data.folders.forEach(function(path){var option=document.createElement('option');option.value=path;$('folders').appendChild(option);});}).catch(function(){});
     setSelect('progress-pref',stored(PROGRESS_KEY,'quarter'));

@@ -64,6 +64,8 @@ import {
 } from './revision';
 import { describeVideo, productionProviders } from './engine';
 import { importYouTube, youtubeURL } from './youtube';
+import { FAMILY_PACK_NOTE, FAMILY_PACK_REFUSAL } from '../family/pack';
+import type { FamilyFeatures } from '../family/pack';
 import { rehearsalProviders } from './rehearsal';
 import { MediaError, decodeVoice, probe, stretch } from './media';
 import { clock, spokenLength } from './transcript';
@@ -165,6 +167,12 @@ type Hooks = {
   describe?: (request: RunRequest) => Promise<Outcome>;
   /** Tests use a fast heartbeat and drive ticks themselves (tickMs 0). */
   timing?: { heartbeatMs?: number; tickMs?: number; wedgeMs?: number };
+  /**
+   * The person's Family feature pack map (family/pack.ts familyFeatures). Its describerLinks
+   * decides the YouTube link import: false only while KADE_FAMILY_PACK_LINKS is '1' and the
+   * account is outside the pack. Without this hook every link import is open.
+   */
+  features?: (req: Request) => FamilyFeatures;
 };
 type Part = { number: number; etag: string; bytes: number; hash: string };
 type SourcePrivacy = { shared: boolean; grownUpsOnly: boolean; ownerIsActor: boolean };
@@ -2309,6 +2317,13 @@ export function createDescriptionRouter(hooks: Hooks): {
     return { set, unset };
   }
 
+  /** May this person import a video from a link? (Part 293: the Family feature pack.) */
+  const linkImport = (req: Request): { available: boolean; locked?: string } =>
+    !hooks.features || hooks.features(req).describerLinks
+      ? { available: true }
+      : { available: false, locked: FAMILY_PACK_NOTE };
+  const packFeatures = (req: Request) => (hooks.features ? { features: hooks.features(req) } : {});
+
   route('get', '/config', async (req, res) => {
     const catalog = await voiceCatalog();
     const dialogue = freeDialogue() ? 0 : transcriptionPerMinute;
@@ -2348,6 +2363,9 @@ export function createDescriptionRouter(hooks: Hooks): {
       voices: catalog.voices,
       describe: catalog.describe,
       categories: catalog.categories,
+      /* Part 293: shown greyed out, never hidden, when it is not available. */
+      linkImport: linkImport(req),
+      ...packFeatures(req),
     });
   });
   /* ---------- narrator choices: her default, favourites and the house list ---------- */
@@ -2356,6 +2374,8 @@ export function createDescriptionRouter(hooks: Hooks): {
     res.json({
       ...(await prefsView(hooks.actor(req).id, catalog)),
       suggested: await suggestedList(catalog),
+      linkImport: linkImport(req),
+      ...packFeatures(req),
     });
   });
   /** The voice her new videos start with; `null` goes back to the house voice. */
@@ -2519,6 +2539,7 @@ export function createDescriptionRouter(hooks: Hooks): {
   });
   route('post', '/imports', async (req, res) => {
     whenConfigured();
+    if (!linkImport(req).available) throw new Problem(FAMILY_PACK_REFUSAL, 403, 'url');
     const input = z.object({ url: z.string().min(1).max(2048), requestId }).parse(req.body);
     let url: string;
     try {

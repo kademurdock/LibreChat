@@ -3054,3 +3054,34 @@ test('lock-screen Play after the phone paused the video carries on with the audi
   assert.equal($('play-as').value, 'video');
   assert.equal($('video').currentTime, 50);
 });
+
+test('Family feature pack: without it the YouTube link import is greyed out with its reason, never hidden', async () => {
+  const server = makeServer();
+  server.override((method, path) => path === '/config', () => ({ status: 200, body: { ...config, linkImport: { available: false, locked: 'Part of the Family feature pack' } } }), false);
+  const env = await boot({ server });
+  const { $ } = env;
+  const label = env.document.root.querySelectorAll('label').find((node) => node.getAttribute('for') === 'dv-youtube');
+  assert.equal(label.textContent, 'YouTube video link', 'a real label names the box');
+  assert.equal($('youtube').hidden, false);
+  assert.equal($('youtube').disabled, true);
+  assert.equal($('import').hidden, false);
+  assert.equal($('import').disabled, true);
+  assert.equal($('youtube-lock').hidden, false, 'the reason is visible text');
+  assert.equal($('youtube-lock').textContent, 'Part of the Family feature pack. Ask Kade to add it to your account.');
+  assert.equal($('youtube').getAttribute('aria-describedby'), 'dv-youtube-help dv-youtube-lock');
+  assert.equal($('import').getAttribute('aria-describedby'), 'dv-youtube-lock');
+  await env.type('youtube', 'https://youtu.be/aqz-KE-bpKQ', 'input');
+  assert.equal($('import').disabled, true, 'typing does not open it');
+  await env.click('import');
+  assert.equal(server.all(/\/imports$/).length, 0, 'nothing is sent');
+  assert.equal($('file').disabled, false, 'uploading a file still works');
+});
+
+test('Family feature pack: with link imports open, the note stays out of the page and out of the description', async () => {
+  const env = await boot();
+  const { $ } = env;
+  assert.equal($('youtube-lock').hidden, true);
+  assert.equal($('youtube').disabled, false);
+  assert.equal($('youtube').getAttribute('aria-describedby'), 'dv-youtube-help', 'a hidden note is never referenced, so it is never read');
+  assert.equal($('import').getAttribute('aria-describedby'), null);
+});
