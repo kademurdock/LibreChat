@@ -22,10 +22,11 @@
  * - The FAMILY FEATURE PACK (her words: "if I let bob down the fictional street
  *   have an account on here, I'm not going to let him have access to the
  *   downloader"): only an account with familyFeatures(user).mediaLinks may use
- *   it. Everyone else, the App Review seat included, is shown the field greyed
- *   out with "Part of the Family feature pack" (never hidden: Apple's 2.3.1),
- *   and the route answers 403 with PACK_REFUSAL. Child accounts in the pack may
- *   use it, but never for an age-restricted video.
+ *   it (the App Review seats never: library/access.ts libraryReviewSeat). The
+ *   guide's `link` exists only for them; everyone else gets `lockedLink`, which
+ *   updated clients show greyed out with "Part of the Family feature pack"
+ *   (never hidden: Apple's 2.3.1), and the route answers 403 with PACK_REFUSAL.
+ *   Child accounts in the pack may use it, but never for an age-restricted video.
  * - A YouTube playlist, radio-mix or start-time part is dropped, so exactly one
  *   video comes in; an album, playlist or profile on another site is refused.
  * - The whole import has DEADLINE_MS (95 s) so the request answers well inside
@@ -248,11 +249,13 @@ const LINK_FIELD = {
 };
 
 /**
- * The guide for THIS person. While the switch is on, the YuE2 cover field always carries `link`
- * (label, hint, button, path, maxSeconds, available): `available: true` for the Family feature
- * pack, and for everyone else `available: false` with `locked: "Part of the Family feature pack"`,
- * so the field is shown greyed out, never hidden. The cover hint mentions links only when they
- * can be used. The switch off takes the field away for everyone. The shared GUIDE is never changed.
+ * The guide for THIS person. The YuE2 cover field carries `link` (label, hint, button, path,
+ * maxSeconds, available: true) ONLY when the person can use it: that is the key's meaning since
+ * Part 293's first round, and the iPhone branch ios-p293 shows a live row whenever `link` is
+ * present. Everyone else, while the switch is on, gets `lockedLink` instead (site, label, button,
+ * available: false, locked: "Part of the Family feature pack"), which only updated clients read
+ * and show greyed out, never hidden. The cover hint mentions links only when they can be used.
+ * The switch off takes both away for everyone. The shared GUIDE is never changed.
  */
 function guideFor(guide, user, features, env = process.env) {
   const yue = guide && guide.engines && guide.engines.yue2;
@@ -263,8 +266,11 @@ function guideFor(guide, user, features, env = process.env) {
     if (setting.key !== 'reference_voice_url') return setting;
     const hint = available ? setting.hint : String(setting.hint || '').replace(LINK_HINT_SENTENCE, '');
     if (!switchedOn) return { ...setting, hint };
-    const link = available ? { ...LINK_FIELD, available: true } : { ...LINK_FIELD, available: false, locked: PACK_NOTE };
-    return { ...setting, hint, link };
+    if (available) return { ...setting, hint, link: { ...LINK_FIELD, available: true } };
+    /* Review of Sep 25: never `link` with available:false, which a client reading only `link`
+     * would show as a live field that answers 403 on every press. */
+    const { site, label, button } = LINK_FIELD;
+    return { ...setting, hint, lockedLink: { site, label, button, available: false, locked: PACK_NOTE } };
   });
   return { ...guide, engines: { ...guide.engines, yue2: { ...yue, settings } } };
 }

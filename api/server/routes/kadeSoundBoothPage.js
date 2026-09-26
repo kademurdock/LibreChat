@@ -464,10 +464,11 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 
     /* Part 293: a media link (YouTube and other sites, or a direct audio file)
      * for a YuE2 cover. The field exists when the server's guide gives the cover
-     * setting a link. Without the Family feature pack the guide says
-     * available:false and the field is GREYED OUT, never hidden: the label, a
-     * disabled box and button, and a visible note ("Part of the Family feature
-     * pack...") that both controls name as their description. With the pack the
+     * setting a link (usable) or a lockedLink. Without the Family feature
+     * pack the guide sends only lockedLink and the field is GREYED OUT, never
+     * hidden: the label, a disabled box and button, and a visible note ("Part of
+     * the Family feature pack...") that both controls name as their description.
+     * With the pack the
      * server brings in the sound and answers exactly as a file import does, plus
      * the song's title, length and site. Every result is said in the status line,
      * and focus stays on the import button while it works, returns to the link
@@ -475,22 +476,24 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function clock(seconds){ var t=Math.round(Number(seconds)||0); var ss=t%60; return Math.floor(t/60)+':'+(ss<10?'0':'')+ss; }
     function focusById(id){ var el=document.getElementById(id); if(el) el.focus(); }
     function linkField(s, id){
-      if(!s.link || state.clips.length>=s.max) return '';
+      var locked=!s.link||s.link.available===false, field=s.link||s.lockedLink;
+      if(!field || state.clips.length>=s.max) return '';
       var lid=id+'_link', off=(state.rendering||state.jobId)?' disabled':'', working=state.importing&&state.linkImporting;
-      if(s.link.available===false){
-        return '<label class="field" for="'+lid+'">'+esc(s.link.label)+'</label><p class="hint locked" id="'+lid+'_lock">'+esc(s.link.locked||'Part of the Family feature pack')+'. Ask Kade to add it to your account.</p>'+
+      if(locked){
+        return '<label class="field" for="'+lid+'">'+esc(field.label)+'</label><p class="hint locked" id="'+lid+'_lock">'+esc(lockedLinkNote(field))+'</p>'+
           '<input type="text" inputmode="url" id="'+lid+'" autocomplete="off" disabled aria-describedby="'+lid+'_lock">'+
-          '<button type="button" class="act" id="btnLinkImport" disabled aria-describedby="'+lid+'_lock">'+esc(s.link.button)+'</button>';
+          '<button type="button" class="act" id="btnLinkImport" disabled aria-describedby="'+lid+'_lock">'+esc(field.button)+'</button>';
       }
       return '<label class="field" for="'+lid+'">'+esc(s.link.label)+'</label><p class="hint" id="'+lid+'_h">'+esc(s.link.hint)+'</p>'+
         '<input type="text" inputmode="url" id="'+lid+'" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://" aria-describedby="'+lid+'_h" value="'+esc(state.linkDraft||'')+'"'+(working?' readonly':'')+off+'>'+
         '<button type="button" class="act" id="btnLinkImport"'+(working?' aria-disabled="true"':'')+off+'>'+(working?'Importing from the link…':esc(s.link.button))+'</button>';
     }
+    function lockedLinkNote(field){ return ((field&&field.locked)||'Part of the Family feature pack')+'. Ask Kade to add it to your account.'; }
     async function importLink(){
       var box=document.getElementById('set_reference_voice_url_link');
-      var setting=state.guide.engines[state.engine].settings.filter(function(s){return s.kind==='clip'&&s.link;})[0];
+      var setting=state.guide.engines[state.engine].settings.filter(function(s){return s.kind==='clip'&&(s.link||s.lockedLink);})[0];
       if(!box || !setting)return;
-      if(setting.link.available===false){say((setting.link.locked||'Part of the Family feature pack')+'. Ask Kade to add it to your account.',true);return;}
+      if(!setting.link || setting.link.available===false){say(lockedLinkNote(setting.link||setting.lockedLink),true);return;}
       if(state.importing){say(state.linkImporting?'Still bringing in the song. This can take up to two minutes.':'Wait for the clip to finish importing.');return;}
       if(busy()){say('Finish the current operation before importing a reference.',true);return;}
       var link=box.value.trim();state.linkDraft=box.value;

@@ -2649,10 +2649,11 @@ router.post('/suggest', requireJwtAuth, express.json({ limit: '64kb' }), (req, r
 
 router.get('/health', requireJwtAuth, async (req, res) => {
   return res.json({
-    /* Part 293: per person. The YuE2 cover field's media link is usable with the
-     * Family feature pack and greyed out ("Part of the Family feature pack")
-     * for everyone else, the App Review seat included (kadeSoundBoothLink.js
-     * guideFor). `features` is the same map GET /api/kade/features answers. */
+    /* Part 293: per person. The YuE2 cover field carries `link` only with the
+     * Family feature pack; everyone else gets `lockedLink`, shown greyed out
+     * ("Part of the Family feature pack") by clients that read it
+     * (kadeSoundBoothLink.js guideFor). `features` is the same map
+     * GET /api/kade/features answers. */
     guide: require('./kadeSoundBoothLink').guideFor(GUIDE, req.user, boothFeatures),
     features: boothFeatures(req.user),
     engines: {

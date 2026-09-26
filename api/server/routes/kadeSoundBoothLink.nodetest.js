@@ -100,6 +100,7 @@ class FakeYouTubeError extends Error {
 
 const VISCHECK = '6a6125d73939d20b95251078'; // the App Review seat
 const BOB = '6b0000000000000000000000'; // an account made long after the family cutoff
+const EARLY_REVIEW = '6a3f47e79be0146175d0e3e7'; // made before the cutoff; a review seat only when listed
 
 /** A fresh world: fake storage, a fake downloader, the real link reader, and the routes wired to them. */
 function world(overrides = {}) {
@@ -265,19 +266,39 @@ test('Family feature pack: the guide greys the field out for everyone else, neve
   assert.match(cover(family).link.hint, /YouTube, SoundCloud, Bandcamp, Vimeo, TikTok, Instagram, Facebook, X, Reddit, Dailymotion, Twitch clips or the Internet Archive, or a direct link to an audio or video file/);
   assert.match(cover(family).hint, /paste a media link/);
 
+  /* `link` keeps its first meaning, usable now (the iPhone branch ios-p293 shows a live row for
+   * it); the greyed-out field rides `lockedLink`, which only updated clients read. */
   const reviewSeat = (user) => pack.familyFeatures(user, {});
   for (const user of [{ id: VISCHECK }, { id: BOB }]) {
     const locked = cover(link.guideFor(GUIDE, user, reviewSeat, {}));
-    assert.equal(locked.link.available, false, user.id);
-    assert.equal(locked.link.locked, 'Part of the Family feature pack');
-    assert.equal(locked.link.label, 'Or paste a media link (YouTube and other sites)', 'the same label, shown greyed out');
-    assert.equal(locked.link.path, '/api/kade/sound-booth/reference/link');
+    assert.equal(locked.link, undefined, `${user.id}: no live link for a client that reads only link`);
+    assert.deepEqual(locked.lockedLink, {
+      site: 'media', label: 'Or paste a media link (YouTube and other sites)', button: 'Import from link',
+      available: false, locked: 'Part of the Family feature pack',
+    }, `${user.id}: the same label, shown greyed out, with no path to press`);
     assert.match(locked.hint, /^Import one song, up to six minutes\. YuE2 uses its melody/, 'the hint only offers what can be used');
   }
+  assert.equal(cover(family).lockedLink, undefined, 'a family account gets only the live link');
   const unsure = link.guideFor(GUIDE, { id: 'u1' }, () => { throw new Error('lookup failed'); }, {});
-  assert.equal(cover(unsure).link.available, false, 'unsure means greyed out');
+  assert.equal(cover(unsure).link, undefined, 'unsure means greyed out');
+  assert.equal(cover(unsure).lockedLink.available, false);
   const switchedOff = link.guideFor(GUIDE, { id: 'u1' }, () => ({ mediaLinks: true }), { KADE_SOUNDBOOTH_YT_LINKS: '0' });
   assert.equal(cover(switchedOff).link, undefined, 'the kill switch takes the field away for everyone');
+  assert.equal(cover(switchedOff).lockedLink, undefined);
+  const lockedOff = link.guideFor(GUIDE, { id: BOB }, reviewSeat, { KADE_SOUNDBOOTH_YT_LINKS: '0' });
+  assert.equal(cover(lockedOff).lockedLink, undefined, 'and its greyed-out form too');
+  /* An extra App Review seat (KADE_APP_REVIEW_USER_IDS) made before the cutoff: the route and the
+   * guide shut it out exactly as the old isReviewSeat gate did. */
+  const saved = process.env.KADE_APP_REVIEW_USER_IDS;
+  process.env.KADE_APP_REVIEW_USER_IDS = `${VISCHECK},${EARLY_REVIEW}`;
+  try {
+    assert.equal(cover(link.guideFor(GUIDE, { id: EARLY_REVIEW }, reviewSeat, {})).link, undefined);
+    assert.equal(link.linkImportAvailable({ id: EARLY_REVIEW }, reviewSeat, {}), false);
+  } finally {
+    if (saved === undefined) delete process.env.KADE_APP_REVIEW_USER_IDS;
+    else process.env.KADE_APP_REVIEW_USER_IDS = saved;
+  }
+  assert.equal(link.linkImportAvailable({ id: EARLY_REVIEW }, reviewSeat, {}), true, 'unlisted, the same early account is family');
   assert.equal(JSON.stringify(GUIDE), before, 'the shared guide is never changed');
   assert.equal(link.guideFor(GUIDE, { id: 'u1' }, () => ({ mediaLinks: true }), {}).engines.scenema, GUIDE.engines.scenema);
   // A child account in the pack keeps the field.
