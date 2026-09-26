@@ -18,8 +18,15 @@ function load(post, ledger = []) {
 }
 test('Part 295: a BYOK photo bills OpenRouter\'s fee plus what Google charged the key', async () => {
   const ledger = [];
-  const sight = load(async () => ({ data: { choices: [{ message: { content: 'A cat.' } }], usage: { cost: 0, cost_details: { upstream_inference_cost: 0.0012 } } } }), ledger);
+  const sight = load(async () => ({ data: { choices: [{ message: { content: 'A cat.' } }], usage: { cost: 0, is_byok: true, cost_details: { upstream_inference_cost: 0.0012 } } } }), ledger);
   assert.equal(await sight.describeAttachedImages([{ image_url: { url: 'cat' } }], { userId: 'u1' }), 'A cat.');
+  assert.equal(ledger.length, 1);
+  assert.equal(ledger[0].costUSD, 0.0012);
+});
+test('Part 295: a normal photo bills its cost once, not the upstream figure that restates it', async () => {
+  const ledger = [];
+  const sight = load(async () => ({ data: { choices: [{ message: { content: 'A dog.' } }], usage: { cost: 0.0012, is_byok: false, cost_details: { upstream_inference_cost: 0.0012 } } } }), ledger);
+  assert.equal(await sight.describeAttachedImages([{ image_url: { url: 'dog' } }], { userId: 'u1' }), 'A dog.');
   assert.equal(ledger.length, 1);
   assert.equal(ledger[0].costUSD, 0.0012);
 });

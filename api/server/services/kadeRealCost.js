@@ -66,12 +66,20 @@ function extraChargeUSD(costUSD, role, env = process.env) {
 
 /**
  * Part 295 (her Google key inside OpenRouter, BYOK): what an OpenRouter call really cost the
- * platform. With BYOK, usage.cost is only OpenRouter's own fee (often 0) and
- * usage.cost_details.upstream_inference_cost is what Google charged her key; without it the
- * upstream field is 0 or null. The generation endpoint's total_cost reads the same way, so a
- * { total_cost, upstream_inference_cost } body works too. null when neither field is a number, so
- * each caller keeps its own fallback estimate.
- * @param {{ cost?: unknown, total_cost?: unknown, upstream_inference_cost?: unknown, cost_details?: { upstream_inference_cost?: unknown } } | null | undefined} usage
+ * platform. The rule, measured on live replies Sep 26 2026 (OpenRouter's docs say otherwise):
+ *
+ *   real cost = usage.is_byok === true ? cost + upstream_inference_cost : cost
+ *
+ *   - A normal reply reports { cost, is_byok: false, cost_details: { upstream_inference_cost } }
+ *     with the upstream figure EQUAL to cost (e.g. cost 0.0125646, upstream 0.0125646). It is the
+ *     same money said twice, never an extra charge: adding it would double every call.
+ *   - With BYOK (is_byok: true), cost is only OpenRouter's own fee (often 0) and the upstream
+ *     figure is what Google charged her key, so the two are summed.
+ *   - The generation endpoint's record { total_cost, is_byok, upstream_inference_cost } follows the
+ *     same rule; pass the whole body so its is_byok comes along.
+ *   - A reply that names no own fee but an upstream figure costs that figure (right either way).
+ * null when neither field is a number, so each caller keeps its own fallback estimate.
+ * @param {{ cost?: unknown, total_cost?: unknown, is_byok?: unknown, upstream_inference_cost?: unknown, cost_details?: { upstream_inference_cost?: unknown } } | null | undefined} usage
  * @returns {number | null}
  */
 function openRouterCost(usage) {
@@ -79,8 +87,8 @@ function openRouterCost(usage) {
   const num = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
   const own = num(usage.cost) ?? num(usage.total_cost);
   const upstream = num(usage.cost_details && usage.cost_details.upstream_inference_cost) ?? num(usage.upstream_inference_cost);
-  if (own == null && upstream == null) return null;
-  return (own || 0) + (upstream || 0);
+  if (own == null) return upstream;
+  return usage.is_byok === true && upstream != null ? own + upstream : own;
 }
 
 /**
