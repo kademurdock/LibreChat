@@ -119,4 +119,58 @@ async function alertOwnerNewFeedback(doc, knownReporterName) {
   }
 }
 
-module.exports = { alertOwnerNewFeedback };
+/**
+ * KADE Sep 26 2026 (Part 295): the same two channels for a platform alarm that is not a bug
+ * report (the Google key alarm first). adminAlert:true with no route; quiet hours still hold for
+ * the push, and the chat nudge carries it meanwhile. Muting `agentId` in notify-prefs silences the
+ * pushes. Fail-soft: returns what happened, never throws.
+ * @param {{ agentId: string, agentName: string, title: string, body: string, nudgeText: string, nudgeType: string }} alert
+ */
+async function alertOwner({ agentId, agentName, title, body, nudgeText, nudgeType }) {
+  const out = { nudge: false, push: 'off' };
+  try {
+    const owner = await ownerUserId();
+    if (!owner) {
+      logger.warn('[kadeOwnerAlerts] no owner account found — alert skipped');
+      return out;
+    }
+    try {
+      const { KadePendingNudge } = require('~/models/kadeNudge');
+      await KadePendingNudge.create({ userId: owner, text: nudgeText, type: nudgeType, channel: 'chat' });
+      out.nudge = true;
+    } catch (nudgeErr) {
+      logger.warn(`[kadeOwnerAlerts] chat nudge failed (non-fatal): ${nudgeErr.message}`);
+    }
+    const bridgeUrl = (
+      process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app'
+    ).replace(/\/$/, '');
+    const secret = process.env.BRIDGE_SECRET || process.env.NOTIFY_AGENT_SECRET || '';
+    if (secret) {
+      try {
+        const r = await fetch(`${bridgeUrl}/notify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            secret,
+            agentId,
+            agentName,
+            title,
+            body: String(body).slice(0, 300),
+            userId: owner,
+            adminAlert: true,
+          }),
+        });
+        const receipt = await r.json().catch(() => ({}));
+        out.push = `sent=${receipt.sent ?? '?'}${receipt.blocked ? ` blocked=${receipt.blocked}` : ''}`;
+      } catch (pushErr) {
+        out.push = 'failed';
+        logger.warn(`[kadeOwnerAlerts] push failed (non-fatal): ${pushErr.message}`);
+      }
+    }
+  } catch (err) {
+    logger.warn(`[kadeOwnerAlerts] alert failed (non-fatal): ${err.message}`);
+  }
+  return out;
+}
+
+module.exports = { alertOwnerNewFeedback, alertOwner };

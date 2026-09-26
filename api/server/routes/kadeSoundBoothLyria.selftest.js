@@ -142,6 +142,57 @@ test('the quote is per song, says so, and invents no duration it cannot know', (
   assert.match(est.spoken, /per song, not per minute/i);
 });
 
+test('Part 295: everyone but Kade is quoted the platform factor x the real price; Kade the real one', () => {
+  const saved = process.env.KADE_BILLING_MULTIPLIER;
+  process.env.KADE_BILLING_MULTIPLIER = '2';
+  try {
+    const member = pure.priceFactor({ id: 'u1', role: 'USER' });
+    assert.equal(member, 2);
+    assert.equal(pure.priceFactor({ id: 'k', role: 'ADMIN' }), 1);
+    assert.equal(pure.priceFactor(undefined), 2, 'nobody known is not the administrator');
+    const song = pure.estimateFor('lyria', 'A slow soul record.', member);
+    assert.equal(song.costUSD, pure.LYRIA_USD_PER_SONG * 2);
+    assert.match(song.spoken, /About 16 cents for the song/);
+    assert.equal(pure.estimateFor('lyria', 'A slow soul record.', 1).costUSD, pure.LYRIA_USD_PER_SONG);
+    const scene = 'Mara says: "hello there, it is a long way to Springfield and back again tonight."';
+    const real = pure.estimateFor('seed', scene, 1).costUSD;
+    assert.ok(Math.abs(pure.estimateFor('seed', scene, member).costUSD - real * 2) < 0.0011);
+    assert.match(pure.estimateFor('scenema', 'Hello there, friend.', member).spoken, /up to \$2\.44 per hour/);
+    /* The guide's price lines follow the person; the shared guide is never changed. */
+    const before = JSON.stringify(pure.GUIDE);
+    const priced = pure.guidePriced(pure.GUIDE, member);
+    assert.match(priced.engines.lyria.cost, /^About 16 cents a song, and that is per SONG/);
+    assert.match(priced.engines.seed.cost, /^About 38 cents a minute\./);
+    assert.equal(priced.engines.scenema, pure.GUIDE.engines.scenema);
+    assert.equal(pure.guidePriced(pure.GUIDE, 1), pure.GUIDE, 'Kade gets the guide exactly as written');
+    assert.equal(JSON.stringify(pure.GUIDE), before);
+    /* Stored costs are real; a person sees what they paid, but not for Kade's YuE2 and Stable Audio trials. */
+    const view = (engine) => pure.projectView({ _id: 'p1', engine, costUSD: 0.08, parts: [{ index: 0, state: 'done', costUSD: 0.05 }] }, member);
+    assert.equal(view('lyria').costUSD, 0.16);
+    assert.equal(view('scenema').parts[0].costUSD, 0.1);
+    assert.equal(view('yue2').costUSD, 0.08);
+  } finally {
+    if (saved === undefined) delete process.env.KADE_BILLING_MULTIPLIER;
+    else process.env.KADE_BILLING_MULTIPLIER = saved;
+  }
+});
+
+test('Part 295: the Google key alarm names the Lyria key by its variable, never its value', () => {
+  const saved = { KADE_LYRIA_KEY: process.env.KADE_LYRIA_KEY, KADE_EMBED_GEMINI_KEY: process.env.KADE_EMBED_GEMINI_KEY };
+  try {
+    delete process.env.KADE_LYRIA_KEY;
+    process.env.KADE_EMBED_GEMINI_KEY = 'test-only-value';
+    assert.equal(pure.lyriaKeyName(), 'KADE_EMBED_GEMINI_KEY');
+    process.env.KADE_LYRIA_KEY = 'test-only-value';
+    assert.equal(pure.lyriaKeyName(), 'KADE_LYRIA_KEY');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
 test('the other two engines are untouched by the third', () => {
   assert.ok(pure.estimateFor('seed', 'Mara says: "hello."').audioSeconds > 0);
   assert.ok(pure.estimateFor('scenema', 'Hello there, friend.').audioSeconds > 0);

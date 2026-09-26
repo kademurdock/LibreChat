@@ -238,7 +238,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
 <body>
   <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a></p>
   <h1>Usage &amp; Balance</h1>
-  <p class="muted">Your account starts with <strong>$10 of credit</strong> loaded by Kade. Model usage includes a contribution toward running the platform; the server-cost line below shows the current multiplier alongside your estimated cost. Metered extras such as pictures, videos, and phone calls also draw from your balance. <strong>Ordinary chat speech is included in Kade's voice plan</strong>. Top up below when you need more credit.</p>
+  <p class="muted">Your account starts with <strong>$10 of credit</strong> loaded by Kade. Model usage includes a contribution toward running the platform; the server-cost line below shows the current multiplier alongside your estimated cost. Metered extras such as pictures, videos, songs, describing, and phone calls also draw from your balance, with the same contribution. <strong>Ordinary chat speech is included in Kade's voice plan</strong>. Top up below when you need more credit.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading your usage…</div>
 
@@ -317,7 +317,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
        * first of the month." Charged / multiplier + extras, from /my-cost. */
       /* KADE Part 291: priceFactor is this person's own factor; the administrator's is 1 (she pays
        * the providers and is never charged), so the multiplier note is only for people it applies to. */
-      try { var cr = await apiGet('/api/kade/my-cost', token); if (cr.ok) { var cj = await cr.json(); document.getElementById('m_cost').textContent = money(cj.totalUSD) + (cj.multiplier && cj.multiplier !== 1 && cj.priceFactor !== 1 ? ' (balances are charged ' + cj.multiplier + '\u00d7 real model cost to help cover the rest of the platform)' : ''); } else { document.getElementById('m_cost').textContent = '\u2014'; } } catch(e) { document.getElementById('m_cost').textContent = '\u2014'; }
+      try { var cr = await apiGet('/api/kade/my-cost', token); if (cr.ok) { var cj = await cr.json(); document.getElementById('m_cost').textContent = money(cj.totalUSD) + (cj.multiplier && cj.multiplier !== 1 && cj.priceFactor !== 1 ? ' (balances are charged ' + cj.multiplier + '\u00d7 real cost to help cover the rest of the platform)' : ''); } else { document.getElementById('m_cost').textContent = '\u2014'; } } catch(e) { document.getElementById('m_cost').textContent = '\u2014'; }
       document.getElementById('a_total').textContent = money((d.allTime||{}).totalUSD);
       const a = d.allTime || {};
       document.getElementById('qty').textContent =
@@ -384,6 +384,7 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
         <dt>LLM (chat): real cost to you, all time</dt><dd id="t_llm">$0.00</dd>
         <dt>LLM (chat): charged to other people's balances, all time</dt><dd id="t_llm_charged">$0.00</dd>
         <dt>Extra services (phone minutes, speech, pictures, video, search), all time</dt><dd id="t_extra">$0.00</dd>
+        <dt>Extra services: charged to other people's balances, all time</dt><dd id="t_extra_charged">$0.00</dd>
         <dt>Voice call estimates, all time (the same calls are in the chat cost above, so they are not added again)</dt><dd id="t_voice_est">$0.00</dd>
         <dt><strong>Grand total real cost, all time</strong></dt><dd id="t_grand"><strong>$0.00</strong></dd>
         <dt>Total remaining balance (all users)</dt><dd id="t_bal">$0.00</dd>
@@ -453,6 +454,7 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
   <script>
     function svcQty(u, name){ const s=(u.services||{})[name]; return s? s.quantity.allTime : 0; }
     function svcExtra(u){ let t=0; for(const k in (u.services||{})){ t += u.services[k].costUSD.allTime; } return t; }
+    function svcCharged(u){ let t=0; for(const k in (u.services||{})){ const s=u.services[k]; t += (s.chargedUSD || s.costUSD).allTime; } return t; }
     (async function(){
       const status = document.getElementById('status');
       let token = null; try { token = await getToken(); } catch(e) {}
@@ -469,6 +471,8 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
        * shown on their own line and left out of the grand total (their turns are in the chat cost). */
       document.getElementById('t_llm_charged').textContent = money((t.llmChargedUSD || t.llmSpendUSD).allTime);
       document.getElementById('t_extra').textContent = money((t.extraRealUSD || t.extraSpendUSD).allTime);
+      /* Part 295: extras are charged at the platform factor too; the line above stays the real cost. */
+      document.getElementById('t_extra_charged').textContent = money((t.extraChargedUSD || t.extraSpendUSD).allTime);
       document.getElementById('t_voice_est').textContent = money(t.voiceEstimateUSD ? t.voiceEstimateUSD.allTime : 0);
       document.getElementById('t_grand').innerHTML = '<strong>'+money((t.grandRealUSD || t.grandSpendUSD).allTime)+'</strong>';
       document.getElementById('t_bal').textContent = money(t.balanceUSD);
@@ -482,7 +486,7 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
           document.getElementById('books_since').textContent = since ? '(since ' + since + ')' : '';
           document.getElementById('books_line').textContent = (bj.books && bj.books.now && bj.books.now.spoken) ? bj.books.now.spoken : ('Multiplier in force: ' + bj.multiplier + '. The bridge did not answer for the provider side.');
           var bu = document.getElementById('books_users'); bu.innerHTML = '';
-          (bj.users || []).forEach(function(u){ var dt=document.createElement('dt'); dt.textContent = u.name + (u.role==='ADMIN'?' (admin)':''); var dd=document.createElement('dd'); dd.textContent = 'cost the server ' + money(u.totalUSD) + ' \u2014 ' + (u.role==='ADMIN' ? 'paid by you' : 'charged ' + money(u.chargedModelUSD + u.extrasUSD) + (u.voiceEstimateUSD >= 0.01 ? ', including a voice call estimate of ' + money(u.voiceEstimateUSD) : '')) + ', ' + num(u.turns) + ' meter rows'; bu.appendChild(dt); bu.appendChild(dd); });
+          (bj.users || []).forEach(function(u){ var dt=document.createElement('dt'); dt.textContent = u.name + (u.role==='ADMIN'?' (admin)':''); var dd=document.createElement('dd'); dd.textContent = 'cost the server ' + money(u.totalUSD) + ' \u2014 ' + (u.role==='ADMIN' ? 'paid by you' : 'charged ' + money(u.chargedModelUSD + (u.chargedExtrasUSD != null ? u.chargedExtrasUSD : u.extrasUSD)) + (u.voiceEstimateUSD >= 0.01 ? ', including a voice call estimate of ' + money(u.chargedVoiceEstimateUSD != null ? u.chargedVoiceEstimateUSD : u.voiceEstimateUSD) : '')) + ', ' + num(u.turns) + ' meter rows'; bu.appendChild(dt); bu.appendChild(dd); });
           if (bj.totalUSD != null) { var dt2=document.createElement('dt'); dt2.innerHTML='<strong>Everyone</strong>'; var dd2=document.createElement('dd'); dd2.innerHTML='<strong>cost the server '+money(bj.totalUSD)+'</strong>'; bu.appendChild(dt2); bu.appendChild(dd2); }
         } else { document.getElementById('books_line').textContent = 'The books did not load.'; }
       } catch(e) { document.getElementById('books_line').textContent = 'The books did not load.'; }
@@ -687,7 +691,7 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
           '<dt>Voice, all time</dt><dd>'+num(svcQty(u,'tts'))+' chars \u00b7 ~'+listenTime(svcQty(u,'tts'))+'</dd>'+
           '<dt>Images</dt><dd>'+num(svcQty(u,'flux'))+'</dd>'+
           '<dt>Searches <span class="muted">(platform tally of tool calls)</span></dt><dd>'+num(svcQty(u,'tavily'))+'</dd>'+
-          '<dt>Extra services, all time</dt><dd>'+money(svcExtra(u))+'</dd>'+
+          '<dt>Extra services: real cost to you, all time</dt><dd>'+money(svcExtra(u))+(u.role==='ADMIN' ? '' : ' (charged to their balance '+money(svcCharged(u))+')')+'</dd>'+
           '<dt>Balance</dt><dd id="bal_'+uid+'">'+money(u.balanceUSD)+'</dd>'+
           '</dl>'+
           '<button type="button" class="addcred" data-uid="'+(u.userId||'')+'" data-balid="bal_'+uid+'" aria-label="Add five dollars of credit to '+safeName+'">+$5 credit</button>'+

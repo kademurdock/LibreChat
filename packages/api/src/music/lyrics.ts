@@ -166,10 +166,16 @@ async function geminiLyrics(buffer: Buffer, mime: string, seconds: number): Prom
   };
 }
 
+/**
+ * `onGeminiError` (Part 295) hears every Gemini HTTP failure before the scribe_v2 fallback, so
+ * the fork's Google key alarm can tell an empty prepaid balance from a refused song. It never
+ * changes the fallback and a throw inside it is ignored.
+ */
 export async function transcribeMusicLyrics(
   buffer: Buffer,
   mime: string,
   seconds: number,
+  onGeminiError?: (error: unknown) => void,
 ): Promise<Transcript> {
   mime = audioMime(buffer, mime);
   try {
@@ -181,6 +187,13 @@ export async function transcribeMusicLyrics(
     const line = `[music/lyrics] lyrics gemini fallback reason=${reason} model=${geminiModel} ${mime} ${buffer.length}B ${Math.round(seconds)}s; using scribe_v2`;
     if (error instanceof GeminiMiss && error.skipped) logger.info(line);
     else logger.warn(line);
+    if (onGeminiError && !(error instanceof GeminiMiss)) {
+      try {
+        onGeminiError(error);
+      } catch {
+        /* the alarm never changes the fallback */
+      }
+    }
     return scribeLyrics(buffer, mime, seconds);
   }
 }

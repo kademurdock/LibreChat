@@ -19,8 +19,9 @@
  *     1 before 2026-09-05T05:01Z (when Part 131 went live), the platform factor after.
  *   - Only spend rows (prompt, completion) count. A positive credits row is filtered out, never
  *     netted against spend by a Math.abs over a sum.
- *   - kadeusage rows are real already (costUSD written at the provider price, charged at 1x).
- *     Never divide them; nothing in this module touches them.
+ *   - kadeusage rows are real already (costUSD written at the provider price). Never divide them;
+ *     nothing in this module touches them. Since Part 295 a row also carries chargedUSD, what the
+ *     person's balance paid (extraChargeUSD below); rows written before it were charged at 1x.
  *
  * Known limits: premium long-context tiers and per-endpoint token configs are re-priced at the
  * model's standard row (a model priced only by an endpoint config has no row and falls back).
@@ -44,6 +45,43 @@ function platformFactor(env = process.env) {
 }
 
 const isAdminRole = (role) => String(role || '').toUpperCase() === 'ADMIN';
+
+/**
+ * KADE Sep 26 2026 (Part 295), her words: "Yes, double everything." Every paid extra (Spotter,
+ * camera video, describing, Lyria, games, the clubhouse, the debate room, fal and the rest) costs a
+ * person the platform factor times its real provider price, the way chat and voice turns already
+ * do. The administrator pays the providers herself: she is never charged, and every price she is
+ * quoted is the real one. Quotes use userPriceFactor; the wallet uses extraChargeUSD.
+ */
+function userPriceFactor(role, env = process.env) {
+  return isAdminRole(role) ? 1 : platformFactor(env);
+}
+
+/** What a person's balance pays for an extra that really cost costUSD: 0 for the administrator. */
+function extraChargeUSD(costUSD, role, env = process.env) {
+  const cost = Number(costUSD);
+  if (!Number.isFinite(cost) || cost <= 0 || isAdminRole(role)) return 0;
+  return Math.round(cost * platformFactor(env) * 1e6) / 1e6;
+}
+
+/**
+ * Part 295 (her Google key inside OpenRouter, BYOK): what an OpenRouter call really cost the
+ * platform. With BYOK, usage.cost is only OpenRouter's own fee (often 0) and
+ * usage.cost_details.upstream_inference_cost is what Google charged her key; without it the
+ * upstream field is 0 or null. The generation endpoint's total_cost reads the same way, so a
+ * { total_cost, upstream_inference_cost } body works too. null when neither field is a number, so
+ * each caller keeps its own fallback estimate.
+ * @param {{ cost?: unknown, total_cost?: unknown, upstream_inference_cost?: unknown, cost_details?: { upstream_inference_cost?: unknown } } | null | undefined} usage
+ * @returns {number | null}
+ */
+function openRouterCost(usage) {
+  if (!usage || typeof usage !== 'object') return null;
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+  const own = num(usage.cost) ?? num(usage.total_cost);
+  const upstream = num(usage.cost_details && usage.cost_details.upstream_inference_cost) ?? num(usage.upstream_inference_cost);
+  if (own == null && upstream == null) return null;
+  return (own || 0) + (upstream || 0);
+}
 
 /**
  * Part 291, her words: "Yes, I do want double on voice." KADE_VOICE_BILL_REAL=1 bills a voice or
@@ -301,6 +339,9 @@ module.exports = {
   SPEND_TYPES,
   platformFactor,
   isAdminRole,
+  userPriceFactor,
+  extraChargeUSD,
+  openRouterCost,
   voiceBilledReal,
   VOICE_KEY,
   VOICE_ESTIMATE_SERVICE,

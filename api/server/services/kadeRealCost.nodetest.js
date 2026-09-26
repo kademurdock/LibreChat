@@ -163,3 +163,31 @@ test('admin role detection ignores case and missing roles', () => {
   assert.equal(R.isAdminRole('USER'), false);
   assert.equal(R.isAdminRole(null), false);
 });
+
+test('Part 295: extras cost everyone else the platform factor x real; Kade pays nothing and is quoted real', () => {
+  const env = { KADE_BILLING_MULTIPLIER: '2' };
+  assert.equal(R.userPriceFactor('USER', env), 2);
+  assert.equal(R.userPriceFactor(undefined, env), 2, 'an account with no role is not the administrator');
+  assert.equal(R.userPriceFactor('ADMIN', env), 1);
+  assert.equal(R.userPriceFactor('USER', {}), 1, 'no factor set means 1x, like tx.ts');
+  assert.equal(R.extraChargeUSD(0.08, 'USER', env), 0.16);
+  assert.equal(R.extraChargeUSD(0.055, 'USER', env), 0.11);
+  assert.equal(R.extraChargeUSD(0.08, 'ADMIN', env), 0, 'the administrator is never charged');
+  assert.equal(R.extraChargeUSD(0, 'USER', env), 0);
+  assert.equal(R.extraChargeUSD(-1, 'USER', env), 0);
+  assert.equal(R.extraChargeUSD('junk', 'USER', env), 0);
+  assert.equal(R.extraChargeUSD(0.1234567891, 'USER', env), 0.246914, 'kept to whole credits');
+});
+
+test('Part 295: OpenRouter cost is its fee plus the BYOK upstream charge, from either response shape', () => {
+  assert.equal(R.openRouterCost({ cost: 0.0021 }), 0.0021, 'no BYOK: unchanged');
+  assert.equal(R.openRouterCost({ cost: 0.0021, cost_details: { upstream_inference_cost: null } }), 0.0021);
+  near(R.openRouterCost({ cost: 0, cost_details: { upstream_inference_cost: 0.0042 } }), 0.0042);
+  near(R.openRouterCost({ cost: 0.0002, cost_details: { upstream_inference_cost: 0.004 } }), 0.0042);
+  near(R.openRouterCost({ cost_details: { upstream_inference_cost: 0.004 } }), 0.004, 'no own fee reported');
+  near(R.openRouterCost({ total_cost: 0.0001, upstream_inference_cost: 0.0031 }), 0.0032, 'the generation endpoint');
+  assert.equal(R.openRouterCost({ prompt_tokens: 10 }), null, 'nothing reported: the caller keeps its own estimate');
+  assert.equal(R.openRouterCost({ cost: -1 }), null);
+  assert.equal(R.openRouterCost(null), null);
+  assert.equal(R.openRouterCost(undefined), null);
+});

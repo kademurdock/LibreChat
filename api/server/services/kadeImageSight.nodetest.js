@@ -2,18 +2,27 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
-function load(post) {
+function load(post, ledger = []) {
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(require.resolve('./kadeImageSight'), 'utf8'), {
     module, process: { env: { OPENROUTER_KEY: 'fake-local-test' } },
     require(id) {
       if (id === 'axios') return { post };
       if (id === '@librechat/data-schemas') return { logger: { warn() {} } };
+      if (id === './kadeRealCost') return require('./kadeRealCost');
+      if (id === '~/models/kadeUsage') return { logKadeUsage: (row) => ledger.push(row) };
       throw Error(id);
     },
   });
   return module.exports;
 }
+test('Part 295: a BYOK photo bills OpenRouter\'s fee plus what Google charged the key', async () => {
+  const ledger = [];
+  const sight = load(async () => ({ data: { choices: [{ message: { content: 'A cat.' } }], usage: { cost: 0, cost_details: { upstream_inference_cost: 0.0012 } } } }), ledger);
+  assert.equal(await sight.describeAttachedImages([{ image_url: { url: 'cat' } }], { userId: 'u1' }), 'A cat.');
+  assert.equal(ledger.length, 1);
+  assert.equal(ledger[0].costUSD, 0.0012);
+});
 test('photo question reaches vision as user text and is separate from instructions', async () => {
   const calls = [];
   const sight = load(async (_, body) => { calls.push(body); return { data: { choices: [{ message: { content: 'The red mug is on the left.' } }] } }; });

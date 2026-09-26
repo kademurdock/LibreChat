@@ -108,6 +108,13 @@ test('provider cost, including free/cached calls, wins over token estimates', ()
   assert.deepEqual(writingCost({ cost: 0.0032, prompt_tokens: 3000 }, 'custom/model'), { costUSD: 0.0032, measured: true });
 });
 
+test('Part 295: a BYOK call costs OpenRouter\'s fee plus what the provider charged the key', () => {
+  assert.deepEqual(writingCost({ cost: 0, cost_details: { upstream_inference_cost: 0.0042 } }, 'custom/model'), { costUSD: 0.0042, measured: true });
+  assert.ok(Math.abs(writingCost({ cost: 0.0002, cost_details: { upstream_inference_cost: 0.004 } }, 'custom/model').costUSD - 0.0042) < 1e-12);
+  assert.deepEqual(writingCost({ cost: 0.0032, cost_details: { upstream_inference_cost: null } }, 'custom/model'), { costUSD: 0.0032, measured: true });
+  assert.deepEqual(writingCost({ cost_details: { upstream_inference_cost: 0.001 } }, 'custom/model'), { costUSD: 0.001, measured: true });
+});
+
 test('Hermes draft estimates are marked as estimates, with missing and invalid usage handled', () => {
   assert.deepEqual(writingCost({ prompt_tokens: 3000, completion_tokens: 1000 }, 'nousresearch/hermes-4-405b'), { costUSD: 0.006, measured: false });
   assert.deepEqual(writingCost({}, 'nousresearch/hermes-4-405b', 12000, 4000), { costUSD: 0.006, measured: false });

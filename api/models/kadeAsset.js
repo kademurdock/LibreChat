@@ -34,6 +34,9 @@ const kadeAssetSchema = new mongoose.Schema(
     prompt: { type: String },
     model: { type: String },
     costUSD: { type: Number, default: 0 },
+    /* Part 295: what the owner paid (the platform factor x costUSD, 0 for Kade). Assets from before
+     * it, and the YuE2 and Stable Audio trials Kade pays for, have none: they show costUSD. */
+    chargedUSD: { type: Number },
     description: { type: String },
     backupUrl: { type: String },
     shared: { type: Boolean, default: false, index: true },
@@ -131,8 +134,8 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
   );
   if (usageOwner) {
     try {
-      const u = r.data?.usage || {};
-      const cost = typeof u.cost === 'number' ? u.cost : 0;
+      /* Part 295: OpenRouter's fee plus, with her Google key inside OpenRouter, what Google charged. */
+      const cost = require('~/server/services/kadeRealCost').openRouterCost(r.data?.usage) ?? 0;
       const { logKadeUsage } = require('~/models/kadeUsage');
       logKadeUsage({
         userId: String(usageOwner),
@@ -279,6 +282,15 @@ async function logKadeAsset({ userId, kind, service, url, prompt, model, costUSD
     if (!userId || !url) {
       return;
     }
+    const cost = typeof costUSD === 'number' ? costUSD : 0;
+    let chargedUSD = 0;
+    if (cost > 0) {
+      try {
+        chargedUSD = await require('~/models/kadeUsage').chargedFor(userId, cost);
+      } catch (_) {
+        chargedUSD = undefined; /* the gallery then shows costUSD, as before */
+      }
+    }
     const doc = await KadeAsset.create({
       user: userId,
       kind,
@@ -286,7 +298,8 @@ async function logKadeAsset({ userId, kind, service, url, prompt, model, costUSD
       url: String(url).slice(0, 2048),
       prompt: prompt ? String(prompt).slice(0, 2000) : undefined,
       model,
-      costUSD: typeof costUSD === 'number' ? costUSD : 0,
+      costUSD: cost,
+      ...(typeof chargedUSD === 'number' ? { chargedUSD } : {}),
       metadata,
     });
     // Enrichment runs detached; never blocks or throws into the caller.

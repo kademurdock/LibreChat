@@ -821,7 +821,9 @@ router.post('/bot-turn', requireJwtAuth, express.json({ limit: '64kb' }), async 
 
     try {
       const { logKadeUsage } = require('~/models/kadeUsage');
-      const cost = typeof turn.usage?.cost === 'number' ? turn.usage.cost : ((turn.usage?.total_tokens || 0) / 1e6) * 1.0;
+      /* Part 295: BYOK-safe (OpenRouter's fee plus what Google charged her key). */
+      const { openRouterCost } = require('~/server/services/kadeRealCost');
+      const cost = openRouterCost(turn.usage) ?? ((turn.usage?.total_tokens || 0) / 1e6) * 1.0;
       logKadeUsage({ userId, service: 'clubhouse_bot', quantity: 1, unit: 'turns', costUSD: cost, metadata: { agentId, kind: 'bot_turn', roomLabel } });
     } catch (_) { /* never break the room */ }
     return res.json({ name: agent.name || 'Guest', line, voice });

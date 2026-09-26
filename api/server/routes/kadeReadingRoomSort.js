@@ -19,6 +19,7 @@ const { logger } = require('@librechat/data-schemas');
 const { KadeBook } = require('~/models/kadeBook');
 const { correctedBookShelf } = require('@librechat/api');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
+const { openRouterCost } = require('~/server/services/kadeRealCost');
 
 const SHELVES = [
   'Fiction — Romance', 'Fiction — Urban', 'Fiction — Mystery & thriller', 'Fiction — Science fiction & fantasy', 'Fiction — Horror',
@@ -114,7 +115,8 @@ async function classifyLLM(books) {
   const text = String(r.data?.choices?.[0]?.message?.content || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   const usage = r.data?.usage || {};
   const est = ((Number(usage.prompt_tokens) || 0) * IN_USD_PER_M() + (Number(usage.completion_tokens) || 0) * OUT_USD_PER_M()) / 1e6;
-  const costUSD = typeof usage.cost === 'number' && usage.cost >= 0 ? usage.cost : est;
+  /* Part 295: BYOK-safe (OpenRouter's fee plus what Google charged her key). */
+  const costUSD = openRouterCost(usage) ?? est;
   let j = {};
   try { j = JSON.parse(text); } catch (_) { const m = text.match(/\{[\s\S]*\}/); if (m) { try { j = JSON.parse(m[0]); } catch (_) {} } }
   const out = {};

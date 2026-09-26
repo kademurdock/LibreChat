@@ -24,6 +24,7 @@ function loadTool() {
     },
     '@librechat/agents/langchain/tools': { Tool: class {} },
     '@librechat/data-schemas': { logger: { warn() {}, info() {} } },
+    '~/server/services/kadeRealCost': require('../../../../server/services/kadeRealCost'),
   };
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(require.resolve('./KadePhoneCall'), 'utf8'), {

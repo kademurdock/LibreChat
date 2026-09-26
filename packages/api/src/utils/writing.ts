@@ -1,8 +1,12 @@
 type WritingUsage = {
   cost?: number;
+  cost_details?: { upstream_inference_cost?: number | null } | null;
   prompt_tokens?: number;
   completion_tokens?: number;
 };
+
+const reported = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 
 export function writingCost(
   usage: WritingUsage,
@@ -10,8 +14,12 @@ export function writingCost(
   inputChars = 0,
   outputChars = 0,
 ): { costUSD: number; measured: boolean } {
-  if (typeof usage.cost === 'number' && Number.isFinite(usage.cost) && usage.cost >= 0) {
-    return { costUSD: usage.cost, measured: true };
+  /* Part 295: with a provider key inside OpenRouter (BYOK), usage.cost is only OpenRouter's fee and
+   * the provider's charge is cost_details.upstream_inference_cost; the real cost is the sum. */
+  const own = reported(usage.cost);
+  const upstream = reported(usage.cost_details?.upstream_inference_cost);
+  if (own !== undefined || upstream !== undefined) {
+    return { costUSD: (own ?? 0) + (upstream ?? 0), measured: true };
   }
   const prices: { [model: string]: [number, number] } = {
     'nousresearch/hermes-4-405b': [1, 3],

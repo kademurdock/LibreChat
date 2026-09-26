@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
+const { openRouterCost } = require('./kadeRealCost');
 
 /**
  * KADE July 13 2026 — "sight" for text-only agents.
@@ -116,7 +117,8 @@ async function describeAttachedImages(imageParts, opts = {}) {
         },
       );
       const text = r.data?.choices?.[0]?.message?.content;
-      const cost = typeof r.data?.usage?.cost === 'number' ? r.data.usage.cost : 0;
+      /* Part 295: with her Google key in OpenRouter (BYOK) usage.cost is only OpenRouter's fee. */
+      const cost = openRouterCost(r.data?.usage) ?? 0;
       return { text: typeof text === 'string' ? text.trim() : '', cost, idx };
     };
 

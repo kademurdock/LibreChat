@@ -194,6 +194,11 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'gemini-2.5-pro': { prompt: 1.25, completion: 10 },
     'gemini-2.5-flash-image': { prompt: 0.15, completion: 30 },
     'gemini-3': { prompt: 2, completion: 12 },
+    /* KADE Sep 26 2026 (Part 295): google/gemini-3-flash-preview (in the picker) had no row, so the
+     * longest match was 'gemini-3' above, Pro's $2/$12, about 4x Flash's list price before the
+     * platform factor. OpenRouter's models list read that day: $0.50/$3.00, cache read $0.05,
+     * served by Google AI Studio and Google Vertex at that price (their flex tiers are half). */
+    'gemini-3-flash': { prompt: 0.5, completion: 3 },
     'gemini-3-pro-image': { prompt: 2, completion: 120 },
     'gemini-3.1': { prompt: 2, completion: 12 },
     'gemini-3.1-flash-lite': { prompt: 0.25, completion: 1.5 },
@@ -406,6 +411,8 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'kimi-k2-0711-preview': { write: 0.6, read: 0.15 },
   'kimi-k2-thinking': { write: 0.6, read: 0.15 },
   'kimi-k2-thinking-turbo': { write: 1.15, read: 0.15 },
+  // Gemini 3 Flash Preview (Part 295) - cache write: $0.50/1M (the prompt rate), cache read: $0.05/1M
+  'gemini-3-flash': { write: 0.5, read: 0.05 },
   // Gemini 3.1 Pro - cache write: $2.00/1M, cache read: $0.20/1M
   'gemini-3.1': { write: 2, read: 0.2 },
   // Gemini 3.1 Flash-Lite - cache write: $0.25/1M, cache read: $0.025/1M

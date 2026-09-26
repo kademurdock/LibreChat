@@ -36,6 +36,7 @@ const { execFile } = require('child_process');
 const { logger } = require('@librechat/data-schemas');
 const jev = require('~/server/services/kadeJev');
 const judges = require('~/server/services/kadeJevJudges');
+const { openRouterCost } = require('~/server/services/kadeRealCost');
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const ENABLED = () => process.env.KADE_LIBRARY_VISION_FILE === '1';
@@ -132,7 +133,8 @@ async function labelFrame(jpeg, title) {
   const text = String(r.data?.choices?.[0]?.message?.content || '').trim().replace(/^["'`]+|["'`.]+$/g, '');
   return {
     label: /^unknown$/i.test(text) || text.length < 2 ? null : text.slice(0, 120),
-    costUSD: typeof usage.cost === 'number' && usage.cost >= 0 ? usage.cost : est,
+    /* Part 295: BYOK-safe (OpenRouter's fee plus what Google charged her key). */
+    costUSD: openRouterCost(usage) ?? est,
   };
 }
 

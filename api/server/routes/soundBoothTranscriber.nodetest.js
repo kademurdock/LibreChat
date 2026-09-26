@@ -169,6 +169,29 @@ test('log: an HTTP refusal and a timeout from Gemini name their status or code, 
   assert.equal(lyrics.geminiFailureReason('plain text'), 'error:plain text');
 });
 
+test('Part 295: an HTTP failure reaches the Google key alarm hook; a refused song or a skip does not', async () => {
+  const heard = [];
+  const hook = (error) => heard.push(error);
+  gemini = (config) => {
+    throw new axios.AxiosError('Request failed with status code 429', 'ERR_BAD_REQUEST', config, null, {
+      status: 429, statusText: 'Too Many Requests', headers: {}, config,
+      data: { error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Your prepayment credits are depleted.' } },
+    });
+  };
+  assert.equal((await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 30, hook)).model, 'scribe_v2', 'the fallback is unchanged');
+  assert.equal(heard.length, 1);
+  assert.equal(heard[0].response.status, 429);
+  gemini = () => ({ candidates: [{ finishReason: 'RECITATION' }] });
+  await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 30, hook);
+  const big = Buffer.alloc(14 * 1024 * 1024 + 1);
+  big.write('ID3');
+  await lyrics.transcribeMusicLyrics(big, 'audio/mpeg', 300, hook);
+  assert.equal(heard.length, 1, 'a RECITATION refusal and an over-size skip are not the key');
+  /* A hook that throws never changes the fallback. */
+  gemini = (config) => { throw new axios.AxiosError('Request failed with status code 403', 'ERR_BAD_REQUEST', config, null, { status: 403, statusText: 'Forbidden', headers: {}, config, data: {} }); };
+  assert.equal((await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 30, () => { throw new Error('alarm down'); })).model, 'scribe_v2');
+});
+
 test('log: recordings Gemini is never asked about are logged as skips, not failures', async () => {
   const big = Buffer.alloc(14 * 1024 * 1024 + 1);
   big.write('ID3');

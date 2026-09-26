@@ -593,7 +593,9 @@ router.post('/talk/:gameId', requireJwtAuth, async (req, res) => {
     await doc.save();
     try {
       const { logKadeUsage } = require('~/models/kadeUsage');
-      const cost = typeof r.data?.usage?.cost === 'number' ? r.data.usage.cost : ((r.data?.usage?.total_tokens || 0) / 1e6) * 1.0;
+      /* Part 295: BYOK-safe (OpenRouter's fee plus what Google charged her key). */
+      const { openRouterCost } = require('~/server/services/kadeRealCost');
+      const cost = openRouterCost(r.data?.usage) ?? ((r.data?.usage?.total_tokens || 0) / 1e6) * 1.0;
       logKadeUsage({ userId: String(userId), service: 'game_table', quantity: 1, unit: 'turns', costUSD: cost, metadata: { gameId: doc.gameId, kind: 'table_talk' } });
     } catch (_) { /* never break the table */ }
     return res.json({ name: pick.name, line });
