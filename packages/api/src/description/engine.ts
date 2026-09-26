@@ -71,7 +71,7 @@ import {
   toOutput,
 } from './timing';
 import { buildReport, captionTrack, clock, descriptionTrack, transcriptText } from './transcript';
-import { nextContinuity, readsTimeStrip } from './prompt';
+import { nextContinuity, readsTimeStrip, spokenForm } from './prompt';
 import { gateCues, recognized } from './ledger';
 import { Halt } from './types';
 
@@ -1089,8 +1089,16 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const failed = new Set<string>();
     const textOf = (index: number, variant: Variant) =>
       variant === 'full' ? cues[index].text : cues[index].shortText;
+    /** Names this section's ledger knows; one with an initial is said without its full stop. */
+    const ledger = [
+      ...(analysis?.people ?? []),
+      ...(stateIn?.people ?? []),
+      ...(saved.firstLook?.state.people ?? []),
+    ].flatMap((person) => [person.name, person.label]);
+    /** The words the voice is sent; placements, captions and the script keep `textOf`. */
+    const saidOf = (index: number, variant: Variant) => spokenForm(textOf(index, variant), ledger);
     const estimate = (index: number, variant: Variant) =>
-      bytes(textOf(index, variant)) * secondsPerByte;
+      bytes(saidOf(index, variant)) * secondsPerByte;
     const length = (index: number, variant: Variant) => clips.get(key(index, variant))?.base;
     const ratio = (index: number) => {
       const variant = (['full', 'short'] as const).find((item) => clips.has(key(index, item)));
@@ -1125,7 +1133,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       await pool(fresh, request.voices ?? 2, async (item, n) => {
         const name = key(item.index, item.variant);
         const clip = await voice(
-          textOf(item.index, item.variant),
+          saidOf(item.index, item.variant),
           join(dir, `voice-${n}${suffix}.wav`),
         );
         if (clip) clips.set(name, clip);
@@ -1160,7 +1168,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       });
       await pool(retry, 1, async (item, n) => {
         const name = key(item.index, item.variant);
-        const clip = await voice(textOf(item.index, item.variant), join(dir, `retry-${n}.wav`));
+        const clip = await voice(saidOf(item.index, item.variant), join(dir, `retry-${n}.wav`));
         failing.delete(name);
         if (clip) clips.set(name, clip);
         else failed.add(name);

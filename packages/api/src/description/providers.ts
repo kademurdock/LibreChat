@@ -14,7 +14,7 @@ import type {
   Word,
 } from './types';
 import type { Brief } from './prompt';
-import { analysisFormat, analysisPrompt, readAnalysis, speakable } from './prompt';
+import { analysisFormat, analysisPrompt, readAnalysis, speakable, spokenForm } from './prompt';
 import { MediaError } from './media';
 import { Halt } from './types';
 
@@ -1384,7 +1384,8 @@ export async function voiceInput(words: string, voice: string): Promise<string> 
  * rate (1 to 1.5), which sounds more natural than stretching the audio afterwards. A failed call
  * is tried up to three times (after 5 s and 20 s, or when the proxy's Retry-After says) before
  * the description is given up, because the words were already paid for. Every byte sent is
- * booked, including a fish voice's direction.
+ * booked, including a fish voice's direction. Names are sent in their spoken form (`spokenForm`),
+ * so a voice sample says them as a description would; the engine has already added its ledger.
  */
 export async function synthesize(
   text: string,
@@ -1395,7 +1396,7 @@ export async function synthesize(
   signal: AbortSignal,
   meter: Meter,
 ): Promise<void> {
-  const words = speakable(text);
+  const words = spokenForm(speakable(text));
   if (!words) throw new Plain('There was nothing to say for this description.');
   const input = await voiceInput(words, voice);
   const cost = Buffer.byteLength(input, 'utf8') * speechPerByte;
