@@ -12,6 +12,7 @@ import {
   failureClass,
   providerDetail,
   providerProblem,
+  realCost,
   visionLimits,
   voices,
 } from './providers.ts';
@@ -653,6 +654,59 @@ test('providers: a refused request’s streamed body still says what the provide
     assert.equal(lookups, 0);
     assert.equal(entries[0].costUSD, undefined);
     assert.equal(entries[0].expectedUSD, undefined);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: the real cost adds what the provider billed on her own key only when OpenRouter says BYOK', () => {
+  /* Not BYOK, as measured on Sep 26: upstream_inference_cost repeats cost and is never added. */
+  assert.equal(realCost(0.0000027, false, 0.0000027), 0.0000027);
+  assert.equal(realCost(0.036408, undefined, 0.036408), 0.036408);
+  /* BYOK: cost is only OpenRouter's fee; Google's charge comes on top. */
+  assert.ok(Math.abs(realCost(0.0018, true, 0.0364) - 0.0382) < 1e-12);
+  /* Missing or unusable fields. */
+  assert.equal(realCost(0.02), 0.02);
+  assert.equal(realCost(0.02, null, null), 0.02);
+  assert.equal(realCost(0.0018, true), 0.0018);
+  assert.equal(realCost(0.0018, true, null), 0.0018);
+  assert.equal(realCost(0.0018, true, Number.NaN), 0.0018);
+  assert.equal(realCost(0.0018, true, -1), 0.0018);
+});
+
+test('providers: BYOK replies, in-reply errors and generation records are booked at the fee plus the provider’s charge, others at their cost alone', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await clip('byok.mp4');
+  /* The usage shape two live calls returned on Sep 26 (not BYOK), and the same with BYOK. */
+  const plain = { ...good.usage, cost: 0.036408, is_byok: false, cost_details: { upstream_inference_cost: 0.036408, upstream_inference_prompt_cost: 0.0255, upstream_inference_completions_cost: 0.010908 } };
+  const byok = { ...good.usage, cost: 0.00182, is_byok: true, cost_details: { upstream_inference_cost: 0.036408 } };
+  let mode = 'plain';
+  const fake = fakeAxios(({ url, config }) => {
+    if (url.includes('/generation'))
+      return { data: { data: { total_cost: 0.0009, is_byok: true, upstream_inference_cost: 0.018, provider_name: 'Google AI Studio' } } };
+    if (mode === 'plain') return { headers: { 'x-generation-id': 'gen-plain' }, data: { ...good, usage: plain } };
+    if (mode === 'byok') return { headers: { 'x-generation-id': 'gen-byok' }, data: { ...good, usage: byok } };
+    if (mode === 'byok-error')
+      return { headers: { 'x-generation-id': 'gen-byok-err' }, data: { error: { code: 400, message: 'Invalid video' }, usage: { cost: 0.0001, is_byok: true, cost_details: { upstream_inference_cost: 0.002 } } } };
+    return { headers: { 'x-generation-id': 'gen-byok-rec' }, data: { error: { code: 400, message: 'Invalid video' } } };
+  });
+  const { entries, meter } = ledger();
+  try {
+    const first = await analyze(look, signal, meter);
+    assert.deepEqual(first.vision.map((call) => call.costUSD), [0.036408], 'not doubled');
+    mode = 'byok';
+    const second = await analyze(look, signal, meter);
+    assert.ok(Math.abs(second.vision[0].costUSD - 0.038228) < 1e-12, `${second.vision[0].costUSD}`);
+    mode = 'byok-error';
+    await analyze(look, signal, meter).catch(() => {});
+    mode = 'byok-record';
+    await limited({ lookupAtMs: [10], lookupMs: 200 }, () => analyze(look, signal, meter).catch(() => {}));
+    assert.equal(entries.length, 4);
+    assert.equal(entries[0].costUSD, 0.036408);
+    assert.ok(Math.abs(entries[1].costUSD - 0.038228) < 1e-12);
+    assert.ok(Math.abs(entries[2].costUSD - 0.0021) < 1e-12, `the cost the error reply reported: ${entries[2].costUSD}`);
+    assert.ok(Math.abs(entries[3].costUSD - 0.0189) < 1e-12, `the record: ${entries[3].costUSD}`);
+    assert.equal(entries[3].costFrom, 'generation');
   } finally {
     fake.restore();
   }

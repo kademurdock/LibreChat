@@ -87,6 +87,12 @@ const modelSchema = z.object({
   usage: z
     .object({
       cost: z.number().nonnegative().optional(),
+      is_byok: z.boolean().nullable().optional().catch(undefined),
+      cost_details: z
+        .object({ upstream_inference_cost: z.number().nullable().optional().catch(undefined) })
+        .nullable()
+        .optional()
+        .catch(undefined),
       prompt_tokens: z.number().optional(),
       completion_tokens: z.number().optional(),
       completion_tokens_details: z
@@ -116,10 +122,34 @@ const upstreamSchema = z.object({
 const generationSchema = z.object({
   data: z.object({
     total_cost: z.number().finite().nonnegative(),
+    is_byok: z.boolean().nullable().optional().catch(undefined),
+    upstream_inference_cost: z.number().nullable().optional().catch(undefined),
     provider_name: z.string().max(200).nullable().optional().catch(undefined),
     native_tokens_reasoning: z.number().nullable().optional().catch(undefined),
   }),
 });
+/**
+ * What an OpenRouter call really cost, from the figures it reports. Without BYOK its `cost` (a
+ * generation record's `total_cost`) is the whole charge, and `upstream_inference_cost` repeats it
+ * (two live calls on Sep 26 2026: the figures were equal), so the two are never added. With BYOK
+ * (`is_byok` true: the provider bills the owner's own key, such as a Google AI Studio key) `cost`
+ * is only OpenRouter's fee, and what the provider charged is `upstream_inference_cost` on top.
+ */
+export function realCost(
+  cost: number,
+  isByok?: boolean | null,
+  upstreamCost?: number | null,
+): number {
+  if (isByok !== true) return cost;
+  const upstream =
+    typeof upstreamCost === 'number' && Number.isFinite(upstreamCost) && upstreamCost > 0
+      ? upstreamCost
+      : 0;
+  return cost + upstream;
+}
+/** What a generation record says the call really cost (`realCost`). */
+const recordedCost = (record: z.infer<typeof generationSchema>['data']): number =>
+  realCost(record.total_cost, record.is_byok, record.upstream_inference_cost);
 export type VoiceCatalog = {
   voices: string[];
   describe?: Record<string, string>;
@@ -778,7 +808,11 @@ function replyData(text: string): z.infer<typeof modelSchema> {
   const reply = (json && typeof json === 'object' ? json : {}) as {
     error?: unknown;
     choices?: unknown;
-    usage?: { cost?: unknown } | null;
+    usage?: {
+      cost?: unknown;
+      is_byok?: unknown;
+      cost_details?: { upstream_inference_cost?: unknown } | null;
+    } | null;
   };
   const choice = Array.isArray(reply.choices)
     ? (reply.choices[0] as { error?: unknown; finish_reason?: unknown } | null | undefined)
@@ -796,7 +830,13 @@ function replyData(text: string): z.infer<typeof modelSchema> {
           : new Upstream(message, Number.isInteger(code) && code >= 400 && code < 600 ? code : undefined)
     ) as Error & FailedCall;
     const cost = reply.usage?.cost;
-    if (typeof cost === 'number' && Number.isFinite(cost) && cost >= 0) failed.costUSD = cost;
+    const upstream = reply.usage?.cost_details?.upstream_inference_cost;
+    if (typeof cost === 'number' && Number.isFinite(cost) && cost >= 0)
+      failed.costUSD = realCost(
+        cost,
+        reply.usage?.is_byok === true,
+        typeof upstream === 'number' ? upstream : undefined,
+      );
     throw failed;
   }
   return modelSchema.parse(json);
@@ -943,10 +983,10 @@ async function costed(
       () => undefined,
     );
     if (record) {
-      failed.costUSD = record.total_cost;
+      failed.costUSD = recordedCost(record);
       failed.costFrom = 'generation';
       context.log?.(
-        `vision: the failed request ${generation} cost $${record.total_cost.toFixed(4)} by OpenRouter's record (provider ${record.provider_name ?? 'unknown'}, ${record.native_tokens_reasoning ?? '?'} reasoning tokens)`,
+        `vision: the failed request ${generation} cost $${failed.costUSD.toFixed(4)} by OpenRouter's record (provider ${record.provider_name ?? 'unknown'}${record.is_byok === true ? ', BYOK' : ''}, ${record.native_tokens_reasoning ?? '?'} reasoning tokens)`,
       );
       return error;
     }
@@ -972,10 +1012,11 @@ async function unreported(
     ? await generationRecord(generation, context.key, context.signal).catch(() => undefined)
     : undefined;
   if (record) {
+    const costUSD = recordedCost(record);
     context.log?.(
-      `vision: the reply ${generation} did not report its cost; $${record.total_cost.toFixed(4)} by OpenRouter's record`,
+      `vision: the reply ${generation} did not report its cost; $${costUSD.toFixed(4)} by OpenRouter's record`,
     );
-    return { costUSD: record.total_cost };
+    return { costUSD };
   }
   const expected = context.expectedUSD();
   context.log?.(
@@ -1076,8 +1117,12 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
             throw await costed(error, generation, pricing);
           }
           const choice = data.choices[0];
-          const reported = data.usage?.cost;
-          const output = data.usage?.completion_tokens;
+          const usage = data.usage;
+          const reported =
+            usage?.cost === undefined
+              ? undefined
+              : realCost(usage.cost, usage.is_byok, usage.cost_details?.upstream_inference_cost);
+          const output = usage?.completion_tokens;
           const priced =
             reported === undefined
               ? await unreported(generation || data.id || undefined, pricing)
