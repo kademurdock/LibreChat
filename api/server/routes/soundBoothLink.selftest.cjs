@@ -21,7 +21,7 @@ const GUIDE = vm.runInNewContext('(' + backend.slice(a, b) + ')', {
   SCREENPLAY_HELP: '', yueCost: 'No reliable per-song cost estimate yet.', yueStylesEnabled: () => false, yueStyles: {},
 });
 
-let guide, held = [], sent = [];
+let guide, held = [], sent = [], heldOther = [];
 const server = http.createServer((req, res) => {
   if (req.url === '/sound-booth') { res.setHeader('Content-Type', 'text/html'); res.end(html); return; }
   if (req.url.startsWith('/assets/')) { res.setHeader('Content-Type', 'application/javascript'); res.end(''); return; }
@@ -30,12 +30,17 @@ const server = http.createServer((req, res) => {
   if (req.url.endsWith('/projects')) { res.end(JSON.stringify({ projects: [] })); return; }
   if (req.method === 'GET') { res.end('{}'); return; }
   let raw = ''; req.on('data', (c) => (raw += c)); req.on('end', () => {
+    // A file import is multipart, not JSON: held so the test can press the link button meanwhile.
+    if (req.url.endsWith('/sound-booth/reference')) { sent.push({ url: req.url, body: null }); heldOther.push(res); return; }
     sent.push({ url: req.url, body: JSON.parse(raw || '{}') });
     if (req.url.endsWith('/reference/link')) { held.push(res); return; }
+    if (req.url.endsWith('/sound-booth/idea')) { heldOther.push(res); return; }
     res.end('{}');
   });
 });
 const waitHeld = async () => { while (!held.length) await new Promise((r) => setTimeout(r, 10)); return held.shift(); };
+const waitHeldOther = async () => { while (!heldOther.length) await new Promise((r) => setTimeout(r, 10)); return heldOther.shift(); };
+const linkPosts = () => sent.filter((s) => s.url.endsWith('/reference/link')).length;
 const focusedId = (page) => page.evaluate(() => document.activeElement && document.activeElement.id);
 
 async function openCover(page) {
@@ -112,8 +117,34 @@ async function openCover(page) {
     await page.getByRole('button', { name: 'Remove Sunny Day', exact: true }).click();
     assert.equal(await page.locator('#set_reference_voice_url_link').count(), 1, 'the link field returns after removing the cover');
     assert.equal(await field.inputValue(), '', 'a used link is cleared');
+
+    /* While a song idea is being written, the link button says why it waits instead of doing nothing. */
+    await field.fill('https://youtu.be/dQw4w9WgXcQ');
+    await page.locator('#btnInspire').click();
+    const idea = await waitHeldOther();
+    await page.locator('#status').filter({ hasText: 'Thinking up a song idea' }).waitFor();
+    await button.click();
+    await page.locator('#status.err').filter({ hasText: 'Finish the current operation before importing a reference.' }).waitFor();
+    await field.press('Enter');
+    await page.locator('#status.err').filter({ hasText: 'Finish the current operation before importing a reference.' }).waitFor();
+    assert.equal(linkPosts(), 2, 'nothing was sent while the idea was being written');
+    idea.end(JSON.stringify({ idea: 'A song about a kitchen during a thunderstorm.' }));
+    await page.locator('#status').filter({ hasText: 'New song idea in the editor' }).waitFor();
+
+    /* During a FILE import, the link button neither claims to be importing from YouTube nor says so. */
+    await page.locator('#set_reference_voice_url').setInputFiles({ name: 'song.mp3', mimeType: 'audio/mpeg', buffer: Buffer.alloc(4096, 1) });
+    const upload = await waitHeldOther();
+    await page.locator('#status').filter({ hasText: 'Importing song.mp3' }).waitFor();
+    assert.equal(await page.locator('#btnLinkImport').innerText(), 'Import from YouTube');
+    await button.click();
+    await page.locator('#status').filter({ hasText: 'Wait for the clip to finish importing.' }).waitFor();
+    assert.equal(linkPosts(), 2, 'no link import starts during a file import');
+    upload.end(JSON.stringify({ ok: true, url: 'https://assets.test/audios/soundbooth-ref-y.mp3', bytes: 4096, seconds: 100, name: 'song.mp3', ext: 'mp3', spoken: 'Clip imported, 100 seconds. Play it to check it before generating.' }));
+    await page.locator('#status').filter({ hasText: 'Clip imported, 100 seconds' }).waitFor();
+    assert.match(await page.locator('.clips li').innerText(), /^Covering: song\.mp3 \(1:40\)/);
+
     assert.deepEqual(errors, []);
-    console.log('YouTube link field: labelled, hidden from App Review, announces progress and failures, keeps focus sensible, fills the cover like a file import and offers Transcribe reference lyrics.');
+    console.log('YouTube link field: labelled, hidden from App Review, announces progress and failures, keeps focus sensible, fills the cover like a file import and offers Transcribe reference lyrics; says why it waits while a song idea is written or a file is importing.');
   } finally {
     await browser.close();
     server.close();

@@ -481,8 +481,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var box=document.getElementById('set_reference_voice_url_link');
       var setting=state.guide.engines[state.engine].settings.filter(function(s){return s.kind==='clip'&&s.link;})[0];
       if(!box || !setting)return;
-      if(state.importing){say('Still bringing in the song. This can take up to two minutes.');return;}
-      if(busy())return;
+      if(state.importing){say(state.linkImporting?'Still bringing in the song. This can take up to two minutes.':'Wait for the clip to finish importing.');return;}
+      if(busy()){say('Finish the current operation before importing a reference.',true);return;}
       var link=box.value.trim();state.linkDraft=box.value;
       if(!link){say('Paste a YouTube link first.',true);box.focus();return;}
       invalidateQuote();state.importError='';state.importing=true;state.linkImporting=true;renderSettings();focusById('btnLinkImport');
