@@ -32,8 +32,9 @@
  *   the phone's timeout, and a person who leaves stops the download.
  * - One import at a time per person, a few at a time for the whole server, and
  *   a daily cap in the same shape as the booth's other caps.
- * - Log lines carry a short id (the YouTube id, "soundcloud:song", or
- *   "file:host/name") and the tools' reasons, never cookies or a link's query.
+ * - Log lines carry a short id (the YouTube id, "soundcloud:" and a short hash
+ *   of the link, or "file:host/name") and the tools' reasons, never cookies, a
+ *   link's query or a private link's key.
  *
  * Kill switch: KADE_SOUNDBOOTH_YT_LINKS=0 takes the field away and refuses it
  * for everyone.

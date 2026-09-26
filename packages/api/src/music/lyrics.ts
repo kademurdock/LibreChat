@@ -4,6 +4,7 @@ import FormData from 'form-data';
 import mongoose from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import type { Request, RequestHandler, Router } from 'express';
+import type { MediaSite } from '../description/links';
 
 /* v2 (Part 293, Sep 25 2026): Gemini now writes section tags, so untagged v1 drafts are not
  * served from the cache any more. */
@@ -213,9 +214,9 @@ async function scribeLyrics(buffer: Buffer, mime: string, seconds: number): Prom
   };
 }
 
-/** Where an imported cover came from, when it was not a file (Part 293: a YouTube link). */
+/** Where an imported cover came from, when it was not a file (Part 293: a media link). */
 export type MusicReferenceSource = {
-  site: 'youtube';
+  site: MediaSite;
   title: string;
   seconds?: number;
   link?: string;

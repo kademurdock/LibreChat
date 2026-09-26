@@ -222,7 +222,7 @@ export { youtubeAudio, readYouTubeLink, YouTubeAudioError } from './description/
 export type { YouTubeAudio, YouTubeAudioKind, YouTubeLink } from './description/youtube';
 /* Part 293: a media link from YouTube, other big media sites (allowlisted yt-dlp extractors) or a
  * direct audio/video file (SSRF-guarded fetch), for the same covers. */
-export { readMediaLink, mediaAudio, MEDIA_EXTRACTORS } from './description/links';
+export { readMediaLink, mediaAudio, SITE_EXTRACTORS } from './description/links';
 export type { MediaAudio, MediaLink, MediaLinkFound, MediaSite } from './description/links';
 
 export { createDescriptionWallet } from './description/wallet';

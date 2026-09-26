@@ -1,5 +1,6 @@
 import http from 'node:http';
 import https from 'node:https';
+import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -30,13 +31,22 @@ import type { YouTubeAudio, YouTubeAudioKind, YouTubeAudioOptions } from './yout
  *
  * - YouTube and YouTube Music: youtubeAudio, unchanged (its client ladder, cookies and PO tokens).
  * - Other big media sites (Vimeo, SoundCloud, Bandcamp, TikTok, Instagram, Facebook, X, Reddit,
- *   Dailymotion, Twitch clips, the Internet Archive): yt-dlp with ONLY the allowlisted extractors
- *   loaded (--use-extractors, which yt-dlp has had since 2022.11.11; the production image installs
- *   the newest yt-dlp from PyPI), so its generic extractor, which would fetch any page on any host
- *   it is handed, never runs: a link or a redirect to anywhere else is "No suitable extractor".
+ *   Dailymotion, Twitch clips, the Internet Archive): yt-dlp with ONLY the pasted site's own
+ *   extractors loaded (--use-extractors, which yt-dlp has had since 2022.11.11; the production
+ *   image installs the newest yt-dlp from PyPI), so its generic extractor, which would fetch any
+ *   page on any host it is handed, never runs, and no site can hand yt-dlp on to another site's
+ *   extractor: a Reddit or X post that links somewhere else is "No suitable extractor". (With all
+ *   the sites loaded together, Bandcamp's loose pattern claimed a Reddit post's outside link such
+ *   as http://<internal host>:<port>?x.bandcamp.com/track/y and fetched it: review of Sep 25.)
  *   Never through a shell (spawn with an argument list), the link after '--'. The page and media
  *   links yt-dlp settles on are checked against private addresses before the download, and the
  *   download uses exactly that checked listing (--load-info-json).
+ * - A site's short or share link (on.soundcloud.com, fb.watch, v.redd.it, facebook.com/share/…,
+ *   reddit.com/r/…/s/…, m.tiktok.com/v/….html) has no extractor of its own, so this code follows
+ *   its redirects first, checking every hop the way a direct file is checked, and yt-dlp is given
+ *   the song's own page only when that page is on the same site.
+ * - A private link's key (a SoundCloud secret-share `s-…` part, a Vimeo unlisted hash, any query
+ *   string) never reaches a log line or the stored record: the id is a short hash of the link.
  * - A direct link to an audio or video file: fetched by this code, never by yt-dlp. The name must
  *   resolve only to public addresses (the fork's SSRF rules: private, loopback, link-local, the
  *   cloud metadata address, CGNAT, unique-local, *.internal including railway.internal), every
@@ -73,9 +83,12 @@ export type MediaLinkFound = {
   site: MediaSite;
   /** The site in words: "YouTube", "SoundCloud", "the link" for a direct file. */
   siteName: string;
-  /** Short and log-safe: the YouTube id, "soundcloud:song-name", "file:host/song.mp3". */
+  /** Short and log-safe: the YouTube id, "soundcloud:" plus a short hash of the link (a private
+   * link's key never shows), "file:host/song.mp3". */
   id: string;
   url: string;
+  /** A site's short or share link: its redirects are followed (resolveShortLink) before yt-dlp. */
+  short?: boolean;
 };
 export type MediaLink = MediaLinkFound | { problem: MediaLinkProblem };
 
@@ -88,7 +101,8 @@ const siteRules: readonly SiteRule[] = [
     name: 'SoundCloud',
     hosts: ['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com', 'on.soundcloud.com'],
   },
-  { site: 'bandcamp', name: 'Bandcamp', hosts: ['bandcamp.com'], subdomains: 'bandcamp.com' },
+  /* Only an artist's own subdomain: Bandcamp's extractor takes no link on bare bandcamp.com. */
+  { site: 'bandcamp', name: 'Bandcamp', hosts: [], subdomains: 'bandcamp.com' },
   {
     site: 'tiktok',
     name: 'TikTok',
@@ -115,37 +129,51 @@ const siteRules: readonly SiteRule[] = [
   { site: 'archive', name: 'the Internet Archive', hosts: ['archive.org', 'www.archive.org'] },
 ];
 
-/**
- * The only yt-dlp extractors ever loaded for a media link (yt-dlp reads each as a regular
- * expression matched against its whole lower-case name). No "generic", no "default", no "all",
- * and none of the link shorteners (twitter:shortener follows t.co to anywhere). Checked against
- * yt-dlp 2026.08.19's --list-extractors: exactly these 14 load. A name a later yt-dlp renames
- * simply matches nothing, which fails closed.
- */
-export const MEDIA_EXTRACTORS: readonly string[] = [
-  'youtube',
-  'vimeo',
-  'soundcloud',
-  'bandcamp',
-  'tiktok',
-  'vm\\.tiktok',
-  'instagram',
-  'facebook',
-  'facebook:reel',
-  'twitter',
-  'dailymotion',
-  'twitch:clips',
-  'reddit',
-  'archive\\.org',
-];
+/** Every host a site link may name (a Bandcamp artist's subdomain aside), for the tests. */
+export const MEDIA_SITE_HOSTS: readonly string[] = siteRules.flatMap((rule) => rule.hosts);
 
-/** --use-extractors with the allowlist, and the generic extractor struck out by name as well. */
-export function extractorArgs(): string[] {
-  return ['--use-extractors', [...MEDIA_EXTRACTORS, '-generic'].join(',')];
+/** Hosts yt-dlp's extractor only takes as www (checked with yt-dlp 2026.08.18). */
+const WWW_HOSTS: Readonly<Record<string, string>> = {
+  'tiktok.com': 'www.tiktok.com',
+  'm.tiktok.com': 'www.tiktok.com',
+};
+
+/** A media site yt-dlp is run for (YouTube goes through youtubeAudio; files are fetched here). */
+export type LinkSite = Exclude<MediaSite, 'youtube' | 'file'>;
+
+/**
+ * The only yt-dlp extractors ever loaded, per site: one run loads only the pasted site's own
+ * (yt-dlp reads each name as a regular expression matched against its whole lower-case name).
+ * No "generic", no "default", no "all", and none of the link shorteners (twitter:shortener
+ * follows t.co to anywhere). Checked against yt-dlp 2026.08.18's "Loaded N extractors": one
+ * each, two for TikTok (tiktok, vm.tiktok) and Facebook (facebook, facebook:reel). A name a later
+ * yt-dlp renames simply matches nothing, which fails closed.
+ */
+export const SITE_EXTRACTORS: Readonly<Record<LinkSite, readonly string[]>> = {
+  vimeo: ['vimeo'],
+  soundcloud: ['soundcloud'],
+  bandcamp: ['bandcamp'],
+  tiktok: ['tiktok', 'vm\\.tiktok'],
+  instagram: ['instagram'],
+  facebook: ['facebook', 'facebook:reel'],
+  x: ['twitter'],
+  dailymotion: ['dailymotion'],
+  twitch: ['twitch:clips'],
+  reddit: ['reddit'],
+  archive: ['archive\\.org'],
+};
+
+/** --use-extractors with this site's own extractors, and the generic one struck out by name. */
+export function extractorArgs(site: MediaSite): string[] {
+  const names = Object.prototype.hasOwnProperty.call(SITE_EXTRACTORS, site)
+    ? SITE_EXTRACTORS[site as LinkSite]
+    : undefined;
+  if (!names?.length) throw new YouTubeAudioError('not-supported', `no extractors for ${site}`);
+  return ['--use-extractors', [...names, '-generic'].join(',')];
 }
 
-/** Every yt-dlp run for a media site: no config file can widen it, one item, the allowlist. */
-export function siteArgs(): string[] {
+/** Every yt-dlp run for a media site: no config file can widen it, one item, that site only. */
+export function siteArgs(site: MediaSite): string[] {
   return [
     '--ignore-config',
     '--no-playlist',
@@ -159,7 +187,7 @@ export function siteArgs(): string[] {
     '2',
     '--js-runtimes',
     `node:${process.execPath}`,
-    ...extractorArgs(),
+    ...extractorArgs(site),
   ];
 }
 
@@ -229,6 +257,68 @@ const shortId = (value: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 60);
 
+/** Hosts that only ever redirect to a song's page (no yt-dlp extractor takes them). */
+const SHORT_HOSTS: readonly string[] = ['on.soundcloud.com', 'fb.watch', 'v.redd.it'];
+
+/**
+ * True for a site's short or share link, which yt-dlp's site extractors cannot read (checked with
+ * yt-dlp 2026.08.18: "No suitable extractor" for every one) and which only redirects to the song.
+ */
+export function shortLink(site: MediaSite, url: URL): boolean {
+  const host = bareHost(url.hostname);
+  if (SHORT_HOSTS.includes(host)) return true;
+  if (site === 'facebook') return /^\/share\//i.test(url.pathname);
+  if (site === 'reddit') return /^\/r\/[^/]+\/s\/[^/]+\/?$/i.test(url.pathname);
+  if (site === 'tiktok') return host === 'm.tiktok.com' && /^\/v\/\d+\.html$/i.test(url.pathname);
+  return false;
+}
+
+/** Query parts that only name the public video (Facebook's watch?v=), kept in the record. */
+const PUBLIC_QUERY: Readonly<Partial<Record<MediaSite, readonly string[]>>> = { facebook: ['v'] };
+
+/**
+ * A site link without its private key: no query string (a Vimeo `?h=` or a share token) beyond
+ * PUBLIC_QUERY, no SoundCloud secret-share part (`s-…`), no Vimeo unlisted hash (the hex part
+ * right after the video number). `secrets` lists what was taken out, so log lines can hide it too.
+ */
+export function publicSiteLink(site: MediaSite, url: URL): { link: string; secrets: string[] } {
+  const keep = PUBLIC_QUERY[site] ?? [];
+  const query = new URLSearchParams();
+  const secrets: string[] = [];
+  /* Each part as the link spells it and as it reads decoded, since a log may print either. */
+  for (const piece of url.search.slice(1).split('&').filter(Boolean)) {
+    const equals = piece.indexOf('=');
+    const rawValue = equals < 0 ? '' : piece.slice(equals + 1);
+    const name = decodeSafely((equals < 0 ? piece : piece.slice(0, equals)).replace(/\+/g, ' '));
+    const value = decodeSafely(rawValue.replace(/\+/g, ' '));
+    if (keep.includes(name)) query.append(name, value);
+    else secrets.push(piece, rawValue, value);
+  }
+  if (secrets.length) secrets.push(url.search.slice(1));
+  const segments = url.pathname.split('/');
+  const kept = segments.filter((segment, i) => {
+    const key =
+      (site === 'soundcloud' && /^s-[\w-]+$/i.test(segment)) ||
+      (site === 'vimeo' && i > 0 && /^\d+$/.test(segments[i - 1]) && /^[\da-f]{6,}$/i.test(segment));
+    if (key) secrets.push(segment);
+    return !key;
+  });
+  const search = query.toString();
+  return {
+    link: `${url.origin}${kept.join('/')}${search ? `?${search}` : ''}`,
+    secrets: secrets.filter((part) => part.length >= 4).sort((a, b) => b.length - a.length),
+  };
+}
+
+/** `text` with every private key of a link replaced by "…" (for log lines and error detail). */
+export function hideSecrets(text: string, secrets: readonly string[]): string {
+  return secrets.reduce((out, secret) => out.split(secret).join('…'), text);
+}
+
+/** A site link's log-safe id: the site and a short hash of the whole link, never its parts. */
+const siteId = (site: MediaSite, href: string) =>
+  `${site}:${createHash('sha256').update(href).digest('hex').slice(0, 10)}`;
+
 /**
  * Reads a pasted link. YouTube links become one plain watch link (readYouTubeLink); other big
  * media sites keep their link without its #fragment; a link ending in an audio or video file is
@@ -263,12 +353,16 @@ export function readMediaLink(value: string): MediaLink {
   }
   const rule = siteRule(url.hostname);
   if (!rule) return { problem: 'not-supported' };
+  const short = shortLink(rule.site, url);
+  const www = WWW_HOSTS[bareHost(url.hostname)];
+  if (www && !short) url.hostname = www;
   return {
     kind: 'site',
     site: rule.site,
     siteName: rule.name,
-    id: `${rule.site}:${shortId(decodeSafely(last)) || 'link'}`,
+    id: siteId(rule.site, url.href),
     url: url.href,
+    ...(short ? { short: true } : {}),
   };
 }
 
@@ -661,9 +755,70 @@ function siteFailure(error: unknown, signal: AbortSignal): YouTubeAudioError {
 
 const ytDlp = () => process.env.YT_DLP_PATH || 'yt-dlp';
 
+/** A sign-in wall a share link may send a signed-out server to. */
+const signInPage = /^\/(?:login|accounts\/login|checkpoint)(?:[/.?]|$)/i;
+
+/**
+ * Follows a site's short or share link to the song's own page, without yt-dlp: at most
+ * MEDIA_REDIRECTS hops, each checked before it is fetched exactly as a direct file's hops are
+ * (linkShapeProblem, then publicHost, then the SSRF-safe GET, which never reads a body). The
+ * page it lands on is never fetched here: it must read (readMediaLink) as a link on the SAME
+ * site that is not short itself, and only that page goes to yt-dlp.
+ */
+export async function resolveShortLink(
+  link: MediaLinkFound,
+  options: { signal: AbortSignal; resolve?: Resolve; transport?: Transport },
+): Promise<MediaLinkFound> {
+  if (!link.short) return link;
+  const resolve = options.resolve ?? systemResolve;
+  const transport = options.transport ?? directTransport;
+  let current = new URL(link.url);
+  for (let hop = 0; hop < MEDIA_REDIRECTS; hop++) {
+    const shape = linkShapeProblem(current);
+    if (shape) throw new YouTubeAudioError('blocked-address', `short link hop ${hop}: the address ${shape}`);
+    const where = await publicHost(current.hostname, resolve);
+    if (where) throw new YouTubeAudioError(where, `short link hop ${hop}: ${bareHost(current.hostname)}`);
+    let response: MediaResponse;
+    try {
+      response = await transport(current, options.signal);
+    } catch (error) {
+      throw fetchFailure(error, options.signal);
+    }
+    response.close();
+    if (!redirectCodes.has(response.status)) {
+      if (response.status === 200)
+        throw new YouTubeAudioError('removed', `the short link on ${bareHost(current.hostname)} led nowhere`);
+      throw statusFailure(response.status);
+    }
+    const location = response.header('location');
+    if (!location) throw new YouTubeAudioError('failed', `short link redirect ${response.status} with no address`);
+    let next: URL;
+    try {
+      next = new URL(location, current);
+    } catch {
+      throw new YouTubeAudioError('failed', `short link redirect ${response.status} to an unreadable address`);
+    }
+    const found = readMediaLink(next.href);
+    const to = bareHost(next.hostname);
+    if (!('url' in found)) throw new YouTubeAudioError(found.problem, `the short link led to ${to}`);
+    if (found.kind !== 'site' || found.site !== link.site)
+      throw new YouTubeAudioError('not-supported', `the ${link.site} short link led to ${to}`);
+    if (signInPage.test(next.pathname))
+      throw new YouTubeAudioError('private', `the ${link.site} short link led to a sign-in page`);
+    if (!found.short) return found;
+    current = new URL(found.url);
+  }
+  throw new YouTubeAudioError('redirects', `more than ${MEDIA_REDIRECTS} short link hops`);
+}
+
 async function siteAudio(link: MediaLinkFound, options: MediaAudioOptions): Promise<MediaAudio> {
   const { signal, maxSeconds } = options;
   const log = options.log ?? (() => {});
+  const page = new URL(link.url);
+  const { link: publicLink, secrets } = publicSiteLink(link.site, page);
+  /* A private link's key stays out of every log line and error detail (yt-dlp prints the link). */
+  const hidden = (error: YouTubeAudioError) =>
+    new YouTubeAudioError(error.kind, hideSecrets(error.message, secrets), error.seconds);
   const directory = await mkdtemp(join(options.tmp ?? tmpdir(), 'kade-mediasite-'));
   try {
     const metaSignal = AbortSignal.any([signal, AbortSignal.timeout(options.metadataMs ?? 45000)]);
@@ -671,14 +826,14 @@ async function siteAudio(link: MediaLinkFound, options: MediaAudioOptions): Prom
     try {
       raw = await command(
         ytDlp(),
-        [...siteArgs(), '--flat-playlist', '--dump-single-json', '--skip-download', '--', link.url],
+        [...siteArgs(link.site), '--flat-playlist', '--dump-single-json', '--skip-download', '--', link.url],
         metaSignal,
         undefined,
         16 * 1024 ** 2,
       );
     } catch (error) {
-      log(`${link.site}: metadata failed: ${reason(error)}`);
-      throw siteFailure(error, metaSignal);
+      log(`${link.site}: metadata failed: ${hideSecrets(reason(error), secrets)}`);
+      throw hidden(siteFailure(error, metaSignal));
     }
     let json: unknown;
     try {
@@ -707,7 +862,7 @@ async function siteAudio(link: MediaLinkFound, options: MediaAudioOptions): Prom
         await command(
           ytDlp(),
           [
-            ...siteArgs(),
+            ...siteArgs(link.site),
             '--load-info-json',
             info,
             '--max-filesize',
@@ -726,10 +881,10 @@ async function siteAudio(link: MediaLinkFound, options: MediaAudioOptions): Prom
         )
       ).toString();
     } catch (error) {
-      log(`${link.site}: download failed: ${reason(error)}`);
-      throw siteFailure(error, signal);
+      log(`${link.site}: download failed: ${hideSecrets(reason(error), secrets)}`);
+      throw hidden(siteFailure(error, signal));
     }
-    const tail = printed.replace(/\s+/g, ' ').trim().slice(-300);
+    const tail = hideSecrets(printed.replace(/\s+/g, ' ').trim().slice(-300), secrets);
     if (/larger than max-filesize/i.test(printed)) throw new YouTubeAudioError('too-large', tail);
     const names = (await readdir(directory)).sort();
     const source = names.find((name) => /^source\.[a-z\d]+$/i.test(name));
@@ -740,7 +895,8 @@ async function siteAudio(link: MediaLinkFound, options: MediaAudioOptions): Prom
       title: details.title,
       uploader: details.uploader,
       id: link.id,
-      link: link.url,
+      /* The song's page without its private key (see publicSiteLink), like a file's link. */
+      link: publicLink,
       site: link.site,
       siteName: link.siteName,
     };
@@ -763,5 +919,9 @@ export async function mediaAudio(
   if (link.kind === 'youtube')
     return { ...(await youtubeAudio(link.url, options)), site: 'youtube', siteName: 'YouTube' };
   if (link.kind === 'file') return fileAudio(link, options);
-  return siteAudio(link, options);
+  if (!link.short) return siteAudio(link, options);
+  const page = await resolveShortLink(link, options);
+  options.log?.(`${link.site}: the short link led to ${bareHost(new URL(page.url).hostname)}`);
+  /* The id stays the pasted link's, so every log line about this import names the same one. */
+  return siteAudio({ ...page, id: link.id }, options);
 }

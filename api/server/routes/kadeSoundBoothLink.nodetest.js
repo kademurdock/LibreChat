@@ -381,7 +381,14 @@ test('refusals: other sites, private addresses, not YuE2, empty, and failures co
   res = await gone.link({ engine: 'yue2', url: 'https://www.instagram.com/reel/Cabc123/' });
   assert.equal(res.statusCode, 422);
   assert.match(res.body.error, /^This is private on Instagram/);
-  assert.match(gone.logs.find(([level]) => level === 'warn')[1], /video=instagram:Cabc123 kind=private/, 'a short id, never the whole link');
+  assert.match(gone.logs.find(([level]) => level === 'warn')[1], /video=instagram:[\da-f]{10} kind=private/, 'a short id, never the whole link');
+  assert.doesNotMatch(gone.logs.find(([level]) => level === 'warn')[1], /Cabc123|instagram\.com/);
+  /* A SoundCloud secret share: its key never reaches a log line (review of Sep 25). */
+  const secret = world({ download: async () => { throw new FakeYouTubeError('removed'); } });
+  res = await secret.link({ engine: 'yue2', url: 'https://soundcloud.com/a/b/s-secret123?si=tok4567' });
+  assert.equal(res.statusCode, 422);
+  assert.ok(secret.logs.length > 0);
+  for (const [, line] of secret.logs) assert.doesNotMatch(line, /secret123|tok4567/, line);
 });
 
 test('caps: one import at a time per person, and a daily cap', async () => {
