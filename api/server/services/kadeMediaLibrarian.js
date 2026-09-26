@@ -43,11 +43,23 @@
  * an observable fact, split compound choices into yes/no questions, say that
  * a pasted company history is not where a recording aired, and never ask Jev
  * for a date, a count or a name.
+ *
+ * Part 295 (Sep 26 2026), her words: "I just noticed there's some described
+ * audio tv shows without folders, some family guy and maybe some other empire
+ * etc. They're floating around in needs a folder. It should be able to find a
+ * folder for everything lol." Version 2: nothing stays in intake for good.
+ * Audio in a TV or Movies folder is a folder fact; other intake audio has its
+ * own kinds (songs by kind and decade, stories, talks, episodes); and an item
+ * Jev is unsure of is filed on its best guess with a "Librarian guess" note
+ * she can search for, instead of being left where it was. Items an older
+ * version read and left in intake are read once more (the sweep's second
+ * look). The one exception is her part of the country: an item flagged as
+ * maybe local to her keeps its old handling and waits for her.
  * -------------------------------------------------------------------------- */
 const jev = require('./kadeJev');
 const judges = require('./kadeJevJudges');
 
-const VERSION = 1;
+const VERSION = 2;
 
 function num(name, dflt) {
   const v = parseFloat(process.env[name]);
@@ -66,6 +78,9 @@ function knobs() {
     elsewhere: num('KADE_MEDIA_ELSEWHERE', 0.85),
     elsewhereFlag: num('KADE_MEDIA_ELSEWHERE_FLAG', 0.8),
     tape: num('KADE_MEDIA_MIN_TAPE', 0.7),
+    /* Part 295: under the kind floor, Jev's best choice is still taken as the guess down to here;
+     * below it the choice is noise and the item goes to its medium's catch-all shelf instead. */
+    guess: num('KADE_MEDIA_MIN_GUESS', 0.4),
   };
 }
 
@@ -314,15 +329,82 @@ function brandFact(item) {
   return `Video/Commercials/${brand.category}/${brand.name}/${dec}`;
 }
 
-/** Folder names that state a fact. Returns a path or null. Never asks Jev. */
-function folderFact(item) {
+/* Part 295 (Sep 26 2026). 1,320 described episodes she uploaded on Sep 24 sat in
+ * Audio/Needs Filing/TV/<show>/<her season folders> (Family guy, Empire, The Big Bang Theory, South
+ * Park...). The folder fact above only knew a folder called "described movies and TV", so Jev was asked
+ * what an episode of Family Guy is, called it "Other Audio", and the item was never read again. Audio in a
+ * TV folder is the sound of television (her described episodes, and the few seasons she marked "not
+ * described"); audio in a Movies folder is the sound of films. Both join her described shelf by rule, her
+ * sub-folders kept word for word. Where the shelf already has a folder whose name differs only in letter
+ * case, the shelf's spelling is used ("Family Guy" joins "Family guy"), so a season split between the two
+ * trees (Family Guy Season 12: 7 filed, 14 waiting) becomes one folder again. */
+const TV_FOLDER = /(?:^|\/)Needs Filing\/(?:TV|TV Shows|Television)(?:\/(.+))?$/i;
+const MOVIES_FOLDER = /(?:^|\/)Needs Filing\/(?:Movies|Films?)(?:\/(.+))?$/i;
+const DESCRIBED_ROOT = 'Audio/Described Movies & TV';
+
+/** How the described shelf spells each folder: lower-case path → the folder's own name. `paths` are the shelf's
+ * item paths (the sweep reads them once a pass), `more` the folders this pass is about to make; each list is
+ * sorted, so the choice between two spellings is stable, and a spelling already on the shelf beats a new one. */
+function shelfIndex(paths, more = []) {
+  const index = new Map();
+  for (const list of [paths, more]) {
+    for (const p of [...(list || [])].map(String).sort()) {
+      const segs = p.split('/');
+      for (let i = 1; i <= segs.length; i++) {
+        const key = segs.slice(0, i).join('/').toLowerCase();
+        if (!index.has(key)) index.set(key, segs[i - 1]);
+      }
+    }
+  }
+  return index;
+}
+
+/* The depth rule (her standing rule: a long flat folder is hard work with a screen reader). Half her Sep 24
+ * seasons came as bare season folders ("The Big Bang Theory - Season 2", "Insecure Season 1"), which would
+ * have put 86 folders straight under TV instead of 16. A bare season folder joins a show folder named from it,
+ * her season folder kept inside word for word. A show the shelf already keeps season by season at the top
+ * ("Arthur - Season 1 (1996)") stays that way, and a season folder already on the shelf is used as it is. */
+const SEASON_FOLDER = /^(.*?\S)[\s\-–:]*\b(?:Season|Series)\s*\d+/i;
+function showOf(folder) {
+  const m = SEASON_FOLDER.exec(String(folder || ''));
+  const show = m ? m[1].replace(/[\s\-–:,]+$/, '') : '';
+  return show.length >= 2 ? show : null;
+}
+function flatSeasons(index, tv, show) {
+  const prefix = `${tv}/`.toLowerCase();
+  for (const key of index ? index.keys() : []) {
+    const seg = key.startsWith(prefix) ? key.slice(prefix.length) : '/';
+    if (!seg.includes('/') && (showOf(seg) || '').toLowerCase() === show.toLowerCase()) return true;
+  }
+  return false;
+}
+
+/** Her folders under the described shelf, each spelled as the shelf spells it when only the case differs. */
+function describedPath(rest, index) {
+  const segs = String(rest || '').split('/').filter(Boolean);
+  const tv = `${DESCRIBED_ROOT}/TV`;
+  const show = /^tv$/i.test(segs[0] || '') ? showOf(segs[1]) : null;
+  if (show && !(index && index.has(`${tv}/${segs[1]}`.toLowerCase())) && ((index && index.has(`${tv}/${show}`.toLowerCase())) || !flatSeasons(index, tv, show))) {
+    segs.splice(1, 0, show);
+  }
+  let out = DESCRIBED_ROOT;
+  for (const seg of segs) out = `${out}/${(index && index.get(`${out}/${seg}`.toLowerCase())) || seg}`;
+  return out;
+}
+
+/** Folder names that state a fact. Returns a path or null. Never asks Jev. `index` is shelfIndex(), optional. */
+function folderFact(item, index) {
   if (item.kind !== 'audio') return null;
   const p = String(item.path || '');
   const o = String(item.originalPath || '');
   const described = /(?:^|\/)described movies(?: and| &)? ?(?:tv|television)?(?:\/(.*))?$/i.exec(p);
-  if (described && /Needs Filing/i.test(p)) return described[1] ? 'Audio/Described Movies & TV/' + described[1] : describedShelf(item.title);
+  if (described && /Needs Filing/i.test(p)) return described[1] ? describedPath(described[1], index) : describedShelf(item.title);
   // Her F:\mp3 movies folder: 612 described films in one flat folder.
   if (/(?:^|\/)mp3 movies(?:\/|$)/i.test(p) && /Needs Filing/i.test(p)) return describedShelf(item.title);
+  const tv = TV_FOLDER.exec(p);
+  if (tv) return describedPath('TV/' + (tv[1] || 'Assorted (One-Offs)'), index);
+  const movies = MOVIES_FOLDER.exec(p);
+  if (movies) return movies[1] ? describedPath('Movies/' + movies[1], index) : describedShelf(item.title);
   const tapes = /(?:^|\/)Cassette tapes(?:\/(.*))?$/i.exec(p);
   if (tapes && /Needs Filing/i.test(p)) return 'Audio/Cassettes' + (tapes[1] ? '/' + tapes[1] : '');
   if (/Needs Filing/i.test(p) && /described (?:movie|video|tv)/i.test(o)) return describedShelf(item.title);
@@ -449,6 +531,44 @@ const VHS_Q = {
   criteria: VHS_CRITERIA,
 };
 
+/* Part 295 (Sep 26 2026), the audio intake lane. Intake audio used to get the radio drop folder's question
+ * (Radio Commercial, Video Game Radio, Aircheck, Other Audio), so a song, a story record or an episode was
+ * "Other Audio" and stayed in Needs Filing for good: 24 songs from Mary Poppins, Over the Garden Wall's
+ * composer's cut, a Passover record and Theme From ALF on Sep 26. These kinds split what "Other Audio" held.
+ * The three radio kinds keep the radio judge's own wording and routes (Springfield airchecks and adverts go
+ * to her Ozarks shelf). Which kind of music is a separate question, asked alongside, so the kind of recording
+ * is never split four ways between kinds of song. */
+const AUDIO_INTAKE_KIND_CRITERIA = {
+  'Radio Commercial': judges.AUDIO_KIND_CRITERIA['Radio Commercial'],
+  'Video Game Radio': judges.AUDIO_KIND_CRITERIA['Video Game Radio'],
+  Aircheck: judges.AUDIO_KIND_CRITERIA.Aircheck,
+  'Song or music': 'A song, a theme tune, an instrumental or another piece of music: a single, an album or soundtrack track, or a demo of one.',
+  'Episode of a TV programme': 'The sound of one episode of a television programme, often with a narrator describing the picture for blind listeners.',
+  'Whole film': 'The sound of a whole film, often with a narrator describing the picture for blind listeners.',
+  'Story or audiobook': 'A story or book read aloud: an audiobook, a book on tape, a read-along record, a radio drama.',
+  'Speech or talk': 'Somebody speaking, not telling a story: a speech, sermon, lecture, interview, seminar or sales talk.',
+  'Home recording': "Somebody's own recording of their life: a family tape, a voice message, friends talking, a recital.",
+  'Something else': 'Sound effects, a test tone, or a title and description too bare to say. Do not put an advertiser and a spot name here.',
+};
+const AUDIO_INTAKE_KIND_Q = {
+  type: 'choice',
+  instructions:
+    'An item from an audio archive is described by `title`, `folder` and `description`. The description is the uploader\'s own note; it may be empty, or only repeat the title. Say what kind of recording it is. Nearly every real advert in this archive is titled with the advertiser, then a dash, then the name of the spot in quotation marks, as in "Folgers - Checkout Commotion" or "Sprint - Mrs Chavez": that shape is a Radio Commercial even when the quoted words sound like a song. The folder is where the file was dropped and is a hint, not the answer. Pick the single best fit.',
+  criteria: AUDIO_INTAKE_KIND_CRITERIA,
+};
+const MUSIC_KIND_CRITERIA = {
+  'TV & Movie Songs': 'A song, theme tune or score from a television programme, a film, a cartoon or a stage musical, or a demo written for one.',
+  "Children's Music": "Songs made for young children: nursery rhymes, sing-alongs, lullabies, learning songs, a children's album.",
+  'Religious & Holiday Music': 'Hymns, gospel and worship songs, and songs for a holiday or festival such as Christmas, Hanukkah, Passover or Easter.',
+  'Assorted Music': 'Any other song or music: pop, rock, country, jazz, classical, an instrumental, an album track.',
+};
+const MUSIC_KIND_Q = {
+  type: 'choice',
+  instructions:
+    'Treat the item described by `title`, `folder` and `description` as a song or a piece of music. Say which kind it is, judging by what the title and description say it comes from or who it was made for, not by how a word in the title sounds. Pick the single best fit.',
+  criteria: MUSIC_KIND_CRITERIA,
+};
+
 const MO_RE = /\b(?:Missouri|Springfield,? M[Oo]|Joplin|Branson|Ozarks?|St\.? Louis|Kansas City|Columbia,? M[Oo]|Jefferson City|Cape Girardeau|Sedalia|Rolla|Lebanon,? M[Oo]|West Plains|Poplar Bluff|Nixa|Republic,? M[Oo]|Hannibal|Kirksville|St\.? Joseph|Independence,? M[Oo]|Lake of the Ozarks|Osage Beach|Neosho|Carthage,? M[Oo]|Bolivar,? M[Oo]|Warrensburg|El Dorado Springs|Silver Dollar City|Bass Pro|Show-Me|KSDK|KMOV|KTVI|KPLR|KDNL|KETC|WDAF|KMBC|KCTV|KSHB|KSMO|KCPT|KYTV|KY3|KOLR|KSPR|KDEB|KOZK|KODE|KSNF|KOAM|KFVS|KOMU|KRCG|KMIZ|KQTV|KTVO|KHQA|KTTS|KWTO|KGBX|KXUS|KMOX|KSHE|KCMO|KPRS)\b/;
 const NONUS_RE = /\b(?:UK|U\.K\.|British|Britain|England|English advert|Scotland|Scottish|Welsh|Ireland|Irish TV|Canada|Canadian|Australia|Australian|New Zealand|ITV|BBC|Channel 4|Channel 5|Sky One|CBC|CTV|Global TV|YTV|Teletoon|MuchMusic|Nine Network|Seven Network|Network Ten|Mexico|Mexican|Japan|Japanese|Germany|German|France|French|Spain|Spanish|Brazil|Brazilian|Italy|Italian|Netherlands|Dutch|Philippines|Filipino|India|Indian TV|Europe|European)\b/;
 /* Her part of the country besides Missouri: Arkansas and the Ozarks edges of Kansas and
@@ -487,7 +607,7 @@ function questionsFor(item) {
   const q = {};
   if (item.kind === 'audio') {
     if (zone !== 'intake') return null;
-    Object.assign(q, { audioKind: judges.AUDIO_KIND_Q, ozarks: judges.OZARKS_Q, category: CATEGORY_Q });
+    Object.assign(q, { audioKind: AUDIO_INTAKE_KIND_Q, musicKind: MUSIC_KIND_Q, ozarks: judges.OZARKS_Q, category: CATEGORY_Q });
   } else {
     const family = familyOf(item.path);
     if (zone === 'intake' || !['other', 'otherads', 'break', 'political', 'infomercial'].includes(family)) q.kind = KIND_Q;
@@ -560,6 +680,95 @@ function routeByKind(item, kind, category, dec, deps) {
   }
 }
 
+/* ── always a folder (Part 295) ──────────────────────────────────────────
+ * Version 1 left an intake item where it was whenever Jev was under the kind
+ * floor, and never read it again: 1,546 items were waiting on Sep 26. Now the
+ * item goes to Jev's best choice anyway, or to its medium's catch-all shelf
+ * when that choice is noise (under `guess`) or has no shelf ("Something
+ * else"), and it carries a note she can search for: "Librarian guess:
+ * Commercials/Other Commercials/1990s (0.55). Check this one." Two things
+ * never happen on a guess: nothing lands on or leaves her Ozarks and Missouri
+ * shelves, and an item flagged as maybe local to her waits for her as before. */
+const CATCHALL_AD = /\b(?:commercials?|ads?|adverts?|advertisements?|spots?)\b/i;
+function guessed(out, from, to, confidence, what) {
+  if (!to || to === from) return out;
+  out.flags.push(`Librarian guess: ${to.replace(/^(?:Videos?|Audio)\//i, '')} (${two(confidence || 0)}). Check this one.`);
+  return Object.assign(out, { to, why: `guess: ${what}`, confidence: confidence || 0 });
+}
+
+/** Where an audio kind goes; null for "Something else", or an unknown kind. The decade is read by rule. */
+function audioShelf(item, choice, a, dec, k) {
+  switch (choice) {
+    case 'Video Game Radio': {
+      // The radio judge names the game after the drop folder; an intake folder is not a game.
+      const folder = String(item.path || '').split('/').pop();
+      return `Audio/Video Game Radio/${INTAKE.test(folder) ? 'Other Games' : judges.audioGame(item)}`;
+    }
+    case 'Radio Commercial':
+    case 'Aircheck':
+      return judges.audioDestination(item, { kind: { choice, confidence: 1 }, ozarks: a.ozarks, category: a.category });
+    case 'Song or music': {
+      const m = choiceOf(a, 'musicKind');
+      const shelf = Object.prototype.hasOwnProperty.call(MUSIC_KIND_CRITERIA, m.choice) && m.confidence >= k.category ? m.choice : 'Assorted Music';
+      return `Audio/Music/${shelf}/${dec}`;
+    }
+    case 'Episode of a TV programme':
+      return `${DESCRIBED_ROOT}/TV/Assorted (One-Offs)`;
+    case 'Whole film':
+      return describedShelf(item.title);
+    case 'Story or audiobook':
+      return `Audio/Audiobooks/${dec}`;
+    case 'Speech or talk':
+      return `Audio/Spoken Word/${dec}`;
+    case 'Home recording':
+      return `Audio/Home Recordings/${dec}`;
+    default:
+      return null;
+  }
+}
+
+/* The radio kinds have Ozarks shelves of their own (and a game is nobody's town); every other kind of
+ * recording from her area waits for her, flagged, rather than going to a national shelf. */
+const AUDIO_LOCAL_OK = new Set(['Radio Commercial', 'Aircheck', 'Video Game Radio']);
+function decideAudio(item, a, dec, k, out) {
+  const from = String(item.path || '');
+  const ak = judges.audioKnobs();
+  const kind = choiceOf(a, 'audioKind');
+  const known = Object.prototype.hasOwnProperty.call(AUDIO_INTAKE_KIND_CRITERIA, kind.choice);
+  const oz = noulOf(a, 'ozarks');
+  const local = oz !== null && oz >= ak.minOzarks;
+  const shelf = known && (AUDIO_LOCAL_OK.has(kind.choice) || !local) ? audioShelf(item, kind.choice, a, dec, k) : null;
+  if (kind.choice === 'Home recording' && kind.confidence >= 0.8 && !local) out.flags.push('Space review: family or local home recording.');
+  if (shelf && kind.confidence >= ak.minKind) {
+    return Object.assign(out, { to: shelf !== from ? shelf : null, why: 'audio: ' + kind.choice, confidence: kind.confidence });
+  }
+  if (local) {
+    out.flags.push(`Jev review: Ozarks, unsure which local shelf (${two(oz)}).`);
+    return out;
+  }
+  const best = shelf && kind.confidence >= k.guess ? shelf : null;
+  return guessed(out, from, best || `Audio/Other Audio/${dec}`, kind.confidence, best ? kind.choice : 'no sure kind');
+}
+
+/* ── review notes (Part 295) ─────────────────────────────────────────────
+ * meta.review holds one sentence per flag. A second read keeps every note it
+ * does not say again, replaces one it says again with the new wording (the
+ * number may have moved), and drops the two that are worked out afresh on
+ * every read: the guess, and "another is kept". */
+const NOTE_START = /\s*(?=(?:Jev review|Space review|Librarian guess):)/;
+const noteKey = (s) => String(s).trim().replace(/\s*\(\d(?:\.\d+)?\)\.?$/, '').replace(/\.$/, '');
+const notesOf = (review) => String(review || '').split(NOTE_START).map((s) => s.trim()).filter(Boolean);
+function reviewNote(old, flags) {
+  const fresh = [...new Set((flags || []).map(String).filter(Boolean))];
+  const keys = new Set(fresh.map(noteKey));
+  const kept = notesOf(old).filter((s) => !/^(?:Librarian guess:|Space review: identical copy)/.test(s) && !keys.has(noteKey(s)));
+  return [...kept, ...fresh].join(' ');
+}
+/** A person has put the item where it belongs: the guess note comes off; every other note stays. */
+function withoutGuess(review) {
+  return notesOf(review).filter((s) => !/^Librarian guess:/.test(s)).join(' ');
+}
+
 /**
  * One item and Jev's answers → { to, why, confidence, flags, tags }.
  * `to` is null when it stays put. Pure: a test holds every rule still.
@@ -570,7 +779,7 @@ function decide(item, answers, deps = {}, k = knobs()) {
   const from = String(item.path || '');
   const zone = zoneOf(item);
   const dec = decadeOf(item);
-  const fact = folderFact(item);
+  const fact = folderFact(item, deps.describedShelves);
   if (fact) return { ...out, to: fact !== from ? fact : null, why: 'folder says so', confidence: 1 };
   const block = blockFact(item);
   if (block) return { ...out, to: block !== from ? block : null, why: 'programming block named in the title', confidence: 1 };
@@ -589,9 +798,7 @@ function decide(item, answers, deps = {}, k = knobs()) {
 
   if (item.kind === 'audio') {
     if (zone !== 'intake') return out;
-    const to = judges.audioDestination(item, { kind: a.audioKind, ozarks: a.ozarks, category: a.category });
-    if (to && to !== from) Object.assign(out, { to, why: 'audio: ' + (a.audioKind && a.audioKind.choice), confidence: (a.audioKind && a.audioKind.confidence) || 0 });
-    return out;
+    return decideAudio(item, a, dec, k, out);
   }
 
   const kind = choiceOf(a, 'kind');
@@ -625,10 +832,16 @@ function decide(item, answers, deps = {}, k = knobs()) {
   if (zone === 'local') return out;
 
   if (zone === 'intake') {
-    if (kind.confidence < k.kind || !kind.choice) return out;
-    const to = routeByKind(item, kind.choice, category, dec, deps);
-    if (to && to !== from) Object.assign(out, { to, why: 'intake: ' + kind.choice + (category && kind.choice === 'One product advert' ? ' / ' + category : ''), confidence: kind.confidence });
-    return out;
+    const to = kind.choice && kind.confidence >= k.kind ? routeByKind(item, kind.choice, category, dec, deps) : null;
+    if (to) {
+      if (to !== from) Object.assign(out, { to, why: 'intake: ' + kind.choice + (category && kind.choice === 'One product advert' ? ' / ' + category : ''), confidence: kind.confidence });
+      return out;
+    }
+    /* Part 295: never left in intake, except what may be local to her (flagged above), which waits for her. */
+    if (out.flags.some((f) => f.includes('unsure if local'))) return out;
+    const best = kind.choice && kind.confidence >= k.guess ? routeByKind(item, kind.choice, category, dec, deps) : null;
+    const shelf = best || (CATCHALL_AD.test(item.title || '') ? `Video/Commercials/Other Commercials/${dec}` : `Video/Other Video/${dec}`);
+    return guessed(out, from, shelf, kind.confidence, best ? kind.choice : 'no sure kind');
   }
 
   /* Already filed: only a clear contradiction moves. */
@@ -795,4 +1008,5 @@ module.exports = {
   VERSION, knobs, decadeOf, clean, networkOf, zoneOf, folderFact, blockFact, blockOf, BLOCKS, brandFact, brandOf, BRANDS, familyOf, categoryOf, stateOf, questionsFor,
   routeByKind, decide, fileMedia, KIND_Q, KIND_CRITERIA, CATEGORY_Q, VHS_Q, VHS_CRITERIA, FOREIGN_Q, MO_RE, NONUS_RE,
   HOME_Q, ELSEWHERE_Q, AR_OZARKS_RE, ourArea, wantState, wantQuestions, wantVerdict, judgeWanted, fullSportsGame,
+  shelfIndex, describedPath, audioShelf, AUDIO_INTAKE_KIND_Q, AUDIO_INTAKE_KIND_CRITERIA, MUSIC_KIND_Q, MUSIC_KIND_CRITERIA, reviewNote, withoutGuess,
 };

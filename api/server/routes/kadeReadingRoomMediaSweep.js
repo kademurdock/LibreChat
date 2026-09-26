@@ -12,6 +12,10 @@
  *      intake folder (Needs Filing, Archive Intake, the "(Review)" folders).
  *      These are filed on Jev's word straight away: that is the point of a
  *      librarian, and a new upload has no older human choice to overrule.
+ *   1b. With room left, the second look (Part 295, Sep 26 2026): an intake item
+ *      an older version of the librarian read and left where it was is read
+ *      once more under the current rules (librarian.VERSION). An item that
+ *      was filed is never read again, nor one whose move was undone.
  *   2. With room left, the rest of the library, oldest first, one item once.
  *      Here a move is only a PROPOSAL (meta.jevFiling.proposal) unless
  *      KADE_MEDIA_AUDIT_APPLY=1, so the accuracy pass over what "a dumb script"
@@ -19,9 +23,11 @@
  *
  * Every item it has read carries meta.jevFiling = { v, at, zone, from, to or
  * proposal, why, confidence }. `from` makes each move undoable (see /undo),
- * and the presence of the field is what keeps an item from being read twice.
- * Flags go in meta.review ("Jev review: made outside the US (0.93).") and are
- * never moves or deletions; TubeVault shows them as review notes.
+ * and the presence of the field is what keeps an item from being read twice
+ * (the second look aside). Flags go in meta.review ("Jev review: made outside
+ * the US (0.93).", "Librarian guess: Other Video/1980s (0.31). Check this
+ * one.") and are never moves or deletions; TubeVault shows them as review
+ * notes. A new read adds to her notes; it never wipes one it does not repeat.
  *
  * Knobs: KADE_MEDIA_SWEEP=0 kills; KADE_MEDIA_SWEEP_INTERVAL_MIN (5);
  * KADE_MEDIA_SWEEP_BATCH (200); KADE_MEDIA_SWEEP_DAILY_USD (2.00);
@@ -47,6 +53,15 @@ const SINCE = () => {
 const INTAKE_RE = /(?:^|\/)(?:Needs Filing|Archive Intake|Found Media|Broadcast Presentation|Advertising)(?:\/|$)|\(Review\)/i;
 const FIELDS = '_id kind title author path originalPath description meta tags createdAt tracks.bytes owner fileCheck.state fileCheck.of';
 const UNREAD = { 'meta.jevFiling': { $exists: false }, 'meta.jevFilingTries': { $not: { $gte: 3 } } };
+/* Part 295, the second look: read by an older librarian, still in intake, never moved by it (no `to`, so
+ * neither filed nor undone). Reading it writes the current version, so it is looked at once per version. */
+const AGAIN = () => ({
+  path: INTAKE_RE,
+  'meta.jevFiling.v': { $lt: librarian.VERSION },
+  'meta.jevFiling.to': { $exists: false },
+  'meta.jevFiling.undone': { $exists: false },
+  'meta.jevFilingTries': { $not: { $gte: 3 } },
+});
 /* Sep 25 2026, the one-file rule (services/kadeLibraryFiles.js): a shortcut stays in the folder it was
  * put in, so the sweep never moves one; and a new upload the verifier has not compared yet (it runs
  * every 2 minutes) waits for it, up to an hour, so its duplicate flag is the exact one. */
@@ -72,13 +87,25 @@ function spentToday() {
   return spent.usd;
 }
 
-async function deps() {
+async function deps(items = []) {
+  const out = {};
   try {
     const { broadcastShelf } = require('@librechat/api');
-    return { broadcastShelf };
-  } catch (_) {
-    return {};
+    out.broadcastShelf = broadcastShelf;
+  } catch (_) {}
+  /* Part 295: the described shelf's folders as spelled, so a TV folder fact joins "Family guy" instead of
+   * starting a "Family Guy" beside it. One read, only when the batch holds audio waiting in Needs Filing. The
+   * folders this batch will make are added after the shelf's own, so two seasons of one show typed two ways
+   * ("Schitt's Creek - Season 1", "schitt's creek - Season 2") land in one show folder even in one pass. */
+  if (items.some((i) => i && i.kind === 'audio' && /Needs Filing/i.test(String(i.path || '')))) {
+    try {
+      const shelf = await KadeBook.distinct('path', { kind: 'audio', path: /^Audio\/Described Movies & TV\// });
+      const first = librarian.shelfIndex(shelf);
+      const planned = items.map((i) => librarian.folderFact(i, first)).filter((p) => p && p.startsWith('Audio/Described Movies & TV/'));
+      out.describedShelves = librarian.shelfIndex(shelf, planned);
+    } catch (_) {}
   }
+  return out;
 }
 
 function bytesOf(item) {
@@ -103,15 +130,19 @@ async function keptCopies(items) {
 }
 
 async function pick(limit) {
-  const base = { kind: { $in: ['video', 'audio'] }, state: 'ready', ...UNREAD, ...FILE_RULES() };
-  const fresh = await KadeBook.find({ ...base, $or: [{ createdAt: { $gte: SINCE() } }, { path: INTAKE_RE }] }, FIELDS).sort({ createdAt: -1 }).limit(limit).lean();
+  const base = { kind: { $in: ['video', 'audio'] }, state: 'ready', ...FILE_RULES() };
+  const fresh = await KadeBook.find({ ...base, ...UNREAD, $or: [{ createdAt: { $gte: SINCE() } }, { path: INTAKE_RE }] }, FIELDS).sort({ createdAt: -1 }).limit(limit).lean();
   const marked = fresh.map((i) => ({ ...i, _fresh: new Date(i.createdAt) >= SINCE() }));
-  if (fresh.length >= limit || auditDone) return marked;
-  const seen = new Set(fresh.map((i) => String(i._id)));
-  const old = await KadeBook.find({ ...base, ...(auditAfter ? { _id: { $gt: auditAfter } } : {}) }, FIELDS).sort({ _id: 1 }).limit(limit).lean();
+  if (marked.length < limit) {
+    const again = await KadeBook.find({ ...base, ...AGAIN() }, FIELDS).sort({ createdAt: -1 }).limit(limit - marked.length).lean();
+    marked.push(...again.map((i) => ({ ...i, _fresh: new Date(i.createdAt) >= SINCE(), _again: true })));
+  }
+  if (marked.length >= limit || auditDone) return marked;
+  const seen = new Set(marked.map((i) => String(i._id)));
+  const old = await KadeBook.find({ ...base, ...UNREAD, ...(auditAfter ? { _id: { $gt: auditAfter } } : {}) }, FIELDS).sort({ _id: 1 }).limit(limit).lean();
   if (!old.length) auditDone = true;
   else auditAfter = old[old.length - 1]._id;
-  return [...marked, ...old.filter((i) => !seen.has(String(i._id))).slice(0, limit - fresh.length)];
+  return [...marked, ...old.filter((i) => !seen.has(String(i._id))).slice(0, limit - marked.length)];
 }
 
 /** One pass. Returns a summary; never throws. */
@@ -125,10 +156,10 @@ async function sweepOnce({ limit = BATCH(), userId = null } = {}) {
     if (!items.length) return (lastPass = { ran: true, read: 0, at: new Date() });
     const byId = new Map(items.map((i) => [String(i._id), i]));
     const kept = await keptCopies(items);
-    const { decisions, costUSD } = await librarian.fileMedia(items.map((i) => ({ ...i, bytes: bytesOf(i) })), { deps: await deps() });
+    const { decisions, costUSD } = await librarian.fileMedia(items.map((i) => ({ ...i, bytes: bytesOf(i) })), { deps: await deps(items) });
     spent.usd += costUSD;
     const ops = [];
-    const tally = { read: items.length, moved: 0, proposed: 0, flagged: 0, errors: 0, byShelf: {} };
+    const tally = { read: items.length, moved: 0, proposed: 0, flagged: 0, guessed: 0, again: 0, errors: 0, byShelf: {} };
     for (const d of decisions) {
       const item = byId.get(String(d.item._id));
       const from = String(item.path || '');
@@ -144,7 +175,11 @@ async function sweepOnce({ limit = BATCH(), userId = null } = {}) {
       const record = { v: librarian.VERSION, at: new Date(), zone, from, why: d.why || '', confidence: Number((d.confidence || 0).toFixed(3)) };
       if (d.to) record[apply ? 'to' : 'proposal'] = d.to;
       const set = { 'meta.jevFiling': record };
-      if (flags.length) set['meta.review'] = flags.join(' ');
+      const before = String((item.meta && item.meta.review) || '');
+      const review = librarian.reviewNote(before, flags);
+      if (review !== before) set['meta.review'] = review;
+      if (item._again) tally.again++;
+      if (String(d.why || '').startsWith('guess')) tally.guessed++;
       if (apply) {
         set.path = d.to;
         set.category = librarian.categoryOf(d.to, item.kind);
@@ -159,7 +194,7 @@ async function sweepOnce({ limit = BATCH(), userId = null } = {}) {
     }
     const result = ops.length ? await KadeBook.bulkWrite(ops, { ordered: false }) : { modifiedCount: 0 };
     lastPass = { ran: true, at: new Date(), ms: Date.now() - t0, costUSD: Number(costUSD.toFixed(4)), written: result.modifiedCount || 0, ...tally };
-    logger.info(`[library/media-sweep] read ${tally.read}: moved ${tally.moved}, proposed ${tally.proposed}, flagged ${tally.flagged}, errors ${tally.errors}, $${costUSD.toFixed(4)} ${JSON.stringify(tally.byShelf).slice(0, 400)}`);
+    logger.info(`[library/media-sweep] read ${tally.read}: moved ${tally.moved}, proposed ${tally.proposed}, flagged ${tally.flagged}, guessed ${tally.guessed}, second look ${tally.again}, errors ${tally.errors}, $${costUSD.toFixed(4)} ${JSON.stringify(tally.byShelf).slice(0, 400)}`);
     if (costUSD > 0) {
       logKadeUsage({ userId: userId || items[0].owner, service: 'describe', quantity: tally.read, unit: 'items', costUSD, metadata: { source: 'media-librarian', moved: tally.moved, proposed: tally.proposed } }).catch?.(() => {});
     }
@@ -174,13 +209,15 @@ async function sweepOnce({ limit = BATCH(), userId = null } = {}) {
 
 async function status() {
   const base = { kind: { $in: ['video', 'audio'] }, state: 'ready' };
-  const [unread, intake, proposals, flagged] = await Promise.all([
+  const [unread, intake, proposals, flagged, secondLook, guesses] = await Promise.all([
     KadeBook.countDocuments({ ...base, ...UNREAD }),
     KadeBook.countDocuments({ ...base, path: INTAKE_RE }),
     KadeBook.countDocuments({ ...base, 'meta.jevFiling.proposal': { $exists: true } }),
     KadeBook.countDocuments({ ...base, 'meta.review': { $exists: true, $ne: '' } }),
+    KadeBook.countDocuments({ ...base, ...AGAIN() }),
+    KadeBook.countDocuments({ ...base, 'meta.review': /Librarian guess:/ }),
   ]);
-  return { enabled: ENABLED(), auditApply: AUDIT_APPLY(), auditDone, intervalMin: INTERVAL_MIN(), batch: BATCH(), dailyUSD: DAILY_USD(), spentTodayUSD: Number(spentToday().toFixed(4)), unread, intake, proposals, flagged, lastPass };
+  return { enabled: ENABLED(), auditApply: AUDIT_APPLY(), auditDone, intervalMin: INTERVAL_MIN(), batch: BATCH(), dailyUSD: DAILY_USD(), spentTodayUSD: Number(spentToday().toFixed(4)), version: librarian.VERSION, unread, intake, secondLook, proposals, flagged, guesses, lastPass };
 }
 
 /** Put back every sweep move made since `since` whose item still sits where the sweep put it. */
@@ -219,7 +256,7 @@ function mount(router, { requireJwtAuth, isAdmin, express }) {
     running = true;
     try {
       const items = await KadeBook.find({ _id: { $in: ids }, state: 'ready', kind: { $in: ['video', 'audio'] }, $or: [{ shared: true }, { owner: req.user.id }] }, FIELDS + ' category').lean();
-      const rules = await deps();
+      const rules = await deps(items);
       const result = await previewLibraryFolders(items, { zoneOf: librarian.zoneOf, categoryOf: librarian.categoryOf, fileMedia: (batch) => librarian.fileMedia(batch, { deps: rules }) });
       spent.usd += result.costUSD;
       if (result.costUSD > 0) logKadeUsage({ userId: req.user.id, service: 'describe', quantity: items.length, unit: 'items', costUSD: result.costUSD, metadata: { source: 'filing-preview', proposed: result.changes.length } }).catch?.(() => {});

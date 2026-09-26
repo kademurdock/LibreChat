@@ -1949,7 +1949,7 @@ router.post(['/librarian/refile-commercials', '/librarian/refile-books'], requir
   } catch (e) { logger.warn(`[library/refile] ${e.message}`); res.status(500).json({ error: 'Could not refile those commercials.' }); }
 });
 const sorter = require('./kadeReadingRoomSort');
-const { zoneOf: mediaZoneOf } = require('~/server/services/kadeMediaLibrarian');
+const { zoneOf: mediaZoneOf, withoutGuess } = require('~/server/services/kadeMediaLibrarian');
 /* The librarian's location doubts, as the media sweep writes them into meta.review. */
 const LOCATION_DOUBT = /(?:Space review: local to another area|Jev review: Missouri \([^)]*\), unsure if local)(?: \(\d(?:\.\d+)?\))?\.\s*/g;
 const LOCATION_DOUBT_ANY = /Space review: local to another area|unsure if local/;
@@ -2015,8 +2015,19 @@ router.post('/librarian/organize', opsOrAdmin(isAdmin), express.json({ limit: '1
       }));
       if (fixes.length) cleared = (await KadeBook.bulkWrite(fixes)).modifiedCount || 0;
     }
-    logger.info(`[library/organize] user=${req.user ? req.user.id : 'ops'} matched=${result.matchedCount} changed=${result.modifiedCount} doubtsCleared=${cleared}`);
-    res.json({ ok: true, matched: result.matchedCount, changed: result.modifiedCount, doubtsCleared: cleared });
+    /* Part 295: "Librarian guess: ... Check this one." is answered by a reviewed move, so the note comes off
+     * an item that now sits in the folder a move just gave it; every other note stays. */
+    let guessesCleared = 0;
+    const placed = new Map(operations.filter((op) => op.updateOne.update.$set.path !== op.updateOne.filter.path).map((op) => [String(op.updateOne.filter._id), op.updateOne.update.$set.path]));
+    if (placed.size) {
+      const guessed = await KadeBook.find({ _id: { $in: [...placed.keys()] }, 'meta.review': /Librarian guess:/ }, '_id path meta.review').lean();
+      const fixes = guessed.filter((d) => placed.get(String(d._id)) === d.path).map((d) => ({
+        updateOne: { filter: { _id: d._id, path: d.path, 'meta.review': d.meta.review }, update: { $set: { 'meta.review': withoutGuess(d.meta.review) } } },
+      }));
+      if (fixes.length) guessesCleared = (await KadeBook.bulkWrite(fixes)).modifiedCount || 0;
+    }
+    logger.info(`[library/organize] user=${req.user ? req.user.id : 'ops'} matched=${result.matchedCount} changed=${result.modifiedCount} doubtsCleared=${cleared} guessesCleared=${guessesCleared}`);
+    res.json({ ok: true, matched: result.matchedCount, changed: result.modifiedCount, doubtsCleared: cleared, guessesCleared });
   } catch (e) { logger.warn(`[library/organize] ${e.message}`); res.status(500).json({ error: 'Could not apply the reviewed changes.' }); }
 });
 

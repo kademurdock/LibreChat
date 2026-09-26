@@ -34,6 +34,166 @@ test('folder facts: both mp3 movies collections join her alphabetical described 
   assert.strictEqual(L.folderFact({ kind: 'video', title: 'Zoo', path: 'Video/Needs Filing/mp3 movies' }), null, 'audio only');
 });
 
+test('folder facts: audio in a TV or Movies folder joins her described shelf, her folders kept word for word (her word, Sep 26)', () => {
+  const to = (path, title = 'x', index) => L.decide({ kind: 'audio', title, path }, {}, { describedShelves: index }).to;
+  // Her Sep 24 upload, as it sits in Needs Filing.
+  assert.strictEqual(to('Audio/Needs Filing/TV/Family guy/Family Guy - Season 12 (2013)', '[S12.E08] Christmas Guy'), 'Audio/Described Movies & TV/TV/Family guy/Family Guy - Season 12 (2013)');
+  assert.strictEqual(to('Audio/Needs Filing/TV/Empire/Empire Season 3 U S'), 'Audio/Described Movies & TV/TV/Empire/Empire Season 3 U S');
+  assert.strictEqual(to('Audio/Needs Filing/TV/The Big Bang Theory - Season 2'), 'Audio/Described Movies & TV/TV/The Big Bang Theory/The Big Bang Theory - Season 2', 'a bare season folder joins a show folder: depth');
+  assert.strictEqual(to('Audio/Needs Filing/TV/Insecure Season 2 (2018)'), 'Audio/Described Movies & TV/TV/Insecure/Insecure Season 2 (2018)');
+  assert.strictEqual(to('Audio/Needs Filing/TV/Rick and Morty - Season 1 [New Description] (2013)'), 'Audio/Described Movies & TV/TV/Rick and Morty/Rick and Morty - Season 1 [New Description] (2013)');
+  assert.strictEqual(to('Audio/Needs Filing/TV/The Fairly OddParents- Fairly Odder - Season 1 (2022)'), 'Audio/Described Movies & TV/TV/The Fairly OddParents- Fairly Odder/The Fairly OddParents- Fairly Odder - Season 1 (2022)');
+  assert.strictEqual(to('Audio/Needs Filing/TV/Hillary (2020)'), 'Audio/Described Movies & TV/TV/Hillary (2020)', 'no season in the name: hers as it is');
+  assert.strictEqual(to('Audio/Needs Filing/TV/arrested development'), 'Audio/Described Movies & TV/TV/arrested development');
+  assert.strictEqual(to('Audio/Needs Filing/TV/Family guy/Family Guy Season 9 not described/Season 9 not described'), 'Audio/Described Movies & TV/TV/Family guy/Family Guy Season 9 not described/Season 9 not described');
+  assert.strictEqual(to('Audio/Needs Filing/TV'), 'Audio/Described Movies & TV/TV/Assorted (One-Offs)', 'a loose episode still gets a folder');
+  assert.strictEqual(to('Audio/Needs Filing/Movies/Disney'), 'Audio/Described Movies & TV/Movies/Disney');
+  assert.strictEqual(to('Audio/Needs Filing/Movies', 'Zootopia'), 'Audio/Described Movies & TV/Movies/Z', 'a loose film joins her alphabetical shelf');
+  // Any case in her folder names; the shelf's own spelling wins when only the case differs.
+  const index = L.shelfIndex([
+    'Audio/Described Movies & TV/TV/Family guy/Family Guy - Season 12 (2013)',
+    'Audio/Described Movies & TV/TV/Bob\'s burgers/Bob\'s Burgers season 2',
+    'Audio/Described Movies & TV/Movies/B',
+  ]);
+  assert.strictEqual(to('Audio/Needs Filing/tv/Family Guy/family guy - season 12 (2013)', 'x', index), 'Audio/Described Movies & TV/TV/Family guy/Family Guy - Season 12 (2013)', 'the split season is one folder again');
+  assert.strictEqual(to('Audio/Needs Filing/TV/Family Guy/Family Guy - Season 20 (2021)', 'x', index), 'Audio/Described Movies & TV/TV/Family guy/Family Guy - Season 20 (2021)', 'a new season goes inside her show folder, new name kept');
+  assert.strictEqual(to('Audio/Needs Filing/TV/Bob\'s Burgers/Bob\'s Burgers Season 2', 'x', index), 'Audio/Described Movies & TV/TV/Bob\'s burgers/Bob\'s Burgers season 2');
+  assert.strictEqual(to('Audio/Needs Filing/movies/b', 'x', index), 'Audio/Described Movies & TV/Movies/B');
+  assert.strictEqual(to('Audio/Needs Filing/TV/Star Season 1', 'x', index), 'Audio/Described Movies & TV/TV/Star/Star Season 1', 'no match: a new show folder, her season folder inside as she typed it');
+  // A show the shelf keeps season by season at the top stays that way; a season already there is used.
+  const flat = L.shelfIndex(['Audio/Described Movies & TV/TV/Arthur - Season 1 (1996)', 'Audio/Described Movies & TV/TV/Animaniacs - Season 1 (2020)']);
+  assert.strictEqual(to('Audio/Needs Filing/TV/Arthur - Season 2 (1997)', 'x', flat), 'Audio/Described Movies & TV/TV/Arthur - Season 2 (1997)');
+  assert.strictEqual(to('Audio/Needs Filing/TV/animaniacs - season 1 (2020)', 'x', flat), 'Audio/Described Movies & TV/TV/Animaniacs - Season 1 (2020)');
+  // Two seasons of one show typed two ways, filed in one pass: the sweep adds the planned folders to the index.
+  const planned = L.shelfIndex([], ["Audio/Described Movies & TV/TV/schitt's creek/schitt's creek - Season 2 (2016)", "Audio/Described Movies & TV/TV/Schitt's Creek/Schitt's Creek - Season 1 (2015)"]);
+  assert.strictEqual(to("Audio/Needs Filing/TV/schitt's creek - Season 2 (2016)", 'x', planned), "Audio/Described Movies & TV/TV/Schitt's Creek/schitt's creek - Season 2 (2016)");
+  assert.strictEqual(L.shelfIndex(['Audio/Described Movies & TV/TV/Family guy'], ['Audio/Described Movies & TV/TV/Family Guy']).get('audio/described movies & tv/tv/family guy'), 'Family guy', 'the shelf beats a new spelling');
+  assert.strictEqual(to('Audio/Needs Filing/described movies and TV/TV/family guy/Family Guy - Season 15 (2016)/Season 15', 'x', index), 'Audio/Described Movies & TV/TV/Family guy/Family Guy - Season 15 (2016)/Season 15', 'the older folder fact spells it the same way');
+  // Never asked of Jev; never for video; never for what is already filed.
+  assert.strictEqual(L.questionsFor({ kind: 'audio', title: 'Christmas Guy', path: 'Audio/Needs Filing/TV/Family guy/Family Guy - Season 12 (2013)' }), null);
+  assert.strictEqual(L.folderFact({ kind: 'video', title: 'x', path: 'Videos/Needs Filing/TV/Family guy' }), null);
+  assert.strictEqual(L.folderFact({ kind: 'audio', title: 'x', path: 'Audio/Described Movies & TV/TV/Family guy/Family Guy - Season 11 (2012)' }), null);
+  assert.strictEqual(L.folderFact({ kind: 'audio', title: 'x', path: 'Audio/Cassettes/My cassette collection/TV' }), null, 'a TV folder outside Needs Filing is hers');
+  assert.strictEqual(L.categoryOf('Audio/Described Movies & TV/TV/Empire/Empire Season 2', 'audio'), 'movie');
+});
+
+test('the audio intake lane: songs by kind and decade, stories, talks and episodes, radio as before', () => {
+  const intake = (title, extra = {}) => ({ kind: 'audio', title, path: 'Audio/Needs Filing/Archive Intake', description: '', ...extra });
+  const q = L.questionsFor(intake('Spoonful of Sugar'));
+  assert.deepStrictEqual(Object.keys(q).sort(), ['audioKind', 'category', 'musicKind', 'ozarks']);
+  assert.strictEqual(q.audioKind, L.AUDIO_INTAKE_KIND_Q);
+  assert.ok(q.audioKind.criteria['Radio Commercial'].includes('brand name'), 'the radio kinds keep the radio judge\'s wording');
+  // A song: its kind of music and the decade read off the title.
+  const song = (title, a) => L.decide(intake(title), ans(a));
+  assert.strictEqual(song('Spoonful of Sugar', { audioKind: ['Song or music', 0.93], musicKind: ['TV & Movie Songs', 0.88], ozarks: 0.04 }).to, 'Audio/Music/TV & Movie Songs/Undated');
+  const fred = song('Fred Flintstone & Barney Rubble in Songs from Mary Poppins (1965)', { audioKind: ['Song or music', 0.9], musicKind: ['TV & Movie Songs', 0.81], ozarks: 0.02 });
+  assert.strictEqual(fred.to, 'Audio/Music/TV & Movie Songs/1960s');
+  assert.deepStrictEqual(fred.flags, [], 'a sure song carries no note');
+  assert.strictEqual(song('Dayyenu', { audioKind: ['Song or music', 0.8], musicKind: ['Religious & Holiday Music', 0.75], ozarks: 0.01 }).to, 'Audio/Music/Religious & Holiday Music/Undated');
+  assert.strictEqual(song('Pharoh Blues', { audioKind: ['Song or music', 0.85], musicKind: ["Children's Music", 0.5], ozarks: 0.01 }).to, 'Audio/Music/Assorted Music/Undated', 'an unsure kind of music still leaves intake, like an unsure product');
+  // The other kinds.
+  assert.strictEqual(song('Sadie and the Snowman read-along 1985', { audioKind: ['Story or audiobook', 0.9] }).to, 'Audio/Audiobooks/1980s');
+  assert.strictEqual(song('Opportunity Meeting 1994', { audioKind: ['Speech or talk', 0.86] }).to, 'Audio/Spoken Word/1990s');
+  assert.strictEqual(song('Christmas Guy', { audioKind: ['Episode of a TV programme', 0.9] }).to, 'Audio/Described Movies & TV/TV/Assorted (One-Offs)');
+  assert.strictEqual(song('101 Dalmatians', { audioKind: ['Whole film', 0.9] }).to, 'Audio/Described Movies & TV/Movies/0-9');
+  const home = song('Grandma at Christmas 1991', { audioKind: ['Home recording', 0.9], ozarks: 0.1 });
+  assert.strictEqual(home.to, 'Audio/Home Recordings/1990s');
+  assert.deepStrictEqual(home.flags, ['Space review: family or local home recording.']);
+});
+
+test('the audio intake lane: a radio commercial, a Springfield aircheck and game radio keep the radio routes', () => {
+  const intake = (title) => ({ kind: 'audio', title, path: 'Audio/Needs Filing/Archive Intake', description: '' });
+  assert.strictEqual(L.decide(intake("Folgers - 'Checkout Commotion'"), ans({ audioKind: ['Radio Commercial', 0.95], category: ['Food & Grocery', 0.9], ozarks: 0.08 })).to, 'Audio/Radio Commercials/Food & Grocery/Undated');
+  assert.strictEqual(L.decide(intake('Sprint - Mrs Chavez 2004'), ans({ audioKind: ['Radio Commercial', 0.9], category: ['Phone & Wireless', 0.5], ozarks: 0.1 })).to, 'Audio/Radio Commercials/Other Commercials/2000s');
+  assert.strictEqual(L.decide(intake('KTTS legal ID 1985'), ans({ audioKind: ['Aircheck', 0.92], ozarks: 0.95 })).to, 'Audio/Ozarks (Springfield Area)/Radio Airchecks/1980s');
+  assert.strictEqual(L.decide(intake('Lazlow - WKTT spot'), ans({ audioKind: ['Video Game Radio', 0.9], ozarks: 0.1 })).to, 'Audio/Video Game Radio/Other Games', 'an intake folder is not a game');
+  assert.strictEqual(L.audioShelf({ title: 'x', path: 'Audio/Needs Filing/Grand Theft Auto IV - Commercials' }, 'Video Game Radio', {}, 'Undated', L.knobs()), 'Audio/Video Game Radio/Grand Theft Auto IV');
+});
+
+test('always a folder: an unsure item goes to its best guess, or its catch-all, with a note she can search for', () => {
+  const intake = (title) => video(title, 'Videos/Needs Filing/Archive Intake');
+  const kfc = L.decide(intake('1994 Kentucky Fried Chicken commercials'), ans({ kind: ['One product advert', 0.55], category: ['Restaurants & Fast Food', 0.52], elsewhere: 0.1 }));
+  assert.strictEqual(kfc.to, 'Video/Commercials/Other Commercials/1990s');
+  assert.deepStrictEqual(kfc.flags, ['Librarian guess: Commercials/Other Commercials/1990s (0.55). Check this one.']);
+  assert.strictEqual(kfc.why, 'guess: One product advert');
+  assert.strictEqual(kfc.confidence, 0.55, 'the record keeps Jev\'s real confidence');
+  const munich = L.decide(intake('1985 Munich, Germany'), ans({ kind: ['Home movie', 0.52], foreign: 0.4, elsewhere: 0.2 }));
+  assert.strictEqual(munich.to, 'Video/Home Video (VHS)/Home Movies/1980s');
+  assert.deepStrictEqual(munich.flags, ['Librarian guess: Home Video (VHS)/Home Movies/1980s (0.52). Check this one.']);
+  // Under the guess floor the choice is noise, and "Something else" has no shelf: the catch-alls, by title.
+  const mine = L.decide(intake('My Video 12'), ans({ kind: ['Something else', 0.61] }));
+  assert.strictEqual(mine.to, 'Video/Other Video/Undated');
+  assert.deepStrictEqual(mine.flags, ['Librarian guess: Other Video/Undated (0.61). Check this one.']);
+  assert.strictEqual(mine.why, 'guess: no sure kind');
+  assert.strictEqual(L.decide(intake('1992 commercial'), ans({ kind: ['Promo for a TV programme or channel', 0.3] })).to, 'Video/Commercials/Other Commercials/1990s');
+  assert.strictEqual(L.decide(intake('bas4.25.92'), {}).to, 'Video/Other Video/Undated', 'no answer at all still leaves intake');
+  // A sure answer carries no note, and other flags keep their place before the guess.
+  assert.deepStrictEqual(L.decide(intake('1999 Jeep Cherokee commercial'), ans({ kind: ['One product advert', 0.95], category: ['Cars and Trucks', 0.9] })).flags, []);
+  const far = L.decide(intake('2007 Rothman Furniture commercials'), ans({ kind: ['Block of several commercials', 0.5], elsewhere: 0.81 }));
+  assert.strictEqual(far.to, 'Video/Commercials/Commercial Breaks/2000s');
+  assert.deepStrictEqual(far.flags, ['Space review: local to another area (0.81).', 'Librarian guess: Commercials/Commercial Breaks/2000s (0.50). Check this one.']);
+  // Audio too.
+  const aintake = (title) => ({ kind: 'audio', title, path: 'Audio/Needs Filing/Archive Intake', description: '' });
+  const blues = L.decide(aintake('Pharoh Blues'), ans({ audioKind: ['Song or music', 0.55], musicKind: ['Religious & Holiday Music', 0.72], ozarks: 0.02 }));
+  assert.strictEqual(blues.to, 'Audio/Music/Religious & Holiday Music/Undated');
+  assert.deepStrictEqual(blues.flags, ['Librarian guess: Music/Religious & Holiday Music/Undated (0.55). Check this one.']);
+  const beep = L.decide(aintake('track 07'), ans({ audioKind: ['Something else', 0.8], ozarks: 0.02 }));
+  assert.strictEqual(beep.to, 'Audio/Other Audio/Undated');
+  assert.deepStrictEqual(beep.flags, ['Librarian guess: Other Audio/Undated (0.80). Check this one.']);
+});
+
+test('always a folder, except her part of the country: a maybe-local item waits for her, and a guess never lands on her shelves', () => {
+  const kplr = L.decide(video('May 19, 1985 KPLR Channel 11 Sunday Movie commercial bumpers', 'Videos/Needs Filing/Archive Intake'),
+    ans({ kind: ['Station ID, bumper or sign-off', 0.5], recorded: 0.9, madefor: 0.7, local: 0.63, area: ['St. Louis', 0.9] }));
+  assert.strictEqual(kplr.to, null);
+  assert.deepStrictEqual(kplr.flags, ['Jev review: Missouri (St. Louis), unsure if local (0.63).'], 'flagged as before, no guess');
+  const sure = L.decide(video('1991 KSD 93.7 FM commercial', 'Videos/Needs Filing/Archive Intake'),
+    ans({ kind: ['One product advert', 0.9], category: ['Radio & Music', 0.3], recorded: 0.8, madefor: 0.6, local: 0.5, area: ['St. Louis', 0.9] }));
+  assert.strictEqual(sure.to, 'Video/Commercials/Other Commercials/1990s', 'a sure kind still files as it did before');
+  // Audio from the Ozarks: a sure radio kind goes to her Ozarks shelf as before; anything else waits, flagged.
+  const aintake = (title) => ({ kind: 'audio', title, path: 'Audio/Needs Filing/Archive Intake', description: '' });
+  const unsureAir = L.decide(aintake('KWTO 1978'), ans({ audioKind: ['Aircheck', 0.5], ozarks: 0.8 }));
+  assert.strictEqual(unsureAir.to, null);
+  assert.deepStrictEqual(unsureAir.flags, ['Jev review: Ozarks, unsure which local shelf (0.80).']);
+  const localSong = L.decide(aintake('Branson Belle theme 1996'), ans({ audioKind: ['Song or music', 0.9], musicKind: ['Assorted Music', 0.8], ozarks: 0.7 }));
+  assert.strictEqual(localSong.to, null);
+  assert.deepStrictEqual(localSong.flags, ['Jev review: Ozarks, unsure which local shelf (0.70).']);
+});
+
+test('local shelves are never moved from, audio included, whatever Jev says', () => {
+  const air = { kind: 'audio', title: 'KTTS 1985', path: 'Audio/Ozarks (Springfield Area)/Radio Airchecks/Undated', description: '' };
+  assert.strictEqual(L.zoneOf(air), 'local');
+  assert.strictEqual(L.questionsFor(air), null);
+  assert.strictEqual(L.decide(air, ans({ audioKind: ['Song or music', 0.99], musicKind: ['Assorted Music', 0.99], ozarks: 0.01 })).to, null);
+  const tape = video('Branson show 1994', 'Video/Ozarks (Springfield Area)/1990s');
+  const d = L.decide(tape, ans({ kind: ['Something else', 0.2] }));
+  assert.strictEqual(d.to, null, 'no guess on her local shelf');
+  assert.deepStrictEqual(d.flags, []);
+});
+
+test('review notes: a new read adds and replaces its own sentences, keeps hers, and drops a stale guess or copy note', () => {
+  assert.strictEqual(L.reviewNote('', ['Jev review: made outside the US (0.93).']), 'Jev review: made outside the US (0.93).');
+  assert.strictEqual(L.reviewNote('Jev review: made outside the US (0.93).', []), 'Jev review: made outside the US (0.93).', 'a note it does not repeat stays');
+  assert.strictEqual(L.reviewNote('Space review: local to another area (0.84).', ['Space review: local to another area (0.86).', 'Librarian guess: Other Video/1990s (0.30). Check this one.']),
+    'Space review: local to another area (0.86). Librarian guess: Other Video/1990s (0.30). Check this one.', 'the new number replaces the old');
+  assert.strictEqual(L.reviewNote('Librarian guess: Other Video/1990s (0.30). Check this one. Space review: identical copy, another is kept.', []), '', 'worked out afresh each read');
+  assert.strictEqual(L.reviewNote('Jev review: Missouri (St. Louis), unsure if local (0.49).', ['Jev review: Missouri (St. Louis), unsure if local (0.63).']), 'Jev review: Missouri (St. Louis), unsure if local (0.63).');
+  assert.strictEqual(L.withoutGuess('Space review: local to another area (0.84). Librarian guess: Commercials/Other Commercials/1990s (0.55). Check this one.'), 'Space review: local to another area (0.84).');
+  assert.strictEqual(L.withoutGuess(undefined), '');
+});
+
+test('fileMedia: the TV folder fact uses the shelf index it is given and never asks Jev', async () => {
+  const asked = [];
+  const ask = async (state) => { asked.push(state.title); return { answers: {}, usage: { input_tokens: 10 } }; };
+  const index = L.shelfIndex(['Audio/Described Movies & TV/TV/Empire/Empire Season 2']);
+  const { decisions, costUSD } = await L.fileMedia([{ _id: 'e', kind: 'audio', title: '02 - 13  Empire - The tameness of the wolf', path: 'Audio/Needs Filing/TV/empire/empire season 2' }], { ask, deps: { describedShelves: index } });
+  assert.strictEqual(decisions[0].to, 'Audio/Described Movies & TV/TV/Empire/Empire Season 2');
+  assert.strictEqual(decisions[0].why, 'folder says so');
+  assert.deepStrictEqual(asked, []);
+  assert.strictEqual(costUSD, 0);
+  assert.strictEqual(L.VERSION, 2, 'the second look reads version-1 leftovers once');
+});
+
 test('kids blocks: Nick Jr and Disney Junior have their own folders, filed by rule (her word, Sep 23)', () => {
   const to = (title, path = 'Videos/Needs Filing/Archive Intake') => L.decide(video(title, path), {}).to;
   // The seven that sat in Archive Intake for want of a confident kind.
@@ -177,7 +337,8 @@ test('intake: Jev decides the shelf; the network and decade come from rules', ()
   const ad = L.decide(video('1999 Jeep Cherokee commercial', 'Videos/Needs Filing/Archive Intake'), ans({ kind: ['One product advert', 1], category: ['Cars and Trucks', 0.98] }));
   assert.strictEqual(ad.to, 'Video/Commercials/Cars and Trucks/1990s');
   const unsure = L.decide(video('Rolie polie olie clay piece', 'Videos/Needs Filing/Archive Intake'), ans({ kind: ['Promo for a TV programme or channel', 0.44] }));
-  assert.strictEqual(unsure.to, null, 'under the floor it stays for a person');
+  assert.strictEqual(unsure.to, 'Video/Channels/Other Channels/Undated', 'Part 295: under the floor it goes to the best guess...');
+  assert.deepStrictEqual(unsure.flags, ['Librarian guess: Channels/Other Channels/Undated (0.44). Check this one.'], '...with a note she can search for');
   const promo = L.decide(video('Nick jr backyardigans is next 2012', 'Videos/Needs Filing/Archive Intake'), ans({ kind: ['Promo for a TV programme or channel', 0.95] }));
   assert.strictEqual(promo.to, 'Video/Channels/Nickelodeon/Nick Jr/2010s');
   const show = L.decide(video('Bear in the big blue house intro 2001', 'Videos/Needs Filing/Archive Intake'), ans({ kind: ['Episode or clip of a TV programme', 0.9] }), { broadcastShelf: () => 'TV Shows/Bear in the Big Blue House/Intros & Credits' });
