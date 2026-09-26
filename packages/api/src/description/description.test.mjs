@@ -1677,6 +1677,27 @@ const videoHash = async (file) =>
   )
     .toString()
     .trim();
+/** The MP4's text tracks: each one's name and whether a player shows it without being asked. */
+const textTracks = async (file) =>
+  JSON.parse(
+    (
+      await command(
+        ffprobePath.path,
+        [
+          '-v',
+          'error',
+          '-select_streams',
+          's',
+          '-show_entries',
+          'stream_tags=handler_name:stream_disposition=default',
+          '-of',
+          'json',
+          file,
+        ],
+        signal,
+      )
+    ).toString(),
+  ).streams.map((stream) => ({ name: stream.tags?.handler_name, on: stream.disposition.default }));
 
 test('standard mode keeps the original picture untouched, the runtime, and the soundtrack around a ducked narration', async () => {
   const f = await fixture('standard');
@@ -1707,6 +1728,11 @@ test('standard mode keeps the original picture untouched, the runtime, and the s
   assert.match(text, /Description: A red square moves across the room\./);
   assert.match(text, /Speaker: dialogue/);
   assert.match(await readFile(result.files.descriptions, 'utf8'), /^WEBVTT/);
+  assert.deepEqual(
+    await textTracks(result.video),
+    [{ name: 'Captions', on: 0 }],
+    'the MP4 carries the dialogue captions, switched off, and not the descriptions the narrator says',
+  );
 });
 
 test('extended mode pauses picture and sound, and the frozen picture lines up with the narration', async () => {
@@ -1806,6 +1832,11 @@ test('a silent video gets narration and a soundtrack stream', async () => {
   assert.ok(
     (await amplitude(result.audio, result.report.descriptions[0].outputAt + 0.5, 660)) > 0.02,
   );
+  // Part 295: a Road Runner short with no dialogue, and VoiceOver read the description lines over
+  // it from the MP4's text track. Now there is no text track; the lines are a file of their own.
+  assert.deepEqual(await textTracks(result.video), [], 'no dialogue, no text track');
+  assert.match(await readFile(result.files.descriptions, 'utf8'), /A red square moves across the room\./);
+  assert.equal(await readFile(result.files.captions, 'utf8'), 'WEBVTT\n\n');
 });
 
 test('long videos: continuity, a section that failed on a passing error is tried again at the end, resume, and re-voicing', async () => {

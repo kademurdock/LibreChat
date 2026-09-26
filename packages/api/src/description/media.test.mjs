@@ -826,7 +826,7 @@ test('look clips: the time strip is added under the picture, and with no font th
   assert.equal(await media.stripFont(), font, 'the installed font comes back once the setting is gone');
 });
 
-test('assemble adds text tracks, chapters and a whole title, and keeps a late picture in step', async () => {
+test('assemble adds the captions track, chapters and a whole title, and keeps a late picture in step', async () => {
   const D = 8;
   const file = await joined('late-picture.mkv', { seconds: D, videoDelay: 0.5, codecs: [...h264, '-c:a', 'aac'] });
   const info = await media.probe(file, signal);
@@ -837,15 +837,10 @@ test('assemble adds text tracks, chapters and a whole title, and keeps a late pi
   await media.saveSound(await media.sectionSound(file, dir, 0, length, true, signal, info), flac, signal);
   const captions = join(dir, 'captions.vtt');
   await writeFile(captions, 'WEBVTT\n\n00:00.500 --> 00:02.000\nHello there.\n');
-  const descriptions = join(dir, 'descriptions.vtt');
-  await writeFile(descriptions, 'WEBVTT\n\n00:01.000 --> 00:03.000\nA white flash.\n');
   const title = `${'x'.repeat(195)}😀😀 (described)`;
   const output = await media.assemble(dir, [flac], null, file, title, signal, {
     media: info,
-    subtitles: [
-      { file: captions, language: 'en', title: 'Captions' },
-      { file: descriptions, language: 'en-US', title: 'Audio descriptions (text)' },
-    ],
+    captions: { file: captions, language: 'en-US', title: 'Captions' },
     chapters: [
       { start: 3, title: 'Ad = one; two #1' },
       { start: 0, title: 'Opening' },
@@ -855,14 +850,14 @@ test('assemble adds text tracks, chapters and a whole title, and keeps a late pi
   near(bursts(await timedPcm(output.video)), flashes(await frames(output.video)), 0.05, 'copied picture and new sound');
   const streams = (await probeJson(output.video, 'stream=codec_type,codec_name:stream_tags=language,handler_name')).streams;
   const texts = streams.filter((s) => s.codec_type === 'subtitle');
-  assert.deepEqual(texts.map((s) => s.codec_name), ['mov_text', 'mov_text']);
-  assert.deepEqual(texts.map((s) => s.tags.language), ['eng', 'eng']);
-  assert.deepEqual(texts.map((s) => s.tags.handler_name), ['Captions', 'Audio descriptions (text)']);
+  assert.deepEqual(texts.map((s) => s.codec_name), ['mov_text']);
+  assert.deepEqual(texts.map((s) => s.tags.language), ['eng']);
+  assert.deepEqual(texts.map((s) => s.tags.handler_name), ['Captions'], 'the dialogue, and no descriptions track');
   const shown = (await probeJson(output.video, 'stream=codec_type:stream_disposition=default')).streams;
   assert.deepEqual(
     shown.map((s) => [s.codec_type, s.disposition.default]), // the chapter track (data) was never on
-    [['video', 1], ['audio', 1], ['subtitle', 0], ['subtitle', 0], ['data', 0]],
-    'no text track is switched on by default, so no player shows it (and VoiceOver reads it) unasked',
+    [['video', 1], ['audio', 1], ['subtitle', 0], ['data', 0]],
+    'the captions track is not switched on by default, so no player shows it (and VoiceOver reads it) unasked',
   );
   assert.equal(await media.quietTextTracks(output.video), 0, 'running it again changes nothing');
   assert.equal(await media.quietTextTracks(output.audio), 0, 'a file without text tracks is left alone');
@@ -885,7 +880,7 @@ test('assemble adds text tracks, chapters and a whole title, and keeps a late pi
   assert.match(media.chapterMetadata([{ start: 0, title: 'a=b;c#d\\e' }], 10), /title=a\\=b\\;c\\#d\\\\e\n/);
 });
 
-test('a copied picture stops where the new soundtrack stops, and none of the original tags come along', async () => {
+test('a copied picture stops where the new soundtrack stops, none of the original tags come along, and a film with no dialogue has no text track', async () => {
   const file = await make('phone.mov', [
     ...lavfi(picture('320x240', 30, 30)),
     ...lavfi(sound(30)),
@@ -902,18 +897,98 @@ test('a copied picture stops where the new soundtrack stops, and none of the ori
   assert.equal(media.copyable(working.media), true);
   const flac = join(dir, 'sound.flac');
   await media.saveSound(await media.sectionSound(working.file, dir, 0, 10 * 48000, true, signal, working.media), flac, signal);
-  const descriptions = join(dir, 'descriptions.vtt');
-  await writeFile(descriptions, 'WEBVTT\n\n00:01.000 --> 00:04.000\nA white flash.\n');
   const output = await media.assemble(dir, [flac], null, working.file, 'Birthday (described)', signal, {
     media: working.media,
-    subtitles: [{ file: descriptions, language: 'en', title: 'Audio descriptions (text)' }],
+    chapters: [
+      { start: 0, title: 'Opening' },
+      { start: 4, title: 'Cake' },
+    ],
   });
   const data = await probeJson(output.video, 'format=duration:format_tags:stream=codec_type,duration');
-  const lengths = [data.format.duration, ...data.streams.filter((s) => s.codec_type !== 'subtitle').map((s) => s.duration)];
+  const lengths = [data.format.duration, ...data.streams.filter((s) => s.codec_type !== 'data').map((s) => s.duration)];
   assert.ok(lengths.every((value) => Math.abs(Number(value) - 10) < 0.1), `described copy lengths ${lengths}`);
+  // Part 295: the Road Runner short had no dialogue, and a player switched its one text track (the
+  // description lines the narrator already says) back on. With no captions there is none at all.
+  const shown = (await probeJson(output.video, 'stream=codec_type:stream_disposition=default')).streams;
+  assert.deepEqual(
+    shown.map((s) => [s.codec_type, s.disposition.default]),
+    [['video', 1], ['audio', 1], ['data', 0]],
+    'no text track, and the chapter track is off',
+  );
+  const marked = await probeJson(output.video, 'chapter=start_time:chapter_tags=title', ['-show_chapters']);
+  assert.deepEqual(marked.chapters.map((c) => c.tags.title), ['Opening', 'Cake'], 'chapters without a captions track');
   const tags = Object.keys(data.format.tags);
   assert.ok(tags.includes('title'), `tags ${tags}`);
   assert.deepEqual(tags.filter((key) => /location|comment/i.test(key)), [], 'no place or comment from the original');
+});
+
+test('a copy made before Part 295 loses only its description text track, and keeps picture, sound, captions and chapters', async () => {
+  const D = 8;
+  const file = await joined('late-picture.mkv', { seconds: D, videoDelay: 0.5, codecs: [...h264, '-c:a', 'aac'] });
+  const info = await media.probe(file, signal);
+  const descriptions = join(await folder('old-copy'), 'descriptions.vtt');
+  await writeFile(descriptions, 'WEBVTT\n\n00:02.500 --> 00:04.000\nA coyote paints a tunnel on a rock.\n');
+  /** A described copy as assemble wrote it until Part 295: captions if any, then the description lines, all off. */
+  async function oldCopy(name, withCaptions) {
+    const dir = await folder(name);
+    const flac = join(dir, 'sound.flac');
+    await media.saveSound(await media.sectionSound(file, dir, 0, Math.floor((D - 0.6) * 48000), true, signal, info), flac, signal);
+    const captions = join(dir, 'captions.vtt');
+    await writeFile(captions, 'WEBVTT\n\n00:00.500 --> 00:02.000\nHello there.\n');
+    const made = await media.assemble(dir, [flac], null, file, 'Road test (described)', signal, {
+      media: info,
+      ...(withCaptions ? { captions: { file: captions, language: 'en', title: 'Captions' } } : {}),
+      chapters: [
+        { start: 0, title: 'Opening' },
+        { start: 3, title: 'Tunnel' },
+      ],
+    });
+    const old = join(dir, 'old.mp4');
+    const texts = withCaptions ? 1 : 0;
+    await media.command(
+      ffmpegPath,
+      [
+        '-nostdin', '-v', 'error', '-y', '-i', made.video, '-i', descriptions,
+        '-map', '0:v', '-map', '0:a', ...(withCaptions ? ['-map', '0:s'] : []), '-map', '1:0', '-map_chapters', '0',
+        '-c:v', 'copy', '-c:a', 'copy', '-c:s', 'mov_text',
+        `-metadata:s:s:${texts}`, 'language=eng', `-metadata:s:s:${texts}`, 'handler_name=Audio descriptions (text)',
+        '-movflags', '+faststart', old,
+      ],
+      signal,
+    );
+    await media.quietTextTracks(old);
+    const names = (await probeJson(old, 'stream=codec_type:stream_tags=handler_name')).streams
+      .filter((s) => s.codec_type === 'subtitle')
+      .map((s) => s.tags.handler_name);
+    assert.deepEqual(names, [...(withCaptions ? ['Captions'] : []), 'Audio descriptions (text)'], 'the old layout');
+    return { dir, old };
+  }
+  for (const withCaptions of [true, false]) {
+    const { dir, old } = await oldCopy(withCaptions ? 'old-copy-dialogue' : 'old-copy-silent', withCaptions);
+    const fixed = join(dir, 'fixed.mp4');
+    assert.equal(await media.dropDescriptionText(old, fixed, signal), true);
+    const streams = (await probeJson(fixed, 'stream=codec_type:stream_tags=language,handler_name:stream_disposition=default')).streams;
+    assert.deepEqual(
+      streams.map((s) => [s.codec_type, s.disposition.default]),
+      withCaptions
+        ? [['video', 1], ['audio', 1], ['subtitle', 0], ['data', 0]]
+        : [['video', 1], ['audio', 1], ['data', 0]],
+      'only the captions stay, and nothing is switched on but picture and sound',
+    );
+    const texts = streams.filter((s) => s.codec_type === 'subtitle');
+    assert.deepEqual(texts.map((s) => [s.tags.handler_name, s.tags.language]), withCaptions ? [['Captions', 'eng']] : []);
+    const cues = async (mp4) =>
+      (await media.command(ffmpegPath, ['-nostdin', '-v', 'error', '-i', mp4, '-map', '0:s:0', '-f', 'webvtt', '-'], signal)).toString();
+    if (withCaptions) assert.equal(await cues(fixed), await cues(old), 'the captions keep their words and times');
+    near(bursts(await timedPcm(fixed)), flashes(await frames(fixed)), 0.05, 'picture and sound still in step');
+    near(flashes(await frames(fixed)), flashes(await frames(old)), 0.001, 'the picture is where it was');
+    const data = await probeJson(fixed, 'chapter=start_time:chapter_tags=title:format_tags=title', ['-show_chapters']);
+    assert.deepEqual(data.chapters.map((c) => c.tags.title), ['Opening', 'Tunnel']);
+    assert.equal(data.format.tags.title, 'Road test (described)');
+    const again = join(dir, 'again.mp4');
+    assert.equal(await media.dropDescriptionText(fixed, again, signal), false, 'a fixed copy is left alone');
+    await assert.rejects(stat(again), { code: 'ENOENT' }, 'and nothing is written');
+  }
 });
 
 test('media tools run with a thread cap and lowered priority, and fail in plain words', async () => {

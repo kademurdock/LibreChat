@@ -1549,20 +1549,20 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     signal,
     {
       media,
-      subtitles: [
-        ...(report.dialogue.length
-          ? [
-              {
-                file: captions,
-                language: report.language ?? fixed.language ?? 'und',
-                title: 'Captions',
-              },
-            ]
-          : []),
-        ...(report.descriptions.length
-          ? [{ file: descriptions, language: 'en', title: 'Audio descriptions (text)' }]
-          : []),
-      ],
+      // The MP4 carries the dialogue captions only, and only when captions.vtt has a cue (the
+      // same test as captionTrack). The description lines are already spoken, and a player that
+      // switches their text track back on (AVKit from her captioning settings, Files, Photos,
+      // QuickLook) has VoiceOver read them over the film: Part 295, a Road Runner short with no
+      // dialogue. descriptions.vtt stays its own file and download.
+      ...(report.dialogue.some((line) => line.text.trim())
+        ? {
+            captions: {
+              file: captions,
+              language: report.language ?? fixed.language ?? 'und',
+              title: 'Captions',
+            },
+          }
+        : {}),
       chapters: outputChapters(chapters, ordered),
     },
   );

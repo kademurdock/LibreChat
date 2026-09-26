@@ -1665,13 +1665,15 @@ export function chapterMetadata(chapters: Chapter[], total: number): string | nu
 }
 
 export type Subtitle = { file: string; language: string; title: string };
-export type AssembleOptions = { media?: Media; subtitles?: Subtitle[]; chapters?: Chapter[] };
+export type AssembleOptions = { media?: Media; captions?: Subtitle; chapters?: Chapter[] };
 
 /**
  * Joins the finished sections: one AAC soundtrack for both files, and either the original
  * picture untouched (ending where the new soundtrack ends, so a preview is only as long as its
- * sound) or the re-encoded sections with their pauses. Optional text tracks go into the MP4 as
- * mov_text, and chapters (output times) into both files. The only file-wide tag is the title.
+ * sound) or the re-encoded sections with their pauses. The MP4's one possible text track is the
+ * dialogue captions, as mov_text and switched off (quietTextTracks); the description lines are
+ * already in the soundtrack, so their text never goes into either file (Part 295). Chapters
+ * (output times) go into both files. The only file-wide tag is the title.
  */
 export async function assemble(
   directory: string,
@@ -1745,7 +1747,7 @@ export async function assemble(
   const shift = offset > 0.0005 ? ['-itsoffset', offset.toFixed(6)] : [];
   const end =
     copy && Number.isFinite(soundLength) ? ['-t', (offset + soundLength).toFixed(6)] : [];
-  const subtitles = options.subtitles ?? [];
+  const captions = options.captions;
   await command(
     ffmpeg(),
     [
@@ -1756,28 +1758,31 @@ export async function assemble(
       ...shift,
       '-i',
       audio,
-      ...subtitles.flatMap((item) => [...shift, '-i', item.file]),
+      ...(captions ? [...shift, '-i', captions.file] : []),
       ...(chapters ? [...shift, '-i', chapters] : []),
       '-map',
       `0:v:${copy ? (media?.videoIndex ?? 0) : 0}`,
       '-map',
       '1:a:0',
-      ...subtitles.flatMap((_, i) => ['-map', `${2 + i}:s:0`]),
+      ...(captions ? ['-map', '2:s:0'] : []),
       '-map_chapters',
-      chapters ? String(2 + subtitles.length) : '-1',
+      chapters ? (captions ? '3' : '2') : '-1',
       '-c:v',
       'copy',
       '-c:a',
       'copy',
-      ...(subtitles.length ? ['-c:s', 'mov_text'] : []),
-      ...subtitles.flatMap((item, i) => [
-        `-metadata:s:s:${i}`,
-        `language=${trackLanguage(item.language)}`,
-        `-metadata:s:s:${i}`,
-        `handler_name=${oneLine(item.title)}`,
-        `-metadata:s:s:${i}`,
-        `title=${oneLine(item.title)}`,
-      ]),
+      ...(captions
+        ? [
+            '-c:s',
+            'mov_text',
+            '-metadata:s:s:0',
+            `language=${trackLanguage(captions.language)}`,
+            '-metadata:s:s:0',
+            `handler_name=${oneLine(captions.title)}`,
+            '-metadata:s:s:0',
+            `title=${oneLine(captions.title)}`,
+          ]
+        : []),
       '-map_metadata:g',
       '-1',
       ...tag,
@@ -1788,7 +1793,7 @@ export async function assemble(
     ],
     signal,
   );
-  if (subtitles.length) await quietTextTracks(video);
+  if (captions) await quietTextTracks(video);
   return { video, audio };
 }
 
@@ -1867,4 +1872,113 @@ export async function quietTextTracks(file: string): Promise<number> {
   } finally {
     await handle.close();
   }
+}
+
+type Track = {
+  index: number;
+  codec_type?: string;
+  duration?: string;
+  tags?: { handler_name?: string; title?: string };
+};
+
+type Layout = { streams: Track[]; chapters: number };
+
+async function layout(file: string, signal: AbortSignal): Promise<Layout> {
+  const raw = await command(
+    ffprobe(),
+    [
+      '-v',
+      'error',
+      '-show_entries',
+      'stream=index,codec_type,duration:stream_tags=handler_name,title:chapter=start_time',
+      '-of',
+      'json',
+      file,
+    ],
+    signal,
+  );
+  const found = JSON.parse(raw.toString()) as { streams?: Track[]; chapters?: unknown[] };
+  return { streams: found.streams ?? [], chapters: found.chapters?.length ?? 0 };
+}
+
+/** The description lines as text, the second text track of copies finished before Part 295. */
+const descriptionText = (item: Track): boolean =>
+  item.codec_type === 'subtitle' &&
+  [item.tags?.handler_name, item.tags?.title].some((name) =>
+    /^audio descriptions/i.test(name?.trim() ?? ''),
+  );
+
+/** What a rewrite must keep: picture and sound streams (and the longest one's length), text tracks, chapters. */
+function contents(found: Layout): {
+  main: number;
+  seconds: number;
+  texts: number;
+  chapters: number;
+} {
+  const main = found.streams.filter(
+    (item) => item.codec_type === 'video' || item.codec_type === 'audio',
+  );
+  return {
+    main: main.length,
+    seconds: Math.max(0, ...main.map((item) => Number(item.duration) || 0)),
+    texts: found.streams.filter((item) => item.codec_type === 'subtitle').length,
+    chapters: found.chapters,
+  };
+}
+
+/**
+ * Copies finished before Part 295 carry a second text track, "Audio descriptions (text)": the
+ * lines the narrator already speaks, which Files, Photos or AVKit can switch on so VoiceOver reads
+ * them over the film. Writes `output` without that track by stream copy, so the picture, the
+ * sound, the dialogue captions, the chapters and the title stay exactly as they were, switches the
+ * captions off again (quietTextTracks), and checks that every picture and sound stream came
+ * through at its old length with the other text tracks and every chapter. Returns false, writing
+ * nothing, when the file has no such track.
+ */
+export async function dropDescriptionText(
+  input: string,
+  output: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const before = await layout(input, signal);
+  if (!before.streams.some(descriptionText)) return false;
+  const kept = before.streams.filter(
+    (item) => item.codec_type === 'subtitle' && !descriptionText(item),
+  );
+  await command(
+    ffmpeg(),
+    [
+      ...quiet,
+      ...sourceOnly,
+      '-i',
+      input,
+      '-map',
+      '0:v',
+      '-map',
+      '0:a',
+      ...kept.flatMap((item) => ['-map', `0:${item.index}`]),
+      '-map_chapters',
+      '0',
+      '-c',
+      'copy',
+      '-movflags',
+      '+faststart',
+      output,
+    ],
+    signal,
+  );
+  await quietTextTracks(output);
+  const was = contents(before);
+  const now = contents(await layout(output, signal));
+  if (
+    now.main !== was.main ||
+    Math.abs(now.seconds - was.seconds) > 0.1 ||
+    now.texts !== kept.length ||
+    now.chapters !== was.chapters
+  )
+    throw new MediaError(
+      'tools',
+      `rewritten copy has ${now.main} streams of ${now.seconds}s, ${now.texts} text, ${now.chapters} chapters; was ${was.main} of ${was.seconds}s, ${kept.length} text kept, ${was.chapters} chapters`,
+    );
+  return true;
 }
