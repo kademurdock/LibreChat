@@ -40,6 +40,7 @@ import type {
 import type { Keeper, Outcome, Providers, SavedLook, Request as EngineRequest } from './engine';
 import type { Edit } from './revision';
 import type { DescriptionWallet } from './wallet';
+import type { FailedCall } from './providers';
 import {
   Plain,
   billed,
@@ -47,6 +48,7 @@ import {
   voiceBase,
   synthesize,
   speechPerByte,
+  providerDetail,
   providerProblem,
   transcriptionPerMinute,
 } from './providers';
@@ -4184,7 +4186,8 @@ export function createDescriptionRouter(hooks: Hooks): {
           try {
             result = await action();
           } catch (error) {
-            const reported = (error as { costUSD?: unknown }).costUSD;
+            const failed = (error ?? {}) as FailedCall;
+            const reported = failed.costUSD;
             const known =
               typeof reported === 'number' && Number.isFinite(reported) && reported >= 0;
             /**
@@ -4192,10 +4195,31 @@ export function createDescriptionRouter(hooks: Hooks): {
              * limit. What the provider may still bill for it is the platform's cost, never hers.
              */
             const interrupted = !known && signal.aborted;
+            /**
+             * Any other failure the provider may have billed is booked as uncertain: at the cost
+             * its provider code expects (a look OpenRouter never priced, `FailedCall.expectedUSD`),
+             * otherwise at its whole reserve.
+             */
+            const uncertain = !known && !interrupted && billed(error);
+            const expected = failed.expectedUSD;
             let actual = 0;
-            if (known) actual = reported as number;
-            else if (!interrupted && billed(error)) actual = reserve;
-            const uncertain = !known && !interrupted && actual === reserve;
+            let settledBy: 'generation' | 'reported' | 'expected' | 'reserve' | 'unbilled' =
+              'unbilled';
+            if (known) {
+              actual = reported as number;
+              settledBy = failed.costFrom === 'generation' ? 'generation' : 'reported';
+            } else if (
+              uncertain &&
+              typeof expected === 'number' &&
+              Number.isFinite(expected) &&
+              expected >= 0
+            ) {
+              actual = Math.min(expected, reserve);
+              settledBy = 'expected';
+            } else if (uncertain) {
+              actual = reserve;
+              settledBy = 'reserve';
+            }
             await settleCost(uncertain ? 'uncertain' : kind, reserve, actual);
             if (actual > 0)
               await hooks
@@ -4207,13 +4231,13 @@ export function createDescriptionRouter(hooks: Hooks): {
                 kind,
                 settled: actual,
                 status: axios.isAxiosError(error) ? error.response?.status : undefined,
-                ...(interrupted
-                  ? {
-                      reserveUSD: Math.round(reserve * 1e6) / 1e6,
-                      providerMayBill: billed(error),
-                      why: stopName(signal.reason),
-                    }
+                ...(typeof failed.generation === 'string'
+                  ? { generation: failed.generation }
                   : {}),
+                reserveUSD: Math.round(reserve * 1e6) / 1e6,
+                ...(interrupted
+                  ? { providerMayBill: billed(error), why: stopName(signal.reason) }
+                  : { settledBy, reason: providerDetail(error) }),
               }),
             );
             throw error;

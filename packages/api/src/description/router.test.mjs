@@ -92,6 +92,12 @@ let overbill = 0;
  */
 let holdVision = null;
 /**
+ * When set, each look (not a first look) takes the next of these: a paid request ({ reserve })
+ * that times out carrying what the real `analyze` sets on a failed call (`failed`: generation id,
+ * recorded or expected cost), then answers as usual, as the real one does on its retry.
+ */
+let visionTimeouts = null;
+/**
  * When set, each look reports the next of these reasoning counts and is billed $0.02 ($0.05
  * reserve), or what `thinkingCost(look)` says.
  */
@@ -432,6 +438,18 @@ before(async () => {
           await meter('vision', 0.2, async () => {
             throw axiosFailure(429);
           });
+        if (visionTimeouts?.length && !look.brief.survey) {
+          const { reserve, failed } = visionTimeouts.shift();
+          await meter('vision', reserve, async () => {
+            throw Object.assign(
+              new Error('The video model did not finish its reply within 300 s.'),
+              { isAxiosError: true, code: 'ETIMEDOUT', config: { url: 'https://openrouter.ai/api/v1/chat/completions' } },
+              failed,
+            );
+          }).catch((error) => {
+            if (!error.isAxiosError) throw error;
+          });
+        }
         if (overbill && !look.brief.survey)
           await meter('vision', 0.05, async () => ({ costUSD: 0.05 * overbill }));
         const thought = thinking && !look.brief.survey ? thinking.shift() : undefined;
@@ -2874,6 +2892,81 @@ test('her cancel while a paid request is out charges nothing for it', async () =
     await park(id);
   }
   await call('delete', `/jobs/${id}`, 'cut-owner').expect(200);
+  await Budgets.deleteMany({});
+});
+
+test('a failed look request is booked at its recorded or expected cost, never its whole reserve, so the run does not stop over the quote', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('priced-owner', 'priced-upload-000001', 150);
+  await call('post', `/jobs/${id}/start`, 'priced-owner').send(settings).expect(202);
+  const approved = (await Jobs.findById(id).lean()).approvedUSD;
+  const usageBefore = usageLog.length;
+  const logsBefore = logLines.length;
+  visionTimeouts = [
+    { reserve: 0.35, failed: { generation: 'gen-recorded', costUSD: 0.012, costFrom: 'generation' } },
+    { reserve: 0.35, failed: { generation: 'gen-unrecorded', expectedUSD: 0.03 } },
+  ];
+  overbill = 1;
+  try {
+    assert.ok(approved < 0.35, `either failure at its $0.35 reserve would pass her approval (${approved})`);
+    const done = await settle(id, ['done', 'failed'], 'priced-owner');
+    assert.equal(done.state, 'done', done.error);
+    assert.equal(done.overQuote, false, 'the run was not stopped over the quote');
+    assert.equal(visionTimeouts.length, 0, 'both sections had a failed request');
+    const booked = usageLog.slice(usageBefore).filter((item) => item.job === id);
+    assert.deepEqual(
+      booked.filter((item) => item.kind.startsWith('vision') && item.costUSD !== 0.05).map((item) => [item.kind, item.costUSD]),
+      [['vision', 0.012], ['vision-uncertain', 0.03]],
+      'the recorded cost is a known charge; the expected one is still uncertain',
+    );
+    const job = await Jobs.findById(id).lean();
+    assert.ok(Math.abs(job.spend.uncertain - 0.03) < 1e-9, `spend.uncertain ${job.spend.uncertain}`);
+    const total = booked.reduce((sum, item) => sum + item.costUSD, 0);
+    assert.ok(Math.abs(done.runCostUSD - total) < 1e-6, `charged ${done.runCostUSD}, booked ${total}`);
+    assert.ok(done.runCostUSD <= approved);
+    const failures = logged(logsBefore, 'dv.paid-failure');
+    assert.deepEqual(
+      failures.map((entry) => [entry.generation, entry.settledBy, entry.settled, entry.reserveUSD]),
+      [
+        ['gen-recorded', 'generation', 0.012, 0.35],
+        ['gen-unrecorded', 'expected', 0.03, 0.35],
+      ],
+    );
+    assert.equal(failures[1].reason, 'ETIMEDOUT The video model did not finish its reply within 300 s.');
+    const room = requests.at(-1).approvedRoom();
+    assert.ok(
+      Math.abs(room - (approved - done.runCostUSD)) < 1e-6,
+      `the second-look budget sees what was settled, not the reserves: ${room} of ${approved}`,
+    );
+  } finally {
+    visionTimeouts = null;
+    overbill = 0;
+    await park(id);
+  }
+  await call('delete', `/jobs/${id}`, 'priced-owner').expect(200);
+
+  const other = await readyJob('priced-owner', 'priced-upload-000002', 60);
+  await call('post', `/jobs/${other}/start`, 'priced-owner').send(settings).expect(202);
+  const otherLogs = logLines.length;
+  const otherUsage = usageLog.length;
+  visionTimeouts = [{ reserve: 0.04, failed: {} }];
+  try {
+    const done = await settle(other, ['done', 'failed'], 'priced-owner');
+    assert.equal(done.state, 'done', done.error);
+    const [failure] = logged(otherLogs, 'dv.paid-failure');
+    assert.equal(failure.settledBy, 'reserve', 'a failure nothing priced still settles at its reserve');
+    assert.equal(failure.settled, 0.04);
+    assert.equal(failure.generation, undefined);
+    assert.ok(Math.abs((await Jobs.findById(other).lean()).spend.uncertain - 0.04) < 1e-9);
+    assert.deepEqual(
+      usageLog.slice(otherUsage).filter((item) => item.job === other && item.kind.startsWith('vision')).map((item) => [item.kind, item.costUSD]),
+      [['vision-uncertain', 0.04]],
+    );
+  } finally {
+    visionTimeouts = null;
+    await park(other);
+  }
+  await call('delete', `/jobs/${other}`, 'priced-owner').expect(200);
   await Budgets.deleteMany({});
 });
 

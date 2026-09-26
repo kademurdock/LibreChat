@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, rm, copyFile, stat, readFile, readdir } from 'node:fs/p
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
+import { Readable } from 'node:stream';
 import ffmpegPath from 'ffmpeg-static';
 import ffprobePath from 'ffprobe-static';
 import { AxiosError } from 'axios';
@@ -1125,16 +1126,18 @@ test('re-look: a retry of the second look that no longer fits is never sent, and
       n === 1
         ? JSON.stringify({ cues: [{ at: 1, until: 5, pauseAt: 1, text: 'Look 1: a red square moves across the room.', shortText: 'Look 1.', importance: 3 }] })
         : 'The square moves.';
+    const reply = {
+      provider: 'Google',
+      choices: [{ finish_reason: 'stop', message: { content } }],
+      usage: { cost: n === 1 ? 0.029 : 0.05, completion_tokens: 1500, completion_tokens_details: { reasoning_tokens: 0 } },
+    };
+    /* Streamed as OpenRouter sends it: the generation id in the headers, keep-alive spaces, then the JSON. */
     return {
       status: 200,
       statusText: 'OK',
-      headers: {},
+      headers: { 'x-generation-id': `gen-${n}` },
       config,
-      data: {
-        provider: 'Google',
-        choices: [{ finish_reason: 'stop', message: { content } }],
-        usage: { cost: n === 1 ? 0.029 : 0.05, completion_tokens: 1500, completion_tokens_details: { reasoning_tokens: 0 } },
-      },
+      data: Readable.from([Buffer.from('\n '), Buffer.from(JSON.stringify(reply))]),
     };
   };
   try {
