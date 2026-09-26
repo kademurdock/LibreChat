@@ -47,6 +47,7 @@ const { descriptionBatchRouter, bookImportRouter, saveBufferToS3, openAudioArchi
 const { requireJwtAuth } = require('~/server/middleware');
 const { tubeVaultHints, validTubeVaultItems } = require('@librechat/api');
 const { logKadeUsage } = require('~/models/kadeUsage');
+const { userPriceFactor } = require('~/server/services/kadeRealCost');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, KadeLibraryFold, CATEGORIES } = require('~/models/kadeBook');
 const { parseBook, PARSER_VERSION, NOTICE_REASONS } = require('./kadeReadingRoomParse');
 
@@ -1449,6 +1450,9 @@ router.get('/book/:id/describe/:t/estimate', requireJwtAuth, async (req, res) =>
     if (!book || !isMedia(book) || !(book.tracks || [])[t]) return res.status(404).json({ error: 'No such recording.' });
     const tr = book.tracks[t];
     const est = describer.estimate(tr.seconds || 0);
+    /* Part 295 review: the run is logged at its real cost and the balance pays the platform factor
+     * times that (logKadeUsage), so the price asked before spending is this person's (real for Kade). */
+    est.usd = Math.round(est.usd * userPriceFactor(req.user && req.user.role) * 10000) / 10000;
     res.json({ ok: true, enabled: describer.ENABLED(), ...est, hasSeconds: !!tr.seconds, queued: describer.queued(), progress: describer.progressOf(String(book.fileId || book._id), t), state: (tr.description || {}).state || '' });
   } catch (e) {
     res.status(500).json({ error: 'Could not estimate.' });

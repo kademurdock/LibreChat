@@ -34,6 +34,7 @@ const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, fluxCost } = require('~/models/kadeUsage');
+const { userPriceFactor } = require('~/server/services/kadeRealCost');
 const { SHARED_HEAD } = require('./kadePages');
 const {
   PERSONA_CRAFT,
@@ -397,8 +398,11 @@ router.get('/model-menu', (req, res) => {
   res.json({ menu: MODEL_MENU });
 });
 
+/* Part 295 review: a portrait is logged at its real price and the balance pays the platform factor
+ * times that (logKadeUsage), so the page quotes this person's price (the real one for Kade). */
 router.get('/quiz', (req, res) => {
-  res.json({ quiz: QUIZ });
+  const factor = userPriceFactor(req.user && req.user.role);
+  res.json({ quiz: QUIZ, priceFactor: factor, portraitUSD: Math.round(fluxCost(FLUX_ENDPOINT, 1) * factor * 1000) / 1000 });
 });
 
 router.post('/quiz/compose', express.json({ limit: '32kb' }), (req, res) => {
@@ -620,7 +624,8 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
       instructions: parsed.instructions,
       questions: parsed.questions,
       notes: parsed.notes,
-      costUSD: Number(costUSD.toFixed(5)),
+      /* Part 295 review: what this person paid (the real cost for Kade); the log line keeps the real one. */
+      costUSD: Number((costUSD * userPriceFactor(req.user && req.user.role)).toFixed(5)),
       costMeasured: measured,
       remainingToday: PERSONA_DAILY_CAP - used - 1,
       model: PERSONA_MODEL,
@@ -665,7 +670,8 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
 <div id="app"><p>Waking the character builder up…</p></div>
 </main><script>
 (function(){
-  var TOKEN=null, QUIZ=[], MENU=[], step=0, answers={}, draft=null, portraitB64=null, pickedName=null;
+  var TOKEN=null, QUIZ=[], MENU=[], step=0, answers={}, draft=null, portraitB64=null, pickedName=null, portraitUSD=null;
+  function portraitPrice(){ if(typeof portraitUSD!=='number') return 'a few cents'; var c=Math.round(portraitUSD*100); return c>=100 ? '$'+portraitUSD.toFixed(2) : Math.max(1,c)+' cent'+(c===1?'':'s'); }
   var describeText='', describeName='', personaRound=0, personaQs=[], personaNotes='';
   var app=document.getElementById('app'), live=document.getElementById('live');
   function say(t){ live.textContent=''; setTimeout(function(){ live.textContent=t; }, 60); }
@@ -802,7 +808,7 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
     h+='<fieldset id="menuBox"><legend>Their engine</legend><p class="help">This is the machinery that does their thinking. Plain choices — the technical names are behind the toggle for anyone who wants them.</p>';
     MENU.forEach(function(m){ h+='<label class="opt modelcard"><input type="radio" name="mm" value="'+m.key+'"'+(m.key===draft.modelKey?' checked':'')+'><strong>'+m.plainName+'</strong> — '+m.blurb+' <em>Good for: '+m.goodFor+'.</em><span class="expert">'+m.provider+' / '+m.model+'</span></label>'; });
     h+='<button type="button" id="expertBtn" aria-pressed="false">Show technical names</button></fieldset>';
-    h+='<fieldset><legend>Their picture</legend><p class="help">One tap paints their portrait — it costs 3 cents of picture credit from the same allowance everything else uses. You can repaint or skip; you can also change it later in the regular builder.</p>';
+    h+='<fieldset><legend>Their picture</legend><p class="help">One tap paints their portrait — it costs '+portraitPrice()+' of picture credit from the same allowance everything else uses. You can repaint or skip; you can also change it later in the regular builder.</p>';
     h+='<div id="portraitZone"><button type="button" id="paint" class="primary">Paint their portrait (3¢)</button></div></fieldset>';
     h+='<div class="row"><button type="button" id="back2">Back to questions</button><button type="button" id="create" class="primary">Bring them to life</button></div><p id="status" role="status"></p>';
     app.innerHTML=h;
@@ -857,7 +863,7 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
     TOKEN=await getToken();
     if(!TOKEN){ app.innerHTML='<p>Sign in on the main site first, then come back here.</p>'; return; }
     try{
-      var q=await api('/api/kade/builder/quiz'); QUIZ=q.quiz;
+      var q=await api('/api/kade/builder/quiz'); QUIZ=q.quiz; portraitUSD=typeof q.portraitUSD==='number'?q.portraitUSD:null;
       var m=await api('/api/kade/builder/model-menu'); MENU=m.menu;
       renderDoor();
     }catch(e){ app.innerHTML='<p>The quiz could not load. Try again in a minute.</p>'; }

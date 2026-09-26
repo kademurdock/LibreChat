@@ -28,7 +28,10 @@ const router = express.Router();
 const musicReferenceHooks = {
   auth: requireJwtAuth, user: req => String(req.user.id), refresh: freshAssetUrl,
   duration: buffer => require('./kadeSoundBoothStitch').durationOf(buffer),
-  transcribe: transcribeMusicLyrics,
+  /* Part 295: a Gemini refusal that is the key's own trouble reaches the Google key alarm; the
+   * transcriber still falls back to scribe_v2 as before. */
+  transcribe: (buffer, mime, seconds) => transcribeMusicLyrics(buffer, mime, seconds, (error) =>
+    googleKeyAlarm('the lyric transcriber', error, process.env.GEMINI_API_KEY ? 'GEMINI_API_KEY' : 'KADE_EMBED_GEMINI_KEY')),
   savedSources: async user => {
     const projects = await KadeSoundBoothProject.find({ user, 'options.reference_voice_url': { $exists: true } }).select('options.reference_voice_url').lean();
     const assets = await KadeAsset.find({ user, kind: 'audio' }).select('url metadata.wavUrl').lean();
@@ -225,6 +228,21 @@ function lyriaBase() {
 function lyriaKey() {
   return process.env.KADE_LYRIA_KEY || process.env.KADE_EMBED_GEMINI_KEY ||
     process.env.GEMINI_API_KEY || process.env.KADE_VISION_KEY || '';
+}
+/* Part 295: which of those it was, by NAME only, for the Google key alarm's line. */
+function lyriaKeyName() {
+  return ['KADE_LYRIA_KEY', 'KADE_EMBED_GEMINI_KEY', 'GEMINI_API_KEY', 'KADE_VISION_KEY'].find((n) => process.env[n]) || 'none';
+}
+/* Part 295: a Google refusal that is the key's own trouble (an empty prepaid balance, billing,
+ * permission) tells Kade, at most once every few hours. Fire-and-forget, never throws. */
+function googleKeyAlarm(lane, error, keyName) {
+  try {
+    require('~/server/services/kadeGoogleKeyAlarm')
+      .reportGoogleKeyTrouble(lane, error, { keyName })
+      .catch(() => {});
+  } catch (_) {
+    /* the alarm must never break a render */
+  }
 }
 
 function bridgeBase() {
@@ -1050,8 +1068,26 @@ function suggestEngine(text) {
   };
 }
 
+/* ---------- what a person pays: the price factor (Part 295) ---------------
+ * Her words, Sep 26 2026: "Yes, double everything." Everyone but the
+ * administrator pays the platform factor times the real price for a render
+ * (logKadeUsage charges it), so every quote, render answer and project price
+ * they are shown is multiplied the same way; she is quoted the real price.
+ * YuE2 and Stable Audio are trials Kade pays for, so their prices stay real.
+ * A test that stubs the module gets 1. */
+function priceFactor(user) {
+  try {
+    return require('../services/kadeRealCost').userPriceFactor(user && user.role);
+  } catch (_) {
+    return 1;
+  }
+}
+const KADE_PAYS_ENGINES = ['yue2', 'stable'];
+const isKade = (user) => String((user && user.role) || '').toUpperCase() === 'ADMIN';
+const priced = (usd, factor) => Math.round(usd * (factor || 1) * 1000) / 1000;
+
 /* ---------- estimates, said out loud before anything is spent ------------- */
-function estimateFor(engine, script) {
+function estimateFor(engine, script, factor = 1) {
   const { words, seconds } = spokenSeconds(script);
   if (engine === 'lyria') {
     /* The only per-SONG price in the booth. The brief's length says nothing
@@ -1059,17 +1095,18 @@ function estimateFor(engine, script) {
      * an audio length it cannot know -- it quotes the flat price and says so.
      * Quoting a fake duration here would be the silent wrong answer this
      * file's own header warns about. */
+    const costUSD = priced(LYRIA_USD_PER_SONG, factor);
     return {
       engine: 'lyria',
       words,
       audioSeconds: null,
       renderSeconds: 45,
-      costUSD: LYRIA_USD_PER_SONG,
-      spoken: `About ${Math.round(LYRIA_USD_PER_SONG * 100)} cents for the song, whatever length it comes out — Lyria is priced per song, not per minute. Usually back in under a minute.`,
+      costUSD,
+      spoken: `About ${Math.round(costUSD * 100)} cents for the song, whatever length it comes out — Lyria is priced per song, not per minute. Usually back in under a minute.`,
     };
   }
   if (engine === 'seed') {
-    const costUSD = Math.round((seconds / 60) * SEED_USD_PER_MIN * 1000) / 1000;
+    const costUSD = priced(Math.round((seconds / 60) * SEED_USD_PER_MIN * 1000) / 1000, factor);
     return {
       engine,
       words,
@@ -1087,7 +1124,21 @@ function estimateFor(engine, script) {
     audioSeconds: seconds,
     renderSeconds,
     costUSD,
-    spoken: `AuK HQ has no reliable total price estimate yet. GPU time costs up to $${Number(process.env.AUK_RATE_PER_HR || 1.22).toFixed(2)} per hour, including startup, processing and ten minutes awake after the last job. This is time the GPU is active, not the length of your recording. Longer work runs in sections.`,
+    spoken: `AuK HQ has no reliable total price estimate yet. GPU time costs up to $${(Number(process.env.AUK_RATE_PER_HR || 1.22) * (factor || 1)).toFixed(2)} per hour, including startup, processing and ten minutes awake after the last job. This is time the GPU is active, not the length of your recording. Longer work runs in sections.`,
+  };
+}
+
+/** The guide's price lines at this person's factor; the shared GUIDE is never changed. */
+function guidePriced(guide, factor) {
+  if (!factor || factor === 1) return guide;
+  const cents = (usd) => `${Math.round(usd * factor * 100)} cents`;
+  return {
+    ...guide,
+    engines: {
+      ...guide.engines,
+      lyria: { ...guide.engines.lyria, cost: `About ${cents(LYRIA_USD_PER_SONG)} a song, and that is per SONG — not per minute, however long it comes out. Back in under a minute, usually.` },
+      seed: { ...guide.engines.seed, cost: `About ${cents(SEED_USD_PER_MIN)} a minute. Back in seconds. Up to two minutes a pass.` },
+    },
   };
 }
 
@@ -1180,14 +1231,16 @@ async function linkJobAssets(projects, userId) {
   return linked;
 }
 
-async function takesFor(projects, userId) {
+/* Part 295: `paid` (everyone but Kade) shows each take at what its owner paid, the asset's
+ * chargedUSD; a take from before Part 295 or a trial Kade pays for has none and shows costUSD. */
+async function takesFor(projects, userId, paid = false) {
   const ids = [];
   for (const p of projects) for (const a of p.assets || []) ids.push(a);
   if (!ids.length) return new Map();
   const valid = ids.filter((i) => mongoose.Types.ObjectId.isValid(String(i)));
   if (!valid.length) return new Map();
   const docs = await KadeAsset.find({ _id: { $in: valid }, user: userId })
-    .select('_id kind url backupUrl description createdAt costUSD metadata')
+    .select('_id kind url backupUrl description createdAt costUSD chargedUSD metadata')
     .lean();
   const map = new Map();
   for (const d of docs) {
@@ -1202,14 +1255,16 @@ async function takesFor(projects, userId) {
       title: d.metadata?.title || '',
       description: d.description || '',
       seconds: (d.metadata && (d.metadata.seconds || d.metadata.durationS)) || null,
-      costUSD: d.costUSD || 0,
+      costUSD: paid && typeof d.chargedUSD === 'number' ? d.chargedUSD : d.costUSD || 0,
       createdAt: d.createdAt,
     });
   }
   return map;
 }
 
-function projectView(p) {
+function projectView(p, factor = 1) {
+  /* Part 295: stored costs are real; a person is shown what they paid (not for Kade's trials). */
+  const paid = KADE_PAYS_ENGINES.includes(p.engine) ? 1 : factor;
   /* Sep 25 2026: a Lyria row saved before sungLyrics existed keeps the sung
    * words in `readback`. Show them as what they are, never as "what you will
    * hear"; on an instrumental project they describe a take it no longer sings,
@@ -1240,12 +1295,12 @@ function projectView(p) {
     carriedFrom: (p.options || {}).carriedFrom || null,
     voiceSeed: p.voiceSeed,
     hasRecoverableAudio: (p.parts || []).some((part) => part.state === 'done' && part.url) || (p.assets || []).length > 0,
-    parts: (p.parts || []).map(({ index, state, durationS, costUSD }) => ({ index, state, durationS, costUSD })),
+    parts: (p.parts || []).map(({ index, state, durationS, costUSD }) => ({ index, state, durationS, costUSD: typeof costUSD === 'number' ? priced(costUSD, paid) : costUSD })),
     jobs: p.jobs || [],
     assets: p.assets || [],
     state: p.state,
     lastError: p.lastError || null,
-    costUSD: p.costUSD || 0,
+    costUSD: priced(p.costUSD || 0, paid),
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     lastRenderAt: p.lastRenderAt || null,
@@ -1343,7 +1398,7 @@ router.get('/script/job/:id', requireJwtAuth, (req, res) => {
  * counted against the day, and handed back in the same "direction, then
  * Lyrics:" shape both screens already split into their two boxes. The
  * Negative Tag Box goes nowhere (see kadeSoundBoothPaste.js). */
-function songPasteScriptResult(engine, mode, pasted, b, field = 'script') {
+function songPasteScriptResult(engine, mode, pasted, b, field = 'script', factor = 1) {
   /* Pasted as the text to write up, whatever sat above its first heading is
    * the direction she had; pasted into the lyrics box, the text is her
    * direction and whatever sat above the heading there is her words. The
@@ -1369,7 +1424,7 @@ function songPasteScriptResult(engine, mode, pasted, b, field = 'script') {
     script: draft,
     screenplay: draft,
     readback,
-    estimate: engine === 'yue2' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor('lyria', placed.script),
+    estimate: engine === 'yue2' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor('lyria', placed.script, factor),
     problem,
     repairs: [],
     mismatch: null,
@@ -1408,13 +1463,13 @@ async function scriptHandler(req, res) {
       const pasted = songPaste.splitSongPaste(b.text);
       if (pasted) {
         logger.info(`[soundbooth/script] ${engine}/${mode} user=${req.user.id} pasted song sorted without the writer: boxes=${pasted.boxes.join(',')}`);
-        return res.json(songPasteScriptResult(engine, mode, pasted, b));
+        return res.json(songPasteScriptResult(engine, mode, pasted, b, 'script', priceFactor(req.user)));
       }
       const pastedWords = songPaste.splitSongPaste(b.lyrics);
       if (pastedWords) {
         logger.info(`[soundbooth/script] ${engine}/${mode} user=${req.user.id} song pasted into the lyrics box sorted: boxes=${pastedWords.boxes.join(',')}`);
         if (String(b.text || '').trim().length < 3) {
-          return res.json(songPasteScriptResult(engine, mode, pastedWords, b, 'lyrics'));
+          return res.json(songPasteScriptResult(engine, mode, pastedWords, b, 'lyrics', priceFactor(req.user)));
         }
         lyricsPaste = songPaste.placeSongPaste(pastedWords, {
           field: 'lyrics', direction: String(b.text || ''), lyrics: pastedWords.before, holdLyrics: true,
@@ -1677,7 +1732,7 @@ async function scriptHandler(req, res) {
       }
     }
     const problem = ['lyria', 'yue2'].includes(engine) ? null : engine === 'seed' ? checkSeed(script) : checkScenema(script);
-    const estimate = engine === 'yue2' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor(engine, script);
+    const estimate = engine === 'yue2' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor(engine, script, priceFactor(req.user));
     logKadeUsage({
       userId: req.user.id,
       service: 'soundbooth_script',
@@ -1792,7 +1847,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   if (b.estimateOnly === true) {
     const quoteScript = b.preview === true && engine === 'scenema'
       ? previewExcerpt(script, { maxWords: 40 }).prompt : script;
-    const estimate = estimateFor(engine, quoteScript);
+    const estimate = estimateFor(engine, quoteScript, priceFactor(req.user));
     if (editing) { estimate.audioSeconds = b.gen_seconds || null; estimate.spoken = 'AuK will edit your imported recording and save a new take. GPU time is billed; the cost depends on recording length and startup. ' + estimate.spoken; }
     /* A pasted song is said to have been sorted before anything is spent. */
     const pasteNote = req.songPaste && req.songPaste.note;
@@ -1941,7 +1996,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       if (step.state === 'failed') {
         return res.status(400).json({ error: project.lastError, projectId: String(project._id) });
       }
-      const est = estimateFor('scenema', script);
+      const est = estimateFor('scenema', script, priceFactor(req.user));
       logger.info(`[soundbooth/render] scenema SPLIT into ${pieces.length} parts project=${project._id} user=${req.user.id}`);
       return res.json({
         ok: true,
@@ -2055,7 +2110,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
                 : `Your script is empty, so it will read a plain line instead: "${String(previewInfo?.text || '').slice(0, 160)}"`) +
               ` Voice number ${project.voiceSeed} — the full render will use this same voice. GPU time is billed.`,
           }
-        : estimateFor('scenema', script);
+        : estimateFor('scenema', script, priceFactor(req.user));
       /* Part 123: the bridge's estimate is read for a PREVIEW too. Its
        * spokenWait now names which case she is in (card awake / waking / none
        * free), and "about a penny" with no wait attached is exactly the promise
@@ -2071,7 +2126,8 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         renderSeconds: bridgeEst.renderSeconds || est.renderSeconds,
         renderSecondsWarm: bridgeEst.renderSecondsWarm,
         cardAwake: bridgeEst.cardAwake,
-        costUSD: typeof bridgeEst.costUSD === 'number' ? bridgeEst.costUSD : est.costUSD,
+        /* Part 295: the bridge quotes the real price; est.costUSD is already this person's. */
+        costUSD: typeof bridgeEst.costUSD === 'number' ? priced(bridgeEst.costUSD, priceFactor(req.user)) : est.costUSD,
       };
       /* A preview writes its OWN sentence (what it will perform, and the voice
        * number). sayEstimate would flatten that back into "about N seconds of
@@ -2132,6 +2188,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       } catch (e) {
         const status = e?.response?.status;
         const detail = e?.response?.data?.error?.message || e?.response?.data?.error || e.message;
+        googleKeyAlarm('Lyria songs', e, lyriaKeyName());
         /* The wall, named out loud. A 404 here is almost always the model id,
          * and the id is the one thing about Lyria 3.5 that does not follow its
          * own family's pattern -- so say the right string instead of handing
@@ -2250,7 +2307,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         url,
         bytes: buffer.length,
         lyrics: opts.keep_lyrics === false ? null : lyricsClean || null,
-        costUSD,
+        costUSD: priced(costUSD, priceFactor(req.user)),
         note: (req.songPaste && req.songPaste.note) || null,
         spoken: ((req.songPaste && req.songPaste.note) ? req.songPaste.note + ' ' : '') + (lyricsClean
           ? 'The song is made, and it wrote words for it. They are saved with the recording.'
@@ -2344,7 +2401,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       assetId,
       url: audio.url,
       seconds,
-      costUSD,
+      costUSD: priced(costUSD, priceFactor(req.user)),
     });
   } catch (error) {
     logger.error('[soundbooth/render] failed:', error);
@@ -2467,7 +2524,9 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
       error: j.error || null,
       url: j.result?.url || null,
       durationS: j.result?.durationS || null,
-      costUSD: j.costUSD || null,
+      /* Part 295 review: the bridge reports the real price; a person is shown what they paid (the
+       * real price for Kade and for the trials she pays for), the way projectView does. */
+      costUSD: j.costUSD ? priced(j.costUSD, KADE_PAYS_ENGINES.includes(project.engine) ? 1 : priceFactor(req.user)) : null,
       /* Part 122: the bridge now says WHY an unfinished job is unfinished, how
        * long it has been that way, and when it will give up. Passed straight
        * through so the surfaces can speak a changing sentence on every poll
@@ -2547,9 +2606,10 @@ router.get('/projects', requireJwtAuth, async (req, res) => {
       .limit(50)
       .lean();
     await linkJobAssets(rows, req.user.id);
-    const takes = await takesFor(rows, req.user.id);
+    const takes = await takesFor(rows, req.user.id, !isKade(req.user));
+    const factor = priceFactor(req.user);
     const projects = await Promise.all(rows.map(async (r) => {
-      const v = projectView(r);
+      const v = projectView(r, factor);
       await refreshReferences(v);
       v.takes = (r.assets || []).map((id) => takes.get(String(id))).filter(Boolean).reverse();
       return v;
@@ -2569,8 +2629,8 @@ router.get('/projects/:id', requireJwtAuth, async (req, res) => {
     const p = await KadeSoundBoothProject.findOne({ _id: req.params.id, user: req.user.id }).lean();
     if (!p) return res.status(404).json({ error: 'No such project.' });
     await linkJobAssets([p], req.user.id);
-    const takes = await takesFor([p], req.user.id);
-    const v = projectView(p);
+    const takes = await takesFor([p], req.user.id, !isKade(req.user));
+    const v = projectView(p, priceFactor(req.user));
     await refreshReferences(v);
     v.takes = (p.assets || []).map((id) => takes.get(String(id))).filter(Boolean).reverse();
     return res.json({ project: v });
@@ -2594,7 +2654,7 @@ router.patch('/projects/:id', requireJwtAuth, express.json({ limit: '64kb' }), a
     if (typeof b.sourceText === 'string') p.sourceText = b.sourceText.slice(0, 8000);
     await p.save();
     if (typeof b.title === 'string') await KadeAsset.updateMany({ user: req.user.id, 'metadata.projectId': String(p._id) }, { $set: { 'metadata.title': p.title, description: p.title } });
-    return res.json({ project: projectView(p) });
+    return res.json({ project: projectView(p, priceFactor(req.user)) });
   } catch (error) {
     logger.error('[soundbooth/project patch] failed:', error);
     return res.status(500).json({ error: "Couldn't save that." });
@@ -2676,7 +2736,7 @@ router.post('/projects/:id/carry', requireJwtAuth, express.json({ limit: '16kb' 
     const created = await KadeSoundBoothProject.create({ user: req.user.id, ...draft });
     logger.info(`[soundbooth/carry] ${source.engine} -> ${to} user=${req.user.id} from=${source._id} to=${created._id} rewrite=${(req.body || {}).rewrite === true}`);
     return res.json({
-      project: projectView(created.toObject ? created.toObject() : created),
+      project: projectView(created.toObject ? created.toObject() : created, priceFactor(req.user)),
       from: { id: String(source._id), engine: source.engine, title: source.title },
       notes,
       rewriteAdvised: out.rewriteAdvised,
@@ -2974,14 +3034,15 @@ router.get('/health', requireJwtAuth, async (req, res) => {
      * ("Part of the Family feature pack") by clients that read it
      * (kadeSoundBoothLink.js guideFor). `features` is the same map
      * GET /api/kade/features answers. */
-    guide: require('./kadeSoundBoothLink').guideFor(GUIDE, req.user, boothFeatures),
+    /* Part 295: price lines and prices at this person's factor (real for Kade). */
+    guide: require('./kadeSoundBoothLink').guideFor(guidePriced(GUIDE, priceFactor(req.user)), req.user, boothFeatures),
     features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
-      seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: SEED_USD_PER_MIN },
+      seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: priced(SEED_USD_PER_MIN, priceFactor(req.user)) },
       stable: { configured: effectsConfigured(), queued: true, model: effectsModel, usdPerRecording: effectsPrice, models: effectsVariants },
       yue2: { configured: yueConfigured(), queued: true, model: 'm-a-p/YuE2-3B' },
-      lyria: { configured: !!lyriaKey(), queued: false, usdPerSong: LYRIA_USD_PER_SONG, model: LYRIA_MODEL },
+      lyria: { configured: !!lyriaKey(), queued: false, usdPerSong: priced(LYRIA_USD_PER_SONG, priceFactor(req.user)), model: LYRIA_MODEL },
     },
     scriptDesk: !!(process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY),
     lyricWritingPersona: 'Lyric',
@@ -2994,5 +3055,5 @@ router.get('/health', requireJwtAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, kidsStyleRefusal, verseCount };
+module.exports._internals = { priceFactor, guidePriced, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, kidsStyleRefusal, verseCount };
 

@@ -117,9 +117,10 @@ test("/my-cost: an administrator's own voice estimates are not added to her real
 test("/my-usage: an administrator's chat line does not add her voice estimates; a caller's does", () => {
   const code = slice('    const qKey = {', '    month.totalUSD =');
   const blank = () => ({ llmUSD: 0, ttsUSD: 0, fluxUSD: 0, tavilyUSD: 0, phoneUSD: 0, otherUSD: 0, tts_chars: 0, flux_images: 0, tavily_searches: 0, phone_minutes: 0 });
+  /* Rows from before Part 295: the aggregation's chargedUSD falls back to costUSD (1x). */
   const kuAgg = [
-    { _id: { service: 'voice_chat', recent: true }, costUSD: 0.3, quantity: 900 },
-    { _id: { service: 'phone', recent: true }, costUSD: 0.2, quantity: 4 },
+    { _id: { service: 'voice_chat', recent: true }, costUSD: 0.3, chargedUSD: 0.3, quantity: 900 },
+    { _id: { service: 'phone', recent: true }, costUSD: 0.2, chargedUSD: 0.2, quantity: 4 },
   ];
   const as = (role) => {
     const all = blank();
@@ -136,6 +137,83 @@ test("/my-usage: an administrator's chat line does not add her voice estimates; 
   const member = as('USER');
   assert.equal(member.all.llmUSD, 1.3);
   assert.equal(member.month.llmUSD, 1.3);
+});
+
+test('Part 295 /my-usage: everyone else sees what their balance paid for extras; Kade sees the real cost', () => {
+  const code = slice('    const qKey = {', '    month.totalUSD =');
+  const blank = () => ({ llmUSD: 0, ttsUSD: 0, fluxUSD: 0, tavilyUSD: 0, phoneUSD: 0, otherUSD: 0, tts_chars: 0, flux_images: 0, tavily_searches: 0, phone_minutes: 0 });
+  const kuAgg = [
+    { _id: { service: 'google_lyria', recent: true }, costUSD: 0.08, chargedUSD: 0.16, quantity: 1 },
+    { _id: { service: 'phone', recent: false }, costUSD: 0.2, chargedUSD: 0.4, quantity: 4 },
+    { _id: { service: 'voice_chat', recent: true }, costUSD: 0.3, chargedUSD: 0.6, quantity: 900 },
+  ];
+  const as = (role) => {
+    const all = blank();
+    const month = blank();
+    run(code, { kuAgg, req: { user: { role } }, all, month }, '');
+    return { all, month };
+  };
+  const member = as('USER');
+  assert.equal(member.month.otherUSD, 0.16, 'a Lyria song at the platform factor');
+  assert.equal(member.all.phoneUSD, 0.4);
+  assert.equal(member.month.phoneUSD, 0, 'last month stays out of this month');
+  assert.equal(member.all.llmUSD, 0.6, 'their voice estimate, as charged');
+  const admin = as('ADMIN');
+  assert.equal(admin.month.otherUSD, 0.08, 'her own readout is the real cost');
+  assert.equal(admin.all.phoneUSD, 0.2);
+  assert.equal(admin.all.llmUSD, 0, 'and her voice estimates are still not added (F14)');
+  assert.match(SRC, /chargedUSD: \{ \$sum: CHARGED_USD \}/, 'the aggregation reads the charged column');
+});
+
+test('Part 295 /my-cost: charged extras beside the real cost; the administrator is charged nothing', () => {
+  const code = slice('    const subjectAdmin = isAdminRole(', '    const label = ');
+  const extras = [
+    { _id: 'google_lyria', costUSD: 0.08, chargedUSD: 0.16, quantity: 1 },
+    { _id: 'voice_chat', costUSD: 0.3, chargedUSD: 0.6, quantity: 900 },
+  ];
+  const vars = (role) => ({ subject: { role }, tx: { spend: -2e6, turns: 3 }, real: [{ realUSD: 1 }], extras });
+  const member = run(code, vars('USER'), 'this.r = { extrasUSD, chargedExtrasUSD, totalUSD, chargedModelUSD };');
+  assert.equal(member.r.extrasUSD, 0.38, 'what they cost the server stays real');
+  assert.equal(member.r.chargedExtrasUSD, 0.76);
+  assert.equal(member.r.totalUSD, 1.38);
+  const admin = run(code, vars('ADMIN'), 'this.r = { extrasUSD, chargedExtrasUSD };');
+  assert.equal(admin.r.extrasUSD, 0.08);
+  assert.equal(admin.r.chargedExtrasUSD, 0);
+});
+
+test('Part 295 /books: "charged" uses the charged extras; "cost the server" stays real', () => {
+  const tx = [{ _id: 'amber', spend: -1e6, turns: 10 }, { _id: 'kade', spend: -4e6, turns: 40 }];
+  const real = [{ key: { user: 'amber' }, realUSD: 0.5 }, { key: { user: 'kade' }, realUSD: 2 }];
+  const ku = [
+    { _id: 'amber', costUSD: 0.6, chargedUSD: 1.2, voiceUSD: 0.4, chargedVoiceUSD: 0.8 },
+    { _id: 'kade', costUSD: 0.35, chargedUSD: 0.35, voiceUSD: 0.3, chargedVoiceUSD: 0.3 },
+  ];
+  const users = [{ _id: 'kade', name: 'Kade', role: 'ADMIN' }, { _id: 'amber', name: 'Amber', role: 'USER' }];
+  const c = run(
+    slice('    const names = {}; for (const u of users)', '  } catch (e) { out.usersError'),
+    { tx, real, ku, users, out: {} },
+    'this.result = out;',
+  );
+  const byId = Object.fromEntries(c.result.users.map((u) => [u.userId, u]));
+  assert.equal(byId.amber.chargedExtrasUSD, 1.2);
+  assert.equal(byId.amber.chargedVoiceEstimateUSD, 0.8);
+  assert.equal(byId.amber.totalUSD, 0.7, 'unchanged: real chat 0.50 + real extras 0.20');
+  assert.equal(byId.kade.chargedExtrasUSD, 0, 'the administrator is never charged');
+  assert.equal(byId.kade.chargedVoiceEstimateUSD, 0);
+  const pages = fs.readFileSync(path.join(__dirname, 'kadePages.js'), 'utf8');
+  assert.match(pages, /u\.chargedModelUSD \+ \(u\.chargedExtrasUSD != null \? u\.chargedExtrasUSD : u\.extrasUSD\)/);
+});
+
+test('Part 295 /usage: extraChargedUSD counts only other people, and falls back to 1x on old rows', () => {
+  const svcC = (cost, charged) => ({ unit: null, quantity: { allTime: 1, window: 1 }, costUSD: { allTime: cost, window: cost }, ...(charged == null ? {} : { chargedUSD: { allTime: charged, window: charged } }) });
+  const userMap = {
+    kade: person('kade', 'ADMIN', { services: { google_lyria: svcC(0.08, 0) } }),
+    amber: person('amber', 'USER', { services: { google_lyria: svcC(0.08, 0.16), phone: svcC(0.2) } }),
+  };
+  const c = run(slice('    const perUser = Object.values(userMap).sort(', '    let twilio = null;'), { userMap }, 'this.totals = totals;');
+  assert.equal(c.totals.extraChargedUSD.allTime, 0.36, 'Amber: Lyria 0.16 + an old phone row at 1x 0.20');
+  assert.equal(c.totals.extraSpendUSD.allTime, 0.36, 'the real extras (bridge/monthly.js reads this) are unchanged');
+  assert.equal(c.totals.extraRealUSD.allTime, 0.36);
 });
 
 test('the dashboard shows the new totals: charged from llmChargedUSD, voice estimates on their own line', () => {

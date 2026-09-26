@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability, hasCapability } = require('~/server/middleware/roles/capabilities');
-const { logKadeUsage } = require('~/models/kadeUsage');
+const { logKadeUsage, CHARGED_USD } = require('~/models/kadeUsage');
 const { KadeAsset } = require('~/models/kadeAsset');
 const { needsRefresh, getNewS3URL, createHarnessRouter } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -10,6 +10,7 @@ const { requireJwtAuth } = require('~/server/middleware');
 const {
   realChat,
   isAdminRole,
+  userPriceFactor,
   voiceUsageEvent,
   isVoiceEstimate,
   VOICE_ESTIMATE_SERVICE,
@@ -150,7 +151,7 @@ router.get('/my-cost', requireJwtAuth, async (req, res) => {
       realChat({ Transaction, db: require('~/models'), match: { user: uid, createdAt: { $gte: since } } }),
       KadeUsage.aggregate([
         { $match: { user: uid, createdAt: { $gte: since } } },
-        { $group: { _id: '$service', costUSD: { $sum: '$costUSD' }, quantity: { $sum: '$quantity' } } },
+        { $group: { _id: '$service', costUSD: { $sum: '$costUSD' }, chargedUSD: { $sum: CHARGED_USD }, quantity: { $sum: '$quantity' } } },
       ]),
       userId === String(req.user.id) ? req.user : User.findById(uid, { role: 1 }).lean(),
     ]);
@@ -161,6 +162,8 @@ router.get('/my-cost', requireJwtAuth, async (req, res) => {
      * her own seat's chat rows, which modelUSD already counts at the real price. */
     const counted = subjectAdmin ? extras.filter((r) => !isVoiceEstimate(r._id)) : extras;
     const extrasUSD = round(counted.reduce((s, r) => s + (r.costUSD || 0), 0));
+    /* Part 295: what the balance paid for the extras (the platform factor x real since Sep 26). */
+    const chargedExtrasUSD = subjectAdmin ? 0 : round(counted.reduce((s, r) => s + (r.chargedUSD || 0), 0));
     const totalUSD = round(modelUSD + extrasUSD);
     const label = `Since ${since.toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'long', day: 'numeric' })} you have cost the server about $${totalUSD.toFixed(2)}.`;
     res.json({
@@ -172,7 +175,14 @@ router.get('/my-cost', requireJwtAuth, async (req, res) => {
       chargedModelUSD,
       modelTurns: tx ? tx.turns : 0,
       extrasUSD,
-      extras: counted.map((r) => ({ service: r._id, costUSD: round(r.costUSD || 0), quantity: r.quantity })),
+      chargedExtrasUSD,
+      chargedUSD: round(chargedModelUSD + chargedExtrasUSD),
+      extras: counted.map((r) => ({
+        service: r._id,
+        costUSD: round(r.costUSD || 0),
+        chargedUSD: subjectAdmin ? 0 : round(r.chargedUSD || 0),
+        quantity: r.quantity,
+      })),
       totalUSD,
       spoken: label,
     });
@@ -212,15 +222,17 @@ router.get('/books', requireJwtAuth, requireAdminAccess, async (req, res) => {
        * estimate. Those turns are already in a chat meter row (Kade's seat, or the caller's own
        * once voice is billed for real), so "cost the server" leaves them out; they stay in the
        * caller's "charged" figure, because their balance really paid them. */
-      KadeUsage.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: '$user', costUSD: { $sum: '$costUSD' }, voiceUSD: { $sum: { $cond: [{ $eq: ['$service', VOICE_ESTIMATE_SERVICE] }, '$costUSD', 0] } } } }]),
+      /* Part 295: chargedUSD / chargedVoiceUSD are what the balance paid for the same rows (the
+       * platform factor x real since Sep 26); costUSD and voiceUSD stay real. */
+      KadeUsage.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: '$user', costUSD: { $sum: '$costUSD' }, chargedUSD: { $sum: CHARGED_USD }, voiceUSD: { $sum: { $cond: [{ $eq: ['$service', VOICE_ESTIMATE_SERVICE] }, '$costUSD', 0] } }, chargedVoiceUSD: { $sum: { $cond: [{ $eq: ['$service', VOICE_ESTIMATE_SERVICE] }, CHARGED_USD, 0] } } } }]),
       User.find({}, { name: 1, email: 1, role: 1 }).lean(),
     ]);
     const names = {}; for (const u of users) names[String(u._id)] = { name: u.name || u.email || String(u._id), role: u.role };
     const realBy = new Map(real.map((r) => [String(r.key.user), r.realUSD]));
     const rows = {};
-    const blankRow = (k) => ({ userId: k, chargedModelUSD: 0, modelUSD: 0, extrasUSD: 0, voiceEstimateUSD: 0, turns: 0 });
+    const blankRow = (k) => ({ userId: k, chargedModelUSD: 0, modelUSD: 0, extrasUSD: 0, chargedExtrasUSD: 0, voiceEstimateUSD: 0, chargedVoiceEstimateUSD: 0, turns: 0 });
     for (const t of tx) { const k = String(t._id); rows[k] = rows[k] || blankRow(k); rows[k].chargedModelUSD = isAdminRole((names[k] || {}).role) ? 0 : round(Math.abs(usd(t.spend))); rows[k].modelUSD = round(realBy.get(k) || 0); rows[k].turns = t.turns; }
-    for (const e of ku) { const k = String(e._id); rows[k] = rows[k] || blankRow(k); rows[k].extrasUSD = round(e.costUSD || 0); rows[k].voiceEstimateUSD = round(e.voiceUSD || 0); }
+    for (const e of ku) { const k = String(e._id); const admin = isAdminRole((names[k] || {}).role); rows[k] = rows[k] || blankRow(k); rows[k].extrasUSD = round(e.costUSD || 0); rows[k].chargedExtrasUSD = admin ? 0 : round(e.chargedUSD || 0); rows[k].voiceEstimateUSD = round(e.voiceUSD || 0); rows[k].chargedVoiceEstimateUSD = admin ? 0 : round(e.chargedVoiceUSD || 0); }
     out.users = Object.values(rows).map((r) => ({ ...r, name: (names[r.userId] || {}).name || r.userId, role: (names[r.userId] || {}).role || null, totalUSD: round(r.modelUSD + r.extrasUSD - r.voiceEstimateUSD) })).sort((a, b) => b.totalUSD - a.totalUSD);
     out.totalUSD = round(out.users.reduce((s, r) => s + r.totalUSD, 0));
   } catch (e) { out.usersError = e && e.message; }
@@ -303,10 +315,13 @@ router.get('/usage', requireJwtAuth, requireAdminAccess, async (req, res) => {
           _id: { user: '$user', service: '$service', recent: { $gte: ['$createdAt', since] } },
           quantity: { $sum: '$quantity' },
           costUSD: { $sum: '$costUSD' },
+          chargedUSD: { $sum: CHARGED_USD },
           unit: { $first: '$unit' },
         },
       },
     ]);
+    /* Part 295: costUSD stays the real cost everywhere on this admin page; chargedUSD is what the
+     * person's balance paid for the same rows (the platform factor x real since Sep 26). */
     for (const row of kuAgg) {
       const u = ensureUser(row._id.user);
       const svc = row._id.service || 'unknown';
@@ -315,13 +330,16 @@ router.get('/usage', requireJwtAuth, requireAdminAccess, async (req, res) => {
           unit: row.unit || null,
           quantity: { allTime: 0, window: 0 },
           costUSD: { allTime: 0, window: 0 },
+          chargedUSD: { allTime: 0, window: 0 },
         };
       }
       u.services[svc].quantity.allTime += row.quantity || 0;
       u.services[svc].costUSD.allTime = round(u.services[svc].costUSD.allTime + (row.costUSD || 0));
+      u.services[svc].chargedUSD.allTime = round(u.services[svc].chargedUSD.allTime + (row.chargedUSD || 0));
       if (row._id.recent) {
         u.services[svc].quantity.window += row.quantity || 0;
         u.services[svc].costUSD.window = round(u.services[svc].costUSD.window + (row.costUSD || 0));
+        u.services[svc].chargedUSD.window = round(u.services[svc].chargedUSD.window + (row.chargedUSD || 0));
       }
     }
 
@@ -338,6 +356,8 @@ router.get('/usage', requireJwtAuth, requireAdminAccess, async (req, res) => {
       llmChargedUSD: { allTime: 0, window: 0 },
       llmRealUSD: { allTime: 0, window: 0 },
       extraSpendUSD: { allTime: 0, window: 0 },
+      /* Part 295: what other people's balances paid for extras (never the administrator's rows). */
+      extraChargedUSD: { allTime: 0, window: 0 },
       voiceEstimateUSD: { allTime: 0, window: 0 },
       extraRealUSD: { allTime: 0, window: 0 },
       balanceUSD: 0,
@@ -369,6 +389,11 @@ router.get('/usage', requireJwtAuth, requireAdminAccess, async (req, res) => {
         addService(svc, d.unit, d.quantity.allTime, d.quantity.window, d.costUSD.allTime, d.costUSD.window);
         totals.extraSpendUSD.allTime = round(totals.extraSpendUSD.allTime + d.costUSD.allTime);
         totals.extraSpendUSD.window = round(totals.extraSpendUSD.window + d.costUSD.window);
+        if (!isAdminRole(u.role)) {
+          const paid = d.chargedUSD || d.costUSD;
+          totals.extraChargedUSD.allTime = round(totals.extraChargedUSD.allTime + paid.allTime);
+          totals.extraChargedUSD.window = round(totals.extraChargedUSD.window + paid.window);
+        }
         const bucket = isVoiceEstimate(svc) ? totals.voiceEstimateUSD : totals.extraRealUSD;
         bucket.allTime = round(bucket.allTime + d.costUSD.allTime);
         bucket.window = round(bucket.window + d.costUSD.window);
@@ -457,6 +482,7 @@ router.get('/my-usage', requireJwtAuth, async (req, res) => {
             _id: { service: '$service', recent: { $gte: ['$createdAt', since] } },
             quantity: { $sum: '$quantity' },
             costUSD: { $sum: '$costUSD' },
+            chargedUSD: { $sum: CHARGED_USD },
           },
         },
       ]),
@@ -488,23 +514,27 @@ router.get('/my-usage', requireJwtAuth, async (req, res) => {
     // token quantity deliberately joins no quantity counter (tokens aren't
     // minutes/chars/images).
     const cKey = { tts: 'ttsUSD', flux: 'fluxUSD', tavily: 'tavilyUSD', phone: 'phoneUSD', voice_chat: 'llmUSD' };
+    /* Part 295 ("Yes, double everything"): everyone else sees what their balance paid for each
+     * extra (chargedUSD, the platform factor x real); the administrator keeps the real cost. */
+    const selfAdmin = isAdminRole(req.user && req.user.role);
     for (const r of kuAgg) {
       const svc = r._id.service;
       /* Part 291 review (F14): the administrator's chat line above is her own seat's rows at the
        * real price, which already include her voice turns, so her voice_chat estimates are not
        * added to it a second time. */
-      if (isVoiceEstimate(svc) && isAdminRole(req.user && req.user.role)) continue;
+      if (isVoiceEstimate(svc) && selfAdmin) continue;
+      const v = (selfAdmin ? r.costUSD : (r.chargedUSD ?? r.costUSD)) || 0;
       if (cKey[svc]) {
-        all[cKey[svc]] = round(all[cKey[svc]] + (r.costUSD || 0));
+        all[cKey[svc]] = round(all[cKey[svc]] + v);
         if (qKey[svc]) { all[qKey[svc]] += r.quantity || 0; }
         if (r._id.recent) {
-          month[cKey[svc]] = round(month[cKey[svc]] + (r.costUSD || 0));
+          month[cKey[svc]] = round(month[cKey[svc]] + v);
           if (qKey[svc]) { month[qKey[svc]] += r.quantity || 0; }
         }
       } else {
         // anything else (fal_video, fal_image, future services) rolls into "other"
-        all.otherUSD = round(all.otherUSD + (r.costUSD || 0));
-        if (r._id.recent) month.otherUSD = round(month.otherUSD + (r.costUSD || 0));
+        all.otherUSD = round(all.otherUSD + v);
+        if (r._id.recent) month.otherUSD = round(month.otherUSD + v);
       }
     }
     month.totalUSD = round(month.llmUSD + month.ttsUSD + month.fluxUSD + month.tavilyUSD + month.phoneUSD + month.otherUSD);
@@ -546,7 +576,9 @@ async function freshAssetUrl(url) {
   return u;
 }
 
-async function assetView(d, { withOwner = false } = {}) {
+/* Part 295: `paid` shows the owner what they paid (the asset's chargedUSD); without it (the
+ * administrator, an asset from before Part 295, a trial Kade pays for) the real costUSD. */
+async function assetView(d, { withOwner = false, paid = false } = {}) {
   const view = {
     id: String(d._id),
     kind: d.kind,
@@ -558,7 +590,7 @@ async function assetView(d, { withOwner = false } = {}) {
     archived: !!d.archived,
     prompt: d.prompt || '',
     model: d.model || '',
-    costUSD: d.costUSD || 0,
+    costUSD: paid && typeof d.chargedUSD === 'number' ? d.chargedUSD : d.costUSD || 0,
     createdAt: d.createdAt,
   };
   /* Part 91.7 — a document's face is its generation-time spoken summary
@@ -583,7 +615,8 @@ router.get('/my-assets', requireJwtAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(300)
       .lean();
-    const assets = await Promise.all(docs.map((d) => assetView(d)));
+    const paid = !isAdminRole(req.user && req.user.role);
+    const assets = await Promise.all(docs.map((d) => assetView(d, { paid })));
     return res.json({ count: assets.length, assets });
   } catch (error) {
     logger.error('[/api/kade/my-assets] error:', error);
@@ -1794,7 +1827,8 @@ router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
     });
     return res.json({
       image: `data:${mime};base64,${Buffer.from(img.data).toString('base64')}`,
-      costUSD,
+      /* Part 295: the price this person paid (real for the administrator). */
+      costUSD: round(costUSD * userPriceFactor(req.user && req.user.role)),
     });
   } catch (err) {
     logger.error(`[kade/avatar-generate] failed: ${err && err.message}`);

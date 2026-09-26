@@ -9,8 +9,9 @@
  *
  *   realCostUSD   chat   = their transactions re-priced at today's real sticker rows (kadeRealCost:
  *                          never "charged / 2", credit rows never counted)
- *                 extras = their kadeusage costUSD as written (already real, charged at 1x; never
- *                          divided)
+ *                 extras = their kadeusage costUSD as written (already real; never divided).
+ *                          chargedUSD for extras is the row's chargedUSD (Part 295: the platform
+ *                          factor x real; rows before it were charged at 1x)
  *   paidBackUSD   = kadefundingledger kind 'repayment', not voided. Credit Kade loads with
  *                   add-credits is recorded as kind 'grant' and never counts.
  *   differenceUSD = realCostUSD - paidBackUSD (positive: Kade has covered more than was paid back;
@@ -161,8 +162,10 @@ function compose({
      * chat rows at the real price; her voice_chat estimates would count them twice. */
     if (admin && isVoiceEstimate(service)) continue;
     const cost = Number(r.costUSD) || 0; /* already real: never divided */
+    /* Part 295: what the balance paid; a group read without the field was charged at 1x. */
+    const paid = typeof r.chargedUSD === 'number' ? r.chargedUSD : cost;
     /* A $0 voice_chat row (switch on) is a count, not an estimate. */
-    add(featureOf(service), cost, cost, { service, estimated: isVoiceEstimate(service) && cost > 0 });
+    add(featureOf(service), cost, paid, { service, estimated: isVoiceEstimate(service) && cost > 0 });
   }
   /* Review F40: with the switch on, an outbound call keeps the bridge's estimate, so one voice line
    * can hold real turns and estimates together; its label says which. */
@@ -218,6 +221,8 @@ const usageGroupStage = (byUser) => ({
   $group: {
     _id: byUser ? { user: '$user', service: '$service' } : '$service',
     costUSD: { $sum: '$costUSD' },
+    /* Part 295: the same expression as kadeUsage CHARGED_USD (kept inline: no '~' requires here). */
+    chargedUSD: { $sum: { $ifNull: ['$chargedUSD', '$costUSD'] } },
     quantity: { $sum: '$quantity' },
   },
 });

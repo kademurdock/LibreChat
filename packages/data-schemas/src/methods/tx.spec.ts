@@ -1656,6 +1656,27 @@ describe('Google Model Tests', () => {
     );
   });
 
+  it('bills Gemini 3 Flash Preview on its own row, not the Pro-priced gemini-3 row (Part 295)', () => {
+    for (const model of ['gemini-3-flash-preview', 'google/gemini-3-flash-preview']) {
+      expect(getValueKey(model)).toBe('gemini-3-flash');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(tokenValues['gemini-3-flash'].prompt);
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['gemini-3-flash'].completion,
+      );
+      expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+        cacheTokenValues['gemini-3-flash'].write,
+      );
+      expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+        cacheTokenValues['gemini-3-flash'].read,
+      );
+    }
+    expect(tokenValues['gemini-3-flash'].prompt).toBeLessThan(tokenValues['gemini-3'].prompt);
+    expect(tokenValues['gemini-3-flash'].completion).toBeLessThan(tokenValues['gemini-3'].completion);
+    expect(getValueKey('google/gemini-3-pro-preview')).toBe('gemini-3');
+    expect(getValueKey('google/gemini-3.1-flash-lite')).toBe('gemini-3.1-flash-lite');
+    expect(getValueKey('google/gemini-2.5-flash-lite')).toBe('gemini-2.5-flash-lite');
+  });
+
   it('should return correct rates for Gemini 3.5 Flash', () => {
     const model = 'gemini-3.5-flash';
     expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(

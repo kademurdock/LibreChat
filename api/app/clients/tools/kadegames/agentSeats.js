@@ -118,10 +118,10 @@ async function personaSeatTurn({ agent, seatName, gameName, seatViewObj, humanNa
       .trim()
       .slice(0, 180);
   }
+  /* Part 295: BYOK-safe (OpenRouter's fee plus what Google charged her key). */
   const costUSD =
-    typeof data?.usage?.cost === 'number'
-      ? data.usage.cost
-      : ((data?.usage?.total_tokens || 0) / 1e6) * 1.0;
+    require('~/server/services/kadeRealCost').openRouterCost(data?.usage) ??
+    ((data?.usage?.total_tokens || 0) / 1e6) * 1.0;
   return { token, banter, costUSD };
 }
 

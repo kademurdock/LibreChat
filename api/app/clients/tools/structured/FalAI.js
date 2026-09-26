@@ -3,8 +3,9 @@ const mongoose = require('mongoose');
 const { falStudioSchema, falNarrationInstructions } = require('@librechat/api');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
-const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
+const { logKadeUsage, KadeUsage, priceFactorForUser, refundUsageOnce } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
+const { userPriceFactor } = require('~/server/services/kadeRealCost');
 
 /**
  * FalAI ("fal_studio") — video + design-image generation via fal.ai.
@@ -62,18 +63,22 @@ class FalAI extends Tool {
     this.userId = fields.userId;
     this.req = fields.req;
     this.name = 'fal_studio';
+    /* Part 295 ("Yes, double everything"): every price the model is told is what THIS person pays,
+     * the platform factor x fal's price, and the real price for Kade. */
+    const f = userPriceFactor(fields.req?.user?.role);
+    const p = (usd) => (usd * f).toFixed(2);
     this.description =
       'Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium), ANIMATE still images into video (image-to-video), make best-in-class design IMAGES with legible text (Seedream 4.5), and generate CINEMATIC AUDIO — dialogue, sound effects, music and voice cloning (Seed Audio 1.0) — via fal.ai. ' +
-      'Video costs real money per second (~$0.42-1.30 per clip) and takes 1-4 minutes to render; images cost ~$0.04 and audio ~$0.19/minute, both fast. ' +
-      `Each user has a ~$${MONTHLY_CAP_USD}/month fal budget; the tool enforces it and says so politely if they've hit it.`;
+      `Video costs real money per second (~$${p(0.42)}-${p(1.3)} per clip) and takes 1-4 minutes to render; images cost ~$${p(0.04)} and audio ~$${p(0.19)}/minute, both fast. ` +
+      `Each user has a ~$${+(MONTHLY_CAP_USD * f).toFixed(2)}/month fal budget; the tool enforces it and says so politely if they've hit it.`;
     this.description_for_model =
       this.description +
       " For video: tell the user the clip is rendering and the rough cost BEFORE generating. If generate_video or animate_image returns a request_id instead of a URL: you CANNOT send messages on your own later, so NEVER say 'I'll ping you' or 'I'll check back' — instead END your reply by asking the user to send any message in ~2 minutes ('just say ready'), and on their NEXT message call check_video FIRST and deliver the result before anything else. " +
       "animate_image with no image_url automatically animates the photo the user uploaded (last 24 hours), or else their most recent generated image — perfect for 'here's my dog, make him wag' or 'now make it move'. Its reply names WHICH image it used: repeat that to the user so nothing gets animated by surprise. animate_image always renders on Kling standard — never promise premium/Veo for an animation. " +
-      "Before any video, if the user hasn't specified, ask ONCE whether they want sound (recommended here — blind users experience video through audio; standard 5s: ~$0.63 with sound vs ~$0.42 silent) and only use premium quality when the user picks it. " +
+      `Before any video, if the user hasn't specified, ask ONCE whether they want sound (recommended here — blind users experience video through audio; standard 5s: ~$${p(0.63)} with sound vs ~$${p(0.42)} silent) and only use premium quality when the user picks it. ` +
       'Always show returned media as markdown: images as ![desc](url), videos as [Watch the video](url), audio as [Play the audio](url). Enhance thin prompts into rich visual descriptions first. ' +
       falNarrationInstructions +
-      "AUDIO (generate_audio, Seed Audio 1.0): cinematic scenes with dialogue + sound effects + music + ambience in one ~2-min pass, plus TTS, voice cloning, and editing existing clips (extend / inpaint / stitch / swap a line). It returns FAST and synchronously with a real audio URL — there is NO request_id and NO check step, so never promise to follow up. Return it as [Play the audio](url) so it plays inline; it is auto-saved to the gallery with a blind-friendly description of what the listener will hear. It costs ~$0.19/min (about 19 cents a minute, 38 cents for a full 2 minutes) and rides the same monthly fal budget — mention the cost but there is no need to pre-ask for a normal clip. For voice cloning or editing, pass reference clips in audio_urls (or set use_recent_audio:true for 'my last clip'). English and Chinese only; keep prompts under 2,048 characters. " +
+      "AUDIO (generate_audio, Seed Audio 1.0): cinematic scenes with dialogue + sound effects + music + ambience in one ~2-min pass, plus TTS, voice cloning, and editing existing clips (extend / inpaint / stitch / swap a line). It returns FAST and synchronously with a real audio URL — there is NO request_id and NO check step, so never promise to follow up. Return it as [Play the audio](url) so it plays inline; it is auto-saved to the gallery with a blind-friendly description of what the listener will hear. It costs ~$" + p(0.19) + "/min (about " + Math.round(19 * f) + " cents a minute, " + Math.round(38 * f) + " cents for a full 2 minutes) and rides the same monthly fal budget — mention the cost but there is no need to pre-ask for a normal clip. For voice cloning or editing, pass reference clips in audio_urls (or set use_recent_audio:true for 'my last clip'). English and Chinese only; keep prompts under 2,048 characters. " +
       /* ── KADE 2026-08-11: WHAT WE LEARNED MAKING ~90 REAL SOUNDS ──────────
        * Her ask was "agents that use seedaudio and informing them," rolled
        * fleet-wide. This lives in the TOOL description rather than in 223
@@ -105,6 +110,12 @@ class FalAI extends Tool {
     logKadeUsage({ userId: this.userId, service, quantity, unit, costUSD, metadata }).catch(() => {});
   }
 
+  /** Part 295: what the billed person pays for a real fal price (the real price for Kade). */
+  async userPrice(usd) {
+    if (this._priceFactor == null) this._priceFactor = await priceFactorForUser(this.userId);
+    return (Number(usd) || 0) * this._priceFactor;
+  }
+
   /**
    * Monthly fal spend guardrail (videos only — images are pennies).
    * Returns null when the job may proceed, or a polite refusal string.
@@ -126,17 +137,20 @@ class FalAI extends Tool {
       }
       // KADE prepaid Stage A: fal draws from the shared wallet ($1 = 1,000,000 credits).
       // Admin already returned null above. Block at $0. Fail open on any error.
+      // Part 295: the wallet pays the platform factor x fal's price, so that is what must fit.
+      const f = await this.userPrice(1);
       try {
         const Balance = mongoose.models.Balance;
         if (Balance) {
           const bal = await Balance.findOne({ user: oid }).select('tokenCredits').lean();
           if (bal && typeof bal.tokenCredits === 'number') {
             const dollars = bal.tokenCredits / 1e6;
-            if (dollars - estUSD < 0) {
-              logger.info(`[FalAI] wallet block: user ${this.userId} has $${dollars.toFixed(2)}, needs $${estUSD.toFixed(2)}`);
+            const need = estUSD * f;
+            if (dollars - need < 0) {
+              logger.info(`[FalAI] wallet block: user ${this.userId} has $${dollars.toFixed(2)}, needs $${need.toFixed(2)}`);
               return (
                 `OUT OF CREDITS — do not retry. This user has about $${dollars.toFixed(2)} of prepaid credits left, ` +
-                `and this (~$${estUSD.toFixed(2)}) would go over. Tell them warmly they've used up their credits for now ` +
+                `and this (~$${need.toFixed(2)}) would go over. Tell them warmly they've used up their credits for now ` +
                 `and can ask Kade to add more; a picture is nearly free if they want something small.`
               );
             }
@@ -162,9 +176,10 @@ class FalAI extends Tool {
           { month: 'long', day: 'numeric' },
         );
         logger.info(`[FalAI] budget block: user ${this.userId} spent $${spent.toFixed(2)} of $${MONTHLY_CAP_USD}`);
+        /* The cap is kept in real dollars; the person hears it at their own prices (Part 295). */
         return (
-          `BUDGET REACHED — do not retry. This user has used $${spent.toFixed(2)} of their ` +
-          `$${MONTHLY_CAP_USD.toFixed(2)} monthly video budget, and this clip (~$${estUSD.toFixed(2)}) would go over. ` +
+          `BUDGET REACHED — do not retry. This user has used $${(spent * f).toFixed(2)} of their ` +
+          `$${(MONTHLY_CAP_USD * f).toFixed(2)} monthly video budget, and this clip (~$${(estUSD * f).toFixed(2)}) would go over. ` +
           `Tell them warmly that they've hit their video budget for this month, it resets on ${resetDate}, ` +
           'and offer a picture instead (images are outside the cap and nearly free).'
         );
@@ -219,7 +234,7 @@ class FalAI extends Tool {
       model: 'seedream-4.5',
       costUSD: 0.04,
     }).catch(() => {});
-    return `![${(data.prompt || 'generated image').slice(0, 80).replace(/[[\]]/g, '')}](${img.url})\n\nImage generated with Seedream 4.5 (~$0.04). Saved to your gallery at /my-creations.`;
+    return `![${(data.prompt || 'generated image').slice(0, 80).replace(/[[\]]/g, '')}](${img.url})\n\nImage generated with Seedream 4.5 (~$${(await this.userPrice(0.04)).toFixed(2)}). Saved to your gallery at /my-creations.`;
   }
 
   audioCost(seconds) {
@@ -493,7 +508,7 @@ class FalAI extends Tool {
     const len = secs >= 60 ? `${Math.floor(secs / 60)} min ${secs % 60} s` : `${secs} s`;
     return (
       `Narration queued (job ${r.data.jobId}). About ${len} of audio from ${est.words || '?'} words; rendering takes roughly ${Math.round((est.renderSeconds || 120) / 60)} minute(s), longer if the GPU has to wake up. ` +
-      `Estimated cost about $${(est.costUSD || 0).toFixed(2)}. ` +
+      `Estimated cost about $${(await this.userPrice(est.costUSD)).toFixed(2)}. ` +
       `${refUrls[0] ? 'Cloning the reference clip. ' : ''}` +
       'Check My Creations when it is ready; a notification depends on their settings. Call check_narration on their next message instead of submitting another render.'
     );
@@ -520,7 +535,7 @@ class FalAI extends Tool {
     if (j.state === 'done' && j.result?.url) {
       const d = Math.round(j.result.durationS || 0);
       const mmss = `${Math.floor(d / 60)}:${String(d % 60).padStart(2, '0')}`;
-      return `Narration ${j.id} is ready: ${mmss} of audio, cost $${(j.costUSD || 0).toFixed(2)}. Play it: [Play the audio](${j.result.url}) — it is also saved in My Creations.`;
+      return `Narration ${j.id} is ready: ${mmss} of audio, cost $${(await this.userPrice(j.costUSD)).toFixed(2)}. Play it: [Play the audio](${j.result.url}) — it is also saved in My Creations.`;
     }
     if (j.state === 'failed') return `Narration ${j.id} failed: ${j.error || 'unknown error'}. This status does not confirm the final provider charge. Check My Creations and usage before choosing another render.`;
     if (j.state === 'cancelled') return `Narration ${j.id} was cancelled.`;
@@ -553,7 +568,7 @@ class FalAI extends Tool {
     const notePrefix = refNote ? `${refNote}\n\n` : '';
     return (
       `${notePrefix}[Play the audio](${res.url})\n\n` +
-      `Seed Audio clip — ${mmss} long (~$${res.costUSD.toFixed(3)}). It plays right here in the chat, ` +
+      `Seed Audio clip — ${mmss} long (~$${(await this.userPrice(res.costUSD)).toFixed(3)}). It plays right here in the chat, ` +
       "and it's saved to your gallery at /my-creations."
     );
   }
@@ -680,7 +695,7 @@ class FalAI extends Tool {
       // instead of surprising the user with a pile of clips from one script.
       return (
         `${links[0]}\n\n` +
-        `Seed Audio clip - ${totalMM} (~$${totalCost.toFixed(3)}), saved to your gallery at /my-creations.\n\n` +
+        `Seed Audio clip - ${totalMM} (~$${(await this.userPrice(totalCost)).toFixed(3)}), saved to your gallery at /my-creations.\n\n` +
         `Heads up: your script ran longer than one 2-minute clip (about ${chunks.length} parts' worth), so I made just the FIRST part. Want the rest? Say "continue" and I'll pick up from here, or "make the whole thing" and I'll generate every part at once.`
       );
     }
@@ -692,7 +707,7 @@ class FalAI extends Tool {
     return (
       `You asked for the full piece, so I split it into ${made} part${made > 1 ? 's' : ''} and generated ${made > 1 ? 'them all' : 'it'}:\n\n` +
       `${links.join('\n')}\n\n` +
-      `Total ~${totalMM}, about $${totalCost.toFixed(2)}. All saved to your gallery at /my-creations - play them in order, or ask me to stitch them into one track.${more}`
+      `Total ~${totalMM}, about $${(await this.userPrice(totalCost)).toFixed(2)}. All saved to your gallery at /my-creations - play them in order, or ask me to stitch them into one track.${more}`
     );
   }
 
@@ -821,7 +836,7 @@ class FalAI extends Tool {
         }).catch(() => {});
         return (
           `[Play the song](${url})\n\n` +
-          `${engLabel} song${lenStr} (~$${estUSD.toFixed(2)}). It plays right here in the chat, ` +
+          `${engLabel} song${lenStr} (~$${(await this.userPrice(estUSD)).toFixed(2)}). It plays right here in the chat, ` +
           "and it's saved to your gallery at /my-creations."
         );
       }
@@ -886,7 +901,7 @@ class FalAI extends Tool {
               costUSD: estUSD,
               metadata: { requestId, seconds, audio, ...(extraMeta || {}) },
             }).catch(() => {});
-            return `${notePrefix}[Watch the video](${url})\n\n${seconds}s ${quality} clip (~$${estUSD}) — it plays right in the chat, and it's saved to your gallery at /my-creations.`;
+            return `${notePrefix}[Watch the video](${url})\n\n${seconds}s ${quality} clip (~$${(await this.userPrice(estUSD)).toFixed(2)}) — it plays right in the chat, and it's saved to your gallery at /my-creations.`;
           }
           return `The video finished but no URL came back. Raw: ${JSON.stringify(out.data).slice(0, 300)}`;
         }
@@ -920,7 +935,7 @@ class FalAI extends Tool {
     }
     return (
       `${notePrefix}The video is still rendering (request_id: ${requestId}, quality: ${quality}). ` +
-      `Estimated cost ~$${estUSD} was logged (auto-refunded if the render fails). ` +
+      `Estimated cost ~$${(await this.userPrice(estUSD)).toFixed(2)} was logged (auto-refunded if the render fails). ` +
       'IMPORTANT: you cannot post a follow-up message on your own after this turn ends — do NOT promise to "ping" or "check back". ' +
       "End your reply by telling the user the video is cooking and to send any message in about 2 minutes (even just 'ready?'). " +
       'On the user\'s NEXT message, call check_video with this request_id FIRST and deliver the video before anything else.'
@@ -1092,32 +1107,13 @@ class FalAI extends Tool {
 
   /**
    * One-time compensating entry when a logged render never delivered — finds
-   * the original charge by request id and mirrors it negative. Idempotent.
+   * the original charge by request id and mirrors it negative. Idempotent, and
+   * (Part 295 review) atomic: two parallel check_video calls for one failed
+   * render refund it once (kadeUsage.refundUsageOnce claims the original row).
    */
   async refundVideoCharge(requestId, reason) {
     try {
-      if (!requestId) return false;
-      const original = await KadeUsage.findOne({
-        user: String(this.userId),
-        service: 'fal_video',
-        costUSD: { $gt: 0 },
-        'metadata.requestId': requestId,
-      }).lean();
-      if (!original) return false;
-      const already = await KadeUsage.findOne({
-        user: String(this.userId),
-        'metadata.refund_for': requestId,
-      }).lean();
-      if (already) return true;
-      await logKadeUsage({
-        userId: this.userId,
-        service: 'fal_video',
-        quantity: original.quantity || 1,
-        unit: original.unit || 'seconds',
-        costUSD: -Math.abs(original.costUSD || 0),
-        metadata: { refund_for: requestId, reason: String(reason || 'render failed').slice(0, 120) },
-      });
-      return true;
+      return await refundUsageOnce({ userId: this.userId, service: 'fal_video', requestId, reason });
     } catch (e) {
       logger.warn('[FalAI] refund attempt failed:', e.message);
       return false;

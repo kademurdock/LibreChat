@@ -63,6 +63,7 @@ function loadTool({ publicIds = PUBLIC, agents = AGENTS } = {}) {
       },
     },
     'librechat-data-provider': { ResourceType: { AGENT: 'agent' }, PermissionBits: { VIEW: 1 } },
+    '~/server/services/kadeRealCost': require('../../../../server/services/kadeRealCost'),
     '~/server/services/PermissionService': {
       findPubliclyAccessibleResources: async (args) => {
         seen.acl.push(args);

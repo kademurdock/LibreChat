@@ -12,6 +12,7 @@
 const crypto = require('crypto');
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
+const { openRouterCost } = require('./kadeRealCost');
 
 const DESCRIBE_MODEL = process.env.KADE_VISION_MODEL || 'google/gemini-3.1-flash-lite';
 const MAX_MEDIA_BYTES = 30 * 1024 * 1024;
@@ -157,8 +158,10 @@ async function orChat(content, maxTokens = 900) {
     ((Number(usage.prompt_tokens) || 0) * IN_USD_PER_M +
       (Number(usage.completion_tokens) || 0) * OUT_USD_PER_M) /
     1e6;
-  // Prefer OpenRouter's real reported cost; fall back to the env-tunable estimate.
-  const costUSD = typeof usage.cost === 'number' && usage.cost >= 0 ? usage.cost : estUSD;
+  // Prefer OpenRouter's real reported cost (with a BYOK key, its fee plus what Google charged,
+  // Part 295); fall back to the env-tunable estimate.
+  const reported = openRouterCost(usage);
+  const costUSD = reported != null ? reported : estUSD;
   return { text: typeof text === 'string' ? text.trim() : null, costUSD };
 }
 

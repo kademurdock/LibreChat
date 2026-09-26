@@ -278,6 +278,17 @@ async function embedText(text) {
     logger.warn(
       `[kadeDiary] embedding call FAILED -- semantic recall is blind for this turn (${lane.provider}/${lane.model}): ${detail}`,
     );
+    /* Part 295: an empty prepaid balance (the Aug 28 cause) or a refused key tells Kade, at most
+     * once every few hours, instead of only filling the log. Fire-and-forget. */
+    if (lane.provider === 'gemini') {
+      try {
+        require('~/server/services/kadeGoogleKeyAlarm')
+          .reportGoogleKeyTrouble('memory recall', e)
+          .catch(() => {});
+      } catch (_) {
+        /* the alarm must never take a turn down */
+      }
+    }
     return null;
   }
 }

@@ -18,7 +18,8 @@ const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { KadeBook } = require('~/models/kadeBook');
 const { correctedBookShelf } = require('@librechat/api');
-const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
+const { logKadeUsage, logPlatformUsage, KadeUsage } = require('~/models/kadeUsage');
+const { openRouterCost } = require('~/server/services/kadeRealCost');
 
 const SHELVES = [
   'Fiction — Romance', 'Fiction — Urban', 'Fiction — Mystery & thriller', 'Fiction — Science fiction & fantasy', 'Fiction — Horror',
@@ -114,7 +115,8 @@ async function classifyLLM(books) {
   const text = String(r.data?.choices?.[0]?.message?.content || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   const usage = r.data?.usage || {};
   const est = ((Number(usage.prompt_tokens) || 0) * IN_USD_PER_M() + (Number(usage.completion_tokens) || 0) * OUT_USD_PER_M()) / 1e6;
-  const costUSD = typeof usage.cost === 'number' && usage.cost >= 0 ? usage.cost : est;
+  /* Part 295: BYOK-safe (OpenRouter's fee plus what Google charged her key). */
+  const costUSD = openRouterCost(usage) ?? est;
   let j = {};
   try { j = JSON.parse(text); } catch (_) { const m = text.match(/\{[\s\S]*\}/); if (m) { try { j = JSON.parse(m[0]); } catch (_) {} } }
   const out = {};
@@ -147,7 +149,10 @@ async function sortOnce({ force = false, userId = null } = {}) {
       await KadeBook.updateOne({ _id: b._id, shortcutOf: { $exists: false }, $or: [{ path: '' }, { path: { $exists: false } }] }, { $set: set, $addToSet: { tags: c.shelf } });
       filed++;
     }
-    logKadeUsage({ userId: userId || books[0].owner, service: 'describe', quantity: filed, unit: 'items', costUSD, metadata: { source: 'librarian-sort', model: MODEL(), books: filed } });
+    const row = { service: 'describe', quantity: filed, unit: 'items', costUSD, metadata: { source: 'librarian-sort', model: MODEL(), books: filed } };
+    /* Part 295 review: a timer pass shelves everyone's books, so it is the platform's upkeep and no
+     * balance pays for it (the row still counts toward this pass's daily cap). */
+    await (userId ? logKadeUsage({ ...row, userId }) : logPlatformUsage({ ...row, fallbackUserId: books[0].owner }));
     logger.info(`[library/librarian-sort] filed ${filed} book(s) for $${costUSD.toFixed(4)} — ${Object.values(out).map((x) => x.shelf).reduce((m, s) => { m[s] = (m[s] || 0) + 1; return m; }, {}) && JSON.stringify(Object.entries(Object.values(out).reduce((m, x) => { m[x.shelf] = (m[x.shelf] || 0) + 1; return m; }, {})).slice(0, 8))}`);
     return filed;
   } catch (e) {

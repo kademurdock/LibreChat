@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
+const { platformFactor } = require('~/server/services/kadeRealCost');
 
 // July 2 2026 round 3: guards against agent tool-loops (a live turn hit
 // langgraph's recursion limit polling check_result 17 times, and dialed twice).
@@ -107,10 +108,16 @@ class KadePhoneCall extends Tool {
     // loader always sets userId to that seat, so handleTools passes the person on the line as
     // actingUserId (req.kadeOnBehalfOf, else the signed-in user). Unknown callers stay on the seat.
     this.actingUserId = String(fields.actingUserId || fields.req?.kadeOnBehalfOf?.id || fields.userId || '');
+    /* Part 295 ("Yes, double everything"): the person the call is billed to pays the platform factor
+     * x the phone line's price; Kade (the seat, calling for herself) is quoted the real price. */
+    const payerIsKade = this.isAdmin && this.actingUserId === String(fields.req?.user?.id || fields.userId || '');
+    const f = payerIsKade ? 1 : platformFactor();
+    const c = (cents) => +(cents * f).toFixed(1);
+    this.priceNote = { perMinute: c(1.5), perCallLow: c(5), perCallHigh: c(10) };
     this.name = 'kade_phone_call';
     this.description =
       'Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user. ' +
-      'An AI voice agent speaks on the call following the purpose you provide. Costs real money (~1.5 cents/minute, billed to the user\'s tab), ' +
+      `An AI voice agent speaks on the call following the purpose you provide. Costs real money (~${this.priceNote.perMinute} cents/minute, billed to the user's tab), ` +
       'hard-capped at 15 minutes and 10 calls per user per day. ONLY use when the user explicitly asks for a call, and ALWAYS confirm the exact ' +
       'number and reason with them first. When confirming, ALSO tell the user (casually, not as a warning): the call will identify them by ' +
       "first name as the person who requested it, and the call's cost is added to their Feed the Server page.";
@@ -120,7 +127,7 @@ class KadePhoneCall extends Tool {
       "To report back what the callee said, call action='check_result' ONCE — it WAITS for the call to finish (up to ~1 minute) and returns the transcript. NEVER call check_result more than once in a turn, and never place the same call twice. " +
       "If it says the call is still in progress, tell the user you'll report when they ask, and END your reply. NEVER invent a call result — only report what the transcript actually says. " +
       'FAMILY WELLNESS CHECK-INS (schedule_checkin / list_checkins / pause_checkin / cancel_checkin / test_checkin): recurring companion calls to REGISTERED family only — you (this agent) make the call, chat warmly, and afterwards a detailed summary of how they seemed and what they said is delivered to the user as a nudge. ' +
-      'Before creating or un-pausing a schedule: state the rough cost (about 5 to 10 cents per call — a daily schedule runs a few dollars a month) and get an explicit yes. For a FIRST-EVER setup, offer a test_checkin to the user so they can hear exactly what their family will hear. Calls run 08:00-21:00 Central only.';
+      `Before creating or un-pausing a schedule: state the rough cost (about ${this.priceNote.perCallLow} to ${this.priceNote.perCallHigh} cents per call — a daily schedule runs a few dollars a month) and get an explicit yes.` + ' For a FIRST-EVER setup, offer a test_checkin to the user so they can hear exactly what their family will hear. Calls run 08:00-21:00 Central only.';
     this.schema = phoneCallJsonSchema;
     this.bridgeUrl = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
     this.bridgeSecret = process.env.BRIDGE_SECRET || '';
@@ -308,7 +315,7 @@ class KadePhoneCall extends Tool {
         const w = r.data && r.data.schedule;
         return (
           `Check-in schedule created (id ${w.id}): I'll call ${w.targetName} ${w.days === 'daily' ? 'every day' : 'on ' + w.days.join(', ')} at ${w.time} Central, chat with them warmly, and deliver the user a detailed report afterwards (as a nudge, their chosen way). ` +
-          'Each call costs roughly 5-10 cents, billed to the user\'s Feed the Server tab. ' +
+          `Each call costs roughly ${this.priceNote.perCallLow}-${this.priceNote.perCallHigh} cents, billed to the user's Feed the Server tab. ` +
           'If this is the user\'s FIRST schedule, strongly suggest a test_checkin with this id so they can hear one themselves before their family gets a call.'
         );
       }

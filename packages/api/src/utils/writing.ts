@@ -1,8 +1,13 @@
 type WritingUsage = {
   cost?: number;
+  is_byok?: boolean | null;
+  cost_details?: { upstream_inference_cost?: number | null } | null;
   prompt_tokens?: number;
   completion_tokens?: number;
 };
+
+const reported = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 
 export function writingCost(
   usage: WritingUsage,
@@ -10,8 +15,18 @@ export function writingCost(
   inputChars = 0,
   outputChars = 0,
 ): { costUSD: number; measured: boolean } {
-  if (typeof usage.cost === 'number' && Number.isFinite(usage.cost) && usage.cost >= 0) {
-    return { costUSD: usage.cost, measured: true };
+  /* Part 295, measured on live replies: real cost = is_byok === true ? cost + upstream : cost.
+   * A normal reply's cost_details.upstream_inference_cost EQUALS its cost (the same money said
+   * twice), so it is never added. Only with a provider key inside OpenRouter (BYOK) is usage.cost
+   * just OpenRouter's fee and the upstream figure what the provider charged the key; then the two
+   * are summed. A reply naming only the upstream figure costs that figure (right either way). */
+  const own = reported(usage.cost);
+  const upstream = reported(usage.cost_details?.upstream_inference_cost);
+  if (own !== undefined) {
+    return { costUSD: usage.is_byok === true && upstream !== undefined ? own + upstream : own, measured: true };
+  }
+  if (upstream !== undefined) {
+    return { costUSD: upstream, measured: true };
   }
   const prices: { [model: string]: [number, number] } = {
     'nousresearch/hermes-4-405b': [1, 3],

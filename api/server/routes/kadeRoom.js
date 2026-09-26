@@ -15,6 +15,7 @@ const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const { KadeRoom } = require('~/models/kadeRoom');
 const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
 const { KadeUsage, logKadeUsage } = require('~/models/kadeUsage');
+const { openRouterCost } = require('~/server/services/kadeRealCost');
 const db = require('~/models');
 const { roomHtml, hallHtml } = require('./kadeRoomPage');
 
@@ -658,10 +659,10 @@ async function generateRoomTurn(req, opts) {
     room.turnCount = (room.turnCount || 0) + 1;
     await room.save();
 
+    /* Part 295: BYOK-safe (OpenRouter's fee plus what Google charged her key). */
     const cost =
-      typeof data?.usage?.cost === 'number'
-        ? data.usage.cost
-        : ((data?.usage?.total_tokens || 0) / 1e6) * 1.0; // rough $1/M-token fallback
+      openRouterCost(data?.usage) ??
+      ((data?.usage?.total_tokens || 0) / 1e6) * 1.0; // rough $1/M-token fallback
     logKadeUsage({
       userId: String(req.user.id || req.user._id),
       service: 'debate_room',

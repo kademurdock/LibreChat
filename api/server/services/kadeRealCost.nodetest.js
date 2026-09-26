@@ -163,3 +163,62 @@ test('admin role detection ignores case and missing roles', () => {
   assert.equal(R.isAdminRole('USER'), false);
   assert.equal(R.isAdminRole(null), false);
 });
+
+test('Part 295: extras cost everyone else the platform factor x real; Kade pays nothing and is quoted real', () => {
+  const env = { KADE_BILLING_MULTIPLIER: '2' };
+  assert.equal(R.userPriceFactor('USER', env), 2);
+  assert.equal(R.userPriceFactor(undefined, env), 2, 'an account with no role is not the administrator');
+  assert.equal(R.userPriceFactor('ADMIN', env), 1);
+  assert.equal(R.userPriceFactor('USER', {}), 1, 'no factor set means 1x, like tx.ts');
+  assert.equal(R.extraChargeUSD(0.08, 'USER', env), 0.16);
+  assert.equal(R.extraChargeUSD(0.055, 'USER', env), 0.11);
+  assert.equal(R.extraChargeUSD(0.08, 'ADMIN', env), 0, 'the administrator is never charged');
+  assert.equal(R.extraChargeUSD(0, 'USER', env), 0);
+  assert.equal(R.extraChargeUSD(-1, 'USER', env), 0);
+  assert.equal(R.extraChargeUSD('junk', 'USER', env), 0);
+  assert.equal(R.extraChargeUSD(0.1234567891, 'USER', env), 0.246914, 'kept to whole credits');
+});
+
+/* The shape of a saved normal (non-BYOK) OpenRouter reply, google/gemini-2.5-flash-lite, Sep 25
+ * 2026: the upstream figure restates cost. */
+const plainUsage = () => ({
+  prompt_tokens: 11722,
+  completion_tokens: 110,
+  total_tokens: 11832,
+  cost: 0.0125646,
+  is_byok: false,
+  cost_details: { upstream_inference_cost: 0.0125646, upstream_inference_prompt_cost: 0.012, upstream_inference_completions_cost: 0.0005646 },
+});
+/* A BYOK reply: OpenRouter's fee in cost, what Google charged her key in the upstream figure. */
+const byokUsage = () => ({
+  prompt_tokens: 1000,
+  completion_tokens: 200,
+  total_tokens: 1200,
+  cost: 0,
+  is_byok: true,
+  cost_details: { upstream_inference_cost: 0.0042, upstream_inference_prompt_cost: 0.0012, upstream_inference_completions_cost: 0.003 },
+});
+
+test('Part 295: a normal OpenRouter reply costs its cost once; the upstream figure that restates it is never added', () => {
+  assert.equal(R.openRouterCost(plainUsage()), 0.0125646);
+  assert.equal(R.openRouterCost({ ...plainUsage(), is_byok: undefined }), 0.0125646, 'no is_byok at all: not BYOK');
+  assert.equal(R.openRouterCost({ cost: 0.0021, is_byok: 'true', cost_details: { upstream_inference_cost: 0.0021 } }), 0.0021, 'only a real true counts');
+  assert.equal(R.openRouterCost({ cost: 0.0021 }), 0.0021);
+  assert.equal(R.openRouterCost({ cost: 0.0021, cost_details: { upstream_inference_cost: null } }), 0.0021);
+  assert.equal(R.openRouterCost({ total_cost: 0.0031, is_byok: false, upstream_inference_cost: 0.0031 }), 0.0031, 'a normal generation record');
+});
+
+test('Part 295: a BYOK reply costs OpenRouter\'s fee plus what Google charged the key, from either shape', () => {
+  near(R.openRouterCost(byokUsage()), 0.0042);
+  near(R.openRouterCost({ ...byokUsage(), cost: 0.0002, cost_details: { upstream_inference_cost: 0.004 } }), 0.0042);
+  assert.equal(R.openRouterCost({ ...byokUsage(), cost_details: { upstream_inference_cost: null } }), 0, 'BYOK with no upstream figure: the fee alone');
+  near(R.openRouterCost({ total_cost: 0.0001, is_byok: true, upstream_inference_cost: 0.0031 }), 0.0032, 'a BYOK generation record');
+  near(R.openRouterCost({ cost_details: { upstream_inference_cost: 0.004 } }), 0.004, 'no own fee reported: the upstream figure, right either way');
+});
+
+test('Part 295: nothing reported leaves the caller its own estimate', () => {
+  assert.equal(R.openRouterCost({ prompt_tokens: 10 }), null);
+  assert.equal(R.openRouterCost({ cost: -1 }), null);
+  assert.equal(R.openRouterCost(null), null);
+  assert.equal(R.openRouterCost(undefined), null);
+});

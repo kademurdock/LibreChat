@@ -54,6 +54,28 @@ test('extras are real already: never divided, speech costs nothing', () => {
   assert.equal(s.breakdown.find((f) => f.feature === 'speech').realUSD, 0);
 });
 
+test('Part 295: extras are charged at the platform factor; real cost and the difference stay real', () => {
+  const s = run({
+    usageRows: [
+      { _id: 'google_lyria', costUSD: 0.08, chargedUSD: 0.16, quantity: 1 },
+      { _id: 'phone', costUSD: 0.14, quantity: 10 } /* a group read without the field: 1x */,
+    ],
+    repaid: { usd: 0.1, entries: 1 },
+  });
+  assert.equal(s.realCostUSD, 0.22);
+  assert.equal(s.chargedUSD, 0.3);
+  assert.equal(s.differenceUSD, 0.12, 'what Kade covered is measured against the real cost');
+  assert.equal(s.breakdown.find((f) => f.feature === 'audio').chargedUSD, 0.16);
+  const kade = F.compose({
+    user: { _id: '6a0000000000000000000009', name: 'Kade', role: 'ADMIN' },
+    usageRows: [{ _id: 'google_lyria', costUSD: 0.08, chargedUSD: 0, quantity: 1 }],
+    price: createPricer(fakeDb(2), 2),
+    factor: 2,
+  });
+  assert.equal(kade.chargedUSD, 0);
+  assert.equal(kade.realCostUSD, 0.08);
+});
+
 test('an unpriced model falls back to charged / factor and is named', () => {
   const s = run({ txGroups: [group('mystery/model-9', 'completion', 1e6, 12)] });
   assert.equal(s.realCostUSD, 6);
