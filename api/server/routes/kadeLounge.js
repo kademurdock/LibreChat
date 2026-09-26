@@ -102,8 +102,27 @@ async function listHotelRooms() {
   }
 }
 
+/* Part 293 (Sep 25 2026): the Family feature pack. Jukebox song links join the
+ * pack only while KADE_FAMILY_PACK_LINKS is '1' (familyFeatures says
+ * jukeboxLinks); the default is off, because the submitted iPhone 2.2.0's
+ * review notes promise the demo account can use them. `features` rides /config
+ * so the room page (and later the phone) greys the link box out, never hides it.
+ * PACK_REFUSAL is packages/api family/pack.ts FAMILY_PACK_REFUSAL (the test
+ * holds them equal). An unreadable answer counts as outside the pack. */
+const PACK_REFUSAL = 'Media links are part of the Family feature pack. Ask Kade to add it to your account.';
+const NO_FEATURES = { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false };
+function loungeFeatures(user) {
+  try {
+    return linkDeps.features(user);
+  } catch (e) {
+    logger.warn('[kade/lounge] family feature pack check failed: ' + e.message);
+    return NO_FEATURES;
+  }
+}
+
 router.get('/config', requireJwtAuth, async (req, res) => {
   const uid = String(req.user.id);
+  const features = loungeFeatures(req.user);
   // July 24 2026, her call: Hotel rooms are HIDDEN — no public list, ever.
   // You see only rooms YOU opened (so you can close them); everybody else
   // checks in blind with the passcode. The code is the key.
@@ -111,10 +130,10 @@ router.get('/config', requireJwtAuth, async (req, res) => {
     .filter((r) => r.createdBy === uid)
     .map((r) => ({ key: r.key, name: r.name, mine: true }));
   if (!loungeConfigured()) {
-    return res.json({ ready: false, rooms: ROOMS, hotel });
+    return res.json({ ready: false, rooms: ROOMS, hotel, features });
   }
   wakeLoungeServer(); // page just opened — start the room spinning now
-  return res.json({ ready: true, url: process.env.LIVEKIT_URL, rooms: ROOMS, hotel });
+  return res.json({ ready: true, url: process.env.LIVEKIT_URL, rooms: ROOMS, hotel, features });
 });
 
 /** Open a room in the Hotel. Body: { name, code }. */
@@ -449,6 +468,8 @@ const PRIVATE_LINK = 'That link points somewhere private.';
 const AUDIO_FORMAT = 'bestaudio[acodec^=mp4a]/bestaudio';
 const LINK_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36';
 const linkDeps = {
+  /* The person's Family feature pack map (packages/api family/pack.ts). */
+  features: (user) => require('@librechat/api').familyFeatures(user),
   lookup: (hostname) => require('dns').promises.lookup(hostname, { all: true, verbatim: true }),
   fetch: (url, init) => fetch(url, init),
 };
@@ -565,6 +586,10 @@ async function followLinkRedirects(start) {
 }
 
 router.post('/fetch-track', requireJwtAuth, express.json(), async (req, res) => {
+  if (loungeFeatures(req.user).jukeboxLinks !== true) {
+    logger.warn('[lounge/fetch-track] refused user=' + String(req.user && req.user.id) + ': not in the Family feature pack');
+    return res.status(403).json({ error: PACK_REFUSAL, pack: true });
+  }
   // Set once the link is known to go through YouTube (a YouTube link, or a
   // Spotify song matched on YouTube): only then can an error mean the wall.
   let viaYouTube = false;
@@ -836,7 +861,7 @@ router.enginePage = (_req, res) => res.set('Cache-Control', 'no-store').type('ht
 /* The link lane's helpers, for kadeLounge.links.nodetest.js only. */
 router.linkLane = {
   youtubeVideoLink, spotifyTrackLink, ytFinalAnswer, ytPermanentError, ytCommonArgs, ytLadder, YT_LADDER,
-  privateAddress, privateLinkReason, followLinkRedirects, linkDeps,
+  privateAddress, privateLinkReason, followLinkRedirects, linkDeps, loungeFeatures, PACK_REFUSAL,
 };
 
 module.exports = router;

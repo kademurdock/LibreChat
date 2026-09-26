@@ -4,6 +4,7 @@
   .rowbtn.gray { background: #5b6270; }
   .rowbtn.red { background: #a33; }
   .rowbtn.small { padding: .45rem .7rem; font-size: .9rem; font-weight: 600; }
+  .rowbtn[disabled], input[disabled] { opacity: .55; cursor: default; }
   .rowbtn:focus-visible, button.room:focus-visible { outline: 3px solid #ffbf47; outline-offset: 2px; }
   button.room { display:block; width:100%; text-align:left; font:inherit; background:#fff; color:inherit; border:1px solid #cdd3da; border-radius:12px; padding:.85rem 1rem; margin:.45rem 0; cursor:pointer; }
   button.room .desc { display:block; font-weight:400; opacity:.8; font-size:.92rem; margin-top:.15rem; }
@@ -110,6 +111,7 @@
       </p>
       <label class="blk" for="jb-link">Or paste a link &mdash; YouTube, Spotify, SoundCloud, Bandcamp, a direct MP3, most anything with sound</label>
       <input type="text" id="jb-link" inputmode="url" autocapitalize="none" autocomplete="off">
+      <p class="muted" id="jb-link-lock" hidden>Part of the Family feature pack. Ask Kade to add it to your account.</p>
       <p>
         <button type="button" class="rowbtn" id="jb-link-cutin">Fetch and play it now</button>
         <button type="button" class="rowbtn gray" id="jb-link-queue">Fetch and queue it</button>

@@ -20,6 +20,10 @@ const dnsCalls = [];
 const hops = [];
 let dnsAnswer = () => [{ address: '93.184.216.34', family: 4 }];
 let hopAnswer = () => ({ status: 200 });
+/* The Family feature pack (Part 293): the real rule from packages/api family/pack.ts, for whoever
+ * the test signs in; `packUser` stands in for req.user's account. */
+const pack = require('tsx/cjs/api').require('../../../packages/api/src/family/pack.ts', __filename);
+let packUser = { id: 'u1', role: 'ADMIN' };
 
 function fakeSpawn(bin, args) {
   const p = new EventEmitter();
@@ -61,6 +65,7 @@ const stubs = {
   '~/models/kadeClubRoom': { KadeClubRoom: {} },
   './Clubhouse/pages': { loungeHtml: '', engineHtml: '' },
   '~/server/utils/stripAiTells': { stripAiTells: (s) => s, KADE_STYLE_NOTE: '' },
+  '@librechat/api': { familyFeatures: () => pack.familyFeatures(packUser) },
 };
 const realLoad = Module._load;
 Module._load = function (request, parent, isMain) {
@@ -115,6 +120,66 @@ beforeEach(() => {
   hops.length = 0;
   dnsAnswer = () => [{ address: '93.184.216.34', family: 4 }];
   hopAnswer = () => ({ status: 200 });
+  packUser = { id: 'u1', role: 'ADMIN' };
+  delete process.env.KADE_FAMILY_PACK_LINKS;
+});
+
+const BOB = { id: '6b0000000000000000000000' }; // made long after the family cutoff
+const REVIEW_SEAT = { id: '6a6125d73939d20b95251078' };
+const config = router.stack.find((layer) => layer.route && layer.route.path === '/config').route.stack.slice(-1)[0].handle;
+async function getConfig() {
+  const res = { body: undefined, json(v) { this.body = v; return this; } };
+  await config({ user: { id: 'u1' } }, res);
+  return res.body;
+}
+
+test('Family feature pack: jukebox links stay open to everyone while KADE_FAMILY_PACK_LINKS is not 1', async () => {
+  for (const user of [BOB, REVIEW_SEAT]) {
+    packUser = user;
+    answer = (args) => (isDownload(args) ? (writeTrack(args), { code: 0 }) : { code: 0, stdout: 'Fancy Song\n' });
+    const res = await post('https://youtu.be/dQw4w9WgXcQ');
+    assert.notEqual(res.statusCode, 403, JSON.stringify(user));
+    assert.equal((await getConfig()).features.jukeboxLinks, true);
+  }
+});
+
+test('Family feature pack: with KADE_FAMILY_PACK_LINKS=1 an account outside the pack is refused before anything runs', async () => {
+  process.env.KADE_FAMILY_PACK_LINKS = '1';
+  assert.equal(lane.PACK_REFUSAL, pack.FAMILY_PACK_REFUSAL, 'the lounge says what the pack helper says');
+  for (const user of [BOB, REVIEW_SEAT, { id: '6a5fc5fa351af41332734161', kadeLibraryAccess: 'none' }]) {
+    packUser = user;
+    const res = await post('https://youtu.be/dQw4w9WgXcQ');
+    assert.equal(res.statusCode, 403, JSON.stringify(user));
+    assert.deepEqual(res.body, { error: 'Media links are part of the Family feature pack. Ask Kade to add it to your account.', pack: true });
+    const cfg = await getConfig();
+    assert.equal(cfg.features.jukeboxLinks, false, 'the room page greys the link box out');
+    assert.equal(cfg.features.familyLibrary, false);
+  }
+  const wide = await post('https://example.com/song.mp3');
+  assert.equal(wide.statusCode, 403, 'the wide lane too');
+  assert.equal(spawns.length, 0, 'yt-dlp never ran');
+  assert.equal(dnsCalls.length, 0, 'nothing was looked up');
+  assert.ok(logs.some(([level, line]) => level === 'warn' && /refused user=u1: not in the Family feature pack/.test(line)));
+  // In the pack: a family account from before the cutoff, one Kade said yes to, and an admin.
+  for (const user of [{ id: '6a5fc5fa351af41332734161' }, { ...BOB, kadeLibraryAccess: 'family' }, { ...BOB, role: 'ADMIN' }]) {
+    packUser = user;
+    answer = (args) => (isDownload(args) ? (writeTrack(args), { code: 0 }) : { code: 0, stdout: 'Fancy Song\n' });
+    assert.notEqual((await post('https://youtu.be/dQw4w9WgXcQ')).statusCode, 403, JSON.stringify(user));
+    assert.equal((await getConfig()).features.jukeboxLinks, true);
+  }
+});
+
+test('Family feature pack: an unreadable pack answer counts as outside the pack', async () => {
+  const saved = lane.linkDeps.features;
+  lane.linkDeps.features = () => { throw new Error('lookup failed'); };
+  try {
+    const res = await post('https://youtu.be/dQw4w9WgXcQ');
+    assert.equal(res.statusCode, 403);
+    assert.equal(spawns.length, 0);
+    assert.deepEqual(lane.loungeFeatures({ id: 'u1' }), { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false });
+  } finally {
+    lane.linkDeps.features = saved;
+  }
 });
 
 test('youtubeVideoLink maps every single-video shape to a plain watch link', () => {

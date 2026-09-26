@@ -43,6 +43,21 @@
       }
       function esc(s){ var d=document.createElement('div'); d.textContent = s || ''; return d.innerHTML.replace(/"/g,'&quot;'); }
       renderHotel(cfg.hotel);
+      /* Part 293: the Family feature pack. While Kade limits jukebox links to the
+       * pack, an account outside it sees the link box and both fetch buttons
+       * greyed out, with the reason as visible text they are described by; never
+       * hidden. The note is referenced only while it shows (a hidden note would
+       * still be read). Adding a file stays open to everyone. */
+      function lockLinks(features){
+        var locked = !!(features && features.jukeboxLinks === false);
+        $('jb-link-lock').hidden = !locked;
+        ['jb-link', 'jb-link-cutin', 'jb-link-queue'].forEach(function(id){
+          $(id).disabled = locked;
+          if(locked){ $(id).setAttribute('aria-describedby', 'jb-link-lock'); }
+          else { $(id).removeAttribute('aria-describedby'); }
+        });
+      }
+      lockLinks(cfg.features);
       $('pick').hidden = false;
       if(!cfg.ready){
         status.className = 'status';
@@ -1140,6 +1155,7 @@
           const cr = await apiGet('/api/kade/lounge/config', token);
           cfg = await cr.json();
           renderHotel(cfg.hotel);
+          lockLinks(cfg.features);
         }catch(e){ status.className='status err'; status.textContent = e.message; }
       });
       $('hotel-checkin').addEventListener('click', async function(){
@@ -1343,6 +1359,7 @@
       }
       function addLink(interrupt){
         if(!lkRoom) return;
+        if($('jb-link').disabled){ say($('jb-link-lock').textContent); return; }
         var url = ($('jb-link').value || '').trim();
         if(!url){ $('jb-link').focus(); return; }
         knockStop(true); // a fresh paste replaces any old knock
