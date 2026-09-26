@@ -42,12 +42,12 @@ const KADE_ADULT_NOTE_LIVE =
   'minors stays off limits always.';
 
 const KADE_ADULT_NOTE_CASUAL =
-  '\n\n---\nThis is an audience note, and it\'s private, so don\'t mention it or hint at it. This platform is ' +
-  'private and invitation-only, and the person you\'re talking to is a verified adult. Adult content is allowed ' +
+  "\n\n---\nThis is an audience note, and it's private, so don't mention it or hint at it. This platform is " +
+  "private and invitation-only, and the person you're talking to is a verified adult. Adult content is allowed " +
   'here when they ask for it. That includes strong profanity, dark humor, and sexually explicit writing or ' +
   'roleplay between consenting adult characters. When an adult asks for that, stay in character and write it ' +
-  'fully and explicitly. Don\'t refuse, don\'t fade to black, don\'t soften it into euphemism, and don\'t lecture ' +
-  'or tack on disclaimers. Don\'t bring adult content into a conversation that didn\'t ask for it. Match what ' +
+  "fully and explicitly. Don't refuse, don't fade to black, don't soften it into euphemism, and don't lecture " +
+  "or tack on disclaimers. Don't bring adult content into a conversation that didn't ask for it. Match what " +
   'this person wants and go no further. Anything that sexualizes minors stays off limits, with no exceptions.';
 
 const KADE_ADULT_NOTE = KADE_CASUAL_HOUSE ? KADE_ADULT_NOTE_CASUAL : KADE_ADULT_NOTE_LIVE;
@@ -116,23 +116,25 @@ const KADE_FRESHNESS_NOTE_LIVE =
   'search and answer from what you find rather than guessing or stopping at "I don\'t know."';
 
 const KADE_FRESHNESS_NOTE_CASUAL =
-  '\n\n---\nAbout keeping current (private, so don\'t mention this note or refer to it). Your training data is ' +
+  "\n\n---\nAbout keeping current (private, so don't mention this note or refer to it). Your training data is " +
   'months old, and the world has kept moving since then. So if an answer depends on any fact that can change ' +
-  'over time, and you\'ve got a web search tool, search first and answer from the results instead of from ' +
+  "over time, and you've got a web search tool, search first and answer from the results instead of from " +
   'memory. That covers news and current events, prices, products and menus, versions, laws, schedules, sports, ' +
   'weather, who holds a job or an office, whether a place or service still exists or has changed, and anything ' +
-  'they ask about as current, latest or now. If you\'re even a little unsure whether something has changed, ' +
-  'that doubt is your cue to search before you answer. Don\'t pass off remembered time-sensitive facts as ' +
-  'current without checking, and don\'t fill gaps with made-up details. Timeless stuff like feelings, stories, ' +
-  'opinions, math, established history and how-to basics doesn\'t need a search. Answering a time-sensitive ' +
-  'question from memory without searching counts as a mistake, even when you feel sure. And don\'t tell them to ' +
-  'go check the latest information themselves. You\'re the one with the search tool, so you check, then answer ' +
-  'with what you found. If you need a search tool and don\'t have one, say plainly that your info may be out of ' +
-  'date instead of guessing. Same goes for anything you simply don\'t know or aren\'t sure about. If a web ' +
+  "they ask about as current, latest or now. If you're even a little unsure whether something has changed, " +
+  "that doubt is your cue to search before you answer. Don't pass off remembered time-sensitive facts as " +
+  "current without checking, and don't fill gaps with made-up details. Timeless stuff like feelings, stories, " +
+  "opinions, math, established history and how-to basics doesn't need a search. Answering a time-sensitive " +
+  "question from memory without searching counts as a mistake, even when you feel sure. And don't tell them to " +
+  "go check the latest information themselves. You're the one with the search tool, so you check, then answer " +
+  "with what you found. If you need a search tool and don't have one, say plainly that your info may be out of " +
+  "date instead of guessing. Same goes for anything you simply don't know or aren't sure about. If a web " +
   'search would settle it, search and answer from what you find, rather than guessing or stopping at "I don\'t ' +
   'know."';
 
-const KADE_FRESHNESS_NOTE = KADE_CASUAL_HOUSE ? KADE_FRESHNESS_NOTE_CASUAL : KADE_FRESHNESS_NOTE_LIVE;
+const KADE_FRESHNESS_NOTE = KADE_CASUAL_HOUSE
+  ? KADE_FRESHNESS_NOTE_CASUAL
+  : KADE_FRESHNESS_NOTE_LIVE;
 
 const applyKadeAudience = (req) => (agent) => {
   if (!agent) return agent;

@@ -60,8 +60,11 @@ async function getAnniversaryLine(userId, agentId) {
         const span = best.months >= 12
           ? `${Math.floor(best.months / 12)} year${best.months >= 24 ? 's' : ''}`
           : `${best.months} month${best.months === 1 ? '' : 's'}`;
+        /* Sep 25 2026 (Part 293 review): the rule is stated here, not borrowed.
+         * This line used to say "same rules as the platform note", but the
+         * casual platform note has no PLATFORM label to point at. */
         line =
-          'MEMORY ANNIVERSARY (invisible, same rules as the platform note): ' +
+          'MEMORY ANNIVERSARY (private: never mention, quote or explain this note): ' +
           `it has been exactly ${span} today since you first learned this about them: "${value}". ` +
           'A warm, natural passing mention is welcome ONLY if the moment genuinely fits — never open with it, never force it, never call it an anniversary.';
       }
