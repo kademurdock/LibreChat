@@ -38,13 +38,20 @@ export function musicWritingSettings(request: Request): {
    * the writer can think on medium (275 s measured with the system in the
    * prompt). The audit that follows stays on low; the handler sets that.
    * Sep 20 2026: budgets raised by 8,000 each after a DeepSeek draft spent its
-   * whole 16,000 thinking about rhyme and meter and came back cut off mid-bridge. */
+   * whole 16,000 thinking about rhyme and meter and came back cut off mid-bridge.
+   * Part 293 follow-up (Sep 25 2026): 2 of 14 deep drafts spent all 32,000 on
+   * thinking and came back with no lyrics, and the retry took the job to 276 and
+   * 324 s. OpenRouter's /api/v1/models lists deepseek/deepseek-v4.1-flash with a
+   * 131,072-token max output on its top provider, and 131,072 or more on every
+   * endpoint but one (BaseTen, 32,768), so the deep lane gets 48,000: another
+   * ~75 s of thinking at the measured ~215 tokens a second, well inside the
+   * job's 600 s, and about two cents at most. The phone and web lanes keep 24,000. */
   if (request.deep)
     return {
       model: lyricWritingModel,
       temperature: 0.85,
       top_p: 0.95,
-      maxTokens: 32000,
+      maxTokens: 48000,
       timeoutMs: 600000,
       reasoning: { enabled: true, effort: 'medium', exclude: true },
     };
@@ -75,7 +82,7 @@ export function musicWritingSettings(request: Request): {
 
 export const musicWritingCraft: string = `DESK NOTES FROM THE OWNER (these outrank the system above where they differ)
 - Words the person supplied are theirs. Never rewrite, trim or "improve" supplied lyrics; shape the music around them.
-- The songs have been coming out too short. Follow the desk's lyric budget: about four minutes, 45 to 65 sung lines counting every written-out chorus. Two maps fit that budget, and the idea picks which: three verses, where verse two is not a shorter copy of verse one and verse three is the payoff; or two long verses of twelve to sixteen lines each, with a bridge and a final chorus that lands the turn. Every verse is new story either way. Do not reach for the same shape every time: a pre-chorus only when it earns its place, a post-chorus, breakdown, drop or solo when the genre wants one, and an ending chosen for this song. Use the system's standard section tags; [Final Chorus] and [Solo] are fine too.
+- The songs have been coming out too short. Follow the desk's lyric budget: about four minutes, 45 to 65 sung lines counting every written-out chorus. The desk draws a SECTION MAP for each song and sends it with the request, under the idea. Use that map unless the idea clearly wants another; if the brief gives its own length or structure, the brief wins and no map is sent. Every verse is new story, verse two is not a shorter copy of verse one, and the last verse or the bridge carries the turn. End the song where the map ends it. Use the section tags the map names, each alone on its line.
 - Her named pet hates, in her words: "Everything's always a tuesday, drinks are always coffee, scenes are clean." Never name a weekday or a clock time, never reach for coffee, the porch light, the kitchen table, neon, shadows, whispers or echoes, and never use clean, steady or scene as filler, unless her own brief used the word. Ask what THIS singer actually has in their hands, where exactly they are and what they would really drink, and write that.
 - The music direction chooses the lead voice, its range and its delivery for this song and this genre. There is no house voice at this desk.
 - SING-ALONG FIRST. Her verdict on this desk's drafts (Sep 20 2026): "it's still not sounding like a song I would sing along to at all. It still feels like literary work." She is right, and where the system above disagrees with the rules below, these win:
@@ -186,6 +193,86 @@ const EXAMPLE_LINES: Set<string> = new Set(
     .filter((line) => line.split(' ').length >= 4 && line.length <= 90),
 );
 
+/* Part 293 follow-up (Sep 25 2026). Tidy moral endings kept shipping after the
+ * desk notes asked for none ("Turns out that I'm the lucky one", "It's the best
+ * present anyway"), and the blind judges named them as why four songs lost. So
+ * the commonest giveaway phrases are scanned for ONLY where a song lands: its
+ * last four sung lines and the last two of its last verse. The same words
+ * anywhere else in a song are ordinary speech. Each is narrowed where plain speech uses it:
+ * "turns out" not when somebody turns out the lights or the town turns out,
+ * "after all" only closing a clause (never "after all the chairs"), "in the
+ * end" only opening or closing a clause (never "the end zone"). From the
+ * re-run: anything that "turned out the best" (or fine, right...) and a line
+ * that closes on "and I'm glad". */
+export const ENDING_TELL = 'a tidy ending: it sums the song up, states a lesson or turns it around';
+const ENDING_GIVEAWAYS: RegExp =
+  /(?:^|[,;:—–-]\s*|\b(?:it|it's|it has|guess|and|but|so|well|now|oh|yeah)\s+)turn(?:s|ed)? out\b(?!\s+(?:the |my |your |his |her |our |their |that |those |these )?(?:lights?|lamps?|pockets?|porch|candles?|fire|stove|oven|burners?|gas|dogs?|cows?|horses?|cattle|goats?|chickens?)\b)|\bthe lucky ones?\b|\bafter all(?=\s*(?:[.,!?;:)—–-]|$))|(?:^|[,;:—–-]\s*|\b(?:and|but|so)\s+)in the end\b(?!\s+(?:of|zone|stall|seat|booth|row|lane|spot|slot|room|unit|table|chair|pew|bed|house|lot))|\bin the end(?=\s*(?:[.,!?;:)—–-]|$))|\band that['’]?s (?:okay|ok|o\.k\.|alright|all right|fine)\b|\bbest (?:present|gift|thing)s? (?:of all|anyway)\b|\bthat['’]?s all (?:that )?matters\b|\bwouldn['’]?t change a thing\b|\ball along(?=\s*(?:[.,!?;:)—–-]|$))|\bturn(?:s|ed)? out (?:to be )?(?:the )?(?:best|worst|greatest|luckiest|right|okay|ok|alright|all right|fine|good|great|better)\b|\band i['’]?m glad(?=\s*(?:[.,!?;:)—–-]|$))/i;
+
+/** The sung lines of a draft (below "Lyrics:", before READBACK), in order,
+ *  without section tags or whole-line parenthesised ad-libs. */
+function sungLines(script: string): { line: string; section: string; pass: number }[] {
+  const at = script.search(/^\s*lyrics\s*:/im);
+  if (at === -1) return [];
+  const out: { line: string; section: string; pass: number }[] = [];
+  let section = '';
+  let pass = 0;
+  for (const raw of script.slice(at).split('\n').slice(1)) {
+    const line = raw.trim();
+    if (/^READBACK:/i.test(line)) break;
+    const tag = /^\[([^\]]*)\]$/.exec(line);
+    if (tag) {
+      section = tag[1].trim();
+      pass += 1;
+    } else if (line && !/^\(.*\)$/.test(line)) out.push({ line, section, pass });
+  }
+  return out;
+}
+
+/** The last two sung lines of the last section whose tag matches. */
+function lastOf(lines: { line: string; section: string; pass: number }[], tag: RegExp): string[] {
+  let pass = -1;
+  for (const l of lines) if (tag.test(l.section)) pass = l.pass;
+  return pass === -1 ? [] : lines.filter((l) => l.pass === pass).slice(-2).map((l) => l.line);
+}
+
+const CHORUS_TAG = /^(?:final |last )?(?:chorus|hook|refrain)\b/i;
+
+/** The lines of the last chorus pass that the first pass does not have: the line
+ *  the writer changes "so it reads differently now". Measured on the re-run:
+ *  that changed line is where the turnaround moved to ("...turned out the best
+ *  day I had", "...but I'm glad you slid up in it"). */
+function changedLastChorus(lines: { line: string; section: string; pass: number }[]): string[] {
+  const passes: string[][] = [];
+  let at = -1;
+  for (const l of lines) {
+    if (!CHORUS_TAG.test(l.section)) continue;
+    if (l.pass !== at) passes.push([]);
+    at = l.pass;
+    passes[passes.length - 1].push(l.line);
+  }
+  if (passes.length < 2) return [];
+  const first = new Set(passes[0]);
+  return passes[passes.length - 1].filter((l) => !first.has(l));
+}
+
+/** The giveaway endings where a song lands: its last four sung lines, the last
+ *  two of its last verse (measured: two of the three tidy endings that lost
+ *  briefs closed the payoff verse, just before the bridge and the last chorus)
+ *  and any line the last chorus changed. A phrase from the person's own brief
+ *  is theirs and is never flagged. */
+export function lyricEndingTells(script: string, brief = ''): LyricTell[] {
+  const lines = sungLines(script);
+  const scope = new Set([...lines.slice(-4).map((l) => l.line), ...lastOf(lines, /^verse/i), ...changedLastChorus(lines)]);
+  const found: LyricTell[] = [];
+  for (const { line } of lines) {
+    if (!scope.has(line) || found.some((t) => t.line === line)) continue;
+    const hit = ENDING_GIVEAWAYS.exec(line);
+    if (!hit || brief.toLowerCase().includes(hit[0].trim().toLowerCase())) continue;
+    found.push({ line, tell: ENDING_TELL });
+  }
+  return found;
+}
+
 /** The sung lines of a draft that lean on a stock tell. Looks only below the
  *  "Lyrics:" heading, skips section tags, and reports each distinct line once. */
 export function lyricTells(script: string, brief = ''): LyricTell[] {
@@ -193,6 +280,7 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
   if (at === -1) return [];
   const found: LyricTell[] = [];
   const seen = new Set<string>();
+  const endings = new Map(lyricEndingTells(script, brief).map((t) => [t.line, t]));
   for (const raw of script.slice(at).split('\n').slice(1)) {
     const line = raw.trim();
     if (!line || /^\[[^\]]*\]$/.test(line) || /^READBACK:/i.test(line) || seen.has(line)) continue;
@@ -208,8 +296,146 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
       found.push({ line, tell });
       break;
     }
+    const ending = endings.get(line);
+    if (ending && !seen.has(line)) {
+      seen.add(line);
+      found.push(ending);
+    }
   }
   return found;
+}
+
+/** Part 293 follow-up: the lines a song ends on, pulled by the desk for the
+ *  audit's ENDING gate: the last two sung lines of the song, of each chorus
+ *  pass, and of the last verse and the last bridge (where the payoff lands),
+ *  each distinct line once, in the order they first appear. */
+export function lyricEndingLines(script: string): string[] {
+  const lines = sungLines(script);
+  const picked = new Set<string>([...lastOf(lines, /^verse/i), ...lastOf(lines, /^bridge/i), ...changedLastChorus(lines)]);
+  for (let i = 0; i < lines.length; i++) {
+    const { section, pass } = lines[i];
+    const lastOfPass = i === lines.length - 1 || lines[i + 1].pass !== pass;
+    if (lastOfPass && CHORUS_TAG.test(section)) {
+      if (i > 0 && lines[i - 1].pass === pass) picked.add(lines[i - 1].line);
+      picked.add(lines[i].line);
+    }
+  }
+  for (const { line } of lines.slice(-2)) picked.add(line);
+  return lines.map((l) => l.line).filter((line, i, all) => picked.has(line) && all.indexOf(line) === i);
+}
+
+/* Part 293 follow-up (Sep 25 2026). Measured on ten briefs: with the desk's two
+ * maps written into the prompt, [Final Chorus] turned up in 10 of 10 songs and 6
+ * of 10 ended Verse 3 > Bridge > Final Chorus > Outro. A list of shapes in a
+ * prompt reads, at low reasoning, as one shape. So the desk draws ONE real map
+ * per request in code, from a seeded random over the request, hands it to the
+ * writer with the idea ("use this map unless the idea clearly wants another"),
+ * and holds the length check to the same map. [Final Chorus] is named only by
+ * the map that has one. When the brief sets its own length or structure, no map
+ * is drawn and the brief wins, as before. */
+export type SectionMap = {
+  id: string;
+  name: string;
+  plan: string;
+  /** Three verses pass any map; two pass only when each has at least this many sung lines. */
+  twoVerseLines: number;
+  /** Where a missing verse goes, said to the audit. */
+  addVerse: string;
+};
+
+export const SECTION_MAPS: Record<string, SectionMap> = {
+  threeVerses: {
+    id: 'threeVerses',
+    name: 'three verses, a chorus after each, and a short bridge',
+    plan: '[Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Bridge] -> [Verse 3] -> [Chorus]. Verses of eight to twelve lines. The bridge is two to four lines and comes before verse three, which is the payoff. The song ends on that last chorus: no outro.',
+    twoVerseLines: Infinity,
+    addVerse: 'after the bridge and before the last chorus',
+  },
+  twoLong: {
+    id: 'twoLong',
+    name: 'two long verses, a bridge and a final chorus',
+    plan: '[Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Bridge] -> [Final Chorus] -> [Outro]. Each verse runs twelve to sixteen lines and moves the story on. The bridge is two to six lines. The [Final Chorus] changes one word or one line so it reads differently now. The outro is two to four lines.',
+    twoVerseLines: 12,
+    addVerse: 'before the bridge',
+  },
+  prePost: {
+    id: 'prePost',
+    name: 'verse, pre-chorus, chorus and a post-chorus',
+    plan: '[Verse 1] -> [Pre-Chorus] -> [Chorus] -> [Post-Chorus] -> [Verse 2] -> [Pre-Chorus] -> [Chorus] -> [Post-Chorus] -> [Bridge] -> [Chorus] -> [Post-Chorus]. Verses of eight to twelve lines. The pre-chorus is two to four lines that climb. The post-chorus is two to four lines on one short repeated phrase or a wordless run, the part that sticks. The song ends on the post-chorus.',
+    twoVerseLines: 8,
+    addVerse: 'with its pre-chorus, before the bridge',
+  },
+  hookFirst: {
+    id: 'hookFirst',
+    name: 'open on the chorus, then three verses',
+    plan: '[Chorus] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Verse 3] -> [Chorus] -> [Outro]. No intro: the first thing sung is the chorus. Verses of eight to ten lines. The outro is two to four lines built from a piece of the hook, and it stops.',
+    twoVerseLines: Infinity,
+    addVerse: 'before the last chorus',
+  },
+  storyRefrain: {
+    id: 'storyRefrain',
+    name: 'a story song with a refrain line instead of a big chorus',
+    plan: '[Verse 1] -> [Verse 2] -> [Verse 3] -> [Bridge] -> [Verse 4]. No chorus section. Every verse is eight to twelve lines and closes on the same one-line refrain that carries the title. The bridge is two to four lines. The song ends on the last verse and its refrain: no outro.',
+    twoVerseLines: Infinity,
+    addVerse: 'as the last verse, closing on the refrain',
+  },
+  dance: {
+    id: 'dance',
+    name: 'a dance-floor song with a drop and a breakdown',
+    plan: '[Intro] -> [Verse 1] -> [Pre-Chorus] -> [Chorus] -> [Drop] -> [Verse 2] -> [Pre-Chorus] -> [Chorus] -> [Breakdown] -> [Chorus] -> [Drop]. The intro is one or two lines or a chant. Verses of eight to ten lines. The pre-chorus builds in two to four lines. Each drop is two to four lines chanting one short phrase from the chorus for the crowd to shout. The breakdown strips down to the voice and one instrument for two to four lines. The song ends on the drop.',
+    twoVerseLines: 8,
+    addVerse: 'with its pre-chorus, before the breakdown',
+  },
+};
+
+/** The brief set its own length or structure: theirs wins, no map is drawn and
+ *  the length check stands down. */
+const briefSetsShape = (brief: string): boolean =>
+  /\b(?:verses?|minutes?|seconds?|short|brief|quick|jingle|hook only|chorus only|no chorus|one verse|two verses|bars|pre-chorus|post-chorus|refrain|song structure|sections?)\b/i.test(brief);
+
+/* Genre decides which maps are in the hat: the drop and breakdown only for a
+ * dance style; a chorus-less story song not for pop, a girl group or the club. */
+const DANCE_STYLE =
+  /\b(?:edm|techno|trance|disco|dubstep|drum (?:and|&|n['’]?) bass|dnb|eurodance|hyperpop|reggaeton|dancehall|jersey club|crunk|rave|(?:deep|tech|acid|progressive|electro|future|tropical) house|house (?:music|track|song|banger)|club (?:song|track|banger|anthem|mix|remix|hit)|dance (?:song|track|pop|anthem|banger|floor|music|remix)|dancefloor|four[- ]on[- ]the[- ]floor)\b/i;
+const BIG_CHORUS_STYLE = /\b(?:pop|girl group|boy band|anthem|arena|stadium|k-?pop|j-?pop|power ballad)\b/i;
+
+/** FNV-1a, then mulberry32: the same request always draws the same map. */
+function seededUnit(text: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  let a = h >>> 0;
+  a = (a + 0x6d2b79f5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+/** The maps this brief can draw from. */
+export function sectionMapPool(brief: string): SectionMap[] {
+  const m = SECTION_MAPS;
+  if (DANCE_STYLE.test(brief)) return [m.dance, m.dance, m.prePost, m.hookFirst];
+  const pool = [m.threeVerses, m.twoLong, m.prePost, m.hookFirst];
+  if (!BIG_CHORUS_STYLE.test(brief)) pool.push(m.storyRefrain);
+  return pool;
+}
+
+/** Draws this request's section map; null when the brief sets its own shape.
+ *  `salt` is the rest of the request (who asked and when), so asking again
+ *  draws again; the brief alone gives a repeatable draw. */
+export function songSectionMap(brief: string, salt = ''): SectionMap | null {
+  const text = String(brief || '').trim();
+  if (!text || briefSetsShape(text)) return null;
+  const pool = sectionMapPool(text);
+  return pool[Math.floor(seededUnit(`${text}\n${salt}`) * pool.length)];
+}
+
+/** The line the writer gets under the idea. */
+export function sectionMapNote(map: SectionMap | null): string {
+  if (!map) return '';
+  return `SECTION MAP, drawn by the desk for this song: ${map.name}. ${map.plan} Use this map unless the idea clearly wants another. Write the STRUCTURE line of the music direction from it.`;
 }
 
 /** The second, surgical request: replace the flagged lines and nothing else. */
@@ -219,9 +445,13 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
  *  Part 293: two LONG verses are the desk's other map (a bridge and a final
  *  chorus carry the turn), so two verses of twelve or more sung lines EACH
  *  pass; a lopsided 16 and 8 does not (review). Whole-line (parenthesised)
- *  ad-libs are not counted. */
-export function lyricShapeIssue(script: string, brief = ''): string | null {
-  if (/\b(?:verses?|minutes?|seconds?|short|brief|quick|jingle|hook only|chorus only|one verse|two verses|bars)\b/i.test(brief)) return null;
+ *  ad-libs are not counted.
+ *  Part 293 follow-up: given the drawn map, the check holds the song to THAT
+ *  map: three verses pass any map (the writer may take another shape), and two
+ *  pass only where the map has two, each long enough. Without a map (a caller
+ *  that drew none) it is the check it was. */
+export function lyricShapeIssue(script: string, brief = '', map?: SectionMap | null): string | null {
+  if (briefSetsShape(brief)) return null;
   const at = script.search(/^\s*lyrics\s*:/im);
   if (at === -1) return null;
   const lengths: number[] = [];
@@ -236,10 +466,22 @@ export function lyricShapeIssue(script: string, brief = ''): string | null {
     } else if (inVerse && line && !/^\(.*\)$/.test(line)) lengths[lengths.length - 1] += 1;
   }
   const verses = lengths.length;
+  const tail = 'It must turn the story: pay off a detail planted earlier, or say what the narrator has been avoiding. New events, not a summary.';
+  if (map) {
+    if (verses === 0 || verses >= 3) return null;
+    const need = map.twoVerseLines;
+    if (verses === 2 && Math.min(...lengths) >= need) return null;
+    if (verses === 2 && need !== Infinity) {
+      const which = lengths.map((n, i) => (n < need ? `[Verse ${i + 1}] has ${n}` : '')).filter(Boolean).join(' and ');
+      return `The map for this song is ${map.name}, and each verse needs at least ${need} sung lines: ${which}. Lengthen each short verse to ${need} lines or more with what happens next, in the same voice and meter. ${tail}`;
+    }
+    const lines = need !== Infinity && need > 8 ? `${need} to ${need + 4}` : 'eight to twelve';
+    return `The song has only ${verses === 1 ? 'one verse' : 'two verses'}, and the map for this song is ${map.name}. Add a [Verse ${verses + 1}] of ${lines} sung lines in the same voice, ${map.addVerse}. ${tail}`;
+  }
   if (verses === 0 || verses >= 3) return null;
   if (verses === 2 && Math.min(...lengths) >= 12) return null;
   const short = verses === 1 ? 'one verse' : Math.max(...lengths) >= 12 ? 'two verses, one of them short,' : 'two short verses';
-  return `The song has only ${short} and this desk writes three verses, or two long ones of twelve to sixteen lines each. Add a [Verse ${verses + 1}] of eight to twelve sung lines in the same voice, placed after the bridge if there is one and before the final chorus, otherwise before the last chorus. It must turn the story: pay off a detail planted earlier, or say what the narrator has been avoiding. New events, not a summary.`;
+  return `The song has only ${short} and this desk writes three verses, or two long ones of twelve to sixteen lines each. Add a [Verse ${verses + 1}] of eight to twelve sung lines in the same voice, placed after the bridge if there is one and before the final chorus, otherwise before the last chorus. ${tail}`;
 }
 
 export function lyricRepairRequest(script: string, tells: LyricTell[], shape: string | null = null): string {
@@ -322,6 +564,16 @@ export function lyricMeterNote(script: string): string {
     : '';
 }
 
+/* Part 293 follow-up (Sep 25 2026): "no lesson at the end" in the desk notes did
+ * not stop tidy moral endings, and at low reasoning a general rule is skimmed.
+ * So the desk pulls the exact lines the song and each chorus land on and puts
+ * them in front of the producer as their own gate, last in the list. */
+function endingGate(script: string, number: number): string {
+  const lines = lyricEndingLines(script);
+  if (!lines.length) return '';
+  return `\n${number}. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, and any line the last chorus changed, pulled by the desk:\n${lines.map((l) => `   - "${l}"`).join('\n')}\n   Read each one on its own. Rewrite any that states a lesson, a turnaround, a verdict on the story or a sum-up of it, so it lands on something that happens or gets said in the moment instead: an action, a concrete detail, a joke, a line said to somebody, or the hook itself. Keep its rhyme sound and length, and change it the same way everywhere it repeats. A song can end unresolved. Lines that already land on a moment stay exactly as they are.`;
+}
+
 export function lyricAuditRequest(script: string, tells: LyricTell[], shape: string | null = null): string {
   const flagged = tells.length
     ? `\n\nThese exact lines lean on default-reach words and must be rewritten, keeping each line's rhyme sound, stress count and length, the same way everywhere a line repeats, and never by swapping in another default-reach word:\n${tells.map((t, i) => `${i + 1}. "${t.line}" -- ${t.tell}`).join('\n')}`
@@ -335,7 +587,7 @@ Check, in this order, and change only what fails:
 4. The spice. Exactly one from the list, visible.
 5. SING-ALONG, the gate this desk fails most. Read each verse's line endings down the page: they must rhyme in couplets or alternating lines, with the rhyme on the last word, so a listener can guess the word before it lands. Rewrite line endings until they do; move words around inside the line before you change its meaning. Meter: do NOT count syllables yourself, in your thinking or anywhere else; it burns the whole budget and the song comes back empty. The desk has counted, and if any verse wanders it is named at the end of this message; even out only those, by ear, to a steady four-stress line. Then the chorus: it says the feeling straight out in plain words, rhymes, and could be shouted from a car. If the chorus describes instead of declaring, rewrite it and keep the title. No worn rhyme pairs (fire and desire, heart and apart, love and above).
 6. Song, not short story, and not a nursery rhyme either. Each verse keeps one or two details so exact that only this song could contain them, never the props recent drafts keep reaching for (rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV) unless the brief named them, and the rest is plain talk. Cut any line that only notices something, and replace any line so general it could sit in a thousand songs. A verse this desk sized itself runs eight lines or more. Moment and voice. Happening now, one attitude in every line, a first line that grabs in eight words, no retrospective wisdom, no Tier 1 structure anywhere.
-7. Singability. Open vowels under held notes, a breath in every long line, no stacked sibilants or consonant pileups on stressed beats, parentheses only for sung ad-libs and echoes, never stage directions.${shape ? `\n8. Length. ${shape}` : ''}${flagged}${lyricMeterNote(script)}
+7. Singability. Open vowels under held notes, a breath in every long line, no stacked sibilants or consonant pileups on stressed beats, parentheses only for sung ad-libs and echoes, never stage directions.${shape ? `\n8. Length. ${shape}` : ''}${endingGate(script, shape ? 9 : 8)}${flagged}${lyricMeterNote(script)}
 
 Return the complete song in the same format: the music direction, the Lyrics: heading with every sung line and every chorus written out in full, then the READBACK line. Nothing else.
 
@@ -436,7 +688,7 @@ ${note ? `${note}\n\n` : ''}SOUND BOOTH DELIVERY CONTRACT
 This is a single text-only writing request, not a conversation. Do not ask questions; make the creative choices and deliver. Do not access conversation history, personal memory, other agents, or audio tools.
 Keep supplied lyrics exactly as the request instructs; do not rewrite them merely to improve their rhymes. Formatting-only work must preserve authored words.
 The Sound Booth format below is the ONLY output format. There is no Lyrics Box, Tag Box or Negative Tag Box here: what would go in a tag box (genre, BPM with feel, drums, bass, instrumentation, the signature instrumental hook, the lead voice, backing vocals, arrangement dynamics) is written as the music direction prose, and nothing about story or theme goes in it. So: output the music direction first, then a Lyrics: heading and the complete sung words when lyrics are requested, followed by the required READBACK: line. Never output commentary, a critique, rhyme annotations, a greeting or an offer to continue. Keep production instructions out of sung lines. Do not add lyrics to an instrumental request.
-Length check, when you wrote the lyrics yourself and the person gave no length: three verses sized by the genre's density tier, or two long verses of twelve to sixteen lines with a bridge and a final chorus, the technical line says about four minutes, and a short verse gets what happened next, not another way of saying the same thing. Then run the Tier 2 scan against Appendix A one more time. This check is private; the answer is always the complete draft in the format below, never a description of it.
+Length check, when you wrote the lyrics yourself and the person gave no length: the sections follow the SECTION MAP sent with the request, every verse sized by the genre's density tier, the technical line says about four minutes, and a short verse gets what happened next, not another way of saying the same thing. Then run the Tier 2 scan against Appendix A one more time. This check is private; the answer is always the complete draft in the format below, never a description of it.
 
 ${base}`;
 }

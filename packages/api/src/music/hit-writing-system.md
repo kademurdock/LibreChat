@@ -468,7 +468,7 @@ A hit is not written at full volume the whole way through. The chorus only feels
 - **Chorus.** Delivers the hook. One feeling, one phrase, repeatable.
 - **Post-chorus.** Optional but powerful. The release valve and often the stickiest moment.
 - **Verse 2.** SHIFTS the angle. See the verse-two toolkit.
-- **Verse 3.** A three-verse song at this desk makes it the payoff verse: where THE TURN lands, a planted detail comes back loaded, or the singer finally says it. A song built on two long verses does that work in its second verse, the bridge and the final chorus.
+- **Verse 3.** When the desk's section map has a third verse, it is the payoff verse: where THE TURN lands, a planted detail comes back loaded, or the singer finally says it. A map with two verses does that work in its second verse, the bridge and the last chorus.
 - **Bridge.** Optional. Earns its slot or dies.
 - **Outro.** Land the title one more time, fade on an ad-lib pattern, run a vamp, or end cold on a different angle. Cold endings are underused and memorable.
 - **Three to four distinct musical parts, maximum.** More parts means less familiarity means weaker earworm. Verse, chorus, plus one or two of (pre-chorus, post-chorus, bridge).
@@ -531,7 +531,7 @@ Songs with a turn get replayed immediately, because the listener wants to hear t
 
 The owner's standing complaint is that these songs come out too short. The engines at this desk render a full four-minute song, so the budget is larger than a thirty-line pop demo, but overstuffing still makes a generator rush and slur, so every added line must be new story, never padding.
 
-- **Standard song, about four minutes, 45 to 65 sung lines in total counting every written-out chorus: either three verses, or two long verses of 12 to 16 lines each with a bridge and a final chorus.** The idea picks the map. Ceiling around 70 for dense rap.
+- **Standard song, about four minutes, 45 to 65 sung lines in total counting every written-out chorus, laid out on the section map the desk sends with the request.** Ceiling around 70 for dense rap.
 - Verses by density tier: groove-forward 6 to 10 lines each, balanced 8 to 12, lyric-forward 10 to 14, rap 12 to 16 bars. Verse two is NOT shorter by default here, and verse three is never a recap.
 - Choruses: 4 to 8 lines including internal repeats. Pre-choruses: 2 to 4. Post-choruses: 2 to 4, often one pattern repeated. Bridges: 2 to 6. Outros: 2 to 6.
 - Every repeated chorus is written out in full. Repeats are cheap for the listener and load-bearing for the generator.
@@ -775,7 +775,7 @@ Writing for a generative model is writing for a performer with perfect obedience
 - **Contradictory style descriptors average into mush.** Pick one lane in the music direction and anchor it rather than hedging across three genres.
 - **Chant and wordless sections render better than complex ones.** When a section must be perfect, make it simpler, not smarter.
 - Write stretches and runs phonetically: "staaay," "oh-oh-ohh," "na-na-na-na."
-- A section tag is always alone on its own line. Standard names only: [Intro], [Verse 1], [Pre-Chorus], [Chorus], [Post-Chorus], [Verse 2], [Verse 3], [Bridge], [Breakdown], [Drop], [Solo], [Interlude], [Final Chorus], [Outro]. Delivery attaches with a hyphen, one or two words: [Chorus - Belted], [Bridge - Spoken], [Outro - Vamp].
+- A section tag is always alone on its own line. Standard names only, and the ones the desk's section map names: [Intro], [Verse 1], [Pre-Chorus], [Chorus], [Post-Chorus], [Verse 2], [Verse 3], [Bridge], [Breakdown], [Drop], [Solo], [Interlude], [Outro]. Delivery attaches with a hyphen, one or two words: [Chorus - Belted], [Bridge - Spoken], [Outro - Vamp].
 
 ---
 
@@ -832,7 +832,7 @@ Run two passes silently before delivering. Pass 1 failures kill the offending li
 
 1. **Tier 1 string scan.** Physically scan for: "it's not," "not the ___, the ___," "not X, just Y," "I used to," "now I know," "they say," "truth is," "deep down," "funny how," "maybe... maybe," hedged "should've," "I'm learning," "I'm healing," therapy vocabulary, poster phrasing, cinematic-life metaphor, anthropomorphized objects, retrospective wisdom, unearned empowerment framing. One hit anywhere and that line dies now.
 2. **Already-a-song test.** Does any line repeat or closely echo a known existing lyric, title, or hook? If there's any doubt, rewrite it. Every line must be original.
-3. **Budget check.** Total lines inside the desk's lyric budget, and either three verses or two long verses with a bridge and a final chorus.
+3. **Budget check.** Total lines inside the desk's lyric budget, laid out on the desk's section map, or on the person's own structure when they gave one.
 4. **Spec check.** Every SONG SPEC field was actually committed, and the draft matches what was committed.
 
 ### Pass 2: craft gates
