@@ -1665,13 +1665,15 @@ export function chapterMetadata(chapters: Chapter[], total: number): string | nu
 }
 
 export type Subtitle = { file: string; language: string; title: string };
-export type AssembleOptions = { media?: Media; subtitles?: Subtitle[]; chapters?: Chapter[] };
+export type AssembleOptions = { media?: Media; captions?: Subtitle; chapters?: Chapter[] };
 
 /**
  * Joins the finished sections: one AAC soundtrack for both files, and either the original
  * picture untouched (ending where the new soundtrack ends, so a preview is only as long as its
- * sound) or the re-encoded sections with their pauses. Optional text tracks go into the MP4 as
- * mov_text, and chapters (output times) into both files. The only file-wide tag is the title.
+ * sound) or the re-encoded sections with their pauses. The MP4's one possible text track is the
+ * dialogue captions, as mov_text and switched off (quietTextTracks); the description lines are
+ * already in the soundtrack, so their text never goes into either file (Part 295). Chapters
+ * (output times) go into both files. The only file-wide tag is the title.
  */
 export async function assemble(
   directory: string,
@@ -1745,7 +1747,7 @@ export async function assemble(
   const shift = offset > 0.0005 ? ['-itsoffset', offset.toFixed(6)] : [];
   const end =
     copy && Number.isFinite(soundLength) ? ['-t', (offset + soundLength).toFixed(6)] : [];
-  const subtitles = options.subtitles ?? [];
+  const captions = options.captions;
   await command(
     ffmpeg(),
     [
@@ -1756,28 +1758,31 @@ export async function assemble(
       ...shift,
       '-i',
       audio,
-      ...subtitles.flatMap((item) => [...shift, '-i', item.file]),
+      ...(captions ? [...shift, '-i', captions.file] : []),
       ...(chapters ? [...shift, '-i', chapters] : []),
       '-map',
       `0:v:${copy ? (media?.videoIndex ?? 0) : 0}`,
       '-map',
       '1:a:0',
-      ...subtitles.flatMap((_, i) => ['-map', `${2 + i}:s:0`]),
+      ...(captions ? ['-map', '2:s:0'] : []),
       '-map_chapters',
-      chapters ? String(2 + subtitles.length) : '-1',
+      chapters ? (captions ? '3' : '2') : '-1',
       '-c:v',
       'copy',
       '-c:a',
       'copy',
-      ...(subtitles.length ? ['-c:s', 'mov_text'] : []),
-      ...subtitles.flatMap((item, i) => [
-        `-metadata:s:s:${i}`,
-        `language=${trackLanguage(item.language)}`,
-        `-metadata:s:s:${i}`,
-        `handler_name=${oneLine(item.title)}`,
-        `-metadata:s:s:${i}`,
-        `title=${oneLine(item.title)}`,
-      ]),
+      ...(captions
+        ? [
+            '-c:s',
+            'mov_text',
+            '-metadata:s:s:0',
+            `language=${trackLanguage(captions.language)}`,
+            '-metadata:s:s:0',
+            `handler_name=${oneLine(captions.title)}`,
+            '-metadata:s:s:0',
+            `title=${oneLine(captions.title)}`,
+          ]
+        : []),
       '-map_metadata:g',
       '-1',
       ...tag,
@@ -1788,7 +1793,7 @@ export async function assemble(
     ],
     signal,
   );
-  if (subtitles.length) await quietTextTracks(video);
+  if (captions) await quietTextTracks(video);
   return { video, audio };
 }
 

@@ -826,7 +826,7 @@ test('look clips: the time strip is added under the picture, and with no font th
   assert.equal(await media.stripFont(), font, 'the installed font comes back once the setting is gone');
 });
 
-test('assemble adds text tracks, chapters and a whole title, and keeps a late picture in step', async () => {
+test('assemble adds the captions track, chapters and a whole title, and keeps a late picture in step', async () => {
   const D = 8;
   const file = await joined('late-picture.mkv', { seconds: D, videoDelay: 0.5, codecs: [...h264, '-c:a', 'aac'] });
   const info = await media.probe(file, signal);
@@ -837,15 +837,10 @@ test('assemble adds text tracks, chapters and a whole title, and keeps a late pi
   await media.saveSound(await media.sectionSound(file, dir, 0, length, true, signal, info), flac, signal);
   const captions = join(dir, 'captions.vtt');
   await writeFile(captions, 'WEBVTT\n\n00:00.500 --> 00:02.000\nHello there.\n');
-  const descriptions = join(dir, 'descriptions.vtt');
-  await writeFile(descriptions, 'WEBVTT\n\n00:01.000 --> 00:03.000\nA white flash.\n');
   const title = `${'x'.repeat(195)}😀😀 (described)`;
   const output = await media.assemble(dir, [flac], null, file, title, signal, {
     media: info,
-    subtitles: [
-      { file: captions, language: 'en', title: 'Captions' },
-      { file: descriptions, language: 'en-US', title: 'Audio descriptions (text)' },
-    ],
+    captions: { file: captions, language: 'en-US', title: 'Captions' },
     chapters: [
       { start: 3, title: 'Ad = one; two #1' },
       { start: 0, title: 'Opening' },
@@ -855,14 +850,14 @@ test('assemble adds text tracks, chapters and a whole title, and keeps a late pi
   near(bursts(await timedPcm(output.video)), flashes(await frames(output.video)), 0.05, 'copied picture and new sound');
   const streams = (await probeJson(output.video, 'stream=codec_type,codec_name:stream_tags=language,handler_name')).streams;
   const texts = streams.filter((s) => s.codec_type === 'subtitle');
-  assert.deepEqual(texts.map((s) => s.codec_name), ['mov_text', 'mov_text']);
-  assert.deepEqual(texts.map((s) => s.tags.language), ['eng', 'eng']);
-  assert.deepEqual(texts.map((s) => s.tags.handler_name), ['Captions', 'Audio descriptions (text)']);
+  assert.deepEqual(texts.map((s) => s.codec_name), ['mov_text']);
+  assert.deepEqual(texts.map((s) => s.tags.language), ['eng']);
+  assert.deepEqual(texts.map((s) => s.tags.handler_name), ['Captions'], 'the dialogue, and no descriptions track');
   const shown = (await probeJson(output.video, 'stream=codec_type:stream_disposition=default')).streams;
   assert.deepEqual(
     shown.map((s) => [s.codec_type, s.disposition.default]), // the chapter track (data) was never on
-    [['video', 1], ['audio', 1], ['subtitle', 0], ['subtitle', 0], ['data', 0]],
-    'no text track is switched on by default, so no player shows it (and VoiceOver reads it) unasked',
+    [['video', 1], ['audio', 1], ['subtitle', 0], ['data', 0]],
+    'the captions track is not switched on by default, so no player shows it (and VoiceOver reads it) unasked',
   );
   assert.equal(await media.quietTextTracks(output.video), 0, 'running it again changes nothing');
   assert.equal(await media.quietTextTracks(output.audio), 0, 'a file without text tracks is left alone');
@@ -885,7 +880,7 @@ test('assemble adds text tracks, chapters and a whole title, and keeps a late pi
   assert.match(media.chapterMetadata([{ start: 0, title: 'a=b;c#d\\e' }], 10), /title=a\\=b\\;c\\#d\\\\e\n/);
 });
 
-test('a copied picture stops where the new soundtrack stops, and none of the original tags come along', async () => {
+test('a copied picture stops where the new soundtrack stops, none of the original tags come along, and a film with no dialogue has no text track', async () => {
   const file = await make('phone.mov', [
     ...lavfi(picture('320x240', 30, 30)),
     ...lavfi(sound(30)),
@@ -902,15 +897,26 @@ test('a copied picture stops where the new soundtrack stops, and none of the ori
   assert.equal(media.copyable(working.media), true);
   const flac = join(dir, 'sound.flac');
   await media.saveSound(await media.sectionSound(working.file, dir, 0, 10 * 48000, true, signal, working.media), flac, signal);
-  const descriptions = join(dir, 'descriptions.vtt');
-  await writeFile(descriptions, 'WEBVTT\n\n00:01.000 --> 00:04.000\nA white flash.\n');
   const output = await media.assemble(dir, [flac], null, working.file, 'Birthday (described)', signal, {
     media: working.media,
-    subtitles: [{ file: descriptions, language: 'en', title: 'Audio descriptions (text)' }],
+    chapters: [
+      { start: 0, title: 'Opening' },
+      { start: 4, title: 'Cake' },
+    ],
   });
   const data = await probeJson(output.video, 'format=duration:format_tags:stream=codec_type,duration');
-  const lengths = [data.format.duration, ...data.streams.filter((s) => s.codec_type !== 'subtitle').map((s) => s.duration)];
+  const lengths = [data.format.duration, ...data.streams.filter((s) => s.codec_type !== 'data').map((s) => s.duration)];
   assert.ok(lengths.every((value) => Math.abs(Number(value) - 10) < 0.1), `described copy lengths ${lengths}`);
+  // Part 295: the Road Runner short had no dialogue, and a player switched its one text track (the
+  // description lines the narrator already says) back on. With no captions there is none at all.
+  const shown = (await probeJson(output.video, 'stream=codec_type:stream_disposition=default')).streams;
+  assert.deepEqual(
+    shown.map((s) => [s.codec_type, s.disposition.default]),
+    [['video', 1], ['audio', 1], ['data', 0]],
+    'no text track, and the chapter track is off',
+  );
+  const marked = await probeJson(output.video, 'chapter=start_time:chapter_tags=title', ['-show_chapters']);
+  assert.deepEqual(marked.chapters.map((c) => c.tags.title), ['Opening', 'Cake'], 'chapters without a captions track');
   const tags = Object.keys(data.format.tags);
   assert.ok(tags.includes('title'), `tags ${tags}`);
   assert.deepEqual(tags.filter((key) => /location|comment/i.test(key)), [], 'no place or comment from the original');

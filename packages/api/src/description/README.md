@@ -12,7 +12,7 @@
    - minor details (importance 1) are left out rather than pausing.
 4. **Mix** in PCM: the soundtrack is brought toward -20 LUFS (at most 6 dB into the limiter), narration sits 0/2/5 dB above it (softer/balanced/louder), the soundtrack eases down 6/8/11 dB around each description and fades around pauses, then a -1 dBFS limiter. Standard mode with H.264 keeps the original picture untouched; otherwise sections are re-encoded frame-exactly so long films cannot drift.
 5. **Keep**: each finished section (FLAC, picture part, JSON record) is uploaded before the next begins. A restart or redeploy puts the job back in the queue and it continues from the last finished section (three automatic tries; then a Continue button). A failed section is reported and skipped; three in a row, or an account error (HTTP 401/402/403), stops the job.
-6. **Finish**: MP4, M4A, `transcript.txt`, `descriptions.vtt`, `captions.vtt`, `description.json`; phone and browser notice through the bridge (`requested: true`, like the Sound Booth).
+6. **Finish**: MP4, M4A, `transcript.txt`, `descriptions.vtt`, `captions.vtt`, `description.json`; phone and browser notice through the bridge (`requested: true`, like the Sound Booth). The MP4's only text track is the dialogue captions, when the film has dialogue, switched off in the file; the descriptions are already spoken, so their text is only the separate `descriptions.vtt`.
 
 Re-voicing a finished copy reuses the saved script and dialogue: only speech and mixing are paid. Voice samples (`POST /sample`) are cached per voice and speed and limited to 40 an hour.
 
