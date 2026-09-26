@@ -77,8 +77,25 @@ import { sampleRate } from './mix';
 type RunKind = 'fresh' | 'preview' | 'finish' | 'revoice' | 'correction' | 'redo' | 'rehearsal';
 /** How a rehearsal ended; every ending leaves the video ready to describe. */
 type RehearsalOutcome = 'finished' | 'stopped' | 'cancelled';
-/** Money one paid run set aside from one day's allowance, in whole cents. */
-type Run = { runId: string; day: string; cents: number; walletOwner?: string; settled?: boolean };
+/**
+ * Money one paid run set aside, in whole cents of the payer's money: from one day's allowance, or
+ * (with `walletOwner`) held from the owner's balance at the person's price.
+ */
+type Run = {
+  runId: string;
+  day: string;
+  cents: number;
+  walletOwner?: string;
+  settled?: boolean;
+  /**
+   * Part 295: what the owner pays per real dollar on this run (the wrapper's `priceFactor`, 1 for
+   * the administrator). Everything the run measures stays in real dollars; the wallet holds `cents`
+   * and settles what was spent times this. Runs reserved before Part 295 have none: 1x.
+   */
+  factor?: number;
+  /** The administrator's run (billing mode 'platform'): the wallet holds nothing, she pays nothing. */
+  platform?: boolean;
+};
 /** Where each section of a version is stored: manifest[i] is the version folder (0 = the old flat layout). */
 type Manifest = (number | null)[];
 type FinishedCopy = {
@@ -159,7 +176,24 @@ type Hooks = {
   storage: () => S3Client;
   log: (message: string) => void;
   warn?: (message: string) => void;
-  usage: (owner: string, job: string, kind: string, costUSD: number) => Promise<void>;
+  /**
+   * One paid (or included) request: costUSD is its real provider cost; chargedUSD is its price to
+   * the owner's balance: costUSD x the run's `priceFactor`, and 0 for included work (dialogue
+   * timing, voice samples), for the administrator's runs and without a wallet.
+   */
+  usage: (
+    owner: string,
+    job: string,
+    kind: string,
+    costUSD: number,
+    chargedUSD?: number,
+  ) => Promise<void>;
+  /**
+   * Part 295 ("double everything"): what this person pays per real dollar of a balance-billed run,
+   * 1 for the administrator. Quotes and holds are shown and taken at it; approvals, the over-quote
+   * stop and every recorded cost stay in real dollars. Without it (or without a wallet) 1x.
+   */
+  priceFactor?: (actor: Actor) => number;
   notify?: (
     owner: string,
     title: string,
@@ -292,7 +326,15 @@ type Job = {
 type Lock = { _id: string; worker: string; until: Date };
 /** One day's allowance: cents held by open runs and spent by closed ones. */
 type Budget = { _id: string; held: number; runs: string[] };
-const run = { runId: String, day: String, cents: Number, walletOwner: String, settled: Boolean };
+const run = {
+  runId: String,
+  day: String,
+  cents: Number,
+  walletOwner: String,
+  settled: Boolean,
+  factor: Number,
+  platform: Boolean,
+};
 const jobSchema = new mongoose.Schema<Job>(
   {
     _id: String,
@@ -458,6 +500,13 @@ const settledCost = (job: Pick<Job, 'runCost' | 'runPending'>): number =>
 /** Dialogue timing (Deepgram) paid from the platform's credit: logged, never quoted or charged. */
 const freeDialogue = () => process.env.KADE_DESCRIPTION_FREE_DIALOGUE === '1';
 const money = (usd: number): string => `$${usd.toFixed(2)}`;
+const validFactor = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 1;
+/** The price a run was reserved at (Part 295); runs reserved before it were 1x. */
+const runFactor = (reservation?: Pick<Run, 'factor'>): number => validFactor(reservation?.factor);
+/** A real amount at the person's price: unchanged at 1x, otherwise to a hundredth of a cent. */
+const atPrice = (usd: number, factor: number): number =>
+  factor === 1 ? usd : Math.round(usd * factor * 10000) / 10000;
 const retain = (job: Pick<Job, 'expiresAt'>, days: number): Date =>
   new Date(Math.max(new Date(job.expiresAt).getTime(), Date.now() + days * day));
 
@@ -663,16 +712,21 @@ class Cancelled extends Error {}
 /** This worker can no longer prove it owns the job: the database stopped answering, or another server took over. */
 class LeaseLost extends Error {}
 class StorageStall extends Error {}
-/** A paid request refused because the run already cost what she agreed to. */
+/**
+ * A paid request refused because the run already cost what she agreed to. The amounts are real
+ * dollars; the message names them at the run's price (`factor`), as her quote did.
+ */
 class OverQuote extends Halt {
   spentUSD: number;
   quotedUSD: number;
-  constructor(spentUSD: number, quotedUSD: number) {
+  factor: number;
+  constructor(spentUSD: number, quotedUSD: number, factor: number = 1) {
     super(
-      `This is costing more than quoted: ${money(spentUSD)} spent of about ${money(quotedUSD)}.`,
+      `This is costing more than quoted: ${money(atPrice(spentUSD, factor))} spent of about ${money(atPrice(quotedUSD, factor))}.`,
     );
     this.spentUSD = spentUSD;
     this.quotedUSD = quotedUSD;
+    this.factor = factor;
   }
 }
 /** Which of our own stops aborted a job's signal, for the operator's log. */
@@ -968,6 +1022,12 @@ export function createDescriptionRouter(hooks: Hooks): {
     if (!hooks.wallet) return 'allowance';
     return hooks.actor(req).role === 'ADMIN' ? 'platform' : 'balance';
   };
+  /**
+   * Part 295: what this person pays per real dollar. Only a wallet charges anyone, so the daily
+   * allowance (and a wrapper without the hook) stays 1x; the wrapper answers 1 for the administrator.
+   */
+  const factorFor = (req: Request): number =>
+    hooks.wallet && hooks.priceFactor ? validFactor(hooks.priceFactor(hooks.actor(req))) : 1;
   const storage = () => hooks.storage();
   const warn = (message: string) => (hooks.warn ?? hooks.log)(message);
   /** Every storage call gives up after two minutes, and sooner when the job is stopped. */
@@ -1321,12 +1381,18 @@ export function createDescriptionRouter(hooks: Hooks): {
   /**
    * Closes a run: the day keeps exactly what it spent (more than was set aside, if a provider
    * charged above its estimate). Keyed by the run, so it happens once and never touches another run's money.
+   * `spentUSD` is real: a balance pays it at the run's price, never more than its hold, and gets
+   * the rest of the hold back.
    */
   async function release(reservation: Run | undefined, spentUSD: number): Promise<void> {
     if (!reservation?.runId || reservation.settled) return;
     if (reservation.walletOwner && hooks.wallet) {
       if (reservation.cents > 0)
-        await hooks.wallet.settle(reservation.walletOwner, reservation.runId, spentUSD);
+        await hooks.wallet.settle(
+          reservation.walletOwner,
+          reservation.runId,
+          spentUSD * runFactor(reservation),
+        );
       await Jobs.updateOne(
         { 'reservation.runId': reservation.runId },
         { $set: { 'reservation.settled': true } },
@@ -1338,6 +1404,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       { $inc: { held: toCents(spentUSD) - reservation.cents }, $pull: { runs: reservation.runId } },
     );
   }
+  /** What the payer has left, in the payer's money: her balance at her price, or today's allowance. */
   async function remaining(owner?: string): Promise<number> {
     if (hooks.wallet && owner) return (await hooks.wallet.available(owner)) ?? Infinity;
     const budget = await Budgets.findById(today()).lean();
@@ -1356,6 +1423,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       ) / 100
     );
   }
+  /** `setAside` is the payer's money, as `remaining` is: the hold at the person's price. */
   async function allowanceText(setAside: number, owner?: string): Promise<string> {
     const left = await remaining(owner);
     if (hooks.wallet)
@@ -1463,6 +1531,12 @@ export function createDescriptionRouter(hooks: Hooks): {
     const library = job.source === 'library' ? job.sourcePrivacy : undefined;
     /** A stopped run's unsettled reserves were never charged, so they are not shown as spent. */
     const orphaned = busy.includes(job.state) ? 0 : Math.max(0, job.runPending ?? 0);
+    /**
+     * Part 295: the owner sees her own price, the one her latest run was reserved at (her set-aside
+     * is already in it). A video that also had runs from before Part 295 shows them at it too.
+     */
+    const factor = runFactor(job.reservation);
+    const priced = (usd: number | undefined) => (usd === undefined ? usd : atPrice(usd, factor));
     return {
       id: job._id,
       name: job.name,
@@ -1475,11 +1549,11 @@ export function createDescriptionRouter(hooks: Hooks): {
       etaSeconds: eta(job),
       error: job.error,
       settings: job.settings,
-      costUSD: Math.round(Math.max(0, (job.costUSD || 0) - orphaned) * 10000) / 10000,
-      runCostUSD: Math.round(Math.max(0, (job.runCost ?? 0) - orphaned) * 10000) / 10000,
+      costUSD: Math.round(Math.max(0, (job.costUSD || 0) - orphaned) * factor * 10000) / 10000,
+      runCostUSD: Math.round(Math.max(0, (job.runCost ?? 0) - orphaned) * factor * 10000) / 10000,
       setAsideUSD: (job.reservation?.cents ?? 0) / 100,
-      estimatedUSD: job.runEstimateUSD,
-      approvedUSD: job.approvedUSD,
+      estimatedUSD: priced(job.runEstimateUSD),
+      approvedUSD: priced(job.approvedUSD),
       overQuote: job.state === 'failed' && !!job.overQuote,
       outputSeconds: job.outputSeconds,
       descriptions: job.count,
@@ -2143,11 +2217,14 @@ export function createDescriptionRouter(hooks: Hooks): {
   /**
    * The ask a run that stopped over its quote names, cut to what today will have left once the
    * run closes and the day keeps what it really spent, as the estimate for Continue does.
+   * Real dollars: the hold comes back less what the run spent at its price, and what the payer
+   * then has is turned back into real money at that price.
    */
   async function askAfterHalt(job: Job, over: OverQuote): Promise<number> {
-    const closing = (job.reservation?.cents ?? 0) - toCents(settledCost(job));
+    const factor = runFactor(job.reservation);
+    const closing = (job.reservation?.cents ?? 0) - toCents(settledCost(job) * factor);
     const left = await remaining(job.owner).then(
-      (value) => Math.max(0, Math.round(value * 100) + closing) / 100,
+      (value) => Math.max(0, Math.round(value * 100) + closing) / 100 / factor,
       () => jobLimit(),
     );
     return askWithin(restEstimate(job), over, left);
@@ -2218,19 +2295,16 @@ export function createDescriptionRouter(hooks: Hooks): {
         `This is estimated at ${money(price.estimateUSD)}, above the ${money(jobLimit())} limit for one run. Choose less detail, turn off the extra passes, or describe a shorter part.`,
       );
     const rehearsal = launch.kind === 'rehearsal';
+    const approvedUSD = rehearsal ? 0 : (launch.approvedUSD ?? approvalFor(price.estimateUSD));
+    /* A balance holds her whole approval at her price; the run itself counts in real dollars. */
+    const factor = factorFor(req);
     const reservation: Run = {
       runId: randomUUID(),
       day: today(),
-      cents: rehearsal
-        ? 0
-        : toCents(
-            hooks.wallet
-              ? (launch.approvedUSD ?? approvalFor(price.estimateUSD))
-              : price.setAsideUSD,
-          ),
-      ...(hooks.wallet ? { walletOwner: job.owner } : {}),
+      cents: rehearsal ? 0 : toCents(hooks.wallet ? approvedUSD * factor : price.setAsideUSD),
+      ...(hooks.wallet ? { walletOwner: job.owner, factor } : {}),
+      ...(billingMode(req) === 'platform' ? { platform: true } : {}),
     };
-    const approvedUSD = rehearsal ? 0 : (launch.approvedUSD ?? approvalFor(price.estimateUSD));
     const guard =
       launch.expectedVersion === undefined
         ? {}
@@ -2320,6 +2394,8 @@ export function createDescriptionRouter(hooks: Hooks): {
           estimateUSD: price.estimateUSD,
           setAsideUSD: reservation.cents / 100,
           approvedUSD,
+          /* The set-aside is at her price; the estimate and approval are real. */
+          ...(factor !== 1 ? { priceFactor: factor } : {}),
         }),
       );
     }
@@ -2346,8 +2422,13 @@ export function createDescriptionRouter(hooks: Hooks): {
   route('get', '/config', async (req, res) => {
     const catalog = await voiceCatalog();
     const dialogue = freeDialogue() ? 0 : transcriptionPerMinute;
+    /* Part 295: every price here is the person's own (her balance is already in her money). */
+    const factor = factorFor(req);
     const perMinute = (detail: Settings['detail']) =>
-      Math.round((rates.vision + speechPerMinute(detail) + dialogue) * 10000) / 10000;
+      Math.round((rates.vision + speechPerMinute(detail) + dialogue) * factor * 10000) / 10000;
+    /** A rule applied to her quote gives her hold: the fixed part is at her price too. */
+    const rule = (value: { factor: number; extraUSD: number }) =>
+      factor === 1 ? value : { ...value, extraUSD: atPrice(value.extraUSD, factor) };
     res.json({
       enabled: configured(),
       maxBytes: 2 * 1024 ** 3,
@@ -2365,9 +2446,12 @@ export function createDescriptionRouter(hooks: Hooks): {
         standard: perMinute('standard'),
         rich: perMinute('rich'),
       },
-      extrasPerMinuteUSD: { closeLook: rates.closeLook, firstLook: rates.firstLook },
-      setAside: setAsideRule,
-      approval: approvalRule,
+      extrasPerMinuteUSD: {
+        closeLook: atPrice(rates.closeLook, factor),
+        firstLook: atPrice(rates.firstLook, factor),
+      },
+      setAside: rule(setAsideRule),
+      approval: rule(approvalRule),
       keep: { days: keepDays, maxDays: keepMaxDays },
       ...(hooks.actor(req).role === 'ADMIN' ? { rehearsal: true } : {}),
       previewSeconds: previewSeconds(),
@@ -2770,6 +2854,12 @@ export function createDescriptionRouter(hooks: Hooks): {
       note: input.note,
     };
     const remainingUSD = await remaining(job.owner);
+    /*
+     * Part 295: the quote is worked out in real dollars, against what her balance buys at her
+     * price, and shown at her price. Her balance (remainingUSD) is already her own money.
+     */
+    const factor = factorFor(req);
+    const room = remainingUSD / factor;
     const limits = {
       remainingUSD,
       dailyUSD: hooks.wallet ? null : dailyLimit(),
@@ -2783,22 +2873,28 @@ export function createDescriptionRouter(hooks: Hooks): {
       const { estimateUSD, breakdown, seconds } = launch.price;
       const approvedUSD =
         input.action === 'resume' && job.state === 'failed' && job.overQuote
-          ? askWithin(estimateUSD, job.overQuote, remainingUSD)
+          ? askWithin(estimateUSD, job.overQuote, room)
           : approvalFor(estimateUSD);
-      const setAsideUSD = hooks.wallet ? approvedUSD : launch.price.setAsideUSD;
+      const holdUSD = hooks.wallet ? approvedUSD : launch.price.setAsideUSD;
+      const setAsideUSD = atPrice(holdUSD, factor);
       let reason: string | undefined;
-      if (setAsideUSD > remainingUSD) reason = await allowanceText(setAsideUSD, job.owner);
+      if (holdUSD > room) reason = await allowanceText(setAsideUSD, job.owner);
       if (estimateUSD > jobLimit())
         reason = `This is estimated at ${money(estimateUSD)}, above the ${money(jobLimit())} limit for one run.`;
       res.json({
-        estimateUSD,
+        estimateUSD: atPrice(estimateUSD, factor),
         setAsideUSD,
-        approvedUSD,
+        approvedUSD: atPrice(approvedUSD, factor),
         ...limits,
         allowed: !reason,
         reason,
         seconds,
-        breakdown,
+        breakdown:
+          factor === 1
+            ? breakdown
+            : (Object.fromEntries(
+                Object.entries(breakdown).map(([key, usd]) => [key, atPrice(usd, factor)]),
+              ) as Breakdown),
       });
     } catch (error) {
       if (!(error instanceof Problem)) throw error;
@@ -2861,10 +2957,11 @@ export function createDescriptionRouter(hooks: Hooks): {
           400,
           'allowUpToUSD',
         );
+      /* She allows an amount at her price (what she was shown); the approval is kept real. */
       const left = await remaining(job.owner);
       launch.approvedUSD = Math.max(
         approvalFor(launch.price.estimateUSD),
-        Math.min(toCents(allow) / 100, left),
+        Math.min(toCents(allow) / 100, left) / factorFor(req),
       );
     }
     await requireVoice(launch.settings.voice);
@@ -3372,7 +3469,8 @@ export function createDescriptionRouter(hooks: Hooks): {
           async (kind, _reserve, action) => {
             const result = await action();
             spent += result.costUSD;
-            await hooks.usage(owner, 'voice-sample', kind, result.costUSD).catch(() => {});
+            /* Voice samples are free to everyone: booked for the operator, charged to no one. */
+            await hooks.usage(owner, 'voice-sample', kind, result.costUSD, 0).catch(() => {});
           },
         );
         audio = wav(await stretch(await decodeVoice(file, signal), rate / native, signal));
@@ -3811,7 +3909,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       const ask = over ? await askAfterHalt(current ?? job, over) : 0;
       let message = plainProblem(error, reason);
       if (over)
-        message = `${over.message} Continue up to ${money(ask)} more? Finished sections are kept.`;
+        message = `${over.message} Continue up to ${money(atPrice(ask, over.factor))} more? Finished sections are kept.`;
       if (cancelled)
         message = 'Processing stopped. Work already sent to providers may still be charged.';
       warn(
@@ -4082,6 +4180,7 @@ export function createDescriptionRouter(hooks: Hooks): {
             estimateUSD: job.runEstimateUSD,
             setAsideUSD: reservation.cents / 100,
             approvedUSD: job.approvedUSD,
+            ...(runFactor(reservation) !== 1 ? { priceFactor: runFactor(reservation) } : {}),
             restarts: job.restarts ?? 0,
             crashes: job.crashes ?? 0,
           }),
@@ -4118,6 +4217,16 @@ export function createDescriptionRouter(hooks: Hooks): {
         };
         const quoted = job.runEstimateUSD ?? 0;
         const approved = job.approvedUSD ?? approvalFor(quoted || jobLimit());
+        /**
+         * Part 295: every figure here is real; a balance-billed run's price to her is this factor
+         * times it, what the wallet settles and what each usage row says it charged. The daily
+         * allowance and the administrator's runs charge no one.
+         */
+        const factor = runFactor(reservation);
+        const chargeFor = (usd: number): number =>
+          reservation.walletOwner && !reservation.platform
+            ? Math.round(usd * factor * 1e6) / 1e6
+            : 0;
         const settleCost = (kindKey: keyof Spend, reserve: number, actual: number) =>
           account(async () => {
             spend.usd = Math.max(0, spend.usd - reserve + actual);
@@ -4164,7 +4273,7 @@ export function createDescriptionRouter(hooks: Hooks): {
             }),
           );
           await hooks
-            .usage(job.owner, job._id, `${kind}-included`, result.costUSD)
+            .usage(job.owner, job._id, `${kind}-included`, result.costUSD, 0)
             .catch((error: Error) => hooks.log('description usage: ' + error.message));
         };
         /**
@@ -4180,7 +4289,8 @@ export function createDescriptionRouter(hooks: Hooks): {
             if (!Number.isFinite(reserve) || reserve < 0)
               throw new Halt('A cost estimate was invalid.');
             const charged = spend.usd - spend.pending;
-            if (reserve > 0 && charged >= approved - 1e-9) throw new OverQuote(charged, quoted);
+            if (reserve > 0 && charged >= approved - 1e-9)
+              throw new OverQuote(charged, quoted, factor);
             const held = reservation.cents / 100;
             if (
               !reservation.walletOwner &&
@@ -4245,7 +4355,13 @@ export function createDescriptionRouter(hooks: Hooks): {
             await settleCost(uncertain ? 'uncertain' : kind, reserve, actual);
             if (actual > 0)
               await hooks
-                .usage(job.owner, job._id, uncertain ? `${kind}-uncertain` : kind, actual)
+                .usage(
+                  job.owner,
+                  job._id,
+                  uncertain ? `${kind}-uncertain` : kind,
+                  actual,
+                  chargeFor(actual),
+                )
                 .catch(() => {});
             hooks.log(
               line(interrupted ? 'dv.paid-interrupted' : 'dv.paid-failure', {
@@ -4272,7 +4388,13 @@ export function createDescriptionRouter(hooks: Hooks): {
           const guessed = result.uncertain === true;
           await settleCost(guessed ? 'uncertain' : kind, reserve, result.costUSD);
           await hooks
-            .usage(job.owner, job._id, guessed ? `${kind}-uncertain` : kind, result.costUSD)
+            .usage(
+              job.owner,
+              job._id,
+              guessed ? `${kind}-uncertain` : kind,
+              result.costUSD,
+              chargeFor(result.costUSD),
+            )
             .catch((error: Error) => hooks.log('description usage: ' + error.message));
         };
         const rehearsalMeter: Meter = async () => {
@@ -4463,7 +4585,7 @@ export function createDescriptionRouter(hooks: Hooks): {
               'Your preview is ready',
               pushBody(
                 summary,
-                `It cost ${money(spend.usd)}. Listen, then choose Describe the rest. ${until}`,
+                `It cost ${money(atPrice(spend.usd, runFactor(reservation)))}. Listen, then choose Describe the rest. ${until}`,
                 place,
               ),
             );

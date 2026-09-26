@@ -162,10 +162,11 @@ async function deductKadeCredits(userId, usd) {
  * Part 295, her words: "Yes, double everything." costUSD is the REAL cost and is written as it
  * is; the balance pays chargedUSD = the platform factor x costUSD (kadeRealCost.extraChargeUSD),
  * nothing for the administrator. A caller that charged a wallet itself passes chargedUSD (or, for
- * a described-video row, metadata.chargedUSD) to say what it charged. A described-video row
- * without one is written at 1x, what its wallet charges today (0 for the included dialogue timing
- * and voice samples it never charges); the wallet's own reservation and settlement already took
- * that money, so it is never debited here.
+ * a described-video row, metadata.chargedUSD) to say what it charged. The describer passes its
+ * price to the person (the platform factor x the real cost, 0 for the administrator, the included
+ * dialogue timing and voice samples); a described-video row without one is written at 1x, what its
+ * wallet charged before that (0 for the included work it never charges). The wallet's own
+ * reservation and settlement already took that money, so it is never debited here.
  *
  * A negative costUSD is a refund row (FalAI refundVideoCharge): it gives back chargedUSD (<= 0,
  * what the original row charged) or, without one, the platform factor x the refunded cost.

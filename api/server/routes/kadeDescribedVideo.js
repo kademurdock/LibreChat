@@ -12,6 +12,7 @@ const {
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
+const { userPriceFactor } = require('~/server/services/kadeRealCost');
 const { SHARED_HEAD } = require('./kadePages');
 
 const MEDIA_PREFIX = () => process.env.KADE_MEDIA_PREFIX || 'media-library';
@@ -309,13 +310,20 @@ const { router, close } = createDescriptionRouter({
   storage: () => initializeS3(),
   log: (message) => logger.info(`[described-video] ${message}`),
   warn: (message) => logger.warn(`[described-video] ${message}`),
-  usage: (userId, job, kind, costUSD) =>
+  /* Part 295, her words: "Yes, double everything." A person's run is quoted, held and settled at
+   * the platform factor (KADE_BILLING_MULTIPLIER) x its real cost; the administrator's stays real
+   * and her balance is never held. Dialogue timing and voice samples stay free. */
+  priceFactor: (actor) => userPriceFactor(actor.role),
+  /* costUSD is real; chargedUSD is what the describer's wallet takes for it (0 for included work and
+   * for the administrator). The wallet already took the money, so the row is never debited. */
+  usage: (userId, job, kind, costUSD, chargedUSD) =>
     logKadeUsage({
       userId,
       service: 'describe',
       quantity: 1,
       unit: 'requests',
       costUSD,
+      chargedUSD,
       metadata: { source: 'described-video', job, kind, walletHandled: true },
     }),
   notify,

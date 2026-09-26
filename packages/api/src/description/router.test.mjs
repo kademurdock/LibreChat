@@ -35,6 +35,8 @@ import {
 
 process.env.FFMPEG_PATH = ffmpegPath;
 let walletMode = false;
+/** Part 295: what a USER pays per real dollar (the wrapper's userPriceFactor); the ADMIN is always 1. */
+let userFactor = 1;
 const billing = createDescriptionWallet();
 process.env.FFPROBE_PATH = ffprobePath.path;
 let mongo, external, service, worker, app, Jobs, Budgets, Locks, storage, root, voiceWav, hooks;
@@ -371,9 +373,10 @@ before(async () => {
     features: (req) =>
       familyFeatures(req.headers['x-pack'] === 'no' ? { id: '6b0000000000000000000000' } : { id: String(req.headers['x-user']), role: 'ADMIN' }),
     log: (message) => logLines.push(message),
-    usage: async (owner, job, kind, costUSD) => {
-      usageLog.push({ owner, job, kind, costUSD });
+    usage: async (owner, job, kind, costUSD, chargedUSD) => {
+      usageLog.push({ owner, job, kind, costUSD, chargedUSD });
     },
+    priceFactor: (actor) => (actor.role === 'ADMIN' ? 1 : userFactor),
     notify: async (owner, title, text, url, detail) => {
       notices.push({ owner, title, text, url, detail });
       return { browser: 1, bridge: 200 };
@@ -2438,7 +2441,7 @@ test('rehearsal stand-ins: fixed words, one numbered description at the first qu
 function loadWrapper() {
   const routes = fileURLToPath(new URL('../../../../api/server/routes/', import.meta.url));
   const books = new Map();
-  const state = { hooks: null, pushes: 0, copies: [], posts: [], bridgeReply: { ok: true, sent: 1 } };
+  const state = { hooks: null, pushes: 0, copies: [], posts: [], usage: [], bridgeReply: { ok: true, sent: 1 } };
   const stubs = {
     axios: {
       post: async (url, body, options) => {
@@ -2458,7 +2461,11 @@ function loadWrapper() {
     },
     '@librechat/data-schemas': { logger: { info() {}, warn() {}, error() {} } },
     '~/server/middleware': { requireJwtAuth: (_req, _res, next) => next() },
-    '~/models/kadeUsage': { logKadeUsage: async () => {} },
+    '~/models/kadeUsage': {
+      logKadeUsage: async (row) => {
+        state.usage.push(row);
+      },
+    },
     './kadePages': { SHARED_HEAD: '' },
     '~/db/models': { User: { findById: () => ({ lean: async () => ({ name: 'Kade Murdock' }) }) } },
     '~/server/services/kadeNudges': {
@@ -2480,6 +2487,9 @@ function loadWrapper() {
   Module._load = function (request, parent, isMain) {
     if (request in stubs) return stubs[request];
     if (request === '~/models/kadeBook') return original.call(this, join(routes, '../../models/kadeBook.js'), parent, isMain);
+    /* The real price rules (Part 295): kadeRealCost has no '~' requires of its own. */
+    if (request === '~/server/services/kadeRealCost')
+      return original.call(this, join(routes, '../services/kadeRealCost.js'), parent, isMain);
     return original.call(this, request, parent, isMain);
   };
   const signals = { SIGTERM: process.listeners('SIGTERM'), SIGINT: process.listeners('SIGINT') };
@@ -2501,6 +2511,28 @@ test('the LibreChat wrapper: library facts and privacy, one idempotent save with
     const owner = new mongoose.Types.ObjectId();
     assert.equal(hooks.actor({ user: { id: 'u1', role: 'ADMIN', kadeAccountType: 'child' } }).child, true);
     assert.equal(hooks.actor({ user: { id: 'u1', role: 'ADMIN' } }).child, false);
+    /* Part 295: a person's price is the platform factor; the administrator's is real. */
+    const multiplier = process.env.KADE_BILLING_MULTIPLIER;
+    process.env.KADE_BILLING_MULTIPLIER = '2';
+    try {
+      assert.equal(hooks.priceFactor(hooks.actor({ user: { id: 'u1', role: 'USER' } })), 2);
+      assert.equal(hooks.priceFactor(hooks.actor({ user: { id: 'u1', role: 'ADMIN' } })), 1);
+    } finally {
+      if (multiplier === undefined) delete process.env.KADE_BILLING_MULTIPLIER;
+      else process.env.KADE_BILLING_MULTIPLIER = multiplier;
+    }
+    await hooks.usage('u1', 'job-1', 'vision', 0.05, 0.1);
+    assert.deepEqual(wrapper.state.usage, [
+      {
+        userId: 'u1',
+        service: 'describe',
+        quantity: 1,
+        unit: 'requests',
+        costUSD: 0.05,
+        chargedUSD: 0.1,
+        metadata: { source: 'described-video', job: 'job-1', kind: 'vision', walletHandled: true },
+      },
+    ], 'the usage row keeps the real cost and says what her wallet took');
     const original = await KadeBook.create({
       owner: new mongoose.Types.ObjectId(),
       kind: 'video',
@@ -2834,6 +2866,201 @@ const park = (id) =>
     { _id: id, state: { $in: ['queued', 'running'] } },
     { $set: { state: 'failed', active: false }, $unset: { worker: 1, lease: 1 } },
   );
+
+/* Part 295, her words: "Yes, double everything." A USER's run is quoted, held and settled at the
+ * wrapper's price factor (2 here); the ADMIN's stays real and her balance is never held. */
+const near = (actual, expected, what) =>
+  assert.ok(Math.abs(actual - expected) < 1e-6, `${what}: ${actual}, expected ${expected}`);
+const approvalOf = (usd) => Math.ceil((usd * 1.5 + 0.1) * 100 - 1e-6) / 100;
+
+test('Part 295: a person is quoted, held and charged twice the real price, and gets the rest of the hold back', async () => {
+  walletMode = true;
+  const user = new mongoose.Types.ObjectId();
+  const admin = new mongoose.Types.ObjectId();
+  const owner = String(user);
+  let id;
+  try {
+    await mongoose.connection.collection('users').insertMany([{ _id: user, role: 'USER' }, { _id: admin, role: 'ADMIN' }]);
+    await mongoose.connection.collection('balances').insertOne({ user, tokenCredits: 10e6 });
+    userFactor = 2;
+    const mine = (await call('get', '/config', owner).set('x-role', 'user').expect(200)).body;
+    const real = (await call('get', '/config', String(admin)).expect(200)).body;
+    assert.equal(mine.billingMode, 'balance');
+    assert.equal(mine.remainingUSD, 10, 'her balance is shown as it is');
+    for (const detail of ['essential', 'standard', 'rich'])
+      near(mine.perMinuteUSD[detail], 2 * real.perMinuteUSD[detail], `${detail} detail a minute`);
+    near(mine.extrasPerMinuteUSD.closeLook, 2 * real.extrasPerMinuteUSD.closeLook, 'a closer look a minute');
+    near(mine.extrasPerMinuteUSD.firstLook, 2 * real.extrasPerMinuteUSD.firstLook, 'a first look a minute');
+    assert.deepEqual(mine.approval, { factor: 1.5, extraUSD: 0.2 }, 'the rule turns her quote into her hold');
+    assert.deepEqual(real.approval, { factor: 1.5, extraUSD: 0.1 });
+
+    id = await readyJob(owner, 'p295-double-0000001', 10);
+    const estimate = async () =>
+      (await call('post', `/jobs/${id}/estimate`, owner).set('x-role', 'user').send({ action: 'start', settings }).expect(200)).body;
+    userFactor = 1;
+    const cost = await estimate();
+    userFactor = 2;
+    const quote = await estimate();
+    assert.equal(cost.approvedUSD, approvalOf(cost.estimateUSD));
+    assert.equal(quote.allowed, true, quote.reason);
+    assert.equal(quote.remainingUSD, 10);
+    near(quote.estimateUSD, 2 * cost.estimateUSD, 'her estimate');
+    near(quote.approvedUSD, 2 * cost.approvedUSD, 'her maximum charge');
+    near(quote.setAsideUSD, quote.approvedUSD, 'her hold is her maximum charge');
+    for (const part of Object.keys(cost.breakdown)) near(quote.breakdown[part], 2 * cost.breakdown[part], part);
+
+    await call('post', `/jobs/${id}/start`, owner).set('x-role', 'user').send(settings).expect(202);
+    near(await billing.available(owner), 10 - quote.setAsideUSD, 'her balance holds twice the real approval');
+    const queued = await Jobs.findById(id).lean();
+    assert.equal(queued.reservation.factor, 2);
+    assert.equal(queued.reservation.platform, undefined);
+    assert.equal(queued.reservation.cents, Math.round(quote.setAsideUSD * 100));
+    assert.equal(queued.runEstimateUSD, cost.estimateUSD, 'the run keeps the real estimate');
+    assert.equal(queued.approvedUSD, cost.approvedUSD, 'and the real approval');
+    const shown = (await call('get', `/jobs/${id}`, owner).expect(200)).body;
+    assert.deepEqual(
+      [shown.estimatedUSD, shown.approvedUSD, shown.setAsideUSD],
+      [quote.estimateUSD, quote.approvedUSD, quote.setAsideUSD],
+      'the job shows what she was quoted',
+    );
+
+    const usageBefore = usageLog.length;
+    overbill = 1;
+    const done = await settle(id, ['done', 'failed'], owner);
+    assert.equal(done.state, 'done', done.error);
+    const stored = await Jobs.findById(id).lean();
+    const booked = usageLog.slice(usageBefore).filter((item) => item.job === id);
+    assert.ok(booked.some((item) => item.kind === 'vision' && item.costUSD === 0.05), 'the look is booked at its real cost');
+    for (const item of booked) near(item.chargedUSD, 2 * item.costUSD, `${item.kind} row charged`);
+    const spent = booked.reduce((sum, item) => sum + item.costUSD, 0);
+    near(stored.runCost, spent, 'the run counted real dollars');
+    near(done.runCostUSD, 2 * spent, 'and shows them at her price');
+    near(done.costUSD, 2 * stored.costUSD, 'for the whole video too');
+    near(await billing.available(owner), 10 - 2 * spent, 'she paid twice what it cost and got the rest of her hold back');
+
+    sampleCost = 0.003;
+    await call('post', '/sample', owner).set('x-role', 'user').send({ voice: 'Voice 1', rate: 1.5, text: 'Part 295' }).expect(200);
+    near(await billing.available(owner), 10 - 2 * spent, 'a voice sample stays free');
+  } finally {
+    overbill = 0;
+    sampleCost = 0;
+    userFactor = 1;
+    walletMode = false;
+    if (id) {
+      await park(id);
+      await call('delete', `/jobs/${id}`, owner).expect(200);
+    }
+  }
+});
+
+test('Part 295: over her quote, the stop names her price, Continue is read at her price, and a hold is never overdrawn', async () => {
+  walletMode = true;
+  userFactor = 2;
+  const user = new mongoose.Types.ObjectId();
+  const owner = String(user);
+  let id;
+  try {
+    await mongoose.connection.collection('users').insertOne({ _id: user, role: 'USER' });
+    await mongoose.connection.collection('balances').insertOne({ user, tokenCredits: 10e6 });
+    id = await readyJob(owner, 'p295-over-000000001', 150);
+    const quote = (await call('post', `/jobs/${id}/estimate`, owner).set('x-role', 'user').send({ action: 'start', settings }).expect(200)).body;
+    overbill = 9;
+    await call('post', `/jobs/${id}/start`, owner).set('x-role', 'user').send(settings).expect(202);
+    const stopped = await settle(id, ['failed', 'done'], owner);
+    assert.equal(stopped.overQuote, true, stopped.error);
+    const job = await Jobs.findById(id).lean();
+    const spent = Math.max(0, job.runCost - (job.runPending ?? 0));
+    assert.ok(job.overQuote.spentUSD >= job.approvedUSD - 1e-9, 'the stop compares real dollars with the real approval');
+    assert.equal(job.overQuote.quotedUSD, job.runEstimateUSD);
+    assert.match(
+      stopped.error,
+      new RegExp(`^This is costing more than quoted: \\$${(2 * job.overQuote.spentUSD).toFixed(2)} spent of about \\$${(2 * job.overQuote.quotedUSD).toFixed(2)}\\.`),
+      'the stop names her price',
+    );
+    assert.equal(stopped.estimatedUSD, quote.estimateUSD);
+    near(stopped.runCostUSD, 2 * spent, 'her run so far, at her price');
+    assert.ok(2 * spent > quote.setAsideUSD, 'the providers overran her hold');
+    near(await billing.available(owner), 10 - quote.setAsideUSD, 'she pays at most her hold; the overrun is the platform’s');
+
+    const ask = (await call('post', `/jobs/${id}/estimate`, owner).set('x-role', 'user').send({ action: 'resume' }).expect(200)).body;
+    assert.equal(ask.allowed, true, ask.reason);
+    assert.match(stopped.error, new RegExp(`Continue up to \\$${ask.approvedUSD.toFixed(2)} more\\?`), 'the stop names the same ask as the estimate');
+    overbill = 0;
+    const before = await billing.available(owner);
+    const resumed = (await call('post', `/jobs/${id}/resume`, owner).set('x-role', 'user').send({ allowUpToUSD: ask.approvedUSD }).expect(202)).body;
+    assert.equal(resumed.approvedUSD, ask.approvedUSD, 'what she allowed is what she is shown');
+    const again = await Jobs.findById(id).lean();
+    near(again.approvedUSD, ask.approvedUSD / 2, 'and it is kept as a real approval');
+    assert.equal(again.reservation.cents, Math.round(ask.setAsideUSD * 100));
+    near(await billing.available(owner), before - ask.setAsideUSD, 'her hold is what she allowed');
+    const done = await settle(id, ['failed', 'done'], owner);
+    assert.equal(done.state, 'done', done.error);
+    near(await billing.available(owner), before, 'nothing more was spent, so all of the hold came back');
+  } finally {
+    overbill = 0;
+    userFactor = 1;
+    walletMode = false;
+    if (id) {
+      await park(id);
+      await call('delete', `/jobs/${id}`, owner).expect(200);
+    }
+  }
+});
+
+test('Part 295: the administrator is quoted and booked at real cost, and nothing is held from her balance', async () => {
+  walletMode = true;
+  userFactor = 2;
+  const admin = new mongoose.Types.ObjectId();
+  const owner = String(admin);
+  const balances = mongoose.connection.collection('balances');
+  const credits = async () => (await balances.findOne({ user: admin })).tokenCredits;
+  let id;
+  try {
+    await mongoose.connection.collection('users').insertOne({ _id: admin, role: 'ADMIN' });
+    await balances.insertOne({ user: admin, tokenCredits: 5e6 });
+    const config = (await call('get', '/config', owner).expect(200)).body;
+    assert.equal(config.billingMode, 'platform');
+    assert.equal(config.remainingUSD, null, 'the platform pays for her runs');
+    assert.deepEqual(config.approval, { factor: 1.5, extraUSD: 0.1 });
+
+    id = await readyJob(owner, 'p295-admin-00000001', 10);
+    const quote = (await call('post', `/jobs/${id}/estimate`, owner).send({ action: 'start', settings }).expect(200)).body;
+    const doubled = (await call('post', `/jobs/${id}/estimate`, owner).set('x-role', 'user').send({ action: 'start', settings }).expect(200)).body;
+    assert.equal(quote.billingMode, 'platform');
+    assert.equal(quote.allowed, true, quote.reason);
+    near(doubled.estimateUSD, 2 * quote.estimateUSD, 'a person would be quoted twice her real estimate');
+    assert.equal(quote.approvedUSD, approvalOf(quote.estimateUSD), 'her maximum is the real approval');
+    assert.equal(quote.setAsideUSD, quote.approvedUSD);
+
+    await call('post', `/jobs/${id}/start`, owner).send(settings).expect(202);
+    assert.equal(await credits(), 5e6, 'nothing is held from her balance');
+    const queued = await Jobs.findById(id).lean();
+    assert.equal(queued.reservation.factor, 1);
+    assert.equal(queued.reservation.platform, true);
+    assert.equal(queued.approvedUSD, quote.approvedUSD);
+    assert.equal(queued.runEstimateUSD, quote.estimateUSD);
+
+    const usageBefore = usageLog.length;
+    overbill = 1;
+    const done = await settle(id, ['done', 'failed'], owner);
+    assert.equal(done.state, 'done', done.error);
+    const booked = usageLog.slice(usageBefore).filter((item) => item.job === id);
+    assert.ok(booked.some((item) => item.kind === 'vision' && item.costUSD === 0.05), 'her look is booked at its real cost');
+    assert.ok(booked.every((item) => item.chargedUSD === 0), 'and charged to no one');
+    const spent = booked.reduce((sum, item) => sum + item.costUSD, 0);
+    near(done.runCostUSD, spent, 'her run shows its real cost');
+    assert.deepEqual([done.estimatedUSD, done.approvedUSD], [quote.estimateUSD, quote.approvedUSD]);
+    assert.equal(await credits(), 5e6, 'and nothing was taken');
+  } finally {
+    overbill = 0;
+    userFactor = 1;
+    walletMode = false;
+    if (id) {
+      await park(id);
+      await call('delete', `/jobs/${id}`, owner).expect(200);
+    }
+  }
+});
 
 test('a restart that cuts off a paid request does not charge its reserve, and the next server finishes within the approval', async () => {
   await Budgets.deleteMany({});
@@ -3330,6 +3557,7 @@ test('free dialogue: Deepgram is logged for the operator, never quoted, charged 
     assert.equal(free.stored.spend?.transcription ?? 0, 0);
     assert.deepEqual(free.booked.map((item) => item.kind), ['transcription-included'], 'the operator still sees it');
     assert.ok(Math.abs(free.booked[0].costUSD - 0.0026) < 1e-9);
+    assert.equal(free.booked[0].chargedUSD, 0, 'and it is charged to no one');
     assert.ok(Math.abs(logged(free.logsBefore, 'dv.included')[0]?.costUSD - 0.0026) < 1e-9);
     assert.equal(await held(), 0);
   } finally {
