@@ -201,10 +201,12 @@ const EXAMPLE_LINES: Set<string> = new Set(
  * anywhere else in a song are ordinary speech. Each is narrowed where plain speech uses it:
  * "turns out" not when somebody turns out the lights or the town turns out,
  * "after all" only closing a clause (never "after all the chairs"), "in the
- * end" only opening or closing a clause (never "the end zone"). */
+ * end" only opening or closing a clause (never "the end zone"). From the
+ * re-run: anything that "turned out the best" (or fine, right...) and a line
+ * that closes on "and I'm glad". */
 export const ENDING_TELL = 'a tidy ending: it sums the song up, states a lesson or turns it around';
 const ENDING_GIVEAWAYS: RegExp =
-  /(?:^|[,;:—–-]\s*|\b(?:it|it's|it has|guess|and|but|so|well|now|oh|yeah)\s+)turn(?:s|ed)? out\b(?!\s+(?:the |my |your |his |her |our |their |that |those |these )?(?:lights?|lamps?|pockets?|porch|candles?|fire|stove|oven|burners?|gas|dogs?|cows?|horses?|cattle|goats?|chickens?)\b)|\bthe lucky ones?\b|\bafter all(?=\s*(?:[.,!?;:)—–-]|$))|(?:^|[,;:—–-]\s*|\b(?:and|but|so)\s+)in the end\b(?!\s+(?:of|zone|stall|seat|booth|row|lane|spot|slot|room|unit|table|chair|pew|bed|house|lot))|\bin the end(?=\s*(?:[.,!?;:)—–-]|$))|\band that['’]?s (?:okay|ok|o\.k\.|alright|all right|fine)\b|\bbest (?:present|gift|thing)s? (?:of all|anyway)\b|\bthat['’]?s all (?:that )?matters\b|\bwouldn['’]?t change a thing\b|\ball along(?=\s*(?:[.,!?;:)—–-]|$))/i;
+  /(?:^|[,;:—–-]\s*|\b(?:it|it's|it has|guess|and|but|so|well|now|oh|yeah)\s+)turn(?:s|ed)? out\b(?!\s+(?:the |my |your |his |her |our |their |that |those |these )?(?:lights?|lamps?|pockets?|porch|candles?|fire|stove|oven|burners?|gas|dogs?|cows?|horses?|cattle|goats?|chickens?)\b)|\bthe lucky ones?\b|\bafter all(?=\s*(?:[.,!?;:)—–-]|$))|(?:^|[,;:—–-]\s*|\b(?:and|but|so)\s+)in the end\b(?!\s+(?:of|zone|stall|seat|booth|row|lane|spot|slot|room|unit|table|chair|pew|bed|house|lot))|\bin the end(?=\s*(?:[.,!?;:)—–-]|$))|\band that['’]?s (?:okay|ok|o\.k\.|alright|all right|fine)\b|\bbest (?:present|gift|thing)s? (?:of all|anyway)\b|\bthat['’]?s all (?:that )?matters\b|\bwouldn['’]?t change a thing\b|\ball along(?=\s*(?:[.,!?;:)—–-]|$))|\bturn(?:s|ed)? out (?:to be )?(?:the )?(?:best|worst|greatest|luckiest|right|okay|ok|alright|all right|fine|good|great|better)\b|\band i['’]?m glad(?=\s*(?:[.,!?;:)—–-]|$))/i;
 
 /** The sung lines of a draft (below "Lyrics:", before READBACK), in order,
  *  without section tags or whole-line parenthesised ad-libs. */
@@ -233,13 +235,34 @@ function lastOf(lines: { line: string; section: string; pass: number }[], tag: R
   return pass === -1 ? [] : lines.filter((l) => l.pass === pass).slice(-2).map((l) => l.line);
 }
 
-/** The giveaway endings among the last four sung lines of the song and the last
+const CHORUS_TAG = /^(?:final |last )?(?:chorus|hook|refrain)\b/i;
+
+/** The lines of the last chorus pass that the first pass does not have: the line
+ *  the writer changes "so it reads differently now". Measured on the re-run:
+ *  that changed line is where the turnaround moved to ("...turned out the best
+ *  day I had", "...but I'm glad you slid up in it"). */
+function changedLastChorus(lines: { line: string; section: string; pass: number }[]): string[] {
+  const passes: string[][] = [];
+  let at = -1;
+  for (const l of lines) {
+    if (!CHORUS_TAG.test(l.section)) continue;
+    if (l.pass !== at) passes.push([]);
+    at = l.pass;
+    passes[passes.length - 1].push(l.line);
+  }
+  if (passes.length < 2) return [];
+  const first = new Set(passes[0]);
+  return passes[passes.length - 1].filter((l) => !first.has(l));
+}
+
+/** The giveaway endings where a song lands: its last four sung lines, the last
  *  two of its last verse (measured: two of the three tidy endings that lost
- *  briefs closed the payoff verse, just before the bridge and the last chorus);
- *  a phrase from the person's own brief is theirs and is never flagged. */
+ *  briefs closed the payoff verse, just before the bridge and the last chorus)
+ *  and any line the last chorus changed. A phrase from the person's own brief
+ *  is theirs and is never flagged. */
 export function lyricEndingTells(script: string, brief = ''): LyricTell[] {
   const lines = sungLines(script);
-  const scope = new Set([...lines.slice(-4).map((l) => l.line), ...lastOf(lines, /^verse/i)]);
+  const scope = new Set([...lines.slice(-4).map((l) => l.line), ...lastOf(lines, /^verse/i), ...changedLastChorus(lines)]);
   const found: LyricTell[] = [];
   for (const { line } of lines) {
     if (!scope.has(line) || found.some((t) => t.line === line)) continue;
@@ -288,11 +311,11 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
  *  each distinct line once, in the order they first appear. */
 export function lyricEndingLines(script: string): string[] {
   const lines = sungLines(script);
-  const picked = new Set<string>([...lastOf(lines, /^verse/i), ...lastOf(lines, /^bridge/i)]);
+  const picked = new Set<string>([...lastOf(lines, /^verse/i), ...lastOf(lines, /^bridge/i), ...changedLastChorus(lines)]);
   for (let i = 0; i < lines.length; i++) {
     const { section, pass } = lines[i];
     const lastOfPass = i === lines.length - 1 || lines[i + 1].pass !== pass;
-    if (lastOfPass && /^(?:final |last )?(?:chorus|hook|refrain)\b/i.test(section)) {
+    if (lastOfPass && CHORUS_TAG.test(section)) {
       if (i > 0 && lines[i - 1].pass === pass) picked.add(lines[i - 1].line);
       picked.add(lines[i].line);
     }
@@ -548,7 +571,7 @@ export function lyricMeterNote(script: string): string {
 function endingGate(script: string, number: number): string {
   const lines = lyricEndingLines(script);
   if (!lines.length) return '';
-  return `\n${number}. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, pulled by the desk:\n${lines.map((l) => `   - "${l}"`).join('\n')}\n   Read each one on its own. Rewrite any that states a lesson, a turnaround, a verdict on the story or a sum-up of it, so it lands on something that happens or gets said in the moment instead: an action, a concrete detail, a joke, a line said to somebody, or the hook itself. Keep its rhyme sound and length, and change it the same way everywhere it repeats. A song can end unresolved. Lines that already land on a moment stay exactly as they are.`;
+  return `\n${number}. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, and any line the last chorus changed, pulled by the desk:\n${lines.map((l) => `   - "${l}"`).join('\n')}\n   Read each one on its own. Rewrite any that states a lesson, a turnaround, a verdict on the story or a sum-up of it, so it lands on something that happens or gets said in the moment instead: an action, a concrete detail, a joke, a line said to somebody, or the hook itself. Keep its rhyme sound and length, and change it the same way everywhere it repeats. A song can end unresolved. Lines that already land on a moment stay exactly as they are.`;
 }
 
 export function lyricAuditRequest(script: string, tells: LyricTell[], shape: string | null = null): string {

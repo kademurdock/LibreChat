@@ -803,6 +803,14 @@ test('Part 293 follow-up: a tidy ending is flagged only where the song lands, an
   const payoff = (v1, v3) => `Folk.\nLyrics:\n[Verse 1]\nI carried the bottle out to the pen\n${v1}\n[Chorus]\nGo to sleep, little goat\n[Verse 2]\nShe kicked it right over\nand did it again\n[Verse 3]\nNow you're snoring on my arm\n${v3}\n[Bridge]\nOne more round of the song\n[Chorus]\nGo to sleep, little goat\n(I'm right here)\nGo to sleep\n\nREADBACK: x`;
   assert.deepEqual(lyricEndingTells(payoff('Took a while, but you got warm', "Turns out that I'm the lucky one"), '').map(t => t.line), ["Turns out that I'm the lucky one"], 'the last verse lands on the lesson');
   assert.deepEqual(lyricEndingTells(payoff("Turns out that I'm the lucky one", 'Took a while, but you got warm'), ''), [], "verse one's couplet is story, not an ending");
+  /* Re-run: the turnaround moved into the one line the last chorus changes. */
+  const fired = (last, outro = ['Fired on my birthday', 'Happy birthday to me', 'Fired on my birthday', 'Happy birthday to me']) => `Punk.\nLyrics:\n[Chorus]\nI got fired on my birthday\nWorst job that I ever had\n[Verse 1]\nThey pulled me off the fryer\nfor a talk\n[Chorus]\nI got fired on my birthday\n${last}\n[Outro]\n${outro.join('\n')}\n\nREADBACK: x`;
+  assert.deepEqual(lyricEndingTells(fired('Worst job turned out the best day I had'), '').map(t => t.line), ['Worst job turned out the best day I had'], 'the changed line of the last chorus');
+  assert.deepEqual(lyricEndingTells(fired('Worst job that I ever had'), ''), [], 'an unchanged chorus line is the hook, not an ending');
+  assert.ok(lyricEndingLines(fired('Worst manager I ever had')).includes('Worst manager I ever had'), 'the ENDING gate quotes the changed line even with no giveaway phrase');
+  assert.deepEqual(lyricEndingTells(fired('Worst job that I ever had', ['Fired on my birthday', 'I got a free lunch, and I\'m glad']), '').map(t => t.line), ["I got a free lunch, and I'm glad"]);
+  for (const plainEnd of ["And I'm glad you came tonight", 'Mama turned out the lights', 'The cows turned out to pasture'])
+    assert.deepEqual(lyricEndingTells(fired('Worst job that I ever had', ['Fired on my birthday', plainEnd]), ''), [], plainEnd);
   for (const plainEnd of ['Mama turns out the lights at nine', 'The whole town turned out for the fair', 'Turn out your pockets, boy', 'After all the chairs were stacked', 'We parked in the end spot by the dumpster', 'Best thing on the menu is the fries', "She kept the hoodie, and I'm still her man", 'Yeah, turns out the cows got out'])
     assert.deepEqual(lyricEndingTells(song(verse, ['I sat down on the step', plainEnd]), ''), [], plainEnd);
   assert.deepEqual(lyricEndingTells(song(verse, ['Pour one out', "I'm the lucky one"]), 'a country song called The Lucky One'), [], 'her own words are hers');
@@ -814,7 +822,7 @@ test('Part 293 follow-up: the audit gets an ENDING gate with the exact lines the
   const draft = 'Pop.\nLyrics:\n[Verse 1]\na1\na2\n[Chorus]\nc1\nc2\nc3\n[Verse 2]\nb1\nb2\n[Chorus]\nc1\nc2\nc3\n[Chorus - Belted]\nd1\nd2\n[Post-Chorus]\np1\np2\n[Outro]\no1\n(la la, fading)\no2\n\nREADBACK: x';
   assert.deepEqual(lyricEndingLines(draft), ['c2', 'c3', 'b1', 'b2', 'd1', 'd2', 'o1', 'o2'], 'each chorus pass (back-to-back passes apart), the last verse, the song; ad-libs and the post-chorus skipped; each line once');
   const ask = lyricAuditRequest(draft, [], null);
-  assert.ok(ask.includes('\n8. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, pulled by the desk:\n   - "c2"\n   - "c3"\n   - "b1"\n   - "b2"\n   - "d1"\n   - "d2"\n   - "o1"\n   - "o2"\n'), ask.slice(0, 4000));
+  assert.ok(ask.includes('\n8. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, and any line the last chorus changed, pulled by the desk:\n   - "c2"\n   - "c3"\n   - "b1"\n   - "b2"\n   - "d1"\n   - "d2"\n   - "o1"\n   - "o2"\n'), ask.slice(0, 4000));
   assert.match(ask, /Rewrite any that states a lesson, a turnaround, a verdict on the story or a sum-up of it/);
   assert.ok(ask.indexOf('7. Singability') < ask.indexOf('8. THE ENDING') && ask.indexOf('8. THE ENDING') < ask.indexOf('Return the complete song'), 'last of the gates');
   const gate = ask.slice(ask.indexOf('8. THE ENDING'), ask.indexOf('Return the complete song'));
