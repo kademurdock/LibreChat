@@ -85,7 +85,7 @@ const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
-const { KADE_PLATFORM_NOTE } = require('~/server/utils/kadePlatformNote');
+const { KADE_PLATFORM_NOTE, carriesPlatformNote } = require('~/server/utils/kadePlatformNote');
 const { getWorldBlock, KADE_WHISPER_LINE } = require('~/server/utils/kadeWorldPulse');
 const { getAnniversaryLine } = require('~/server/utils/kadeAnniversaries');
 const { getMCPManager } = require('~/config');
@@ -854,7 +854,7 @@ class AgentClient extends BaseClient {
          * cache-missing hourly cadence); bare ≈ 500-700 tokens (~$1.2/mo),
          * same model, same lane, same honest test. */
         const isBareProbe = String(agent.instructions || '').includes('KADE BARE PROBE');
-        if (!isBareProbe && !String(agent.instructions || '').includes('PLATFORM (invisible')) {
+        if (!isBareProbe && !carriesPlatformNote(agent.instructions)) {
           headParts.push(KADE_PLATFORM_NOTE);
         }
         /** KADE Aug 6 2026 — LIVING WORLD LAYER (ideas 25+26, her pick):

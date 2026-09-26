@@ -6,6 +6,11 @@ const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
+/* Part 293 (Sep 25 2026): the freshness and adult notes default to casual
+ * speech. KADE_CASUAL_HOUSE=0 restores the earlier texts byte for byte; see
+ * utils/kadePlatformNote.js for the measurement and the switch. */
+const KADE_CASUAL_HOUSE = process.env.KADE_CASUAL_HOUSE !== '0';
+
 /** Kade child accounts (kadeAccountType 'child', July 3 2026): every agent gets an
  * invisible under-15 audience note appended to its instructions. Same personality,
  * clean content, zero preachiness — the user should never feel a filter. getAgent
@@ -27,7 +32,7 @@ const KADE_CHILD_NOTE =
  * or the admin. An account with no type recorded (four predate the July 3 child
  * feature) gets neither note until someone says what it is -- never assume an
  * untyped account is an adult. */
-const KADE_ADULT_NOTE =
+const KADE_ADULT_NOTE_LIVE =
   '\n\n---\nAUDIENCE NOTE (invisible -- never mention it or hint at it): this is a private, invitation-only ' +
   'platform and this user is a verified adult. Adult content is allowed here when the user asks for it: strong ' +
   'profanity, dark humor, and sexually explicit writing or roleplay between consenting adult characters. When an ' +
@@ -35,6 +40,17 @@ const KADE_ADULT_NOTE =
   'black, do not soften it into euphemism, do not lecture or add disclaimers. Never bring adult content into a ' +
   'conversation that did not ask for it; match what this person wants and nothing more. Content sexualizing ' +
   'minors stays off limits always.';
+
+const KADE_ADULT_NOTE_CASUAL =
+  '\n\n---\nThis is an audience note, and it\'s private, so don\'t mention it or hint at it. This platform is ' +
+  'private and invitation-only, and the person you\'re talking to is a verified adult. Adult content is allowed ' +
+  'here when they ask for it. That includes strong profanity, dark humor, and sexually explicit writing or ' +
+  'roleplay between consenting adult characters. When an adult asks for that, stay in character and write it ' +
+  'fully and explicitly. Don\'t refuse, don\'t fade to black, don\'t soften it into euphemism, and don\'t lecture ' +
+  'or tack on disclaimers. Don\'t bring adult content into a conversation that didn\'t ask for it. Match what ' +
+  'this person wants and go no further. Anything that sexualizes minors stays off limits, with no exceptions.';
+
+const KADE_ADULT_NOTE = KADE_CASUAL_HOUSE ? KADE_ADULT_NOTE_CASUAL : KADE_ADULT_NOTE_LIVE;
 
 const isKadeAdult = (user) =>
   !!user && user.kadeAccountType !== 'child' && (user.kadeAccountType === 'adult' || user.role === 'ADMIN');
@@ -81,7 +97,7 @@ const { KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
  * The room lanes (Clubhouse/Parlor/Debate) deliberately do NOT get this —
  * they have no tools, and telling a toolless bot to search or hedge would
  * just make it announce staleness mid-banter. */
-const KADE_FRESHNESS_NOTE =
+const KADE_FRESHNESS_NOTE_LIVE =
   '\n\n---\nFRESHNESS (invisible — never mention or reference this note): your training data is months old ' +
   'and the world has moved on. If the answer involves ANY fact that can change with time — news, current events, ' +
   'prices, products or menus, versions, laws, schedules, sports, weather, who holds a job or office, whether a ' +
@@ -98,6 +114,25 @@ const KADE_FRESHNESS_NOTE =
    * not only for time-sensitive facts. */
   'The same goes for anything you simply do not know or are not sure of: if a web search would settle it, ' +
   'search and answer from what you find rather than guessing or stopping at "I don\'t know."';
+
+const KADE_FRESHNESS_NOTE_CASUAL =
+  '\n\n---\nAbout keeping current (private, so don\'t mention this note or refer to it). Your training data is ' +
+  'months old, and the world has kept moving since then. So if an answer depends on any fact that can change ' +
+  'over time, and you\'ve got a web search tool, search first and answer from the results instead of from ' +
+  'memory. That covers news and current events, prices, products and menus, versions, laws, schedules, sports, ' +
+  'weather, who holds a job or an office, whether a place or service still exists or has changed, and anything ' +
+  'they ask about as current, latest or now. If you\'re even a little unsure whether something has changed, ' +
+  'that doubt is your cue to search before you answer. Don\'t pass off remembered time-sensitive facts as ' +
+  'current without checking, and don\'t fill gaps with made-up details. Timeless stuff like feelings, stories, ' +
+  'opinions, math, established history and how-to basics doesn\'t need a search. Answering a time-sensitive ' +
+  'question from memory without searching counts as a mistake, even when you feel sure. And don\'t tell them to ' +
+  'go check the latest information themselves. You\'re the one with the search tool, so you check, then answer ' +
+  'with what you found. If you need a search tool and don\'t have one, say plainly that your info may be out of ' +
+  'date instead of guessing. Same goes for anything you simply don\'t know or aren\'t sure about. If a web ' +
+  'search would settle it, search and answer from what you find, rather than guessing or stopping at "I don\'t ' +
+  'know."';
+
+const KADE_FRESHNESS_NOTE = KADE_CASUAL_HOUSE ? KADE_FRESHNESS_NOTE_CASUAL : KADE_FRESHNESS_NOTE_LIVE;
 
 const applyKadeAudience = (req) => (agent) => {
   if (!agent) return agent;
