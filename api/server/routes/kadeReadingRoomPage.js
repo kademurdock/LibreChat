@@ -359,7 +359,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
 <script src="/assets/library/requests.js?v=20260924b"></script>
 <script src="/assets/library/reader.js?v=20260924"></script>
-<script src="/assets/library/access.js?v=20260924"></script>
+<script src="/assets/library/access.js?v=20260925"></script>
 <script>
 (function(){
   var token = null;

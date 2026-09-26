@@ -1,6 +1,9 @@
-/* Family library access, for the library owner (Sep 24 2026).
- * Her ask: the shared collection is family only; accounts made later wait for
- * her yes. This section lists every account with its access in one plain
+/* The Family feature pack (born Family library access), for the library owner
+ * (Sep 24 2026; renamed Sep 25, Part 293). Her ask: the shared collection is
+ * family only; accounts made later wait for her yes. The same switch now opens
+ * the pack's media-link features too (her words: "each family feature is some
+ * kind of premium event, whatever we don't want going public"), so the section
+ * names the pack; the stored field is still kadeLibraryAccess. This section lists every account with its access in one plain
  * sentence and a button that says exactly what it will do. Focus stays on the
  * button you pressed; each change is announced once. A trusted uploader's
  * earlier uploads can be previewed and then approved together. */
@@ -38,13 +41,13 @@
         node.removeAttribute('aria-disabled');
       }
     }
-    var heading = element('h2', 'Family library access');
+    var heading = element('h2', 'Family feature pack');
     heading.id = 'h-family-access';
     root.appendChild(heading);
     root.appendChild(
       element(
         'p',
-        'Family accounts from before September 24 keep the shared collection. Accounts made after that see only their own uploads until you turn family access on. Turning it off never touches anyone’s own uploads.',
+        'The Family feature pack opens the family’s shared Library shelves and the media links: pasting a song link from YouTube or another media site in the Sound Booth, and the describer’s and jukebox’s links when those are limited to the pack. Family accounts from before September 24 have it. Accounts made after that see only their own uploads, with the link boxes greyed out, until you turn the pack on. Turning it off never touches anyone’s own uploads.',
       ),
     ).className = 'hint';
     /* The page's one live region (say) carries each change; a paragraph of its own would sit in
@@ -68,7 +71,7 @@
     root.appendChild(list);
 
     function accessLabel(account) {
-      return (account.member ? 'Turn off family access for ' : 'Turn on family access for ') + account.name;
+      return (account.member ? 'Turn off the Family feature pack for ' : 'Turn on the Family feature pack for ') + account.name;
     }
     function renderAccount(account) {
       var row = element('li');
@@ -85,7 +88,7 @@
             account = result.account;
             words.textContent = account.name + '. ' + account.status;
             toggle.textContent = accessLabel(account);
-            announce(account.name + (account.member ? ' now has family access.' : ' no longer has family access.'));
+            announce(account.name + (account.member ? ' now has the Family feature pack.' : ' no longer has the Family feature pack.'));
           });
         };
         row.appendChild(toggle);

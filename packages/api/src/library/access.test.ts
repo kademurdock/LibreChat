@@ -129,23 +129,23 @@ test('the owner sees every account in one plain sentence, and fixed accounts hav
   withEnv({ KADE_LIBRARY_HIDDEN_FROM: undefined, KADE_LIBRARY_TRUSTED_UPLOADERS: undefined, NOTIFY_TEST_USER_IDS: undefined }, () => {
     const view = (row: LibraryAccountRow) => familyLibraryAccountView(row);
     assert.deepEqual(view({ _id: new Types.ObjectId(KADE), name: 'Kade Murdock', role: 'ADMIN' }), {
-      id: KADE, name: 'Kade Murdock', member: true, status: 'Library owner. Always has family access.', changeable: false, trusted: false,
+      id: KADE, name: 'Kade Murdock', member: true, status: 'Library owner. Always has the Family feature pack.', changeable: false, trusted: false,
     });
     const reviewer = view({ id: VISCHECK, name: 'Visibility Test' });
     assert.equal(reviewer.changeable, false);
     assert.equal(reviewer.member, false);
     assert.match(reviewer.status, /App Review/);
-    assert.equal(view({ id: AMBER_LACEY, name: 'Amber Lacey' }).status, 'Has family access. Existing family account.');
+    assert.equal(view({ id: AMBER_LACEY, name: 'Amber Lacey' }).status, 'Has the Family feature pack. Existing family account.');
     assert.equal(
       view({ id: AMBER_A, name: 'Amber A' }).status,
-      'Has family access. Existing family account. Trusted uploader: uploads go straight into the family library.',
+      'Has the Family feature pack. Existing family account. Trusted uploader: uploads go straight into the family library.',
     );
-    assert.equal(view({ id: AMBER_A, name: 'Amber A', kadeLibraryAccess: 'none' }).status, 'No family access. You turned it off.');
-    assert.equal(view({ id: EVALCLEAN, name: 'tester' }).status, 'No family access. Test account.');
-    assert.equal(view({ id: later('2026-10-01T00:00:00Z'), username: 'stranger' }).status, 'No family access yet. New account.');
-    assert.equal(view({ id: later('2026-10-01T00:00:00Z'), name: 'Cousin', kadeLibraryAccess: 'family' }).status, 'Has family access. You turned it on.');
+    assert.equal(view({ id: AMBER_A, name: 'Amber A', kadeLibraryAccess: 'none' }).status, 'No Family feature pack. You turned it off.');
+    assert.equal(view({ id: EVALCLEAN, name: 'tester' }).status, 'No Family feature pack. Test account.');
+    assert.equal(view({ id: later('2026-10-01T00:00:00Z'), username: 'stranger' }).status, 'No Family feature pack yet. New account.');
+    assert.equal(view({ id: later('2026-10-01T00:00:00Z'), name: 'Cousin', kadeLibraryAccess: 'family' }).status, 'Has the Family feature pack. You turned it on.');
     assert.equal(view({ id: EARLY }).name, 'Unnamed account');
-    assert.equal(view({ id: EARLY, name: 'Test Guest' }).status, 'No family access. Test account.');
+    assert.equal(view({ id: EARLY, name: 'Test Guest' }).status, 'No Family feature pack. Test account.');
   });
 });
 
@@ -358,7 +358,7 @@ test('only the owner reaches the access routes, and fixed accounts cannot be swi
     const changed = await call('', KADE, { id: AMBER_LACEY, access: 'none' });
     assert.equal(changed.status, 200);
     assert.deepEqual(changed.body.account, {
-      id: AMBER_LACEY, name: 'Amber Lacey', member: false, status: 'No family access. You turned it off.', changeable: true, trusted: false,
+      id: AMBER_LACEY, name: 'Amber Lacey', member: false, status: 'No Family feature pack. You turned it off.', changeable: true, trusted: false,
     });
     assert.deepEqual(calls, [`${AMBER_LACEY}:none`]);
 

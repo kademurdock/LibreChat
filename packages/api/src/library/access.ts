@@ -139,6 +139,8 @@ export const ownUploadsOnlyNote: string =
   'Do not say the catalog failed.';
 
 /* ── the owner's view ─────────────────────────────────────────────────── */
+/* Part 293 (Sep 25 2026): this permission is also the Family feature pack (family/pack.ts), so
+ * the owner's words name the pack: the shelves AND the pack's media-link features. */
 
 export type LibraryAccountRow = LibraryAccount;
 
@@ -160,21 +162,21 @@ export function familyLibraryAccountView(user: LibraryAccountRow): LibraryAccoun
   let status: string;
   let changeable = true;
   if (libraryReviewSeat(user)) {
-    status = 'App Review and screenshot account. Always kept out of the family library.';
+    status = 'App Review and screenshot account. Always kept out of the Family feature pack.';
     changeable = false;
   } else if (user.role === 'ADMIN') {
-    status = 'Library owner. Always has family access.';
+    status = 'Library owner. Always has the Family feature pack.';
     changeable = false;
   } else if (user.kadeLibraryAccess === 'family') {
-    status = 'Has family access. You turned it on.';
+    status = 'Has the Family feature pack. You turned it on.';
   } else if (user.kadeLibraryAccess === 'none') {
-    status = 'No family access. You turned it off.';
+    status = 'No Family feature pack. You turned it off.';
   } else if (libraryTestSeat(user)) {
-    status = 'No family access. Test account.';
+    status = 'No Family feature pack. Test account.';
   } else if (member) {
-    status = 'Has family access. Existing family account.';
+    status = 'Has the Family feature pack. Existing family account.';
   } else {
-    status = 'No family access yet. New account.';
+    status = 'No Family feature pack yet. New account.';
   }
   if (trusted && member) status += ' Trusted uploader: uploads go straight into the family library.';
   return {
@@ -403,7 +405,7 @@ export interface MembershipDependencies {
 type AuthedRequest = { user?: { id?: string } };
 
 /**
- * GET  /                  every account with its family access, in plain words
+ * GET  /                  every account with its Family feature pack (family access), in plain words
  * POST /                  { id, access: 'family' | 'none' }
  * POST /approve-uploads   { id, apply? } a trusted uploader's backlog: preview, then apply
  */
@@ -416,13 +418,13 @@ export function libraryMembershipRouter(deps: MembershipDependencies): Router {
       accounts.sort((a, b) => a.name.localeCompare(b.name));
       res.json({ accounts });
     } catch {
-      res.status(503).json({ error: 'Could not read family library access. Try again in a moment.' });
+      res.status(503).json({ error: 'Could not read the Family feature pack list. Try again in a moment.' });
     }
   });
   router.post('/', async (req, res) => {
     const { id, access } = (req.body || {}) as { id?: unknown; access?: unknown };
     if (typeof id !== 'string' || !OBJECT_ID.test(id) || (access !== 'family' && access !== 'none')) {
-      res.status(400).json({ error: 'Choose an account, and whether it has family access.' });
+      res.status(400).json({ error: 'Choose an account, and whether it has the Family feature pack.' });
       return;
     }
     try {
@@ -441,7 +443,7 @@ export function libraryMembershipRouter(deps: MembershipDependencies): Router {
         return;
       }
       const view = familyLibraryAccountView(after);
-      deps.log?.(`family access ${access} for ${id} by ${(req as AuthedRequest).user?.id || '?'}`);
+      deps.log?.(`family feature pack ${access} for ${id} by ${(req as AuthedRequest).user?.id || '?'}`);
       res.json({ ok: true, account: view });
     } catch {
       res.status(503).json({ error: 'Could not save that. Load the accounts again before retrying.' });
@@ -457,7 +459,7 @@ export function libraryMembershipRouter(deps: MembershipDependencies): Router {
       // Trust rides on family access: with hers turned off, her uploads wait for a decision again.
       const account = await deps.account(id);
       if (!account || !familyLibraryMember(account)) {
-        res.status(409).json({ error: 'Turn on family library access for this account before approving its earlier uploads.' });
+        res.status(409).json({ error: 'Turn on the Family feature pack for this account before approving its earlier uploads.' });
         return;
       }
       const receipt = await deps.approveUploads(id, apply === true, String((req as AuthedRequest).user?.id || ''));

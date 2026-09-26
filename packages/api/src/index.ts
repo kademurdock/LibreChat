@@ -202,6 +202,18 @@ export {
   trustedApprovalNote,
 } from './library/access';
 export { libraryToolDescription, libraryToolSchema } from './tools/registry/library';
+/* Part 293: the Family feature pack, on the Library's family permission. */
+export {
+  familyPack,
+  familyFeatures,
+  familyFeaturesView,
+  familyFeaturesRouter,
+  familyPackLinksGated,
+  FAMILY_PACK_NAME,
+  FAMILY_PACK_NOTE,
+  FAMILY_PACK_REFUSAL,
+} from './family/pack';
+export type { FamilyFeatures, FamilyFeaturesView } from './family/pack';
 
 export { createDescriptionRouter } from './description/router';
 export { describedVideoPage } from './description/page';
