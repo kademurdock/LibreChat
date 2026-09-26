@@ -91,6 +91,25 @@ export type Cue = {
   /** Ids of the people this cue mentions. */
   who?: string[];
 };
+/** One paid call to the video model, as OpenRouter reported it (no request details, no secrets). */
+export type VisionCall = {
+  /** OpenRouter's generation id, for looking the call up later. */
+  generation?: string;
+  /** The model asked for, and the model version that answered. */
+  model: string;
+  served?: string;
+  /** The backend that served it, such as "Google" (google-vertex) or "Google AI Studio". */
+  provider?: string;
+  tier?: string;
+  finish?: string;
+  nativeFinish?: string;
+  promptTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  costUSD: number;
+  /** Seconds the call took. */
+  seconds: number;
+};
 export type Analysis = {
   kind: string;
   setting: string;
@@ -98,6 +117,33 @@ export type Analysis = {
   speakers: { speaker: number; who: string }[];
   cues: Cue[];
   protectedSounds: Interval[];
+  /** Every paid call behind this look, in order; the last one wrote it. */
+  vision?: VisionCall[];
+  /** The crammed-end sign, found by a code check and logged: this look's times may run late. */
+  stretched?: string[];
+  /** A second look at the same section, and which of the two this analysis is. */
+  relook?: Relook;
+};
+/**
+ * A second look at one section, asked in code when the first reasoned under the floor or crammed
+ * its last description into the end (engine.ts `reasoningFloor`).
+ */
+export type Relook = {
+  /** 'reasoning': the first look reasoned under the floor; 'crammed': it showed the crammed end. */
+  reasons: ('reasoning' | 'crammed')[];
+  /** Reasoning tokens of the first look and of the second (null when there was no second). */
+  reasoning: [number, number | null];
+  /** Which look this analysis is. */
+  kept: 1 | 2;
+  /** Why there was no second look to choose: it would pass the approved maximum, or it failed. */
+  skipped?: 'approved maximum' | 'failed';
+  /**
+   * Only on a saved first look whose second look was not answered yet: a run that stops in between
+   * asks only the second look next time, without paying for the first again.
+   */
+  pending?: true;
+  /** The paid calls of the look that was not kept, so both looks' backends and costs are on record. */
+  other?: VisionCall[];
 };
 
 const time = z.number().finite();

@@ -7,8 +7,10 @@ RUN apk upgrade --no-cache
 RUN apk add --no-cache jemalloc
 RUN apk add --no-cache python3 py3-pip uv
 # Kade fork: ffmpeg to auto-trim Seed Audio voice-clone reference clips
-# to the model's 30s max (see FalAI.js trimAudioRefIfLong).
-RUN apk add --no-cache ffmpeg
+# to the model's 30s max (see FalAI.js trimAudioRefIfLong). font-dejavu gives
+# ffmpeg's drawtext a font for the describer's time strip on look clips
+# (/usr/share/fonts/dejavu/DejaVuSansMono.ttf; without it the strip is left out).
+RUN apk add --no-cache ffmpeg font-dejavu
 # Kade fork: yt-dlp for the Clubhouse jukebox link lane — YouTube (and
 # Spotify-by-title-match) links become room audio (kadeLounge.js /fetch-track).
 # The bgutil plugin talks to the yt-pot sidecar service (Railway private

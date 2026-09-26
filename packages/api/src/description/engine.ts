@@ -13,6 +13,7 @@ import type {
   Placement,
   Plan,
   Progress,
+  Relook,
   Report,
   SectionRecord,
   Settings,
@@ -28,10 +29,10 @@ import {
   assemble,
   copyable,
   decodeVoice,
+  lookClip,
   MediaError,
   normalize,
   saveSound,
-  sectionClip,
   sectionPicture,
   sectionSound,
   soundtrack,
@@ -64,10 +65,11 @@ import {
   outputTimeline,
   planSections,
   snapToCuts,
+  stretchSigns,
   toOutput,
 } from './timing';
 import { buildReport, captionTrack, clock, descriptionTrack, transcriptText } from './transcript';
-import { nextContinuity } from './prompt';
+import { nextContinuity, readsTimeStrip } from './prompt';
 import { gateCues, recognized } from './ledger';
 import { Halt } from './types';
 
@@ -155,6 +157,22 @@ export type Request = {
   sectionNotes?: Record<number, string>;
   /** The source is already this part, as kept by an earlier run, so it is not cut again. */
   workingCopy?: boolean;
+  /**
+   * Length of the whole video in source seconds. With a range, a part that runs to within half a
+   * second of it ends the video, and its last clip gets the ending rule.
+   */
+  sourceSeconds?: number;
+  /**
+   * What is left of the person's approved maximum for this run (USD): the approval less what the
+   * run has spent, with requests still in flight counted at their full reserve. That is stricter
+   * than the meter, whose stop counts settled charges only. A second look at a section, and each
+   * retry of it, starts only while this covers `relookMargin` times what the first look really
+   * cost plus what the sections still to look at are expected to cost. Absent: the engine knows
+   * no limit and the meter alone keeps one.
+   */
+  approvedRoom?: () => number;
+  /** The run's quoted estimate (USD), shared over the sections it looks at when weighing a second look. */
+  quotedUSD?: number;
   /** Section timings, failures and retries, for the server log. */
   log?: (message: string) => void;
 };
@@ -359,6 +377,32 @@ const lookRetryMilliseconds = () => {
 const voiceRetryMilliseconds = 1500;
 /** Narration length per UTF-8 byte at 1x before this job's own clips have been measured. */
 const seedSecondsPerByte = 0.0625;
+/**
+ * A look (normal or close) that reasoned fewer tokens than this is looked at once more. Evidence,
+ * the Pluto A/B of Sep 25 2026 (11 paid looks at the same cartoon on google/gemini-3.8-flash,
+ * medium effort): the two looks that came back with 0 reasoning tokens stretched like the
+ * production look (mean error 7-10 s, max 19-21 s, the ending never reached); every look with
+ * 3,282 or more was accurate (mean 0.08-0.27 s; one at 5,699 still ran three cues 6.5-7.5 s late
+ * for a while), and one at 830 ran three cues 6.5-8.5 s late. The backend and the time strip did
+ * not track the drift. The floor sits between 830 and 3,282, from a small sample.
+ */
+export const reasoningFloor = 1500;
+/**
+ * A second look, and each retry of it, starts only while what is left of her approval covers this
+ * many times what the first look really cost (the second may reason far more than the first did),
+ * plus what the sections still to look at are expected to cost. It is weighed on real cost, not on
+ * the reserve: a Pluto close look reserves $0.38 against a $0.34 approval, yet its looks cost
+ * $0.03-0.06. The meter's own stop stays the backstop, as it is for every other paid request.
+ */
+export const relookMargin = 3;
+/** The look's own reasoning tokens (its last call wrote it); undefined when not reported. */
+const reasoningOf = (analysis: Analysis): number | undefined => {
+  const calls = analysis.vision ?? [];
+  return calls[calls.length - 1]?.reasoningTokens;
+};
+/** What a look's paid calls really cost, retries included. */
+const costOf = (analysis: Analysis): number =>
+  (analysis.vision ?? []).reduce((sum, call) => sum + call.costUSD, 0);
 
 type Voiced = { pcm: Float32Array; base: number };
 type Looked = {
@@ -532,8 +576,29 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   let secondsPerByte = prior;
   let keptSecondsPerByte = fixed.secondsPerByte;
   let voiceFailures = 0;
+  let stripMissing = false;
   const carried = new Map<number, Carried[]>();
+  /**
+   * Sections this run still has to look at (a saved first look still waiting for its second look
+   * counts). A second look keeps back what they are expected to cost, so it never spends the
+   * approval the rest of the run needs.
+   */
+  const finished = new Set(saved.records.map((record) => record.index));
+  const toLook = new Set<number>();
+  for (let i = 0; i < active; i++) {
+    const kept = saved.looks?.[i]?.analysis;
+    if (!finished.has(i) && saved.analyses?.[i] === undefined && (!kept || kept.relook?.pending))
+      toLook.add(i);
+  }
+  const lookCount = toLook.size;
+  /** What each first look of this run really cost, when its provider said. */
+  const firstCosts: number[] = [];
 
+  /** A part that runs to the end of the video: its last clip is the film's real ending. */
+  const endsVideo =
+    !!settings.range &&
+    request.sourceSeconds !== undefined &&
+    settings.range.end >= request.sourceSeconds - 0.5;
   const briefFor = (i: number, survey: boolean, scale: number): Brief => {
     const section = fixed.sections[i];
     const cuts = cutsIn(section);
@@ -543,6 +608,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       about: request.about,
       notes: settings.notes,
       range: settings.range,
+      ...(endsVideo ? { endsVideo } : {}),
       detail: settings.detail,
       rate: settings.rate,
       maxRate: settings.maxRate,
@@ -586,30 +652,36 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     survey: boolean = false,
   ): Promise<Looked> {
     const section = fixed.sections[i];
+    /** A first look an earlier run paid for and kept, stopped before its second look was asked. */
+    let unfinished: Analysis | undefined;
     if (!survey) {
       const reused = saved.analyses?.[i];
       if (reused !== undefined) return { analysis: reused };
       const kept = saved.looks?.[i];
-      if (kept?.analysis) {
+      if (kept?.analysis?.relook?.pending) unfinished = kept.analysis;
+      else if (kept?.analysis) {
         markSeen(section, seen.main);
         return { analysis: kept.analysis };
       }
       if (
         kept?.failure &&
         (saved.analyses || (kept.failureClass && kept.failureClass !== 'transient'))
-      )
+      ) {
+        toLook.delete(i);
         return {
           analysis: null,
           failure: kept.failure,
           failureClass: kept.failureClass ?? 'transient',
           reused: true,
         };
+      }
     }
     const still = stillOf(section);
-    if (still >= 0 && (survey ? seen.survey : seen.main).has(still)) {
+    if (!unfinished && still >= 0 && (survey ? seen.survey : seen.main).has(still)) {
       log(
         `Section ${i + 1} of ${count} shows the same still picture as before; not looked at again.`,
       );
+      if (!survey) toLook.delete(i);
       return { analysis: blank(state) };
     }
     const seconds = section.end - section.start;
@@ -618,35 +690,85 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     try {
       await mkdir(dir, { recursive: true });
       const scale = settings.closeLook && !survey ? 4 : 1;
-      const clip = await sectionClip(source, dir, section.start, seconds, signal, scale > 1, media);
-      let analysis: Analysis;
+      const film = survey ? undefined : (settings.range?.start ?? 0) + section.start;
+      const { file: clip, stamped } = await lookClip(
+        source,
+        dir,
+        section.start,
+        seconds,
+        signal,
+        scale > 1,
+        media,
+        film,
+      );
+      if (film !== undefined && !stamped && !stripMissing) {
+        stripMissing = true;
+        log('Look clips carry no time strip: the media tools have no drawtext or no font.');
+      }
+      const input: Look = {
+        file: clip,
+        seconds: seconds * scale,
+        brief: { ...briefFor(i, survey, scale), ...(stamped ? { stamped } : {}) },
+        state,
+        lines: linesFrom(inSection(section), section.start).map((line) => ({
+          ...line,
+          start: line.start * scale,
+          end: line.end * scale,
+        })),
+        before: linesFrom(
+          words.filter((word) => word.start >= section.start - 15 && word.start < section.start),
+          section.start - 15,
+        ).slice(-4),
+        log,
+      };
+      const heardLines = linesFrom(inSection(section), section.start);
+      /** One paid look in section seconds, without strip readings, with the crammed-end sign. */
+      const finish = (analysis: Analysis, which: string): Analysis => {
+        let result = toSection(analysis, scale, seconds);
+        if (stamped) {
+          const kept = result.cues.filter(
+            (cue) => !readsTimeStrip(cue.text) && !readsTimeStrip(cue.shortText),
+          );
+          if (kept.length < result.cues.length) {
+            log(
+              `Section ${i + 1} of ${count}: ${result.cues.length - kept.length} of the ${which}look's descriptions read the time strip and were left out.`,
+            );
+            result = { ...result, cues: kept };
+          }
+        }
+        if (film !== undefined) {
+          const signs = stretchSigns({
+            cues: result.cues,
+            lines: heardLines,
+            seconds,
+            offset: film,
+          });
+          if (signs.length) {
+            result = { ...result, stretched: signs };
+            log(
+              `Section ${i + 1} of ${count}: the ${which}look's times may run late: ${signs.join('; ')}.`,
+            );
+          }
+        }
+        return result;
+      };
+      let result: Analysis;
       try {
-        analysis = await providers.analyze(
-          {
-            file: clip,
-            seconds: seconds * scale,
-            brief: briefFor(i, survey, scale),
-            state,
-            lines: linesFrom(inSection(section), section.start).map((line) => ({
-              ...line,
-              start: line.start * scale,
-              end: line.end * scale,
-            })),
-            before: linesFrom(
-              words.filter(
-                (word) => word.start >= section.start - 15 && word.start < section.start,
-              ),
-              section.start - 15,
-            ).slice(-4),
-            log,
-          },
-          signal,
-          meter,
-        );
+        if (unfinished) {
+          log(
+            `Section ${i + 1} of ${count}: the last run stopped between its two looks; the first look it paid for is weighed for its second look now.`,
+          );
+          const first: Analysis = { ...unfinished };
+          delete first.relook;
+          result = await lookAgain(i, input, first, finish);
+        } else {
+          result = finish(await providers.analyze(input, signal, meter), '');
+          if (!survey) result = await lookAgain(i, input, result, finish);
+        }
       } finally {
         await rm(clip, { force: true });
       }
-      const result = toSection(analysis, scale, seconds);
+      if (!survey) toLook.delete(i);
       markSeen(section, survey ? seen.survey : seen.main);
       log(
         `Section ${i + 1} of ${count}: ${survey ? 'first look' : 'looked'} in ${seconds1((Date.now() - began) / 1000)}.`,
@@ -667,8 +789,121 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       if (accountProblem(error)) return { analysis: null, failure, fatal: new Error(failure) };
       const kind: FailureClass = failureClass(error);
       log(`Section ${i + 1} of ${count} could not be described (${kind}): ${failure}`);
+      /** A passing failure is tried again at the end of the run; any other is not looked at again. */
+      if (!survey && kind !== 'transient') toLook.delete(i);
       return { analysis: null, failure, failureClass: kind };
     }
+  }
+
+  /**
+   * Looks at a section once more when its first look reasoned under `reasoningFloor` tokens or
+   * showed the crammed-end sign, and never when the provider did not report reasoning. The second
+   * look, and each retry of it, starts only while what is left of the approved maximum covers
+   * `relookMargin` times what the first look really cost plus what the sections still to look at
+   * are expected to cost (their share of the quote, or the mean first look so far when that is
+   * more). It keeps the second look when that one reasoned at least the floor, otherwise whichever
+   * reasoned more (the first on a tie). Both calls go through the meter like any look, so both are
+   * charged at what they cost, and the one not kept stays in `relook.other`. The paid first look is
+   * kept, marked pending, before the second is asked, so a run that stops in between asks only the
+   * second look next time. It uses the job's own signal: only our own stop can cut it off, and the
+   * meter never bills a request our stop cut off.
+   */
+  async function lookAgain(
+    i: number,
+    input: Look,
+    first: Analysis,
+    finish: (analysis: Analysis, which: string) => Analysis,
+  ): Promise<Analysis> {
+    const firstCost = costOf(first);
+    if (first.vision?.length) firstCosts.push(firstCost);
+    const thought = reasoningOf(first);
+    if (thought === undefined) return first;
+    const reasons: Relook['reasons'] = [];
+    if (thought < reasoningFloor) reasons.push('reasoning');
+    if (first.stretched?.length) reasons.push('crammed');
+    if (!reasons.length) return first;
+    const where = `Section ${i + 1} of ${count}`;
+    const what = reasons.includes('reasoning')
+      ? 'the look skipped its thinking'
+      : "the look's last description is crammed at the end";
+    const later = [...toLook].filter((k) => k !== i).length;
+    const quotedShare = lookCount ? (request.quotedUSD ?? 0) / lookCount : 0;
+    const meanLook = firstCosts.length
+      ? firstCosts.reduce((sum, cost) => sum + cost, 0) / firstCosts.length
+      : 0;
+    const heldBack = later * Math.max(quotedShare, meanLook);
+    const need = relookMargin * firstCost + heldBack;
+    const usd = (value: number) => `$${Math.max(0, value).toFixed(3)}`;
+    const needed = `${usd(need)} needed: ${relookMargin} times the first look's ${usd(firstCost)}${later ? ` plus ${usd(heldBack)} kept for the ${later} section${later === 1 ? '' : 's'} still to look at` : ''}`;
+    /** What is left of her approval when it no longer covers the need; undefined while it does. */
+    const short = (): number | undefined => {
+      const room = request.approvedRoom?.();
+      return room !== undefined && need > room + 1e-9 ? room : undefined;
+    };
+    const skip = (why: Relook['skipped']): Analysis => ({
+      ...first,
+      relook: { reasons, reasoning: [thought, null], kept: 1, skipped: why },
+    });
+    const before = short();
+    if (before !== undefined) {
+      log(
+        `${where}: ${what} and a second look would pass the approved maximum (${needed}; ${usd(before)} left).`,
+      );
+      return skip('approved maximum');
+    }
+    await safely(
+      () =>
+        keeper.keepLook?.(i, {
+          analysis: {
+            ...first,
+            relook: { reasons, reasoning: [thought, null], kept: 1, pending: true },
+          },
+        }),
+      `The look at section ${i + 1}`,
+    );
+    const both = reasons.length > 1 ? ', and its last description is crammed at the end' : '';
+    log(`${where}: ${what} (${thought} reasoning tokens${both}); looking once more.`);
+    /** Every call of the second look, retries included, is weighed again before it is metered. */
+    let stoppedAt: number | undefined;
+    const gated: Meter = async (kind, reserve, action) => {
+      stoppedAt = short();
+      if (stoppedAt !== undefined) throw new Halt('A second look would pass the approved maximum.');
+      await meter(kind, reserve, action);
+    };
+    let second: Analysis;
+    try {
+      second = finish(await providers.analyze(input, signal, gated), 'second ');
+    } catch (error) {
+      if (signal.aborted) throw error;
+      if (stoppedAt !== undefined) {
+        log(
+          `${where}: the second look stopped before a call that would pass the approved maximum (${needed}; ${usd(stoppedAt)} left), so the first is kept.`,
+        );
+        return skip('approved maximum');
+      }
+      const why =
+        error instanceof MediaError || error instanceof Halt
+          ? error.message
+          : providerProblem(error, 'The video model');
+      log(`${where}: the second look failed, so the first is kept: ${why}`);
+      return skip('failed');
+    }
+    const again = reasoningOf(second);
+    const better = again !== undefined && (again >= reasoningFloor || again > thought);
+    log(
+      `${where}: the second look reasoned ${again ?? 'an unknown number of'} tokens${second.stretched?.length ? ', crammed end' : ''}, the first ${thought}; the ${better ? 'second' : 'first'} is kept.`,
+    );
+    log(`${where}: the second look cost ${usd(costOf(second))}, the first ${usd(firstCost)}.`);
+    const [kept, other] = better ? [second, first] : [first, second];
+    return {
+      ...kept,
+      relook: {
+        reasons,
+        reasoning: [thought, again ?? null],
+        kept: better ? 2 : 1,
+        other: other.vision ?? [],
+      },
+    };
   }
 
   async function voice(text: string, file: string): Promise<Voiced | null> {

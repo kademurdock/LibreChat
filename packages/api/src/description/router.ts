@@ -4227,6 +4227,13 @@ export function createDescriptionRouter(hooks: Hooks): {
           throw new Halt('A rehearsal never sends paid requests.');
         };
         const meter = rehearsal ? rehearsalMeter : paidMeter;
+        /**
+         * What is left of her approval, with requests still in flight counted at their full
+         * reserve. That is stricter than the meter's own stop, which counts settled charges only.
+         * The engine starts a second look at a section, and each retry of it, only while this
+         * covers three times what the first look really cost plus the rest of the run.
+         */
+        const approvedRoom = () => (rehearsal ? 0 : Math.max(0, approved - spend.usd));
         const request: RunRequest = {
           source,
           directory,
@@ -4243,6 +4250,8 @@ export function createDescriptionRouter(hooks: Hooks): {
           session: `video:${job._id}`,
           signal,
           meter,
+          approvedRoom,
+          ...(rehearsal ? {} : { quotedUSD: quoted }),
           progress,
           providers: rehearsal ? rehearsalProviders : (hooks.providers ?? productionProviders),
           keeper: state.keeper,
@@ -4250,6 +4259,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           stopAfter: job.stopAfter,
           chapters: job.chapters,
           ...(partBytes !== undefined ? { workingCopy: true } : {}),
+          ...(job.seconds ? { sourceSeconds: job.seconds } : {}),
           sectionNotes: Object.fromEntries(
             Object.entries(job.sectionNotes ?? {}).map(([index, note]) => [Number(index), note]),
           ),

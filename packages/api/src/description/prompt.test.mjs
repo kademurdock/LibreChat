@@ -26,9 +26,11 @@ import {
   keytermsFor,
   providerDetail,
   providerProblem,
+  speechPerByte,
   steps,
   synthesize,
   transcribe,
+  voiceInput,
 } from './providers.ts';
 import { Halt, settingsSchema } from './types.ts';
 import {
@@ -37,6 +39,7 @@ import {
   lintDescription,
   nextContinuity,
   readAnalysis,
+  readsTimeStrip,
   roomText,
   speakable,
 } from './prompt.ts';
@@ -1149,6 +1152,145 @@ test('providers: keyterms come from her notes, call letters, chapters and senten
   assert.deepEqual(keytermsFor({ title: 'VID_20240101 HD', notes: '', about: 'Lots of Words Here' }), []);
 });
 
+test('prompt: a clip with a time strip says to take cue times from it and never read it aloud', () => {
+  const lines = [{ start: 4, end: 8, text: 'Hello there.', speaker: 0 }];
+  const stamped = analysisPrompt(40, brief({ slowed: true, stamped: true }), null, lines, []);
+  const strip = stamped.split('\n').filter((line) => /strip/i.test(line));
+  assert.equal(strip.length, 2, 'the strip line, and the reminder in the on-screen text rule');
+  assert.match(strip[0], /^TIME STRIP: .*real film time, then its time in this clip/);
+  assert.match(strip[1], /^ON-SCREEN TEXT: .* Never read the time strip under the picture\.$/);
+  assert.match(strip[0], /Take every at, until and pauseAt from the clip time printed on the frame/);
+  assert.match(strip[0], /never describe or read the strip aloud/);
+  assert.ok(stamped.indexOf('TIME STRIP') < stamped.indexOf('SOURCE METADATA'), 'it sits with the clip facts');
+  assert.doesNotMatch(analysisPrompt(40, brief({ slowed: true }), null, lines, []), /strip/i, 'no strip, no line');
+  assert.doesNotMatch(analysisPrompt(40, brief({ survey: true, stamped: true }), null, lines, []), /TIME STRIP/, 'the first look writes no cues');
+});
+
+test('prompt: every text is sized to its own time, with the words per second at her usual speed', () => {
+  const lines = [{ start: 4.3, end: 8.5, text: 'Hello there.', speaker: 0 }];
+  const room = roomText(30, brief(), lines);
+  assert.match(
+    room,
+    /SIZE EVERY TEXT TO ITS OWN TIME\. A text is spoken from its at until the next cue starts or the next line of dialogue begins/,
+  );
+  assert.match(
+    room,
+    /about 3\.9 words per second: 1\.5 seconds fits about 4 words, 3 seconds fits about 10 words, 5 seconds fits about 18 words, 8 seconds fits about 30 words\./,
+  );
+  assert.match(room, /a text that does not fit is replaced by its shortText/);
+  assert.match(room, /Write each shortText in about half as many words\./);
+  assert.doesNotMatch(room, /Write each text to fit the stretch/);
+  // Her Pluto job: measured voice 0.0756 s per byte at 1x, usual speed 1.5x. The model wrote about
+  // 14.5 words for windows of about 3.1 s, and 19 of 32 lines fell back to the short text.
+  const pluto = roomText(310, brief({ detail: 'rich', slowed: true, secondsPerByte: 0.0756, maxRate: 2 }), []);
+  const perSecond = Number(/about ([\d.]+) words per second/.exec(pluto)[1]);
+  assert.equal(perSecond, 3.3);
+  assert.match(pluto, /words per second of the original speed, or a quarter of that per second of this slowed clip/);
+  const three = Number(/12 seconds of this clip fits about (\d+) words/.exec(pluto)[1]);
+  assert.ok(three <= 9, `a 3-second window gets ${three} words, well under 14.5`);
+  assert.match(pluto, /6 seconds of this clip fits about 3 words/);
+  const prompt = analysisPrompt(30, brief(), null, lines, []);
+  assert.equal(prompt.match(/SIZE EVERY TEXT/g).length, 1);
+  assert.doesNotMatch(analysisPrompt(30, brief({ survey: true }), null, lines, []), /SIZE EVERY TEXT/);
+});
+
+test('prompt: the clip that ends the video is described to its end, with the closing card and main credits', () => {
+  const lines = [{ start: 4, end: 8, text: 'Hello there.', speaker: 0 }];
+  const part = (index, extra = {}) =>
+    analysisPrompt(77, brief({ position: { index, count: 2, start: index * 80, end: index * 80 + 77, total: 158 }, ...extra }), null, lines, []);
+  const last = part(1);
+  assert.match(last, /COVER THE WHOLE CLIP: describe it in order from its first second to its last/);
+  assert.match(last, /never move an event later to fill a quiet stretch, and never leave the final seconds undescribed when something new happens there\./);
+  assert.doesNotMatch(last, /never stop describing/, 'a quiet ending may stay quiet at essential detail');
+  assert.match(last, /THE ENDING: this clip ends the video\. If the video tells a story, describe how it ends as fully as how it began, and the last thing anyone does\./);
+  assert.doesNotMatch(last, /THE ENDING: [^\n]*(?:rescue|reunion|happy ending)/, 'no resolution examples to echo, and none asked of a reel with no story');
+  assert.match(last, /read the closing title card when one is shown, such as The End, and, when there is room, the main names in the end credits/);
+  assert.match(last, /summarize the rest of a long credit roll/);
+  assert.ok(last.indexOf('ROOM TO SPEAK') < last.indexOf('COVER THE WHOLE CLIP'));
+  assert.ok(last.indexOf('THE ENDING') < last.indexOf('WHAT TO DESCRIBE'));
+  const first = part(0);
+  assert.match(first, /COVER THE WHOLE CLIP/, 'every clip is covered to its end');
+  assert.doesNotMatch(first, /THE ENDING|closing title card when/);
+  assert.match(analysisPrompt(40, brief(), null, lines, []), /THE ENDING/, 'a video in one clip ends in it');
+  const range = analysisPrompt(40, brief({ range: { start: 60, end: 100 } }), null, lines, []);
+  assert.match(range, /This clip ends the part being described, so describe it all the way to its last second\./);
+  assert.doesNotMatch(range, /THE ENDING/, 'the film may go on after a part');
+  assert.doesNotMatch(analysisPrompt(8, brief(), null, [], []), /THE ENDING/, 'an ident has its own short rule');
+  assert.doesNotMatch(analysisPrompt(40, brief({ survey: true }), null, lines, []), /COVER THE WHOLE CLIP|THE ENDING/);
+  assert.match(last, /Animation or cartoon: .*Give the ending the same care as the opening: the last gag, how the story resolves, such as a happy ending, and then the closing title card\./);
+  assert.doesNotMatch(last, /reads:? "?The End|happy birthday|Pluto|Mickey/i, 'no example line to copy, nothing from the Pluto job');
+});
+
+test('prompt: on-screen text keeps its own rule, including writing on things in the scene', () => {
+  const prompt = analysisPrompt(40, brief({ detail: 'rich' }), null, [], []);
+  const rule = prompt.split('\n').find((line) => line.startsWith('ON-SCREEN TEXT: '));
+  assert.ok(rule, 'a line of its own that starts with the heading');
+  assert.match(rule, /^ON-SCREEN TEXT: this is more than titles, credits and captions\./);
+  assert.doesNotMatch(rule, /every legible word|every word/, 'scope, not quantity: long text and crawls are still summarized');
+  assert.match(rule, /Writing on things in the scene, such as a cake, a banner, a sign, a package or a letter, is read too, as soon as it can be read, by the rules below\./);
+  assert.doesNotMatch(rule, /strip/i, 'no strip, no reminder');
+  assert.match(rule, /Text that matters to the story, such as a message, a name or a label, has importance 3\./);
+  assert.ok(prompt.indexOf('WHAT TO DESCRIBE') < prompt.indexOf(rule));
+  assert.ok(prompt.indexOf(rule) < prompt.indexOf('On-screen words get the same lead-in every time'));
+  assert.doesNotMatch(rule, /"/, 'no quoted line to copy');
+});
+
+test('prompt: a part that runs to the end of the video ends with THE ENDING; a part in the middle does not', () => {
+  const lines = [{ start: 4, end: 8, text: 'Hello there.', speaker: 0 }];
+  // "10:00 to the end" of a 13:00 video, in three clips: the router keeps the range, the engine
+  // knows the part reaches the end.
+  const tail = (index, extra = {}) =>
+    analysisPrompt(
+      60,
+      brief({ range: { start: 600, end: 780 }, position: { index, count: 3, start: index * 60, end: index * 60 + 60, total: 180 }, ...extra }),
+      null,
+      lines,
+      [],
+    );
+  const ending = tail(2, { endsVideo: true });
+  assert.match(ending, /THE ENDING: this clip ends the video\./, 'the last clip of the part is the real ending');
+  assert.doesNotMatch(ending, /This clip ends the part being described/);
+  assert.match(ending, /This is the part from 10:00 to 13:00 of a longer video\./, 'the part is still described as a part');
+  assert.doesNotMatch(tail(1, { endsVideo: true }), /THE ENDING|ends the part/, 'only its last clip');
+  const middle = tail(2);
+  assert.match(middle, /This clip ends the part being described/, 'a part that stops before the end keeps the plain rule');
+  assert.doesNotMatch(middle, /THE ENDING/);
+});
+
+test('prompt: the on-screen text, coverage and level rules do not contradict each other', () => {
+  const lines = [{ start: 4, end: 8, text: 'Hello there.', speaker: 0 }];
+  for (const detail of ['essential', 'standard', 'rich']) {
+    const prompt = analysisPrompt(40, brief({ detail, stamped: true, slowed: true }), null, lines, []);
+    assert.doesNotMatch(prompt, /every legible word|read every word/, `${detail}: no absolute rule to read everything`);
+    assert.match(prompt, /summarize long text/, `${detail}: long text is still summarized`);
+    assert.match(prompt, /summarize crawls and tickers once/, `${detail}: crawls too`);
+    assert.doesNotMatch(prompt, /never stop describing/, `${detail}: quiet endings may stay quiet`);
+    assert.match(prompt, /never describe or read the strip aloud/);
+    assert.match(prompt, /Never read the time strip under the picture\./, `${detail}: the scope rule repeats the one exception`);
+  }
+  const essential = analysisPrompt(40, brief({ detail: 'essential' }), null, lines, []);
+  assert.match(essential, /Leave quiet moments quiet when nothing new happens/);
+  assert.match(essential, /never leave the final seconds undescribed when something new happens there/);
+});
+
+test('prompt: a description that reads the time strip is recognized', () => {
+  for (const text of [
+    'Text reads film 1:20.8 clip 0.0',
+    'The strip reads film 1:00:02.3.',
+    'A black band shows clip 91.0 at the bottom.',
+    'FILM 2:37.0',
+  ])
+    assert.equal(readsTimeStrip(text), true, text);
+  for (const text of [
+    'A sign reads Film Festival.',
+    'A girl holds a paper clip.',
+    'Text reads Happy Birthday.',
+    'The clip ends on a black screen.',
+    'Text reads 1:20.',
+  ])
+    assert.equal(readsTimeStrip(text), false, text);
+});
+
 function fakeAxios(handler) {
   const calls = [];
   const previous = axios.defaults.adapter;
@@ -1170,10 +1312,12 @@ const meter = async (kind, reserve, action) => {
 const signal = new AbortController().signal;
 const reply = (content, extra = {}) => ({
   data: {
+    id: 'gen-123',
+    model: 'google/gemini-3.8-flash-20260902',
     provider: 'Google AI Studio',
     service_tier: 'flex',
     choices: [{ finish_reason: 'stop', message: { content }, ...extra }],
-    usage: { cost: 0.0042, completion_tokens: 900, completion_tokens_details: { reasoning_tokens: 400 } },
+    usage: { cost: 0.0042, prompt_tokens: 51000, completion_tokens: 900, completion_tokens_details: { reasoning_tokens: 400 } },
   },
 });
 const replyBody = JSON.stringify({
@@ -1185,7 +1329,7 @@ const replyBody = JSON.stringify({
   protectedSounds: [],
 });
 
-test('providers: the vision request uses the flex-eligible model, pinned reasoning and no temperature', async () => {
+test('providers: the vision request uses the flex-eligible model, pinned reasoning, no temperature and no backend pin', async () => {
   process.env.OPENROUTER_KEY = 'test-key';
   process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash:floor';
   const file = join(scratch, 'clip.mp4');
@@ -1208,14 +1352,67 @@ test('providers: the vision request uses the flex-eligible model, pinned reasoni
     assert.deepEqual(Object.keys(body.messages[0].content[0].video_url), ['url']);
     assert.equal(body.response_format.type, 'json_schema');
     assert.match(log[0], /tier flex, provider Google AI Studio, finish stop, output 900 tokens \(400 reasoning\), \$0\.0042/);
+    assert.deepEqual(
+      body.provider,
+      { max_price: { prompt: 1.5, completion: 7.5 } },
+      'no backend order: the Pluto A/B found the drift tracks reasoning, not the backend',
+    );
+    assert.deepEqual(result.vision, [
+      {
+        model: 'google/gemini-3.8-flash:floor',
+        costUSD: 0.0042,
+        seconds: result.vision[0].seconds,
+        generation: 'gen-123',
+        served: 'google/gemini-3.8-flash-20260902',
+        provider: 'Google AI Studio',
+        tier: 'flex',
+        finish: 'stop',
+        promptTokens: 51000,
+        outputTokens: 900,
+        reasoningTokens: 400,
+      },
+    ]);
+    assert.ok(result.vision[0].seconds >= 0);
     await analyze({ file, seconds: 40, brief: brief({ survey: true, slowed: true }), state: null, lines: [], before: [] }, signal, meter);
     assert.deepEqual(fake.calls[1].body.reasoning, { effort: 'low' });
     assert.equal(fake.calls[1].body.max_tokens, 24000);
     delete process.env.KADE_DESCRIPTION_MODEL;
     await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter);
     assert.equal(fake.calls[2].body.model, 'google/gemini-3.8-flash');
+    process.env.KADE_DESCRIPTION_MODEL = 'qwen/qwen3-vl-flash';
+    await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter);
+    for (const call of fake.calls) {
+      assert.deepEqual(call.body.provider, { max_price: { prompt: 1.5, completion: 7.5 } }, call.body.model);
+      assert.equal(JSON.stringify(call.body).includes('google-vertex'), false, 'no backend is named anywhere in the request');
+    }
   } finally {
     delete process.env.KADE_DESCRIPTION_MODEL;
+    fake.restore();
+  }
+});
+
+test('providers: a Pluto-sized close look holds more than her whole $0.34 approval while it is out', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const file = join(scratch, 'reserve.mp4');
+  await writeFile(file, Buffer.from('clip'));
+  const fake = fakeAxios(() => reply(replyBody));
+  const reserves = [];
+  try {
+    for (const look of [
+      { file, seconds: 10, brief: brief(), state: null, lines: [], before: [] },
+      { file, seconds: 310, brief: brief({ slowed: true }), state: null, lines: [{ start: 1, end: 3, text: 'Happy birthday.', speaker: 0 }], before: [] },
+    ]) {
+      charges.length = 0;
+      await analyze(look, signal, meter);
+      assert.equal(charges.length, 1);
+      reserves.push(charges[0].reserve);
+    }
+    assert.ok(reserves[0] < reserves[1]);
+    assert.ok(
+      reserves[1] > 0.37,
+      `a slowed 310 s close look holds about $0.38 while it is out, which is why a second look is weighed on real cost: ${reserves[1]}`,
+    );
+  } finally {
     fake.restore();
   }
 });
@@ -1249,6 +1446,8 @@ test('providers: a reply cut off for length is retried once on the standard tier
     assert.equal(result.cues.length, 1);
     assert.equal(fake.calls.length, 2);
     assert.equal(fake.calls[1].body.model, 'google/gemini-3.8-flash');
+    assert.deepEqual(result.vision.map((call) => call.finish), ['length', 'stop'], 'the record keeps the cut-off call too');
+    assert.deepEqual(fake.calls[1].body.provider, { max_price: { prompt: 1.5, completion: 7.5 } }, 'the retry names no backend either');
     assert.equal(fake.calls[1].body.response_format.type, 'json_schema');
     assert.match(fake.calls[1].body.messages[0].content[1].text, /Give about half as many cues/);
   } finally {
@@ -1309,21 +1508,43 @@ test('providers: Deepgram gets keyterms and filler words, reports the language, 
   }
 });
 
-test('providers: the voice call is retried before a paid description is dropped, and everything sent is booked', async () => {
+test('providers: Inworld voices get no delivery direction, fish voices keep it, and every byte sent is booked', async () => {
   const file = join(scratch, 'voice.wav');
   charges.length = 0;
-  const fake = fakeAxios((_call, n) =>
-    n === 1
-      ? httpError(503, {}, { 'retry-after': '0' })
-      : { data: new Uint8Array(400).buffer, headers: { 'content-type': 'audio/wav' } },
+  const audio = { data: new Uint8Array(400).buffer, headers: { 'content-type': 'audio/wav' } };
+  const speech = (fake) => fake.calls.filter((call) => call.url.endsWith('/v1/audio/speech'));
+  let fake = fakeAxios((call) => (call.url.endsWith('/voices.json') ? httpError(503, {}) : audio));
+  try {
+    assert.equal(await voiceInput('Mickey waves.', 'Fish Voice'), 'Mickey waves.', 'an unreadable voice list means no direction');
+    await synthesize('Mickey waves.', 'Fish Voice', 'session', file, 1.2, signal, meter);
+    assert.equal(speech(fake).at(-1).body.input, 'Mickey waves.');
+  } finally {
+    fake.restore();
+  }
+  let spoken = 0;
+  fake = fakeAxios((call) =>
+    call.url.endsWith('/voices.json')
+      ? { data: { voices: ['Voice 1', 'Fish Voice'], fish: ['Fish Voice'] } }
+      : ++spoken === 1
+        ? httpError(503, {}, { 'retry-after': '0' })
+        : audio,
   );
   try {
     await synthesize('A sign reads [Grand Opening] & more.', 'Voice 1', 'session', file, 1.5, signal, meter);
-    assert.equal(fake.calls.length, 2);
-    assert.equal(fake.calls[1].body.input, '[clear engaged audio description] A sign reads Grand Opening and more.');
-    const sent = Buffer.byteLength(fake.calls[1].body.input);
-    assert.ok(sent > 0);
+    assert.equal(speech(fake).length, 2, 'the voice call is retried before a paid description is dropped');
+    const inworld = speech(fake)[1].body;
+    assert.equal(inworld.input, 'A sign reads Grand Opening and more.', 'an Inworld voice gets no direction to lift into its instruction');
+    assert.equal(inworld.delivery, 'STABLE');
+    assert.equal(inworld.speed, 1.5);
+    assert.equal(charges.at(-1).kind, 'speech');
+    assert.equal(charges.at(-1).cost, Buffer.byteLength(inworld.input, 'utf8') * speechPerByte);
     assert.equal(charges.at(-1).cost, 0, 'subscription narration is included');
+    await synthesize('Pluto flies off the slide.', 'Fish Voice', 'session', file, 1.5, signal, meter);
+    const fish = speech(fake).at(-1).body;
+    assert.equal(fish.input, '[clear engaged audio description] Pluto flies off the slide.', 'a fish voice keeps its direction');
+    assert.equal(fish.delivery, 'STABLE');
+    assert.equal(charges.at(-1).cost, Buffer.byteLength(fish.input, 'utf8') * speechPerByte, 'the direction a fish voice is billed for is booked');
+    assert.equal(await voiceInput('Pluto flies off the slide.', 'Voice 1'), 'Pluto flies off the slide.');
   } finally {
     fake.restore();
   }

@@ -2,7 +2,16 @@ import { z } from 'zod';
 import axios from 'axios';
 import { createReadStream } from 'node:fs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
-import type { Analysis, Chapter, Continuity, FailureClass, Line, Meter, Word } from './types';
+import type {
+  Analysis,
+  Chapter,
+  Continuity,
+  FailureClass,
+  Line,
+  Meter,
+  VisionCall,
+  Word,
+} from './types';
 import type { Brief } from './prompt';
 import { analysisFormat, analysisPrompt, readAnalysis, speakable } from './prompt';
 import { MediaError } from './media';
@@ -29,11 +38,13 @@ export const keytermPerMinute = 0.0013;
 /** Subscription narration is included for users; metered visual analysis and transcription remain separate. */
 export const speechPerByte: number = 0;
 /**
- * Delivery direction for the narrator. The voice proxy lifts a leading [tag] into Inworld's
- * instruction field, which Inworld does not bill, but Fish voices are billed for it as text, so
- * it is counted with the spoken words.
+ * Delivery direction for fish.audio voices only, which read a leading [tag] as their style and
+ * bill it as text, so it is counted with the spoken words. Inworld voices get none: the proxy
+ * lifted it into Inworld's instruction field, and with it TTS-2 put unpunctuated pauses of up to
+ * 383 ms after names and first words (5 to 10 of 24 test lines; none without it, Sep 25 A/B).
+ * Fish voices had no such pauses with it.
  */
-const direction = '[clear engaged audio description] ';
+const fishDirection = '[clear engaged audio description] ';
 const dialogueService = 'Dialogue timing (Deepgram)';
 
 const speechSchema = z.object({
@@ -61,6 +72,8 @@ const speechSchema = z.object({
   }),
 });
 const modelSchema = z.object({
+  id: z.string().max(200).nullable().optional().catch(undefined),
+  model: z.string().max(200).nullable().optional().catch(undefined),
   provider: z.string().nullable().optional().catch(undefined),
   service_tier: z.string().nullable().optional().catch(undefined),
   choices: z.array(
@@ -541,6 +554,12 @@ const declined: ReadonlySet<string> = new Set([
 
 type Choice = z.infer<typeof modelSchema>['choices'][number];
 
+/** Output tokens one look may use; a slowed close look gets more. */
+const lookTokens = (brief: Brief): number => (brief.slowed ? 24000 : 12000);
+/** The most one look call can cost, which the meter holds while the call is out. */
+const reserveFor = (seconds: number, prompt: string, maxTokens: number): number =>
+  (seconds * 400 * 1.5 + prompt.length * 0.5 + maxTokens * 7.5) / 1e6 + 0.01;
+
 function replyOf(choice: Choice | undefined, look: Look): Analysis {
   const native = (choice?.native_finish_reason ?? '').toUpperCase();
   if (choice?.finish_reason === 'content_filter' || declined.has(native))
@@ -563,14 +582,15 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
   if (!key) throw new Plain('Video understanding is not configured.');
   const prompt = analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before);
   const video = (await readFile(look.file)).toString('base64');
-  const maxTokens = look.brief.slowed ? 24000 : 12000;
-  const reserve = (look.seconds * 400 * 1.5 + prompt.length * 0.5 + maxTokens * 7.5) / 1e6 + 0.01;
+  const maxTokens = lookTokens(look.brief);
+  const reserve = reserveFor(look.seconds, prompt, maxTokens);
   const model = visionModel();
   let result: Analysis | undefined;
   let previous: unknown;
   let tries = 0;
   let timeouts = 0;
   let cutoffs = 0;
+  const calls: VisionCall[] = [];
   const retryable = (error: unknown) => {
     if (error instanceof Refusal) return false;
     if (error instanceof CutOff) return ++cutoffs <= 1;
@@ -588,12 +608,14 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
           ? '\n\nYour last reply was too long and was cut off. Give about half as many cues this time, and keep every text short.'
           : '';
       let failure: unknown;
+      const asked = first ? model : standardModel(model);
       try {
         await meter('vision', reserve, async () => {
+          const began = Date.now();
           const response = await axios.post(
             'https://openrouter.ai/api/v1/chat/completions',
             {
-              model: first ? model : standardModel(model),
+              model: asked,
               max_tokens: maxTokens,
               reasoning: { effort: look.brief.survey ? 'low' : 'medium' },
               provider: { max_price: { prompt: 1.5, completion: 7.5 } },
@@ -621,6 +643,7 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
           const data = modelSchema.parse(response.data);
           const choice = data.choices[0];
           const cost = data.usage?.cost ?? reserve;
+          calls.push(visionCall(asked, data, cost, (Date.now() - began) / 1000));
           look.log?.(
             `vision: tier ${data.service_tier ?? 'unknown'}, provider ${data.provider ?? 'unknown'}, finish ${choice?.finish_reason ?? 'none'}${choice?.native_finish_reason ? ` (${choice.native_finish_reason})` : ''}, output ${data.usage?.completion_tokens ?? '?'} tokens (${data.usage?.completion_tokens_details?.reasoning_tokens ?? '?'} reasoning), $${cost.toFixed(4)}`,
           );
@@ -645,14 +668,50 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
     backoff(5000),
   );
   if (!result) throw new Plain('No visual description was returned.');
-  return result;
+  return { ...result, vision: calls };
+}
+
+/** What OpenRouter said about one call: backend, tier, finish reason, tokens, cost and time. */
+function visionCall(
+  model: string,
+  data: z.infer<typeof modelSchema>,
+  costUSD: number,
+  seconds: number,
+): VisionCall {
+  const choice = data.choices[0];
+  const call: VisionCall = { model, costUSD, seconds: Math.round(seconds * 10) / 10 };
+  if (data.id) call.generation = data.id;
+  if (data.model) call.served = data.model;
+  if (data.provider) call.provider = data.provider;
+  if (data.service_tier) call.tier = data.service_tier;
+  if (choice?.finish_reason) call.finish = choice.finish_reason;
+  if (choice?.native_finish_reason) call.nativeFinish = choice.native_finish_reason;
+  if (data.usage?.prompt_tokens !== undefined) call.promptTokens = data.usage.prompt_tokens;
+  if (data.usage?.completion_tokens !== undefined) call.outputTokens = data.usage.completion_tokens;
+  const reasoning = data.usage?.completion_tokens_details?.reasoning_tokens;
+  if (typeof reasoning === 'number') call.reasoningTokens = reasoning;
+  return call;
+}
+
+/**
+ * The words sent for a voice: fish.audio voices (named in the catalog's `fish` list) get the
+ * delivery direction in front; Inworld voices, and any voice when the catalog cannot be read,
+ * get the words alone.
+ */
+export async function voiceInput(words: string, voice: string): Promise<string> {
+  const fish = await voices().then(
+    (list) => !!list.fish?.includes(voice),
+    () => false,
+  );
+  return fish ? fishDirection + words : words;
 }
 
 /**
  * Speaks one description through the platform voice proxy. `speed` is the voice engine's own
  * rate (1 to 1.5), which sounds more natural than stretching the audio afterwards. A failed call
  * is tried up to three times (after 5 s and 20 s, or when the proxy's Retry-After says) before
- * the description is given up, because the words were already paid for.
+ * the description is given up, because the words were already paid for. Every byte sent is
+ * booked, including a fish voice's direction.
  */
 export async function synthesize(
   text: string,
@@ -665,7 +724,7 @@ export async function synthesize(
 ): Promise<void> {
   const words = speakable(text);
   if (!words) throw new Plain('There was nothing to say for this description.');
-  const input = direction + words;
+  const input = await voiceInput(words, voice);
   const cost = Buffer.byteLength(input, 'utf8') * speechPerByte;
   await attempt(
     3,

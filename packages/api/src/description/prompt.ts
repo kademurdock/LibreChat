@@ -41,6 +41,10 @@ export type Brief = {
   secondsPerByte?: number;
   /** Her note for this one section (redo with a note). */
   sectionNote?: string;
+  /** The clip carries a strip under the picture printing each frame's film time and clip time. */
+  stamped?: boolean;
+  /** The part in `range` runs to the end of the video, so its last clip is the real ending. */
+  endsVideo?: boolean;
 };
 
 /** Makes text safe for the speech engine: no brackets or symbols it could read as tags. */
@@ -139,7 +143,7 @@ const kindGuide = [
   'How-to or tutorial: describe the steps shown that the speaker does not say, and read measurements and labels on screen.',
   'Video game: describe the scene, what the player does, and important on-screen text or scores.',
   "Home video: describe who is there, where they are, and what they are doing. Read the camcorder date stamp when it first appears and whenever it changes, and use real people's names only from the notes or the dialogue.",
-  'Animation or cartoon: the comedy is in the pictures. Describe each gag as it happens, its setup and then its payoff, over the music and sound effects, and say what makes a sound when the sound alone does not tell, such as a boxing glove on a spring. Do not spend a stretch on a sound the listener just heard, such as a scream or a laugh, while there is action to describe.',
+  'Animation or cartoon: the comedy is in the pictures. Describe each gag as it happens, its setup and then its payoff, over the music and sound effects, and say what makes a sound when the sound alone does not tell, such as a boxing glove on a spring. Do not spend a stretch on a sound the listener just heard, such as a scream or a laugh, while there is action to describe. Give the ending the same care as the opening: the last gag, how the story resolves, such as a happy ending, and then the closing title card.',
 ].join('\n');
 
 /** Words a listener hears per second at 1x, from the measured voice speed when there is one. */
@@ -243,6 +247,12 @@ export function roomText(seconds: number, brief: Brief, lines: Line[]): string {
       (span) =>
         `${(span.start * scale).toFixed(1)} to ${(span.end * scale).toFixed(1)}: ${budget(span)}`,
     );
+  const sizes = [1.5, 3, 5, 8]
+    .map(
+      (span) =>
+        `${span * scale} seconds${scale > 1 ? ' of this clip' : ''} fits about ${words({ start: 0, end: span }, usual, 0.3)} words`,
+    )
+    .join(', ');
   const room = stretches.reduce((sum, span) => sum + span.end - span.start, 0);
   const target = Math.max(
     1,
@@ -262,13 +272,51 @@ export function roomText(seconds: number, brief: Brief, lines: Line[]): string {
     stretches.length
       ? `That is about ${Math.round(room)} seconds of room in all. At this level of detail, plan about ${target} ${target === 1 ? 'cue' : 'cues'} across it when there is that much to see.`
       : '',
-    'Write each text to fit the stretch where it will be spoken, and each shortText in about half that. In a stretch under about 3 seconds, merge what happens there into one cue. In a longer stretch, give each new action its own cue starting when it appears, instead of joining events seconds apart into one.',
+    `SIZE EVERY TEXT TO ITS OWN TIME. A text is spoken from its at until the next cue starts or the next line of dialogue begins, whichever comes first, so cues in the same stretch share it. At the listener's usual speed that is about ${usual.toFixed(1)} words per second${scale > 1 ? ' of the original speed, or a quarter of that per second of this slowed clip' : ''}: ${sizes}. Count the words of every text against its own time before you return it: a text that does not fit is replaced by its shortText, and the rest of its detail is never heard. Write each shortText in about half as many words.`,
+    'In a stretch under about 3 seconds, merge what happens there into one cue. In a longer stretch, give each new action its own cue starting when it appears, instead of joining events seconds apart into one.',
     level.fill,
     brief.detail === 'essential'
       ? ''
       : 'After the cues that matter, you may add importance 1 cues for anything else worth seeing in a stretch still more than half empty; they are spoken only when there is room.',
     brief.mode === 'extended'
       ? 'This listener allows pauses: a description that matters may run longer than its stretch and the picture will wait for it, but prefer descriptions that fit.'
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** The one line about the time strip, when the clip carries one. */
+const stripText = (brief: Brief): string =>
+  brief.stamped && !brief.survey
+    ? "TIME STRIP: a black strip under the picture prints each frame's real film time, then its time in this clip. Take every at, until and pauseAt from the clip time printed on the frame where the thing happens, never an estimate, and never describe or read the strip aloud: it is not part of the video."
+    : '';
+
+/** What the time strip prints, "film 1:20.8   clip 0.0", read back in a description. */
+const stripReading = /\bfilm \d+(?::\d\d){1,2}\.\d\b|\bclip \d+\.\d\b/i;
+
+/** True when a description reads the time strip's own lettering, which is never spoken. */
+export function readsTimeStrip(text: string): boolean {
+  return stripReading.test(text);
+}
+
+/**
+ * Coverage to the last second, and for the clip that ends the video (a part that runs to the end
+ * included), its ending, closing title card and main credits. In the Pluto run the model stretched
+ * the sad part over the happy ending and never reached the end card. The story half is only for a
+ * video that tells one: a commercial reel or a station break has no resolution to describe.
+ */
+function coverageText(seconds: number, brief: Brief): string {
+  if (brief.survey) return '';
+  const position = brief.position;
+  const total = position?.total ?? seconds / (brief.slowed ? 4 : 1);
+  const last = !position || position.index >= position.count - 1;
+  return [
+    'COVER THE WHOLE CLIP: describe it in order from its first second to its last; what happens in the final seconds matters as much as the start. Put each cue at the moment its event happens: never move an event later to fill a quiet stretch, and never leave the final seconds undescribed when something new happens there.',
+    last && total > 15
+      ? brief.range && !brief.endsVideo
+        ? 'This clip ends the part being described, so describe it all the way to its last second.'
+        : 'THE ENDING: this clip ends the video. If the video tells a story, describe how it ends as fully as how it began, and the last thing anyone does. Then read the closing title card when one is shown, such as The End, and, when there is room, the main names in the end credits, such as the studio, the director and the stars; summarize the rest of a long credit roll.'
       : '',
   ]
     .filter(Boolean)
@@ -350,7 +398,7 @@ export function analysisPrompt(
 
 THIS CLIP
 It is ${seconds.toFixed(2)} seconds long. Every time you give is in seconds from the start of THIS clip, between 0 and ${seconds.toFixed(2)}.
-${[metadataText(seconds, brief), ...trusted, positionText(seconds, brief)].filter(Boolean).join('\n')}
+${[stripText(brief), metadataText(seconds, brief), ...trusted, positionText(seconds, brief)].filter(Boolean).join('\n')}
 
 CONTINUITY
 ${continuityText(state)}
@@ -360,9 +408,10 @@ ${brief.orientation?.length ? `WHOLE-FILM REFERENCE, NOT KNOWLEDGE THE LISTENER 
 ${before.length ? `Dialogue just before this clip:\n${dialogueText(before, state, false)}\n` : ''}
 DIALOGUE IN THIS CLIP (speech recognition with times; S numbers are voices as grouped by speech recognition, usually the same voice each time, but similar voices can be merged, especially across unrelated commercials)
 ${dialogueText(lines, state)}
-${brief.survey ? '' : `\n${roomText(seconds, brief, lines)}\n`}
+${brief.survey ? '' : `\n${roomText(seconds, brief, lines)}\n${coverageText(seconds, brief)}\n`}
 WHAT TO DESCRIBE
 Describe what a sighted viewer can see and the listener cannot get from the sound: actions, who does what to whom, entrances and exits, scene and time changes, facial expressions and gestures that matter, visual jokes, important objects, logos, and on-screen text such as titles, credits, signs, captions and subtitles.
+ON-SCREEN TEXT: this is more than titles, credits and captions. Writing on things in the scene, such as a cake, a banner, a sign, a package or a letter, is read too, as soon as it can be read, by the rules below. Text that matters to the story, such as a message, a name or a label, has importance 3.${brief.stamped && !brief.survey ? ' Never read the time strip under the picture.' : ''}
 On-screen words get the same lead-in every time, so they sound different from action: "Text reads" for titles, captions and cards, or name the surface, such as "A sign reads" or "The box reads", then the words exactly. Read short text word for word while it is visible; summarize long text. Never guess unclear letters, digits, brands or dates; say that text appears but cannot be read.
 Describe events as they happen. Never reveal something before it appears or give away a surprise. Leave out what the soundtrack already makes clear, but say where a sound comes from when that is not obvious.
 ${level.guide}

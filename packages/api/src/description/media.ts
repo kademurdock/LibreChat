@@ -219,6 +219,11 @@ export type Media = {
   centre?: boolean;
   /** Another audio track is flagged or titled as audio description. */
   describedAudio?: boolean;
+  /**
+   * Display rotation in degrees from the picture's display matrix (phone video), absent when 0.
+   * `width` and `height` are the stored sides; ffmpeg turns the picture upright before any filter.
+   */
+  rotation?: number;
 };
 type Disposition = Partial<
   Record<'default' | 'attached_pic' | 'comment' | 'visual_impaired' | 'hearing_impaired', number>
@@ -390,9 +395,10 @@ async function inspect(file: string, signal: AbortSignal): Promise<Inspection> {
       : Math.max(0, (seconds(data.format?.start_time) ?? videoStart) + whole - videoStart);
   const order = video.field_order ?? '';
   const interlaced = ['tt', 'bb', 'tb', 'bt'].includes(order);
+  const rotation = (video.side_data_list ?? []).find((item) => !!item.rotation)?.rotation;
   return {
     known: order !== '' && order !== 'unknown',
-    rotated: (video.side_data_list ?? []).some((item) => !!item.rotation),
+    rotated: !!rotation,
     media: {
       seconds: total ?? Number.NaN,
       audio: audio.index !== null,
@@ -418,6 +424,7 @@ async function inspect(file: string, signal: AbortSignal): Promise<Inspection> {
           }
         : {}),
       ...(audio.described ? { describedAudio: true } : {}),
+      ...(rotation ? { rotation } : {}),
     },
   };
 }
@@ -461,6 +468,8 @@ export type Capabilities = {
   bwdif: boolean;
   scdet: boolean;
   freezedetect: boolean;
+  /** Text drawn on frames (needs libfreetype), for the time strip on look clips. */
+  drawtext: boolean;
   limiterLatency: boolean;
   perChannel: boolean;
 };
@@ -484,6 +493,7 @@ async function checkTools(bin: string): Promise<Capabilities> {
     bwdif: names.has('bwdif'),
     scdet: names.has('scdet'),
     freezedetect: names.has('freezedetect'),
+    drawtext: names.has('drawtext'),
     limiterLatency: /\blatency\b/.test(limiter),
     perChannel: /measure_perchannel/.test(stats),
   };
@@ -507,7 +517,9 @@ export async function capabilities(log?: (message: string) => void): Promise<Cap
   if (log && !reported) {
     reported = true;
     const missing: string[] = [
-      ...(['zscale', 'bwdif', 'scdet', 'freezedetect'] as const).filter((name) => !result[name]),
+      ...(['zscale', 'bwdif', 'scdet', 'freezedetect', 'drawtext'] as const).filter(
+        (name) => !result[name],
+      ),
       ...(result.limiterLatency ? [] : ['alimiter latency']),
       ...(result.perChannel ? [] : ['astats per channel']),
     ];
@@ -950,6 +962,117 @@ export function videoCeiling(outputSeconds: number): number {
 /** Analysis frame rate: 8 fps for clips of 20 s or less (idents, bumpers), otherwise 3. */
 export const lookRate = (seconds: number): number => (seconds <= 20 ? 8 : 3);
 
+/**
+ * Fonts for the time strip, first found wins: KADE_DESCRIPTION_FONT, then DejaVu Sans Mono from
+ * the font-dejavu package (the Alpine server image; the Debian and Arch paths too), then the
+ * monospace font of a Windows or macOS machine for local runs. KADE_DESCRIPTION_FONT=off turns
+ * the strip off.
+ */
+const stripFonts: readonly string[] = [
+  '/usr/share/fonts/dejavu/DejaVuSansMono.ttf',
+  '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf',
+  '/usr/share/fonts/TTF/DejaVuSansMono.ttf',
+  'C:/Windows/Fonts/consola.ttf',
+  '/System/Library/Fonts/Menlo.ttc',
+];
+let fontCheck: { wanted: string; result: Promise<string | null> } | undefined;
+
+/** The font file for the time strip, or null when none is installed (the strip is then left out). */
+export function stripFont(): Promise<string | null> {
+  const wanted = (process.env.KADE_DESCRIPTION_FONT ?? '').replace(/\\/g, '/');
+  if (!fontCheck || fontCheck.wanted !== wanted) {
+    const off = /^(?:off|none|0)$/i.test(wanted);
+    const candidates = off
+      ? []
+      : [...(wanted ? [wanted] : []), ...stripFonts].filter((path) => !path.includes("'"));
+    const result = (async () => {
+      for (const path of candidates) {
+        const found = await stat(path).then(
+          (info) => info.isFile(),
+          () => false,
+        );
+        if (found) return path;
+      }
+      return null;
+    })();
+    fontCheck = { wanted, result };
+  }
+  return fontCheck.result;
+}
+
+/**
+ * The picture size `shape` gives for `width`: square pixels, even sides, the display shape. A
+ * quarter-turned phone picture reaches the filters upright, so its sides are swapped first.
+ */
+export function shapedSize(
+  media: Pick<Media, 'width' | 'height' | 'sar' | 'rotation'>,
+  width: number,
+): { width: number; height: number } {
+  // Turning a picture inverts its pixel shape too, as ffmpeg's transpose does.
+  const turned = Math.abs(Math.round(media.rotation ?? 0)) % 180 === 90;
+  const display = turned
+    ? (media.height * media.sar.den) / media.sar.num
+    : (media.width * media.sar.num) / media.sar.den;
+  const tall = turned ? media.width : media.height;
+  const w = Math.max(2, Math.floor(Math.min(width, display) / 2) * 2);
+  const h = Math.max(2, Math.floor((w * tall) / display / 2) * 2);
+  return { width: w, height: h };
+}
+
+export type Strip = {
+  /** Font file for drawtext. */
+  font: string;
+  /** Real film time (source seconds) at the clip's first frame. */
+  film: number;
+  /** How much the clip is slowed: 4 for a close look, otherwise 1. */
+  scale: number;
+  /** Original seconds the clip covers, for choosing the clock's form. */
+  seconds: number;
+  /** Picture size after scaling, for the lettering size. */
+  width: number;
+  height: number;
+};
+
+/** Escapes a value for a filter option and quotes it for the filter graph. */
+const filterValue = (value: string) => `'${value.replace(/[\\':]/g, (c) => `\\${c}`)}'`;
+
+/**
+ * A black strip added under the picture (nothing in the picture is covered) that prints each
+ * frame's real film time, then its time on the clip's own timeline (slowed by `scale`), to a
+ * tenth of a second, so the model can read times off the frames instead of estimating them.
+ * Goes after `shape` and before the slow-down, where `t` is original seconds from the clip start.
+ */
+export function timeStrip(strip: Strip): string[] {
+  const hours = strip.film + strip.seconds >= 3600;
+  const film = `floor((${strip.film.toFixed(3)}+t)*10+0.5)`;
+  const clip = `floor(t*${strip.scale}*10+0.5)`;
+  const eif = (expression: string, pad?: number) =>
+    `%{eif:${expression}:d${pad ? `:${pad}` : ''}}`;
+  const clock = [
+    ...(hours ? [eif(`floor(${film}/36000)`), eif(`mod(floor(${film}/600),60)`, 2)] : []),
+    ...(hours ? [] : [eif(`floor(${film}/600)`)]),
+    `${eif(`mod(floor(${film}/10),60)`, 2)}.${eif(`mod(${film},10)`)}`,
+  ].join(':');
+  const text = `film ${clock}   clip ${eif(`floor(${clip}/10)`)}.${eif(`mod(${clip},10)`)}`;
+  const chars = hours ? 31 : 28;
+  const size = Math.max(
+    10,
+    Math.floor(Math.min(strip.height * 0.055, strip.width / (chars * 0.62))),
+  );
+  const band = 2 * Math.ceil((size * 1.7) / 2);
+  return [
+    `pad=w=iw:h=ih+${band}:x=0:y=0:color=black`,
+    [
+      `drawtext=fontfile=${filterValue(strip.font)}`,
+      `text=${filterValue(text)}`,
+      `fontsize=${size}`,
+      'fontcolor=white',
+      `x=${Math.round(size * 0.6)}`,
+      `y=h-${band}+${Math.round((band - size) / 2)}`,
+    ].join(':'),
+  ];
+}
+
 /** A small copy of one section, with sound, for the vision model to watch and hear. */
 export async function sectionClip(
   source: string,
@@ -960,17 +1083,43 @@ export async function sectionClip(
   closeLook: boolean = false,
   media?: Media,
 ): Promise<string> {
+  return (await lookClip(source, directory, start, seconds, signal, closeLook, media)).file;
+}
+
+/**
+ * The look clip. With `film` (the real film time where the section starts), a strip under the
+ * picture prints each frame's film time and clip time. When the installed ffmpeg has no drawtext,
+ * no font is installed, or the strip fails to render, the clip is made without it and `stamped`
+ * is false.
+ */
+export async function lookClip(
+  source: string,
+  directory: string,
+  start: number,
+  seconds: number,
+  signal: AbortSignal,
+  closeLook: boolean = false,
+  media?: Media,
+  film?: number,
+): Promise<{ file: string; stamped: boolean }> {
   const info = await mediaOf(source, media, signal);
   const tools = await capabilities();
   const video = join(directory, 'analysis.mp4');
   const outputSeconds = closeLook ? seconds * 4 : seconds;
   const ceiling = videoCeiling(outputSeconds);
-  const encode = async (width: number) => {
+  const font = film !== undefined && tools.drawtext ? await stripFont() : null;
+  let stamped = font !== null;
+  const stripFor = (width: number): string[] =>
+    font === null || film === undefined
+      ? []
+      : timeStrip({ font, film, scale: closeLook ? 4 : 1, seconds, ...shapedSize(info, width) });
+  const encode = async (width: number, strip: string[]) => {
     const picture = [
       pictureClock(info, start),
       deinterlace(info, tools),
       `fps=${closeLook ? 4 : lookRate(seconds)}:start_time=0`,
       ...shape(info, tools, width),
+      ...strip,
       `trim=end=${seconds.toFixed(6)}`,
       ...(closeLook ? ['setpts=4*PTS'] : []),
     ];
@@ -1027,9 +1176,21 @@ export async function sectionClip(
     );
     return (await stat(video)).size;
   };
+  /** Encodes with the strip while it works; a strip that fails to render is dropped, not fatal. */
+  const attempt = async (width: number) => {
+    if (stamped) {
+      try {
+        return await encode(width, stripFor(width));
+      } catch (error) {
+        if (signal.aborted || !(error instanceof MediaError) || error.kind === 'disk') throw error;
+        stamped = false;
+      }
+    }
+    return encode(width, []);
+  };
   const width = closeLook ? 1440 : 960;
-  if ((await encode(width)) <= clipLimit) return video;
-  if ((await encode(closeLook ? 960 : 640)) <= clipLimit) return video;
+  if ((await attempt(width)) <= clipLimit) return { file: video, stamped };
+  if ((await attempt(closeLook ? 960 : 640)) <= clipLimit) return { file: video, stamped };
   await rm(video, { force: true });
   throw new MediaError(
     'too-detailed',

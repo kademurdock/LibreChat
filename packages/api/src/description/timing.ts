@@ -1,4 +1,4 @@
-import type { Cue, Interval, Placement, Settings, Word } from './types';
+import type { Cue, Interval, Line, Placement, Settings, Word } from './types';
 
 export function mergeIntervals(intervals: Interval[], seconds: number, padding = 0): Interval[] {
   const ordered = intervals
@@ -242,6 +242,53 @@ export function snapToCuts(cues: Cue[], cuts: number[]): Cue[] {
       pauseAt: cue.pauseAt === undefined ? undefined : Math.max(cue.pauseAt, cut),
     };
   });
+}
+
+/** An earlier stretch this long with no dialogue and no description, while the last is crammed. */
+export const idleStretch = 8;
+/** The last description counts as crammed when it starts this close to the end of the clip. */
+export const crammedEnd = 2.5;
+
+const tenth = (value: number) => value.toFixed(1);
+
+/**
+ * Signs that a look's times stretched later than the events, as plain sentences (film seconds),
+ * for the log and the section record. One cheap check: the last description crammed into the
+ * clip's final `crammedEnd` seconds while an earlier stretch of `idleStretch` seconds has neither
+ * dialogue nor any description's window. In the Pluto A/B (Sep 25 2026) it fired on both looks
+ * whose times stretched and on none of the nine accurate ones, and a sign asks for one second
+ * look (engine.ts). A second check, a description sharing words with dialogue that ended long
+ * before it, was dropped: it fired on all eleven looks, the accurate ones included, because the
+ * right description of a later moment can repeat an earlier line ("blows out the candle").
+ * `cues` and `lines` are in section seconds.
+ */
+export function stretchSigns(input: {
+  cues: Cue[];
+  lines: Line[];
+  seconds: number;
+  /** Film seconds where the section starts, for the times in the sentences. */
+  offset: number;
+}): string[] {
+  const { cues, lines, seconds, offset } = input;
+  const signs: string[] = [];
+  const ordered = [...cues].sort((a, b) => a.at - b.at);
+  const last = ordered[ordered.length - 1];
+  if (last && seconds >= 4 * idleStretch && last.at >= seconds - crammedEnd) {
+    const busy = [
+      ...lines,
+      ...ordered
+        .slice(0, -1)
+        .map((cue) => ({ start: cue.at, end: Math.max(cue.until, cue.at + 1) })),
+    ];
+    const idle = gaps(busy, last.at)
+      .filter((span) => span.end - span.start >= idleStretch)
+      .sort((a, b) => b.end - b.start - (a.end - a.start))[0];
+    if (idle)
+      signs.push(
+        `the last description starts ${tenth(seconds - last.at)} s before the clip ends while ${tenth(idle.end - idle.start)} s from ${tenth(offset + idle.start)} s has neither dialogue nor description`,
+      );
+  }
+  return signs;
 }
 
 export type Variant = 'full' | 'short';
