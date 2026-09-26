@@ -886,7 +886,7 @@ const GUIDE = {
       howToWrite: ['Describe the new style, instruments and singing voice in Music direction.', 'Put exact words under Lyrics, with [Verse] and [Chorus] tags. Use Transcribe reference lyrics after importing a cover to get an editable draft, then correct anything it misheard.', 'For a cover, import one source recording up to six minutes. The worker transcribes its melody, then makes a new arrangement. Listen for transcription errors; the source is kept intact.', 'Pasting a finished song laid out as Lyrics Box, Tag Box and Negative Tag Box? Paste it whole into Music direction. The booth puts the Lyrics Box under Lyrics and the Tag Box in Music direction, and leaves the Negative Tag Box out: YuE2 has no place for things to avoid, and naming them tends to add them.'],
       settings: [
         { key: 'lyrics', label: 'Lyrics', hint: 'The words to sing. Use [Verse] and [Chorus] tags, or choose Write my song idea to draft them.', kind: 'text' },
-        { key: 'reference_voice_url', label: 'Recording to cover (optional)', hint: 'Import one song, up to six minutes. YuE2 uses its melody for a new arrangement; this does not clone the original singer. Add the words you want under Lyrics.', kind: 'clip', max: 1 },
+        { key: 'reference_voice_url', label: 'Recording to cover (optional)', hint: 'Import one song, up to six minutes. You can also paste a media link to a song, from YouTube or another media site. YuE2 uses its melody for a new arrangement; this does not clone the original singer. Add the words you want under Lyrics.', kind: 'clip', max: 1 },
         { key: 'abc', label: 'Optional composition (ABC)', hint: 'Use a melody score instead of an imported recording.', kind: 'text' },
         ...(yueStylesEnabled() ? [{ key: 'band', label: 'Style', hint: 'A singing style taught to YuE2 from real recordings. Soul sings with one expressive female lead and rich harmonies. Kids sings with a children’s choir. None is plain YuE2. The style leads the song and Music direction still steers it on top, for example slow and gentle, or piano only. Works for new songs and for covers.', kind: 'choice', options: ['none', ...Object.keys(yueStyles)], default: 'none' }] : []),
         { key: 'cot', label: 'Following a score (only used with an ABC composition)', hint: 'This does nothing for a brand new song. With an ABC score, Melody follows the tune and frees the arrangement; Full keeps the chords too. A cover from a recording always uses Melody.', kind: 'choice', options: ['melody','full'], default: 'melody' },
@@ -2776,65 +2776,101 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
         accepted: allowed.exts,
       });
     }
-    if (typeof saveBufferToS3 !== 'function') {
-      return res.status(503).json({ error: 'File storage is not set up on this server.' });
+    const stored = await storeReference(req, { buffer: f.buffer, ext, engine, name: f.originalname });
+    return res.status(stored.status).json(stored.body);
+  } catch (error) {
+    logger.error('[soundbooth/reference] failed:', error);
+    return res.status(500).json({ error: 'That clip could not be imported.' });
+  }
+});
+
+/* The shared tail of every reference import: a file (above) and a media link
+ * (Part 293, /reference/link below) both end here, so both answer with the
+ * same JSON. A link import adds `source` (the song's site, title, length and
+ * link), which is also kept on the music reference so the cover stays named.
+ * Returns { status, body } rather than answering, so each route answers once. */
+async function storeReference(req, { buffer, ext, engine, name, source }) {
+  if (typeof saveBufferToS3 !== 'function') {
+    return { status: 503, body: { error: 'File storage is not set up on this server.' } };
+  }
+  /* Keep AuK source recordings intact. Its worker decodes M4A/MP3 with
+   * ffmpeg and samples references only for speech, never for editing. */
+  let outBuffer = buffer;
+  let outExt = ext;
+  let clipSeconds = null;
+  let clipAdvice = '';
+  try {
+    const { normalizeReferenceClip, durationOf } = require('./kadeSoundBoothStitch');
+    const norm = engine === 'seed' ? await normalizeReferenceClip(buffer, ext) : null;
+    if (engine === 'scenema' || engine === 'yue2') {
+      clipSeconds = await durationOf(buffer);
+      clipAdvice = engine === 'yue2' ? 'The full original is kept. Choose Transcribe reference lyrics for an editable draft of the words. Singing can be misheard; review before generating.' : 'The full original recording is kept. Speech uses a voice sample; editing uses the recording.';
     }
-    /* Keep AuK source recordings intact. Its worker decodes M4A/MP3 with
-     * ffmpeg and samples references only for speech, never for editing. */
-    let outBuffer = f.buffer;
-    let outExt = ext;
-    let clipSeconds = null;
-    let clipAdvice = '';
-    try {
-      const { normalizeReferenceClip, durationOf } = require('./kadeSoundBoothStitch');
-      const norm = engine === 'seed' ? await normalizeReferenceClip(f.buffer, ext) : null;
-      if (engine === 'scenema' || engine === 'yue2') {
-        clipSeconds = await durationOf(f.buffer);
-        clipAdvice = engine === 'yue2' ? 'The full original is kept. Choose Transcribe reference lyrics for an editable draft of the words. Singing can be misheard; review before generating.' : 'The full original recording is kept. Speech uses a voice sample; editing uses the recording.';
-      }
-      if (norm && norm.buffer && norm.buffer.length > 1000) {
-        outBuffer = norm.buffer;
-        outExt = 'wav';
-        clipSeconds = norm.seconds;
-        clipAdvice = norm.advice;
-      }
-    } catch (e) {
-      logger.warn(`[soundbooth/reference] transcode failed (storing the original): ${e.message} ${String(e.stderr || '').slice(0, 200)}`);
-      clipAdvice = 'I could not convert it to a studio WAV, so the original file is attached as-is.';
+    if (norm && norm.buffer && norm.buffer.length > 1000) {
+      outBuffer = norm.buffer;
+      outExt = 'wav';
+      clipSeconds = norm.seconds;
+      clipAdvice = norm.advice;
     }
-    if (engine === 'yue2') {
-      const error = musicReferenceError(clipSeconds);
-      if (error) return res.status(400).json({ error });
-    }
-    const fileName = `soundbooth-ref-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${outExt}`;
-    const url = await saveBufferToS3({
-      userId: String(req.user.id),
-      buffer: outBuffer,
-      fileName,
-      basePath: 'audios',
-    });
-    if (!url) return res.status(502).json({ error: 'The clip did not save. Try again.' });
-    await registerMusicReference(String(req.user.id), url, clipSeconds);
-    logger.info(`[soundbooth/reference] user=${req.user.id} ${f.originalname || fileName} ${f.buffer.length}B -> ${outExt} ${outBuffer.length}B ${clipSeconds !== null ? clipSeconds + 's' : ''}`);
-    return res.json({
+  } catch (e) {
+    logger.warn(`[soundbooth/reference] transcode failed (storing the original): ${e.message} ${String(e.stderr || '').slice(0, 200)}`);
+    clipAdvice = 'I could not convert it to a studio WAV, so the original file is attached as-is.';
+  }
+  if (engine === 'yue2') {
+    const error = musicReferenceError(clipSeconds);
+    if (error) return { status: 400, body: { error } };
+  }
+  const fileName = `soundbooth-ref-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${outExt}`;
+  const url = await saveBufferToS3({
+    userId: String(req.user.id),
+    buffer: outBuffer,
+    fileName,
+    basePath: 'audios',
+  });
+  if (!url) return { status: 502, body: { error: 'The clip did not save. Try again.' } };
+  await registerMusicReference(String(req.user.id), url, clipSeconds, source || null);
+  logger.info(`[soundbooth/reference] user=${req.user.id} ${source ? `link=${source.id} ` : ''}${String(name || fileName).slice(0, 80)} ${buffer.length}B -> ${outExt} ${outBuffer.length}B ${clipSeconds !== null ? clipSeconds + 's' : ''}`);
+  const link = source ? require('./kadeSoundBoothLink') : null;
+  const heard = source
+    ? `Covering ${source.title}${clipSeconds !== null ? `, ${link.spokenMinutes(clipSeconds)}` : ''}, from ${link.siteLabel(source.site)}`
+    : `Clip imported${clipSeconds !== null ? `, ${clipSeconds} seconds` : ''}`;
+  return {
+    status: 200,
+    body: {
       ok: true,
       url,
       bytes: outBuffer.length,
       seconds: clipSeconds,
-      name: String(f.originalname || fileName).slice(0, 120),
+      name: String(name || fileName).slice(0, 120),
       /* Said out loud on the phone the moment it lands, because a silent
        * success on an upload is indistinguishable from nothing happening. */
       ext: outExt,
       /* Her ask: "have a play button to check your sample." The URL comes back
        * so the screen can play the thing that is actually attached — the
        * difference between believing a clone is set up and hearing that it is. */
-      spoken: `Clip imported${clipSeconds !== null ? `, ${clipSeconds} seconds` : ''}. ${clipAdvice} Play it to check it before generating.`.replace(/\s+/g, ' '),
-    });
-  } catch (error) {
-    logger.error('[soundbooth/reference] failed:', error);
-    return res.status(500).json({ error: 'That clip could not be imported.' });
-  }
-});
+      spoken: `${heard}. ${clipAdvice} Play it to check it before generating.`.replace(/\s+/g, ' '),
+      ...(source ? { source: { site: source.site, title: source.title, seconds: source.seconds, link: source.link } } : {}),
+    },
+  };
+}
+
+/* ====================== POST /reference/link (a media-link cover) =========
+ * Part 293. The route, its words, caps and the Family feature pack gate live in
+ * kadeSoundBoothLink.js; the fetching is packages/api description/links.ts
+ * (mediaAudio: YouTube on the describer's ladder, other sites through
+ * allowlisted yt-dlp extractors, direct files behind the SSRF guard). The
+ * storage tail is storeReference. */
+router.use(require('./kadeSoundBoothLink').createReferenceLinkRouter({
+  auth: requireJwtAuth,
+  store: storeReference,
+  media: () => require('@librechat/api'),
+  features: boothFeatures,
+  logger,
+}));
+/** The person's Family feature pack map (packages/api family/pack.ts familyFeatures). */
+function boothFeatures(user) {
+  return require('@librechat/api').familyFeatures(user);
+}
 
 /* ============================ POST /idea ================================== */
 /* Surprise me, for songs (Parts 228 to 231; the whole story is at the top of
@@ -2931,9 +2967,15 @@ router.post('/suggest', requireJwtAuth, express.json({ limit: '64kb' }), (req, r
   return res.json(suggestEngine((req.body || {}).text));
 });
 
-router.get('/health', requireJwtAuth, async (_req, res) => {
+router.get('/health', requireJwtAuth, async (req, res) => {
   return res.json({
-    guide: GUIDE,
+    /* Part 293: per person. The YuE2 cover field carries `link` only with the
+     * Family feature pack; everyone else gets `lockedLink`, shown greyed out
+     * ("Part of the Family feature pack") by clients that read it
+     * (kadeSoundBoothLink.js guideFor). `features` is the same map
+     * GET /api/kade/features answers. */
+    guide: require('./kadeSoundBoothLink').guideFor(GUIDE, req.user, boothFeatures),
+    features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
       seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: SEED_USD_PER_MIN },

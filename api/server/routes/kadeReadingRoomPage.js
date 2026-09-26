@@ -111,7 +111,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 <body>
   <p><a class="back" href="/home" aria-label="Back to Home">&larr; Home</a></p>
   <h1 id="pageTitle">The Library</h1>
-  <p id="familyLibraryNotice" hidden>Your own uploads are here. The family's shared collection is only for family members Kade has approved. Ask Kade if you should have it.</p>
+  <p id="familyLibraryNotice" hidden>Your own uploads are here. The family's shared collection is part of the Family feature pack, which Kade turns on for family members. Ask Kade if you should have it.</p>
   <p id="live" class="status" role="status" aria-live="polite"></p>
   <section aria-labelledby="librarianHeading" style="padding:1rem;border:1px solid #8a919c;border-radius:14px;margin-bottom:1rem">
     <h2 id="librarianHeading">Meet Mrs. Witherspoon</h2>
@@ -359,7 +359,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
 <script src="/assets/library/requests.js?v=20260924b"></script>
 <script src="/assets/library/reader.js?v=20260924"></script>
-<script src="/assets/library/access.js?v=20260924"></script>
+<script src="/assets/library/access.js?v=20260925"></script>
 <script>
 (function(){
   var token = null;

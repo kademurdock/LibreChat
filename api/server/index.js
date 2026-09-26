@@ -331,6 +331,8 @@ const startServer = async () => {
   // Part 181 (Sep 11 2026): the Reading Room — books read by a voice, and the family media library.
   app.use('/api/kade/reading-room', routes.kadeReadingRoom);
   app.use('/api/kade/titles', routes.kadeTitles);
+  // Part 293 (Sep 25 2026): the Family feature pack map, per person.
+  app.use('/api/kade/features', require('./routes/kadeFeatures'));
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);

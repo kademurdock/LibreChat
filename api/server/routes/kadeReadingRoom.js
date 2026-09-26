@@ -366,10 +366,11 @@ async function settleTrustedSubmissions(req, bookIds) {
   refreshLibrarianDigest({ create: false });
 }
 /* Family library access, owner only (Sep 24 2026). The Library page's
- * "Family library access" section (client/public/assets/library/access.js). */
+ * "Family feature pack" section (client/public/assets/library/access.js):
+ * since Part 293 the same permission is the Family feature pack. */
 router.use('/membership', express.json({ limit: '2kb' }), require('@librechat/api').libraryMembershipRouter({
   auth: requireJwtAuth,
-  owner: (req, res, next) => (isAdmin(req) ? next() : res.status(403).json({ error: 'Only the library owner manages family access.' })),
+  owner: (req, res, next) => (isAdmin(req) ? next() : res.status(403).json({ error: 'Only the library owner manages the Family feature pack.' })),
   accounts: async () => {
     const { User } = require('~/db/models');
     return User.find({}, '_id name username email role kadeLibraryAccess').limit(2000).lean();

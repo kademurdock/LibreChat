@@ -7,6 +7,7 @@ const {
   registerShutdownTask,
   createDescriptionRouter,
   createDescriptionWallet,
+  familyFeatures,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -319,6 +320,9 @@ const { router, close } = createDescriptionRouter({
     }),
   notify,
   library,
+  /* Part 293: the Family feature pack map. The YouTube link import joins the pack only while
+   * KADE_FAMILY_PACK_LINKS is '1' (the submitted iPhone 2.2.0 promises the demo account can use it). */
+  features: (req) => familyFeatures(req.user),
 });
 /* A redeploy stops the process: running work is marked to continue from its saved sections. */
 registerShutdownTask('described video', close);

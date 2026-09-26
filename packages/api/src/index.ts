@@ -205,8 +205,27 @@ export {
   trustedApprovalNote,
 } from './library/access';
 export { libraryToolDescription, libraryToolSchema } from './tools/registry/library';
+/* Part 293: the Family feature pack, on the Library's family permission. */
+export {
+  familyPack,
+  familyFeatures,
+  familyFeaturesView,
+  familyFeaturesRouter,
+  familyPackLinksGated,
+  FAMILY_PACK_NAME,
+  FAMILY_PACK_NOTE,
+  FAMILY_PACK_REFUSAL,
+} from './family/pack';
+export type { FamilyFeatures, FamilyFeaturesView } from './family/pack';
 
 export { createDescriptionRouter } from './description/router';
 export { describedVideoPage } from './description/page';
+/* Part 293: the describer's yt-dlp ladder, sound only, for the Sound Booth's YuE2 covers. */
+export { youtubeAudio, readYouTubeLink, YouTubeAudioError } from './description/youtube';
+export type { YouTubeAudio, YouTubeAudioKind, YouTubeLink } from './description/youtube';
+/* Part 293: a media link from YouTube, other big media sites (allowlisted yt-dlp extractors) or a
+ * direct audio/video file (SSRF-guarded fetch), for the same covers. */
+export { readMediaLink, mediaAudio, SITE_EXTRACTORS } from './description/links';
+export type { MediaAudio, MediaLink, MediaLinkFound, MediaSite } from './description/links';
 
 export { createDescriptionWallet } from './description/wallet';

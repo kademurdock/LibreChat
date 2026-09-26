@@ -387,11 +387,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
            * her ask: hearing what is attached is the only way to know. */
           var accept = (state.engine==='seed'||state.engine==='yue2') ? '.wav,.mp3,.m4a,.ogg,audio/*' : '.wav,.mp3,.m4a,audio/*';
           var list = state.clips.slice(0, s.max).map(function(c,i){
-            return '<li>'+(s.max>1?'@Audio'+(i+1)+': ':'')+esc(c.name)+
+            var covering = state.engine==='yue2' && s.max===1;
+            return '<li>'+(s.max>1?'@Audio'+(i+1)+': ':covering?'Covering: ':'')+esc(c.name)+(covering&&c.seconds?' ('+clock(c.seconds)+')':'')+
               '<audio controls preload="none" aria-label="Play the imported clip, '+esc(c.name)+'"><source src="'+esc(c.url)+'"></audio>'+
               '<button type="button" class="act quiet" data-rmclip="'+i+'">Remove '+esc(c.name)+'</button></li>';
           }).join('');
-          return head+'<input type="file" id="'+id+'" accept="'+accept+'" aria-describedby="'+id+'_h"'+(state.importing || state.rendering || state.jobId || state.clips.length>=s.max?' disabled':'')+'><ul class="clips">'+list+'</ul>';
+          return head+'<input type="file" id="'+id+'" accept="'+accept+'" aria-describedby="'+id+'_h"'+(state.importing || state.rendering || state.jobId || state.clips.length>=s.max?' disabled':'')+'>'+linkField(s,id)+'<ul class="clips">'+list+'</ul>';
         }
         return '';
       }).join('');
@@ -425,6 +426,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       Array.prototype.forEach.call(box.querySelectorAll('input[type=file]'), function(el){
         el.onchange = function(){ if(el.files && el.files[0]) importClip(el.files[0]); };
       });
+      var linkBox = document.getElementById('set_reference_voice_url_link');
+      if(linkBox){
+        linkBox.oninput = function(){ state.linkDraft = linkBox.value; };
+        linkBox.onkeydown = function(e){ if(e.key==='Enter'){ e.preventDefault(); importLink(); } };
+        document.getElementById('btnLinkImport').onclick = importLink;
+      }
       Array.prototype.forEach.call(box.querySelectorAll('[data-rmclip]'), function(btn){
         btn.onclick = function(){ if(busy())return; invalidateQuote();state.clips.splice(parseInt(btn.dataset.rmclip,10),1); say('Clip removed.'); renderSettings(); };
       });
@@ -454,10 +461,62 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         var r = await fetch('/api/kade/sound-booth/reference', {method:'POST', headers:{'Authorization':'Bearer '+token}, body:fd, signal:AbortSignal.timeout(240000)});
         var j = null; try { j = await r.json(); } catch(e) {}
         if(!r.ok || !j || !j.url)throw new Error((j&&j.error)||'That clip could not be imported.');
-        state.clips.push({url:j.url, name:j.name||file.name});
+        state.clips.push({url:j.url, name:j.name||file.name, seconds:j.seconds||null});
         say((j.spoken||'Clip imported.') + (state.engine==='seed' ? ' It is @Audio'+state.clips.length+'.' : ''));
       } catch(e){state.importError=e.message||'Could not import that clip.';say(state.importError,true);}
       finally {state.importing=false;invalidateQuote();renderSettings();}
+    }
+
+    /* Part 293: a media link (YouTube and other sites, or a direct audio file)
+     * for a YuE2 cover. The field exists when the server's guide gives the cover
+     * setting a link (usable) or a lockedLink. Without the Family feature
+     * pack the guide sends only lockedLink and the field is GREYED OUT, never
+     * hidden: the label, a disabled box and button, and a visible note ("Part of
+     * the Family feature pack...") that both controls name as their description.
+     * With the pack the
+     * server brings in the sound and answers exactly as a file import does, plus
+     * the song's title, length and site. Every result is said in the status line,
+     * and focus stays on the import button while it works, returns to the link
+     * after a failure, and moves to Transcribe reference lyrics after a success. */
+    function clock(seconds){ var t=Math.round(Number(seconds)||0); var ss=t%60; return Math.floor(t/60)+':'+(ss<10?'0':'')+ss; }
+    function focusById(id){ var el=document.getElementById(id); if(el) el.focus(); }
+    function linkField(s, id){
+      var locked=!s.link||s.link.available===false, field=s.link||s.lockedLink;
+      if(!field || state.clips.length>=s.max) return '';
+      var lid=id+'_link', off=(state.rendering||state.jobId)?' disabled':'', working=state.importing&&state.linkImporting;
+      if(locked){
+        return '<label class="field" for="'+lid+'">'+esc(field.label)+'</label><p class="hint locked" id="'+lid+'_lock">'+esc(lockedLinkNote(field))+'</p>'+
+          '<input type="text" inputmode="url" id="'+lid+'" autocomplete="off" disabled aria-describedby="'+lid+'_lock">'+
+          '<button type="button" class="act" id="btnLinkImport" disabled aria-describedby="'+lid+'_lock">'+esc(field.button)+'</button>';
+      }
+      return '<label class="field" for="'+lid+'">'+esc(s.link.label)+'</label><p class="hint" id="'+lid+'_h">'+esc(s.link.hint)+'</p>'+
+        '<input type="text" inputmode="url" id="'+lid+'" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://" aria-describedby="'+lid+'_h" value="'+esc(state.linkDraft||'')+'"'+(working?' readonly':'')+off+'>'+
+        '<button type="button" class="act" id="btnLinkImport"'+(working?' aria-disabled="true"':'')+off+'>'+(working?'Importing from the link…':esc(s.link.button))+'</button>';
+    }
+    function lockedLinkNote(field){ return ((field&&field.locked)||'Part of the Family feature pack')+'. Ask Kade to add it to your account.'; }
+    async function importLink(){
+      var box=document.getElementById('set_reference_voice_url_link');
+      var setting=state.guide.engines[state.engine].settings.filter(function(s){return s.kind==='clip'&&(s.link||s.lockedLink);})[0];
+      if(!box || !setting)return;
+      if(!setting.link || setting.link.available===false){say(lockedLinkNote(setting.link||setting.lockedLink),true);return;}
+      if(state.importing){say(state.linkImporting?'Still bringing in the song. This can take up to two minutes.':'Wait for the clip to finish importing.');return;}
+      if(busy()){say('Finish the current operation before importing a reference.',true);return;}
+      var link=box.value.trim();state.linkDraft=box.value;
+      if(!link){say('Paste a media link first.',true);box.focus();return;}
+      invalidateQuote();state.importError='';state.importing=true;state.linkImporting=true;renderSettings();focusById('btnLinkImport');
+      say('Bringing in the sound from the link. This can take up to two minutes.');
+      var r=await post(setting.link.path||'/api/kade/sound-booth/reference/link',{engine:state.engine,url:link});
+      state.importing=false;state.linkImporting=false;
+      if(!r.ok || !r.data || !r.data.url){
+        state.importError=r.status===0?'The connection dropped while the song was coming in. Try again.':(r.data&&r.data.error)||'The song could not be brought in from that link.';
+        invalidateQuote();renderSettings();say(state.importError,true);focusById('set_reference_voice_url_link');return;
+      }
+      var source=r.data.source||{};
+      state.linkDraft='';
+      state.clips.push({url:r.data.url,name:source.title||r.data.name||'Linked song',seconds:r.data.seconds||source.seconds||null});
+      invalidateQuote();renderSettings();
+      say(r.data.spoken||'Song imported from the link.');
+      focusById('btnLyrics');
     }
 
     function collect(){

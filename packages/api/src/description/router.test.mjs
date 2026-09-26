@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { S3Client } from '@aws-sdk/client-s3';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createDescriptionRouter } from './router.ts';
+import { familyFeatures } from '../family/pack.ts';
 import { describeVideo } from './engine.ts';
 import { createDescriptionWallet } from './wallet.ts';
 import { command, decodeVoice } from './media.ts';
@@ -346,6 +347,9 @@ before(async () => {
       child: req.headers['x-child'] === '1',
     }),
     storage: () => storage,
+    /* The real Family feature pack rule: x-pack: no is an account made after the family cutoff. */
+    features: (req) =>
+      familyFeatures(req.headers['x-pack'] === 'no' ? { id: '6b0000000000000000000000' } : { id: String(req.headers['x-user']), role: 'ADMIN' }),
     log: (message) => logLines.push(message),
     usage: async (owner, job, kind, costUSD) => {
       usageLog.push({ owner, job, kind, costUSD });
@@ -1201,6 +1205,46 @@ test('YouTube and library imports: idempotent, privacy and catalog facts kept, s
   await call('post', `/jobs/${library.body.id}/cancel`, 'youtube-owner').expect(200);
   await call('delete', `/jobs/${library.body.id}`, 'youtube-owner').expect(200);
   await call('delete', `/jobs/${first.body.id}`, 'youtube-owner').expect(200);
+});
+
+test('Family feature pack: the link import joins the pack only while KADE_FAMILY_PACK_LINKS is 1, and is greyed out, never hidden', async () => {
+  const saved = process.env.KADE_FAMILY_PACK_LINKS;
+  try {
+    delete process.env.KADE_FAMILY_PACK_LINKS;
+    let config = (await call('get', '/config', 'pack-out').set('x-pack', 'no').expect(200)).body;
+    assert.deepEqual(config.linkImport, { available: true }, 'switch off: the demo account keeps link imports');
+    assert.equal(config.features.describerLinks, true);
+    assert.equal(config.features.mediaLinks, false, 'the booth downloader is the pack\'s either way');
+    const open = await call('post', '/imports', 'pack-out').set('x-pack', 'no')
+      .send({ requestId: 'pack-import-000001', url: 'http://127.0.0.1/admin' })
+      .expect(400);
+    assert.equal(open.body.field, 'url', 'the gate let it through to the usual link check');
+
+    process.env.KADE_FAMILY_PACK_LINKS = '1';
+    config = (await call('get', '/config', 'pack-out').set('x-pack', 'no').expect(200)).body;
+    assert.deepEqual(config.linkImport, { available: false, locked: 'Part of the Family feature pack' });
+    assert.equal(config.features.describerLinks, false);
+    const prefs = (await call('get', '/prefs', 'pack-out').set('x-pack', 'no').expect(200)).body;
+    assert.deepEqual(prefs.linkImport, config.linkImport, 'the phone reads the same answer from /prefs');
+    assert.deepEqual(prefs.features, config.features);
+    const refused = await call('post', '/imports', 'pack-out').set('x-pack', 'no')
+      .send({ requestId: 'pack-import-000002', url: 'https://youtu.be/aqz-KE-bpKQ' })
+      .expect(403);
+    assert.deepEqual(refused.body, {
+      error: 'Media links are part of the Family feature pack. Ask Kade to add it to your account.',
+      field: 'url',
+    });
+    assert.equal(await Jobs.countDocuments({ owner: 'pack-out' }), 0, 'nothing was queued');
+    const member = (await call('get', '/config', 'pack-in').expect(200)).body;
+    assert.deepEqual(member.linkImport, { available: true });
+    assert.equal(member.features.describerLinks, true);
+    await call('post', '/imports', 'pack-in')
+      .send({ requestId: 'pack-import-000003', url: 'http://127.0.0.1/admin' })
+      .expect(400);
+  } finally {
+    if (saved === undefined) delete process.env.KADE_FAMILY_PACK_LINKS;
+    else process.env.KADE_FAMILY_PACK_LINKS = saved;
+  }
 });
 
 test('the free check reads a big file only at both ends, keeps a rename, and can be tried again after a storage fault', async () => {
