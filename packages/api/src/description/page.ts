@@ -830,7 +830,10 @@ export const descriptionBrowserScript: string = String.raw`
     ['video','audio'].forEach(function(name){var el=$(name);el.onloadedmetadata=function(){if(resumeAt&&el===media())el.currentTime=Math.min(resumeAt,el.duration||resumeAt);el.playbackRate=Number($('playback-rate').value);if(resumePlay&&el===media())el.play().catch(function(){});};});
     $('video').src=result.video;$('audio').src=result.audio;
     ['video','audio','transcript','captions','descriptions','script'].forEach(function(kind){var link=$(kind+'-download');link.hidden=!result[kind+'Download'];if(result[kind+'Download'])link.href=result[kind+'Download'];});
-    ['descriptions','captions'].forEach(function(kind,index){if(!texts[index])return;var url=URL.createObjectURL(new Blob([texts[index]],{type:'text/vtt'}));trackUrls.push(url);var track=document.createElement('track');track.kind=kind;track.label=kind==='descriptions'?'Audio descriptions':'Dialogue captions';track.srclang='en';track.src=url;$('video').appendChild(track);if(track.track)track.track.mode='hidden';});
+    /* Only the dialogue captions become a track. The description text is never given to the video:
+     * Safari speaks a "descriptions" track on its own when a phone has Audio Descriptions turned on,
+     * over the narrator who already says it. The description buttons read the page's own copy (cues). */
+    if(texts[1]){var url=URL.createObjectURL(new Blob([texts[1]],{type:'text/vtt'}));trackUrls.push(url);var track=document.createElement('track');track.kind='captions';track.label='Dialogue captions';track.srclang='en';track.src=url;$('video').appendChild(track);if(track.track)track.track.mode='hidden';}
     cues=parseVtt(texts[0]);captionCues=parseVtt(texts[1]);captionShown='';showCaption();renderTranscript(texts[2]);
     $('results').hidden=false;$('skip').hidden=false;loadedFiles=id+'/'+version;
     $('library-save-box').hidden=!config.library;
@@ -1512,17 +1515,36 @@ export const descriptionBrowserScript: string = String.raw`
   /* Sep 25 2026 (Part 291), her word: captions are welcome, but VoiceOver read them over the film.
    * The browser's own caption rendering is what a screen reader's media-descriptions feature reads,
    * so every text track stays 'hidden' (its cues still load) and the page draws the current caption
-   * itself in #dv-caption, aria-hidden unless she ticks Read the captions aloud. A track a sighted
-   * person turns on from the player's own menu after the first play is left alone. */
+   * itself in #dv-caption, aria-hidden unless she ticks Read the captions aloud. With that ticked, a
+   * track a sighted person turns on from the player's own menu after the first play is left alone. */
   function quietTracks(){var list=$('video').textTracks;if(!list)return;for(var i=0;i<list.length;i++)if(list[i].mode==='showing')list[i].mode='hidden';}
+  /* Sep 26 2026 (Part 295), her word: it still happened, on a Road Runner cartoon with no dialogue.
+   * The page's own track was quiet; the browser's copies of the MP4's text tracks were not. Safari
+   * lists those itself once the file loads and can turn one on from the phone's captioning settings
+   * whenever it is ready, which can be after the first play or on going full screen, and nothing
+   * turned it off again. So while Read the captions aloud is off, any track that comes on is put
+   * back to hidden at every chance: each change, every play, full screen in and out, and while it
+   * plays. The page also sets each track's mode once itself; Safari takes that as the page's choice
+   * and stops picking captions for that track on its own. Description text is never shown or spoken
+   * by the browser, ticked or not: the narrator already says it. Sighted viewers still see #dv-caption. */
+  function descriptionTrack(t){return t.kind==='descriptions'||/^audio descriptions/i.test(t.label||'');}
+  function guardTracks(){
+    var list=$('video').textTracks,reading=$('read-captions').checked;if(!list)return;
+    for(var i=0;i<list.length;i++){var t=list[i],words=descriptionTrack(t);if(reading&&!words)continue;
+      if(!t.kadeSet){t.kadeSet=true;if(t.mode==='disabled')t.mode='hidden';}
+      if(words){if(t.mode!=='disabled')t.mode='disabled';}else if(t.mode==='showing')t.mode='hidden';}
+  }
   function showCaption(){var m=$('video'),now=m.currentTime,text='';if(!m.hidden)for(var i=0;i<captionCues.length;i++){var c=captionCues[i];if(c.at>now)break;if(now<c.end)text=c.text;}if(text===captionShown)return;captionShown=text;$('caption').textContent=text;}
   function captionVoice(){var box=$('caption');if($('read-captions').checked){box.removeAttribute('aria-hidden');box.setAttribute('aria-live','polite');}else{box.removeAttribute('aria-live');box.setAttribute('aria-hidden','true');}}
   $('video').addEventListener('timeupdate',showCaption);$('video').addEventListener('seeked',showCaption);
   $('video').addEventListener('loadedmetadata',quietTracks);
   $('video').addEventListener('play',function(){if(tracksArmed){tracksArmed=false;quietTracks();}});
   if($('video').textTracks&&$('video').textTracks.addEventListener)$('video').textTracks.addEventListener('addtrack',function(){if(tracksArmed)setTimeout(quietTracks,0);});
+  ['play','loadedmetadata','loadeddata','timeupdate','webkitbeginfullscreen','webkitendfullscreen','webkitpresentationmodechanged'].forEach(function(type){$('video').addEventListener(type,guardTracks);});
+  ['fullscreenchange','webkitfullscreenchange'].forEach(function(type){document.addEventListener(type,guardTracks);});
+  if($('video').textTracks&&$('video').textTracks.addEventListener){$('video').textTracks.addEventListener('change',guardTracks);$('video').textTracks.addEventListener('addtrack',function(){guardTracks();setTimeout(guardTracks,0);});}
   $('read-captions').checked=stored(READ_CAPTIONS_KEY,false)===true;captionVoice();
-  $('read-captions').onchange=function(){store(READ_CAPTIONS_KEY,this.checked);captionVoice();};
+  $('read-captions').onchange=function(){store(READ_CAPTIONS_KEY,this.checked);captionVoice();guardTracks();};
   function seek(step){var m=media();m.currentTime=Math.max(0,Math.min(m.duration||0,m.currentTime+step));say('At '+clock(m.currentTime)+'.',true);}
   $('play').onclick=function(){var m=media();if(m.paused)m.play().catch(function(){failure(new Error('Playback could not start. Try the other player, or download the copy.'));});else m.pause();};
   $('back').onclick=function(){seek(-10);};$('forward').onclick=function(){seek(10);};
