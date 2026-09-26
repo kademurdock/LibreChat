@@ -89,6 +89,19 @@ test('the App Review seat never sees the family library, whatever is set', () =>
     assert.equal(familyLibraryMember({ id: VISCHECK }), false, 'the review seat is hidden even when the list changes');
     assert.equal(familyLibraryMember({ id: AMBER_A }), true);
   });
+  /* Every App Review seat kadeFunding.isReviewSeat names (KADE_APP_REVIEW_USER_IDS) is one too,
+   * so the Library and the Family feature pack keep one rule for review seats. */
+  withEnv({ KADE_LIBRARY_HIDDEN_FROM: undefined, KADE_APP_REVIEW_USER_IDS: `${VISCHECK}, ${EARLY.toUpperCase()}` }, () => {
+    assert.equal(libraryReviewSeat({ id: EARLY }), true);
+    assert.equal(familyLibraryMember({ id: EARLY, kadeLibraryAccess: 'family' }), false);
+    const view = familyLibraryAccountView({ id: EARLY, name: 'Second reviewer' });
+    assert.equal(view.changeable, false);
+    assert.match(view.status, /^App Review and screenshot account\. Always kept out of the Family feature pack\.$/);
+    assert.equal(familyLibraryMember({ id: AMBER_A }), true);
+  });
+  withEnv({ KADE_LIBRARY_HIDDEN_FROM: undefined, KADE_APP_REVIEW_USER_IDS: undefined }, () => {
+    assert.equal(libraryReviewSeat({ id: EARLY }), false, 'unlisted, the same account is an ordinary one');
+  });
 });
 
 test('test seats start without family access; Kade can still grant one on purpose', () => {

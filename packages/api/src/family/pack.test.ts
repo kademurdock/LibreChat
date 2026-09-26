@@ -7,7 +7,7 @@ import { after, before, test } from 'node:test';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import express from 'express';
-import { FAMILY_LIBRARY_CUTOFF, familyLibraryMember } from '../library/access';
+import { FAMILY_LIBRARY_CUTOFF, familyLibraryMember, libraryReviewSeat } from '../library/access';
 import type { LibraryAccount } from '../library/access';
 import {
   FAMILY_PACK_NAME,
@@ -70,7 +70,7 @@ const table: Row[] = [
 ];
 
 test('truth table: the pack is exactly the Library family permission', () => {
-  withEnv({ KADE_LIBRARY_HIDDEN_FROM: undefined, NOTIFY_TEST_USER_IDS: undefined }, () => {
+  withEnv({ KADE_LIBRARY_HIDDEN_FROM: undefined, NOTIFY_TEST_USER_IDS: undefined, KADE_APP_REVIEW_USER_IDS: undefined }, () => {
     for (const row of table) {
       assert.equal(familyPack(row.user), row.pack, row.who);
       assert.equal(familyPack(row.user), familyLibraryMember(row.user), `${row.who}: not a fork of the rule`);
@@ -79,7 +79,7 @@ test('truth table: the pack is exactly the Library family permission', () => {
 });
 
 test('truth table: media links and the family library follow the pack whatever the switch says', () => {
-  withEnv({ KADE_LIBRARY_HIDDEN_FROM: undefined, NOTIFY_TEST_USER_IDS: undefined }, () => {
+  withEnv({ KADE_LIBRARY_HIDDEN_FROM: undefined, NOTIFY_TEST_USER_IDS: undefined, KADE_APP_REVIEW_USER_IDS: undefined }, () => {
     for (const env of [OFF, ON]) {
       for (const row of table) {
         const map = familyFeatures(row.user, env);
@@ -91,7 +91,7 @@ test('truth table: media links and the family library follow the pack whatever t
 });
 
 test('truth table: describer and jukebox links join the pack only when KADE_FAMILY_PACK_LINKS is exactly 1', () => {
-  withEnv({ KADE_LIBRARY_HIDDEN_FROM: undefined, NOTIFY_TEST_USER_IDS: undefined }, () => {
+  withEnv({ KADE_LIBRARY_HIDDEN_FROM: undefined, NOTIFY_TEST_USER_IDS: undefined, KADE_APP_REVIEW_USER_IDS: undefined }, () => {
     for (const row of table) {
       const off = familyFeatures(row.user, OFF);
       const on = familyFeatures(row.user, ON);
@@ -106,6 +106,26 @@ test('truth table: describer and jukebox links join the pack only when KADE_FAMI
     }
     assert.equal(familyPackLinksGated(ON), true);
     assert.equal(familyPackLinksGated(OFF), false);
+  });
+});
+
+test('a second App Review or demo seat listed only in KADE_APP_REVIEW_USER_IDS never gets the pack, even made before the cutoff', () => {
+  const base = { KADE_LIBRARY_HIDDEN_FROM: undefined, NOTIFY_TEST_USER_IDS: undefined };
+  withEnv({ ...base, KADE_APP_REVIEW_USER_IDS: undefined }, () => {
+    assert.equal(familyPack({ id: EARLY }), true, 'unlisted, this early account is family');
+  });
+  /* The list kadeFunding.isReviewSeat reads: split on commas, trimmed, any case. */
+  withEnv({ ...base, KADE_APP_REVIEW_USER_IDS: ` ${VISCHECK} ,${EARLY.toUpperCase()} ` }, () => {
+    for (const user of [{ id: EARLY }, { id: EARLY, kadeLibraryAccess: 'family' }, { _id: { toString: () => EARLY } }]) {
+      assert.equal(libraryReviewSeat(user), true, 'one rule for the Library and the pack');
+      assert.equal(familyPack(user), false, 'no pack, not even when granted');
+      assert.equal(familyLibraryMember(user), false, 'and no family shelves');
+      for (const env of [OFF, ON]) assert.equal(familyFeatures(user, env).mediaLinks, false, 'the downloader stays shut');
+    }
+    assert.deepEqual(familyFeatures({ id: EARLY }, ON), { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false });
+    assert.equal(familyPack({ id: VISCHECK }), false);
+    assert.equal(familyPack({ id: AMBER_A }), true, 'everyone else is unchanged');
+    assert.equal(familyPack({ id: BOB, role: 'ADMIN' }), true);
   });
 });
 

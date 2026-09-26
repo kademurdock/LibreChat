@@ -71,11 +71,17 @@ function listFromEnv(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-/** Accounts that must always see an empty family library: the review seat and anything named in
- * KADE_LIBRARY_HIDDEN_FROM (emails or ids; default the vischeck seat's email). */
+/** Accounts that must always see an empty family library and never get the Family feature pack:
+ * the review seat, anything named in KADE_LIBRARY_HIDDEN_FROM (emails or ids; default the
+ * vischeck seat's email), and every App Review seat id in KADE_APP_REVIEW_USER_IDS, the list
+ * kadeFunding.isReviewSeat reads. (Review of Sep 25: the Sound Booth's link gate used to refuse
+ * that list, and the pack must not reopen the downloader to a second review or demo seat.) */
 export function libraryReviewSeat(user: LibraryAccount | null | undefined): boolean {
   if (!user) return false;
-  const hidden = listFromEnv(process.env.KADE_LIBRARY_HIDDEN_FROM || 'kadeai.vischeck722@gmail.com');
+  const hidden = [
+    ...listFromEnv(process.env.KADE_LIBRARY_HIDDEN_FROM || 'kadeai.vischeck722@gmail.com'),
+    ...listFromEnv(process.env.KADE_APP_REVIEW_USER_IDS),
+  ];
   const id = accountId(user);
   const email = String(user.email || '').toLowerCase();
   return id === REVIEW_SEAT || (!!id && hidden.includes(id)) || (!!email && hidden.includes(email));
