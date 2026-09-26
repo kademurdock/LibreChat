@@ -61,6 +61,7 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
     if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
     if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay' || name === './kadeSoundBoothPaste' || name === './kadeSoundBoothCarry') return localRequire(name);
+    if (name === './kadeSoundBoothLink') return { createReferenceLinkRouter: () => (_req, _res, next) => next && next(), guideFor: guide => guide };
     return {};
   } };
   vm.runInNewContext(readFileSync(url, 'utf8'), context);
@@ -151,6 +152,7 @@ test('real script route accounts for the shortening call as well as the first dr
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
     if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
     if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay' || name === './kadeSoundBoothPaste' || name === './kadeSoundBoothCarry') return localRequire(name);
+    if (name === './kadeSoundBoothLink') return { createReferenceLinkRouter: () => (_req, _res, next) => next && next(), guideFor: guide => guide };
     return {};
   } };
   vm.runInNewContext(readFileSync(url, 'utf8'), context);
@@ -228,6 +230,7 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
     if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
     if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay' || name === './kadeSoundBoothPaste' || name === './kadeSoundBoothCarry') return localRequire(name);
+    if (name === './kadeSoundBoothLink') return { createReferenceLinkRouter: () => (_req, _res, next) => next && next(), guideFor: guide => guide };
     return {};
   } };
   vm.runInNewContext(readFileSync(url, 'utf8'), context);
@@ -556,6 +559,7 @@ test('Part 293: Surprise me keeps every pitch clean for a clean audience and is 
     if (name === '~/models/kadeUsage') return { logKadeUsage: async () => {}, KadeUsage: { find: () => ({ sort: () => ({ limit: () => ({ select: () => ({ lean: async () => [] }) }) }) }) } };
     if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
     if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay' || name === './kadeSoundBoothPaste' || name === './kadeSoundBoothCarry') return createRequire(url)(name);
+    if (name === './kadeSoundBoothLink') return { createReferenceLinkRouter: () => (_req, _res, next) => next && next(), guideFor: guide => guide };
     return {};
   } };
   vm.runInNewContext(readFileSync(url, 'utf8'), context);
@@ -592,6 +596,7 @@ function loadBooth({ reply, api = {}, middleware, jev } = {}) {
     if (name === '~/server/middleware' && middleware) return middleware;
     if (name === '~/server/services/kadeJevJudges' && jev) return jev;
     if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay' || name === './kadeSoundBoothPaste' || name === './kadeSoundBoothCarry') return localRequire(name);
+    if (name === './kadeSoundBoothLink') return { createReferenceLinkRouter: () => (_req, _res, next) => next && next(), guideFor: guide => guide };
     return {};
   } };
   vm.runInNewContext(readFileSync(url, 'utf8'), context);
