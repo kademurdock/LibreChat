@@ -59,14 +59,17 @@ export function speakable(value: string): string {
 
 /**
  * Well-known names whose written initial the voices misread, and the word they say right in its
- * place. A name changes only before its surname, a lowercase word or a comma, so "Wile E.
- * Coyote's" is said "Wiley Coyote's" while a sentence that ends on the initial keeps its stop.
+ * place. Each pattern captures the initial's full stop, then looks (without taking it) for what
+ * shows the sentence carries on: the surname, a lowercase word, a possessive or other punctuation.
+ * When nothing does, that stop also ends the sentence and is kept, so "Wile E. Coyote's" is said
+ * "Wiley Coyote's", "Wile E.'s" is said "Wiley's" and "passes Wile E." is said "passes Wiley.".
  */
 const sayAs: { written: RegExp; spoken: string }[] = [
   // Sep 26 Road Runner job: the narrator stretched "Wile E." into "wile-EEEE"; he is "Wiley".
+  // The short name "Wile E." alone is him too, so it changes wherever it stands.
   {
     written:
-      /(?<![\p{L}\p{N}])(?:Wile|WILE)\s+E\.?(?=\s+(?:Coyote|COYOTE)(?![\p{L}\p{N}])|\s+\p{Ll}|,)/gu,
+      /(?<![\p{L}\p{N}])(?:Wile|WILE)\s+E(\.|(?!\.))(?![\p{L}\p{N}])(?=(\s+(?:Coyote|COYOTE)(?![\p{L}\p{N}])|\s+\p{Ll}|['’][sS](?![\p{L}\p{N}])|[,;:?!)\]–—])?)/gu,
     spoken: 'Wiley',
   },
 ];
@@ -86,9 +89,10 @@ const initialInName = /(?<![\p{L}\p{N}.])(\p{L})\.(?=\s)/gu;
 export function spokenForm(text: string, names: readonly string[] = []): string {
   let said = text;
   for (const { written, spoken } of sayAs)
-    said = said.replace(written, (found) =>
-      found === found.toUpperCase() ? spoken.toUpperCase() : spoken,
-    );
+    said = said.replace(written, (found: string, stop: string, carriesOn?: string) => {
+      const word = found === found.toUpperCase() ? spoken.toUpperCase() : spoken;
+      return carriesOn === undefined ? word + stop : word;
+    });
   const initialled = [...new Set(names.map((name) => name.replace(/\s+/g, ' ').trim()))]
     .filter((name) => innerInitial.test(name))
     .sort((a, b) => b.length - a.length);

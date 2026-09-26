@@ -810,7 +810,26 @@ test('prompt: the narrator says Wiley Coyote and ledger initials without a full 
   assert.equal(spokenForm("Wile E. Coyote's rocket sputters."), "Wiley Coyote's rocket sputters.", 'a possessive keeps its ending');
   assert.equal(spokenForm('A card reads WILE E. COYOTE, GENIUS.'), 'A card reads WILEY COYOTE, GENIUS.');
   assert.equal(spokenForm('Wile E Coyote waves. Wile E. grins, then Wile E., hungry, sits.'), 'Wiley Coyote waves. Wiley grins, then Wiley, hungry, sits.');
-  assert.equal(spokenForm('The sign reads Wile E. Then he runs.'), 'The sign reads Wile E. Then he runs.', 'a sentence ending on the initial keeps its stop');
+  assert.equal(spokenForm('The sign reads Wile E. Then he runs.'), 'The sign reads Wiley. Then he runs.', 'a sentence ending on the initial keeps its stop');
+  // The short name the Road Runner job's own looks used, wherever it stands.
+  for (const [written, said] of [
+    ['The Road Runner zips past Wile E.', 'The Road Runner zips past Wiley.'],
+    ["Wile E.'s rocket sputters.", "Wiley's rocket sputters."],
+    ['Wile E.’s rocket sputters.', 'Wiley’s rocket sputters.'],
+    ["WILE E.'S ROCKET", "WILEY'S ROCKET"],
+    ['A rock lands on Wile E. The Road Runner beeps.', 'A rock lands on Wiley. The Road Runner beeps.'],
+    ['Wile E.? No. Wile E.! Yes.', 'Wiley? No. Wiley! Yes.'],
+    ['The mouse (and Wile E.) waits.', 'The mouse (and Wiley) waits.'],
+    ['A card reads "Wile E." in red.', 'A card reads "Wiley." in red.'],
+    ['Wile E... waits.', 'Wiley... waits.'],
+    ['Wile E — the genius — waits.', 'Wiley — the genius — waits.'],
+  ]) {
+    assert.equal(spokenForm(written), said, written);
+    assert.equal(spokenForm(said), said, `${said} is already said`);
+  }
+  for (const text of ['Wile Easy grins.', 'A tag reads WILE E.T.', 'Wile E.Coyote', 'Mr. Wile E3 waits.']) {
+    assert.equal(spokenForm(text), text, 'not the short name');
+  }
   const ledger = ['John F. Kennedy', 'the senator', 'J. R. R. Tolkien', 'Chuck E. Cheese', 'the Chuck E. Cheese mascot', ''];
   assert.equal(
     spokenForm('John F. Kennedy waves. The crowd cheers for John F. Kennedy.', ledger),
