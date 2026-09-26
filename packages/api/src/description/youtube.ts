@@ -9,8 +9,7 @@ import { command, ffmpeg } from './media';
 
 /** One YouTube video as its id and plain watch link, or why the text is not one. */
 export type YouTubeLink =
-  | { id: string; url: string }
-  | { problem: 'not-link' | 'not-youtube' | 'not-video' };
+  { id: string; url: string } | { problem: 'not-link' | 'not-youtube' | 'not-video' };
 
 const youtubeHosts = [
   'youtube.com',
