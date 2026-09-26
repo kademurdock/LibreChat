@@ -1,10 +1,13 @@
-/* Part 293: the Sound Booth's YouTube link for a YuE2 cover.
+/* Part 293: the Sound Booth's media link for a YuE2 cover (YouTube, other big
+ * media sites, or a direct audio/video file), behind the Family feature pack.
  *
  * The file route and the link route run from the real kadeSoundBooth.js source
  * (the /reference region, sliced out and run with fakes for storage and the
  * duration probe, the way soundBoothReference.selftest.cjs does), so the test
- * holds them to the SAME answer shape. yt-dlp is never run: youtubeAudio is a
- * fake that answers the way packages/api description/youtube.ts does.
+ * holds them to the SAME answer shape. The real readMediaLink (packages/api
+ * description/links.ts) reads every pasted link; yt-dlp is never run:
+ * mediaAudio is a fake that answers the way links.ts does, except in the
+ * six-minute test, which runs the real chain with a fake yt-dlp.
  *
  * Run: node --test api/server/routes/kadeSoundBoothLink.nodetest.js
  */
@@ -16,6 +19,10 @@ const path = require('node:path');
 const vm = require('node:vm');
 const Module = require('node:module');
 const link = require('./kadeSoundBoothLink');
+
+const tsx = require('tsx/cjs/api');
+const links = tsx.require('../../../packages/api/src/description/links.ts', __filename);
+const pack = tsx.require('../../../packages/api/src/family/pack.ts', __filename);
 
 /* ---------- the real musicReferenceError, compiled from lyrics.ts ---------- */
 function musicLyrics() {
@@ -59,7 +66,6 @@ function loadRoutes(fakes) {
       if (name === './kadeSoundBoothLink') {
         return { ...link, createReferenceLinkRouter: (deps) => { routes.linkDeps = deps; return 'link router'; } };
       }
-      if (name === '~/server/services/kadeFunding') return { isReviewSeat: fakes.isReviewSeat };
       if (name === '@librechat/api') return fakes.api;
       throw new Error('unexpected require ' + name);
     },
@@ -83,6 +89,7 @@ function fakeRes() {
   return res;
 }
 
+
 class FakeYouTubeError extends Error {
   constructor(kind, seconds) {
     super('detail for the log: ' + kind);
@@ -91,7 +98,10 @@ class FakeYouTubeError extends Error {
   }
 }
 
-/** A fresh world: fake storage, a fake YouTube, and the routes wired to them. */
+const VISCHECK = '6a6125d73939d20b95251078'; // the App Review seat
+const BOB = '6b0000000000000000000000'; // an account made long after the family cutoff
+
+/** A fresh world: fake storage, a fake downloader, the real link reader, and the routes wired to them. */
 function world(overrides = {}) {
   const w = {
     logs: [],
@@ -99,8 +109,11 @@ function world(overrides = {}) {
     registered: [],
     downloads: [],
     seconds: 192.4,
-    reviewSeat: false,
-    download: async () => ({ buffer: Buffer.alloc(4096, 1), title: 'Sunny Day (Official Audio)', seconds: 192, uploader: 'Some Band', id: 'dQw4w9WgXcQ', link: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }),
+    pack: true,
+    download: async (found) => ({
+      buffer: Buffer.alloc(4096, 1), title: 'Sunny Day (Official Audio)', seconds: 192, uploader: 'Some Band',
+      id: found.id, link: found.url, site: found.site, siteName: found.siteName,
+    }),
     ...overrides,
   };
   const logger = { info: (m) => w.logs.push(['info', m]), warn: (m) => w.logs.push(['warn', m]), error: (m) => w.logs.push(['error', String(m)]) };
@@ -109,14 +122,10 @@ function world(overrides = {}) {
     durationOf: async (buffer) => (w.durationOf ? w.durationOf(buffer) : w.seconds),
     saveBufferToS3: async ({ buffer, fileName }) => { w.stored.push({ buffer, fileName }); return 'https://assets.test/audios/' + fileName; },
     registerMusicReference: async (...args) => { w.registered.push(args); },
-    isReviewSeat: () => w.reviewSeat,
     api: {
-      readYouTubeLink: (text) => {
-        const m = /youtu\.?be(?:\.com)?\/(?:watch\?v=)?([\w-]{11})/.exec(text);
-        if (/vimeo/.test(text)) return { problem: 'not-youtube' };
-        return m ? { id: m[1], url: 'https://www.youtube.com/watch?v=' + m[1] } : { problem: 'not-link' };
-      },
-      youtubeAudio: async (url, options) => { w.downloads.push({ url, options }); return w.download(url, options); },
+      readMediaLink: links.readMediaLink,
+      mediaAudio: async (found, options) => { w.downloads.push({ link: found, options }); return w.download(found, options); },
+      familyFeatures: (user) => (w.features ? w.features(user) : { mediaLinks: w.pack, describerLinks: true, jukeboxLinks: true, familyLibrary: w.pack }),
     },
   });
   w.state = { cap: overrides.cap || link.dailyCap(20, () => '2026-09-25'), running: new Set() };
@@ -134,6 +143,8 @@ function world(overrides = {}) {
   return w;
 }
 
+const plain = (value) => JSON.parse(JSON.stringify(value)); // objects made inside the vm have its prototypes
+
 test('same shape: a YouTube link answers exactly like a file import, plus the title and length', async () => {
   const w = world();
   const file = await w.file();
@@ -145,7 +156,6 @@ test('same shape: a YouTube link answers exactly like a file import, plus the ti
   assert.equal(viaLink.body.ext, 'mp3');
   assert.equal(viaLink.body.name, 'Sunny Day (Official Audio)');
   assert.equal(viaLink.body.seconds, 192.4, 'measured the same way a file is');
-  const plain = (value) => JSON.parse(JSON.stringify(value)); // objects made inside the vm have its prototypes
   assert.deepEqual(plain(viaLink.body.source), { site: 'youtube', title: 'Sunny Day (Official Audio)', seconds: 192, link: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' });
   assert.match(viaLink.body.spoken, /^Covering Sunny Day \(Official Audio\), 3 minutes 12 seconds, from YouTube\. The full original is kept\. Choose Transcribe reference lyrics/);
   assert.match(file.body.spoken, /^Clip imported, 192\.4 seconds\./, 'the file import still says what it said');
@@ -155,11 +165,28 @@ test('same shape: a YouTube link answers exactly like a file import, plus the ti
   assert.equal(w.registered[0][3], null, 'a file import has no source');
   assert.deepEqual(plain(w.registered[1].slice(2)), [192.4, { site: 'youtube', title: 'Sunny Day (Official Audio)', seconds: 192, link: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', id: 'dQw4w9WgXcQ' }]);
   // The downloader got the plain link and the booth's limits.
-  assert.equal(w.downloads[0].url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.equal(w.downloads[0].link.url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.equal(w.downloads[0].link.site, 'youtube');
   assert.equal(w.downloads[0].options.maxSeconds, 360);
   assert.equal(w.downloads[0].options.maxBytes, 20 * 1024 * 1024);
   assert.ok(w.downloads[0].options.signal instanceof AbortSignal);
   assert.equal(w.state.running.size, 0);
+});
+
+test('media sites and direct files: the same shape, named with where the song came from', async () => {
+  const w = world();
+  const cloud = await w.link({ engine: 'yue2', url: 'https://soundcloud.com/some-band/sunny-day' });
+  assert.equal(cloud.statusCode, 200);
+  assert.deepEqual(plain(cloud.body.source), { site: 'soundcloud', title: 'Sunny Day (Official Audio)', seconds: 192, link: 'https://soundcloud.com/some-band/sunny-day' });
+  assert.match(cloud.body.spoken, /^Covering Sunny Day \(Official Audio\), 3 minutes 12 seconds, from SoundCloud\./);
+  const file = await w.link({ engine: 'yue2', url: 'https://cdn.example.com/music/sunny-day.mp3' });
+  assert.equal(file.statusCode, 200);
+  assert.equal(file.body.source.site, 'file');
+  assert.match(file.body.spoken, /, from the link\./);
+  assert.deepEqual(w.downloads.map((d) => d.link.kind), ['site', 'file']);
+  assert.equal(Object.keys(file.body).filter((key) => key !== 'source').join(), Object.keys(cloud.body).filter((key) => key !== 'source').join());
+  assert.equal(link.siteLabel('archive'), 'the Internet Archive');
+  assert.equal(link.siteLabel('something-new'), 'the link');
 });
 
 test('duration: the downloader refuses a long video before downloading, said like a long file', async () => {
@@ -175,6 +202,8 @@ test('duration: the downloader refuses a long video before downloading, said lik
   assert.equal(six.statusCode, 400);
   assert.match(six.body.error, /^This YouTube video is 6 minutes long, and covers from YouTube must be shorter than 6 minutes\./);
   assert.doesNotMatch(six.body.error, /up to/);
+  const cloud = await edge.link({ engine: 'yue2', url: 'https://soundcloud.com/band/long-song' });
+  assert.match(cloud.body.error, /^This song from SoundCloud is 6 minutes long, and covers from a link must be shorter than 6 minutes\. Choose a shorter song/);
   // A measured MP3 over six minutes is refused by the shared tail, as a file would be.
   const w2 = world();
   w2.seconds = 433.1;
@@ -184,62 +213,136 @@ test('duration: the downloader refuses a long video before downloading, said lik
   assert.equal(w2.stored.length, 0);
 });
 
-test('App Review: the review seat is refused with a neutral sentence and is never shown the field', async () => {
-  const w = world({ reviewSeat: true });
+const boothGuide = () => {
+  const a = booth.indexOf('const GUIDE = ') + 14;
+  const b = booth.indexOf('\n};', a) + 2;
+  return vm.runInNewContext('(' + booth.slice(a, b) + ')', {
+    effectsGuide: {}, SCREENPLAY_HELP: '', yueCost: '', yueStylesEnabled: () => false, yueStyles: {},
+  });
+};
+const cover = (g) => g.engines.yue2.settings.find((s) => s.key === 'reference_voice_url');
+
+test('Family feature pack: without it the route refuses in plain words, and nothing is fetched', async () => {
+  assert.equal(link.PACK_NOTE, pack.FAMILY_PACK_NOTE, 'the booth says what the pack helper says');
+  assert.equal(link.PACK_REFUSAL, pack.FAMILY_PACK_REFUSAL);
+  const w = world({ pack: false });
   const res = await w.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
   assert.equal(res.statusCode, 403);
-  assert.equal(res.body.error, link.REVIEW_WORDS);
-  assert.doesNotMatch(res.body.error, /YouTube|review|Apple/i);
+  assert.equal(res.body.error, 'Media links are part of the Family feature pack. Ask Kade to add it to your account.');
+  assert.equal(res.body.pack, true);
   assert.equal(w.downloads.length, 0);
-
-  const boothGuide = () => {
-    const a = booth.indexOf('const GUIDE = ') + 14;
-    const b = booth.indexOf('\n};', a) + 2;
-    return vm.runInNewContext('(' + booth.slice(a, b) + ')', {
-      effectsGuide: {}, SCREENPLAY_HELP: '', yueCost: '', yueStylesEnabled: () => false, yueStyles: {},
-    });
-  };
-  const GUIDE = boothGuide();
-  const before = JSON.stringify(GUIDE);
-  const cover = (g) => g.engines.yue2.settings.find((s) => s.key === 'reference_voice_url');
-  assert.match(cover(GUIDE).hint, /You can also paste a YouTube link to a song\./);
-
-  const family = link.guideFor(GUIDE, { id: 'u1' }, () => false, {});
-  assert.deepEqual(cover(family).link, {
-    site: 'youtube', label: 'Or paste a YouTube link', hint: cover(family).link.hint,
-    button: 'Import from YouTube', path: '/api/kade/sound-booth/reference/link', maxSeconds: 360,
-  });
-  assert.match(cover(family).hint, /paste a YouTube link/);
-
-  const reviewer = link.guideFor(GUIDE, { id: 'review' }, () => true, {});
-  assert.equal(cover(reviewer).link, undefined);
-  assert.doesNotMatch(JSON.stringify(reviewer.engines.yue2), /YouTube/);
-  assert.match(cover(reviewer).hint, /^Import one song, up to six minutes\. YuE2 uses its melody/);
-
-  const unsure = link.guideFor(GUIDE, { id: 'u1' }, () => { throw new Error('lookup failed'); }, {});
-  assert.equal(cover(unsure).link, undefined, 'unsure means hidden');
-  const switchedOff = link.guideFor(GUIDE, { id: 'u1' }, () => false, { KADE_SOUNDBOOTH_YT_LINKS: '0' });
-  assert.equal(cover(switchedOff).link, undefined);
-  assert.equal(JSON.stringify(GUIDE), before, 'the shared guide is never changed');
-  assert.equal(link.guideFor(GUIDE, { id: 'u1' }, () => false, {}).engines.scenema, GUIDE.engines.scenema);
-  // A child account is not the review seat and keeps the field.
-  assert.ok(cover(link.guideFor(GUIDE, { id: 'child', kadeAccountType: 'child' }, () => false, {})).link);
+  assert.equal(w.state.running.size, 0);
+  assert.match(w.logs.find(([level]) => level === 'warn')[1], /link REFUSED user=u1: not in the Family feature pack/);
+  // The real rule: the App Review seat and "bob" (made after the cutoff) are out; a family account is in.
+  const real = world({ features: (user) => pack.familyFeatures(user, {}) });
+  for (const user of [{ id: VISCHECK }, { id: VISCHECK, kadeLibraryAccess: 'family' }, { id: BOB }]) {
+    assert.equal((await real.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' }, user)).statusCode, 403, user.id);
+  }
+  assert.equal(real.downloads.length, 0);
+  assert.equal((await real.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' }, { id: BOB, kadeLibraryAccess: 'family' })).statusCode, 200);
+  assert.equal((await real.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' }, { id: BOB, role: 'ADMIN' })).statusCode, 200);
+  // A lookup that throws never opens the downloader.
+  const unsure = world({ features: () => { throw new Error('lookup failed'); } });
+  assert.equal((await unsure.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' })).statusCode, 403);
+  // The kill switch refuses everyone, pack or not.
+  const off = world({ env: { KADE_SOUNDBOOTH_YT_LINKS: '0' } });
+  const refused = await off.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
+  assert.equal(refused.statusCode, 403);
+  assert.equal(refused.body.error, link.SWITCHED_OFF);
+  assert.equal(off.downloads.length, 0);
 });
 
-test('words: the bot wall, private, age-restricted and removed videos are said plainly', () => {
-  const say = (kind) => link.linkWords(new FakeYouTubeError(kind));
+test('Family feature pack: the guide greys the field out for everyone else, never hides it', () => {
+  const GUIDE = boothGuide();
+  const before = JSON.stringify(GUIDE);
+  assert.match(cover(GUIDE).hint, /You can also paste a media link to a song, from YouTube or another media site\./);
+
+  const family = link.guideFor(GUIDE, { id: 'u1' }, () => ({ mediaLinks: true }), {});
+  assert.deepEqual(cover(family).link, {
+    site: 'media', label: 'Or paste a media link (YouTube and other sites)', hint: cover(family).link.hint,
+    button: 'Import from link', path: '/api/kade/sound-booth/reference/link', maxSeconds: 360, available: true,
+  });
+  assert.match(cover(family).link.hint, /YouTube, SoundCloud, Bandcamp, Vimeo, TikTok, Instagram, Facebook, X, Reddit, Dailymotion, Twitch clips or the Internet Archive, or a direct link to an audio or video file/);
+  assert.match(cover(family).hint, /paste a media link/);
+
+  const reviewSeat = (user) => pack.familyFeatures(user, {});
+  for (const user of [{ id: VISCHECK }, { id: BOB }]) {
+    const locked = cover(link.guideFor(GUIDE, user, reviewSeat, {}));
+    assert.equal(locked.link.available, false, user.id);
+    assert.equal(locked.link.locked, 'Part of the Family feature pack');
+    assert.equal(locked.link.label, 'Or paste a media link (YouTube and other sites)', 'the same label, shown greyed out');
+    assert.equal(locked.link.path, '/api/kade/sound-booth/reference/link');
+    assert.match(locked.hint, /^Import one song, up to six minutes\. YuE2 uses its melody/, 'the hint only offers what can be used');
+  }
+  const unsure = link.guideFor(GUIDE, { id: 'u1' }, () => { throw new Error('lookup failed'); }, {});
+  assert.equal(cover(unsure).link.available, false, 'unsure means greyed out');
+  const switchedOff = link.guideFor(GUIDE, { id: 'u1' }, () => ({ mediaLinks: true }), { KADE_SOUNDBOOTH_YT_LINKS: '0' });
+  assert.equal(cover(switchedOff).link, undefined, 'the kill switch takes the field away for everyone');
+  assert.equal(JSON.stringify(GUIDE), before, 'the shared guide is never changed');
+  assert.equal(link.guideFor(GUIDE, { id: 'u1' }, () => ({ mediaLinks: true }), {}).engines.scenema, GUIDE.engines.scenema);
+  // A child account in the pack keeps the field.
+  assert.equal(cover(link.guideFor(GUIDE, { id: 'child', kadeAccountType: 'child' }, () => ({ mediaLinks: true }), {})).link.available, true);
+});
+
+/* The website's linkField, run from the page source: greyed out means a label, a disabled box
+ * and button, and a visible note both controls are described by. */
+function pageLinkField() {
+  const pageContext = { module: { exports: {} }, require: () => ({ SHARED_HEAD: '' }) };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'kadeSoundBoothPage.js'), 'utf8'), pageContext);
+  const html = pageContext.module.exports.soundBoothHtml;
+  const from = html.indexOf('    function linkField(s, id){');
+  const to = html.indexOf('    async function importLink(){', from);
+  assert.ok(from > 0 && to > from, 'linkField is where the test expects it');
+  const sandbox = {
+    state: { clips: [], linkDraft: '', importing: false, linkImporting: false, rendering: false, jobId: null },
+    esc: (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+  };
+  vm.runInNewContext(html.slice(from, to), sandbox);
+  return (setting) => sandbox.linkField(setting, 'set_reference_voice_url');
+}
+
+test('greyed out on the website: a real label, disabled controls, and "Part of the Family feature pack" as their description', () => {
+  const linkField = pageLinkField();
+  const GUIDE = boothGuide();
+  const locked = linkField(cover(link.guideFor(GUIDE, { id: BOB }, () => ({ mediaLinks: false }), {})));
+  assert.match(locked, /<label class="field" for="set_reference_voice_url_link">Or paste a media link \(YouTube and other sites\)<\/label>/);
+  assert.match(locked, /<p class="hint locked" id="set_reference_voice_url_link_lock">Part of the Family feature pack\. Ask Kade to add it to your account\.<\/p>/);
+  assert.match(locked, /<input type="text"[^>]* id="set_reference_voice_url_link"[^>]* disabled aria-describedby="set_reference_voice_url_link_lock">/);
+  assert.match(locked, /<button type="button" class="act" id="btnLinkImport" disabled aria-describedby="set_reference_voice_url_link_lock">Import from link<\/button>/);
+  const open = linkField(cover(link.guideFor(GUIDE, { id: 'u1' }, () => ({ mediaLinks: true }), {})));
+  assert.doesNotMatch(open, /disabled|Family feature pack/);
+  assert.match(open, /aria-describedby="set_reference_voice_url_link_h"/);
+  assert.match(open, /placeholder="https:\/\/"/);
+  assert.match(open, />Import from link<\/button>/);
+});
+
+test('words: link problems, YouTube, other sites and direct files are said plainly', () => {
+  const say = (kind, site) => link.linkWords(new FakeYouTubeError(kind), undefined, site);
   assert.equal(say('bot'), 'YouTube is blocking the server right now. Try again in a few minutes, or download the song and import the file.');
   assert.equal(link.linkStatus(new FakeYouTubeError('bot')), 503);
   assert.match(say('private'), /^This YouTube video is private/);
   assert.match(say('age'), /age-restricted/);
   assert.equal(link.linkWords(new FakeYouTubeError('age'), { id: 'kid', kadeAccountType: 'child' }), 'This YouTube video is age-restricted, so it cannot be brought in on this account. Choose a different video.');
+  assert.equal(link.linkWords(new FakeYouTubeError('age'), { id: 'kid', kadeAccountType: 'child' }, 'tiktok'), 'This is age-restricted, so it cannot be brought in on this account. Choose a different song.');
   assert.equal(link.linkWords(new FakeYouTubeError('age'), { id: 'u1' }), link.WORDS.age);
   assert.match(say('removed'), /has been removed/);
-  assert.match(say('not-youtube'), /^That is not a YouTube link\./);
-  assert.match(say('not-video'), /channel or a playlist/);
+  assert.match(say('not-supported'), /^The booth cannot bring songs in from that site\./);
+  assert.match(say('not-video'), /channel, playlist or album/);
+  assert.match(say('blocked-address', 'file'), /private or internal address, or carries a sign-in or a port number/);
+  assert.match(say('not-found', 'file'), /could not be found/);
+  assert.match(say('redirects', 'file'), /too many hops/);
+  assert.match(say('not-media', 'file'), /did not send an audio or video file/);
   assert.match(say('timeout'), /took too long/);
+  assert.equal(say('private', 'soundcloud'), 'This is private on SoundCloud, or needs a sign-in there, so the server cannot get it. If you have the song, import the file instead.');
+  assert.equal(say('failed', 'archive'), 'The song could not be brought in from the Internet Archive. Try again in a few minutes, or download the song and import the file.');
+  assert.equal(say('timeout', 'x'), 'X took too long to answer. Try again in a few minutes, or download the song and import the file.');
+  assert.equal(say('removed', 'file'), 'Nothing is at that link any more. Check the link, or import the song as a file.');
+  assert.equal(say('private', 'file'), link.FILE_WORDS.private);
+  assert.equal(link.linkStatus(new FakeYouTubeError('blocked-address')), 400);
+  assert.equal(link.linkStatus(new FakeYouTubeError('not-media')), 422);
   assert.equal(say('something new'), link.WORDS.failed);
   assert.equal(link.linkWords(new Error('plain')), link.WORDS.failed);
+  for (const words of [...Object.values(link.LINK_WORDS), ...Object.values(link.FILE_WORDS)]) assert.doesNotMatch(words, /undefined|\$\{/);
   assert.equal(link.spokenMinutes(61), '1 minute 1 second');
   assert.equal(link.spokenMinutes(45), '45 seconds');
   assert.equal(link.spokenMinutes(120), '2 minutes');
@@ -247,16 +350,23 @@ test('words: the bot wall, private, age-restricted and removed videos are said p
   assert.equal(link.clock(65), '1:05');
 });
 
-test('refusals: not YouTube, not YuE2, empty, and failures from YouTube come back in the booth voice', async () => {
+test('refusals: other sites, private addresses, not YuE2, empty, and failures come back in the booth voice', async () => {
   const w = world();
-  let res = await w.link({ engine: 'yue2', url: 'https://vimeo.com/123' });
+  let res = await w.link({ engine: 'yue2', url: 'https://example.com/songs/sunny-day' });
   assert.equal(res.statusCode, 400);
-  assert.equal(res.body.error, link.WORDS['not-youtube']);
+  assert.equal(res.body.error, link.LINK_WORDS['not-supported']);
+  assert.equal(res.body.kind, 'not-supported');
+  for (const url of ['http://169.254.169.254/latest/meta-data/x.mp3', 'http://[::1]/song.mp3', 'https://user@cdn.example.com/song.mp3', 'http://kade.railway.internal/song.mp3']) {
+    res = await w.link({ engine: 'yue2', url });
+    assert.equal(res.statusCode, 400, url);
+    assert.equal(res.body.kind, 'blocked-address', url);
+  }
   res = await w.link({ engine: 'scenema', url: 'https://youtu.be/dQw4w9WgXcQ' });
   assert.equal(res.statusCode, 400);
   assert.match(res.body.error, /YuE2 covers/);
   res = await w.link({ engine: 'yue2', url: '   ' });
   assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'Paste a media link first.');
   assert.equal(w.downloads.length, 0);
 
   const walled = world({ download: async () => { throw new FakeYouTubeError('bot'); } });
@@ -268,31 +378,33 @@ test('refusals: not YouTube, not YuE2, empty, and failures from YouTube come bac
   assert.equal(walled.state.running.size, 0);
 
   const gone = world({ download: async () => { throw new FakeYouTubeError('private'); } });
-  res = await gone.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
+  res = await gone.link({ engine: 'yue2', url: 'https://www.instagram.com/reel/Cabc123/' });
   assert.equal(res.statusCode, 422);
-  assert.match(res.body.error, /private/);
+  assert.match(res.body.error, /^This is private on Instagram/);
+  assert.match(gone.logs.find(([level]) => level === 'warn')[1], /video=instagram:Cabc123 kind=private/, 'a short id, never the whole link');
 });
 
 test('caps: one import at a time per person, and a daily cap', async () => {
   let release;
-  const w = world({ download: () => new Promise((resolve) => { release = () => resolve({ buffer: Buffer.alloc(4096, 1), title: 'Song', seconds: 100, id: 'dQw4w9WgXcQ', link: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }); }) });
+  const w = world({ download: () => new Promise((resolve) => { release = () => resolve({ buffer: Buffer.alloc(4096, 1), title: 'Song', seconds: 100, id: 'dQw4w9WgXcQ', link: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', site: 'youtube' }); }) });
   const first = w.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
   await new Promise((resolve) => setImmediate(resolve));
   const second = await w.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
   assert.equal(second.statusCode, 409);
+  assert.match(second.body.error, /A link import is already running for you/);
   release();
   assert.equal((await first).statusCode, 200);
 
   const capped = world({ cap: link.dailyCap(2, () => '2026-09-25') });
   assert.equal((await capped.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' })).statusCode, 200);
-  assert.equal((await capped.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' })).statusCode, 200);
+  assert.equal((await capped.link({ engine: 'yue2', url: 'https://vimeo.com/76979871' })).statusCode, 200);
   const third = await capped.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
   assert.equal(third.statusCode, 429);
-  assert.match(third.body.error, /2 YouTube imports today/);
-  // A link that is not YouTube is refused before the cap counts it.
+  assert.match(third.body.error, /2 link imports today/);
+  // A link the booth will not fetch is refused before the cap counts it.
   const day = link.dailyCap(1, () => '2026-09-25');
   const w2 = world({ cap: day });
-  await w2.link({ engine: 'yue2', url: 'https://vimeo.com/1' });
+  await w2.link({ engine: 'yue2', url: 'https://example.com/page' });
   assert.equal((await w2.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' })).statusCode, 200);
   // A new day starts a new count.
   let today = '2026-09-25';
@@ -304,7 +416,7 @@ test('caps: one import at a time per person, and a daily cap', async () => {
 });
 
 test('deadline and hang-up: the import is stopped, answered once, and the person is freed', async () => {
-  const waitForAbort = async (_url, options) =>
+  const waitForAbort = async (_found, options) =>
     new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new FakeYouTubeError('timeout')), { once: true }));
   const w = world({ deadlineMs: 50, download: waitForAbort });
   const res = await w.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
@@ -325,11 +437,11 @@ test('deadline and hang-up: the import is stopped, answered once, and the person
   assert.equal(left.stored.length, 0);
 });
 
-test('age: a child is never carried past YouTube age gates by the server account', async () => {
-  // The fake answers like youtubeAudio: an age-restricted video is refused unless the caller allows it.
-  const ageGated = async (_url, options) => {
+test('age: a child is never carried past an age gate by the server', async () => {
+  // The fake answers like mediaAudio: an age-restricted video is refused unless the caller allows it.
+  const ageGated = async (found, options) => {
     if (!options.allowAgeRestricted) throw new FakeYouTubeError('age');
-    return { buffer: Buffer.alloc(4096, 1), title: 'Grown-up Song', seconds: 200, id: 'dQw4w9WgXcQ', link: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' };
+    return { buffer: Buffer.alloc(4096, 1), title: 'Grown-up Song', seconds: 200, id: found.id, link: found.url, site: found.site };
   };
   const child = world({ download: ageGated });
   const res = await child.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' }, { id: 'kid', kadeAccountType: 'child' });
@@ -353,8 +465,8 @@ test('age: a child is never carried past YouTube age gates by the server account
   assert.equal((await plainAccount.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' })).statusCode, 200);
 });
 
-/* The real chain at the six-minute edge: the route, the real youtubeAudio (packages/api
- * description/youtube.ts, loaded through tsx) with yt-dlp faked by a real tone, the real MP3
+/* The real chain at the six-minute edge: the route, the real mediaAudio and youtubeAudio (packages/api
+ * description/links.ts and youtube.ts, loaded through tsx) with yt-dlp faked by a real tone, the real MP3
  * conversion, then the real storeReference, durationOf (ffprobe) and musicReferenceError.
  * YouTube lists whole seconds, so a listed "359" can hold up to 359.99 s of sound, and the MP3
  * encoder adds a few hundredths more (360.04 s here). Before Part 293's review a listed 6:00 was
@@ -402,11 +514,10 @@ test('six-minute edge: listed at 6:00 is refused before any download; listed at 
     });
     return child;
   };
-  const youtube = require('tsx/cjs/api').require('../../../packages/api/src/description/youtube.ts', __filename);
   const { durationOf } = require('./kadeSoundBoothStitch');
 
   // Listed at exactly 6:00: refused from the metadata, in words that do not contradict themselves.
-  const six = world({ durationOf, download: (url, options) => youtube.youtubeAudio(url, options) });
+  const six = world({ durationOf, download: (found, options) => links.mediaAudio(found, options) });
   const refused = await six.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
   assert.equal(refused.statusCode, 400);
   assert.equal(refused.body.kind, 'too-long');
@@ -417,7 +528,7 @@ test('six-minute edge: listed at 6:00 is refused before any download; listed at 
   // Listed at 5:59 but holding 359.99 s of sound: the MP3 is cut at 359.9 s and passes the booth's check.
   runs = [];
   video = { title: 'Just Under Six', listed: 359, sound: 359.99 };
-  const w = world({ durationOf, download: (url, options) => youtube.youtubeAudio(url, options) });
+  const w = world({ durationOf, download: (found, options) => links.mediaAudio(found, options) });
   const res = await w.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
   assert.equal(res.statusCode, 200, res.body && res.body.error);
   assert.equal(runs.length, 2, 'metadata, then one download');

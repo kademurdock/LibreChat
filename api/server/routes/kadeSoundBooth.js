@@ -763,7 +763,7 @@ const GUIDE = {
       howToWrite: ['Describe the new style, instruments and singing voice in Music direction.', 'Put exact words under Lyrics, with [Verse] and [Chorus] tags. Use Transcribe reference lyrics after importing a cover to get an editable draft, then correct anything it misheard.', 'For a cover, import one source recording up to six minutes. The worker transcribes its melody, then makes a new arrangement. Listen for transcription errors; the source is kept intact.'],
       settings: [
         { key: 'lyrics', label: 'Lyrics', hint: 'The words to sing. Use [Verse] and [Chorus] tags, or choose Write my song idea to draft them.', kind: 'text' },
-        { key: 'reference_voice_url', label: 'Recording to cover (optional)', hint: 'Import one song, up to six minutes. You can also paste a YouTube link to a song. YuE2 uses its melody for a new arrangement; this does not clone the original singer. Add the words you want under Lyrics.', kind: 'clip', max: 1 },
+        { key: 'reference_voice_url', label: 'Recording to cover (optional)', hint: 'Import one song, up to six minutes. You can also paste a media link to a song, from YouTube or another media site. YuE2 uses its melody for a new arrangement; this does not clone the original singer. Add the words you want under Lyrics.', kind: 'clip', max: 1 },
         { key: 'abc', label: 'Optional composition (ABC)', hint: 'Use a melody score instead of an imported recording.', kind: 'text' },
         ...(yueStylesEnabled() ? [{ key: 'band', label: 'Style', hint: 'A singing style taught to YuE2 from real recordings. Soul sings with one expressive female lead and rich harmonies. Kids sings with a children’s choir. None is plain YuE2. The style leads the song and Music direction still steers it on top, for example slow and gentle, or piano only. Works for new songs and for covers.', kind: 'choice', options: ['none', ...Object.keys(yueStyles)], default: 'none' }] : []),
         { key: 'cot', label: 'Following a score (only used with an ABC composition)', hint: 'This does nothing for a brand new song. With an ABC score, Melody follows the tune and frees the arrangement; Full keeps the chords too. A cover from a recording always uses Melody.', kind: 'choice', options: ['melody','full'], default: 'melody' },
@@ -2473,10 +2473,10 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
   }
 });
 
-/* The shared tail of every reference import: a file (above) and a YouTube link
+/* The shared tail of every reference import: a file (above) and a media link
  * (Part 293, /reference/link below) both end here, so both answer with the
- * same JSON. A link import adds `source` (the video's title, length and link),
- * which is also kept on the music reference so the cover stays named.
+ * same JSON. A link import adds `source` (the song's site, title, length and
+ * link), which is also kept on the music reference so the cover stays named.
  * Returns { status, body } rather than answering, so each route answers once. */
 async function storeReference(req, { buffer, ext, engine, name, source }) {
   if (typeof saveBufferToS3 !== 'function') {
@@ -2518,9 +2518,10 @@ async function storeReference(req, { buffer, ext, engine, name, source }) {
   });
   if (!url) return { status: 502, body: { error: 'The clip did not save. Try again.' } };
   await registerMusicReference(String(req.user.id), url, clipSeconds, source || null);
-  logger.info(`[soundbooth/reference] user=${req.user.id} ${source ? `youtube=${source.id} ` : ''}${String(name || fileName).slice(0, 80)} ${buffer.length}B -> ${outExt} ${outBuffer.length}B ${clipSeconds !== null ? clipSeconds + 's' : ''}`);
+  logger.info(`[soundbooth/reference] user=${req.user.id} ${source ? `link=${source.id} ` : ''}${String(name || fileName).slice(0, 80)} ${buffer.length}B -> ${outExt} ${outBuffer.length}B ${clipSeconds !== null ? clipSeconds + 's' : ''}`);
+  const link = source ? require('./kadeSoundBoothLink') : null;
   const heard = source
-    ? `Covering ${source.title}${clipSeconds !== null ? `, ${require('./kadeSoundBoothLink').spokenMinutes(clipSeconds)}` : ''}, from YouTube`
+    ? `Covering ${source.title}${clipSeconds !== null ? `, ${link.spokenMinutes(clipSeconds)}` : ''}, from ${link.siteLabel(source.site)}`
     : `Clip imported${clipSeconds !== null ? `, ${clipSeconds} seconds` : ''}`;
   return {
     status: 200,
@@ -2542,20 +2543,22 @@ async function storeReference(req, { buffer, ext, engine, name, source }) {
   };
 }
 
-/* ====================== POST /reference/link (a YouTube cover) ============
- * Part 293. The route, its words, caps and the App Review rule live in
- * kadeSoundBoothLink.js; the yt-dlp work is the describer's (youtubeAudio in
- * packages/api description/youtube.ts). The storage tail is storeReference. */
+/* ====================== POST /reference/link (a media-link cover) =========
+ * Part 293. The route, its words, caps and the Family feature pack gate live in
+ * kadeSoundBoothLink.js; the fetching is packages/api description/links.ts
+ * (mediaAudio: YouTube on the describer's ladder, other sites through
+ * allowlisted yt-dlp extractors, direct files behind the SSRF guard). The
+ * storage tail is storeReference. */
 router.use(require('./kadeSoundBoothLink').createReferenceLinkRouter({
   auth: requireJwtAuth,
   store: storeReference,
-  youtube: () => require('@librechat/api'),
-  reviewSeat: boothReviewSeat,
+  media: () => require('@librechat/api'),
+  features: boothFeatures,
   logger,
 }));
-/** The App Store review seat (id list or the hidden-library email), which never sees link import. */
-function boothReviewSeat(user) {
-  return require('~/server/services/kadeFunding').isReviewSeat(user);
+/** The person's Family feature pack map (packages/api family/pack.ts familyFeatures). */
+function boothFeatures(user) {
+  return require('@librechat/api').familyFeatures(user);
 }
 
 /* ============================ POST /idea ================================== */
@@ -2646,9 +2649,12 @@ router.post('/suggest', requireJwtAuth, express.json({ limit: '64kb' }), (req, r
 
 router.get('/health', requireJwtAuth, async (req, res) => {
   return res.json({
-    /* Part 293: per person, so the YuE2 cover field offers a YouTube link to
-     * everyone but the App Review seat (kadeSoundBoothLink.js guideFor). */
-    guide: require('./kadeSoundBoothLink').guideFor(GUIDE, req.user, boothReviewSeat),
+    /* Part 293: per person. The YuE2 cover field's media link is usable with the
+     * Family feature pack and greyed out ("Part of the Family feature pack")
+     * for everyone else, the App Review seat included (kadeSoundBoothLink.js
+     * guideFor). `features` is the same map GET /api/kade/features answers. */
+    guide: require('./kadeSoundBoothLink').guideFor(GUIDE, req.user, boothFeatures),
+    features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
       seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: SEED_USD_PER_MIN },
