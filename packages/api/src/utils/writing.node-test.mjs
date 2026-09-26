@@ -6,8 +6,17 @@ import vm from 'node:vm';
 const source = stripTypeScriptTypes(readFileSync(new URL('./writing.ts', import.meta.url), 'utf8'));
 const hitSource = stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8')).replace('export const hitWritingSystem', 'const hitWritingSystem');
 const musicSource = hitSource + '\n' + stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8')).replace("import { hitWritingSystem } from './hitSystem';", '');
-const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
+const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+/* What the Sound Booth route needs from @librechat/api to load at all (its GUIDE reads the YuE
+ * styles when the file loads), and a stand-in for the Part 293 audience helper whose answer a
+ * test can set. */
+const bootStubs = { yueStylesEnabled: () => false, yueStyles: {} };
+const audienceStub = { answer: 'explicit', calls: [] };
+/* The real word checks (Part 293 review: the route holds a clean song to clean with them); only
+ * the account lookup is stood in for. */
+const audienceModule = createRequire(import.meta.url)('../../../../api/server/utils/kadeSongAudience.js');
+const songAudienceStub = { ...audienceModule, songAudience: async (user, options) => { audienceStub.calls.push({ user, options }); return audienceStub.answer; } };
 
 test('music drafting reads the current Lyric persona while formatting and speech stay untouched', async () => {
   const reads = [];
@@ -16,7 +25,7 @@ test('music drafting reads the current Lyric persona while formatting and speech
   const first = await musicWritingPrompt('Sound Booth format', { engine: 'yue2', mode: 'write' }, read);
   assert.ok(first.includes(instructions));
   assert.match(first, /Multisyllabic and mosaic rhymes/); assert.match(first, /Keep supplied lyrics exactly/);
-  assert.match(first, /SYNTHETIC-VOCAL HIT-WRITING SYSTEM/); assert.match(first, /THE FOURTEEN TELLS/); assert.match(first, /three verses, 45 to 60 sung lines/);
+  assert.match(first, /SYNTHETIC-VOCAL HIT-WRITING SYSTEM/); assert.match(first, /THE FOURTEEN TELLS/); assert.match(first, /about four minutes, 45 to 65 sung lines/); assert.match(first, /either three verses, or two long verses of 12 to 16 lines each/);
   assert.match(first, /a named weekday \(Tuesday above all\)/); assert.match(first, /drinks are always coffee/);
   assert.match(first, /There is no Lyrics Box, Tag Box or Negative Tag Box here/);
   assert.doesNotMatch(first, /begins with the words `Lyrics Box`|APPENDIX B: TAG BOX PRESETS|REVISION PROTOCOL|30 to 40 lines total/, 'the other product\'s output contract and short budget are not carried');
@@ -46,19 +55,25 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: 'Intimate R&B with warm piano.\nLyrics:\n[Verse]\nMy exact authored line.\nREADBACK: A quiet song.' } }], usage: { cost: 0.002 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models') return { getAgent: async filter => { assert.equal(filter.id, lyricAgentId); return { instructions }; } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
-    if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay') return localRequire(name);
+    if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
+    if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay' || name === './kadeSoundBoothPaste' || name === './kadeSoundBoothCarry') return localRequire(name);
     return {};
   } };
   vm.runInNewContext(readFileSync(url, 'utf8'), context);
   let result;
   const response = { status(code) { assert.equal(code, 200); return this; }, json(value) { result = value; return this; } };
   const request = { user: { id: 'writer-fixture' }, body: { engine: 'yue2', mode: 'write', text: 'An intimate R&B song about coming home.', lyrics: 'My exact authored line.' } };
+  audienceStub.answer = 'explicit'; audienceStub.calls.length = 0;
   await handlers.get('post/script')(request, response);
   assert.ok(requests[0].messages[0].content.includes(instructions));
+  /* Part 293: the desk asks who the song is for, and a grown-up's desk carries the explicit note. */
+  assert.equal(audienceStub.calls.length, 1); assert.equal(audienceStub.calls[0].user.id, 'writer-fixture');
+  assert.ok(requests[0].messages[0].content.includes(SONG_EXPLICIT_NOTE)); assert.ok(!requests[0].messages[0].content.includes(SONG_CLEAN_NOTE));
+  assert.equal(ledger[0].metadata.audience, 'explicit');
   assert.equal(requests[0].model, lyricWritingModel);
   assert.equal(requests[0].max_tokens, 24000);
   assert.equal(requests[0].temperature, 0.85);
@@ -83,6 +98,8 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
   assert.equal(requests[3].reasoning, undefined);
   assert.equal(requests[3].top_p, undefined);
   assert.equal(requests[3].max_tokens, 2200);
+  assert.equal(audienceStub.calls.length, 3, 'formatting her own words never asks, and never gets a note');
+  assert.doesNotMatch(requests[3].messages[0].content, /CLEAN OR EXPLICIT/);
 });
 
 test('provider cost, including free/cached calls, wins over token estimates', () => {
@@ -129,10 +146,11 @@ test('real script route accounts for the shortening call as well as the first dr
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async () => { calls++; return { data: { choices: [{ message: { content: '[Setting: A quiet room.]\nNora (calm woman) says softly: "' + 'Stay here. '.repeat(calls === 1 ? 220 : 30) + '"' } }], usage: { cost: calls === 1 ? 0.004 : 0.002 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
-    if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay') return localRequire(name);
+    if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
+    if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay' || name === './kadeSoundBoothPaste' || name === './kadeSoundBoothCarry') return localRequire(name);
     return {};
   } };
   vm.runInNewContext(readFileSync(url, 'utf8'), context);
@@ -204,17 +222,25 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: requests.length === 1 || /supplied/.test(body.messages[1].content) ? draft : repaired } }], usage: { cost: 0.01 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {} };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models') return { getAgent: async () => ({ instructions: 'Saved Lyric persona.' }) };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
-    if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay') return localRequire(name);
+    if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
+    if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay' || name === './kadeSoundBoothPaste' || name === './kadeSoundBoothCarry') return localRequire(name);
     return {};
   } };
   vm.runInNewContext(readFileSync(url, 'utf8'), context);
   let result; const response = { status() { return this; }, json(value) { result = value; return this; } };
-  await handlers.get('post/script')({ user: { id: 'scan-fixture' }, body: { engine: 'yue2', mode: 'write', text: 'a folk song about a bad morning' } }, response);
+  audienceStub.answer = 'clean'; audienceStub.calls.length = 0;
+  await handlers.get('post/script')({ user: { id: 'scan-fixture' }, body: { engine: 'yue2', mode: 'write', band: 'kids', text: 'a folk song about a bad morning' } }, response);
   assert.equal(requests.length, 2, 'one draft, one audit');
+  /* Part 293: the Kids style reaches the audience check, and the audit reuses the draft's system
+   * prompt, so it carries the same clean note. */
+  assert.equal(audienceStub.calls[0].options.band, 'kids');
+  for (const call of requests) { assert.ok(call.messages[0].content.includes(SONG_CLEAN_NOTE)); assert.ok(!call.messages[0].content.includes(SONG_EXPLICIT_NOTE)); }
+  assert.equal(requests[1].messages[0].content, requests[0].messages[0].content, 'the audit sees the same system prompt');
+  audienceStub.answer = 'explicit';
   assert.match(requests[1].messages[1].content, /be the producer who decides whether it gets cut/);
   assert.match(requests[1].messages[1].content, /"I poured my coffee on a Tuesday" -- a named weekday|-- coffee/);
   assert.match(result.script, /Tang the day the fair left town/); assert.doesNotMatch(result.script, /Tuesday/);
@@ -259,8 +285,21 @@ test('Part 216: only the sung words come from a repair; direction and READBACK s
 
 test('Part 216: a song the desk sized itself must have three verses; her own length wins', () => {
   const two = 'Pop.\nLyrics:\n[Verse 1]\na\n[Chorus]\nb\n[Verse 2]\nc\n[Bridge]\nd\n[Chorus]\nb\nREADBACK: x';
-  assert.match(lyricShapeIssue(two, 'a pop song about luck'), /only two verses.*Add a \[Verse 3\]/);
+  assert.match(lyricShapeIssue(two, 'a pop song about luck'), /only two short verses.*or two long ones.*Add a \[Verse 3\]/);
   assert.equal(lyricShapeIssue(two.replace('[Bridge]', '[Verse 3]'), 'a pop song about luck'), null);
+  /* Part 293: two LONG verses (24 sung verse lines between them) are the desk's other map. */
+  const verse = n => Array.from({ length: n }, (_, i) => `line ${i + 1} of this verse`).join('\n');
+  const long = (a, b) => `Pop.\nLyrics:\n[Verse 1]\n${verse(a)}\n[Chorus]\nb\n[Verse 2]\n${verse(b)}\n[Bridge]\nd\n[Final Chorus]\nb\n\nREADBACK: x`;
+  assert.equal(lyricShapeIssue(long(12, 12), 'a pop song about luck'), null, 'two verses of twelve pass');
+  assert.equal(lyricShapeIssue(long(16, 14), 'a pop song about luck'), null, 'twelve to sixteen each');
+  /* Part 293 review: EACH of the two verses must be long; a lopsided song is sent back to grow. */
+  for (const [a, b] of [[16, 8], [20, 4], [8, 16]])
+    assert.match(lyricShapeIssue(long(a, b), 'a pop song about luck'), /only two verses, one of them short, and this desk writes three verses.*Add a \[Verse 3\]/, `${a} and ${b}`);
+  assert.match(lyricShapeIssue(long(12, 11), 'a pop song about luck'), /only two verses, one of them short/);
+  assert.match(lyricShapeIssue(long(12, 11).replace('[Verse 2]\n', '[Verse 2]\n(oh)\n(oh, oh)\n'), 'luck'), /only two verses, one of them short/, 'whole-line ad-libs are not verse lines');
+  assert.match(lyricShapeIssue(long(8, 8), 'luck'), /only two short verses/);
+  assert.match(lyricShapeIssue(`Pop.\nLyrics:\n[Verse 1]\n${verse(30)}\n[Chorus]\nb\n\nREADBACK: x`, 'luck'), /only one verse.*Add a \[Verse 2\]/, 'one long verse is still one verse');
+  assert.equal(lyricShapeIssue(long(12, 12).replace('[Verse 2]', '[Verse 2 - Spoken]'), 'luck'), null, 'a delivery cue keeps a verse a verse');
   for (const brief of ['a short jingle', 'two verses and a chorus', 'a ninety second song', 'sixteen bars about my dog'])
     assert.equal(lyricShapeIssue(two, brief), null, brief);
   assert.equal(lyricShapeIssue('Instrumental brief. Instrumental only, no vocals.', 'surf rock'), null);
@@ -355,7 +394,8 @@ test('Part 231: Surprise me writes ideas in her format, shows her list only as a
 
 test('Part 230: the desk demands rhyme and one meter, counts syllables itself, and knows her newest pet hates', async () => {
   const prompt = await musicWritingPrompt('format', { engine: 'yue2', mode: 'write' }, async () => ({ instructions: 'persona' }));
-  assert.match(prompt, /SING-ALONG FIRST/); assert.match(prompt, /This desk under-rhymes/); assert.match(prompt, /SAY IT PLAIN IN THE CHORUS/);
+  assert.match(prompt, /SING-ALONG FIRST/); assert.match(prompt, /This desk under-rhymes/); assert.match(prompt, /THE CHORUS STATES THE HOOK\. The verses can show; the chorus TELLS/);
+  assert.doesNotMatch(prompt, /say it plain/i, 'Part 293: the old heading was sung back in a real song and is on her ban list');
   const wander = 'Pop.\n\nLyrics:\n[Verse 1]\nBar is half full and the jukebox is dying tonight again\nYou by the window\nSome fella walked in and he looked you up and he looked you down\nI got a beer\n[Chorus]\nLook at her\n\nREADBACK: x';
   const audit = lyricAuditRequest(wander, [], null);
   assert.match(audit, /SING-ALONG, the gate this desk fails most/); assert.doesNotMatch(audit, /one line rhymes with nothing/);
@@ -375,4 +415,320 @@ test('Part 231: a duet line that opens with a singer cue is a sung line, so a re
   assert.match(merged, /\[Her\] I saved you a seat by the door/);
   const audit = lyricAuditRequest(first, [], null);
   assert.match(audit, /do NOT count syllables yourself/); assert.match(audit, /not a nursery rhyme either/);
+});
+
+/* ---------------- Part 293 (Sep 25 2026): who the song is for, and her ChatGPT prompt ---------------- */
+const DESK_OPENING = "You are Lyric, working the songwriting desk in Kade-AI's Sound Booth. Your saved persona below is who you are in conversation. The HIT-WRITING SYSTEM after it is how every song at this desk is written; where the two differ about craft, the system wins. Then come the owner's desk notes and the delivery format the audio engine needs.";
+
+test('Part 293: the audience note sits after the desk notes and before the delivery contract; READBACK stays last', async () => {
+  const read = async () => ({ instructions: 'persona' });
+  const base = 'You are the script desk.\n\nAFTER the script, on a new line, output exactly:\nREADBACK: one or two plain sentences saying what a listener will hear.';
+  const request = { engine: 'yue2', mode: 'write' };
+  const before = await musicWritingPrompt(base, request, read);
+  assert.equal(await musicWritingPrompt(base, request, read, null), before, 'null (a grown-up under the kill switch) sends no note');
+  assert.equal(await musicWritingPrompt(base, request, read, undefined), before);
+  assert.doesNotMatch(before, /CLEAN OR EXPLICIT/);
+  assert.equal(before.split('\n')[0], DESK_OPENING, 'the gateway matches this opening line');
+  for (const [audience, note, other] of [['explicit', SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE], ['clean', SONG_CLEAN_NOTE, SONG_EXPLICIT_NOTE]]) {
+    const prompt = await musicWritingPrompt(base, request, read, audience);
+    assert.equal(prompt.split('\n')[0], DESK_OPENING, `${audience}: the opening line never changes`);
+    const at = prompt.indexOf(note);
+    assert.ok(at >= prompt.indexOf(musicWritingCraft) + musicWritingCraft.length, `${audience}: after the owner's desk notes`);
+    assert.ok(at < prompt.indexOf('SOUND BOOTH DELIVERY CONTRACT'), `${audience}: before the delivery contract`);
+    assert.ok(prompt.lastIndexOf('READBACK: one or two plain sentences') > prompt.indexOf('SOUND BOOTH DELIVERY CONTRACT') && prompt.endsWith(base), `${audience}: the READBACK rule stays last`);
+    assert.equal(prompt.split(note).length, 2, `${audience}: said once`);
+    assert.ok(!prompt.includes(other), `${audience}: never both`);
+    assert.equal(prompt.replace(note + '\n\n', ''), before, `${audience}: the note is the only change`);
+  }
+  assert.ok((await musicWritingPrompt(base, { engine: 'lyria', mode: 'write' }, read, 'clean')).includes(SONG_CLEAN_NOTE), 'Lyria drafts get it too');
+  assert.equal(await musicWritingPrompt('Original format', { engine: 'yue2', mode: 'format' }, read, 'explicit'), 'Original format', 'her own words: no note');
+  assert.equal(await musicWritingPrompt('Original format', { engine: 'scenema', mode: 'write' }, read, 'clean'), 'Original format', 'speech: no note');
+  for (const words of ['explicit is allowed', 'funny, filthy, horny, furious, petty, dark, cruel, sarcastic or stupid on purpose', 'write fuck, shit, bitch, asshole, damn and the rest in full', 'no asterisks, no bleeps and no "f-ing"', 'Sexual jokes, dark humor, petty insults and dumb immature jokes', 'Do not sand a line down just because a cleaner word exists', 'Do not force it into a song that does not want it', 'as punctuation or as the escalation of a joke that already works', 'A lullaby, a hymn or a sweet song usually wants none', 'If the brief asks for clean, radio or kid-friendly words, write it clean', 'Never slurs, and nothing sexual involving anyone under 18'])
+    assert.ok(SONG_EXPLICIT_NOTE.includes(words), words);
+  for (const words of ['this song must be clean', 'No swearing, no sexual content or innuendo, no drug jokes, nothing gory', 'Keep the edge and lose the words', 'instead of bleeping or starring anything out'])
+    assert.ok(SONG_CLEAN_NOTE.includes(words), words);
+  assert.match(before, /\[Solo\], \[Interlude\], \[Final Chorus\], \[Outro\]/, 'the system names the two new section tags');
+});
+
+test('Part 293: her ChatGPT prompt joins the desk notes as plain rules, with no example lines to copy', () => {
+  const at = musicWritingCraft.indexOf('WRITE IT LIKE A PERSON WROTE IT');
+  const end = musicWritingCraft.indexOf('- Do the SONG SPEC');
+  assert.ok(at > 0 && end > at, 'inside the owner notes, before the closing instruction');
+  const section = musicWritingCraft.slice(at, end);
+  for (const rule of ['Trust the listener', 'When a line lands, move on', 'Never explain a joke', 'one saying how sad the singer is', 'No lesson at the end', 'grief can stay grief, anger can stay anger', 'want the person they shouldn', 'Give the singer a personality', 'opinions, bad habits, pettiness, contradictions', 'do not have to be the good guy', 'Songs are not HR training videos', 'Every line earns its spot', 'could sit in 500 other songs', 'exists only for the rhyme', 'explains the line before it', 'only links two better lines', 'Plain words with a sharp observation beat fancy words', 'No thesaurus poetry', 'never turn a feeling into a person just to get a rhyme', 'take the premise seriously', 'Start with a believable version and escalate', 'callbacks and misdirection', 'set up an expectation and wreck it', 'Specific beats random', 'Never explain the punchline', 'a phrase, a question, a command, a ridiculous image, a repeated word or a punchline', 'Take the title from the hook or from the central joke', 'Punk and emo', 'hard consonants, specific grievances, not eyeliner and darkness', 'no vocabulary flexing and no generic bragging', 'only when something happens there', 'bodies and rooms', 'brutally clear in one sentence', 'Experimental may break the shape, never into nonsense'])
+    assert.ok(section.includes(rule), rule);
+  assert.doesNotMatch(section, /["“”]/, 'no worked example lines: the writer hands examples back');
+  assert.match(musicWritingCraft, /could another good songwriter surprise me with this\? Are there a few lines somebody would quote, caption or yell with friends the next morning\?/);
+  /* The conflicts, settled her way. */
+  assert.match(musicWritingCraft, /At most ONE deliberately unrhymed line in the whole song\. Slant rhyme counts as rhyme\. Never twist word order or grammar to land a rhyme/);
+  assert.match(musicWritingCraft, /Skip the nursery-rhyme pairs/);
+  assert.match(musicWritingCraft, /about four minutes, 45 to 65 sung lines/); assert.match(musicWritingCraft, /or two long verses of twelve to sixteen lines each, with a bridge and a final chorus/);
+  assert.match(musicWritingCraft, /Do not reach for the same shape every time: a pre-chorus only when it earns its place/); assert.match(musicWritingCraft, /\[Final Chorus\] and \[Solo\] are fine too/);
+  assert.match(musicWritingCraft, /No more than two observed details per verse, and each one something only this song could contain/);
+  assert.match(musicWritingCraft, /unless her brief names them: rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV/);
+  assert.doesNotMatch(musicWritingCraft, /what was on the plate|the chain that squeaks|kitchens|timestamps|unfinished drinks/, 'no prop list to copy');
+  assert.match(musicWritingCraft, /chooses the lead voice, its range and its delivery for this song and this genre\. There is no house voice at this desk\./);
+  assert.doesNotMatch(musicWritingCraft, /\balto\b|close to the microphone|\bbelt/i, 'the house default is never shown as something to copy');
+  assert.doesNotMatch(musicWritingCraft, /Lyrics Box|Tag Box|elite professional songwriter/, 'her ChatGPT output contract stays out');
+  const audit = lyricAuditRequest('Pop.\n\nLyrics:\n[Verse 1]\nOne line\n\nREADBACK: x', [], null);
+  assert.match(audit, /Does the last verse do new work\?/); assert.doesNotMatch(audit, /what was on the plate|the traffic was bad/);
+});
+
+test('Part 293: the kill scan knows the rest of her ChatGPT ban list and leaves plain speech alone', () => {
+  const flags = (line, brief = '') => lyricTells('x\nLyrics:\n' + line, brief).map(t => t.tell);
+  const tells = [
+    ["I'm breaking these chains tonight", 'a greeting-card phrase'], ['Breaking the chains she put on me', 'a greeting-card phrase'], ['This war inside my head', 'a greeting-card phrase'],
+    ['Showing off my battle scars', 'a greeting-card phrase'], ["I'm a beautiful mess", 'a greeting-card phrase'], ['Perfectly imperfect, baby', 'a greeting-card phrase'],
+    ['Picking up the shattered pieces', 'a greeting-card phrase'], ['This is my truth', 'a greeting-card phrase'], ['I finally found my voice', 'a greeting-card phrase'],
+    ['And I chose myself', 'a greeting-card phrase'], ["I'm finally free", 'a greeting-card phrase'],
+    ["Now I'm enough", 'a lesson-learned line'], ['I am enough for me', 'a lesson-learned line'], ['I survived', 'a lesson-learned line'], ['I survived it all', 'a lesson-learned line'],
+    ['Yeah, I survived the storm', 'a lesson-learned line'], ['I learned to let it go', 'a lesson-learned line'], ["I've learned how to breathe", 'a lesson-learned line'],
+    ['Now I know better', 'a lesson-learned line'], ['I finally found myself', 'a lesson-learned line'], ['Finding myself again (again)', 'a lesson-learned line'],
+    ["And I been doing it too, I'll say it plain", "the desk's own filler"], ['He showed up right on cue', "the desk's own filler"], ["And that's the wild part", "the desk's own filler"],
+    ["Now I'm sitting pretty", "the desk's own filler"], ["Sittin' pretty on a Pontiac", "the desk's own filler"],
+    ['Fighting all my demons', 'a worn image word'], ['I feel hollow', 'a worn image word'], ['The house felt hollow', 'a worn image word'], ['Stars that shimmer on the lake', 'a worn image word'],
+    ['Shimmering like gold', 'a worn image word'], ['Watch it all unfold', 'a worn image word'], ['The night is unfolding', 'a worn image word'], ["I don't want your validation", 'a worn image word'],
+    ['Good vibrations only', 'a worn image word'], ["We're on the same frequency", 'a worn image word'], ['My heartbeat is a drum', 'a worn image word'], ['The room was electric', 'a worn image word'],
+    ['Electric love', 'a worn image word'],
+    ["I don't need your money, I need your time", '"I don\'t need X, I need Y"'], ["I don't need a crown, I just want the keys", '"I don\'t need X, I need Y"'],
+    ["I ain't need no help, just need a ride", '"I don\'t need X, I need Y"'],
+  ];
+  for (const [line, tell] of tells) assert.deepEqual(flags(line), [tell], line);
+  const plainSpeech = [
+    'He plays electric guitar at the Legion', 'Paid the electric bill in quarters', 'The electric company cut us off', 'Doing the Electric Slide at the reunion',
+    'She got the electric blanket and the good pillow', 'Down in the hollow past the church', 'I would do it again in a heartbeat', 'Unfold the lawn chair, sit a spell',
+    'She unfolded the map on the hood', 'I found myself at the Waffle House at noon', "I'm enough of a fool to call", 'I survived three kids and a Buick',
+    "I don't need a medal, I don't need a prize", 'Chained the dog out by the shed', 'Sitting in the truck bed', 'He learned the hard way', 'Now they know',
+  ];
+  for (const line of plainSpeech) assert.deepEqual(flags(line), [], line);
+  /* Part 293 review: her own register, which the first narrowing still hit. */
+  const herRegister = [
+    'Down in Possum Hollow where the creek runs', 'Down at Possum Hollow', 'We camped down in a hollow by the creek', 'Found a hollow, set the trap',
+    "The electric's out again", "The electric's due on the fifth", 'They shut off the electric again', 'We fixed the electric pump out back',
+    'Electric blue on her fingernails', 'Both electric companies came out', 'Parked the electric carts in a row',
+    "I learned to drive in Daddy's Ford", 'I learned to fish before I learned to read', "I'm enough trouble for the both of us", "I'm enough like him", "I'm enough trouble for you",
+    'Tuned to the police frequency', 'The scanner frequency, channel nine', 'Some nights I find myself',
+  ];
+  for (const line of herRegister) assert.deepEqual(flags(line), [], line);
+  const stillFlagged = [
+    ['I got a hollow heart', 'a worn image word'], ['Hollow, that is all I am', 'a worn image word'], ['It rings so hollow', 'a worn image word'],
+    ['The electric feeling in the air', 'a worn image word'], ["We're on the same frequency", 'a worn image word'],
+    ['And I learned to fly', 'a lesson-learned line'], ['Somewhere back there I learned to', 'a lesson-learned line'], ['I learned to love myself', 'a lesson-learned line'],
+    ["I'm enough just as I am", 'a lesson-learned line'], ["Baby, I'm still enough", 'a lesson-learned line'],
+    ['I need to find myself', 'a lesson-learned line'], ["I'll find myself again", 'a lesson-learned line'],
+  ];
+  for (const [line, tell] of stillFlagged) assert.deepEqual(flags(line), [tell], line);
+  assert.deepEqual(flags('The room was electric', 'an electric blues song'), [], 'a word from her brief is hers');
+  assert.deepEqual(flags('Fighting all my demons', 'a metal song about demons'), []);
+  assert.deepEqual(lyricTells('Neo-soul with electric piano, shimmering cymbals and a heartbeat kick.\nLyrics:\n[Verse 1]\nI paid the rent in quarters'), [], 'the style paragraph is never scanned');
+});
+
+async function loadIdeaModule() {
+  const strip = file => stripTypeScriptTypes(readFileSync(new URL('../music/' + file, import.meta.url), 'utf8'));
+  const shelfSource = strip('ideaShelf.ts').replace('export const ideaShelf', 'const ideaShelf');
+  const ideaSource = shelfSource + '\n' + strip('idea.ts').replace("import { ideaShelf } from './ideaShelf';", '') + '\nexport { ideaShelf };';
+  return import('data:text/javascript;base64,' + Buffer.from(ideaSource).toString('base64'));
+}
+
+test('Part 293: Surprise me keeps every pitch clean for a clean audience and is unchanged for a grown-up', async () => {
+  const idea = await loadIdeaModule();
+  const { songIdeaSystem, songIdeaSystemFor, SONG_IDEA_CLEAN_NOTE } = idea;
+  for (const audience of ['explicit', null, undefined]) assert.equal(songIdeaSystemFor(audience), songIdeaSystem, String(audience));
+  const clean = songIdeaSystemFor('clean');
+  assert.ok(clean.startsWith(songIdeaSystem) && clean.endsWith(SONG_IDEA_CLEAN_NOTE));
+  assert.ok(clean.startsWith("You are Lyric, working the songwriting desk in Kade-AI's Sound Booth."), 'the gateway still knows the desk');
+  assert.equal(SONG_IDEA_CLEAN_NOTE.match(/[.!?](?=\s|$)/g).length, 1, 'one sentence');
+  assert.match(SONG_IDEA_CLEAN_NOTE, /clean/);
+
+  /* The real /idea route asks who is asking and sends the matching system. */
+  const url = new URL('../../../../api/server/routes/kadeSoundBooth.js', import.meta.url);
+  const handlers = new Map(), requests = [];
+  const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map(method => [method, (path, ...values) => handlers.set(method + path, values.at(-1))]));
+  const multer = Object.assign(() => ({ single: () => () => {} }), { memoryStorage: () => ({}) });
+  const pitch = 'Country comedy: A man keeps a running feud with the self-checkout at the only grocery in town, and by the third verse the whole store is taking sides over one bag of onions.';
+  const context = { module: { exports: {} }, Buffer, URL, console, Date, Intl, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
+    if (name === 'express') return { Router: () => router, json: () => () => {} };
+    if (name === 'multer') return multer;
+    if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: pitch } }], usage: { cost: 0.001 } } }; } };
+    if (name === '@librechat/api') return { ...idea, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
+    if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
+    if (name === '~/models/kadeUsage') return { logKadeUsage: async () => {}, KadeUsage: { find: () => ({ sort: () => ({ limit: () => ({ select: () => ({ lean: async () => [] }) }) }) }) } };
+    if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
+    if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay' || name === './kadeSoundBoothPaste' || name === './kadeSoundBoothCarry') return createRequire(url)(name);
+    return {};
+  } };
+  vm.runInNewContext(readFileSync(url, 'utf8'), context);
+  let result; const response = { status() { return this; }, json(value) { result = value; return this; } };
+  audienceStub.calls.length = 0;
+  for (const [answer, user] of [['clean', 'idea-child'], ['explicit', 'idea-adult']]) {
+    audienceStub.answer = answer;
+    await handlers.get('post/idea')({ user: { id: user }, body: {} }, response);
+    assert.equal(result.idea, pitch);
+    assert.equal(requests.at(-1).messages[0].content, songIdeaSystemFor(answer), answer);
+  }
+  assert.deepEqual(audienceStub.calls.map(c => c.user.id), ['idea-child', 'idea-adult']);
+  audienceStub.answer = 'explicit';
+});
+
+/* ---------------- Part 293 review fixes ---------------- */
+/** The real Sound Booth route in a sandbox. `reply(body, n)` answers the nth model call; every
+ *  router registration is kept in order, so a test can see what runs before what. */
+function loadBooth({ reply, api = {}, middleware } = {}) {
+  const url = new URL('../../../../api/server/routes/kadeSoundBooth.js', import.meta.url), localRequire = createRequire(url);
+  const handlers = new Map(), requests = [], ledger = [], registered = [];
+  const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map(method => [method, (path, ...values) => { registered.push([method, path, ...values]); handlers.set(method + path, values.at(-1)); }]));
+  const multer = Object.assign(() => ({ single: () => () => {} }), { memoryStorage: () => ({}) });
+  const context = { module: { exports: {} }, Buffer, URL, console, Date, Intl, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
+    if (name === 'express') return { Router: () => router, json: () => (_req, _res, next) => next && next() };
+    if (name === 'multer') return multer;
+    if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
+    if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: reply(body, requests.length) } }], usage: { cost: 0.01 } } }; } };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => 'the YuE2 router', createEffectsRouter: () => 'the effects router', createLyricsRouter: () => 'the lyrics router', effectsGuide: {}, ...bootStubs, ...api };
+    if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
+    if (name === '~/models') return { getAgent: async () => ({ instructions: 'Saved Lyric persona.' }) };
+    if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row), KadeUsage: { find: () => ({ sort: () => ({ limit: () => ({ select: () => ({ lean: async () => [] }) }) }) }) } };
+    if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
+    if (name === '~/server/middleware' && middleware) return middleware;
+    if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay' || name === './kadeSoundBoothPaste' || name === './kadeSoundBoothCarry') return localRequire(name);
+    return {};
+  } };
+  vm.runInNewContext(readFileSync(url, 'utf8'), context);
+  const call = async (path, req) => {
+    const out = { code: 200, body: null };
+    await handlers.get(path)(req, { status(code) { out.code = code; return this; }, json(value) { out.body = value; return this; } });
+    return out;
+  };
+  return { handlers, requests, ledger, registered, call, internals: context.module.exports._internals };
+}
+
+test('Part 293 review: a clean song is held to clean in code, and a grown-up\'s song is left alone', async () => {
+  const draft = 'Punk with fast drums.\nLyrics:\n[Verse 1]\nThis rent is batshit crazy\nThe sink has broken twice\n[Chorus]\nPay up, pay up\nREADBACK: A punk song about a landlord.';
+  const fixed = draft.replace('This rent is batshit crazy', 'This rent is out of line, man');
+  const body = { engine: 'yue2', mode: 'write', text: 'a punk song about my landlord' };
+  let booth = loadBooth({ reply: (_b, n) => (n === 1 ? draft : fixed) });
+  audienceStub.answer = 'clean';
+  let out = await booth.call('post/script', { user: { id: 'clean-1' }, body });
+  assert.equal(out.code, 200);
+  assert.equal(booth.requests.length, 2, 'one draft, one audit');
+  assert.match(booth.requests[1].messages[1].content, /"This rent is batshit crazy" -- a swear word or a sexual word, and this song has to be clean/);
+  assert.doesNotMatch(out.body.script, /batshit/); assert.match(out.body.script, /out of line, man/);
+  assert.ok(out.body.repairs.includes('made 1 line clean'), out.body.repairs.join(' | '));
+
+  booth = loadBooth({ reply: () => draft });
+  out = await booth.call('post/script', { user: { id: 'clean-2' }, body });
+  assert.equal(out.code, 422, 'the audit kept the swear, so the draft is refused');
+  assert.match(out.body.error, /has to be clean/); assert.match(out.body.error, /Your idea is kept/);
+  assert.equal(booth.ledger.length, 1); assert.equal(booth.ledger[0].metadata.refused, 'explicit words in a clean song'); assert.equal(booth.ledger[0].costUSD, 0.02, 'what it cost is still on the ledger');
+
+  booth = loadBooth({ reply: () => draft });
+  out = await booth.call('post/script', { user: { id: 'clean-3' }, body: { ...body, lyrics: 'My own batshit words' } });
+  assert.equal(out.code, 200, 'her own supplied lyrics are hers and are never checked');
+
+  audienceStub.answer = 'explicit';
+  booth = loadBooth({ reply: () => draft });
+  out = await booth.call('post/script', { user: { id: 'adult-1' }, body });
+  assert.equal(out.code, 200);
+  assert.doesNotMatch(booth.requests[1].messages[1].content, /has to be clean/, 'a grown-up\'s swearing is not a tell');
+  assert.match(out.body.script, /batshit/);
+  audienceStub.answer = null;
+  booth = loadBooth({ reply: () => draft });
+  assert.equal((await booth.call('post/script', { user: { id: 'adult-2' }, body })).code, 200, 'the kill switch only withdraws the permission');
+  audienceStub.answer = 'explicit';
+});
+
+test('Part 293 review: two short verses grown into two long ones say "lengthened the verses", not "added a third verse"', async () => {
+  const lines = (tag, n) => `[${tag}]\n` + Array.from({ length: n }, (_, i) => `${tag.toLowerCase()} row ${i + 1} goes here`).join('\n');
+  const song = (...verses) => `Pop.\nLyrics:\n${verses.map((n, i) => lines(`Verse ${i + 1}`, n) + '\n' + lines('Chorus', i < 2 ? 4 : 0)).join('\n').replace(/\n\[Chorus\]\n?$/, '')}\nREADBACK: A pop song.`;
+  const draft = song(8, 8);
+  assert.match(lyricShapeIssue(draft, 'a pop song about luck'), /two short verses/);
+  for (const [grown, label] of [[song(12, 12), 'lengthened the verses'], [song(8, 8, 8), 'added a third verse']]) {
+    const booth = loadBooth({ reply: (_b, n) => (n === 1 ? draft : grown) });
+    const out = await booth.call('post/script', { user: { id: 'shape-' + label }, body: { engine: 'yue2', mode: 'write', text: 'a pop song about luck' } });
+    assert.equal(out.code, 200);
+    assert.ok(out.body.repairs.includes(label), `${label}: ${out.body.repairs.join(' | ')}`);
+    assert.equal(out.body.repairs.filter(r => /verse/.test(r)).length, 1);
+  }
+  assert.equal(loadBooth({ reply: () => '' }).internals.verseCount(song(8, 8, 8)), 3);
+});
+
+test('Part 293 review: the Kids style never renders explicit lyrics, checked on the server before the YuE2 router', async () => {
+  let authed = 0;
+  const booth = loadBooth({ reply: () => '', middleware: { requireJwtAuth: (_req, _res, next) => { authed += 1; next(); } } });
+  const { kidsStyleRefusal } = booth.internals;
+  const yueAt = booth.registered.findIndex(([method, path]) => method === 'use' && path === 'the YuE2 router');
+  /* The pasted-song sorter also sits on POST /render ahead of it (it has to: a pasted Lyrics Box
+   * must be in the body before the words are checked), so the gate is the last one before YuE2. */
+  const gateAt = booth.registered.reduce((at, [method, path], i) => (method === 'post' && path === '/render' && i < yueAt ? i : at), -1);
+  assert.ok(gateAt >= 0 && yueAt > gateAt, 'the check runs before the YuE2 router can queue anything');
+  const gate = booth.registered[gateAt].at(-1);
+  const run = async (body) => {
+    const out = { code: 0, body: null, next: false };
+    await gate({ body }, { status(code) { out.code = code; return this; }, json(value) { out.body = value; return this; } }, () => { out.next = true; });
+    return out;
+  };
+  const refused = await run({ engine: 'yue2', band: 'kids', lyrics: '[Verse 1]\nThis shit is cold', script: 'A choir.' });
+  assert.equal(refused.code, 400); assert.equal(authed, 1, 'only a signed-in person is answered');
+  assert.match(refused.body.error, /Kids style/); assert.match(refused.body.error, /have to be clean/); assert.match(refused.body.error, /set Style to None or another style/);
+  for (const body of [
+    { engine: 'yue2', band: 'kids', lyrics: 'Clap your hands and stomp your feet' },
+    { engine: 'yue2', band: 'soul', lyrics: 'This shit is cold' },
+    { engine: 'yue2', lyrics: 'This shit is cold' },
+    { engine: 'lyria', band: 'kids', lyrics: 'This shit is cold' },
+    {},
+  ]) assert.equal((await run(body)).next, true, JSON.stringify(body));
+  assert.ok(kidsStyleRefusal({ engine: 'yue2', band: 'kids_choir', lyrics: 'f*** this' }));
+  assert.equal(kidsStyleRefusal(undefined), null);
+});
+
+test('Part 293 review: the writing lane\'s music grammar describes the voice, the map and the length without demonstrating one', () => {
+  const { MUSIC_GRAMMAR, MUSIC_GRAMMAR_WRITE, systemPrompt } = loadBooth({ reply: () => '' }).internals;
+  const differing = MUSIC_GRAMMAR.split('\n').filter((line, i) => MUSIC_GRAMMAR_WRITE.split('\n')[i] !== line);
+  assert.equal(differing.length, 3, 'exactly the three steps are replaced');
+  assert.deepEqual(differing.map(l => l.slice(0, 2)), ['3.', '4.', '6.']);
+  for (const engine of ['yue2', 'lyria']) {
+    const write = systemPrompt({ engine, mode: 'write' });
+    assert.ok(write.includes(MUSIC_GRAMMAR_WRITE), engine);
+    assert.doesNotMatch(write, /warm alto|close to the microphone|belting|raspy|two-minute song|\[Intro\] -> \[Verse 1\]|piano alone/, `${engine}: no house voice, map or length`);
+    assert.match(write, /4\. VOCAL PROFILE if anyone sings: sex, timbre, range and delivery, chosen for this genre and this singer\./);
+    assert.match(write, /3\. STRUCTURE as the section tags this song uses/); assert.match(write, /6\. THE TECHNICAL LINE last: BPM as a number, the key, and the length in plain words/);
+    const steps = ['1. GENRE WITH ERA', '2. INSTRUMENTS', '3. STRUCTURE', '4. VOCAL PROFILE', '5. MOOD', '6. THE TECHNICAL LINE'].map(s => write.indexOf(s));
+    assert.ok(steps.every((at, i) => at > 0 && (i === 0 || at > steps[i - 1])), `${engine}: all six steps, in order`);
+    assert.ok(systemPrompt({ engine, mode: 'format' }).includes(MUSIC_GRAMMAR), `${engine}: formatting her words keeps the grammar as it was`);
+  }
+});
+
+test('Part 293 review: Surprise me for a clean audience never draws a dirty shelf idea or genre, and refuses a dirty pitch', async () => {
+  const idea = await loadIdeaModule();
+  const isClean = (t) => !audienceModule.hasExplicitWords(t);
+  const dirtyShelf = idea.ideaShelf.filter((t) => !isClean(t));
+  assert.equal(dirtyShelf.length, 2, 'two of her hundred');
+  let n = 7; const rolling = () => ((n = (n * 9301 + 49297) % 233280) / 233280);
+  let sawDirty = 0;
+  for (let i = 0; i < 400; i++) {
+    const open = idea.songIdeaSparks(rolling);
+    if (open.shelf.some((t) => dirtyShelf.includes(t))) sawDirty += 1;
+    const sparks = idea.songIdeaSparks(rolling, ['A dirty blues about a damn mule', 'A clean one'], isClean);
+    assert.equal(sparks.shelf.length, 6);
+    assert.ok(sparks.shelf.every(isClean), sparks.shelf.join(' | '));
+    assert.doesNotMatch(sparks.sound, /dirty/);
+    assert.deepEqual(sparks.avoid, ['A clean one']);
+  }
+  assert.ok(sawDirty > 0, 'a grown-up\'s draw is unchanged');
+
+  const pitches = ['Blues shuffle: A mule that will not pull the plow gets cussed at all day, damn this and damn that, until the farmer\'s wife takes the reins and it works like a champion.','Country comedy: A man keeps a running feud with the self-checkout at the only grocery in town, and by the third verse the whole store is taking sides over one bag of onions.'];
+  const drawn = [];
+  const booth = loadBooth({ reply: (_b, count) => pitches[(count - 1) % 2], api: { ...idea, songIdeaSparks: (random, seen, check) => { drawn.push(check); return idea.songIdeaSparks(random, seen, check); } } });
+  audienceStub.answer = 'clean';
+  let out = await booth.call('post/idea', { user: { id: 'idea-clean' }, body: { band: 'kids' } });
+  assert.equal(out.body.idea, pitches[1], 'the dirty pitch was refused and the loop drew again');
+  assert.equal(booth.requests.length, 2); assert.equal(typeof drawn[0], 'function');
+  assert.equal(audienceStub.calls.at(-1).options.band, 'kids', 'the Style reaches the audience check');
+  audienceStub.answer = 'explicit';
+  out = await booth.call('post/idea', { user: { id: 'idea-adult-2' }, body: {} });
+  assert.equal(out.body.idea, pitches[0], 'a grown-up gets the pitch as written'); assert.equal(drawn.at(-1), undefined);
+});
+
+test('Part 293 review: the website sends the Style with Surprise me', () => {
+  const page = readFileSync(new URL('../../../../api/server/routes/kadeSoundBoothPage.js', import.meta.url), 'utf8');
+  assert.match(page, /post\('\/api\/kade\/sound-booth\/idea',\{band:engine==='yue2'\?state\.values\.band:undefined\}\)/);
 });

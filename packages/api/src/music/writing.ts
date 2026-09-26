@@ -75,16 +75,45 @@ export function musicWritingSettings(request: Request): {
 
 export const musicWritingCraft: string = `DESK NOTES FROM THE OWNER (these outrank the system above where they differ)
 - Words the person supplied are theirs. Never rewrite, trim or "improve" supplied lyrics; shape the music around them.
-- The songs have been coming out too short. Follow the desk's lyric budget: about four minutes, three verses, every verse new story. Verse two is not a shorter copy of verse one, and verse three is the payoff.
+- The songs have been coming out too short. Follow the desk's lyric budget: about four minutes, 45 to 65 sung lines counting every written-out chorus. Two maps fit that budget, and the idea picks which: three verses, where verse two is not a shorter copy of verse one and verse three is the payoff; or two long verses of twelve to sixteen lines each, with a bridge and a final chorus that lands the turn. Every verse is new story either way. Do not reach for the same shape every time: a pre-chorus only when it earns its place, a post-chorus, breakdown, drop or solo when the genre wants one, and an ending chosen for this song. Use the system's standard section tags; [Final Chorus] and [Solo] are fine too.
 - Her named pet hates, in her words: "Everything's always a tuesday, drinks are always coffee, scenes are clean." Never name a weekday or a clock time, never reach for coffee, the porch light, the kitchen table, neon, shadows, whispers or echoes, and never use clean, steady or scene as filler, unless her own brief used the word. Ask what THIS singer actually has in their hands, where exactly they are and what they would really drink, and write that.
+- The music direction chooses the lead voice, its range and its delivery for this song and this genre. There is no house voice at this desk.
 - SING-ALONG FIRST. Her verdict on this desk's drafts (Sep 20 2026): "it's still not sounding like a song I would sing along to at all. It still feels like literary work." She is right, and where the system above disagrees with the rules below, these win:
-  1. RHYME YOU CAN HEAR. Every verse is built in couplets (AABB) or alternating lines (ABAB, or XAXA at the very least), and the rhyming word is the LAST word of the line. Perfect rhymes and strong slant rhymes both count; a vowel that merely looks similar does not. A listener must be able to guess the last word of a line before it lands. The chorus rhymes too, and the title line has a rhyme partner. The system's advice to leave lines unrhymed and avoid tidy couplets is for a writer who over-rhymes. This desk under-rhymes. At most ONE deliberately unrhymed line in the whole song.
-  2. ONE METER PER SECTION. Choose a syllable count for the verse lines and hold it within one syllable, line after line, and match it again in verse two and verse three so the same tune fits all three. Long line, short line, long line, short line is fine if it repeats exactly. A verse whose lines run 5, 12, 7 and 10 syllables cannot be sung. Do not count syllables one by one while you think; that burns the whole budget and the song comes back cut off. Pick a beat (four stresses a line is the workhorse), say each line to it once, and move on. The desk counts afterwards and will tell you which verses wander.
-  3. SAY IT PLAIN IN THE CHORUS. The verses can show; the chorus TELLS. It is the singer saying the feeling straight out in words a ten year old knows, short lines, the title first or last, built to be shouted by a car full of people. Four to six lines plus repeats. No chorus made of description.
-  4. SONG, NOT SHORT STORY. No more than two observed details per verse; the rest is the singer talking, to someone, in plain sentences. Cut every line that only notices something (the crack in the seat, the chain that squeaks) unless the next line cashes it in. No understatement contests, no trailing off, no "and that's that". The opposite failure is just as dead: lines so general they could sit in a thousand songs (the traffic was bad, you were looking mad). Plain words, exact facts: what was on the plate, what she did with her keys. Verses this desk sizes itself run eight lines or more.
+  1. RHYME YOU CAN HEAR. Every verse is built in couplets (AABB) or alternating lines (ABAB, or XAXA at the very least), and the rhyming word is the LAST word of the line. Perfect rhymes and strong slant rhymes both count; a vowel that merely looks similar does not. A listener must be able to guess the last word of a line before it lands. The chorus rhymes too, and the title line has a rhyme partner. The system's advice to leave lines unrhymed and avoid tidy couplets is for a writer who over-rhymes. This desk under-rhymes. At most ONE deliberately unrhymed line in the whole song. Slant rhyme counts as rhyme. Never twist word order or grammar to land a rhyme; if a line has to bend to reach its rhyme, rewrite the line. Skip the nursery-rhyme pairs everyone has heard a thousand times.
+  2. ONE METER PER SECTION. Choose a syllable count for the verse lines and hold it within one syllable, line after line, and match verse one's count in every verse after it so the same tune fits them all. Long line, short line, long line, short line is fine if it repeats exactly. A verse whose lines run 5, 12, 7 and 10 syllables cannot be sung. Do not count syllables one by one while you think; that burns the whole budget and the song comes back cut off. Pick a beat (four stresses a line is the workhorse), say each line to it once, and move on. The desk counts afterwards and will tell you which verses wander.
+  3. THE CHORUS STATES THE HOOK. The verses can show; the chorus TELLS. It is the singer saying the feeling straight out in words a ten year old knows, short lines, the title first or last, built to be shouted by a car full of people. Four to six lines plus repeats. No chorus made of description.
+  4. SONG, NOT SHORT STORY. No more than two observed details per verse, and each one something only this song could contain. Skip the props recent drafts keep reaching for, unless her brief names them: rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV. The rest is the singer talking, to someone, in plain sentences. Cut every line that only notices something unless the next line cashes it in. No understatement contests, no trailing off, no "and that's that". The opposite failure is just as dead: lines so general they could sit in a thousand songs. Plain words, exact facts. Verses this desk sizes itself run eight lines or more.
   5. LET IT BE FUN. Jokes, stories where something happens, animals, kids, bragging, nonsense syllables, call and response, a bit the crowd does. A children's song or a comedy song gets the same craft and none of the melancholy.
   6. More of her pet hates: humming or a hum of any kind (the heater, the fridge, the engine, a tune), "knowing" as a noun or a mood ("the knowing", "a knowing look"), anything done "slow", and the radio playing a song that comments on the scene.
-- Do the SONG SPEC and the hook lab silently before the first line, and the QUALITY GATES silently after the last. Deliver only the finished song.`;
+- WRITE IT LIKE A PERSON WROTE IT. From the songwriting prompt she uses elsewhere; these hold alongside the rules above.
+  - Trust the listener. When a line lands, move on. Never explain a joke. Never follow a sad line with one saying how sad the singer is. No lesson at the end and no inspirational turnaround nobody earned: grief can stay grief, anger can stay anger, a fight can stay unresolved, and the singer can still want the person they shouldn't.
+  - Give the singer a personality: opinions, bad habits, pettiness, contradictions, wants, and a way of talking you would recognise across a room. They do not have to be the good guy. Songs are not HR training videos.
+  - Every line earns its spot. Cut or rewrite any line that could sit in 500 other songs, exists only for the rhyme, explains the line before it, or only links two better lines. Plain words with a sharp observation beat fancy words with nothing behind them. No thesaurus poetry, and never turn a feeling into a person just to get a rhyme.
+  - Comedy: take the premise seriously enough for the joke to work. Start with a believable version and escalate. Use callbacks and misdirection; set up an expectation and wreck it. Specific beats random. Never explain the punchline.
+  - The hook can be a phrase, a question, a command, a ridiculous image, a repeated word or a punchline. Take the title from the hook or from the central joke.
+  - Genre, briefly. Punk and emo: shoutable lines, hard consonants, specific grievances, not eyeliner and darkness. Rap: cadence and internal rhyme, things a person would actually say, no vocabulary flexing and no generic bragging. Country and folk: a truck, a porch or a bottle shows up only when something happens there. R&B: desire lives in bodies and rooms more than in declarations, and the singer needs room to move. Pop: the idea is brutally clear in one sentence. Experimental may break the shape, never into nonsense.
+- Do the SONG SPEC and the hook lab silently before the first line, and the QUALITY GATES silently after the last. Then one last silent check on every line: could another good songwriter surprise me with this? Are there a few lines somebody would quote, caption or yell with friends the next morning? If not, rewrite until there are. Deliver only the finished song.`;
+
+/* Part 293 (Sep 25 2026). Her words: "Chat gpt is the only model besides like
+ * Grok that will cuss in lyrics when I have it write songs... Can we incorporate
+ * this into the song writing features in my app". The desk wrote no swear word
+ * in 1,011 lines of her songs although the hit system allows profanity: that
+ * permission is one sentence in twelve thousand words, and DeepSeek wrote
+ * explicit chat only once the adult note in build.js told it who was asking.
+ * So the desk is now told who the song is for (api/server/utils/kadeSongAudience.js):
+ * a grown-up gets the permission spelled out, the child account, the App Review
+ * seat, the Kids choir style and anyone unknown get a clean note. The notes sit
+ * after the owner's desk notes and before the delivery contract. */
+export type SongAudience = 'explicit' | 'clean' | null;
+
+export const SONG_EXPLICIT_NOTE: string =
+  'CLEAN OR EXPLICIT: explicit is allowed. This song is for a verified grown-up on a private, invitation-only platform. Songs here can be funny, filthy, horny, furious, petty, dark, cruel, sarcastic or stupid on purpose. Cussing is fine when the song calls for it: write fuck, shit, bitch, asshole, damn and the rest in full, with no asterisks, no bleeps and no "f-ing". Sexual jokes, dark humor, petty insults and dumb immature jokes are all fair game when they suit the idea. Do not sand a line down just because a cleaner word exists. Do not force it into a song that does not want it either: swear because this singer would actually talk that way, and let it land as punctuation or as the escalation of a joke that already works. A lullaby, a hymn or a sweet song usually wants none. If the brief asks for clean, radio or kid-friendly words, write it clean. Never slurs, and nothing sexual involving anyone under 18.';
+
+export const SONG_CLEAN_NOTE: string =
+  'CLEAN OR EXPLICIT: this song must be clean. No swearing, no sexual content or innuendo, no drug jokes, nothing gory. Keep the edge and lose the words: attitude, pettiness, jokes and big feelings all still belong. Write it clean from the start instead of bleeping or starring anything out.';
+
+const audienceNote = (audience: SongAudience | undefined): string =>
+  audience === 'explicit' ? SONG_EXPLICIT_NOTE : audience === 'clean' ? SONG_CLEAN_NOTE : '';
 
 /* Part 216 (Sep 19 2026). Her words: "Everything's always a tuesday, drinks are
  * always coffee, scenes are clean." The desk runs the writer on low reasoning so
@@ -108,6 +137,32 @@ const LYRIC_TELLS: [string, RegExp][] = [
   ['humming', /\bhumm?(?:s|ed|ing|in['’]?)?\b/i],
   ['"knowing" as a mood', /\b(?:the|a|that|this|some) knowing\b|\bknowing (?:look|smile|glance|eyes?)\b/i],
   ['a stock phrase', /\b(?:clean slate|fresh start|moving on|turn(?:ed|ing)? the page|still standing|beautiful disaster|meant to be|what we had|weight of the world)\b/i],
+  /* Part 293 (Sep 25 2026): the rest of the anti-AI list in the songwriting
+   * prompt she uses with ChatGPT, where this scan had no pattern yet. Narrowed
+   * where plain speech uses the same words: "found myself" only in the
+   * self-discovery sense (at the end of a line), "I survived" and "I'm enough"
+   * only as a declaration, "hollow" not as a place (the hollow), "unfold" not
+   * when something is unfolded (the map), "heartbeat" not "in a heartbeat",
+   * and "electric" never before an instrument or an everyday thing.
+   * Part 293 review: narrowed again where her own register was still hit.
+   * "I learned to" only with an abstract complement (let go, breathe, be
+   * strong) or dangling at the end of a line, never "I learned to drive in
+   * Daddy's Ford". "I'm enough" only as a declaration (end of the line, "for
+   * me", "as I am"), never "I'm enough trouble". "find myself" in the present
+   * only as a quest ("to find myself", "find myself again"), so an enjambed
+   * "Some nights I find myself" stays. "the electric" and "electric's" are the
+   * power bill, "electric blue" a colour, and pumps and lights are things.
+   * "frequency" after radio, police or scanner is a dial. "hollow" stays a
+   * place after the, that or this; after "a" when only a preposition, a
+   * comma or the end of the line follows ("a hollow by the creek", but "a
+   * hollow heart" is flagged); and after a capitalised word (Possum Hollow),
+   * which needs its own pattern without the i flag. */
+  ['a greeting-card phrase', /\b(?:break(?:ing|in['’]?|s)? (?:these|the|my|those) chains|war (?:inside|in) my head|battle scars?|beautiful mess|perfectly imperfect|shattered pieces|my truth|found my voice|ch(?:ose|oose|oosing) myself|finally free)\b/i],
+  ['a lesson-learned line', /\bi(?:['’]ve)? learn(?:ed|t) (?:how )?to (?:let (?:it |you |them |him |her |that |this )?go|love (?:myself|me|again)|breathe|fly(?=\s*(?:[.,!?;:()—–-]|$))|stand(?: tall| on my own)?|be (?:strong|free|me|myself|okay|ok|alone|brave|enough|happy)|live (?:again|without)|walk away|move on|forgive|heal|trust (?:myself|again)|smile again|shine|rise|survive|say no)\b|\bi(?:['’]ve)? learn(?:ed|t) (?:how )?to(?=[\s.,!?;:—–-]*$)|\bnow i know\b|\bi survived(?=\s*(?:[.,!?;:()—–-]|$|it all\b|the (?:storm|fire|worst)\b))|\bi(?:['’]m| am)(?: more than| still| finally| always| already)? enough(?=\s*(?:[.,!?;:()—–-]|$)|\s+for (?:me|myself|you|anyone|them|him|her|us)\b|\s+(?:just )?as i am\b)|(?:\bfound myself|\bfinding myself|(?<=(?:\bto|\bgonna|\bgotta|['’]ll|\bwill|\bcan|\bmust|\bmight)\s)find myself|\bfind myself(?= again\b))(?: again)?(?=[\s.,!?;:—–-]*(?:\([^)]*\)[\s.,!?;:—–-]*)?$)/i],
+  ["the desk's own filler", /\b(?:(?:say|said|saying) it plain|on cue|the wild part|sitt?ing pretty|sittin['’]? pretty)\b/i],
+  ['a worn image word', /\bdemons\b|\bshimmer(?:s|ed|ing)?\b|\bunfold(?:s|ed|ing)?\b(?!\s+(?:the|a|an|my|your|his|her|our|their|that|this|it|them|up)\b)|\bvalidation\b|\bvibrations?\b|(?<!\b(?:radio|police|scanner|cb|ham|fm|am|shortwave|short-wave|emergency|fire|weather)\s)\bfrequenc(?:y|ies)\b|(?<!\bin a\s)\bheartbeats?\b|(?<!\bthe\s)\belectric\b(?!['’]s\b)(?!\s+(?:guitar|piano|bass|keys|keyboard|organ|slide|bill|compan(?:y|ies)|co-?op|fence|chair|blanket|razor|can opener|drill|car|stove|fan|heater|meter|pump|light|blue|cart|bike|scooter|motor|mower|train|wire|line|pole|shock|heat|oven|range|dryer|avenue|eel|kettle|toothbrush|smoker|grill|saw|truck|boat)(?:e?s)?\b)|(?<=\bthe\s)electric(?=\s+(?:feeling|touch|spark|sparks|charge|current|air|night|energy|love|kiss|pulse|thrill|rush|chemistry|glow|buzz|tension|connection|moment|vibes?)\b)/i],
+  ['a worn image word', /(?<!\b(?:[Tt]he|THE|[Tt]hat|THAT|[Tt]his|THIS|[Aa])\s)(?<![A-Z][A-Za-z'’]*\s)\bHollow(?:ness)?\b|(?<!\b(?:[Tt]he|THE|[Tt]hat|THAT|[Tt]his|THIS|[Aa])\s)\b(?:hollow(?:ness)?|HOLLOW(?:NESS)?)\b|(?<=\b[Aa]\s)(?:hollow|Hollow|HOLLOW)\b(?!['’]s\b|\s+(?:by|in|on|at|past|near|under|behind|below|beyond|where|down|up|off|out|over|beside|between|to|from|with)\b|\s*[,.;:!?)—–-]|\s*$)/],
+  ['"I don\'t need X, I need Y"', /\bi (?:don['’]?t|do not|ain['’]?t) need\b[^.!?]*?[,;:—–-]\s*(?:but )?(?:i (?:just |only |really )?|just |only )(?:need|want)\b/i],
 ];
 
 export type LyricTell = { line: string; tell: string };
@@ -160,14 +215,31 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
 /** The second, surgical request: replace the flagged lines and nothing else. */
 /** Seen live: asked for three verses, the writer delivered two. Returns the
  *  instruction to add when a song the desk sized itself came back short; null
- *  when the person set the length or structure, or the shape is fine. */
+ *  when the person set the length or structure, or the shape is fine.
+ *  Part 293: two LONG verses are the desk's other map (a bridge and a final
+ *  chorus carry the turn), so two verses of twelve or more sung lines EACH
+ *  pass; a lopsided 16 and 8 does not (review). Whole-line (parenthesised)
+ *  ad-libs are not counted. */
 export function lyricShapeIssue(script: string, brief = ''): string | null {
   if (/\b(?:verses?|minutes?|seconds?|short|brief|quick|jingle|hook only|chorus only|one verse|two verses|bars)\b/i.test(brief)) return null;
   const at = script.search(/^\s*lyrics\s*:/im);
   if (at === -1) return null;
-  const verses = (script.slice(at).match(/^\s*\[verse[^\]]*\]\s*$/gim) || []).length;
+  const lengths: number[] = [];
+  let inVerse = false;
+  for (const raw of script.slice(at).split('\n').slice(1)) {
+    const line = raw.trim();
+    if (/^READBACK:/i.test(line)) break;
+    const tag = /^\[([^\]]*)\]$/.exec(line);
+    if (tag) {
+      inVerse = /^\s*verse/i.test(tag[1]);
+      if (inVerse) lengths.push(0);
+    } else if (inVerse && line && !/^\(.*\)$/.test(line)) lengths[lengths.length - 1] += 1;
+  }
+  const verses = lengths.length;
   if (verses === 0 || verses >= 3) return null;
-  return `The song has only ${verses === 1 ? 'one verse' : 'two verses'} and this desk writes three. Add a [Verse ${verses + 1}] of eight to twelve sung lines in the same voice, placed after the bridge if there is one and before the final chorus, otherwise before the last chorus. It must turn the story: pay off a detail planted earlier, or say what the narrator has been avoiding. New events, not a summary.`;
+  if (verses === 2 && Math.min(...lengths) >= 12) return null;
+  const short = verses === 1 ? 'one verse' : Math.max(...lengths) >= 12 ? 'two verses, one of them short,' : 'two short verses';
+  return `The song has only ${short} and this desk writes three verses, or two long ones of twelve to sixteen lines each. Add a [Verse ${verses + 1}] of eight to twelve sung lines in the same voice, placed after the bridge if there is one and before the final chorus, otherwise before the last chorus. It must turn the story: pay off a detail planted earlier, or say what the narrator has been avoiding. New events, not a summary.`;
 }
 
 export function lyricRepairRequest(script: string, tells: LyricTell[], shape: string | null = null): string {
@@ -246,7 +318,7 @@ export function lyricMeterNote(script: string): string {
   }
   close();
   return uneven.length
-    ? `\n\nCounted by the desk (roughly), these verses cannot carry one tune: ${uneven.join('; ')}. Even each verse out so lines in the same position match within one syllable, and so verse two and verse three match verse one.`
+    ? `\n\nCounted by the desk (roughly), these verses cannot carry one tune: ${uneven.join('; ')}. Even each verse out so lines in the same position match within one syllable, and so every verse matches verse one.`
     : '';
 }
 
@@ -257,12 +329,12 @@ export function lyricAuditRequest(script: string, tells: LyricTell[], shape: str
   return `Think briefly: decide what fails, fix it, and write the song out. Your first draft is below. Now be the producer who decides whether it gets cut. Run the QUALITY GATES on it silently and return the upgraded song. Fix in place: keep the story, the hook and every line that already sings, and do not paraphrase a working song into a different one. The exception is gate 5: if the verses do not rhyme or do not hold a meter, rewriting their line endings throughout is the job, not a liberty.
 
 Check, in this order, and change only what fails:
-1. THE TURN and the payoff. Does verse three do new work? Plant one concrete detail in verse one and bring it back loaded in verse three, or let one new fact make the last chorus mean something it did not mean the first time. On the final chorus, change exactly one word or one line if that lands the turn.
+1. THE TURN and the payoff. Does the last verse do new work? Plant one concrete detail in verse one and bring it back loaded in the last verse or the bridge, or let one new fact make the last chorus mean something it did not mean the first time. On the final chorus, change exactly one word or one line if that lands the turn.
 2. The hook. Plain speech, six to eight syllables, its click syllable on an open vowel, exactly one surprise, repeated verbatim, title landing four to eight times. If the best line in the song is hiding in a verse, it is the hook in the wrong seat.
 3. Hook stew. A near-wordless second hook (a post-chorus chant or run) if the genre wants one.
 4. The spice. Exactly one from the list, visible.
 5. SING-ALONG, the gate this desk fails most. Read each verse's line endings down the page: they must rhyme in couplets or alternating lines, with the rhyme on the last word, so a listener can guess the word before it lands. Rewrite line endings until they do; move words around inside the line before you change its meaning. Meter: do NOT count syllables yourself, in your thinking or anywhere else; it burns the whole budget and the song comes back empty. The desk has counted, and if any verse wanders it is named at the end of this message; even out only those, by ear, to a steady four-stress line. Then the chorus: it says the feeling straight out in plain words, rhymes, and could be shouted from a car. If the chorus describes instead of declaring, rewrite it and keep the title. No worn rhyme pairs (fire and desire, heart and apart, love and above).
-6. Song, not short story, and not a nursery rhyme either. Each verse keeps one or two details so exact that only this singer could have them (what was on the plate, what the barber did with the bill) and the rest is plain talk. Cut any line that only notices something, and replace any line so general it could sit in a thousand songs (the traffic was bad, you were looking mad). A verse this desk sized itself runs eight lines or more. Moment and voice. Happening now, one attitude in every line, a first line that grabs in eight words, no retrospective wisdom, no Tier 1 structure anywhere.
+6. Song, not short story, and not a nursery rhyme either. Each verse keeps one or two details so exact that only this song could contain them, never the props recent drafts keep reaching for (rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV) unless the brief named them, and the rest is plain talk. Cut any line that only notices something, and replace any line so general it could sit in a thousand songs. A verse this desk sized itself runs eight lines or more. Moment and voice. Happening now, one attitude in every line, a first line that grabs in eight words, no retrospective wisdom, no Tier 1 structure anywhere.
 7. Singability. Open vowels under held notes, a breath in every long line, no stacked sibilants or consonant pileups on stressed beats, parentheses only for sung ad-libs and echoes, never stage directions.${shape ? `\n8. Length. ${shape}` : ''}${flagged}${lyricMeterNote(script)}
 
 Return the complete song in the same format: the music direction, the Lyrics: heading with every sung line and every chorus written out in full, then the READBACK line. Nothing else.
@@ -337,8 +409,10 @@ export async function musicWritingPrompt(
   base: string,
   request: Request,
   readAgent: Reader,
+  audience: SongAudience = null,
 ): Promise<string> {
   if (!writesMusic(request)) return base;
+  const note = audienceNote(audience);
   const agent = await readAgent({ id: lyricAgentId });
   if (!agent?.instructions?.trim())
     throw Object.assign(
@@ -358,11 +432,11 @@ ${hitWritingSystem}
 
 ${musicWritingCraft}
 
-SOUND BOOTH DELIVERY CONTRACT
+${note ? `${note}\n\n` : ''}SOUND BOOTH DELIVERY CONTRACT
 This is a single text-only writing request, not a conversation. Do not ask questions; make the creative choices and deliver. Do not access conversation history, personal memory, other agents, or audio tools.
 Keep supplied lyrics exactly as the request instructs; do not rewrite them merely to improve their rhymes. Formatting-only work must preserve authored words.
 The Sound Booth format below is the ONLY output format. There is no Lyrics Box, Tag Box or Negative Tag Box here: what would go in a tag box (genre, BPM with feel, drums, bass, instrumentation, the signature instrumental hook, the lead voice, backing vocals, arrangement dynamics) is written as the music direction prose, and nothing about story or theme goes in it. So: output the music direction first, then a Lyrics: heading and the complete sung words when lyrics are requested, followed by the required READBACK: line. Never output commentary, a critique, rhyme annotations, a greeting or an offer to continue. Keep production instructions out of sung lines. Do not add lyrics to an instrumental request.
-Length check, when you wrote the lyrics yourself and the person gave no length: three verses sized by the genre's density tier, the technical line says about four minutes, and a short verse gets what happened next, not another way of saying the same thing. Then run the Tier 2 scan against Appendix A one more time. This check is private; the answer is always the complete draft in the format below, never a description of it.
+Length check, when you wrote the lyrics yourself and the person gave no length: three verses sized by the genre's density tier, or two long verses of twelve to sixteen lines with a bridge and a final chorus, the technical line says about four minutes, and a short verse gets what happened next, not another way of saying the same thing. Then run the Tier 2 scan against Appendix A one more time. This check is private; the answer is always the complete draft in the format below, never a description of it.
 
 ${base}`;
 }

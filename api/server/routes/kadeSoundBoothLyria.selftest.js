@@ -74,6 +74,11 @@ function loadBooth({ saved, usage, assets }) {
       });
     }
     if (name === '~/server/services/kadeJevJudges') return {};
+    /* Part 293: who a song is for. The real word checks, with the account lookup stood in for
+     * (a grown-up), so the Lyria cases are about Lyria. */
+    if (name === '~/server/utils/kadeSongAudience') {
+      return { ...require(path.join(__dirname, '..', 'utils', 'kadeSongAudience.js')), songAudience: async () => 'explicit' };
+    }
     if (name === '~/models') return { getAgent: async () => null };
     if (name === '~/server/middleware') {
       return { requireJwtAuth: (req, _res, next) => { req.user = { id: String(module.__user) }; next(); } };

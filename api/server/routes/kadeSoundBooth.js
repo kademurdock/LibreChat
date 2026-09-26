@@ -10,10 +10,11 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystem, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
+const { songAudience, hasExplicitWords, explicitSungLines, isKidsBand } = require('~/server/utils/kadeSongAudience');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
 const { splitSpeakScript, saySplit, previewExcerpt } = require('./kadeSoundBoothSplit');
@@ -70,6 +71,20 @@ router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
   next();
 });
 router.use(createLyricsRouter(musicReferenceHooks));
+/* Part 293 review: the Kids trained style is a children's choir, and it never sings explicit
+ * words, whoever asks and whatever wrote them. The desk writes clean for the Kids style only
+ * when it is told the style, and the iPhone does not send it yet, so the render is checked here,
+ * on the server, before the YuE2 router queues anything. The refusal says what to change. */
+const KIDS_STYLE_NEEDS_CLEAN_WORDS = "The Kids style sings with a children's choir, so its lyrics have to be clean. Take the swearing and anything sexual out of the lyrics, or set Style to None or another style, then make the music again.";
+function kidsStyleRefusal(body) {
+  const b = body || {};
+  return b.engine === 'yue2' && isKidsBand(b.band) && hasExplicitWords(b.lyrics) ? KIDS_STYLE_NEEDS_CLEAN_WORDS : null;
+}
+router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
+  const refusal = kidsStyleRefusal(req.body);
+  if (!refusal) return next();
+  return requireJwtAuth(req, res, () => res.status(400).json({ error: refusal }));
+});
 router.use(createYueRouter({
   auth: requireJwtAuth,
   user: req => String(req.user.id),
@@ -364,6 +379,19 @@ INSTRUMENTAL: if no one sings, the last line is exactly: Instrumental only, no v
 
 Do not use %%% markers, <speak> tags, or "Name (traits) says:" lines. Those belong to the other two engines and this one will not read them. No code fence, no preamble, no headings other than "Lyrics:".`;
 
+/* Part 293 review. The desk notes say there is no house voice and not to reach for the same shape
+ * every time, and her rule is that a prompt may name a shape but never demonstrate one. Three of
+ * the samples above did demonstrate one (a warm breathy alto close to the microphone, one fixed
+ * section map, a two-minute song), and this grammar sits in the last and weightiest block of every
+ * desk draft and audit. So the writing lane gets those three steps described without a sample.
+ * Formatting her own words, and Lyria's plain brief, keep the grammar as it was. */
+const MUSIC_GRAMMAR_WRITE_STEPS = [
+  [/^3\. STRUCTURE.*$/m, '3. STRUCTURE as the section tags this song uses, in order, joined by arrows, then a few words on what changes at each: what drops out, where it lifts, how it ends. For an exact timeline, give each section a [start - end] timestamp instead.'],
+  [/^4\. VOCAL PROFILE.*$/m, '4. VOCAL PROFILE if anyone sings: sex, timbre, range and delivery, chosen for this genre and this singer.'],
+  [/^6\. THE TECHNICAL LINE.*$/m, '6. THE TECHNICAL LINE last: BPM as a number, the key, and the length in plain words. This engine reads the length from the prompt, so always say how long.'],
+];
+const MUSIC_GRAMMAR_WRITE = MUSIC_GRAMMAR_WRITE_STEPS.reduce((grammar, [step, plain]) => grammar.replace(step, plain), MUSIC_GRAMMAR);
+
 /* ---- Lyria wire-prompt helpers (Part 179, Sep 11 2026) ---------------------
  * Google's prompt guide wants supplied words under a "Lyrics:" heading with
  * section tags, and the phrase "Instrumental only, no vocals." for an
@@ -453,7 +481,8 @@ function cleanLyrics(raw) {
 }
 
 function systemPrompt({ engine, mode }) {
-  const grammar = engine === 'yue2' ? MUSIC_GRAMMAR + '\nFor YuE2, output a short style direction followed by a Lyrics: heading and complete original lyrics with verse and chorus tags. Always provide both. Do not include lyrics in the style paragraph.' : engine === 'lyria' ? MUSIC_GRAMMAR : engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
+  const music = mode === 'write' ? MUSIC_GRAMMAR_WRITE : MUSIC_GRAMMAR;
+  const grammar = engine === 'yue2' ? music + '\nFor YuE2, output a short style direction followed by a Lyrics: heading and complete original lyrics with verse and chorus tags. Always provide both. Do not include lyrics in the style paragraph.' : engine === 'lyria' ? music : engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
   const job =
     mode === 'write'
       ? (engine === 'lyria' || engine === 'yue2')
@@ -1349,6 +1378,22 @@ function songPasteScriptResult(engine, mode, pasted, b, field = 'script') {
   };
 }
 
+/** How many [Verse] sections a draft's sung words have (tags below "Lyrics:", before READBACK),
+ *  counted the way lyricShapeIssue counts them. */
+function verseCount(script) {
+  const text = String(script || '');
+  const at = text.search(/^\s*lyrics\s*:/im);
+  if (at === -1) return 0;
+  let verses = 0;
+  for (const raw of text.slice(at).split('\n').slice(1)) {
+    const line = raw.trim();
+    if (/^READBACK:/i.test(line)) break;
+    const tag = /^\[([^\]]*)\]$/.exec(line);
+    if (tag && /^\s*verse/i.test(tag[1])) verses += 1;
+  }
+  return verses;
+}
+
 async function scriptHandler(req, res) {
   try {
     let b = req.body || {};
@@ -1424,7 +1469,12 @@ async function scriptHandler(req, res) {
 
     const started = Date.now();
     const writingSettings = musicWritingSettings({ engine, mode, patient: b.patient === true, deep: b.background === true });
-    const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode }, getAgent);
+    /* Part 293: who the song is for. A grown-up's desk is told explicit lyrics
+     * are welcome; the child, the App Review seat, the Kids choir style and
+     * anyone unknown get a clean note. Never throws; fails clean. The audit
+     * below reuses this same system prompt, so it keeps the same note. */
+    const audience = mode === 'write' && ['lyria', 'yue2'].includes(engine) ? await songAudience(req.user, { band: b.band }) : null;
+    const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode }, getAgent, audience);
     const first = await callModel({
       ...writingSettings,
       system: writingSystem,
@@ -1479,6 +1529,15 @@ async function scriptHandler(req, res) {
         logger.warn('[soundbooth/script] jev tell pass skipped: ' + e.message);
       }
     }
+    /* Part 293 review: a clean song is held to clean in code, not by the prompt alone (the hit
+     * system in the same prompt says profanity is on by default). Every sung line the desk wrote
+     * with a swear or sexual word joins the flagged lines, after Jev so no veto can drop it, and
+     * the audit rewrites it; a draft that still has one is refused below. */
+    const swearing = (script) => (ownsLyrics && audience === 'clean' ? explicitSungLines(script) : []);
+    if (ownsLyrics && audience === 'clean') {
+      const flagged = new Set(tells.map((t) => t.line));
+      tells = [...tells, ...swearing(raw).filter((t) => !flagged.has(t.line))];
+    }
     const shape = wantsWords ? lyricShapeIssue(raw, text) : null;
     const timeLeft = (writingSettings.timeoutMs || 0) - (Date.now() - started) - 4000;
     /* Part 217: every originated song gets the producer's audit when there is time
@@ -1499,18 +1558,35 @@ async function scriptHandler(req, res) {
         /* Only the sung words come from the repair; her direction and READBACK
          * stay exactly as first written (the repair is careless with them). */
         const merged = mergeRepairedLyrics(raw, fixed.text);
-        const remaining = merged ? lyricTells(merged, text).length : tells.length;
+        const swore = swearing(raw).length;
+        const stillSwears = merged ? swearing(merged).length : swore;
+        const remaining = merged ? lyricTells(merged, text).length + stillSwears : tells.length;
         const grew = !!merged && !!shape && !lyricShapeIssue(merged, text);
         logger.info(`[soundbooth/script] audit: merged=${!!merged} tells ${tells.length}->${remaining} shape=${shape ? 'short' : 'ok'} grew=${grew} ${Date.now() - started}ms`);
         if (merged && remaining <= tells.length) {
+          const versesBefore = verseCount(raw);
+          const versesAfter = verseCount(merged);
           raw = merged;
           repairs = [...repairs, "second pass: the producer's audit"];
-          if (remaining < tells.length) repairs = [...repairs, `rewrote ${tells.length - remaining} line${tells.length - remaining === 1 ? '' : 's'} that leaned on stock images`];
-          if (grew) repairs = [...repairs, 'added a third verse'];
+          const stock = tells.length - swore - (remaining - stillSwears);
+          if (stock > 0) repairs = [...repairs, `rewrote ${stock} line${stock === 1 ? '' : 's'} that leaned on stock images`];
+          if (stillSwears < swore) repairs = [...repairs, `made ${swore - stillSwears} line${swore - stillSwears === 1 ? '' : 's'} clean`];
+          /* Two short verses grown into two long ones is not a third verse (review). */
+          if (grew) repairs = [...repairs, versesAfter <= versesBefore ? 'lengthened the verses' : versesAfter - versesBefore > 1 ? 'added verses' : versesAfter === 3 ? 'added a third verse' : 'added a verse'];
         }
       } catch (e) {
         logger.warn('[soundbooth/script] tell repair skipped (first draft kept): ' + e.message);
       }
+    }
+    const unclean = swearing(raw).length;
+    if (unclean) {
+      /* No time for the audit, or the audit kept a swear: a clean song is never handed over dirty. */
+      logger.warn(`[soundbooth/script] clean song refused: ${unclean} sung line(s) still explicit user=${req.user.id} ${Date.now() - started}ms`);
+      logKadeUsage({
+        userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD: totalCost,
+        metadata: { engine, mode, costMeasured, writingPersona: lyricAgentId, audience, refused: 'explicit words in a clean song', model: writingSettings.model || MODEL, ms: Date.now() - started },
+      }).catch(() => {});
+      return res.status(422).json({ error: 'This song has to be clean, and the draft came back with words it cannot have. Your idea is kept. Try again.' });
     }
     if (ownsLyrics) raw = fixStageDirections(raw);
     let { script, readback } = splitScriptAndReadback(raw);
@@ -1600,6 +1676,7 @@ async function scriptHandler(req, res) {
         mode,
         costMeasured,
         writingPersona: mode === 'write' && ['lyria', 'yue2'].includes(engine) ? lyricAgentId : undefined,
+        audience: audience || undefined,
         model: writingSettings.model || MODEL,
         ms: Date.now() - started,
         inTok: usage.prompt_tokens,
@@ -2778,12 +2855,19 @@ router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req,
   ideaCounts.set(req.user.id, used + 1);
   try {
     const seen = await ideasAlreadyShown(req.user.id);
+    /* Part 293: clean pitches for the child, the review seat and anyone unknown. Review: held to
+     * clean in code as well. Her shelf items with a swear or sex in them and the "dirty blues
+     * comedy" genre are never drawn for them, and a pitch with an explicit word is refused, so
+     * the two-try loop draws again. */
+    const audience = await songAudience(req.user, { band: (req.body || {}).band });
+    const clean = audience === 'clean';
+    const isClean = (words) => !hasExplicitWords(words);
     let idea = null, costUSD = 0, measured = true, tries = 0, usage = {};
     while (!idea && tries < 2) {
       tries += 1;
       const made = await callModel({
-        system: songIdeaSystem,
-        user: songIdeaRequest(songIdeaSparks(Math.random, seen)),
+        system: songIdeaSystemFor(audience),
+        user: songIdeaRequest(songIdeaSparks(Math.random, seen, clean ? isClean : undefined)),
         model: lyricWritingModel,
         maxTokens: 8000,
         temperature: 1.1,
@@ -2792,7 +2876,9 @@ router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req,
         timeoutMs: 60000,
       });
       costUSD += made.costUSD; measured = measured && made.measured; usage = made.usage;
-      const candidate = cleanSongIdea(made.text);
+      const pitched = cleanSongIdea(made.text);
+      const candidate = pitched && clean && !isClean(pitched) ? null : pitched;
+      if (pitched && !candidate) logger.info(`[soundbooth/idea] try ${tries} refused: not clean, and this account needs it clean`);
       /* Part 239: `tooCloseToShelf` compares five-word runs, so it catches a
        * sentence copied word for word and nothing else. The way a model
        * really repeats itself is by telling the same idea in new words, and
@@ -2852,5 +2938,5 @@ router.get('/health', requireJwtAuth, async (_req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE };
+module.exports._internals = { readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, kidsStyleRefusal, verseCount };
 

@@ -641,6 +641,15 @@ router.get('/asset-download/:id', requireJwtAuth, async (req, res) => {
     if (!d || (String(d.user) !== userId && !d.shared)) {
       return res.status(404).json({ error: 'Not found' });
     }
+    /* Part 293: someone else's shared asset downloads only if the Wall of Fame would show it to
+     * this viewer, so the child account and the App Review seat cannot fetch by id (from a passed
+     * link) an explicit song the wall hides from them. The owner always gets their own. */
+    if (String(d.user) !== userId) {
+      const { wallViewerRestricted, filterWallAssets } = require('~/server/utils/kadeSongAudience');
+      if (!filterWallAssets([d], await wallViewerRestricted(req.user)).length) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+    }
     const master = req.query.master === '1';
     if (master && !d.metadata?.wavUrl) return res.status(404).json({ error: 'No WAV master for this take' });
     const candidates = (master ? [d.metadata.wavUrl] : [d.url, d.backupUrl]).filter(Boolean);
@@ -781,7 +790,14 @@ router.get('/wall', requireJwtAuth, async (req, res) => {
       .limit(200)
       .populate('user', 'name username')
       .lean();
-    const assets = await Promise.all(docs.map((d) => assetView(d, { withOwner: true })));
+    /* Part 293: grown-ups may now get explicit songs from the Sound Booth desk.
+     * Anyone the desk would not call a grown-up (the child account, the App
+     * Review seat, an account nobody typed) never sees a shared asset whose
+     * title, prompt, lyrics or any other saved text carries an explicit word;
+     * grown-ups see the wall exactly as before. */
+    const { wallViewerRestricted, filterWallAssets } = require('~/server/utils/kadeSongAudience');
+    const visible = filterWallAssets(docs, await wallViewerRestricted(req.user));
+    const assets = await Promise.all(visible.map((d) => assetView(d, { withOwner: true })));
     return res.json({ count: assets.length, assets });
   } catch (error) {
     logger.error('[/api/kade/wall] error:', error);

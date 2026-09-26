@@ -71,17 +71,22 @@ function sample(xs: string[], n: number, random: () => number): string[] {
   return out;
 }
 
-export function songIdeaSparks(random: () => number = Math.random, avoid: string[] = []): SongSparks {
+/* Part 293 review: for an account that needs it clean, the route passes its word check as
+ * `isClean`, and nothing drawn may fail it: not a shelf idea (two of her hundred swear or say
+ * sex), not an idea she was shown before, and never the dirty-blues genre. */
+export function songIdeaSparks(random: () => number = Math.random, avoid: string[] = [], isClean?: (text: string) => boolean): SongSparks {
   const pick = (xs: string[]): string => xs[Math.min(xs.length - 1, Math.floor(random() * xs.length))];
-  const first = pick(GENRES);
-  const second = random() < 0.3 ? pick(GENRES) : '';
+  const keep = (xs: string[]): string[] => (isClean ? xs.filter((x) => isClean(x)) : xs);
+  const genres = isClean ? keep(GENRES).filter((g) => !/\bdirty\b/i.test(g)) : GENRES;
+  const first = pick(genres);
+  const second = random() < 0.3 ? pick(genres) : '';
   return {
     sound: second && second !== first ? `${first} crossed with ${second}` : first,
     lens: pick(LENSES),
     territory: pick(TERRITORIES),
     rule: random() < 0.5,
-    shelf: sample(ideaShelf, 6, random),
-    avoid: avoid.slice(-30),
+    shelf: sample(keep(ideaShelf), 6, random),
+    avoid: keep(avoid).slice(-30),
   };
 }
 
@@ -106,6 +111,17 @@ Neon, fluorescent light, mirrors, ghosts, shadows, whispers, echoes, heartbeats,
 
 HOW TO WRITE IT DOWN
 One line, 25 to 70 words: the genre tag, a colon, the situation. No title, no instrument list, no tempo, no running time, no lyrics, no quotation of a hook. If you are told to add a craft rule, end with one short sentence that fences the writer off from the lazy version of this exact song, in the manner of "Never say the word sorry." or "Told entirely through what is on the table." or "No one raises their voice." Otherwise end after the situation. No preamble, no sign-off, nothing else.`;
+
+/* Part 293 (Sep 25 2026): Surprise me learns who is asking, like the writer.
+ * The child account, the App Review seat and anyone unknown get every pitch
+ * clean; a grown-up gets the system exactly as it was. The first sentence is
+ * untouched, so the gateway still knows the desk. */
+export const SONG_IDEA_CLEAN_NOTE: string =
+  'This idea is for someone who needs it clean: keep every pitch free of swearing, sex, drugs and gore, and keep all of its humor and edge.';
+
+export function songIdeaSystemFor(audience: 'explicit' | 'clean' | null | undefined): string {
+  return audience === 'clean' ? `${songIdeaSystem}\n\n${SONG_IDEA_CLEAN_NOTE}` : songIdeaSystem;
+}
 
 export function songIdeaRequest(sparks: SongSparks): string {
   const avoid = sparks.avoid.length ? `\n\nIdeas she has already been shown. Be nothing like any of them in situation, genre or structure:\n- ${sparks.avoid.join('\n- ')}` : '';
