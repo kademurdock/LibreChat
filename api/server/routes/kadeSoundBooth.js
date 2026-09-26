@@ -2524,7 +2524,9 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
       error: j.error || null,
       url: j.result?.url || null,
       durationS: j.result?.durationS || null,
-      costUSD: j.costUSD || null,
+      /* Part 295 review: the bridge reports the real price; a person is shown what they paid (the
+       * real price for Kade and for the trials she pays for), the way projectView does. */
+      costUSD: j.costUSD ? priced(j.costUSD, KADE_PAYS_ENGINES.includes(project.engine) ? 1 : priceFactor(req.user)) : null,
       /* Part 122: the bridge now says WHY an unfinished job is unfinished, how
        * long it has been that way, and when it will give up. Passed straight
        * through so the surfaces can speak a changing sentence on every poll

@@ -59,6 +59,68 @@ test("the key's own trouble is recognised; a bad request, a refused song or a ne
   assert.equal(A.googleKeyTrouble({ response: { status: 429, data: 'Too Many Requests' } }).kind, 'quota');
 });
 
+/* Part 295 review: Google's own bodies, as the Gemini API sends them. */
+const RATE_LIMIT_MESSAGE =
+  'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.';
+const quotaFailure = (quotaId, quotaValue = '1000') => ({
+  '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+  violations: [{ quotaMetric: 'generativelanguage.googleapis.com/generate_content_paid_tier_requests', quotaId, quotaDimensions: { location: 'global', model: 'gemini-3-flash' }, quotaValue }],
+});
+const HELP = { '@type': 'type.googleapis.com/google.rpc.Help', links: [{ description: 'Learn more about Gemini API quotas', url: 'https://ai.google.dev/gemini-api/docs/rate-limits' }] };
+const RETRY = { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '13s' };
+const invalidKey = (reason, message) =>
+  googleError(400, 'INVALID_ARGUMENT', message, [
+    { '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason, domain: 'googleapis.com', metadata: { service: 'generativelanguage.googleapis.com' } },
+    { '@type': 'type.googleapis.com/google.rpc.LocalizedMessage', locale: 'en-US', message },
+  ]);
+
+test('a deleted, rotated or expired key is the key\'s own trouble (400 API_KEY_INVALID / API_KEY_EXPIRED)', async () => {
+  const deleted = invalidKey('API_KEY_INVALID', 'API key not valid. Please pass a valid API key.');
+  assert.equal(A.googleKeyTrouble(deleted).kind, 'invalid-key');
+  assert.equal(A.googleKeyTrouble(invalidKey('API_KEY_EXPIRED', 'API key expired. Please renew the API key.')).kind, 'invalid-key');
+  /* The words alone are enough when a proxy drops the details. */
+  assert.equal(A.googleKeyTrouble(googleError(400, 'INVALID_ARGUMENT', 'API key not valid. Please pass a valid API key.')).kind, 'invalid-key');
+  assert.equal(A.googleKeyTrouble(googleError(400, 'INVALID_ARGUMENT', 'Request contains an invalid argument.')), null, 'an ordinary bad request is still not the key');
+  const h = deps();
+  const r = await A.reportGoogleKeyTrouble('memory recall', deleted, {}, h.d);
+  assert.equal(r.alerted, true);
+  assert.equal(h.alerts.length, 1);
+  assert.match(h.alerts[0].body, /not valid \(deleted, rotated or expired\)/);
+  assert.match(h.alerts[0].body, /KADE_EMBED_GEMINI_KEY on Railway/);
+  assert.match(h.lines[0], /kind=invalid-key status=400 INVALID_ARGUMENT/);
+});
+
+test('an ordinary per-minute rate limit is logged, not called a billing problem, and leaves the window for a real one', async () => {
+  const burst = googleError(429, 'RESOURCE_EXHAUSTED', RATE_LIMIT_MESSAGE, [quotaFailure('GenerateRequestsPerMinutePerProjectPerModel'), HELP, RETRY]);
+  assert.equal(A.googleKeyTrouble(burst).kind, 'rate', '"check your plan and billing details" is boilerplate, not money');
+  assert.equal(A.googleKeyTrouble(googleError(429, 'RESOURCE_EXHAUSTED', RATE_LIMIT_MESSAGE, [RETRY])).kind, 'rate', 'a RetryInfo alone is a burst');
+  assert.equal(A.googleKeyTrouble(googleError(429, 'RESOURCE_EXHAUSTED', RATE_LIMIT_MESSAGE, [quotaFailure('GenerateRequestsPerDayPerProjectPerModel'), HELP, RETRY])).kind, 'quota', 'a daily quota is the key running dry for the day');
+  assert.equal(A.googleKeyTrouble(googleError(429, 'RESOURCE_EXHAUSTED', RATE_LIMIT_MESSAGE, [quotaFailure('GenerateRequestsPerMinutePerProjectPerModel-FreeTier', '0'), HELP, RETRY])).kind, 'quota', 'a limit of 0 means access is gone, not a burst');
+  assert.equal(A.googleKeyTrouble(googleError(429, 'RESOURCE_EXHAUSTED', RATE_LIMIT_MESSAGE)).kind, 'quota', 'a 429 with nothing more said still tells her');
+  const h = deps();
+  const first = await A.reportGoogleKeyTrouble('Lyria songs', burst, { keyName: 'KADE_EMBED_GEMINI_KEY' }, h.d);
+  assert.equal(first.alerted, false);
+  assert.equal(h.alerts.length, 0, 'no push about a burst');
+  assert.match(h.lines[0], /kind=rate status=429 RESOURCE_EXHAUSTED: .* -- a short rate limit, not alerting$/);
+  h.advance(60 * 60e3);
+  const empty = await A.reportGoogleKeyTrouble('memory recall', googleError(429, 'RESOURCE_EXHAUSTED', 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing.'), {}, h.d);
+  assert.equal(empty.kind, 'billing');
+  assert.equal(empty.alerted, true, 'the burst an hour ago did not use up the window');
+  assert.equal(h.alerts.length, 1);
+});
+
+test('each key name has its own window: a separate Lyria key is heard on its own', async () => {
+  const h = deps();
+  const empty = googleError(429, 'RESOURCE_EXHAUSTED', 'Your prepayment credits are depleted.');
+  assert.equal((await A.reportGoogleKeyTrouble('Lyria songs', empty, { keyName: 'KADE_LYRIA_KEY' }, h.d)).alerted, true);
+  assert.doesNotMatch(h.alerts[0].body, /the same key runs/, 'a lane\'s own key runs only that lane');
+  h.advance(10 * 60e3);
+  assert.equal((await A.reportGoogleKeyTrouble('memory recall', empty, {}, h.d)).alerted, true, 'the embedding key is another key');
+  assert.match(h.alerts[1].body, /the same key runs memory recall, Lyria songs and the lyric transcriber/);
+  assert.equal((await A.reportGoogleKeyTrouble('Lyria songs', empty, { keyName: 'KADE_LYRIA_KEY' }, h.d)).alerted, false);
+  assert.equal(h.alerts.length, 2);
+});
+
 test('the key never reaches the log or the alert, even when Google repeats it', () => {
   const t = A.googleKeyTrouble(googleError(403, 'PERMISSION_DENIED', 'API key AIzaSyTESTONLYNOTAREALKEY12345 is blocked; see ?key=AIzaSyTESTONLYNOTAREALKEY12345'));
   assert.doesNotMatch(t.detail, /AIzaSyTESTONLY/);

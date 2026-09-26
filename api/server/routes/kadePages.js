@@ -238,7 +238,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
 <body>
   <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a></p>
   <h1>Usage &amp; Balance</h1>
-  <p class="muted">Your account starts with <strong>$10 of credit</strong> loaded by Kade. Model usage includes a contribution toward running the platform; the server-cost line below shows the current multiplier alongside your estimated cost. Metered extras such as pictures, videos, songs, describing, and phone calls also draw from your balance, with the same contribution. <strong>Ordinary chat speech is included in Kade's voice plan</strong>. Top up below when you need more credit.</p>
+  <p class="muted">Your account starts with <strong>$10 of credit</strong> loaded by Kade. Model usage includes a contribution toward running the platform; the server-cost line below shows the current multiplier alongside your estimated cost. Metered extras such as pictures, videos, songs, picture and library descriptions, and phone calls also draw from your balance, with the same contribution. Described video has its own price, shown before it starts. <strong>Ordinary chat speech is included in Kade's voice plan</strong>. Top up below when you need more credit.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading your usage…</div>
 

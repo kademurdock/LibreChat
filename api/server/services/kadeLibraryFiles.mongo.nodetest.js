@@ -363,7 +363,7 @@ function loadSweep() {
   sandbox.require = (name) => ({
     '@librechat/data-schemas': { logger: { info() {}, warn() {} } },
     '~/models/kadeBook': { KadeBook },
-    '~/models/kadeUsage': { logKadeUsage: async () => {} },
+    '~/models/kadeUsage': { logKadeUsage: async () => {}, logPlatformUsage: async () => {} },
     '~/server/services/kadeJev': { enabled: () => true },
     '~/server/services/kadeMediaLibrarian': { zoneOf: () => 'intake', categoryOf: () => 'tv', VERSION: 1 },
   })[name];

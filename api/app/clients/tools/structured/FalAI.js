@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const { falStudioSchema, falNarrationInstructions } = require('@librechat/api');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
-const { logKadeUsage, KadeUsage, priceFactorForUser } = require('~/models/kadeUsage');
+const { logKadeUsage, KadeUsage, priceFactorForUser, refundUsageOnce } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { userPriceFactor } = require('~/server/services/kadeRealCost');
 
@@ -234,7 +234,7 @@ class FalAI extends Tool {
       model: 'seedream-4.5',
       costUSD: 0.04,
     }).catch(() => {});
-    return `![${(data.prompt || 'generated image').slice(0, 80).replace(/[[\]]/g, '')}](${img.url})\n\nImage generated with Seedream 4.5 (~$0.04). Saved to your gallery at /my-creations.`;
+    return `![${(data.prompt || 'generated image').slice(0, 80).replace(/[[\]]/g, '')}](${img.url})\n\nImage generated with Seedream 4.5 (~$${(await this.userPrice(0.04)).toFixed(2)}). Saved to your gallery at /my-creations.`;
   }
 
   audioCost(seconds) {
@@ -1107,34 +1107,13 @@ class FalAI extends Tool {
 
   /**
    * One-time compensating entry when a logged render never delivered — finds
-   * the original charge by request id and mirrors it negative. Idempotent.
+   * the original charge by request id and mirrors it negative. Idempotent, and
+   * (Part 295 review) atomic: two parallel check_video calls for one failed
+   * render refund it once (kadeUsage.refundUsageOnce claims the original row).
    */
   async refundVideoCharge(requestId, reason) {
     try {
-      if (!requestId) return false;
-      const original = await KadeUsage.findOne({
-        user: String(this.userId),
-        service: 'fal_video',
-        costUSD: { $gt: 0 },
-        'metadata.requestId': requestId,
-      }).lean();
-      if (!original) return false;
-      const already = await KadeUsage.findOne({
-        user: String(this.userId),
-        'metadata.refund_for': requestId,
-      }).lean();
-      if (already) return true;
-      await logKadeUsage({
-        userId: this.userId,
-        service: 'fal_video',
-        quantity: original.quantity || 1,
-        unit: original.unit || 'seconds',
-        costUSD: -Math.abs(original.costUSD || 0),
-        /* Part 295: give back exactly what the original row charged (1x on rows from before it). */
-        chargedUSD: -Math.abs(typeof original.chargedUSD === 'number' ? original.chargedUSD : original.costUSD || 0),
-        metadata: { refund_for: requestId, reason: String(reason || 'render failed').slice(0, 120) },
-      });
-      return true;
+      return await refundUsageOnce({ userId: this.userId, service: 'fal_video', requestId, reason });
     } catch (e) {
       logger.warn('[FalAI] refund attempt failed:', e.message);
       return false;

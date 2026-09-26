@@ -14,10 +14,25 @@ const vm = require('node:vm');
 
 const ROLES = { kade: 'ADMIN', amber: 'USER', holly: null };
 
-function load({ multiplier = '2', roleLookupFails = false } = {}) {
+/** A dotted-path read and the few query shapes kadeUsage.js asks the collection for. */
+const at = (doc, p) => p.split('.').reduce((v, k) => (v == null ? undefined : v[k]), doc);
+const matches = (doc, query) =>
+  Object.entries(query).every(([k, want]) => {
+    const have = at(doc, k);
+    if (want && typeof want === 'object') {
+      if ('$gt' in want) return typeof have === 'number' && have > want.$gt;
+      if ('$exists' in want) return (have !== undefined) === want.$exists;
+    }
+    return String(have) === String(want);
+  });
+/** Every database answer waits a turn, so two callers really do interleave. */
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+function load({ multiplier = '2', roleLookupFails = false, owner = 'kade', ownerLookupFails = false } = {}) {
   const rows = [];
   const moves = [];
   const warnings = [];
+  const ctl = { failCreate: false };
   class Schema {
     constructor(def) {
       this.def = def;
@@ -25,7 +40,45 @@ function load({ multiplier = '2', roleLookupFails = false } = {}) {
   }
   Schema.Types = { ObjectId: 'ObjectId', Mixed: 'Mixed' };
   const models = {
-    KadeUsage: { create: async (row) => rows.push(row) },
+    KadeUsage: {
+      create: async (row) => {
+        await tick();
+        if (ctl.failCreate) throw new Error('write refused');
+        rows.push(row);
+      },
+      findOne: (query) => ({
+        lean: async () => {
+          await tick();
+          const doc = rows.find((r) => matches(r, query));
+          return doc ? JSON.parse(JSON.stringify(doc)) : null;
+        },
+      }),
+      /* Atomic like MongoDB's: the match and the write happen with nothing in between. */
+      findOneAndUpdate: (filter, update) => ({
+        lean: async () => {
+          await tick();
+          const doc = rows.find((r) => matches(r, filter));
+          if (!doc) return null;
+          const before = JSON.parse(JSON.stringify(doc));
+          for (const [k, v] of Object.entries(update.$set || {})) {
+            const keys = k.split('.');
+            const last = keys.pop();
+            keys.reduce((o, key) => (o[key] = o[key] || {}), doc)[last] = v;
+          }
+          return before;
+        },
+      }),
+      updateOne: async (filter, update) => {
+        await tick();
+        const doc = rows.find((r) => matches(r, filter));
+        for (const k of Object.keys((doc && update.$unset) || {})) {
+          const keys = k.split('.');
+          const last = keys.pop();
+          const parent = keys.reduce((o, key) => (o == null ? o : o[key]), doc);
+          if (parent) delete parent[last];
+        }
+      },
+    },
     User: {
       findById: (id) => ({
         select: () => ({
@@ -57,10 +110,18 @@ function load({ multiplier = '2', roleLookupFails = false } = {}) {
           extraChargeUSD: (cost, role) => realCost.extraChargeUSD(cost, role, env),
         };
       }
+      if (name === '../server/services/kadeOwnerAlerts') {
+        return {
+          ownerUserId: async () => {
+            if (ownerLookupFails) throw new Error('db down');
+            return owner;
+          },
+        };
+      }
       throw new Error('unexpected require ' + name);
     },
   });
-  return { U: module.exports, rows, moves, warnings };
+  return { U: module.exports, rows, moves, warnings, ctl };
 }
 
 test('a person pays the platform factor x the real cost, and the row keeps the real cost', async () => {
@@ -165,4 +226,67 @@ test('deductKadeCredits takes exactly what it is given, never from the administr
 test('readers fall back to costUSD on rows written before Part 295 (they were charged 1x)', () => {
   const { U } = load();
   assert.deepEqual(JSON.parse(JSON.stringify(U.CHARGED_USD)), { $ifNull: ['$chargedUSD', '$costUSD'] });
+});
+
+/* Part 295 review: refunds move money now, so each charge is given back exactly once. */
+const charge = (over = {}) => ({ _id: 'o1', user: 'amber', service: 'fal_video', quantity: 5, unit: 'seconds', costUSD: 0.42, chargedUSD: 0.84, metadata: { requestId: 'req-1' }, ...over });
+const refundRows = (rows) => rows.filter((r) => r.metadata && r.metadata.refund_for);
+
+test('a failed render is refunded once, even when two checks for it run at the same time', async () => {
+  const { U, rows, moves } = load();
+  rows.push(charge());
+  const both = await Promise.all([
+    U.refundUsageOnce({ userId: 'amber', service: 'fal_video', requestId: 'req-1', reason: 'fal render FAILED' }),
+    U.refundUsageOnce({ userId: 'amber', service: 'fal_video', requestId: 'req-1', reason: 'fal render FAILED' }),
+  ]);
+  assert.deepEqual(both, [true, true], 'both callers are told it is refunded');
+  assert.equal(refundRows(rows).length, 1, 'one refund row, not two');
+  assert.deepEqual(moves, [{ user: 'amber', inc: 840000 }], 'the $0.84 charge comes back once, not $1.68');
+  assert.equal(refundRows(rows)[0].costUSD, -0.42);
+  assert.equal(refundRows(rows)[0].chargedUSD, -0.84);
+  assert.ok(rows[0].metadata.refundedAt, 'the original row carries the claim');
+  assert.equal(await U.refundUsageOnce({ userId: 'amber', service: 'fal_video', requestId: 'req-1' }), true);
+  assert.equal(refundRows(rows).length, 1, 'a later check changes nothing');
+});
+
+test('a refund row from before the claim still counts; no charge, nothing to refund; a pre-Part 295 charge comes back at 1x', async () => {
+  const { U, rows, moves } = load();
+  rows.push(charge({ _id: 'o2', metadata: { requestId: 'req-2' } }), { user: 'amber', service: 'fal_video', costUSD: -0.42, chargedUSD: -0.84, metadata: { refund_for: 'req-2' } });
+  assert.equal(await U.refundUsageOnce({ userId: 'amber', service: 'fal_video', requestId: 'req-2' }), true);
+  assert.equal(await U.refundUsageOnce({ userId: 'amber', service: 'fal_video', requestId: 'nope' }), false);
+  assert.equal(await U.refundUsageOnce({ userId: 'amber', service: 'fal_video', requestId: '' }), false);
+  assert.deepEqual(moves, []);
+  rows.push(charge({ _id: 'o3', chargedUSD: undefined, metadata: { requestId: 'req-3' } }));
+  assert.equal(await U.refundUsageOnce({ userId: 'amber', service: 'fal_video', requestId: 'req-3' }), true);
+  assert.deepEqual(moves, [{ user: 'amber', inc: 420000 }], 'it was charged 1x, so 1x comes back');
+});
+
+test('a refund that could not be written lets go of its claim, so the next check tries again', async () => {
+  const { U, rows, moves, ctl } = load();
+  rows.push(charge());
+  ctl.failCreate = true;
+  assert.equal(await U.refundUsageOnce({ userId: 'amber', service: 'fal_video', requestId: 'req-1' }), false);
+  assert.equal(rows[0].metadata.refundedAt, undefined, 'claim released');
+  assert.deepEqual(moves, []);
+  ctl.failCreate = false;
+  assert.equal(await U.refundUsageOnce({ userId: 'amber', service: 'fal_video', requestId: 'req-1' }), true);
+  assert.equal(refundRows(rows).length, 1);
+  assert.deepEqual(moves, [{ user: 'amber', inc: 840000 }]);
+});
+
+/* Part 295 review: a timer pass files everyone's items; the newest uploader no longer pays for it. */
+test('platform upkeep is written to Kade at the real cost and charged to nobody', async () => {
+  const { U, rows, moves } = load();
+  await U.logPlatformUsage({ fallbackUserId: 'amber', service: 'describe', quantity: 200, unit: 'items', costUSD: 0.04, metadata: { source: 'media-librarian' } });
+  assert.equal(rows[0].user, 'kade');
+  assert.equal(rows[0].costUSD, 0.04, 'her readouts and the pass cap still see it');
+  assert.equal(rows[0].chargedUSD, 0);
+  assert.deepEqual(moves, []);
+  for (const opts of [{ owner: null }, { ownerLookupFails: true }]) {
+    const other = load(opts);
+    await other.U.logPlatformUsage({ fallbackUserId: 'amber', service: 'describe', quantity: 3, unit: 'items', costUSD: 0.01, metadata: { source: 'librarian-sort' } });
+    assert.equal(other.rows[0].user, 'amber', 'without her account the row is kept on the batch owner');
+    assert.equal(other.rows[0].chargedUSD, 0, 'and still charged nothing');
+    assert.deepEqual(other.moves, []);
+  }
 });

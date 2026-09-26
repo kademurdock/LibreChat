@@ -173,4 +173,4 @@ async function alertOwner({ agentId, agentName, title, body, nudgeText, nudgeTyp
   return out;
 }
 
-module.exports = { alertOwnerNewFeedback, alertOwner };
+module.exports = { alertOwnerNewFeedback, alertOwner, ownerUserId };

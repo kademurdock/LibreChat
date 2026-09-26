@@ -18,7 +18,7 @@ const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { KadeBook } = require('~/models/kadeBook');
 const { correctedBookShelf } = require('@librechat/api');
-const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
+const { logKadeUsage, logPlatformUsage, KadeUsage } = require('~/models/kadeUsage');
 const { openRouterCost } = require('~/server/services/kadeRealCost');
 
 const SHELVES = [
@@ -149,7 +149,10 @@ async function sortOnce({ force = false, userId = null } = {}) {
       await KadeBook.updateOne({ _id: b._id, shortcutOf: { $exists: false }, $or: [{ path: '' }, { path: { $exists: false } }] }, { $set: set, $addToSet: { tags: c.shelf } });
       filed++;
     }
-    logKadeUsage({ userId: userId || books[0].owner, service: 'describe', quantity: filed, unit: 'items', costUSD, metadata: { source: 'librarian-sort', model: MODEL(), books: filed } });
+    const row = { service: 'describe', quantity: filed, unit: 'items', costUSD, metadata: { source: 'librarian-sort', model: MODEL(), books: filed } };
+    /* Part 295 review: a timer pass shelves everyone's books, so it is the platform's upkeep and no
+     * balance pays for it (the row still counts toward this pass's daily cap). */
+    await (userId ? logKadeUsage({ ...row, userId }) : logPlatformUsage({ ...row, fallbackUserId: books[0].owner }));
     logger.info(`[library/librarian-sort] filed ${filed} book(s) for $${costUSD.toFixed(4)} — ${Object.values(out).map((x) => x.shelf).reduce((m, s) => { m[s] = (m[s] || 0) + 1; return m; }, {}) && JSON.stringify(Object.entries(Object.values(out).reduce((m, x) => { m[x.shelf] = (m[x.shelf] || 0) + 1; return m; }, {})).slice(0, 8))}`);
     return filed;
   } catch (e) {

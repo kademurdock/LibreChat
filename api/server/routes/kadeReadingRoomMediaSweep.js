@@ -31,7 +31,7 @@
  * -------------------------------------------------------------------------- */
 const { logger } = require('@librechat/data-schemas');
 const { KadeBook } = require('~/models/kadeBook');
-const { logKadeUsage } = require('~/models/kadeUsage');
+const { logKadeUsage, logPlatformUsage } = require('~/models/kadeUsage');
 const jev = require('~/server/services/kadeJev');
 const librarian = require('~/server/services/kadeMediaLibrarian');
 
@@ -161,7 +161,10 @@ async function sweepOnce({ limit = BATCH(), userId = null } = {}) {
     lastPass = { ran: true, at: new Date(), ms: Date.now() - t0, costUSD: Number(costUSD.toFixed(4)), written: result.modifiedCount || 0, ...tally };
     logger.info(`[library/media-sweep] read ${tally.read}: moved ${tally.moved}, proposed ${tally.proposed}, flagged ${tally.flagged}, errors ${tally.errors}, $${costUSD.toFixed(4)} ${JSON.stringify(tally.byShelf).slice(0, 400)}`);
     if (costUSD > 0) {
-      logKadeUsage({ userId: userId || items[0].owner, service: 'describe', quantity: tally.read, unit: 'items', costUSD, metadata: { source: 'media-librarian', moved: tally.moved, proposed: tally.proposed } }).catch?.(() => {});
+      const row = { service: 'describe', quantity: tally.read, unit: 'items', costUSD, metadata: { source: 'media-librarian', moved: tally.moved, proposed: tally.proposed } };
+      /* Part 295 review: a timer pass files everyone's items, so it is the platform's upkeep and no
+       * balance pays for it; before, the newest upload's owner paid for the whole batch. */
+      (userId ? logKadeUsage({ ...row, userId }) : logPlatformUsage({ ...row, fallbackUserId: items[0].owner })).catch?.(() => {});
     }
     return lastPass;
   } catch (e) {

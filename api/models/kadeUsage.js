@@ -215,9 +215,72 @@ async function logKadeUsage({ userId, service, quantity, unit, costUSD, chargedU
   }
 }
 
+/**
+ * Part 295 review: give back one charge exactly once, found by its request id (FalAI's failed
+ * renders). Since Part 295 a refund row moves money, and two check_video calls for the same failed
+ * render can run at once (a message's tool calls run in parallel), so a look-then-write would pay
+ * the refund twice. The claim is one atomic write on the ORIGINAL row (metadata.refundedAt, set
+ * only where it is missing): only the caller whose write matched writes the refund row. If that
+ * row could not be written the claim is let go, so a later check can try again. A refund row from
+ * before the claim existed still counts as done. true when the charge is refunded (now or before),
+ * false when there is no such charge. Throws on a database error; the caller catches.
+ */
+async function refundUsageOnce({ userId, service, requestId, reason }) {
+  if (!userId || !requestId) return false;
+  const user = String(userId);
+  const original = await KadeUsage.findOne({ user, service, costUSD: { $gt: 0 }, 'metadata.requestId': requestId }).lean();
+  if (!original) return false;
+  if (original.metadata && original.metadata.refundedAt) return true;
+  if (await KadeUsage.findOne({ user, 'metadata.refund_for': requestId }).lean()) return true;
+  const claimed = await KadeUsage.findOneAndUpdate(
+    { _id: original._id, 'metadata.refundedAt': { $exists: false } },
+    { $set: { 'metadata.refundedAt': new Date() } },
+  ).lean();
+  if (!claimed) return true; /* another call claimed it first and writes the refund */
+  await logKadeUsage({
+    userId,
+    service,
+    quantity: original.quantity || 1,
+    unit: original.unit || 'seconds',
+    costUSD: -Math.abs(original.costUSD || 0),
+    /* Give back exactly what the original row charged (1x on rows from before Part 295). */
+    chargedUSD: -Math.abs(typeof original.chargedUSD === 'number' ? original.chargedUSD : original.costUSD || 0),
+    metadata: { refund_for: requestId, reason: String(reason || 'render failed').slice(0, 120) },
+  });
+  if (!(await KadeUsage.findOne({ user, 'metadata.refund_for': requestId }).lean())) {
+    await KadeUsage.updateOne({ _id: original._id }, { $unset: { 'metadata.refundedAt': 1 } });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Part 295 review: upkeep a timer runs for everyone (the library's filing and shelving passes) is
+ * the platform's cost, never one person's, whoever's upload happened to be first in the batch. The
+ * row is written to Kade's account (the owner lookup in kadeOwnerAlerts) at the real cost, so her
+ * readouts and each pass's own daily cap still see it, and no balance pays for it (chargedUSD 0).
+ * fallbackUserId holds the row only when her account cannot be found; it is still charged nothing.
+ * Never throws.
+ */
+async function logPlatformUsage({ fallbackUserId, ...row }) {
+  let owner = null;
+  try {
+    owner = await require('../server/services/kadeOwnerAlerts').ownerUserId();
+  } catch (err) {
+    try {
+      logger.warn(`[KadeUsage] owner lookup failed for ${row.service} upkeep: ${err && err.message}`);
+    } catch (_) {
+      /* noop */
+    }
+  }
+  return logKadeUsage({ ...row, userId: owner || fallbackUserId, chargedUSD: 0 });
+}
+
 module.exports = {
   KadeUsage,
   logKadeUsage,
+  logPlatformUsage,
+  refundUsageOnce,
   deductKadeCredits,
   priceFactorForUser,
   chargedFor,
