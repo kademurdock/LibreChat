@@ -600,11 +600,16 @@ export class YouTubeAudioError extends Error {
 
 export type YouTubeAudioDetails = { title: string; seconds: number; uploader: string };
 
-/** Reads yt-dlp's metadata and decides, before any download, whether the sound can come in. */
+/**
+ * Reads yt-dlp's metadata and decides, before any download, whether the sound can come in.
+ * An age-restricted video comes in only when the caller allows it (never for a child's account)
+ * AND the server is signed in; a child is refused even though the server's cookies could fetch it.
+ */
 export function readAudioMetadata(
   json: unknown,
   maxSeconds: number,
   cookies: boolean,
+  allowAgeRestricted: boolean = false,
 ): YouTubeAudioDetails {
   const parsed = metadataSchema.safeParse(json);
   if (!parsed.success) throw new YouTubeAudioError('unreadable');
@@ -617,11 +622,13 @@ export function readAudioMetadata(
   if (availability === 'private') throw new YouTubeAudioError('private');
   if (availability === 'subscriber_only') throw new YouTubeAudioError('members');
   if (availability === 'premium_only') throw new YouTubeAudioError('premium');
-  if (!cookies && (availability === 'needs_auth' || (data.age_limit ?? 0) >= 18))
-    throw new YouTubeAudioError('age');
+  const ageGated = availability === 'needs_auth' || (data.age_limit ?? 0) >= 18;
+  if (ageGated && !(allowAgeRestricted && cookies)) throw new YouTubeAudioError('age');
   const seconds = data.duration ?? 0;
   if (!(seconds > 0)) throw new YouTubeAudioError('no-length');
-  if (seconds > maxSeconds) throw new YouTubeAudioError('too-long', `${seconds} s`, seconds);
+  /* YouTube lists whole seconds (a listed 6:00 may hold up to 6:00.99 of sound), so a video
+   * listed AT the limit is refused too: only a listing under it is sure to fit. */
+  if (seconds >= maxSeconds) throw new YouTubeAudioError('too-long', `${seconds} s`, seconds);
   return {
     title: cut(cleanLabel(data.title), 200) || 'YouTube video',
     seconds,
@@ -664,7 +671,10 @@ function audioFailure(
 const audioFormat = 'ba[acodec^=mp4a]/ba/b[height<=360]/b';
 
 export type YouTubeAudioOptions = {
-  /** The longest video accepted, read from the metadata before any download. */
+  /**
+   * The length limit: a video listed at or over it is refused from the metadata before any
+   * download, and the MP3 is cut a tenth of a second short of it.
+   */
   maxSeconds: number;
   /** The largest MP3 handed back. */
   maxBytes: number;
@@ -677,6 +687,12 @@ export type YouTubeAudioOptions = {
   bitrate?: string;
   /** Folder for the temporary folder (the system temp folder by default). */
   tmp?: string;
+  /**
+   * May an age-restricted video come in through the server's signed-in YouTube account? False by
+   * default; the booth passes true for grown-ups only, so a child's account never gets past
+   * YouTube's own age gate.
+   */
+  allowAgeRestricted?: boolean;
 };
 
 export type YouTubeAudio = {
@@ -692,7 +708,8 @@ export type YouTubeAudio = {
 
 /**
  * One YouTube video's sound as an MP3, or a YouTubeAudioError. The length is checked before the
- * download; a video over `maxSeconds` is refused with its length, and nothing is fetched.
+ * download; a video listed at or over `maxSeconds` is refused with its length, and nothing is
+ * fetched.
  */
 export async function youtubeAudio(
   value: string,
@@ -704,7 +721,10 @@ export async function youtubeAudio(
   const log = options.log ?? (() => {});
   if (signal.aborted) throw new YouTubeAudioError('timeout', 'stopped before it started');
   const directory = await mkdtemp(join(options.tmp ?? tmpdir(), 'kade-ytaudio-'));
+  /* What YouTube last answered, one record per climb: a metadata pass that was walled on its
+   * first client must not name a slow download "the bot wall" when the deadline cuts it. */
   const seen: { error?: unknown } = {};
+  const downloadSeen: { error?: unknown } = {};
   try {
     const metaSignal = AbortSignal.any([signal, AbortSignal.timeout(options.metadataMs ?? 45000)]);
     let raw: Buffer;
@@ -726,7 +746,12 @@ export async function youtubeAudio(
     } catch {
       throw new YouTubeAudioError('unreadable', 'metadata was not JSON');
     }
-    const details = readAudioMetadata(json, maxSeconds, !!(process.env.KADE_YT_COOKIES || '').trim());
+    const details = readAudioMetadata(
+      json,
+      maxSeconds,
+      !!(process.env.KADE_YT_COOKIES || '').trim(),
+      options.allowAgeRestricted === true,
+    );
     let printed: string;
     try {
       printed = (
@@ -735,7 +760,7 @@ export async function youtubeAudio(
             '--max-filesize',
             String(Math.max(3 * maxBytes, 64 * 1024 ** 2)),
             '--match-filter',
-            `duration <= ${Math.floor(maxSeconds)} & !is_live`,
+            `duration < ${Math.ceil(maxSeconds)} & !is_live`,
             '-f',
             audioFormat,
             ...ffmpegLocation(),
@@ -748,11 +773,11 @@ export async function youtubeAudio(
           signal,
           1024 * 1024,
           log,
-          seen,
+          downloadSeen,
         )
       ).toString();
     } catch (error) {
-      throw audioFailure(error, signal, seen);
+      throw audioFailure(error, signal, downloadSeen);
     }
     const tail = printed.replace(/\s+/g, ' ').trim().slice(-300);
     // Over --max-filesize or outside the filter, yt-dlp skips the file and still exits 0.
@@ -765,6 +790,11 @@ export async function youtubeAudio(
         `no audio file; files [${names.filter((name) => name.startsWith('source')).join(', ')}]; yt-dlp said: ${tail}`,
       );
     const output = join(directory, 'cover.mp3');
+    /* YouTube lists whole seconds, so a video listed at 6:00 can hold up to 6:00.99 of sound, and
+     * the MP3 encoder adds a few hundredths more: the booth's own six-minute check would refuse
+     * it after the whole download. The MP3 stops a tenth of a second short of maxSeconds; only
+     * that last fraction of a second past the limit is ever lost. */
+    const lastSecond = String(Math.max(1, maxSeconds - 0.1));
     try {
       await command(
         ffmpeg(),
@@ -785,6 +815,8 @@ export async function youtubeAudio(
           'libmp3lame',
           '-b:a',
           options.bitrate ?? '192k',
+          '-t',
+          lastSecond,
           output,
         ],
         signal,

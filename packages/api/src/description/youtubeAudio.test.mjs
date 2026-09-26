@@ -11,10 +11,11 @@ import test, { after, beforeEach } from 'node:test';
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ffmpegPath from 'ffmpeg-static';
+import ffprobeStatic from 'ffprobe-static';
 import {
   ffmpegLocation,
   readAudioMetadata,
@@ -153,9 +154,9 @@ test('ffmpeg: only a real path is handed to yt-dlp, never a bare name', () => {
 });
 
 test('metadata: the length is judged before any download, in kinds rather than sentences', () => {
-  const kind = (json, cookies = false) => {
+  const kind = (json, cookies = false, grownUp = true) => {
     try {
-      readAudioMetadata(json, 360, cookies);
+      readAudioMetadata(json, 360, cookies, grownUp);
       return 'ok';
     } catch (error) {
       assert.ok(error instanceof YouTubeAudioError);
@@ -168,7 +169,9 @@ test('metadata: the length is judged before any download, in kinds rather than s
   } catch (error) {
     assert.equal(error.seconds, 433.1);
   }
-  assert.equal(kind({ title: 'x', duration: 360 }), 'ok');
+  // YouTube lists whole seconds, so a listing AT the limit may hold a fraction more: refused too.
+  assert.equal(kind({ title: 'x', duration: 360 }), 'too-long');
+  assert.equal(kind({ title: 'x', duration: 359 }), 'ok');
   assert.equal(kind({ title: 'x', is_live: true, live_status: 'is_live' }), 'live');
   assert.equal(kind({ title: 'x', live_status: 'is_upcoming' }), 'live');
   assert.equal(kind({ title: 'x', live_status: 'post_live' }), 'processing');
@@ -177,6 +180,16 @@ test('metadata: the length is judged before any download, in kinds rather than s
   assert.equal(kind({ title: 'x', duration: 60, availability: 'premium_only' }), 'premium');
   assert.equal(kind({ title: 'x', duration: 60, age_limit: 18 }), 'age');
   assert.equal(kind({ title: 'x', duration: 60, age_limit: 18 }, true), 'ok', 'signed-in cookies may get through');
+  // A child is refused an age-restricted video even when the server is signed in.
+  assert.equal(kind({ title: 'x', duration: 60, age_limit: 18 }, true, false), 'age');
+  assert.equal(kind({ title: 'x', duration: 60, availability: 'needs_auth' }, true, false), 'age');
+  assert.equal(kind({ title: 'x', duration: 60, availability: 'needs_auth' }, false, true), 'age');
+  assert.equal(kind({ title: 'x', duration: 60, age_limit: 0 }, true, false), 'ok', 'a child keeps ordinary videos');
+  assert.equal(
+    (() => { try { readAudioMetadata({ title: 'x', duration: 60, age_limit: 18 }, 360, true); return 'ok'; } catch (error) { return error.kind; } })(),
+    'age',
+    'not allowed unless the caller says so',
+  );
   assert.equal(kind({ title: 'x' }), 'no-length');
   assert.equal(kind(null), 'unreadable');
   const zwsp = String.fromCodePoint(0x200b);
@@ -203,7 +216,7 @@ test('download: one video comes in as an MP3 with its title and length, and the 
   }
   const download = runs[1];
   assert.equal(download[download.indexOf('-f') + 1], 'ba[acodec^=mp4a]/ba/b[height<=360]/b');
-  assert.equal(download[download.indexOf('--match-filter') + 1], 'duration <= 360 & !is_live');
+  assert.equal(download[download.indexOf('--match-filter') + 1], 'duration < 360 & !is_live');
   assert.deepEqual(await readdir(root), [], 'temp folder removed');
 });
 
@@ -216,6 +229,35 @@ test('duration: a video over six minutes is refused from its metadata, and nothi
   });
   assert.equal(runs.length, 1);
   assert.ok(isMetadataRun(runs[0]));
+  assert.deepEqual(await readdir(root), []);
+});
+
+/** The MP3's real length, from ffprobe. */
+async function measured(buffer) {
+  const file = join(root, 'measure.mp3');
+  await writeFile(file, buffer);
+  try {
+    return await new Promise((resolve, reject) => {
+      const probe = realSpawn(ffprobeStatic.path, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]);
+      let out = '';
+      probe.stdout.on('data', (chunk) => (out += chunk));
+      probe.on('close', (code) => (code === 0 ? resolve(Number(out.trim())) : reject(new Error('ffprobe failed'))));
+    });
+  } finally {
+    await rm(file, { force: true });
+  }
+}
+
+test('duration: the MP3 stops a tenth of a second short of the limit, so a listing just under it always fits', async () => {
+  // Listed at 2 s under a 3 s limit, but holding 2.99 s of sound (plus the encoder's few hundredths).
+  answer = (args) => (isMetadataRun(args) ? { stdout: metadata({ duration: 2 }) } : { tone: { ext: 'webm', seconds: 2.99 } });
+  const got = await youtubeAudio('https://youtu.be/dQw4w9WgXcQ', options({ maxSeconds: 3 }));
+  const seconds = await measured(got.buffer);
+  assert.ok(seconds <= 2.95 && seconds > 2.8, `measured ${seconds} s`);
+  // A short song is never touched by the cut.
+  answer = (args) => (isMetadataRun(args) ? { stdout: metadata({ duration: 2 }) } : { tone: { ext: 'webm', seconds: 2 } });
+  const whole = await measured((await youtubeAudio('https://youtu.be/dQw4w9WgXcQ', options({ maxSeconds: 360 }))).buffer);
+  assert.ok(whole > 1.95 && whole < 2.1, `measured ${whole} s`);
   assert.deepEqual(await readdir(root), []);
 });
 
@@ -249,6 +291,50 @@ test('errors: a deadline that cuts the climb short still names what YouTube was 
   setTimeout(() => stop.abort(new Error('deadline')), 200);
   await assert.rejects(youtubeAudio('https://youtu.be/dQw4w9WgXcQ', options({ signal: stop.signal })), { kind: 'timeout' });
   assert.deepEqual(await readdir(root), [], 'cleaned up after a timeout too');
+});
+
+test('errors: a slow download after a walled metadata client is a timeout, not the bot wall', async () => {
+  // Metadata: the first client is walled, the second answers. Then the download hangs past the deadline.
+  answer = (args, run) =>
+    run === 1
+      ? { code: 1, stderr: "ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm you're not a bot. Use --cookies-from-browser or --cookies for the authentication." }
+      : isMetadataRun(args)
+        ? { stdout: metadata() }
+        : { hang: true };
+  const stop = new AbortController();
+  setTimeout(() => stop.abort(new Error('deadline')), 500);
+  await assert.rejects(youtubeAudio('https://youtu.be/dQw4w9WgXcQ', options({ signal: stop.signal })), (error) => {
+    assert.equal(error.kind, 'timeout');
+    return true;
+  });
+  assert.equal(runs.length, 3, 'walled, metadata, then the download that hung');
+  assert.ok(!isMetadataRun(runs[2]));
+  assert.deepEqual(await readdir(root), []);
+});
+
+test('age: a child is refused an age-restricted video even when the server is signed in, and nothing is downloaded', async () => {
+  process.env.KADE_YT_COOKIES = '# Netscape HTTP Cookie File (test placeholder)\n';
+  try {
+    answer = () => ({ stdout: metadata({ age_limit: 18, availability: 'needs_auth', duration: 200 }) });
+    await assert.rejects(youtubeAudio('https://youtu.be/dQw4w9WgXcQ', options({ allowAgeRestricted: false })), { kind: 'age' });
+    assert.equal(runs.length, 1, 'only the metadata pass ran');
+    assert.ok(isMetadataRun(runs[0]));
+    runs = [];
+    await assert.rejects(youtubeAudio('https://youtu.be/dQw4w9WgXcQ', options()), { kind: 'age' }, 'refused unless the caller allows it');
+    assert.equal(runs.length, 1);
+    // A grown-up with the server signed in gets through to the download.
+    runs = [];
+    answer = (args) =>
+      isMetadataRun(args)
+        ? { stdout: metadata({ age_limit: 18, availability: 'needs_auth', duration: 3 }) }
+        : { tone: { ext: 'm4a', seconds: 3 } };
+    const got = await youtubeAudio('https://youtu.be/dQw4w9WgXcQ', options({ allowAgeRestricted: true }));
+    assert.ok(got.buffer.length > 10000);
+    assert.equal(runs.length, 2);
+  } finally {
+    delete process.env.KADE_YT_COOKIES;
+  }
+  assert.deepEqual(await readdir(root), []);
 });
 
 test('errors: an MP3 over the size cap is refused, and a missing download is a plain failure', async () => {
