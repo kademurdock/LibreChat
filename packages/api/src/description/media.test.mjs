@@ -692,6 +692,93 @@ test('analysis clips: more frames for short clips, close look slowed, and a size
     assert.ok(bytes(seconds) < 40 * 1024 ** 2, `a ${seconds} s clip fits under 40 MB at its ceiling`);
 });
 
+/** The text a time strip's drawtext prints at time `t`, with its expansions worked out here. */
+function stripPrints(filters, t) {
+  const quoted = /:text='((?:[^'\\]|\\.)*)'/.exec(filters[1]);
+  assert.ok(quoted, 'the strip text is quoted for the filter graph');
+  const text = quoted[1].replace(/\\(.)/g, '$1');
+  const mod = (a, b) => a - b * Math.floor(a / b);
+  return text.replace(/%\{eif:([^:}]+):d(?::(\d+))?\}/g, (_match, expression, pad) => {
+    const value = Function('t', 'floor', 'mod', `return ${expression};`)(t, Math.floor, mod);
+    return String(Math.trunc(value)).padStart(Number(pad || 0), '0');
+  });
+}
+
+test('time strip: a padded band under the picture prints the real film time and the clip time', () => {
+  const strip = media.timeStrip({ font: 'C:/Windows/Fonts/consola.ttf', film: 80.75, scale: 4, seconds: 77.5, width: 1280, height: 720 });
+  assert.equal(strip.length, 2);
+  const band = Number(/^pad=w=iw:h=ih\+(\d+):x=0:y=0:color=black$/.exec(strip[0])?.[1]);
+  assert.ok(band >= 24 && band % 2 === 0, `an even band is added below the picture: ${strip[0]}`);
+  assert.ok(strip[1].startsWith("drawtext=fontfile='C\\:/Windows/Fonts/consola.ttf':text='film %{eif\\:"), strip[1]);
+  assert.match(strip[1], /:fontcolor=white:/);
+  const y = /:y=h-(\d+)\+(\d+)$/.exec(strip[1]);
+  assert.ok(y && Number(y[1]) === band, 'the lettering sits inside the band, never on the picture');
+  const size = Number(/:fontsize=(\d+):/.exec(strip[1])[1]);
+  assert.ok(Number(y[2]) + size <= band, 'the lettering fits the band');
+  assert.ok(!/[,;[\]]/.test(strip[1].replace(/'[^']*'/g, '')), 'commas in the expressions stay inside the quotes');
+  assert.equal(stripPrints(strip, 0), 'film 1:20.8   clip 0.0');
+  assert.equal(stripPrints(strip, 22.75), 'film 1:43.5   clip 91.0', 'close look: clip time runs four times faster than film time');
+  assert.equal(stripPrints(strip, 76.25), 'film 2:37.0   clip 305.0');
+  const plain = media.timeStrip({ font: '/usr/share/fonts/dejavu/DejaVuSansMono.ttf', film: 12, scale: 1, seconds: 60, width: 960, height: 540 });
+  assert.equal(stripPrints(plain, 1 / 3), 'film 0:12.3   clip 0.3', 'a normal look prints the same second twice over');
+  assert.ok(plain[1].startsWith("drawtext=fontfile='/usr/share/fonts/dejavu/DejaVuSansMono.ttf':"));
+  const late = media.timeStrip({ font: '/f.ttf', film: 3597.25, scale: 4, seconds: 8, width: 960, height: 540 });
+  assert.equal(stripPrints(late, 5), 'film 1:00:02.3   clip 20.0', 'past an hour the clock shows hours');
+  const tall = media.timeStrip({ font: '/f.ttf', film: 0, scale: 4, seconds: 60, width: 406, height: 720 });
+  const tallSize = Number(/:fontsize=(\d+):/.exec(tall[1])[1]);
+  assert.ok(tallSize * 0.62 * 28 <= 406, `a narrow portrait picture gets lettering that fits its width: ${tallSize}`);
+});
+
+test('look clips: the time strip is added under the picture, and with no font the clip is made without it', async () => {
+  const file = await make('clips.mp4', [...lavfi(picture('320x240', 30, 26)), ...lavfi(sound(26)), ...h264, '-c:a', 'aac']);
+  const info = await media.probe(file, signal);
+  const dir = await folder('strip');
+  const bare = await media.lookClip(file, dir, 2, 4, signal, true, info);
+  assert.equal(bare.stamped, false, 'no film time asked for, no strip');
+  const plain = await geometry(bare.file);
+  const gray = async (clip, width, height) => {
+    const raw = await media.command(ffmpegPath, ['-nostdin', '-v', 'error', '-i', clip, '-frames:v', '1', '-vf', `scale=${width}:${height}:flags=neighbor,format=gray`, '-f', 'rawvideo', '-'], signal);
+    return raw;
+  };
+  const before = await gray(bare.file, plain.width, plain.height);
+  const font = await media.stripFont();
+  const stamped = await media.lookClip(file, dir, 2, 4, signal, true, info, 82);
+  assert.equal(stamped.stamped, font !== null && (await media.capabilities()).drawtext);
+  const shaped = await geometry(stamped.file);
+  assert.equal(shaped.width, plain.width);
+  if (stamped.stamped) {
+    const band = shaped.height - plain.height;
+    assert.ok(band >= 24, `the strip adds a band below the picture: ${band}`);
+    const after = await gray(stamped.file, shaped.width, shaped.height);
+    let diff = 0;
+    for (let i = 0; i < plain.width * plain.height; i++) diff += Math.abs(after[i] - before[i]);
+    assert.ok(diff / (plain.width * plain.height) < 6, 'the picture above the strip is not covered');
+    const strip = after.subarray(plain.width * plain.height);
+    const dark = strip.filter((value) => value < 40).length / strip.length;
+    const lit = strip.filter((value) => value > 200).length;
+    assert.ok(dark > 0.6 && lit > 50, `the band is black with white lettering: ${dark}, ${lit}`);
+    const length = Number((await probeJson(stamped.file, 'format=duration')).format.duration);
+    assert.ok(Math.abs(length - 16) < 0.2, `still slowed four times: ${length}`);
+  } else assert.equal(shaped.height, plain.height);
+  const own = join(dir, 'own-font.ttf');
+  await writeFile(own, 'any file');
+  process.env.KADE_DESCRIPTION_FONT = own.replace(/\//g, '\\');
+  try {
+    assert.equal(await media.stripFont(), own.replace(/\\/g, '/'), 'a font named in the setting comes first');
+    process.env.KADE_DESCRIPTION_FONT = join(dir, 'missing.ttf');
+    assert.equal(await media.stripFont(), font, 'a named font that is not there falls back to the installed ones');
+    process.env.KADE_DESCRIPTION_FONT = 'off';
+    assert.equal(await media.stripFont(), null);
+    const fallback = await media.lookClip(file, dir, 2, 4, signal, false, info, 82);
+    assert.equal(fallback.stamped, false, 'with no font the clip is made without the strip');
+    const fallbackHeight = (await geometry(fallback.file)).height;
+    assert.equal(fallbackHeight, (await geometry(await media.sectionClip(file, dir, 2, 4, signal, false, info))).height);
+  } finally {
+    delete process.env.KADE_DESCRIPTION_FONT;
+  }
+  assert.equal(await media.stripFont(), font, 'the installed font comes back once the setting is gone');
+});
+
 test('assemble adds text tracks, chapters and a whole title, and keeps a late picture in step', async () => {
   const D = 8;
   const file = await joined('late-picture.mkv', { seconds: D, videoDelay: 0.5, codecs: [...h264, '-c:a', 'aac'] });

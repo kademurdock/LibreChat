@@ -1151,6 +1151,19 @@ test('providers: keyterms come from her notes, call letters, chapters and senten
   assert.deepEqual(keytermsFor({ title: 'VID_20240101 HD', notes: '', about: 'Lots of Words Here' }), []);
 });
 
+test('prompt: a clip with a time strip says once to take cue times from it and never read it aloud', () => {
+  const lines = [{ start: 4, end: 8, text: 'Hello there.', speaker: 0 }];
+  const stamped = analysisPrompt(40, brief({ slowed: true, stamped: true }), null, lines, []);
+  const strip = stamped.split('\n').filter((line) => /strip/i.test(line));
+  assert.equal(strip.length, 1, 'one line about the strip');
+  assert.match(strip[0], /^TIME STRIP: .*real film time, then its time in this clip/);
+  assert.match(strip[0], /Take every at, until and pauseAt from the clip time printed on the frame/);
+  assert.match(strip[0], /never describe or read the strip aloud/);
+  assert.ok(stamped.indexOf('TIME STRIP') < stamped.indexOf('SOURCE METADATA'), 'it sits with the clip facts');
+  assert.doesNotMatch(analysisPrompt(40, brief({ slowed: true }), null, lines, []), /strip/i, 'no strip, no line');
+  assert.doesNotMatch(analysisPrompt(40, brief({ survey: true, stamped: true }), null, lines, []), /TIME STRIP/, 'the first look writes no cues');
+});
+
 function fakeAxios(handler) {
   const calls = [];
   const previous = axios.defaults.adapter;

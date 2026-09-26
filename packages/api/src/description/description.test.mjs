@@ -42,7 +42,7 @@ import {
   dialogueLoudness,
 } from './engine.ts';
 import { readAnalysis, nextContinuity, analysisPrompt } from './prompt.ts';
-import { command, probe, frameRate, sectionClip, MediaError } from './media.ts';
+import { capabilities, command, lookClip, probe, frameRate, sectionClip, stripFont, MediaError } from './media.ts';
 import { transcriptText, clock } from './transcript.ts';
 import { settingsSchema, Halt } from './types.ts';
 import { editsSchema, revise, scriptCues, libraryPathSchema } from './revision.ts';
@@ -713,6 +713,45 @@ test('close look slows the entire clip and maps descriptions back onto the origi
   );
   assert.ok(result.report.descriptions[0].at >= 1 && result.report.descriptions[0].at < 2);
   assert.ok(Math.abs(result.report.outputSeconds - 9) < 0.2);
+});
+
+test('look clips print the real film time of a part of a longer video, and the prompt knows the strip is there', async () => {
+  const f = await fixture('strip-look', 9);
+  const font = await stripFont();
+  const tools = await capabilities();
+  const seen = [];
+  const backend = providers(f.voice, [], []);
+  backend.analyze = async (look) => {
+    const kept = join(f.dir, `look-${seen.length}.mp4`);
+    await copyFile(look.file, kept);
+    seen.push({ look, kept, prompt: analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before) });
+    return { kind: 'other', setting: '', people: [], speakers: [], protectedSounds: [], cues: [] };
+  };
+  const log = [];
+  await run(f, [], [], { providers: backend, log, settings: { ...settings, closeLook: true, range: { start: 2, end: 8 } } });
+  assert.equal(seen.length, 1);
+  const stamped = font !== null && tools.drawtext;
+  assert.equal(seen[0].look.brief.stamped === true, stamped);
+  assert.equal(/TIME STRIP/.test(seen[0].prompt), stamped);
+  assert.equal(log.some((line) => /no time strip/.test(line)), !stamped);
+  if (!stamped) return;
+  const band = async (file, height) => {
+    const info = await probe(file, signal);
+    const raw = await command(ffmpegPath, ['-nostdin', '-v', 'error', '-i', file, '-frames:v', '1', '-vf', 'format=gray', '-f', 'rawvideo', '-'], signal);
+    return { info, strip: raw.subarray(info.width * height) };
+  };
+  const source = await probe(f.file, signal);
+  const engine = await band(seen[0].kept, 120);
+  assert.ok(engine.info.height > 120, `the strip sits below the 160x120 picture: ${engine.info.height}`);
+  const reference = async (film) => {
+    const dir = join(f.dir, `reference-${film}`);
+    await mkdir(dir, { recursive: true });
+    return (await band((await lookClip(f.file, dir, 2, 6, signal, true, source, film)).file, 120)).strip;
+  };
+  const distance = (a, b) => a.reduce((sum, value, i) => sum + Math.abs(value - b[i]), 0) / a.length;
+  const right = distance(engine.strip, await reference(2));
+  const wrong = distance(engine.strip, await reference(0));
+  assert.ok(right < wrong / 2, `the strip shows film time 0:02.0, where the part starts in the source: ${right} vs ${wrong}`);
 });
 
 test('whole-film first look checkpoints, resumes, and finishes before any narration', async () => {

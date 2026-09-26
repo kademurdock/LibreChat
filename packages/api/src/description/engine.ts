@@ -28,10 +28,10 @@ import {
   assemble,
   copyable,
   decodeVoice,
+  lookClip,
   MediaError,
   normalize,
   saveSound,
-  sectionClip,
   sectionPicture,
   sectionSound,
   soundtrack,
@@ -532,6 +532,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   let secondsPerByte = prior;
   let keptSecondsPerByte = fixed.secondsPerByte;
   let voiceFailures = 0;
+  let stripMissing = false;
   const carried = new Map<number, Carried[]>();
 
   const briefFor = (i: number, survey: boolean, scale: number): Brief => {
@@ -618,14 +619,28 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     try {
       await mkdir(dir, { recursive: true });
       const scale = settings.closeLook && !survey ? 4 : 1;
-      const clip = await sectionClip(source, dir, section.start, seconds, signal, scale > 1, media);
+      const film = survey ? undefined : (settings.range?.start ?? 0) + section.start;
+      const { file: clip, stamped } = await lookClip(
+        source,
+        dir,
+        section.start,
+        seconds,
+        signal,
+        scale > 1,
+        media,
+        film,
+      );
+      if (film !== undefined && !stamped && !stripMissing) {
+        stripMissing = true;
+        log('Look clips carry no time strip: the media tools have no drawtext or no font.');
+      }
       let analysis: Analysis;
       try {
         analysis = await providers.analyze(
           {
             file: clip,
             seconds: seconds * scale,
-            brief: briefFor(i, survey, scale),
+            brief: { ...briefFor(i, survey, scale), ...(stamped ? { stamped } : {}) },
             state,
             lines: linesFrom(inSection(section), section.start).map((line) => ({
               ...line,

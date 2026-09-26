@@ -41,6 +41,8 @@ export type Brief = {
   secondsPerByte?: number;
   /** Her note for this one section (redo with a note). */
   sectionNote?: string;
+  /** The clip carries a strip under the picture printing each frame's film time and clip time. */
+  stamped?: boolean;
 };
 
 /** Makes text safe for the speech engine: no brackets or symbols it could read as tags. */
@@ -275,6 +277,12 @@ export function roomText(seconds: number, brief: Brief, lines: Line[]): string {
     .join('\n');
 }
 
+/** The one line about the time strip, when the clip carries one. */
+const stripText = (brief: Brief): string =>
+  brief.stamped && !brief.survey
+    ? "TIME STRIP: a black strip under the picture prints each frame's real film time, then its time in this clip. Take every at, until and pauseAt from the clip time printed on the frame where the thing happens, never an estimate, and never describe or read the strip aloud: it is not part of the video."
+    : '';
+
 function metadataText(seconds: number, brief: Brief): string {
   const scale = brief.slowed ? 4 : 1;
   const start = brief.position?.start ?? 0;
@@ -350,7 +358,7 @@ export function analysisPrompt(
 
 THIS CLIP
 It is ${seconds.toFixed(2)} seconds long. Every time you give is in seconds from the start of THIS clip, between 0 and ${seconds.toFixed(2)}.
-${[metadataText(seconds, brief), ...trusted, positionText(seconds, brief)].filter(Boolean).join('\n')}
+${[stripText(brief), metadataText(seconds, brief), ...trusted, positionText(seconds, brief)].filter(Boolean).join('\n')}
 
 CONTINUITY
 ${continuityText(state)}
