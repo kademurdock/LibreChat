@@ -357,7 +357,7 @@ test('the backfill hashes only same-size files the ETags cannot tell apart; the 
   assert.strictEqual((await h.files.duplicateGroups()).length, 1, 'the pair now shows up for Kade');
 });
 
-function loadSweep() {
+function loadSweep(librarian = { zoneOf: () => 'intake', categoryOf: () => 'tv', VERSION: 1 }) {
   const source = fs.readFileSync(path.join(__dirname, '../routes/kadeReadingRoomMediaSweep.js'), 'utf8');
   const sandbox = { module: { exports: {} }, process, Date, setInterval, setTimeout, console };
   sandbox.require = (name) => ({
@@ -365,11 +365,81 @@ function loadSweep() {
     '~/models/kadeBook': { KadeBook },
     '~/models/kadeUsage': { logKadeUsage: async () => {} },
     '~/server/services/kadeJev': { enabled: () => true },
-    '~/server/services/kadeMediaLibrarian': { zoneOf: () => 'intake', categoryOf: () => 'tv', VERSION: 1 },
+    '~/server/services/kadeMediaLibrarian': librarian,
   })[name];
   vm.runInNewContext(source, sandbox);
   return sandbox.module.exports;
 }
+
+test('the second look (Part 295): intake items an older librarian left are read once more; filed, undone, current and given-up items are not', async () => {
+  const sweep = loadSweep({ zoneOf: () => 'intake', categoryOf: () => 'tv', VERSION: 2 });
+  const read = (v, extra = {}) => ({ v, at: new Date('2026-09-24T12:00:00Z'), zone: 'intake', from: 'Audio/Needs Filing/TV/Empire/Empire Season 2', why: '', confidence: 0, ...extra });
+  const tv = 'Audio/Needs Filing/TV/Empire/Empire Season 2';
+  await KadeBook.create({ owner: KADE, kind: 'audio', state: 'ready', title: 'Left by version 1', path: tv, meta: { jevFiling: read(1) } });
+  await KadeBook.create({ owner: KADE, kind: 'audio', state: 'ready', title: 'Never read', path: 'Audio/Needs Filing/Archive Intake' });
+  await KadeBook.create({ owner: KADE, kind: 'audio', state: 'ready', title: 'Read by version 2', path: tv, meta: { jevFiling: read(2) } });
+  await KadeBook.create({ owner: KADE, kind: 'audio', state: 'ready', title: 'Filed', path: 'Audio/Described Movies & TV/TV/Empire/Empire Season 2', meta: { jevFiling: read(1, { to: 'Audio/Described Movies & TV/TV/Empire/Empire Season 2' }) } });
+  await KadeBook.create({ owner: KADE, kind: 'audio', state: 'ready', title: 'Filed, then put back by undo', path: tv, meta: { jevFiling: read(1, { to: 'Audio/Radio Airchecks/Undated', undone: new Date() }) } });
+  await KadeBook.create({ owner: KADE, kind: 'video', state: 'ready', title: 'Read on a shelf and left', path: 'Video/Channels/NBC/1990s', meta: { jevFiling: read(1, { zone: 'filed' }) } });
+  await KadeBook.create({ owner: KADE, kind: 'audio', state: 'ready', title: 'Jev failed it three times', path: tv, meta: { jevFiling: read(1), jevFilingTries: 3 } });
+  await KadeBook.create({ owner: KADE, kind: 'audio', state: 'pending', title: 'Still uploading', path: tv, meta: { jevFiling: read(1) } });
+  const picked = await sweep._pick(50);
+  assert.deepStrictEqual(Array.from(picked, (i) => i.title), ['Never read', 'Left by version 1'], 'new arrivals first, then the second look');
+  assert.strictEqual(picked[1]._again, true);
+  assert.deepStrictEqual(Array.from(await sweep._pick(1), (i) => i.title), ['Never read'], 'the second look waits for room in the batch');
+});
+
+test('the second look files her described episodes by the folder fact, in the shelf\'s own spelling, and keeps her other notes', async () => {
+  const librarian = require('./kadeMediaLibrarian');
+  const sweep = loadSweep(librarian);
+  const prev = process.env.KADE_MEDIA_SWEEP;
+  delete process.env.KADE_MEDIA_SWEEP;
+  try {
+    await KadeBook.create({ owner: KADE, kind: 'audio', state: 'ready', title: '[S12.E01] Finders Keepers', path: 'Audio/Described Movies & TV/TV/Family guy/Family Guy - Season 12 (2013)', meta: { jevFiling: { v: 1, to: 'x' } } });
+    const waiting = await KadeBook.create({ owner: KADE, kind: 'audio', state: 'ready', title: '[S12.E08] Christmas Guy', path: 'Audio/Needs Filing/TV/Family Guy/Family Guy - Season 12 (2013)',
+      meta: { jevFiling: { v: 1, at: new Date('2026-09-24T12:23:50Z'), zone: 'intake', from: 'Audio/Needs Filing/TV/Family Guy/Family Guy - Season 12 (2013)', why: '', confidence: 0 }, review: 'Jev review: made outside the US (0.93). Space review: identical copy, another is kept.' } });
+    const pass = await sweep.sweepOnce({ limit: 10 });
+    assert.strictEqual(pass.moved, 1, JSON.stringify(pass));
+    assert.strictEqual(pass.again, 1);
+    assert.strictEqual(pass.costUSD, 0, 'a folder fact costs nothing');
+    const after = await KadeBook.findById(waiting._id).lean();
+    assert.strictEqual(after.path, 'Audio/Described Movies & TV/TV/Family guy/Family Guy - Season 12 (2013)', 'the split season is one folder again');
+    assert.strictEqual(after.category, 'movie');
+    assert.strictEqual(after.meta.jevFiling.v, 2);
+    assert.strictEqual(after.meta.jevFiling.from, 'Audio/Needs Filing/TV/Family Guy/Family Guy - Season 12 (2013)', 'undoable');
+    assert.strictEqual(after.meta.jevFiling.why, 'folder says so');
+    assert.strictEqual(after.meta.review, 'Jev review: made outside the US (0.93).', 'her other note stays; the copy note is worked out again and this one has no kept copy');
+    const again = await sweep.sweepOnce({ limit: 10 });
+    assert.strictEqual(again.read, 0, 'read once per version');
+  } finally {
+    if (prev === undefined) delete process.env.KADE_MEDIA_SWEEP;
+    else process.env.KADE_MEDIA_SWEEP = prev;
+  }
+});
+
+test('Part 295 review: the second look puts a St. Louis business on her St. Louis shelf and takes the old location doubt off', async () => {
+  const librarian = require('./kadeMediaLibrarian');
+  const sweep = loadSweep(librarian);
+  const prev = process.env.KADE_MEDIA_SWEEP;
+  delete process.env.KADE_MEDIA_SWEEP;
+  try {
+    const intake = 'Videos/Needs Filing/Archive Intake';
+    const rothman = await KadeBook.create({ owner: KADE, kind: 'video', state: 'ready', title: '2007 Rothman Furniture commercials', path: intake,
+      meta: { jevFiling: { v: 1, at: new Date('2026-09-26T15:00:00Z'), zone: 'intake', from: intake, why: '', confidence: 0 }, review: 'Space review: local to another area (0.81). Jev review: made outside the US (0.91).' } });
+    const pass = await sweep.sweepOnce({ limit: 10 });
+    assert.strictEqual(pass.moved, 1, JSON.stringify(pass));
+    assert.strictEqual(pass.costUSD, 0, 'a rule costs nothing');
+    const after = await KadeBook.findById(rothman._id).lean();
+    assert.strictEqual(after.path, 'Video/Missouri/St. Louis (Local)/2000s');
+    assert.strictEqual(after.category, 'tv');
+    assert.deepStrictEqual(Array.from(after.tags || []), ['Missouri', 'St. Louis']);
+    assert.strictEqual(after.meta.jevFiling.from, intake, 'undoable');
+    assert.strictEqual(after.meta.review, 'Jev review: made outside the US (0.91).', 'no deletion suggestion on her own shelf; her other note stays');
+  } finally {
+    if (prev === undefined) delete process.env.KADE_MEDIA_SWEEP;
+    else process.env.KADE_MEDIA_SWEEP = prev;
+  }
+});
 
 test('the media sweep never picks a shortcut, and waits for the verifier on a fresh upload', async () => {
   const sweep = loadSweep();
