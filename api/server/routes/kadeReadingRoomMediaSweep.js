@@ -25,9 +25,12 @@
  * proposal, why, confidence }. `from` makes each move undoable (see /undo),
  * and the presence of the field is what keeps an item from being read twice
  * (the second look aside). Flags go in meta.review ("Jev review: made outside
- * the US (0.93).", "Librarian guess: Other Video/1980s (0.31). Check this
- * one.") and are never moves or deletions; TubeVault shows them as review
- * notes. A new read adds to her notes; it never wipes one it does not repeat.
+ * the US (0.93).", "Jev review: librarian guess, Other Video/1980s (0.31).
+ * Check this one.") and are never moves or deletions; TubeVault shows them as
+ * review notes. A new read adds to her notes; it never wipes one it does not
+ * repeat, except the location doubts once it puts an item on her own shelves
+ * (as /librarian/organize does) and a note the read itself has answered.
+ * A missing or malformed Jev answer is an error: no move, one try counted.
  *
  * Knobs: KADE_MEDIA_SWEEP=0 kills; KADE_MEDIA_SWEEP_INTERVAL_MIN (5);
  * KADE_MEDIA_SWEEP_BATCH (200); KADE_MEDIA_SWEEP_DAILY_USD (2.00);
@@ -176,7 +179,11 @@ async function sweepOnce({ limit = BATCH(), userId = null } = {}) {
       if (d.to) record[apply ? 'to' : 'proposal'] = d.to;
       const set = { 'meta.jevFiling': record };
       const before = String((item.meta && item.meta.review) || '');
-      const review = librarian.reviewNote(before, flags);
+      /* Part 295 review: an item that lands on her Ozarks or Missouri shelves is local to here, so the location
+       * doubts come off, whichever read wrote them; decide's own `drop` names notes the read has answered. */
+      const drop = [...(d.drop || [])];
+      if (apply && librarian.zoneOf({ kind: item.kind, path: d.to }) === 'local') drop.push(librarian.LOCATION_DOUBT_NOTE);
+      const review = librarian.reviewNote(before, flags, drop);
       if (review !== before) set['meta.review'] = review;
       if (item._again) tally.again++;
       if (String(d.why || '').startsWith('guess')) tally.guessed++;
@@ -215,7 +222,7 @@ async function status() {
     KadeBook.countDocuments({ ...base, 'meta.jevFiling.proposal': { $exists: true } }),
     KadeBook.countDocuments({ ...base, 'meta.review': { $exists: true, $ne: '' } }),
     KadeBook.countDocuments({ ...base, ...AGAIN() }),
-    KadeBook.countDocuments({ ...base, 'meta.review': /Librarian guess:/ }),
+    KadeBook.countDocuments({ ...base, 'meta.review': /Jev review: librarian guess|Librarian guess:/ }),
   ]);
   return { enabled: ENABLED(), auditApply: AUDIT_APPLY(), auditDone, intervalMin: INTERVAL_MIN(), batch: BATCH(), dailyUSD: DAILY_USD(), spentTodayUSD: Number(spentToday().toFixed(4)), version: librarian.VERSION, unread, intake, secondLook, proposals, flagged, guesses, lastPass };
 }

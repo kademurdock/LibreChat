@@ -417,6 +417,30 @@ test('the second look files her described episodes by the folder fact, in the sh
   }
 });
 
+test('Part 295 review: the second look puts a St. Louis business on her St. Louis shelf and takes the old location doubt off', async () => {
+  const librarian = require('./kadeMediaLibrarian');
+  const sweep = loadSweep(librarian);
+  const prev = process.env.KADE_MEDIA_SWEEP;
+  delete process.env.KADE_MEDIA_SWEEP;
+  try {
+    const intake = 'Videos/Needs Filing/Archive Intake';
+    const rothman = await KadeBook.create({ owner: KADE, kind: 'video', state: 'ready', title: '2007 Rothman Furniture commercials', path: intake,
+      meta: { jevFiling: { v: 1, at: new Date('2026-09-26T15:00:00Z'), zone: 'intake', from: intake, why: '', confidence: 0 }, review: 'Space review: local to another area (0.81). Jev review: made outside the US (0.91).' } });
+    const pass = await sweep.sweepOnce({ limit: 10 });
+    assert.strictEqual(pass.moved, 1, JSON.stringify(pass));
+    assert.strictEqual(pass.costUSD, 0, 'a rule costs nothing');
+    const after = await KadeBook.findById(rothman._id).lean();
+    assert.strictEqual(after.path, 'Video/Missouri/St. Louis (Local)/2000s');
+    assert.strictEqual(after.category, 'tv');
+    assert.deepStrictEqual(Array.from(after.tags || []), ['Missouri', 'St. Louis']);
+    assert.strictEqual(after.meta.jevFiling.from, intake, 'undoable');
+    assert.strictEqual(after.meta.review, 'Jev review: made outside the US (0.91).', 'no deletion suggestion on her own shelf; her other note stays');
+  } finally {
+    if (prev === undefined) delete process.env.KADE_MEDIA_SWEEP;
+    else process.env.KADE_MEDIA_SWEEP = prev;
+  }
+});
+
 test('the media sweep never picks a shortcut, and waits for the verifier on a fresh upload', async () => {
   const sweep = loadSweep();
   const plain = await KadeBook.create({ owner: KADE, kind: 'audio', state: 'ready', title: 'A tape', path: 'Audio/Needs Filing' });

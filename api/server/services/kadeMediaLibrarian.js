@@ -55,6 +55,16 @@
  * version read and left in intake are read once more (the sweep's second
  * look). The one exception is her part of the country: an item flagged as
  * maybe local to her keeps its old handling and waits for her.
+ *
+ * Part 295 review (the same day). "Her part of the country" is read off the
+ * item itself, not only off Jev's Missouri answers: a title, description or
+ * folder naming Missouri, Arkansas, the Ozarks edge or St. Louis as Part 283
+ * knew it (its stations, confirmed businesses and team tie-ins) is never
+ * guessed onto a national shelf. It waits for her with a "Jev review: ...
+ * unsure if local" note, and a confirmed St. Louis business goes to her St.
+ * Louis shelf by rule. A missing or malformed Jev answer is an error (no move,
+ * tried again later), never a guess. A guess note starts "Jev review:" so
+ * TubeVault lists it with her other review tasks.
  * -------------------------------------------------------------------------- */
 const jev = require('./kadeJev');
 const judges = require('./kadeJevJudges');
@@ -309,6 +319,7 @@ const BRANDS = [
 ];
 const CHANNEL_SURFING = /\bchannel[\s-]*surf(?:ing|er|s)?\b/i;
 const AD_WORDS = /\b(?:commercials?|ads?|adverts?|advertisements?|spots?|jingles?|promos?)\b/i;
+const BREAK_WORDS = /commercial breaks?|commercial compilation|commercial collection|ad breaks?/i;
 /** The one brand a title names, or null (none, or two: a reel of several). */
 function brandOf(title) {
   const t = String(title || '');
@@ -325,8 +336,20 @@ function brandFact(item) {
   const dec = decadeOf(item);
   if (CHANNEL_SURFING.test(t)) return `Video/Channels/Channel Surfing/${dec}`;
   const brand = brandOf(t);
-  if (!brand || !AD_WORDS.test(t) || /commercial breaks?|commercial compilation|commercial collection|ad breaks?/i.test(t)) return null;
+  if (!brand || !AD_WORDS.test(t) || BREAK_WORDS.test(t)) return null;
   return `Video/Commercials/${brand.category}/${brand.name}/${dec}`;
+}
+
+/* Part 295 review. Part 283 (Sep 24 2026), her words: "If it's from STL, put it in stl." A business the
+ * Part 283 lookup confirmed as St. Louis's own, and that no other market shares a name with, goes to her St.
+ * Louis shelf by rule: Schnucks, Famous-Barr, Suntrup, Rothman Furniture, Carol House... (STL_BUSINESS, below).
+ * A recorded break is several advertisers and goes to Jev; so does anything naming Indianapolis, whose tapes
+ * sit in the same collection. */
+function stlFact(item) {
+  if (item.kind !== 'video' || zoneOf(item) !== 'intake') return null;
+  const t = String(item.title || '');
+  if (!STL_BUSINESS.test(t) || STL_ELSEWHERE.test(t) || BREAK_WORDS.test(t)) return null;
+  return `${AREA_DEST['St. Louis']}/${decadeOf(item)}`;
 }
 
 /* Part 295 (Sep 26 2026). 1,320 described episodes she uploaded on Sep 24 sat in
@@ -340,6 +363,7 @@ function brandFact(item) {
  * trees (Family Guy Season 12: 7 filed, 14 waiting) becomes one folder again. */
 const TV_FOLDER = /(?:^|\/)Needs Filing\/(?:TV|TV Shows|Television)(?:\/(.+))?$/i;
 const MOVIES_FOLDER = /(?:^|\/)Needs Filing\/(?:Movies|Films?)(?:\/(.+))?$/i;
+const SOUNDTRACK = /\b(?:soundtracks?|OST)\b/i;
 const DESCRIBED_ROOT = 'Audio/Described Movies & TV';
 
 /** How the described shelf spells each folder: lower-case path → the folder's own name. `paths` are the shelf's
@@ -387,6 +411,12 @@ function describedPath(rest, index) {
   if (show && !(index && index.has(`${tv}/${segs[1]}`.toLowerCase())) && ((index && index.has(`${tv}/${show}`.toLowerCase())) || !flatSeasons(index, tv, show))) {
     segs.splice(1, 0, show);
   }
+  /* Part 295 review: her Movies shelf is letter folders (A-Z, 0-9, Numbers). A film folder that is not one of
+   * them goes inside its letter ("Frozen (2013)" under F), unless the shelf already keeps it at the top. */
+  if (/^movies$/i.test(segs[0] || '') && segs[1] && !/^(?:[a-z]|0-9|numbers|other)$/i.test(segs[1])
+    && !(index && index.has(`${DESCRIBED_ROOT}/Movies/${segs[1]}`.toLowerCase()))) {
+    segs.splice(1, 0, describedShelf(segs[1]).split('/').pop());
+  }
   let out = DESCRIBED_ROOT;
   for (const seg of segs) out = `${out}/${(index && index.get(`${out}/${seg}`.toLowerCase())) || seg}`;
   return out;
@@ -394,16 +424,19 @@ function describedPath(rest, index) {
 
 /** Folder names that state a fact. Returns a path or null. Never asks Jev. `index` is shelfIndex(), optional. */
 function folderFact(item, index) {
-  if (item.kind !== 'audio') return null;
   const p = String(item.path || '');
+  // Part 295 review: her Ozarks and Missouri shelves are never moved from, even by a folder fact inside them.
+  if (item.kind !== 'audio' || LOCAL_SHELF.test(p)) return null;
   const o = String(item.originalPath || '');
   const described = /(?:^|\/)described movies(?: and| &)? ?(?:tv|television)?(?:\/(.*))?$/i.exec(p);
   if (described && /Needs Filing/i.test(p)) return described[1] ? describedPath(described[1], index) : describedShelf(item.title);
   // Her F:\mp3 movies folder: 612 described films in one flat folder.
   if (/(?:^|\/)mp3 movies(?:\/|$)/i.test(p) && /Needs Filing/i.test(p)) return describedShelf(item.title);
-  const tv = TV_FOLDER.exec(p);
+  // A soundtrack in her TV or Movies folder is music, not the sound of the show: it goes to Jev's audio lane.
+  const music = SOUNDTRACK.test(`${p} ${item.title || ''}`);
+  const tv = !music && TV_FOLDER.exec(p);
   if (tv) return describedPath('TV/' + (tv[1] || 'Assorted (One-Offs)'), index);
-  const movies = MOVIES_FOLDER.exec(p);
+  const movies = !music && MOVIES_FOLDER.exec(p);
   if (movies) return movies[1] ? describedPath('Movies/' + movies[1], index) : describedShelf(item.title);
   const tapes = /(?:^|\/)Cassette tapes(?:\/(.*))?$/i.exec(p);
   if (tapes && /Needs Filing/i.test(p)) return 'Audio/Cassettes' + (tapes[1] ? '/' + tapes[1] : '');
@@ -497,7 +530,7 @@ const AREA_Q = {
   instructions: 'Which part of Missouri is this item from?',
   criteria: {
     'Springfield and the Ozarks': 'Springfield, Branson, Joplin, Lebanon, West Plains, Rolla, the Lake of the Ozarks and southwest or south-central Missouri; stations KYTV KY3, KOLR, KSPR, KDEB, KOZK, KODE, KSNF, KOAM, KTTS, KWTO.',
-    'St. Louis': 'St. Louis and its area; stations KSDK, KMOV, KTVI, KPLR, KDNL, KETC, KMOX.',
+    'St. Louis': 'St. Louis and its area, the Illinois side included (Belleville, Edwardsville, Alton); TV stations KSDK, KMOV, KTVI, KPLR, KDNL, KETC, KNLC; radio KMOX, KSD, KSHE, WIL, KWK, KHTR, KEZK, KYKY (Y98); St. Louis businesses such as Schnucks, Dierbergs and Famous-Barr.',
     'Kansas City': 'Kansas City and its area; stations WDAF, KMBC, KCTV, KSHB, KSMO, KCPT.',
     'Elsewhere in Missouri': 'Columbia, Jefferson City, Cape Girardeau, St. Joseph, Kirksville, Hannibal, or Missouri as a whole.',
   },
@@ -569,12 +602,56 @@ const MUSIC_KIND_Q = {
   criteria: MUSIC_KIND_CRITERIA,
 };
 
-const MO_RE = /\b(?:Missouri|Springfield,? M[Oo]|Joplin|Branson|Ozarks?|St\.? Louis|Kansas City|Columbia,? M[Oo]|Jefferson City|Cape Girardeau|Sedalia|Rolla|Lebanon,? M[Oo]|West Plains|Poplar Bluff|Nixa|Republic,? M[Oo]|Hannibal|Kirksville|St\.? Joseph|Independence,? M[Oo]|Lake of the Ozarks|Osage Beach|Neosho|Carthage,? M[Oo]|Bolivar,? M[Oo]|Warrensburg|El Dorado Springs|Silver Dollar City|Bass Pro|Show-Me|KSDK|KMOV|KTVI|KPLR|KDNL|KETC|WDAF|KMBC|KCTV|KSHB|KSMO|KCPT|KYTV|KY3|KOLR|KSPR|KDEB|KOZK|KODE|KSNF|KOAM|KFVS|KOMU|KRCG|KMIZ|KQTV|KTVO|KHQA|KTTS|KWTO|KGBX|KXUS|KMOX|KSHE|KCMO|KPRS)\b/;
+const MO_RE = /\b(?:Missouri|Springfield,? M[Oo]|Joplin|Branson|Ozarks?|St\.? Louis|Kansas City|Columbia,? M[Oo]|Jefferson City|Cape Girardeau|Sedalia|Rolla|Lebanon,? M[Oo]|West Plains|Poplar Bluff|Nixa|Republic,? M[Oo]|Hannibal|Kirksville|St\.? Joseph|Independence,? M[Oo]|Lake of the Ozarks|Osage Beach|Neosho|Carthage,? M[Oo]|Bolivar,? M[Oo]|Warrensburg|El Dorado Springs|Silver Dollar City|Celebration City|Baldknobbers|Tarkio College|Farm Power Lawn|Bass Pro|Show-Me|KSDK|KMOV|KTVI|KPLR|KDNL|KETC|WDAF|KMBC|KCTV|KSHB|KSMO|KCPT|KYTV|KY3|KOLR|KSPR|KDEB|KOZK|KODE|KSNF|KOAM|KFVS|KOMU|KRCG|KMIZ|KQTV|KTVO|KHQA|KTTS|KWTO|KGBX|KXUS|KMOX|KSHE|KCMO|KPRS)\b/;
 const NONUS_RE = /\b(?:UK|U\.K\.|British|Britain|England|English advert|Scotland|Scottish|Welsh|Ireland|Irish TV|Canada|Canadian|Australia|Australian|New Zealand|ITV|BBC|Channel 4|Channel 5|Sky One|CBC|CTV|Global TV|YTV|Teletoon|MuchMusic|Nine Network|Seven Network|Network Ten|Mexico|Mexican|Japan|Japanese|Germany|German|France|French|Spain|Spanish|Brazil|Brazilian|Italy|Italian|Netherlands|Dutch|Philippines|Filipino|India|Indian TV|Europe|European)\b/;
 /* Her part of the country besides Missouri: Arkansas and the Ozarks edges of Kansas and
  * Oklahoma. Anything naming them is never "local to another area". */
 const AR_OZARKS_RE = /\b(?:Arkansas|Razorbacks?|Little Rock|Fayetteville|Springdale|Bentonville|Rogers,? AR|Harrison,? AR|Mountain Home|Calico Rock|Jonesboro|Fort Smith|Hot Springs|Eureka Springs|Batesville|Searcy|Conway,? AR|Pine Bluff|Texarkana|Grove,? OK|Miami,? OK|Tahlequah|Pittsburg,? KS|Coffeyville|KATV|KARK|KTHV|KLRT|KASN|KAIT|KFSM|KHBS|KHOG|KNWA|KFTA|KAFT|KETS|KTVE|KARZ)\b/i;
-const ourArea = (text) => MO_RE.test(text) || AR_OZARKS_RE.test(text);
+/* Part 295 review: St. Louis as Part 283 (Sep 24 2026) knew it, from brand-folders/stl_move.py and the St. Louis
+ * collection's own titles. Most of its tapes name no place: "2001 Schnucks commercials", "1991 KSD 93.7 FM
+ * commercial", "1998 Denny's commercials w/ Isaac Bruce". STL_BUSINESS is the confirmed businesses no other
+ * market shares a name with, filed by rule (stlFact). The rest are evidence enough to keep an item off national
+ * shelves and to ask Jev the Missouri questions, not enough to file it: the station calls (KNLC is Part 283's;
+ * the radio calls are the collection's), the businesses whose names other places also use, the Illinois side,
+ * and the Cardinals and Rams tie-ins. STL_ELSEWHERE is Part 283's exception: the same collection's Indianapolis
+ * tapes. */
+const STL_BUSINESS = /\b(?:Schnucks|Dierbergs|Famous[- ]Barr|Suntrup|Rothman Furniture|Carol House|Weekends Only|Goedeker'?s?|Bommarito|Lou Fusz|Dave Sinclair|Don Brown Chevrolet|Merollis|Behlmann|Weber Chevrolet|Seeger Toyota|Fred Broeg|Laura Buick|Jamestown Mall|Maryland Plaza|Overland Thrift|Kloss Furniture|Vess Soda|Wehmueller|SSM DePaul|Sheet Metal Workers'? Local 36|Lewis (?:and|&) Clark Community College|Dobbs Tire)\b/i;
+const STL_CALLS = /\b(?:KNLC|KSD|KSHE|K-SHE|WIL|KWK|KHTR|KEZK|WKBQ|KYKY|Y98|KMJM|KATZ|KXOK|KLOU|KFUO|KWMU|WRTH)\b/;
+/* Case matters here: "Dirt Cheap" is a St. Louis store, "dirt cheap" is a price. */
+const STL_WORDS = new RegExp('\\b(?:' + [
+  "Grand[Pp]a'?s", "Pantera'?s (?:Pizza|commercials?)", 'Dirt Cheap', 'Hotshots', 'Music Vision', "That'?s a Winner", "Show Me'?s", "Shop ['’]?[Nn]['’]? Save",
+  'National Supermarkets', 'AutoTire', 'Bi-State', 'Quality Ford Dealers?', 'Midwest GMC Dealers', 'Plaza Motors', 'Roberts Motors', 'Gateway Pontiac Dealers',
+  'Mid[- ]America (?:Chevy|Cadillac)', 'Feld Chevrolet', 'Royal Waterbeds', 'Advance Carpet', 'Tile Town', 'Famous Brand Shoes', 'Sunshine Drapery', 'Gateway Brick',
+  'Forshaw', 'Walther/Glenn', 'Champion Factory Direct', "Ted'?s Motorcycle World", 'Ferguson Roofing', 'Schneider Heating', 'Tipton Appliances', "Henning'?s Golf",
+  'Sanford[- ]Brown', "St\\.? John'?s Mercy", 'Glendale Chrysler', 'Rodney D\\.? Young',
+  'Busch Stadium', 'Lambert (?:Airport|Field)', 'Parkway North', 'Roxana', 'Edwardsville', 'Collinsville,? IL', 'Belleville,? IL', 'Granite City', 'Alton,? IL',
+  'Fairmount Park', 'Florissant', 'Webster Groves',
+].join('|') + ')\\b');
+/* Team tie-ins count only off network material, as in Part 283 ("World Series", a network name); the Cardinals
+ * only when no other Cardinals are named. */
+const STL_TIEINS = /\b(?:Cardinals|McGwire|Ozzie Smith|Jack Buck|Tony La Russa|Al Hrabosky|Isaac Bruce|Rick Meagher|Dan McLaughlin|Stan Musial|Whitey Herzog|Rams PSL)\b/;
+const STL_NATIONAL = /Childhelp USA|National Wildlife|World Series|\bABC\b(?! Kids)|\bNBC\b|\bCBS\b|\bFOX\b(?! Sports Net St)|\b(?:Arizona|Phoenix|Louisville|Ball State|Stanford|Incarnate Word)\b/;
+const STL_ELSEWHERE = /Indianapolis|\bIndiana\b|\bWISH\b|\bWTHR\b|\bWRTV\b|\bWXIN\b|\bWTTV\b|L\.S\. Ayres|George McGinnis|Ray Skillman|Stanley Kahn|Tenbrook|Now Courier|\bWRAL\b|Kokomo/i;
+/** St. Louis by Part 283's evidence; never the collection's Indianapolis tapes. */
+function stLouis(text) {
+  const t = String(text || '');
+  if (STL_ELSEWHERE.test(t)) return false;
+  return STL_BUSINESS.test(t) || STL_CALLS.test(t) || STL_WORDS.test(t) || (STL_TIEINS.test(t) && !STL_NATIONAL.test(t));
+}
+const ourArea = (text) => MO_RE.test(text) || AR_OZARKS_RE.test(text) || stLouis(text);
+/** Whether the Missouri questions are asked: a Missouri name, or St. Louis by Part 283's evidence. */
+const missouriText = (text) => MO_RE.test(text) || stLouis(text);
+const OZARKS_WORDS = /\b(?:Springfield,? M[Oo]|Joplin|Branson|Ozarks?|Lebanon,? M[Oo]|West Plains|Nixa|Republic,? M[Oo]|Rolla|Neosho|Carthage,? M[Oo]|Bolivar,? M[Oo]|Osage Beach|El Dorado Springs|Silver Dollar City|Celebration City|Baldknobbers|Bass Pro|KYTV|KY3|KOLR|KSPR|KDEB|KOZK|KODE|KSNF|KOAM|KTTS|KWTO|KGBX|KXUS)\b/;
+/** The part of her country an item names, by rule: an AREA_Q choice, 'Arkansas' for Arkansas and the Ozarks edge,
+ * or null. Used for a hold note when Jev gave no sure area. */
+function areaByRule(text) {
+  const t = String(text || '');
+  if (stLouis(t) || /\bSt\.? Louis\b|\b(?:KSDK|KMOV|KTVI|KPLR|KDNL|KETC|KMOX)\b/.test(t)) return 'St. Louis';
+  if (/\bKansas City\b|\b(?:WDAF|KMBC|KCTV|KSHB|KSMO|KCPT|KCMO|KPRS)\b/.test(t)) return 'Kansas City';
+  if (OZARKS_WORDS.test(t)) return 'Springfield and the Ozarks';
+  if (MO_RE.test(t)) return 'Elsewhere in Missouri';
+  return AR_OZARKS_RE.test(t) ? 'Arkansas' : null;
+}
 /* Kade, Sep 23 2026: "all the non-local to me material that is local to someone else but was
  * never syndicated ... Like local car commercials from other states." Trial on 600 of her
  * library items ($0.013): all 16 at 0.9 or more were local elsewhere (Louisiana furniture
@@ -602,8 +679,8 @@ function stateOf(item) {
 
 function questionsFor(item) {
   const zone = zoneOf(item);
-  if (zone === 'skip' || folderFact(item) || blockFact(item) || brandFact(item)) return null;
-  const text = String(item.title || '') + ' ' + String(item.description || '');
+  if (zone === 'skip' || folderFact(item) || stlFact(item) || blockFact(item) || brandFact(item)) return null;
+  const text = moText(item);
   const q = {};
   if (item.kind === 'audio') {
     if (zone !== 'intake') return null;
@@ -613,11 +690,19 @@ function questionsFor(item) {
     if (zone === 'intake' || !['other', 'otherads', 'break', 'political', 'infomercial'].includes(family)) q.kind = KIND_Q;
     if (zone === 'intake' || ['ad', 'channel', 'oneoffs', 'psa'].includes(family)) q.category = CATEGORY_Q;
     if (family === 'vhs') q.tape = VHS_Q;
-    if (zone !== 'local' && MO_RE.test(text)) Object.assign(q, { recorded: RECORDED_Q, madefor: MADEFOR_Q, local: LOCAL_Q, area: AREA_Q, localKind: judges.LOCAL_KIND_Q });
+    if (zone !== 'local' && missouriText(text)) Object.assign(q, { recorded: RECORDED_Q, madefor: MADEFOR_Q, local: LOCAL_Q, area: AREA_Q, localKind: judges.LOCAL_KIND_Q });
   }
   if (NONUS_RE.test(text)) q.foreign = FOREIGN_Q;
-  if (item.kind === 'video' && zone === 'intake' && !ourArea(text + ' ' + String(item.path || ''))) q.elsewhere = ELSEWHERE_Q;
+  if (item.kind === 'video' && zone === 'intake' && !ourArea(areaText(item))) q.elsewhere = ELSEWHERE_Q;
   return Object.keys(q).length ? q : null;
+}
+/** What the Missouri questions are asked on: the title and description. */
+function moText(item) {
+  return String(item.title || '') + ' ' + String(item.description || '');
+}
+/** What "her part of the country" is read from: the title, description and folder. */
+function areaText(item) {
+  return `${item.title || ''} ${item.description || ''} ${item.path || ''}`;
 }
 
 /* ── pure decision ───────────────────────────────────────────────────────── */
@@ -685,15 +770,60 @@ function routeByKind(item, kind, category, dec, deps) {
  * floor, and never read it again: 1,546 items were waiting on Sep 26. Now the
  * item goes to Jev's best choice anyway, or to its medium's catch-all shelf
  * when that choice is noise (under `guess`) or has no shelf ("Something
- * else"), and it carries a note she can search for: "Librarian guess:
- * Commercials/Other Commercials/1990s (0.55). Check this one." Two things
- * never happen on a guess: nothing lands on or leaves her Ozarks and Missouri
- * shelves, and an item flagged as maybe local to her waits for her as before. */
+ * else"), and it carries a note she can search for: "Jev review: librarian
+ * guess, Commercials/Other Commercials/1990s (0.55). Check this one." It
+ * starts "Jev review:" so TubeVault's review lists (task_matches, FLAG_SPLIT)
+ * show it beside her other flags. Three things never happen on a guess:
+ * nothing lands on or leaves her Ozarks and Missouri shelves; an item from her
+ * part of the country (flagged by Jev, named in its title, description or
+ * folder, or flagged by an earlier read) waits for her; and a missing or
+ * malformed Jev answer is never guessed from. */
 const CATCHALL_AD = /\b(?:commercials?|ads?|adverts?|advertisements?|spots?)\b/i;
+const GUESS_NOTE = /^(?:Jev review: librarian guess, |Librarian guess: ).*?\(\d(?:\.\d+)?\)\. Check this one\./;
+const MALFORMED = 'Jev answer missing or malformed';
 function guessed(out, from, to, confidence, what) {
   if (!to || to === from) return out;
-  out.flags.push(`Librarian guess: ${to.replace(/^(?:Videos?|Audio)\//i, '')} (${two(confidence || 0)}). Check this one.`);
+  out.flags.push(`Jev review: librarian guess, ${to.replace(/^(?:Videos?|Audio)\//i, '')} (${two(confidence || 0)}). Check this one.`);
   return Object.assign(out, { to, why: `guess: ${what}`, confidence: confidence || 0 });
+}
+/** A choice answer Jev really gave: one of the criteria, with a number. */
+function wellFormed(a, id, criteria) {
+  const x = a && a[id];
+  return !!x && typeof x.choice === 'string' && Object.prototype.hasOwnProperty.call(criteria, x.choice) && typeof x.confidence === 'number' && Number.isFinite(x.confidence);
+}
+/** The hold note for an item from her part of the country that is not sure enough to file: Jev's area when it is
+ * sure, otherwise the one the item names. The number is Jev's "local" answer when there is one. */
+function holdNote(item, a) {
+  const rule = areaByRule(areaText(item));
+  const jevArea = choiceOf(a, 'area');
+  let area = rule;
+  if (!rule || rule === 'Elsewhere in Missouri' || rule === 'Arkansas') {
+    if (jevArea.confidence >= 0.7 && AREA_DEST[jevArea.choice]) area = jevArea.choice;
+  }
+  const n = noulOf(a, 'local');
+  const num = n === null ? '' : ` (${two(n)})`;
+  if (!area || area === 'Arkansas') return `Jev review: Arkansas or the Ozarks edge, unsure if local${num}.`;
+  return `Jev review: Missouri (${area.replace(/^Springfield and the /, '')}), unsure if local${num}.`;
+}
+/* The notes that say where an item might be from. They come off when the item lands on her own shelves (the
+ * sweep, as /librarian/organize does), and "local to another area" comes off anything naming her area. */
+const NOTE_END = String.raw`(?: \(\d(?:\.\d+)?\))?\.`;
+const LOCATION_DOUBT_NOTE = new RegExp(String.raw`^(?:Space review: local to another area|Jev review: (?:Missouri \([^)]*\)|Arkansas or the Ozarks edge), unsure if local|Jev review: Ozarks, unsure which local shelf)` + NOTE_END);
+const ELSEWHERE_NOTE = new RegExp('^Space review: local to another area' + NOTE_END);
+const UNSURE_LOCAL_NOTE = new RegExp(String.raw`^Jev review: (?:Missouri \([^)]*\)|Arkansas or the Ozarks edge), unsure if local` + NOTE_END);
+/** An earlier read already said this item may be local to her (a note still in meta.review). */
+function doubtedBefore(item) {
+  return notesOf((item.meta || {}).review).some((s) => UNSURE_LOCAL_NOTE.test(s) || /^Jev review: Ozarks, unsure which local shelf/.test(s));
+}
+/* A reel of one advertiser's spots ("1994 Kentucky Fried Chicken commercials") is the item Jev splits between
+ * one advert and a block. On a guess it goes to the advertiser's shelf, not the shelf for recorded breaks,
+ * unless the title names a channel, a break or a compilation, or two names before the advert word. */
+const SEVERAL_WORDS = /\b(?:breaks?|compilations?|collections?|blocks?|reels?|montages?|various|assorted|marathon)\b/i;
+function oneAdvertiser(title) {
+  const t = String(title || '');
+  if (!CATCHALL_AD.test(t) || networkOf(t) || SEVERAL_WORDS.test(t)) return false;
+  const lead = t.split(CATCHALL_AD)[0];
+  return !/[,&+/⧸]|\band\b|\bvs\.?(?:\s|$)/i.test(lead);
 }
 
 /** Where an audio kind goes; null for "Something else", or an unknown kind. The decade is read by rule. */
@@ -736,7 +866,9 @@ function decideAudio(item, a, dec, k, out) {
   const kind = choiceOf(a, 'audioKind');
   const known = Object.prototype.hasOwnProperty.call(AUDIO_INTAKE_KIND_CRITERIA, kind.choice);
   const oz = noulOf(a, 'ozarks');
-  const local = oz !== null && oz >= ak.minOzarks;
+  // Part 295 review: without a real kind and a real Ozarks answer, nothing is decided; the sweep tries again.
+  if (!wellFormed(a, 'audioKind', AUDIO_INTAKE_KIND_CRITERIA) || oz === null) return Object.assign(out, { to: null, error: MALFORMED });
+  const local = oz >= ak.minOzarks;
   const shelf = known && (AUDIO_LOCAL_OK.has(kind.choice) || !local) ? audioShelf(item, kind.choice, a, dec, k) : null;
   if (kind.choice === 'Home recording' && kind.confidence >= 0.8 && !local) out.flags.push('Space review: family or local home recording.');
   if (shelf && kind.confidence >= ak.minKind) {
@@ -744,6 +876,14 @@ function decideAudio(item, a, dec, k, out) {
   }
   if (local) {
     out.flags.push(`Jev review: Ozarks, unsure which local shelf (${two(oz)}).`);
+    return out;
+  }
+  /* Part 295 review: a title, description or folder naming her part of the country waits for her too, whatever
+   * the Ozarks answer ("KWTO Springfield - Spring Sale" at 0.4 was going to Other Commercials), and so does an
+   * item an earlier read already doubted. */
+  if (ourArea(areaText(item)) || doubtedBefore(item)) {
+    const area = areaByRule(areaText(item));
+    out.flags.push(!area || area === 'Springfield and the Ozarks' ? `Jev review: Ozarks, unsure which local shelf (${two(oz)}).` : holdNote(item, a));
     return out;
   }
   const best = shelf && kind.confidence >= k.guess ? shelf : null;
@@ -754,19 +894,25 @@ function decideAudio(item, a, dec, k, out) {
  * meta.review holds one sentence per flag. A second read keeps every note it
  * does not say again, replaces one it says again with the new wording (the
  * number may have moved), and drops the two that are worked out afresh on
- * every read: the guess, and "another is kept". */
+ * every read: the guess, and "another is kept". `drop` names notes the read
+ * has made stale (decide's `drop`, and the location doubts once an item lands
+ * on her own shelves); they come off whichever read wrote them. */
 const NOTE_START = /\s*(?=(?:Jev review|Space review|Librarian guess):)/;
 const noteKey = (s) => String(s).trim().replace(/\s*\(\d(?:\.\d+)?\)\.?$/, '').replace(/\.$/, '');
 const notesOf = (review) => String(review || '').split(NOTE_START).map((s) => s.trim()).filter(Boolean);
-function reviewNote(old, flags) {
-  const fresh = [...new Set((flags || []).map(String).filter(Boolean))];
+const COPY_NOTE = /^Space review: identical copy, another is kept\./;
+/** A note with the sentences `res` match cut off its front; whatever else was written after them stays. */
+const cut = (s, res) => res.reduce((t, re) => { const m = re.exec(t); return m ? t.slice(m[0].length).trim() : t; }, s);
+function reviewNote(old, flags, drop = []) {
+  const stale = drop || [];
+  const fresh = [...new Set((flags || []).map(String).filter(Boolean))].filter((s) => !stale.some((re) => re.test(s)));
   const keys = new Set(fresh.map(noteKey));
-  const kept = notesOf(old).filter((s) => !/^(?:Librarian guess:|Space review: identical copy)/.test(s) && !keys.has(noteKey(s)));
+  const kept = notesOf(old).map((s) => cut(s, [GUESS_NOTE, COPY_NOTE, ...stale])).filter((s) => s && !keys.has(noteKey(s)));
   return [...kept, ...fresh].join(' ');
 }
 /** A person has put the item where it belongs: the guess note comes off; every other note stays. */
 function withoutGuess(review) {
-  return notesOf(review).filter((s) => !/^Librarian guess:/.test(s)).join(' ');
+  return notesOf(review).map((s) => cut(s, [GUESS_NOTE])).filter(Boolean).join(' ');
 }
 
 /**
@@ -775,12 +921,14 @@ function withoutGuess(review) {
  */
 function decide(item, answers, deps = {}, k = knobs()) {
   const a = answers || {};
-  const out = { to: null, why: '', confidence: 0, flags: [], tags: [] };
+  const out = { to: null, why: '', confidence: 0, flags: [], tags: [], drop: [] };
   const from = String(item.path || '');
   const zone = zoneOf(item);
   const dec = decadeOf(item);
   const fact = folderFact(item, deps.describedShelves);
   if (fact) return { ...out, to: fact !== from ? fact : null, why: 'folder says so', confidence: 1 };
+  const stl = stlFact(item);
+  if (stl) return { ...out, to: stl !== from ? stl : null, why: 'St. Louis business (Part 283)', confidence: 1, tags: ['Missouri', 'St. Louis'], drop: [LOCATION_DOUBT_NOTE] };
   const block = blockFact(item);
   if (block) return { ...out, to: block !== from ? block : null, why: 'programming block named in the title', confidence: 1 };
   const brand = brandFact(item);
@@ -789,9 +937,12 @@ function decide(item, answers, deps = {}, k = knobs()) {
   const foreign = noulOf(a, 'foreign');
   if (foreign !== null && foreign >= k.foreign) out.flags.push(`Jev review: made outside the US (${two(foreign)}).`);
   const elsewhere = noulOf(a, 'elsewhere');
-  if (elsewhere !== null && elsewhere >= k.elsewhereFlag && zone !== 'local' && !ourArea(`${item.title || ''} ${item.description || ''} ${from}`)) {
+  const named = ourArea(areaText(item));
+  if (elsewhere !== null && elsewhere >= k.elsewhereFlag && zone !== 'local' && !named) {
     out.flags.push(`Space review: local to another area (${two(elsewhere)}).`);
   }
+  // Part 295 review: anything naming her part of the country is never local to another area, whatever an older read wrote.
+  if (named) out.drop.push(ELSEWHERE_NOTE);
   if (item.kind === 'video' && zone !== 'local' && SPORTS_GAME_RE.test(item.title || '') && !LOCAL_TEAM_RE.test(item.title || '') && Number(item.bytes || 0) > 3e8) {
     out.flags.push('Space review: full sports game broadcast.');
   }
@@ -810,6 +961,7 @@ function decide(item, answers, deps = {}, k = knobs()) {
   const recorded = noulOf(a, 'recorded');
   const madefor = noulOf(a, 'madefor');
   const local = noulOf(a, 'local');
+  let national = false;
   if (zone !== 'local' && recorded !== null && madefor !== null && local !== null && Math.max(recorded, madefor) >= k.missouri) {
     const area0 = choiceOf(a, 'area');
     const area = area0.confidence >= 0.7 && AREA_DEST[area0.choice] ? area0.choice : 'Elsewhere in Missouri';
@@ -826,22 +978,39 @@ function decide(item, answers, deps = {}, k = knobs()) {
       out.flags = out.flags.filter((f) => !f.startsWith('Space review'));
       return Object.assign(out, { to: to !== from ? to : null, why: `Missouri local (${area})`, confidence: Math.min(Math.max(recorded, madefor), local) });
     }
-    if (local <= 0.35 && recorded >= 0.75) out.tags.push(area === 'Springfield and the Ozarks' ? 'Aired in the Ozarks' : `Aired in ${AREA_TAG[area]}`);
-    else out.flags.push(`Jev review: Missouri (${area.replace(/^Springfield and the /, '')}), unsure if local (${two(local)}).`);
+    if (local <= 0.35 && recorded >= 0.75) {
+      // Jev is sure it is national material that aired here: an older read's "unsure if local" is answered.
+      out.tags.push(area === 'Springfield and the Ozarks' ? 'Aired in the Ozarks' : `Aired in ${AREA_TAG[area]}`);
+      out.drop.push(UNSURE_LOCAL_NOTE);
+      national = true;
+    } else out.flags.push(`Jev review: Missouri (${area.replace(/^Springfield and the /, '')}), unsure if local (${two(local)}).`);
   }
   if (zone === 'local') return out;
 
   if (zone === 'intake') {
-    const to = kind.choice && kind.confidence >= k.kind ? routeByKind(item, kind.choice, category, dec, deps) : null;
+    /* Part 295 review: a missing or malformed answer decides nothing (the kadeJev contract): no move, and the
+     * sweep counts a try. That is a kind that is not one of the criteria, and, for an item naming Missouri, any
+     * of the three Missouri answers missing. */
+    if (!wellFormed(a, 'kind', KIND_CRITERIA) || (missouriText(moText(item)) && (recorded === null || madefor === null || local === null))) {
+      return Object.assign(out, { to: null, error: MALFORMED });
+    }
+    const to = kind.confidence >= k.kind ? routeByKind(item, kind.choice, category, dec, deps) : null;
     if (to) {
       if (to !== from) Object.assign(out, { to, why: 'intake: ' + kind.choice + (category && kind.choice === 'One product advert' ? ' / ' + category : ''), confidence: kind.confidence });
       return out;
     }
-    /* Part 295: never left in intake, except what may be local to her (flagged above), which waits for her. */
+    /* Part 295: never left in intake, except what may be local to her, which waits for her: flagged above by
+     * Jev, or (Part 295 review) named in its title, description or folder, or doubted by an earlier read,
+     * unless Jev is sure it is national material that only aired here. */
     if (out.flags.some((f) => f.includes('unsure if local'))) return out;
-    const best = kind.choice && kind.confidence >= k.guess ? routeByKind(item, kind.choice, category, dec, deps) : null;
+    if (!national && (named || doubtedBefore(item))) {
+      out.flags.push(holdNote(item, a));
+      return out;
+    }
+    const guessKind = kind.choice === 'Block of several commercials' && oneAdvertiser(item.title) ? 'One product advert' : kind.choice;
+    const best = kind.confidence >= k.guess ? routeByKind(item, guessKind, category, dec, deps) : null;
     const shelf = best || (CATCHALL_AD.test(item.title || '') ? `Video/Commercials/Other Commercials/${dec}` : `Video/Other Video/${dec}`);
-    return guessed(out, from, shelf, kind.confidence, best ? kind.choice : 'no sure kind');
+    return guessed(out, from, shelf, kind.confidence, best ? guessKind : 'no sure kind');
   }
 
   /* Already filed: only a clear contradiction moves. */
@@ -1009,4 +1178,5 @@ module.exports = {
   routeByKind, decide, fileMedia, KIND_Q, KIND_CRITERIA, CATEGORY_Q, VHS_Q, VHS_CRITERIA, FOREIGN_Q, MO_RE, NONUS_RE,
   HOME_Q, ELSEWHERE_Q, AR_OZARKS_RE, ourArea, wantState, wantQuestions, wantVerdict, judgeWanted, fullSportsGame,
   shelfIndex, describedPath, audioShelf, AUDIO_INTAKE_KIND_Q, AUDIO_INTAKE_KIND_CRITERIA, MUSIC_KIND_Q, MUSIC_KIND_CRITERIA, reviewNote, withoutGuess,
+  stlFact, stLouis, areaByRule, missouriText, LOCATION_DOUBT_NOTE, GUESS_NOTE, MALFORMED,
 };
