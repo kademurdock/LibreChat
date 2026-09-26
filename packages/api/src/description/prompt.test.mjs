@@ -3,6 +3,7 @@ import test, { after } from 'node:test';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
+import { Readable } from 'node:stream';
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import ffmpegPath from 'ffmpeg-static';
 import ffprobePath from 'ffprobe-static';
@@ -1291,6 +1292,8 @@ test('prompt: a description that reads the time strip is recognized', () => {
     assert.equal(readsTimeStrip(text), false, text);
 });
 
+/** A streamed reply as OpenRouter sends one: keep-alive spaces first, then the JSON. */
+const streamed = (data) => Readable.from([Buffer.from('\n  \n'), Buffer.from(JSON.stringify(data))]);
 function fakeAxios(handler) {
   const calls = [];
   const previous = axios.defaults.adapter;
@@ -1300,7 +1303,8 @@ function fakeAxios(handler) {
     calls.push(call);
     const reply = await handler(call, calls.length);
     if (reply instanceof Error) throw reply;
-    return { status: 200, statusText: 'OK', headers: reply.headers ?? {}, data: reply.data, config };
+    const data = config.responseType === 'stream' ? streamed(reply.data) : reply.data;
+    return { status: 200, statusText: 'OK', headers: reply.headers ?? {}, data, config };
   };
   return { calls, restore: () => (axios.defaults.adapter = previous) };
 }

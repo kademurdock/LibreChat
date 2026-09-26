@@ -40,6 +40,7 @@ import type {
 import type { Keeper, Outcome, Providers, SavedLook, Request as EngineRequest } from './engine';
 import type { Edit } from './revision';
 import type { DescriptionWallet } from './wallet';
+import type { FailedCall } from './providers';
 import {
   Plain,
   billed,
@@ -47,6 +48,7 @@ import {
   voiceBase,
   synthesize,
   speechPerByte,
+  providerDetail,
   providerProblem,
   transcriptionPerMinute,
 } from './providers';
@@ -449,7 +451,14 @@ const money = (usd: number): string => `$${usd.toFixed(2)}`;
 const retain = (job: Pick<Job, 'expiresAt'>, days: number): Date =>
   new Date(Math.max(new Date(job.expiresAt).getTime(), Date.now() + days * day));
 
-/** Measured provider costs per minute of video (Sep 2026 samples, rounded up), for estimates only. */
+/**
+ * Measured provider costs per minute of video (Sep 2026 samples, rounded up), for estimates only.
+ * A close look is quoted at vision plus closeLook, $0.046 a minute. The Road Runner A/B of Sep 26
+ * 2026 measured about $0.035 a minute for a first close look within its 8,000-token thinking
+ * budget, and about $0.064 a minute for each second look at high effort, which 1 in 7 to 1 in 3
+ * sections needed: about $0.045 to $0.055 a minute in all. Her approval (`approvalRule`) leaves
+ * room above the quote.
+ */
 const rates = { vision: 0.021, closeLook: 0.025, firstLook: 0.021 };
 /** Fixed overhead per run: prompts and joins for a description run, a re-voice, a correction. */
 const overhead = { describe: 0.03, revoice: 0, correction: 0 };
@@ -4180,22 +4189,48 @@ export function createDescriptionRouter(hooks: Hooks): {
             if (!saved.matchedCount)
               throw new Halt('Processing stopped before the next paid request.');
           });
-          let result: { costUSD: number };
+          let result: { costUSD: number; uncertain?: boolean };
           try {
             result = await action();
           } catch (error) {
-            const reported = (error as { costUSD?: unknown }).costUSD;
+            const failed = (error ?? {}) as FailedCall;
+            const reported = failed.costUSD;
             const known =
               typeof reported === 'number' && Number.isFinite(reported) && reported >= 0;
             /**
              * Our own stop cut this request off: a restart, a lost lease, her cancel or the time
              * limit. What the provider may still bill for it is the platform's cost, never hers.
+             * A request that failed on its own before the stop (`FailedCall.interrupted` false,
+             * the stop cutting short only the lookup of its cost) is not ours to absorb.
              */
-            const interrupted = !known && signal.aborted;
+            const interrupted =
+              !known &&
+              (typeof failed.interrupted === 'boolean' ? failed.interrupted : signal.aborted);
+            /**
+             * Any other failure the provider may have billed is booked as uncertain: at the cost
+             * its provider code expects (a look OpenRouter never priced, `FailedCall.expectedUSD`),
+             * otherwise at its whole reserve.
+             */
+            const uncertain = !known && !interrupted && billed(error);
+            const expected = failed.expectedUSD;
             let actual = 0;
-            if (known) actual = reported as number;
-            else if (!interrupted && billed(error)) actual = reserve;
-            const uncertain = !known && !interrupted && actual === reserve;
+            let settledBy: 'generation' | 'reported' | 'expected' | 'reserve' | 'unbilled' =
+              'unbilled';
+            if (known) {
+              actual = reported as number;
+              settledBy = failed.costFrom === 'generation' ? 'generation' : 'reported';
+            } else if (
+              uncertain &&
+              typeof expected === 'number' &&
+              Number.isFinite(expected) &&
+              expected >= 0
+            ) {
+              actual = Math.min(expected, reserve);
+              settledBy = 'expected';
+            } else if (uncertain) {
+              actual = reserve;
+              settledBy = 'reserve';
+            }
             await settleCost(uncertain ? 'uncertain' : kind, reserve, actual);
             if (actual > 0)
               await hooks
@@ -4207,20 +4242,26 @@ export function createDescriptionRouter(hooks: Hooks): {
                 kind,
                 settled: actual,
                 status: axios.isAxiosError(error) ? error.response?.status : undefined,
-                ...(interrupted
-                  ? {
-                      reserveUSD: Math.round(reserve * 1e6) / 1e6,
-                      providerMayBill: billed(error),
-                      why: stopName(signal.reason),
-                    }
+                ...(typeof failed.generation === 'string'
+                  ? { generation: failed.generation }
                   : {}),
+                reserveUSD: Math.round(reserve * 1e6) / 1e6,
+                ...(interrupted
+                  ? { providerMayBill: billed(error), why: stopName(signal.reason) }
+                  : {
+                      settledBy,
+                      reason: providerDetail(error),
+                      ...(signal.aborted ? { stoppedAfter: stopName(signal.reason) } : {}),
+                    }),
               }),
             );
             throw error;
           }
-          await settleCost(kind, reserve, result.costUSD);
+          /** A cost the provider never reported (an expected one) is booked apart as uncertain. */
+          const guessed = result.uncertain === true;
+          await settleCost(guessed ? 'uncertain' : kind, reserve, result.costUSD);
           await hooks
-            .usage(job.owner, job._id, kind, result.costUSD)
+            .usage(job.owner, job._id, guessed ? `${kind}-uncertain` : kind, result.costUSD)
             .catch((error: Error) => hooks.log('description usage: ' + error.message));
         };
         const rehearsalMeter: Meter = async () => {
@@ -4231,7 +4272,8 @@ export function createDescriptionRouter(hooks: Hooks): {
          * What is left of her approval, with requests still in flight counted at their full
          * reserve. That is stricter than the meter's own stop, which counts settled charges only.
          * The engine starts a second look at a section, and each retry of it, only while this
-         * covers three times what the first look really cost plus the rest of the run.
+         * covers three times what the first look really cost (or the second look's expected cost
+         * when that is more) plus the rest of the run.
          */
         const approvedRoom = () => (rehearsal ? 0 : Math.max(0, approved - spend.usd));
         const request: RunRequest = {

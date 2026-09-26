@@ -87,10 +87,19 @@ let librarySaveFails = false;
 /** When set, each look is billed this many times its $0.05 reserve. */
 let overbill = 0;
 /**
- * When set ({ started, skip? }), the next look (after `skip` looks) holds a $0.35 paid request open
- * until the job's signal aborts it.
+ * When set ({ started, skip?, failed? }), the next look (after `skip` looks) holds a $0.35 paid
+ * request open until the job's signal aborts it (with `failed`, it fails carrying those fields).
  */
 let holdVision = null;
+/**
+ * When set, each look (not a first look) takes the next of these: a paid request ({ reserve })
+ * that times out carrying what the real `analyze` sets on a failed call (`failed`: generation id,
+ * recorded or expected cost), then answers as usual, as the real one does on its retry. Each entry
+ * gets `room` (her approval left, as the engine sees it) and `booked` (charged so far) right after
+ * the failure settles. With `unreported`, the retry's reply reported no cost and is booked as
+ * uncertain at that amount.
+ */
+let visionTimeouts = null;
 /**
  * When set, each look reports the next of these reasoning counts and is billed $0.02 ($0.05
  * reserve), or what `thinkingCost(look)` says.
@@ -419,9 +428,16 @@ before(async () => {
           holdVision = null;
           await meter('vision', 0.35, () =>
             new Promise((_resolve, reject) => {
-              /* What axios throws when the request's own signal aborts it. */
+              /*
+               * What axios throws when the request's own signal aborts it, or, with `hold.failed`, a
+               * request that had already failed on its own and whose cost lookup the stop cut short.
+               */
               const cut = () =>
-                reject(Object.assign(new Error('canceled'), { name: 'CanceledError', isAxiosError: true, code: 'ERR_CANCELED' }));
+                reject(
+                  hold.failed
+                    ? Object.assign(new Error('The video model did not finish its reply within 300 s.'), { isAxiosError: true, code: 'ETIMEDOUT' }, hold.failed)
+                    : Object.assign(new Error('canceled'), { name: 'CanceledError', isAxiosError: true, code: 'ERR_CANCELED' }),
+                );
               if (_signal.aborted) return cut();
               _signal.addEventListener('abort', cut, { once: true });
               hold.started();
@@ -432,6 +448,26 @@ before(async () => {
           await meter('vision', 0.2, async () => {
             throw axiosFailure(429);
           });
+        if (visionTimeouts?.length && !look.brief.survey) {
+          const entry = visionTimeouts.shift();
+          await meter('vision', entry.reserve, async () => {
+            throw Object.assign(
+              new Error('The video model did not finish its reply within 300 s.'),
+              { isAxiosError: true, code: 'ETIMEDOUT', config: { url: 'https://openrouter.ai/api/v1/chat/completions' } },
+              entry.failed,
+            );
+          }).catch((error) => {
+            if (!error.isAxiosError) throw error;
+          });
+          /* What the engine would see if it weighed a second look now, and what was booked so far. */
+          const run = requests.at(-1);
+          const job = run.session.replace(/^video:/, '');
+          entry.room = run.approvedRoom();
+          entry.booked = usageLog.filter((item) => item.job === job).reduce((sum, item) => sum + item.costUSD, 0);
+          /* The retry finished, but its reply reported no cost: the real `analyze` books it as uncertain. */
+          if (entry.unreported !== undefined)
+            await meter('vision', entry.reserve, async () => ({ costUSD: entry.unreported, uncertain: true }));
+        }
         if (overbill && !look.brief.survey)
           await meter('vision', 0.05, async () => ({ costUSD: 0.05 * overbill }));
         const thought = thinking && !look.brief.survey ? thinking.shift() : undefined;
@@ -2874,6 +2910,124 @@ test('her cancel while a paid request is out charges nothing for it', async () =
     await park(id);
   }
   await call('delete', `/jobs/${id}`, 'cut-owner').expect(200);
+  await Budgets.deleteMany({});
+});
+
+test('a request that failed on its own before her cancel is still booked, at its expected cost, and not blamed on the cancel', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('late-owner', 'late-upload-0000001', 150);
+  await call('post', `/jobs/${id}/start`, 'late-owner').send(settings).expect(202);
+  const usageBefore = usageLog.length;
+  const logsBefore = logLines.length;
+  try {
+    let started = () => {};
+    const inFlight = new Promise((resolve) => (started = resolve));
+    holdVision = { started, failed: { generation: 'gen-before-cancel', interrupted: false, expectedUSD: 0.03 } };
+    const ticking = worker.tick();
+    await inFlight;
+    await call('post', `/jobs/${id}/cancel`, 'late-owner').expect(200);
+    await ticking;
+    const job = (await call('get', `/jobs/${id}`, 'late-owner').expect(200)).body;
+    assert.equal(job.state, 'cancelled');
+    assert.deepEqual(logged(logsBefore, 'dv.paid-interrupted'), []);
+    const [failure] = logged(logsBefore, 'dv.paid-failure');
+    assert.deepEqual(
+      [failure?.generation, failure?.settledBy, failure?.settled, failure?.stoppedAfter],
+      ['gen-before-cancel', 'expected', 0.03, 'cancel'],
+    );
+    assert.deepEqual(
+      usageLog.slice(usageBefore).filter((item) => item.job === id).map((item) => [item.kind, item.costUSD]),
+      [['vision-uncertain', 0.03]],
+    );
+  } finally {
+    holdVision = null;
+    await park(id);
+  }
+  await call('delete', `/jobs/${id}`, 'late-owner').expect(200);
+  await Budgets.deleteMany({});
+});
+
+test('a failed look request is booked at its recorded or expected cost, never its whole reserve, so the run does not stop over the quote', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('priced-owner', 'priced-upload-000001', 150);
+  await call('post', `/jobs/${id}/start`, 'priced-owner').send(settings).expect(202);
+  const approved = (await Jobs.findById(id).lean()).approvedUSD;
+  const usageBefore = usageLog.length;
+  const logsBefore = logLines.length;
+  const failures = [
+    { reserve: 0.35, failed: { generation: 'gen-recorded', costUSD: 0.012, costFrom: 'generation' } },
+    { reserve: 0.35, failed: { generation: 'gen-unrecorded', expectedUSD: 0.03 } },
+  ];
+  visionTimeouts = [...failures];
+  overbill = 1;
+  try {
+    assert.ok(approved < 0.35, `either failure at its $0.35 reserve would pass her approval (${approved})`);
+    const done = await settle(id, ['done', 'failed'], 'priced-owner');
+    assert.equal(done.state, 'done', done.error);
+    assert.equal(done.overQuote, false, 'the run was not stopped over the quote');
+    assert.equal(visionTimeouts.length, 0, 'both sections had a failed request');
+    const booked = usageLog.slice(usageBefore).filter((item) => item.job === id);
+    assert.deepEqual(
+      booked.filter((item) => item.kind.startsWith('vision') && item.costUSD !== 0.05).map((item) => [item.kind, item.costUSD]),
+      [['vision', 0.012], ['vision-uncertain', 0.03]],
+      'the recorded cost is a known charge; the expected one is still uncertain',
+    );
+    const job = await Jobs.findById(id).lean();
+    assert.ok(Math.abs(job.spend.uncertain - 0.03) < 1e-9, `spend.uncertain ${job.spend.uncertain}`);
+    const total = booked.reduce((sum, item) => sum + item.costUSD, 0);
+    assert.ok(Math.abs(done.runCostUSD - total) < 1e-6, `charged ${done.runCostUSD}, booked ${total}`);
+    assert.ok(done.runCostUSD <= approved);
+    const lines = logged(logsBefore, 'dv.paid-failure');
+    assert.deepEqual(
+      lines.map((entry) => [entry.generation, entry.settledBy, entry.settled, entry.reserveUSD]),
+      [
+        ['gen-recorded', 'generation', 0.012, 0.35],
+        ['gen-unrecorded', 'expected', 0.03, 0.35],
+      ],
+    );
+    assert.equal(lines[1].reason, 'ETIMEDOUT The video model did not finish its reply within 300 s.');
+    /* Taken inside the run, right after each failure settled and before the look went on. */
+    for (const [i, failure] of failures.entries()) {
+      const settled = [0.012, 0.03][i];
+      assert.ok(failure.booked >= settled, `the failure was booked (${failure.booked})`);
+      assert.ok(
+        Math.abs(failure.room - (approved - failure.booked)) < 1e-6,
+        `the second-look budget sees what was settled: ${failure.room} of ${approved}, ${failure.booked} booked`,
+      );
+      assert.ok(
+        failure.room > Math.max(0, approved - (failure.booked - settled + failure.reserve)) + 0.01,
+        `more room than if the failure still held its $0.35 reserve: ${failure.room}`,
+      );
+    }
+  } finally {
+    visionTimeouts = null;
+    overbill = 0;
+    await park(id);
+  }
+  await call('delete', `/jobs/${id}`, 'priced-owner').expect(200);
+
+  const other = await readyJob('priced-owner', 'priced-upload-000002', 60);
+  await call('post', `/jobs/${other}/start`, 'priced-owner').send(settings).expect(202);
+  const otherLogs = logLines.length;
+  const otherUsage = usageLog.length;
+  visionTimeouts = [{ reserve: 0.04, failed: {}, unreported: 0.015 }];
+  try {
+    const done = await settle(other, ['done', 'failed'], 'priced-owner');
+    assert.equal(done.state, 'done', done.error);
+    const [failure] = logged(otherLogs, 'dv.paid-failure');
+    assert.equal(failure.settledBy, 'reserve', 'a failure nothing priced still settles at its reserve');
+    assert.equal(failure.settled, 0.04);
+    assert.equal(failure.generation, undefined);
+    assert.ok(Math.abs((await Jobs.findById(other).lean()).spend.uncertain - 0.055) < 1e-9, 'with the reply that reported no cost');
+    assert.deepEqual(
+      usageLog.slice(otherUsage).filter((item) => item.job === other && item.kind.startsWith('vision')).map((item) => [item.kind, item.costUSD]),
+      [['vision-uncertain', 0.04], ['vision-uncertain', 0.015]],
+    );
+  } finally {
+    visionTimeouts = null;
+    await park(other);
+  }
+  await call('delete', `/jobs/${other}`, 'priced-owner').expect(200);
   await Budgets.deleteMany({});
 });
 
