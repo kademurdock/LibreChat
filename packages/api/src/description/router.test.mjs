@@ -2965,11 +2965,17 @@ test('Part 295: over her quote, the stop names her price, Continue is read at he
     id = await readyJob(owner, 'p295-over-000000001', 150);
     const quote = (await call('post', `/jobs/${id}/estimate`, owner).set('x-role', 'user').send({ action: 'start', settings }).expect(200)).body;
     overbill = 9;
+    const usageBefore = usageLog.length;
     await call('post', `/jobs/${id}/start`, owner).set('x-role', 'user').send(settings).expect(202);
     const stopped = await settle(id, ['failed', 'done'], owner);
     assert.equal(stopped.overQuote, true, stopped.error);
     const job = await Jobs.findById(id).lean();
     const spent = Math.max(0, job.runCost - (job.runPending ?? 0));
+    /* The wallet takes no more than the hold, so the run's usage rows (her /my-usage, the admin
+     * books) say no more than that either. */
+    const booked = usageLog.slice(usageBefore).filter((item) => item.job === id);
+    for (const item of booked) assert.ok(item.chargedUSD <= 2 * item.costUSD + 1e-9, `${item.kind} row charged at most her price`);
+    near(booked.reduce((sum, item) => sum + item.chargedUSD, 0), quote.setAsideUSD, 'the rows add up to what she paid, not to the overrun');
     assert.ok(job.overQuote.spentUSD >= job.approvedUSD - 1e-9, 'the stop compares real dollars with the real approval');
     assert.equal(job.overQuote.quotedUSD, job.runEstimateUSD);
     assert.match(
@@ -2996,6 +3002,50 @@ test('Part 295: over her quote, the stop names her price, Continue is read at he
     const done = await settle(id, ['failed', 'done'], owner);
     assert.equal(done.state, 'done', done.error);
     near(await billing.available(owner), before, 'nothing more was spent, so all of the hold came back');
+  } finally {
+    overbill = 0;
+    userFactor = 1;
+    walletMode = false;
+    if (id) {
+      await park(id);
+      await call('delete', `/jobs/${id}`, owner).expect(200);
+    }
+  }
+});
+
+test('Part 295: a Continue ask cut to a balance with a fraction of a cent is held in whole cents she has', async () => {
+  walletMode = true;
+  userFactor = 2;
+  const user = new mongoose.Types.ObjectId();
+  const owner = String(user);
+  let id;
+  try {
+    await mongoose.connection.collection('users').insertOne({ _id: user, role: 'USER' });
+    await mongoose.connection.collection('balances').insertOne({ user, tokenCredits: 10e6 });
+    id = await readyJob(owner, 'p295-fraction-00001', 150);
+    overbill = 9;
+    await call('post', `/jobs/${id}/start`, owner).set('x-role', 'user').send(settings).expect(202);
+    const stopped = await settle(id, ['failed', 'done'], owner);
+    assert.equal(stopped.overQuote, true, stopped.error);
+    const roomy = (await call('post', `/jobs/${id}/estimate`, owner).set('x-role', 'user').send({ action: 'resume' }).expect(200)).body;
+    /* The least Continue can hold is the usual approval for the rest, at her price. */
+    const least = 2 * approvalOf(roomy.estimateUSD / 2);
+    assert.ok(roomy.approvedUSD > least + 0.02, 'the full ask is above the least, so a balance between them caps it');
+    const balance = Math.round((least + 0.016) * 1e6);
+    await mongoose.connection.collection('balances').updateOne({ user }, { $set: { tokenCredits: balance } });
+    const ask = (await call('post', `/jobs/${id}/estimate`, owner).set('x-role', 'user').send({ action: 'resume' }).expect(200)).body;
+    assert.equal(ask.allowed, true, ask.reason);
+    near(ask.approvedUSD, least + 0.01, 'the ask is her balance cut down to whole cents');
+    near(ask.setAsideUSD, ask.approvedUSD, 'and so is the hold it names');
+    overbill = 0;
+    const raised = Math.round(ask.approvedUSD * 100) / 100;
+    const resumed = await call('post', `/jobs/${id}/resume`, owner).set('x-role', 'user').send({ allowUpToUSD: raised });
+    assert.equal(resumed.status, 202, resumed.body && resumed.body.error);
+    const again = await Jobs.findById(id).lean();
+    assert.equal(again.reservation.cents, Math.round((least + 0.01) * 100), 'the hold is what she was shown');
+    near(await billing.available(owner), balance / 1e6 - (least + 0.01), 'and her balance covered it');
+    const done = await settle(id, ['failed', 'done'], owner);
+    assert.equal(done.state, 'done', done.error);
   } finally {
     overbill = 0;
     userFactor = 1;

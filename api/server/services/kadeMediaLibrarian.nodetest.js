@@ -190,6 +190,18 @@ test('Part 295 review: an item naming her part of the country is never guessed o
   assert.deepStrictEqual(kwto.flags, ['Jev review: Ozarks, unsure which local shelf (0.40).']);
   const stlSong = L.decide(aintake('KSHE 95 jingle 1983'), ans({ audioKind: ['Song or music', 0.5], musicKind: ['Assorted Music', 0.8], ozarks: 0.05 }));
   assert.deepStrictEqual([stlSong.to, stlSong.flags], [null, ['Jev review: Missouri (St. Louis), unsure if local.']]);
+  // Review: Jev sure of the kind does not send her area to a national shelf; the Ozarks question asks about Springfield only.
+  const buck = L.decide(aintake('KMOX St. Louis - Jack Buck interview 1985'), ans({ audioKind: ['Speech or talk', 0.9], ozarks: 0.05 }));
+  assert.deepStrictEqual([buck.to, buck.flags], [null, ['Jev review: Missouri (St. Louis), unsure if local.']]);
+  const news = L.decide(aintake('KSDK St. Louis 10 PM news 1992'), ans({ audioKind: ['Episode of a TV programme', 0.85], ozarks: 0.1 }));
+  assert.deepStrictEqual([news.to, news.flags], [null, ['Jev review: Missouri (St. Louis), unsure if local.']]);
+  const hogs = L.decide(aintake('Arkansas Razorbacks fight song 1994'), ans({ audioKind: ['Song or music', 0.9], musicKind: ['Assorted Music', 0.8], ozarks: 0.1 }));
+  assert.deepStrictEqual([hogs.to, hogs.flags], [null, ['Jev review: Arkansas or the Ozarks edge, unsure if local.']]);
+  const doubted = L.decide({ ...aintake('Opportunity Meeting 1994'), meta: { review: 'Jev review: Ozarks, unsure which local shelf (0.45).' } }, ans({ audioKind: ['Speech or talk', 0.9], ozarks: 0.1 }));
+  assert.deepStrictEqual([doubted.to, doubted.flags], [null, ['Jev review: Ozarks, unsure which local shelf (0.10).']], 'an earlier doubt still holds it');
+  // The radio kinds keep their own judge, which has her local shelves; a talk naming nowhere files as before.
+  assert.strictEqual(L.decide(aintake('Opportunity Meeting 1994'), ans({ audioKind: ['Speech or talk', 0.9], ozarks: 0.1 })).to, 'Audio/Spoken Word/1990s');
+  assert.strictEqual(L.decide(aintake('KMOX legal ID 1985'), ans({ audioKind: ['Aircheck', 0.92], ozarks: 0.1 })).to, 'Audio/Radio Airchecks/1980s', 'a sure aircheck is not held');
 });
 
 test('Part 295 review: St. Louis as Part 283 knew it (her word: "If it\'s from STL, put it in stl")', () => {

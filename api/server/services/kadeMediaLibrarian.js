@@ -871,17 +871,20 @@ function decideAudio(item, a, dec, k, out) {
   const local = oz >= ak.minOzarks;
   const shelf = known && (AUDIO_LOCAL_OK.has(kind.choice) || !local) ? audioShelf(item, kind.choice, a, dec, k) : null;
   if (kind.choice === 'Home recording' && kind.confidence >= 0.8 && !local) out.flags.push('Space review: family or local home recording.');
-  if (shelf && kind.confidence >= ak.minKind) {
+  /* Part 295 review: a title, description or folder naming her part of the country waits for her too, whatever
+   * the Ozarks answer ("KWTO Springfield - Spring Sale" at 0.4 was going to Other Commercials), and so does an
+   * item an earlier read already doubted. That holds even when Jev is sure of the kind: OZARKS_Q asks about
+   * Springfield only, so a sure "KMOX St. Louis" talk or an "Arkansas Razorbacks" song was going to a national
+   * shelf. Only the radio kinds, whose judge has her local shelves, still file when sure. */
+  const named = ourArea(areaText(item)) || doubtedBefore(item);
+  if (shelf && kind.confidence >= ak.minKind && (AUDIO_LOCAL_OK.has(kind.choice) || !named)) {
     return Object.assign(out, { to: shelf !== from ? shelf : null, why: 'audio: ' + kind.choice, confidence: kind.confidence });
   }
   if (local) {
     out.flags.push(`Jev review: Ozarks, unsure which local shelf (${two(oz)}).`);
     return out;
   }
-  /* Part 295 review: a title, description or folder naming her part of the country waits for her too, whatever
-   * the Ozarks answer ("KWTO Springfield - Spring Sale" at 0.4 was going to Other Commercials), and so does an
-   * item an earlier read already doubted. */
-  if (ourArea(areaText(item)) || doubtedBefore(item)) {
+  if (named) {
     const area = areaByRule(areaText(item));
     out.flags.push(!area || area === 'Springfield and the Ozarks' ? `Jev review: Ozarks, unsure which local shelf (${two(oz)}).` : holdNote(item, a));
     return out;

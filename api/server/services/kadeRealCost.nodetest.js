@@ -211,7 +211,9 @@ test('Part 295: a normal OpenRouter reply costs its cost once; the upstream figu
 test('Part 295: a BYOK reply costs OpenRouter\'s fee plus what Google charged the key, from either shape', () => {
   near(R.openRouterCost(byokUsage()), 0.0042);
   near(R.openRouterCost({ ...byokUsage(), cost: 0.0002, cost_details: { upstream_inference_cost: 0.004 } }), 0.0042);
-  assert.equal(R.openRouterCost({ ...byokUsage(), cost_details: { upstream_inference_cost: null } }), 0, 'BYOK with no upstream figure: the fee alone');
+  assert.equal(R.openRouterCost({ ...byokUsage(), cost_details: { upstream_inference_cost: null } }), null, 'BYOK with no upstream figure: no price, the caller estimates (as the describer does)');
+  assert.equal(R.openRouterCost({ cost: 0.0002, is_byok: true, cost_details: {} }), null, 'nor the fee alone when the fee is not 0');
+  assert.equal(R.openRouterCost({ total_cost: 0.0001, is_byok: true }), null, 'a BYOK generation record without the figure');
   near(R.openRouterCost({ total_cost: 0.0001, is_byok: true, upstream_inference_cost: 0.0031 }), 0.0032, 'a BYOK generation record');
   near(R.openRouterCost({ cost_details: { upstream_inference_cost: 0.004 } }), 0.004, 'no own fee reported: the upstream figure, right either way');
 });

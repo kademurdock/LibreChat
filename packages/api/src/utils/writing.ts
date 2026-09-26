@@ -19,10 +19,13 @@ export function writingCost(
    * A normal reply's cost_details.upstream_inference_cost EQUALS its cost (the same money said
    * twice), so it is never added. Only with a provider key inside OpenRouter (BYOK) is usage.cost
    * just OpenRouter's fee and the upstream figure what the provider charged the key; then the two
-   * are summed. A reply naming only the upstream figure costs that figure (right either way). */
+   * are summed. A reply naming only the upstream figure costs that figure (right either way).
+   * A BYOK reply without the upstream figure is not a price (the fee alone is often 0): it is
+   * priced from its tokens, as the describer's realCost and kadeRealCost.openRouterCost do. */
   const own = reported(usage.cost);
   const upstream = reported(usage.cost_details?.upstream_inference_cost);
-  if (own !== undefined) {
+  const byokUnpriced = usage.is_byok === true && upstream === undefined;
+  if (own !== undefined && !byokUnpriced) {
     return { costUSD: usage.is_byok === true && upstream !== undefined ? own + upstream : own, measured: true };
   }
   if (upstream !== undefined) {
@@ -36,6 +39,8 @@ export function writingCost(
     'z-ai/glm-5.3-flash': [0.075, 0.25],
   };
   const rates = prices[model];
+  /* A model with no price row keeps the writer working on a BYOK reply: the fee, marked unmeasured. */
+  if (!rates && byokUnpriced && own !== undefined) return { costUSD: own, measured: false };
   if (!rates) throw new Error('Writing model pricing is unavailable; configure a supported writing model.');
   const input = Number.isFinite(usage.prompt_tokens) ? Math.max(0, usage.prompt_tokens ?? 0) : inputChars / 4;
   const output = Number.isFinite(usage.completion_tokens) ? Math.max(0, usage.completion_tokens ?? 0) : outputChars / 4;

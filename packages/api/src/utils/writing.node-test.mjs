@@ -119,7 +119,10 @@ test('Part 295: a normal reply costs its cost once; the upstream figure that res
 test('Part 295: a BYOK call costs OpenRouter\'s fee plus what the provider charged the key', () => {
   assert.deepEqual(writingCost({ cost: 0, is_byok: true, cost_details: { upstream_inference_cost: 0.0042 } }, 'custom/model'), { costUSD: 0.0042, measured: true });
   assert.ok(Math.abs(writingCost({ cost: 0.0002, is_byok: true, cost_details: { upstream_inference_cost: 0.004 } }, 'custom/model').costUSD - 0.0042) < 1e-12);
-  assert.deepEqual(writingCost({ cost: 0.0002, is_byok: true, cost_details: { upstream_inference_cost: null } }, 'custom/model'), { costUSD: 0.0002, measured: true });
+  /* Review: a BYOK reply without the upstream figure is priced from its tokens, as the describer does. */
+  assert.deepEqual(writingCost({ cost: 0.0002, is_byok: true, cost_details: { upstream_inference_cost: null }, prompt_tokens: 3000, completion_tokens: 1000 }, 'nousresearch/hermes-4-405b'), { costUSD: 0.006, measured: false });
+  assert.deepEqual(writingCost({ cost: 0, is_byok: true, cost_details: { upstream_inference_cost: null } }, 'nousresearch/hermes-4-405b', 12000, 4000), { costUSD: 0.006, measured: false });
+  assert.deepEqual(writingCost({ cost: 0.0002, is_byok: true, cost_details: { upstream_inference_cost: null } }, 'custom/model'), { costUSD: 0.0002, measured: false }, 'no price row: the writer keeps working, the fee marked unmeasured');
   assert.deepEqual(writingCost({ cost_details: { upstream_inference_cost: 0.001 } }, 'custom/model'), { costUSD: 0.001, measured: true });
 });
 

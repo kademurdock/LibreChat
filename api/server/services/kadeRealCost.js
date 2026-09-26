@@ -78,6 +78,9 @@ function extraChargeUSD(costUSD, role, env = process.env) {
  *   - The generation endpoint's record { total_cost, is_byok, upstream_inference_cost } follows the
  *     same rule; pass the whole body so its is_byok comes along.
  *   - A reply that names no own fee but an upstream figure costs that figure (right either way).
+ *   - A BYOK reply with no upstream figure is not a price: the fee alone (often 0) would book a
+ *     call Google billed her key for at next to nothing. It is null, as the describer's realCost
+ *     leaves it undefined, so the caller prices it from its own token estimate.
  * null when neither field is a number, so each caller keeps its own fallback estimate.
  * @param {{ cost?: unknown, total_cost?: unknown, is_byok?: unknown, upstream_inference_cost?: unknown, cost_details?: { upstream_inference_cost?: unknown } } | null | undefined} usage
  * @returns {number | null}
@@ -88,7 +91,8 @@ function openRouterCost(usage) {
   const own = num(usage.cost) ?? num(usage.total_cost);
   const upstream = num(usage.cost_details && usage.cost_details.upstream_inference_cost) ?? num(usage.upstream_inference_cost);
   if (own == null) return upstream;
-  return usage.is_byok === true && upstream != null ? own + upstream : own;
+  if (usage.is_byok !== true) return own;
+  return upstream != null ? own + upstream : null;
 }
 
 /**

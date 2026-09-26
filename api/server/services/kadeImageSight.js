@@ -117,8 +117,15 @@ async function describeAttachedImages(imageParts, opts = {}) {
         },
       );
       const text = r.data?.choices?.[0]?.message?.content;
-      /* Part 295: with her Google key in OpenRouter (BYOK) usage.cost is only OpenRouter's fee. */
-      const cost = openRouterCost(r.data?.usage) ?? 0;
+      /* Part 295: with her Google key in OpenRouter (BYOK) usage.cost is only OpenRouter's fee.
+       * A reply that names no real cost (a BYOK one without Google's figure) is priced from its
+       * tokens at the describer's env-tunable rates, as kadeDescribe does. */
+      const usage = r.data?.usage || {};
+      const cost =
+        openRouterCost(usage) ??
+        ((Number(usage.prompt_tokens) || 0) * Number(process.env.KADE_DESCRIBE_IN_USD_PER_M || 0.1) +
+          (Number(usage.completion_tokens) || 0) * Number(process.env.KADE_DESCRIBE_OUT_USD_PER_M || 0.4)) /
+          1e6;
       return { text: typeof text === 'string' ? text.trim() : '', cost, idx };
     };
 

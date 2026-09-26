@@ -47,7 +47,7 @@ const { descriptionBatchRouter, bookImportRouter, saveBufferToS3, openAudioArchi
 const { requireJwtAuth } = require('~/server/middleware');
 const { tubeVaultHints, validTubeVaultItems } = require('@librechat/api');
 const { logKadeUsage } = require('~/models/kadeUsage');
-const { userPriceFactor } = require('~/server/services/kadeRealCost');
+const { userPriceFactor, extraChargeUSD } = require('~/server/services/kadeRealCost');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, KadeLibraryFold, CATEGORIES } = require('~/models/kadeBook');
 const { parseBook, PARSER_VERSION, NOTICE_REASONS } = require('./kadeReadingRoomParse');
 
@@ -802,7 +802,7 @@ router.get('/book/:id', requireJwtAuth, async (req, res) => {
         const d = t.description || {};
         return { s: i, title: t.title || `Part ${i + 1}`, seconds: t.seconds || 0, clipBegin: t.clipBegin || 0, clipEnd: t.clipEnd, bytes: t.bytes || 0, mime: t.mime, url,
           recaps: (t.recaps || []).map((r) => ({ from: r.from, to: r.to, summary: r.summary, scenes: r.scenes || [], at: r.at })),
-          description: d.state ? { state: d.state, summary: d.summary || '', scenes: d.scenes || [], model: d.model || '', costUSD: d.costUSD || 0, error: d.error || '', at: d.at } : null };
+          description: d.state ? { state: d.state, summary: d.summary || '', scenes: d.scenes || [], model: d.model || '', costUSD: descriptionCost(d, req), error: d.error || '', at: d.at } : null };
       }));
     }
     res.json({
@@ -1443,6 +1443,22 @@ router.get('/search', requireJwtAuth, async (req, res) => {
 /* ── THE LIBRARY'S EYES: video descriptions ─────────────────────────────── */
 const describer = require('./kadeReadingRoomDescribe');
 
+/** Part 295 review: what a finished description says it cost. Kade sees the real cost; everyone
+ * else sees what the balance of whoever asked for it paid (chargedUSD, the price they confirmed),
+ * nothing when that was Kade. A description from before this has no chargedUSD and was charged at
+ * its real cost. */
+function descriptionCost(d, req) {
+  if (isAdmin(req) || typeof d.chargedUSD !== 'number') return d.costUSD || 0;
+  return d.chargedUSD;
+}
+/** A stored description as one person is shown it: its cost at their view, chargedUSD left out. */
+function descriptionFor(d, req) {
+  if (!d || !d.state) return null;
+  const shown = { ...d, costUSD: descriptionCost(d, req) };
+  delete shown.chargedUSD;
+  return shown;
+}
+
 router.get('/book/:id/describe/:t/estimate', requireJwtAuth, async (req, res) => {
   try {
     const book = await openBook(req, req.params.id);
@@ -1469,7 +1485,7 @@ router.post('/book/:id/describe/:t', requireJwtAuth, async (req, res) => {
     const tr = book.tracks[t];
     if (!/^video\//.test(tr.mime || '')) return res.status(400).json({ error: 'That is a sound recording — there is nothing to see in it.' });
     const d = tr.description || {};
-    if (d.state === 'done' && req.query.again !== '1') return res.json({ ok: true, state: 'done', description: d });
+    if (d.state === 'done' && req.query.again !== '1') return res.json({ ok: true, state: 'done', description: descriptionFor(d, req) });
     if (d.state === 'working') return res.json({ ok: true, state: 'working', progress: describer.progressOf(String(book.fileId || book._id), t) });
     const signedUrl = await signGet(tr.key, tr.mime);
     /* The one-file rule: a shortcut's description is written on the file it reads (`fileId`), so one
@@ -1483,7 +1499,9 @@ router.post('/book/:id/describe/:t', requireJwtAuth, async (req, res) => {
           await KadeBook.updateOne({ _id: bookId }, { $set: { [`tracks.${t}.description.state`]: 'failed', [`tracks.${t}.description.error`]: String(err.message || err).slice(0, 400), [`tracks.${t}.description.at`]: new Date() } });
           return;
         }
-        const set = { [`tracks.${t}.description`]: { summary: result.summary, scenes: result.scenes, model: result.model, costUSD: result.costUSD, frames: result.frames, state: 'done', error: '', at: new Date() } };
+        /* chargedUSD: what logKadeUsage takes from the asker's balance for it (0 for Kade). */
+        const chargedUSD = extraChargeUSD(result.costUSD, req.user && req.user.role);
+        const set = { [`tracks.${t}.description`]: { summary: result.summary, scenes: result.scenes, model: result.model, costUSD: result.costUSD, chargedUSD, frames: result.frames, state: 'done', error: '', at: new Date() } };
         if (result.seconds && !tr.seconds) set[`tracks.${t}.seconds`] = result.seconds;
         await KadeBook.updateOne({ _id: bookId }, { $set: set });
         await KadeBook.updateMany({ shortcutOf: bookId, [`tracks.${t}.key`]: tr.key }, { $set: { [`tracks.${t}.description`]: set[`tracks.${t}.description`] } }).catch(() => {});
@@ -1503,7 +1521,7 @@ router.get('/book/:id/describe/:t', requireJwtAuth, async (req, res) => {
     const t = clampInt(req.params.t, 0, 10000, 0);
     if (!book || !isMedia(book) || !(book.tracks || [])[t]) return res.status(404).json({ error: 'No such recording.' });
     const d = book.tracks[t].description || {};
-    res.json({ ok: true, state: d.state || '', progress: describer.progressOf(String(book.fileId || book._id), t), description: d.state ? d : null });
+    res.json({ ok: true, state: d.state || '', progress: describer.progressOf(String(book.fileId || book._id), t), description: descriptionFor(d, req) });
   } catch (e) {
     res.status(500).json({ error: 'Could not read the description.' });
   }

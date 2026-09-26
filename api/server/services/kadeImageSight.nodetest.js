@@ -30,6 +30,15 @@ test('Part 295: a normal photo bills its cost once, not the upstream figure that
   assert.equal(ledger.length, 1);
   assert.equal(ledger[0].costUSD, 0.0012);
 });
+test('Part 295 review: a BYOK photo without Google\'s figure is priced from its tokens, never at the fee alone', async () => {
+  const ledger = [];
+  const usage = { prompt_tokens: 2000, completion_tokens: 500, cost: 0, is_byok: true, cost_details: { upstream_inference_cost: null } };
+  const sight = load(async () => ({ data: { choices: [{ message: { content: 'A bird.' } }], usage } }), ledger);
+  assert.equal(await sight.describeAttachedImages([{ image_url: { url: 'bird' } }], { userId: 'u1' }), 'A bird.');
+  assert.equal(ledger.length, 1);
+  /* 2,000 in at $0.10/M and 500 out at $0.40/M. */
+  assert.ok(Math.abs(ledger[0].costUSD - 0.0004) < 1e-12, String(ledger[0].costUSD));
+});
 test('photo question reaches vision as user text and is separate from instructions', async () => {
   const calls = [];
   const sight = load(async (_, body) => { calls.push(body); return { data: { choices: [{ message: { content: 'The red mug is on the left.' } }] } }; });

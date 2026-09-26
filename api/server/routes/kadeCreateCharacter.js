@@ -672,6 +672,7 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
 (function(){
   var TOKEN=null, QUIZ=[], MENU=[], step=0, answers={}, draft=null, portraitB64=null, pickedName=null, portraitUSD=null;
   function portraitPrice(){ if(typeof portraitUSD!=='number') return 'a few cents'; var c=Math.round(portraitUSD*100); return c>=100 ? '$'+portraitUSD.toFixed(2) : Math.max(1,c)+' cent'+(c===1?'':'s'); }
+  function portraitTag(){ if(typeof portraitUSD!=='number') return ''; var c=Math.round(portraitUSD*100); return ' ('+(c>=100 ? '$'+portraitUSD.toFixed(2) : Math.max(1,c)+'¢')+')'; }
   var describeText='', describeName='', personaRound=0, personaQs=[], personaNotes='';
   var app=document.getElementById('app'), live=document.getElementById('live');
   function say(t){ live.textContent=''; setTimeout(function(){ live.textContent=t; }, 60); }
@@ -809,7 +810,7 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
     MENU.forEach(function(m){ h+='<label class="opt modelcard"><input type="radio" name="mm" value="'+m.key+'"'+(m.key===draft.modelKey?' checked':'')+'><strong>'+m.plainName+'</strong> — '+m.blurb+' <em>Good for: '+m.goodFor+'.</em><span class="expert">'+m.provider+' / '+m.model+'</span></label>'; });
     h+='<button type="button" id="expertBtn" aria-pressed="false">Show technical names</button></fieldset>';
     h+='<fieldset><legend>Their picture</legend><p class="help">One tap paints their portrait — it costs '+portraitPrice()+' of picture credit from the same allowance everything else uses. You can repaint or skip; you can also change it later in the regular builder.</p>';
-    h+='<div id="portraitZone"><button type="button" id="paint" class="primary">Paint their portrait (3¢)</button></div></fieldset>';
+    h+='<div id="portraitZone"><button type="button" id="paint" class="primary">Paint their portrait'+portraitTag()+'</button></div></fieldset>';
     h+='<div class="row"><button type="button" id="back2">Back to questions</button><button type="button" id="create" class="primary">Bring them to life</button></div><p id="status" role="status"></p>';
     app.innerHTML=h;
     say('The character is drafted. Review the name, the personality, the engine, and the picture, then bring them to life.');
@@ -832,7 +833,7 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
       var name=currentName();
       var out=await api('/api/kade/builder/avatar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:'Character named '+name+'. '+draft.avatarPrompt})});
       portraitB64=out.image_b64;
-      zone.innerHTML='<img class="portrait" alt="Their freshly painted portrait" src="data:image/png;base64,'+portraitB64+'"><div class="row"><button type="button" id="repaint">Paint a different one (3¢)</button></div><p class="help">'+(out.remainingToday)+' repaints left today.</p>';
+      zone.innerHTML='<img class="portrait" alt="Their freshly painted portrait" src="data:image/png;base64,'+portraitB64+'"><div class="row"><button type="button" id="repaint">Paint a different one'+portraitTag()+'</button></div><p class="help">'+(out.remainingToday)+' repaints left today.</p>';
       say('Portrait painted. There is a repaint button if you want a different one.');
       document.getElementById('repaint').onclick=paint;
     }catch(e){ zone.innerHTML='<p role="alert">'+(e.message||'That did not work.')+'</p><div class="row"><button type="button" id="paint2">Try again</button></div>'; document.getElementById('paint2').onclick=paint; }

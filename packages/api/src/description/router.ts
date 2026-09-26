@@ -494,6 +494,11 @@ const configured = () =>
   process.env.KADE_DESCRIBED_VIDEO !== '0';
 const today = () => new Date().toISOString().slice(0, 10);
 const toCents = (usd: number): number => Math.max(0, Math.ceil(usd * 100 - 1e-6));
+/**
+ * A balance cut down to whole cents. An ask capped by the balance is floored with this, because
+ * its hold is rounded up to whole cents and must never come to more than the balance.
+ */
+const wholeCents = (usd: number): number => Math.floor(usd * 100 + 1e-6) / 100;
 /** What a run has truly spent: its running total less the reserves of requests that never settled. */
 const settledCost = (job: Pick<Job, 'runCost' | 'runPending'>): number =>
   Math.max(0, (job.runCost ?? 0) - (job.runPending ?? 0));
@@ -2224,7 +2229,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     const factor = runFactor(job.reservation);
     const closing = (job.reservation?.cents ?? 0) - toCents(settledCost(job) * factor);
     const left = await remaining(job.owner).then(
-      (value) => Math.max(0, Math.round(value * 100) + closing) / 100 / factor,
+      (value) => Math.max(0, Math.round(wholeCents(value) * 100) + closing) / 100 / factor,
       () => jobLimit(),
     );
     return askWithin(restEstimate(job), over, left);
@@ -2859,7 +2864,7 @@ export function createDescriptionRouter(hooks: Hooks): {
      * price, and shown at her price. Her balance (remainingUSD) is already her own money.
      */
     const factor = factorFor(req);
-    const room = remainingUSD / factor;
+    const room = wholeCents(remainingUSD) / factor;
     const limits = {
       remainingUSD,
       dailyUSD: hooks.wallet ? null : dailyLimit(),
@@ -2958,7 +2963,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           'allowUpToUSD',
         );
       /* She allows an amount at her price (what she was shown); the approval is kept real. */
-      const left = await remaining(job.owner);
+      const left = wholeCents(await remaining(job.owner));
       launch.approvedUSD = Math.max(
         approvalFor(launch.price.estimateUSD),
         Math.min(toCents(allow) / 100, left) / factorFor(req),
@@ -4223,10 +4228,27 @@ export function createDescriptionRouter(hooks: Hooks): {
          * allowance and the administrator's runs charge no one.
          */
         const factor = runFactor(reservation);
-        const chargeFor = (usd: number): number =>
-          reservation.walletOwner && !reservation.platform
-            ? Math.round(usd * factor * 1e6) / 1e6
-            : 0;
+        const paysBalance = !!reservation.walletOwner && !reservation.platform;
+        const holdUSD = reservation.cents / 100;
+        /**
+         * What this run's usage rows have said they charged. The wallet settles no more than the
+         * hold, so the rows stop there too: a run that overruns its hold (requests in flight when
+         * her approval is reached) never books more than she paid. A run picked up again after a
+         * restart starts from what its earlier worker already booked.
+         */
+        let rowsUSD = paysBalance ? Math.min(holdUSD, spend.usd * factor) : 0;
+        const chargeFor = (usd: number): number => {
+          if (!paysBalance) return 0;
+          const charge = Math.max(
+            0,
+            Math.min(
+              Math.round(usd * factor * 1e6) / 1e6,
+              Math.round((holdUSD - rowsUSD) * 1e6) / 1e6,
+            ),
+          );
+          rowsUSD += charge;
+          return charge;
+        };
         const settleCost = (kindKey: keyof Spend, reserve: number, actual: number) =>
           account(async () => {
             spend.usd = Math.max(0, spend.usd - reserve + actual);

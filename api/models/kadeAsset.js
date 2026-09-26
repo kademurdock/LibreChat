@@ -135,7 +135,14 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
   if (usageOwner) {
     try {
       /* Part 295: OpenRouter's fee plus, with her Google key inside OpenRouter, what Google charged. */
-      const cost = require('~/server/services/kadeRealCost').openRouterCost(r.data?.usage) ?? 0;
+      /* A reply naming no real cost (BYOK without Google's figure) is priced from its tokens at
+       * the describer's env-tunable rates, as kadeDescribe does. */
+      const usage = r.data?.usage || {};
+      const cost =
+        require('~/server/services/kadeRealCost').openRouterCost(usage) ??
+        ((Number(usage.prompt_tokens) || 0) * Number(process.env.KADE_DESCRIBE_IN_USD_PER_M || 0.1) +
+          (Number(usage.completion_tokens) || 0) * Number(process.env.KADE_DESCRIBE_OUT_USD_PER_M || 0.4)) /
+          1e6;
       const { logKadeUsage } = require('~/models/kadeUsage');
       logKadeUsage({
         userId: String(usageOwner),

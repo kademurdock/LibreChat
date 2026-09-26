@@ -65,6 +65,27 @@ test('the Library Describe confirm quotes what the balance will pay (real for Ka
   assert.equal((await quote(KADE)).usd, 0.2502, 'Kade is quoted the real price');
 });
 
+test('a finished Library description says what the asker paid (the real cost for Kade)', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'kadeReadingRoom.js'), 'utf8');
+  const from = source.indexOf('function descriptionCost(');
+  const to = source.indexOf("router.get('/book/:id/describe/:t/estimate'", from);
+  assert.ok(from >= 0 && to > from, 'the helpers are found');
+  const c = { isAdmin: (req) => req.user && req.user.role === 'ADMIN' };
+  vm.runInNewContext(source.slice(from, to) + '; this.descriptionCost = descriptionCost; this.descriptionFor = descriptionFor;', c);
+  /* Stored as the done handler writes it: the real cost, and what logKadeUsage charged the asker. */
+  const charged = realCost.extraChargeUSD(0.04, 'USER', ENV);
+  assert.equal(charged, 0.08);
+  const d = { state: 'done', summary: 's', scenes: [], costUSD: 0.04, chargedUSD: charged, at: 1 };
+  const amber = c.descriptionFor(d, { user: AMBER });
+  assert.equal(amber.costUSD, 0.08, 'the confirmed $0.08 is what the page says it cost');
+  assert.equal(amber.chargedUSD, undefined);
+  assert.equal(c.descriptionFor(d, { user: KADE }).costUSD, 0.04, 'Kade sees the real cost');
+  assert.equal(c.descriptionCost({ ...d, chargedUSD: 0 }, { user: AMBER }), 0, 'one Kade asked for names no price');
+  assert.equal(c.descriptionCost({ state: 'done', costUSD: 0.04 }, { user: AMBER }), 0.04, 'an older one was charged at its real cost');
+  assert.equal(c.descriptionFor({}, { user: AMBER }), null);
+  assert.match(source, /chargedUSD = extraChargeUSD\(result\.costUSD, req\.user && req\.user\.role\)/, 'the done handler stores the charge');
+});
+
 function loadBuilder(logged) {
   const handlers = {};
   const router = {
@@ -129,6 +150,17 @@ test("the character builder's portrait line and persona price are this person's 
   assert.equal(said(0.06), '6 cents');
   assert.equal(said(0.03), '3 cents');
   assert.equal(said(null), 'a few cents', 'an old answer without a price still reads sensibly');
+  /* Review: both portrait buttons named a fixed 3 cents while a USER pays 6. */
+  const CENT = String.fromCharCode(0xa2);
+  assert.ok(!html.body.includes('3' + CENT), 'no fixed price on either portrait button');
+  assert.match(html.body, /Paint their portrait'\+portraitTag\(\)\+'/);
+  assert.match(html.body, /Paint a different one'\+portraitTag\(\)\+'/);
+  const tagFn = html.body.match(/function portraitTag\(\)\{[^\n]*\}/);
+  assert.ok(tagFn, 'the buttons word their price from the quiz answer');
+  const tag = (usd) => vm.runInNewContext(`var portraitUSD=${JSON.stringify(usd)}; ${tagFn[0]} portraitTag();`);
+  assert.equal(tag(0.06), ' (6' + CENT + ')');
+  assert.equal(tag(0.03), ' (3' + CENT + ')', 'Kade sees the real price');
+  assert.equal(tag(null), '', 'an old answer without a price names none');
 
   const write = async (user) => {
     const res = response();
