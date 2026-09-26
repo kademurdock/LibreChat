@@ -135,12 +135,15 @@ export function youtubeProblem(text: string): YouTubeProblem | undefined {
     : undefined;
 }
 
-const errorText = (error: unknown) => {
+/** A failed command's message and the tail of what it printed. */
+export const errorText = (error: unknown): string => {
   if (!(error instanceof Error)) return String(error);
   const detail = (error as Error & { detail?: unknown }).detail;
   return `${error.message} ${typeof detail === 'string' ? detail : ''}`;
 };
-const reason = (error: unknown) => errorText(error).replace(/\s+/g, ' ').trim().slice(-300);
+/** errorText on one line, its last 300 characters, for a log line. */
+export const reason = (error: unknown): string =>
+  errorText(error).replace(/\s+/g, ' ').trim().slice(-300);
 
 /** A named YouTube failure that should reach Kade as it is. `kind` is youtubeProblem's name. */
 class Refused extends Error {
@@ -263,6 +266,7 @@ async function climb(
 }
 
 const metadataSchema = z.object({
+  _type: z.string().nullable().optional().catch(undefined),
   title: z.string().max(1000).catch(''),
   duration: z.number().finite().nullable().optional().catch(undefined),
   is_live: z.boolean().nullable().optional().catch(undefined),
@@ -582,7 +586,13 @@ export type YouTubeAudioKind =
   | 'timeout'
   | 'unreadable'
   | 'tools'
-  | 'failed';
+  | 'failed'
+  /* Media links from other sites and direct files (Part 293, links.ts). */
+  | 'not-supported'
+  | 'blocked-address'
+  | 'not-found'
+  | 'not-media'
+  | 'redirects';
 
 /** A YouTube audio import that stopped. `message` is detail for the server log only. */
 export class YouTubeAudioError extends Error {
@@ -597,22 +607,37 @@ export class YouTubeAudioError extends Error {
   }
 }
 
+/** `seconds` is 0 only when `lengthOptional` let a listing without a length through. */
 export type YouTubeAudioDetails = { title: string; seconds: number; uploader: string };
+
+export type AudioMetadataOptions = {
+  /**
+   * Other media sites do not always list a length (Part 293): with this set, a listing without
+   * one comes back as 0 seconds and the caller measures the downloaded file instead.
+   */
+  lengthOptional?: boolean;
+  /** The title when the listing has none ("YouTube video" by default). */
+  fallbackTitle?: string;
+};
 
 /**
  * Reads yt-dlp's metadata and decides, before any download, whether the sound can come in.
  * An age-restricted video comes in only when the caller allows it (never for a child's account)
  * AND the server is signed in; a child is refused even though the server's cookies could fetch it.
+ * A playlist, album or profile is never one song, so it is refused as 'not-video'.
  */
 export function readAudioMetadata(
   json: unknown,
   maxSeconds: number,
   cookies: boolean,
   allowAgeRestricted: boolean = false,
+  options: AudioMetadataOptions = {},
 ): YouTubeAudioDetails {
   const parsed = metadataSchema.safeParse(json);
   if (!parsed.success) throw new YouTubeAudioError('unreadable');
   const data = parsed.data;
+  if (data._type === 'playlist' || data._type === 'multi_video')
+    throw new YouTubeAudioError('not-video');
   const live = data.live_status ?? '';
   if (live === 'post_live') throw new YouTubeAudioError('processing');
   if (data.is_live || live === 'is_live' || live === 'is_upcoming')
@@ -624,15 +649,67 @@ export function readAudioMetadata(
   const ageGated = availability === 'needs_auth' || (data.age_limit ?? 0) >= 18;
   if (ageGated && !(allowAgeRestricted && cookies)) throw new YouTubeAudioError('age');
   const seconds = data.duration ?? 0;
-  if (!(seconds > 0)) throw new YouTubeAudioError('no-length');
+  if (!(seconds > 0) && !options.lengthOptional) throw new YouTubeAudioError('no-length');
   /* YouTube lists whole seconds (a listed 6:00 may hold up to 6:00.99 of sound), so a video
    * listed AT the limit is refused too: only a listing under it is sure to fit. */
   if (seconds >= maxSeconds) throw new YouTubeAudioError('too-long', `${seconds} s`, seconds);
   return {
-    title: cut(cleanLabel(data.title), 200) || 'YouTube video',
-    seconds,
+    title: cut(cleanLabel(data.title), 200) || options.fallbackTitle || 'YouTube video',
+    seconds: seconds > 0 ? seconds : 0,
     uploader: data.uploader ? cut(cleanLabel(data.uploader), 120) : '',
   };
+}
+
+/**
+ * Turns a downloaded source into the cover MP3 with the server's own ffmpeg: sound only, no
+ * metadata, cut a tenth of a second short of maxSeconds. YouTube lists whole seconds, so a video
+ * listed at 5:59 can hold up to 5:59.99 of sound, and the MP3 encoder adds a few hundredths more;
+ * only that last fraction of a second past the limit is ever lost. Only local files are read
+ * (-protocol_whitelist file), so a playlist file dressed up as audio cannot send ffmpeg to the
+ * network. Throws a YouTubeAudioError ('timeout', 'tools' or 'failed'); returns the MP3's bytes.
+ */
+export async function coverMp3(
+  input: string,
+  output: string,
+  options: { maxSeconds: number; signal: AbortSignal; bitrate?: string },
+): Promise<number> {
+  const { signal } = options;
+  const lastSecond = String(Math.max(1, options.maxSeconds - 0.1));
+  try {
+    await command(
+      ffmpeg(),
+      [
+        '-nostdin',
+        '-hide_banner',
+        '-v',
+        'error',
+        '-y',
+        '-protocol_whitelist',
+        'file',
+        '-i',
+        input,
+        '-map',
+        '0:a:0',
+        '-vn',
+        '-map_metadata',
+        '-1',
+        '-c:a',
+        'libmp3lame',
+        '-b:a',
+        options.bitrate ?? '192k',
+        '-t',
+        lastSecond,
+        output,
+      ],
+      signal,
+    );
+  } catch (error) {
+    if (signal.aborted) throw new YouTubeAudioError('timeout', 'ffmpeg: ' + reason(error));
+    if (/ENOENT/.test(errorText(error)))
+      throw new YouTubeAudioError('tools', 'ffmpeg: ' + reason(error));
+    throw new YouTubeAudioError('failed', 'ffmpeg: ' + reason(error));
+  }
+  return (await stat(output)).size;
 }
 
 const audioKinds: ReadonlySet<string> = new Set([
@@ -789,44 +866,13 @@ export async function youtubeAudio(
         `no audio file; files [${names.filter((name) => name.startsWith('source')).join(', ')}]; yt-dlp said: ${tail}`,
       );
     const output = join(directory, 'cover.mp3');
-    /* YouTube lists whole seconds, so a video listed at 6:00 can hold up to 6:00.99 of sound, and
-     * the MP3 encoder adds a few hundredths more: the booth's own six-minute check would refuse
-     * it after the whole download. The MP3 stops a tenth of a second short of maxSeconds; only
-     * that last fraction of a second past the limit is ever lost. */
-    const lastSecond = String(Math.max(1, maxSeconds - 0.1));
-    try {
-      await command(
-        ffmpeg(),
-        [
-          '-nostdin',
-          '-hide_banner',
-          '-v',
-          'error',
-          '-y',
-          '-i',
-          join(directory, source),
-          '-map',
-          '0:a:0',
-          '-vn',
-          '-map_metadata',
-          '-1',
-          '-c:a',
-          'libmp3lame',
-          '-b:a',
-          options.bitrate ?? '192k',
-          '-t',
-          lastSecond,
-          output,
-        ],
-        signal,
-      );
-    } catch (error) {
-      if (signal.aborted) throw new YouTubeAudioError('timeout', 'ffmpeg: ' + reason(error));
-      if (/ENOENT/.test(errorText(error)))
-        throw new YouTubeAudioError('tools', 'ffmpeg: ' + reason(error));
-      throw new YouTubeAudioError('failed', 'ffmpeg: ' + reason(error));
-    }
-    const bytes = (await stat(output)).size;
+    /* Cut a tenth of a second short of maxSeconds (coverMp3): a listing at 5:59 always fits the
+     * booth's own six-minute check after the whole download. */
+    const bytes = await coverMp3(join(directory, source), output, {
+      maxSeconds,
+      signal,
+      bitrate: options.bitrate,
+    });
     if (bytes > maxBytes) throw new YouTubeAudioError('too-large', `${bytes} bytes as MP3`);
     if (bytes < 1000) throw new YouTubeAudioError('failed', 'ffmpeg made an empty MP3');
     return {
