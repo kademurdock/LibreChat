@@ -24,8 +24,9 @@ function musicLyrics() {
   const compiled = new Module(filename, module);
   compiled.filename = filename;
   compiled.paths = module.paths;
-  // form-data is only used by the transcriber, which this test never calls.
-  compiled.require = (id) => (id === 'form-data' ? function FormData() {} : Module.prototype.require.call(compiled, id));
+  // form-data and the logger are only used by the transcriber, which this test never calls.
+  const stubs = { 'form-data': function FormData() {}, '@librechat/data-schemas': { logger: { info() {}, warn() {}, error() {} } } };
+  compiled.require = (id) => (id in stubs ? stubs[id] : Module.prototype.require.call(compiled, id));
   const source = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
   }).outputText;

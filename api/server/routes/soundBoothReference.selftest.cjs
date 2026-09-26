@@ -27,6 +27,8 @@ console.log('Reference validation passed: missing expected references stop befor
   const ts = require('typescript'), Module = require('node:module'), path = require('node:path');
   const filename = path.resolve(__dirname, '../../../packages/api/src/music/lyrics.ts');
   const compiled = new Module(filename, module); compiled.filename = filename; compiled.paths = module.paths;
+  // The transcriber's logger (Part 293) comes from @librechat/data-schemas, which is not built here.
+  compiled.require = (id) => (id === '@librechat/data-schemas' ? { logger: { info() {}, warn() {}, error() {} } } : Module.prototype.require.call(compiled, id));
   compiled._compile(ts.transpileModule(readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText, filename);
   let handler, duration = 433.1, stores = 0, registeredSeconds;
   const audio = Buffer.from('original audio');

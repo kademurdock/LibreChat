@@ -3,9 +3,14 @@ const fs = require('node:fs'), path = require('node:path'), Module = require('no
 const ts = require('typescript'), express = require('express'), axios = require('axios'), mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 require.extensions['.ts'] = (mod, filename) => mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText, filename);
+/* The transcriber's logger (Part 293) comes from @librechat/data-schemas, which is not built for
+ * this script: a recording stand-in, so the fallback reasons can be checked. */
+const logs = [];
+const dataSchemas = { logger: { info: (line) => logs.push(['info', String(line)]), warn: (line) => logs.push(['warn', String(line)]), error: (line) => logs.push(['error', String(line)]) } };
 function source(name) {
   const filename = path.resolve(__dirname, '../../../packages/api/src/music/' + name + '.ts');
   const mod = new Module(filename, module); mod.filename = filename; mod.paths = module.paths;
+  mod.require = (id) => (id === '@librechat/data-schemas' ? dataSchemas : Module.prototype.require.call(mod, id));
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText, filename);
   return mod.exports;
 }
@@ -31,9 +36,15 @@ const { notifyMusic } = source('notify');
       assert.equal(body.contents[0].parts[0].inlineData.mimeType, 'audio/mpeg');
       assert.equal(Buffer.from(body.contents[0].parts[0].inlineData.data, 'base64').toString(), 'ID3fixture audio');
       assert.match(body.contents[0].parts[1].text, /audibly present/);
+      // Part 293: section tags only where the music marks a section, from the allowed list; Flash on low thinking.
+      assert.match(body.contents[0].parts[1].text, /only where the music audibly marks a new section: \[Verse\], \[Pre-Chorus\], \[Chorus\], \[Post-Chorus\], \[Bridge\], \[Intro\] or \[Outro\]\. A block whose words come back as a refrain is \[Chorus\]\. Do not number the labels\./);
+      assert.doesNotMatch(body.contents[0].parts[1].text, /invented section labels/);
+      assert.match(url, /\/models\/gemini-3\.8-flash:generateContent$/);
+      assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, 'low');
       assert.equal(body.contents[0].parts.length, 2, 'the model gets audio and instructions, never saved lyrics');
       if (geminiMode === 'error') throw new Error('Gemini unavailable');
-      data = { candidates: [{ finishReason: geminiMode === 'truncated' ? 'MAX_TOKENS' : 'STOP', content: { parts: [{ thought: true, text: 'Private reasoning must never be used as lyrics.' }, { text: 'Heard words\nRepeated chorus\nRepeated chorus' }] } }], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20, thoughtsTokenCount: 3 } };
+      const finishReason = { truncated: 'MAX_TOKENS', recitation: 'RECITATION' }[geminiMode] || 'STOP';
+      data = { candidates: [{ finishReason, content: { parts: [{ thought: true, text: 'Private reasoning must never be used as lyrics.' }, { text: '[Verse 1]\nHeard words\n\n[Interlude]\n\n[chorus]\nRepeated chorus\nRepeated chorus' }] } }], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20, thoughtsTokenCount: 3 } };
     } else if (url === 'https://api.elevenlabs.io/v1/speech-to-text') {
       scribeCalls++;
       assert.equal(config.headers['xi-api-key'], 'scribe-fixture');
@@ -133,25 +144,43 @@ const { notifyMusic } = source('notify');
     assert.equal(lyrics.seconds, 30); assert.deepEqual(lyrics.usage, { inputTokens: 100, outputTokens: 23 });
     assert.doesNotMatch(lyrics.transcript, /reasoning|Old incomplete/);
     assert.equal((lyrics.transcript.match(/Repeated chorus/g) || []).length, 2);
+    // Tags are kept to the allowed list: numbers go, unknown labels go, case is fixed.
+    assert.equal(lyrics.transcript, '[Verse]\nHeard words\n\n[Chorus]\nRepeated chorus\nRepeated chorus');
+    assert.match(lyrics.warning, /the section tags are guesses from the music/);
     const cached = await (await post('/reference/lyrics', { url: ref })).json(); assert.equal(cached.cached, true); assert.equal(transcriptionCalls, 1);
+    assert.equal(cached.warning, lyrics.warning, 'a cached Gemini draft keeps the Gemini warning');
     assert.equal(geminiCalls, 1); assert.equal(scribeCalls, 0);
     geminiMode = 'truncated';
     const fallback = await transcribeMusicLyrics(Buffer.from('ID3fixture audio'), 'application/octet-stream', 45);
     assert.equal(fallback.model, 'scribe_v2'); assert.equal(fallback.transcript, 'Fallback lyrics.\nSame chorus.\nSame chorus.');
     assert.equal(fallback.seconds, 45); assert.equal(scribeCalls, 1);
+    assert.ok(logs.some(([level, line]) => level === 'warn' && /\[music\/lyrics\] lyrics gemini fallback reason=finish:MAX_TOKENS model=gemini-3\.8-flash audio\/mpeg 16B 45s; using scribe_v2$/.test(line)), 'a truncated Gemini draft is logged before the fallback');
     const largeAudio = Buffer.alloc(14 * 1024 * 1024 + 1);
     largeAudio.write('ID3fixture audio');
     const beforeLarge = geminiCalls;
     assert.equal((await transcribeMusicLyrics(largeAudio, 'application/octet-stream', 360)).model, 'scribe_v2');
     assert.equal(geminiCalls, beforeLarge, 'oversized inline audio uses Scribe without uploading to Gemini');
+    assert.ok(logs.some(([level, line]) => level === 'info' && /reason=skip:over-14MiB /.test(line)), 'a skipped Gemini call is logged as a skip, not a failure');
     geminiMode = 'error'; scribeFailure = true;
     await References.updateOne({ user: 'a' }, { $set: { transcriptVersion: 'older-version' } });
     assert.equal((await post('/reference/lyrics', { url: ref })).status, 502);
     const afterFailure = await References.findOne({ user: 'a' }).lean();
     assert.equal(afterFailure.transcript.transcript, lyrics.transcript, 'provider failures preserve existing draft');
     assert.equal(afterFailure.leaseUntil, undefined);
+    assert.ok(logs.some(([level, line]) => level === 'warn' && /reason=error:Gemini unavailable /.test(line)), 'a Gemini error is logged before the fallback');
     geminiMode = 'ok'; scribeFailure = false;
     assert.equal((await post('/reference/lyrics', { url: ref })).status, 200);
+    // A commercial song Gemini will not recite: the backup draft says plainly where it came from, cached or not.
+    geminiMode = 'recitation';
+    await References.updateOne({ user: 'a' }, { $set: { transcriptVersion: 'older-version' } });
+    const backup = await (await post('/reference/lyrics', { url: ref })).json();
+    assert.equal(backup.model, 'scribe_v2'); assert.equal(backup.cached, false);
+    assert.equal(backup.warning, 'Draft lyrics from the backup transcriber, so they have no section tags. Add tags such as [Verse] and [Chorus] yourself. Singing, backing vocals and instruments can cause wrong or missing words. Listen and correct the Lyrics box before generating.');
+    const backupCached = await (await post('/reference/lyrics', { url: ref })).json();
+    assert.equal(backupCached.cached, true); assert.equal(backupCached.warning, backup.warning);
+    assert.ok(logs.some(([level, line]) => level === 'warn' && /lyrics gemini fallback reason=finish:RECITATION model=gemini-3\.8-flash /.test(line)), 'RECITATION is countable in the log');
+    assert.ok(logs.every(([, line]) => !line.includes('gemini-fixture') && !line.includes('scribe-fixture')), 'no key in any log line');
+    geminiMode = 'ok';
 
     const cover = { ...input, reference_voice_url: ref };
     const beforeSubmissions = submitted.length, beforeProjects = projectWrites;
@@ -183,6 +212,6 @@ const { notifyMusic } = source('notify');
     assert.equal(savedSource, ref, 'pre-registry owned projects remain usable');
     assert.equal(musicReferenceError(360), undefined);
     for (const seconds of [null, undefined, NaN, 0, -1]) assert.match(musicReferenceError(seconds), /could not be read/);
-    console.log('Music controls integration passed: batches, distinct seeds, controls, concurrent-click guard, partial saves, single routed notification, uncertain submissions, cancellation, legacy jobs, private transcription, duration guard and cached drafts.');
+    console.log('Music controls integration passed: batches, distinct seeds, controls, concurrent-click guard, partial saves, single routed notification, uncertain submissions, cancellation, legacy jobs, private transcription, duration guard and cached drafts; tagged drafts, warnings by transcriber and logged fallback reasons.');
   } finally { server.closeAllConnections(); server.close(); await mongoose.disconnect(); await mongo.stop(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

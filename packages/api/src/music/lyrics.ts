@@ -2,12 +2,19 @@ import axios from 'axios';
 import express from 'express';
 import FormData from 'form-data';
 import mongoose from 'mongoose';
+import { logger } from '@librechat/data-schemas';
 import type { Request, RequestHandler, Router } from 'express';
 
-const transcriptVersion = 'gemini38-scribe2-lyrics-v1';
+/* v2 (Part 293, Sep 25 2026): Gemini now writes section tags, so untagged v1 drafts are not
+ * served from the cache any more. */
+const transcriptVersion = 'gemini38-tags-scribe2-lyrics-v2';
+/* Flash on low thinking: the Sep 25 check found no word-accuracy gain from medium or Pro, and
+ * medium once spent 7,863 thought tokens and hit MAX_TOKENS. */
 const geminiModel = 'gemini-3.8-flash';
+/* The tag instruction is TAG_PROMPT from the Sep 25 check (no accuracy loss detected; every
+ * chorus tagged), with [Post-Chorus] added to the allowed labels. */
 const lyricPrompt =
-  'Transcribe the complete sung lyrics from this audio, from beginning to end, in the original language. Use only words audibly present in this recording. Preserve repeated choruses, repetitions, contractions, and audible vocalizations. Do not summarize, translate, improve the writing, or fill gaps from memory. Mark genuinely unintelligible words [unclear]. Put each sung phrase on its own line, with a blank line between sections. Return only the lyric transcript, with no commentary, timestamps, or invented section labels.';
+  'Transcribe the complete sung lyrics from this audio, from beginning to end, in the original language. Use only words audibly present in this recording. Preserve repeated choruses, repetitions, contractions, and audible vocalizations. Do not summarize, translate, improve the writing, or fill gaps from memory. Mark genuinely unintelligible words [unclear]. Put each sung phrase on its own line, with a blank line between sections. Put a section label on its own line before a section only where the music audibly marks a new section: [Verse], [Pre-Chorus], [Chorus], [Post-Chorus], [Bridge], [Intro] or [Outro]. A block whose words come back as a refrain is [Chorus]. Do not number the labels. Return only the lyric transcript with those labels, with no commentary or timestamps.';
 type Transcript = {
   transcript: string;
   seconds: number;
@@ -16,6 +23,7 @@ type Transcript = {
 };
 type ScribeResult = { text: string };
 type GeminiResult = {
+  promptFeedback?: { blockReason?: string };
   candidates?: {
     finishReason?: string;
     content?: { parts?: { text?: string; thought?: boolean }[] };
@@ -38,10 +46,71 @@ function audioMime(buffer: Buffer, declared: string): string {
   return declared.startsWith('audio/') ? declared.split(';')[0] : 'application/octet-stream';
 }
 
+/** The only section labels a draft may carry; YuE2 reads the lyrics word for word. */
+const sectionTags = ['Intro', 'Verse', 'Pre-Chorus', 'Chorus', 'Post-Chorus', 'Bridge', 'Outro'];
+const sectionTagByName = new Map(
+  sectionTags.map((tag) => [tag.toLowerCase().replace(/[^a-z]/g, ''), `[${tag}]`]),
+);
+
+/**
+ * Keeps Gemini's labels to the allowed list: "[verse 2]" becomes "[Verse]", a label outside the
+ * list ("[Interlude]") is dropped, and "[unclear]" on its own line stays. Lyric lines are never
+ * touched.
+ */
+export function tidySectionTags(transcript: string): string {
+  return transcript
+    .split('\n')
+    .flatMap((line) => {
+      const label = /^\s*\[([^\]\n]{1,40})\]\s*$/.exec(line);
+      if (!label) return [line];
+      const name = label[1]
+        .toLowerCase()
+        .replace(/\s*(?:x\s*\d+|\d+\s*x|\d+)$/, '')
+        .replace(/[^a-z]/g, '');
+      if (name === 'unclear') return [line];
+      const tag = sectionTagByName.get(name);
+      return tag ? [tag] : [];
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Why Gemini gave no draft, as one short countable word for the log ("finish:RECITATION"). */
+class GeminiMiss extends Error {
+  reason: string;
+  skipped: boolean;
+  constructor(reason: string, skipped = false) {
+    super(`No Gemini lyric transcript (${reason}).`);
+    this.name = 'GeminiMiss';
+    this.reason = reason;
+    this.skipped = skipped;
+  }
+}
+
+/**
+ * The reason in a Gemini failure, for the log: finish:<finishReason>, blocked:<blockReason>,
+ * http:<status>[:<API status>], error:<axios code>, skip:<why>. Never the request, its headers or
+ * the key.
+ */
+export function geminiFailureReason(error: unknown): string {
+  if (error instanceof GeminiMiss) return error.reason;
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const body = error.response?.data as { error?: { status?: unknown } } | undefined;
+    const apiStatus = typeof body?.error?.status === 'string' ? body.error.status : '';
+    if (status) return `http:${status}${apiStatus ? `:${apiStatus.slice(0, 40)}` : ''}`;
+    return `error:${error.code || 'network'}`;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return `error:${message.replace(/\s+/g, ' ').trim().slice(0, 160) || 'unknown'}`;
+}
+
 async function geminiLyrics(buffer: Buffer, mime: string, seconds: number): Promise<Transcript> {
   const key = process.env.GEMINI_API_KEY || process.env.KADE_EMBED_GEMINI_KEY;
-  if (!key || buffer.length > 14 * 1024 * 1024 || !mime.startsWith('audio/'))
-    throw new Error('Use the alternate lyric transcriber for this recording.');
+  if (!key) throw new GeminiMiss('skip:no-key', true);
+  if (buffer.length > 14 * 1024 * 1024) throw new GeminiMiss('skip:over-14MiB', true);
+  if (!mime.startsWith('audio/')) throw new GeminiMiss('skip:not-audio', true);
   const { data } = await axios.post<GeminiResult>(
     `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
     {
@@ -69,13 +138,19 @@ async function geminiLyrics(buffer: Buffer, mime: string, seconds: number): Prom
     },
   );
   const candidate = data.candidates?.[0];
-  const transcript = candidate?.content?.parts
-    ?.filter((part) => !part.thought && typeof part.text === 'string')
-    .map((part) => part.text)
-    .join('\n')
-    .trim();
-  if (candidate?.finishReason !== 'STOP' || !transcript)
-    throw new Error('No complete lyric transcript returned.');
+  if (!candidate) {
+    const blocked = data.promptFeedback?.blockReason;
+    throw new GeminiMiss(blocked ? `blocked:${blocked}` : 'finish:no-candidate');
+  }
+  if (candidate.finishReason !== 'STOP')
+    throw new GeminiMiss(`finish:${candidate.finishReason || 'none'}`);
+  const transcript = tidySectionTags(
+    (candidate.content?.parts ?? [])
+      .filter((part) => !part.thought && typeof part.text === 'string')
+      .map((part) => part.text)
+      .join('\n'),
+  );
+  if (!transcript) throw new GeminiMiss('finish:STOP-empty');
   const usage = data.usageMetadata;
   return {
     transcript,
@@ -98,7 +173,13 @@ export async function transcribeMusicLyrics(
   mime = audioMime(buffer, mime);
   try {
     return await geminiLyrics(buffer, mime, seconds);
-  } catch {
+  } catch (error) {
+    /* Countable: grep "lyrics gemini fallback reason=finish:RECITATION" to see how often
+     * Gemini refuses a commercial song and the untagged backup draft is used instead. */
+    const reason = geminiFailureReason(error);
+    const line = `[music/lyrics] lyrics gemini fallback reason=${reason} model=${geminiModel} ${mime} ${buffer.length}B ${Math.round(seconds)}s; using scribe_v2`;
+    if (error instanceof GeminiMiss && error.skipped) logger.info(line);
+    else logger.warn(line);
     return scribeLyrics(buffer, mime, seconds);
   }
 }
@@ -199,6 +280,16 @@ type Hooks = {
   transcribe: (buffer: Buffer, mime: string, seconds: number) => Promise<Transcript>;
 };
 
+/**
+ * The sentence read aloud with a draft, by where it came from: Gemini's section tags are guesses
+ * to check; the backup transcriber writes no tags at all, and the person is told so plainly.
+ */
+export function lyricsWarning(model: string | undefined): string {
+  if (typeof model === 'string' && model.startsWith('gemini'))
+    return 'Draft lyrics only: singing, backing vocals and instruments can cause wrong or missing words, and the section tags are guesses from the music. Listen, then correct the words and the tags in the Lyrics box before generating.';
+  return 'Draft lyrics from the backup transcriber, so they have no section tags. Add tags such as [Verse] and [Chorus] yourself. Singing, backing vocals and instruments can cause wrong or missing words. Listen and correct the Lyrics box before generating.';
+}
+
 export function musicReferenceError(seconds: number | null | undefined): string | undefined {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0)
     return 'The recording could not be read. Import a readable audio file before generating.';
@@ -280,9 +371,8 @@ export function createLyricsRouter(hooks: Hooks): Router {
             .json({ error: 'That recording is not saved on your account. Import it again.' });
           return;
         }
-        const warning =
-          'Draft lyrics only: singing, backing vocals and instruments can cause wrong or missing words. Listen and correct the Lyrics box before generating. Add section tags where useful.';
         if (reference?.transcript && reference.transcriptVersion === transcriptVersion) {
+          const warning = lyricsWarning(reference.transcript.model);
           res.json({ ...reference.transcript, warning, cached: true });
           return;
         }
@@ -303,7 +393,11 @@ export function createLyricsRouter(hooks: Hooks): Router {
         }
         try {
           if (claim.transcript && claim.transcriptVersion === transcriptVersion) {
-            res.json({ ...claim.transcript, warning, cached: true });
+            res.json({
+              ...claim.transcript,
+              warning: lyricsWarning(claim.transcript.model),
+              cached: true,
+            });
             return;
           }
           const url = await hooks.refresh(claim.url);
@@ -336,7 +430,7 @@ export function createLyricsRouter(hooks: Hooks): Router {
             { user, key },
             { $set: { transcript: result, transcriptVersion } },
           );
-          res.json({ ...result, warning, cached: false });
+          res.json({ ...result, warning: lyricsWarning(result.model), cached: false });
         } finally {
           await References.updateOne({ user, key }, { $unset: { leaseUntil: 1 } });
         }
