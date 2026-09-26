@@ -29,11 +29,13 @@ export const keytermPerMinute = 0.0013;
 /** Subscription narration is included for users; metered visual analysis and transcription remain separate. */
 export const speechPerByte: number = 0;
 /**
- * Delivery direction for the narrator. The voice proxy lifts a leading [tag] into Inworld's
- * instruction field, which Inworld does not bill, but Fish voices are billed for it as text, so
- * it is counted with the spoken words.
+ * Delivery direction for fish.audio voices only, which read a leading [tag] as their style and
+ * bill it as text, so it is counted with the spoken words. Inworld voices get none: the proxy
+ * lifted it into Inworld's instruction field, and with it TTS-2 put unpunctuated pauses of up to
+ * 383 ms after names and first words (5 to 10 of 24 test lines; none without it, Sep 25 A/B).
+ * Fish voices had no such pauses with it.
  */
-const direction = '[clear engaged audio description] ';
+const fishDirection = '[clear engaged audio description] ';
 const dialogueService = 'Dialogue timing (Deepgram)';
 
 const speechSchema = z.object({
@@ -649,10 +651,24 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
 }
 
 /**
+ * The words sent for a voice: fish.audio voices (named in the catalog's `fish` list) get the
+ * delivery direction in front; Inworld voices, and any voice when the catalog cannot be read,
+ * get the words alone.
+ */
+export async function voiceInput(words: string, voice: string): Promise<string> {
+  const fish = await voices().then(
+    (list) => !!list.fish?.includes(voice),
+    () => false,
+  );
+  return fish ? fishDirection + words : words;
+}
+
+/**
  * Speaks one description through the platform voice proxy. `speed` is the voice engine's own
  * rate (1 to 1.5), which sounds more natural than stretching the audio afterwards. A failed call
  * is tried up to three times (after 5 s and 20 s, or when the proxy's Retry-After says) before
- * the description is given up, because the words were already paid for.
+ * the description is given up, because the words were already paid for. Every byte sent is
+ * booked, including a fish voice's direction.
  */
 export async function synthesize(
   text: string,
@@ -665,7 +681,7 @@ export async function synthesize(
 ): Promise<void> {
   const words = speakable(text);
   if (!words) throw new Plain('There was nothing to say for this description.');
-  const input = direction + words;
+  const input = await voiceInput(words, voice);
   const cost = Buffer.byteLength(input, 'utf8') * speechPerByte;
   await attempt(
     3,
