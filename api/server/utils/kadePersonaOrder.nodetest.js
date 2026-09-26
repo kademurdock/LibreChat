@@ -90,7 +90,9 @@ test('the guards that read agent.instructions still see the persona, not a rebui
    * matching, and a bare probe would start carrying the whole wardrobe. */
   const join = CLIENT.indexOf('agent.instructions = headParts.filter(Boolean).join(');
   const bareProbe = CLIENT.indexOf("includes('KADE BARE PROBE')", CLIENT.indexOf('const personaLast'));
-  const doubleGuard = CLIENT.indexOf("includes('PLATFORM (invisible')");
+  /* Part 293: the guard is carriesPlatformNote now; the old 'PLATFORM (invisible'
+   * check matched an opener the note had dropped, so it never fired. */
+  const doubleGuard = CLIENT.indexOf('!carriesPlatformNote(agent.instructions)');
   assert.ok(bareProbe > -1 && bareProbe < join, 'the bare-probe guard now runs after the head is rebuilt');
   assert.ok(doubleGuard > -1 && doubleGuard < join, 'the double-append guard now runs after the head is rebuilt');
 });
