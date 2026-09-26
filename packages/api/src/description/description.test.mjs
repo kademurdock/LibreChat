@@ -2260,6 +2260,43 @@ test('names the listener has not heard yet are replaced before anything is voice
   );
 });
 
+test('the narrator says Wiley Coyote and ledger initials without a stop; captions and script keep the written names', async () => {
+  const f = await fixture('spoken-names');
+  const said = [];
+  const backend = providers(f.voice, [], []);
+  const coyote = "Wile E. Coyote's rocket sputters.";
+  const homer = 'Homer J. Simpson waves.';
+  backend.analyze = async () => ({
+    kind: 'animation',
+    setting: '',
+    people: [
+      { id: 'P1', label: 'the coyote', name: 'Wile E. Coyote', look: 'brown fur', nameFrom: 'known' },
+      { id: 'P2', label: 'the bald man', name: 'Homer J. Simpson', look: 'white shirt', nameFrom: 'known' },
+    ],
+    speakers: [],
+    protectedSounds: [],
+    cues: [
+      { ...cue, at: 1, until: 4, text: coyote, shortText: coyote },
+      { ...cue, at: 5, until: 8.5, pauseAt: 5, text: homer, shortText: homer },
+    ],
+  });
+  const synthesize = backend.synthesize;
+  backend.synthesize = async (text, ...rest) => {
+    said.push(text);
+    return synthesize(text, ...rest);
+  };
+  const result = await run(f, [], [], { providers: backend });
+  assert.ok(said.includes("Wiley Coyote's rocket sputters."), said.join(' | '));
+  assert.ok(said.includes('Homer J Simpson waves.'), said.join(' | '));
+  assert.ok(said.every((text) => !/Wile E|J\. Simpson/.test(text)), said.join(' | '));
+  const descriptions = await readFile(result.files.descriptions, 'utf8');
+  const transcript = await readFile(result.files.transcript, 'utf8');
+  for (const written of [descriptions, transcript, JSON.stringify(result.report.descriptions)]) {
+    assert.ok(written.includes(coyote) && written.includes(homer), written);
+    assert.ok(!/Wiley|Homer J Simpson/.test(written), written);
+  }
+});
+
 test('continuity records what was actually heard and what was left out, and the next look is told', async () => {
   const f = await fixture('heard', 30);
   const { keeper, kept } = keeperFor(savedPlan(30, [10, 20]), [

@@ -42,6 +42,7 @@ import {
   readsTimeStrip,
   roomText,
   speakable,
+  spokenForm,
 } from './prompt.ts';
 import {
   buildReport,
@@ -804,6 +805,36 @@ test('prompt: the lint removes judging words but never touches words read from t
   );
 });
 
+test('prompt: the narrator says Wiley Coyote and ledger initials without a full stop; nothing else changes', () => {
+  assert.equal(spokenForm('Baby Wile E. Coyote totters out of a cave door.'), 'Baby Wiley Coyote totters out of a cave door.');
+  assert.equal(spokenForm("Wile E. Coyote's rocket sputters."), "Wiley Coyote's rocket sputters.", 'a possessive keeps its ending');
+  assert.equal(spokenForm('A card reads WILE E. COYOTE, GENIUS.'), 'A card reads WILEY COYOTE, GENIUS.');
+  assert.equal(spokenForm('Wile E Coyote waves. Wile E. grins, then Wile E., hungry, sits.'), 'Wiley Coyote waves. Wiley grins, then Wiley, hungry, sits.');
+  assert.equal(spokenForm('The sign reads Wile E. Then he runs.'), 'The sign reads Wile E. Then he runs.', 'a sentence ending on the initial keeps its stop');
+  const ledger = ['John F. Kennedy', 'the senator', 'J. R. R. Tolkien', 'Chuck E. Cheese', 'the Chuck E. Cheese mascot', ''];
+  assert.equal(
+    spokenForm('John F. Kennedy waves. The crowd cheers for John F. Kennedy.', ledger),
+    'John F Kennedy waves. The crowd cheers for John F Kennedy.',
+    'a sentence end after the name stays',
+  );
+  assert.equal(spokenForm("John F. Kennedy's car turns.", ledger), "John F Kennedy's car turns.");
+  assert.equal(spokenForm('J. R. R. Tolkien writes.', ledger), 'J R R Tolkien writes.');
+  assert.equal(spokenForm('The Chuck E. Cheese mascot waves.', ledger), 'The Chuck E Cheese mascot waves.');
+  assert.equal(spokenForm('Robert F. Kennedy speaks.', ledger), 'Robert F. Kennedy speaks.', 'a name the ledger does not know is left alone');
+  for (const text of [
+    'He chose plan B. Then he ran.',
+    'It is 5 p.m. Now what?',
+    'Dr. Smith and Mr. T meet at the U.S. Capitol at 10 a.m. Snow falls.',
+    'A sign reads E.T. Go home. Mrs. B. Jones smiles.',
+  ]) {
+    assert.equal(spokenForm(text), text);
+    assert.equal(spokenForm(text, ledger), text);
+  }
+  const once = spokenForm('Wile E. Coyote chases John F. Kennedy.', ledger);
+  assert.equal(once, 'Wiley Coyote chases John F Kennedy.');
+  assert.equal(spokenForm(once, ledger), once, 'saying it twice changes nothing more');
+});
+
 test('prompt: the lint keeps reaction words that describe a thing, and leaves no stray commas', () => {
   for (const text of [
     'Two boys in horror masks jump out from behind a hedge.',
@@ -1545,6 +1576,8 @@ test('providers: Inworld voices get no delivery direction, fish voices keep it, 
     assert.equal(fish.delivery, 'STABLE');
     assert.equal(charges.at(-1).cost, Buffer.byteLength(fish.input, 'utf8') * speechPerByte, 'the direction a fish voice is billed for is booked');
     assert.equal(await voiceInput('Pluto flies off the slide.', 'Voice 1'), 'Pluto flies off the slide.');
+    await synthesize('Baby Wile E. Coyote totters out of a cave door.', 'Voice 1', 'session', file, 1.5, signal, meter);
+    assert.equal(speech(fake).at(-1).body.input, 'Baby Wiley Coyote totters out of a cave door.', 'every voice call, samples too, says Wiley');
   } finally {
     fake.restore();
   }

@@ -57,6 +57,51 @@ export function speakable(value: string): string {
     .trim();
 }
 
+/**
+ * Well-known names whose written initial the voices misread, and the word they say right in its
+ * place. A name changes only before its surname, a lowercase word or a comma, so "Wile E.
+ * Coyote's" is said "Wiley Coyote's" while a sentence that ends on the initial keeps its stop.
+ */
+const sayAs: { written: RegExp; spoken: string }[] = [
+  // Sep 26 Road Runner job: the narrator stretched "Wile E." into "wile-EEEE"; he is "Wiley".
+  {
+    written:
+      /(?<![\p{L}\p{N}])(?:Wile|WILE)\s+E\.?(?=\s+(?:Coyote|COYOTE)(?![\p{L}\p{N}])|\s+\p{Ll}|,)/gu,
+    spoken: 'Wiley',
+  },
+];
+/** A one-letter initial with more of the name after it: the "F." of "John F. Kennedy". */
+const innerInitial = /(?<![\p{L}\p{N}.])\p{Lu}\.(?=\s+\p{Lu})/u;
+/** The same inside a name already found in a description, whatever its case. */
+const initialInName = /(?<![\p{L}\p{N}.])(\p{L})\.(?=\s)/gu;
+
+/**
+ * The words as the narrator should say them; the written description, captions and saved text
+ * keep the original. Names in the table above get their spoken spelling, and a name from the
+ * section's people ledger (`names`: its people's names and labels) that has an initial inside it
+ * loses the initial's full stop ("John F Kennedy"), which the voice would otherwise hear as a
+ * sentence end and pause on or stretch. Every other full stop, abbreviation and sentence end is
+ * left alone. Saying it twice changes nothing more.
+ */
+export function spokenForm(text: string, names: readonly string[] = []): string {
+  let said = text;
+  for (const { written, spoken } of sayAs)
+    said = said.replace(written, (found) =>
+      found === found.toUpperCase() ? spoken.toUpperCase() : spoken,
+    );
+  const initialled = [...new Set(names.map((name) => name.replace(/\s+/g, ' ').trim()))]
+    .filter((name) => innerInitial.test(name))
+    .sort((a, b) => b.length - a.length);
+  for (const name of initialled) {
+    const found = new RegExp(
+      `(?<![\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')}(?![\\p{L}\\p{N}])`,
+      'giu',
+    );
+    said = said.replace(found, (match) => match.replace(initialInName, '$1'));
+  }
+  return said;
+}
+
 /** Words that judge character or motive rather than describe; removing them never breaks a sentence. */
 const opinions =
   /\s*\b(?:evilly|mockingly|hysterically|blissfully|menacingly|smugly|sinisterly|maliciously|wickedly|deviously|slyly|sneakily|arrogantly|cruelly|spitefully|sarcastically|condescendingly|happily|gleefully|joyfully|triumphantly|proudly|in (?:horror|disbelief|shock|confusion|terror|dismay|astonishment|fury|anger|rage|glee|triumph|frustration|delight|panic)|with (?:rage|contempt|disdain|glee|delight|fury))\b/g;
