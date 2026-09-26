@@ -119,8 +119,26 @@ export type Analysis = {
   protectedSounds: Interval[];
   /** Every paid call behind this look, in order; the last one wrote it. */
   vision?: VisionCall[];
-  /** Signs, found by a code check and logged, that this look's times run late (nothing changed). */
+  /** The crammed-end sign, found by a code check and logged: this look's times may run late. */
   stretched?: string[];
+  /** A second look at the same section, and which of the two this analysis is. */
+  relook?: Relook;
+};
+/**
+ * A second look at one section, asked in code when the first reasoned under the floor or crammed
+ * its last description into the end (engine.ts `reasoningFloor`).
+ */
+export type Relook = {
+  /** 'reasoning': the first look reasoned under the floor; 'crammed': it showed the crammed end. */
+  reasons: ('reasoning' | 'crammed')[];
+  /** Reasoning tokens of the first look and of the second (null when there was no second). */
+  reasoning: [number, number | null];
+  /** Which look this analysis is. */
+  kept: 1 | 2;
+  /** Why there was no second look to choose: it would pass the approved maximum, or it failed. */
+  skipped?: 'approved maximum' | 'failed';
+  /** The paid calls of the look that was not kept, so both looks' backends and costs are on record. */
+  other?: VisionCall[];
 };
 
 const time = z.number().finite();

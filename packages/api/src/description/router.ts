@@ -4206,6 +4206,11 @@ export function createDescriptionRouter(hooks: Hooks): {
           throw new Halt('A rehearsal never sends paid requests.');
         };
         const meter = rehearsal ? rehearsalMeter : paidMeter;
+        /**
+         * What is left of her approval, counted as the meter counts it, with requests in flight
+         * held at their reserve: a second look at a section starts only when its reserve fits.
+         */
+        const approvedRoom = () => (rehearsal ? 0 : Math.max(0, approved - spend.usd));
         const request: RunRequest = {
           source,
           directory,
@@ -4222,6 +4227,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           session: `video:${job._id}`,
           signal,
           meter,
+          approvedRoom,
           progress,
           providers: rehearsal ? rehearsalProviders : (hooks.providers ?? productionProviders),
           keeper: state.keeper,

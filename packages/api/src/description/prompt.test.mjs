@@ -24,8 +24,7 @@ import {
   billed,
   failureClass,
   keytermsFor,
-  lookBackend,
-  lookRouting,
+  lookReserve,
   providerDetail,
   providerProblem,
   speechPerByte,
@@ -1331,7 +1330,7 @@ const replyBody = JSON.stringify({
   protectedSounds: [],
 });
 
-test('providers: the vision request uses the flex-eligible model, pinned reasoning and no temperature', async () => {
+test('providers: the vision request uses the flex-eligible model, pinned reasoning, no temperature and no backend pin', async () => {
   process.env.OPENROUTER_KEY = 'test-key';
   process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash:floor';
   const file = join(scratch, 'clip.mp4');
@@ -1356,12 +1355,8 @@ test('providers: the vision request uses the flex-eligible model, pinned reasoni
     assert.match(log[0], /tier flex, provider Google AI Studio, finish stop, output 900 tokens \(400 reasoning\), \$0\.0042/);
     assert.deepEqual(
       body.provider,
-      {
-        order: ['google-vertex/flex', 'google-vertex/global/flex', 'google-vertex'],
-        allow_fallbacks: true,
-        max_price: { prompt: 1.5, completion: 7.5 },
-      },
-      'the flex variant starts on the Vertex flex tier, then Vertex, then anywhere',
+      { max_price: { prompt: 1.5, completion: 7.5 } },
+      'no backend order: the Pluto A/B found the drift tracks reasoning, not the backend',
     );
     assert.deepEqual(result.vision, [
       {
@@ -1385,18 +1380,35 @@ test('providers: the vision request uses the flex-eligible model, pinned reasoni
     delete process.env.KADE_DESCRIPTION_MODEL;
     await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter);
     assert.equal(fake.calls[2].body.model, 'google/gemini-3.8-flash');
-    assert.deepEqual(fake.calls[2].body.provider, {
-      order: ['google-vertex'],
-      allow_fallbacks: true,
-      max_price: { prompt: 1.5, completion: 7.5 },
-    }, 'every look starts on the same backend, with fallbacks allowed');
     process.env.KADE_DESCRIPTION_MODEL = 'qwen/qwen3-vl-flash';
     await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter);
-    assert.deepEqual(fake.calls[3].body.provider, { max_price: { prompt: 1.5, completion: 7.5 } }, 'another maker keeps OpenRouter routing');
-    assert.deepEqual(lookRouting('google/gemini-3.8-flash').order, [lookBackend]);
-    assert.equal(lookBackend, 'google-vertex');
+    for (const call of fake.calls) {
+      assert.deepEqual(call.body.provider, { max_price: { prompt: 1.5, completion: 7.5 } }, call.body.model);
+      assert.equal(JSON.stringify(call.body).includes('google-vertex'), false, 'no backend is named anywhere in the request');
+    }
   } finally {
     delete process.env.KADE_DESCRIPTION_MODEL;
+    fake.restore();
+  }
+});
+
+test('providers: lookReserve is the reserve the meter is handed for that look', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const file = join(scratch, 'reserve.mp4');
+  await writeFile(file, Buffer.from('clip'));
+  const fake = fakeAxios(() => reply(replyBody));
+  try {
+    for (const look of [
+      { file, seconds: 10, brief: brief(), state: null, lines: [], before: [] },
+      { file, seconds: 310, brief: brief({ slowed: true }), state: null, lines: [{ start: 1, end: 3, text: 'Happy birthday.', speaker: 0 }], before: [] },
+    ]) {
+      charges.length = 0;
+      await analyze(look, signal, meter);
+      assert.equal(charges.length, 1);
+      assert.equal(charges[0].reserve, lookReserve(look));
+    }
+    assert.ok(charges[0].reserve > 0.37, `a slowed 310 s close look holds about $0.38 while it is out: ${charges[0].reserve}`);
+  } finally {
     fake.restore();
   }
 });
@@ -1431,7 +1443,7 @@ test('providers: a reply cut off for length is retried once on the standard tier
     assert.equal(fake.calls.length, 2);
     assert.equal(fake.calls[1].body.model, 'google/gemini-3.8-flash');
     assert.deepEqual(result.vision.map((call) => call.finish), ['length', 'stop'], 'the record keeps the cut-off call too');
-    assert.deepEqual(fake.calls[1].body.provider.order, ['google-vertex']);
+    assert.deepEqual(fake.calls[1].body.provider, { max_price: { prompt: 1.5, completion: 7.5 } }, 'the retry names no backend either');
     assert.equal(fake.calls[1].body.response_format.type, 'json_schema');
     assert.match(fake.calls[1].body.messages[0].content[1].text, /Give about half as many cues/);
   } finally {

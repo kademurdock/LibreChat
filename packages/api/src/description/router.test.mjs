@@ -85,8 +85,15 @@ let beforeEngine = null;
 let librarySaveFails = false;
 /** When set, each look is billed this many times its $0.05 reserve. */
 let overbill = 0;
-/** When set ({ started }), the next look holds a $0.35 paid request open until the job's signal aborts it. */
+/**
+ * When set ({ started, skip? }), the next look (after `skip` looks) holds a $0.35 paid request open
+ * until the job's signal aborts it.
+ */
 let holdVision = null;
+/** When set, each look reports the next of these reasoning counts and is billed $0.02 ($0.05 reserve). */
+let thinking = null;
+/** What the engine is told one look call reserves, when it weighs a second look against her approval. */
+let relookReserve = 0.05;
 const usageLog = [];
 /** Every line the worker logged, parsed, so a test can read the operator's view. */
 const logLines = [];
@@ -398,7 +405,8 @@ before(async () => {
         calls.analyze++;
         if (failSection === calls.analyze || (failLaterSections && look.state))
           throw axiosFailure(402);
-        if (holdVision && !look.brief.survey) {
+        if (holdVision?.skip && !look.brief.survey) holdVision.skip--;
+        else if (holdVision && !look.brief.survey) {
           const hold = holdVision;
           holdVision = null;
           await meter('vision', 0.35, () =>
@@ -418,12 +426,17 @@ before(async () => {
           });
         if (overbill && !look.brief.survey)
           await meter('vision', 0.05, async () => ({ costUSD: 0.05 * overbill }));
+        const thought = thinking && !look.brief.survey ? thinking.shift() : undefined;
+        if (thought !== undefined) await meter('vision', 0.05, async () => ({ costUSD: 0.02 }));
         return {
           kind: 'other',
           setting: 'A test pattern.',
           people: [],
           speakers: [{ speaker: 0, who: 'the host' }],
           protectedSounds: [],
+          ...(thought !== undefined
+            ? { vision: [{ model: 'google/gemini-3.8-flash', costUSD: 0.02, seconds: 1, reasoningTokens: thought }] }
+            : {}),
           cues: [
             {
               at: 2,
@@ -440,6 +453,7 @@ before(async () => {
           ),
         };
       },
+      reserve: () => relookReserve,
       synthesize: async (_text, _voice, _session, file, _speed, _signal, meter) => {
         calls.synthesize++;
         if (simulateConcurrentCosts || sampleCost) {
@@ -2811,6 +2825,100 @@ test('her cancel while a paid request is out charges nothing for it', async () =
     await park(id);
   }
   await call('delete', `/jobs/${id}`, 'cut-owner').expect(200);
+  await Budgets.deleteMany({});
+});
+
+test('a look that skipped its thinking is looked at once more inside her approval, and both looks are booked', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('relook-owner', 'relook-upload-000001', 60);
+  await call('post', `/jobs/${id}/start`, 'relook-owner').send(settings).expect(202);
+  const approved = (await Jobs.findById(id).lean()).approvedUSD;
+  const usageBefore = usageLog.length;
+  const logsBefore = logLines.length;
+  const looksBefore = calls.analyze;
+  thinking = [0, 5000];
+  try {
+    const done = await settle(id, ['done', 'failed'], 'relook-owner');
+    assert.equal(done.state, 'done', done.error);
+    assert.equal(calls.analyze - looksBefore, 2, 'one section, looked at twice');
+    const booked = usageLog.slice(usageBefore).filter((item) => item.job === id && item.kind === 'vision');
+    assert.deepEqual(booked.map((item) => item.costUSD), [0.02, 0.02], 'both looks booked at what they cost');
+    const job = await Jobs.findById(id).lean();
+    assert.ok(Math.abs(job.spend.vision - 0.04) < 1e-9, `spend.vision ${job.spend.vision}`);
+    const engine = logged(logsBefore, 'dv.engine').map((entry) => entry.message);
+    assert.ok(engine.some((text) => /the look skipped its thinking \(0 reasoning tokens\); looking once more\.$/.test(text)), engine.join('\n'));
+    assert.ok(engine.some((text) => /the second look reasoned 5000 tokens, the first 0; the second is kept\.$/.test(text)), engine.join('\n'));
+    const room = requests.at(-1).approvedRoom();
+    assert.ok(
+      Math.abs(room - (approved - done.runCostUSD)) < 1e-6,
+      `the engine sees her approval less what the run spent: ${room} of ${approved}`,
+    );
+  } finally {
+    thinking = null;
+    await park(id);
+  }
+  await call('delete', `/jobs/${id}`, 'relook-owner').expect(200);
+
+  const tight = await readyJob('relook-owner', 'relook-upload-000002', 60);
+  await call('post', `/jobs/${tight}/start`, 'relook-owner').send(settings).expect(202);
+  const allowed = (await Jobs.findById(tight).lean()).approvedUSD;
+  const tightLogs = logLines.length;
+  const tightLooks = calls.analyze;
+  thinking = [0, 5000];
+  relookReserve = allowed;
+  try {
+    const done = await settle(tight, ['done', 'failed'], 'relook-owner');
+    assert.equal(done.state, 'done', done.error);
+    assert.equal(calls.analyze - tightLooks, 1, 'a second look that would pass her approval is never sent');
+    const engine = logged(tightLogs, 'dv.engine').map((entry) => entry.message);
+    assert.ok(
+      engine.some((text) => text.startsWith('Section 1 of 1: the look skipped its thinking and a second look would pass the approved maximum')),
+      engine.join('\n'),
+    );
+    assert.ok(done.runCostUSD <= allowed);
+  } finally {
+    thinking = null;
+    relookReserve = 0.05;
+    await park(tight);
+  }
+  await call('delete', `/jobs/${tight}`, 'relook-owner').expect(200);
+  await Budgets.deleteMany({});
+});
+
+test('her cancel during a second look charges nothing for it; the first look stays charged', async () => {
+  await Budgets.deleteMany({});
+  const id = await readyJob('relookcut-owner', 'relookcut-upload-001', 60);
+  await call('post', `/jobs/${id}/start`, 'relookcut-owner').send(settings).expect(202);
+  const usageBefore = usageLog.length;
+  const logsBefore = logLines.length;
+  thinking = [0, 5000];
+  try {
+    let started = () => {};
+    const inFlight = new Promise((resolve) => (started = resolve));
+    holdVision = { started, skip: 1 };
+    const ticking = worker.tick();
+    await inFlight;
+    await call('post', `/jobs/${id}/cancel`, 'relookcut-owner').expect(200);
+    await ticking;
+    const job = (await call('get', `/jobs/${id}`, 'relookcut-owner').expect(200)).body;
+    assert.equal(job.state, 'cancelled');
+    assert.ok(Math.abs(job.runCostUSD - 0.02) < 1e-9, `only the first look is charged: ${job.runCostUSD}`);
+    const booked = usageLog.slice(usageBefore).filter((item) => item.job === id);
+    assert.deepEqual(booked.map((item) => [item.kind, item.costUSD]), [['vision', 0.02]]);
+    const [cut] = logged(logsBefore, 'dv.paid-interrupted');
+    assert.equal(cut?.why, 'cancel');
+    assert.equal(cut.settled, 0);
+    assert.equal(cut.reserveUSD, 0.35, 'the operator still sees what the provider may bill');
+    assert.ok(
+      !logged(logsBefore, 'dv.engine').some((entry) => /second look failed/.test(entry.message)),
+      'our own stop is not a failed look',
+    );
+  } finally {
+    holdVision = null;
+    thinking = null;
+    await park(id);
+  }
+  await call('delete', `/jobs/${id}`, 'relookcut-owner').expect(200);
   await Budgets.deleteMany({});
 });
 

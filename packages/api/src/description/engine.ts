@@ -13,6 +13,7 @@ import type {
   Placement,
   Plan,
   Progress,
+  Relook,
   Report,
   SectionRecord,
   Settings,
@@ -54,6 +55,7 @@ import {
   failureClass,
   keytermsFor,
   linesFrom,
+  lookReserve,
   providerProblem,
   synthesize,
   transcribe,
@@ -83,6 +85,8 @@ export type Providers = {
     hints?: { keyterms?: string[]; onLanguage?: (code: string) => void },
   ) => Promise<Word[]>;
   analyze: (look: Look, signal: AbortSignal, meter: Meter) => Promise<Analysis>;
+  /** The reserve the meter holds for one call of this look; `lookReserve` when absent. */
+  reserve?: (look: Look) => number;
   synthesize: (
     text: string,
     voice: string,
@@ -93,7 +97,12 @@ export type Providers = {
     meter: Meter,
   ) => Promise<void>;
 };
-export const productionProviders: Providers = { transcribe, analyze, synthesize };
+export const productionProviders: Providers = {
+  transcribe,
+  analyze,
+  synthesize,
+  reserve: lookReserve,
+};
 
 export type SectionFiles = { sound: string; picture?: string };
 /** A paid look at one section that has not been rendered yet. */
@@ -161,6 +170,13 @@ export type Request = {
    * second of it ends the video, and its last clip gets the ending rule.
    */
   sourceSeconds?: number;
+  /**
+   * What is left of the person's approved maximum for this run (USD), as the meter counts it: the
+   * approval less what the run has spent, requests still in flight counted at their reserve. A
+   * second look at a section runs only when its reserve fits. Absent: the engine knows no limit
+   * and the meter alone keeps one.
+   */
+  approvedRoom?: () => number;
   /** Section timings, failures and retries, for the server log. */
   log?: (message: string) => void;
 };
@@ -365,6 +381,21 @@ const lookRetryMilliseconds = () => {
 const voiceRetryMilliseconds = 1500;
 /** Narration length per UTF-8 byte at 1x before this job's own clips have been measured. */
 const seedSecondsPerByte = 0.0625;
+/**
+ * A look (normal or close) that reasoned fewer tokens than this is looked at once more. Evidence,
+ * the Pluto A/B of Sep 25 2026 (11 paid looks at the same cartoon on google/gemini-3.8-flash,
+ * medium effort): the two looks that came back with 0 reasoning tokens stretched like the
+ * production look (mean error 7-10 s, max 19-21 s, the ending never reached); every look with
+ * 3,282 or more was accurate (mean 0.08-0.27 s; one at 5,699 still ran three cues 6.5-7.5 s late
+ * for a while), and one at 830 ran three cues 6.5-8.5 s late. The backend and the time strip did
+ * not track the drift. The floor sits between 830 and 3,282, from a small sample.
+ */
+export const reasoningFloor = 1500;
+/** The look's own reasoning tokens (its last call wrote it); undefined when not reported. */
+const reasoningOf = (analysis: Analysis): number | undefined => {
+  const calls = analysis.vision ?? [];
+  return calls[calls.length - 1]?.reasoningTokens;
+};
 
 type Voiced = { pcm: Float32Array; base: number };
 type Looked = {
@@ -646,57 +677,59 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         stripMissing = true;
         log('Look clips carry no time strip: the media tools have no drawtext or no font.');
       }
-      let analysis: Analysis;
+      const input: Look = {
+        file: clip,
+        seconds: seconds * scale,
+        brief: { ...briefFor(i, survey, scale), ...(stamped ? { stamped } : {}) },
+        state,
+        lines: linesFrom(inSection(section), section.start).map((line) => ({
+          ...line,
+          start: line.start * scale,
+          end: line.end * scale,
+        })),
+        before: linesFrom(
+          words.filter((word) => word.start >= section.start - 15 && word.start < section.start),
+          section.start - 15,
+        ).slice(-4),
+        log,
+      };
+      const heardLines = linesFrom(inSection(section), section.start);
+      /** One paid look in section seconds, without strip readings, with the crammed-end sign. */
+      const finish = (analysis: Analysis, which: string): Analysis => {
+        let result = toSection(analysis, scale, seconds);
+        if (stamped) {
+          const kept = result.cues.filter(
+            (cue) => !readsTimeStrip(cue.text) && !readsTimeStrip(cue.shortText),
+          );
+          if (kept.length < result.cues.length) {
+            log(
+              `Section ${i + 1} of ${count}: ${result.cues.length - kept.length} of the ${which}look's descriptions read the time strip and were left out.`,
+            );
+            result = { ...result, cues: kept };
+          }
+        }
+        if (film !== undefined) {
+          const signs = stretchSigns({
+            cues: result.cues,
+            lines: heardLines,
+            seconds,
+            offset: film,
+          });
+          if (signs.length) {
+            result = { ...result, stretched: signs };
+            log(
+              `Section ${i + 1} of ${count}: the ${which}look's times may run late: ${signs.join('; ')}.`,
+            );
+          }
+        }
+        return result;
+      };
+      let result: Analysis;
       try {
-        analysis = await providers.analyze(
-          {
-            file: clip,
-            seconds: seconds * scale,
-            brief: { ...briefFor(i, survey, scale), ...(stamped ? { stamped } : {}) },
-            state,
-            lines: linesFrom(inSection(section), section.start).map((line) => ({
-              ...line,
-              start: line.start * scale,
-              end: line.end * scale,
-            })),
-            before: linesFrom(
-              words.filter(
-                (word) => word.start >= section.start - 15 && word.start < section.start,
-              ),
-              section.start - 15,
-            ).slice(-4),
-            log,
-          },
-          signal,
-          meter,
-        );
+        result = finish(await providers.analyze(input, signal, meter), '');
+        if (!survey) result = await lookAgain(i, input, result, finish);
       } finally {
         await rm(clip, { force: true });
-      }
-      let result = toSection(analysis, scale, seconds);
-      if (stamped) {
-        const kept = result.cues.filter(
-          (cue) => !readsTimeStrip(cue.text) && !readsTimeStrip(cue.shortText),
-        );
-        if (kept.length < result.cues.length) {
-          log(
-            `Section ${i + 1} of ${count}: ${result.cues.length - kept.length} of the look's descriptions read the time strip and were left out.`,
-          );
-          result = { ...result, cues: kept };
-        }
-      }
-      if (film !== undefined) {
-        const signs = stretchSigns({
-          cues: result.cues,
-          lines: linesFrom(inSection(section), section.start),
-          seconds,
-          names: result.people.flatMap((person) => [person.name, person.label]),
-          offset: film,
-        });
-        if (signs.length) {
-          result = { ...result, stretched: signs };
-          log(`Section ${i + 1} of ${count}: the look's times may run late: ${signs.join('; ')}.`);
-        }
       }
       markSeen(section, survey ? seen.survey : seen.main);
       log(
@@ -720,6 +753,77 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       log(`Section ${i + 1} of ${count} could not be described (${kind}): ${failure}`);
       return { analysis: null, failure, failureClass: kind };
     }
+  }
+
+  /**
+   * Looks at a section once more when its first look reasoned under `reasoningFloor` tokens or
+   * showed the crammed-end sign, and never when the provider did not report reasoning. The second
+   * look runs only when its reserve fits what is left of the approved maximum. It keeps the second
+   * look when that one reasoned at least the floor, otherwise whichever reasoned more (the first on
+   * a tie). Both calls go through the meter like any look, so both are charged at what they cost,
+   * and the one not kept stays in `relook.other`. It uses the job's own signal: only our own stop
+   * can cut it off, and the meter never bills a request our stop cut off.
+   */
+  async function lookAgain(
+    i: number,
+    input: Look,
+    first: Analysis,
+    finish: (analysis: Analysis, which: string) => Analysis,
+  ): Promise<Analysis> {
+    const thought = reasoningOf(first);
+    if (thought === undefined) return first;
+    const reasons: Relook['reasons'] = [];
+    if (thought < reasoningFloor) reasons.push('reasoning');
+    if (first.stretched?.length) reasons.push('crammed');
+    if (!reasons.length) return first;
+    const where = `Section ${i + 1} of ${count}`;
+    const what = reasons.includes('reasoning')
+      ? 'the look skipped its thinking'
+      : "the look's last description is crammed at the end";
+    const reserve = (providers.reserve ?? lookReserve)(input);
+    const room = request.approvedRoom?.();
+    if (room !== undefined && reserve > room + 1e-9) {
+      log(
+        `${where}: ${what} and a second look would pass the approved maximum ($${reserve.toFixed(2)} held for it, $${Math.max(0, room).toFixed(2)} left).`,
+      );
+      return {
+        ...first,
+        relook: { reasons, reasoning: [thought, null], kept: 1, skipped: 'approved maximum' },
+      };
+    }
+    await safely(() => keeper.keepLook?.(i, { analysis: first }), `The look at section ${i + 1}`);
+    const both = reasons.length > 1 ? ', and its last description is crammed at the end' : '';
+    log(`${where}: ${what} (${thought} reasoning tokens${both}); looking once more.`);
+    let second: Analysis;
+    try {
+      second = finish(await providers.analyze(input, signal, meter), 'second ');
+    } catch (error) {
+      if (signal.aborted) throw error;
+      const why =
+        error instanceof MediaError || error instanceof Halt
+          ? error.message
+          : providerProblem(error, 'The video model');
+      log(`${where}: the second look failed, so the first is kept: ${why}`);
+      return {
+        ...first,
+        relook: { reasons, reasoning: [thought, null], kept: 1, skipped: 'failed' },
+      };
+    }
+    const again = reasoningOf(second);
+    const better = again !== undefined && (again >= reasoningFloor || again > thought);
+    log(
+      `${where}: the second look reasoned ${again ?? 'an unknown number of'} tokens${second.stretched?.length ? ', crammed end' : ''}, the first ${thought}; the ${better ? 'second' : 'first'} is kept.`,
+    );
+    const [kept, other] = better ? [second, first] : [first, second];
+    return {
+      ...kept,
+      relook: {
+        reasons,
+        reasoning: [thought, again ?? null],
+        kept: better ? 2 : 1,
+        other: other.vision ?? [],
+      },
+    };
   }
 
   async function voice(text: string, file: string): Promise<Voiced | null> {

@@ -554,34 +554,18 @@ const declined: ReadonlySet<string> = new Set([
 
 type Choice = z.infer<typeof modelSchema>['choices'][number];
 
+/** Output tokens one look may use; a slowed close look gets more. */
+const lookTokens = (brief: Brief): number => (brief.slowed ? 24000 : 12000);
+/** The most one look call can cost, which the meter holds while the call is out. */
+const reserveFor = (seconds: number, prompt: string, maxTokens: number): number =>
+  (seconds * 400 * 1.5 + prompt.length * 0.5 + maxTokens * 7.5) / 1e6 + 0.01;
 /**
- * The OpenRouter backend video looks try first. Checked on Sep 25 2026 against /api/v1/providers
- * ("Google" is google-vertex, "Google AI Studio" is google-ai-studio) and the model's endpoint list
- * (tags google-vertex/global and google-vertex/global/flex). In the Pluto run the two sections
- * went to different backends and the second one's times drifted, so every look now starts on the
- * same one; fallbacks stay allowed so an outage does not stop a job.
+ * The reserve the meter holds for one call of this look, the same sum `analyze` uses, so the
+ * engine can tell before a second look whether it fits the person's approved maximum.
  */
-export const lookBackend = 'google-vertex';
-/**
- * Vertex's flex tier: the tier slug in OpenRouter's service-tier docs, then the tag its endpoint
- * list shows. A base slug never matches a tier endpoint, so flex has to be named.
- */
-export const lookFlex: readonly string[] = [`${lookBackend}/flex`, `${lookBackend}/global/flex`];
-export type Routing = {
-  order?: string[];
-  allow_fallbacks?: boolean;
-  max_price: { prompt: number; completion: number };
-};
-/**
- * OpenRouter provider preferences for a look. An explicit order replaces the price sort of the
- * `:floor` variant and drops the flex endpoints it admits, so that variant names Vertex's flex
- * tier first. Models from other makers keep OpenRouter's own routing.
- */
-export function lookRouting(model: string): Routing {
-  const max_price = { prompt: 1.5, completion: 7.5 };
-  if (!model.startsWith('google/')) return { max_price };
-  const order = model.endsWith(':floor') ? [...lookFlex, lookBackend] : [lookBackend];
-  return { order, allow_fallbacks: true, max_price };
+export function lookReserve(look: Look): number {
+  const prompt = analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before);
+  return reserveFor(look.seconds, prompt, lookTokens(look.brief));
 }
 
 function replyOf(choice: Choice | undefined, look: Look): Analysis {
@@ -606,8 +590,8 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
   if (!key) throw new Plain('Video understanding is not configured.');
   const prompt = analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before);
   const video = (await readFile(look.file)).toString('base64');
-  const maxTokens = look.brief.slowed ? 24000 : 12000;
-  const reserve = (look.seconds * 400 * 1.5 + prompt.length * 0.5 + maxTokens * 7.5) / 1e6 + 0.01;
+  const maxTokens = lookTokens(look.brief);
+  const reserve = reserveFor(look.seconds, prompt, maxTokens);
   const model = visionModel();
   let result: Analysis | undefined;
   let previous: unknown;
@@ -642,7 +626,7 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
               model: asked,
               max_tokens: maxTokens,
               reasoning: { effort: look.brief.survey ? 'low' : 'medium' },
-              provider: lookRouting(asked),
+              provider: { max_price: { prompt: 1.5, completion: 7.5 } },
               messages: [
                 {
                   role: 'user',
