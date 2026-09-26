@@ -791,29 +791,35 @@ test('Part 293 follow-up: the length check holds a song to the map that was draw
   assert.match(lyricShapeIssue(song(8, 8), brief, null), /only two short verses/);
 });
 
-test('Part 293 follow-up: a tidy ending is flagged only in the last four sung lines, and plain speech is left alone', () => {
+test('Part 293 follow-up: a tidy ending is flagged only where the song lands, and plain speech is left alone', () => {
   const song = (verse, end) => `Folk.\nLyrics:\n[Verse 1]\n${verse.join('\n')}\n[Chorus]\nGoat on the fence and goat on the stair\n[Outro]\n${end.join('\n')}\n\nREADBACK: A folk song.`;
   const verse = ['I carried the bottle out to the pen', 'She kicked it right over and did it again'];
   for (const ending of ["Turns out that I'm the lucky one", "It's the best present anyway", 'You were right after all', 'In the end, it was just a truck', "And that's okay", 'Guess it turned out fine', "That's all that matters", "I wouldn't change a thing", 'You had my number all along', "We're the lucky ones tonight", 'The best gift of all'])
     assert.deepEqual(lyricEndingTells(song(verse, ['I sat down on the step', ending]), 'a lullaby for a goat'), [{ line: ending, tell: ENDING_TELL }], ending);
   const early = ["Turns out that I'm the lucky one", "It's the best present anyway", 'You were right after all', 'In the end, it was just a truck', "And that's okay"];
   assert.deepEqual(lyricEndingTells(song([...early, 'one more', 'two more', 'three more'], ['Put the bucket by the gate', 'Shut the barn and walked away']), ''), [], 'the same words earlier in the song are speech');
+  /* Measured: the goat and hoodie songs closed their payoff verse on the lesson, just before the
+   * bridge and the last chorus. The last verse's closing couplet is scanned; verse one's is not. */
+  const payoff = (v1, v3) => `Folk.\nLyrics:\n[Verse 1]\nI carried the bottle out to the pen\n${v1}\n[Chorus]\nGo to sleep, little goat\n[Verse 2]\nShe kicked it right over\nand did it again\n[Verse 3]\nNow you're snoring on my arm\n${v3}\n[Bridge]\nOne more round of the song\n[Chorus]\nGo to sleep, little goat\n(I'm right here)\nGo to sleep\n\nREADBACK: x`;
+  assert.deepEqual(lyricEndingTells(payoff('Took a while, but you got warm', "Turns out that I'm the lucky one"), '').map(t => t.line), ["Turns out that I'm the lucky one"], 'the last verse lands on the lesson');
+  assert.deepEqual(lyricEndingTells(payoff("Turns out that I'm the lucky one", 'Took a while, but you got warm'), ''), [], "verse one's couplet is story, not an ending");
   for (const plainEnd of ['Mama turns out the lights at nine', 'The whole town turned out for the fair', 'Turn out your pockets, boy', 'After all the chairs were stacked', 'We parked in the end spot by the dumpster', 'Best thing on the menu is the fries', "She kept the hoodie, and I'm still her man", 'Yeah, turns out the cows got out'])
     assert.deepEqual(lyricEndingTells(song(verse, ['I sat down on the step', plainEnd]), ''), [], plainEnd);
   assert.deepEqual(lyricEndingTells(song(verse, ['Pour one out', "I'm the lucky one"]), 'a country song called The Lucky One'), [], 'her own words are hers');
-  const draft = song(["Turns out that I'm the lucky one", 'She kicked it right over'], ['I sat down on the step', 'Turns out the goat was the lucky one']);
+  const draft = song(["Turns out that I'm the lucky one", 'She kicked it right over', 'and did it again'], ['I sat down on the step', 'Turns out the goat was the lucky one']);
   assert.deepEqual(lyricTells(draft, '').map(t => [t.line, t.tell]), [['Turns out the goat was the lucky one', ENDING_TELL]], 'the kill scan carries the ending flag, and only at the end');
 });
 
 test('Part 293 follow-up: the audit gets an ENDING gate with the exact lines the song and each chorus land on', () => {
   const draft = 'Pop.\nLyrics:\n[Verse 1]\na1\na2\n[Chorus]\nc1\nc2\nc3\n[Verse 2]\nb1\nb2\n[Chorus]\nc1\nc2\nc3\n[Chorus - Belted]\nd1\nd2\n[Post-Chorus]\np1\np2\n[Outro]\no1\n(la la, fading)\no2\n\nREADBACK: x';
-  assert.deepEqual(lyricEndingLines(draft), ['c2', 'c3', 'd1', 'd2', 'o1', 'o2'], 'each chorus pass, back-to-back passes apart, ad-libs and the post-chorus skipped, each line once');
+  assert.deepEqual(lyricEndingLines(draft), ['c2', 'c3', 'b1', 'b2', 'd1', 'd2', 'o1', 'o2'], 'each chorus pass (back-to-back passes apart), the last verse, the song; ad-libs and the post-chorus skipped; each line once');
   const ask = lyricAuditRequest(draft, [], null);
-  assert.ok(ask.includes('\n8. THE ENDING. These are the last two sung lines of the song and of each chorus pass, pulled by the desk:\n   - "c2"\n   - "c3"\n   - "d1"\n   - "d2"\n   - "o1"\n   - "o2"\n'), ask.slice(0, 4000));
+  assert.ok(ask.includes('\n8. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, pulled by the desk:\n   - "c2"\n   - "c3"\n   - "b1"\n   - "b2"\n   - "d1"\n   - "d2"\n   - "o1"\n   - "o2"\n'), ask.slice(0, 4000));
   assert.match(ask, /Rewrite any that states a lesson, a turnaround, a verdict on the story or a sum-up of it/);
   assert.ok(ask.indexOf('7. Singability') < ask.indexOf('8. THE ENDING') && ask.indexOf('8. THE ENDING') < ask.indexOf('Return the complete song'), 'last of the gates');
   const gate = ask.slice(ask.indexOf('8. THE ENDING'), ask.indexOf('Return the complete song'));
-  assert.equal((gate.match(/"/g) || []).length, 12, 'the only quotes are the pulled lines: the gate names the shape and never demonstrates one');
+  assert.equal((gate.match(/"/g) || []).length, 16, 'the only quotes are the pulled lines: the gate names the shape and never demonstrates one');
+  assert.deepEqual(lyricEndingLines(draft.replace('[Post-Chorus]', '[Bridge]')), ['c2', 'c3', 'b1', 'b2', 'd1', 'd2', 'p1', 'p2', 'o1', 'o2'], 'the bridge too');
   const withShape = lyricAuditRequest(draft, lyricTells(draft), 'Add a [Verse 3].');
   assert.match(withShape, /\n8\. Length\. Add a \[Verse 3\]\.\n9\. THE ENDING\./);
   assert.doesNotMatch(lyricAuditRequest('An instrumental. Instrumental only, no vocals.', [], null), /THE ENDING/);

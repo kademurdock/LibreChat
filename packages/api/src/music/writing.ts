@@ -196,9 +196,9 @@ const EXAMPLE_LINES: Set<string> = new Set(
 /* Part 293 follow-up (Sep 25 2026). Tidy moral endings kept shipping after the
  * desk notes asked for none ("Turns out that I'm the lucky one", "It's the best
  * present anyway"), and the blind judges named them as why four songs lost. So
- * the commonest giveaway phrases are scanned for, ONLY in the last four sung
- * lines of the song, where they sum the song up; the same words earlier in a
- * song are ordinary speech. Each is narrowed where plain speech uses it:
+ * the commonest giveaway phrases are scanned for ONLY where a song lands: its
+ * last four sung lines and the last two of its last verse. The same words
+ * anywhere else in a song are ordinary speech. Each is narrowed where plain speech uses it:
  * "turns out" not when somebody turns out the lights or the town turns out,
  * "after all" only closing a clause (never "after all the chairs"), "in the
  * end" only opening or closing a clause (never "the end zone"). */
@@ -226,13 +226,25 @@ function sungLines(script: string): { line: string; section: string; pass: numbe
   return out;
 }
 
-/** The giveaway endings among the last four sung lines; a phrase from the
- *  person's own brief is theirs and is never flagged. */
+/** The last two sung lines of the last section whose tag matches. */
+function lastOf(lines: { line: string; section: string; pass: number }[], tag: RegExp): string[] {
+  let pass = -1;
+  for (const l of lines) if (tag.test(l.section)) pass = l.pass;
+  return pass === -1 ? [] : lines.filter((l) => l.pass === pass).slice(-2).map((l) => l.line);
+}
+
+/** The giveaway endings among the last four sung lines of the song and the last
+ *  two of its last verse (measured: two of the three tidy endings that lost
+ *  briefs closed the payoff verse, just before the bridge and the last chorus);
+ *  a phrase from the person's own brief is theirs and is never flagged. */
 export function lyricEndingTells(script: string, brief = ''): LyricTell[] {
+  const lines = sungLines(script);
+  const scope = new Set([...lines.slice(-4).map((l) => l.line), ...lastOf(lines, /^verse/i)]);
   const found: LyricTell[] = [];
-  for (const { line } of sungLines(script).slice(-4)) {
+  for (const { line } of lines) {
+    if (!scope.has(line) || found.some((t) => t.line === line)) continue;
     const hit = ENDING_GIVEAWAYS.exec(line);
-    if (!hit || brief.toLowerCase().includes(hit[0].trim().toLowerCase()) || found.some((t) => t.line === line)) continue;
+    if (!hit || brief.toLowerCase().includes(hit[0].trim().toLowerCase())) continue;
     found.push({ line, tell: ENDING_TELL });
   }
   return found;
@@ -271,11 +283,12 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
 }
 
 /** Part 293 follow-up: the lines a song ends on, pulled by the desk for the
- *  audit's ENDING gate: the last two sung lines of the song and of each chorus
- *  pass, each distinct line once, in song order. */
+ *  audit's ENDING gate: the last two sung lines of the song, of each chorus
+ *  pass, and of the last verse and the last bridge (where the payoff lands),
+ *  each distinct line once, in the order they first appear. */
 export function lyricEndingLines(script: string): string[] {
   const lines = sungLines(script);
-  const picked = new Set<string>();
+  const picked = new Set<string>([...lastOf(lines, /^verse/i), ...lastOf(lines, /^bridge/i)]);
   for (let i = 0; i < lines.length; i++) {
     const { section, pass } = lines[i];
     const lastOfPass = i === lines.length - 1 || lines[i + 1].pass !== pass;
@@ -535,7 +548,7 @@ export function lyricMeterNote(script: string): string {
 function endingGate(script: string, number: number): string {
   const lines = lyricEndingLines(script);
   if (!lines.length) return '';
-  return `\n${number}. THE ENDING. These are the last two sung lines of the song and of each chorus pass, pulled by the desk:\n${lines.map((l) => `   - "${l}"`).join('\n')}\n   Read each one on its own. Rewrite any that states a lesson, a turnaround, a verdict on the story or a sum-up of it, so it lands on something that happens or gets said in the moment instead: an action, a concrete detail, a joke, a line said to somebody, or the hook itself. Keep its rhyme sound and length, and change it the same way everywhere it repeats. A song can end unresolved. Lines that already land on a moment stay exactly as they are.`;
+  return `\n${number}. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, pulled by the desk:\n${lines.map((l) => `   - "${l}"`).join('\n')}\n   Read each one on its own. Rewrite any that states a lesson, a turnaround, a verdict on the story or a sum-up of it, so it lands on something that happens or gets said in the moment instead: an action, a concrete detail, a joke, a line said to somebody, or the hook itself. Keep its rhyme sound and length, and change it the same way everywhere it repeats. A song can end unresolved. Lines that already land on a moment stay exactly as they are.`;
 }
 
 export function lyricAuditRequest(script: string, tells: LyricTell[], shape: string | null = null): string {
