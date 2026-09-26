@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -1303,6 +1303,16 @@ async function scriptHandler(req, res) {
 
     const started = Date.now();
     const writingSettings = musicWritingSettings({ engine, mode, patient: b.patient === true, deep: b.background === true });
+    /* Part 216: the kill scan. Only for lyrics the desk originated -- supplied
+     * lyrics are hers and are never scanned or touched. */
+    const ownsLyrics = !!writingSettings.model && !(typeof b.lyrics === 'string' && b.lyrics.trim());
+    const wantsWords = ownsLyrics && !/\binstrumental\b|\bno (?:vocals|singing|lyrics)\b/i.test(text);
+    /* Part 293 follow-up: a list of shapes in the prompt came back as one house shape
+     * ([Final Chorus] in 10 of 10 songs), so the desk draws ONE section map per request,
+     * seeded by the idea, who asked and when (asking again draws again), and the length
+     * check below holds the song to that same map. None when the brief sets its own shape. */
+    const sectionMap = wantsWords && typeof songSectionMap === 'function' ? songSectionMap(text, `${req.user.id}\n${started}`) : null;
+    if (sectionMap) lines.splice(1, 0, sectionMapNote(sectionMap));
     /* Part 293: who the song is for. A grown-up's desk is told explicit lyrics
      * are welcome; the child, the App Review seat, the Kids choir style and
      * anyone unknown get a clean note. Never throws; fails clean. The audit
@@ -1320,15 +1330,12 @@ async function scriptHandler(req, res) {
     let totalCost = first.costUSD;
     let costMeasured = first.measured;
     let repairs = [];
-    /* Part 216: the kill scan. Only for lyrics the desk originated -- supplied
-     * lyrics are hers and are never scanned or touched. One surgical rewrite of
-     * the flagged lines, and only if it fits inside what is left of the phone's
-     * patience; a draft with a Tuesday in it still beats a timeout. */
-    const ownsLyrics = !!writingSettings.model && !(typeof b.lyrics === 'string' && b.lyrics.trim());
-    /* Seen once in testing: the writer answered with only a one-paragraph
-     * description and no song. A sung request that comes back without a Lyrics:
-     * heading is a failed draft, not something to hand her; ask once more. */
-    const wantsWords = ownsLyrics && !/\binstrumental\b|\bno (?:vocals|singing|lyrics)\b/i.test(text);
+    /* One surgical rewrite of the flagged lines, and only if it fits inside what
+     * is left of the phone's patience; a draft with a Tuesday in it still beats
+     * a timeout. Seen once in testing: the writer answered with only a
+     * one-paragraph description and no song. A sung request that comes back
+     * without a Lyrics: heading is a failed draft, not something to hand her;
+     * ask once more. */
     if (wantsWords && !/^\s*lyrics\s*:/im.test(raw) && (writingSettings.timeoutMs || 0) - (Date.now() - started) >= 45000) {
       try {
         const again = await callModel({
@@ -1363,6 +1370,12 @@ async function scriptHandler(req, res) {
         logger.warn('[soundbooth/script] jev tell pass skipped: ' + e.message);
       }
     }
+    /* Part 293 follow-up: a tidy moral ending in the last four sung lines is not "stock
+     * writing", which is all Jev is asked about, so no Jev veto can drop one. */
+    if (ownsLyrics && typeof lyricEndingTells === 'function') {
+      const flagged = new Set(tells.map((t) => t.line));
+      tells = [...tells, ...lyricEndingTells(raw, text).filter((t) => !flagged.has(t.line))];
+    }
     /* Part 293 review: a clean song is held to clean in code, not by the prompt alone (the hit
      * system in the same prompt says profanity is on by default). Every sung line the desk wrote
      * with a swear or sexual word joins the flagged lines, after Jev so no veto can drop it, and
@@ -1372,7 +1385,7 @@ async function scriptHandler(req, res) {
       const flagged = new Set(tells.map((t) => t.line));
       tells = [...tells, ...swearing(raw).filter((t) => !flagged.has(t.line))];
     }
-    const shape = wantsWords ? lyricShapeIssue(raw, text) : null;
+    const shape = wantsWords ? lyricShapeIssue(raw, text, sectionMap) : null;
     const timeLeft = (writingSettings.timeoutMs || 0) - (Date.now() - started) - 4000;
     /* Part 217: every originated song gets the producer's audit when there is time
      * for it; flagged tells and a missing verse ride in the same call. */
@@ -1395,8 +1408,8 @@ async function scriptHandler(req, res) {
         const swore = swearing(raw).length;
         const stillSwears = merged ? swearing(merged).length : swore;
         const remaining = merged ? lyricTells(merged, text).length + stillSwears : tells.length;
-        const grew = !!merged && !!shape && !lyricShapeIssue(merged, text);
-        logger.info(`[soundbooth/script] audit: merged=${!!merged} tells ${tells.length}->${remaining} shape=${shape ? 'short' : 'ok'} grew=${grew} ${Date.now() - started}ms`);
+        const grew = !!merged && !!shape && !lyricShapeIssue(merged, text, sectionMap);
+        logger.info(`[soundbooth/script] audit: merged=${!!merged} tells ${tells.length}->${remaining} shape=${shape ? 'short' : 'ok'} map=${sectionMap ? sectionMap.id : 'none'} grew=${grew} ${Date.now() - started}ms`);
         if (merged && remaining <= tells.length) {
           const versesBefore = verseCount(raw);
           const versesAfter = verseCount(merged);
@@ -1418,7 +1431,7 @@ async function scriptHandler(req, res) {
       logger.warn(`[soundbooth/script] clean song refused: ${unclean} sung line(s) still explicit user=${req.user.id} ${Date.now() - started}ms`);
       logKadeUsage({
         userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD: totalCost,
-        metadata: { engine, mode, costMeasured, writingPersona: lyricAgentId, audience, refused: 'explicit words in a clean song', model: writingSettings.model || MODEL, ms: Date.now() - started },
+        metadata: { engine, mode, costMeasured, writingPersona: lyricAgentId, audience, sectionMap: sectionMap ? sectionMap.id : undefined, refused: 'explicit words in a clean song', model: writingSettings.model || MODEL, ms: Date.now() - started },
       }).catch(() => {});
       return res.status(422).json({ error: 'This song has to be clean, and the draft came back with words it cannot have. Your idea is kept. Try again.' });
     }
@@ -1491,6 +1504,7 @@ async function scriptHandler(req, res) {
         costMeasured,
         writingPersona: mode === 'write' && ['lyria', 'yue2'].includes(engine) ? lyricAgentId : undefined,
         audience: audience || undefined,
+        sectionMap: sectionMap ? sectionMap.id : undefined,
         model: writingSettings.model || MODEL,
         ms: Date.now() - started,
         inTok: usage.prompt_tokens,

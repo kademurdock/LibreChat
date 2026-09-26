@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const source = stripTypeScriptTypes(readFileSync(new URL('./writing.ts', import.meta.url), 'utf8'));
 const hitSource = stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8')).replace('export const hitWritingSystem', 'const hitWritingSystem');
 const musicSource = hitSource + '\n' + stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8')).replace("import { hitWritingSystem } from './hitSystem';", '');
-const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
+const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 /* What the Sound Booth route needs from @librechat/api to load at all (its GUIDE reads the YuE
  * styles when the file loads), and a stand-in for the Part 293 audience helper whose answer a
@@ -25,7 +25,7 @@ test('music drafting reads the current Lyric persona while formatting and speech
   const first = await musicWritingPrompt('Sound Booth format', { engine: 'yue2', mode: 'write' }, read);
   assert.ok(first.includes(instructions));
   assert.match(first, /Multisyllabic and mosaic rhymes/); assert.match(first, /Keep supplied lyrics exactly/);
-  assert.match(first, /SYNTHETIC-VOCAL HIT-WRITING SYSTEM/); assert.match(first, /THE FOURTEEN TELLS/); assert.match(first, /about four minutes, 45 to 65 sung lines/); assert.match(first, /either three verses, or two long verses of 12 to 16 lines each/);
+  assert.match(first, /SYNTHETIC-VOCAL HIT-WRITING SYSTEM/); assert.match(first, /THE FOURTEEN TELLS/); assert.match(first, /about four minutes, 45 to 65 sung lines/); assert.match(first, /laid out on the section map the desk sends with the request/); assert.doesNotMatch(first, /\[Final Chorus\]|either three verses|two long verses/, 'Part 293 follow-up: no list of shapes in the prompt, and no [Final Chorus] unless the drawn map names it');
   assert.match(first, /a named weekday \(Tuesday above all\)/); assert.match(first, /drinks are always coffee/);
   assert.match(first, /There is no Lyrics Box, Tag Box or Negative Tag Box here/);
   assert.doesNotMatch(first, /begins with the words `Lyrics Box`|APPENDIX B: TAG BOX PRESETS|REVISION PROTOCOL|30 to 40 lines total/, 'the other product\'s output contract and short budget are not carried');
@@ -404,7 +404,7 @@ test('Part 230: the desk demands rhyme and one meter, counts syllables itself, a
   assert.doesNotMatch(lyricAuditRequest(even, [], null), /Counted by the desk/);
   const tells = lyricTells('x\nLyrics:\n[Verse 1]\nThe heater hummin\' warm and low\nShe gave me that knowing look\nI know the way back home\n(Mm, mm)', '');
   assert.deepEqual(tells.map(t => t.tell), ['humming', '"knowing" as a mood']);
-  assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true }).maxTokens, 32000);
+  assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true }).maxTokens, 48000);
 });
 
 test('Part 231: a duet line that opens with a singer cue is a sung line, so a repair that relabels singers still merges', () => {
@@ -447,7 +447,8 @@ test('Part 293: the audience note sits after the desk notes and before the deliv
     assert.ok(SONG_EXPLICIT_NOTE.includes(words), words);
   for (const words of ['this song must be clean', 'No swearing, no sexual content or innuendo, no drug jokes, nothing gory', 'Keep the edge and lose the words', 'instead of bleeping or starring anything out'])
     assert.ok(SONG_CLEAN_NOTE.includes(words), words);
-  assert.match(before, /\[Solo\], \[Interlude\], \[Final Chorus\], \[Outro\]/, 'the system names the two new section tags');
+  assert.match(before, /\[Solo\], \[Interlude\], \[Outro\]/, 'the system names [Solo]');
+  assert.doesNotMatch(before, /Final Chorus\]/, 'Part 293 follow-up: [Final Chorus] comes only with the drawn map that has one');
 });
 
 test('Part 293: her ChatGPT prompt joins the desk notes as plain rules, with no example lines to copy', () => {
@@ -462,8 +463,8 @@ test('Part 293: her ChatGPT prompt joins the desk notes as plain rules, with no 
   /* The conflicts, settled her way. */
   assert.match(musicWritingCraft, /At most ONE deliberately unrhymed line in the whole song\. Slant rhyme counts as rhyme\. Never twist word order or grammar to land a rhyme/);
   assert.match(musicWritingCraft, /Skip the nursery-rhyme pairs/);
-  assert.match(musicWritingCraft, /about four minutes, 45 to 65 sung lines/); assert.match(musicWritingCraft, /or two long verses of twelve to sixteen lines each, with a bridge and a final chorus/);
-  assert.match(musicWritingCraft, /Do not reach for the same shape every time: a pre-chorus only when it earns its place/); assert.match(musicWritingCraft, /\[Final Chorus\] and \[Solo\] are fine too/);
+  assert.match(musicWritingCraft, /about four minutes, 45 to 65 sung lines/); assert.match(musicWritingCraft, /The desk draws a SECTION MAP for each song and sends it with the request, under the idea\. Use that map unless the idea clearly wants another; if the brief gives its own length or structure, the brief wins and no map is sent\./);
+  assert.doesNotMatch(musicWritingCraft, /Final Chorus|two long verses|three verses/, 'Part 293 follow-up: the shapes live in the drawn map, not in a list');
   assert.match(musicWritingCraft, /No more than two observed details per verse, and each one something only this song could contain/);
   assert.match(musicWritingCraft, /unless her brief names them: rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV/);
   assert.doesNotMatch(musicWritingCraft, /what was on the plate|the chain that squeaks|kitchens|timestamps|unfinished drinks/, 'no prop list to copy');
@@ -573,7 +574,7 @@ test('Part 293: Surprise me keeps every pitch clean for a clean audience and is 
 /* ---------------- Part 293 review fixes ---------------- */
 /** The real Sound Booth route in a sandbox. `reply(body, n)` answers the nth model call; every
  *  router registration is kept in order, so a test can see what runs before what. */
-function loadBooth({ reply, api = {}, middleware } = {}) {
+function loadBooth({ reply, api = {}, middleware, jev } = {}) {
   const url = new URL('../../../../api/server/routes/kadeSoundBooth.js', import.meta.url), localRequire = createRequire(url);
   const handlers = new Map(), requests = [], ledger = [], registered = [];
   const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map(method => [method, (path, ...values) => { registered.push([method, path, ...values]); handlers.set(method + path, values.at(-1)); }]));
@@ -589,6 +590,7 @@ function loadBooth({ reply, api = {}, middleware } = {}) {
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row), KadeUsage: { find: () => ({ sort: () => ({ limit: () => ({ select: () => ({ lean: async () => [] }) }) }) }) } };
     if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
     if (name === '~/server/middleware' && middleware) return middleware;
+    if (name === '~/server/services/kadeJevJudges' && jev) return jev;
     if (name === './kadeSoundBoothSplit' || name === './kadeSoundBoothScreenplay') return localRequire(name);
     return {};
   } };
@@ -729,4 +731,137 @@ test('Part 293 review: Surprise me for a clean audience never draws a dirty shel
 test('Part 293 review: the website sends the Style with Surprise me', () => {
   const page = readFileSync(new URL('../../../../api/server/routes/kadeSoundBoothPage.js', import.meta.url), 'utf8');
   assert.match(page, /post\('\/api\/kade\/sound-booth\/idea',\{band:engine==='yue2'\?state\.values\.band:undefined\}\)/);
+});
+
+/* Part 293 follow-up (Sep 25 2026): the before/after test found a house shape ([Final Chorus] in
+ * 10 of 10 songs), tidy moral endings that lost four briefs, and two deep drafts that spent the
+ * whole 32,000-token budget thinking. Guards in code, not more prompt. */
+const EVAL_BRIEFS = ['crunk club song about my ex showing up at the club in my hoodie', 'pop punk song about getting fired from Taco Bell on my birthday', "country song about my mom's cat who hates everybody but the mailman", "sad slow R&B song about cleaning out my grandpa's truck after he died", 'rap song roasting my little brother for losing every game of Uno', "lullaby for a baby goat who won't go to sleep", 'emo song about a vending machine that stole my last dollar', '90s girl group song telling a guy to lose my number', "petty country song about my neighbor's leaf blower", 'gospel choir song thanking the air conditioner in August'];
+
+test('Part 293 follow-up: the desk draws one real section map per request, and only a dance style can draw the drop', () => {
+  const brief = EVAL_BRIEFS[2];
+  assert.equal(songSectionMap(brief, 'kade\n1758000000000').id, songSectionMap(brief, 'kade\n1758000000000').id, 'the same request draws the same map');
+  const counts = {};
+  for (let i = 0; i < 1000; i++) { const id = songSectionMap(brief, `kade\n${1758000000000 + i * 977}`).id; counts[id] = (counts[id] || 0) + 1; }
+  assert.deepEqual(Object.keys(counts).sort(), ['hookFirst', 'prePost', 'storyRefrain', 'threeVerses', 'twoLong'], 'asking again can draw every map in the hat');
+  assert.ok(Math.max(...Object.values(counts)) < 300, `no house shape: ${JSON.stringify(counts)}`);
+  assert.ok(new Set(EVAL_BRIEFS.map(b => songSectionMap(b).id)).size >= 3, 'different ideas draw different maps');
+  for (const b of [EVAL_BRIEFS[0], 'deep house track about a lost earring', 'EDM banger about a parking ticket', 'a disco song about my roller skates']) {
+    const pool = sectionMapPool(b).map(m => m.id);
+    assert.ok(pool.includes('dance'), b);
+    assert.ok(!pool.some(id => ['storyRefrain', 'threeVerses', 'twoLong'].includes(id)), `${b}: a dance song draws a dance-floor map`);
+  }
+  for (const b of ["a song about my grandma's house", 'a song about the book club', EVAL_BRIEFS[5], 'a song about my first school dance', EVAL_BRIEFS[3]])
+    assert.ok(!sectionMapPool(b).some(m => m.id === 'dance'), `${b}: no drop outside a dance style`);
+  for (const b of [EVAL_BRIEFS[7], EVAL_BRIEFS[1]]) assert.ok(!sectionMapPool(b).some(m => m.id === 'storyRefrain'), `${b}: pop keeps a real chorus`);
+  for (const b of ['a two verse song about luck', 'a short jingle for my bakery', 'a song about luck, about three minutes long', 'a song with no chorus about luck', 'a song about luck with a refrain', 'a 16 bars rap about luck', ''])
+    assert.equal(songSectionMap(b, 'kade\n1'), null, `${b}: her own structure wins, no map`);
+  assert.equal(sectionMapNote(null), '');
+  for (const map of Object.values(SECTION_MAPS)) {
+    const note = sectionMapNote(map);
+    assert.ok(note.startsWith(`SECTION MAP, drawn by the desk for this song: ${map.name}. ${map.plan}`), map.id);
+    assert.match(note, /Use this map unless the idea clearly wants another\. Write the STRUCTURE line of the music direction from it\.$/);
+    assert.equal(/\[Final Chorus\]/.test(note), map.id === 'twoLong', `${map.id}: [Final Chorus] only in the map that has one`);
+    assert.doesNotMatch(note, /["“”]/, `${map.id}: names a shape, never demonstrates a line`);
+    for (const tag of note.match(/\[[^\]]+\]/g)) assert.match(tag, /^\[(?:Intro|Verse [1-4]|Pre-Chorus|Chorus|Post-Chorus|Bridge|Breakdown|Drop|Final Chorus|Outro)\]$/, `${map.id}: ${tag} is a standard tag`);
+  }
+});
+
+test('Part 293 follow-up: the length check holds a song to the map that was drawn', () => {
+  const rows = (n, tag) => Array.from({ length: n }, (_, i) => `${tag} line ${i + 1} goes here`).join('\n');
+  const song = (...verses) => `Pop.\nLyrics:\n${verses.map((n, i) => `[Verse ${i + 1}]\n${rows(n, 'v' + (i + 1))}\n[Chorus]\nhook here`).join('\n')}\n\nREADBACK: x`;
+  const M = SECTION_MAPS, brief = 'a song about luck';
+  for (const map of Object.values(M)) assert.equal(lyricShapeIssue(song(8, 8, 8), brief, map), null, `${map.id}: three verses pass (the writer may take another shape)`);
+  for (const id of ['prePost', 'dance']) assert.equal(lyricShapeIssue(song(8, 9), brief, M[id]), null, `${id}: two verses of eight are the map`);
+  assert.equal(lyricShapeIssue(song(12, 14), brief, M.twoLong), null, 'twoLong: two verses of twelve are the map');
+  for (const id of ['threeVerses', 'hookFirst', 'storyRefrain']) {
+    const ask = lyricShapeIssue(song(12, 12), brief, M[id]);
+    assert.ok(ask.startsWith(`The song has only two verses, and the map for this song is ${M[id].name}. Add a [Verse 3] of eight to twelve sung lines in the same voice, ${M[id].addVerse}.`), `${id}: ${ask}`);
+  }
+  assert.match(lyricShapeIssue(song(16, 8), brief, M.twoLong), /is two long verses, a bridge and a final chorus, and each verse needs at least 12 sung lines: \[Verse 2\] has 8\. Lengthen each short verse to 12 lines or more/);
+  assert.match(lyricShapeIssue(song(8, 8), brief, M.twoLong), /\[Verse 1\] has 8 and \[Verse 2\] has 8\./);
+  assert.match(lyricShapeIssue(song(6, 10), brief, M.prePost), /at least 8 sung lines: \[Verse 1\] has 6\. Lengthen/);
+  assert.match(lyricShapeIssue(song(20), brief, M.twoLong), /only one verse, and the map for this song is two long verses.*Add a \[Verse 2\] of 12 to 16 sung lines in the same voice, before the bridge\./);
+  assert.match(lyricShapeIssue(song(10), brief, M.dance), /Add a \[Verse 2\] of eight to twelve sung lines in the same voice, with its pre-chorus, before the breakdown\./);
+  for (const map of Object.values(M)) {
+    assert.equal(lyricShapeIssue(song(8), 'a two verse song about luck', map), null, `${map.id}: her own structure beats any map`);
+    assert.doesNotMatch(lyricShapeIssue(song(8), brief, map), /this desk writes three verses, or two long ones/, `${map.id}: never the old two-map list`);
+  }
+  assert.match(lyricShapeIssue(song(8, 8), brief), /only two short verses and this desk writes three verses/, 'no map drawn: the check it was');
+  assert.match(lyricShapeIssue(song(8, 8), brief, null), /only two short verses/);
+});
+
+test('Part 293 follow-up: a tidy ending is flagged only in the last four sung lines, and plain speech is left alone', () => {
+  const song = (verse, end) => `Folk.\nLyrics:\n[Verse 1]\n${verse.join('\n')}\n[Chorus]\nGoat on the fence and goat on the stair\n[Outro]\n${end.join('\n')}\n\nREADBACK: A folk song.`;
+  const verse = ['I carried the bottle out to the pen', 'She kicked it right over and did it again'];
+  for (const ending of ["Turns out that I'm the lucky one", "It's the best present anyway", 'You were right after all', 'In the end, it was just a truck', "And that's okay", 'Guess it turned out fine', "That's all that matters", "I wouldn't change a thing", 'You had my number all along', "We're the lucky ones tonight", 'The best gift of all'])
+    assert.deepEqual(lyricEndingTells(song(verse, ['I sat down on the step', ending]), 'a lullaby for a goat'), [{ line: ending, tell: ENDING_TELL }], ending);
+  const early = ["Turns out that I'm the lucky one", "It's the best present anyway", 'You were right after all', 'In the end, it was just a truck', "And that's okay"];
+  assert.deepEqual(lyricEndingTells(song([...early, 'one more', 'two more', 'three more'], ['Put the bucket by the gate', 'Shut the barn and walked away']), ''), [], 'the same words earlier in the song are speech');
+  for (const plainEnd of ['Mama turns out the lights at nine', 'The whole town turned out for the fair', 'Turn out your pockets, boy', 'After all the chairs were stacked', 'We parked in the end spot by the dumpster', 'Best thing on the menu is the fries', "She kept the hoodie, and I'm still her man", 'Yeah, turns out the cows got out'])
+    assert.deepEqual(lyricEndingTells(song(verse, ['I sat down on the step', plainEnd]), ''), [], plainEnd);
+  assert.deepEqual(lyricEndingTells(song(verse, ['Pour one out', "I'm the lucky one"]), 'a country song called The Lucky One'), [], 'her own words are hers');
+  const draft = song(["Turns out that I'm the lucky one", 'She kicked it right over'], ['I sat down on the step', 'Turns out the goat was the lucky one']);
+  assert.deepEqual(lyricTells(draft, '').map(t => [t.line, t.tell]), [['Turns out the goat was the lucky one', ENDING_TELL]], 'the kill scan carries the ending flag, and only at the end');
+});
+
+test('Part 293 follow-up: the audit gets an ENDING gate with the exact lines the song and each chorus land on', () => {
+  const draft = 'Pop.\nLyrics:\n[Verse 1]\na1\na2\n[Chorus]\nc1\nc2\nc3\n[Verse 2]\nb1\nb2\n[Chorus]\nc1\nc2\nc3\n[Chorus - Belted]\nd1\nd2\n[Post-Chorus]\np1\np2\n[Outro]\no1\n(la la, fading)\no2\n\nREADBACK: x';
+  assert.deepEqual(lyricEndingLines(draft), ['c2', 'c3', 'd1', 'd2', 'o1', 'o2'], 'each chorus pass, back-to-back passes apart, ad-libs and the post-chorus skipped, each line once');
+  const ask = lyricAuditRequest(draft, [], null);
+  assert.ok(ask.includes('\n8. THE ENDING. These are the last two sung lines of the song and of each chorus pass, pulled by the desk:\n   - "c2"\n   - "c3"\n   - "d1"\n   - "d2"\n   - "o1"\n   - "o2"\n'), ask.slice(0, 4000));
+  assert.match(ask, /Rewrite any that states a lesson, a turnaround, a verdict on the story or a sum-up of it/);
+  assert.ok(ask.indexOf('7. Singability') < ask.indexOf('8. THE ENDING') && ask.indexOf('8. THE ENDING') < ask.indexOf('Return the complete song'), 'last of the gates');
+  const gate = ask.slice(ask.indexOf('8. THE ENDING'), ask.indexOf('Return the complete song'));
+  assert.equal((gate.match(/"/g) || []).length, 12, 'the only quotes are the pulled lines: the gate names the shape and never demonstrates one');
+  const withShape = lyricAuditRequest(draft, lyricTells(draft), 'Add a [Verse 3].');
+  assert.match(withShape, /\n8\. Length\. Add a \[Verse 3\]\.\n9\. THE ENDING\./);
+  assert.doesNotMatch(lyricAuditRequest('An instrumental. Instrumental only, no vocals.', [], null), /THE ENDING/);
+  const story = 'Folk.\nLyrics:\n[Verse 1]\nv1\nThat goat will never sleep\n[Verse 2]\nv2\nThat goat will never sleep\n\nREADBACK: x';
+  assert.deepEqual(lyricEndingLines(story), ['That goat will never sleep', 'v2'], 'a story song with no chorus: the last two lines, in the order they first appear');
+});
+
+test('Part 293 follow-up: the deep lane may think to 48,000 tokens; the phone and the web keep 24,000', () => {
+  const deep = musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true });
+  assert.equal(deep.maxTokens, 48000); assert.ok(deep.maxTokens <= 131072, "inside the model's listed max output (OpenRouter, Sep 25 2026)");
+  assert.equal(deep.timeoutMs, 600000); assert.equal(deep.reasoning.effort, 'medium');
+  assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write' }).maxTokens, 24000, 'phone lane untouched');
+  assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write', patient: true }).maxTokens, 24000, 'web lane untouched');
+  assert.equal(musicWritingSettings({ engine: 'lyria', mode: 'write', deep: true }).maxTokens, 48000);
+});
+
+test('Part 293 follow-up: the route sends the drawn map under the idea, holds the length check to it, and no Jev veto drops a tidy ending', async () => {
+  const rows = (n, tag) => Array.from({ length: n }, (_, i) => `${tag} row ${i + 1} goes here`).join('\n');
+  const draft = `Pop with bright guitars.\nLyrics:\n[Verse 1]\n${rows(8, 'first')}\n[Chorus]\nLucky me, lucky me\nPut it on the tab for free\n[Verse 2]\n${rows(8, 'second')}\n[Chorus]\nLucky me, lucky me\nPut it on the tab for free\n[Outro]\nI set the scratch card down\nTurns out that I'm the lucky one\n\nREADBACK: A pop song about luck.`;
+  const fixed = draft.replace("Turns out that I'm the lucky one", 'And I scratched the next one with my thumb');
+  const vetoAll = { lyricTellsJev: async () => ({ tells: [], asked: 20, costUSD: 0, scores: new Map() }), lyricTellsLog: () => {} };
+  for (const forced of ['prePost', 'threeVerses']) {
+    const salts = [];
+    const api = { songSectionMap: (brief, salt) => { salts.push(salt); return songSectionMap(brief, salt) && SECTION_MAPS[forced]; }, sectionMapNote, lyricEndingTells };
+    const booth = loadBooth({ reply: (_b, n) => (n === 1 ? draft : fixed), api, jev: vetoAll });
+    const out = await booth.call('post/script', { user: { id: 'map-fixture' }, body: { engine: 'yue2', mode: 'write', text: 'a song about luck' } });
+    assert.equal(out.code, 200);
+    assert.match(salts[0], /^map-fixture\n\d{13}$/, 'seeded by the idea, who asked and when');
+    assert.ok(booth.requests[0].messages[1].content.startsWith(`WHAT THEY WANT MADE:\na song about luck\n\n${sectionMapNote(SECTION_MAPS[forced])}`), `${forced}: the map rides under the idea`);
+    assert.equal(booth.ledger[0].metadata.sectionMap, forced);
+    const audit = booth.requests[1].messages[1].content;
+    assert.match(audit, /"Turns out that I'm the lucky one" -- a tidy ending/, `${forced}: Jev vetoed every flag, the tidy ending is still flagged`);
+    assert.match(audit, /THE ENDING\. These are the last two sung lines/);
+    if (forced === 'prePost') assert.doesNotMatch(audit, /8\. Length/, 'two verses of eight are this map');
+    else assert.match(audit, /8\. Length\. The song has only two verses, and the map for this song is three verses, a chorus after each, and a short bridge\. Add a \[Verse 3\]/);
+    assert.doesNotMatch(out.body.script, /Turns out/); assert.match(out.body.script, /scratched the next one/);
+  }
+  const plainApi = { songSectionMap, sectionMapNote, lyricEndingTells };
+  let booth = loadBooth({ reply: () => draft, api: plainApi });
+  await booth.call('post/script', { user: { id: 'map-2' }, body: { engine: 'yue2', mode: 'write', text: 'a two verse song about luck' } });
+  assert.doesNotMatch(booth.requests[0].messages[1].content, /SECTION MAP/, 'her own structure: no map');
+  assert.equal(booth.ledger[0].metadata.sectionMap, undefined);
+  booth = loadBooth({ reply: () => draft, api: plainApi });
+  await booth.call('post/script', { user: { id: 'map-3' }, body: { engine: 'yue2', mode: 'write', text: 'a song about luck', lyrics: 'My own words about luck' } });
+  assert.doesNotMatch(booth.requests[0].messages[1].content, /SECTION MAP/, 'her supplied lyrics: no map');
+  booth = loadBooth({ reply: () => draft, api: plainApi });
+  await booth.call('post/script', { user: { id: 'map-4' }, body: { engine: 'yue2', mode: 'write', text: 'a song about luck' } });
+  const drawn = booth.ledger[0].metadata.sectionMap;
+  assert.ok(drawn in SECTION_MAPS, 'the real draw');
+  assert.ok(booth.requests[0].messages[1].content.includes(sectionMapNote(SECTION_MAPS[drawn])), 'the note sent is the map logged');
 });
