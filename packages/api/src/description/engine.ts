@@ -55,7 +55,6 @@ import {
   failureClass,
   keytermsFor,
   linesFrom,
-  lookReserve,
   providerProblem,
   synthesize,
   transcribe,
@@ -85,8 +84,6 @@ export type Providers = {
     hints?: { keyterms?: string[]; onLanguage?: (code: string) => void },
   ) => Promise<Word[]>;
   analyze: (look: Look, signal: AbortSignal, meter: Meter) => Promise<Analysis>;
-  /** The reserve the meter holds for one call of this look; `lookReserve` when absent. */
-  reserve?: (look: Look) => number;
   synthesize: (
     text: string,
     voice: string,
@@ -97,12 +94,7 @@ export type Providers = {
     meter: Meter,
   ) => Promise<void>;
 };
-export const productionProviders: Providers = {
-  transcribe,
-  analyze,
-  synthesize,
-  reserve: lookReserve,
-};
+export const productionProviders: Providers = { transcribe, analyze, synthesize };
 
 export type SectionFiles = { sound: string; picture?: string };
 /** A paid look at one section that has not been rendered yet. */
@@ -171,12 +163,16 @@ export type Request = {
    */
   sourceSeconds?: number;
   /**
-   * What is left of the person's approved maximum for this run (USD), as the meter counts it: the
-   * approval less what the run has spent, requests still in flight counted at their reserve. A
-   * second look at a section runs only when its reserve fits. Absent: the engine knows no limit
-   * and the meter alone keeps one.
+   * What is left of the person's approved maximum for this run (USD): the approval less what the
+   * run has spent, with requests still in flight counted at their full reserve. That is stricter
+   * than the meter, whose stop counts settled charges only. A second look at a section, and each
+   * retry of it, starts only while this covers `relookMargin` times what the first look really
+   * cost plus what the sections still to look at are expected to cost. Absent: the engine knows
+   * no limit and the meter alone keeps one.
    */
   approvedRoom?: () => number;
+  /** The run's quoted estimate (USD), shared over the sections it looks at when weighing a second look. */
+  quotedUSD?: number;
   /** Section timings, failures and retries, for the server log. */
   log?: (message: string) => void;
 };
@@ -391,11 +387,22 @@ const seedSecondsPerByte = 0.0625;
  * not track the drift. The floor sits between 830 and 3,282, from a small sample.
  */
 export const reasoningFloor = 1500;
+/**
+ * A second look, and each retry of it, starts only while what is left of her approval covers this
+ * many times what the first look really cost (the second may reason far more than the first did),
+ * plus what the sections still to look at are expected to cost. It is weighed on real cost, not on
+ * the reserve: a Pluto close look reserves $0.38 against a $0.34 approval, yet its looks cost
+ * $0.03-0.06. The meter's own stop stays the backstop, as it is for every other paid request.
+ */
+export const relookMargin = 3;
 /** The look's own reasoning tokens (its last call wrote it); undefined when not reported. */
 const reasoningOf = (analysis: Analysis): number | undefined => {
   const calls = analysis.vision ?? [];
   return calls[calls.length - 1]?.reasoningTokens;
 };
+/** What a look's paid calls really cost, retries included. */
+const costOf = (analysis: Analysis): number =>
+  (analysis.vision ?? []).reduce((sum, call) => sum + call.costUSD, 0);
 
 type Voiced = { pcm: Float32Array; base: number };
 type Looked = {
@@ -571,6 +578,21 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   let voiceFailures = 0;
   let stripMissing = false;
   const carried = new Map<number, Carried[]>();
+  /**
+   * Sections this run still has to look at (a saved first look still waiting for its second look
+   * counts). A second look keeps back what they are expected to cost, so it never spends the
+   * approval the rest of the run needs.
+   */
+  const finished = new Set(saved.records.map((record) => record.index));
+  const toLook = new Set<number>();
+  for (let i = 0; i < active; i++) {
+    const kept = saved.looks?.[i]?.analysis;
+    if (!finished.has(i) && saved.analyses?.[i] === undefined && (!kept || kept.relook?.pending))
+      toLook.add(i);
+  }
+  const lookCount = toLook.size;
+  /** What each first look of this run really cost, when its provider said. */
+  const firstCosts: number[] = [];
 
   /** A part that runs to the end of the video: its last clip is the film's real ending. */
   const endsVideo =
@@ -630,30 +652,36 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     survey: boolean = false,
   ): Promise<Looked> {
     const section = fixed.sections[i];
+    /** A first look an earlier run paid for and kept, stopped before its second look was asked. */
+    let unfinished: Analysis | undefined;
     if (!survey) {
       const reused = saved.analyses?.[i];
       if (reused !== undefined) return { analysis: reused };
       const kept = saved.looks?.[i];
-      if (kept?.analysis) {
+      if (kept?.analysis?.relook?.pending) unfinished = kept.analysis;
+      else if (kept?.analysis) {
         markSeen(section, seen.main);
         return { analysis: kept.analysis };
       }
       if (
         kept?.failure &&
         (saved.analyses || (kept.failureClass && kept.failureClass !== 'transient'))
-      )
+      ) {
+        toLook.delete(i);
         return {
           analysis: null,
           failure: kept.failure,
           failureClass: kept.failureClass ?? 'transient',
           reused: true,
         };
+      }
     }
     const still = stillOf(section);
-    if (still >= 0 && (survey ? seen.survey : seen.main).has(still)) {
+    if (!unfinished && still >= 0 && (survey ? seen.survey : seen.main).has(still)) {
       log(
         `Section ${i + 1} of ${count} shows the same still picture as before; not looked at again.`,
       );
+      if (!survey) toLook.delete(i);
       return { analysis: blank(state) };
     }
     const seconds = section.end - section.start;
@@ -726,11 +754,21 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       };
       let result: Analysis;
       try {
-        result = finish(await providers.analyze(input, signal, meter), '');
-        if (!survey) result = await lookAgain(i, input, result, finish);
+        if (unfinished) {
+          log(
+            `Section ${i + 1} of ${count}: the last run stopped between its two looks; the first look it paid for is weighed for its second look now.`,
+          );
+          const first: Analysis = { ...unfinished };
+          delete first.relook;
+          result = await lookAgain(i, input, first, finish);
+        } else {
+          result = finish(await providers.analyze(input, signal, meter), '');
+          if (!survey) result = await lookAgain(i, input, result, finish);
+        }
       } finally {
         await rm(clip, { force: true });
       }
+      if (!survey) toLook.delete(i);
       markSeen(section, survey ? seen.survey : seen.main);
       log(
         `Section ${i + 1} of ${count}: ${survey ? 'first look' : 'looked'} in ${seconds1((Date.now() - began) / 1000)}.`,
@@ -751,6 +789,8 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       if (accountProblem(error)) return { analysis: null, failure, fatal: new Error(failure) };
       const kind: FailureClass = failureClass(error);
       log(`Section ${i + 1} of ${count} could not be described (${kind}): ${failure}`);
+      /** A passing failure is tried again at the end of the run; any other is not looked at again. */
+      if (!survey && kind !== 'transient') toLook.delete(i);
       return { analysis: null, failure, failureClass: kind };
     }
   }
@@ -758,11 +798,15 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   /**
    * Looks at a section once more when its first look reasoned under `reasoningFloor` tokens or
    * showed the crammed-end sign, and never when the provider did not report reasoning. The second
-   * look runs only when its reserve fits what is left of the approved maximum. It keeps the second
-   * look when that one reasoned at least the floor, otherwise whichever reasoned more (the first on
-   * a tie). Both calls go through the meter like any look, so both are charged at what they cost,
-   * and the one not kept stays in `relook.other`. It uses the job's own signal: only our own stop
-   * can cut it off, and the meter never bills a request our stop cut off.
+   * look, and each retry of it, starts only while what is left of the approved maximum covers
+   * `relookMargin` times what the first look really cost plus what the sections still to look at
+   * are expected to cost (their share of the quote, or the mean first look so far when that is
+   * more). It keeps the second look when that one reasoned at least the floor, otherwise whichever
+   * reasoned more (the first on a tie). Both calls go through the meter like any look, so both are
+   * charged at what they cost, and the one not kept stays in `relook.other`. The paid first look is
+   * kept, marked pending, before the second is asked, so a run that stops in between asks only the
+   * second look next time. It uses the job's own signal: only our own stop can cut it off, and the
+   * meter never bills a request our stop cut off.
    */
   async function lookAgain(
     i: number,
@@ -770,6 +814,8 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     first: Analysis,
     finish: (analysis: Analysis, which: string) => Analysis,
   ): Promise<Analysis> {
+    const firstCost = costOf(first);
+    if (first.vision?.length) firstCosts.push(firstCost);
     const thought = reasoningOf(first);
     if (thought === undefined) return first;
     const reasons: Relook['reasons'] = [];
@@ -780,40 +826,74 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const what = reasons.includes('reasoning')
       ? 'the look skipped its thinking'
       : "the look's last description is crammed at the end";
-    const reserve = (providers.reserve ?? lookReserve)(input);
-    const room = request.approvedRoom?.();
-    if (room !== undefined && reserve > room + 1e-9) {
+    const later = [...toLook].filter((k) => k !== i).length;
+    const quotedShare = lookCount ? (request.quotedUSD ?? 0) / lookCount : 0;
+    const meanLook = firstCosts.length
+      ? firstCosts.reduce((sum, cost) => sum + cost, 0) / firstCosts.length
+      : 0;
+    const heldBack = later * Math.max(quotedShare, meanLook);
+    const need = relookMargin * firstCost + heldBack;
+    const usd = (value: number) => `$${Math.max(0, value).toFixed(3)}`;
+    const needed = `${usd(need)} needed: ${relookMargin} times the first look's ${usd(firstCost)}${later ? ` plus ${usd(heldBack)} kept for the ${later} section${later === 1 ? '' : 's'} still to look at` : ''}`;
+    /** What is left of her approval when it no longer covers the need; undefined while it does. */
+    const short = (): number | undefined => {
+      const room = request.approvedRoom?.();
+      return room !== undefined && need > room + 1e-9 ? room : undefined;
+    };
+    const skip = (why: Relook['skipped']): Analysis => ({
+      ...first,
+      relook: { reasons, reasoning: [thought, null], kept: 1, skipped: why },
+    });
+    const before = short();
+    if (before !== undefined) {
       log(
-        `${where}: ${what} and a second look would pass the approved maximum ($${reserve.toFixed(2)} held for it, $${Math.max(0, room).toFixed(2)} left).`,
+        `${where}: ${what} and a second look would pass the approved maximum (${needed}; ${usd(before)} left).`,
       );
-      return {
-        ...first,
-        relook: { reasons, reasoning: [thought, null], kept: 1, skipped: 'approved maximum' },
-      };
+      return skip('approved maximum');
     }
-    await safely(() => keeper.keepLook?.(i, { analysis: first }), `The look at section ${i + 1}`);
+    await safely(
+      () =>
+        keeper.keepLook?.(i, {
+          analysis: {
+            ...first,
+            relook: { reasons, reasoning: [thought, null], kept: 1, pending: true },
+          },
+        }),
+      `The look at section ${i + 1}`,
+    );
     const both = reasons.length > 1 ? ', and its last description is crammed at the end' : '';
     log(`${where}: ${what} (${thought} reasoning tokens${both}); looking once more.`);
+    /** Every call of the second look, retries included, is weighed again before it is metered. */
+    let stoppedAt: number | undefined;
+    const gated: Meter = async (kind, reserve, action) => {
+      stoppedAt = short();
+      if (stoppedAt !== undefined) throw new Halt('A second look would pass the approved maximum.');
+      await meter(kind, reserve, action);
+    };
     let second: Analysis;
     try {
-      second = finish(await providers.analyze(input, signal, meter), 'second ');
+      second = finish(await providers.analyze(input, signal, gated), 'second ');
     } catch (error) {
       if (signal.aborted) throw error;
+      if (stoppedAt !== undefined) {
+        log(
+          `${where}: the second look stopped before a call that would pass the approved maximum (${needed}; ${usd(stoppedAt)} left), so the first is kept.`,
+        );
+        return skip('approved maximum');
+      }
       const why =
         error instanceof MediaError || error instanceof Halt
           ? error.message
           : providerProblem(error, 'The video model');
       log(`${where}: the second look failed, so the first is kept: ${why}`);
-      return {
-        ...first,
-        relook: { reasons, reasoning: [thought, null], kept: 1, skipped: 'failed' },
-      };
+      return skip('failed');
     }
     const again = reasoningOf(second);
     const better = again !== undefined && (again >= reasoningFloor || again > thought);
     log(
       `${where}: the second look reasoned ${again ?? 'an unknown number of'} tokens${second.stretched?.length ? ', crammed end' : ''}, the first ${thought}; the ${better ? 'second' : 'first'} is kept.`,
     );
+    log(`${where}: the second look cost ${usd(costOf(second))}, the first ${usd(firstCost)}.`);
     const [kept, other] = better ? [second, first] : [first, second];
     return {
       ...kept,

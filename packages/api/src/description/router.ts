@@ -4207,8 +4207,10 @@ export function createDescriptionRouter(hooks: Hooks): {
         };
         const meter = rehearsal ? rehearsalMeter : paidMeter;
         /**
-         * What is left of her approval, counted as the meter counts it, with requests in flight
-         * held at their reserve: a second look at a section starts only when its reserve fits.
+         * What is left of her approval, with requests still in flight counted at their full
+         * reserve. That is stricter than the meter's own stop, which counts settled charges only.
+         * The engine starts a second look at a section, and each retry of it, only while this
+         * covers three times what the first look really cost plus the rest of the run.
          */
         const approvedRoom = () => (rehearsal ? 0 : Math.max(0, approved - spend.usd));
         const request: RunRequest = {
@@ -4228,6 +4230,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           signal,
           meter,
           approvedRoom,
+          ...(rehearsal ? {} : { quotedUSD: quoted }),
           progress,
           providers: rehearsal ? rehearsalProviders : (hooks.providers ?? productionProviders),
           keeper: state.keeper,

@@ -24,7 +24,6 @@ import {
   billed,
   failureClass,
   keytermsFor,
-  lookReserve,
   providerDetail,
   providerProblem,
   speechPerByte,
@@ -1392,11 +1391,12 @@ test('providers: the vision request uses the flex-eligible model, pinned reasoni
   }
 });
 
-test('providers: lookReserve is the reserve the meter is handed for that look', async () => {
+test('providers: a Pluto-sized close look holds more than her whole $0.34 approval while it is out', async () => {
   process.env.OPENROUTER_KEY = 'test-key';
   const file = join(scratch, 'reserve.mp4');
   await writeFile(file, Buffer.from('clip'));
   const fake = fakeAxios(() => reply(replyBody));
+  const reserves = [];
   try {
     for (const look of [
       { file, seconds: 10, brief: brief(), state: null, lines: [], before: [] },
@@ -1405,9 +1405,13 @@ test('providers: lookReserve is the reserve the meter is handed for that look', 
       charges.length = 0;
       await analyze(look, signal, meter);
       assert.equal(charges.length, 1);
-      assert.equal(charges[0].reserve, lookReserve(look));
+      reserves.push(charges[0].reserve);
     }
-    assert.ok(charges[0].reserve > 0.37, `a slowed 310 s close look holds about $0.38 while it is out: ${charges[0].reserve}`);
+    assert.ok(reserves[0] < reserves[1]);
+    assert.ok(
+      reserves[1] > 0.37,
+      `a slowed 310 s close look holds about $0.38 while it is out, which is why a second look is weighed on real cost: ${reserves[1]}`,
+    );
   } finally {
     fake.restore();
   }

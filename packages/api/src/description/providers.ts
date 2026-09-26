@@ -559,14 +559,6 @@ const lookTokens = (brief: Brief): number => (brief.slowed ? 24000 : 12000);
 /** The most one look call can cost, which the meter holds while the call is out. */
 const reserveFor = (seconds: number, prompt: string, maxTokens: number): number =>
   (seconds * 400 * 1.5 + prompt.length * 0.5 + maxTokens * 7.5) / 1e6 + 0.01;
-/**
- * The reserve the meter holds for one call of this look, the same sum `analyze` uses, so the
- * engine can tell before a second look whether it fits the person's approved maximum.
- */
-export function lookReserve(look: Look): number {
-  const prompt = analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before);
-  return reserveFor(look.seconds, prompt, lookTokens(look.brief));
-}
 
 function replyOf(choice: Choice | undefined, look: Look): Analysis {
   const native = (choice?.native_finish_reason ?? '').toUpperCase();

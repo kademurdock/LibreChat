@@ -3,6 +3,7 @@ import test, { after } from 'node:test';
 import { mkdtemp, mkdir, rm, copyFile, stat, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createRequire } from 'node:module';
 import ffmpegPath from 'ffmpeg-static';
 import ffprobePath from 'ffprobe-static';
 import { AxiosError } from 'axios';
@@ -42,13 +43,14 @@ import {
   workingChapters,
   dialogueLoudness,
   reasoningFloor,
+  relookMargin,
 } from './engine.ts';
 import { readAnalysis, nextContinuity, analysisPrompt } from './prompt.ts';
 import { capabilities, command, lookClip, probe, frameRate, sectionClip, stripFont, MediaError } from './media.ts';
 import { transcriptText, clock } from './transcript.ts';
 import { settingsSchema, Halt } from './types.ts';
 import { editsSchema, revise, scriptCues, libraryPathSchema } from './revision.ts';
-import { Refusal, lookReserve } from './providers.ts';
+import { Refusal, analyze as realAnalyze } from './providers.ts';
 import { youtubeURL } from './youtube.ts';
 
 process.env.FFMPEG_PATH = ffmpegPath;
@@ -909,6 +911,30 @@ function ledger() {
     },
   };
 }
+/**
+ * Her approval as the router keeps it: each paid request is booked at its reserve while it is out
+ * and at what it cost once it settles, and the engine is told what is left.
+ */
+function approval(approvedUSD) {
+  const charges = [];
+  let spent = 0;
+  return {
+    charges,
+    meter: async (kind, reserve, action) => {
+      spent += reserve;
+      let costUSD;
+      try {
+        ({ costUSD } = await action());
+      } catch (error) {
+        spent -= reserve;
+        throw error;
+      }
+      spent += costUSD - reserve;
+      charges.push({ kind, reserve, costUSD });
+    },
+    approvedRoom: () => Math.max(0, approvedUSD - spent),
+  };
+}
 const spokenLooks = (result) =>
   result.report.descriptions.map((item) => item.text.match(/^Look (\d)/)?.[1]).filter(Boolean);
 
@@ -943,10 +969,12 @@ test('re-look: a look that skipped its thinking is looked at once more, both are
   assert.ok(log.includes('Section 1 of 1: the look skipped its thinking (0 reasoning tokens); looking once more.'), log.join('\n'));
   assert.ok(log.includes('Section 1 of 1: the second look reasoned 5699 tokens, the first 0; the second is kept.'), log.join('\n'));
   assert.deepEqual(
-    kept.looks.map((item) => item.look.analysis.relook?.kept ?? 'first'),
-    ['first', 2],
-    'the paid first look is kept before the second is asked, so a stop in between never pays for it again',
+    kept.looks.map((item) => (item.look.analysis.relook.pending ? 'pending' : item.look.analysis.relook.kept)),
+    ['pending', 2],
+    'the paid first look is kept, marked pending, before the second is asked, so a stop in between never pays for it again',
   );
+  assert.equal(record.relook.pending, undefined, 'the finished section is never marked pending');
+  assert.ok(log.includes('Section 1 of 1: the second look cost $0.052, the first $0.029.'), log.join('\n'));
 });
 
 test('re-look: a look that thought enough, or whose provider does not say, is not looked at again', async () => {
@@ -992,48 +1020,143 @@ test('re-look: of two thin looks the one that reasoned more is kept, the first o
   }
 });
 
-test('re-look: a second look that would pass the approved maximum is skipped and logged', async () => {
+test('re-look: the second look is weighed on what the first really cost, not on its reserve', async () => {
+  assert.equal(relookMargin, 3);
   const f = await fixture('relook-budget', 9);
   const { backend, looks } = thinking(f, [0, 5000]);
-  backend.reserve = () => 0.4;
   const { charges, meter } = ledger();
   const { keeper, kept } = keeperFor(undefined);
   const log = [];
-  await run(f, [], [], { providers: backend, keeper, log, meter, approvedRoom: () => 0.39 });
+  await run(f, [], [], { providers: backend, keeper, log, meter, approvedRoom: () => 0.08 });
   assert.equal(looks.length, 1);
   assert.equal(charges.length, 1, 'nothing more was charged');
   assert.ok(
-    log.includes('Section 1 of 1: the look skipped its thinking and a second look would pass the approved maximum ($0.40 held for it, $0.39 left).'),
+    log.includes("Section 1 of 1: the look skipped its thinking and a second look would pass the approved maximum ($0.087 needed: 3 times the first look's $0.029; $0.080 left)."),
     log.join('\n'),
   );
   assert.deepEqual(kept.records[0].analysis.relook, { reasons: ['reasoning'], reasoning: [0, null], kept: 1, skipped: 'approved maximum' });
+  assert.deepEqual(kept.looks.map((item) => item.look.analysis.relook.pending), [undefined], 'nothing was left pending');
 
   const g = await fixture('relook-budget-fits', 9);
   const fits = thinking(g, [0, 5000]);
-  fits.backend.reserve = () => 0.4;
-  await run(g, [], [], { providers: fits.backend, approvedRoom: () => 0.4 });
-  assert.equal(fits.looks.length, 2, 'a reserve that exactly fits is allowed');
-
-  const h = await fixture('relook-budget-default', 9);
-  const plain = thinking(h, [0, 5000]);
-  const rooms = [];
-  const hlog = [];
-  await run(h, [], [], {
-    providers: plain.backend,
-    log: hlog,
+  const reads = [];
+  await run(g, [], [], {
+    providers: fits.backend,
     approvedRoom: () => {
-      rooms.push(0.05);
-      return 0.05;
+      reads.push(0.087);
+      return 0.087;
     },
   });
-  assert.equal(plain.looks.length, 1);
-  assert.equal(rooms.length, 1, 'the room is read once, when the second look is weighed');
-  const expected = lookReserve(plain.looks[0]);
-  assert.ok(expected > 0.05);
-  assert.ok(
-    hlog.some((line) => line.includes(`would pass the approved maximum ($${expected.toFixed(2)} held for it, $0.05 left)`)),
-    `without its own reserve the backend is weighed at lookReserve, the sum the meter is handed: ${hlog.join('\n')}`,
+  assert.equal(fits.looks.length, 2, 'room for exactly three first looks is enough, though each call reserves $0.40');
+  assert.equal(reads.length, 2, 'the room is read when the second look is weighed, and again before its call is metered');
+});
+
+test('re-look: a Pluto-sized close look against a $0.34 approval gets its second look, and its times come back to the section', async () => {
+  /** Pluto's section 2 ran 77.47 s: a close look of it reserves about $0.38 per call. */
+  const f = await fixture('relook-close', 78);
+  const slowed = (n) => [{ ...cue, at: 8, until: 14, pauseAt: 8, text: `Look ${n}: a red square moves across the room.`, shortText: `Look ${n}.` }];
+  const { backend, looks } = thinking(f, [0, 5699], slowed);
+  const her = approval(0.34);
+  const { keeper, kept } = keeperFor(undefined);
+  const log = [];
+  await run(f, [], [], {
+    providers: backend,
+    keeper,
+    log,
+    meter: her.meter,
+    approvedRoom: her.approvedRoom,
+    quotedUSD: 0.16,
+    settings: { ...settings, closeLook: true },
+  });
+  assert.equal(looks.length, 2, log.join('\n'));
+  assert.deepEqual(
+    her.charges.map((item) => [item.reserve, item.costUSD]),
+    [[0.4, 0.029], [0.4, 0.052]],
+    'each call reserved more than her whole approval, and each was charged what it cost',
   );
+  const section = kept.records[0];
+  const seconds = section.end - section.start;
+  assert.ok(seconds > 77, `one Pluto-sized section: ${seconds} s`);
+  for (const look of looks) {
+    assert.ok(Math.abs(look.seconds - 4 * seconds) < 1e-6, `${look.seconds} for a ${seconds} s section`);
+    assert.equal(look.brief.slowed, true);
+  }
+  assert.deepEqual(looks[1].brief, looks[0].brief);
+  const record = section.analysis;
+  assert.deepEqual({ kept: record.relook.kept, reasoning: record.relook.reasoning }, { kept: 2, reasoning: [0, 5699] });
+  assert.deepEqual(
+    record.cues.map((item) => [item.text, item.at, item.until, item.pauseAt]),
+    [['Look 2: a red square moves across the room.', 2, 3.5, 2]],
+    'the kept second close look has its times divided by 4',
+  );
+});
+
+test('re-look: a second look keeps back what the sections still to look at are expected to cost', async () => {
+  for (const [name, approved, quotedUSD, looked, line] of [
+    ['relook-held', 0.149, 0.1, 2, "($0.137 needed: 3 times the first look's $0.029 plus $0.050 kept for the 1 section still to look at; $0.120 left)"],
+    ['relook-held-fits', 0.2, 0.1, 3, null],
+    ['relook-held-measured', 0.14, undefined, 2, "($0.116 needed: 3 times the first look's $0.029 plus $0.029 kept for the 1 section still to look at; $0.111 left)"],
+    ['relook-held-measured-fits', 0.149, undefined, 3, null],
+  ]) {
+    const f = await fixture(name, 20);
+    const { backend, looks } = thinking(f, [0, 5000, 5000]);
+    const her = approval(approved);
+    const { keeper } = keeperFor(savedPlan(20, [10]));
+    const log = [];
+    await run(f, [], [], { providers: backend, keeper, log, meter: her.meter, approvedRoom: her.approvedRoom, quotedUSD });
+    assert.equal(looks.length, looked, `${name}: ${log.join('\n')}`);
+    assert.deepEqual(looks.map((look) => look.brief.position.index), looked === 2 ? [0, 1] : [0, 0, 1], name);
+    const skipped = log.find((entry) => entry.includes('would pass the approved maximum'));
+    if (line) assert.ok(skipped?.endsWith(line + '.'), `${name}: ${skipped}`);
+    else assert.equal(skipped, undefined, name);
+    assert.ok(her.charges.reduce((sum, item) => sum + item.costUSD, 0) <= approved, name);
+  }
+});
+
+test('re-look: a retry of the second look that no longer fits is never sent, and the first look is kept', async () => {
+  const axios = createRequire(import.meta.url)('axios');
+  const previous = { adapter: axios.defaults.adapter, key: process.env.OPENROUTER_KEY };
+  process.env.OPENROUTER_KEY = 'test-key';
+  const replies = [];
+  axios.defaults.adapter = async (config) => {
+    replies.push(config.url);
+    const n = replies.length;
+    const content =
+      n === 1
+        ? JSON.stringify({ cues: [{ at: 1, until: 5, pauseAt: 1, text: 'Look 1: a red square moves across the room.', shortText: 'Look 1.', importance: 3 }] })
+        : 'The square moves.';
+    return {
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+      data: {
+        provider: 'Google',
+        choices: [{ finish_reason: 'stop', message: { content } }],
+        usage: { cost: n === 1 ? 0.029 : 0.05, completion_tokens: 1500, completion_tokens_details: { reasoning_tokens: 0 } },
+      },
+    };
+  };
+  try {
+    const f = await fixture('relook-retry', 9);
+    const backend = { ...providers(f.voice, [], []), analyze: realAnalyze };
+    const her = approval(0.13);
+    const { keeper, kept } = keeperFor(undefined);
+    const log = [];
+    const result = await run(f, [], [], { providers: backend, keeper, log, meter: her.meter, approvedRoom: her.approvedRoom });
+    assert.equal(replies.length, 2, 'the first look, and one unreadable answer to the second; its retry was never sent');
+    assert.deepEqual(her.charges.map((item) => item.costUSD), [0.029, 0.05], 'nothing more was charged');
+    assert.ok(
+      log.includes("Section 1 of 1: the second look stopped before a call that would pass the approved maximum ($0.087 needed: 3 times the first look's $0.029; $0.051 left), so the first is kept."),
+      log.join('\n'),
+    );
+    assert.deepEqual(kept.records[0].analysis.relook, { reasons: ['reasoning'], reasoning: [0, null], kept: 1, skipped: 'approved maximum' });
+    assert.deepEqual(spokenLooks(result), ['1'], 'the section is described from the first look');
+  } finally {
+    axios.defaults.adapter = previous.adapter;
+    if (previous.key === undefined) delete process.env.OPENROUTER_KEY;
+    else process.env.OPENROUTER_KEY = previous.key;
+  }
 });
 
 test('re-look: a crammed end asks for one more look even after enough thinking; a failed second look keeps the first', async () => {
@@ -1074,7 +1197,7 @@ test('re-look: a crammed end asks for one more look even after enough thinking; 
   assert.ok(glog.some((line) => line.startsWith('Section 1 of 1: the second look failed, so the first is kept: ')), glog.join('\n'));
 });
 
-test('re-look: our own stop during the second look stops the job, and the paid first look is already kept', async () => {
+test('re-look: our own stop during the second look stops the job, and the next run asks only the second look', async () => {
   const f = await fixture('relook-stopped', 9);
   const controller = new AbortController();
   const { backend, looks } = thinking(f, [0, 5000]);
@@ -1092,7 +1215,27 @@ test('re-look: our own stop during the second look stops the job, and the paid f
   assert.equal(looks.length, 2);
   assert.equal(kept.looks.length, 1);
   assert.equal(kept.looks[0].look.analysis.vision[0].reasoningTokens, 0, 'the first look is saved for the next run to reuse');
+  assert.deepEqual(kept.looks[0].look.analysis.relook, { reasons: ['reasoning'], reasoning: [0, null], kept: 1, pending: true });
   assert.equal(kept.records.length, 0);
+
+  const next = thinking(f, [5699]);
+  const { keeper: resumed, kept: done } = keeperFor(kept.plans[0], [], { looks: [kept.looks[0].look] });
+  const { charges, meter } = ledger();
+  const log = [];
+  await run(f, [], [], { providers: next.backend, keeper: resumed, meter, log });
+  assert.equal(next.looks.length, 1, 'the first look is not paid for again');
+  assert.deepEqual(charges.map((item) => item.costUSD), [0.029]);
+  const record = done.records[0].analysis;
+  assert.deepEqual(
+    { reasons: record.relook.reasons, reasoning: record.relook.reasoning, kept: record.relook.kept, pending: record.relook.pending },
+    { reasons: ['reasoning'], reasoning: [0, 5699], kept: 2, pending: undefined },
+  );
+  assert.deepEqual(record.relook.other.map((call) => call.reasoningTokens), [0], 'the first look stays on record');
+  assert.ok(
+    log.includes('Section 1 of 1: the last run stopped between its two looks; the first look it paid for is weighed for its second look now.'),
+    log.join('\n'),
+  );
+  assert.ok(log.includes('Section 1 of 1: the second look reasoned 5699 tokens, the first 0; the second is kept.'), log.join('\n'));
 });
 
 test('whole-film first look checkpoints, resumes, and finishes before any narration', async () => {
@@ -1253,6 +1396,7 @@ async function run(f, words, cues, overrides = {}) {
     signal: overrides.signal || signal,
     meter: overrides.meter || meter,
     approvedRoom: overrides.approvedRoom,
+    quotedUSD: overrides.quotedUSD,
     progress: overrides.progress || progress,
     providers: backend,
     keeper: overrides.keeper,

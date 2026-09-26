@@ -137,6 +137,11 @@ export type Relook = {
   kept: 1 | 2;
   /** Why there was no second look to choose: it would pass the approved maximum, or it failed. */
   skipped?: 'approved maximum' | 'failed';
+  /**
+   * Only on a saved first look whose second look was not answered yet: a run that stops in between
+   * asks only the second look next time, without paying for the first again.
+   */
+  pending?: true;
   /** The paid calls of the look that was not kept, so both looks' backends and costs are on record. */
   other?: VisionCall[];
 };
