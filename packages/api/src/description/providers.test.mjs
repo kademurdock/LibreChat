@@ -146,8 +146,17 @@ function ledger() {
   };
   return { entries, meter };
 }
-/** What a 10-second look's reserve holds beyond its expected cost at the ceiling: the margin and 6,000 reply tokens. */
-const unexpected = 0.01 + (12000 - 6000) * 7.5e-6;
+/**
+ * What the describer expects a look OpenRouter never priced to have cost, worked out from its
+ * reserve (the clip at 400 tokens a second, the prompt at 3 characters a token and all its output
+ * tokens at the `max_price` ceiling, plus $0.01), which fixes its prompt's length: the clip at 85
+ * tokens a second and the prompt at 4 characters a token, and its expected reasoning plus 3,000
+ * answer tokens, at the list price ($0.75 and $3.75 per million).
+ */
+function expectedOf(reserve, { seconds = 10, maxTokens = 12000, reasoning = 6000 } = {}) {
+  const characters = ((reserve - 0.01 - maxTokens * 7.5e-6) / 1.5e-6 - seconds * 400) * 3;
+  return Math.min(reserve, ((seconds * 85 + characters / 4) * 0.75 + (reasoning + 3000) * 3.75) / 1e6);
+}
 /** Shorter request and lookup limits for one test (the real ones: 300 s, and 5, 15 and 40 s within a minute). */
 async function limited(values, run) {
   const saved = { ...visionLimits, lookupAtMs: [...visionLimits.lookupAtMs] };
@@ -285,11 +294,12 @@ test('providers: a failed look OpenRouter never priced carries its expected cost
     for (const [i, entry] of entries.entries()) {
       assert.equal(entry.generation, `gen-${i + 1}`);
       assert.equal(entry.costUSD, undefined);
-      assert.ok(entry.expectedUSD > 0.045, `a typical reply is priced in: ${entry.expectedUSD}`);
+      assert.ok(entry.expectedUSD > 9000 * 3.75e-6, `a typical reply is priced in: ${entry.expectedUSD}`);
       assert.ok(
-        Math.abs(entry.reserve - entry.expectedUSD - unexpected) < 1e-9,
-        `the expected cost is the reserve less its margin and the reply tokens a look does not usually use: ${entry.expectedUSD} of ${entry.reserve}`,
+        Math.abs(entry.expectedUSD - expectedOf(entry.reserve)) < 1e-9,
+        `the expected cost is its clip, prompt and a typical reply at the list price: ${entry.expectedUSD} of ${entry.reserve}`,
       );
+      assert.ok(entry.expectedUSD < entry.reserve / 3, `${entry.expectedUSD} of ${entry.reserve}`);
       assert.equal(entry.interrupted, false);
     }
     assert.ok(log.some((line) => line.startsWith('vision: no record of what the failed request gen-1 cost; booked at the expected $')), log.join('\n'));
@@ -399,7 +409,7 @@ test('providers: the mid-stream error shape is a provider failure, never a finis
     const [first, second] = entries;
     assert.equal(first.generation, 'gen-mid');
     assert.equal(first.costUSD, undefined);
-    assert.ok(Math.abs(first.reserve - first.expectedUSD - unexpected) < 1e-9, `expected, not the reserve: ${first.expectedUSD} of ${first.reserve}`);
+    assert.ok(Math.abs(first.expectedUSD - expectedOf(first.reserve)) < 1e-9, `expected, not the reserve: ${first.expectedUSD} of ${first.reserve}`);
     assert.equal(second.costUSD, 0.004, 'the cost the reply itself reported');
     assert.equal(second.costFrom, undefined);
     assert.deepEqual(lookups, ['gen-mid', 'gen-mid'], 'a reply that reported its cost is not looked up');
@@ -434,7 +444,7 @@ test('providers: a finished reply that reports no cost is priced from OpenRouter
     assert.equal(result.cues.length, 1, 'the reply is still used');
     const [entry] = entries;
     assert.equal(entry.uncertain, true);
-    assert.ok(Math.abs(entry.reserve - entry.costUSD - unexpected) < 1e-9, `${entry.costUSD} of ${entry.reserve}`);
+    assert.ok(Math.abs(entry.costUSD - expectedOf(entry.reserve)) < 1e-9, `${entry.costUSD} of ${entry.reserve}`);
   } finally {
     fake.restore();
   }
@@ -523,7 +533,7 @@ test('providers: our stop while a failed request’s cost is looked up ends the 
     assert.equal(lookups, 0);
     assert.equal(entries.length, 1);
     assert.equal(entries[0].interrupted, false, 'it failed before the stop');
-    assert.ok(Math.abs(entries[0].reserve - entries[0].expectedUSD - unexpected) < 1e-9);
+    assert.ok(Math.abs(entries[0].expectedUSD - expectedOf(entries[0].reserve)) < 1e-9);
     assert.ok(log.some((line) => line.startsWith('vision: the job stopped before OpenRouter recorded what the failed request gen-before-stop cost')), log.join('\n'));
   } finally {
     fake.restore();
@@ -707,6 +717,181 @@ test('providers: BYOK replies, in-reply errors and generation records are booked
     assert.ok(Math.abs(entries[2].costUSD - 0.0021) < 1e-12, `the cost the error reply reported: ${entries[2].costUSD}`);
     assert.ok(Math.abs(entries[3].costUSD - 0.0189) < 1e-12, `the record: ${entries[3].costUSD}`);
     assert.equal(entries[3].costFrom, 'generation');
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: each look thinks as the Sep 26 A/B measured, and its reserve follows its output tokens', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const fake = fakeAxios(() => ({ headers: { 'x-generation-id': 'gen-plan' }, data: good }));
+  const { entries, meter } = ledger();
+  try {
+    const base = await clip('plan.mp4');
+    const close = { ...base, seconds: 40, brief: { ...brief, slowed: true } };
+    for (const look of [
+      { ...base, brief: { ...brief, survey: true } },
+      base,
+      close,
+      { ...close, second: true },
+      { ...base, second: true },
+    ])
+      await analyze(look, signal, meter);
+    assert.deepEqual(
+      fake.calls.map(({ body }) => [body.reasoning, body.max_tokens]),
+      [
+        [{ effort: 'low' }, 12000],
+        [{ effort: 'medium' }, 12000],
+        [{ max_tokens: 8000 }, 24000],
+        [{ effort: 'high' }, 48000],
+        [{ effort: 'high' }, 48000],
+      ],
+      'a survey at low effort, a normal look at medium, a close look within 8,000 reasoning tokens, a second look at high effort with room for 48,000',
+    );
+    assert.ok(
+      Math.abs(entries[3].reserve - entries[2].reserve - 24000 * 7.5e-6) < 1e-9,
+      `the second close look reserves 24,000 more output tokens at the ceiling for the same clip and prompt: ${entries[2].reserve} and ${entries[3].reserve}`,
+    );
+    assert.ok(Math.abs(entries[4].reserve - entries[1].reserve - 36000 * 7.5e-6) < 1e-9, `${entries[1].reserve} and ${entries[4].reserve}`);
+  } finally {
+    fake.restore();
+  }
+});
+
+/** A reply kept alive with a space and finished after `ms`. */
+function finishedAfter(data, ms) {
+  let timer;
+  return new Readable({
+    read() {
+      if (timer) return;
+      this.push(' ');
+      timer = setTimeout(() => {
+        this.push(JSON.stringify(data));
+        this.push(null);
+      }, ms);
+    },
+    destroy(error, callback) {
+      clearTimeout(timer);
+      callback(error);
+    },
+  });
+}
+
+test('providers: a second look has longer than a first look to finish its reply before it counts as a timeout', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await clip('deadline.mp4');
+  const fake = fakeAxios(({ url, config }) =>
+    url.includes('/generation')
+      ? recordOf(config, 0.01)
+      : { headers: { 'x-generation-id': 'gen-late' }, data: finishedAfter(good, 400) },
+  );
+  const { entries, meter } = ledger();
+  try {
+    await limited({ requestMs: 150, secondRequestMs: 3000, lookupAtMs: [10], lookupMs: 200 }, async () => {
+      const second = await analyze({ ...look, second: true }, signal, meter);
+      assert.equal(second.cues.length, 1, 'a reply that took 400 ms fits the second look’s limit');
+      const first = await analyze(look, signal, meter).catch((error) => error);
+      assert.equal(failureClass(first), 'transient');
+    });
+    assert.deepEqual(
+      entries.map((entry) => entry.error?.code ?? 'ok'),
+      ['ok', 'ETIMEDOUT', 'ETIMEDOUT'],
+      'the same reply is past a first look’s limit, and a timeout gets one more try only',
+    );
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: a close look OpenRouter never priced is booked near what close looks cost, about $0.06 for Road Runner’s 74.5 s section, not near its reserve', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const base = await clip('roadrunner.mp4');
+  /* Road Runner's section 2 ran from 88.96 to 163.44 s; its close-look clip lasts four times that. */
+  const seconds = 4 * (163.44 - 88.96);
+  const look = { ...base, seconds, brief: { ...brief, slowed: true } };
+  const fake = fakeAxios(({ url, config }) =>
+    url.includes('/generation')
+      ? httpError(config, 404, { error: { message: 'Generation not found' } })
+      : { headers: { 'x-generation-id': 'gen-rr' }, data: { error: { code: 400, message: 'Invalid video' } } },
+  );
+  const { entries, meter } = ledger();
+  try {
+    await limited({ lookupAtMs: [10], lookupMs: 100 }, async () => {
+      await analyze(look, signal, meter).catch(() => {});
+      await analyze({ ...look, second: true }, signal, meter).catch(() => {});
+    });
+    assert.equal(entries.length, 2, 'an error code that blames the request is not retried');
+    const [first, second] = entries;
+    assert.equal(first.costUSD, undefined);
+    assert.ok(first.reserve > 0.3, `the reserve it is no longer booked at: ${first.reserve}`);
+    assert.ok(first.expectedUSD >= 0.04 && first.expectedUSD <= 0.07, `looks like it really cost $0.048 to $0.051: ${first.expectedUSD}`);
+    assert.ok(Math.abs(first.expectedUSD - expectedOf(first.reserve, { seconds, maxTokens: 24000, reasoning: 8000 })) < 1e-9, `${first.expectedUSD}`);
+    assert.ok(second.reserve > 0.5, `a second look’s reserve: ${second.reserve}`);
+    assert.ok(
+      Math.abs(second.expectedUSD - expectedOf(second.reserve, { seconds, maxTokens: 48000, reasoning: 16000 })) < 1e-9,
+      `a second look is expected to reason about 16,000 tokens at high effort: ${second.expectedUSD}`,
+    );
+    assert.ok(second.expectedUSD > first.expectedUSD && second.expectedUSD < second.reserve / 5, `${second.expectedUSD} of ${second.reserve}`);
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: a cut-off reply its reasoning filled is asked again with the reasoning capped, not for fewer cues; one its answer filled is asked for fewer cues', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const cut = (reasoning, output) => ({
+    choices: [{ finish_reason: 'length', native_finish_reason: 'MAX_TOKENS', message: { content: '{"cues":[' } }],
+    usage: { cost: output * 3.75e-6, completion_tokens: output, completion_tokens_details: { reasoning_tokens: reasoning } },
+  });
+  const high = { effort: 'high' };
+  const budget = { max_tokens: 8000 };
+  const cases = [
+    { name: 'a second look whose high-effort reasoning filled its 48,000 tokens', second: true, slowed: true, replies: [cut(46500, 48000)], reasoning: [high, { max_tokens: 16000 }], shorter: false },
+    { name: 'a normal look whose medium reasoning filled its 12,000 tokens', replies: [cut(11200, 12000)], reasoning: [{ effort: 'medium' }, { max_tokens: 4000 }], shorter: false },
+    { name: 'the same cut-off, reported as an error inside the reply', second: true, slowed: true, replies: [{ error: { code: 400, message: 'max tokens reached', metadata: { error_type: 'max_tokens_exceeded' } }, usage: cut(47000, 48000).usage }], reasoning: [high, { max_tokens: 16000 }], shorter: false },
+    { name: 'a second look whose answer filled its room', second: true, slowed: true, replies: [cut(14000, 48000)], reasoning: [high, high], shorter: true },
+    { name: 'a close look, whose 8,000-token budget already leaves room', slowed: true, replies: [cut(7900, 24000)], reasoning: [budget, budget], shorter: true },
+    { name: 'a close look that reasoned past its budget, which a cap at 8,000 would not lower', slowed: true, replies: [cut(20000, 24000)], reasoning: [budget, budget], shorter: true },
+    { name: 'a second look cut off again after its reasoning was capped', second: true, slowed: true, replies: [cut(46500, 48000), cut(16000, 48000)], reasoning: [high, { max_tokens: 16000 }], shorter: false, fails: true },
+  ];
+  const video = (i) => `data:video/mp4;base64,${Buffer.from(`clip-${i}`).toString('base64')}`;
+  const asked = cases.map(() => []);
+  const fake = fakeAxios(({ url, config, body }) => {
+    if (url.includes('/generation')) return recordOf(config, 0.01);
+    const i = cases.findIndex((_item, k) => body.messages[0].content[0].video_url.url === video(k));
+    asked[i].push(body);
+    const reply = cases[i].replies[asked[i].length - 1] ?? good;
+    return { headers: { 'x-generation-id': `gen-cut-${i}-${asked[i].length}` }, data: reply };
+  });
+  try {
+    await Promise.all(
+      cases.map(async (item, i) => {
+        const file = join(scratch, `cutoff-${i}.mp4`);
+        await writeFile(file, Buffer.from(`clip-${i}`));
+        const log = [];
+        const look = {
+          file,
+          seconds: item.slowed ? 40 : 10,
+          brief: { ...brief, slowed: item.slowed },
+          state: null,
+          lines: [],
+          before: [],
+          second: item.second,
+          log: (line) => log.push(line),
+        };
+        const outcome = await analyze(look, signal, meter).catch((error) => error);
+        const bodies = asked[i];
+        if (item.fails) {
+          assert.equal(outcome.constructor.name, 'CutOff', item.name);
+          assert.equal(failureClass(outcome), 'input', `${item.name}: the engine keeps the first look`);
+        } else assert.equal(outcome.cues.length, 1, item.name);
+        assert.equal(bodies.length, 2, `${item.name}: one more try only`);
+        assert.deepEqual(bodies.map((body) => body.reasoning), item.reasoning, item.name);
+        assert.equal(bodies[1].max_tokens, bodies[0].max_tokens, `${item.name}: the same room`);
+        assert.equal(/half as many cues/.test(bodies[1].messages[0].content[1].text), item.shorter, item.name);
+        assert.equal(log.some((line) => line.includes('reasoning capped at')), !item.shorter, `${item.name}: ${log.join('\n')}`);
+      }),
+    );
   } finally {
     fake.restore();
   }

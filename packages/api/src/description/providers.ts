@@ -215,8 +215,13 @@ async function fetchVoices(): Promise<VoiceCatalog> {
 
 /** The video model declined a clip (a safety filter); the same clip will be declined again. */
 export class Refusal extends Error {}
-/** The model's reply ran out of room; one more try asks for fewer, shorter cues. */
-class CutOff extends SyntaxError {}
+/**
+ * The model's reply ran out of room; one more try asks for fewer, shorter cues, or, when its
+ * reasoning used up the room (`thinking`), caps the reasoning instead.
+ */
+class CutOff extends SyntaxError {
+  thinking?: boolean;
+}
 /** The voice service answered, but not with audio; worth one more try. */
 class Unplayable extends Error {}
 /** A failure whose message is already a plain sentence for Kade (the provider error is its cause). */
@@ -631,6 +636,11 @@ export type Look = {
   before: Line[];
   /** Server log line per call: tier, provider, finish reason, tokens and cost (no secrets). */
   log?: (message: string) => void;
+  /**
+   * A section's second look (the engine's re-look after a look that skipped its thinking or
+   * crammed its end): it thinks at high effort with room for 48,000 tokens (`planFor`).
+   */
+  second?: boolean;
 };
 
 const declined: ReadonlySet<string> = new Set([
@@ -644,41 +654,154 @@ const declined: ReadonlySet<string> = new Set([
 
 type Choice = z.infer<typeof modelSchema>['choices'][number];
 
-/** Output tokens one look may use; a slowed close look gets more. */
-const lookTokens = (brief: Brief): number => (brief.slowed ? 24000 : 12000);
+/** How a look asks the model to think (OpenRouter's `reasoning`): an effort, or a token budget. */
+type Reasoning = { effort: 'low' | 'medium' | 'high' } | { max_tokens: number };
+/**
+ * How one look asks: how it thinks, how many output tokens (reasoning included) it may write, how
+ * many reasoning tokens it is expected to write, and how long the request may take.
+ */
+type LookPlan = {
+  reasoning: Reasoning;
+  maxTokens: number;
+  reasoningTokens: number;
+  requestMs: number;
+};
+/**
+ * A close look's thinking budget (`reasoning.max_tokens`), and its expected reasoning. In the Road
+ * Runner close-look A/B of Sep 26 2026 (22 paid looks on google/gemini-3.8-flash) this budget
+ * reasoned 4,703 to 7,248 tokens in 6 of 7 finished looks, all in step, for $0.037 to $0.057 a
+ * look, the cheapest setting; the seventh (1,786, AI Studio, $0.019) stretched like production's
+ * medium looks and is caught by the engine's `reasoningFloor`. Effort medium ranged from 869 to
+ * 18,954 tokens, and every look that stretched the timeline 1.6 times had reasoned 1,125 to 1,786.
+ */
+const closeReasoningTokens = 8000;
+/**
+ * Room for a second look, which thinks at high effort. In the same A/B, high effort at 24,000
+ * tokens reasoned 21,383 and 23,040 tokens in 2 of 3 looks and was cut off (MAX_TOKENS) with no
+ * usable reply; at 48,000 both looks reasoned 12,897 to 18,260 and were in step, for $0.086 to
+ * $0.103.
+ */
+const secondLookTokens = 48000;
+/**
+ * Reasoning tokens a look asked by effort is expected to write, from the same A/B: high 9,947 to
+ * 23,040 (mean about 15,500 over seven looks), medium 869 to 18,954 (mean about 5,800 over seven).
+ * Low was not measured: about a fifth of its 12,000 tokens, OpenRouter's share for low effort.
+ */
+const effortReasoningTokens = { low: 2400, medium: 6000, high: 16000 };
+/**
+ * How a look asks. A survey (the whole-film first look) thinks at low effort; a close look (slowed)
+ * gets the `closeReasoningTokens` budget in 24,000 output tokens; any other look thinks at medium
+ * effort in 12,000. A second look (`Look.second`) thinks at high effort in `secondLookTokens`, and,
+ * since Vertex writes about 140 tokens a second (a 48,000-token reply takes about 340 s), gets
+ * `visionLimits.secondRequestMs` instead of `requestMs`.
+ */
+function planFor(look: Look): LookPlan {
+  const { survey, slowed } = look.brief;
+  if (look.second && !survey)
+    return {
+      reasoning: { effort: 'high' },
+      maxTokens: secondLookTokens,
+      reasoningTokens: effortReasoningTokens.high,
+      requestMs: visionLimits.secondRequestMs,
+    };
+  const maxTokens = slowed ? 24000 : 12000;
+  const requestMs = visionLimits.requestMs;
+  if (survey)
+    return {
+      reasoning: { effort: 'low' },
+      maxTokens,
+      reasoningTokens: effortReasoningTokens.low,
+      requestMs,
+    };
+  if (slowed)
+    return {
+      reasoning: { max_tokens: closeReasoningTokens },
+      maxTokens,
+      reasoningTokens: closeReasoningTokens,
+      requestMs,
+    };
+  return {
+    reasoning: { effort: 'medium' },
+    maxTokens,
+    reasoningTokens: effortReasoningTokens.medium,
+    requestMs,
+  };
+}
 /**
  * The most OpenRouter may charge for a look, in USD per million tokens (sent as `max_price`). The
- * reserve and a failed call's expected cost are priced at it, never below the real price per token.
+ * reserve is priced at it, never below the real price per token.
  */
 const visionPrice = { prompt: 1.5, completion: 7.5 };
+/**
+ * google/gemini-3.8-flash's standard list price, in USD per million tokens: what a look OpenRouter
+ * never priced is expected to have cost (the `:floor` flex tier is about half of it).
+ */
+const listPrice = { prompt: 0.75, completion: 3.75 };
+/**
+ * Prompt tokens per second of the clip as sent (a close look's clip is four times the section).
+ * Road Runner's looks of Sep 26 2026 had 34,029 prompt tokens (34,644 on Vertex) for an 89 s
+ * section at 4x (356 clip seconds, about 96 a second in all) with a 16,614-character prompt
+ * text, and 30,043 for the next 74.5 s section (298 clip seconds, 18,132 characters). 85 a second
+ * of clip plus the text at 4 characters a token gives 34,400 and 29,856, and within 1.1% for the
+ * two half-section looks (18,550 and 20,326 against 18,757 and 20,488).
+ */
+const clipTokensPerSecond = 85;
+/**
+ * Output tokens a look writes besides its reasoning: the Sep 26 A/B's 17 finished whole-section
+ * looks wrote 1,228 to 3,271 (mean about 2,460).
+ */
+const answerTokens = 3000;
 /** What sending the clip and the prompt can cost: about 400 tokens a second of video, 3 characters a token. */
 const promptUSD = (seconds: number, prompt: string): number =>
   ((seconds * 400 + prompt.length / 3) * visionPrice.prompt) / 1e6;
 /** The most one look call can cost, which the meter holds while the call is out. */
 const reserveFor = (seconds: number, prompt: string, maxTokens: number): number =>
   promptUSD(seconds, prompt) + (maxTokens * visionPrice.completion) / 1e6 + 0.01;
-/** Output tokens, reasoning included, of a typical look: a failed call is expected to have written this many. */
-const typicalReplyTokens = 6000;
 /**
- * What a look call is expected to have cost when OpenRouter never said: its own clip and prompt
- * and a typical reply, never more than its reserve.
+ * What a look call is expected to have cost when OpenRouter never said, at the list price: its
+ * clip (`clipTokensPerSecond`) and prompt text, and the reasoning it was expected to write plus
+ * `answerTokens`, never more than its reserve. A close look of Road Runner's 74.5 s second section
+ * comes to about $0.064 (it really cost $0.048 to $0.051 with this budget), its second look to
+ * about $0.094.
  */
-const expectedFor = (seconds: number, prompt: string, reserve: number): number =>
+const expectedFor = (
+  seconds: number,
+  prompt: string,
+  reasoningTokens: number,
+  reserve: number,
+): number =>
   Math.min(
     reserve,
-    promptUSD(seconds, prompt) + (typicalReplyTokens * visionPrice.completion) / 1e6,
+    ((seconds * clipTokensPerSecond + prompt.length / 4) * listPrice.prompt +
+      (reasoningTokens + answerTokens) * listPrice.completion) /
+      1e6,
   );
+/**
+ * Whether a cut-off reply's reasoning, not its answer, used up its room: it reasoned at least half
+ * of what it wrote. Asking that look for fewer cues would not make room.
+ */
+const filledByReasoning = (reasoning: unknown, output: unknown): boolean =>
+  typeof reasoning === 'number' &&
+  typeof output === 'number' &&
+  output > 0 &&
+  reasoning >= output / 2;
 /** The largest reply a look may send (4 MiB). */
 const replyBytes = 4 * 1024 ** 2;
 const chatURL = 'https://openrouter.ai/api/v1/chat/completions';
 /**
  * How long one look request may take from sending to the last byte of its reply (axios's own
- * timeout only notices silence, and OpenRouter keeps a slow reply alive with spaces), and when to
- * ask OpenRouter what a failed request cost: milliseconds after the failure, all within `lookupMs`.
- * Tests shorten them.
+ * timeout only notices silence, and OpenRouter keeps a slow reply alive with spaces), a second
+ * look's longer limit (`planFor`), and when to ask OpenRouter what a failed request cost:
+ * milliseconds after the failure, all within `lookupMs`. Tests shorten them.
  */
-export const visionLimits: { requestMs: number; lookupAtMs: number[]; lookupMs: number } = {
+export const visionLimits: {
+  requestMs: number;
+  secondRequestMs: number;
+  lookupAtMs: number[];
+  lookupMs: number;
+} = {
   requestMs: 300000,
+  secondRequestMs: 420000,
   lookupAtMs: [5000, 15000, 40000],
   lookupMs: 60000,
 };
@@ -812,6 +935,8 @@ function replyData(text: string): z.infer<typeof modelSchema> {
       cost?: unknown;
       is_byok?: unknown;
       cost_details?: { upstream_inference_cost?: unknown } | null;
+      completion_tokens?: unknown;
+      completion_tokens_details?: { reasoning_tokens?: unknown } | null;
     } | null;
   };
   const choice = Array.isArray(reply.choices)
@@ -829,6 +954,11 @@ function replyData(text: string): z.infer<typeof modelSchema> {
           ? new Refusal(`The video model declined to describe this scene: ${message}`)
           : new Upstream(message, Number.isInteger(code) && code >= 400 && code < 600 ? code : undefined)
     ) as Error & FailedCall;
+    if (failed instanceof CutOff)
+      failed.thinking = filledByReasoning(
+        reply.usage?.completion_tokens_details?.reasoning_tokens,
+        reply.usage?.completion_tokens,
+      );
     const cost = reply.usage?.cost;
     const upstream = reply.usage?.cost_details?.upstream_inference_cost;
     if (typeof cost === 'number' && Number.isFinite(cost) && cost >= 0)
@@ -845,14 +975,15 @@ function replyData(text: string): z.infer<typeof modelSchema> {
 /**
  * Sends one look request and reads its reply as it streams in, so OpenRouter's generation id (in
  * the headers) is known even when the reply never finishes. The whole request, headers to last
- * byte, must finish within `visionLimits.requestMs`; missing that is a timeout like axios's own.
- * A refused request's body is read so the error still carries it.
+ * byte, must finish within `requestMs` (the look's `planFor`); missing that is a timeout like
+ * axios's own. A refused request's body is read so the error still carries it.
  */
 async function askModel(
   body: object,
   key: string,
   signal: AbortSignal,
   heard: (generation: string) => void,
+  requestMs: number,
 ): Promise<z.infer<typeof modelSchema>> {
   const request = new AbortController();
   const stop = () => request.abort(signal.reason);
@@ -862,7 +993,7 @@ async function askModel(
   const deadline = setTimeout(() => {
     late = true;
     request.abort();
-  }, visionLimits.requestMs);
+  }, requestMs);
   let config: InternalAxiosRequestConfig | undefined;
   const note = (headers: unknown) => {
     const generation = generationOf(headers);
@@ -872,7 +1003,7 @@ async function askModel(
     const response = await axios.post(chatURL, body, {
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       signal: request.signal,
-      timeout: visionLimits.requestMs,
+      timeout: requestMs,
       responseType: 'stream',
       maxRedirects: 0,
       maxBodyLength: 60 * 1024 ** 2,
@@ -899,7 +1030,7 @@ async function askModel(
     }
     if (late && !signal.aborted && !refused)
       throw new axios.AxiosError(
-        `The video model did not finish its reply within ${Math.round(visionLimits.requestMs / 1000)} s.`,
+        `The video model did not finish its reply within ${Math.round(requestMs / 1000)} s.`,
         'ETIMEDOUT',
         config,
       );
@@ -1040,23 +1171,31 @@ function replyOf(choice: Choice | undefined, look: Look): Analysis {
  * Asks the video model for one clip's description. Retries rate limits, server errors and
  * unreadable replies with growing waits (at most once after a timeout, which may be billed,
  * including a timeout the provider reported inside its reply); a refusal or a bad request is not
- * retried. The known cost is settled even when the reply turns out unusable. A request that fails
- * in a way that may be billed, or a reply that did not report its cost, is priced before the meter
- * settles it: by OpenRouter's record of its generation when one appears within a minute, otherwise
- * at what such a look is expected to cost at this run's rate (`costed`, `unreported`), never at
- * its whole reserve.
+ * retried. A reply cut off at its length is asked once more for about half as many cues, or, when
+ * its reasoning used up the room (`filledByReasoning`), with its reasoning capped at a third of its
+ * output tokens instead (16,000 for a second look, 4,000 for a normal look; a close look's own
+ * 8,000 budget is already that low), since fewer cues would not make room. The
+ * known cost is settled even when the reply turns out unusable. A request that fails in a way that
+ * may be billed, or a reply that did not report its cost, is priced before the meter settles it:
+ * by OpenRouter's record of its generation when one appears within a minute, otherwise at what
+ * such a look is expected to cost (`costed`, `unreported`, `expectedFor`), never at its whole
+ * reserve. How the look thinks, its output tokens (and so its reserve) and its deadline come from
+ * `planFor`.
  */
 export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Promise<Analysis> {
   const key = process.env.OPENROUTER_KEY;
   if (!key) throw new Plain('Video understanding is not configured.');
   const prompt = analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before);
   const video = (await readFile(look.file)).toString('base64');
-  const maxTokens = lookTokens(look.brief);
-  const reserve = reserveFor(look.seconds, prompt, maxTokens);
+  const plan = planFor(look);
+  const reserve = reserveFor(look.seconds, prompt, plan.maxTokens);
+  /** How this try thinks, and what it is expected to reason: the plan's, until a retry caps it. */
+  let reasoning: Reasoning = plan.reasoning;
+  let reasoningTokens = plan.reasoningTokens;
   const pricing: Pricing = {
     key,
     signal,
-    expectedUSD: () => expectedFor(look.seconds, prompt, reserve),
+    expectedUSD: () => expectedFor(look.seconds, prompt, reasoningTokens, reserve),
     log: look.log,
   };
   const model = visionModel();
@@ -1079,8 +1218,20 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
     async () => {
       const first = tries++ === 0;
       const loose = previous instanceof SyntaxError && !(previous instanceof CutOff);
+      const cut = previous instanceof CutOff ? previous : undefined;
+      /** A cap on the reasoning, when a reply's reasoning used up its room and a cap lowers it. */
+      const budget = 'max_tokens' in plan.reasoning ? plan.reasoning.max_tokens : Infinity;
+      const cap = Math.round(plan.maxTokens / 3);
+      const capped = !!cut?.thinking && cap < budget;
+      if (capped) {
+        reasoning = { max_tokens: cap };
+        reasoningTokens = cap;
+        look.log?.(
+          `vision: the reasoning used up the cut-off reply's room; asking again with reasoning capped at ${cap} tokens`,
+        );
+      }
       const shorter =
-        previous instanceof CutOff
+        cut && !capped
           ? '\n\nYour last reply was too long and was cut off. Give about half as many cues this time, and keep every text short.'
           : '';
       let failure: unknown;
@@ -1094,8 +1245,8 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
             data = await askModel(
               {
                 model: asked,
-                max_tokens: maxTokens,
-                reasoning: { effort: look.brief.survey ? 'low' : 'medium' },
+                max_tokens: plan.maxTokens,
+                reasoning,
                 provider: { max_price: { ...visionPrice } },
                 messages: [
                   {
@@ -1112,6 +1263,7 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
               key,
               signal,
               (id) => (generation = id),
+              plan.requestMs,
             );
           } catch (error) {
             throw await costed(error, generation, pricing);
@@ -1135,6 +1287,11 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
           try {
             result = replyOf(choice, look);
           } catch (error) {
+            if (error instanceof CutOff)
+              error.thinking = filledByReasoning(
+                usage?.completion_tokens_details?.reasoning_tokens,
+                output,
+              );
             failure = error;
           }
           return priced;

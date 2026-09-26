@@ -378,15 +378,16 @@ const voiceRetryMilliseconds = 1500;
 /** Narration length per UTF-8 byte at 1x before this job's own clips have been measured. */
 const seedSecondsPerByte = 0.0625;
 /**
- * A look (normal or close) that reasoned fewer tokens than this is looked at once more. Evidence,
- * the Pluto A/B of Sep 25 2026 (11 paid looks at the same cartoon on google/gemini-3.8-flash,
- * medium effort): the two looks that came back with 0 reasoning tokens stretched like the
- * production look (mean error 7-10 s, max 19-21 s, the ending never reached); every look with
- * 3,282 or more was accurate (mean 0.08-0.27 s; one at 5,699 still ran three cues 6.5-7.5 s late
- * for a while), and one at 830 ran three cues 6.5-8.5 s late. The backend and the time strip did
- * not track the drift. The floor sits between 830 and 3,282, from a small sample.
+ * A look (normal or close) that reasoned fewer tokens than this is looked at once more. Evidence:
+ * the Road Runner close-look A/B of Sep 26 2026 (22 paid looks on google/gemini-3.8-flash): the
+ * three looks that stretched the timeline 1.6 times (the ending never reached) reasoned 1,125 to
+ * 1,786 tokens, and the 1,786 one passed the old floor of 1,500; every finished look with 4,703 or
+ * more was in step. The Pluto A/B of Sep 25 (11 looks, medium effort) agreed: 0 and 830 tokens
+ * drifted, 3,282 or more were accurate. A look under the floor that was in step anyway (one
+ * Vertex look at 1,452) gets a second look it did not need: the price of catching every stretched
+ * one. The second look thinks at high effort (`Look.second`).
  */
-export const reasoningFloor = 1500;
+export const reasoningFloor = 3000;
 /**
  * A second look, and each retry of it, starts only while what is left of her approval covers this
  * many times what the first look really cost (the second may reason far more than the first did),
@@ -798,7 +799,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   /**
    * Looks at a section once more when its first look reasoned under `reasoningFloor` tokens or
    * showed the crammed-end sign, and never when the provider did not report reasoning. The second
-   * look, and each retry of it, starts only while what is left of the approved maximum covers
+   * look thinks at high effort with room for 48,000 tokens and 420 s (`Look.second`), so its
+   * reserve is larger (about $0.56 for a 75 s close look), but it is weighed on real cost all the
+   * same: it, and each retry of it, starts only while what is left of the approved maximum covers
    * `relookMargin` times what the first look really cost plus what the sections still to look at
    * are expected to cost (their share of the quote, or the mean first look so far when that is
    * more). It keeps the second look when that one reasoned at least the floor, otherwise whichever
@@ -872,7 +875,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     };
     let second: Analysis;
     try {
-      second = finish(await providers.analyze(input, signal, gated), 'second ');
+      second = finish(
+        await providers.analyze({ ...input, second: true }, signal, gated),
+        'second ',
+      );
     } catch (error) {
       if (signal.aborted) throw error;
       if (stoppedAt !== undefined) {

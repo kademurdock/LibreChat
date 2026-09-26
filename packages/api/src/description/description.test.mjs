@@ -940,7 +940,7 @@ const spokenLooks = (result) =>
   result.report.descriptions.map((item) => item.text.match(/^Look (\d)/)?.[1]).filter(Boolean);
 
 test('re-look: a look that skipped its thinking is looked at once more, both are charged, and the one that thought is kept', async () => {
-  assert.equal(reasoningFloor, 1500);
+  assert.equal(reasoningFloor, 3000);
   const f = await fixture('relook-thin', 9);
   const { backend, looks } = thinking(f, [0, 5699, 7000]);
   const { charges, meter } = ledger();
@@ -950,6 +950,7 @@ test('re-look: a look that skipped its thinking is looked at once more, both are
   assert.equal(looks.length, 2, 'one second look, never a third');
   assert.equal(looks[1].file, looks[0].file, 'the same clip');
   assert.deepEqual(looks[1].brief, looks[0].brief, 'with the same brief');
+  assert.deepEqual(looks.map((look) => look.second), [undefined, true], 'the second look is asked as one (high effort, room for 48,000 tokens)');
   assert.deepEqual(
     charges.map((item) => [item.kind, item.costUSD]),
     [['vision', 0.029], ['vision', 0.052]],
@@ -981,7 +982,7 @@ test('re-look: a look that skipped its thinking is looked at once more, both are
 test('re-look: a look that thought enough, or whose provider does not say, is not looked at again', async () => {
   for (const [name, counts] of [
     ['relook-enough', [4945]],
-    ['relook-floor', [1500]],
+    ['relook-floor', [3000]],
     ['relook-unknown', [undefined]],
   ]) {
     const f = await fixture(name, 9);
@@ -995,6 +996,23 @@ test('re-look: a look that thought enough, or whose provider does not say, is no
     assert.equal(kept.records[0].analysis.relook, undefined, name);
     assert.ok(!log.some((line) => /once more|second look/.test(line)), `${name}: ${log.join('\n')}`);
   }
+});
+
+test('re-look: a look that reasoned 1,786 tokens, over the old floor of 1,500 but as slow as the Road Runner looks that ran 1.6 times long, is looked at again', async () => {
+  const f = await fixture('relook-1786', 9);
+  const { backend, looks } = thinking(f, [1786, 12897]);
+  const { charges, meter } = ledger();
+  const { keeper, kept } = keeperFor(undefined);
+  const log = [];
+  await run(f, [], [], { providers: backend, keeper, log, meter });
+  assert.deepEqual(looks.map((look) => look.second), [undefined, true]);
+  assert.equal(charges.length, 2);
+  const record = kept.records[0].analysis;
+  assert.deepEqual(
+    { reasons: record.relook.reasons, reasoning: record.relook.reasoning, kept: record.relook.kept },
+    { reasons: ['reasoning'], reasoning: [1786, 12897], kept: 2 },
+  );
+  assert.ok(log.includes('Section 1 of 1: the look skipped its thinking (1786 reasoning tokens); looking once more.'), log.join('\n'));
 });
 
 test('re-look: of two thin looks the one that reasoned more is kept, the first on a tie', async () => {
@@ -1119,8 +1137,10 @@ test('re-look: a retry of the second look that no longer fits is never sent, and
   const previous = { adapter: axios.defaults.adapter, key: process.env.OPENROUTER_KEY };
   process.env.OPENROUTER_KEY = 'test-key';
   const replies = [];
+  const bodies = [];
   axios.defaults.adapter = async (config) => {
     replies.push(config.url);
+    bodies.push(JSON.parse(config.data));
     const n = replies.length;
     const content =
       n === 1
@@ -1149,6 +1169,15 @@ test('re-look: a retry of the second look that no longer fits is never sent, and
     const result = await run(f, [], [], { providers: backend, keeper, log, meter: her.meter, approvedRoom: her.approvedRoom });
     assert.equal(replies.length, 2, 'the first look, and one unreadable answer to the second; its retry was never sent');
     assert.deepEqual(her.charges.map((item) => item.costUSD), [0.029, 0.05], 'nothing more was charged');
+    assert.deepEqual(
+      bodies.map((body) => [body.reasoning, body.max_tokens]),
+      [[{ effort: 'medium' }, 12000], [{ effort: 'high' }, 48000]],
+      'the second look thinks at high effort with room for 48,000 tokens',
+    );
+    assert.ok(
+      her.charges[1].reserve > 0.13,
+      `its reserve ($${her.charges[1].reserve.toFixed(3)}) is more than her whole approval, yet it was sent: it is weighed on the first look's real cost`,
+    );
     assert.ok(
       log.includes("Section 1 of 1: the second look stopped before a call that would pass the approved maximum ($0.087 needed: 3 times the first look's $0.029; $0.051 left), so the first is kept."),
       log.join('\n'),

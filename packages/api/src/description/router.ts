@@ -451,7 +451,14 @@ const money = (usd: number): string => `$${usd.toFixed(2)}`;
 const retain = (job: Pick<Job, 'expiresAt'>, days: number): Date =>
   new Date(Math.max(new Date(job.expiresAt).getTime(), Date.now() + days * day));
 
-/** Measured provider costs per minute of video (Sep 2026 samples, rounded up), for estimates only. */
+/**
+ * Measured provider costs per minute of video (Sep 2026 samples, rounded up), for estimates only.
+ * A close look is quoted at vision plus closeLook, $0.046 a minute. The Road Runner A/B of Sep 26
+ * 2026 measured about $0.035 a minute for a first close look within its 8,000-token thinking
+ * budget, and about $0.064 a minute for each second look at high effort, which 1 in 7 to 1 in 3
+ * sections needed: about $0.045 to $0.055 a minute in all. Her approval (`approvalRule`) leaves
+ * room above the quote.
+ */
 const rates = { vision: 0.021, closeLook: 0.025, firstLook: 0.021 };
 /** Fixed overhead per run: prompts and joins for a description run, a re-voice, a correction. */
 const overhead = { describe: 0.03, revoice: 0, correction: 0 };
