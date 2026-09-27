@@ -224,7 +224,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <label class="field" for="auAuthor">Who made it (optional)</label><input type="text" id="auAuthor" placeholder="Author, narrator, studio, or station">
       <label class="field" for="auYear">Year (optional)</label><input type="text" id="auYear" placeholder="1989">
       <label class="field" for="auCategory">Shelf</label>
-      <select id="auCategory"><option value="other">Audio or video</option><option value="audiobook">Audiobook</option><option value="movie">Movie</option><option value="cassette">Cassette</option><option value="radio">Radio</option><option value="commercials">Commercials</option><option value="music">Music</option><option value="other">Other</option></select>
+      <select id="auCategory"><option value="other">Audio or video</option><option value="audiobook">Audiobook</option><option value="movie">Movie or described audio</option><option value="cassette">Cassette</option><option value="radio">Radio</option><option value="commercials">Commercials</option><option value="music">Music</option><option value="other">Other</option></select>
       <label class="field" for="auDesc">About it (optional)</label><textarea id="auDesc" rows="3" placeholder="What it is, where it came from, anything a listener should know."></textarea>
       <label class="field"><input type="checkbox" id="auPrivate"> Keep this upload private</label><label class="field"><input type="checkbox" id="auGrownUps"> Grown-ups only</label>
       <button class="act primary" id="auStartBtn" type="button">Start this donation</button>
@@ -338,7 +338,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <label class="field" for="edAuthor">Who made it</label><input type="text" id="edAuthor">
       <label class="field" for="edYear">Year</label><input type="text" id="edYear">
       <label class="field" for="edCategory">Shelf</label>
-      <select id="edCategory"><option value="other">Audio or video</option><option value="audiobook">Audiobook</option><option value="movie">Movie</option><option value="tv">TV</option><option value="commercials">Commercials</option><option value="psa">PSA</option><option value="vhs">VHS / home video</option><option value="cassette">Cassette</option><option value="radio">Radio</option><option value="music">Music</option><option value="other">Other</option></select>
+      <select id="edCategory"><option value="other">Audio or video</option><option value="audiobook">Audiobook</option><option value="movie">Movie or described audio</option><option value="tv">TV</option><option value="commercials">Commercials</option><option value="psa">PSA</option><option value="vhs">VHS / home video</option><option value="cassette">Cassette</option><option value="radio">Radio</option><option value="music">Music</option><option value="other">Other</option></select>
       <label class="field" for="edPath">Folder in the archive (blank = not in the archive)</label><input type="text" id="edPath" placeholder="Video/Commercials/Coffee & Tea">
       <label class="field" for="edDesc">About it</label><textarea id="edDesc" rows="2"></textarea>
       <button class="act primary" id="edSaveBtn" type="button">Save changes</button>
@@ -371,7 +371,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   // While the reading view (a modal dialog) is open, #live is inert; the reader says it instead.
   function say(t){ if (libraryReader && libraryReader.say(t)) return; live.textContent = ''; setTimeout(function(){ live.textContent = t; }, 30); }
   function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-  function catName(c){ return {book:'Book', audiobook:'Audiobook', movie:'Movie', cassette:'Cassette', radio:'Radio', commercials:'Commercials', music:'Music', other:'Other'}[c] || c; }
+  function catName(c){ return {book:'Book', audiobook:'Audiobook', movie:'Movie', cassette:'Cassette', radio:'Radio', commercials:'Commercials', music:'Music', tv:'TV', vhs:'VHS', psa:'Public service announcement', other:'Other'}[c] || c; }
+  /* Part 296, her Sep 27 word: a described MP3 said "Movie" because the word came from the shelf's
+     category. The server now sends the one word for what an item is ("Described audio episode",
+     "Movie trailer"); an older answer without it falls back to the category. */
+  function typeWord(b){ return (b && b.typeLabel) || (b && b.kind !== 'text' ? catName(b.category) : 'Book'); }
   async function api(path, opts){
     opts = opts || {};
     var h = opts.headers || {}; h['Authorization'] = 'Bearer ' + token;
@@ -387,7 +391,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function canManage(b){ return b && (librarian || (me && b.owner === me)); }
   function bookLi(b, where){
     var li = document.createElement('li');
-    var kind = b.kind !== 'text' ? catName(b.category) : 'Book';
+    var kind = typeWord(b);
     var by = b.author ? ' by ' + b.author : '';
     var prog = b.progress && b.progress.where ? (b.kind !== 'text' ? ' · Part ' : ' · Chapter ') + b.progress.where : '';
     var donor = where === 'library' || where === 'borrowed' ? ' · Donated by ' + esc(b.ownerName || 'someone') : '';
@@ -568,9 +572,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       var crumbs = $('crumbs'); crumbs.innerHTML = '';
       var home = document.createElement('button'); home.type = 'button'; home.textContent = 'Library'; home.onclick = function(){ loadArchive('', 0); }; crumbs.appendChild(home);
       var parts = archivePath ? archivePath.split('/') : [];
+      // Part 296: each shelf reads under its display name ("Described audio TV"); it still opens its real path
+      var named = j.crumbs && j.crumbs.length === parts.length ? j.crumbs : null;
       parts.forEach(function(seg, i){
         var sep = document.createElement('span'); sep.textContent = ' › '; sep.setAttribute('aria-hidden', 'true'); crumbs.appendChild(sep);
-        var b = document.createElement('button'); b.type = 'button'; b.textContent = seg; var target = parts.slice(0, i + 1).join('/');
+        var b = document.createElement('button'); b.type = 'button'; b.textContent = named ? named[i].name : seg; var target = parts.slice(0, i + 1).join('/');
         if (i === parts.length - 1) { b.setAttribute('aria-current', 'location'); }
         b.onclick = function(){ loadArchive(target, 0); }; crumbs.appendChild(b);
       });
@@ -693,7 +699,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       var ol = $('collItems'); ol.innerHTML = '';
       c.items.forEach(function(it, i){
         var li = document.createElement('li');
-        li.innerHTML = '<span class="t book"><strong>' + (i + 1) + '. ' + esc(it.title) + '</strong><span class="meta">' + esc((it.book.author ? it.book.author + ' · ' : '') + catName(it.book.kind === 'text' ? 'book' : it.book.category) + (it.seconds ? ' · ' + clock(it.seconds) : '')) + '</span></span>';
+        li.innerHTML = '<span class="t book"><strong>' + (i + 1) + '. ' + esc(it.title) + '</strong><span class="meta">' + esc((it.book.author ? it.book.author + ' · ' : '') + typeWord(it.book) + (it.seconds ? ' · ' + clock(it.seconds) : '')) + '</span></span>';
         var play = document.createElement('button'); play.className = 'act'; play.type = 'button'; play.textContent = 'Play'; play.setAttribute('aria-label', 'Play ' + it.title);
         play.onclick = function(){ queue = c.items.slice(i + 1).map(function(x){ return x.book.id; }); location.search = '?book=' + it.book.id + '&track=' + it.track + '&q=' + encodeURIComponent(queue.join(',')); };
         li.appendChild(play);
@@ -1429,7 +1435,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     $('askLibrarian').href = librarianChatUrl + '&prompt=' + encodeURIComponent('Tell me about the Library item with catalog ID ' + book.id + '.');
     var bits = [];
     if (book.author) bits.push('by ' + book.author);
-    if (book.kind !== 'text') bits.push(catName(book.category));
+    if (book.kind !== 'text') bits.push(typeWord(book));
     if (book.listen) bits.push(book.listen);
     if (book.ownerName && !book.mine) bits.push('donated by ' + book.ownerName);
     $('bookMeta').textContent = bits.join(' · ');

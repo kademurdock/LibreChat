@@ -399,7 +399,7 @@ test('GET /recent: the newest shared items; a seat without the family library ge
 });
 
 test("an item says whether it is the library owner's, so a row need not end with her name", () => {
-  const c = { libraryPath: (b) => b.path || '', libraryCategory: () => 'other', process: { env: {} } };
+  const c = { shelfTree: T, libraryPath: (b) => b.path || '', libraryCategory: () => 'other', process: { env: {} } };
   vm.runInNewContext(slice('function summary(book, progress)', '/* ── the shelf ──'), c);
   const kade = c.summary({ _id: 'a', owner: '6a3cba4d0b0afa92194e42f7', ownerName: 'kademurdock', title: 'Meeks ad' }, null);
   const amber = c.summary({ _id: 'b', owner: '6a5fc5fa351af41332734161', ownerName: 'Amber', title: 'A book' }, null);
@@ -408,4 +408,86 @@ test("an item says whether it is the library owner's, so a row need not end with
   assert.equal(kade.ownerName, 'kademurdock', 'the stored name is still sent, for older app builds');
   c.process.env.KADE_OWNER_USER_ID = '6a5fc5fa351af41332734161';
   assert.equal(c.summary({ _id: 'b', owner: '6a5fc5fa351af41332734161' }, null).fromLibraryOwner, true);
+});
+
+/* ── Part 296, her Sep 27 word: the described MP3 shelf reads as described audio (display only) ── */
+test('the described MP3 shelf and its Movies and TV shelves read under display names; paths stay real', () => {
+  const tree = T.buildTree(rows({
+    'Audio/Described Movies & TV/Movies/A': 30,
+    'Audio/Described Movies & TV/Movies/B': 25,
+    'Audio/Described Movies & TV/TV/Family guy/Family Guy Season 9 not described': 18,
+    'Audio/Described Movies & TV/TV/Bob\'s burgers/Season 1': 25,
+    'Audio/Described Movies & TV/Described by Kade-AI': 2,
+    'Videos/Movies & Studios/Trailers & Previews/1990s': 30,
+    'Videos/Movies & Studios/1980s': 30,
+    'Videos/TV Shows/ALF/1980s': 30,
+    'Videos/TV Shows/Big/1990s': 30,
+  }));
+  const described = byId(tree, 'Audio/Described Movies & TV');
+  assert.equal(described.name, 'Described audio movies and TV');
+  assert.equal(described.path, 'Audio/Described Movies & TV', 'the real shelf is what opens');
+  assert.deepEqual(names(described), ['Described audio movies', 'Described audio TV', 'Described by Kade-AI']);
+  assert.deepEqual(described.children.map((k) => k.path), ['Audio/Described Movies & TV/Movies', 'Audio/Described Movies & TV/TV', 'Audio/Described Movies & TV/Described by Kade-AI']);
+  assert.deepEqual(names(byId(tree, 'Audio/Described Movies & TV/TV')), ["Bob's burgers, Season 1", 'Family guy'], 'her own folders keep their own names');
+  const studios = byId(tree, 'Videos/Movies & Studios');
+  assert.equal(studios.name, 'Movie trailers and studio clips');
+  assert.deepEqual(names(studios), ['1980s', 'Trailers & Previews, 1990s']);
+  assert.equal(byId(tree, 'Videos/TV Shows').name, 'TV Shows');
+  assert.equal(tree.roots[1].name, 'Audio');
+});
+
+test('a chain through the described shelf reads the deeper display name, never "movies and TV" over TV alone', () => {
+  // a seat whose only described items are TV: the row opens TV, so it must not say "movies and TV"
+  const onlyTv = T.buildTree(rows({ 'Audio/Described Movies & TV/TV/Family guy': 25, 'Audio/Described Movies & TV/TV/Empire': 25 }));
+  const row = onlyTv.roots[1].children[0];
+  assert.equal(row.path, 'Audio/Described Movies & TV/TV');
+  assert.equal(row.name, 'Described audio TV');
+  // the chain carries on below it in her own words
+  const oneShow = T.buildTree(rows({ 'Audio/Described Movies & TV/TV/Family guy/Season 12': 25, 'Audio/Described Movies & TV/TV/Family guy/Season 13': 25 }));
+  assert.equal(oneShow.roots[1].children[0].name, 'Described audio TV, Family guy');
+  assert.equal(oneShow.roots[1].children[0].path, 'Audio/Described Movies & TV/TV/Family guy');
+  // a display name is a whole name: the repeat check never drops it, but still drops a plain repeat after it
+  assert.equal(T.joinNames([{ text: 'Described audio movies and TV', shown: true }, { text: 'Described audio TV', shown: true }]), 'Described audio TV');
+  assert.equal(T.joinNames([{ text: 'Described audio TV', shown: true }, 'TV']), 'Described audio TV');
+  assert.equal(T.joinNames(['Movies', { text: 'Described audio movies', shown: true }]), 'Movies, Described audio movies');
+  // one only-Movies seat, with its letters
+  const onlyMovies = T.buildTree(rows({ 'Audio/Described Movies & TV/Movies/A': 30, 'Audio/Described Movies & TV/Movies/B': 30 }));
+  assert.equal(onlyMovies.roots[1].children[0].name, 'Described audio movies');
+  assert.deepEqual(names(onlyMovies.roots[1].children[0]), ['A', 'B']);
+});
+
+test('a small shelf listed whole says where each item sits in display names; breadcrumbs too', () => {
+  assert.equal(T.subShelf('Audio', 'Audio/Described Movies & TV/TV/Empire'), 'Described audio TV, Empire');
+  assert.equal(T.subShelf('Audio/Described Movies & TV', 'Audio/Described Movies & TV/Movies/A'), 'Described audio movies, A');
+  assert.equal(T.subShelf('', 'Audio/Described Movies & TV/Movies'), 'Audio, Described audio movies');
+  assert.equal(T.subShelf('Videos/TV Shows/ALF', 'Videos/TV Shows/ALF/Bumpers/1980s'), 'Bumpers, 1980s');
+  assert.deepEqual(T.crumbs('Audio/Described Movies & TV/TV/Family guy'), [
+    { name: 'Audio', path: 'Audio' },
+    { name: 'Described audio movies and TV', path: 'Audio/Described Movies & TV' },
+    { name: 'Described audio TV', path: 'Audio/Described Movies & TV/TV' },
+    { name: 'Family guy', path: 'Audio/Described Movies & TV/TV/Family guy' },
+  ]);
+  assert.deepEqual(T.crumbs(''), []);
+  assert.equal(T.folderName('Audio/Described Movies & TV', 'Described Movies & TV'), 'Described audio movies and TV');
+  assert.equal(T.folderName('Videos/arrested development', 'arrested development'), 'arrested development', 'an unmapped folder name goes out exactly as before');
+});
+
+test('GET /archive names the described shelves for every app, 2.2.1 included, and still opens the real paths', async () => {
+  let r = libraryRoutes({ folders: [{ _id: 'Radio', count: 30 }, { _id: 'Described Movies & TV', count: 4189 }, { _id: 'Cassettes', count: 2541 }], total: 0 });
+  let out = await r.get('/archive', { path: 'Audio' });
+  assert.deepEqual(out.body.folders, [
+    { name: 'Cassettes', count: 2541, path: 'Audio/Cassettes' },
+    { name: 'Described audio movies and TV', count: 4189, path: 'Audio/Described Movies & TV' },
+    { name: 'Radio', count: 30, path: 'Audio/Radio' },
+  ]);
+  assert.deepEqual(out.body.crumbs, [{ name: 'Audio', path: 'Audio' }]);
+  r = libraryRoutes({ folders: [{ _id: 'TV', count: 2554 }, { _id: 'Movies', count: 1635 }, { _id: 'Described by Kade-AI', count: 2 }], total: 0 });
+  out = await r.get('/archive', { path: 'Audio/Described Movies & TV' });
+  assert.deepEqual(out.body.folders.map((f) => [f.name, f.path]), [
+    ['Described audio movies', 'Audio/Described Movies & TV/Movies'],
+    ['Described audio TV', 'Audio/Described Movies & TV/TV'],
+    ['Described by Kade-AI', 'Audio/Described Movies & TV/Described by Kade-AI'],
+  ]);
+  assert.equal(out.body.crumbs[1].name, 'Described audio movies and TV');
+  assert.equal(out.body.path, 'Audio/Described Movies & TV');
 });

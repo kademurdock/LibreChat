@@ -437,15 +437,21 @@ function summary(book, progress) {
   const s = progress ? progress.s : 0;
   const tracks = book.kind !== 'text' ? (book.tracks || []).length : 0;
   const seconds = book.kind !== 'text' ? (book.tracks || []).reduce((n, t) => n + (t.seconds || 0), 0) : 0;
+  const category = libraryCategory(book);
+  const path = libraryPath(book);
   return {
     id: String(book._id),
     kind: book.kind || 'text',
-    category: libraryCategory(book),
+    category,
+    /** Part 296 (her Sep 27 word): the one word for what this is ("Described audio episode", "Movie
+     * trailer"), from the real file kind, the shelf, the category, the title and the length. Display only:
+     * `category` stays the stored value (pictures and the Edit sheet key on it). */
+    typeLabel: shelfTree.typeLabel({ kind: book.kind || 'text', category, path, title: book.title, seconds, description: book.description, meta: book.meta }),
     description: book.description || '',
     tracks,
     seconds,
     state: book.state,
-    path: libraryPath(book),
+    path,
     storedPath: book.path || '',
     meta: book.meta || {},
     tags: book.tags || [],
@@ -1440,11 +1446,14 @@ router.get('/archive', requireJwtAuth, async (req, res) => {
       KadeBook.aggregate([...view, { $match: here }, ...byTitle, { $skip: page * limit }, { $limit: limit }, listFields]),
       KadeBook.aggregate([...view, { $match: here }, { $count: 'count' }]).then((rows) => rows[0]?.count || 0),
     ]);
-    folders.sort((a, b) => shelfTree.compareNames(shelfTree.tidyName(a._id), shelfTree.tidyName(b._id)));
+    // Part 296: a shelf whose real name misleads reads under its display name (the described MP3 shelf is
+    // "Described audio movies and TV"); `path` is still the real shelf, which every client opens by.
+    for (const f of folders) f.name = shelfTree.folderName(prefix + f._id, f._id);
+    folders.sort((a, b) => shelfTree.compareNames(shelfTree.tidyName(a.name), shelfTree.tidyName(b.name)));
     const progress = items.length ? await KadeReadingProgress.find({ user: req.user.id, book: { $in: items.map((i) => i._id) } }).lean() : [];
     const pb = {}; for (const pr of progress) pb[String(pr.book)] = pr;
     const listed = items.map((b) => (deep ? { ...summary(b, pb[String(b._id)]), sub: shelfTree.subShelf(at, b.path) } : summary(b, pb[String(b._id)])));
-    res.json({ path: at, folders: folders.map((f) => ({ name: f._id, count: f.count, path: prefix + f._id })), items: listed, total, page, limit, ...(deep ? { deep: true } : {}) });
+    res.json({ path: at, crumbs: shelfTree.crumbs(at), folders: folders.map((f) => ({ name: f.name, count: f.count, path: prefix + f._id })), items: listed, total, page, limit, ...(deep ? { deep: true } : {}) });
   } catch (e) {
     logger.error('[library/archive] error:', e);
     res.status(500).json({ error: 'Could not open that folder.' });
