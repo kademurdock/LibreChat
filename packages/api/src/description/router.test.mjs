@@ -1555,6 +1555,12 @@ test('describe again: a stopped run starts over from the original already kept, 
     (await call('post', `/jobs/${id}/estimate`, 'again-owner')
       .send({ action: 'reanalyze', settings: { ...settings, ...extra } })
       .expect(200)).body;
+  const same = await ask();
+  assert.equal(same.allowed, false, 'the choices that stopped it three times are not run again');
+  assert.match(same.reason, /same part of this video with these choices/);
+  const sameRun = await call('post', `/jobs/${id}/reanalyze`, 'again-owner').send({ ...settings, expectedVersion: 1 }).expect(409);
+  assert.match(sameRun.body.error, /with these choices/);
+  assert.equal((await Jobs.findById(id).lean()).state, 'failed', 'nothing started');
   const quote = await ask({ detail: 'essential' });
   assert.equal(quote.allowed, true, quote.reason);
   assert.ok(quote.estimateUSD > 0);
@@ -2265,6 +2271,60 @@ test('a Library video she already has returns that job instead of starting anoth
   assert.notEqual(fresh.id, first.id);
   await call('post', `/jobs/${fresh.id}/cancel`, 'repeat-owner').expect(200);
   await call('delete', `/jobs/${fresh.id}`, 'repeat-owner').expect(200);
+});
+
+test('a YouTube link she already brought in opens that video instead of downloading it again', async () => {
+  /* No yt-dlp runs: a binary that does not exist fails every client, the way the bot wall leaves no settled answer. */
+  const saved = process.env.YT_DLP_PATH;
+  process.env.YT_DLP_PATH = 'kade-no-such-yt-dlp-for-tests';
+  const link = 'https://youtu.be/dQw4w9WgXcQ?t=5';
+  const ask = (owner, requestId, url = link) => call('post', '/imports', owner).send({ requestId, url });
+  const made = [];
+  try {
+    const first = (await ask('tube-owner', 'tube-repeat-000001').expect(202)).body;
+    made.push(first.id);
+    assert.equal(first.existing, false);
+    const importing = (await ask('tube-owner', 'tube-repeat-000002', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ').expect(200)).body;
+    assert.equal(importing.existing, true, 'still being brought in: that one, never a second download');
+    assert.equal(importing.id, first.id);
+    const failed = await settle(first.id, ['failed'], 'tube-owner');
+    assert.match(failed.error, /Try again later/);
+    assert.equal(failed.recheckable, true, 'an import a later try may get past can be checked again');
+    assert.equal(failed.describableAgain, false);
+    const retry = (await ask('tube-owner', 'tube-repeat-000003').expect(202)).body;
+    made.push(retry.id);
+    assert.equal(retry.existing, false, 'nothing was kept from a failed import, so the link is fetched afresh');
+    assert.notEqual(retry.id, first.id);
+    await settle(retry.id, ['failed'], 'tube-owner');
+    const stored = await Jobs.findById(retry.id).lean();
+    objects.set(`/test/${stored.key}`, Buffer.from('video'));
+    await Jobs.updateOne({ _id: retry.id }, { $set: { state: 'done', seconds: 30, settings, error: '' }, $unset: { checkFailure: 1 } });
+    const kept = (await ask('tube-owner', 'tube-repeat-000004').expect(200)).body;
+    assert.equal(kept.existing, true, 'checked and kept: the link opens it');
+    assert.equal(kept.id, retry.id);
+    assert.equal(kept.describableAgain, true);
+    const repeated = (await ask('tube-owner', 'tube-repeat-000003').expect(202)).body;
+    assert.equal(repeated.id, retry.id, 'the same request repeated is that job itself');
+    assert.equal(repeated.existing, false);
+    objects.hide(`/test/${stored.key}`);
+    const gone = (await ask('tube-owner', 'tube-repeat-000005').expect(202)).body;
+    made.push(gone.id);
+    assert.equal(gone.existing, false, 'an original no longer kept is fetched afresh');
+    assert.notEqual(gone.id, retry.id);
+    const other = (await ask('another-tube-owner', 'tube-repeat-000006').expect(202)).body;
+    assert.equal(other.existing, false, 'owners are separate');
+    await call('post', `/jobs/${other.id}/cancel`, 'another-tube-owner').expect(200);
+    await call('delete', `/jobs/${other.id}`, 'another-tube-owner').expect(200);
+  } finally {
+    for (const job of made) {
+      const current = await Jobs.findById(job).lean();
+      if (current && ['importing', 'checking'].includes(current.state))
+        await call('post', `/jobs/${job}/cancel`, 'tube-owner').expect(200);
+      if (current) await call('delete', `/jobs/${job}`, 'tube-owner').expect(200);
+    }
+    if (saved === undefined) delete process.env.YT_DLP_PATH;
+    else process.env.YT_DLP_PATH = saved;
+  }
 });
 
 test('delete and expiry erase every stored version and delete marker, page by page, never a Library original', async () => {

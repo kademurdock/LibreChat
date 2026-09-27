@@ -67,7 +67,7 @@ import {
   defaultLibraryPath,
 } from './revision';
 import { describeVideo, productionProviders } from './engine';
-import { importYouTube, youtubeURL } from './youtube';
+import { importYouTube, worthRetrying, youtubeURL } from './youtube';
 import { FAMILY_PACK_NOTE, FAMILY_PACK_REFUSAL } from '../family/pack';
 import type { FamilyFeatures } from '../family/pack';
 import { rehearsalProviders } from './rehearsal';
@@ -674,8 +674,29 @@ const inScope = (spans: number[], stopAfter?: number) =>
 const roughCover = (seconds: number, stopAfter?: number) =>
   stopAfter === undefined ? seconds : Math.min(seconds, stopAfter + 60);
 const crashLocked = (job: Job) => (job.crashes ?? 0) >= 3 && job.crashAt === (job.done ?? 0);
+/*
+ * Sep 27 2026: it no longer says to delete the video. Describing again starts over from the
+ * original kept here; deleting erased it, and a YouTube video then had to be fetched again.
+ */
 const crashText =
-  'The server stopped three times while working on the same part of this video, so it will not try that part again. Go back to the last finished version, or delete this video and describe it again with other settings or as a shorter part.';
+  'The server stopped three times while working on the same part of this video, so it will not try that part again. Go back to the last finished version, or describe it again from the copy already kept, with other settings or as a shorter part.';
+/**
+ * After three stops at the same part (crashLocked), describing again with the very choices that
+ * stopped it would pay for the finished sections again and stop at the same place, restarting the
+ * server up to three more times. It needs another part, other detail or other extra passes.
+ */
+const sameCrashChoices = (before: Partial<Settings>, next: Settings): boolean => {
+  const near = (a?: Interval, b?: Interval) =>
+    !a || !b ? !a && !b : Math.abs(a.start - b.start) < 1 && Math.abs(a.end - b.end) < 1;
+  return (
+    near(before.range, next.range) &&
+    (before.detail ?? 'standard') === next.detail &&
+    !!before.closeLook === !!next.closeLook &&
+    !!before.firstLook === !!next.firstLook
+  );
+};
+const crashAgainText =
+  'The server stopped three times at the same part of this video with these choices. To describe it again, change how much to describe or the extra passes, or choose a shorter part.';
 /**
  * Sep 27 2026, her ask: a video that was checked, and whose run finished or stopped, can be
  * described afresh from the original already kept here, never fetched again (YouTube may refuse
@@ -1975,6 +1996,14 @@ export function createDescriptionRouter(hooks: Hooks): {
       throw new Problem('Wait for this video to finish before describing it again.');
     const expectedVersion = expected(job, body, true);
     const launch = launchStart(job, body, [job.state], nextVersion(job), admin);
+    if (crashLocked(job) && job.settings && sameCrashChoices(job.settings, launch.settings)) {
+      // A first-minutes preview that stops before the part it stopped at never reaches it.
+      const spans = storedSpans(job, launch.settings.range);
+      const stopAfter = launch.patch.stopAfter;
+      const short =
+        stopAfter !== undefined && !!spans && (spans[job.crashAt ?? 0] ?? 0) >= stopAfter;
+      if (!short) throw new Problem(crashAgainText);
+    }
     return {
       ...launch,
       expectedVersion,
@@ -2744,7 +2773,30 @@ export function createDescriptionRouter(hooks: Hooks): {
       );
     }
     const owner = hooks.actor(req).id;
-    const job = await createOnce(descriptionJobId(owner, 'youtube:' + input.requestId), owner, {
+    const id = descriptionJobId(owner, 'youtube:' + input.requestId);
+    /*
+     * Sep 27 2026, her ask (YouTube refuses the server now and then): a link she already brought
+     * in opens that video instead of downloading it again, as a Library video does. Only one that
+     * was checked (its original is kept here, so it can be described again) or is still being
+     * brought in; one whose import failed is fetched afresh.
+     */
+    const earlier = await Jobs.findOne({
+      owner,
+      youtube: url,
+      state: { $ne: 'deleting' },
+      $or: [{ seconds: { $gt: 0 } }, { state: { $in: ['importing', 'checking'] } }],
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    if (
+      earlier &&
+      earlier._id !== id &&
+      (!earlier.seconds || (await exists(earlier.sourceKey || earlier.key).catch(() => true)))
+    ) {
+      res.json({ ...(await single(earlier)), existing: true });
+      return;
+    }
+    const job = await createOnce(id, owner, {
       name: 'YouTube video',
       bytes: 0,
       youtube: url,
@@ -2753,7 +2805,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       stage: 'Waiting to import the YouTube video',
     });
     if (job.youtube !== url) throw new Problem('This import recovery ID belongs to another video.');
-    res.status(202).json(publicJob(job));
+    res.status(202).json({ ...publicJob(job), existing: false });
     void tick();
   });
   route('post', '/library-imports', async (req, res) => {
@@ -4037,8 +4089,12 @@ export function createDescriptionRouter(hooks: Hooks): {
                 error: message,
                 finishedAt: new Date(),
                 expiresAt: retain(job, 3),
+                /*
+                 * Sep 27 2026: a YouTube import YouTube may let through on a later try (the bot
+                 * wall flickers) can be checked again, which brings the link in afresh.
+                 */
                 ...(lane === 'check' && !cancelled
-                  ? { checkFailure: passing ? 'transient' : 'permanent' }
+                  ? { checkFailure: passing || worthRetrying(error) ? 'transient' : 'permanent' }
                   : {}),
                 ...(over
                   ? { overQuote: { spentUSD: over.spentUSD, quotedUSD: over.quotedUSD } }

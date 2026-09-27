@@ -18,8 +18,10 @@ import ffmpegPath from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
 import {
   ffmpegLocation,
+  importYouTube,
   readAudioMetadata,
   readYouTubeLink,
+  worthRetrying,
   youtubeAudio,
   YouTubeAudioError,
   youtubeURL,
@@ -348,4 +350,29 @@ test('errors: an MP3 over the size cap is refused, and a missing download is a p
   answer = (args) => (isMetadataRun(args) ? { stdout: metadata() } : { stdout: '[download] nothing happened' });
   await assert.rejects(youtubeAudio('https://youtu.be/dQw4w9WgXcQ', options()), { kind: 'failed' });
   assert.deepEqual(await readdir(root), []);
+});
+
+test('describer imports (Sep 27 2026): the bot wall can be tried again later; a private video cannot', async () => {
+  const folder = await mkdtemp(join(root, 'import-'));
+  try {
+    answer = () => ({ code: 1, stderr: "ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm you're not a bot. Use --cookies-from-browser or --cookies for the authentication." });
+    const walled = await importYouTube('https://youtu.be/dQw4w9WgXcQ', folder, 5400, new AbortController().signal).then(
+      () => assert.fail('the wall let it through'),
+      (error) => error,
+    );
+    assert.match(walled.message, /blocking downloads from the server right now/);
+    assert.equal(walled.constructor, Error, 'still a plain Error, so its sentence reaches her as it is');
+    assert.equal(worthRetrying(walled), true);
+    runs = [];
+    answer = () => ({ code: 1, stderr: 'ERROR: [youtube] dQw4w9WgXcQ: Private video. Sign in if you have been granted access to this video' });
+    const refused = await importYouTube('https://youtu.be/dQw4w9WgXcQ', folder, 5400, new AbortController().signal).then(
+      () => assert.fail('a private video came in'),
+      (error) => error,
+    );
+    assert.match(refused.message, /private/);
+    assert.equal(worthRetrying(refused), false);
+    assert.equal(runs.length, 1);
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
 });

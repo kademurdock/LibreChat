@@ -145,6 +145,18 @@ export const errorText = (error: unknown): string => {
 export const reason = (error: unknown): string =>
   errorText(error).replace(/\s+/g, ' ').trim().slice(-300);
 
+/**
+ * Sep 27 2026: an import failure a later try may get past: the bot wall (it flickers), a climb
+ * that ran out of clients with no settled answer, a video YouTube is still processing. The check
+ * lane marks such a video so Check again brings it in afresh; a settled answer (private, removed,
+ * region, too long) is not. Still a plain Error, so its sentence reaches her as it is.
+ */
+const retryLater = (message: string): Error =>
+  Object.assign(new Error(message), { retryable: true });
+/** True for an importYouTube failure that Check again may get past. */
+export const worthRetrying = (error: unknown): boolean =>
+  error instanceof Error && (error as Error & { retryable?: unknown }).retryable === true;
+
 /** A named YouTube failure that should reach Kade as it is. `kind` is youtubeProblem's name. */
 class Refused extends Error {
   readonly kind?: string;
@@ -393,13 +405,13 @@ export type YouTubeDetails = { name: string; seconds: number; about: string; cha
 export function readMetadata(json: unknown, maxSeconds: number, cookies: boolean): YouTubeDetails {
   const parsed = metadataSchema.safeParse(json);
   if (!parsed.success)
-    throw new Error(
+    throw retryLater(
       'YouTube sent details the server could not read. Try again later, or upload the file instead.',
     );
   const data = parsed.data;
   const live = data.live_status ?? '';
   if (live === 'post_live')
-    throw new Error(
+    throw retryLater(
       'This stream has just ended and YouTube is still processing it. Try again later.',
     );
   if (data.is_live || live === 'is_live' || live === 'is_upcoming')
@@ -416,7 +428,7 @@ export function readMetadata(json: unknown, maxSeconds: number, cookies: boolean
     throw named('confirm your age');
   const seconds = data.duration ?? 0;
   if (!(seconds > 0))
-    throw new Error(
+    throw retryLater(
       "YouTube has not published this video's length yet. Try again after it has finished processing.",
     );
   if (seconds > maxSeconds)
@@ -464,7 +476,7 @@ export async function importYouTube(
     signal.throwIfAborted();
     log('youtube metadata: ' + reason(error));
     if (error instanceof Refused) throw new Error(error.message);
-    throw new Error(
+    throw retryLater(
       youtubeProblem(errorText(error))?.message ??
         `YouTube would not hand this video to the server. It may need a sign-in, be restricted, or be blocking server downloads right now. Try again later, or ${viaLibrary}.`,
     );
@@ -473,7 +485,7 @@ export async function importYouTube(
   try {
     json = JSON.parse(raw.toString());
   } catch {
-    throw new Error(
+    throw retryLater(
       'YouTube sent details the server could not read. Try again later, or upload the file instead.',
     );
   }
@@ -543,7 +555,7 @@ export async function importYouTube(
     if (error instanceof Refused) throw new Error(error.message);
     if (oversize) throw new Error(tooLarge);
     const problem = youtubeProblem(errorText(error));
-    throw new Error(
+    throw retryLater(
       problem?.message ??
         'The YouTube video could not be downloaded. Upload the video file instead, or try again later.',
     );
