@@ -505,7 +505,7 @@ The bridge earns its slot or gets cut. Pick one:
 2. **The flip.** Change position. The one leaving becomes the one begging.
 3. **The zoom out.** One wide line after a song of close ones.
 4. **The breakdown.** Voice and one instrument.
-5. **The mantra.** One line, four times, rising.
+5. **The mantra.** One line sung twice, rising, with a new line answering it each time.
 6. **The beat switch or half-time drop.**
 7. **The silence.** A bar of nothing before the last chorus.
 8. **The other voice.** A feature, a spoken line, a choir.

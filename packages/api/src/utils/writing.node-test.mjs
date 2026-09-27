@@ -953,11 +953,17 @@ test('Part 296 follow-up: her hit-writing system asks for the hook once or twice
   const { hitWritingSystem } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8'))).toString('base64'));
   const markdown = readFileSync(new URL('../music/hit-writing-system.md', import.meta.url), 'utf8').replace(/\r\n/g, '\n').replace(/\n+$/, '');
   assert.equal(hitWritingSystem, markdown, 'hitSystem.ts is regenerated from the markdown');
-  for (const old of [/says one thing eight times/, /One phrase, four passes/, /repeats its hook six times/, /repeat one phrase eight times/, /rhyme a word with itself if the cadence/, /two to four times inside the chorus, sometimes more/, /including internal repeats/, /One word repeated three times in a row/, /repeats five times/, /The title lands four to eight times\. /])
+  for (const old of [/says one thing eight times/, /One phrase, four passes/, /repeats its hook six times/, /repeat one phrase eight times/, /rhyme a word with itself if the cadence/, /two to four times inside the chorus, sometimes more/, /including internal repeats/, /One word repeated three times in a row/, /repeats five times/, /The title lands four to eight times\. /, /One line, four times, rising/])
     assert.doesNotMatch(hitWritingSystem, old);
   assert.match(hitWritingSystem, /Sing the hook phrase once or twice inside the chorus, and give every other chorus line a job: a turn, a concrete image, a consequence\. The title lands several times across the song because the chorus comes back\./);
   assert.match(hitWritingSystem, /Choruses: 4 to 8 lines, the hook in one or two of them and something new in each of the others\./);
   assert.match(hitWritingSystem, /9\. One word repeated for pressure, once in the song, never stretched into a list\./);
+  /* Review: the bridge toolkit's mantra asked for one line four times, which the desk's own gate flags
+   * (four lines ending on one word) and her Tier 2 bans. Built the way it now reads, a mantra bridge passes. */
+  assert.match(hitWritingSystem, /5\. \*\*The mantra\.\*\* One line sung twice, rising, with a new line answering it each time\./);
+  const bridge = lines => `x\nLyrics:\n[Bridge]\n${lines.join('\n')}\n\nREADBACK: x`;
+  assert.deepEqual(lyricRepeatIssues(bridge(['I ain\'t coming back to town', 'Sold the truck to Randy for a hundred flat', 'I ain\'t coming back to town', 'Left the key inside your mama\'s welcome mat']), ''), []);
+  assert.equal(lyricRepeatIssues(bridge(Array(4).fill('I ain\'t coming back to town')), '').length, 1, 'one line four times is still flagged');
   /* Everything else of hers stays, her own bans on the list shape included. */
   assert.match(hitWritingSystem, /Self-declarative bridge repetition that just lists/);
   assert.match(hitWritingSystem, /Forced self-rhyme: rhyming a word with itself as cadence padding\. Deliberate hook repetition is fine\./);
@@ -973,7 +979,7 @@ test('Part 296 follow-up: her hit-writing system asks for the hook once or twice
     assert.deepEqual(lyricTells(script, '').filter(t => !/copied from the writing system/.test(t.tell)), [], chorus);
   }
   /* The rewritten rules name the shape and never do it themselves. */
-  const rules = ['2. Repetition avoidance.', 'FIX: One hook, sung once', '**Repetition as feeling.**', '**Confidence in simplicity.**', 'Sing the hook phrase once or twice', '- Choruses: 4 to 8 lines', '9. One word repeated for pressure']
+  const rules = ['2. Repetition avoidance.', 'FIX: One hook, sung once', '**Repetition as feeling.**', '**Confidence in simplicity.**', 'Sing the hook phrase once or twice', '- Choruses: 4 to 8 lines', '9. One word repeated for pressure', '5. **The mantra.**']
     .map(start => { const at = hitWritingSystem.indexOf(start); assert.ok(at !== -1, start); return hitWritingSystem.slice(at, hitWritingSystem.indexOf('\n', at)).replace(/ Pre-choruses:.*$/, ''); });
   assert.deepEqual(lyricRepeatIssues(`x\nLyrics:\n[Verse 1]\n${rules.join(' ').split(/(?<=[.:])\s+/).join('\n')}\n\nREADBACK: x`, ''), []);
   /* Our own notes no longer point at advice the system has stopped giving. */
