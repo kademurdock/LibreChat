@@ -98,7 +98,7 @@ async function main() {
         console.log('YuE2 integration: validation, no-charge quote, durable queue, duplicate rejection, owner isolation, completion idempotency, uncertain submission, cancellation passed.');
         console.log('YuE2 covers (Part 295): flag-off requests unchanged, cover and instrumental fields, trained-style refusal, saved choices, guide choices, score chords on Keep the original chords with old cot requests unchanged (Part 296), price per card, take notes said once passed.');
         await lyricSync(post, base, sentInputs, (next) => { state = next.state; extraOutput = next.output || {}; });
-        console.log('YuE2 lyric sync: flags off unchanged, fit and measure fields only for sung covers with words, take notes and facts from the timing report passed.');
+        console.log('YuE2 lyric sync: flags off unchanged, fit and measure fields only for sung covers with words, take notes and facts from the timing report, kept sections, score touch-up, meter note, name-paired rows and no spoken fit score passed.');
     }
     finally {
         server.close();
@@ -312,7 +312,7 @@ async function covers(post, base, sentInputs, provider) {
 /* Lyric sync (the Part 295 follow-up), behind YUE_FIT_LYRICS=1 and YUE_MEASURE_FIT=1. The lyrics are invented. */
 async function lyricSync(post, base, sentInputs, provider) {
     const assert = strict_1.default;
-    const { yueInput, yueTakeNote, yueTakeFacts, yueFitLyricsEnabled, yueMeasureFitEnabled, yueSyncReasons } = yue_1;
+    const { yueInput, yueTakeNote, yueTakeFacts, yueFitLyricsEnabled, yueMeasureFitEnabled, yueScoreTouchupEnabled, yueSyncReasons } = yue_1;
     const LEGACY_KEYS = ['style', 'title', 'count', 'weirdness', 'steps', 'guidance', 'lyrics', 'abc', 'reference_voice_url', 'cot', 'band', 'lora_key', 'lora_scale', 'seed'];
     const COVER_KEYS = ['keep_harmony', 'match_score_tempo', 'length_guard'];
     const recording = 'https://assets.test/source.wav';
@@ -362,20 +362,22 @@ async function lyricSync(post, base, sentInputs, provider) {
     const sync = { applied: true, reason: null, lyrics_fitted: true, phrases: 56, phrases_with_words: 55, lines: 50,
         words_without_tune: [{ section: 'intro', words: 9, lines: 2 }], fit_score: 83,
         held_words_on_note: { hits: 5, of: 6 }, phrase_starts_after_pause: { hits: 40, of: 50 }, words_heard: { hits: 300, of: 310 } };
-    const note = "Your lines were re-broken to follow the tune's 55 phrases; your words are unchanged. The intro words have no sung tune in the recording, so this take left them out. Fit score 83 of 100: 5 of 6 long notes kept their words.";
+    const note = "Your lines were re-broken to follow the tune's phrases: your words keep their order; 2 intro lines were left out, because the recording has no sung tune there. 5 of 6 long notes kept their words.";
     assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_fit: rows, lyric_sync: sync }, both), note);
     assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_fit: rows, lyric_sync: { applied: false, reason: 'align', lyrics_fitted: false } }, both),
         'Your line breaks were kept as written: your words could not be timed against the recording this time.');
     assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_sync: { applied: false, reason: 'unknown', lyrics_fitted: false } }, both), '');
     assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_sync: { applied: true, lyrics_fitted: false, fit_score: 61, held_words_on_note: { hits: 2, of: 6 } } }, measured),
-        'Fit score 61 of 100: 2 of 6 long notes kept their words.');
+        '2 of 6 long notes kept their words.', 'the fit score is never spoken');
     assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_sync: { applied: true, lyrics_fitted: false, fit_score: 70, held_words_on_note: { hits: 0, of: 0 } } }, measured),
-        'Fit score 70 of 100.');
+        '');
     assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_sync: { applied: false, reason: 'notes', lyrics_fitted: false } }, measured), '',
         'she did not ask for new line breaks, so there is nothing to explain');
     assert.equal(yueTakeNote({ features: features.slice(0, 4), cover_mode: 'harmony', lyric_fit: rows, lyric_sync: sync }, both),
         'The intro words look short for its tune: 9 syllables for 47 notes.', 'an older worker keeps the old note');
     for (const reason of Object.values(yueSyncReasons)) assert.doesNotMatch(reason, /Kade|\d/);
+
+    await lyricSyncRoundTwo(features, both, measured);
 
     // What the asset keeps: the lines YuE2 sang, only when they were re-broken, and the fit score.
     const used = '[Verse]\nPaper lanterns\non the water\n\n[Chorus]\nCarry me home';
@@ -407,5 +409,53 @@ async function lyricSync(post, base, sentInputs, provider) {
             if (value === undefined) delete process.env[key]; else process.env[key] = value;
         }
     }
+}
+/* Round 2 (after Kade's ear): kept sections, the score touch-up, the meter note, the name-paired
+ * syllable rows, and the fit score kept out of spoken notes. The lyrics are invented. */
+async function lyricSyncRoundTwo(features, both, measured) {
+    const assert = strict_1.default;
+    const { yueInput, yueTakeNote, yueTakeFacts, yueScoreTouchupEnabled, yueSyncReasons } = yue_1;
+    const recording = 'https://assets.test/source.wav';
+    const body = { script: 'Folk duo with a 6/8 feel', lyrics: '[Verse]\nPaper lanterns on the water\n[Chorus]\nCarry me home', seed: 5, reference_voice_url: recording };
+    // The touch-up is A/B only: sent only with YUE_SCORE_TOUCHUP=1 and only alongside fit_lyrics.
+    assert.equal(yueScoreTouchupEnabled({}), false); assert.equal(yueScoreTouchupEnabled({ YUE_SCORE_TOUCHUP: '1' }), true);
+    assert.equal('fit_score_touchup' in yueInput(body, { YUE_FIT_LYRICS: '1' }), false);
+    assert.equal('fit_score_touchup' in yueInput(body, { YUE_SCORE_TOUCHUP: '1', YUE_MEASURE_FIT: '1' }), false, 'never without fit_lyrics');
+    const touched = yueInput(body, { YUE_FIT_LYRICS: '1', YUE_MEASURE_FIT: '1', YUE_SCORE_TOUCHUP: '1' });
+    assert.equal(touched.fit_score_touchup, true);
+    assert.deepEqual(Object.keys(touched).slice(-3), ['fit_lyrics', 'measure_fit', 'fit_score_touchup']);
+    assert.equal(yueSyncReasons.error, 'your words could not be fitted to the tune this time');
+
+    // Sections kept as she wrote them, by name with an ordinal when the name repeats; the touch-up.
+    const sections = [{ index: 1, section: 'verse', words: 30, heard: 25, fitted: true }, { index: 2, section: 'chorus', words: 20, heard: 18, fitted: true },
+        { index: 3, section: 'verse', words: 30, heard: 9, fitted: false }, { index: 4, section: 'bridge', words: 40, heard: 9, fitted: false }];
+    const sync = { applied: true, lyrics_fitted: true, words_without_tune: [], sections, fit_score: 90, held_words_on_note: { hits: 3, of: 3 },
+        held_unverified: { hits: 1, of: 9 }, score_touchup: { applied: true, ties: 0, folds: 3, places: [{}, {}, {}] } };
+    assert.equal(yueTakeNote({ features: [...features, 'score-touchup'], cover_mode: 'harmony', lyric_sync: sync }, both),
+        "Your lines were re-broken to follow the tune's phrases: your words keep their order. The second verse and the bridge keep your own line breaks: too few of their words could be heard clearly in the recording. The score was touched up in 3 places so each held word keeps its long note; the rest of the melody is unchanged. 3 of 3 long notes kept their words.");
+    const oneKept = { ...sync, sections: sections.slice(0, 2).concat([{ index: 4, section: 'bridge', fitted: false }]), score_touchup: null,
+        held_words_on_note: undefined, words_without_tune: [{ section: 'intro', words: 5, lines: 1 }, { section: 'outro', words: 4, lines: 1 }] };
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_sync: oneKept }, both),
+        "Your lines were re-broken to follow the tune's phrases: your words keep their order; 1 intro line and 1 outro line were left out, because the recording has no sung tune there. The bridge keeps your own line breaks: too few of its words could be heard clearly in the recording.");
+    assert.doesNotMatch(yueTakeNote({ features, cover_mode: 'harmony', lyric_sync: sync }, both), /Fit score|of 100|unverified|9/);
+    assert.equal(yueTakeFacts({ features, cover_mode: 'harmony', lyric_sync: sync }, both).fitScore, 90, 'the fit score is still saved');
+
+    // The meter note (worker feature meter-check), never from an older worker or odd values.
+    const meterFeatures = ['keep-harmony', 'instrumental', 'lyric-fit', 'chord-check', 'meter-check'];
+    const meterSaid = "Your style asks for a 6/8 feel, but the song's score is in 4/4, so the phrasing may sit off the beat. Leave the meter out of the style, or describe a 4/4 feel.";
+    assert.equal(yueTakeNote({ features: meterFeatures, cover_mode: 'harmony', meter_check: { style_meter: '6/8', score_meter: '4/4' } }, both), meterSaid);
+    assert.equal(yueTakeNote({ features: meterFeatures, cover_mode: 'harmony', meter_check: { style_meter: 'waltz', score_meter: '4/4' } }, both),
+        "Your style asks for a waltz, but the song's score is in 4/4, so the phrasing may sit off the beat. Leave the meter out of the style, or describe a 4/4 feel.");
+    assert.equal(yueTakeNote({ features: meterFeatures.slice(0, 4), cover_mode: 'harmony', meter_check: { style_meter: '6/8', score_meter: '4/4' } }, both), '');
+    assert.equal(yueTakeNote({ features: meterFeatures, cover_mode: 'harmony', meter_check: { style_meter: '<b>', score_meter: '4/4' } }, both), '');
+    assert.equal(yueTakeNote({ features: meterFeatures, cover_mode: 'harmony', meter_check: null }, both), '');
+
+    // Syllable rows paired by name (lyric-fit-v2): the tuneless intro is said once; older rows never.
+    const rows = { sections: [{ score_section: null, lyrics_section: 'Intro', sung_notes: null, syllables: 9, fit: 'no tune' },
+        { score_section: 'verse', lyrics_section: 'Verse', sung_notes: 47, syllables: 50, fit: 'close' }], same_order: false };
+    const v2 = ['keep-harmony', 'instrumental', 'lyric-fit', 'chord-check', 'lyric-fit-v2'];
+    assert.equal(yueTakeNote({ features: v2, cover_mode: 'harmony', lyric_fit: rows }, measured),
+        'The intro words have no sung tune in the recording, so YuE2 may skip them or sing them somewhere else.');
+    assert.equal(yueTakeNote({ features: v2.slice(0, 4), cover_mode: 'harmony', lyric_fit: rows }, measured), '');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

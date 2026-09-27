@@ -32,6 +32,8 @@ export type Input = {
   /* Lyric sync worker fields, sent only behind YUE_FIT_LYRICS and YUE_MEASURE_FIT (music/yue.ts). */
   fit_lyrics?: 'timing';
   measure_fit?: boolean;
+  /* A/B only, behind YUE_SCORE_TOUCHUP with YUE_FIT_LYRICS (music/yue.ts). */
+  fit_score_touchup?: boolean;
   seed: number;
 };
 type LyricFitRow = {
@@ -52,8 +54,14 @@ type LyricSyncReport = {
   words_without_tune?: Array<{ section?: string | null; words?: number; lines?: number }>;
   fit_score?: number | null;
   held_words_on_note?: HitCount;
+  /* Held notes the recording itself was not heard clearly on: reported apart, never spoken. */
+  held_unverified?: HitCount;
   phrase_starts_after_pause?: HitCount;
   words_heard?: HitCount;
+  /* Her sections: fitted to the tune, or kept as she wrote them (too few words heard clearly). */
+  sections?: Array<{ index?: number; section?: string | null; words?: number; heard?: number; fitted?: boolean }>;
+  repeats?: Array<{ section?: string | null; instances?: number[]; source?: number; fitted?: boolean }>;
+  score_touchup?: { applied?: boolean; ties?: number; folds?: number; places?: unknown[] } | null;
 };
 export type Output = {
   url?: string;
@@ -78,6 +86,8 @@ export type Output = {
   /* Lyric sync report (worker features lyric-sync and fit-score): counts and indices only. */
   lyric_sync?: LyricSyncReport | null;
   lyrics_used?: string;
+  /* Worker feature meter-check: the style names a meter the score contradicts. */
+  meter_check?: { style_meter?: string; score_meter?: string } | null;
 };
 export type Provider = {
   id?: string;

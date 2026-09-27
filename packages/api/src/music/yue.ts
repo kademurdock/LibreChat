@@ -128,6 +128,12 @@ export function yueFitLyricsEnabled(env: NodeJS.ProcessEnv = process.env): boole
 export function yueMeasureFitEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.YUE_MEASURE_FIT === '1';
 }
+/** YUE_SCORE_TOUCHUP=1, A/B only and only with YUE_FIT_LYRICS: the worker may fold a quick note
+ * sliding into a held note into it, so the held word keeps that note. The melody changes a
+ * little there, so it stays off until Kade has heard it. */
+export function yueScoreTouchupEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.YUE_SCORE_TOUCHUP === '1';
+}
 const TAG_LINE = /^\s*\[[^\]\n]+\]\s*$/;
 /** Whether lyrics hold any word to sing outside [section] tag lines. */
 function hasSungWords(lyrics: string): boolean {
@@ -139,11 +145,12 @@ function syncFields(
   recording: boolean,
   instrumental: boolean,
   env: NodeJS.ProcessEnv,
-): Pick<Input, 'fit_lyrics' | 'measure_fit'> {
-  const fields: Pick<Input, 'fit_lyrics' | 'measure_fit'> = {};
+): Pick<Input, 'fit_lyrics' | 'measure_fit' | 'fit_score_touchup'> {
+  const fields: Pick<Input, 'fit_lyrics' | 'measure_fit' | 'fit_score_touchup'> = {};
   if (!recording || instrumental || !hasSungWords(lyrics)) return fields;
   if (yueFitLyricsEnabled(env)) fields.fit_lyrics = 'timing';
   if (yueMeasureFitEnabled(env)) fields.measure_fit = true;
+  if (fields.fit_lyrics && yueScoreTouchupEnabled(env)) fields.fit_score_touchup = true;
   return fields;
 }
 export const yueSinging: { sung: string; instrumental: string } = {
@@ -377,33 +384,75 @@ export const yueSyncReasons: Record<string, string> = {
   words: 'your words did not line up with the tune',
   empty: 'there are no words to sing',
   align: 'your words could not be timed against the recording this time',
+  error: 'your words could not be fitted to the tune this time',
 };
 
-/** The lyric sync part of a take note: what moved, what was left out, and the take's fit. */
+function sectionName(name: string | null | undefined): string {
+  return (
+    String(name || '')
+      .replace(/[[\]]/g, '')
+      .trim()
+      .toLowerCase() || 'untitled'
+  );
+}
+function joinAnd(items: string[]): string {
+  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth'];
+type SyncSection = NonNullable<NonNullable<Output['lyric_sync']>['sections']>[number];
+/** 'the bridge', 'the second verse': one of her sections, with an ordinal when its name repeats. */
+function sectionCalled(all: SyncSection[], section: SyncSection): string {
+  const name = sectionName(section.section);
+  const same = all.filter((s) => sectionName(s.section) === name);
+  const nth = same.indexOf(section);
+  return same.length > 1 && nth >= 0 && nth < ORDINALS.length ? `the ${ORDINALS[nth]} ${name}` : `the ${name}`;
+}
+
+/** The lyric sync part of a take note: what moved, what was left out or kept as written, and
+ * how many long notes kept their words. The fit score is saved on the take, never spoken. */
 function syncNotes(sync: NonNullable<Output['lyric_sync']>, input: Input): string[] {
   const notes: string[] = [];
   if (sync.lyrics_fitted) {
-    const phrases = sync.phrases_with_words;
-    notes.push(
-      typeof phrases === 'number'
-        ? `Your lines were re-broken to follow the tune's ${phrases} phrase${phrases === 1 ? '' : 's'}; your words are unchanged.`
-        : "Your lines were re-broken to follow the tune's phrases; your words are unchanged.",
-    );
-    for (const gone of (sync.words_without_tune || []).slice(0, 2))
+    const gone = (sync.words_without_tune || []).filter((g) => typeof g.lines === 'number' && g.lines > 0);
+    const lines = gone.reduce((sum, g) => sum + (g.lines || 0), 0);
+    const said = gone.map((g) => `${g.lines} ${sectionName(g.section)} line${g.lines === 1 ? '' : 's'}`);
+    const left = said.length
+      ? `; ${joinAnd(said)} ${lines === 1 ? 'was' : 'were'} left out, because the recording has no sung tune there`
+      : '';
+    notes.push(`Your lines were re-broken to follow the tune's phrases: your words keep their order${left}.`);
+    const all = sync.sections || [];
+    const kept = all.filter((s) => s.fitted === false);
+    if (kept.length) {
+      const who = joinAnd(kept.map((s) => sectionCalled(all, s)));
       notes.push(
-        `${sectionWords(gone.section)} have no sung tune in the recording, so this take left them out.`,
+        `${who.charAt(0).toUpperCase()}${who.slice(1)} ${kept.length === 1 ? 'keeps' : 'keep'} your own line breaks: too few of ${kept.length === 1 ? 'its' : 'their'} words could be heard clearly in the recording.`,
       );
+    }
+    const touch = sync.score_touchup;
+    if (touch && touch.applied) {
+      const places = Array.isArray(touch.places) ? touch.places.length : 0;
+      notes.push(
+        places > 0
+          ? `The score was touched up in ${places} place${places === 1 ? '' : 's'} so each held word keeps its long note; the rest of the melody is unchanged.`
+          : 'The score was touched up so each held word keeps its long note; the rest of the melody is unchanged.',
+      );
+    }
   } else if (input.fit_lyrics === 'timing' && sync.reason && yueSyncReasons[sync.reason])
     notes.push(`Your line breaks were kept as written: ${yueSyncReasons[sync.reason]}.`);
-  if (typeof sync.fit_score === 'number') {
-    const held = sync.held_words_on_note;
-    const kept =
-      held && typeof held.hits === 'number' && typeof held.of === 'number' && held.of > 0
-        ? `: ${held.hits} of ${held.of} long notes kept their words`
-        : '';
-    notes.push(`Fit score ${sync.fit_score} of 100${kept}.`);
-  }
+  const held = sync.held_words_on_note;
+  if (held && typeof held.hits === 'number' && typeof held.of === 'number' && held.of > 0)
+    notes.push(`${held.hits} of ${held.of} long notes kept their words.`);
   return notes;
+}
+
+const METER_SAID = /^(?:\d{1,2}\/\d{1,2}|waltz)$/;
+/** A style that names a meter the score contradicts (worker feature meter-check). */
+function meterNote(output: Output): string {
+  const check = output.meter_check;
+  if (!check || typeof check.style_meter !== 'string' || typeof check.score_meter !== 'string') return '';
+  if (!METER_SAID.test(check.style_meter) || !/^\d{1,2}\/\d{1,2}$/.test(check.score_meter)) return '';
+  const asked = check.style_meter === 'waltz' ? 'a waltz' : `a ${check.style_meter} feel`;
+  return `Your style asks for ${asked}, but the song's score is in ${check.score_meter}, so the phrasing may sit off the beat. Leave the meter out of the style, or describe a ${check.score_meter} feel.`;
 }
 
 /** A short spoken note about one finished take, from what the worker reported. Reads `features`
@@ -437,6 +486,21 @@ export function yueTakeNote(output: Output | undefined, input: Input): string {
       );
     if (rows.length > 2)
       notes.push(`Words in ${rows.length - 2} more section${rows.length === 3 ? '' : 's'} may not fit their tune either.`);
+    /* Worker feature lyric-fit-v2 pairs sections by name, so a "no tune" row is real: words
+     * under [Intro] where the recording's intro has no sung tune. Older rows are skipped. */
+    if (output.features.includes('lyric-fit-v2')) {
+      const tuneless = (output.lyric_fit.sections || []).filter(
+        (row) => row.fit === 'no tune' && row.lyrics_section,
+      );
+      for (const row of tuneless.slice(0, 1))
+        notes.push(
+          `${sectionWords(row.lyrics_section)} have no sung tune in the recording, so YuE2 may skip them or sing them somewhere else.`,
+        );
+    }
+  }
+  if (output.features.includes('meter-check')) {
+    const meter = meterNote(output);
+    if (meter) notes.push(meter);
   }
   if (input.my_voice === true)
     notes.push('A version in your voice follows a few minutes after each take, beside it in this project.');
