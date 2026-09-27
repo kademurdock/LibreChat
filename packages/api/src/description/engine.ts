@@ -1658,9 +1658,12 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   await keptWorking;
   const ordered = [...records.values()].sort((a, b) => a.index - b.index);
   const credit = request.credit ?? undefined;
-  if (credit) await progress('Adding the Kade-AI credit', 93);
-  const opening = credit?.where === 'both' ? await creditPart('start', credit) : null;
-  const closing = credit && !partial ? await creditPart('end', credit) : null;
+  /** A preview has no closing card (its film has not ended), so an end-only credit adds nothing. */
+  const wantsOpening = credit?.where === 'both';
+  const wantsClosing = !!credit && !partial;
+  if (wantsOpening || wantsClosing) await progress('Adding the Kade-AI credit', 93);
+  const opening = credit && wantsOpening ? await creditPart('start', credit) : null;
+  const closing = credit && wantsClosing ? await creditPart('end', credit) : null;
   /** One rendered end as the report keeps it, with the logo that played before its words. */
   const placed = (end: CreditPart) => ({
     text: end.text,
@@ -1677,11 +1680,11 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   /** "opening 3.1 s with logo 3", "closing 5.1 s without a logo" or "closing left out". */
   const told = (name: string, end: CreditPart | null) =>
     `${name} ${end ? `${seconds1(end.seconds)} ${end.logo ? `with ${end.logo}` : 'without a logo'}` : 'left out'}`;
-  if (credit)
+  if (wantsOpening || wantsClosing)
     log(
       `Kade-AI credit: ${[
-        credit.where === 'both' ? told('opening', opening) : '',
-        partial ? '' : told('closing', closing),
+        wantsOpening ? told('opening', opening) : '',
+        wantsClosing ? told('closing', closing) : '',
       ]
         .filter(Boolean)
         .join(', ')}.`,

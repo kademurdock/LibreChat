@@ -3644,6 +3644,27 @@ test('Kade-AI credit: a preview gets the opening only; the closing card only by 
   assert.ok(log.some((line) => /^Kade-AI credit: opening \d+\.\d s with logo t\.$/.test(line)), log.join('\n'));
   assert.equal(preview.report.credit.start.logo, 'logo t');
 
+  /* The closing card only (KADE_DESCRIPTION_CREDIT=end): a preview has no end, so it has no credit and says nothing of one. */
+  const e = await fixture('credit-preview-end', 20);
+  const endLog = [];
+  const stages = [];
+  const endVoice = withCreditVoice(providers(e.voice, [], [{ ...cue, at: 1, until: 5 }]), creditVoice);
+  const endPreview = await run(e, [], [], {
+    providers: endVoice,
+    keeper: keeperFor(plan).keeper,
+    stopAfter: 10,
+    credit: { where: 'end', logos: { end: { file: logo, voiceAt: 0.8, name: 'logo u' } } },
+    progress: async (stage) => {
+      stages.push(stage);
+    },
+    log: endLog,
+  });
+  assert.equal(endPreview.partial, true);
+  assert.equal(endPreview.report.credit, undefined, 'nothing to add before the film ends');
+  assert.ok(!endVoice.said.some((item) => item.session.endsWith(':credit')), 'no credit line is voiced');
+  assert.ok(!stages.includes('Adding the Kade-AI credit'), stages.join(', '));
+  assert.ok(!endLog.some((line) => line.startsWith('Kade-AI credit')), endLog.join('\n'));
+
   const g = await fixture('credit-missing-logo');
   const voice = await toneFile(g.dir, 'credit-voice.wav', 880, 1.2);
   const missing = [];

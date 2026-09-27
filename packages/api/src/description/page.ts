@@ -227,7 +227,7 @@ export function describedVideoPage(sharedHead: string): string {
 <div id="dv-tier-box" hidden><label for="dv-tier">Google tier for the looks (only you see this)</label><select id="dv-tier" aria-describedby="dv-tier-help"><option value="">Server default</option><option value="flex">Flex: about half the price; each look may wait in Google’s queue</option><option value="standard">Standard: the full price; looks answer sooner</option></select>
 <p id="dv-tier-help" class="hint">The same model either way. A flex look that fails is asked again on standard. The server log and each part’s record say which tier every look used, so you can describe the same video both ways with Write fresh descriptions and compare by ear.</p></div>
 <div id="dv-credit-box" hidden><label class="check"><input id="dv-credit" type="checkbox" checked aria-describedby="dv-credit-help"> Kade-AI credit at the start and end (only you can turn it off)</label>
-<p id="dv-credit-help" class="hint">A short sparkle, then the narrator says Audio description by Kade-AI before the film, and Described by Kade-AI. More at kademurdock dot com after it. Everyone else’s copies always have it. It costs nothing.</p></div>
+<p id="dv-credit-help" class="hint">Before the film, a short tune, then the narrator says Audio description by Kade-AI; after it, another tune, then Described by Kade-AI. More at kademurdock dot com. Everyone else’s copies always have it. It costs nothing.</p></div>
 <details id="dv-part"><summary>Describe only part of it</summary>
 <p id="dv-part-help" class="hint">Type times as hours:minutes:seconds, like 1:12:30, or minutes:seconds, like 4:05. Leave From empty to start at the beginning, or To empty to go to the end.</p>
 <div class="settings">
