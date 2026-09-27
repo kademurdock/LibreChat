@@ -67,7 +67,7 @@ export function yueStylesEnabled(): boolean {
 /** The Style choice's hint in the booth guide (the `band` setting). Both styles were taught from
  * real recordings; it names no person and no folder. */
 export const yueStyleHint: string =
-  'A singing style taught to YuE2 from real recordings. Soul learned from soul and R&B records; write female lead vocal or male lead vocal in Music direction to choose the voice. Kids sings with a children’s choir, so its lyrics must be clean. None is plain YuE2. Works for new songs and covers.';
+  'A singing style taught to YuE2 from real recordings. Soul learned from soul and R&B records; write female lead vocal or male lead vocal in Music direction to choose the voice. Kids sings with a children’s choir. None is plain YuE2. Works for new songs and covers.';
 /** Added to the Style hint for an account outside the Family feature pack, so a client that
  * does not read `locked` yet still says why the choice does nothing there. */
 export const yueStyleLockedSentence: string =

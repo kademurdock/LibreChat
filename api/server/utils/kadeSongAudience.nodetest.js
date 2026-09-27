@@ -14,7 +14,7 @@ const noRead = async () => {
   throw new Error('must not read the database for this account');
 };
 
-test('grown-ups get explicit; the child, the review seat and the Kids style get clean', async () => {
+test('grown-ups get explicit; the child and the review seat get clean; the Kids style follows the account', async () => {
   const adult = { id: '6a0000000000000000000001', kadeAccountType: 'adult', role: 'USER' };
   assert.equal(await A.songAudience(adult, { env, loadUser: noRead }), 'explicit');
   assert.equal(await A.songAudience({ id: '6a0000000000000000000002', role: 'ADMIN' }, { env, loadUser: noRead }), 'explicit', 'the admin, untyped');
@@ -22,8 +22,10 @@ test('grown-ups get explicit; the child, the review seat and the Kids style get 
   assert.equal(await A.songAudience({ id: '6a0000000000000000000003', kadeAccountType: 'child', role: 'ADMIN' }, { env, loadUser: noRead }), 'clean', 'child wins over any role');
   assert.equal(await A.songAudience({ id: VISCHECK, kadeAccountType: 'adult', role: 'USER' }, { env, loadUser: noRead }), 'clean', 'the App Review seat is typed adult and still gets clean');
   assert.equal(await A.songAudience({ id: '6a0000000000000000000009', kadeAccountType: 'adult' }, { env: { KADE_APP_REVIEW_USER_IDS: '6a0000000000000000000009' }, loadUser: noRead }), 'clean', 'review seats named in the env');
+  /* Sep 27 2026, her word: the Kids style is a sound, not an audience, on an uncensored platform. */
   for (const band of ['kids', 'kids_choir', 'KDKIDS'])
-    assert.equal(await A.songAudience(adult, { band, env, loadUser: noRead }), 'clean', band);
+    assert.equal(await A.songAudience(adult, { band, env, loadUser: noRead }), 'explicit', band);
+  assert.equal(await A.songAudience({ id: '6a0000000000000000000003', kadeAccountType: 'child', role: 'USER' }, { band: 'kids', env, loadUser: noRead }), 'clean', 'the child stays clean with any style');
   for (const band of [undefined, '', 'none', 'soul'])
     assert.equal(await A.songAudience(adult, { band, env, loadUser: noRead }), 'explicit', String(band));
 });
@@ -50,7 +52,7 @@ test('the kill switch KADE_SONG_EXPLICIT=0 withdraws only the grown-up permissio
   assert.equal(await A.songAudience({ id: 'a', kadeAccountType: 'adult' }, { env: off, loadUser: noRead }), null, 'a grown-up gets no note');
   assert.equal(await A.songAudience({ id: 'k', role: 'ADMIN' }, { env: off, loadUser: noRead }), null, 'the admin too');
   /* Part 293 review: pulling the switch must never leave the child or the reviewer less protected. */
-  assert.equal(await A.songAudience({ id: 'a', kadeAccountType: 'adult' }, { env: off, loadUser: noRead, band: 'kids' }), 'clean', 'the Kids style');
+  assert.equal(await A.songAudience({ id: 'a', kadeAccountType: 'adult' }, { env: off, loadUser: noRead, band: 'kids' }), null, 'the Kids style follows the grown-up');
   assert.equal(await A.songAudience({ id: 'c', kadeAccountType: 'child' }, { env: off, loadUser: noRead }), 'clean', 'the child');
   assert.equal(await A.songAudience({ id: VISCHECK, kadeAccountType: 'adult' }, { env: off, loadUser: noRead }), 'clean', 'the App Review seat');
   assert.equal(await A.songAudience({ id: 'u', role: 'USER' }, { env: off, loadUser: async () => ({}) }), 'clean', 'an untyped account');

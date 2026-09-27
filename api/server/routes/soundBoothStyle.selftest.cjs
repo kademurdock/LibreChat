@@ -113,7 +113,8 @@ test('the Style hint is true now and names no person or folder', () => {
   assert.match(hint, /^A singing style taught to YuE2 from real recordings\./);
   assert.match(hint, /Soul learned from soul and R&B records/);
   assert.match(hint, /female lead vocal or male lead vocal in Music direction/);
-  assert.match(hint, /Kids sings with a children’s choir, so its lyrics must be clean\./, 'Part 296: shorter, and it warns before the clean-words refusal');
+  assert.match(hint, /Kids sings with a children’s choir\./, 'Part 296: shorter');
+  assert.doesNotMatch(hint, /clean/i, 'Sep 27 2026: no clean-lyrics rule for the Kids style');
   assert.match(hint, /None is plain YuE2\./);
   assert.ok(hint.split(/\s+/).length <= 60, 'the hint stays short');
   assert.doesNotMatch(hint, /one expressive female lead/, 'the old sonauto description is gone');
@@ -271,10 +272,10 @@ test('the booth route: the guide greys Style out per person, and /render refuses
       assert.equal(family.status, 200);
       assert.equal(family.body.yueSaw.band, 'soul', 'the pack passes on to YuE2');
 
-      // The Kids clean-words check still answers for a family account.
+      // Sep 27 2026, her word: no clean-words rule for the Kids style; explicit lyrics pass through.
       const swearing = await post({ ...song, band: 'kids', lyrics: '[Verse]\nWhat the fuck' });
-      assert.equal(swearing.status, 400);
-      assert.match(swearing.body.error, /The Kids style sings with a children's choir/);
+      assert.equal(swearing.status, 200);
+      assert.equal(swearing.body.yueSaw.band, 'kids', 'the Kids style renders explicit lyrics like any style');
     } finally {
       server.close();
     }

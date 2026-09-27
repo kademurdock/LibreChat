@@ -676,33 +676,11 @@ test('Part 293 review: two short verses grown into two long ones say "lengthened
   assert.equal(loadBooth({ reply: () => '' }).internals.verseCount(song(8, 8, 8)), 3);
 });
 
-test('Part 293 review: the Kids style never renders explicit lyrics, checked on the server before the YuE2 router', async () => {
-  let authed = 0;
-  const booth = loadBooth({ reply: () => '', middleware: { requireJwtAuth: (_req, _res, next) => { authed += 1; next(); } } });
-  const { kidsStyleRefusal } = booth.internals;
+test('Sep 27 2026: no Kids-style refusal; explicit lyrics pass through to YuE2 like any style', () => {
+  const booth = loadBooth({ reply: () => '' });
+  assert.equal(booth.internals.kidsStyleRefusal, undefined, 'the refusal is gone');
   const yueAt = booth.registered.findIndex(([method, path]) => method === 'use' && path === 'the YuE2 router');
-  /* The pasted-song sorter also sits on POST /render ahead of it (it has to: a pasted Lyrics Box
-   * must be in the body before the words are checked), so the gate is the last one before YuE2. */
-  const gateAt = booth.registered.reduce((at, [method, path], i) => (method === 'post' && path === '/render' && i < yueAt ? i : at), -1);
-  assert.ok(gateAt >= 0 && yueAt > gateAt, 'the check runs before the YuE2 router can queue anything');
-  const gate = booth.registered[gateAt].at(-1);
-  const run = async (body) => {
-    const out = { code: 0, body: null, next: false };
-    await gate({ body }, { status(code) { out.code = code; return this; }, json(value) { out.body = value; return this; } }, () => { out.next = true; });
-    return out;
-  };
-  const refused = await run({ engine: 'yue2', band: 'kids', lyrics: '[Verse 1]\nThis shit is cold', script: 'A choir.' });
-  assert.equal(refused.code, 400); assert.equal(authed, 1, 'only a signed-in person is answered');
-  assert.match(refused.body.error, /Kids style/); assert.match(refused.body.error, /have to be clean/); assert.match(refused.body.error, /set Style to None or another style/);
-  for (const body of [
-    { engine: 'yue2', band: 'kids', lyrics: 'Clap your hands and stomp your feet' },
-    { engine: 'yue2', band: 'soul', lyrics: 'This shit is cold' },
-    { engine: 'yue2', lyrics: 'This shit is cold' },
-    { engine: 'lyria', band: 'kids', lyrics: 'This shit is cold' },
-    {},
-  ]) assert.equal((await run(body)).next, true, JSON.stringify(body));
-  assert.ok(kidsStyleRefusal({ engine: 'yue2', band: 'kids_choir', lyrics: 'f*** this' }));
-  assert.equal(kidsStyleRefusal(undefined), null);
+  assert.ok(yueAt >= 0, 'the YuE2 router is still registered');
 });
 
 test('Part 293 review: the writing lane\'s music grammar describes the voice, the map and the length without demonstrating one', () => {
@@ -755,7 +733,9 @@ test('Part 293 review: Surprise me for a clean audience never draws a dirty shel
 
 test('Part 293 review: the website sends the Style with Surprise me', () => {
   const page = readFileSync(new URL('../../../../api/server/routes/kadeSoundBoothPage.js', import.meta.url), 'utf8');
-  assert.match(page, /post\('\/api\/kade\/sound-booth\/idea',\{band:engine==='yue2'\?state\.values\.band:undefined\}\)/);
+  /* Part 295: the Style rides along only while it is not locked (outside the Family feature pack). */
+  assert.match(page, /var styleOpen=engine==='yue2'&&/);
+  assert.match(page, /post\('\/api\/kade\/sound-booth\/idea',\{band:styleOpen\?state\.values\.band:undefined\}\)/);
 });
 
 /* Part 293 follow-up (Sep 25 2026): the before/after test found a house shape ([Final Chorus] in

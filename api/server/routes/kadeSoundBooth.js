@@ -14,7 +14,7 @@ const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingProm
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
-const { songAudience, hasExplicitWords, explicitSungLines, isKidsBand } = require('~/server/utils/kadeSongAudience');
+const { songAudience, hasExplicitWords, explicitSungLines } = require('~/server/utils/kadeSongAudience');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
 const { splitSpeakScript, saySplit, previewExcerpt } = require('./kadeSoundBoothSplit');
@@ -100,20 +100,10 @@ router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
     return res.status(403).json({ error: FAMILY_PACK_STYLES_REFUSAL, pack: true });
   });
 });
-/* Part 293 review: the Kids trained style is a children's choir, and it never sings explicit
- * words, whoever asks and whatever wrote them. The desk writes clean for the Kids style only
- * when it is told the style, and the iPhone does not send it yet, so the render is checked here,
- * on the server, before the YuE2 router queues anything. The refusal says what to change. */
-const KIDS_STYLE_NEEDS_CLEAN_WORDS = "The Kids style sings with a children's choir, so its lyrics have to be clean. Take the swearing and anything sexual out of the lyrics, or set Style to None or another style, then make the music again.";
-function kidsStyleRefusal(body) {
-  const b = body || {};
-  return b.engine === 'yue2' && isKidsBand(b.band) && hasExplicitWords(b.lyrics) ? KIDS_STYLE_NEEDS_CLEAN_WORDS : null;
-}
-router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
-  const refusal = kidsStyleRefusal(req.body);
-  if (!refusal) return next();
-  return requireJwtAuth(req, res, () => res.status(400).json({ error: refusal }));
-});
+/* Sep 27 2026, her word: "It's also kinda stupid that the soundbooth says kids choir has to have
+ * clean lyrics ... I hate assumptions like that on an uncensored platform." The Kids style is a
+ * sound, not an audience: its lyrics follow the account like every other song (the child account
+ * and the App Review seat stay clean through kadeSongAudience), so there is no render refusal. */
 router.use(createYueRouter({
   auth: requireJwtAuth,
   user: req => String(req.user.id),
@@ -3108,5 +3098,5 @@ router.get('/health', requireJwtAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, kidsStyleRefusal, verseCount };
+module.exports._internals = { priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
 

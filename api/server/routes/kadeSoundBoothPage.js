@@ -652,7 +652,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var btn=this, label=btn.textContent, engine=state.engine, box=document.getElementById('script'), original=box.value;
       state.writing=true;btn.disabled=true;document.getElementById('btnDraft').disabled=true;updateRenderControls();
       say('Thinking up a song idea. About ten seconds.');
-      /* Part 293: the Style rides along, so a Kids-style pitch is clean for everyone.
+      /* Part 293: the Style rides along (Sep 27 2026: it no longer makes a pitch clean; the account decides).
        * Part 295 review: never a locked Style (outside the Family feature pack), which an opened
        * project can still hold in state.values; collect() never sends one either. */
       var styleOpen=engine==='yue2'&&!state.guide.engines.yue2.settings.some(function(s){return s.key==='band'&&s.locked;});

@@ -10,7 +10,7 @@
  * and for the Wall of Fame.
  *
  *   songAudience(user, { band })  -> 'explicit' | 'clean' | null
- *     'clean'    the App Review seat, the child account, the Kids choir style, an untyped account,
+ *     'clean'    the App Review seat, the child account, an untyped account,
  *                and ANY failure to find out (fails closed, like kadeReadingRoom.js isChild)
  *     'explicit' an account typed adult, or the admin (isKadeAdult, below)
  *     null       a grown-up while the kill switch KADE_SONG_EXPLICIT=0 is on: the explicit
@@ -54,7 +54,6 @@ async function decideAudience(user, { band, env, loadUser, reviewSeat }) {
   try {
     if (!user) return 'clean';
     if (reviewSeat(user, env)) return 'clean';
-    if (isKidsBand(band)) return 'clean';
     const account = await withAccountType(user, loadUser);
     if (!account || account.kadeAccountType === 'child') return 'clean';
     return isKadeAdult(account) ? 'explicit' : 'clean';
