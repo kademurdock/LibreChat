@@ -88,10 +88,11 @@ export const musicWritingCraft: string = `DESK NOTES FROM THE OWNER (these outra
 - SING-ALONG FIRST. Her verdict on this desk's drafts (Sep 20 2026): "it's still not sounding like a song I would sing along to at all. It still feels like literary work." She is right, and where the system above disagrees with the rules below, these win:
   1. RHYME YOU CAN HEAR. Every verse is built in couplets (AABB) or alternating lines (ABAB, or XAXA at the very least), and the rhyming word is the LAST word of the line. Perfect rhymes and strong slant rhymes both count; a vowel that merely looks similar does not. A listener must be able to guess the last word of a line before it lands. The chorus rhymes too, and the title line has a rhyme partner. The system's advice to leave lines unrhymed and avoid tidy couplets is for a writer who over-rhymes. This desk under-rhymes. At most ONE deliberately unrhymed line in the whole song. Slant rhyme counts as rhyme. Never twist word order or grammar to land a rhyme; if a line has to bend to reach its rhyme, rewrite the line. Skip the nursery-rhyme pairs everyone has heard a thousand times.
   2. ONE METER PER SECTION. Choose a syllable count for the verse lines and hold it within one syllable, line after line, and match verse one's count in every verse after it so the same tune fits them all. Long line, short line, long line, short line is fine if it repeats exactly. A verse whose lines run 5, 12, 7 and 10 syllables cannot be sung. Do not count syllables one by one while you think; that burns the whole budget and the song comes back cut off. Pick a beat (four stresses a line is the workhorse), say each line to it once, and move on. The desk counts afterwards and will tell you which verses wander.
-  3. THE CHORUS STATES THE HOOK. The verses can show; the chorus TELLS. It is the singer saying the feeling straight out in words a ten year old knows, short lines, the title first or last, built to be shouted by a car full of people. Four to six lines plus repeats. No chorus made of description.
+  3. THE CHORUS STATES THE HOOK. The verses can show; the chorus TELLS. It is the singer saying the feeling straight out in words a ten year old knows, short lines, the title first or last, built to be shouted by a car full of people. Four to six lines, and the hook is sung in them no more than twice: every other line says something the hook does not (what happens because of it, what it costs, a picture, a comeback), and no other line is sung twice inside one chorus. The title lands four to eight times across the whole song because the chorus comes back, never four times inside one chorus. The system's advice to sing one phrase pass after pass inside a chorus is for a writer who never repeats. This desk over-repeats: her verdict on its choruses (Sep 27 2026) was a writer who "was lyrical for a minute" and then "ran out of ideas". The desk draws a CHORUS SHAPE with the section map; follow it. No chorus made of description.
   4. SONG, NOT SHORT STORY. No more than two observed details per verse, and each one something only this song could contain. Skip the props recent drafts keep reaching for, unless her brief names them: rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV. The rest is the singer talking, to someone, in plain sentences. Cut every line that only notices something unless the next line cashes it in. No understatement contests, no trailing off, no "and that's that". The opposite failure is just as dead: lines so general they could sit in a thousand songs. Plain words, exact facts. Verses this desk sizes itself run eight lines or more.
   5. LET IT BE FUN. Jokes, stories where something happens, animals, kids, bragging, nonsense syllables, call and response, a bit the crowd does. A children's song or a comedy song gets the same craft and none of the melancholy.
   6. More of her pet hates: humming or a hum of any kind (the heater, the fridge, the engine, a tune), "knowing" as a noun or a mood ("the knowing", "a knowing look"), anything done "slow", and the radio playing a song that comments on the scene.
+  7. NO LISTS OF LINES THAT OPEN THE SAME WAY. Three lines in a row that open with the same word or words, or one line that stacks three clauses on the same opening word, is the list she hears as machine writing (her words, Sep 27 2026: "very ai"), and her own system already bans lists that only repeat. Say the thing once, as a sentence, and spend the other lines on what happens. One word sung three times for pressure, or a chant in a post-chorus, is not this.
 - WRITE IT LIKE A PERSON WROTE IT. From the songwriting prompt she uses elsewhere; these hold alongside the rules above.
   - Trust the listener. When a line lands, move on. Never explain a joke. Never follow a sad line with one saying how sad the singer is. No lesson at the end and no inspirational turnaround nobody earned: grief can stay grief, anger can stay anger, a fight can stay unresolved, and the singer can still want the person they shouldn't.
   - Give the singer a personality: opinions, bad habits, pettiness, contradictions, wants, and a way of talking you would recognise across a room. They do not have to be the good guy. Songs are not HR training videos.
@@ -438,6 +439,56 @@ export function sectionMapNote(map: SectionMap | null): string {
   return `SECTION MAP, drawn by the desk for this song: ${map.name}. ${map.plan} Use this map unless the idea clearly wants another. Write the STRUCTURE line of the music direction from it.`;
 }
 
+/* Part 296 (Sep 27 2026). Her words about the desk's choruses: "it does good on
+ * some of the rhymes, but the chorus is horrible... over and over, nothing else.
+ * Sounds like a writer that was lyrical for a minute then... ran out of ideas."
+ * Measured on 46 drafts: the hook sung three or more times in 78% of first
+ * choruses, and in 48% half the lines or fewer said anything new. The section
+ * map said nothing about the inside of a chorus, and the system above it asks
+ * for one phrase sung over and over. So the desk draws ONE chorus shape per
+ * request in code, the same way it draws the map (a list of shapes in a prompt
+ * reads as one shape at low reasoning), and says it in words: never an example
+ * line, because the writer hands examples back. The gate after the draft
+ * (lyricRepeatIssues) holds the song to it. */
+export type ChorusShape = { id: string; plan: string };
+
+export const CHORUS_SHAPES: Record<string, ChorusShape> = {
+  bookends: {
+    id: 'bookends',
+    plan: 'the hook is the first line and the last line, and the lines between carry it somewhere: what happens because of it, what it costs, or the comeback.',
+  },
+  answer: {
+    id: 'answer',
+    plan: 'the hook is the first line and comes back once, as the third. The second line answers it with a new fact, and the lines after the third raise the stakes and land hardest on the last.',
+  },
+  build: {
+    id: 'build',
+    plan: 'the chorus climbs to the hook. Each line before it adds a new fact or pushes the feeling further, and the hook lands on the last line. It may also open the chorus, and that is its only other time.',
+  },
+};
+
+/** The brief asked for a chant or for repetition, or for no chorus at all: the
+ *  desk draws no chorus shape and the chorus gate stands down. */
+const briefWantsRepeats = (brief: string): boolean =>
+  /\b(?:repetitive|repeat(?:s|ed|ing)?|chant(?:s|ed|ing)?|mantra|over and over|loop(?:s|ed|ing)?|call and response|call-and-response|hook only|chorus only)\b/i.test(brief);
+
+/** This request's chorus shape; null for a map with no chorus (the story song's
+ *  refrain is one line by design) or when the brief asks for repetition or for
+ *  no chorus. Drawn with the same salt as the map, so asking again draws again. */
+export function chorusShapeFor(brief: string, salt = '', map: SectionMap | null = null): ChorusShape | null {
+  const text = String(brief || '').trim();
+  if (!text || briefWantsRepeats(text) || /\bno chorus\b/i.test(text) || map?.id === 'storyRefrain') return null;
+  const pool = Object.values(CHORUS_SHAPES);
+  return pool[Math.floor(seededUnit(`${text}\nchorus\n${salt}`) * pool.length)];
+}
+
+/** The line the writer gets under the section map. */
+export function chorusShapeNote(shape: ChorusShape | null, map: SectionMap | null = null): string {
+  if (!shape) return '';
+  const chant = map?.id === 'dance' ? ' Chanting one short phrase belongs to the [Drop], not to the chorus.' : map?.id === 'prePost' ? ' Chanting one short phrase belongs to the [Post-Chorus], not to the chorus.' : '';
+  return `CHORUS SHAPE, drawn by the desk for this song: ${shape.plan} Whatever the shape, the hook is sung no more than twice in one chorus, and every line that is not the hook says something the hook does not. Other lines are never sung twice inside it, two lines in a row never open with the same words, and a word ends two of its lines at most. Four to six lines. The same chorus comes back each time, so the title still lands four to eight times across the song.${chant}`;
+}
+
 /** The second, surgical request: replace the flagged lines and nothing else. */
 /** Seen live: asked for three verses, the writer delivered two. Returns the
  *  instruction to add when a song the desk sized itself came back short; null
@@ -564,6 +615,468 @@ export function lyricMeterNote(script: string): string {
     : '';
 }
 
+/* Part 296 (Sep 27 2026): the repetition gate. Her two complaints, measured in
+ * code because "prompt-only pleading does not work at low reasoning; guards in
+ * code do" (Part 216):
+ *  1. A chorus that is its hook sung again and again with nothing else. In a
+ *     chorus pass: the hook (its most repeated phrase that carries a real word)
+ *     sung more than twice, another line sung twice besides the hook, or fewer
+ *     than three in four of its lines different.
+ *  2. "same this same this same this and that. Very ai." Three or more lines in
+ *     a row opening with the same two words (or the same word, when it is not a
+ *     pronoun, an article or a joining word), or one line stacking three clauses
+ *     on the same opening. Her own Tier 2 bans already name this (lists that
+ *     only repeat, checklist lyrics); nothing enforced them.
+ * Plus one rhyme check the collapsed choruses shared: one word ending three or
+ * more lines of a section.
+ * Chants are left alone where the map designs them (post-chorus, drop, intro,
+ * outro), a single word sung three times is the system's spice, not a list, and
+ * whole-line (ad-libs) are backing vocals. A word from her brief is hers. */
+const STOP_WORDS = new Set(
+  (
+    "i me my mine you your yours we us our he him his she her it its they them their a an the and or but so if of to in on at by for with from up down out off over into onto is am are was were be been being do does did done have has had " +
+    "i'm you're it's that's don't can't won't ain't i'll you'll i've i'd you'd we're they're she's he's gonna wanna gotta just like that this these those what when where who how why all no not yeah oh ooh ah hey uh na la whoa baby babe girl boy yo ay now then too very some any got get come go let's lets mm hmm huh"
+  ).split(/\s+/),
+);
+/* Openings too common in speech to count as a list on their own (two shared words still do). */
+const COMMON_OPENINGS = new Set(
+  "i i'm i've i'd i'll you you're you've you'd you'll he he's she she's it it's we we're we've they they're they've that's there's the a an and but so then or if when my your our his her their".split(' '),
+);
+const EXEMPT_SECTION = /^(?:post[- ]?chorus|drop|intro|outro|chant|vamp|tag|interlude|instrumental|solo)\b/i;
+
+const sayable = (line: string): string =>
+  line
+    .toLowerCase()
+    .replace(/[’‘`]/g, "'")
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z0-9' ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+const bare = (word: string): string => word.replace(/^'+|'+$/g, '');
+const contentWords = (text: string): string[] =>
+  text
+    .split(' ')
+    .map(bare)
+    .filter((w) => w.length > 1 && !STOP_WORDS.has(w));
+/** The phrases of a line split at punctuation, each made sayable, two words or more. */
+const phrasesOf = (line: string): { said: string; raw: string }[] =>
+  line
+    .replace(/\([^)]*\)/g, ' ')
+    .split(/[,;:!?.]+|\s[—–-]+\s|[—–]/)
+    .map((raw) => ({ said: sayable(raw), raw: raw.trim() }))
+    .filter((p) => p.said.includes(' '));
+/* A voice tic at the end of a line ("..., yeah") is breath, not the rhyme word. */
+const TAIL_TICS = new Set('yeah yea oh ooh ah hey uh whoa baby babe na la mm yo ay huh now'.split(' '));
+const endWord = (line: string): string => {
+  const words = sayable(line).split(' ').map(bare).filter(Boolean);
+  while (words.length > 1 && TAIL_TICS.has(words[words.length - 1])) words.pop();
+  return words[words.length - 1] || '';
+};
+const hasWords = (brief: string, words: string): boolean => ` ${sayable(brief)} `.includes(` ${words} `);
+
+type LyricPass = { tag: string; tagAt: number; lines: string[] };
+
+/** Every section pass below "Lyrics:" (before READBACK) with its tag, the index
+ *  of its tag line in the script's lines (for sung lines before any tag, the
+ *  "Lyrics:" heading's) and its sung lines, whole-line ad-libs left out. */
+function lyricPasses(script: string): { rows: string[]; passes: LyricPass[] } {
+  const rows = script.split('\n');
+  const passes: LyricPass[] = [];
+  const at = rows.findIndex((row) => /^\s*lyrics\s*:\s*$/i.test(row));
+  if (at === -1) return { rows, passes };
+  let current: LyricPass | null = null;
+  for (let i = at + 1; i < rows.length; i++) {
+    const line = rows[i].trim();
+    if (/^READBACK:/i.test(line)) break;
+    const tag = /^\[([^\]]*)\]$/.exec(line);
+    if (tag) {
+      current = { tag: tag[1].trim(), tagAt: i, lines: [] };
+      passes.push(current);
+    } else if (line && !/^\(.*\)$/.test(line)) {
+      if (!current) {
+        current = { tag: '', tagAt: at, lines: [] };
+        passes.push(current);
+      }
+      current.lines.push(line);
+    }
+  }
+  return { rows, passes };
+}
+
+/** How often a phrase is sung across these lines, as whole words; words in
+ *  parentheses are echoes and are not counted. */
+function timesSung(phrase: string, lines: string[]): number {
+  let hits = 0;
+  for (const line of lines) {
+    const words = ` ${sayable(line)} `;
+    for (let from = words.indexOf(` ${phrase} `); from !== -1; from = words.indexOf(` ${phrase} `, from + phrase.length + 1)) hits += 1;
+  }
+  return hits;
+}
+
+/** The chorus's hook: of its phrases (whole lines, and the pieces of a line
+ *  between punctuation) that carry a real word, the one sung most often in this
+ *  pass, the longer on a tie. */
+function chorusHook(lines: string[]): { hook: string; shown: string; hits: number } {
+  const shown = new Map<string, string>();
+  for (const line of lines) {
+    const whole = { said: sayable(line), raw: line.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim() };
+    for (const { said, raw } of [...phrasesOf(line), whole])
+      if (said.includes(' ') && contentWords(said).length && !shown.has(said)) shown.set(said, raw.replace(/[,;:!?.]+$/, ''));
+  }
+  let hook = '';
+  let hits = 0;
+  for (const said of shown.keys()) {
+    const n = timesSung(said, lines);
+    if (n > hits || (n === hits && said.length > hook.length)) [hook, hits] = [said, n];
+  }
+  return { hook, shown: shown.get(hook) || hook, hits };
+}
+
+/** How many lines of a section bring something new: two or more real words not
+ *  yet sung in it, or at least half of the line's real words new. */
+function linesWithNews(lines: string[]): number {
+  const seen = new Set<string>();
+  let news = 0;
+  for (const line of lines) {
+    const words = contentWords(sayable(line));
+    const fresh = words.filter((w) => !seen.has(w));
+    words.forEach((w) => seen.add(w));
+    if (fresh.length >= 2 || (words.length > 0 && fresh.length > 0 && fresh.length / words.length >= 0.5)) news += 1;
+  }
+  return news;
+}
+
+/** The longest run of three or more consecutive, different lines that open the
+ *  same way: two shared opening words, or one when it is not a common opening. */
+function openingRun(lines: string[], brief: string): { run: number; from: number; key: string } | null {
+  let best: { run: number; from: number; key: string } | null = null;
+  for (const width of [2, 1]) {
+    let run = 1;
+    for (let i = 1; i <= lines.length; i++) {
+      const a = sayable(lines[i - 1]).split(' ');
+      const b = i < lines.length ? sayable(lines[i]).split(' ') : [];
+      const key = a.slice(0, width).join(' ');
+      /* A wordless run (a na-na line) is a vocal, not a line of the list. */
+      const same =
+        b.length >= width &&
+        a.length >= width &&
+        b.slice(0, width).join(' ') === key &&
+        sayable(lines[i - 1]) !== sayable(lines[i]) &&
+        contentWords(sayable(lines[i - 1])).length > 0 &&
+        contentWords(sayable(lines[i])).length > 0 &&
+        (width === 2 || !COMMON_OPENINGS.has(bare(key)));
+      if (same) {
+        run += 1;
+        continue;
+      }
+      if (run >= 3 && !hasWords(brief, key) && (!best || run > best.run)) {
+        const opening = lines[i - 1].replace(/\([^)]*\)/g, ' ').trim().split(/\s+/).slice(0, width).join(' ').replace(/[,;:!?.]+$/, '');
+        best = { run, from: i - run, key: opening };
+      }
+      run = 1;
+    }
+  }
+  return best;
+}
+
+/** A line that stacks three or more clauses on the same opening: the same two
+ *  words, or the same word when it is not a common opening. Clauses of one word
+ *  (a word sung three times for pressure) and clauses with no real word (a
+ *  chant) do not count. */
+function stackedLine(line: string, brief: string): { n: number; key: string } | null {
+  const parts = line
+    .replace(/\([^)]*\)/g, ' ')
+    .split(/,|;|—|–|\band\b|\bor\b/i)
+    .map((part) => ({ said: sayable(part), raw: part.trim() }))
+    .filter((p, i, all) => p.said.includes(' ') && contentWords(p.said).length && all.findIndex((q) => q.said === p.said) === i);
+  /* Different clauses only: one phrase sung three times is a chant (the chorus
+   * gate counts it there), not a list of things. */
+  const counts = new Map<string, { n: number; raw: string }>();
+  for (const { said, raw } of parts) {
+    const words = said.split(' ');
+    const rawWords = raw.split(/\s+/);
+    const keys: [string, string][] = [[words.slice(0, 2).join(' '), rawWords.slice(0, 2).join(' ')]];
+    if (!COMMON_OPENINGS.has(bare(words[0]))) keys.push([words[0], rawWords[0]]);
+    for (const [key, shown] of keys) {
+      const had = counts.get(key);
+      counts.set(key, { n: (had?.n || 0) + 1, raw: had?.raw || shown.replace(/[,;:!?.]+$/, '') });
+    }
+  }
+  let best: { n: number; key: string } | null = null;
+  for (const [key, { n, raw }] of counts) if (n >= 3 && !hasWords(brief, key) && (!best || n > best.n)) best = { n, key: raw };
+  return best;
+}
+
+export type RepeatIssue = {
+  /** The section tag as written, e.g. Chorus or Verse 2. */
+  tag: string;
+  /** A unique name for this section in a rewrite request (the tag, told apart when two differ). */
+  label: string;
+  /** Script line indices of the tag lines of every pass that carries these exact lines. */
+  passes: number[];
+  /** Is it a chorus (the rewrite writes a whole new one) or another section (named lines only)? */
+  chorus: boolean;
+  /** The pass's sung lines as written. */
+  lines: string[];
+  /** The hook as written, for a chorus. */
+  hook: string;
+  /** What the desk measured, in plain words. */
+  problems: string[];
+  /** How far over the line it is; the desk keeps the version that weighs less. */
+  weight: number;
+};
+
+/** Measures one section pass. */
+function sectionRepeats(tag: string, lines: string[], brief: string): { hook: string; problems: string[]; weight: number } {
+  const problems: string[] = [];
+  let weight = 0;
+  let hook = '';
+  const chorus = CHORUS_TAG.test(tag);
+  const worded = lines.filter((line) => contentWords(sayable(line)).length);
+  if (chorus && worded.length >= 2 && !briefWantsRepeats(brief)) {
+    const found = chorusHook(worded);
+    hook = found.shown;
+    const counts = new Map<string, number>();
+    for (const line of worded) counts.set(sayable(line), (counts.get(sayable(line)) || 0) + 1);
+    const repeated = [...counts].filter(([, n]) => n >= 2);
+    const distinct = counts.size;
+    if (found.hits > 2) {
+      problems.push(`the hook "${found.shown}" is sung ${found.hits} times in one chorus`);
+      weight += found.hits - 2;
+    }
+    /* A line sung twice that does not carry the hook (lines that do are counted above). */
+    const others = repeated.filter(([said]) => !found.hook || !` ${said} `.includes(` ${found.hook} `)).map(([said]) => worded.find((line) => sayable(line) === said) || said);
+    if (others.length) {
+      problems.push(`besides the hook, ${others.map((line) => `"${line}"`).join(' and ')} ${others.length === 1 ? 'is' : 'are'} sung more than once in it`);
+      weight += others.length;
+    }
+    if (distinct / worded.length < 0.75) {
+      problems.push(`only ${distinct} of its ${worded.length} lines are different`);
+      weight += 1;
+    }
+    if (problems.length) {
+      const news = linesWithNews(worded);
+      if (news <= worded.length / 2) problems.push(`only ${news} of its ${worded.length} lines say anything the hook does not`);
+    }
+  }
+  const ends = new Map<string, number>();
+  for (const line of worded) {
+    const word = endWord(line);
+    if (word) ends.set(word, (ends.get(word) || 0) + 1);
+  }
+  for (const [word, n] of ends) {
+    if (n < 3 || hasWords(brief, word)) continue;
+    problems.push(`${n} of its lines end on the word "${word}"`);
+    weight += n - 2;
+  }
+  const run = openingRun([...lines], brief);
+  if (run) {
+    problems.push(`${run.run} lines in a row open with "${run.key}" (${lines.slice(run.from, run.from + run.run).map((line) => `"${line}"`).join(', ')})`);
+    weight += run.run - 2;
+  }
+  for (const line of [...new Set(lines)]) {
+    const stack = stackedLine(line, brief);
+    if (!stack) continue;
+    problems.push(`the line "${line}" stacks ${stack.n} clauses that each open with "${stack.key}"`);
+    weight += stack.n - 2;
+  }
+  return { hook, problems, weight };
+}
+
+/** Part 296: the sections of a draft that repeat instead of saying something,
+ *  one entry per distinct section (a chorus sung three times is one entry that
+ *  names its three passes). Empty when there is nothing to fix. */
+export function lyricRepeatIssues(script: string, brief = ''): RepeatIssue[] {
+  const { passes } = lyricPasses(script);
+  const issues: RepeatIssue[] = [];
+  const byContent = new Map<string, RepeatIssue | null>();
+  const labels = new Set<string>();
+  for (const pass of passes) {
+    if (!pass.lines.length || EXEMPT_SECTION.test(pass.tag)) continue;
+    const chorus = CHORUS_TAG.test(pass.tag);
+    const key = `${chorus ? 'chorus' : pass.tag.toLowerCase()}\n${pass.lines.map(sayable).join('\n')}`;
+    if (byContent.has(key)) {
+      const seen = byContent.get(key);
+      if (seen) seen.passes.push(pass.tagAt);
+      continue;
+    }
+    const measured = sectionRepeats(pass.tag, pass.lines, brief);
+    if (!measured.weight) {
+      byContent.set(key, null);
+      continue;
+    }
+    const name = pass.tag || 'Lyrics';
+    let label = name;
+    for (let n = 2; labels.has(label.toLowerCase()); n++) label = `${name} (version ${n})`;
+    labels.add(label.toLowerCase());
+    const issue: RepeatIssue = { tag: name, label, passes: [pass.tagAt], chorus, lines: pass.lines, hook: measured.hook, problems: measured.problems, weight: measured.weight };
+    byContent.set(key, issue);
+    issues.push(issue);
+  }
+  return issues;
+}
+
+/** The total weight of a draft's repeat issues: lower is better. */
+export function lyricRepeatWeight(script: string, brief = ''): number {
+  return lyricRepeatIssues(script, brief).reduce((n, issue) => n + issue.weight, 0);
+}
+
+const passCount = (issue: RepeatIssue): string => (issue.passes.length > 1 ? `, sung ${issue.passes.length} times` : '');
+
+/** The audit's gate for what the desk measured. Empty when nothing repeats. */
+function repeatGate(issues: RepeatIssue[], number: number): string {
+  if (!issues.length) return '';
+  return `\n${number}. REPEATS, measured by the desk. ${issues.map((issue) => `[${issue.tag}]${passCount(issue)}: ${issue.problems.join('; ')}.`).join(' ')} Fix each where it stands. A chorus sings its hook word for word no more than twice and spends every other line on something new: what happens, what it costs, a picture only this song has, or a comeback; change it the same way every time it comes back. Lines that open the same way get openings of their own, and a line that stacks a list becomes one plain thought. Keep the hook, the rhyme sounds and the length.`;
+}
+
+type RepeatPart = RepeatIssue & {
+  /** A later chorus that changed from the first one. */
+  later: boolean;
+  /** Not at fault itself, but carries the old chorus: rewritten with it so the song keeps one chorus. */
+  companion: boolean;
+};
+
+/** The sections a rewrite asks for: the issues, and when the first chorus is at
+ *  fault, every later chorus that changed from it (a final chorus with its one
+ *  changed line), so the new chorus reaches every place the old one was sung.
+ *  The request and the step that writes the answer in both build this list, so
+ *  their labels agree. */
+function repeatParts(script: string, issues: RepeatIssue[]): RepeatPart[] {
+  const choruses = lyricPasses(script).passes.filter((pass) => pass.lines.length && CHORUS_TAG.test(pass.tag));
+  const firstAt = choruses.length ? choruses[0].tagAt : NaN;
+  const parts: RepeatPart[] = issues.map((issue) => ({ ...issue, passes: [...issue.passes], later: issue.chorus && !issue.passes.includes(firstAt), companion: false }));
+  const main = parts.find((part) => part.chorus && part.passes.includes(firstAt));
+  if (!main) return parts;
+  const covered = new Set(parts.flatMap((part) => part.passes));
+  const labels = new Set(parts.map((part) => part.label.toLowerCase()));
+  const byContent = new Map<string, RepeatPart>();
+  for (const pass of choruses) {
+    if (covered.has(pass.tagAt)) continue;
+    const key = pass.lines.map(sayable).join('\n');
+    const had = byContent.get(key);
+    if (had) {
+      had.passes.push(pass.tagAt);
+      continue;
+    }
+    let label = pass.tag;
+    for (let n = 2; labels.has(label.toLowerCase()); n++) label = `${pass.tag} (version ${n})`;
+    labels.add(label.toLowerCase());
+    const part: RepeatPart = { tag: pass.tag, label, passes: [pass.tagAt], chorus: true, lines: pass.lines, hook: main.hook, problems: [], weight: 0, later: true, companion: true };
+    byContent.set(key, part);
+    parts.push(part);
+  }
+  return parts;
+}
+
+/** Part 296: the one targeted rewrite when a section still repeats after the
+ *  audit. Only the named sections come back; the desk writes them in, a new
+ *  chorus into every pass that carried the old one. */
+export function lyricRepeatRequest(script: string, issues: RepeatIssue[]): string {
+  const parts = repeatParts(script, issues);
+  const main = parts.find((part) => part.chorus && !part.later);
+  const many = parts.length > 1;
+  const asks = parts.map((part, i) => {
+    const head = `${i + 1}. [${part.label}]${passCount(part)}`;
+    if (main && part.later) {
+      /* Measured: told only to "carry the change over", the writer invented a new one
+       * (a done-with-him song's last chorus turned into "I still love you"). So the
+       * changed line is quoted and kept. */
+      const first = new Set(main.lines.map(sayable));
+      const changed = [...new Set(part.lines.filter((line) => !first.has(sayable(line))))];
+      const keep = changed.length && changed.length <= 2 ? ` Its changed line${changed.length > 1 ? 's' : ''} ${changed.map((line) => `"${line}"`).join(' and ')} ${changed.length > 1 ? 'stay' : 'stays'} word for word, in the same place in the chorus; everything else is your new [${main.label}].` : ` Write it as your new [${main.label}] with that same change carried over, and nothing else different.`;
+      return `${head}: a later chorus that changed from the first one${part.companion ? '' : ', with the same problems'}.${keep}`;
+    }
+    const said = `${head}: ${part.problems.join('; ')}.`;
+    if (part.chorus) {
+      const later = part.later ? ' It is a later chorus: keep it as close to the first chorus of the song as it already is, with its own change.' : '';
+      return `${said}\n   Rewrite it as a real chorus. Keep the hook${part.hook ? ` "${part.hook}"` : ''} word for word and sing it no more than twice: open and close on it, or sing it first and third. Every other line says something the hook does not: what happens because of it, what it costs, a picture only this song has, or a comeback. Other lines are never sung twice, two lines in a row never open with the same words, and a word ends two of its lines at most. Keep about ${part.lines.length} lines, the same beat and a rhyme a listener can hear, and keep the lines short enough to shout: none longer than the longest line it has now.${part.passes.length > 1 ? ` It is sung every time the chorus comes back, so it has to hold up ${part.passes.length} times.` : ''}${later}`;
+    }
+    return `${said}\n   Rewrite only the lines named, so no two lines in a row open the same way and no line stacks a list; keep what each line says, its last word where you can, and its length. Return the whole section with every other line exactly as it is.`;
+  });
+  return `Think briefly: fix what is named, then write it out. Do not count syllables. Your song is below, and it stays exactly as it is except for the part${many ? 's' : ''} named here. The desk measured the song and found ${issues.length > 1 ? 'these sections' : 'this section'} repeating instead of saying something, which the owner of this desk hears as a writer who ran out of ideas:
+
+${asks.join('\n\n')}
+
+Keep the song's voice, its story, its attitude and who it is for. Return ONLY the rewritten part${many ? 's' : ''}, each under its label in square brackets exactly as written above (${parts.map((part) => `[${part.label}]`).join(', ')}), every line written out. Nothing else: no music direction, no other sections, no READBACK, no notes.
+
+${script}`;
+}
+
+/** Part 296: writes a targeted rewrite into the draft. A returned section is
+ *  taken only when it keeps about its length and weighs less than the one it
+ *  replaces (a companion chorus: when it passes the gate), and it goes into
+ *  every pass it names, a chorus into every place it is sung. A later chorus is
+ *  taken only with the new first chorus, and gets that new chorus when its own
+ *  answer is missing or fails, so the song keeps one chorus. The music
+ *  direction, the tags, every other line and the READBACK stay as written.
+ *  Null when nothing usable came back. */
+export function applyRepeatRewrite(script: string, reply: string, issues: RepeatIssue[], brief = ''): string | null {
+  const blocks = new Map<string, string[]>();
+  let open: string[] | null = null;
+  for (const raw of String(reply || '').split('\n')) {
+    const line = raw.trim().replace(/^[*_#]+\s*|\s*[*_]+$/g, '').trim();
+    if (/^READBACK\b/i.test(line) || /^lyrics\s*:\s*$/i.test(line)) {
+      open = null;
+      continue;
+    }
+    const tag = /^\[([^\]]+)\]:?$/.exec(line);
+    if (tag) {
+      const key = tag[1].trim().replace(/\s+/g, ' ').toLowerCase();
+      open = blocks.has(key) ? null : [];
+      if (open) blocks.set(key, open);
+      continue;
+    }
+    /* A section is one run of lines: a blank line or a code fence after it ends it, so
+     * a note the writer adds underneath is never taken for sung words. */
+    if (!line || /^```/.test(line)) {
+      if (open && open.length) open = null;
+      continue;
+    }
+    if (!open || (line.length >= 110 && /[.!?]["')]?$/.test(line) && !/^\(/.test(line))) continue;
+    open.push(line);
+  }
+  const parts = repeatParts(script, issues);
+  const usable = (part: RepeatPart): string[] | null => {
+    const lines = blocks.get(part.label.toLowerCase());
+    if (!lines) return null;
+    const sung = lines.filter((line) => !/^\(.*\)$/.test(line));
+    const n = part.lines.length;
+    if (sung.length < Math.max(2, n - 2) || sung.length > n + 3) return null;
+    /* Same beat: measured, a rap chorus of short shouts came back as long verse lines
+     * (longest 7 syllables before, 13 after) while every good rewrite stayed within 2.
+     * The desk's count is rough, hence the room. */
+    if (Math.max(...sung.map(syllables)) > Math.max(...part.lines.map(syllables)) + 3) return null;
+    const weight = sectionRepeats(part.tag, sung, brief).weight;
+    return (part.companion ? weight === 0 : weight < part.weight) ? lines : null;
+  };
+  const main = parts.find((part) => part.chorus && !part.later);
+  const mainLines = main ? usable(main) : null;
+  const replace = new Map<number, string[]>();
+  for (const part of parts) {
+    let lines = part === main ? mainLines : usable(part);
+    if (part.chorus && part.later && main) lines = mainLines ? lines || mainLines : null;
+    if (lines) for (const at of part.passes) replace.set(at, lines);
+  }
+  if (!replace.size) return null;
+  const rows = script.split('\n');
+  const heading = rows.findIndex((row) => /^\s*lyrics\s*:\s*$/i.test(row));
+  const readback = rows.findIndex((row, i) => i > heading && /^\s*READBACK:/i.test(row));
+  const out: string[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    out.push(rows[i]);
+    const lines = replace.get(i);
+    if (!lines) continue;
+    let end = i + 1;
+    while (end < rows.length && end !== readback && !/^\s*\[[^\]]*\]\s*$/.test(rows[end])) end += 1;
+    let keep = end;
+    while (keep > i + 1 && !rows[keep - 1].trim()) keep -= 1;
+    out.push(...lines, ...rows.slice(keep, end));
+    i = end - 1;
+  }
+  return out.join('\n');
+}
+
 /* Part 293 follow-up (Sep 25 2026): "no lesson at the end" in the desk notes did
  * not stop tidy moral endings, and at low reasoning a general rule is skimmed.
  * So the desk pulls the exact lines the song and each chorus land on and puts
@@ -574,7 +1087,12 @@ function endingGate(script: string, number: number): string {
   return `\n${number}. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, and any line the last chorus changed, pulled by the desk:\n${lines.map((l) => `   - "${l}"`).join('\n')}\n   Read each one on its own. Rewrite any that states a lesson, a turnaround, a verdict on the story or a sum-up of it, so it lands on something that happens or gets said in the moment instead: an action, a concrete detail, a joke, a line said to somebody, or the hook itself. Keep its rhyme sound and length, and change it the same way everywhere it repeats. A song can end unresolved. Lines that already land on a moment stay exactly as they are.`;
 }
 
-export function lyricAuditRequest(script: string, tells: LyricTell[], shape: string | null = null): string {
+/* Part 296: gate 2 used to say the hook is "repeated verbatim, title landing four
+ * to eight times". The system gives that count across a full song; said to the
+ * producer of one draft it read as a count for one chorus, and the audit left
+ * every collapsed chorus as it found it (9 of 9 stored, 8 of 8 fresh). It now
+ * says where the count lives, and what the desk measured rides as its own gate. */
+export function lyricAuditRequest(script: string, tells: LyricTell[], shape: string | null = null, repeats: RepeatIssue[] = []): string {
   const flagged = tells.length
     ? `\n\nThese exact lines lean on default-reach words and must be rewritten, keeping each line's rhyme sound, stress count and length, the same way everywhere a line repeats, and never by swapping in another default-reach word:\n${tells.map((t, i) => `${i + 1}. "${t.line}" -- ${t.tell}`).join('\n')}`
     : '';
@@ -582,12 +1100,12 @@ export function lyricAuditRequest(script: string, tells: LyricTell[], shape: str
 
 Check, in this order, and change only what fails:
 1. THE TURN and the payoff. Does the last verse do new work? Plant one concrete detail in verse one and bring it back loaded in the last verse or the bridge, or let one new fact make the last chorus mean something it did not mean the first time. On the final chorus, change exactly one word or one line if that lands the turn.
-2. The hook. Plain speech, six to eight syllables, its click syllable on an open vowel, exactly one surprise, repeated verbatim, title landing four to eight times. If the best line in the song is hiding in a verse, it is the hook in the wrong seat.
+2. The hook. Plain speech, six to eight syllables, its click syllable on an open vowel, exactly one surprise. It is sung word for word once or twice in each chorus, never more: the title lands because the chorus comes back, not because one chorus says it over and over. Every other chorus line says something the hook does not. If the best line in the song is hiding in a verse, it is the hook in the wrong seat.
 3. Hook stew. A near-wordless second hook (a post-chorus chant or run) if the genre wants one.
 4. The spice. Exactly one from the list, visible.
 5. SING-ALONG, the gate this desk fails most. Read each verse's line endings down the page: they must rhyme in couplets or alternating lines, with the rhyme on the last word, so a listener can guess the word before it lands. Rewrite line endings until they do; move words around inside the line before you change its meaning. Meter: do NOT count syllables yourself, in your thinking or anywhere else; it burns the whole budget and the song comes back empty. The desk has counted, and if any verse wanders it is named at the end of this message; even out only those, by ear, to a steady four-stress line. Then the chorus: it says the feeling straight out in plain words, rhymes, and could be shouted from a car. If the chorus describes instead of declaring, rewrite it and keep the title. No worn rhyme pairs (fire and desire, heart and apart, love and above).
 6. Song, not short story, and not a nursery rhyme either. Each verse keeps one or two details so exact that only this song could contain them, never the props recent drafts keep reaching for (rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV) unless the brief named them, and the rest is plain talk. Cut any line that only notices something, and replace any line so general it could sit in a thousand songs. A verse this desk sized itself runs eight lines or more. Moment and voice. Happening now, one attitude in every line, a first line that grabs in eight words, no retrospective wisdom, no Tier 1 structure anywhere.
-7. Singability. Open vowels under held notes, a breath in every long line, no stacked sibilants or consonant pileups on stressed beats, parentheses only for sung ad-libs and echoes, never stage directions.${shape ? `\n8. Length. ${shape}` : ''}${endingGate(script, shape ? 9 : 8)}${flagged}${lyricMeterNote(script)}
+7. Singability. Open vowels under held notes, a breath in every long line, no stacked sibilants or consonant pileups on stressed beats, parentheses only for sung ad-libs and echoes, never stage directions.${shape ? `\n8. Length. ${shape}` : ''}${repeatGate(repeats, shape ? 9 : 8)}${endingGate(script, 8 + (shape ? 1 : 0) + (repeats.length ? 1 : 0))}${flagged}${lyricMeterNote(script)}
 
 Return the complete song in the same format: the music direction, the Lyrics: heading with every sung line and every chorus written out in full, then the READBACK line. Nothing else.
 

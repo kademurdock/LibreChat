@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const source = stripTypeScriptTypes(readFileSync(new URL('./writing.ts', import.meta.url), 'utf8'));
 const hitSource = stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8')).replace('export const hitWritingSystem', 'const hitWritingSystem');
 const musicSource = hitSource + '\n' + stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8')).replace("import { hitWritingSystem } from './hitSystem';", '');
-const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
+const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL, chorusShapeFor, chorusShapeNote, CHORUS_SHAPES, lyricRepeatIssues, lyricRepeatWeight, lyricRepeatRequest, applyRepeatRewrite } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 /* What the Sound Booth route needs from @librechat/api to load at all (its GUIDE reads the YuE
  * styles when the file loads), and a stand-in for the Part 293 audience helper whose answer a
@@ -596,12 +596,12 @@ test('Part 293: Surprise me keeps every pitch clean for a clean audience and is 
 /* ---------------- Part 293 review fixes ---------------- */
 /** The real Sound Booth route in a sandbox. `reply(body, n)` answers the nth model call; every
  *  router registration is kept in order, so a test can see what runs before what. */
-function loadBooth({ reply, api = {}, middleware, jev } = {}) {
+function loadBooth({ reply, api = {}, middleware, jev, clock, env = {} } = {}) {
   const url = new URL('../../../../api/server/routes/kadeSoundBooth.js', import.meta.url), localRequire = createRequire(url);
   const handlers = new Map(), requests = [], ledger = [], registered = [];
   const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map(method => [method, (path, ...values) => { registered.push([method, path, ...values]); handlers.set(method + path, values.at(-1)); }]));
   const multer = Object.assign(() => ({ single: () => () => {} }), { memoryStorage: () => ({}) });
-  const context = { module: { exports: {} }, Buffer, URL, console, Date, Intl, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
+  const context = { module: { exports: {} }, Buffer, URL, console, Date: clock || Date, Intl, process: { env: { REFRAME_PROXY_SECRET: 'fixture', ...env } }, require(name) {
     if (name === 'express') return { Router: () => router, json: () => (_req, _res, next) => next && next() };
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
@@ -883,4 +883,273 @@ test('Part 293 follow-up: the route sends the drawn map under the idea, holds th
   const drawn = booth.ledger[0].metadata.sectionMap;
   assert.ok(drawn in SECTION_MAPS, 'the real draw');
   assert.ok(booth.requests[0].messages[1].content.includes(sectionMapNote(SECTION_MAPS[drawn])), 'the note sent is the map logged');
+});
+
+/* ---------------- Part 296 (Sep 27 2026): the chorus that is its hook and nothing else ----------------
+ * Her words: "it does good on some of the rhymes, but the chorus is horrible... over and over, nothing
+ * else... Then also, same this same this same this and that. Very ai." Every lyric below is invented for
+ * these tests. */
+const chorusOf = (lines, tag = 'Chorus') => `Pop.\nLyrics:\n[${tag}]\n${lines.join('\n')}\n\nREADBACK: x`;
+const flagsOf = (script, brief = '') => lyricRepeatIssues(script, brief).flatMap(i => i.problems);
+
+test('Part 296: the chorus gate finds a hook sung over and over and passes a chorus that develops', () => {
+  const collapsed = chorusOf(['Fired on my birthday', 'Fired on my birthday', 'They took the paper crown right off my head', 'Fired on my birthday']);
+  const [issue] = lyricRepeatIssues(collapsed, 'punk song about getting fired');
+  assert.equal(issue.tag, 'Chorus'); assert.equal(issue.chorus, true); assert.equal(issue.hook, 'Fired on my birthday');
+  assert.deepEqual(issue.problems, ['the hook "Fired on my birthday" is sung 3 times in one chorus', 'only 2 of its 4 lines are different', 'only 2 of its 4 lines say anything the hook does not', '3 of its lines end on the word "birthday"']);
+  const develops = chorusOf(['Fired on my birthday', 'Twenty minutes into the shift', 'They took the paper crown right off my head', 'Fired on my birthday']);
+  assert.deepEqual(lyricRepeatIssues(develops, ''), [], 'the hook twice, first and last, and every other line new');
+  assert.deepEqual(lyricRepeatIssues(chorusOf(['Fired on my birthday', 'Twenty minutes into the shift', 'Fired on my birthday', 'I kept the paper crown']), ''), [], 'first and third');
+  /* A hook sung twice inside one line counts twice. */
+  assert.match(flagsOf(chorusOf(['Go on home, go on home', 'You gave the key back in July', 'Go on home, go on home', 'The dog stopped waiting by the door']))[0], /the hook "Go on home" is sung 4 times in one chorus/);
+  /* The phrase sung most is the hook, even inside a longer line. */
+  assert.match(flagsOf(chorusOf(['One more ride', 'Just one more ride', 'Your hand on the wheel at ten and two', 'One more ride', 'Just one more ride']))[0], /the hook "One more ride" is sung 4 times/);
+  /* Echoes in parentheses are backing vocals, not the lead singing the hook again. */
+  assert.deepEqual(lyricRepeatIssues(chorusOf(['Lose my number (lose it)', 'You had a year to call', 'I changed the lock on the mailbox too', '(Lose my number)', 'Lose my number, that is all']), ''), []);
+  /* Another line sung twice besides the hook. */
+  assert.match(flagsOf(chorusOf(['Fired on my birthday', 'Hand me my check', 'Twenty minutes into the shift', 'Hand me my check', 'Fired on my birthday'])).join('|'), /besides the hook, "Hand me my check" is sung more than once in it/);
+  /* One word ending three lines, but a voice tic at the end of a line is breath. */
+  assert.match(flagsOf(chorusOf(['Not one more', 'I hung the towel on the door', 'The boss can mop his own floor', 'You owe me for the day before'])).join('|'), /^$/, 'three different rhyme words on one sound are a rhyme, not a repeat');
+  assert.match(flagsOf(chorusOf(['I want you gone', 'Pack the van and move along', 'I sing it louder every song', 'I want you gone, yeah', 'Yeah, you are gone'])).join('|'), /3 of its lines end on the word "gone"/);
+  /* Chants live where the map puts them. */
+  for (const tag of ['Post-Chorus', 'Drop', 'Outro', 'Intro']) assert.deepEqual(lyricRepeatIssues(chorusOf(['Come get your truck', 'Come get your truck', 'Come get your truck', 'Come get your truck'], tag), ''), [], tag);
+  /* Her brief asked for the chant. */
+  assert.deepEqual(lyricRepeatIssues(collapsed, 'a repetitive chant about getting fired').filter(i => i.problems.some(p => /hook/.test(p))), []);
+  /* A chorus sung three times is one entry naming its three passes; a changed last chorus is its own entry. */
+  const song = `Pop.\nLyrics:\n[Verse 1]\nWe parked the Buick by the levee gate\n[Chorus]\nFired on my birthday\nFired on my birthday\nThey took the paper crown right off my head\nFired on my birthday\n[Verse 2]\nMama had a cake with the candles out\n[Chorus]\nFired on my birthday\nFired on my birthday\nThey took the paper crown right off my head\nFired on my birthday\n[Final Chorus]\nFired on my birthday\nFired on my birthday\nI took the paper crown and I kept the change\nFired on my birthday\n\nREADBACK: x`;
+  const issues = lyricRepeatIssues(song, '');
+  assert.deepEqual(issues.map(i => [i.label, i.passes.length]), [['Chorus', 2], ['Final Chorus', 1]]);
+  assert.equal(lyricRepeatWeight(song, ''), issues.reduce((n, i) => n + i.weight, 0));
+  assert.deepEqual(lyricRepeatIssues('An instrumental. Instrumental only, no vocals.', ''), []);
+});
+
+test('Part 296: lines that open the same way and a line that stacks a list are flagged; plain speech is left alone', () => {
+  const verse = lines => `Country.\nLyrics:\n[Verse 1]\n${lines.join('\n')}\n\nREADBACK: x`;
+  assert.match(flagsOf(verse(['I got a job at the feed store', 'I got a dog that bites the mail', 'I got a truck that runs on prayer', 'And a porch swing hanging by one nail'])).join('|'), /3 lines in a row open with "I got"/);
+  assert.match(flagsOf(verse(['Take the Buick to the levee', 'Take the long way past the mill', 'Take your mama to the Walmart', 'Then come on back up the hill'])).join('|'), /3 lines in a row open with "Take"/);
+  assert.match(flagsOf(verse(['Same bar, same stool, same song and that', 'I drove home by the water tower'])).join('|'), /the line "Same bar, same stool, same song and that" stacks 3 clauses that each open with "Same"/);
+  assert.match(flagsOf(verse(["Don't wave, don't smile, don't call my phone", 'I moved out to Mountain Home'])).join('|'), /stacks 3 clauses that each open with "Don't"/);
+  for (const plainVerse of [
+    ['I drove to Harrison for parts', 'I found a gasket and a cup', 'I paid the man in quarters', 'You never even woke up'],
+    ['And the dog came back at dinner', 'And a cat was on the roof', 'And my preacher called at seven', 'With a sermon and no proof'],
+    ['Shake it, shake it, shake it', 'Nah, nah, nah, nah', 'Higher, higher, higher', 'We are dancing on the car'],
+    ['Na na na, hey', 'Na na na, ho', 'Na na na, oh', 'We are dancing on the car'],
+    ['I got a job at the feed store', 'I got a dog', 'We parked out by the levee', 'Where the fishing boats all sog'],
+  ]) assert.deepEqual(lyricRepeatIssues(verse(plainVerse), ''), [], plainVerse[0]);
+  /* One common opening word is speech; the same two words three lines running is the list. */
+  assert.match(flagsOf(verse(['And the dog came back at dinner', 'And the cat was on the roof', 'And the preacher called at seven', 'With a sermon and no proof'])).join('|'), /3 lines in a row open with "And the"/);
+  assert.deepEqual(lyricRepeatIssues(verse(['Same bar, same stool, same song and that', 'I drove home by the water tower']), 'a song about the same old same old'), [], 'a word from her brief is hers');
+  /* Her own Tier 2 ban names the bridge that only lists. */
+  assert.match(flagsOf('Pop.\nLyrics:\n[Bridge]\nIt was the shuffle\nIt was the seat\nIt was the dog\n\nREADBACK: x').join('|'), /3 lines in a row open with "It was"/);
+});
+
+test('Part 296: the desk draws one chorus shape in code and says it in words, never with a line to copy', () => {
+  const brief = 'pop song about finally deleting his number';
+  assert.equal(chorusShapeFor(brief, 'kade\n1').id, chorusShapeFor(brief, 'kade\n1').id, 'the same request draws the same shape');
+  const counts = {};
+  for (let i = 0; i < 600; i++) { const id = chorusShapeFor(brief, `kade\n${1758000000000 + i * 977}`).id; counts[id] = (counts[id] || 0) + 1; }
+  assert.deepEqual(Object.keys(counts).sort(), Object.keys(CHORUS_SHAPES).sort(), 'asking again can draw every shape');
+  assert.ok(Math.max(...Object.values(counts)) < 300, JSON.stringify(counts));
+  assert.equal(chorusShapeFor(brief, 'x', SECTION_MAPS.storyRefrain), null, 'the story song has a refrain line, not a chorus');
+  for (const b of ['a song with no chorus about my truck', 'a repetitive chant for the football game', 'a call and response gospel song', ''])
+    assert.equal(chorusShapeFor(b, 'x'), null, b);
+  assert.equal(chorusShapeNote(null), '');
+  for (const shape of Object.values(CHORUS_SHAPES)) {
+    const note = chorusShapeNote(shape, SECTION_MAPS.threeVerses);
+    assert.ok(note.startsWith(`CHORUS SHAPE, drawn by the desk for this song: ${shape.plan} `), shape.id);
+    assert.match(note, /the hook is sung no more than twice in one chorus, and every line that is not the hook says something the hook does not\. Other lines are never sung twice inside it/);
+    assert.match(note, /so the title still lands four to eight times across the song\.$/);
+    assert.doesNotMatch(note, /["“”]/, `${shape.id}: names the shape, never demonstrates a line`);
+    assert.deepEqual(lyricRepeatIssues(`x\nLyrics:\n[Verse 1]\n${note.split(/(?<=[.:])\s+/).join('\n')}\n\nREADBACK: x`, ''), [], `${shape.id}: the note does not do what it bans`);
+  }
+  assert.match(chorusShapeNote(CHORUS_SHAPES.bookends, SECTION_MAPS.prePost), /Chanting one short phrase belongs to the \[Post-Chorus\], not to the chorus\.$/);
+  assert.match(chorusShapeNote(CHORUS_SHAPES.bookends, SECTION_MAPS.dance), /belongs to the \[Drop\]/);
+  assert.doesNotMatch(chorusShapeNote(CHORUS_SHAPES.bookends, SECTION_MAPS.twoLong), /Chanting/);
+});
+
+test('Part 296: the desk notes and the audit say the four-to-eight count is for the whole song, and the audit gets what was measured', () => {
+  assert.doesNotMatch(musicWritingCraft, /Four to six lines plus repeats/);
+  assert.match(musicWritingCraft, /Four to six lines, and the hook is sung in them no more than twice/);
+  assert.match(musicWritingCraft, /The title lands four to eight times across the whole song because the chorus comes back, never four times inside one chorus/);
+  assert.match(musicWritingCraft, /7\. NO LISTS OF LINES THAT OPEN THE SAME WAY/);
+  assert.doesNotMatch(musicWritingCraft, /Final Chorus|two long verses|three verses/, 'still no list of song shapes');
+  /* Her own words may be quoted; the shapes she hates are never demonstrated. */
+  const rules = musicWritingCraft.slice(musicWritingCraft.indexOf('3. THE CHORUS STATES THE HOOK'), musicWritingCraft.indexOf('4. SONG, NOT SHORT STORY')) + musicWritingCraft.slice(musicWritingCraft.indexOf('7. NO LISTS'), musicWritingCraft.indexOf('- WRITE IT LIKE A PERSON'));
+  assert.deepEqual(lyricRepeatIssues(`x\nLyrics:\n[Verse 1]\n${rules.split(/(?<=[.:])\s+/).join('\n')}\n\nREADBACK: x`, ''), []);
+  const draft = chorusOf(['Fired on my birthday', 'Fired on my birthday', 'They took the paper crown right off my head', 'Fired on my birthday']);
+  const plainAsk = lyricAuditRequest(draft, [], null);
+  assert.doesNotMatch(plainAsk, /repeated verbatim, title landing four to eight times/);
+  assert.match(plainAsk, /It is sung word for word once or twice in each chorus, never more: the title lands because the chorus comes back, not because one chorus says it over and over\. Every other chorus line says something the hook does not\./);
+  assert.doesNotMatch(plainAsk.slice(plainAsk.indexOf('2. The hook.'), plainAsk.indexOf('3. Hook stew.')), /four to eight/, 'no song-wide count for a low-effort audit to verify (a count in a gate is where DeepSeek burns its budget)');
+  assert.match(plainAsk, /exactly one surprise/); assert.doesNotMatch(plainAsk, /REPEATS/);
+  const issues = lyricRepeatIssues(draft, '');
+  const ask = lyricAuditRequest(draft, [], null, issues);
+  assert.match(ask, /\n8\. REPEATS, measured by the desk\. \[Chorus\]: the hook "Fired on my birthday" is sung 3 times in one chorus; only 2 of its 4 lines are different; only 2 of its 4 lines say anything the hook does not; 3 of its lines end on the word "birthday"\. Fix each where it stands\./);
+  assert.match(ask, /\n9\. THE ENDING\./, 'the ending gate stays last');
+  const withShape = lyricAuditRequest(draft, [], 'Add a [Verse 3].', issues);
+  assert.match(withShape, /\n8\. Length\. Add a \[Verse 3\]\.\n9\. REPEATS, measured by the desk\./); assert.match(withShape, /\n10\. THE ENDING\./);
+  assert.ok(ask.endsWith(draft));
+});
+
+/* A song with a collapsed chorus sung twice, a final chorus that changed one line, and a verse whose
+ * lines open the same way. */
+const P296_SONG = `Punk with fast drums, 170 BPM.
+
+Lyrics:
+[Verse 1]
+They pulled me off the fryer for a talk
+The manager was holding a clipboard and a sock
+I got a name tag with a typo on the front
+I got a paper crown from the birthday lunch
+I got a warning for the ketchup on the wall
+So I clocked out early and I told them all
+
+[Chorus]
+Fired on my birthday
+Fired on my birthday
+Handed me a cupcake and a pink slip
+Fired on my birthday
+(Hey!)
+
+[Verse 2]
+Drove home in the uniform with the windows down
+Mama had the candles lit for half the town
+
+[Chorus]
+Fired on my birthday
+Fired on my birthday
+Handed me a cupcake and a pink slip
+Fired on my birthday
+(Hey!)
+
+[Final Chorus]
+Fired on my birthday
+Fired on my birthday
+Blew the candles out and kept the pink slip
+Fired on my birthday
+
+READBACK: A punk song about getting fired on a birthday.`;
+const P296_REPLY = `[Chorus]
+Fired on my birthday
+Twenty minutes into the shift
+Took the paper crown right off my head
+Fired on my birthday
+
+[Verse 1]
+They pulled me off the fryer for a talk
+The manager was holding a clipboard and a sock
+My name tag had a typo on the front
+There was a paper crown from the birthday lunch
+They warned me for the ketchup on the wall
+So I clocked out early and I told them all
+
+[Final Chorus]
+Fired on my birthday
+Twenty minutes into the shift
+Blew the candles out and kept the pink slip
+Fired on my birthday`;
+
+test('Part 296: one targeted rewrite goes into every chorus pass, keeps the last chorus\'s changed line, and refuses what would not sing', () => {
+  const issues = lyricRepeatIssues(P296_SONG, 'punk song about getting fired on my birthday');
+  assert.deepEqual(issues.map(i => i.label), ['Verse 1', 'Chorus', 'Final Chorus']);
+  const ask = lyricRepeatRequest(P296_SONG, issues);
+  assert.match(ask, /^Think briefly: fix what is named, then write it out\. Do not count syllables\./);
+  assert.match(ask, /1\. \[Verse 1\]: 3 lines in a row open with "I got"/); assert.match(ask, /Rewrite only the lines named/);
+  assert.match(ask, /2\. \[Chorus\], sung 2 times: the hook "Fired on my birthday" is sung 3 times in one chorus/);
+  assert.match(ask, /Keep the hook "Fired on my birthday" word for word and sing it no more than twice: open and close on it, or sing it first and third\./);
+  assert.match(ask, /none longer than the longest line it has now/);
+  assert.match(ask, /3\. \[Final Chorus\]: a later chorus that changed from the first one, with the same problems\. Its changed line "Blew the candles out and kept the pink slip" stays word for word, in the same place in the chorus; everything else is your new \[Chorus\]\./);
+  assert.match(ask, /Return ONLY the rewritten parts, each under its label in square brackets exactly as written above \(\[Verse 1\], \[Chorus\], \[Final Chorus\]\)/);
+  assert.ok(ask.endsWith(P296_SONG), 'the whole song rides last, for the story');
+  const brief = 'punk song about getting fired on my birthday';
+  const fixed = applyRepeatRewrite(P296_SONG, P296_REPLY, issues, brief);
+  assert.equal(fixed.split('Twenty minutes into the shift').length - 1, 3, 'the new chorus in every chorus pass');
+  assert.equal(fixed.split('Handed me a cupcake').length - 1, 0);
+  assert.match(fixed, /\[Final Chorus\]\nFired on my birthday\nTwenty minutes into the shift\nBlew the candles out and kept the pink slip\nFired on my birthday\n\nREADBACK:/);
+  assert.match(fixed, /My name tag had a typo on the front/); assert.doesNotMatch(fixed, /I got a name tag/);
+  assert.ok(fixed.startsWith('Punk with fast drums, 170 BPM.\n\nLyrics:\n[Verse 1]\n'), 'the direction as written');
+  assert.ok(fixed.endsWith('READBACK: A punk song about getting fired on a birthday.'));
+  assert.match(fixed, /\[Verse 2\]\nDrove home in the uniform with the windows down\nMama had the candles lit for half the town\n\n\[Chorus\]/, 'untouched sections and the blank lines between them stay');
+  assert.deepEqual(lyricRepeatIssues(fixed, brief), []);
+  /* No answer for the last chorus: it gets the new chorus, so the song keeps one chorus. */
+  const noFinal = applyRepeatRewrite(P296_SONG, P296_REPLY.slice(0, P296_REPLY.indexOf('[Final Chorus]')), issues, brief);
+  assert.equal(noFinal.split('Twenty minutes into the shift').length - 1, 3); assert.doesNotMatch(noFinal, /Handed me a cupcake|Blew the candles/);
+  /* Refused: a chorus that still repeats, one that lost its lines, one whose lines grew past the tune,
+   * and an answer with none of the labels. A later chorus is never rewritten without the first. */
+  const only = (chorus) => `[Chorus]\n${chorus.join('\n')}\n\n[Final Chorus]\nFired on my birthday\nTwenty minutes into the shift\nBlew the candles out and kept the pink slip\nFired on my birthday`;
+  assert.equal(applyRepeatRewrite(P296_SONG, only(['Fired on my birthday', 'Fired on my birthday', 'Fired on my birthday', 'Handed me a cupcake']), issues.slice(1), brief), null);
+  assert.equal(applyRepeatRewrite(P296_SONG, only(['Fired on my birthday']), issues.slice(1), brief), null);
+  assert.equal(applyRepeatRewrite(P296_SONG, only(['Fired on my birthday', 'Twenty minutes into the shift of the longest Saturday morning of my entire natural life', 'Took the crown', 'Fired on my birthday']), issues.slice(1), brief), null);
+  assert.equal(applyRepeatRewrite(P296_SONG, 'Sure! Here is a better chorus for you.', issues, brief), null);
+  /* The wrapper a model adds is not sung. */
+  const noisy = '```\n**[Chorus]**\nFired on my birthday\nTwenty minutes into the shift\nTook the paper crown right off my head\nFired on my birthday\n```\nThis version keeps the hook on the first and last lines and gives the middle lines new facts from the story.';
+  const cleaned = applyRepeatRewrite(P296_SONG, noisy, issues.slice(1), brief);
+  assert.doesNotMatch(cleaned, /```|\*\*|This version/); assert.equal(cleaned.split('Twenty minutes into the shift').length - 1, 3);
+  const noted = applyRepeatRewrite(P296_SONG, '[Chorus]\nFired on my birthday\nTwenty minutes into the shift\nTook the paper crown right off my head\nFired on my birthday\n\nI kept the hook first and last.', issues.slice(1), brief);
+  assert.doesNotMatch(noted, /I kept the hook/, 'a note under the section is not sung');
+});
+
+test('Part 296: the route tells the writer the chorus shape, hands the audit what repeats, and makes ONE bounded rewrite', async () => {
+  const lines = ["Mama bought a ticket at the Casey's on the square", 'Daddy said the numbers never paid for anything', 'Uncle Ray was parking in the handicapped spot', 'The cashier gave a look and then a pack of gum', 'We scratched it on the hood with a nickel from the cup', 'Three cherries in a row and a dollar sign', 'My cousin started screaming like the Cardinals won', 'The dog jumped in the truck bed and knocked the cooler down'];
+  const chorus = ['Lucky me tonight', 'Lucky me tonight', 'Found a twenty in the dryer', 'Lucky me tonight'];
+  const draft = `Country with a fiddle.\nLyrics:\n[Verse 1]\n${lines.join('\n')}\n\n[Chorus]\n${chorus.join('\n')}\n\n[Verse 2]\n${lines.join('\n')}\n\n[Chorus]\n${chorus.join('\n')}\n\n[Bridge]\nWe drove it to the lottery office in Batesville\n\n[Verse 3]\n${lines.join('\n')}\n\n[Chorus]\n${chorus.join('\n')}\n\nREADBACK: A country song about a lucky night.`;
+  const good = '[Chorus]\nLucky me tonight\nFound a twenty in the dryer\nBought the whole bar onion rings\nLucky me tonight';
+  const api = { songSectionMap: () => SECTION_MAPS.threeVerses, sectionMapNote, lyricEndingTells, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite };
+  const body = { engine: 'yue2', mode: 'write', text: 'a song about luck', patient: true };
+  let booth = loadBooth({ reply: (_b, n) => (n <= 2 ? draft : good), api });
+  let out = await booth.call('post/script', { user: { id: 'repeat-1' }, body });
+  assert.equal(out.code, 200);
+  assert.equal(booth.requests.length, 3, 'draft, audit, one rewrite');
+  const shapeId = booth.ledger[0].metadata.chorusShape;
+  assert.ok(shapeId in CHORUS_SHAPES);
+  assert.ok(booth.requests[0].messages[1].content.startsWith(`WHAT THEY WANT MADE:\na song about luck\n\n${sectionMapNote(SECTION_MAPS.threeVerses)}\n\n${chorusShapeNote(CHORUS_SHAPES[shapeId], SECTION_MAPS.threeVerses)}`), 'the chorus shape rides under the map');
+  assert.match(booth.requests[1].messages[1].content, /REPEATS, measured by the desk\. \[Chorus\], sung 3 times: the hook "Lucky me tonight" is sung 3 times in one chorus/);
+  const rewrite = booth.requests[2];
+  assert.match(rewrite.messages[1].content, /repeating instead of saying something/); assert.ok(rewrite.messages[1].content.endsWith(draft));
+  assert.equal(rewrite.messages[0].content, booth.requests[0].messages[0].content, 'the same system prompt: the gateway keeps the songwriter lane, and the audience note rides along');
+  assert.equal(rewrite.reasoning.effort, 'low');
+  assert.equal(out.body.script.split('Bought the whole bar onion rings').length - 1, 3);
+  assert.equal(out.body.script.split('Lucky me tonight').length - 1, 6, 'the title still lands six times across the song');
+  assert.ok(out.body.repairs.includes('rewrote the chorus so it says more than its hook'));
+  assert.deepEqual({ ...booth.ledger[0].metadata.repeats }, { draft: 1, left: 0, rewrite: 'fixed' });
+  assert.equal(booth.ledger[0].costUSD, 0.03, 'all three calls are on the ledger');
+  /* Kept the draft: a rewrite that brings in a stock image, one that still repeats, or one that
+   * swears in a clean song. Never a second try. */
+  for (const [bad, audience] of [[good.replace('Bought the whole bar onion rings', 'Poured a coffee for the band'), 'explicit'], ['[Chorus]\nLucky me tonight\nLucky me tonight\nLucky me tonight\nFound a twenty', 'explicit'], [good.replace('Bought the whole bar onion rings', 'Bought the whole damn bar onion rings'), 'clean']]) {
+    audienceStub.answer = audience;
+    booth = loadBooth({ reply: (_b, n) => (n <= 2 ? draft : bad), api });
+    out = await booth.call('post/script', { user: { id: 'repeat-2' }, body });
+    audienceStub.answer = 'explicit';
+    assert.equal(out.code, 200, bad);
+    assert.equal(booth.requests.length, 3, 'one rewrite, never a loop');
+    assert.equal(out.body.script.split('Found a twenty in the dryer').length - 1, 3, 'the song as it was');
+    assert.doesNotMatch(out.body.script, /coffee|damn/);
+    assert.ok(!out.body.repairs.some(r => /rewrote the chorus/.test(r)));
+    assert.equal(booth.ledger[0].metadata.repeats.rewrite, 'kept the draft');
+  }
+  /* The phone waits 112 seconds: no time left after the audit, no rewrite. */
+  let offset = 0;
+  const clock = class extends Date { static now() { return Date.now() + offset; } };
+  booth = loadBooth({ reply: (_b, n) => { if (n === 2) offset += 90000; return draft; }, api, clock });
+  out = await booth.call('post/script', { user: { id: 'repeat-3' }, body: { ...body, patient: false } });
+  assert.equal(booth.requests.length, 2, 'draft and audit only');
+  assert.equal(booth.ledger[0].metadata.repeats.rewrite, 'skipped');
+  /* Nothing repeats: no rewrite call at all. */
+  const fine = draft.replaceAll(chorus.join('\n'), good.replace('[Chorus]\n', ''));
+  booth = loadBooth({ reply: () => fine, api });
+  out = await booth.call('post/script', { user: { id: 'repeat-4' }, body });
+  assert.equal(booth.requests.length, 2);
+  assert.deepEqual({ ...booth.ledger[0].metadata.repeats }, { draft: 0, left: 0, rewrite: undefined });
+  /* The kill switch: no shape, no REPEATS gate, no rewrite; the desk as it was plus the corrected wording. */
+  booth = loadBooth({ reply: () => draft, api, env: { KADE_LYRIC_REPEATS: '0' } });
+  out = await booth.call('post/script', { user: { id: 'repeat-off' }, body });
+  assert.equal(booth.requests.length, 2);
+  assert.doesNotMatch(booth.requests[0].messages[1].content, /CHORUS SHAPE/); assert.doesNotMatch(booth.requests[1].messages[1].content, /REPEATS/);
+  assert.equal(booth.ledger[0].metadata.repeats, undefined); assert.equal(booth.ledger[0].metadata.chorusShape, undefined);
+  /* Her own words are never measured or rewritten, and get no chorus shape. */
+  booth = loadBooth({ reply: () => draft, api });
+  out = await booth.call('post/script', { user: { id: 'repeat-5' }, body: { ...body, lyrics: chorus.join('\n') } });
+  assert.equal(booth.requests.length, 1);
+  assert.doesNotMatch(booth.requests[0].messages[1].content, /CHORUS SHAPE/);
+  assert.equal(booth.ledger[0].metadata.repeats, undefined);
 });

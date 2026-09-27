@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -1668,6 +1668,13 @@ async function scriptHandler(req, res) {
      * check below holds the song to that same map. None when the brief sets its own shape. */
     const sectionMap = wantsWords && typeof songSectionMap === 'function' ? songSectionMap(text, `${req.user.id}\n${started}`) : null;
     if (sectionMap) lines.splice(1, 0, sectionMapNote(sectionMap));
+    /* Part 296: her "the chorus is horrible... over and over, nothing else". One chorus
+     * shape drawn in code with the same salt, said in words under the map. None for the
+     * story song's refrain or a brief that asks for a chant or no chorus.
+     * KADE_LYRIC_REPEATS=0 stands down the shape, the audit's REPEATS gate and the rewrite. */
+    const repeatsOn = wantsWords && process.env.KADE_LYRIC_REPEATS !== '0';
+    const chorusShape = repeatsOn && typeof chorusShapeFor === 'function' ? chorusShapeFor(text, `${req.user.id}\n${started}`, sectionMap) : null;
+    if (chorusShape) lines.splice(sectionMap ? 2 : 1, 0, chorusShapeNote(chorusShape, sectionMap));
     /* Part 293: who the song is for. A grown-up's desk is told explicit lyrics
      * are welcome; the child, the App Review seat, the Kids choir style and
      * anyone unknown get a clean note. Never throws; fails clean. The audit
@@ -1741,6 +1748,11 @@ async function scriptHandler(req, res) {
       tells = [...tells, ...swearing(raw).filter((t) => !flagged.has(t.line))];
     }
     const shape = wantsWords ? lyricShapeIssue(raw, text, sectionMap) : null;
+    /* Part 296: what repeats instead of saying something, measured in code, rides into the
+     * audit as its own gate (the audit used to be told the hook lands four to eight times
+     * and left every collapsed chorus alone). */
+    const measuresRepeats = repeatsOn && typeof lyricRepeatIssues === 'function';
+    const repeatsInDraft = measuresRepeats ? lyricRepeatIssues(raw, text) : [];
     const timeLeft = (writingSettings.timeoutMs || 0) - (Date.now() - started) - 4000;
     /* Part 217: every originated song gets the producer's audit when there is time
      * for it; flagged tells and a missing verse ride in the same call. */
@@ -1749,7 +1761,7 @@ async function scriptHandler(req, res) {
         const fixed = await callModel({
           ...writingSettings,
           system: writingSystem,
-          user: lyricAuditRequest(raw, tells, shape),
+          user: lyricAuditRequest(raw, tells, shape, repeatsInDraft),
           maxTokens: writingSettings.maxTokens,
           /* the deep lane thinks hard on the draft; the audit is an edit, not a rewrite */
           reasoning: writingSettings.reasoning ? { ...writingSettings.reasoning, effort: 'low' } : undefined,
@@ -1778,6 +1790,46 @@ async function scriptHandler(req, res) {
         }
       } catch (e) {
         logger.warn('[soundbooth/script] tell repair skipped (first draft kept): ' + e.message);
+      }
+    }
+    /* Part 296: a chorus still sung over and over, or lines still opening the same way,
+     * after the audit get ONE targeted rewrite of just those sections, written in by code
+     * (a new chorus into every pass). It is kept only if it weighs less on the same gate,
+     * adds no stock-image line and, for a clean song, no explicit line; otherwise the
+     * song stays as it was. Never a second try: a draft that still repeats beats a timeout. */
+    let repeatsLeft = measuresRepeats ? lyricRepeatIssues(raw, text) : [];
+    let repeatRewrite = repeatsLeft.length ? 'skipped' : undefined;
+    const repeatTime = (writingSettings.timeoutMs || 0) - (Date.now() - started) - 4000;
+    if (repeatsLeft.length && repeatTime >= 25000 && typeof lyricRepeatRequest === 'function' && typeof applyRepeatRewrite === 'function') {
+      const before = repeatsLeft.reduce((n, issue) => n + issue.weight, 0);
+      try {
+        const answer = await callModel({
+          ...writingSettings,
+          system: writingSystem,
+          user: lyricRepeatRequest(raw, repeatsLeft),
+          maxTokens: writingSettings.maxTokens,
+          reasoning: writingSettings.reasoning ? { ...writingSettings.reasoning, effort: 'low' } : undefined,
+          timeoutMs: Math.min(repeatTime, 150000),
+        });
+        totalCost += answer.costUSD;
+        costMeasured = costMeasured && answer.measured;
+        const candidate = applyRepeatRewrite(raw, answer.text, repeatsLeft, text);
+        const after = candidate ? lyricRepeatIssues(candidate, text) : repeatsLeft;
+        const weight = after.reduce((n, issue) => n + issue.weight, 0);
+        const noNewTells = !!candidate && lyricTells(candidate, text).length <= lyricTells(raw, text).length;
+        const noNewSwears = !!candidate && swearing(candidate).length <= swearing(raw).length;
+        const kept = !!candidate && weight < before && noNewTells && noNewSwears;
+        logger.info(`[soundbooth/script] repeats: ${repeatsLeft.map((i) => i.tag).join(',')} weight ${before}->${candidate ? weight : 'none'} tells=${noNewTells ? 'ok' : 'more'} clean=${noNewSwears ? 'ok' : 'more'} kept=${kept} ${Date.now() - started}ms`);
+        repeatRewrite = kept ? (weight ? 'better' : 'fixed') : 'kept the draft';
+        if (kept) {
+          const choruses = repeatsLeft.some((issue) => issue.chorus) && !after.some((issue) => issue.chorus);
+          raw = candidate;
+          repeatsLeft = after;
+          repairs = [...repairs, choruses ? 'rewrote the chorus so it says more than its hook' : 'rewrote lines that kept repeating themselves'];
+        }
+      } catch (e) {
+        repeatRewrite = 'failed';
+        logger.warn('[soundbooth/script] repeat rewrite skipped (song kept): ' + e.message);
       }
     }
     const unclean = swearing(raw).length;
@@ -1880,6 +1932,9 @@ async function scriptHandler(req, res) {
         writingPersona: mode === 'write' && ['lyria', 'yue2'].includes(engine) ? lyricAgentId : undefined,
         audience: audience || undefined,
         sectionMap: sectionMap ? sectionMap.id : undefined,
+        chorusShape: chorusShape ? chorusShape.id : undefined,
+        /* Part 296: sections that repeated in the draft, still repeat in what she gets, and what the rewrite did. */
+        repeats: measuresRepeats ? { draft: repeatsInDraft.length, left: repeatsLeft.length, rewrite: repeatRewrite } : undefined,
         model: writingSettings.model || MODEL,
         ms: Date.now() - started,
         inTok: usage.prompt_tokens,
