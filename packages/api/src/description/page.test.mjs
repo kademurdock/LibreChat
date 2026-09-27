@@ -3545,3 +3545,52 @@ test('a YouTube link she already has opens that video and says so, and is never 
   assert.notEqual(asked[1].body.requestId, asked[2].body.requestId);
   assert.deepEqual(heard, ['You already have this video. It is already open.']);
 });
+
+test('a part that cannot be described greys fresh descriptions with its reason in the cost text they are described by, never Working out the cost', async () => {
+  const server = makeServer();
+  const stopped = server.add(
+    doneJob({ name: 'Road Runner', state: 'failed', copies: [], resumable: false, describableAgain: true, done: 2, sections: 6 }),
+  );
+  const env = await boot({ server, search: '?id=' + stopped.id });
+  const { $ } = env;
+  await env.timers.advance(700);
+  assert.match($('estimate').textContent, /^Write fresh descriptions: about \$\d/);
+  await env.type('part-from', '4:00');
+  await env.timers.advance(700);
+  await env.type('part-to', '3:00');
+  await env.timers.advance(700);
+  const why = 'The end must be at least one second after the start.';
+  assert.equal($('reanalyze').getAttribute('data-reason'), why);
+  assert.equal($('estimate').textContent, 'Write fresh descriptions: ' + why, 'the greyed button says why, not a price that never comes');
+  assert.equal($('reanalyze').textContent, 'Write fresh descriptions with these choices', 'no price from before the part changed');
+  await env.type('part-to', '');
+  await env.timers.advance(700);
+  assert.match($('estimate').textContent, /^Write fresh descriptions: about \$\d/);
+
+  const preview = server.add(
+    doneJob({ name: 'Feature film', seconds: 5400, preview: true, finishable: false, describableAgain: true, copies: [{ version: 1, preview: true, settings: standardSettings, outputSeconds: 185, count: 4 }] }),
+  );
+  const second = await boot({ server, search: '?id=' + preview.id });
+  await second.timers.advance(700);
+  await second.type('part-from', '1:40:00');
+  await second.timers.advance(700);
+  assert.equal(
+    second.$('estimate').textContent,
+    'Try the preview again and Write fresh descriptions: The video is only 1:30:00 long, so the part must start before that.',
+  );
+  assert.equal(second.$('preview-again').textContent, 'Try the preview again with these choices');
+});
+
+test('carrying on a run where no section finished is spoken by the name on its button', async () => {
+  const server = makeServer();
+  const stopped = server.add(
+    doneJob({ name: 'Home video', state: 'cancelled', copies: [], resumable: true, describableAgain: true, done: 0, sections: 12 }),
+  );
+  const env = await boot({ server, search: '?id=' + stopped.id });
+  const { $ } = env;
+  await env.timers.advance(700);
+  assert.equal($('resume').textContent.startsWith('Try again from the beginning'), true);
+  await env.tick('first-look', true);
+  await env.timers.advance(700);
+  assert.match(env.status(), /^First look on\. Try again from the beginning: about \$\d+\.\d\d\. Write fresh descriptions: about \$\d+\.\d\d\.$/);
+});

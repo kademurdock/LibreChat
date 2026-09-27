@@ -660,8 +660,10 @@ export const descriptionBrowserScript: string = String.raw`
   }
   function mainKey(){if(!job)return '';if(job.state==='ready')return 'start';if(job.state!=='done'&&job.resumable)return 'resume';if(!again())return '';return job.preview?'previewAgain':'reanalyze';}
   var LABELS={start:'Create described copy',preview:'Try the first 3 minutes',previewAgain:'Try the preview again',revoice:'Make a new version with this narration',reanalyze:'Write fresh descriptions',finish:'Describe the rest',redo:'Try again on the parts that could not be described',resume:'Continue where it stopped'};
+  /** A button's name as it shows: carrying on a stopped run is Try again from the beginning when no section finished, and Allow more and continue after it cost more than quoted. */
+  function labelFor(key){if(key==='resume'&&job){if(job.overQuote)return 'Allow more and continue';if(!Number(job.done))return 'Try again from the beginning';}return LABELS[key];}
   /** A price, or the reason alone when the server refused before pricing (never "about $0.00"). */
-  function priceWords(e){var label=LABELS[e.key];if(!e.allowed&&!(e.estimateUSD>0))return label+': '+refusal(e);return label+': about '+money(e.estimateUSD)+'.'+(e.allowed?'':' '+refusal(e));}
+  function priceWords(e){var label=labelFor(e.key);if(!e.allowed&&!(e.estimateUSD>0))return label+': '+refusal(e);return label+': about '+money(e.estimateUSD)+'.'+(e.allowed?'':' '+refusal(e));}
   function allowance(e){var mode=e.billingMode||(config&&config.billingMode),maximum=typeof e.approvedUSD==='number'?'Maximum charge: '+money(e.approvedUSD)+'. ':'',included=(e.dialogueIncluded||(config&&config.dialogueIncluded))?'Narration and dialogue timing are included.':'Narration is included.';if(mode==='platform')return 'Admin processing is paid by the platform. '+included;if(mode==='balance')return maximum+money(e.remainingUSD)+' is available in your account. '+included;return money(e.remainingUSD)+' of today’s '+money(e.dailyUSD)+' is left.';}
   function refusal(e){return e.reason||('This needs '+money(e.setAsideUSD)+' set aside, and '+allowance(e));}
   function scheduleEstimates(announce,prefix){
@@ -697,16 +699,17 @@ export const descriptionBrowserScript: string = String.raw`
     }catch(e){presetSig='';}
   }
   async function freshEstimate(action,extra){var body=Object.assign({action:action},extra||{});return call('/jobs/'+job.id+'/estimate','POST',body);}
-  function priced(key,text){var e=estimates[key];return text+(e&&(e.allowed||e.estimateUSD>0)?', about '+money(e.estimateUSD):'');}
+  /** A price on the button, left off when it was refused before pricing or the part typed for it cannot be described (a price from before would be stale). */
+  function priced(key,text){var e=estimates[key],partly=['start','preview','previewAgain','reanalyze'].indexOf(key)>=0&&!!part().error;return text+(e&&!partly&&(e.allowed||e.estimateUSD>0)?', about '+money(e.estimateUSD):'');}
   /**
    * Each price in button order, then each refusal once (one reason for several buttons, such as
    * the original being gone, is said once and names them), then what her account allows. A lead
    * (Continue's own words) comes first, and its estimate stands for the account when given.
    */
   function pricesSaid(keys,lead,base){
-    var parts=lead?[lead]:[],reasons=[],named={},first=base||null;
+    var parts=lead?[lead]:[],reasons=[],named={},first=base||null,block=freshBlock();
     keys.forEach(function(key){
-      var e=estimates[key];if(!e)return;
+      var e=estimates[key];if(!e||block&&(key==='previewAgain'||key==='reanalyze'))return;
       var costed=e.allowed||e.estimateUSD>0;
       if(costed)parts.push(LABELS[key]+': about '+money(e.estimateUSD)+'.');
       if(e.allowed){first=first||e;return;}
@@ -714,9 +717,15 @@ export const descriptionBrowserScript: string = String.raw`
       if(!costed)named[why].push(LABELS[key]);
     });
     reasons.forEach(function(why){var names=named[why];parts.push((names.length?names.join(' and ')+': ':'')+why);});
+    if(block)parts.push(block);
     if(first)parts.push(allowance(first));
     return parts.join(' ');
   }
+  /**
+   * A part she typed that cannot be described is never sent to be priced, so the buttons it greys
+   * say why here, in the text they are described by, instead of waiting on a price that never comes.
+   */
+  function freshBlock(){var p=again()?part():null;if(!p||!p.error)return '';return (job.preview?LABELS.previewAgain+' and '+LABELS.reanalyze:LABELS.reanalyze)+': '+p.error;}
   function gate(id,reason){var button=$(id);if(reason){button.setAttribute('aria-disabled','true');button.setAttribute('data-reason',reason);}else{button.removeAttribute('aria-disabled');button.removeAttribute('data-reason');}}
   function blocked(id){if(inflight)return true;var button=$(id);if(button.getAttribute('aria-disabled')==='true'){say(button.getAttribute('data-reason')||'That is not available right now.',true);return true;}return false;}
   function spendReason(key){
