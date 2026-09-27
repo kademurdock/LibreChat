@@ -1380,7 +1380,7 @@ export const descriptionBrowserScript: string = String.raw`
       await showIf(id,updated,false);say('Trying those parts again. The current version stays available.',true);land('job-title',$('redo'));await list();
     });
   };
-  function cueTime(cue){var at=cue.outputAt!==undefined?cue.outputAt:cue.at,text=clock(at);if(cue.outputAt!==undefined&&Math.abs(cue.outputAt-cue.at)>=1)text+=', original '+clock(cue.at);return text;}
+  function cueTime(cue){var at=cue.outputAt!==undefined?cue.outputAt:cue.at,text=clock(at),lead=(script&&script.lead)||0;if(cue.outputAt!==undefined&&Math.abs(cue.outputAt-lead-cue.at)>=1)text+=', original '+clock(cue.at);return text;}
   function cueLabel(cue){
     var edit=edits[cue.id],text=(edit?edit.text:cue.text)||'',status=edit&&edit.omit||!edit&&cue.omit?'Left out: ':edit?'Changed: ':cue.spoken===false?'Not spoken: ':'';
     return status+cueTime(cue)+'. '+(text.length>60?text.slice(0,60)+'…':text);

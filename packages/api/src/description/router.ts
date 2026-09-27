@@ -3382,7 +3382,12 @@ export function createDescriptionRouter(hooks: Hooks): {
       typeof req.query.version === 'string' ? req.query.version : undefined,
     );
     const records = await baseRecords(job, copy);
-    res.json({ version: copy.version, cues: scriptCues([...records.values()], copy.lead ?? 0) });
+    /* `lead`: the copy's opening Kade-AI credit, so the editor can tell it from a frozen pause. */
+    res.json({
+      version: copy.version,
+      ...(copy.lead ? { lead: copy.lead } : {}),
+      cues: scriptCues([...records.values()], copy.lead ?? 0),
+    });
   });
   route('post', '/jobs/:id/reanalyze', async (req, res) => {
     whenConfigured();

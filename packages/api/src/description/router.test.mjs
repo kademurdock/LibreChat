@@ -4114,6 +4114,7 @@ test('Kade-AI credit: every copy begins and ends with it at no charge; only the 
     const spoken = script.cues.find((cue) => cue.spoken);
     assert.ok(Math.abs(spoken.outputAt - cueAt) < 0.01, `the script (${spoken.outputAt}) and the players (${cueAt}) agree`);
     assert.ok(spoken.outputAt > copy.lead, 'after the opening credit');
+    assert.equal(script.lead, copy.lead, 'the editor is told how long the opening credit is');
     const included = usageLog.filter((row) => row.job === theirs && row.kind === 'speech-included');
     assert.equal(included.length, 2, 'the two credit lines are the platform’s own promotion');
     assert.ok(included.every((row) => row.chargedUSD === 0));
@@ -4128,6 +4129,7 @@ test('Kade-AI credit: every copy begins and ends with it at no charge; only the 
     assert.equal(plain.state, 'done', plain.error);
     assert.equal(requests.at(-1).credit, null, 'the engine is told to leave it out');
     assert.equal((await Jobs.findById(hers).lean()).copies.at(-1).lead, undefined);
+    assert.equal((await call('get', `/jobs/${hers}/script`, 'credit-admin').expect(200)).body.lead, undefined);
     assert.ok(Math.abs(plain.outputSeconds - 10) < 0.1);
     const plainText = (await call('get', `/jobs/${hers}/text/transcript`, 'credit-admin').expect(200)).text;
     assert.doesNotMatch(plainText, /Credit:/);

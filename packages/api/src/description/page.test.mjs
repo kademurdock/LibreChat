@@ -2012,6 +2012,26 @@ test('editor: described-copy times, spoken markers, validation, short-version li
   assert.equal(env.document.activeElement, $('job-title'));
 });
 
+/* Sep 27 2026: every time in a credited copy comes after the opening Kade-AI credit. That shift
+ * is not a frozen pause, so it never adds an "original" time to every description. */
+test('editor: the opening Kade-AI credit alone does not give each description an original time', async () => {
+  const server = makeServer();
+  const done = server.add(doneJob({ name: 'Ad' }));
+  const lead = 3.08;
+  server.override(
+    (method, path) => /\/script$/.test(path),
+    () => ({ status: 200, body: { version: 1, lead, cues: scriptCues.map((cue) => ({ ...cue, outputAt: cue.outputAt + lead })) } }),
+  );
+  const env = await boot({ server, search: '?id=' + done.id });
+  const { $ } = env;
+  $('editor').open = true;
+  await env.click('edit-load');
+  assert.deepEqual(
+    $('edit-cue').options.map((o) => o.textContent),
+    ['0:08. A red barn stands in snow.', '0:55, original 0:40. Frank waves from the porch.', 'Not spoken: 2:01, original 1:40. A sign reads Meeks Lumber.'],
+  );
+});
+
 test('editor: correct this description jumps from the player, next and previous move one at a time, redo one part with a note', async () => {
   const server = makeServer();
   const done = server.add(doneJob({ name: 'Ad' }));
