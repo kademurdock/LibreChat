@@ -152,9 +152,9 @@ Read this before drafting. If a draft sounds like a machine wrote it, one of the
 BAD: Your memory drifts through the corridors of my mind.
 FIX: I been thinkin' 'bout you all damn day.
 
-**2. Repetition avoidance.** The model thinks repeating is bad writing. Repetition is the engine of pop music. A real chorus says one thing eight times and earns it. A machine chorus says eight things and earns nothing.
+**2. Repetition avoidance.** The model thinks repeating is bad writing. Repetition is the engine of pop music. A real chorus lands one hook once or twice, spends its other lines pushing that hook further, and earns the repeat by coming back after every verse. A machine chorus says eight things and earns nothing.
 BAD: A chorus with four distinct clever statements.
-FIX: One phrase, four passes, hotter each time, one word changed on the last pass.
+FIX: One hook, sung once or twice per chorus, every other line adding a turn, a picture or a consequence, the whole chorus back hotter each time, one word changed on the last pass.
 
 **3. Abstraction as safety.** Specificity is risky, so the model reaches for the generic.
 BAD: The walls between us finally came down.
@@ -216,7 +216,7 @@ Banning bad patterns isn't enough. You have to know what good looks like and rea
 
 **Internal contradiction.** "Mad at you, can't lose you." "I'm leavin'. Call me when you get home." Real people feel two things at once, and that tension IS the song. This is not the banned contrast template. Internal contradiction is two real feelings coexisting. Contrast templates are rhetorical posturing.
 
-**Repetition as feeling.** When the emotion gets too big for new words, you say the same thing again. Choruses live and die on repeating one sticky thing. A chorus that repeats its hook six times and gets better each pass is doing the job.
+**Repetition as feeling.** When the emotion gets too big for new words, you say the same thing again. Choruses live and die on repeating one sticky thing. A chorus that lands its hook once or twice, gives every other line something new, and hits harder each time it comes back is doing the job.
 
 **Bounce over depth.** Three monosyllables in a row can do work ten polysyllables can't. The genius is in the cadence, not the content.
 
@@ -224,7 +224,7 @@ Banning bad patterns isn't enough. You have to know what good looks like and rea
 
 **Voice tics and connective tissue.** "Boy," "girl," "babe," "ay," "yeah," "look," "ohh," "mmm," "uhh," "hold up," "for real," "I swear," "tell me," "hey," "yo." These are not filler. They are how singers breathe and how listeners lock in. Use them generously. Free craft.
 
-**Confidence in simplicity.** The best writers repeat one phrase eight times if it works. They rhyme a word with itself if the cadence is right. They are not trying to impress an English teacher. They are trying to make a song.
+**Confidence in simplicity.** The best writers bring one phrase back in every chorus if it works. They are not trying to impress an English teacher. They are trying to make a song.
 
 **The opening grab.** Real songs hook you in the first eight words. Not with poetry: with a stance, a scene, an attitude, a question, a callout, or a flat declaration. The first line is a first impression. Make it sound like a person walking into the room mid-thought.
 
@@ -288,7 +288,7 @@ Every great hook has one stressed syllable that locks the title in: on a strong 
 
 ### Repetition with micro-charge, and the one-change rule
 
-Repeat the hook phrase two to four times inside the chorus, sometimes more. Each return should feel hotter because of what the verse or pre-chorus just set up. Same words, rising heat.
+Sing the hook phrase once or twice inside the chorus, and give every other chorus line a job: a turn, a concrete image, a consequence. The title lands several times across the song because the chorus comes back. Each return should feel hotter because of what the verse or pre-chorus just set up. Same words, rising heat.
 
 On the LAST pass of a repeated phrase, consider changing exactly one word or one line. The ear, lulled by the pattern, snaps awake at the change. One change. Never a rewrite.
 
@@ -439,7 +439,7 @@ Synthetic vocals rush lines that have no pause. Write breath points in: a comma,
 
 ### The generator locks onto pattern
 
-A generator commits to a melody confidently when it can find the pattern: the hook repeating verbatim, and paired lines (one and three, two and four) carrying roughly matching syllable counts and stress shapes. Novel phrasing on every line gives it nothing to grip, so the melody wanders and the delivery rushes.
+A generator commits to a melody confidently when it can find the pattern: the hook repeating verbatim each time the chorus comes back, and paired lines (one and three, two and four) carrying roughly matching syllable counts and stress shapes. Novel phrasing on every line gives it nothing to grip, so the melody wanders and the delivery rushes.
 
 So: WITHIN a section, keep paired lines rhythmically consistent. BETWEEN sections, change the shape. Consistency inside the pattern, contrast between patterns. That's the difference between human groove and machine monotone, and it's also exactly what the generator renders best.
 
@@ -533,7 +533,7 @@ The owner's standing complaint is that these songs come out too short. The engin
 
 - **Standard song, about four minutes, 45 to 65 sung lines in total counting every written-out chorus, laid out on the section map the desk sends with the request.** Ceiling around 70 for dense rap.
 - Verses by density tier: groove-forward 6 to 10 lines each, balanced 8 to 12, lyric-forward 10 to 14, rap 12 to 16 bars. Verse two is NOT shorter by default here, and verse three is never a recap.
-- Choruses: 4 to 8 lines including internal repeats. Pre-choruses: 2 to 4. Post-choruses: 2 to 4, often one pattern repeated. Bridges: 2 to 6. Outros: 2 to 6.
+- Choruses: 4 to 8 lines, the hook in one or two of them and something new in each of the others. Pre-choruses: 2 to 4. Post-choruses: 2 to 4, often one pattern repeated. Bridges: 2 to 6. Outros: 2 to 6.
 - Every repeated chorus is written out in full. Repeats are cheap for the listener and load-bearing for the generator.
 - If the person gave a length, a line count or a structure, theirs wins.
 
@@ -618,7 +618,7 @@ R&B lives or dies on the VOCAL. The writing's job is to build a runway for it.
 - A hook moment roughly every twenty seconds. Pre-chorus and post-chorus are the modern win condition, not optional garnish.
 - One concrete specific per verse buys the right to be universal everywhere else.
 - Vocabulary stays plain. The craft hides in the cadence and the melody, not the dictionary.
-- The title lands four to eight times. Front-load it: title in the first line of the chorus is a stronger modern move than saving it for the last.
+- The title lands four to eight times across the song, once or twice in each chorus. Front-load it: title in the first line of the chorus is a stronger modern move than saving it for the last.
 
 ### The country and Americana engine
 
@@ -711,7 +711,7 @@ Choose exactly one from this list before drafting. This is the fingerprint that 
 6. A spoken or half-spoken aside dropped into a sung section.
 7. A section stripped to voice and one instrument.
 8. A cold ending on a line that isn't the title.
-9. One word repeated three times in a row for pressure.
+9. One word repeated for pressure, once in the song, never stretched into a list.
 10. A question in the hook that never gets answered.
 11. A bar of pure ad-lib where a lyric was expected.
 12. A final chorus with exactly one word changed.
@@ -845,7 +845,7 @@ Run two passes silently before delivering. Pass 1 failures kill the offending li
 10. **Voice commitment.** Is the singer somebody specific, with attitude, in every line?
 11. **Moment, not summary.** Is the song happening now?
 12. **Opening grab.** Does the first line make you want the second?
-13. **Hook stickiness.** Would the chorus stay in someone's head after one play? Does it survive a cold listen? Is the title in the right place, landing four to eight times? Is there exactly ONE engineered surprise?
+13. **Hook stickiness.** Would the chorus stay in someone's head after one play? Does it survive a cold listen? Is the title in the right place, landing four to eight times across the song and once or twice in each chorus? Is there exactly ONE engineered surprise?
 14. **One waited-for moment.** Is there exactly one thing built up to that earns a replay? If THE TURN is in play, does the final chorus actually reread?
 15. **Rhyme palette.** Does resolution match the feeling? Is the spectrum mixed, with slant carrying the modern weight? Any forced rhymes, worn pairs, or all-end-rhyme uniformity? Do internals carry sound through the lines?
 16. **Prosody shape.** Do line counts, line lengths, and schemes agree with the emotion?
@@ -919,18 +919,17 @@ You already picked your side
 
 [Chorus]
 Now they know
-Now they know
+Ain't bring a crowd, ain't need the rope
+Jokes all gone, now you raise a toast
 Wasn't sayin' much but now they know
-Now they know
 (Yeah, yeah)
-Now they know
 
 [Post-Chorus]
 Ay, ay, ay
 (Now they know)
 Ay, ay, ay
 
-Why it works: it happens NOW, in the room, this minute. One voice, cocky, never breaking character. The hook is plain speech, lands its click on an open vowel, and repeats five times. The single engineered surprise is that the flex is quiet ("Wasn't sayin' much"), which is not what the ear expects from a brag. "Spring" rhymes with nothing and doesn't care; that's the unrhymed line walking. The pre-chorus builds without previewing. The post-chorus is a near-wordless second hook that a synthetic voice renders well.
+Why it works: it happens NOW, in the room, this minute. One voice, cocky, never breaking character. The hook is plain speech, lands its click on an open vowel, and is sung twice, opening the chorus and closing it, while the lines between pay off the verse. The single engineered surprise is that the flex is quiet ("Wasn't sayin' much"), which is not what the ear expects from a brag. "Spring" rhymes with nothing and doesn't care; that's the unrhymed line walking. The pre-chorus builds without previewing. The post-chorus is a near-wordless second hook that a synthetic voice renders well.
 
 ### Example B: lyric-forward country-soul
 
@@ -946,12 +945,11 @@ You'll be gone 'fore they turn the lights up
 
 [Chorus]
 Sit back down
-Just sit back down
+Let your ride go, I'll buy the round
 You can leave when the lot's empty and the band's in the van
-Sit back down
 Just sit back down
 
-Why it works: present-moment, mid-feeling, no looking back. The voice is smitten and clear-eyed with an edge. "You get mean when the room gets loud, but you was soft for a minute" is internal contradiction, two real feelings at once, not the banned contrast template. The hook is something a person would actually say out loud, repeats, and sits on an open vowel for the sustain. The chorus line lengths wobble on purpose: short plea, short plea, one long bargaining line, then short and short again. The shape IS the begging.
+Why it works: present-moment, mid-feeling, no looking back. The voice is smitten and clear-eyed with an edge. "You get mean when the room gets loud, but you was soft for a minute" is internal contradiction, two real feelings at once, not the banned contrast template. The hook is something a person would actually say out loud, opens and closes the chorus, and sits on an open vowel for the sustain. The chorus line lengths wobble on purpose: short plea, short bribe, one long bargaining line, then the plea again. The shape IS the begging.
 
 ### Example C: hip-hop verse mechanics
 
@@ -980,9 +978,9 @@ Went and made my plate, took my time with it
 [Chorus]
 I sleep fine
 Sayin' it slow so you hear it
-I sleep fine
 Whole house quiet and I like it
-I sleep
+Thermostat on seventy-two
+All mine
 Ohh, I sleep fine
 
 [Outro - Vamp]
@@ -995,4 +993,4 @@ Mm. I saw it. I ain't answer.
 (I sleep fine)
 And I sleep fiiine, ohh
 
-Why it works: this is the grown-and-gone lane, which is neither heartbreak nor empowerment. The voice is unbothered and slightly amused, and every line stays inside it. The title carries a double meaning that never gets explained: literal sleep, and the status report. The one surprise in the hook is the singer narrating their own delivery ("Sayin' it slow so you hear it"), which is a real thing people do in an argument. "I sleep" is the two-word spotlight line, the chosen spice. The vamp is written out rather than implied: backgrounds hold the hook in parentheses while the lead escalates into asides and a spoken fragment, then stretches the final vowel phonetically so the generator sustains it instead of clipping.
+Why it works: this is the grown-and-gone lane, which is neither heartbreak nor empowerment. The voice is unbothered and slightly amused, and every line stays inside it. The title carries a double meaning that never gets explained: literal sleep, and the status report. The one surprise in the hook is the singer narrating their own delivery ("Sayin' it slow so you hear it"), which is a real thing people do in an argument. "All mine" is the two-word spotlight line, the chosen spice. The vamp is written out rather than implied: backgrounds hold the hook in parentheses while the lead escalates into asides and a spoken fragment, then stretches the final vowel phonetically so the generator sustains it instead of clipping.

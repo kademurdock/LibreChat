@@ -929,6 +929,11 @@ test('Part 296: lines that open the same way and a line that stacks a list are f
   assert.match(flagsOf(verse(['Take the Buick to the levee', 'Take the long way past the mill', 'Take your mama to the Walmart', 'Then come on back up the hill'])).join('|'), /3 lines in a row open with "Take"/);
   assert.match(flagsOf(verse(['Same bar, same stool, same song and that', 'I drove home by the water tower'])).join('|'), /the line "Same bar, same stool, same song and that" stacks 3 clauses that each open with "Same"/);
   assert.match(flagsOf(verse(["Don't wave, don't smile, don't call my phone", 'I moved out to Mountain Home'])).join('|'), /stacks 3 clauses that each open with "Don't"/);
+  /* Part 296 follow-up, the measured miss: "and" splits the line, and the last clause opens on "the same". */
+  assert.match(flagsOf(verse(['Same three cousins, same old dog, and the same damn everything', 'I drove home by the water tower'])).join('|'), /the line "Same three cousins, same old dog, and the same damn everything" stacks 3 clauses that each open with "Same"/);
+  assert.match(flagsOf(verse(['The same old road, the same old town, the same old you', 'I drove home by the water tower'])).join('|'), /stacks 3 clauses that each open with "The same"/, 'the two words were already counted, and still name it');
+  for (const plainLine of ['The fair, the fireworks and the Ferris wheel', 'The rain on the roof, the wind, and the cold in my boots', 'Same old dog and the same old truck'])
+    assert.deepEqual(lyricRepeatIssues(verse([plainLine, 'I drove home by the water tower']), ''), [], plainLine);
   for (const plainVerse of [
     ['I drove to Harrison for parts', 'I found a gasket and a cup', 'I paid the man in quarters', 'You never even woke up'],
     ['And the dog came back at dinner', 'And a cat was on the roof', 'And my preacher called at seven', 'With a sermon and no proof'],
@@ -941,6 +946,39 @@ test('Part 296: lines that open the same way and a line that stacks a list are f
   assert.deepEqual(lyricRepeatIssues(verse(['Same bar, same stool, same song and that', 'I drove home by the water tower']), 'a song about the same old same old'), [], 'a word from her brief is hers');
   /* Her own Tier 2 ban names the bridge that only lists. */
   assert.match(flagsOf('Pop.\nLyrics:\n[Bridge]\nIt was the shuffle\nIt was the seat\nIt was the dog\n\nREADBACK: x').join('|'), /3 lines in a row open with "It was"/);
+});
+
+test('Part 296 follow-up: her hit-writing system asks for the hook once or twice in a chorus, and its worked examples do what it says', async () => {
+  /* Her word (Sep 27 2026): "You can fix the instructions and turn it on. Those instructions were written by an ai." */
+  const { hitWritingSystem } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8'))).toString('base64'));
+  const markdown = readFileSync(new URL('../music/hit-writing-system.md', import.meta.url), 'utf8').replace(/\r\n/g, '\n').replace(/\n+$/, '');
+  assert.equal(hitWritingSystem, markdown, 'hitSystem.ts is regenerated from the markdown');
+  for (const old of [/says one thing eight times/, /One phrase, four passes/, /repeats its hook six times/, /repeat one phrase eight times/, /rhyme a word with itself if the cadence/, /two to four times inside the chorus, sometimes more/, /including internal repeats/, /One word repeated three times in a row/, /repeats five times/, /The title lands four to eight times\. /])
+    assert.doesNotMatch(hitWritingSystem, old);
+  assert.match(hitWritingSystem, /Sing the hook phrase once or twice inside the chorus, and give every other chorus line a job: a turn, a concrete image, a consequence\. The title lands several times across the song because the chorus comes back\./);
+  assert.match(hitWritingSystem, /Choruses: 4 to 8 lines, the hook in one or two of them and something new in each of the others\./);
+  assert.match(hitWritingSystem, /9\. One word repeated for pressure, once in the song, never stretched into a list\./);
+  /* Everything else of hers stays, her own bans on the list shape included. */
+  assert.match(hitWritingSystem, /Self-declarative bridge repetition that just lists/);
+  assert.match(hitWritingSystem, /Forced self-rhyme: rhyming a word with itself as cadence padding\. Deliberate hook repetition is fine\./);
+  assert.match(hitWritingSystem, /Every repeated chorus is written out in full\./);
+  assert.match(hitWritingSystem, /Across a full song the title should land roughly four to eight times\./);
+  /* Her worked examples used to sing the hook three to five times in one chorus: each now passes the desk's own gate. */
+  const examples = hitWritingSystem.slice(hitWritingSystem.indexOf('## APPENDIX C: WORKED EXAMPLES'));
+  const choruses = [...examples.matchAll(/\[Chorus\]\n([\s\S]*?)\n\n/g)].map(m => m[1]);
+  assert.equal(choruses.length, 3);
+  for (const chorus of choruses) {
+    const script = `x\nLyrics:\n[Chorus]\n${chorus}\n\nREADBACK: x`;
+    assert.deepEqual(lyricRepeatIssues(script, ''), [], chorus);
+    assert.deepEqual(lyricTells(script, '').filter(t => !/copied from the writing system/.test(t.tell)), [], chorus);
+  }
+  /* The rewritten rules name the shape and never do it themselves. */
+  const rules = ['2. Repetition avoidance.', 'FIX: One hook, sung once', '**Repetition as feeling.**', '**Confidence in simplicity.**', 'Sing the hook phrase once or twice', '- Choruses: 4 to 8 lines', '9. One word repeated for pressure']
+    .map(start => { const at = hitWritingSystem.indexOf(start); assert.ok(at !== -1, start); return hitWritingSystem.slice(at, hitWritingSystem.indexOf('\n', at)).replace(/ Pre-choruses:.*$/, ''); });
+  assert.deepEqual(lyricRepeatIssues(`x\nLyrics:\n[Verse 1]\n${rules.join(' ').split(/(?<=[.:])\s+/).join('\n')}\n\nREADBACK: x`, ''), []);
+  /* Our own notes no longer point at advice the system has stopped giving. */
+  assert.doesNotMatch(musicWritingCraft, /pass after pass|sung three times for pressure/);
+  assert.match(musicWritingCraft, /One word repeated for pressure, once in a song, or a chant in a post-chorus, is not this\./);
 });
 
 test('Part 296: the desk draws one chorus shape in code and says it in words, never with a line to copy', () => {

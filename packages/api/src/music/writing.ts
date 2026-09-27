@@ -88,11 +88,11 @@ export const musicWritingCraft: string = `DESK NOTES FROM THE OWNER (these outra
 - SING-ALONG FIRST. Her verdict on this desk's drafts (Sep 20 2026): "it's still not sounding like a song I would sing along to at all. It still feels like literary work." She is right, and where the system above disagrees with the rules below, these win:
   1. RHYME YOU CAN HEAR. Every verse is built in couplets (AABB) or alternating lines (ABAB, or XAXA at the very least), and the rhyming word is the LAST word of the line. Perfect rhymes and strong slant rhymes both count; a vowel that merely looks similar does not. A listener must be able to guess the last word of a line before it lands. The chorus rhymes too, and the title line has a rhyme partner. The system's advice to leave lines unrhymed and avoid tidy couplets is for a writer who over-rhymes. This desk under-rhymes. At most ONE deliberately unrhymed line in the whole song. Slant rhyme counts as rhyme. Never twist word order or grammar to land a rhyme; if a line has to bend to reach its rhyme, rewrite the line. Skip the nursery-rhyme pairs everyone has heard a thousand times.
   2. ONE METER PER SECTION. Choose a syllable count for the verse lines and hold it within one syllable, line after line, and match verse one's count in every verse after it so the same tune fits them all. Long line, short line, long line, short line is fine if it repeats exactly. A verse whose lines run 5, 12, 7 and 10 syllables cannot be sung. Do not count syllables one by one while you think; that burns the whole budget and the song comes back cut off. Pick a beat (four stresses a line is the workhorse), say each line to it once, and move on. The desk counts afterwards and will tell you which verses wander.
-  3. THE CHORUS STATES THE HOOK. The verses can show; the chorus TELLS. It is the singer saying the feeling straight out in words a ten year old knows, short lines, the title first or last, built to be shouted by a car full of people. Four to six lines, and the hook is sung in them no more than twice: every other line says something the hook does not (what happens because of it, what it costs, a picture, a comeback), and no other line is sung twice inside one chorus. The title lands four to eight times across the whole song because the chorus comes back, never four times inside one chorus. The system's advice to sing one phrase pass after pass inside a chorus is for a writer who never repeats. This desk over-repeats: her verdict on its choruses (Sep 27 2026) was a writer who "was lyrical for a minute" and then "ran out of ideas". The desk draws a CHORUS SHAPE with the section map; follow it. An idea that itself asks for a chant or for repetition gets what it asks for. No chorus made of description.
+  3. THE CHORUS STATES THE HOOK. The verses can show; the chorus TELLS. It is the singer saying the feeling straight out in words a ten year old knows, short lines, the title first or last, built to be shouted by a car full of people. Four to six lines, and the hook is sung in them no more than twice: every other line says something the hook does not (what happens because of it, what it costs, a picture, a comeback), and no other line is sung twice inside one chorus. The title lands four to eight times across the whole song because the chorus comes back, never four times inside one chorus. This desk over-repeats: her verdict on its choruses (Sep 27 2026) was a writer who "was lyrical for a minute" and then "ran out of ideas". The desk draws a CHORUS SHAPE with the section map; follow it. An idea that itself asks for a chant or for repetition gets what it asks for. No chorus made of description.
   4. SONG, NOT SHORT STORY. No more than two observed details per verse, and each one something only this song could contain. Skip the props recent drafts keep reaching for, unless her brief names them: rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV. The rest is the singer talking, to someone, in plain sentences. Cut every line that only notices something unless the next line cashes it in. No understatement contests, no trailing off, no "and that's that". The opposite failure is just as dead: lines so general they could sit in a thousand songs. Plain words, exact facts. Verses this desk sizes itself run eight lines or more.
   5. LET IT BE FUN. Jokes, stories where something happens, animals, kids, bragging, nonsense syllables, call and response, a bit the crowd does. A children's song or a comedy song gets the same craft and none of the melancholy.
   6. More of her pet hates: humming or a hum of any kind (the heater, the fridge, the engine, a tune), "knowing" as a noun or a mood ("the knowing", "a knowing look"), anything done "slow", and the radio playing a song that comments on the scene.
-  7. NO LISTS OF LINES THAT OPEN THE SAME WAY. Three lines in a row that open with the same word or words, or one line that stacks three clauses on the same opening word, is the list she hears as machine writing (her words, Sep 27 2026: "very ai"), and her own system already bans lists that only repeat. Say the thing once, as a sentence, and spend the other lines on what happens. One word sung three times for pressure, or a chant in a post-chorus, is not this.
+  7. NO LISTS OF LINES THAT OPEN THE SAME WAY. Three lines in a row that open with the same word or words, or one line that stacks three clauses on the same opening word, is the list she hears as machine writing (her words, Sep 27 2026: "very ai"), and her own system already bans lists that only repeat. Say the thing once, as a sentence, and spend the other lines on what happens. One word repeated for pressure, once in a song, or a chant in a post-chorus, is not this.
 - WRITE IT LIKE A PERSON WROTE IT. From the songwriting prompt she uses elsewhere; these hold alongside the rules above.
   - Trust the listener. When a line lands, move on. Never explain a joke. Never follow a sad line with one saying how sad the singer is. No lesson at the end and no inspirational turnaround nobody earned: grief can stay grief, anger can stay anger, a fight can stay unresolved, and the singer can still want the person they shouldn't.
   - Give the singer a personality: opinions, bad habits, pettiness, contradictions, wants, and a way of talking you would recognise across a room. They do not have to be the good guy. Songs are not HR training videos.
@@ -653,7 +653,7 @@ export function lyricMeterNote(script: string): string {
  * Plus one rhyme check the collapsed choruses shared: one word ending three or
  * more lines of a section.
  * Chants are left alone where the map designs them (post-chorus, drop, intro,
- * outro), a single word sung three times is the system's spice, not a list, and
+ * outro), a single word repeated for pressure is the system's spice, not a list, and
  * whole-line (ad-libs) are backing vocals. A word from her brief is hers. */
 const STOP_WORDS = new Set(
   (
@@ -819,8 +819,12 @@ function openingRun(lines: string[], brief: string): { run: number; from: number
 
 /** A line that stacks three or more clauses on the same opening: the same two
  *  words, or the same word when it is not a common opening. Clauses of one word
- *  (a word sung three times for pressure) and clauses with no real word (a
- *  chant) do not count. */
+ *  (a word repeated for pressure) and clauses with no real word (a
+ *  chant) do not count.
+ *  Part 296 follow-up: a clause that opens on "the" is also counted by the words
+ *  after it. Measured, "Same three cousins, same old dog, and the same damn
+ *  everything" passed: "and" splits the line, and the last clause then opened
+ *  on "the same", so the list counted only two. */
 function stackedLine(line: string, brief: string): { n: number; key: string } | null {
   const parts = line
     .replace(/\([^)]*\)/g, ' ')
@@ -835,7 +839,14 @@ function stackedLine(line: string, brief: string): { n: number; key: string } | 
     const rawWords = raw.split(/\s+/);
     const keys: [string, string][] = [[words.slice(0, 2).join(' '), rawWords.slice(0, 2).join(' ')]];
     if (!COMMON_OPENINGS.has(bare(words[0]))) keys.push([words[0], rawWords[0]]);
-    for (const [key, shown] of keys) {
+    if (bare(words[0]) === 'the') {
+      const after = words.slice(1, 3).join(' ');
+      if (words.length >= 3) keys.push([after, rawWords.slice(1, 3).join(' ')]);
+      if (!COMMON_OPENINGS.has(bare(words[1]))) keys.push([words[1], rawWords[1]]);
+    }
+    /* One clause counts once for each opening it carries. */
+    const once = keys.filter(([k], i) => keys.findIndex(([other]) => other === k) === i);
+    for (const [key, shown] of once) {
       const had = counts.get(key);
       counts.set(key, { n: (had?.n || 0) + 1, raw: had?.raw || shown.replace(/[,;:!?.]+$/, '') });
     }
