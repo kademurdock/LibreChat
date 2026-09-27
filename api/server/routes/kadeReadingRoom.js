@@ -24,6 +24,8 @@
  *   POST   /book/:id/share              { shared, grownUpsOnly }  (owner)
  *   POST   /book/:id/return             take a library book off my shelf
  *   DELETE /book/:id                    withdraw a book (owner or ADMIN)
+ *   GET    /tree                        every shelf and its item count, one call (Part 296)
+ *   GET    /recent                      the newest items in the library (Part 296)
  *
  * AUDIO: nothing is cached on purpose. Every chunk is <= ~450 characters so
  * the proxy's streamed lane answers in under half a second, the reader is
@@ -259,6 +261,13 @@ function refreshListen(item) {
 }
 
 const router = express.Router();
+/* Part 296 (Sep 27 2026): the shelf tree (kadeReadingRoomTree.js) is cached, so any library write that
+ * can add, move, share or remove an item empties it when the write's answer goes out. */
+const shelfTree = require('./kadeReadingRoomTree');
+router.use((req, res, next) => {
+  if (shelfTree.writeClears(req.method, req.path)) res.once('finish', shelfTree.forget).once('close', shelfTree.forget);
+  next();
+});
 router.get('/guide', requireJwtAuth, (_req, res) => res.json(require('@librechat/api').librarianGuide));
 const { requests: libraryRequests, requestReader } = require('~/server/services/kadeLibraryRequests');
 router.use('/requests', express.json({ limit: '12kb' }), require('@librechat/api').libraryRequestRouter(
@@ -450,6 +459,8 @@ function summary(book, progress) {
     format: book.format,
     ownerName: book.ownerName,
     owner: String(book.owner),
+    /** Part 296: the library owner's own item, so a row need not end "donated by" her on every item. */
+    fromLibraryOwner: String(book.owner) === libraryOwnerId(),
     shared: !!book.shared,
     grownUpsOnly: !!book.grownUpsOnly,
     /** A shortcut to another item's file (the one-file rule), or null. */
@@ -465,6 +476,8 @@ function summary(book, progress) {
       : null,
   };
 }
+/** Kade's account, the library's owner (the id the owner-only tools already use). */
+const libraryOwnerId = () => process.env.KADE_OWNER_USER_ID || '6a3cba4d0b0afa92194e42f7';
 
 /* ── the shelf ─────────────────────────────────────────────────────────── */
 router.get('/shelf', requireJwtAuth, async (req, res) => {
@@ -1387,22 +1400,36 @@ router.use('/archive/descriptions', descriptionBatchRouter({
   read: (filter) => KadeBook.find(filter, '_id description').lean(),
 }));
 
+/** A shelf path to READ (Part 296). cleanPath also squeezes ".." to "." for paths it writes, which
+ * sent "Married... with Children" to the "Married. with Children" shelf beside it; a read only
+ * matches the path as it is stored, so it keeps every character. */
+const shelfPath = (p) => String(p || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').slice(0, 400);
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Case-insensitive title order for a shelf's items (the stored order put lowercase after Z). */
+const byTitle = [{ $addFields: { _titleKey: { $toLower: { $ifNull: ['$title', ''] } } } }, { $sort: { _titleKey: 1, _id: 1 } }];
+/** A listed item needs its summary, not a described video's every scene or its recaps. */
+const listFields = { $project: { 'tracks.description.scenes': 0, 'tracks.recaps': 0 } };
+
 router.get('/archive', requireJwtAuth, async (req, res) => {
   try {
     const hidden = libraryHiddenFrom(req); // the reviewer seat sees only its own uploads
     const child = await isChild(req);
-    const at = cleanPath(req.query.path || '');
+    const at = shelfPath(req.query.path || '');
     const page = clampInt(req.query.page, 0, 100000, 0);
     const limit = clampInt(req.query.limit, 1, 200, 60);
+    /* Part 296: deep=1 lists every item anywhere under the shelf, each with `sub` (where under it,
+     * as words), for a small shelf the phone shows whole instead of a folder per decade. */
+    const deep = req.query.deep === '1' || req.query.deep === 'true';
     // the aggregate below does not cast strings to ObjectId the way find() does
     const ownerId = new mongoose.Types.ObjectId(String(req.user.id));
     const scope = req.query.scope === 'mine' ? 'mine' : 'public';
     const base = { state: 'ready', ...(hidden || scope === 'mine' ? { owner: ownerId } : { shared: true }), ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
     const view = [{ $match: base }, { $addFields: { path: libraryPathExpression() } }];
     const prefix = at ? at + '/' : '';
-    const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escaped = escapeRegex(prefix);
+    const here = deep ? (at ? { path: { $regex: '^' + escapeRegex(at) + '(?:/|$)' } } : {}) : { path: at };
     const [folders, items, total] = await Promise.all([
-      KadeBook.aggregate([
+      deep ? [] : KadeBook.aggregate([
         ...view,
         { $match: { path: { $regex: '^' + escaped + '.+' } } },
         { $project: { seg: { $arrayElemAt: [{ $split: [{ $substrCP: ['$path', prefix.length, 400] }, '/'] }, 0] } } },
@@ -1410,15 +1437,72 @@ router.get('/archive', requireJwtAuth, async (req, res) => {
         { $sort: { _id: 1 } },
         { $limit: 500 },
       ]),
-      KadeBook.aggregate([...view, { $match: { path: at } }, { $sort: { title: 1, _id: 1 } }, { $skip: page * limit }, { $limit: limit }]),
-      KadeBook.aggregate([...view, { $match: { path: at } }, { $count: 'count' }]).then((rows) => rows[0]?.count || 0),
+      KadeBook.aggregate([...view, { $match: here }, ...byTitle, { $skip: page * limit }, { $limit: limit }, listFields]),
+      KadeBook.aggregate([...view, { $match: here }, { $count: 'count' }]).then((rows) => rows[0]?.count || 0),
     ]);
+    folders.sort((a, b) => shelfTree.compareNames(shelfTree.tidyName(a._id), shelfTree.tidyName(b._id)));
     const progress = items.length ? await KadeReadingProgress.find({ user: req.user.id, book: { $in: items.map((i) => i._id) } }).lean() : [];
     const pb = {}; for (const pr of progress) pb[String(pr.book)] = pr;
-    res.json({ path: at, folders: folders.map((f) => ({ name: f._id, count: f.count, path: prefix + f._id })), items: items.map((b) => summary(b, pb[String(b._id)])), total, page, limit });
+    const listed = items.map((b) => (deep ? { ...summary(b, pb[String(b._id)]), sub: shelfTree.subShelf(at, b.path) } : summary(b, pb[String(b._id)])));
+    res.json({ path: at, folders: folders.map((f) => ({ name: f._id, count: f.count, path: prefix + f._id })), items: listed, total, page, limit, ...(deep ? { deep: true } : {}) });
   } catch (e) {
     logger.error('[library/archive] error:', e);
     res.status(500).json({ error: 'Could not open that folder.' });
+  }
+});
+
+/* ── Part 296 (Sep 27 2026): every shelf and its count in one call ────────
+ * One aggregation groups the reader's items by display path; kadeReadingRoomTree.js builds the
+ * tree and its display rules (nothing is moved or renamed). The same reader rules as /archive:
+ * a seat without the family library (the App Review seat among them) sees only its own uploads,
+ * says nothing of a family collection and gets no Springfield screen; a child never sees a
+ * grown-ups-only item. scope=mine is the reader's own uploads, with what is still uploading. */
+const STALLED_AFTER_MS = 24 * 60 * 60 * 1000;
+router.get('/tree', requireJwtAuth, async (req, res) => {
+  try {
+    const hidden = libraryHiddenFrom(req);
+    const child = await isChild(req);
+    const scope = req.query.scope === 'mine' ? 'mine' : 'public';
+    const own = hidden || scope === 'mine';
+    const key = `${scope}:${own ? String(req.user.id) : 'family'}:${child ? 'child' : 'adult'}`;
+    const kept = shelfTree.cached(key);
+    if (kept) return res.json(kept);
+    const ownerId = new mongoose.Types.ObjectId(String(req.user.id));
+    const base = { state: 'ready', ...(own ? { owner: ownerId } : { shared: true }), ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
+    const since = new Date(Date.now() - STALLED_AFTER_MS);
+    const [rows, uploading, stalled] = await Promise.all([
+      KadeBook.aggregate([{ $match: base }, { $group: { _id: libraryPathExpression(), n: { $sum: 1 } } }]),
+      scope === 'mine' ? KadeBook.countDocuments({ owner: req.user.id, state: 'pending', updatedAt: { $gte: since } }) : 0,
+      scope === 'mine' ? KadeBook.countDocuments({ owner: req.user.id, state: 'pending', updatedAt: { $lt: since } }) : 0,
+    ]);
+    const tree = shelfTree.buildTree(rows.map((r) => [r._id, r.n]), { local: !own });
+    const body = { scope, ...tree, ...(scope === 'mine' ? { pending: { uploading, stalled } } : {}) };
+    res.json(shelfTree.remember(key, body));
+  } catch (e) {
+    logger.error('[library/tree] error:', e);
+    res.status(500).json({ error: 'Could not load the shelves.' });
+  }
+});
+
+/** The newest items in the library (Part 296): shared items by when they were shared, or a seat's
+ * own uploads when it has no family library. */
+router.get('/recent', requireJwtAuth, async (req, res) => {
+  try {
+    const hidden = libraryHiddenFrom(req);
+    const child = await isChild(req);
+    const limit = clampInt(req.query.limit, 1, 100, 60);
+    const grown = child ? { grownUpsOnly: { $ne: true } } : {};
+    const light = '-tracks.description.scenes -tracks.recaps';
+    // sharedAt alone, so the {shared, sharedAt} index answers it without reading the whole library
+    const items = hidden
+      ? await KadeBook.find({ owner: req.user.id, state: 'ready', ...grown }).select(light).sort({ createdAt: -1 }).limit(limit).lean()
+      : await KadeBook.find({ shared: true, state: 'ready', ...grown }).select(light).sort({ sharedAt: -1 }).limit(limit).lean();
+    const progress = items.length ? await KadeReadingProgress.find({ user: req.user.id, book: { $in: items.map((i) => i._id) } }).lean() : [];
+    const pb = {}; for (const pr of progress) pb[String(pr.book)] = pr;
+    res.json({ items: items.map((b) => summary(b, pb[String(b._id)] || null)), limit });
+  } catch (e) {
+    logger.error('[library/recent] error:', e);
+    res.status(500).json({ error: 'Could not load what is new.' });
   }
 });
 

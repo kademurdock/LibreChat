@@ -54,6 +54,10 @@ const SINCE = () => {
   return Number.isFinite(d.getTime()) ? d : new Date('2026-09-23T00:00:00Z');
 };
 const INTAKE_RE = /(?:^|\/)(?:Needs Filing|Archive Intake|Found Media|Broadcast Presentation|Advertising)(?:\/|$)|\(Review\)/i;
+/** Part 296: a pass that filed something makes the phone's cached shelf counts stale. */
+const forgetShelfTree = () => {
+  try { require('./kadeReadingRoomTree').forget(); } catch (_) { /* the tree is optional here */ }
+};
 const FIELDS = '_id kind title author path originalPath description meta tags createdAt tracks.bytes owner fileCheck.state fileCheck.of';
 const UNREAD = { 'meta.jevFiling': { $exists: false }, 'meta.jevFilingTries': { $not: { $gte: 3 } } };
 /* Part 295, the second look: read by an older librarian, still in intake, never moved by it (no `to`, so
@@ -200,6 +204,7 @@ async function sweepOnce({ limit = BATCH(), userId = null } = {}) {
       ops.push({ updateOne: { filter: { _id: item._id, path: from, state: 'ready' }, update } });
     }
     const result = ops.length ? await KadeBook.bulkWrite(ops, { ordered: false }) : { modifiedCount: 0 };
+    if (result.modifiedCount) forgetShelfTree();
     lastPass = { ran: true, at: new Date(), ms: Date.now() - t0, costUSD: Number(costUSD.toFixed(4)), written: result.modifiedCount || 0, ...tally };
     logger.info(`[library/media-sweep] read ${tally.read}: moved ${tally.moved}, proposed ${tally.proposed}, flagged ${tally.flagged}, guessed ${tally.guessed}, second look ${tally.again}, errors ${tally.errors}, $${costUSD.toFixed(4)} ${JSON.stringify(tally.byShelf).slice(0, 400)}`);
     if (costUSD > 0) {
@@ -238,6 +243,7 @@ async function undo(since) {
     .filter((i) => i.meta.jevFiling.to === i.path && typeof i.meta.jevFiling.from === 'string')
     .map((i) => ({ updateOne: { filter: { _id: i._id, path: i.path }, update: { $set: { path: i.meta.jevFiling.from, category: librarian.categoryOf(i.meta.jevFiling.from, i.kind), 'meta.jevFiling.undone': new Date() } } } }));
   const r = ops.length ? await KadeBook.bulkWrite(ops, { ordered: false }) : { modifiedCount: 0 };
+  if (r.modifiedCount) forgetShelfTree();
   logger.info(`[library/media-sweep] undo since ${when.toISOString()}: ${r.modifiedCount || 0} of ${items.length}`);
   return { considered: items.length, restored: r.modifiedCount || 0 };
 }

@@ -149,6 +149,10 @@ async function sortOnce({ force = false, userId = null } = {}) {
       await KadeBook.updateOne({ _id: b._id, shortcutOf: { $exists: false }, $or: [{ path: '' }, { path: { $exists: false } }] }, { $set: set, $addToSet: { tags: c.shelf } });
       filed++;
     }
+    // Part 296: the phone's cached shelf counts (kadeReadingRoomTree.js) are stale once a book is shelved
+    if (filed) {
+      try { require('./kadeReadingRoomTree').forget(); } catch (_) { /* optional */ }
+    }
     const row = { service: 'describe', quantity: filed, unit: 'items', costUSD, metadata: { source: 'librarian-sort', model: MODEL(), books: filed } };
     /* Part 295 review: a timer pass shelves everyone's books, so it is the platform's upkeep and no
      * balance pays for it (the row still counts toward this pass's daily cap). */
