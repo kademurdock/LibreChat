@@ -109,6 +109,21 @@ async function seedSounds() {
         );
     }
 
+    /* Part 297: a sound re-made on fal lives at a NEW url (places297), because
+     * phones cache by url. Rows are $setOnInsert, so they have to be moved on
+     * purpose: only rows still on the exact superseded url, so a sound Kade
+     * installed herself with @sound is never overwritten. Idempotent. */
+    let moved = 0;
+    for (const url of Object.values(LIFE_SOUNDS)) {
+      if (!url.includes('/places297/')) continue;
+      const r = await MooSound.updateMany(
+        { url: url.replace('/places297/', '/places296/') },
+        { $set: { url } },
+      );
+      moved += r.modifiedCount || 0;
+    }
+    if (moved) logger.info(`[seed] moved ${moved} sound rows to their Part 297 recordings`);
+
     const existing = await MooSound.find({ scopeType: 'event' }).lean();
     const existingIds = new Set(existing.map((r) => r.scopeId));
 

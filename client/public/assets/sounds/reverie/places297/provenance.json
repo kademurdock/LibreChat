@@ -1,0 +1,1772 @@
+[
+  {
+    "id": "amb.arcade.room",
+    "label": "The Starlite Arcade: machines chirping on both sides, bells, a skee-ball rolling, an electric hum",
+    "kind": "ambience loop",
+    "method": "Generated with Seed Audio 1.0 on fal, $0.1875 per minute (Part 297), then cut into a 30 s loop from the middle of the take with a 2 s equal-power crossfade.",
+    "model": "bytedance/seed-audio-1.0",
+    "prompt": "FORTY SECONDS of continuous location sound. WIDE SHOT, a room microphone standing in the middle aisle of a busy old 1980s video arcade, sync sound only, no score. Rows of coin-operated video game cabinets line both walls, on the left and on the right, and every cabinet is running its own electronic attract sounds at once: 8-bit bleeps, laser zaps, bloops, short game jingles and little explosions, overlapping from near and far and echoing off the walls. Pinball machine bells ring every few seconds, and at the far end wooden skee-ball balls keep rumbling up the lanes and clunking into the rings. Under it all, the steady electrical hum of the machines. Nobody is pressing buttons near the microphone. No dialogue, no voices, no narration, no background music. Forty seconds of continuous video arcade ambience.",
+    "negativePrompt": null,
+    "seed": null,
+    "cut": "sfx.py loop master 5.0 30 --xf 2 (uses 5.0-37.0 s of the 40.0 s master); seam tail -32.1 dB / head -31.6 dB; 30.0 s, peak -11.77 dB, rms -29.49 dB",
+    "masterFile": "amb.arcade.room__seed_062454.wav",
+    "masterSha256": "5dd6ec9e0efa77939689d289125d9c34e76d654d518cb84ecba65f257ec0de42",
+    "finalWavSha256": "309cde7802c5f298ea814c99effe5e5586607f339a5cf10ffb3b83ab3bf4f541",
+    "seconds": 29.99,
+    "meanVolumeDb": -27.0,
+    "maxVolumeDb": -9.5,
+    "leveling": "two-pass loudnorm I=-24:TP=-6:LRA=7 (linear)",
+    "inputLUFS": -26.53,
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "b949b1a78dd22284bb4b525ebead18f8ba688ef390131e18007ea996fe02e8c0",
+    "blindEar": {
+      "final": {
+        "guess": "A field recording of a busy amusement arcade or casino, with various electronic game machines playing synthesized chimes, melodies, and sound effects, accompanied by a low-frequency background rumble and distant crowd chatter in a large, reverberant indoor space.",
+        "alternatives": [
+          "A bustling subway station with electronic turnstiles and train noise",
+          "An indoor exhibition hall or convention center with interactive displays"
+        ],
+        "events": 0,
+        "music": "synthesized electronic game melodies and chimes",
+        "voices": "muffled background crowd chatter",
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "A busy public space, likely an outdoor market or arcade, with prominent 8-bit retro video game sound effects playing over background crowd chatter and footsteps.",
+        "alternatives": [
+          "An amusement park midway with game stalls",
+          "A retro gaming convention or exhibition hall"
+        ],
+        "events": 0,
+        "music": "8-bit electronic synthesizer sound effects with distinct pitches but no melody",
+        "voices": "Indistinct background crowd chatter and a child's voice nearby",
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Heard as a field recording of a busy amusement arcade: game machines with chimes and melodies, a low rumble, and a reverberant indoor space. Source and place match. The crowd voices are only murmur.",
+        "PASS: The listener named a busy amusement arcade with electronic game machines, chimes, a low hum and a reverberant indoor space. The muffled crowd murmur fits an arcade, and the master agrees.",
+        "PASS: Heard as a busy amusement arcade with game machines, chimes and a low hum in a large indoor space, realism 9. The crowd chatter is muffled murmur, which fits a public arcade, and the master agrees it is an arcade."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "amb.bakery.room",
+    "label": "The Early Bird Bakery: the oven fan, a warm room, tray clinks, paper bags, the bell over the door",
+    "kind": "ambience loop",
+    "method": "Generated with seed + sa3m (mix) (Part 297), then cut into a 30 s loop from the middle of the take with a 2 s equal-power crossfade.",
+    "model": "seed + sa3m (mix)",
+    "prompt": "Same two takes as r2_1. SEED (clanks): THIRTY-SIX SECONDS of continuous location sound. WIDE SHOT, a room microphone in the corner of a small bakery's back kitchen at five in the morning, sync sound only, no score. The big steel bakery oven's convection fan roars steadily the whole time, a low warm whoosh that fills the room. Across the room a baker keeps sliding aluminium sheet pans in and out of a tall steel rolling rack, the pans clinking and clanking against the metal rails, and sets baking trays down on a steel worktable with a bright metal clank. The room is warm and tiled, with a little echo. No dialogue, no voices, no narration, no music. Thirty-six seconds of continuous bakery kitchen ambience. || SA3M (fan): TrackType: SFX, Room tone of a commercial bakery kitchen before dawn, the loud steady whoosh and hum of a big convection oven fan running continuously, a warm tiled room, constant, no events  --neg speech, voices, talking, singing, music, plastic, rustling, footsteps, beeping",
+    "negativePrompt": null,
+    "seed": null,
+    "cut": "The fan is sa3m master 80.0-114.0 s (a different stretch from r2_1) and the clanks are Seed master 1.0-35.0 s, mixed with sfx.py mix fan 0 dB, clanks -13 dB, 34 s (bk_mixC.wav). Then sfx.py loop bk_mixC.wav 1.0 30 --xf 2 (mix 1.0-33.0 s). Seam tail -30.84 dB / head -31.74 dB; 30.0 s, peak -11.69 dB, rms -29.78 dB.",
+    "masterFile": "amb.bakery.room__sa3m_062454.wav (oven fan)",
+    "masterSha256": null,
+    "finalWavSha256": "f39e53c759abf8f08cd8af12ccb1ce009c5956dc6609a15c35690ed9556fafbc",
+    "seconds": 29.99,
+    "meanVolumeDb": -27.1,
+    "maxVolumeDb": -8.4,
+    "leveling": "two-pass loudnorm I=-24:TP=-6:LRA=7 (linear)",
+    "inputLUFS": -26.62,
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "ba8d76ee4433c5dbd0141b96d9a746a7e7c13ae311467a2760cb737b3c2477b4",
+    "blindEar": {
+      "final": {
+        "guess": "Someone handling and stacking metal pots, pans, or bowls on a hard countertop in a kitchen with background ventilation hum",
+        "alternatives": [
+          "Sorting metal tools in a workshop",
+          "Washing and stacking metal dishes in a sink"
+        ],
+        "events": 12,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "seed_clank_master_window_3_33": {
+          "guess": "Rhythmic metallic clanking, scraping, and rattling of metal parts or tools inside a metal container or machine, with a low background hum, recorded in an indoor workshop environment.",
+          "alternatives": [
+            "A dishwasher running with metal pots and cutlery clinking inside",
+            "A conveyor belt transporting metal scraps in a recycling plant"
+          ],
+          "events": 0,
+          "music": false,
+          "voices": false,
+          "realism": 9,
+          "problems": "none",
+          "_ear": "gemini-3.5-flash",
+          "_file": "amb.bakery.room__seed_062824.wav",
+          "_window": [
+            3,
+            30
+          ]
+        },
+        "sa3m_fan_master_window_80_110": {
+          "guess": "Two metallic clunks, likely a latch or door mechanism opening and closing, set against a continuous low-frequency background hum from an appliance in an indoor room.",
+          "alternatives": [
+            "A microwave door being opened and then closed",
+            "A toaster lever being pressed down and then popping up"
+          ],
+          "events": 2,
+          "music": false,
+          "voices": false,
+          "realism": 9,
+          "problems": "none",
+          "_ear": "gemini-3.5-flash",
+          "_file": "amb.bakery.room__sa3m_062454.wav",
+          "_window": [
+            80,
+            30
+          ]
+        }
+      }
+    },
+    "reviewers": {
+      "passed": 2,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Metal pans and trays handled on a kitchen counter over a ventilation hum. That covers the tray clinks and the oven fan in a kitchen setting, all the right material family. There is no door bell or paper bags.",
+        "FAIL: Changed to false, which overrides the text below it. Kept as first written: Metal pots, pans and bowls on a kitchen counter over a ventilation hum reads as a warm kitchen, with the hum standing in for the oven fan. This is the closest to the bakery bed, though there is still no door bell.",
+        "PASS: Heard as metal pans or trays being handled on a kitchen counter with a ventilation hum underneath. That matches the tray clinks and oven fan of a small bakery kitchen, realism 9, with no voices or music."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "amb.bathhouse.pool",
+    "label": "The Sweetwater Bathhouse: water lapping at the edge, the filter pump, drips and far splashes under a tiled roof",
+    "kind": "ambience loop",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut into a 30 s loop from the middle of the take with a 2 s equal-power crossfade.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, ambience of an old indoor public swimming pool under a tiled roof, water gently lapping and slopping at the pool edge and overflow gutter, the steady hum of the pool filter pump, water drips echoing, distant splashes far across the pool, big reverberant tiled hall, continuous  [--neg \"speech, voices, talking, singing, music, shouting\"; 150 s requested; seed 1521840]",
+    "negativePrompt": "speech, voices, talking, singing, music, shouting",
+    "seed": 1521840,
+    "cut": "loop start 95.0 s, 30 s body + 2 s crossfade (uses master 95.0-127.0 s of 150 s); seam tail -34.89 dB / head -35.74 dB",
+    "masterFile": "amb.bathhouse.pool__sa3m_060049.wav",
+    "masterSha256": "7dd11e327d14b2e416119ee7de04cd470d55eb9d82e36572ead0175ad2527fe6",
+    "finalWavSha256": "2348cca5b3a496661eafee7913d4d8d699eab9779ad430ffa565fe12d7c5d020",
+    "seconds": 29.99,
+    "meanVolumeDb": -27.9,
+    "maxVolumeDb": -5.7,
+    "leveling": "two-pass loudnorm I=-24:TP=-6:LRA=7 (linear)",
+    "inputLUFS": -29.65,
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "e6ae5546160396ded8d18b4b744f059c1a4515736d1b2295a6d70b71b6648b0c",
+    "blindEar": {
+      "final": {
+        "guess": "Close-up recording of water sloshing and splashing, as if someone is swimming or wading in a pool",
+        "alternatives": [
+          "Someone taking a bath and moving around in a bathtub",
+          "Stirring or agitating a large tub of water"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "Close-up recording of water splashing, sloshing, and bubbling, as if someone is swimming or moving around in a pool or calm lake.",
+        "alternatives": [
+          "A person wading through shallow water",
+          "Stirring and splashing water in a large tub or bath"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Water sloshing in a pool is the same source and material family, and the setting is a pool. It is close-up rather than lapping with far splashes, and there is no pump. It passes, but only just.",
+        "PASS: Heard as close-up water sloshing, like someone swimming in a pool. That fits an indoor pool bed, though no pump or tiled echo was noted.",
+        "PASS: Water sloshing and splashing as in a pool, no voices, music or problems; gives a pool sense, though close-up and without pump or tiled reverb."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "amb.bijou.room",
+    "label": "The Bijou: projector motor and sprocket ticking, a picture murmuring through the wall, a seat creak, popcorn",
+    "kind": "ambience loop",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut into a 30 s loop from the middle of the take with a 2 s equal-power crossfade.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, Film projector, 35mm, running steadily, motor whir and fast mechanical sprocket clatter, projection booth interior  [--neg \"speech, voices, talking, singing, music, plastic, rustling\"; 90 s requested; seed 1282720659]",
+    "negativePrompt": "speech, voices, talking, singing, music, plastic, rustling",
+    "seed": 1282720659,
+    "cut": "loop start 56.0 s, 30 s body + 2 s crossfade (uses master 56.0-88.0 s of 90 s); seam tail -30.64 dB / head -30.31 dB",
+    "masterFile": "amb.bijou.room__sa3m_060137.wav",
+    "masterSha256": "088c8ace2ffbea81e1b28382eca8a7f6328735f15ca7aee36b036bcc6b3baf83",
+    "finalWavSha256": "16c1ed7c74449716b6cbbc13585e412777f4bf2104cb574c29d5e6395be5ca41",
+    "seconds": 29.99,
+    "meanVolumeDb": -28.0,
+    "maxVolumeDb": -12.9,
+    "leveling": "two-pass loudnorm I=-24:TP=-6:LRA=7 (linear)",
+    "inputLUFS": -26.77,
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "56891a90b1526e49d7c66e2f0448d56af8586e867302c01411bdd08e79e4338d",
+    "blindEar": {
+      "final": {
+        "guess": "Vintage 16mm film projector running with a steady whirring and rhythmic clicking, recorded close-up in a small room",
+        "alternatives": [
+          "Old film reel spinning on a projector",
+          "Mechanical ticker or printing press machine"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "Vintage 8mm film projector running with a steady mechanical clatter and motor whir, recorded close-up in a small room",
+        "alternatives": [
+          "Mechanical sewing machine running at a steady speed",
+          "Ticker tape machine printing rapidly"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: The final and the master are both heard as a vintage film projector, with whir and rhythmic clicking. This clearly names the target's main source.",
+        "PASS: Heard as a 16mm projector whirring and clicking, backed by the master. It clearly gives the projector-booth sense of the place.",
+        "PASS: Vintage 16mm projector whirring with rhythmic clicking, alternatives also film-related; realism 9, no problems. Most clearly the target."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "cer.bijou.projector",
+    "label": "Bijou: the projector spins up and the film starts ticking through the gate",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, a vintage 35mm film projector in the small projection booth of an old movie theater. The projector is switched on: the electric motor whirs up to speed and the film starts clattering through the gate with a fast, steady mechanical ticking and sprocket rattle, the reels spinning. It runs for a few seconds and is switched off. Repeated eight separate times with two seconds of silence between each. [--neg \"speech, voices, talking, singing, music\"]",
+    "negativePrompt": "speech, voices, talking, singing, music",
+    "seed": 1557266128,
+    "cut": "sfx.py cut master 0.44 5.0 (fin 0.004, fout 0.3). This is the start of the first run, where the mechanism begins ticking and speeds up. The model ignored 'eight separate times' and gave one continuous 52 s run.",
+    "masterFile": "cer.bijou.projector__sa3m_060039.wav",
+    "masterSha256": "ecf0ef9f889c10dfa03866674abd7475e80f27f44e14fba8c0a6cb4f3cea8ebc",
+    "finalWavSha256": "f127c529558e6c900cc988776c23c80571a3fbc8cb7af806c2f0c8a7f0ca831a",
+    "seconds": 4.99,
+    "meanVolumeDb": -37.4,
+    "maxVolumeDb": -10.3,
+    "gainDb": -6.1,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "56299defbe8282bae5f435346cdc4079a74d35e5a77d6475d2315d0aba928bb0",
+    "blindEar": {
+      "final": {
+        "guess": "Vintage 8mm film projector starting up and running with a rhythmic mechanical whirring and clicking sound, recorded close-up in a small room",
+        "alternatives": [
+          "Old mechanical sewing machine running at a steady pace",
+          "Antique ticker tape machine or printing press in operation"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "A vintage film projector running with a steady mechanical whirring and clicking sound, starting with a couple of mechanical switch clicks, recorded close-up in a small room.",
+        "alternatives": [
+          "A mechanical ticker tape machine",
+          "A vintage sewing machine running at a steady speed"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "hiss"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Names a vintage film projector starting up with rhythmic whirring and clicking, and the master agrees.",
+        "PASS: Named outright as a vintage film projector starting up with rhythmic whirring and clicking. The master agrees.",
+        "PASS: The listener named a vintage film projector starting up with rhythmic whirring and clicking. Realism is 9 and there are no voices or music."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "game.claw.drop",
+    "label": "Claw machine: a sorry little two-note wah",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, comedy failure sound: a sad trombone plays a short two-note 'wah-wah', the second note lower and drooping, a sorry little losing sound. Ten separate wah-wahs with a pause of two seconds between each. [--neg: speech, voices, talking, singing, drums, band, crowd]",
+    "negativePrompt": "speech, voices, talking, singing, drums, band, crowd",
+    "seed": 1265813677,
+    "cut": "cut master 19.44 s for 2.0 s (--fin 0.004 --fout 0.08): one two-note pair, note 1 from 19.46 to 20.4 s, note 2 from 20.5 to 21.35 s, then silence",
+    "masterFile": "game.claw.drop__sa3m_060021.wav",
+    "masterSha256": "cf5f176378e4c0d7648514edde476bf454b34ed1cdb27a9b0cb10d81b55b1cfd",
+    "finalWavSha256": "f5981f7c71a26c837dad9a2bfea073bf42363e1ffc3831ede5acd62858db355c",
+    "seconds": 1.98,
+    "meanVolumeDb": -24.1,
+    "maxVolumeDb": -11.2,
+    "gainDb": 1.5,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "60f8bb831f7dff332ebcb57bb7c87063a9e3dae603ac7b60525a9e1b8df3cf77",
+    "blindEar": {
+      "final": {
+        "guess": "A synthesized sad trombone sound effect playing a descending four-note comic fail cue",
+        "alternatives": [
+          "A muted brass instrument playing a wah-wah sound",
+          "A slide whistle mimicking a sad trombone"
+        ],
+        "events": 4,
+        "music": "Four descending brassy notes, classic sad trombone motif",
+        "voices": false,
+        "realism": 5,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "A synthesizer mimicking a slide whistle with pitch bends and vibrato, creating cartoonish sound effects in a dry studio environment",
+        "alternatives": [
+          "slide whistle",
+          "theremin"
+        ],
+        "events": 10,
+        "music": "monophonic sliding synthesizer notes with vibrato",
+        "voices": false,
+        "realism": 8,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 2,
+      "of": 3,
+      "bestVotes": 2,
+      "reasons": [
+        "PASS: A sad-trombone wah-wah fail cue is the comic losing sound the target asks for, though the listener heard four notes rather than two.",
+        "PASS: A sad trombone playing a descending comic fail cue, with a muted-brass wah-wah as an alternative. That clearly means the losing wah-wah.",
+        "FAIL: The identity is right (a sad trombone wah-wah), but realism is 5, below the fitness floor of 6, and it plays four notes instead of two."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "game.claw.motor",
+    "label": "Claw machine: the gantry motor whirs across and stops",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Small SFX on fal, $0.0206 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/small/sfx/text-to-audio",
+    "prompt": "TrackType: SFX, claw crane machine gantry motor: a small electric gear motor whirs with a steady whine for two seconds as the claw carriage slides along metal rails, then stops with a click. Ten separate moves with two seconds of silence between each. [--neg: speech, voices, talking, singing, music]",
+    "negativePrompt": "speech, voices, talking, singing, music",
+    "seed": 1812516078,
+    "cut": "cut master 37.30 s for 2.55 s (--fin 0.004 --fout 0.1): steady whir, then the stop and click at about 39.3 s, with its natural decay",
+    "masterFile": "game.claw.motor__sa3s_060303.wav",
+    "masterSha256": "4ad59090736c2cd1c22b926828ff2dd0813d98be7e9b00db65d88bc5b4147fa4",
+    "finalWavSha256": "8d4ac7cc7325f49137970226981a98fe2ea91888bc94c401b31b71c63ec2ab81",
+    "seconds": 2.53,
+    "meanVolumeDb": -34.6,
+    "maxVolumeDb": -8.6,
+    "gainDb": -10.0,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "a6ac6e1278721695a0ba8dd287407a148a628cd19c6d2ba5d37ac32229196b56",
+    "blindEar": {
+      "final": {
+        "guess": "A motorized CD or DVD drive tray closing, ending with a mechanical latching click, recorded close-up in a quiet indoor environment.",
+        "alternatives": [
+          "A cassette deck door mechanism closing",
+          "A small motorized printer carriage moving and stopping"
+        ],
+        "events": 2,
+        "music": false,
+        "voices": false,
+        "realism": 10,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "A mechanical metal wheel or gears spinning rapidly after an initial loud squeak, then gradually slowing down with a rhythmic rattling clatter until it stops with a clunk, recorded in a resonant indoor space.",
+        "alternatives": [
+          "A hand-cranked mechanical siren or generator spinning down",
+          "An old film projector or mechanical toy running and stopping"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: A small motorized mechanism runs and then stops with a latch click. That is the same family as an electric gantry motor that whirs and stops.",
+        "PASS: A small motorised mechanism runs and stops with a latching click, and the listener also offered a printer carriage moving and stopping. That is the right family for a claw gantry whirring across and stopping.",
+        "PASS: A small motor mechanism that moves and stops with a latch click. That fits a gantry motor that whirs and stops, at realism 10."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "game.claw.win",
+    "label": "Claw machine: a victory jingle and the prize thumps into the chute",
+    "kind": "one-shot",
+    "method": "Generated with sa3m (jingle) + sa3s (thump) (Part 297), then cut to one event.",
+    "model": "sa3m (jingle) + sa3s (thump)",
+    "prompt": "JINGLE (sa3m): TrackType: SFX, arcade claw machine prize win: a short bright electronic victory fanfare jingle chimes from the machine's speaker, then a stuffed plush toy drops through the flap and thumps into the plastic prize chute. Eight separate wins with a pause of three seconds between each. [--neg: speech, voices, talking, singing, drums, band, crowd] || THUMP (sa3s): TrackType: SFX, a soft stuffed plush toy falls down a short chute and lands with a dull thump on the hard plastic floor of an arcade prize bin, and the plastic flap swings shut with a small clack. A dozen separate drops with two seconds of silence between each. [--neg: speech, voices, talking, singing, music]",
+    "negativePrompt": null,
+    "seed": null,
+    "cut": "jingle: the same cut as r1_1 (jingle master 0.03 s for 2.03 s). thump: a different moment, cut thump master 3.05 s for 1.25 s (--fin 0.01 --fout 0.2), a slide then a thump at about 3.6 s, then ffmpeg lowpass=f=700 twice. The thump sits 2.02 s into the file; both parts at 0 dB, peak -3.96 dBFS",
+    "masterFile": "game.claw.win.thump__sa3s_060303.wav",
+    "masterSha256": null,
+    "finalWavSha256": "edcab81e96d07b95cdd35d9558817e85262879787aca409bb9d38cb8fd45cc74",
+    "seconds": 3.26,
+    "meanVolumeDb": -32.3,
+    "maxVolumeDb": -10.7,
+    "gainDb": -6.0,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "cecda643947905e4f8e907212fb08fe12d891900c09ed10851b28c6551f458e1",
+    "blindEar": {
+      "final": {
+        "guess": "A short 8-bit chiptune synthesizer arpeggio followed by a single heavy thud or stomp on a hollow wooden surface in a dry room.",
+        "alternatives": [
+          "A video game sound effect of a character jumping and landing on a wooden deck",
+          "A retro UI button press sound followed by a heavy object dropped on a table"
+        ],
+        "events": 5,
+        "music": "Short ascending 8-bit chiptune melody",
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "jingle_master": {
+          "guess": "Upbeat retro video game music track featuring synthesized brass, bass, and drums, with cartoonish sound effects and a crowd cheering at the end, presented as a clean digital stereo mix.",
+          "alternatives": [
+            "Theme music for a playful children's television show or animation.",
+            "A demonstration track for a 1990s-era synthesizer or sound card."
+          ],
+          "events": 0,
+          "music": "Upbeat, synthesized retro video game melody with brass-like leads, a rhythmic bassline, and electronic percussion.",
+          "voices": false,
+          "realism": 9,
+          "problems": "none",
+          "_ear": "gemini-3.5-flash",
+          "_file": "game.claw.win__sa3m_060027.wav"
+        },
+        "jingle_master_window_0_2.4": {
+          "guess": "Synthesized 8-bit chiptune melody, short ascending sequence of four electronic notes, clean digital render",
+          "alternatives": [
+            "Retro video game power-up sound effect",
+            "Digital device notification alert"
+          ],
+          "events": 4,
+          "music": "Short ascending four-note melody, square wave synthesizer",
+          "voices": false,
+          "realism": 10,
+          "problems": "none",
+          "_ear": "gemini-3.5-flash",
+          "_file": "game.claw.win__sa3m_060027.wav",
+          "_window": [
+            0,
+            2.4
+          ]
+        },
+        "thump_master": {
+          "guess": "A person repeatedly tapping and hitting a hollow plastic container or storage bin, producing dull thuds and plastic rattling noises, recorded in a quiet indoor room.",
+          "alternatives": [
+            "Rummaging through a plastic drawer or organizer",
+            "Tapping on the side of a plastic trash can"
+          ],
+          "events": 40,
+          "music": false,
+          "voices": false,
+          "realism": 9,
+          "problems": "none",
+          "_ear": "gemini-3.5-flash",
+          "_file": "game.claw.win.thump__sa3s_060303.wav"
+        }
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 1,
+      "reasons": [
+        "PASS: A chiptune arpeggio is followed by a thud, but the listener called it a heavy stomp, which is a poorer fit for a plush toy landing.",
+        "PASS: An ascending chiptune arpeggio and then a heavy thud on a hollow surface, with 'heavy object dropped' offered as an alternative. This is the clearest jingle plus prize thump.",
+        "PASS: An 8-bit arpeggio then a heavy thud: jingle plus thump. A heavy stomp fits a plush toy less well."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "game.pinball.bumper",
+    "label": "Pinball: pop bumpers thwack and ring",
+    "kind": "one-shot",
+    "method": "Generated with Seed Audio 1.0 on fal, $0.1875 per minute (Part 297), then cut to one event.",
+    "model": "bytedance/seed-audio-1.0",
+    "prompt": "Ten seconds of audio, close up on a vintage pinball machine in fast play, the steel ball trapped among the pop bumpers: rapid loud snapping thwacks of the bumper solenoids, each thwack followed by a bright ding of the score bell, the ball clattering between them, the flippers clacking. Continuous action for the whole ten seconds. No dialogue, no voices, no narration, no music. Ten seconds.",
+    "negativePrompt": null,
+    "seed": null,
+    "cut": "sfx.py cut from 3.71 s for 1.84 s, fade-in 0.004 s, fade-out 0.25 s. It holds the clatter burst at 3.735-4.5 s and the bell strike at 4.755 s ringing out, and ends before the next hit at 5.575 s.",
+    "masterFile": "game.pinball.bumper__seed_061428.wav",
+    "masterSha256": "51f50eedbd822a298a9e4c7de640c34566c4014d27269add8a9f70f59719a293",
+    "finalWavSha256": "9d89bf85b5a2e936c9eae70e348a1294943d4c32fbc13024e46d95b25a94e430",
+    "seconds": 1.83,
+    "meanVolumeDb": -28.2,
+    "maxVolumeDb": -8.8,
+    "gainDb": -7.8,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "01b5fe3f33aedb893684af9bd4f7fe3c03adcb2dff2cdd6ebfabd2b4581e26c9",
+    "blindEar": {
+      "final": {
+        "guess": "A shopkeeper's door bell or manual cash register bell being activated, with a metallic clatter followed by a clear, high-pitched chime, recorded indoors.",
+        "alternatives": [
+          "A metal object falling and striking a small desk service bell",
+          "A mechanical wind-up toy or clockwork mechanism releasing a bell strike"
+        ],
+        "events": 3,
+        "music": "A single high-pitched bell chime with a clear resonant pitch",
+        "voices": false,
+        "realism": 10,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "Vintage mechanical cash register being operated with metallic clacks and a bell chime, close-up, dry indoor setting",
+        "alternatives": [
+          "Antique typewriter typing with carriage return bell",
+          "Mechanical pinball machine bumper and bell triggers"
+        ],
+        "events": 15,
+        "music": false,
+        "voices": false,
+        "realism": 10,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 2,
+      "of": 3,
+      "bestVotes": 2,
+      "reasons": [
+        "PASS: Metallic mechanical clatter then a bell chime is the thwack-and-ring of an electromechanical bell mechanism; master even lists pinball bumpers as an alternative, though the main guess is a cash register.",
+        "FAIL: The main guess is a shop door bell or cash register: a clatter, then a single chime. Only the master lists pinball bumpers, and only as an alternative. A player would more likely hear a register or service bell than a ball ricocheting between bumpers.",
+        "PASS: A metallic mechanical clatter followed by a sharp bell fits a thwack and ring from the same material family. The master even lists a pinball bumper as an alternative, realism 10, with no problems."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "game.pinball.drain",
+    "label": "Pinball: the ball drains, a falling buzzer and a clunk",
+    "kind": "one-shot",
+    "method": "Generated with sa3s (both layers) (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/small/sfx/text-to-audio",
+    "prompt": "LAYER 1, the falling tone, from drain__sa3s_063245: \"TrackType: SFX, Retro arcade game over sound: a harsh buzzy electronic tone, like a low square wave buzzer, that slides down in pitch, bwaaaooowm, one and a half seconds long, then silence. Eight separate times with two seconds of silence between each.\" --neg \"speech, voices, talking, singing, music, melody, chords, metal bowl, spinning, spring, lever\" | LAYER 2, the clunk, from jackpot__sa3s_063047: \"TrackType: SFX, A single very loud hard knock: a heavy steel hammer bangs once against the inside of a hollow wooden cabinet, a sharp booming bang with a short hollow wooden resonance. Eight separate times with two seconds of silence between each.\" --neg \"speech, voices, talking, singing, music, melody, door, footsteps, bell\"",
+    "negativePrompt": "speech, voices, talking, singing, music, melody, chords, metal bowl, spinning, spring, lever",
+    "seed": 1641818114,
+    "cut": "Built with work/seq.py (lossless, peak held at -1 dB or lower, no normalisation). Layer 1: drain__sa3s_063245 from 3.50 s for 1.50 s (fade-in 0.01 s, fade-out 0.2 s), placed at 0.00 s. This is the stretch where both pitch and brightness fall. Layer 2: jackpot__sa3s_063047 from 0.62 s for 1.35 s (fade-in 0.002 s, fade-out 0.2 s), placed at 1.45 s. It is a short cluster of knocks, like a ball bouncing into the trough, and it decays to about -58 dB before the end. The file is 2.8 s with a peak of -2.77 dB and no lead silence. It runs 0.3 s past the 2.5 s spec so the clunk can decay naturally.",
+    "masterFile": "game.pinball.drain__sa3s_063245.wav",
+    "masterSha256": "98b6fc2bc9c75f9c01435c41f1e9063351816f9de3b13d8bbd91fd073689cf9c",
+    "finalWavSha256": "b4084168182866effd1c2a378acfce9bec256dc6809853d26ab8034a76cf28fe",
+    "seconds": 2.79,
+    "meanVolumeDb": -27.8,
+    "maxVolumeDb": -10.0,
+    "gainDb": -7.2,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "c22212e8ad312d7144d1289765adf429fab4aa26b4b6aadba38638c664477630",
+    "blindEar": {
+      "final": {
+        "guess": "A descending electronic synthesizer sweep followed by two sharp knocks on a wooden door in a dry indoor room.",
+        "alternatives": [
+          "A cartoon falling sound effect followed by a double knock on wood",
+          "A sci-fi UI transition sound followed by a physical door knock"
+        ],
+        "events": 3,
+        "music": "descending electronic pitch sweep",
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "Retro 8-bit video game sound effect of a sci-fi engine revving and pitch bending, recorded digitally",
+        "alternatives": [
+          "Sci-fi spaceship engine acceleration",
+          "Synthesizer pitch bend sound design element"
+        ],
+        "events": 2,
+        "music": "Synthesized pitch bends and glissandos, retro chiptune style",
+        "voices": false,
+        "realism": 3,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 2,
+      "of": 3,
+      "bestVotes": 2,
+      "reasons": [
+        "PASS: A descending electronic sweep fits the falling buzzer, and the sharp knocks on wood fit the ball's clunk into a wooden cabinet. The master is a compatible synth pitch bend.",
+        "PASS: A falling electronic sweep followed by hard knocks on wood fits a falling buzzer and a clunk. Right after the drain line, a player would likely hear the ball being lost. The double knock and the 'door' reading keep confidence moderate.",
+        "FAIL: The final sounds like a synth sweep followed by two knocks on a wooden door. That reads as a door knock, not a ball dropping into a trough. The master is a chiptune engine rev with realism 3, which contradicts the target rather than supporting it."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "game.pinball.jackpot",
+    "label": "Pinball: jackpot bells and the knocker",
+    "kind": "one-shot",
+    "method": "Generated with sa3m (bells) + sa3s (knocker) (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "BELLS, from jackpot__sa3m_064237: \"TrackType: SFX, Old school bells ringing in an empty hallway: two loud brass alarm bells of different sizes ring together, bright metal gongs hammered very fast by their clappers, a piercing clanging ring. Eight separate rings of two seconds each, with three seconds of silence between them.\" --neg \"speech, voices, talking, singing, music, melody, chords, synthesizer, drill, motor, electric toothbrush, telephone, typing, footsteps\" | KNOCKER, from jackpot__sa3s_063047: \"TrackType: SFX, A single very loud hard knock: a heavy steel hammer bangs once against the inside of a hollow wooden cabinet, a sharp booming bang with a short hollow wooden resonance. Eight separate times with two seconds of silence between each.\" --neg \"speech, voices, talking, singing, music, melody, door, footsteps, bell\"",
+    "negativePrompt": "speech, voices, talking, singing, music, melody, chords, synthesizer, drill, motor, electric toothbrush, telephone, typing, footsteps",
+    "seed": 1358874200,
+    "cut": "Built with work/seq.py (lossless, peak held at -1 dB, no normalisation). Bells: the single bright bell strike in jackpot__sa3m_064237 at 12.07 s (attack at 12.085 s), used 0.5 s at a time (fade-out 0.3 s, -3 dB). Nine copies are placed every 0.16 s from 0.00 to 1.28 s, making a fast run of about six strikes a second. Knocker: jackpot__sa3s_063047 from 10.98 s for 1.0 s (the single loud knock at 11.00 s, fade-out 0.2 s), placed at 1.72 s after the ringing has stopped. The file is 2.8 s with about 10 ms of lead silence, a peak of -1.01 dB, and a tail that decays to silence on its own.",
+    "masterFile": "game.pinball.jackpot__sa3m_064237.wav",
+    "masterSha256": "dee84c3b6c4c9c1ae2e26a2386496f061247ddb251b0a22c5bfa033aa0384dfc",
+    "finalWavSha256": "5442f2c8563483c67b1e6eb4c092b07b49b916536b19973bf8aa21cbcb0121a1",
+    "seconds": 2.79,
+    "meanVolumeDb": -32.1,
+    "maxVolumeDb": -10.0,
+    "gainDb": -9.0,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "b3c17547e6cad02d5c1c4248b6a223959f11f132a5755b80a68d2d814a9a3168",
+    "blindEar": {
+      "final": {
+        "guess": "A vintage telephone bell ringing rapidly, abruptly cut off by a heavy wooden door or drawer slamming shut in a small, reflective room.",
+        "alternatives": [
+          "A mechanical wind-up alarm clock ringing and then being slammed down on a wooden table",
+          "A school bell ringing followed by a locker door slamming shut"
+        ],
+        "events": 2,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "A tambourine or sleigh bells being shaken once, with a long metallic reverb decay, repeated five times in a studio setting.",
+        "alternatives": [
+          "A spring drum being shaken",
+          "A metal chime or bell tree being struck"
+        ],
+        "events": 5,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: A metal bell ringing rapidly, then a heavy wooden slam, matches the machine's bells and the knocker bang. The master's metallic bell sound supports it.",
+        "PASS: A mechanical bell ringing rapidly, then a heavy wooden slam, maps well to jackpot bells followed by the free-game knocker. Both parts are physical and loud.",
+        "PASS: A rapidly ringing electromechanical bell cut off by a heavy wooden slam matches pinball bells followed by the knocker. There is no music or voice and realism is 9. The master, a shaken metal bell sound, is compatible."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "game.pinball.start",
+    "label": "Pinball: the machine wakes with three chime-rod bells",
+    "kind": "one-shot",
+    "method": "Generated with Seed Audio 1.0 on fal, $0.1875 per minute (Part 297), then cut to one event.",
+    "model": "bytedance/seed-audio-1.0",
+    "prompt": "Twelve seconds of audio, close up: a vintage electromechanical pinball machine in a quiet arcade wakes up three separate times, with a two-second pause between each. Each time a coin drops in, the relays clatter for half a second, then the chime unit rings three quick chime-rod bells, ding, ding, ding, and each bell rings out. No dialogue, no voices, no narration, no music. Twelve seconds.",
+    "negativePrompt": null,
+    "seed": null,
+    "cut": "sfx.py cut from 9.14 s for 2.10 s, fade-in 0.004 s, fade-out 0.30 s. This is the second three-chime group (attacks at 9.17, 9.485 and 9.79 s) with its ring left to decay naturally. The relay clatter at 6.2-7.1 s is not included. Lead silence 0.02 s.",
+    "masterFile": "game.pinball.start__seed_060413.wav",
+    "masterSha256": "1a91eab740ad46cb35933ab2298aa9695aa1a3831d90ae2a562b0a9e2b13357a",
+    "finalWavSha256": "c32152f0b8890ce70faa395088ecd9d53f4131434e69735ec24600ede35a9afc",
+    "seconds": 2.09,
+    "meanVolumeDb": -34.0,
+    "maxVolumeDb": -10.2,
+    "gainDb": -6.7,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "305d05c09794e47f2715d50df6e3f9ae6876422347832a5b944c065b79bd3d56",
+    "blindEar": {
+      "final": {
+        "guess": "Three sequential strikes on a small metal chime or glockenspiel, resonant and clear, recorded in a dry room",
+        "alternatives": [
+          "Tapping a crystal wine glass with a spoon",
+          "A small wind chime being struck three times"
+        ],
+        "events": 3,
+        "music": "Three descending musical notes with a bright, metallic timbre",
+        "voices": false,
+        "realism": 10,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "A mechanical winding or cranking sound followed by a single high-pitched metallic bell chime, repeated twice, recorded in a quiet indoor room.",
+        "alternatives": [
+          "A wind-up toy being wound and then ringing a bell",
+          "A vintage cash register lever being pulled with a bell notification"
+        ],
+        "events": 4,
+        "music": "A single high-pitched bell chime note decaying naturally",
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Three struck metal chime notes, clear and resonant, matches three chime-rod bells; master's mechanical winding and bell supports an electromechanical source.",
+        "PASS: Heard as three clear strikes on a small metal chime, which is the target's three chime-rod bells. It is acoustic, short and punchy. There is no machine body, but the bells carry the cue.",
+        "PASS: Three clear strikes on a small metal chime, realism 10, with no voices or problems. This matches three chime-rod bells, and the master's cranking before the bell supports a mechanical source."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "game.skeeball.roll",
+    "label": "Skee-ball: a wooden ball rolls up the ramp, hops and drops into a ring",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, Skee-ball lane in an amusement arcade: a heavy hardwood ball is bowled up a long wooden alley, rumbling loudly as it rolls over the wood, hops off the wooden ramp bump with a clack, lands in a wooden scoring ring with a hollow knock and rattles down into the ball return. A dozen separate rolls with a pause of two seconds between each. [--neg: speech, voices, talking, singing, music]",
+    "negativePrompt": "speech, voices, talking, singing, music",
+    "seed": 743570254,
+    "cut": "cut master 12.49 s for 2.68 s (--fin 0.004 --fout 0.2): first hit at 12.515 s (about 25 ms lead), then the bounces and rattle decaying to about 15.1 s",
+    "masterFile": "game.skeeball.roll__sa3m_060008.wav",
+    "masterSha256": "8e28f0989f1b7dbf91dcae8af4504598f21e10893c2d6e45f77f5a5ba35ced10",
+    "finalWavSha256": "7f56d50268ed81d3b1a3f7a97b7c4604af6db631ab300e2fd8a4a2b8b61bdf68",
+    "seconds": 2.66,
+    "meanVolumeDb": -33.0,
+    "maxVolumeDb": -10.0,
+    "gainDb": 1.5,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "e4010183b483b6c2f092aeea6fee8f93910e5360093fee8019f1f88c1366a081",
+    "blindEar": {
+      "final": {
+        "guess": "A small wooden ball or object bouncing down a series of wooden steps or a wooden track, recorded close-up in a small, dry room.",
+        "alternatives": [
+          "Wooden dominoes knocking into each other in rapid succession",
+          "A wooden percussion instrument or rattle being played"
+        ],
+        "events": 14,
+        "music": false,
+        "voices": false,
+        "realism": 10,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "wooden cups or blocks being handled, tapped, and rolled on a wooden table in a quiet room",
+        "alternatives": [
+          "wooden dice shaker and dice being rolled on a wooden board",
+          "wooden building blocks being stacked and knocked over"
+        ],
+        "events": 25,
+        "music": false,
+        "voices": false,
+        "realism": 10,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: A small wooden ball bouncing along a wooden track has the same source, action and material family as a wooden skee-ball rolling and hopping.",
+        "PASS: A small wooden ball bouncing along a wooden track, close-up. The material and the rolling and hopping fit a skee-ball roll into a ring, and the master supports wooden rolling.",
+        "PASS: A small wooden ball bouncing along a wooden track is the right material and action, with realism 10 and no problems. The master supports it."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "obj.brush.stroke",
+    "label": "Easel: three brush strokes across a canvas",
+    "kind": "one-shot",
+    "method": "Generated with sa3m (fal-ai/stable-audio-3/medium/text-to-audio), 45 s take, negative prompt: sandpaper, sanding, scraping, scratching, rasp, wood, grit, leaves, twigs, plastic, crinkle, bag, cellophane, broom, speech, voices, talking, singing, music (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, Painting foley: a big soft paintbrush soaked with runny wet paint, pressed against taut canvas and swept across it in long slow strokes, a smooth slippery wet swish with a soft squelch as the bristles bend and spread the paint. Groups of three wet brush strokes with two seconds of silence between each group, close microphone, quiet room.",
+    "negativePrompt": "sandpaper, sanding, scraping, scratching, rasp, wood, grit, leaves, twigs, plastic, crinkle, bag, cellophane, broom, speech, voices, talking, singing, music",
+    "seed": 1261502531,
+    "cut": "master 11.08 s to 14.00 s (2.92 s), one group of three strokes with onsets at about 11.1, 11.9 and 12.8 s in the master. ffmpeg highpass=f=120, lowpass=f=3500 applied to the cut. Fade in 3 ms, fade out 0.2 s; the last stroke decays to about -70 dB before the fade. First attack at 25 ms. Peak -19.9 dB, not normalised.",
+    "masterFile": "obj.brush.stroke__sa3m_062621.wav",
+    "masterSha256": "503144283f484ced5c5c16bed9d38e7ceb470a4ecb2a921ddfed4615fce8677f",
+    "finalWavSha256": "f40bf2bc3001c27444f716800862b3d35a3139a4a11501bc9acc01b2fab712c4",
+    "seconds": 2.9,
+    "meanVolumeDb": -37.6,
+    "maxVolumeDb": -10.2,
+    "gainDb": 9.9,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "7687ad0b5957ac2d88a56c1c704bb5195c51861bc136e7003fa5496ffae373bc",
+    "blindEar": {
+      "final": {
+        "guess": "Two light, dry scrapes of a hand or soft brush across a textured fabric or paper surface, recorded close-up in a quiet room",
+        "alternatives": [
+          "A sleeve rubbing against a jacket",
+          "Light sandpaper sanding a wooden surface"
+        ],
+        "events": 2,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "Rhythmic sweeping of a broom on a concrete floor, close-up recording",
+        "alternatives": [
+          "Rubbing sandpaper on a wooden surface",
+          "Brushing dry leaves on a sidewalk"
+        ],
+        "events": 30,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Final names a soft brush dragged dry across a textured fabric or paper surface. That is the same source (a brush) and the same material family as canvas. It hears two strokes, not three, but this lens judges source and material. The master's broom on concrete is a different reading, but it cannot override a compatible final.",
+        "PASS: Final: dry scrapes of a soft brush across textured fabric or paper. That is the right material and action for a paintbrush on canvas. Two strokes instead of three is close enough. The master (broom sweeping) is also a bristle stroke, so it fits.",
+        "PASS: Final says light dry strokes of a soft brush across textured fabric or paper. Canvas is a fabric surface and a brush is the tool, so this matches the target's material and action. It is realistic (9) with no voices, music or glitches. It has two strokes where the target asks for three, which is a small shortfall. The master's broom-sweeping take is compatible but cannot add to the pass."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "obj.charcoal.scratch",
+    "label": "Easel: quick charcoal strokes on paper",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Small SFX on fal, $0.0206 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/small/sfx/text-to-audio",
+    "prompt": "TrackType: SFX, charcoal pencil drawing on paper, sketching, quick scratchy strokes of charcoal on drawing paper, artist sketch foley, close  [--neg \"speech, voices, talking, singing, music\"]",
+    "negativePrompt": "speech, voices, talking, singing, music",
+    "seed": 2063453836,
+    "cut": "cut start 0.07 s, dur 2.5 s, fin 0.004, fout 0.2 (the opening burst, before the silence at 2.6 s)",
+    "masterFile": "obj.charcoal.scratch__sa3s_060352.wav",
+    "masterSha256": "22b89598afd2c259677e12deeb0855b79fe6bf4b6f68f1ddc3940d30280055b2",
+    "finalWavSha256": "a92787a23bfe5f0ea3d2d042701f58bed565acbe2fa90d2ed68cd3d5002afc6a",
+    "seconds": 2.49,
+    "meanVolumeDb": -28.4,
+    "maxVolumeDb": -10.5,
+    "gainDb": 9.4,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "c2fd2b8caf921f7893acde96e8ab3add9b6ba64f8055596373c6b98a1550b16f",
+    "blindEar": {
+      "final": {
+        "guess": "Pencil sketching quick strokes on paper, close-up, dry room",
+        "alternatives": [
+          "Fine sandpaper lightly rubbing wood",
+          "A small brush sweeping over a textured surface"
+        ],
+        "events": 6,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "Rhythmic sketching or shading with a pencil or charcoal on textured paper, close-up",
+        "alternatives": [
+          "Sanding wood with fine sandpaper",
+          "Dry brushing a canvas"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 2,
+      "reasons": [
+        "PASS: Quick pencil strokes on paper match the target action closely, and the master names charcoal.",
+        "PASS: Quick pencil strokes on paper, close-up, which matches quick charcoal strokes.",
+        "PASS: Heard as quick sketching strokes on paper, close and clean, which matches quick charcoal strokes."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "obj.hammock.creak",
+    "label": "Hammock: two slow rope creaks as it swings",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, foley of a person lying in a fabric hammock tied with thick hemp ropes between two trees, swinging slowly: on every swing the ropes stretch taut and give a slow, low, crackling, fibrous rope creak, the knots grind against the rough tree bark and the canvas softly rustles, then a long pause before the next creak, a quiet garden at dusk with faint crickets. [--neg \"plastic, rubber, balloon, leather, squeaky toy, ratchet, zipper, speech, voices, talking, singing, music, birds\"]",
+    "negativePrompt": "plastic, rubber, balloon, leather, squeaky toy, ratchet, zipper, speech, voices, talking, singing, music, birds",
+    "seed": 331863871,
+    "cut": "Master 1.46-3.395 s (a big creak at 1.42-1.7, a small one at 2.3, and a big one at 2.86-3.2), played at 0.7x speed with tape-style varispeed (new helper work/tools/slow.py: linear resample, so pitch drops about 6 semitones and length grows 1.43x), 2.764 s, fades 0.004 in and 0.25 out. Lead silence 0.01 s, peak -19.6 dB (not normalised).",
+    "masterFile": "obj.hammock.creak__sa3m_063718.wav",
+    "masterSha256": "fc1d41943a019ce0720be1077aa18d2d43215175afd2b4dfa0342e6dc77aecde",
+    "finalWavSha256": "92477b1424ae00a69128dbe9b5f28c833d3912d824db77572bf93af70e8e0fe6",
+    "seconds": 2.75,
+    "meanVolumeDb": -37.2,
+    "maxVolumeDb": -10.0,
+    "gainDb": 9.6,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "79960c85b296cabf38277206d857aaa58e4eafbe2ddd5eb29f7f6e1c79caf127",
+    "blindEar": {
+      "final": {
+        "guess": "Two slow, dry creaks of a wooden door hinge or floorboard, recorded close-up in a quiet indoor environment.",
+        "alternatives": [
+          "A wooden chair creaking under weight",
+          "Leather saddle or jacket creaking"
+        ],
+        "events": 2,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "Rhythmic squeaking and friction of a plastic manual air pump being operated in a dry, close-up indoor environment",
+        "alternatives": [
+          "A squeaky leather chair or sofa being rocked on",
+          "Twisting and rubbing latex balloons together"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 10,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 2,
+      "of": 3,
+      "bestVotes": 2,
+      "reasons": [
+        "FAIL: Two slow creaks match the action, but the listener names a wooden hinge or floorboard, not rope. The master sounds like a plastic air pump, so nothing supports rope. Unsure, so it fails.",
+        "PASS: Two slow, dry creaks, which matches the count and pacing. The listener placed them on a wooden hinge or floorboard rather than rope, but creaking under load after the hammock line reads as the swing. The master (plastic pump squeak) does not undercut the final.",
+        "PASS: The listener heard two slow, dry creaks under load, which matches a swinging hammock's creak pattern. It named wood or leather rather than rope, but the creak action and timing fit and the realism is high."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "obj.jukebox.play",
+    "label": "Jukebox: a coin, the arm swings, needle crackle and a soft chord progression",
+    "kind": "one-shot",
+    "method": "Generated with seed (mechanism) + sa3m (music), built (Part 297), then cut to one event.",
+    "model": "seed (mechanism) + sa3m (music), built",
+    "prompt": "MECHANISM (seed): Six seconds of audio. Close-up of an old 1950s jukebox in a quiet living room: a single coin drops into the metal coin slot and clinks and rattles down inside the machine, then the record changer mechanism whirs as the arm swings across with a heavy mechanical clunk, and the needle drops onto the vinyl record with soft crackle and pops. No dialogue, no voices, no narration, no music. Six seconds.  ||  MUSIC (sa3m): A soft, slow 1950s doo-wop ballad instrumental playing from an old jukebox record: a warm chord progression on clean electric guitar and piano with upright bass, gentle vinyl crackle, mellow and cosy, 70 BPM. [--neg \"speech, voices, talking, singing, vocals, choir\"]",
+    "negativePrompt": null,
+    "seed": null,
+    "cut": "python work/seq.py out 6.0 \"seed_062249|0.07|3.85|0.0|0dB|fin0.004|fout0.2\" \"sa3m_060830|4.9|2.4|3.55|-10dB|fin0.25|fout0.3\". The first piece is the seed master from 0.07 to 3.92 s (coin at 0.1-0.6 s, whir, clunk at 3.3 s), placed at 0.0. The second is the music master from 4.9 to 7.3 s, faded in at 3.55 s and 10 dB down. Total 6.0 s.",
+    "masterFile": "obj.jukebox.play__sa3m_060830.wav",
+    "masterSha256": null,
+    "finalWavSha256": "579e4e33b19884806bfb7e6a2bf9da6380ffe0e2f2eece1ef384b987025feffa",
+    "seconds": 5.99,
+    "meanVolumeDb": -35.3,
+    "maxVolumeDb": -10.4,
+    "gainDb": -5.5,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "9a21f8fde9d606315be03a39a51ca3d19295afbb741cf10f3fbe9a61eb704ac6",
+    "blindEar": {
+      "final": {
+        "guess": "A coin dropping into a metal slot, followed by a mechanical latch turning, and ending with a synthesized electric piano chord.",
+        "alternatives": [
+          "A key unlocking a metal door followed by a digital chime",
+          "A vending machine dispensing an item with a confirmation sound"
+        ],
+        "events": 3,
+        "music": "A single sustained electric piano or synthesizer chord",
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "obj.jukebox.play__seed_062249.wav": {
+          "guess": "A metal locker door being unlocked with a key, the lock turning, and the door latch clicking open in a quiet room.",
+          "alternatives": [
+            "A metal filing cabinet being unlocked and opened",
+            "A small metal safe or lockbox being opened with a key"
+          ],
+          "events": 3,
+          "music": false,
+          "voices": false,
+          "realism": 10,
+          "problems": "none",
+          "_ear": "gemini-3.5-flash",
+          "_file": "obj.jukebox.play__seed_062249.wav"
+        },
+        "obj.jukebox.play__sa3m_060830.wav": {
+          "guess": "A slow, jazzy lo-fi instrumental featuring a clean electric guitar with a tremolo effect playing chords, accompanied by a deep electric bass guitar, recorded in a studio setting.",
+          "alternatives": [
+            "A chillhop guitar loop",
+            "An indie rock guitar and bass progression"
+          ],
+          "events": 0,
+          "music": "Jazzy chords played on electric guitar with tremolo effect, accompanied by a slow electric bass line.",
+          "voices": false,
+          "realism": 9,
+          "problems": "none",
+          "_ear": "gemini-3.5-flash",
+          "_file": "obj.jukebox.play__sa3m_060830.wav"
+        },
+        "obj.jukebox.play__sa3m_060830.wav window 4.6 s + 3.4 s (the region the music cut came from)": {
+          "guess": "Clean electric guitar playing a short jazzy chord progression with chorus and reverb in a studio setting",
+          "alternatives": [
+            "Synthesizer electric piano playing a chord progression",
+            "Acoustic-electric guitar with modulation effects"
+          ],
+          "events": 3,
+          "music": "Jazzy chord progression played on a clean electric guitar",
+          "voices": false,
+          "realism": 9,
+          "problems": "none",
+          "_ear": "gemini-3.5-flash",
+          "_file": "obj.jukebox.play__sa3m_060830.wav",
+          "_window": [
+            4.6,
+            3.4
+          ]
+        }
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: A coin drops into a metal slot, a mechanism turns, then an electric piano chord plays. That matches coin, mechanism and chord. The needle crackle is missing.",
+        "PASS: Heard as a coin into a metal slot, then a mechanism, then a sustained piano chord. That matches coin, mechanism and chord; the needle crackle is missing, but it is recognisable after the game line.",
+        "PASS: The listener heard a coin dropping into a metal slot, a mechanical latch turning, then a sustained electric piano chord. That is the coin, the mechanism and the chord in order. Needle crackle is missing, but nothing contradicts the target."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "obj.lamp.hum",
+    "label": "Lava lamp: a low electric hum and the odd slow bloop",
+    "kind": "one-shot",
+    "method": "Generated with sa3m (hum) + seed (bloops, round 1 master, new cut), built (Part 297), then cut to one event.",
+    "model": "sa3m (hum) + seed (bloops, round 1 master, new cut), built",
+    "prompt": "HUM (sa3m, new this round): TrackType: SFX, close-up of a lamp's electrical transformer humming on a bedside table: a deep, steady, clearly audible 60 Hz mains hum, a warm low tonal electric drone with a soft buzz, continuous and unchanging, in a quiet bedroom at night. [--neg \"speech, voices, talking, singing, music, melody, beeps, clicks, fan, wind, air conditioner, water\"]  ||  BLOOPS (seed, round 1 master reused at $0): Five seconds of audio. Close-up on a desk in a quiet bedroom at night: a lava lamp hums with a low steady electrical buzz from its warm bulb, and once, a slow soft liquid bloop as a blob of wax rises through the oil. No dialogue, no voices, no narration, no music. Five seconds.",
+    "negativePrompt": null,
+    "seed": null,
+    "cut": "Built with work/seq.py, 4.0 s total: hum from sa3m master 10.0-14.0 s placed at 0 s, +22 dB, fades 0.03/0.4; bloops from the Seed master 2.3-3.5 s (both bloops, at 2.4-2.6 and 3.0-3.1) placed at 1.2 s, +10 dB, fades 0.05/0.2. Peak -3.3 dB, lead 0.0 s.",
+    "masterFile": "obj.lamp.hum__seed_062044.wav",
+    "masterSha256": null,
+    "finalWavSha256": "9377405b8c3c844c05a46b64f8fe7b3dce26ea4c91564402e7f04b60555d795e",
+    "seconds": 3.98,
+    "meanVolumeDb": -32.2,
+    "maxVolumeDb": -10.0,
+    "gainDb": -6.7,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "cc797e77112c6d692c42b1bf45acd173e3b55b034471ffbfb82851c58d85e907",
+    "blindEar": {
+      "final": {
+        "guess": "Two wet, squelchy suction or bubbling sounds, like a plunger or gas escaping viscous liquid, with a low-frequency background hum",
+        "alternatives": [
+          "A plunger being pulled off a wet surface",
+          "Large bubbles popping in thick mud or boiling porridge"
+        ],
+        "events": 2,
+        "music": false,
+        "voices": false,
+        "realism": 8,
+        "problems": "low-frequency hum"
+      },
+      "master": {
+        "obj.lamp.hum__sa3m_063719.wav (0-30 s)": {
+          "guess": "Low-frequency electrical hum or appliance drone, like a refrigerator or HVAC unit running, recorded in a small, quiet room.",
+          "alternatives": [
+            "A distant industrial ventilation fan",
+            "A computer server rack hum"
+          ],
+          "events": 0,
+          "music": false,
+          "voices": false,
+          "realism": 9,
+          "problems": "none",
+          "_ear": "gemini-3.5-flash",
+          "_file": "obj.lamp.hum__sa3m_063719.wav",
+          "_window": [
+            0,
+            30
+          ]
+        },
+        "obj.lamp.hum__seed_062044.wav": {
+          "guess": "Two soft, low-pitched bubble pops or glugs underwater, recorded in a small, enclosed container.",
+          "alternatives": [
+            "A person swallowing or gulping",
+            "A small stone dropping into deep water"
+          ],
+          "events": 2,
+          "music": false,
+          "voices": false,
+          "realism": 8,
+          "problems": "none",
+          "_ear": "gemini-3.5-flash",
+          "_file": "obj.lamp.hum__seed_062044.wav"
+        }
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Heard as wet bubbling bloops in a viscous liquid over a low hum. That is the lava lamp's signature pair. The masters confirm an electrical hum and slow bubble glugs.",
+        "PASS: Two wet, viscous bubbling bloops over a low background hum, which covers both signature parts of a lava lamp. The masters (appliance hum, soft underwater bubble pops) support it.",
+        "PASS: The listener heard slow viscous bubbling over a low hum, which is the lava lamp's hum and bloop. The flagged hum is part of the target."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "obj.oven.door",
+    "label": "Bakery: the heavy oven door creaks open and clanks",
+    "kind": "one-shot",
+    "method": "Generated with Seed Audio 1.0 on fal, $0.1875 per minute (Part 297), then cut to one event.",
+    "model": "bytedance/seed-audio-1.0",
+    "prompt": "Twelve seconds of audio. Cinematic game audio, close-up: in a tiled bakery kitchen, the heavy cast-iron door of a big bread oven is pulled open three separate times; each time the iron hinges creak and the heavy metal door drops open with a loud clank against its iron stop, then a pause. No dialogue, no voices, no narration, no music. Twelve seconds.",
+    "negativePrompt": null,
+    "seed": null,
+    "cut": "sfx.py cut master 1.5 3.05 (fin 0.02, fout 0.25). This is the second half of the first opening creak, the clank at about 3.3 s in the master, and its decay. It is 3.05 s, slightly over the 3 s limit, to keep the natural decay.",
+    "masterFile": "obj.oven.door__seed_061231.wav",
+    "masterSha256": "e46bcc1dd318b0e2ddc356edd6898632e3ce5bafcaa0a46e0a7a6e84d30ae909",
+    "finalWavSha256": "9974346d6c02991ad36f9fe39118ae1c93b3056d390fa7aa7b28094b4a60f9da",
+    "seconds": 3.02,
+    "meanVolumeDb": -28.7,
+    "maxVolumeDb": -10.3,
+    "gainDb": -9.0,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "9f5fb55baca7877aa3a03f887f20a84b3052e9ab6edc673a6393a2cc5756a431",
+    "blindEar": {
+      "final": {
+        "guess": "A heavy metal door or security gate slamming shut with a loud metallic clang, recorded in a large, reverberant indoor space like a warehouse or parking structure.",
+        "alternatives": [
+          "A large metal dumpster lid slamming shut",
+          "An industrial metal hatch being closed forcefully"
+        ],
+        "events": 1,
+        "music": false,
+        "voices": false,
+        "realism": 10,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "Heavy metal sliding door or gate scraping and slamming shut in a resonant indoor space",
+        "alternatives": [
+          "Industrial metal filing cabinet drawer being opened and closed forcefully",
+          "Heavy metal dumpster lid sliding and slamming"
+        ],
+        "events": 5,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 2,
+      "of": 3,
+      "bestVotes": 2,
+      "reasons": [
+        "PASS: A heavy hinged metal door with a loud metallic clang fits the metal-door family. It has no creak and a large reverberant room, but the source and material are compatible.",
+        "PASS: Heard as a heavy metal door closing with a metallic clang. The material and action fit a heavy oven door clanking, though the warehouse-sized reverb makes it sound bigger than a bakery oven.",
+        "FAIL: It is a heavy metal door, but it slams shut in a big reverberant warehouse. The target is a creak open and a clank at a bakery oven: the action is wrong, there is no creak, and the space is wrong."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "obj.sauna.steam",
+    "label": "Sauna: water on hot stones hisses into steam",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, sauna, pouring water onto the hot stones of a sauna stove, the water sizzles and crackles violently on the hot rocks and bursts into hissing steam, eight separate pours with a pause of four seconds between each (negative: speech, voices, talking, singing, music, ice, clunk, aerosol spray, plastic; seed 706561916; 50 s; existing round-1 master, $0 this round)",
+    "negativePrompt": "speech, voices, talking, singing, music, ice, clunk, aerosol spray, plastic",
+    "seed": 706561916,
+    "cut": "From 0.40 s to 3.80 s of the master (3.4 s), starting on the water hitting (attack at 0.045 s in the file, no lead silence). Gain curve: 0 dB to 0.35 s, then a straight line in dB down to -30 dB at 3.4 s, then a 0.25 s cosine fade-out. Made with work/tmp/r3sauna/build.py. 48 kHz 16-bit stereo, peak -14.0 dBFS, not normalised.",
+    "masterFile": "obj.sauna.steam__sa3m_060730.wav",
+    "masterSha256": "d838909c92f022de7c265336ad1c0bbd713fccb697571daa230721afc5319837",
+    "finalWavSha256": "9751dec33f36d7b02c695e2c58b60ba9b5391f39cceb702ed08ef9149652b0c1",
+    "seconds": 3.39,
+    "meanVolumeDb": -37.5,
+    "maxVolumeDb": -10.1,
+    "gainDb": 4.0,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "fb54d566be84ee6b993b4ae99ba81aa7b6cf1b7027e49b52e381e5a39711e3d6",
+    "blindEar": {
+      "final": {
+        "guess": "Water splashed onto hot sauna stones, sizzling and steaming, close-up recording in a small wooden room",
+        "alternatives": [
+          "Frying food in hot oil in a pan",
+          "Pouring a carbonated beverage into a glass"
+        ],
+        "events": 1,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "Dry rice or small plastic beads being poured and cascading into a container, recorded in a close, dry indoor space",
+        "alternatives": [
+          "Pouring dry lentils or small seeds",
+          "Water pouring onto a plastic sheet or container"
+        ],
+        "events": 4,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: The final is described as water splashed onto hot sauna stones, sizzling and steaming, in a small wooden room. That is the exact source, action and material. The master's rice-pouring description does not override a clear final.",
+        "PASS: The final is named directly as water splashed onto hot sauna stones, sizzling and steaming in a small wooden room. The master's pouring-rice guess is irrelevant because the final is clear.",
+        "PASS: The final is named exactly as water splashed onto hot sauna stones, sizzling and steaming in a small wooden room, with realism 9 and no problems. The master reads as pouring rice, but the final is primary and was cut from it."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "obj.telescope.turn",
+    "label": "Telescope: the brass focus ring squeaks and clicks into place",
+    "kind": "one-shot",
+    "method": "Generated with sa3s + sa3m (built) (Part 297), then cut to one event.",
+    "model": "sa3s + sa3m (built)",
+    "prompt": "TURN (sa3s): TrackType: SFX, a short rusty metal squeak as a stiff old brass screw ring is twisted a quarter turn, then a solid heavy metal click as it locks, like an iron latch. Metal on metal, close-up. Fifteen separate twists, with two seconds of silence between each. [--neg \"plastic, toy, rubber, zipper, comb, speech, voices, talking, singing, music, beeps, electronic tones\"]  ||  CLICK (sa3m): TrackType: SFX, an antique brass spyglass telescope being adjusted by hand: the heavy brass focus ring grinds around the hollow brass tube with a short metallic squeal, then locks with a bright metal click that rings briefly inside the tube, like a steel sword sliding in its metal scabbard. Twelve separate adjustments, with three seconds of silence between each. Solid metal, heavy, ringing brass. [--neg \"plastic, toy, rubber, zipper, comb, cassette, speech, voices, talking, singing, music, beeps, electronic tones\"]",
+    "negativePrompt": null,
+    "seed": null,
+    "cut": "Built with work/seq.py, 2.0 s total: sa3s master 23.745-24.595 s (a run of ratchet ticks at 23.765/24.0/24.18/24.485, placed at 0 s, -6 dB, fades 0.004/0.08), then sa3m master 6.525-7.625 s (a metallic scrape at 6.53-6.62 into clicks at 6.63-6.88, decaying by 7.05, placed at 0.8 s, 0 dB, fades 0.004/0.25). Peak -4.8 dB, lead silence 0.02 s.",
+    "masterFile": "obj.telescope.turn__sa3m_063717.wav",
+    "masterSha256": null,
+    "finalWavSha256": "514fa6b1cd52cc26a9c7ccd04abad10e3d72ea3e77643f9baa66b2849467903c",
+    "seconds": 1.98,
+    "meanVolumeDb": -32.7,
+    "maxVolumeDb": -9.9,
+    "gainDb": -5.2,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "de6edea452ae321e054b2dd25ada65260a57de508b78e6d80b7d15a785019bb1",
+    "blindEar": {
+      "final": {
+        "guess": "A metal latch or deadbolt sliding and clicking into place, recorded close-up in a dry studio environment.",
+        "alternatives": [
+          "Opening and closing a Zippo lighter",
+          "A mechanical switch or lever being flipped"
+        ],
+        "events": 2,
+        "music": false,
+        "voices": false,
+        "realism": 10,
+        "problems": "none"
+      },
+      "master": {
+        "obj.telescope.turn__sa3s_063717.wav (0-30 s)": {
+          "guess": "Close-up recording of a small metal mechanical device, like a ratchet or combination lock, being turned and clicked repeatedly in a quiet, dry room.",
+          "alternatives": [
+            "Flicking a metal lighter wheel repeatedly",
+            "Winding a mechanical toy or clockwork mechanism"
+          ],
+          "events": 28,
+          "music": false,
+          "voices": false,
+          "realism": 10,
+          "problems": "none",
+          "_ear": "gemini-3.5-flash",
+          "_file": "obj.telescope.turn__sa3s_063717.wav",
+          "_window": [
+            0,
+            30
+          ]
+        },
+        "obj.telescope.turn__sa3m_063717.wav (0-30 s)": {
+          "guess": "handling and sliding metal rods or tools, creating scrapes, clinks, and ringing sounds, recorded close-up in a dry studio environment",
+          "alternatives": [
+            "sorting through metal kitchen utensils or cutlery",
+            "assembling or adjusting metal mechanical parts"
+          ],
+          "events": 15,
+          "music": false,
+          "voices": false,
+          "realism": 10,
+          "problems": "none",
+          "_ear": "gemini-3.5-flash",
+          "_file": "obj.telescope.turn__sa3m_063717.wav",
+          "_window": [
+            0,
+            30
+          ]
+        }
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: A metal mechanism sliding and clicking into place fits the brass focus ring clicking home. The master confirms small metal mechanical turning and clicks.",
+        "PASS: A close metal mechanism sliding and clicking into place, with a master heard as a small metal ratchet turned and clicked. The squeak is missing, but a metal ring clicking into place after reading about the telescope is recognisable.",
+        "PASS: The listener heard a close-up metal mechanism clicking into place, and the master supports a turned ratchet-like device. The squeak is missing, but the material and action fit."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "obj.water.bubbles",
+    "label": "Hot tub or fish tank: soft bubbling",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, soft steady bubbling water, small air bubbles rising continuously through still water in a glass tank, a gentle even stream of bubbles popping at the surface, close and calm  [negative_prompt: speech, voices, talking, singing, music, motor hum, pouring, glugging, roar]",
+    "negativePrompt": "speech, voices, talking, singing, music, motor hum, pouring, glugging, roar",
+    "seed": 434642661,
+    "cut": "cut 5.0 s, 4.0 s long, from a continuous sound: fade-in 0.015 s, fade-out 0.25 s",
+    "masterFile": "obj.water.bubbles__sa3m_060014.wav",
+    "masterSha256": "76c31cf21b23cdb718bc5484eb0a03dc49344215968b6f758ce08303a477f303",
+    "finalWavSha256": "6c0e30659d6a860657b3c067fc4d184c553e8b72ef3b8335af1f7b670a687cd2",
+    "seconds": 3.98,
+    "meanVolumeDb": -37.0,
+    "maxVolumeDb": -10.0,
+    "gainDb": 2.1,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "c461b80d3b555ec00c6d22575d3203fc22e5b9de9faec09172d331668625fdc3",
+    "blindEar": {
+      "final": {
+        "guess": "Continuous bubbling and gurgling of water, like a boiling pot or a small indoor water feature, recorded close-up",
+        "alternatives": [
+          "Water boiling in a saucepan",
+          "Air bubbling through a liquid"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "Continuous sound of water bubbling and gurgling, like a gentle boil or a small water fountain, recorded close-up in a quiet room",
+        "alternatives": [
+          "Water boiling in a pot",
+          "Air bubbles rising through a liquid"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Heard as continuous bubbling and gurgling water, like a small indoor water feature. Steady soft bubbling fits.",
+        "PASS: Heard as continuous bubbling like a small indoor water feature, which is soft steady bubbling that works for both the hot tub and the fish tank.",
+        "PASS: Heard as continuous bubbling like a small indoor water feature: steady and soft, not a roar."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "obj.water.laps",
+    "label": "Bathhouse: steady swimming strokes echo off the tile",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, swimming pool, a swimmer doing front crawl laps, loud rhythmic splashing arm strokes every second, feet kicking and churning the water, big reverberant echo of an indoor tiled natatorium, the swimmer passes by  [negative_prompt: speech, voices, talking, singing, music, whistle, crowd, bathtub]",
+    "negativePrompt": "speech, voices, talking, singing, music, whistle, crowd, bathtub",
+    "seed": 2107411200,
+    "cut": "cut 21.0 s, 7.0 s long, from a continuous sound: fade-in 0.05 s, fade-out 0.25 s. I chose this window because the ear heard no voices in it; the master has distant chatter elsewhere",
+    "masterFile": "obj.water.laps__sa3m_060204.wav",
+    "masterSha256": "1d628c37ee5d672ad1a639519e4c402431ab21caa30d69a0bce2942bb56b13ab",
+    "finalWavSha256": "f9b5fdeeb504b525d4d8cac0037286daf02d9c96357ddbc8efbbad8a9d742e65",
+    "seconds": 6.99,
+    "meanVolumeDb": -34.1,
+    "maxVolumeDb": -10.3,
+    "gainDb": -7.1,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "7afb1b6b8a31574189c135e116a178bb8d0910df8eac41be2151667f7919ca3e",
+    "blindEar": {
+      "final": {
+        "guess": "Water splashing and sloshing in an indoor swimming pool, with wet sloshing sounds and reverberant acoustics of a tiled space",
+        "alternatives": [
+          "Someone bathing in a large bathtub",
+          "Waves gently lapping against a concrete pier"
+        ],
+        "events": 3,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "Indoor public swimming pool ambience with people swimming, splashing, and echoing voices in a large tiled hall",
+        "alternatives": [
+          "Indoor water park wave pool",
+          "Large public bathhouse with splashing"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": "distant echoing voices, chatter, and laughter of people in the pool",
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Heard as water splashing and sloshing in an indoor pool with tiled acoustics. The master supports it as people swimming in a tiled hall. Water in a pool is the right source, though the final does not name distinct strokes.",
+        "PASS: Heard as water splashing and sloshing in an echoing tiled indoor pool. The listener did not name strokes, but the master's 'people swimming' supports it, and it fits a player swimming laps.",
+        "PASS: The final is heard as water sloshing and splashing in a reverberant indoor tiled pool, with no voices. It is vague about swimming strokes but compatible, and the master confirms people swimming in a tiled hall."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "obj.water.splash.big",
+    "label": "Bathhouse: a cannonball hits the deep end, with a long tiled echo",
+    "kind": "one-shot",
+    "method": "Generated with Seed Audio 1.0 on fal, $0.1875 per minute (Part 297), then cut to one event.",
+    "model": "bytedance/seed-audio-1.0",
+    "prompt": "Twenty seconds of audio. Inside a large indoor swimming pool hall with hard tiled walls and a tiled roof, empty and quiet. Twice, ten seconds apart, a person does a cannonball into the deep end: a huge heavy plunge and splash that booms through the hall, water crashing back down, then a wave slaps against the far tiled wall and the echo rings away across the tiles. No dialogue, no voices, no shouting, no narration, no music. Twenty seconds.",
+    "negativePrompt": null,
+    "seed": null,
+    "cut": "cut 10.77 s, 7.4 s long (second cannonball, onset 10.79 s), fade-in 0.004 s, fade-out 0.3 s; tail decayed to about -54 dB",
+    "masterFile": "obj.water.splash.big__seed_060351.wav",
+    "masterSha256": "c68b2c8c8af35905f88ee3ffe35145255d1a9fea850b1b24d7efcce1f5e67eba",
+    "finalWavSha256": "ebfb825827c075c46058db00c29100366796edb7c5bbc3e87028df811a26c3f0",
+    "seconds": 7.38,
+    "meanVolumeDb": -29.3,
+    "maxVolumeDb": -10.1,
+    "gainDb": -8.4,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "db935886da1feb2e76bf6e11fba7648173d6a9bfd2d134190298b1ff244caf1a",
+    "blindEar": {
+      "final": {
+        "guess": "A large splash of water from a person diving or jumping into a swimming pool, followed by bubbling and sloshing",
+        "alternatives": [
+          "A heavy object being thrown into a deep body of water",
+          "A large wave crashing against a surface"
+        ],
+        "events": 1,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "Two separate instances of a person jumping or diving into a swimming pool, creating a large splash and underwater bubbling sounds, recorded in a resonant indoor pool environment.",
+        "alternatives": [
+          "A heavy object being thrown into a body of water",
+          "A large wave crashing against a barrier"
+        ],
+        "events": 2,
+        "music": false,
+        "voices": false,
+        "realism": 10,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Heard as a large splash of someone jumping into a pool, then bubbling. The master confirms a resonant indoor pool.",
+        "PASS: Heard as a large splash from a person jumping into a pool, then bubbling and sloshing. The master says it was recorded in a resonant indoor pool, so this is a clear cannonball.",
+        "PASS: Heard as a large splash of a person jumping into a pool, followed by bubbling and sloshing. The master confirms a resonant indoor pool."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "ui.goal.done",
+    "label": "Life goal reached: a small bell fanfare into a warm chord",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, acoustic glockenspiel and small brass handbells, real instruments in a warm wooden room. Twelve separate short celebration jingles: each one is a quick proud fanfare of four rising bell notes that lands on a warm major chord, several bells struck together and left to ring out and fade. Three seconds of silence between each jingle. Only bells, played by hand.",
+    "negativePrompt": "speech, voices, singing, drums, beat, bass, synthesizer, electronic, digital, keys jingling, wind chimes, rattling, shaking",
+    "seed": 1971515727,
+    "cut": "cut from master at 43.17 s for 4.78 s (--fout 0.3). The whole cue: onset at 43.19 s, a rising run, landing on a C chord at 45.6 s, then decay to about -45 dB, ending just before the next cue at 48.0 s. Lead 0.02 s.",
+    "masterFile": "ui.goal.done__sa3m_060218.wav",
+    "masterSha256": "8b46a802fdd929fc788893ed945995cbd9fb6064ce8f576a0269a81c99f0906d",
+    "finalWavSha256": "a493b96d6c7e7afd4b143d729521fb2b978a9b878ade431d6de1fb49159442d1",
+    "seconds": 4.77,
+    "meanVolumeDb": -34.5,
+    "maxVolumeDb": -10.0,
+    "gainDb": -8.6,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "53ef91de98474d2e5bd1df3f3919ba6604c5aa0730680a01c16e48a636e61223",
+    "blindEar": {
+      "final": {
+        "guess": "A short, bright musical chime or notification sound, featuring ascending bell-like notes ending in a sustained chord, recorded in a clean studio environment.",
+        "alternatives": [
+          "A smartphone ringtone or alert sound",
+          "A toy glockenspiel being played"
+        ],
+        "events": 6,
+        "music": "An ascending melodic sequence of bell-like notes ending on a harmonious chord",
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "A gentle, simple lullaby melody played on a glockenspiel or toy music box, recorded in a quiet, dry studio environment.",
+        "alternatives": [
+          "A digital synthesizer preset mimicking a music box",
+          "A child's toy xylophone being played softly"
+        ],
+        "events": 48,
+        "music": "A simple, gentle melody in a major key, played with a bell-like timbre, resembling a lullaby.",
+        "voices": false,
+        "realism": 8,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Ascending bell-like notes ending in a sustained harmonious chord: a bell fanfare into a chord.",
+        "PASS: Rising bell-like notes that end in a held, harmonious chord: bell fanfare into a warm chord.",
+        "PASS: Ascending bell-like notes ending in a sustained harmonious chord: a bell fanfare into a chord."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "ui.reward",
+    "label": "Reward: a shimmer of tiny bells",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, tiny brass handbells, real bells in a warm wooden room. Ten separate shimmers: in each one, eight tiny high-pitched handbells are rung one after another very fast, a quick sparkling cascade of pure ringing bell tones that overlap into a bright shimmer and then ring out and fade. Two seconds of silence between each shimmer.",
+    "negativePrompt": "keys, keyring, coins, rattling, shaking, spinning, scraping, synthesizer, electronic, digital, speech, voices, singing, drums",
+    "seed": 1357334580,
+    "cut": "cut from master at 31.105 s for 3.8 s (--fout 0.3). Onset at 31.125 s after silence; the shimmer runs to 33.2 s, and the decay reaches about -45 dB at 34.9 s. That is 0.3 s over the 3.5 s spec, kept so the ring is not chopped. Lead 0.02 s.",
+    "masterFile": "ui.reward__sa3m_062053.wav",
+    "masterSha256": "2a69926bfc4ef467cad41bd1d7ccd2c462da5257f1da11a383061e5d52bb03d9",
+    "finalWavSha256": "d24f9cb17d2c52da3f9295a177e7bf4e58651aa354db415c32321763c7824d51",
+    "seconds": 3.79,
+    "meanVolumeDb": -28.9,
+    "maxVolumeDb": -10.1,
+    "gainDb": -6.4,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "19b5084ce75cb218a4ca39725aae0f59f25a578c5603e985e7b893a1296e4323",
+    "blindEar": {
+      "final": {
+        "guess": "A single sweep across a metal bar chime (mark tree) with a bright, shimmering decay in a dry studio room.",
+        "alternatives": [
+          "Wind chimes being brushed by hand",
+          "A magical shimmer sound effect"
+        ],
+        "events": 1,
+        "music": "High-pitched, cascading metallic chime notes",
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "A Tibetan singing bowl or metal chime being struck twice with a soft mallet, producing a resonant, long-decaying tone in a quiet room.",
+        "alternatives": [
+          "A crystal singing bowl being struck",
+          "A large metal wind chime hit by a soft object"
+        ],
+        "events": 2,
+        "music": "A resonant, metallic bell-like tone with a clear fundamental pitch and rich overtones.",
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Mark tree sweep with a bright shimmering decay: a shimmer of tiny metal bells.",
+        "PASS: A single sweep across a mark tree with a shimmering decay: a shimmer of tiny bells.",
+        "PASS: A shimmering sweep across a mark tree, which is a shimmer of tiny bells, at realism 9."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "ui.want.done",
+    "label": "Want fulfilled: three rising marimba notes",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, solo wooden marimba with soft rubber mallets, close microphone in a small warm room. Twelve separate short cues, each one exactly three single mallet strokes climbing upward, low note, middle note, high note, quick and evenly spaced, a happy major arpeggio, clearly three separate notes, the last note decaying naturally. No rolls, no tremolo. Two seconds of silence between each cue. Only the marimba.",
+    "negativePrompt": "speech, voices, singing, drums, beat, bass, synthesizer, electronic, pad, strings, piano, rolls, tremolo, long melody, sad, minor key",
+    "seed": 932069027,
+    "cut": "cut from master at 0.262 s for 2.7 s (--fin 0.012 --fout 0.25). This is the master's first cue, started just before its second note (the first note, at 0.045 s, is left out), so the cut runs E, F#, A upward. Lead 0 s, natural decay.",
+    "masterFile": "ui.want.done__sa3m_060424.wav",
+    "masterSha256": "8264c18b9ce8c3d3187090142c01eaaf3c9bc6400dd72060dcf4e02456dff60e",
+    "finalWavSha256": "d77aa59395cccda83adc1d51acd96c107cd10d42b9001dea5c550b01c9bcc2ec",
+    "seconds": 2.68,
+    "meanVolumeDb": -24.9,
+    "maxVolumeDb": -9.9,
+    "gainDb": -2.6,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "138122908f44ed86e96d0e5f4fd7535c169d87fa0644ff7d290371621ad500e9",
+    "blindEar": {
+      "final": {
+        "guess": "Four sequential strikes on a wooden mallet instrument, like a marimba or xylophone, playing a short ascending arpeggio in a dry studio setting.",
+        "alternatives": [
+          "A digital ringtone or UI notification chime",
+          "A synthetic mallet keyboard preset playing a short melody"
+        ],
+        "events": 4,
+        "music": "A short four-note ascending musical arpeggio",
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "A gentle, resonant melody played on a wooden mallet instrument, like a marimba or balafon, with a soft attack and warm decay, recorded in a studio with light reverb.",
+        "alternatives": [
+          "A physical modeling synthesizer patch emulating a log drum",
+          "A soft kalimba or thumb piano with electronic amplification"
+        ],
+        "events": 30,
+        "music": "A slow, melodic sequence of notes played on a resonant mallet instrument, forming gentle arpeggios.",
+        "voices": false,
+        "realism": 9,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: Wooden mallet instrument (marimba) playing a short ascending arpeggio; four notes rather than three, but the source, material and rising action match.",
+        "PASS: Rising wooden mallet (marimba) arpeggio, short and dry. Four notes instead of three, but it still reads clearly as a warm, satisfied marimba cue.",
+        "PASS: Short ascending arpeggio on a wooden mallet instrument (marimba), realism 9, no problems; four vs three notes is a minor count difference."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  },
+  {
+    "id": "work.hammer.build",
+    "label": "Build mode: a hammer driving nails into lumber",
+    "kind": "one-shot",
+    "method": "Generated with Stable Audio 3 Medium on fal, $0.0376 per take (Part 297), then cut to one event.",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, a steel claw hammer driving iron nails into a wooden two-by-four plank on a workbench: sharp metal-on-metal hammer blows, the nail ringing and the lumber thudding, four or five blows per nail, then a pause of two seconds before the next nail. A dozen separate nails, carpentry, close microphone.  [--neg \"speech, voices, talking, singing, music\"]",
+    "negativePrompt": "speech, voices, talking, singing, music",
+    "seed": 454632592,
+    "cut": "cut from the -3 dB copy work/masters/work.hammer.build__sa3m_060013_m3db.wav, start 9.975 s, dur 4.0 s, fin 0.004, fout 0.2. It holds a light setting tap at 10.0 s, then the run of blows every ~0.55 s from 10.3 s to 13.6 s, with the last blow's decay kept.",
+    "masterFile": "work.hammer.build__sa3m_060013.wav",
+    "masterSha256": "698f014279e7f82bab1797e1cf815618697ce7991cac354b73349282f51ed0d3",
+    "finalWavSha256": "d148ed56aad96f5221d94f41417b70555077a40b8819574b002d5568671f113d",
+    "seconds": 3.98,
+    "meanVolumeDb": -37.5,
+    "maxVolumeDb": -10.1,
+    "gainDb": -8.6,
+    "leveling": "linear gain to peak -10 dBFS, mean no louder than -24 dB",
+    "encoding": "AAC 128k stereo 48 kHz",
+    "sha256": "12a2ff237dc107ab70906baa68453a5cb0c70b24aeb3ba0a7cdf155e24022f57",
+    "blindEar": {
+      "final": {
+        "guess": "A series of rhythmic hammer strikes on a wooden surface, likely driving a nail, recorded in a dry indoor room.",
+        "alternatives": [
+          "A wooden mallet tapping on a wooden peg or block",
+          "A manual staple gun being fired repeatedly into wood"
+        ],
+        "events": 20,
+        "music": false,
+        "voices": false,
+        "realism": 10,
+        "problems": "none"
+      },
+      "master": {
+        "guess": "A sequence of hand claps, palm slaps, and rapid finger tapping on wooden and plastic surfaces, recorded in a small room with close mic positioning",
+        "alternatives": [
+          "A person drumming their hands on a desk",
+          "Foley recording of rhythmic tapping and knocking on various household objects"
+        ],
+        "events": 55,
+        "music": false,
+        "voices": false,
+        "realism": 10,
+        "problems": "none"
+      }
+    },
+    "reviewers": {
+      "passed": 3,
+      "of": 3,
+      "bestVotes": 3,
+      "reasons": [
+        "PASS: The final describes rhythmic hammer strikes driving a nail into wood, which is the target. The master's claps and tapping do not override the final.",
+        "PASS: The final is heard as rhythmic hammer strikes on wood, likely driving a nail. The master heard claps, but the final description is the one that counts.",
+        "PASS: The final was heard as hammer strikes driving a nail into wood, with realism 10. The master sounds like hand claps, but the final is primary."
+      ]
+    },
+    "screening": "A listening model told nothing heard it; three reviewers who never heard it matched that description to the target. Human listening acceptance remains open."
+  }
+]
