@@ -322,11 +322,13 @@ function mostCommonKind(records: SectionRecord[], fallback: string): string {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? fallback;
 }
 
-/** The Kade-AI credit as the engine rendered it, before its place in the copy is known. */
+/**
+ * The Kade-AI credit as the engine rendered it, before its place in the copy is known: each end's
+ * line, its length, and the logo that played before it (absent when the words were said alone).
+ */
 export type RenderedCredit = {
-  logo?: string;
-  start?: { text: string; duration: number };
-  end?: { text: string; duration: number };
+  start?: { text: string; duration: number; logo?: string };
+  end?: { text: string; duration: number; logo?: string };
 };
 
 /**
@@ -419,7 +421,6 @@ export function buildReport(
   if (credit && (credit.start || credit.end)) {
     report.credit = {
       lead,
-      ...(credit.logo ? { logo: credit.logo } : {}),
       ...(credit.start ? { start: { ...credit.start, at: 0 } } : {}),
       ...(credit.end ? { end: { ...credit.end, at: offset } } : {}),
     };

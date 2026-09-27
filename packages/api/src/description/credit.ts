@@ -6,8 +6,9 @@ import { decibels, mix, sampleRate } from './mix';
  * platform that described it, as exposure, never as a request for money. The credit sits outside
  * the film at both ends, so it never talks over dialogue, music or the opening:
  *
- * - before the first frame: the sonic logo, then the narrator says the start line;
- * - after the last frame: the logo again, then the end line, which names the website.
+ * - before the first frame: the opening sonic logo (logo 3), then the narrator says the start
+ *   line;
+ * - after the last frame: the closing logo (logo 4), then the end line, which names the website.
  *
  * The job's own narrator says both at the job's own speed. The platform's voice proxy already says
  * "Kade-AI" as "Kadie A I" and "kademurdock" as "Kadie Murdock" on every speech request, so the
@@ -45,26 +46,54 @@ export const logos: Record<number, { voiceAt: number; about: string }> = {
   4: { voiceAt: 1.8, about: 'chime melody' },
   5: { voiceAt: 0.95, about: 'chime shower' },
 };
-/** Logo 3, the celesta tune shaped like the name, until Kade chooses. */
-export const defaultLogo = 3;
+/**
+ * Kade's choice (Sep 27 2026): logo 3, the celesta tune shaped like the name, opens the copy, and
+ * logo 4, the chime melody, closes it.
+ */
+export const defaultLogos: Record<'start' | 'end', number> = { start: 3, end: 4 };
 
-/** The logo number (KADE_DESCRIPTION_LOGO 1 to 5), or null for `none`: the words alone. */
-export function logoChoice(): number | null {
-  const value = (process.env.KADE_DESCRIPTION_LOGO || '').trim().toLowerCase();
+/**
+ * One logo switch: a logo number (1 to 5), null for `none` (the words alone), or undefined when it
+ * is unset or names no logo, so the next switch decides.
+ */
+function logoSetting(name: string): number | null | undefined {
+  const value = (process.env[name] || '').trim().toLowerCase();
+  if (!value) return undefined;
   if (value === 'none' || value === 'off' || value === '0') return null;
-  const number = Number.parseInt(value, 10);
-  return logos[number] ? number : defaultLogo;
+  const number = Number(value);
+  return Number.isInteger(number) && logos[number] ? number : undefined;
 }
+
+/**
+ * The logo before one end's words, or null for none: KADE_DESCRIPTION_LOGO_START (default 3) or
+ * KADE_DESCRIPTION_LOGO_END (default 4), each 1 to 5 or `none`. KADE_DESCRIPTION_LOGO, the older
+ * single switch, still sets both ends when an end's own switch is unset.
+ */
+export function logoChoice(which: 'start' | 'end'): number | null {
+  const own = logoSetting(
+    which === 'start' ? 'KADE_DESCRIPTION_LOGO_START' : 'KADE_DESCRIPTION_LOGO_END',
+  );
+  if (own !== undefined) return own;
+  const both = logoSetting('KADE_DESCRIPTION_LOGO');
+  return both !== undefined ? both : defaultLogos[which];
+}
+
+/** One end's sonic logo: its file, how far into it the words begin, and its name for the log. */
+export type CreditLogo = { file: string; voiceAt: number; name: string };
 
 /** What the engine needs to add the credit to a copy (engine.ts `Request.credit`). */
 export type Credit = {
   /** `both`: the opening credit and the closing card; `end`: the closing card only. */
   where: 'both' | 'end';
-  /** The sonic logo; without it (or when its file cannot be read) the words are said alone. */
-  logo?: { file: string; voiceAt: number; name: string };
+  /**
+   * The sonic logo before each end's words (`start`, `end`); an end without one (or whose file
+   * cannot be read) has its words said alone.
+   */
+  logos?: { start?: CreditLogo; end?: CreditLogo };
   /**
    * The meter the credit's speech is booked through: the platform's included work, charged to
-   * nobody (router.ts `includedMeter`). Absent: the job's own meter.
+   * nobody (router.ts `includedMeter`). Absent: the job's own meter. Either way the engine books
+   * it as the `credit` part of the run's cost breakdown.
    */
   meter?: Meter;
 };

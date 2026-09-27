@@ -1563,19 +1563,24 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   }
 
   /**
-   * One end of the Kade-AI credit (credit.ts): the logo, with the line said over its tail by the
-   * job's narrator at the engine's own speed (never sped up to fit anything), levelled like the
-   * narration with the logo 3 LU under it, through the same limiter as the sections. Its speech is
-   * booked through the credit's own meter (the platform's included work) under a TTS session key
-   * of its own, so it never colours the first or last description. The opening credit is whole
-   * output frames long when the picture is re-encoded, with the film's first frame held under it.
-   * A credit whose speech or picture fails is left out and the copy finishes without it; a logo
-   * that cannot be read leaves the words alone.
+   * One end of the Kade-AI credit (credit.ts): that end's logo, with the line said over its tail
+   * by the job's narrator at the engine's own speed (never sped up to fit anything), levelled like
+   * the narration with the logo 3 LU under it, through the same limiter as the sections. Its
+   * speech is booked through the credit's own meter (the platform's included work) as the
+   * `credit` part of the run's cost, under a TTS session key of its own, so it never colours the
+   * first or last description. The opening credit is whole output frames long when the picture is
+   * re-encoded, with the film's first frame held under it. A credit whose speech or picture fails
+   * is left out and the copy finishes without it; a logo that cannot be read leaves the words
+   * alone.
    */
   async function creditPart(which: 'start' | 'end', credit: Credit): Promise<CreditPart | null> {
     const dir = join(directory, 'credit');
     const line = creditLines[which];
     const where = which === 'start' ? 'opening' : 'closing';
+    const own = credit.logos?.[which];
+    /** The credit's speech is its own part of the run's cost, whichever meter it goes through. */
+    const booked: Meter = (kind, reserve, action) =>
+      (credit.meter ?? meter)(kind, reserve, action, 'credit');
     try {
       await mkdir(dir, { recursive: true });
       const spoken = join(dir, `${which}-voice.wav`);
@@ -1588,7 +1593,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           spoken,
           native,
           signal,
-          credit.meter ?? meter,
+          booked,
         );
         words = trimSilence(await decodeVoice(spoken, signal));
       } finally {
@@ -1596,15 +1601,15 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       }
       if (words.length <= sampleRate * 0.2) throw new Error('The voice returned no words.');
       let logo: Float32Array | null = null;
-      if (credit.logo)
+      if (own)
         try {
-          const decoded = await decodeStereo(credit.logo.file, signal);
+          const decoded = await decodeStereo(own.file, signal);
           if (decoded.length >= sampleRate * 0.2 * 2) logo = decoded;
           else throw new Error('The logo file is empty.');
         } catch (error) {
           if (signal.aborted) throw error;
           log(
-            `The Kade-AI logo (${credit.logo.name}) could not be read, so the ${where} credit is said without it: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown error'}`,
+            `The Kade-AI logo (${own.name}) could not be read, so the ${where} credit is said without it: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown error'}`,
           );
         }
       const logoLevel = logo ? loudness(logo, 2) : -Infinity;
@@ -1614,7 +1619,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           ? decibels(clamp(levels.narration - 3 - logoLevel, -30, 12))
           : 1,
         voice: level(words, levels.narration - 3.01),
-        voiceAt: logo && credit.logo ? credit.logo.voiceAt : bareVoiceAt,
+        voiceAt: logo && own ? own.voiceAt : bareVoiceAt,
         before: which === 'end' ? endBreath : 0,
       });
       let pcm = laid.pcm;
@@ -1636,7 +1641,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         ...(picture ? { picture } : {}),
         seconds: pcm.length / 2 / sampleRate,
         text: line.written,
-        logo: logo && credit.logo ? credit.logo.name : undefined,
+        logo: logo && own ? own.name : undefined,
       };
     } catch (error) {
       if (signal.aborted) throw error;
@@ -1656,24 +1661,30 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   if (credit) await progress('Adding the Kade-AI credit', 93);
   const opening = credit?.where === 'both' ? await creditPart('start', credit) : null;
   const closing = credit && !partial ? await creditPart('end', credit) : null;
+  /** One rendered end as the report keeps it, with the logo that played before its words. */
+  const placed = (end: CreditPart) => ({
+    text: end.text,
+    duration: end.seconds,
+    ...(end.logo ? { logo: end.logo } : {}),
+  });
   const rendered: RenderedCredit | undefined =
     opening || closing
       ? {
-          ...((opening?.logo ?? closing?.logo) ? { logo: opening?.logo ?? closing?.logo } : {}),
-          ...(opening ? { start: { text: opening.text, duration: opening.seconds } } : {}),
-          ...(closing ? { end: { text: closing.text, duration: closing.seconds } } : {}),
+          ...(opening ? { start: placed(opening) } : {}),
+          ...(closing ? { end: placed(closing) } : {}),
         }
       : undefined;
+  /** "opening 3.1 s with logo 3", "closing 5.1 s without a logo" or "closing left out". */
+  const told = (name: string, end: CreditPart | null) =>
+    `${name} ${end ? `${seconds1(end.seconds)} ${end.logo ? `with ${end.logo}` : 'without a logo'}` : 'left out'}`;
   if (credit)
     log(
       `Kade-AI credit: ${[
-        credit.where === 'both'
-          ? `opening ${opening ? seconds1(opening.seconds) : 'left out'}`
-          : '',
-        partial ? '' : `closing ${closing ? seconds1(closing.seconds) : 'left out'}`,
+        credit.where === 'both' ? told('opening', opening) : '',
+        partial ? '' : told('closing', closing),
       ]
         .filter(Boolean)
-        .join(', ')}${rendered ? `, ${rendered.logo ?? 'no logo'}` : ''}.`,
+        .join(', ')}.`,
     );
   await progress('Joining the finished sections', 93);
   const files = await pool(ordered, 4, async (record) => {

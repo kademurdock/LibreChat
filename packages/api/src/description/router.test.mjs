@@ -4072,14 +4072,17 @@ test('tiers: quotes follow the tier; only the administrator may choose a job’s
 
 /* Sep 27 2026, her ask: every described copy says who described it. The credit sits before the
  * film's first frame and after its last, in the job's narrator, at no charge to anyone. */
-test('Kade-AI credit: every copy begins and ends with it at no charge; only the administrator may leave it out', async () => {
+test('Kade-AI credit: every copy begins with logo 3 and ends with logo 4 at no charge, listed as included; only the administrator may leave it out', async () => {
   const saved = process.env.KADE_DESCRIPTION_CREDIT;
   delete process.env.KADE_DESCRIPTION_CREDIT;
+  const logoSwitches = ['KADE_DESCRIPTION_LOGO', 'KADE_DESCRIPTION_LOGO_START', 'KADE_DESCRIPTION_LOGO_END'];
+  const savedLogos = logoSwitches.map((name) => process.env[name]);
+  for (const name of logoSwitches) delete process.env[name];
   sampleCost = 0.001;
   const jobs = [];
   try {
     const adminConfig = (await call('get', '/config', 'credit-admin').expect(200)).body;
-    assert.deepEqual(adminConfig.credit, { where: 'both', logo: 3 }, 'both ends, logo 3 until she chooses');
+    assert.deepEqual(adminConfig.credit, { where: 'both', logos: { start: 3, end: 4 } }, 'both ends: her name tune opens, the chime melody closes');
     const userConfig = (await call('get', '/config', 'credit-user').set('x-role', 'user').expect(200)).body;
     assert.equal(userConfig.credit, undefined, 'only the administrator is offered the switch');
 
@@ -4093,8 +4096,9 @@ test('Kade-AI credit: every copy begins and ends with it at no charge; only the 
     assert.equal(done.state, 'done', done.error);
     const asked = requests.at(-1).credit;
     assert.equal(asked.where, 'both');
-    assert.deepEqual(asked.logo.name, 'logo 3');
-    assert.match(asked.logo.file.replace(/\\/g, '/'),/api\/server\/assets\/kade-ai-logo\/logo-3\.flac$/);
+    assert.deepEqual([asked.logos.start.name, asked.logos.end.name], ['logo 3', 'logo 4']);
+    assert.match(asked.logos.start.file.replace(/\\/g, '/'), /api\/server\/assets\/kade-ai-logo\/logo-3\.flac$/);
+    assert.match(asked.logos.end.file.replace(/\\/g, '/'), /api\/server\/assets\/kade-ai-logo\/logo-4\.flac$/);
     assert.equal(typeof asked.meter, 'function');
     const claimed = logged(from, 'dv.claim').find((entry) => entry.id === theirs);
     assert.equal(claimed.credit, 'both');
@@ -4102,7 +4106,7 @@ test('Kade-AI credit: every copy begins and ends with it at no charge; only the 
     const copy = (await Jobs.findById(theirs).lean()).copies.at(-1);
     assert.ok(copy.lead > 2 && copy.lead < 6, `opening credit ${copy.lead} s: ${engine.join('\n')}`);
     assert.ok(done.outputSeconds > 10 + copy.lead + 2, `copy ${done.outputSeconds} s with both ends`);
-    assert.ok(engine.some((message) => /^Kade-AI credit: opening \d+\.\d s, closing \d+\.\d s, logo 3\.$/.test(message)), engine.join('\n'));
+    assert.ok(engine.some((message) => /^Kade-AI credit: opening \d+\.\d s with logo 3, closing \d+\.\d s with logo 4\.$/.test(message)), engine.join('\n'));
     const transcript = (await call('get', `/jobs/${theirs}/text/transcript`, 'credit-user').expect(200)).text;
     assert.match(transcript, /^0:00 Credit: Audio description by Kade-AI\.$/m);
     assert.match(transcript, /^0:1\d Credit: Described by Kade-AI\. More at kademurdock\.com\.$/m);
@@ -4118,6 +4122,17 @@ test('Kade-AI credit: every copy begins and ends with it at no charge; only the 
     const included = usageLog.filter((row) => row.job === theirs && row.kind === 'speech-included');
     assert.equal(included.length, 2, 'the two credit lines are the platform’s own promotion');
     assert.ok(included.every((row) => row.chargedUSD === 0));
+    const stored = await Jobs.findById(theirs).lean();
+    assert.ok(Math.abs(stored.runIncluded.credit - 0.002) < 1e-9, `its real cost is kept apart: ${JSON.stringify(stored.runIncluded)}`);
+    assert.equal(stored.runParts?.credit, undefined, 'and never among what she paid for');
+    assert.deepEqual(
+      done.costParts.filter((item) => item.part === 'credit'),
+      [{ part: 'credit', label: 'The Kade-AI credit', usd: 0, included: true }],
+      'her cost breakdown lists the credit as included work, at no price',
+    );
+    const paidParts = done.costParts.filter((item) => !item.included);
+    assert.ok(Math.abs(paidParts.reduce((sum, item) => sum + item.usd, 0) - done.spentUSD) < 1e-3, 'what she paid for still adds up to what she spent');
+    assert.ok(logged(from, 'dv.cost').some((entry) => entry.id === theirs && / credit 0\.002 incl/.test(entry.parts)), 'the cost log line names it as included');
     sampleCost = 0;
 
     /* Her own job: she may leave the credit out, and put it back when she makes a new version. */
@@ -4133,6 +4148,7 @@ test('Kade-AI credit: every copy begins and ends with it at no charge; only the 
     assert.ok(Math.abs(plain.outputSeconds - 10) < 0.1);
     const plainText = (await call('get', `/jobs/${hers}/text/transcript`, 'credit-admin').expect(200)).text;
     assert.doesNotMatch(plainText, /Credit:/);
+    assert.ok(!plain.costParts.some((item) => item.part === 'credit'), 'no credit, nothing listed for it');
     await call('post', `/jobs/${hers}/revoice`, 'credit-admin').send({ voice: 'Voice 1', credit: true }).expect(202);
     const again = await settle(hers, ['done', 'failed'], 'credit-admin');
     assert.equal(again.state, 'done', again.error);
@@ -4142,11 +4158,16 @@ test('Kade-AI credit: every copy begins and ends with it at no charge; only the 
     process.env.KADE_DESCRIPTION_CREDIT = 'end';
     assert.equal((await call('get', '/config', 'credit-admin').expect(200)).body.credit.where, 'end');
     process.env.KADE_DESCRIPTION_LOGO = 'none';
-    assert.equal((await call('get', '/config', 'credit-admin').expect(200)).body.credit.logo, null);
+    assert.deepEqual((await call('get', '/config', 'credit-admin').expect(200)).body.credit.logos, { start: null, end: null }, 'the older switch still sets both');
+    process.env.KADE_DESCRIPTION_LOGO_END = '2';
+    assert.deepEqual((await call('get', '/config', 'credit-admin').expect(200)).body.credit.logos, { start: null, end: 2 }, 'an end’s own switch wins');
   } finally {
     if (saved === undefined) delete process.env.KADE_DESCRIPTION_CREDIT;
     else process.env.KADE_DESCRIPTION_CREDIT = saved;
-    delete process.env.KADE_DESCRIPTION_LOGO;
+    logoSwitches.forEach((name, i) => {
+      if (savedLogos[i] === undefined) delete process.env[name];
+      else process.env[name] = savedLogos[i];
+    });
     sampleCost = 0;
     for (const [id, who] of jobs) {
       await park(id);

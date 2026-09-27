@@ -305,8 +305,9 @@ export type Levels = { gain: number; narration: number; duck: number };
 /**
  * The part of a run a paid request belongs to, for the cost breakdown a person is shown
  * (router.ts `costParts`): the whole-film first look ("learning who is who"), the look at each
- * section, a close look at it, a second look after a rushed one, dialogue timing and the voice.
- * A failed try the provider may bill is booked as `failedTries` by the meter, whatever its part.
+ * section, a close look at it, a second look after a rushed one, dialogue timing, the voice, and
+ * the Kade-AI credit's speech (always the platform's included work, charged to nobody). A failed
+ * try the provider may bill is booked as `failedTries` by the meter, whatever its part.
  */
 export type CostPart =
   | 'firstLook'
@@ -316,12 +317,14 @@ export type CostPart =
   | 'failedTries'
   | 'dialogue'
   | 'voice'
+  | 'credit'
   | 'other';
 /**
  * Runs one paid request while `reserveUSD` is held. The action says what it cost; `uncertain`
  * marks a cost the provider never reported (an expected one), which is booked apart as uncertain.
- * `part` says which part of the run it pays for (the engine names its looks; without it a look
- * is booked as `looks`, transcription as `dialogue` and speech as `voice`).
+ * `part` says which part of the run it pays for (the engine names its looks and the credit's
+ * speech; without it a look is booked as `looks`, transcription as `dialogue` and speech as
+ * `voice`).
  */
 export type Meter = (
   kind: 'vision' | 'transcription' | 'speech',
@@ -330,8 +333,11 @@ export type Meter = (
   part?: CostPart,
 ) => Promise<void>;
 export type Progress = (stage: string, progress: number) => Promise<void>;
-/** One credit line as it sits in the described copy, in output seconds from its logo's start. */
-export type CreditLine = { text: string; at: number; duration: number };
+/**
+ * One credit line as it sits in the described copy, in output seconds from its logo's start, and
+ * which sonic logo played before it, such as "logo 3" (absent when the words were said alone).
+ */
+export type CreditLine = { text: string; at: number; duration: number; logo?: string };
 /**
  * The Kade-AI credit of one copy: `lead` seconds of opening credit before the film's first
  * frame (every other output time in the report already includes it), and the closing card
@@ -339,8 +345,6 @@ export type CreditLine = { text: string; at: number; duration: number };
  */
 export type CreditReport = {
   lead: number;
-  /** Which sonic logo played, such as "logo 3"; absent when the words were said without it. */
-  logo?: string;
   start?: CreditLine;
   end?: CreditLine;
 };

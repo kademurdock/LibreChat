@@ -1516,7 +1516,7 @@ test('Kade-AI credit: nobody else sees the switch or sends it; the credit stays 
 
 test('Kade-AI credit: the administrator may leave it out of a copy, the confirm says so, and a new version can put it back', async () => {
   const server = makeServer();
-  server.override((method, path) => path === '/config', () => ({ status: 200, body: { ...config, credit: { where: 'both', logo: 3 } } }));
+  server.override((method, path) => path === '/config', () => ({ status: 200, body: { ...config, credit: { where: 'both', logos: { start: 3, end: 4 } } } }));
   const ready = server.add(jobOf({ name: 'Road Runner', seconds: 120 }));
   const env = await boot({ server, search: '?id=' + ready.id });
   const { $ } = env;
@@ -1532,7 +1532,7 @@ test('Kade-AI credit: the administrator may leave it out of a copy, the confirm 
   assert.equal(server.last(/\/start$/).body.credit, false);
 
   const again = makeServer();
-  again.override((method, path) => path === '/config', () => ({ status: 200, body: { ...config, credit: { where: 'both', logo: 3 } } }));
+  again.override((method, path) => path === '/config', () => ({ status: 200, body: { ...config, credit: { where: 'both', logos: { start: 3, end: 4 } } } }));
   const done = again.add(doneJob({ name: 'Ad', settings: { ...standardSettings, credit: false } }));
   const view = await boot({ server: again, search: '?id=' + done.id });
   await view.timers.advance(700);
@@ -2637,10 +2637,11 @@ test('cost clarity: a finished run lists its parts once, and the ready notice sa
       { part: 'closeLooks', label: 'Closer looks', usd: 0.0562 },
       { part: 'secondLooks', label: 'Second looks at rushed parts', usd: 0.115 },
       { part: 'dialogue', label: 'Dialogue timing', usd: 0.022, included: true },
+      { part: 'credit', label: 'The Kade-AI credit', usd: 0.0009, included: true },
     ],
   });
   await env.timers.advance(5000);
-  assert.equal($('cost').textContent, 'This run cost 17 cents, of about 18 cents quoted. Closer looks: 6 cents; second looks at rushed parts: 11 cents. Dialogue timing (2 cents, paid by the platform) and narration are included.', 'the parts said add up to the total said (5.6 and 11.5 cents make 17)');
+  assert.equal($('cost').textContent, 'This run cost 17 cents, of about 18 cents quoted. Closer looks: 6 cents; second looks at rushed parts: 11 cents. Dialogue timing (2 cents, paid by the platform), the Kade-AI credit and narration are included.', 'the parts said add up to the total said (5.6 and 11.5 cents make 17)');
   assert.equal(env.status(), 'Your described copy is ready. It cost 17 cents.');
 });
 
@@ -2652,6 +2653,7 @@ test('cost clarity: someone else’s finished run shows included work at no pric
       { part: 'looks', label: 'Looks', usd: 0.3 },
       { part: 'failedTries', label: 'Tries that failed', usd: 0.04 },
       { part: 'dialogue', label: 'Dialogue timing', usd: 0, included: true },
+      { part: 'credit', label: 'The Kade-AI credit', usd: 0, included: true },
     ],
   }));
   const older = server.add(doneJob({ name: 'Old one', costUSD: 0.2, runCostUSD: 0.2 }));
@@ -2669,7 +2671,7 @@ test('cost clarity: someone else’s finished run shows included work at no pric
   }));
   const env = await boot({ server, search: '?id=' + mine.id });
   const { $ } = env;
-  assert.equal($('cost').textContent, 'This run cost 34 cents, of about 36 cents quoted. Looks: 30 cents; tries that failed: 4 cents. Dialogue timing and narration are included. All versions of this video: 50 cents.');
+  assert.equal($('cost').textContent, 'This run cost 34 cents, of about 36 cents quoted. Looks: 30 cents; tries that failed: 4 cents. Dialogue timing, the Kade-AI credit and narration are included. All versions of this video: 50 cents.', 'the credit is included work, and keeps its name');
   await env.open(older);
   assert.equal($('cost').textContent, 'Processing cost for this video so far: $0.20.');
   await env.open(unkept);

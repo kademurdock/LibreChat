@@ -53,7 +53,7 @@ import { settingsSchema, Halt } from './types.ts';
 import { editsSchema, revise, scriptCues, libraryPathSchema } from './revision.ts';
 import { Refusal, analyze as realAnalyze } from './providers.ts';
 import { youtubeURL } from './youtube.ts';
-import { layCredit, creditComment } from './credit.ts';
+import { layCredit, creditComment, logoChoice } from './credit.ts';
 
 process.env.FFMPEG_PATH = ffmpegPath;
 process.env.FFPROBE_PATH = ffprobePath.path;
@@ -3372,6 +3372,31 @@ const vttStarts = (text) =>
     (m) => Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4]) / 1000,
   );
 
+test('Kade-AI credit: logo 3 opens and logo 4 closes; each end has its own switch, and the older single switch sets both', () => {
+  const names = ['KADE_DESCRIPTION_LOGO', 'KADE_DESCRIPTION_LOGO_START', 'KADE_DESCRIPTION_LOGO_END'];
+  const saved = names.map((name) => process.env[name]);
+  const choose = (env) => {
+    for (const name of names) delete process.env[name];
+    Object.assign(process.env, env);
+    return [logoChoice('start'), logoChoice('end')];
+  };
+  try {
+    assert.deepEqual(choose({}), [3, 4], 'Kade’s choice: the name tune, then the chime melody');
+    assert.deepEqual(choose({ KADE_DESCRIPTION_LOGO_START: '1', KADE_DESCRIPTION_LOGO_END: '5' }), [1, 5]);
+    assert.deepEqual(choose({ KADE_DESCRIPTION_LOGO_END: 'none' }), [3, null], 'the closing card said without a logo');
+    assert.deepEqual(choose({ KADE_DESCRIPTION_LOGO: '2' }), [2, 2], 'the older switch still sets both ends');
+    assert.deepEqual(choose({ KADE_DESCRIPTION_LOGO: 'none', KADE_DESCRIPTION_LOGO_START: '3' }), [3, null], 'an end’s own switch wins over it');
+    assert.deepEqual(choose({ KADE_DESCRIPTION_LOGO: '5', KADE_DESCRIPTION_LOGO_END: '9' }), [5, 5], 'a switch that names no logo is passed over');
+    assert.deepEqual(choose({ KADE_DESCRIPTION_LOGO_START: ' OFF ', KADE_DESCRIPTION_LOGO_END: '0' }), [null, null]);
+    assert.deepEqual(choose({ KADE_DESCRIPTION_LOGO_START: '2.5', KADE_DESCRIPTION_LOGO_END: '' }), [3, 4], 'nothing readable: Kade’s choice');
+  } finally {
+    names.forEach((name, i) => {
+      if (saved[i] === undefined) delete process.env[name];
+      else process.env[name] = saved[i];
+    });
+  }
+});
+
 test('Kade-AI credit: the words start where the logo says, the logo eases 4 dB down under them, and the card ends softly', () => {
   const logo = sine(2, 1320, 0.2, 2);
   const voice = sine(1, 660, 0.3);
@@ -3423,9 +3448,8 @@ test('Kade-AI credit: chapters, the script and the transcript count the opening 
     warning: '',
     credit: {
       lead: 3.5,
-      logo: 'logo 3',
-      start: { text: 'Audio description by Kade-AI.', at: 0, duration: 3.5 },
-      end: { text: 'Described by Kade-AI. More at kademurdock.com.', at: 15.5, duration: 4 },
+      start: { text: 'Audio description by Kade-AI.', at: 0, duration: 3.5, logo: 'logo 3' },
+      end: { text: 'Described by Kade-AI. More at kademurdock.com.', at: 15.5, duration: 4, logo: 'logo 4' },
     },
   };
   const text = transcriptText(report);
@@ -3441,9 +3465,10 @@ test('Kade-AI credit: chapters, the script and the transcript count the opening 
   assert.doesNotMatch(transcriptText({ ...report, credit: undefined }), /Credit/);
 });
 
-test('Kade-AI credit, original picture kept: logo and start line before the first frame, end line after the last, every time shifted, charged to the credit meter only', async () => {
+test('Kade-AI credit, original picture kept: its logo and start line before the first frame, the other logo and end line after the last, every time shifted, charged to the credit meter only as the credit part', async () => {
   const f = await fixture('credit-copy');
   const logo = await toneFile(f.dir, 'logo.flac', 1320, 2, true);
+  const closingLogo = await toneFile(f.dir, 'logo-end.flac', 1760, 2, true);
   const creditVoice = await toneFile(f.dir, 'credit-voice.wav', 880, 1.2);
   const words = [
     { start: 0.3, end: 1.8, word: 'dialogue' },
@@ -3456,9 +3481,12 @@ test('Kade-AI credit, original picture kept: logo and start line before the firs
     providers: backend,
     credit: {
       where: 'both',
-      logo: { file: logo, voiceAt: 0.8, name: 'logo t' },
-      meter: async (kind, _reserve, action) => {
-        booked.credit.push(kind);
+      logos: {
+        start: { file: logo, voiceAt: 0.8, name: 'logo s' },
+        end: { file: closingLogo, voiceAt: 0.8, name: 'logo e' },
+      },
+      meter: async (kind, _reserve, action, part) => {
+        booked.credit.push([kind, part]);
         await action();
       },
     },
@@ -3482,9 +3510,11 @@ test('Kade-AI credit, original picture kept: logo and start line before the firs
     ],
     'the job’s narrator at the engine’s own speed, under a session key of its own',
   );
-  assert.deepEqual(booked.credit, ['speech', 'speech']);
+  assert.deepEqual(booked.credit, [['speech', 'credit'], ['speech', 'credit']], 'booked as the credit part of the run');
   assert.deepEqual(booked.job, [], 'nothing of the credit on her meter');
-  assert.equal(credit.logo, 'logo t');
+  assert.equal(credit.start.logo, 'logo s', 'the opening logo before the start line');
+  assert.equal(credit.end.logo, 'logo e', 'the closing logo before the end line');
+  assert.equal(credit.logo, undefined, 'each line names its own logo');
   assert.ok(credit.lead > 0.8 + 1.2 + 0.4 && credit.lead < 0.8 + 1.2 + 0.7, `opening credit ${credit.lead} s`);
   assert.equal(credit.start.at, 0);
   assert.equal(credit.start.text, 'Audio description by Kade-AI.');
@@ -3492,7 +3522,7 @@ test('Kade-AI credit, original picture kept: logo and start line before the firs
   assert.ok(Math.abs(credit.end.at - (credit.lead + 9)) < 0.05, 'the closing card follows the film');
   assert.ok(Math.abs(result.report.outputSeconds - (credit.end.at + credit.end.duration)) < 1e-6);
   assert.ok(credit.end.duration > 0.6 + 2.4, `closing card ${credit.end.duration} s`);
-  assert.ok(log.some((line) => /^Kade-AI credit: opening \d+\.\d s, closing \d+\.\d s, logo t\.$/.test(line)), log.join('\n'));
+  assert.ok(log.some((line) => /^Kade-AI credit: opening \d+\.\d s with logo s, closing \d+\.\d s with logo e\.$/.test(line)), log.join('\n'));
   const narration = result.report.descriptions[0];
   assert.ok(Math.abs(narration.outputAt - (narration.at + credit.lead)) < 0.01, 'a description moves by the opening credit');
   assert.ok(Math.abs(result.report.dialogue[0].start - (0.3 + credit.lead)) < 0.05, 'and so does the dialogue');
@@ -3511,11 +3541,13 @@ test('Kade-AI credit, original picture kept: logo and start line before the firs
   for (const file of [result.video, result.audio]) {
     const heard = await wholeSound(file);
     const at = (from, frequency) => toneLevel(heard.subarray(Math.round(from * sampleRate), Math.round((from + 0.25) * sampleRate)), frequency);
-    assert.ok(at(0.3, 1320) > 0.01, `the logo plays first (${file})`);
+    assert.ok(at(0.3, 1320) > 0.01, `the opening logo plays first (${file})`);
+    assert.ok(at(0.3, 1760) < 0.004, 'not the closing one');
     assert.ok(at(0.3, 220) < 0.004, 'before the film’s own sound');
     assert.ok(at(0.8 + 0.4, 880) > 0.02, 'then the start line');
     assert.ok(at(credit.lead + 0.5, 220) > 0.04, 'then the film');
-    assert.ok(at(credit.end.at + 0.9, 1320) > 0.01, 'the logo again after it');
+    assert.ok(at(credit.end.at + 0.9, 1760) > 0.01, 'the closing logo after it');
+    assert.ok(at(credit.end.at + 0.9, 1320) < 0.004, 'not the opening one again');
     assert.ok(at(credit.end.at + 0.9, 220) < 0.004, 'with the film over');
     assert.ok(at(credit.end.at + 0.6 + 1.0, 880) > 0.02, 'and the end line');
   }
@@ -3551,7 +3583,10 @@ test('Kade-AI credit, picture re-encoded: the first frame is held under the open
   const result = await run(f, words, [], {
     providers: backend,
     settings: { ...settings, mode: 'extended' },
-    credit: { where: 'both', logo: { file: logo, voiceAt: 0.8, name: 'logo t' } },
+    credit: {
+      where: 'both',
+      logos: { start: { file: logo, voiceAt: 0.8, name: 'logo t' }, end: { file: logo, voiceAt: 0.8, name: 'logo t' } },
+    },
   });
   const credit = result.report.credit;
   const leadFrames = credit.lead * 30;
@@ -3597,26 +3632,31 @@ test('Kade-AI credit: a preview gets the opening only; the closing card only by 
     providers: withCreditVoice(providers(f.voice, [], [{ ...cue, at: 1, until: 5 }]), creditVoice),
     keeper: keeperFor(plan).keeper,
     stopAfter: 10,
-    credit: { where: 'both', logo: { file: logo, voiceAt: 0.8, name: 'logo t' } },
+    credit: {
+      where: 'both',
+      logos: { start: { file: logo, voiceAt: 0.8, name: 'logo t' }, end: { file: logo, voiceAt: 0.8, name: 'logo u' } },
+    },
     log,
   });
   assert.equal(preview.partial, true);
   assert.ok(preview.report.credit.start && !preview.report.credit.end, 'the film has not ended');
   assert.ok(Math.abs(preview.report.outputSeconds - (preview.report.credit.lead + 13)) < 0.05);
-  assert.ok(log.some((line) => /^Kade-AI credit: opening \d+\.\d s, logo t\.$/.test(line)), log.join('\n'));
+  assert.ok(log.some((line) => /^Kade-AI credit: opening \d+\.\d s with logo t\.$/.test(line)), log.join('\n'));
+  assert.equal(preview.report.credit.start.logo, 'logo t');
 
   const g = await fixture('credit-missing-logo');
   const voice = await toneFile(g.dir, 'credit-voice.wav', 880, 1.2);
   const missing = [];
   const endOnly = await run(g, [], [{ ...cue, at: 2, until: 6 }], {
     providers: withCreditVoice(providers(g.voice, [], [{ ...cue, at: 2, until: 6 }]), voice),
-    credit: { where: 'end', logo: { file: join(g.dir, 'no-such-logo.flac'), voiceAt: 0.8, name: 'logo 9' } },
+    credit: { where: 'end', logos: { end: { file: join(g.dir, 'no-such-logo.flac'), voiceAt: 0.8, name: 'logo 9' } } },
     log: missing,
   });
   const credit = endOnly.report.credit;
   assert.equal(credit.lead, 0, 'no opening credit');
   assert.equal(credit.start, undefined);
-  assert.equal(credit.logo, undefined, 'said without the logo');
+  assert.equal(credit.end.logo, undefined, 'said without the logo');
+  assert.ok(missing.some((line) => /^Kade-AI credit: closing \d+\.\d s without a logo\.$/.test(line)), missing.join('\n'));
   assert.ok(Math.abs(credit.end.duration - (0.6 + 0.15 + 1.2 + 0.45)) < 0.15, `closing card ${credit.end.duration} s`);
   assert.ok(missing.some((line) => /^The Kade-AI logo \(logo 9\) could not be read, so the closing credit is said without it/.test(line)), missing.join('\n'));
   assert.ok(Math.abs(endOnly.report.descriptions[0].outputAt - endOnly.report.descriptions[0].at) < 0.01, 'nothing moves');

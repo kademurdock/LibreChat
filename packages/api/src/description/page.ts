@@ -793,12 +793,12 @@ export const descriptionBrowserScript: string = String.raw`
   function heldText(j){var held=Number(j.heldUSD)||0,n=Number(j.heldLooks)||0;if(held<0.005)return '';return n>1?' The '+n+' looks in progress can cost at most '+cents(held)+' together; you pay only what they really cost.':' The '+(n===1?'look':'work')+' in progress can cost at most '+cents(held)+'; you pay only what it really costs.';}
   /**
    * A finished or stopped run's parts, in whole cents that add up to the total said, and what was
-   * included at no charge. A run from before its parts were kept has one part, other: it is not
-   * broken down.
+   * included at no charge (only a label's first letter is lowered, so "the Kade-AI credit" keeps
+   * its name). A run from before its parts were kept has one part, other: it is not broken down.
    */
   function partsText(j){
     var paid=[],free=[],voicePaid=false;
-    (j.costParts||[]).forEach(function(p){if(!p||typeof p.label!=='string')return;if(p.included){free.push(p.label.toLowerCase()+(Number(p.usd)>=0.005?' ('+cents(p.usd)+', paid by the platform)':''));return;}if(p.part==='voice')voicePaid=true;paid.push(p);});
+    (j.costParts||[]).forEach(function(p){if(!p||typeof p.label!=='string')return;if(p.included){free.push(p.label.charAt(0).toLowerCase()+p.label.slice(1)+(Number(p.usd)>=0.005?' ('+cents(p.usd)+', paid by the platform)':''));return;}if(p.part==='voice')voicePaid=true;paid.push(p);});
     if(paid.length===1&&paid[0].part==='other')paid=[];
     var whole=shares(paid.map(function(p){return p.usd;}),spentOf(j));
     var said=paid.map(function(p,i){return (i?p.label.charAt(0).toLowerCase()+p.label.slice(1):p.label)+': '+centsSaid(whole[i],p.usd);});

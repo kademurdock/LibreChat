@@ -73,7 +73,7 @@ import { FAMILY_PACK_NOTE, FAMILY_PACK_REFUSAL } from '../family/pack';
 import type { FamilyFeatures } from '../family/pack';
 import { rehearsalProviders } from './rehearsal';
 import { creditWhere, logoChoice, logos } from './credit';
-import type { Credit } from './credit';
+import type { Credit, CreditLogo } from './credit';
 import { MediaError, decodeVoice, dropDescriptionText, probe, stretch } from './media';
 import { clock, spokenLength } from './transcript';
 import { settingsSchema, Halt, tiers } from './types';
@@ -222,7 +222,8 @@ type Hooks = {
   features?: (req: Request) => FamilyFeatures;
   /**
    * The folder of the Kade-AI sonic logos (logo-1.flac to logo-5.flac, 48 kHz stereo), chosen by
-   * KADE_DESCRIPTION_LOGO (credit.ts `logoChoice`). Without it the credit is said without a logo.
+   * KADE_DESCRIPTION_LOGO_START and KADE_DESCRIPTION_LOGO_END (credit.ts `logoChoice`). Without it
+   * the credit is said without a logo.
    */
   creditLogos?: string;
 };
@@ -267,7 +268,8 @@ type Job = {
   runParts?: RunParts;
   /**
    * Work the platform paid for and never charged this run (dialogue timing from its own
-   * Deepgram credit), real dollars by part: shown to the administrator, "included" to others.
+   * Deepgram credit, the Kade-AI credit's speech), real dollars by part: shown to the
+   * administrator, "included" to others.
    */
   runIncluded?: RunParts;
   runKind?: RunKind;
@@ -366,6 +368,7 @@ const runPartsSchema = {
   failedTries: Number,
   dialogue: Number,
   voice: Number,
+  credit: Number,
   other: Number,
 };
 const jobSchema = new mongoose.Schema<Job>(
@@ -505,24 +508,28 @@ const checking = ['checking', 'importing'];
 const describing: RunKind[] = ['fresh', 'preview', 'finish', 'rehearsal'];
 /**
  * The Kade-AI credit for one run (credit.ts): both ends by default, the closing card only or none
- * by KADE_DESCRIPTION_CREDIT, none when the administrator left it out of the job. The logo is
- * `logo-N.flac` in the wrapper's logo folder, N from KADE_DESCRIPTION_LOGO.
+ * by KADE_DESCRIPTION_CREDIT, none when the administrator left it out of the job. Each end's logo
+ * is `logo-N.flac` in the wrapper's logo folder: N from KADE_DESCRIPTION_LOGO_START (3) for the
+ * opening and KADE_DESCRIPTION_LOGO_END (4) for the closing card.
  */
 function creditFor(settings: Settings, meter: Meter, folder?: string): Credit | null {
   const where = creditWhere();
   if (where === 'off' || settings.credit === false) return null;
-  const number = logoChoice();
+  const logo = (which: 'start' | 'end'): CreditLogo | undefined => {
+    const number = logoChoice(which);
+    return number && folder
+      ? {
+          file: join(folder, `logo-${number}.flac`),
+          voiceAt: logos[number].voiceAt,
+          name: `logo ${number}`,
+        }
+      : undefined;
+  };
+  const start = where === 'both' ? logo('start') : undefined;
+  const end = logo('end');
   return {
     where,
-    ...(number && folder
-      ? {
-          logo: {
-            file: join(folder, `logo-${number}.flac`),
-            voiceAt: logos[number].voiceAt,
-            name: `logo ${number}`,
-          },
-        }
-      : {}),
+    ...(start || end ? { logos: { ...(start ? { start } : {}), ...(end ? { end } : {}) } } : {}),
     meter,
   };
 }
@@ -579,6 +586,7 @@ const costPartNames: readonly (readonly [CostPart, string, string])[] = [
   ['failedTries', 'Tries that failed', 'failed'],
   ['dialogue', 'Dialogue timing', 'dialogue'],
   ['voice', 'Narration voice', 'voice'],
+  ['credit', 'The Kade-AI credit', 'credit'],
   ['other', 'Other processing', 'other'],
 ];
 /** The part a metered request is booked to: the engine's name for a look, otherwise by its kind. */
@@ -598,8 +606,9 @@ const partsTotal = (parts: RunParts | undefined): number =>
  * What the run's settled requests cost, part by part, at the owner's price (`factor`); the parts
  * add up to what the run has spent. Money a run booked before its parts were kept (a run begun
  * before Sep 27 2026) is "Other processing". Work the platform paid for and never charged
- * (dialogue timing from its own credit) follows, marked included: at its real cost for the
- * administrator (`platform`), at nothing for anyone else.
+ * (dialogue timing from its own Deepgram credit, and the Kade-AI credit's speech on every copy)
+ * follows, marked included: at its real cost for the administrator (`platform`), at nothing for
+ * anyone else.
  */
 function costLines(
   job: Pick<Job, 'runParts' | 'runIncluded'>,
@@ -2743,7 +2752,10 @@ export function createDescriptionRouter(hooks: Hooks): {
         ? {
             rehearsal: true,
             tiers: { default: tier, choices: [...tiers] },
-            credit: { where: creditWhere(), logo: logoChoice() },
+            credit: {
+              where: creditWhere(),
+              logos: { start: logoChoice('start'), end: logoChoice('end') },
+            },
           }
         : {}),
       previewSeconds: previewSeconds(),
@@ -4614,9 +4626,11 @@ export function createDescriptionRouter(hooks: Hooks): {
             );
           });
         /**
-         * Dialogue timing paid from the platform's Deepgram credit: never quoted, never charged,
-         * never counted against her approval. Logged, and booked as `transcription-included`
-         * at list price so the operator can watch how much credit is used.
+         * Dialogue timing paid from the platform's Deepgram credit, and the Kade-AI credit's
+         * speech (the platform's own promotion): never quoted, never charged, never counted
+         * against her approval. Logged, and booked as `transcription-included` or
+         * `speech-included` at list price so the operator can watch what they cost; the run's
+         * `runIncluded` keeps them by part (`dialogue`, `credit`) for the cost breakdown.
          */
         const includedMeter: Meter = async (kind, reserve, action, part) => {
           signal.throwIfAborted();
@@ -4838,8 +4852,8 @@ export function createDescriptionRouter(hooks: Hooks): {
           log: (message) => hooks.log(line('dv.engine', { id: job._id, message: scrub(message) })),
           /*
            * The Kade-AI credit is the platform's own promotion: its speech is booked as included
-           * work, charged to nobody and never counted against her approval. A rehearsal's
-           * stand-in voice never calls a meter.
+           * work (the `credit` part of the cost breakdown), charged to nobody and never counted
+           * against her approval. A rehearsal's stand-in voice never calls a meter.
            */
           credit: creditFor(settings, rehearsal ? meter : includedMeter, hooks.creditLogos),
         };
