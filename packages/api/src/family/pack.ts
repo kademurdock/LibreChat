@@ -28,6 +28,12 @@ import type { LibraryAccount } from '../library/access';
  * jukebox's song links join the pack only when it is exactly '1'. Default off,
  * because the submitted iPhone 2.2.0's review notes promise the demo account
  * can use them. The Sound Booth's media link is the pack's either way.
+ *
+ * Part 295 (Sep 27 2026): the Sound Booth's trained styles (trainedStyles) join
+ * the pack. The Soul style was taught from commercial soul and R&B records, so
+ * its Style choice is greyed out for everyone outside the pack and refused by
+ * the server (FAMILY_PACK_STYLES_REFUSAL). Booth words name no person, so that
+ * refusal does not say who to ask.
  * -------------------------------------------------------------------------- */
 
 /** One person's pack features. True means usable now; false means shown greyed out. */
@@ -40,6 +46,9 @@ export interface FamilyFeatures {
   jukeboxLinks: boolean;
   /** Kade's shared Library shelves. */
   familyLibrary: boolean;
+  /** The Sound Booth's trained YuE2 styles (the Style choice: Soul, Kids), taught from real
+   * recordings, commercial songs among them (Part 295, Sep 27 2026). */
+  trainedStyles: boolean;
 }
 
 /** What GET /api/kade/features answers. */
@@ -58,6 +67,10 @@ export const FAMILY_PACK_NOTE: string = 'Part of the Family feature pack';
 export const FAMILY_PACK_REFUSAL: string =
   'Media links are part of the Family feature pack. Ask Kade to add it to your account.';
 
+/** What the Sound Booth answers (403) when an account outside the pack asks for a trained style. */
+export const FAMILY_PACK_STYLES_REFUSAL: string =
+  'Trained styles are part of the Family feature pack, and this account does not have it. Set Style to None, then make the music again.';
+
 /** True when the describer's and the jukebox's links belong to the pack (env exactly '1'). */
 export function familyPackLinksGated(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.KADE_FAMILY_PACK_LINKS === '1';
@@ -75,7 +88,7 @@ export function familyFeatures(
 ): FamilyFeatures {
   const pack = familyPack(user);
   const open = !!user && (pack || !familyPackLinksGated(env));
-  return { mediaLinks: pack, describerLinks: open, jukeboxLinks: open, familyLibrary: pack };
+  return { mediaLinks: pack, describerLinks: open, jukeboxLinks: open, familyLibrary: pack, trainedStyles: pack };
 }
 
 export function familyFeaturesView(

@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueCoverSettings, yueCoverOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -74,6 +74,32 @@ router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
   next();
 });
 router.use(createLyricsRouter(musicReferenceHooks));
+/* Part 295 (Sep 27 2026): the trained styles are part of the Family feature pack. The Soul style
+ * was taught from commercial soul and R&B records, so only an account with the pack
+ * (familyFeatures(user).trainedStyles; never the App Review seats) may render in a style. The
+ * guide greys the Style choice out for everyone else (withStyleAccess), and an older client that
+ * still shows it live is refused here, on the server, before the YuE2 router queues anything,
+ * with words that say what to change. An unreadable pack answer counts as outside the pack. */
+/** Any Style but None, for YuE2: yueInput's own reading of `band`. */
+function asksForStyle(body) {
+  const b = body || {};
+  return b.engine === 'yue2' && !!b.band && b.band !== 'none';
+}
+function styleAllowed(user) {
+  try {
+    return boothFeatures(user).trainedStyles === true;
+  } catch (e) {
+    return false;
+  }
+}
+router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
+  if (!asksForStyle(req.body)) return next();
+  return requireJwtAuth(req, res, () => {
+    if (styleAllowed(req.user)) return next();
+    logger.warn(`[soundbooth/render] trained style REFUSED user=${req.user && req.user.id}: not in the Family feature pack`);
+    return res.status(403).json({ error: FAMILY_PACK_STYLES_REFUSAL, pack: true });
+  });
+});
 /* Part 293 review: the Kids trained style is a children's choir, and it never sings explicit
  * words, whoever asks and whatever wrote them. The desk writes clean for the Kids style only
  * when it is told the style, and the iPhone does not send it yet, so the render is checked here,
@@ -908,7 +934,9 @@ const GUIDE = {
         { key: 'lyrics', label: 'Lyrics', hint: 'The words to sing. Use [Verse] and [Chorus] tags, or choose Write my song idea to draft them.', kind: 'text' },
         { key: 'reference_voice_url', label: 'Recording to cover (optional)', hint: 'Import one song, up to six minutes. You can also paste a media link to a song, from YouTube or another media site. YuE2 uses its melody for a new arrangement; this does not clone the original singer. Add the words you want under Lyrics.', kind: 'clip', max: 1 },
         { key: 'abc', label: 'Optional composition (ABC)', hint: 'Use a melody score instead of an imported recording.', kind: 'text' },
-        ...(yueStylesEnabled() ? [{ key: 'band', label: 'Style', hint: 'A singing style taught to YuE2 from real recordings. Soul sings with one expressive female lead and rich harmonies. Kids sings with a children’s choir. None is plain YuE2. The style leads the song and Music direction still steers it on top, for example slow and gentle, or piano only. Works for new songs and for covers.', kind: 'choice', options: ['none', ...Object.keys(yueStyles)], default: 'none' }] : []),
+        /* Part 295: the hint lives in packages/api music/yue.ts (yueStyleHint); /health greys the
+         * choice out for anyone outside the Family feature pack (withStyleAccess). */
+        ...(yueStylesEnabled() ? [{ key: 'band', label: 'Style', hint: yueStyleHint, kind: 'choice', options: ['none', ...Object.keys(yueStyles)], default: 'none' }] : []),
         { key: 'cot', label: 'Following a score (only used with an ABC composition)', hint: 'This does nothing for a brand new song. With an ABC score, Melody follows the tune and frees the arrangement; Full keeps the chords too. A cover from a recording always uses Melody.', kind: 'choice', options: ['melody','full'], default: 'melody' },
         { key: 'count', label: 'Number of takes', hint: 'Request 1 to 4 variations together. Up to two generate in parallel when GPUs are available. Every take uses a different seed and additional GPU time.', kind: 'number', min: 1, max: 4, step: 1, default: 1 },
         { key: 'weirdness', label: 'Creative variation (weirdness)', hint: '50 keeps the original sound settings. Lower is more predictable; higher explores less likely musical choices and may sound less coherent. Changes sampling temperature; this is a YuE2 control, not a copy of Suno.', kind: 'range', min: 0, max: 100, step: 1, default: 50 },
@@ -2944,6 +2972,17 @@ function withYueCovers(guide) {
 function boothFeatures(user) {
   return require('@librechat/api').familyFeatures(user);
 }
+/** Part 295: the YuE2 Style choice for THIS person. Outside the Family feature pack it stays,
+ * with every option, greyed out: `locked` is "Part of the Family feature pack" and the hint says
+ * so (yue.ts yueStyleAccess). A guide without the choice (styles switched off) is unchanged, and
+ * the shared GUIDE is never changed. */
+function withStyleAccess(guide, user) {
+  const yue = guide && guide.engines && guide.engines.yue2;
+  if (!yue || !Array.isArray(yue.settings) || !yue.settings.some((s) => s.key === 'band')) return guide;
+  const settings = yueStyleAccess(yue.settings, styleAllowed(user), require('./kadeSoundBoothLink').PACK_NOTE);
+  if (settings === yue.settings) return guide;
+  return { ...guide, engines: { ...guide.engines, yue2: { ...yue, settings } } };
+}
 
 /* ============================ POST /idea ================================== */
 /* Surprise me, for songs (Parts 228 to 231; the whole story is at the top of
@@ -3048,7 +3087,8 @@ router.get('/health', requireJwtAuth, async (req, res) => {
      * (kadeSoundBoothLink.js guideFor). `features` is the same map
      * GET /api/kade/features answers. */
     /* Part 295: price lines and prices at this person's factor (real for Kade). */
-    guide: require('./kadeSoundBoothLink').guideFor(withYueCovers(guidePriced(GUIDE, priceFactor(req.user))), req.user, boothFeatures),
+    /* Part 295: the Style choice is greyed out outside the pack (withStyleAccess). */
+    guide: withStyleAccess(require('./kadeSoundBoothLink').guideFor(withYueCovers(guidePriced(GUIDE, priceFactor(req.user))), req.user, boothFeatures), req.user),
     features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
@@ -3068,5 +3108,5 @@ router.get('/health', requireJwtAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { priceFactor, guidePriced, withYueCovers, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, kidsStyleRefusal, verseCount };
+module.exports._internals = { priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, kidsStyleRefusal, verseCount };
 

@@ -174,7 +174,9 @@ async function covers(post, base, sentInputs, provider) {
     try {
         assert.throws(() => yueInput({ script: 'Lullaby', lyrics: '', singing: INSTRUMENTAL, band: 'kids' }, ON), { message: 'Styles are for singing, so an instrumental cannot use one. Set Style to None, or choose Sung under Singing or instrumental.' });
         const styled = yueInput({ script: 'Lullaby', lyrics: 'Words', band: 'soul', reference_voice_url: recording }, ON);
-        assert.equal(styled.lora_key, 'yue2-loras/soul-sona1800.pt'); assert.equal(styled.cot, 'full'); assert.equal(styled.keep_harmony, true);
+        // Part 295: Soul is the real-music composer LoRA (soundBoothStyle.selftest.cjs has the rest).
+        assert.equal(styled.lora_key, 'yue2-loras/soul-real-step1000.pt'); assert.equal(styled.cot, 'full'); assert.equal(styled.keep_harmony, true);
+        assert.equal(styled.style, 'kdsoulr, in the style of kdsoulr. English, contemporary R&B and soul. Lullaby');
         assert.equal(yueInput({ script: 'Lullaby', lyrics: 'Words', band: 'kids' }, ON).cot, 'off');
     } finally {
         if (before === undefined) delete process.env.YUE_STYLES_ENABLED; else process.env.YUE_STYLES_ENABLED = before;

@@ -13,6 +13,7 @@ import {
   FAMILY_PACK_NAME,
   FAMILY_PACK_NOTE,
   FAMILY_PACK_REFUSAL,
+  FAMILY_PACK_STYLES_REFUSAL,
   familyFeatures,
   familyFeaturesRouter,
   familyFeaturesView,
@@ -78,13 +79,14 @@ test('truth table: the pack is exactly the Library family permission', () => {
   });
 });
 
-test('truth table: media links and the family library follow the pack whatever the switch says', () => {
+test('truth table: media links, the family library and trained styles follow the pack whatever the switch says', () => {
   withEnv({ KADE_LIBRARY_HIDDEN_FROM: undefined, NOTIFY_TEST_USER_IDS: undefined, KADE_APP_REVIEW_USER_IDS: undefined }, () => {
     for (const env of [OFF, ON]) {
       for (const row of table) {
         const map = familyFeatures(row.user, env);
         assert.equal(map.mediaLinks, row.pack, `${row.who} mediaLinks`);
         assert.equal(map.familyLibrary, row.pack, `${row.who} familyLibrary`);
+        assert.equal(map.trainedStyles, row.pack, `${row.who} trainedStyles`);
       }
     }
   });
@@ -122,7 +124,7 @@ test('a second App Review or demo seat listed only in KADE_APP_REVIEW_USER_IDS n
       assert.equal(familyLibraryMember(user), false, 'and no family shelves');
       for (const env of [OFF, ON]) assert.equal(familyFeatures(user, env).mediaLinks, false, 'the downloader stays shut');
     }
-    assert.deepEqual(familyFeatures({ id: EARLY }, ON), { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false });
+    assert.deepEqual(familyFeatures({ id: EARLY }, ON), { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false, trainedStyles: false });
     assert.equal(familyPack({ id: VISCHECK }), false);
     assert.equal(familyPack({ id: AMBER_A }), true, 'everyone else is unchanged');
     assert.equal(familyPack({ id: BOB, role: 'ADMIN' }), true);
@@ -131,17 +133,23 @@ test('a second App Review or demo seat listed only in KADE_APP_REVIEW_USER_IDS n
 
 test('the map has one boolean per feature, and the view names the pack in plain words', () => {
   const map = familyFeatures({ id: AMBER_A }, OFF);
-  assert.deepEqual(Object.keys(map).sort(), ['describerLinks', 'familyLibrary', 'jukeboxLinks', 'mediaLinks']);
+  assert.deepEqual(Object.keys(map).sort(), ['describerLinks', 'familyLibrary', 'jukeboxLinks', 'mediaLinks', 'trainedStyles']);
   for (const value of Object.values(map)) assert.equal(typeof value, 'boolean');
   assert.equal(FAMILY_PACK_NAME, 'Family feature pack');
   assert.equal(FAMILY_PACK_NOTE, 'Part of the Family feature pack');
   assert.equal(FAMILY_PACK_REFUSAL, 'Media links are part of the Family feature pack. Ask Kade to add it to your account.');
+  /* Part 295: the Sound Booth's words name no person, so the styles refusal says what to change instead. */
+  assert.equal(
+    FAMILY_PACK_STYLES_REFUSAL,
+    'Trained styles are part of the Family feature pack, and this account does not have it. Set Style to None, then make the music again.',
+  );
+  assert.doesNotMatch(FAMILY_PACK_STYLES_REFUSAL, /Kade/);
   assert.deepEqual(familyFeaturesView({ id: BOB }, ON), {
     familyPack: false,
     name: FAMILY_PACK_NAME,
     note: FAMILY_PACK_NOTE,
     refusal: FAMILY_PACK_REFUSAL,
-    features: { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false },
+    features: { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false, trainedStyles: false },
   });
 });
 
@@ -187,7 +195,7 @@ test('GET /api/kade/features answers the signed-in person, fresh every time, and
     res = await fetch(`${base}/api/kade/features`);
     const body = (await res.json()) as { familyPack: boolean; features: Record<string, boolean> };
     assert.equal(body.familyPack, false);
-    assert.deepEqual(body.features, { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false });
+    assert.deepEqual(body.features, { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false, trainedStyles: false });
   } finally {
     if (saved === undefined) delete process.env.KADE_FAMILY_PACK_LINKS;
     else process.env.KADE_FAMILY_PACK_LINKS = saved;

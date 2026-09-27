@@ -32,14 +32,22 @@ export function yueTakeCost(executionMs: number | undefined, gpu?: string | null
   return (ms / 1000) * (row ? row.usdPerSecond : yueFallbackUsdPerSecond);
 }
 
-/* Trained styles: each is an AR LoRA trained on a folder of real songs, kept in the private
+/* Trained styles: each is an AR LoRA trained on real recordings, kept in the private
  * bucket and folded into the composer by the worker for one song. The lead sentence is the
  * caption its LoRA was trained under, trigger word first, so it has to open the style text.
  * They were trained score-free, so a new song in a style asks the worker for cot off.
- * Chosen by ear on the stock decoder (Part 239): kids step 1200, soul the sonauto step 1800,
- * which replaced the first soul LoRA because it sings one steady voice instead of drifting
- * between a man and a woman. Nothing here names a person or a private folder: this menu is
- * read by everyone who uses the booth. */
+ * Kids: step 1200, chosen by ear on the stock decoder (Part 239), trained on recordings of
+ * children's choirs.
+ * Soul (Part 295, Sep 27 2026): the composer LoRA taught from real soul and R&B records
+ * (trigger kdsoulr, step 1000, the steadiest words of the pilot), chosen in a blind test over
+ * the AI-trained sonauto style (yue2-loras/soul-sona1800.pt, lead "kdsona, in the style of
+ * kdsona. English, female lead vocal."), which stays in the bucket: putting that key and lead
+ * back is the rollback. Its training captions were "kdsoulr, in the style of kdsoulr.
+ * English, <era> <sub-genre>, <pace>, <female|male> lead vocal, ...", one per song, so the
+ * lead names the genre and leaves the singer to Music direction. Trained on commercial
+ * records, so the whole Style choice is part of the Family feature pack (yueStyleAccess).
+ * Nothing here names a person or a private folder: this menu is read by everyone who uses the
+ * booth. */
 export const yueStyles: Record<string, { key: string; scale: number; lead: string }> = {
   kids: {
     key: 'yue2-loras/kids-step1200.pt',
@@ -47,13 +55,43 @@ export const yueStyles: Record<string, { key: string; scale: number; lead: strin
     lead: "kdkids, in the style of kdkids. English, children's choir, a group of young voices singing together, bright and clear.",
   },
   soul: {
-    key: 'yue2-loras/soul-sona1800.pt',
+    key: 'yue2-loras/soul-real-step1000.pt',
     scale: 1,
-    lead: 'kdsona, in the style of kdsona. English, female lead vocal.',
+    lead: 'kdsoulr, in the style of kdsoulr. English, contemporary R&B and soul.',
   },
 };
 export function yueStylesEnabled(): boolean {
   return process.env.YUE_STYLES_ENABLED === '1';
+}
+
+/** The Style choice's hint in the booth guide (the `band` setting). Both styles were taught from
+ * real recordings; it names no person and no folder. */
+export const yueStyleHint: string =
+  'A singing style taught to YuE2 from real recordings. Soul learned from soul and R&B records, most of them with a woman singing lead; write female lead vocal or male lead vocal in Music direction to choose the voice. Kids learned from recordings of children’s choirs and sings with a children’s choir. None is plain YuE2. The style leads the song and Music direction still steers it on top, for example slow and gentle, or piano only. Works for new songs and for covers.';
+/** Added to the Style hint for an account outside the Family feature pack, so a client that
+ * does not read `locked` yet still says why the choice does nothing there. */
+export const yueStyleLockedSentence: string =
+  ' Part of the Family feature pack, so songs on this account use None, plain YuE2.';
+
+/**
+ * The Style choice for one person. With the Family feature pack (`allowed`) the settings come
+ * back unchanged. Without it the `band` setting stays, with every option, and gains `locked`
+ * (the pack's note, "Part of the Family feature pack") plus a sentence on its hint: clients show
+ * it greyed out, never hidden (Apple's 2.3.1). The booth route refuses a style from such an
+ * account on its own (kadeSoundBooth.js), so an older client that shows the choice live gets a
+ * plain answer instead of a song.
+ */
+export function yueStyleAccess<T extends { key: string; hint: string }>(
+  settings: T[],
+  allowed: boolean,
+  note: string,
+): Array<T | (T & { locked: string })> {
+  if (allowed || !settings.some((setting) => setting.key === 'band')) return settings;
+  return settings.map((setting) =>
+    setting.key === 'band'
+      ? { ...setting, hint: `${setting.hint}${yueStyleLockedSentence}`, locked: note }
+      : setting,
+  );
 }
 
 /* Part 295: the official cover recipe (chords kept) and instrumentals, behind YUE_COVERS_V2=1.

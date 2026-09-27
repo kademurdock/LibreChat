@@ -43,6 +43,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
   button.act.primary { background:#1f7a49; border-color:#1f7a49; color:#fff; }
   button.act.quiet { border-color:#8a919c; color:inherit; font-weight:600; }
   button.act[disabled] { opacity:.55; cursor:default; }
+  select[disabled] { opacity:.55; cursor:default; }
   button.act:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-visible, .engcard:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   .engines { display:flex; gap:.8rem; flex-wrap:wrap; }
   .engcard { flex:1 1 16rem; text-align:left; font:inherit; color:inherit; background:#fff; border:2px solid #b9bfc9; border-radius:14px; padding:.9rem 1rem; cursor:pointer; }
@@ -379,7 +380,15 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(s.kind==='range') return head+'<input type="range" id="'+id+'" data-key="'+s.key+'" min="'+s.min+'" max="'+s.max+'" step="'+(s.step||1)+'" aria-describedby="'+id+'_h" value="'+(v!=null?esc(v):s.default)+'"><output id="'+id+'_value" for="'+id+'">'+(v!=null?esc(v):s.default)+'</output>';
         if(s.kind==='number') return head+'<input type="number" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" step="'+(s.step||'any')+'"'+(s.min!=null?' min="'+s.min+'"':'')+(s.max!=null?' max="'+s.max+'"':'')+' placeholder="'+(s.default!=null?esc('normal is '+s.default):'leave empty')+'" value="'+(v!=null?esc(v):'')+'">';
         if(s.kind==='toggle') return '<label class="field"><input type="checkbox" id="'+id+'" data-key="'+s.key+'"'+(((v!=null)?v:s.default)?' checked':'')+' aria-describedby="'+id+'_h"> '+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
-        if(s.kind==='choice') return head+'<select id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h">'+s.options.map(function(o){ var lab = o===''?'None':o.replace(/_/g,' '); return '<option value="'+esc(o)+'"'+((v!=null?v:s.default)===o?' selected':'')+'>'+esc(lab.charAt(0).toUpperCase()+lab.slice(1))+'</option>'; }).join('')+'</select>';
+        /* Part 295: a Family feature pack choice outside the pack (the YuE2 Style) comes with
+         * locked. It is shown greyed out, never hidden: its label, every option and a hint that
+         * says "Part of the Family feature pack" (the server wrote that sentence), the select
+         * disabled on its default, and collect() never sends it. */
+        if(s.kind==='choice'){
+          var locked=!!s.locked, chosen=locked?s.default:(v!=null?v:s.default);
+          var choiceHead=locked?'<label class="field" for="'+id+'">'+esc(s.label)+'</label><p class="hint locked" id="'+id+'_h">'+esc(s.hint)+'</p>':head;
+          return choiceHead+'<select id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h"'+(locked?' disabled':'')+'>'+s.options.map(function(o){ var lab = o===''?'None':o.replace(/_/g,' '); return '<option value="'+esc(o)+'"'+(chosen===o?' selected':'')+'>'+esc(lab.charAt(0).toUpperCase()+lab.slice(1))+'</option>'; }).join('')+'</select>';
+        }
         if(s.kind==='clip'){
           /* Explicit extensions, not audio/* — a .ogg is typed video/ogg or
            * application/ogg as often as audio/ogg, so a wildcard filter can
@@ -524,7 +533,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var g = state.guide.engines[state.engine];
       g.settings.forEach(function(s){
         var v = state.values[s.key];
-        if(s.kind==='clip') return;
+        if(s.kind==='clip' || s.locked) return;
         if(s.kind==='toggle'){ if(s.key==='validate'){ b.validate = (v===undefined || v===null) ? true : !!v; return; } b[s.key] = (v===undefined || v===null) ? !!s.default : !!v; return; }
         if(s.kind==='number'||s.kind==='range'){ var n = parseFloat(v); if(!isNaN(n)) b[s.key] = (s.key==='seed'||s.key==='pitch') ? Math.round(n) : n; return; }
         if(v!=null && String(v).trim()!=='') b[s.key] = v;
