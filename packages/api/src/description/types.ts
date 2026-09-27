@@ -2,6 +2,13 @@ import { z } from 'zod';
 
 export const detailLevels = ['essential', 'standard', 'rich'] as const;
 export const volumeLevels = ['softer', 'balanced', 'louder'] as const;
+/**
+ * Google's two ways to run a look (Sep 26 2026): `flex`, its lower-priority queue at half the price
+ * per token, and `standard`. The server's choice is KADE_DESCRIPTION_TIER (providers.ts
+ * `descriptionTier`); `Settings.tier` is the administrator's own choice for one job.
+ */
+export const tiers = ['flex', 'standard'] as const;
+export type Tier = (typeof tiers)[number];
 export type Settings = {
   voice: string;
   /** Usual narration speed, 1 to 3. */
@@ -17,6 +24,11 @@ export type Settings = {
   firstLook?: boolean;
   /** Describe only this part of the source, in source seconds. Absent means the whole video. */
   range?: Interval;
+  /**
+   * The administrator's tier for this job's looks, to compare the two by ear. The router drops it
+   * from anyone else's request (`readSettings`); absent, looks ask the server's tier.
+   */
+  tier?: Tier;
 };
 export const settingsSchema: z.ZodType<Settings, z.ZodTypeDef, unknown> = z
   .object({
@@ -40,6 +52,8 @@ export const settingsSchema: z.ZodType<Settings, z.ZodTypeDef, unknown> = z
         'The part to describe must be at least one second long.',
       )
       .optional(),
+    /** A tier this server does not know is dropped, never an error. */
+    tier: z.enum(tiers).optional().catch(undefined),
   })
   .refine(
     (value) => value.maxRate >= value.rate,
@@ -100,6 +114,12 @@ export type VisionCall = {
   served?: string;
   /** The backend that served it, such as "Google" (google-vertex) or "Google AI Studio". */
   provider?: string;
+  /**
+   * The tier this call asked for: flex, or standard (the tier chosen, a fallback from flex, or the
+   * re-look of a look that thought under the floor).
+   */
+  requested?: Tier;
+  /** The tier OpenRouter says served it (`service_tier`: "flex", or "default" for standard). */
   tier?: string;
   finish?: string;
   nativeFinish?: string;

@@ -35,6 +35,7 @@ import type {
   Plan,
   SectionRecord,
   Settings,
+  Tier,
   Word,
 } from './types';
 import type { Keeper, Outcome, Providers, SavedLook, Request as EngineRequest } from './engine';
@@ -50,6 +51,7 @@ import {
   speechPerByte,
   providerDetail,
   providerProblem,
+  tierFor,
   transcriptionPerMinute,
 } from './providers';
 import {
@@ -71,7 +73,7 @@ import type { FamilyFeatures } from '../family/pack';
 import { rehearsalProviders } from './rehearsal';
 import { MediaError, decodeVoice, dropDescriptionText, probe, stretch } from './media';
 import { clock, spokenLength } from './transcript';
-import { settingsSchema, Halt } from './types';
+import { settingsSchema, Halt, tiers } from './types';
 import { sampleRate } from './mix';
 
 type RunKind = 'fresh' | 'preview' | 'finish' | 'revoice' | 'correction' | 'redo' | 'rehearsal';
@@ -516,14 +518,33 @@ const retain = (job: Pick<Job, 'expiresAt'>, days: number): Date =>
   new Date(Math.max(new Date(job.expiresAt).getTime(), Date.now() + days * day));
 
 /**
- * Measured provider costs per minute of video (Sep 2026 samples, rounded up), for estimates only.
- * A close look is quoted at vision plus closeLook, $0.046 a minute. The Road Runner A/B of Sep 26
- * 2026 measured about $0.035 a minute for a first close look within its 8,000-token thinking
- * budget, and about $0.064 a minute for each second look at high effort, which 1 in 7 to 1 in 3
- * sections needed: about $0.045 to $0.055 a minute in all. Her approval (`approvalRule`) leaves
- * room above the quote.
+ * Measured provider costs per minute of video (Sep 2026 samples, rounded up), for estimates only,
+ * by the tier the run's looks ask (`tierOf`). A close look is quoted at vision plus closeLook.
+ *
+ * Standard: $0.046 a minute for a close look. The Road Runner A/B of Sep 26 2026 measured about
+ * $0.035 a minute for a first close look within its 8,000-token thinking budget, and about $0.064
+ * a minute for each second look at high effort, which 1 in 7 to 1 in 3 sections needed: about
+ * $0.045 to $0.055 a minute in all. Her approval (`approvalRule`) leaves room above the quote.
+ *
+ * Flex: $0.035 a minute for a close look. Round 2 of the bake-off (Sep 26, three kits)
+ * measured flex close looks at $0.020 a minute at list price, and 4 of 14 thought under the floor;
+ * their second looks go to standard ($0.064 a minute), so a typical flex run costs about $0.038.
+ * A flex try that fails is asked again on standard, and a run whose every look fell back costs
+ * what standard does, about $0.055 a minute plus $0.0052 of dialogue timing. At 1.5 times the
+ * quote plus $0.10, her approval for $0.035 plus the dialogue timing is $0.0603 a minute plus
+ * $0.145, so even that run finishes without the over-quote stop (with free dialogue timing, up to
+ * about 58 minutes). Normal looks and the first look, not measured on flex, are quoted the same
+ * way: at the standard rate divided by the approval's 1.5, $0.014.
  */
-const rates = { vision: 0.021, closeLook: 0.025, firstLook: 0.021 };
+const rates: Record<Tier, { vision: number; closeLook: number; firstLook: number }> = {
+  standard: { vision: 0.021, closeLook: 0.025, firstLook: 0.021 },
+  flex: { vision: 0.014, closeLook: 0.021, firstLook: 0.014 },
+};
+/**
+ * The tier a run's looks ask (providers.ts `tierFor`): the administrator's choice for the job,
+ * otherwise the server's, and always standard for a model that is not Google's.
+ */
+const tierOf = (settings: Pick<Settings, 'tier'>): Tier => tierFor({ tier: settings.tier });
 /** Fixed overhead per run: prompts and joins for a description run, a re-voice, a correction. */
 const overhead = { describe: 0.03, revoice: 0, correction: 0 };
 const setAsideRule = { factor: 1.1, extraUSD: 0.05 };
@@ -581,10 +602,11 @@ const askWithin = (
 function priceFor(work: Work, settings: Settings): Price {
   const per = (seconds: number, rate: number) => (seconds / 60) * rate;
   const looked = work.looks > 0;
+  const rate = rates[tierOf(settings)];
   const breakdown: Breakdown = {
-    vision: per(work.looks, rates.vision) + (looked ? work.fixed : 0),
-    closeLook: settings.closeLook ? per(work.looks, rates.closeLook) : 0,
-    firstLook: settings.firstLook ? per(work.firstLook, rates.firstLook) : 0,
+    vision: per(work.looks, rate.vision) + (looked ? work.fixed : 0),
+    closeLook: settings.closeLook ? per(work.looks, rate.closeLook) : 0,
+    firstLook: settings.firstLook ? per(work.firstLook, rate.firstLook) : 0,
     speech:
       (work.bytes === undefined
         ? per(work.voiced, speechPerMinute(settings.detail))
@@ -1033,6 +1055,8 @@ export function createDescriptionRouter(hooks: Hooks): {
    */
   const factorFor = (req: Request): number =>
     hooks.wallet && hooks.priceFactor ? validFactor(hooks.priceFactor(hooks.actor(req))) : 1;
+  /** The administrator: sees real prices, rehearses, curates and may choose a job's tier. */
+  const isAdmin = (req: Request): boolean => hooks.actor(req).role === 'ADMIN';
   const storage = () => hooks.storage();
   const warn = (message: string) => (hooks.warn ?? hooks.log)(message);
   /** Every storage call gives up after two minutes, and sooner when the job is stopped. */
@@ -1814,8 +1838,17 @@ export function createDescriptionRouter(hooks: Hooks): {
   };
   const storedSpans = (job: Job, range?: Interval) =>
     job.planKey === planKey(range) && (job.spans?.length ?? 0) > 1 ? job.spans : undefined;
-  function readSettings(job: Job, body: unknown): { settings: Settings; preview: boolean } {
+  /**
+   * A new run's settings from her request. The tier is the administrator's alone, to compare the
+   * two by ear: anyone else's is dropped, so their looks ask the server's tier.
+   */
+  function readSettings(
+    job: Job,
+    body: unknown,
+    admin: boolean,
+  ): { settings: Settings; preview: boolean } {
     const settings = settingsSchema.parse(body);
+    if (!admin || !settings.tier) delete settings.tier;
     const preview =
       z.object({ preview: z.boolean().optional() }).parse(body ?? {}).preview === true;
     const seconds = job.seconds || 0;
@@ -1866,9 +1899,15 @@ export function createDescriptionRouter(hooks: Hooks): {
       savedToLibrary: '',
     };
   }
-  function launchStart(job: Job, body: unknown, from: string[], version: number): Launch {
+  function launchStart(
+    job: Job,
+    body: unknown,
+    from: string[],
+    version: number,
+    admin: boolean,
+  ): Launch {
     if (!job.seconds) throw new Problem('Wait for the video to finish checking.');
-    const { settings, preview } = readSettings(job, body);
+    const { settings, preview } = readSettings(job, body, admin);
     const whole = workingSeconds(job.seconds, settings.range);
     const spans = storedSpans(job, settings.range);
     const stopAfter = preview ? previewSeconds() : undefined;
@@ -1905,11 +1944,11 @@ export function createDescriptionRouter(hooks: Hooks): {
       throw new Problem('This video has a newer version. Reopen it before making another.');
     return value;
   }
-  function launchReanalyze(job: Job, body: unknown): Launch {
+  function launchReanalyze(job: Job, body: unknown, admin: boolean): Launch {
     if (job.state !== 'done' || !job.seconds)
       throw new Problem('Wait for this video to finish before describing it again.');
     const expectedVersion = expected(job, body, true);
-    const launch = launchStart(job, body, ['done'], nextVersion(job));
+    const launch = launchStart(job, body, ['done'], nextVersion(job), admin);
     return {
       ...launch,
       expectedVersion,
@@ -2244,14 +2283,14 @@ export function createDescriptionRouter(hooks: Hooks): {
    * A free run of the whole pipeline through real storage and the real media tools, with
    * stand-in providers. Nothing is set aside and no paid request is ever sent.
    */
-  function launchRehearsal(job: Job, body: unknown): Launch {
+  function launchRehearsal(job: Job, body: unknown, admin: boolean): Launch {
     if (job.state !== 'ready')
       throw new Problem('A rehearsal runs on a checked video that is ready to describe.');
     const input = {
       voice: job.settings?.voice || 'Rehearsal tone',
       ...(body && typeof body === 'object' ? body : {}),
     };
-    const launch = launchStart(job, input, ['ready'], readyVersion(job));
+    const launch = launchStart(job, input, ['ready'], readyVersion(job), admin);
     return {
       ...launch,
       kind: 'rehearsal',
@@ -2269,6 +2308,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     action: string,
     body: unknown,
     strict: boolean,
+    admin: boolean,
   ): Promise<Launch> {
     if (action === 'start' || action === 'preview') {
       if (job.state === 'failed' && !job.settings)
@@ -2279,9 +2319,15 @@ export function createDescriptionRouter(hooks: Hooks): {
         );
       if (job.state !== 'ready') throw new Problem('Wait for the video to finish checking.');
       const input = { ...((body as object) ?? {}), preview: action === 'preview' };
-      return launchStart(job, action === 'start' ? body : input, ['ready'], readyVersion(job));
+      return launchStart(
+        job,
+        action === 'start' ? body : input,
+        ['ready'],
+        readyVersion(job),
+        admin,
+      );
     }
-    if (action === 'reanalyze') return launchReanalyze(job, body);
+    if (action === 'reanalyze') return launchReanalyze(job, body, admin);
     if (action === 'revoice') return launchRevoice(job, body, strict);
     if (action === 'redo') return launchRedo(job, body);
     if (action === 'finish') return launchFinish(job);
@@ -2396,6 +2442,9 @@ export function createDescriptionRouter(hooks: Hooks): {
           owner: ownerTag(job.owner),
           kind: launch.kind,
           version: queued.version || 1,
+          /* The tier its looks ask, and whether the administrator chose it for this job. */
+          tier: tierOf(settings),
+          ...(settings.tier ? { tierChosen: true } : {}),
           estimateUSD: price.estimateUSD,
           setAsideUSD: reservation.cents / 100,
           approvedUSD,
@@ -2429,8 +2478,11 @@ export function createDescriptionRouter(hooks: Hooks): {
     const dialogue = freeDialogue() ? 0 : transcriptionPerMinute;
     /* Part 295: every price here is the person's own (her balance is already in her money). */
     const factor = factorFor(req);
+    /* At the server's tier; the administrator's estimates follow the tier she picks. */
+    const tier = tierFor({});
+    const rate = rates[tier];
     const perMinute = (detail: Settings['detail']) =>
-      Math.round((rates.vision + speechPerMinute(detail) + dialogue) * factor * 10000) / 10000;
+      Math.round((rate.vision + speechPerMinute(detail) + dialogue) * factor * 10000) / 10000;
     /** A rule applied to her quote gives her hold: the fixed part is at her price too. */
     const rule = (value: { factor: number; extraUSD: number }) =>
       factor === 1 ? value : { ...value, extraUSD: atPrice(value.extraUSD, factor) };
@@ -2452,13 +2504,13 @@ export function createDescriptionRouter(hooks: Hooks): {
         rich: perMinute('rich'),
       },
       extrasPerMinuteUSD: {
-        closeLook: atPrice(rates.closeLook, factor),
-        firstLook: atPrice(rates.firstLook, factor),
+        closeLook: atPrice(rate.closeLook, factor),
+        firstLook: atPrice(rate.firstLook, factor),
       },
       setAside: rule(setAsideRule),
       approval: rule(approvalRule),
       keep: { days: keepDays, maxDays: keepMaxDays },
-      ...(hooks.actor(req).role === 'ADMIN' ? { rehearsal: true } : {}),
+      ...(isAdmin(req) ? { rehearsal: true, tiers: { default: tier, choices: [...tiers] } } : {}),
       previewSeconds: previewSeconds(),
       library: !!hooks.library,
       defaultLibraryPath,
@@ -2874,7 +2926,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       dialogueIncluded: freeDialogue(),
     };
     try {
-      const launch = await launchFor(job, input.action, body, false);
+      const launch = await launchFor(job, input.action, body, false, isAdmin(req));
       const { estimateUSD, breakdown, seconds } = launch.price;
       const approvedUSD =
         input.action === 'resume' && job.state === 'failed' && job.overQuote
@@ -2929,6 +2981,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       preview ? 'preview' : 'start',
       await withStartingVoice(req, req.body),
       true,
+      isAdmin(req),
     );
     await requireVoice(launch.settings.voice);
     res.status(202).json(await single(await enqueue(req, job, launch)));
@@ -2981,7 +3034,9 @@ export function createDescriptionRouter(hooks: Hooks): {
       res.json(await single(job));
       return;
     }
-    res.status(202).json(await single(await enqueue(req, job, launchRehearsal(job, req.body))));
+    res
+      .status(202)
+      .json(await single(await enqueue(req, job, launchRehearsal(job, req.body, true))));
   });
   route('post', '/jobs/:id/keep', async (req, res) => {
     const job = await owned(req);
@@ -3073,7 +3128,7 @@ export function createDescriptionRouter(hooks: Hooks): {
   route('post', '/jobs/:id/reanalyze', async (req, res) => {
     whenConfigured();
     const job = await owned(req);
-    const launch = launchReanalyze(job, req.body);
+    const launch = launchReanalyze(job, req.body, isAdmin(req));
     await requireVoice(launch.settings.voice);
     res.status(202).json(await single(await enqueue(req, job, launch)));
   });
@@ -4182,6 +4237,8 @@ export function createDescriptionRouter(hooks: Hooks): {
             detail: settings.detail,
             closeLook: !!settings.closeLook,
             firstLook: !!runSettings.firstLook,
+            tier: tierOf(settings),
+            ...(settings.tier ? { tierChosen: true } : {}),
             estimateUSD: job.runEstimateUSD,
             setAsideUSD: reservation.cents / 100,
             approvedUSD: job.approvedUSD,

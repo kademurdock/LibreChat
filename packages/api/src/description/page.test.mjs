@@ -1444,6 +1444,37 @@ test('start: the confirm names the choices, price and set-aside; focus lands on 
   assert.equal($('start').hidden, true);
 });
 
+test('Google tier: hidden from anyone the server does not offer it to, and never sent', async () => {
+  const server = makeServer();
+  const ready = server.add(jobOf({ name: 'Road Runner', seconds: 120 }));
+  const env = await boot({ server, search: '?id=' + ready.id });
+  await env.timers.advance(700);
+  assert.equal(env.$('tier-box').hidden, true);
+  assert.equal('tier' in server.last(/\/estimate$/).body.settings, false);
+  await env.click('start');
+  assert.equal('tier' in server.last(/\/start$/).body, false);
+});
+
+test('Google tier: the administrator may choose one; it goes with the estimate and the start, and the confirm names it', async () => {
+  const server = makeServer();
+  server.override((method, path) => path === '/config', () => ({ status: 200, body: { ...config, tiers: { default: 'flex', choices: ['flex', 'standard'] } } }));
+  const ready = server.add(jobOf({ name: 'Road Runner', seconds: 120 }));
+  const env = await boot({ server, search: '?id=' + ready.id });
+  const { $ } = env;
+  await env.timers.advance(700);
+  assert.equal(visible($('tier-box')), true);
+  assert.equal($('tier').options[0].textContent, 'Server default (flex)');
+  assert.equal($('tier').value, '');
+  assert.equal('tier' in server.last(/\/estimate$/).body.settings, false, 'the server default sends no tier');
+  await env.choose('tier', 'standard');
+  await env.timers.advance(700);
+  assert.match(env.status(), /^Google tier: standard\. /);
+  assert.equal(server.last(/\/estimate$/).body.settings.tier, 'standard');
+  await env.click('start');
+  assert.match(env.dialogs.at(-1).text, /first look off, Google standard tier, notes: none\./);
+  assert.equal(server.last(/\/start$/).body.tier, 'standard');
+});
+
 /* ------------------------------------------------------------------------------------------
  * Preview, part of a video, redo, abandon, resume.
  * ---------------------------------------------------------------------------------------- */

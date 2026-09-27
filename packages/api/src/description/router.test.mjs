@@ -80,6 +80,8 @@ let failLaterSections = false;
 let storageHook = null;
 let refuseSection = -1;
 process.env.KADE_DESCRIPTION_RETRY_SECONDS = '0';
+/* The tests written before the tiers quote the standard tier, as every run did then; the tier test sets its own. */
+process.env.KADE_DESCRIPTION_TIER = 'standard';
 let voicesDown = false;
 let realTranscribe = false;
 let simulateConcurrentCosts = false;
@@ -3770,5 +3772,98 @@ test('copies made before Part 295 get an MP4 without their description text trac
   for (const id of all) {
     await call('delete', `/jobs/${id}`, 'quiet-owner').expect(200);
     assert.equal(versionsOf(id).length, 0, 'deleting the video erases the original and the rewrite');
+  }
+});
+
+/* Tiers (Sep 26): KADE_DESCRIPTION_TIER sets every run's tier and its quote; only the administrator
+ * may choose one for a job (settings.tier), to compare the two by ear. */
+test('tiers: quotes follow the tier; only the administrator may choose a job’s tier, and her choice reaches the run, its log and its copy', async () => {
+  walletMode = true;
+  const user = new mongoose.Types.ObjectId();
+  const administrator = new mongoose.Types.ObjectId();
+  const owner = String(user);
+  const admin = String(administrator);
+  const jobs = [];
+  const tierFor = (tier) => {
+    if (tier) process.env.KADE_DESCRIPTION_TIER = tier;
+    else delete process.env.KADE_DESCRIPTION_TIER;
+  };
+  try {
+    await mongoose.connection.collection('users').insertMany([{ _id: user, role: 'USER' }, { _id: administrator, role: 'ADMIN' }]);
+    await mongoose.connection.collection('balances').insertOne({ user, tokenCredits: 10e6 });
+    userFactor = 2;
+    const config = async (tier, who = admin, role) => {
+      tierFor(tier);
+      const asked = call('get', '/config', who);
+      return (await (role ? asked.set('x-role', role) : asked).expect(200)).body;
+    };
+    const flexConfig = await config(undefined);
+    assert.deepEqual(flexConfig.tiers, { default: 'flex', choices: ['flex', 'standard'] }, 'flex unless the server says otherwise');
+    assert.deepEqual(flexConfig.extrasPerMinuteUSD, { closeLook: 0.021, firstLook: 0.014 });
+    const standardConfig = await config('standard');
+    assert.deepEqual(standardConfig.tiers, { default: 'standard', choices: ['flex', 'standard'] });
+    assert.deepEqual(standardConfig.extrasPerMinuteUSD, { closeLook: 0.025, firstLook: 0.021 }, 'standard keeps today’s rates');
+    near(standardConfig.perMinuteUSD.standard - flexConfig.perMinuteUSD.standard, 0.007, 'a look a minute, standard less flex');
+    const userConfig = await config('flex', owner, 'user');
+    assert.equal(userConfig.tiers, undefined, 'only the administrator is offered the choice');
+    assert.deepEqual(userConfig.extrasPerMinuteUSD, { closeLook: 0.042, firstLook: 0.028 }, 'everyone else sees twice the real flex price');
+    tierFor(undefined);
+
+    /* A ten-minute part with the closer look: $0.035 a minute on flex, $0.046 on standard. */
+    const mine = await readyJob(admin, 'tier-estimate-admin1', 7200);
+    const theirs = await readyJob(owner, 'tier-estimate-user01', 7200);
+    jobs.push([mine, admin], [theirs, owner]);
+    const part = { ...settings, range: { start: 0, end: 600 }, closeLook: true };
+    const ask = async (id, who, extra = {}, role) => {
+      const asked = call('post', `/jobs/${id}/estimate`, who);
+      return (await (role ? asked.set('x-role', role) : asked).send({ action: 'start', settings: { ...part, ...extra } }).expect(200)).body;
+    };
+    const flex = await ask(mine, admin);
+    near(flex.breakdown.closeLook, 0.21, 'the closer look on flex');
+    near(flex.breakdown.vision, 0.14 + 0.03, 'the look on flex, plus the run’s overhead');
+    const chosen = await ask(mine, admin, { tier: 'standard' });
+    near(chosen.breakdown.closeLook, 0.25, 'her standard is quoted at standard');
+    near(chosen.breakdown.vision, 0.21 + 0.03, 'the look on standard');
+    const unknown = await ask(mine, admin, { tier: 'priority' });
+    assert.equal(unknown.allowed, true, 'a tier the server does not know is dropped, never an error');
+    near(unknown.breakdown.closeLook, 0.21, 'and the server’s tier is quoted');
+    tierFor('standard');
+    near((await ask(mine, admin)).breakdown.closeLook, 0.25, 'the server’s standard');
+    near((await ask(mine, admin, { tier: 'flex' })).breakdown.closeLook, 0.21, 'her flex over the server’s standard');
+    tierFor(undefined);
+    const userFlex = await ask(theirs, owner, {}, 'user');
+    const userStandard = await ask(theirs, owner, { tier: 'standard' }, 'user');
+    assert.deepEqual(userStandard, userFlex, 'anyone else’s tier is dropped');
+    near(userFlex.breakdown.closeLook, 0.42, 'at twice the real flex price');
+
+    /* Starting: her choice is kept with the job and reaches the run; anyone else's is not. */
+    const from = logLines.length;
+    const hers = await readyJob(admin, 'tier-run-admin-00001', 10);
+    const other = await readyJob(owner, 'tier-run-user-000001', 10);
+    jobs.push([hers, admin], [other, owner]);
+    await call('post', `/jobs/${other}/start`, owner).set('x-role', 'user').send({ ...settings, tier: 'standard' }).expect(202);
+    assert.equal((await Jobs.findById(other).lean()).settings.tier, undefined, 'dropped before it is stored');
+    const queuedOther = logged(from, 'dv.queue').find((entry) => entry.id === other);
+    assert.deepEqual([queuedOther.tier, queuedOther.tierChosen], ['flex', undefined], 'the server’s tier, not chosen');
+    await call('post', `/jobs/${other}/cancel`, owner).expect(200);
+
+    await call('post', `/jobs/${hers}/start`, admin).send({ ...settings, tier: 'standard' }).expect(202);
+    assert.equal((await Jobs.findById(hers).lean()).settings.tier, 'standard');
+    const queued = logged(from, 'dv.queue').find((entry) => entry.id === hers);
+    assert.deepEqual([queued.tier, queued.tierChosen], ['standard', true]);
+    const done = await settle(hers, ['done', 'failed'], admin);
+    assert.equal(done.state, 'done', done.error);
+    assert.equal(requests.at(-1).settings.tier, 'standard', 'the engine is told her tier');
+    const claimed = logged(from, 'dv.claim').find((entry) => entry.id === hers);
+    assert.deepEqual([claimed.tier, claimed.tierChosen], ['standard', true]);
+    assert.equal(done.copies.at(-1).settings.tier, 'standard', 'her copy says which tier made it');
+  } finally {
+    tierFor('standard');
+    userFactor = 1;
+    walletMode = false;
+    for (const [id, who] of jobs) {
+      await park(id);
+      await call('delete', `/jobs/${id}`, who).expect(200);
+    }
   }
 });

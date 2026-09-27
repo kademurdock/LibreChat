@@ -224,6 +224,8 @@ export function describedVideoPage(sharedHead: string): string {
 <label class="check"><input id="dv-first-look" type="checkbox" aria-describedby="dv-first-look-help"> Look through the whole film first to learn who is who (costs more)</label>
 <p id="dv-first-look-help" class="hint">An extra pass for consistent names and appearances. People are still named only when the film reveals their names; famous cartoon, puppet and game characters are named when they appear. Not used for videos of two minutes or less.</p>
 </fieldset>
+<div id="dv-tier-box" hidden><label for="dv-tier">Google tier for the looks (only you see this)</label><select id="dv-tier" aria-describedby="dv-tier-help"><option value="">Server default</option><option value="flex">Flex: about half the price; each look may wait in Google’s queue</option><option value="standard">Standard: the full price; looks answer sooner</option></select>
+<p id="dv-tier-help" class="hint">The same model either way. A flex look that fails is asked again on standard. The server log and each part’s record say which tier every look used, so you can describe the same video both ways with Write fresh descriptions and compare by ear.</p></div>
 <details id="dv-part"><summary>Describe only part of it</summary>
 <p id="dv-part-help" class="hint">Type times as hours:minutes:seconds, like 1:12:30, or minutes:seconds, like 4:05. Leave From empty to start at the beginning, or To empty to go to the end.</p>
 <div class="settings">
@@ -440,7 +442,7 @@ export const descriptionBrowserScript: string = String.raw`
   function previewSeconds(){return (config&&config.previewSeconds)||180;}
   function canPreview(){return describing()>previewSeconds()+60;}
   function previewName(){return 'Try the first '+length(previewSeconds())+(part().range?' of this part':'');}
-  function settings(){var s={voice:$('voice').value,rate:Number($('rate').value),maxRate:Number($('max-rate').value),mode:$('mode').value,detail:$('detail').value,volume:$('volume').value,notes:$('notes').value.trim(),closeLook:$('close-look').checked,firstLook:$('first-look').checked};var p=part();if(p.range)s.range=p.range;return s;}
+  function settings(){var s={voice:$('voice').value,rate:Number($('rate').value),maxRate:Number($('max-rate').value),mode:$('mode').value,detail:$('detail').value,volume:$('volume').value,notes:$('notes').value.trim(),closeLook:$('close-look').checked,firstLook:$('first-look').checked};if(config&&config.tiers&&$('tier').value)s.tier=$('tier').value;var p=part();if(p.range)s.range=p.range;return s;}
   function voiceFields(){var s=settings();return {voice:s.voice,rate:s.rate,maxRate:s.maxRate,mode:s.mode,volume:s.volume};}
   function renderPart(){
     var p=part();['part-from','part-to'].forEach(function(id){if(p.field===id)$(id).setAttribute('aria-invalid','true');else $(id).removeAttribute('aria-invalid');});
@@ -612,7 +614,7 @@ export const descriptionBrowserScript: string = String.raw`
   }
   function fillForm(saved){
     setVoice(saved.voice);setSpeed('rate',saved.rate);setSpeed('max-rate',saved.maxRate);[['mode','mode'],['detail','detail'],['volume','volume']].forEach(function(pair){setSelect(pair[1],saved[pair[0]]);});
-    $('notes').value=saved.notes||'';$('close-look').checked=!!saved.closeLook;$('first-look').checked=!!saved.firstLook;
+    $('notes').value=saved.notes||'';$('close-look').checked=!!saved.closeLook;$('first-look').checked=!!saved.firstLook;setSelect('tier',saved.tier||'');
     $('part-from').value=saved.range?clock(saved.range.start):'';$('part-to').value=saved.range?clock(saved.range.end):'';$('part').open=!!saved.range;
   }
   function freshForm(){
@@ -733,7 +735,7 @@ export const descriptionBrowserScript: string = String.raw`
     if(!job||job.state!=='done'||job.preview||!job.settings)return '';
     var saved=job.settings,s=settings(),changed=[];
     if(s.detail!==saved.detail)changed.push('detail');if(s.notes!==(saved.notes||''))changed.push('notes');
-    if(s.closeLook!==!!saved.closeLook)changed.push('closer look');if(s.firstLook!==!!saved.firstLook)changed.push('first look');
+    if(s.closeLook!==!!saved.closeLook)changed.push('closer look');if(s.firstLook!==!!saved.firstLook)changed.push('first look');if((s.tier||'')!==(saved.tier||''))changed.push('Google tier');
     if(JSON.stringify(s.range||null)!==JSON.stringify(saved.range||null))changed.push('part to describe');
     if(!changed.length)return '';
     return 'Your change to '+changed.join(', ').replace(/, ([^,]*)$/,' and $1')+' is only used by Write fresh descriptions.';
@@ -748,7 +750,8 @@ export const descriptionBrowserScript: string = String.raw`
     $('import').disabled=uploading||off||linkLocked()||!$('youtube').value.trim();
     $('library-use').disabled=uploading||off||!libraryLink($('library').value);
     $('settings').disabled=!config||busy||state==='deleting';
-    ['detail','notes','close-look','first-look','part-from','part-to','preset-commercials','preset-cartoon','preset-tv','preset-film','preset-custom'].forEach(function(id){$(id).disabled=resumeOnly;});
+    ['detail','notes','close-look','first-look','tier','part-from','part-to','preset-commercials','preset-cartoon','preset-tv','preset-film','preset-custom'].forEach(function(id){$(id).disabled=resumeOnly;});
+    $('tier-box').hidden=!(config&&config.tiers);
     $('voice-open').disabled=voicesOff;$('voice-default').disabled=voicesOff;$('sample-play').disabled=voicesOff;$('sample-fast').disabled=voicesOff;$('say-play').disabled=voicesOff;
     $('resume-note').hidden=!resumeOnly;
     if(resumeOnly){var saved=job.settings||{};$('resume-note').textContent='Continuing keeps the detail, notes and extra passes this attempt started with: '+(DETAIL_NAMES[saved.detail]||'Standard detail')+', closer look '+(saved.closeLook?'on':'off')+', first look '+(saved.firstLook?'on':'off')+'. You can change the voice, speeds, pauses and volume under Choose the narration before you continue.';}
@@ -996,11 +999,12 @@ export const descriptionBrowserScript: string = String.raw`
     var prefix='';
     if(id==='close-look')prefix='Closer look '+($('close-look').checked?'on.':'off.');
     if(id==='first-look')prefix='First look '+($('first-look').checked?'on.':'off.');
+    if(id==='tier')prefix='Google tier: '+($('tier').value||'server default')+'.';
     if(id==='part-from'||id==='part-to'){if(p.error){say(p.error,true);return;}prefix=p.range?'Part: '+length(p.range.end-p.range.start)+'.':'The whole video.';presetSig='';}
-    var paid=['detail','mode','close-look','first-look','part-from','part-to'].indexOf(id)>=0;
+    var paid=['detail','mode','close-look','first-look','tier','part-from','part-to'].indexOf(id)>=0;
     scheduleEstimates(paid&&!!job&&!!job.seconds,prefix);
   }
-  ['voice','rate','max-rate','mode','detail','volume','notes','close-look','first-look','part-from','part-to'].forEach(function(id){$(id).addEventListener('change',function(){onSettingsChange(id);});});
+  ['voice','rate','max-rate','mode','detail','volume','notes','close-look','first-look','tier','part-from','part-to'].forEach(function(id){$(id).addEventListener('change',function(){onSettingsChange(id);});});
   ['commercials','cartoon','tv','film','custom'].forEach(function(name){$('preset-'+name).addEventListener('change',function(){
     if(!$('preset-'+name).checked)return;
     if(name==='custom'){$('customize').open=true;say('Customize is open below the voice choices.',true);return;}
@@ -1179,7 +1183,7 @@ export const descriptionBrowserScript: string = String.raw`
   }
   $('stop-upload').onclick=function(){stopUpload=true;if(xhr)xhr.abort();};
   window.addEventListener('beforeunload',function(event){if(!uploading)return;event.preventDefault();event.returnValue='';});
-  function describeRun(s){return voiceName(s.voice)+' at '+s.rate+'×, '+(DETAIL_NAMES[s.detail]||s.detail)+', '+(s.mode==='extended'?'pausing the picture when needed':'keeping the original length')+', closer look '+(s.closeLook?'on':'off')+', first look '+(s.firstLook?'on':'off')+', notes: '+(s.notes||'none');}
+  function describeRun(s){return voiceName(s.voice)+' at '+s.rate+'×, '+(DETAIL_NAMES[s.detail]||s.detail)+', '+(s.mode==='extended'?'pausing the picture when needed':'keeping the original length')+', closer look '+(s.closeLook?'on':'off')+', first look '+(s.firstLook?'on':'off')+(s.tier?', Google '+s.tier+' tier':'')+', notes: '+(s.notes||'none');}
   function begin(preview){
     var id=preview?'preview':'start';if(!job||blocked(id))return;
     act(async function(){
@@ -1620,6 +1624,7 @@ export const descriptionBrowserScript: string = String.raw`
     $('limits').textContent='Up to 2 GB and '+length(sourceLimit)+'. One run describes up to '+length(config.maxMinutes*60)+'; for a longer video, choose the part to describe. Any video file works: if yours is not listed, switch the file type to All files. Your video stays private to your account. Only when you choose to describe it does it go to three services: the picture and sound to the video model (Google Gemini, through OpenRouter) to write the descriptions, the soundtrack to Deepgram to time the dialogue, and the description text to the platform voices for the narration.';
     var perMinute=config.perMinuteUSD||{},extras=config.extrasPerMinuteUSD||{};
     if(perMinute.standard){var extra=(extras.closeLook||0)+(extras.firstLook||0);$('prices').textContent='Standard detail costs about '+Math.round(perMinute.standard*100)+' cents a minute of video'+(extra?'; the extra passes add about '+Math.round(extra*100)+' cents a minute':'')+'. Checking a video is free.';$('prices').hidden=false;}
+    if(config.tiers)$('tier').options[0].textContent='Server default ('+config.tiers.default+')';
     $('library-box').hidden=!config.library;showLinkLock();
     $('folder').value=config.defaultLibraryPath||DEFAULT_FOLDER;
     if(config.library)call('/library-folders').then(function(data){data.folders.forEach(function(path){var option=document.createElement('option');option.value=path;$('folders').appendChild(option);});}).catch(function(){});

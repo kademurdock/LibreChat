@@ -979,6 +979,41 @@ test('re-look: a look that skipped its thinking is looked at once more, both are
   assert.ok(log.includes('Section 1 of 1: the second look cost $0.052, the first $0.029.'), log.join('\n'));
 });
 
+test('re-look: a look that thought under the floor is looked at again on the standard tier and weighed at it; a crammed end keeps the job’s tier; her chosen tier reaches the first look', async () => {
+  for (const [name, tier] of [
+    ['relook-tier-server', undefined],
+    ['relook-tier-flex', 'flex'],
+    ['relook-tier-standard', 'standard'],
+  ]) {
+    const f = await fixture(name, 9);
+    const { backend, looks } = thinking(f, [0, 5699]);
+    const weighed = [];
+    backend.expected = (look) => {
+      weighed.push([look.second, look.tier]);
+      return 0.01;
+    };
+    const { keeper } = keeperFor(undefined);
+    await run(f, [], [], { providers: backend, keeper, meter: ledger().meter, settings: tier ? { ...settings, tier } : settings });
+    assert.deepEqual(
+      looks.map((look) => [look.second, look.tier]),
+      [[undefined, tier], [true, 'standard']],
+      `${name}: the first look asks the job's tier (absent: the server's), the second standard`,
+    );
+    assert.deepEqual(weighed, [[true, 'standard']], `${name}: its room is weighed at the standard price`);
+  }
+  const f = await fixture('relook-tier-crammed', 40);
+  const early = { ...cue, at: 2, until: 5, pauseAt: 2, text: 'Look 1: a red square moves across the room.' };
+  const crammed = { ...cue, at: 38.5, until: 40, pauseAt: 38.5, text: 'Look 1: the square sweeps off the table.', shortText: 'It sweeps off.' };
+  const { backend, looks } = thinking(f, [5000, 4000], (n) => (n === 1 ? [early, crammed] : [{ ...early, text: 'Look 2: a red square moves across the room.' }]));
+  const { keeper } = keeperFor(undefined);
+  await run(f, [], [], { providers: backend, keeper, settings: { ...settings, tier: 'flex' } });
+  assert.deepEqual(
+    looks.map((look) => [look.second, look.tier]),
+    [[undefined, 'flex'], [true, 'flex']],
+    'a look that thought enough but crammed its end is looked at again on the job’s tier',
+  );
+});
+
 test('re-look: a look that thought enough, or whose provider does not say, is not looked at again', async () => {
   for (const [name, counts] of [
     ['relook-enough', [4945]],

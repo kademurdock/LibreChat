@@ -10,6 +10,7 @@ import type {
   FailureClass,
   Line,
   Meter,
+  Tier,
   VisionCall,
   Word,
 } from './types';
@@ -19,14 +20,36 @@ import { MediaError } from './media';
 import { Halt } from './types';
 
 /**
- * The standard tier by default. `google/gemini-3.8-flash:floor` in KADE_DESCRIPTION_MODEL lets
- * OpenRouter pick the cheapest endpoint, including Google's flex tier at about half the price,
- * where a queued background job may wait longer; retries then use the standard tier.
+ * The video model (KADE_DESCRIPTION_MODEL, default google/gemini-3.8-flash). The tier is chosen
+ * apart (`descriptionTier`, `routeFor`), so a routing variant is dropped from the name. `:floor`
+ * sorts by price: in the Sep 26 bake-off all 5 `:floor` looks ran on Kade's own Google AI Studio
+ * key (BYOK), which billed twice OpenRouter's list price. `:nitro` would admit the dearer
+ * priority tier.
  */
 export const visionModel = (): string =>
-  process.env.KADE_DESCRIPTION_MODEL || 'google/gemini-3.8-flash';
-/** The same model without the price-sorted variant, for a retry that should not queue on flex. */
-export const standardModel = (model: string): string => model.replace(/:floor$/, '');
+  (process.env.KADE_DESCRIPTION_MODEL || 'google/gemini-3.8-flash').replace(/:(floor|nitro)$/, '');
+/**
+ * The tier looks ask for unless the administrator chose one for a job (`Settings.tier`):
+ * KADE_DESCRIPTION_TIER, `flex` (the default) or `standard`. Round 2 of the close-look bake-off
+ * (Sep 26 2026, 25 graded looks on three kits) found Google's flex tier of the same model as good
+ * as standard (0.50 wrong details a look against 0.55, timing 0.13 s against 0.19 s, 75% of the
+ * events against 73%) at half the price per token, but slower: its first byte came 19 to 112 s in,
+ * a look took 72 s at the median and 199 s at the slowest, inside the 300 s deadline.
+ */
+export const descriptionTier = (): Tier =>
+  process.env.KADE_DESCRIPTION_TIER?.trim().toLowerCase() === 'standard' ? 'standard' : 'flex';
+/**
+ * OpenRouter's endpoint for Google Vertex's flex tier of google/gemini-3.8-flash ($0.375 and $1.875
+ * per million tokens, its endpoint list on Sep 26 2026). Other models are always asked on the
+ * standard tier (`tierFor`).
+ */
+export const flexEndpoint = 'google-vertex/global/flex';
+/**
+ * OpenRouter's name for Google AI Studio, where Kade's own key (BYOK, added Sep 26 2026) bills
+ * google/gemini-3.8-flash at $1.50 and $7.50 per million tokens, twice Vertex's standard price, and
+ * where flex was overloaded 5 of 6 tries. Every look leaves it out.
+ */
+export const aiStudio = 'google-ai-studio';
 export const voiceBase = (): string =>
   process.env.KADE_TTS_PROXY_URL || 'https://inworld-tts-proxy-production.up.railway.app';
 export const userAgent =
@@ -643,6 +666,11 @@ export type Look = {
    * crammed its end): it thinks at high effort with room for 48,000 tokens (`planFor`).
    */
   second?: boolean;
+  /**
+   * The tier its first try asks (`tierFor`): the administrator's choice for the job, or standard
+   * for the re-look of a look that thought under the floor. Absent: the server's `descriptionTier`.
+   */
+  tier?: Tier;
 };
 
 const declined: ReadonlySet<string> = new Set([
@@ -731,14 +759,41 @@ function planFor(look: Look): LookPlan {
 }
 /**
  * The most OpenRouter may charge for a look, in USD per million tokens (sent as `max_price`). The
- * reserve is priced at it, never below the real price per token.
+ * reserve is priced at it on either tier, so it covers a flex try that falls back to standard and
+ * is never below the real price per token.
  */
 const visionPrice = { prompt: 1.5, completion: 7.5 };
 /**
- * google/gemini-3.8-flash's standard list price, in USD per million tokens: what a look OpenRouter
- * never priced is expected to have cost (the `:floor` flex tier is about half of it).
+ * google/gemini-3.8-flash's list price on each tier, in USD per million tokens (OpenRouter's
+ * endpoint list, Sep 26 2026, the prices the bake-off was billed): what a look OpenRouter never
+ * priced is expected to have cost on the tier it asked.
  */
-const listPrice = { prompt: 0.75, completion: 3.75 };
+const listPrice: Record<Tier, { prompt: number; completion: number }> = {
+  flex: { prompt: 0.375, completion: 1.875 },
+  standard: { prompt: 0.75, completion: 3.75 },
+};
+/**
+ * The tier a look's first try asks: the look's own (`Look.tier`), otherwise the server's. Only
+ * Google's models have Vertex's flex tier, so any other model is asked on the standard tier.
+ */
+export function tierFor(look: Pick<Look, 'tier'>, model: string = visionModel()): Tier {
+  if (!model.startsWith('google/')) return 'standard';
+  return look.tier ?? descriptionTier();
+}
+/**
+ * OpenRouter's routing for one try (`provider`). Flex is pinned to Vertex's flex endpoint with no
+ * fallback inside OpenRouter (a flex request that falls back there would bill the standard price
+ * behind our back): when it fails, `analyze` asks again on the standard tier itself. Standard
+ * leaves only Google AI Studio out, where Kade's own key would bill twice the price; OpenRouter
+ * never routes a request without a tier to a flex or priority endpoint. Both keep the `max_price`
+ * ceiling, and both name AI Studio in `ignore`, so no look can reach her key.
+ */
+export function routeFor(tier: Tier): Record<string, unknown> {
+  const ceiling = { max_price: { ...visionPrice } };
+  return tier === 'flex'
+    ? { only: [flexEndpoint], ignore: [aiStudio], allow_fallbacks: false, ...ceiling }
+    : { ignore: [aiStudio], ...ceiling };
+}
 /**
  * Prompt tokens per second of the clip as sent (a close look's clip is four times the section).
  * Road Runner's looks of Sep 26 2026 had 34,029 prompt tokens (34,644 on Vertex) for an 89 s
@@ -760,29 +815,31 @@ const promptUSD = (seconds: number, prompt: string): number =>
 const reserveFor = (seconds: number, prompt: string, maxTokens: number): number =>
   promptUSD(seconds, prompt) + (maxTokens * visionPrice.completion) / 1e6 + 0.01;
 /**
- * What a look call is expected to have cost when OpenRouter never said, at the list price: its
- * clip (`clipTokensPerSecond`) and prompt text, and the reasoning it was expected to write plus
- * `answerTokens`, never more than its reserve. A close look of Road Runner's 74.5 s second section
- * comes to about $0.064 (it really cost $0.048 to $0.051 with this budget), its second look to
- * about $0.094.
+ * What a look call is expected to have cost when OpenRouter never said, at the list price of the
+ * tier it asked: its clip (`clipTokensPerSecond`) and prompt text, and the reasoning it was
+ * expected to write plus `answerTokens`, never more than its reserve. On standard, a close look of
+ * Road Runner's 74.5 s second section comes to about $0.064 (it really cost $0.048 to $0.051 with
+ * this budget), its second look to about $0.094; on flex, half that.
  */
 const expectedFor = (
   seconds: number,
   prompt: string,
   reasoningTokens: number,
   reserve: number,
+  tier: Tier,
 ): number =>
   Math.min(
     reserve,
-    ((seconds * clipTokensPerSecond + prompt.length / 4) * listPrice.prompt +
-      (reasoningTokens + answerTokens) * listPrice.completion) /
+    ((seconds * clipTokensPerSecond + prompt.length / 4) * listPrice[tier].prompt +
+      (reasoningTokens + answerTokens) * listPrice[tier].completion) /
       1e6,
   );
 /**
- * What a look is expected to cost before it is asked (`expectedFor` with its own `planFor`): for a
- * second look of Road Runner's 74.5 s close section about $0.094 (such looks really cost $0.086 to
- * $0.103), far above the thin first looks that call for one (AI Studio's 1,786-token look: $0.019).
- * The engine's re-look gate needs at least this much room.
+ * What a look is expected to cost before it is asked (`expectedFor` with its own `planFor`, on the
+ * tier its first try asks): for a standard second look of Road Runner's 74.5 s close section about
+ * $0.094 (such looks really cost $0.086 to $0.103), far above the thin first looks that call for
+ * one (AI Studio's 1,786-token look: $0.019). The engine's re-look gate needs at least this much
+ * room.
  */
 export function expectedLook(look: Look): number {
   const prompt = analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before);
@@ -792,6 +849,7 @@ export function expectedLook(look: Look): number {
     prompt,
     plan.reasoningTokens,
     reserveFor(look.seconds, prompt, plan.maxTokens),
+    tierFor(look),
   );
 }
 /**
@@ -810,18 +868,22 @@ const chatURL = 'https://openrouter.ai/api/v1/chat/completions';
  * How long one look request may take from sending to the last byte of its reply (axios's own
  * timeout only notices silence, and OpenRouter keeps a slow reply alive with spaces), a second
  * look's longer limit (`planFor`), and when to ask OpenRouter what a failed request cost:
- * milliseconds after the failure, all within `lookupMs`. Tests shorten them.
+ * milliseconds after the failure, all within `lookupMs`. `fallbackMs` is the wait before a failed
+ * flex try is asked again on the standard tier, a separate queue, so a Retry-After that flex sent
+ * is not waited out. Tests shorten them.
  */
 export const visionLimits: {
   requestMs: number;
   secondRequestMs: number;
   lookupAtMs: number[];
   lookupMs: number;
+  fallbackMs: number;
 } = {
   requestMs: 300000,
   secondRequestMs: 420000,
   lookupAtMs: [5000, 15000, 40000],
   lookupMs: 60000,
+  fallbackMs: 1000,
 };
 /**
  * What a failed look request tells the meter, set on the error it throws: OpenRouter's generation
@@ -1203,9 +1265,16 @@ function replyOf(choice: Choice | undefined, look: Look): Analysis {
  * known cost is settled even when the reply turns out unusable. A request that fails in a way that
  * may be billed, or a reply that did not report its cost, is priced before the meter settles it:
  * by OpenRouter's record of its generation when one appears within a minute, otherwise at what
- * such a look is expected to cost (`costed`, `unreported`, `expectedFor`), never at its whole
- * reserve. How the look thinks, its output tokens (and so its reserve) and its deadline come from
- * `planFor`.
+ * such a look is expected to cost at the list price of the tier it asked (`costed`, `unreported`,
+ * `expectedFor`), never at its whole reserve, which stays at the `max_price` ceiling on either
+ * tier. How the look thinks, its output tokens (and so its reserve) and its deadline come from
+ * `planFor`, the same on both tiers.
+ *
+ * The first try asks the look's tier (`tierFor`). On flex it is pinned to Vertex's flex endpoint
+ * (`routeFor`); when it fails in any way worth another try (busy, 429, 5xx, a timeout, an
+ * unusable or cut-off reply, or a 404 because OpenRouter has no flex endpoint to send it to), the
+ * next try, after `visionLimits.fallbackMs`, and every try after it ask the standard tier, never
+ * Google AI Studio. The timeout rule still allows one more try after a timeout in all.
  */
 export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Promise<Analysis> {
   const key = process.env.OPENROUTER_KEY;
@@ -1214,16 +1283,19 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
   const video = (await readFile(look.file)).toString('base64');
   const plan = planFor(look);
   const reserve = reserveFor(look.seconds, prompt, plan.maxTokens);
+  const model = visionModel();
+  const tier = tierFor(look, model);
+  /** The tier this try asks: the look's own first, standard for every retry. */
+  let lane: Tier = tier;
   /** How this try thinks, and what it is expected to reason: the plan's, until a retry caps it. */
   let reasoning: Reasoning = plan.reasoning;
   let reasoningTokens = plan.reasoningTokens;
   const pricing: Pricing = {
     key,
     signal,
-    expectedUSD: () => expectedFor(look.seconds, prompt, reasoningTokens, reserve),
+    expectedUSD: () => expectedFor(look.seconds, prompt, reasoningTokens, reserve, lane),
     log: look.log,
   };
-  const model = visionModel();
   let result: Analysis | undefined;
   let previous: unknown;
   let tries = 0;
@@ -1235,13 +1307,27 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
     if (error instanceof CutOff) return ++cutoffs <= 1;
     if (isTimeout(error) || (error instanceof Upstream && [408, 504].includes(error.status ?? 0)))
       return ++timeouts <= 1;
+    /** No flex endpoint to route to (renamed, dropped or down): standard may still answer. */
+    if (lane === 'flex' && statusOf(error) === 404) return true;
     return transient(error) || error instanceof z.ZodError;
   };
+  const growing = backoff(5000);
+  /**
+   * A failed flex try goes to the standard queue at once; standard's own retries then wait as a
+   * look that began on standard would (5 s, then 15 s), since flex's trouble says nothing of it.
+   */
+  const wait: Wait = (i, error) =>
+    lane === 'flex' ? visionLimits.fallbackMs : growing(tier === 'flex' ? i - 1 : i, error);
   await attempt(
     4,
     signal,
     async () => {
       const first = tries++ === 0;
+      lane = first ? tier : 'standard';
+      if (tries === 2 && tier === 'flex')
+        look.log?.(
+          `vision: the flex try failed (${providerDetail(previous) || 'unusable reply'}); asking again on the standard tier`,
+        );
       const loose = previous instanceof SyntaxError && !(previous instanceof CutOff);
       const cut = previous instanceof CutOff ? previous : undefined;
       /** A cap on the reasoning, when a reply's reasoning used up its room and a cap lowers it. */
@@ -1260,7 +1346,7 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
           ? '\n\nYour last reply was too long and was cut off. Give about half as many cues this time, and keep every text short.'
           : '';
       let failure: unknown;
-      const asked = first ? model : standardModel(model);
+      const asked = lane;
       try {
         await meter('vision', reserve, async () => {
           const began = Date.now();
@@ -1269,10 +1355,10 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
           try {
             data = await askModel(
               {
-                model: asked,
+                model,
                 max_tokens: plan.maxTokens,
                 reasoning,
-                provider: { max_price: { ...visionPrice } },
+                provider: routeFor(asked),
                 messages: [
                   {
                     role: 'user',
@@ -1309,9 +1395,9 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
               ? await unreported(generation || data.id || undefined, pricing)
               : { costUSD: reported };
           const cost = priced.costUSD;
-          calls.push(visionCall(asked, data, cost, (Date.now() - began) / 1000, generation));
+          calls.push(visionCall(model, asked, data, cost, (Date.now() - began) / 1000, generation));
           look.log?.(
-            `vision: tier ${data.service_tier ?? 'unknown'}, provider ${data.provider ?? 'unknown'}, finish ${choice?.finish_reason ?? 'none'}${choice?.native_finish_reason ? ` (${choice.native_finish_reason})` : ''}, output ${output ?? '?'} tokens (${data.usage?.completion_tokens_details?.reasoning_tokens ?? '?'} reasoning), $${cost.toFixed(4)}`,
+            `vision: asked ${asked === 'flex' ? `flex (${flexEndpoint})` : 'standard'}, served tier ${data.service_tier ?? 'unknown'}, provider ${data.provider ?? 'unknown'}, finish ${choice?.finish_reason ?? 'none'}${choice?.native_finish_reason ? ` (${choice.native_finish_reason})` : ''}, output ${output ?? '?'} tokens (${data.usage?.completion_tokens_details?.reasoning_tokens ?? '?'} reasoning), $${cost.toFixed(4)}`,
           );
           try {
             result = replyOf(choice, look);
@@ -1336,22 +1422,26 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
       }
     },
     retryable,
-    backoff(5000),
+    wait,
   );
   if (!result) throw new Plain('No visual description was returned.');
   return { ...result, vision: calls };
 }
 
-/** What OpenRouter said about one call: backend, tier, finish reason, tokens, cost and time. */
+/**
+ * What OpenRouter said about one call: the tier it asked and the one that served it, backend,
+ * finish reason, tokens, cost and time.
+ */
 function visionCall(
   model: string,
+  requested: Tier,
   data: z.infer<typeof modelSchema>,
   costUSD: number,
   seconds: number,
   heard?: string,
 ): VisionCall {
   const choice = data.choices[0];
-  const call: VisionCall = { model, costUSD, seconds: Math.round(seconds * 10) / 10 };
+  const call: VisionCall = { model, requested, costUSD, seconds: Math.round(seconds * 10) / 10 };
   const generation = data.id || heard;
   if (generation) call.generation = generation;
   if (data.model) call.served = data.model;

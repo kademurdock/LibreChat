@@ -756,6 +756,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           section.start - 15,
         ).slice(-4),
         log,
+        ...(settings.tier ? { tier: settings.tier } : {}),
       };
       const heardLines = linesFrom(inSection(section), section.start);
       /** One paid look in section seconds, without strip readings, with the crammed-end sign. */
@@ -885,7 +886,15 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       : 0;
     const heldBack = later * Math.max(quotedShare, meanLook);
     const margin = relookMargin * firstCost;
-    const expected = providers.expected?.({ ...input, second: true });
+    /**
+     * A look that thought under the floor is looked at again on the standard tier whatever the
+     * job's tier (flex skipped its thinking in 2 of 6 Road Runner looks in the Sep 26 bake-off);
+     * a look that only crammed its end is looked at again on the job's own tier.
+     */
+    const secondLook: Look = reasons.includes('reasoning')
+      ? { ...input, second: true, tier: 'standard' }
+      : { ...input, second: true };
+    const expected = providers.expected?.(secondLook);
     const own = typeof expected === 'number' && Number.isFinite(expected) ? expected : 0;
     const need = Math.max(margin, own) + heldBack;
     const usd = (value: number) => `$${Math.max(0, value).toFixed(3)}`;
@@ -931,10 +940,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     };
     let second: Analysis;
     try {
-      second = finish(
-        await providers.analyze({ ...input, second: true }, signal, gated),
-        'second ',
-      );
+      second = finish(await providers.analyze(secondLook, signal, gated), 'second ');
     } catch (error) {
       if (signal.aborted) throw error;
       if (stoppedAt !== undefined) {

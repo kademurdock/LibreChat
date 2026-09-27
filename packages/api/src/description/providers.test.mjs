@@ -21,6 +21,11 @@ import { MediaError } from './media.ts';
 import { folderBytes } from './youtube.ts';
 
 const axios = createRequire(import.meta.url)('axios');
+/*
+ * The tests written before the tiers ask the standard tier, as every look did then; the tier tests
+ * below set their own (KADE_DESCRIPTION_TIER, or the look's own `tier`).
+ */
+process.env.KADE_DESCRIPTION_TIER = 'standard';
 const scratch = await mkdtemp(join(tmpdir(), 'described-providers-test-'));
 after(async () => {
   await rm(scratch, { recursive: true, force: true });
@@ -154,10 +159,12 @@ function ledger() {
  * tokens a second and the prompt at 4 characters a token, and its expected reasoning plus 3,000
  * answer tokens, at the list price ($0.75 and $3.75 per million).
  */
-function expectedOf(reserve, { seconds = 10, maxTokens = 12000, reasoning = 6000 } = {}) {
+function expectedOf(reserve, { seconds = 10, maxTokens = 12000, reasoning = 6000, price = { prompt: 0.75, completion: 3.75 } } = {}) {
   const characters = ((reserve - 0.01 - maxTokens * 7.5e-6) / 1.5e-6 - seconds * 400) * 3;
-  return Math.min(reserve, ((seconds * 85 + characters / 4) * 0.75 + (reasoning + 3000) * 3.75) / 1e6);
+  return Math.min(reserve, ((seconds * 85 + characters / 4) * price.prompt + (reasoning + 3000) * price.completion) / 1e6);
 }
+/** Vertex's flex price for google/gemini-3.8-flash, per million tokens (OpenRouter's endpoint list, Sep 26 2026). */
+const flexPrice = { prompt: 0.375, completion: 1.875 };
 /** Shorter request and lookup limits for one test (the real ones: 300 s, and 5, 15 and 40 s within a minute). */
 async function limited(values, run) {
   const saved = { ...visionLimits, lookupAtMs: [...visionLimits.lookupAtMs] };
@@ -968,6 +975,260 @@ test('providers: a cut-off reply its reasoning filled is asked again with the re
         assert.equal(log.some((line) => line.includes('reasoning capped at')), !item.shorter, `${item.name}: ${log.join('\n')}`);
       }),
     );
+  } finally {
+    fake.restore();
+  }
+});
+
+/* ------------------------------------------------------------------------------------------
+ * Tiers (Sep 26): the same model on Google Vertex's flex tier (the default) or its standard tier,
+ * never through Google AI Studio, where Kade's own key bills twice the price.
+ * ---------------------------------------------------------------------------------------- */
+
+const flexRoute = {
+  only: ['google-vertex/global/flex'],
+  ignore: ['google-ai-studio'],
+  allow_fallbacks: false,
+  max_price: { prompt: 1.5, completion: 7.5 },
+};
+const standardRoute = { ignore: ['google-ai-studio'], max_price: { prompt: 1.5, completion: 7.5 } };
+/** Runs with KADE_DESCRIPTION_TIER set (undefined: unset, the server's default), then puts it back. */
+async function onTier(tier, run) {
+  const saved = process.env.KADE_DESCRIPTION_TIER;
+  if (tier === undefined) delete process.env.KADE_DESCRIPTION_TIER;
+  else process.env.KADE_DESCRIPTION_TIER = tier;
+  try {
+    return await run();
+  } finally {
+    if (saved === undefined) delete process.env.KADE_DESCRIPTION_TIER;
+    else process.env.KADE_DESCRIPTION_TIER = saved;
+  }
+}
+/** A reply as OpenRouter reports the tier that served it: flex when the request was pinned there. */
+const servedBy = (body) => ({
+  ...good,
+  model: 'google/gemini-3.8-flash-20260902',
+  provider: 'Google',
+  service_tier: body.provider?.only ? 'flex' : 'default',
+});
+/** No request may reach Google AI Studio: every route leaves it out, and none names it. */
+function neverAiStudio(bodies, what) {
+  for (const body of bodies) {
+    assert.deepEqual(body.provider.ignore, ['google-ai-studio'], what);
+    assert.equal(body.provider.order, undefined, what);
+    assert.ok((body.provider.only ?? []).every((slug) => slug === 'google-vertex/global/flex'), what);
+    assert.equal(body.model.endsWith(':floor'), false, what);
+  }
+}
+
+test('providers: on the flex tier, the default, every look is pinned to Vertex flex with no fallback inside OpenRouter, thinks and answers as on standard, and never reaches AI Studio', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const fake = fakeAxios(({ body }) => ({ headers: { 'x-generation-id': 'gen-tier' }, data: servedBy(body) }));
+  const log = [];
+  try {
+    const base = { ...(await clip('tier.mp4')), log: (line) => log.push(line) };
+    const close = { ...base, seconds: 40, brief: { ...brief, slowed: true } };
+    const looks = [{ ...base, brief: { ...brief, survey: true } }, base, close, { ...close, second: true }];
+    const askAll = async () => {
+      const results = [];
+      for (const look of looks) results.push(await analyze(look, signal, meter));
+      return results;
+    };
+    const flex = await onTier(undefined, askAll);
+    const flexBodies = fake.calls.splice(0).map((call) => call.body);
+    const standard = await onTier('standard', askAll);
+    const standardBodies = fake.calls.splice(0).map((call) => call.body);
+    for (const body of flexBodies) assert.deepEqual(body.provider, flexRoute);
+    for (const body of standardBodies) assert.deepEqual(body.provider, standardRoute);
+    neverAiStudio([...flexBodies, ...standardBodies], 'every look');
+    const withoutRoute = ({ provider: _route, ...rest }) => rest;
+    assert.deepEqual(flexBodies.map(withoutRoute), standardBodies.map(withoutRoute), 'the same request on either tier apart from its route');
+    assert.deepEqual(
+      flexBodies.map((body) => [body.model, body.reasoning, body.max_tokens, body.response_format.type]),
+      [
+        ['google/gemini-3.8-flash', { effort: 'low' }, 12000, 'json_schema'],
+        ['google/gemini-3.8-flash', { effort: 'medium' }, 12000, 'json_schema'],
+        ['google/gemini-3.8-flash', { max_tokens: 8000 }, 24000, 'json_schema'],
+        ['google/gemini-3.8-flash', { effort: 'high' }, 48000, 'json_schema'],
+      ],
+      'a survey, a normal look, a close look and a second look each keep their own reasoning and room',
+    );
+    assert.deepEqual(
+      flex.map((result) => result.vision.map((call) => [call.requested, call.tier, call.provider])),
+      looks.map(() => [['flex', 'flex', 'Google']]),
+      'each call records the tier it asked, the tier that served it and the backend',
+    );
+    assert.deepEqual(standard.map((result) => result.vision[0].requested), ['standard', 'standard', 'standard', 'standard']);
+    assert.match(log[0], /^vision: asked flex \(google-vertex\/global\/flex\), served tier flex, provider Google, finish stop, output 4000 tokens \(3500 reasoning\), \$0\.0310$/);
+    assert.match(log[4], /^vision: asked standard, served tier default, provider Google, finish stop/);
+
+    /* A look's own tier (the administrator's choice, or a thin look's re-look) wins over the server's. */
+    await onTier('standard', () => analyze({ ...base, tier: 'flex' }, signal, meter));
+    await onTier('flex', () => analyze({ ...base, tier: 'standard' }, signal, meter));
+    /* A value the server does not know is the default, flex. */
+    await onTier('priority', () => analyze(base, signal, meter));
+    /* A routing suffix on the model is dropped: :floor would sort her own AI Studio key in by price. */
+    process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash:floor';
+    await onTier('standard', () => analyze(base, signal, meter));
+    /* Only Google's models have a flex tier. */
+    process.env.KADE_DESCRIPTION_MODEL = 'qwen/qwen3-vl-flash';
+    await onTier('flex', () => analyze(base, signal, meter));
+    delete process.env.KADE_DESCRIPTION_MODEL;
+    const bodies = fake.calls.map((call) => call.body);
+    assert.deepEqual(bodies.map((body) => body.provider), [flexRoute, standardRoute, flexRoute, standardRoute, standardRoute]);
+    assert.deepEqual(bodies.map((body) => body.model), [
+      'google/gemini-3.8-flash',
+      'google/gemini-3.8-flash',
+      'google/gemini-3.8-flash',
+      'google/gemini-3.8-flash',
+      'qwen/qwen3-vl-flash',
+    ]);
+    neverAiStudio(bodies, 'every choice');
+  } finally {
+    delete process.env.KADE_DESCRIPTION_MODEL;
+    fake.restore();
+  }
+});
+
+test('providers: a flex try that fails is asked again at once on the standard tier, never AI Studio: rate limited, busy, a server error in the reply, no flex endpoint, a timeout, an unusable reply', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await clip('fallback.mp4');
+  const failures = {
+    'rate limited, asking to wait 30 s': (config) => {
+      const error = httpError(config, 429, { error: { message: 'Resource exhausted' } });
+      error.response.headers = { 'retry-after': '30' };
+      return error;
+    },
+    busy: (config) => httpError(config, 503, { error: { message: 'No instances available' } }),
+    'a server error inside the reply': () => ({ data: { error: { code: 502, message: 'Upstream error from Google' } } }),
+    'no flex endpoint': (config) =>
+      httpError(config, 404, { error: { message: 'No endpoints found matching your data policy (Only: google-vertex/global/flex)' } }),
+    'a timeout': () => ({ headers: { 'x-generation-id': 'gen-flex-slow' }, data: endless() }),
+    'an unusable reply': () => ({ data: { ...good, choices: [{ finish_reason: 'stop', message: { content: 'not a script' } }] } }),
+  };
+  for (const [name, fail] of Object.entries(failures)) {
+    const log = [];
+    const fake = fakeAxios(({ url, config, body }) => {
+      if (url.includes('/generation')) return recordOf(config, 0.004);
+      return body.provider.only ? fail(config) : { headers: { 'x-generation-id': 'gen-standard' }, data: servedBy(body) };
+    });
+    try {
+      const began = Date.now();
+      const result = await onTier('flex', () =>
+        limited({ requestMs: 300, lookupAtMs: [10], lookupMs: 100, fallbackMs: 20 }, () =>
+          analyze({ ...look, log: (line) => log.push(line) }, signal, meter),
+        ),
+      );
+      const bodies = fake.calls.filter((call) => call.body).map((call) => call.body);
+      assert.deepEqual(bodies.map((body) => body.provider), [flexRoute, standardRoute], name);
+      neverAiStudio(bodies, name);
+      assert.equal(result.cues.length, 1, name);
+      assert.equal(result.vision.at(-1).requested, 'standard', name);
+      assert.equal(result.vision.at(-1).tier, 'default', name);
+      assert.ok(
+        log.some((line) => /^vision: the flex try failed \(.+\); asking again on the standard tier$/.test(line)),
+        `${name}: ${log.join('\n')}`,
+      );
+      assert.ok(Date.now() - began < 4000, `${name}: standard is another queue, so a Retry-After from flex is not waited out (${Date.now() - began} ms)`);
+    } finally {
+      fake.restore();
+    }
+  }
+});
+
+test('providers: after the fallback every try stays on standard; a timeout on each tier ends the look; a bad request, an account problem or a refusal on flex is not asked again', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await clip('fallback-more.mp4');
+  /* Busy on flex, busy once more on standard, then an answer: never back to flex. */
+  let chats = 0;
+  let fake = fakeAxios(({ config, body }) =>
+    ++chats <= 2 ? httpError(config, 503, { error: { message: 'busy' } }) : { data: servedBy(body) },
+  );
+  try {
+    const result = await onTier('flex', () => limited({ fallbackMs: 10 }, () => analyze(look, signal, meter)));
+    assert.equal(result.cues.length, 1);
+    assert.deepEqual(fake.calls.map((call) => call.body.provider), [flexRoute, standardRoute, standardRoute]);
+  } finally {
+    fake.restore();
+  }
+  /* A timeout on flex, then on standard: the one-retry-after-timeout rule counts both. */
+  chats = 0;
+  fake = fakeAxios(({ url, config }) =>
+    url.includes('/generation') ? recordOf(config, 0.002) : { headers: { 'x-generation-id': `gen-late-${++chats}` }, data: endless() },
+  );
+  try {
+    const failure = await onTier('flex', () =>
+      limited({ requestMs: 150, lookupAtMs: [10], lookupMs: 100, fallbackMs: 10 }, () => analyze(look, signal, meter).catch((error) => error)),
+    );
+    assert.equal(chats, 2, 'one more try after a timeout, in all');
+    assert.equal(failureClass(failure), 'transient');
+    assert.deepEqual(fake.calls.filter((call) => call.body).map((call) => call.body.provider), [flexRoute, standardRoute]);
+  } finally {
+    fake.restore();
+  }
+  /* Failures standard would repeat, or that stop the job, are not asked again on standard. */
+  for (const [name, reply] of [
+    ['a bad request', (config) => httpError(config, 400, { error: { message: 'Invalid video' } })],
+    ['an empty balance', (config) => httpError(config, 402, { error: { message: 'Insufficient credits' } })],
+    ['a refused key', (config) => httpError(config, 401, { error: { message: 'No auth credentials found' } })],
+    ['a refusal', () => ({ data: { ...good, choices: [{ finish_reason: 'content_filter', native_finish_reason: 'SAFETY', message: { content: '' } }] } })],
+  ]) {
+    fake = fakeAxios(({ config }) => reply(config));
+    try {
+      await onTier('flex', () => analyze(look, signal, meter).catch(() => {}));
+      assert.equal(fake.calls.length, 1, name);
+      assert.deepEqual(fake.calls[0].body.provider, flexRoute, name);
+    } finally {
+      fake.restore();
+    }
+  }
+});
+
+test('providers: a failed or unpriced try is booked at the list price of the tier it asked, flex at half of standard, while the reserve stays at the standard worst case', async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const base = await clip('tier-price.mp4');
+  const look = { ...base, seconds: 40, brief: { ...brief, slowed: true } };
+  const close = { seconds: 40, maxTokens: 24000, reasoning: 8000 };
+  let chats = 0;
+  let fake = fakeAxios(({ url, config }) =>
+    url.includes('/generation')
+      ? httpError(config, 404, { error: { message: 'Generation not found' } })
+      : { headers: { 'x-generation-id': `gen-price-${++chats}` }, data: endless() },
+  );
+  let { entries, meter } = ledger();
+  try {
+    await onTier('flex', () =>
+      limited({ requestMs: 150, lookupAtMs: [10], lookupMs: 60, fallbackMs: 10 }, () => analyze(look, signal, meter).catch(() => {})),
+    );
+    assert.equal(chats, 2);
+    const [flex, standard] = entries;
+    assert.equal(flex.reserve, standard.reserve, 'the reserve is the standard worst case on either tier');
+    assert.ok(Math.abs(flex.expectedUSD - expectedOf(flex.reserve, { ...close, price: flexPrice })) < 1e-9, `flex at $0.375 and $1.875: ${flex.expectedUSD}`);
+    assert.ok(Math.abs(standard.expectedUSD - expectedOf(standard.reserve, close)) < 1e-9, `standard at $0.75 and $3.75: ${standard.expectedUSD}`);
+    assert.ok(Math.abs(flex.expectedUSD - standard.expectedUSD / 2) < 1e-12, 'flex is half the price per token');
+    /* What the engine's re-look gate is told a look will cost, before it is asked. */
+    await onTier('flex', () => assert.ok(Math.abs(expectedLook(look) - flex.expectedUSD) < 1e-12, 'the server’s flex'));
+    await onTier('standard', () => assert.ok(Math.abs(expectedLook(look) - standard.expectedUSD) < 1e-12, 'the server’s standard'));
+    await onTier('standard', () => assert.ok(Math.abs(expectedLook({ ...look, tier: 'flex' }) - flex.expectedUSD) < 1e-12, 'the look’s own flex'));
+    const second = { ...look, second: true };
+    await onTier('flex', () =>
+      assert.ok(Math.abs(2 * expectedLook(second) - expectedLook({ ...second, tier: 'standard' })) < 1e-12, 'a thin look’s standard re-look costs twice a flex one'),
+    );
+  } finally {
+    fake.restore();
+  }
+  /* A finished flex reply that reported no cost, with no record in time: uncertain at the flex price. */
+  fake = fakeAxios(({ url, config, body }) =>
+    url.includes('/generation')
+      ? httpError(config, 404, { error: { message: 'Generation not found' } })
+      : { headers: { 'x-generation-id': 'gen-unpriced' }, data: { ...servedBy(body), usage: { completion_tokens: 4000 } } },
+  );
+  ({ entries, meter } = ledger());
+  try {
+    const result = await onTier('flex', () => limited({ lookupAtMs: [10], lookupMs: 60 }, () => analyze(look, signal, meter)));
+    assert.equal(entries[0].uncertain, true);
+    assert.ok(Math.abs(entries[0].costUSD - expectedOf(entries[0].reserve, { ...close, price: flexPrice })) < 1e-9, `${entries[0].costUSD}`);
+    assert.equal(result.vision[0].requested, 'flex');
   } finally {
     fake.restore();
   }

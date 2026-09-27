@@ -1383,8 +1383,17 @@ const replyBody = JSON.stringify({
   protectedSounds: [],
 });
 
-test('providers: the vision request uses the flex-eligible model, pinned reasoning, no temperature and no backend pin', async () => {
+const flexRoute = {
+  only: ['google-vertex/global/flex'],
+  ignore: ['google-ai-studio'],
+  allow_fallbacks: false,
+  max_price: { prompt: 1.5, completion: 7.5 },
+};
+const standardRoute = { ignore: ['google-ai-studio'], max_price: { prompt: 1.5, completion: 7.5 } };
+
+test('providers: the vision request drops a routing suffix, pins reasoning, sends no temperature, and asks Vertex flex by default, never AI Studio', async () => {
   process.env.OPENROUTER_KEY = 'test-key';
+  delete process.env.KADE_DESCRIPTION_TIER;
   process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash:floor';
   const file = join(scratch, 'clip.mp4');
   await writeFile(file, Buffer.from('not really a video'));
@@ -1398,22 +1407,22 @@ test('providers: the vision request uses the flex-eligible model, pinned reasoni
     );
     assert.equal(result.cues[0].text, 'A cook flips a pancake.');
     const body = fake.calls[0].body;
-    assert.equal(body.model, 'google/gemini-3.8-flash:floor');
+    assert.equal(body.model, 'google/gemini-3.8-flash', ':floor would sort her own AI Studio key in by price');
     assert.deepEqual(body.reasoning, { effort: 'medium' });
     assert.equal(body.temperature, undefined);
     assert.equal(body.max_tokens, 12000);
     assert.deepEqual(Object.keys(body.messages[0].content[0]), ['type', 'video_url']);
     assert.deepEqual(Object.keys(body.messages[0].content[0].video_url), ['url']);
     assert.equal(body.response_format.type, 'json_schema');
-    assert.match(log[0], /tier flex, provider Google AI Studio, finish stop, output 900 tokens \(400 reasoning\), \$0\.0042/);
-    assert.deepEqual(
-      body.provider,
-      { max_price: { prompt: 1.5, completion: 7.5 } },
-      'no backend order: the Pluto A/B found the drift tracks reasoning, not the backend',
+    assert.match(
+      log[0],
+      /^vision: asked flex \(google-vertex\/global\/flex\), served tier flex, provider Google AI Studio, finish stop, output 900 tokens \(400 reasoning\), \$0\.0042$/,
     );
+    assert.deepEqual(body.provider, flexRoute, 'flex is pinned to Vertex, with no fallback inside OpenRouter');
     assert.deepEqual(result.vision, [
       {
-        model: 'google/gemini-3.8-flash:floor',
+        model: 'google/gemini-3.8-flash',
+        requested: 'flex',
         costUSD: 0.0042,
         seconds: result.vision[0].seconds,
         generation: 'gen-123',
@@ -1430,17 +1439,24 @@ test('providers: the vision request uses the flex-eligible model, pinned reasoni
     await analyze({ file, seconds: 40, brief: brief({ survey: true, slowed: true }), state: null, lines: [], before: [] }, signal, meter);
     assert.deepEqual(fake.calls[1].body.reasoning, { effort: 'low' });
     assert.equal(fake.calls[1].body.max_tokens, 24000);
+    assert.deepEqual(fake.calls[1].body.provider, flexRoute, 'the survey asks flex too');
     delete process.env.KADE_DESCRIPTION_MODEL;
+    process.env.KADE_DESCRIPTION_TIER = 'standard';
     await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter);
     assert.equal(fake.calls[2].body.model, 'google/gemini-3.8-flash');
+    assert.deepEqual(fake.calls[2].body.provider, standardRoute, 'the standard tier leaves only AI Studio out');
+    delete process.env.KADE_DESCRIPTION_TIER;
     process.env.KADE_DESCRIPTION_MODEL = 'qwen/qwen3-vl-flash';
     await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter);
+    assert.deepEqual(fake.calls[3].body.provider, standardRoute, 'only Google’s models have a flex tier');
     for (const call of fake.calls) {
-      assert.deepEqual(call.body.provider, { max_price: { prompt: 1.5, completion: 7.5 } }, call.body.model);
-      assert.equal(JSON.stringify(call.body).includes('google-vertex'), false, 'no backend is named anywhere in the request');
+      assert.deepEqual(call.body.provider.ignore, ['google-ai-studio'], call.body.model);
+      assert.equal(call.body.provider.order, undefined, 'no backend order');
+      assert.equal(JSON.stringify(call.body.provider.only ?? []).includes('google-ai-studio'), false);
     }
   } finally {
     delete process.env.KADE_DESCRIPTION_MODEL;
+    delete process.env.KADE_DESCRIPTION_TIER;
     fake.restore();
   }
 });
@@ -1501,7 +1517,9 @@ test('providers: a reply cut off for length is retried once on the standard tier
     assert.equal(fake.calls.length, 2);
     assert.equal(fake.calls[1].body.model, 'google/gemini-3.8-flash');
     assert.deepEqual(result.vision.map((call) => call.finish), ['length', 'stop'], 'the record keeps the cut-off call too');
-    assert.deepEqual(fake.calls[1].body.provider, { max_price: { prompt: 1.5, completion: 7.5 } }, 'the retry names no backend either');
+    assert.deepEqual(result.vision.map((call) => call.requested), ['flex', 'standard']);
+    assert.deepEqual(fake.calls[0].body.provider, flexRoute);
+    assert.deepEqual(fake.calls[1].body.provider, standardRoute, 'the retry asks the standard tier, never AI Studio');
     assert.equal(fake.calls[1].body.response_format.type, 'json_schema');
     assert.match(fake.calls[1].body.messages[0].content[1].text, /Give about half as many cues/);
   } finally {
