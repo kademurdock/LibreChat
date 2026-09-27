@@ -1062,7 +1062,7 @@ test('providers: on the flex tier, the default, every look is pinned to Vertex f
     assert.match(log[0], /^vision: asked flex \(google-vertex\/global\/flex\), served tier flex, provider Google, finish stop, output 4000 tokens \(3500 reasoning\), \$0\.0310$/);
     assert.match(log[4], /^vision: asked standard, served tier default, provider Google, finish stop/);
 
-    /* A look's own tier (the administrator's choice, or a thin look's re-look) wins over the server's. */
+    /* A look's own tier (the administrator's choice, or standard once a run moved off flex) wins over the server's. */
     await onTier('standard', () => analyze({ ...base, tier: 'flex' }, signal, meter));
     await onTier('flex', () => analyze({ ...base, tier: 'standard' }, signal, meter));
     /* A value the server does not know is the default, flex. */
@@ -1106,8 +1106,18 @@ test('providers: a flex try that fails is asked again at once on the standard ti
     'a timeout': () => ({ headers: { 'x-generation-id': 'gen-flex-slow' }, data: endless() }),
     'an unusable reply': () => ({ data: { ...good, choices: [{ finish_reason: 'stop', message: { content: 'not a script' } }] } }),
   };
+  /* What the engine is told of each flex try (`Look.onFlex`): only a reply says flex had room. */
+  const told = {
+    'rate limited, asking to wait 30 s': 'failed',
+    busy: 'failed',
+    'a server error inside the reply': 'failed',
+    'no flex endpoint': 'failed',
+    'a timeout': 'timed out',
+    'an unusable reply': 'answered',
+  };
   for (const [name, fail] of Object.entries(failures)) {
     const log = [];
+    const outcomes = [];
     const fake = fakeAxios(({ url, config, body }) => {
       if (url.includes('/generation')) return recordOf(config, 0.004);
       return body.provider.only ? fail(config) : { headers: { 'x-generation-id': 'gen-standard' }, data: servedBy(body) };
@@ -1115,10 +1125,11 @@ test('providers: a flex try that fails is asked again at once on the standard ti
     try {
       const began = Date.now();
       const result = await onTier('flex', () =>
-        limited({ requestMs: 300, lookupAtMs: [10], lookupMs: 100, fallbackMs: 20 }, () =>
-          analyze({ ...look, log: (line) => log.push(line) }, signal, meter),
+        limited({ requestMs: 300, lookupAtMs: [10], lookupMs: 100, fallbackMs: 20, flexQueueMs: 50 }, () =>
+          analyze({ ...look, log: (line) => log.push(line), onFlex: (outcome) => outcomes.push(outcome) }, signal, meter),
         ),
       );
+      assert.deepEqual(outcomes, [told[name]], `${name}: the flex try is reported once, the standard one never`);
       const bodies = fake.calls.filter((call) => call.body).map((call) => call.body);
       assert.deepEqual(bodies.map((body) => body.provider), [flexRoute, standardRoute], name);
       neverAiStudio(bodies, name);
@@ -1136,7 +1147,7 @@ test('providers: a flex try that fails is asked again at once on the standard ti
   }
 });
 
-test('providers: after the fallback every try stays on standard; a timeout on each tier ends the look; a bad request, an account problem or a refusal on flex is not asked again', async () => {
+test('providers: after the fallback every try stays on standard; a flex timeout leaves standard its own retry after a timeout; a bad request, an account problem or a refusal on flex is not asked again', async () => {
   process.env.OPENROUTER_KEY = 'test-key';
   const look = await clip('fallback-more.mp4');
   /* Busy on flex, busy once more on standard, then an answer: never back to flex. */
@@ -1151,20 +1162,67 @@ test('providers: after the fallback every try stays on standard; a timeout on ea
   } finally {
     fake.restore();
   }
-  /* A timeout on flex, then on standard: the one-retry-after-timeout rule counts both. */
+  /*
+   * A timeout on flex, then on standard twice: flex's queue says nothing of standard, so standard
+   * keeps the one more try after a timeout that a look on standard alone has.
+   */
   chats = 0;
   fake = fakeAxios(({ url, config }) =>
     url.includes('/generation') ? recordOf(config, 0.002) : { headers: { 'x-generation-id': `gen-late-${++chats}` }, data: endless() },
   );
   try {
+    const outcomes = [];
     const failure = await onTier('flex', () =>
-      limited({ requestMs: 150, lookupAtMs: [10], lookupMs: 100, fallbackMs: 10 }, () => analyze(look, signal, meter).catch((error) => error)),
+      limited({ requestMs: 150, lookupAtMs: [10], lookupMs: 100, fallbackMs: 10, flexQueueMs: 0 }, () =>
+        analyze({ ...look, onFlex: (outcome) => outcomes.push(outcome) }, signal, meter).catch((error) => error),
+      ),
     );
-    assert.equal(chats, 2, 'one more try after a timeout, in all');
+    assert.equal(chats, 3, 'the flex try, then standard and its one more try after a timeout');
     assert.equal(failureClass(failure), 'transient');
-    assert.deepEqual(fake.calls.filter((call) => call.body).map((call) => call.body.provider), [flexRoute, standardRoute]);
+    assert.deepEqual(fake.calls.filter((call) => call.body).map((call) => call.body.provider), [flexRoute, standardRoute, standardRoute]);
+    assert.deepEqual(outcomes, ['timed out']);
   } finally {
     fake.restore();
+  }
+  /*
+   * A flex try's deadline has room for Google's queue on top of the look's own: a reply that comes
+   * after the look's deadline but within the queue's room is taken from flex, where the same wait
+   * on standard is a timeout.
+   */
+  for (const tier of ['flex', 'standard']) {
+    chats = 0;
+    fake = fakeAxios(async ({ url, config, body }) => {
+      if (url.includes('/generation')) return recordOf(config, 0.002);
+      chats++;
+      await later(250);
+      return { data: servedBy(body) };
+    });
+    /* The first failure stops the look, so standard's retry is not waited for. */
+    const stop = new AbortController();
+    const failed = [];
+    const watch = async (_kind, _reserve, action) => {
+      try {
+        await action();
+      } catch (error) {
+        failed.push(error.code);
+        stop.abort();
+        throw error;
+      }
+    };
+    try {
+      const result = await onTier(tier, () =>
+        limited({ requestMs: 150, lookupAtMs: [10], lookupMs: 100, fallbackMs: 10, flexQueueMs: 400 }, () =>
+          analyze(look, stop.signal, watch).catch(() => undefined),
+        ),
+      );
+      assert.equal(chats, 1, tier);
+      if (tier === 'flex') {
+        assert.deepEqual(failed, [], 'flex answered within its queue room');
+        assert.deepEqual(result.vision.map((call) => call.requested), ['flex']);
+      } else assert.deepEqual(failed, ['ETIMEDOUT'], 'standard has no queue room: the same wait is a timeout');
+    } finally {
+      fake.restore();
+    }
   }
   /* Failures standard would repeat, or that stop the job, are not asked again on standard. */
   for (const [name, reply] of [
@@ -1196,9 +1254,20 @@ test('providers: a failed or unpriced try is booked at the list price of the tie
       : { headers: { 'x-generation-id': `gen-price-${++chats}` }, data: endless() },
   );
   let { entries, meter } = ledger();
+  /* Stopped after the flex try and the standard one, so standard's own retry is not waited for. */
+  const stop = new AbortController();
+  const twice = async (kind, reserve, action) => {
+    try {
+      await meter(kind, reserve, action);
+    } finally {
+      if (entries.length >= 2) stop.abort();
+    }
+  };
   try {
     await onTier('flex', () =>
-      limited({ requestMs: 150, lookupAtMs: [10], lookupMs: 60, fallbackMs: 10 }, () => analyze(look, signal, meter).catch(() => {})),
+      limited({ requestMs: 150, lookupAtMs: [10], lookupMs: 60, fallbackMs: 10, flexQueueMs: 0 }, () =>
+        analyze(look, stop.signal, twice).catch(() => {}),
+      ),
     );
     assert.equal(chats, 2);
     const [flex, standard] = entries;
@@ -1212,7 +1281,7 @@ test('providers: a failed or unpriced try is booked at the list price of the tie
     await onTier('standard', () => assert.ok(Math.abs(expectedLook({ ...look, tier: 'flex' }) - flex.expectedUSD) < 1e-12, 'the look’s own flex'));
     const second = { ...look, second: true };
     await onTier('flex', () =>
-      assert.ok(Math.abs(2 * expectedLook(second) - expectedLook({ ...second, tier: 'standard' })) < 1e-12, 'a thin look’s standard re-look costs twice a flex one'),
+      assert.ok(Math.abs(2 * expectedLook(second) - expectedLook({ ...second, tier: 'standard' })) < 1e-12, 'a second look on standard costs twice a flex one'),
     );
   } finally {
     fake.restore();

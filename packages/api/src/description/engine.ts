@@ -18,13 +18,14 @@ import type {
   SectionRecord,
   Settings,
   Skip,
+  Tier,
   Word,
 } from './types';
 import type { Freeze, Media, Rational } from './media';
 import type { Leftover, Variant } from './timing';
 import type { Brief, Heard } from './prompt';
 import type { Duck, Pause } from './mix';
-import type { FailedCall, Look } from './providers';
+import type { FailedCall, FlexOutcome, Look } from './providers';
 import {
   assemble,
   copyable,
@@ -629,6 +630,28 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   const lookCount = toLook.size;
   /** What each first look of this run really cost, when its provider said. */
   const firstCosts: number[] = [];
+  /**
+   * The tier this run's looks ask: the administrator's choice for the job, otherwise the server's
+   * (undefined). Once a flex try times out, or flex fails twice in a row with no answer between,
+   * the rest of the run asks the standard tier: in a busy spell on flex every look would otherwise
+   * wait out its deadline or error, and may be billed for it, before standard is asked.
+   */
+  let runTier: Tier | undefined = settings.tier;
+  let flexFailures = 0;
+  const onFlex = (outcome: FlexOutcome): void => {
+    if (outcome === 'answered') {
+      flexFailures = 0;
+      return;
+    }
+    flexFailures++;
+    if (runTier === 'standard' || (outcome === 'failed' && flexFailures < 2)) return;
+    runTier = 'standard';
+    log(
+      outcome === 'timed out'
+        ? "Google's flex tier did not answer a look in time; the rest of this run's looks ask the standard tier."
+        : "Google's flex tier failed two looks in a row; the rest of this run's looks ask the standard tier.",
+    );
+  };
 
   /** A part that runs to the end of the video: its last clip is the film's real ending. */
   const endsVideo =
@@ -756,7 +779,8 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           section.start - 15,
         ).slice(-4),
         log,
-        ...(settings.tier ? { tier: settings.tier } : {}),
+        ...(runTier ? { tier: runTier } : {}),
+        onFlex,
       };
       const heardLines = linesFrom(inSection(section), section.start);
       /** One paid look in section seconds, without strip readings, with the crammed-end sign. */
@@ -887,13 +911,12 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const heldBack = later * Math.max(quotedShare, meanLook);
     const margin = relookMargin * firstCost;
     /**
-     * A look that thought under the floor is looked at again on the standard tier whatever the
-     * job's tier (flex skipped its thinking in 2 of 6 Road Runner looks in the Sep 26 bake-off);
-     * a look that only crammed its end is looked at again on the job's own tier.
+     * The second look asks the run's tier, as any look does (standard once the run has moved off
+     * flex). In the Sep 26 bake-off standard thought under the floor about as often as flex (3 of
+     * 11 looks against 4 of 14), so standard is no surer cure for a thin look, and a flex second look
+     * costs half as much; one that fails is asked again on standard by `analyze`.
      */
-    const secondLook: Look = reasons.includes('reasoning')
-      ? { ...input, second: true, tier: 'standard' }
-      : { ...input, second: true };
+    const secondLook: Look = { ...input, second: true, ...(runTier ? { tier: runTier } : {}) };
     const expected = providers.expected?.(secondLook);
     const own = typeof expected === 'number' && Number.isFinite(expected) ? expected : 0;
     const need = Math.max(margin, own) + heldBack;

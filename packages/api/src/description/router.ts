@@ -528,8 +528,9 @@ const retain = (job: Pick<Job, 'expiresAt'>, days: number): Date =>
  *
  * Flex: $0.035 a minute for a close look. Round 2 of the bake-off (Sep 26, three kits)
  * measured flex close looks at $0.020 a minute at list price, and 4 of 14 thought under the floor;
- * their second looks go to standard ($0.064 a minute), so a typical flex run costs about $0.038.
- * A flex try that fails is asked again on standard, and a run whose every look fell back costs
+ * their second looks stay on flex ($0.032 a minute), so a typical flex run costs about $0.029.
+ * A flex try that fails is asked again on standard (and after a flex timeout, or two flex
+ * failures in a row, the rest of the run asks standard), and a run whose every look fell back costs
  * what standard does, about $0.055 a minute plus $0.0052 of dialogue timing. At 1.5 times the
  * quote plus $0.10, her approval for $0.035 plus the dialogue timing is $0.0603 a minute plus
  * $0.145, so even that run finishes without the over-quote stop (with free dialogue timing, up to

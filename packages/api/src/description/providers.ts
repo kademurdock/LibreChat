@@ -668,10 +668,21 @@ export type Look = {
   second?: boolean;
   /**
    * The tier its first try asks (`tierFor`): the administrator's choice for the job, or standard
-   * for the re-look of a look that thought under the floor. Absent: the server's `descriptionTier`.
+   * once the run has moved off flex (the engine's `onFlex`). Absent: the server's `descriptionTier`.
    */
   tier?: Tier;
+  /**
+   * Told how each of its flex tries went (`FlexOutcome`), so the engine can ask the rest of a run on
+   * the standard tier when flex keeps failing. Standard tries are not reported.
+   */
+  onFlex?: (outcome: FlexOutcome) => void;
 };
+/**
+ * How a flex try went: `answered` (a reply came back, usable or not: flex had room), `timed out`
+ * (no whole reply within its deadline, or a 408 or 504), or `failed` (any other error before a
+ * reply: busy, rate limited, no flex endpoint). Our own stop is never reported.
+ */
+export type FlexOutcome = 'answered' | 'timed out' | 'failed';
 
 const declined: ReadonlySet<string> = new Set([
   'SAFETY',
@@ -870,7 +881,9 @@ const chatURL = 'https://openrouter.ai/api/v1/chat/completions';
  * look's longer limit (`planFor`), and when to ask OpenRouter what a failed request cost:
  * milliseconds after the failure, all within `lookupMs`. `fallbackMs` is the wait before a failed
  * flex try is asked again on the standard tier, a separate queue, so a Retry-After that flex sent
- * is not waited out. Tests shorten them.
+ * is not waited out. `flexQueueMs` is added to a flex try's deadline for Google's queue: in the
+ * Sep 26 bake-off flex's first byte came 19 to 112 s in, and the 420 s second-look deadline was
+ * sized for a 48,000-token reply on standard. Tests shorten them.
  */
 export const visionLimits: {
   requestMs: number;
@@ -878,12 +891,14 @@ export const visionLimits: {
   lookupAtMs: number[];
   lookupMs: number;
   fallbackMs: number;
+  flexQueueMs: number;
 } = {
   requestMs: 300000,
   secondRequestMs: 420000,
   lookupAtMs: [5000, 15000, 40000],
   lookupMs: 60000,
   fallbackMs: 1000,
+  flexQueueMs: 120000,
 };
 /**
  * What a failed look request tells the meter, set on the error it throws: OpenRouter's generation
@@ -1274,7 +1289,10 @@ function replyOf(choice: Choice | undefined, look: Look): Analysis {
  * (`routeFor`); when it fails in any way worth another try (busy, 429, 5xx, a timeout, an
  * unusable or cut-off reply, or a 404 because OpenRouter has no flex endpoint to send it to), the
  * next try, after `visionLimits.fallbackMs`, and every try after it ask the standard tier, never
- * Google AI Studio. The timeout rule still allows one more try after a timeout in all.
+ * Google AI Studio. A flex try's deadline has `visionLimits.flexQueueMs` more for Google's queue,
+ * and a flex timeout does not use up the one more try that a timeout on standard allows, so a look
+ * that falls back gets the two standard tries it had before the tiers. How each flex try went is
+ * told to `Look.onFlex`.
  */
 export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Promise<Analysis> {
   const key = process.env.OPENROUTER_KEY;
@@ -1302,11 +1320,13 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
   let timeouts = 0;
   let cutoffs = 0;
   const calls: VisionCall[] = [];
+  const timedOut = (error: unknown) =>
+    isTimeout(error) || (error instanceof Upstream && [408, 504].includes(error.status ?? 0));
   const retryable = (error: unknown) => {
     if (error instanceof Refusal) return false;
     if (error instanceof CutOff) return ++cutoffs <= 1;
-    if (isTimeout(error) || (error instanceof Upstream && [408, 504].includes(error.status ?? 0)))
-      return ++timeouts <= 1;
+    /** Flex's queue says nothing of standard's: its timeout leaves standard's one retry. */
+    if (timedOut(error)) return lane === 'flex' || ++timeouts <= 1;
     /** No flex endpoint to route to (renamed, dropped or down): standard may still answer. */
     if (lane === 'flex' && statusOf(error) === 404) return true;
     return transient(error) || error instanceof z.ZodError;
@@ -1374,11 +1394,20 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
               key,
               signal,
               (id) => (generation = id),
-              plan.requestMs,
+              plan.requestMs + (asked === 'flex' ? visionLimits.flexQueueMs : 0),
             );
           } catch (error) {
+            if (asked === 'flex' && !signal.aborted)
+              look.onFlex?.(
+                error instanceof CutOff || error instanceof Refusal
+                  ? 'answered'
+                  : timedOut(error)
+                    ? 'timed out'
+                    : 'failed',
+              );
             throw await costed(error, generation, pricing);
           }
+          if (asked === 'flex') look.onFlex?.('answered');
           const choice = data.choices[0];
           const usage = data.usage;
           const reported =

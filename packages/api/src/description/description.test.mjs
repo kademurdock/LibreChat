@@ -979,7 +979,7 @@ test('re-look: a look that skipped its thinking is looked at once more, both are
   assert.ok(log.includes('Section 1 of 1: the second look cost $0.052, the first $0.029.'), log.join('\n'));
 });
 
-test('re-look: a look that thought under the floor is looked at again on the standard tier and weighed at it; a crammed end keeps the job’s tier; her chosen tier reaches the first look', async () => {
+test('re-look: a look that thought under the floor is looked at again on the job’s tier and weighed at it, as is a crammed end; her chosen tier reaches both looks', async () => {
   for (const [name, tier] of [
     ['relook-tier-server', undefined],
     ['relook-tier-flex', 'flex'],
@@ -996,10 +996,10 @@ test('re-look: a look that thought under the floor is looked at again on the sta
     await run(f, [], [], { providers: backend, keeper, meter: ledger().meter, settings: tier ? { ...settings, tier } : settings });
     assert.deepEqual(
       looks.map((look) => [look.second, look.tier]),
-      [[undefined, tier], [true, 'standard']],
-      `${name}: the first look asks the job's tier (absent: the server's), the second standard`,
+      [[undefined, tier], [true, tier]],
+      `${name}: both looks ask the job's tier (absent: the server's); the bake-off's flex estimate has the second look on flex too`,
     );
-    assert.deepEqual(weighed, [[true, 'standard']], `${name}: its room is weighed at the standard price`);
+    assert.deepEqual(weighed, [[true, tier]], `${name}: its room is weighed at the job's tier`);
   }
   const f = await fixture('relook-tier-crammed', 40);
   const early = { ...cue, at: 2, until: 5, pauseAt: 2, text: 'Look 1: a red square moves across the room.' };
@@ -1012,6 +1012,49 @@ test('re-look: a look that thought under the floor is looked at again on the sta
     [[undefined, 'flex'], [true, 'flex']],
     'a look that thought enough but crammed its end is looked at again on the job’s tier',
   );
+});
+
+test('flex tier: a flex timeout, or two flex failures in a row, moves the rest of the run to standard, its second looks included; an answer between failures keeps flex', async () => {
+  const cases = [
+    /* name, the job's tier, what each first look's flex try reports, the tier each look asks, the log line */
+    ['flex-run-timeout', 'flex', [['timed out'], ['answered']], ['flex', 'standard', 'standard', 'standard', 'standard'], /did not answer a look in time; the rest of this run's looks ask the standard tier\./],
+    ['flex-run-server-timeout', undefined, [[], ['timed out']], [undefined, undefined, 'standard', 'standard', 'standard'], /did not answer a look in time/],
+    ['flex-run-twice', 'flex', [['failed'], ['failed']], ['flex', 'flex', 'standard', 'standard', 'standard'], /failed two looks in a row; the rest of this run's looks ask the standard tier\./],
+    ['flex-run-between', 'flex', [['failed'], ['answered'], ['failed'], ['answered'], ['failed']], ['flex', 'flex', 'flex', 'flex', 'flex'], null],
+    ['flex-run-standard', 'standard', [], ['standard', 'standard', 'standard', 'standard', 'standard'], null],
+  ];
+  for (const [name, tier, script, tiers, said] of cases) {
+    const f = await fixture(name, 35);
+    const asked = [];
+    const backend = providers(f.voice, [], []);
+    backend.analyze = async (look) => {
+      const n = asked.length;
+      asked.push(look.tier);
+      /* As `analyze` does: only a flex try is reported. */
+      if (look.tier !== 'standard') for (const outcome of script[n] ?? []) look.onFlex(outcome);
+      return { kind: 'other', setting: 'A test pattern.', people: [], speakers: [], protectedSounds: [], cues: [{ ...cue, at: 1, until: 5 }] };
+    };
+    const { keeper } = keeperFor(savedPlan(35, [7, 14, 21, 28]));
+    const log = [];
+    await run(f, [], [], { providers: backend, keeper, log, settings: tier ? { ...settings, tier } : settings });
+    assert.deepEqual(asked, tiers, name);
+    const moved = log.filter((line) => /the rest of this run's looks ask the standard tier/.test(line));
+    if (said) {
+      assert.equal(moved.length, 1, `${name}: said once\n${log.join('\n')}`);
+      assert.match(moved[0], said, name);
+    } else assert.deepEqual(moved, [], name);
+  }
+  /* A second look asked after the run moved off flex asks standard, though the job chose flex. */
+  const f = await fixture('flex-run-relook', 9);
+  const { backend, looks } = thinking(f, [0, 5699]);
+  const inner = backend.analyze;
+  backend.analyze = async (look, s, m) => {
+    if (!look.second) look.onFlex('timed out');
+    return inner(look, s, m);
+  };
+  const { keeper } = keeperFor(undefined);
+  await run(f, [], [], { providers: backend, keeper, settings: { ...settings, tier: 'flex' } });
+  assert.deepEqual(looks.map((look) => [look.second, look.tier]), [[undefined, 'flex'], [true, 'standard']]);
 });
 
 test('re-look: a look that thought enough, or whose provider does not say, is not looked at again', async () => {

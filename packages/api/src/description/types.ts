@@ -115,8 +115,8 @@ export type VisionCall = {
   /** The backend that served it, such as "Google" (google-vertex) or "Google AI Studio". */
   provider?: string;
   /**
-   * The tier this call asked for: flex, or standard (the tier chosen, a fallback from flex, or the
-   * re-look of a look that thought under the floor).
+   * The tier this call asked for: flex, or standard (the tier chosen, a fallback from flex, or a
+   * look after the run moved off flex).
    */
   requested?: Tier;
   /** The tier OpenRouter says served it (`service_tier`: "flex", or "default" for standard). */
