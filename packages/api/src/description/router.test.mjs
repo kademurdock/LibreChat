@@ -1656,6 +1656,46 @@ test('a preview renders a marked copy, then Describe the rest finishes the same 
   await call('delete', `/jobs/${id}`, 'preview-owner').expect(200);
 });
 
+test('a finished preview is tried again as reanalyze with the preview flag; the preview action is only for a video never described', async () => {
+  await Budgets.deleteMany({});
+  const owner = 'again-preview-owner';
+  const id = await readyJob(owner, 'again-preview-upload1', 150);
+  await call('post', `/jobs/${id}/start`, owner).send({ ...settings, preview: true }).expect(202);
+  const preview = await settle(id, ['done', 'failed'], owner);
+  assert.equal(preview.state, 'done', preview.error);
+  assert.equal(preview.preview, true);
+  assert.equal(preview.describableAgain, true);
+  const ask = async (body) => (await call('post', `/jobs/${id}/estimate`, owner).send(body).expect(200)).body;
+  const refused = await ask({ action: 'preview', settings: { ...settings, detail: 'rich' } });
+  assert.equal(refused.allowed, false, 'the website once priced its Try the preview again this way');
+  assert.match(refused.reason, /finish checking/);
+  const whole = await ask({ action: 'reanalyze', settings: { ...settings, detail: 'rich' } });
+  const first = await ask({ action: 'reanalyze', settings: { ...settings, detail: 'rich', preview: true } });
+  assert.equal(whole.allowed, true, whole.reason);
+  assert.equal(first.allowed, true, first.reason);
+  assert.ok(first.seconds < whole.seconds, `the first minutes only: ${first.seconds} of ${whole.seconds} seconds`);
+  assert.ok(first.estimateUSD < whole.estimateUSD);
+  const started = (
+    await call('post', `/jobs/${id}/reanalyze`, owner)
+      .send({ ...settings, detail: 'rich', preview: true, expectedVersion: 1 })
+      .expect(202)
+  ).body;
+  assert.equal(started.version, 2);
+  assert.equal(started.estimatedUSD, first.estimateUSD, 'it runs at the price it was shown');
+  const queued = await Jobs.findById(id).lean();
+  assert.equal(queued.runKind, 'preview');
+  assert.equal(queued.stopAfter, 60);
+  const again = await settle(id, ['done', 'failed'], owner);
+  assert.equal(again.state, 'done', again.error);
+  assert.equal(again.version, 2);
+  assert.equal(again.preview, true);
+  assert.equal(again.finishable, true, 'Describe the rest carries on from the new preview');
+  assert.equal(again.settings.detail, 'rich');
+  assert.deepEqual(again.copies.map((copy) => [copy.version, copy.preview]), [[1, true], [2, true]]);
+  assert.equal(await held(), 0);
+  await call('delete', `/jobs/${id}`, owner).expect(200);
+});
+
 test('a preview that turns out to cover the whole video is kept as the finished copy', async () => {
   await Budgets.deleteMany({});
   const id = await readyJob('whole-owner', 'whole-preview-upload1', 100);

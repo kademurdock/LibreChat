@@ -534,14 +534,39 @@ function makeServer() {
     },
   };
   const json = (status, body) => ({ status, body });
+  /** A refusal as router.ts answers an estimate it will not run: the reason, and no price. */
+  const refused = (reason) => ({
+    estimateUSD: 0,
+    setAsideUSD: 0,
+    approvedUSD: 0,
+    remainingUSD: server.remainingUSD,
+    dailyUSD: 5,
+    limitUSD: 5,
+    allowed: false,
+    reason,
+    seconds: 0,
+    breakdown: { vision: 0, speech: 0, dialogue: 0, closeLook: 0, firstLook: 0 },
+  });
+  server.refused = refused;
+  /** The refusals launchFor and requireSource give (router.ts), so the page is held to what the server accepts. */
+  const refusalFor = (job, action) => {
+    if ((action === 'start' || action === 'preview') && job.state !== 'ready') return 'Wait for the video to finish checking.';
+    if (action !== 'reanalyze') return '';
+    if (job.state === 'ready') return 'This video has not been described yet. Use Create described copy.';
+    if (!(job.describableAgain ?? job.state === 'done')) return 'Wait for this video to finish before describing it again.';
+    if (job.originalGone) return 'The original video is no longer on the server, so it cannot be described again. Choose the video again to describe it.';
+    return '';
+  };
   const estimate = (job, body) => {
+    const refusal = refusalFor(job, body.action);
+    if (refusal) return refused(refusal);
     const s = body.settings || job.settings || standardSettings;
     const seconds = s.range ? s.range.end - s.range.start : job.seconds;
     let minutes = seconds / 60;
     let dialogue = 0;
     const per = config.perMinuteUSD[s.detail || 'standard'] + (s.closeLook ? 0.025 : 0) + (s.firstLook ? 0.021 : 0);
     let value;
-    if (body.action === 'preview') {
+    if (body.action === 'preview' || (body.action === 'reanalyze' && s.preview)) {
       minutes = Math.min(3, minutes);
       dialogue = cents((seconds / 60) * 0.0052);
       value = cents(minutes * per + 0.03 + dialogue);
@@ -645,6 +670,8 @@ function makeServer() {
       case 'redo':
         return update({ state: 'queued', version: job.version + (action === 'redo' ? 1 : 0) });
       case 'reanalyze':
+        if (refusalFor(job, 'reanalyze')) return json(409, { error: refusalFor(job, 'reanalyze') });
+        return update({ state: 'queued', version: job.version + 1, preview: !!body.preview, resumable: false, describableAgain: false });
       case 'revoice':
         return update({ state: 'queued', version: job.version + 1 });
       case 'abandon':
@@ -3304,4 +3331,217 @@ test('Family feature pack: with link imports open, the note stays out of the pag
   assert.equal($('youtube').disabled, false);
   assert.equal($('youtube').getAttribute('aria-describedby'), 'dv-youtube-help', 'a hidden note is never referenced, so it is never read');
   assert.equal($('import').getAttribute('aria-describedby'), null);
+});
+
+/* ------------------------------------------------------------------------------------------
+ * Describing again from the copy already kept (Sep 27 2026): after a finished copy or a stopped
+ * run, priced and run as the server's reanalyze, greyed with its reason and never hidden.
+ * ---------------------------------------------------------------------------------------- */
+
+test('a finished preview is tried again as fresh descriptions of the first minutes, never the preview action the server refuses', async () => {
+  const server = makeServer();
+  const film = server.add(
+    doneJob({
+      name: 'Feature film',
+      seconds: 5400,
+      preview: true,
+      finishable: true,
+      describableAgain: true,
+      copies: [{ version: 1, preview: true, settings: standardSettings, outputSeconds: 185, count: 4 }],
+    }),
+  );
+  const env = await boot({ server, search: '?id=' + film.id });
+  const { $ } = env;
+  await env.timers.advance(700);
+  const asked = server.all(/\/estimate$/).map((request) => request.body);
+  assert.ok(!asked.some((body) => body.action === 'preview'), 'a finished video is never priced with the preview action');
+  assert.ok(asked.some((body) => body.action === 'reanalyze' && body.settings.preview === true), 'the preview is priced as reanalyze, marked as a preview');
+  assert.equal($('preview-again').getAttribute('aria-disabled'), null, 'the button is not greyed');
+  assert.equal($('preview-again').textContent, 'Try the preview again with these choices, about $0.66');
+  assert.equal(visible($('reanalyze')), true, 'the whole video can be described afresh too');
+  assert.equal($('reanalyze').textContent, 'Write fresh descriptions with these choices, about $4.80');
+  assert.equal($('estimate').textContent, 'Describe the rest: about $3.34. Try the preview again: about $0.66. Write fresh descriptions: about $4.80. $5.00 of today’s $5.00 is left.');
+  assert.equal($('again-help').textContent, 'Fresh descriptions use the copy of this video already on the server, so nothing is uploaded again.');
+  assert.equal($('preview-again').getAttribute('aria-describedby'), 'dv-estimate dv-again-help');
+  await env.choose('detail', 'rich');
+  await env.timers.advance(700);
+  assert.match(env.status(), /Try the preview again: about \$0\.70\.$/);
+  await env.click('preview-again');
+  assert.match(
+    env.dialogs.at(-1).text,
+    /^Try the preview of “Feature film” again with Oak at 1\.5×, Rich detail, .*\? It uses the copy of this video already on the server, so nothing is uploaded again\. This pays for looking at the video again\. Narration is included\. About \$0\.70\. \$5\.00 of today’s \$5\.00 is left\. Earlier versions stay available\.$/,
+  );
+  const sent = server.last(/\/reanalyze$/, 'POST').body;
+  assert.equal(sent.preview, true);
+  assert.equal(sent.detail, 'rich');
+  assert.equal(sent.expectedVersion, 1);
+  assert.equal(server.all(/\/start$/).length, 0, 'nothing is sent to the route for new videos');
+  assert.equal(env.status(), 'Trying the preview again. You will hear when it is ready.');
+});
+
+test('a stopped run offers Write fresh descriptions beside Continue, from the copy already kept, and says the finished sections are paid for again', async () => {
+  const server = makeServer();
+  const stopped = server.add(
+    doneJob({ name: 'Home video', source: 'youtube', state: 'failed', copies: [], resumable: true, describableAgain: true, done: 3, sections: 12, error: 'Scene description (Gemini) is not responding.' }),
+  );
+  const env = await boot({ server, search: '?id=' + stopped.id });
+  const { $ } = env;
+  await env.timers.advance(700);
+  assert.equal(visible($('resume')), true);
+  assert.equal(visible($('reanalyze')), true);
+  assert.equal($('reanalyze').getAttribute('aria-disabled'), null);
+  assert.equal($('reanalyze').textContent, 'Write fresh descriptions with these choices, about $0.56');
+  assert.equal($('preview-again').hidden, true, 'a stopped run of the whole video is not offered a preview');
+  assert.equal(
+    $('again-help').textContent,
+    'Fresh descriptions use the copy of this video already on the server, so nothing is downloaded again. It starts over, so the 3 sections already finished are paid for again; Continue where it stopped keeps them.',
+  );
+  assert.equal($('reanalyze').getAttribute('aria-describedby'), 'dv-estimate dv-again-help');
+  assert.equal($('estimate').textContent, 'Continue where it stopped: 9 of 12 sections left, about $0.27. Write fresh descriptions: about $0.56. $5.00 of today’s $5.00 is left.');
+  assert.equal($('notes').disabled, false, 'fresh descriptions may change the notes');
+  assert.match($('resume-note').textContent, /under Choose the narration before you continue\. Other changes are only used by Write fresh descriptions, which starts over\.$/);
+  await env.type('notes', 'The man in the red sweater is Uncle Bob');
+  assert.equal($('revoice-note').textContent, 'Your change to notes is only used by Write fresh descriptions; carrying on keeps what this attempt started with.');
+  assert.equal($('resume').getAttribute('aria-describedby'), 'dv-resume-price dv-resume-note dv-revoice-note');
+  await env.tick('first-look', true);
+  await env.timers.advance(700);
+  assert.equal(env.status(), 'First look on. Continue where it stopped: about $0.27. Write fresh descriptions: about $0.77.');
+  await env.click('reanalyze');
+  assert.match(
+    env.dialogs.at(-1).text,
+    /^Write fresh descriptions for “Home video” with Oak at 1\.5×, .*notes: The man in the red sweater is Uncle Bob\? It uses the copy of this video already on the server, so nothing is downloaded again\. This pays for looking at the video again\. It starts over, so the 3 sections already finished are paid for again; Continue where it stopped keeps them\. Narration is included\. About \$0\.77\. \$5\.00 of today’s \$5\.00 is left\.$/,
+  );
+  const sent = server.last(/\/reanalyze$/, 'POST').body;
+  assert.equal(sent.expectedVersion, 1);
+  assert.equal(sent.notes, 'The man in the red sweater is Uncle Bob');
+  assert.equal(sent.firstLook, true);
+  assert.equal(sent.preview, undefined);
+  assert.equal(server.all(/\/resume$/).length, 0);
+  assert.equal(env.status(), 'Writing fresh descriptions. You will hear when they are ready.');
+});
+
+test('Continue is named as keeping the finished sections only while it is offered; a stopped preview is tried again as a preview', async () => {
+  const server = makeServer();
+  const over = server.add(
+    doneJob({ name: 'KOLR 10 open', state: 'failed', copies: [], resumable: true, overQuote: true, describableAgain: true, done: 1, sections: 4, runCostUSD: 0.45, estimatedUSD: 0.05 }),
+  );
+  const env = await boot({ server, search: '?id=' + over.id });
+  await env.timers.advance(700);
+  assert.match(env.$('again-help').textContent, /It starts over, so the 1 section already finished is paid for again; Allow more and continue keeps it\.$/);
+  const cancelled = server.add(
+    doneJob({
+      name: 'Feature film',
+      seconds: 5400,
+      state: 'cancelled',
+      preview: true,
+      copies: [{ version: 1, preview: true, settings: standardSettings, outputSeconds: 185, count: 4 }],
+      resumable: false,
+      describableAgain: true,
+      done: 0,
+      sections: 30,
+      version: 2,
+    }),
+  );
+  const second = await boot({ server, search: '?id=' + cancelled.id });
+  const { $ } = second;
+  await second.timers.advance(700);
+  assert.equal($('resume').hidden, true);
+  assert.equal(visible($('preview-again')), true);
+  assert.equal(visible($('reanalyze')), true);
+  assert.equal(
+    $('again-help').textContent,
+    'Fresh descriptions use the copy of this video already on the server, so nothing is uploaded again. Earlier versions stay available.',
+    'no section finished, so nothing is said to be paid for twice',
+  );
+  assert.equal($('estimate').textContent, 'Try the preview again: about $0.66. Write fresh descriptions: about $4.80. $5.00 of today’s $5.00 is left.');
+  await second.click('preview-again');
+  assert.doesNotMatch(second.dialogs.at(-1).text, /paid for again|keeps them/);
+  assert.equal(server.last(/\/reanalyze$/, 'POST').body.expectedVersion, 2);
+});
+
+test('Write fresh descriptions the server refuses is greyed with its reason, never hidden, and one reason for two buttons is said once', async () => {
+  const server = makeServer();
+  const crashAgain = 'The server stopped three times at the same part of this video with these choices. To describe it again, change how much to describe or the extra passes, or choose a shorter part.';
+  server.override(
+    (method, path, body) => /\/estimate$/.test(path) && body.action === 'reanalyze' && body.settings.detail === 'standard',
+    () => ({ status: 200, body: server.refused(crashAgain) }),
+    false,
+  );
+  const locked = server.add(
+    doneJob({ name: 'Road Runner', state: 'failed', copies: [], resumable: false, describableAgain: true, done: 2, sections: 6, error: 'The server stopped three times while working on the same part of this video, so it will not try that part again.' }),
+  );
+  const env = await boot({ server, search: '?id=' + locked.id });
+  const { $ } = env;
+  await env.timers.advance(700);
+  assert.equal($('resume').hidden, true);
+  assert.equal(visible($('reanalyze')), true, 'never hidden');
+  assert.equal($('reanalyze').getAttribute('aria-disabled'), 'true');
+  assert.equal($('reanalyze').getAttribute('data-reason'), crashAgain);
+  assert.equal($('reanalyze').textContent, 'Write fresh descriptions with these choices', 'no price is named for a run that will not start');
+  assert.equal($('estimate').textContent, 'Write fresh descriptions: ' + crashAgain);
+  assert.equal(
+    $('again-help').textContent,
+    'Fresh descriptions use the copy of this video already on the server, so nothing is uploaded again. It starts over, so the 2 sections already finished are paid for again.',
+  );
+  await env.click('reanalyze');
+  assert.equal(env.status(), crashAgain);
+  assert.equal(server.all(/\/reanalyze$/).length, 0);
+  assert.equal(env.dialogs.length, 0);
+  await env.choose('detail', 'essential');
+  await env.timers.advance(700);
+  assert.equal($('reanalyze').getAttribute('aria-disabled'), null, 'other choices can run');
+  assert.equal($('reanalyze').textContent, 'Write fresh descriptions with these choices, about $0.46');
+
+  server.overrides.length = 0;
+  const gone = server.add(
+    doneJob({ name: 'Feature film', seconds: 5400, preview: true, finishable: true, originalGone: true, copies: [{ version: 1, preview: true, settings: standardSettings, outputSeconds: 185, count: 4 }] }),
+  );
+  const second = await boot({ server, search: '?id=' + gone.id });
+  await second.timers.advance(700);
+  const missing = 'The original video is no longer on the server, so it cannot be described again. Choose the video again to describe it.';
+  assert.equal(second.$('estimate').textContent, 'Describe the rest: about $3.34. Try the preview again and Write fresh descriptions: ' + missing + ' $5.00 of today’s $5.00 is left.');
+  assert.equal(second.$('preview-again').getAttribute('data-reason'), missing);
+  assert.equal(second.$('reanalyze').getAttribute('data-reason'), missing);
+  assert.equal(second.$('finish').getAttribute('aria-disabled'), null, 'Describe the rest still works');
+});
+
+test('a run that stops where Continue is refused says once that Write fresh descriptions can start it over', async () => {
+  const server = makeServer();
+  const job = server.add(doneJob({ name: 'Road Runner', state: 'running', copies: [], progress: 40, sections: 6, done: 2 }));
+  const env = await boot({ server, search: '?id=' + job.id });
+  const heard = listen(env.$('status'));
+  Object.assign(job, { state: 'failed', resumable: false, describableAgain: true, error: 'The server stopped three times while working on the same part of this video, so it will not try that part again.' });
+  await env.timers.advance(5000);
+  assert.equal(env.status(), 'Road Runner stopped before finishing. Write fresh descriptions can start it over.');
+  assert.equal(heard.filter((text) => text.includes('stopped before finishing')).length, 1);
+  assert.equal(visible(env.$('reanalyze')), true);
+});
+
+test('a YouTube link she already has opens that video and says so, and is never asked for again under a new ID', async () => {
+  const server = makeServer();
+  const had = server.add(doneJob({ name: 'KOLR 10 sign-on', source: 'youtube', describableAgain: true }));
+  server.override((method, path) => path === '/imports', () => ({ status: 200, body: { ...had, existing: true } }));
+  const env = await boot({ server });
+  const { $ } = env;
+  const heard = listen($('status'));
+  await env.type('youtube', 'https://youtu.be/aqz-KE-bpKQ', 'input');
+  await env.click('import');
+  await env.timers.advance(100);
+  assert.equal(server.all(/^\/imports$/).length, 1, 'a video she has is not asked for again');
+  assert.equal($('job-title').textContent, 'KOLR 10 sign-on');
+  assert.equal(env.status(), 'You already have this video. KOLR 10 sign-on: finished. Your described copy is below.');
+  assert.equal(heard.filter((text) => text.includes('KOLR')).length, 1, 'the name and state are said once');
+  assert.equal(env.document.activeElement, $('result-title'));
+  assert.equal($('youtube').value, '');
+  assert.equal(server.jobs.size, 1, 'no second job was made');
+  heard.length = 0;
+  server.override((method, path) => path === '/imports', () => ({ status: 202, body: { ...had, existing: false } }));
+  server.override((method, path) => path === '/imports', () => ({ status: 200, body: { ...had, existing: true } }));
+  await env.type('youtube', 'https://youtu.be/aqz-KE-bpKQ', 'input');
+  await env.click('import');
+  await env.timers.advance(100);
+  const asked = server.all(/^\/imports$/);
+  assert.equal(asked.length, 3, 'this tab’s own finished import is asked once more, under a new ID');
+  assert.notEqual(asked[1].body.requestId, asked[2].body.requestId);
+  assert.deepEqual(heard, ['You already have this video. It is already open.']);
 });

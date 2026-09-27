@@ -238,6 +238,7 @@ export function describedVideoPage(sharedHead: string): string {
 </fieldset>
 <p id="dv-estimate">Choose a video to see the estimated cost.</p>
 <div class="row"><button id="dv-preview" class="primary" type="button" aria-describedby="dv-estimate" hidden>Try the first 3 minutes</button><button id="dv-start" class="primary" type="button" aria-describedby="dv-estimate" hidden>Create described copy</button><button id="dv-preview-again" class="primary" type="button" aria-describedby="dv-estimate" hidden>Try the preview again with these choices</button><button id="dv-revoice" type="button" aria-describedby="dv-estimate dv-revoice-help dv-revoice-note" hidden>Make a new version with this narration</button><button id="dv-reanalyze" type="button" aria-describedby="dv-estimate" hidden>Write fresh descriptions with these choices</button><button id="dv-rehearse" type="button" aria-describedby="dv-rehearse-help" hidden>Free rehearsal (test tone, no paid services)</button></div>
+<p id="dv-again-help" class="hint" hidden></p>
 <p id="dv-rehearse-help" class="hint" hidden>Runs every step with a test tone in place of the paid services, to check that storage, the notice and the player work. Nothing is charged, and the copy is labelled as a rehearsal.</p>
 <p id="dv-revoice-help" class="hint" hidden>A new version with this narration reuses the descriptions already written, and narration is included. To change the detail, notes or extra passes, use Write fresh descriptions instead. Finished versions stay available until this video expires.</p>
 <p id="dv-revoice-note" class="hint" hidden></p>
@@ -388,6 +389,23 @@ export const descriptionBrowserScript: string = String.raw`
     var done=Number(job&&job.done)||0,total=Number(job&&job.sections)||0;
     if(!done)return 'Try again from the beginning';
     return 'Continue where it stopped'+(total>done?': '+(total-done)+' of '+plural(total,'section','sections')+' left':'');
+  }
+  /* Sep 27 2026: Write fresh descriptions starts from the original already kept on the server,
+   * after a finished copy or after a run that stopped (the server's describableAgain; an answer
+   * without it means a finished copy only). Nothing is fetched or uploaded again. */
+  function stoppedRun(j){return !!j&&(j.state==='failed'||j.state==='cancelled');}
+  function again(){if(!job||!job.seconds)return false;return job.describableAgain===undefined?job.state==='done':!!job.describableAgain;}
+  function fromKept(lead){return lead+' the copy of this video already on the server, so nothing is '+(job&&job.source==='upload'?'uploaded':'downloaded')+' again.';}
+  /** A stopped run's finished sections are paid for again; the button that keeps them is named only while it is offered. */
+  function againCost(){
+    var done=stoppedRun(job)?Number(job.done)||0:0;if(!done)return '';
+    var keeper=job.resumable?(job.overQuote?'Allow more and continue':'Continue where it stopped'):'';
+    return 'It starts over, so the '+plural(done,'section','sections')+' already finished '+(done===1?'is':'are')+' paid for again'+(keeper?'; '+keeper+' keeps '+(done===1?'it':'them'):'')+'.';
+  }
+  function againHelp(){
+    if(!again())return '';var list=[fromKept('Fresh descriptions use')];
+    if(stoppedRun(job)){var cost=againCost();if(cost)list.push(cost);if(copies().length)list.push('Earlier versions stay available.');}
+    return list.join(' ');
   }
   function raiseTo(){
     var e=estimates.resume;if(!e)return 0;
@@ -627,16 +645,23 @@ export const descriptionBrowserScript: string = String.raw`
     var list=[],s=settings(),p=part(),state=job.state;
     if(state==='ready'){if(p.error||tooLong())return [];list.push({key:'start',body:{action:'start',settings:s}});if(canPreview())list.push({key:'preview',body:{action:'preview',settings:s}});return list;}
     if(state==='done'){
-      if(job.preview){if(job.finishable)list.push({key:'finish',body:{action:'finish'}});if(!p.error)list.push({key:'preview',body:{action:'preview',settings:s}});}
-      else{list.push({key:'revoice',body:{action:'revoice',settings:s}});if(!p.error)list.push({key:'reanalyze',body:{action:'reanalyze',settings:s}});}
+      if(job.preview){if(job.finishable)list.push({key:'finish',body:{action:'finish'}});}
+      else list.push({key:'revoice',body:{action:'revoice',settings:s}});
       if(retryCount(job))list.push({key:'redo',body:{action:'redo'}});
-      return list;
     }
-    if(job.resumable)list.push({key:'resume',body:{action:'resume',settings:voiceFields()}});
+    else if(job.resumable)list.push({key:'resume',body:{action:'resume',settings:voiceFields()}});
+    /* A preview tried again is fresh descriptions of the first minutes: the server's preview
+     * action is only for a video that was never described, so it is priced as reanalyze. */
+    if(again()&&!p.error){
+      if(job.preview)list.push({key:'previewAgain',body:{action:'reanalyze',settings:Object.assign({},s,{preview:true})}});
+      list.push({key:'reanalyze',body:{action:'reanalyze',settings:s}});
+    }
     return list;
   }
-  function mainKey(){if(!job)return '';if(job.state==='ready')return 'start';if(job.state==='done')return job.preview?'preview':'reanalyze';return job.resumable?'resume':'';}
-  var LABELS={start:'Create described copy',preview:'Try the first 3 minutes',revoice:'Make a new version with this narration',reanalyze:'Write fresh descriptions',finish:'Describe the rest',redo:'Try again on the parts that could not be described',resume:'Continue where it stopped'};
+  function mainKey(){if(!job)return '';if(job.state==='ready')return 'start';if(job.state!=='done'&&job.resumable)return 'resume';if(!again())return '';return job.preview?'previewAgain':'reanalyze';}
+  var LABELS={start:'Create described copy',preview:'Try the first 3 minutes',previewAgain:'Try the preview again',revoice:'Make a new version with this narration',reanalyze:'Write fresh descriptions',finish:'Describe the rest',redo:'Try again on the parts that could not be described',resume:'Continue where it stopped'};
+  /** A price, or the reason alone when the server refused before pricing (never "about $0.00"). */
+  function priceWords(e){var label=LABELS[e.key];if(!e.allowed&&!(e.estimateUSD>0))return label+': '+refusal(e);return label+': about '+money(e.estimateUSD)+'.'+(e.allowed?'':' '+refusal(e));}
   function allowance(e){var mode=e.billingMode||(config&&config.billingMode),maximum=typeof e.approvedUSD==='number'?'Maximum charge: '+money(e.approvedUSD)+'. ':'',included=(e.dialogueIncluded||(config&&config.dialogueIncluded))?'Narration and dialogue timing are included.':'Narration is included.';if(mode==='platform')return 'Admin processing is paid by the platform. '+included;if(mode==='balance')return maximum+money(e.remainingUSD)+' is available in your account. '+included;return money(e.remainingUSD)+' of today’s '+money(e.dailyUSD)+' is left.';}
   function refusal(e){return e.reason||('This needs '+money(e.setAsideUSD)+' set aside, and '+allowance(e));}
   function scheduleEstimates(announce,prefix){
@@ -653,7 +678,7 @@ export const descriptionBrowserScript: string = String.raw`
       estimates={};results.forEach(function(result){estimates[result.key]=result;});
       if(typeof results[0].remainingUSD==='number')config.remainingUSD=results[0].remainingUSD;
       controls();
-      if(speak){var main=estimates[mainKey()]||results[0];var text=(prefix?prefix+' ':'')+(job.state==='ready'&&main.key==='start'?'Create described copy':LABELS[main.key])+': about '+money(main.estimateUSD)+'.';if(!main.allowed)text+=' '+refusal(main);say(text,true);}
+      if(speak){var main=estimates[mainKey()]||results[0],text=(prefix?prefix+' ':'')+priceWords(main);if(main.key==='resume'&&estimates.reanalyze)text+=' '+priceWords(estimates.reanalyze);say(text,true);}
       presetPrices();
     }catch(e){
       if(seq!==estimateSeq||shownId!==id||e.name==='AbortError')return;
@@ -672,7 +697,26 @@ export const descriptionBrowserScript: string = String.raw`
     }catch(e){presetSig='';}
   }
   async function freshEstimate(action,extra){var body=Object.assign({action:action},extra||{});return call('/jobs/'+job.id+'/estimate','POST',body);}
-  function priced(key,text){var e=estimates[key];return text+(e?', about '+money(e.estimateUSD):'');}
+  function priced(key,text){var e=estimates[key];return text+(e&&(e.allowed||e.estimateUSD>0)?', about '+money(e.estimateUSD):'');}
+  /**
+   * Each price in button order, then each refusal once (one reason for several buttons, such as
+   * the original being gone, is said once and names them), then what her account allows. A lead
+   * (Continue's own words) comes first, and its estimate stands for the account when given.
+   */
+  function pricesSaid(keys,lead,base){
+    var parts=lead?[lead]:[],reasons=[],named={},first=base||null;
+    keys.forEach(function(key){
+      var e=estimates[key];if(!e)return;
+      var costed=e.allowed||e.estimateUSD>0;
+      if(costed)parts.push(LABELS[key]+': about '+money(e.estimateUSD)+'.');
+      if(e.allowed){first=first||e;return;}
+      var why=refusal(e);if(!named[why]){named[why]=[];reasons.push(why);}
+      if(!costed)named[why].push(LABELS[key]);
+    });
+    reasons.forEach(function(why){var names=named[why];parts.push((names.length?names.join(' and ')+': ':'')+why);});
+    if(first)parts.push(allowance(first));
+    return parts.join(' ');
+  }
   function gate(id,reason){var button=$(id);if(reason){button.setAttribute('aria-disabled','true');button.setAttribute('data-reason',reason);}else{button.removeAttribute('aria-disabled');button.removeAttribute('data-reason');}}
   function blocked(id){if(inflight)return true;var button=$(id);if(button.getAttribute('aria-disabled')==='true'){say(button.getAttribute('data-reason')||'That is not available right now.',true);return true;}return false;}
   function spendReason(key){
@@ -685,7 +729,7 @@ export const descriptionBrowserScript: string = String.raw`
     var e=estimates;
     $('start').textContent=priced('start','Create described copy');
     $('preview').textContent=priced('preview',previewName());
-    $('preview-again').textContent=priced('preview','Try the preview again with these choices');
+    $('preview-again').textContent=priced('previewAgain','Try the preview again with these choices');
     $('revoice').textContent=priced('revoice','Make a new version with this narration');
     $('reanalyze').textContent=priced('reanalyze','Write fresh descriptions with these choices');
     $('finish').textContent=priced('finish','Describe the rest');
@@ -702,18 +746,13 @@ export const descriptionBrowserScript: string = String.raw`
       else if(e.start){text='Video length: '+length(job.seconds)+(p.range?', describing '+length(p.range.end-p.range.start)+' of it':'')+'. Create described copy: about '+money(e.start.estimateUSD)+'; '+money(e.start.setAsideUSD)+' is set aside until it finishes, and anything unused comes back.'+(e.preview?' '+previewName()+': about '+money(e.preview.estimateUSD)+'.':'')+' '+allowance(e.start);if(!e.start.allowed)text+=' '+refusal(e.start);}
       else text='Video length: '+length(job.seconds)+'. Working out the cost…';
     }
-    else if(job&&job.state==='done'){
-      var parts=[];
-      if(e.finish)parts.push('Describe the rest: about '+money(e.finish.estimateUSD)+'.');
-      if(e.preview)parts.push('Try the preview again: about '+money(e.preview.estimateUSD)+'.');
-      if(e.revoice)parts.push('Make a new version with this narration: about '+money(e.revoice.estimateUSD)+'.');
-      if(e.reanalyze)parts.push('Write fresh descriptions: about '+money(e.reanalyze.estimateUSD)+'.');
-      if(e.redo)parts.push('Try again on the parts that could not be described: about '+money(e.redo.estimateUSD)+'.');
-      var any=e.finish||e.preview||e.revoice||e.reanalyze||e.redo;if(any)parts.push(''+allowance(any));
-      text=parts.join(' ')||'Working out the cost…';
+    else if(job&&job.state==='done')text=pricesSaid(['finish','previewAgain','revoice','reanalyze','redo'])||'Working out the cost…';
+    else if(job&&stoppedRun(job)&&(job.resumable||again())){
+      var lead='',fromKeptKeys=again()?['previewAgain','reanalyze']:[];
+      if(job.resumable&&job.overQuote)lead=e.resume?overQuoteText(job)+' Carrying on is expected to cost about '+money(e.resume.estimateUSD)+' more, and it may spend up to '+money(raiseTo())+'.':overQuoteText(job)+' Working out the cost of carrying on…';
+      else if(job.resumable)lead=e.resume?resumeName()+', about '+money(e.resume.estimateUSD)+'.':'Working out the cost of continuing…';
+      text=pricesSaid(fromKeptKeys,lead,job.resumable&&e.resume)||'Working out the cost…';
     }
-    else if(job&&job.resumable&&job.overQuote)text=e.resume?overQuoteText(job)+' Carrying on is expected to cost about '+money(e.resume.estimateUSD)+' more, and it may spend up to '+money(raiseTo())+'. '+allowance(e.resume):overQuoteText(job)+' Working out the cost of carrying on…';
-    else if(job&&job.resumable)text=e.resume?resumeName()+', about '+money(e.resume.estimateUSD)+'. '+allowance(e.resume):'Working out the cost of continuing…';
     else if(job)text=job.costUSD?'Processing cost for this video so far: '+money(job.costUSD)+'.':'';
     if($('estimate').textContent!==text)$('estimate').textContent=text;
   }
@@ -731,18 +770,21 @@ export const descriptionBrowserScript: string = String.raw`
     $('redo-help').textContent='Only those parts are described again; everything else is reused and not paid for again. The current version stays available.';
     $('preview-note').textContent=job&&job.preview?'This preview describes the first '+length(previewSeconds())+'. Describe the rest keeps the preview’s parts, so they are not paid for again.':'';
   }
+  /** A choice only fresh descriptions use: re-voicing a finished copy, or carrying on a stopped run, keeps its own. */
   function revoiceNote(){
-    if(!job||job.state!=='done'||job.preview||!job.settings)return '';
+    if(!job||!job.settings)return '';
+    var carrying=stoppedRun(job)&&!!job.resumable&&again();
+    if(!carrying&&(job.state!=='done'||job.preview))return '';
     var saved=job.settings,s=settings(),changed=[];
     if(s.detail!==saved.detail)changed.push('detail');if(s.notes!==(saved.notes||''))changed.push('notes');
     if(s.closeLook!==!!saved.closeLook)changed.push('closer look');if(s.firstLook!==!!saved.firstLook)changed.push('first look');if((s.tier||'')!==(saved.tier||''))changed.push('Google tier');
     if(JSON.stringify(s.range||null)!==JSON.stringify(saved.range||null))changed.push('part to describe');
     if(!changed.length)return '';
-    return 'Your change to '+changed.join(', ').replace(/, ([^,]*)$/,' and $1')+' is only used by Write fresh descriptions.';
+    return 'Your change to '+changed.join(', ').replace(/, ([^,]*)$/,' and $1')+' is only used by Write fresh descriptions'+(carrying?'; carrying on keeps what this attempt started with.':'.');
   }
   function controls(){
-    var busy=working(job),state=job?job.state:'',ready=state==='ready',done=state==='done',off=!config||!config.enabled,preview=done&&!!job.preview;
-    var resumeOnly=!!job&&!!job.resumable&&!done;
+    var busy=working(job),state=job?job.state:'',ready=state==='ready',done=state==='done',off=!config||!config.enabled,preview=done&&!!job.preview,fresh=again();
+    var resuming=!!job&&!!job.resumable&&!done,resumeOnly=resuming&&!fresh;
     $('file').disabled=uploading||off;
     $('upload').disabled=uploading||off||!$('file').files.length;
     $('upload').textContent=job&&job.state==='uploading'&&!uploading?'Resume upload and check video':'Upload and check video';
@@ -753,12 +795,17 @@ export const descriptionBrowserScript: string = String.raw`
     ['detail','notes','close-look','first-look','tier','part-from','part-to','preset-commercials','preset-cartoon','preset-tv','preset-film','preset-custom'].forEach(function(id){$(id).disabled=resumeOnly;});
     $('tier-box').hidden=!(config&&config.tiers);
     $('voice-open').disabled=voicesOff;$('voice-default').disabled=voicesOff;$('sample-play').disabled=voicesOff;$('sample-fast').disabled=voicesOff;$('say-play').disabled=voicesOff;
-    $('resume-note').hidden=!resumeOnly;
-    if(resumeOnly){var saved=job.settings||{};$('resume-note').textContent='Continuing keeps the detail, notes and extra passes this attempt started with: '+(DETAIL_NAMES[saved.detail]||'Standard detail')+', closer look '+(saved.closeLook?'on':'off')+', first look '+(saved.firstLook?'on':'off')+'. You can change the voice, speeds, pauses and volume under Choose the narration before you continue.';}
+    $('resume-note').hidden=!resuming;
+    if(resuming){var saved=job.settings||{};$('resume-note').textContent='Continuing keeps the detail, notes and extra passes this attempt started with: '+(DETAIL_NAMES[saved.detail]||'Standard detail')+', closer look '+(saved.closeLook?'on':'off')+', first look '+(saved.firstLook?'on':'off')+'. You can change the voice, speeds, pauses and volume under Choose the narration before you continue.'+(fresh?' Other changes are only used by Write fresh descriptions, which starts over.':'');}
     $('start').hidden=!ready;$('preview').hidden=!ready||!canPreview();
-    $('revoice').hidden=!done||preview;$('reanalyze').hidden=!done||preview;$('revoice-help').hidden=!done||preview;
-    $('preview-again').hidden=!preview;$('preview-box').hidden=!preview;$('finish').hidden=!preview||!job.finishable;
+    $('revoice').hidden=!done||preview;$('revoice-help').hidden=!done||preview;
+    /* Offered wherever the server allows it, greyed with its reason when refused, never hidden. */
+    $('reanalyze').hidden=!fresh;$('preview-again').hidden=!fresh||!job.preview;
+    $('preview-box').hidden=!preview;$('finish').hidden=!preview||!job.finishable;
     var note=revoiceNote();$('revoice-note').hidden=!note;$('revoice-note').textContent=note;
+    var help=againHelp(),helped=help?'dv-estimate dv-again-help':'dv-estimate',flagged=note&&resuming?' dv-revoice-note':'';setNote('again-help',help);
+    $('reanalyze').setAttribute('aria-describedby',helped);$('preview-again').setAttribute('aria-describedby',helped);
+    $('resume').setAttribute('aria-describedby','dv-resume-price dv-resume-note'+flagged);$('allow-more').setAttribute('aria-describedby','dv-over-quote'+flagged);
     $('redo-box').hidden=!done||!retryCount(job);
     $('cancel').hidden=!busy;
     var cancelling=!!(job&&job.cancelRequested&&busy),stuck=cancelStuck(job);
@@ -776,7 +823,7 @@ export const descriptionBrowserScript: string = String.raw`
     $('edit-load').disabled=!done;
     var partReason=ready?(part().error||(tooLong()?'Choose the part to describe first; one run can describe up to '+length(config.maxMinutes*60)+'.':'')):'';
     gate('start',partReason||spendReason('start'));gate('preview',partReason||spendReason('preview'));
-    gate('preview-again',part().error||spendReason('preview'));gate('revoice',spendReason('revoice'));gate('reanalyze',part().error||spendReason('reanalyze'));
+    gate('preview-again',part().error||spendReason('previewAgain'));gate('revoice',spendReason('revoice'));gate('reanalyze',part().error||spendReason('reanalyze'));
     gate('finish',spendReason('finish'));gate('redo',spendReason('redo'));gate('resume',spendReason('resume'));gate('allow-more',spendReason('resume'));
     gate('rehearse',!config||!config.enabled?'The describer is not set up yet.':partReason);
     gate('edit-save',voicesOff?spendReason('revoice'):'');gate('edit-redo',voicesOff?spendReason('redo'):'');
@@ -947,7 +994,7 @@ export const descriptionBrowserScript: string = String.raw`
   function stoppedLine(j){
     if(j.overQuote)return j.name+' stopped because it is costing more than quoted: '+money(j.runCostUSD)+' spent of about '+money(j.estimatedUSD)+'. To let it carry on, press Allow more and continue; it asks before spending.';
     if(j.recheckable)return j.name+': the check was interrupted. Press Check again; checking is free.';
-    return j.name+' stopped before finishing. '+(j.resumable?(Number(j.done)?'Press Continue where it stopped to carry on.':'Press Try again from the beginning to start over.'):'');
+    return j.name+' stopped before finishing. '+(j.resumable?(Number(j.done)?'Press Continue where it stopped to carry on.':'Press Try again from the beginning to start over.'):j.describableAgain&&j.seconds?'Write fresh descriptions can start it over.':'');
   }
   async function showIf(id,data,focus){if(shownId===id)await show(data,focus);}
   async function poll(){
@@ -1070,8 +1117,10 @@ export const descriptionBrowserScript: string = String.raw`
       clearError();var key='kade-youtube-import:'+url,id;try{id=sessionStorage.getItem(key);}catch(e){}
       id=id||uuid();try{sessionStorage.setItem(key,id);}catch(e){}
       var imported=await call('/imports','POST',{url:url,requestId:id});
-      if(['failed','cancelled','done'].indexOf(imported.state)>=0){id=uuid();try{sessionStorage.setItem(key,id);}catch(e){}imported=await call('/imports','POST',{url:url,requestId:id});}
-      $('youtube').value='';await show(imported,true);await list();
+      /* Sep 27 2026: a link she already brought in comes back as that video (existing), never
+       * downloaded again; only this tab's own finished import asks with a new ID. */
+      if(!imported.existing&&['failed','cancelled','done'].indexOf(imported.state)>=0){id=uuid();try{sessionStorage.setItem(key,id);}catch(e){}imported=await call('/imports','POST',{url:url,requestId:id});}
+      $('youtube').value='';await show(imported,true,imported.existing?'You already have this video.':'');await list();
     });
   };
   $('library-use').onclick=function(){
@@ -1239,15 +1288,17 @@ export const descriptionBrowserScript: string = String.raw`
   function fresh(preview){
     var button=preview?'preview-again':'reanalyze';if(!job||blocked(button))return;
     act(async function(){
-      clearError();var id=job.id,s=settings(),e=await freshEstimate(preview?'preview':'reanalyze',{settings:s});
+      /* Both are reanalyze on the server; the preview marks the first minutes only. */
+      clearError();var id=job.id,s=settings(),e=await freshEstimate('reanalyze',{settings:preview?Object.assign({},s,{preview:true}):s});
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
-      if(!confirm((preview?'Try the preview of “'+job.name+'” again with ':'Write fresh descriptions for “'+job.name+'” with ')+describeRun(s)+'? This pays for looking at the video again. Narration is included. About '+money(e.estimateUSD)+'. '+allowance(e)+' Earlier versions stay available.'))return;
+      var kept=copies().length>0,cost=againCost();
+      if(!confirm((preview?'Try the preview of “'+job.name+'” again with ':'Write fresh descriptions for “'+job.name+'” with ')+describeRun(s)+'? '+fromKept('It uses')+' This pays for looking at the video again.'+(cost?' '+cost:'')+' Narration is included. About '+money(e.estimateUSD)+'. '+allowance(e)+(kept?' Earlier versions stay available.':'')))return;
       remember();noteRecent(s.voice);
       var body=Object.assign({},s,{expectedVersion:job.version||1});if(preview)body.preview=true;
       var updated=await call('/jobs/'+id+'/reanalyze','POST',body);
       if(shownId===id){script=null;edits={};$('edit-fields').hidden=true;}
       await showIf(id,updated,false);
-      say(preview?'Trying the preview again. You will hear when it is ready.':'Writing fresh descriptions. Earlier versions are still available below.',true);
+      say(preview?'Trying the preview again. You will hear when it is ready.':kept?'Writing fresh descriptions. Earlier versions are still available below.':'Writing fresh descriptions. You will hear when they are ready.',true);
       land('job-title',$(button));await list();
     });
   }
