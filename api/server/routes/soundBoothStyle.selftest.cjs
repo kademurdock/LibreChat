@@ -113,8 +113,9 @@ test('the Style hint is true now and names no person or folder', () => {
   assert.match(hint, /^A singing style taught to YuE2 from real recordings\./);
   assert.match(hint, /Soul learned from soul and R&B records/);
   assert.match(hint, /female lead vocal or male lead vocal in Music direction/);
-  assert.match(hint, /Kids learned from recordings of children’s choirs/);
+  assert.match(hint, /Kids sings with a children’s choir, so its lyrics must be clean\./, 'Part 296: shorter, and it warns before the clean-words refusal');
   assert.match(hint, /None is plain YuE2\./);
+  assert.ok(hint.split(/\s+/).length <= 60, 'the hint stays short');
   assert.doesNotMatch(hint, /one expressive female lead/, 'the old sonauto description is gone');
   for (const words of [hint, yue.yueStyleLockedSentence, pack.FAMILY_PACK_STYLES_REFUSAL, yue.yueStyles.soul.lead, yue.yueStyles.kids.lead]) {
     assert.doesNotMatch(words, PERSON_OR_FOLDER, words);

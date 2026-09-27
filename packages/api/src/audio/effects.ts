@@ -22,33 +22,27 @@ export function effectsVariant(input?: Pick<Input, 'soundModel'> | null): Varian
   return effectsVariants[input?.soundModel || '3_small_sfx'] || effectsVariants['3_small_sfx'];
 }
 export const effectsCost =
-  'Provider cost: 3 Medium is 3.76 cents per recording, or 15.04 cents for four. 3 Small SFX is 2.06 cents per recording, or 8.24 cents for four. This trial does not deduct from your credit balance; Kade pays the provider cost. Each press starts generation without another confirmation.';
+  '3 Medium is 3.76 cents a take and 3 Small SFX is 2.06 cents. This trial does not deduct from your credit balance.';
 const queue = 'https://queue.fal.run';
+/* Part 296: settings people rarely change carry `advanced`, and the booth shows them inside one
+ * collapsed "More settings" group. */
 export const effectsGuide = {
   name: 'Stable Audio',
-  tagline: 'Stereo sound effects and layered ambience, saved as lossless WAV.',
-  where:
-    'Stable Audio 3 Medium is the default; the original 3 Small SFX remains available in Sound settings. Both run on fal. Your description is sent to fal.',
+  tagline: 'Sound effects and ambience, saved as WAV.',
+  where: "Made on fal's servers; your description is sent to fal.",
   cost: effectsCost as string,
-  bestFor: [
-    'nature and room ambience',
-    'foley, machines and environmental effects',
-    'trying inexpensive soundscape variations',
-  ],
-  notFor: [
-    'spoken dialogue or exact lyrics',
-    'separate editable layers or guaranteed seamless loops',
-  ],
+  bestFor: ['nature and room ambience', 'foley, machines and other effects', 'cheap variations to compare'],
+  notFor: ['speech or singing', 'separate layers or seamless loops'],
   howToWrite: [
-    'Describe the foreground sound, then the quieter background layers, their distance and the space around them.',
-    'For ambience, ask for a continuous natural recording. Say no music or speech if you want only environmental sound.',
-    'Listen to several takes. Complex layers and precise timing may need separate recordings and mixing.',
+    'Describe the main sound, then the quieter layers, how far away they are and the space around them.',
+    'For ambience, ask for a continuous natural recording, and say no music or speech if you want neither.',
+    'Listen to several takes. Complex layers or exact timing may need separate takes mixed together.',
   ],
   settings: [
     {
       key: 'soundModel',
       label: 'Sound model',
-      hint: '3 Medium is the larger model and our recommended starting point for detailed ambience: 3.76 cents per take. 3 Small SFX is the original option: 2.06 cents per take. Stereo width and layer accuracy still vary between recordings.',
+      hint: '3 Medium is more detailed, at 3.76 cents a take; 3 Small SFX is 2.06 cents a take.',
       kind: 'choice',
       options: ['3_medium', '3_small_sfx'],
       default: '3_medium',
@@ -56,7 +50,7 @@ export const effectsGuide = {
     {
       key: 'duration',
       label: 'Duration in seconds',
-      hint: '1 to 120 seconds in Sound Booth for either model. Provider pricing is per recording.',
+      hint: '1 to 120 seconds. The price is per take, whatever its length.',
       kind: 'number',
       min: 1,
       max: 120,
@@ -66,7 +60,7 @@ export const effectsGuide = {
     {
       key: 'count',
       label: 'Number of takes',
-      hint: '1 to 4 variations, submitted together with different seeds. Each costs Kade 3.76 cents with Medium or 2.06 cents with Small SFX.',
+      hint: '1 to 4 variations at once; each costs the price of one take.',
       kind: 'number',
       min: 1,
       max: 4,
@@ -76,20 +70,22 @@ export const effectsGuide = {
     {
       key: 'steps',
       label: 'Inference steps',
-      hint: '8 is the recommended default for both distilled models. More steps take longer and do not guarantee better sound.',
+      hint: '8 is normal. More takes longer and is not always better.',
       kind: 'number',
       min: 1,
       max: 100,
       step: 1,
       default: 8,
+      advanced: true,
     },
     {
       key: 'seed',
       label: 'Optional seed',
-      hint: 'Leave blank for a new starting point. A batch uses consecutive seeds.',
+      hint: 'Leave blank for a new start; reuse a number to repeat one.',
       kind: 'number',
       min: 0,
       max: 2147483647,
+      advanced: true,
     },
   ],
 } as const;

@@ -66,6 +66,7 @@ function loadBooth({ saved, usage, assets, api: extraApi = {}, requires = {} }) 
         /* Part 295 YuE2 covers: the flag-off behaviour (a carry to YuE2 reads the reason line). */
         yueCoverSettings: (settings) => settings,
         yueCoverOptions: () => ({}),
+        yueSavedOptions: (options) => options,
         yueProjectWhy: () => 'YuE2 — a song made on the sleeping music GPU',
         yueTakeFacts: () => ({}),
         effectsGuide: { name: 'Stable Audio', settings: [], howToWrite: [] },
@@ -169,7 +170,8 @@ test('Part 295: everyone but Kade is quoted the platform factor x the real price
     /* The guide's price lines follow the person; the shared guide is never changed. */
     const before = JSON.stringify(pure.GUIDE);
     const priced = pure.guidePriced(pure.GUIDE, member);
-    assert.match(priced.engines.lyria.cost, /^About 16 cents a song, and that is per SONG/);
+    assert.match(priced.engines.lyria.cost, /^About 16 cents a song, whatever its length\./);
+    assert.equal(pure.GUIDE.engines.lyria.cost, 'About eight cents a song, whatever its length. Usually back in under a minute.', 'the written line and the priced one say the same');
     assert.match(priced.engines.seed.cost, /^About 38 cents a minute\./);
     assert.equal(priced.engines.scenema, pure.GUIDE.engines.scenema);
     assert.equal(pure.guidePriced(pure.GUIDE, 1), pure.GUIDE, 'Kade gets the guide exactly as written');
@@ -206,6 +208,42 @@ test('the other two engines are untouched by the third', () => {
   assert.ok(pure.estimateFor('scenema', 'Hello there, friend.').audioSeconds > 0);
 });
 
+/* Part 296 (Sep 27 2026), her words: the booth is "super wordy and cluttered". The settings people
+ * rarely change carry `advanced`, and both screens put those in one collapsed "More settings"
+ * group; the guide's words are short enough to hear in one go. Stable Audio's own guide is in
+ * packages/api (effects.selftest.cjs checks it); here it is a stand-in. */
+test('Part 296: common settings on top, rarely changed ones in More settings, short words throughout', () => {
+  const advanced = (engine) => Array.from(pure.GUIDE.engines[engine].settings.filter((s) => s.advanced).map((s) => s.key));
+  assert.deepEqual(advanced('scenema'), ['gen_seconds', 'pace', 'seed']);
+  assert.deepEqual(advanced('yue2'), ['abc', 'cot', 'weirdness', 'steps', 'guidance', 'seed']);
+  assert.deepEqual(advanced('lyria'), ['keep_lyrics']);
+  assert.deepEqual(advanced('seed'), ['speed', 'pitch', 'volume', 'multilingual', 'audio_quality']);
+  const words = (text) => String(text).split(/\s+/).filter(Boolean).length;
+  for (const key of ['scenema', 'yue2', 'lyria', 'seed']) {
+    const g = pure.GUIDE.engines[key];
+    assert.ok(g.settings.some((s) => !s.advanced), key + ' keeps something on top');
+    for (const s of g.settings) {
+      assert.ok(s.advanced === undefined || s.advanced === true, `${key} ${s.key}: advanced is true or absent`);
+      assert.ok(words(s.hint) <= 30, `${key} ${s.key} hint: ${s.hint}`);
+      assert.doesNotMatch(`${s.label} ${s.hint}`, /\bKade\b/);
+    }
+    for (const line of [g.tagline, g.where, g.cost]) assert.ok(words(line) <= 25, `${key}: ${line}`);
+    assert.ok(g.bestFor.length >= 2 && g.bestFor.length <= 4, key + ' bestFor');
+    assert.ok(g.notFor.length >= 2 && g.notFor.length <= 4, key + ' notFor');
+    for (const item of [...g.bestFor, ...g.notFor]) assert.ok(words(item) <= 10, `${key}: ${item}`);
+    assert.ok(g.howToWrite.length <= 8, key + ' howToWrite');
+    for (const tip of g.howToWrite) assert.ok(words(tip) <= 45, `${key}: ${tip}`);
+  }
+  /* What someone needs to avoid a surprise is still said. */
+  assert.match(pure.GUIDE.engines.lyria.cost, /a song, whatever its length/);
+  assert.match(pure.GUIDE.engines.seed.cost, /Up to two minutes a pass/);
+  assert.match(pure.GUIDE.engines.lyria.where, /Google/);
+  assert.match(pure.GUIDE.engines.seed.where, /fal/);
+  assert.match(pure.GUIDE.engines.lyria.howToWrite.join(' '), /Always say how long/);
+  assert.match(pure.GUIDE.engines.seed.settings.find((s) => s.key === 'audio_urls').hint, /under thirty seconds/);
+  assert.match(pure.GUIDE.engines.yue2.settings.find((s) => s.key === 'reference_voice_url').hint, /^Import one song, up to six minutes\. Or paste a media link\./);
+});
+
 test('a song goes to Lyria; people talking over music is still a Seed scene', () => {
   assert.equal(pure.suggestEngine('Write me a song about leaving Missouri, with a chorus.').engine, 'lyria');
   assert.equal(pure.suggestEngine('A short instrumental theme, warm Rhodes, around 70 bpm.').engine, 'lyria');
@@ -235,7 +273,7 @@ test("the brief format follows Google's order: genre, instruments, structure, vo
   const howto = pure.GUIDE.engines.lyria.howToWrite.join('\n');
   assert.match(howto, /Genre and era first/);
   assert.match(howto, /\[Intro\] -> \[Verse 1\]/);
-  assert.match(howto, /BPM number, the key, and how long/);
+  assert.match(howto, /then BPM, key and length/);
   assert.doesNotMatch(howto, /Lead with the FEELING/);
 });
 
@@ -330,7 +368,7 @@ test('Part 295: YuE2 covers reach the guide, the saved project, the take and the
   const booth = loadBooth({
     saved: [], usage: [], assets: [],
     api: {
-      yueCoverSettings: yue.yueCoverSettings, yueCoverOptions: yue.yueCoverOptions,
+      yueCoverSettings: yue.yueCoverSettings, yueCoverOptions: yue.yueCoverOptions, yueSavedOptions: yue.yueSavedOptions,
       yueProjectWhy: yue.yueProjectWhy, yueTakeFacts: yue.yueTakeFacts,
       yueStylesEnabled: yue.yueStylesEnabled, yueStyles: yue.yueStyles, yueCost: yue.yueCost,
       getNewS3URL: async (u) => u,
@@ -360,13 +398,19 @@ test('Part 295: YuE2 covers reach the guide, the saved project, the take and the
     assert.equal('singing' in created[0].options, false, 'flag off: nothing new is saved');
 
     process.env.YUE_COVERS_V2 = '1';
-    const cot = GUIDE.engines.yue2.settings.find((s) => s.key === 'cot').hint;
     const guide = withYueCovers(GUIDE);
     const keys = guide.engines.yue2.settings.map((s) => s.key);
     assert.deepEqual(Array.from(keys.slice(0, 4)), ['singing', 'lyrics', 'reference_voice_url', 'keep_chords']);
-    assert.match(guide.engines.yue2.settings.find((s) => s.key === 'cot').hint, /For a recording, use Keep the original chords instead\./);
-    assert.equal(GUIDE.engines.yue2.settings.find((s) => s.key === 'cot').hint, cot, 'the shared guide is never changed');
+    /* Part 296: Keep the original chords also decides a score's chords, so the score choice leaves. */
+    assert.equal(keys.includes('cot'), false);
+    assert.equal(GUIDE.engines.yue2.settings.some((s) => s.key === 'cot'), true, 'the shared guide is never changed');
     assert.equal(guide.engines.lyria, GUIDE.engines.lyria);
+    /* The settings people change most stay on top; the rest sit in More settings. */
+    assert.deepEqual(Array.from(guide.engines.yue2.settings.filter((s) => !s.advanced).map((s) => s.key)), ['singing', 'lyrics', 'reference_voice_url', 'keep_chords', 'count']);
+    assert.deepEqual(Array.from(guide.engines.yue2.settings.filter((s) => s.advanced).map((s) => s.key)), ['abc', 'weirdness', 'steps', 'guidance', 'seed']);
+    /* A score project, saved before or after Part 296, opens with its chords answer. */
+    assert.equal(projectView({ engine: 'yue2', options: { abc: 'X:1', cot: 'melody' } }).options.keep_chords, 'No: a new accompaniment that fits my style');
+    assert.equal(projectView({ engine: 'yue2', options: { lyrics: 'la', cot: 'full' } }).options.keep_chords, undefined, 'a song with no score is left alone');
 
     const input = yue.yueInput({ script: 'Jazz trio', lyrics: '[Chorus]\nWords', reference_voice_url: 'https://assets.test/a.wav', singing: 'Instrumental, no singing' });
     await hooks.project('u1', input, '');

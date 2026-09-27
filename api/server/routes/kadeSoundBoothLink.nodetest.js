@@ -256,7 +256,7 @@ test('Family feature pack: without it the route refuses in plain words, and noth
 test('Family feature pack: the guide greys the field out for everyone else, never hides it', () => {
   const GUIDE = boothGuide();
   const before = JSON.stringify(GUIDE);
-  assert.match(cover(GUIDE).hint, /You can also paste a media link to a song, from YouTube or another media site\./);
+  assert.match(cover(GUIDE).hint, /Or paste a media link\./);
 
   const family = link.guideFor(GUIDE, { id: 'u1' }, () => ({ mediaLinks: true }), {});
   assert.deepEqual(cover(family).link, {
@@ -277,6 +277,7 @@ test('Family feature pack: the guide greys the field out for everyone else, neve
       available: false, locked: 'Part of the Family feature pack',
     }, `${user.id}: the same label, shown greyed out, with no path to press`);
     assert.match(locked.hint, /^Import one song, up to six minutes\. YuE2 uses its melody/, 'the hint only offers what can be used');
+    assert.doesNotMatch(locked.hint, /media link/);
   }
   assert.equal(cover(family).lockedLink, undefined, 'a family account gets only the live link');
   const unsure = link.guideFor(GUIDE, { id: 'u1' }, () => { throw new Error('lookup failed'); }, {});

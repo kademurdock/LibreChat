@@ -224,3 +224,24 @@ test('YuE2: an instrumental renders with no words, a sung song still asks for th
 test('YuE2: a take note from the worker is shown under its take', () => {
   assert.ok(html.includes(`(t.note ? '<p class="hint">' + esc(t.note) + '</p>' : '')`));
 });
+
+/* Part 296 (Sep 27 2026): the settings the guide marks advanced sit in ONE collapsed "More
+ * settings" disclosure, after the rest of the panel, and it stays open across re-renders once
+ * opened. soundBoothWorkspace.selftest.cjs drives it in a real browser. */
+test('More settings: one real disclosure for advanced settings, remembered per engine', () => {
+  const fn = pageFunction('renderSettings');
+  assert.match(fn, /var advanced = show\.filter\(function\(s\)\{ return !!s\.advanced; \}\);/);
+  assert.match(fn, /show\.filter\(function\(s\)\{ return !s\.advanced; \}\)\.map\(settingField\)/, 'everything else stays on top');
+  assert.match(fn, /'<details id="moreSettingsGroup"'\+\(moreOpen\[engine\]\?' open':''\)\+'><summary>More settings<\/summary>'/);
+  assert.match(fn, /addEventListener\('toggle', function\(\)\{ moreOpen\[engine\] = group\.open; \}\)/);
+  assert.match(fn, /panel\.querySelectorAll\('\[data-key\]'\)/, 'a setting inside the group still saves its value');
+  assert.match(html, /<select id="mood">[\s\S]*?<\/div>\s*<div id="moreSettings"><\/div>/, 'the group comes last in the panel');
+  assert.match(pageFunction('settingField'), /aria-hidden="true"/, 'a slider says its value once');
+  assert.equal(html.includes('var EASY'), false, 'the unused Easy list is gone');
+});
+
+test('each engine is announced by what it does', () => {
+  assert.match(html, /e==='yue2'\?'Describe the style, add lyrics, then choose Make music\.'/);
+  assert.match(html, /e==='stable'\?'Describe your sounds, then choose Generate sounds\.'/);
+  assert.doesNotMatch(html, /other engines show a price confirmation/, 'no confirmation step is promised');
+});

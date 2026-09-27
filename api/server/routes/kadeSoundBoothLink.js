@@ -50,7 +50,7 @@ const LINK_DAILY_CAP = Number(process.env.KADE_SOUNDBOOTH_LINK_CAP || 20);
 const MAX_RUNNING = Number(process.env.KADE_SOUNDBOOTH_LINK_RUNNING || 3);
 
 /** The sentence added to the YuE2 cover hint, and taken out again for anyone without the pack. */
-const LINK_HINT_SENTENCE = ' You can also paste a media link to a song, from YouTube or another media site.';
+const LINK_HINT_SENTENCE = ' Or paste a media link.';
 /** packages/api family/pack.ts FAMILY_PACK_NOTE and FAMILY_PACK_REFUSAL (the tests hold them equal). */
 const PACK_NOTE = 'Part of the Family feature pack';
 const PACK_REFUSAL = 'Media links are part of the Family feature pack. Ask Kade to add it to your account.';
@@ -242,7 +242,7 @@ function chicagoDay() {
 const LINK_FIELD = {
   site: 'media',
   label: 'Or paste a media link (YouTube and other sites)',
-  hint: 'One song or video, shorter than six minutes, from YouTube, SoundCloud, Bandcamp, Vimeo, TikTok, Instagram, Facebook, X, Reddit, Dailymotion, Twitch clips or the Internet Archive, or a direct link to an audio or video file. The server brings in only its sound. A YouTube link from a playlist or mix brings in just that one video.',
+  hint: 'One song or video, shorter than six minutes, from YouTube, SoundCloud, Bandcamp, Vimeo, TikTok, Instagram, Facebook, X, Reddit, Dailymotion, Twitch clips or the Internet Archive, or a direct link to an audio or video file. Only the sound is kept, and a link from a playlist or mix brings in just that one video.',
   button: 'Import from link',
   path: LINK_PATH,
   maxSeconds: COVER_MAX_SECONDS,

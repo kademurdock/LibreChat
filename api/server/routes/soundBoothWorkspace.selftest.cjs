@@ -13,7 +13,7 @@ require.extensions['.ts']=(mod,filename)=>mod._compile(ts.transpileModule(fs.rea
 const {effectsGuide,effectsInput}=require(root+'/packages/api/src/audio/effects.ts');
 const backend=fs.readFileSync(root+'/api/server/routes/kadeSoundBooth.js','utf8');
 const a=backend.indexOf('const GUIDE = ')+14,b=backend.indexOf('\n};',a)+2;
-const guide=vm.runInNewContext('('+backend.slice(a,b)+')',{effectsGuide,SCREENPLAY_HELP:'Actor directions in brackets; spoken text outside brackets.',yueCost:'No reliable per-song cost estimate yet. YuE2 currently does not deduct from your credit balance.'});
+const guide=vm.runInNewContext('('+backend.slice(a,b)+')',{effectsGuide,yueStylesEnabled:()=>false,yueStyles:{},SCREENPLAY_HELP:'Actor directions in brackets; spoken text outside brackets.',yueCost:'No reliable per-song cost estimate yet. YuE2 currently does not deduct from your credit balance.'});
 const sent=[],errors=[];
 let failNextRender=false, referenceResponse;
 const server=http.createServer((req,res)=>{
@@ -76,6 +76,8 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.locator('#script').inputValue(),'');
   assert.equal(await page.locator('#editorLabel').innerText(),'Scene script');
   assert.equal(await page.locator('#set_audio_urls').isVisible(),true);
+  assert.equal(await page.locator('#set_speed').isVisible(),false,'Seed Audio speed waits in More settings');
+  assert.equal(await page.locator('#moreSettingsGroup > summary').innerText(),'More settings');
   assert.equal(await page.locator('#set_voice_description').count(),0);
   await page.locator('#script').fill('Seed scene and dialogue');
   await page.locator('[data-engine="scenema"]').click();
@@ -182,6 +184,15 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.locator('#script').inputValue(),'A folk song about coming home','transcription undo preserves music direction');
   await page.locator('#trackTitle').fill('Home Again');
   await page.locator('#set_count').fill('2');
+  // Part 296: variation, steps, guidance and seed sit in ONE collapsed More settings group.
+  assert.equal(await page.locator('#moreSettingsGroup').evaluate(el=>el.tagName+':'+el.open),'DETAILS:false');
+  assert.equal(await page.locator('#moreSettingsGroup > summary').innerText(),'More settings');
+  assert.deepEqual(await page.locator('#moreSettingsGroup [data-key]').evaluateAll(els=>els.map(el=>el.dataset.key)),['abc','cot','weirdness','steps','guidance','seed']);
+  assert.equal(await page.locator('#set_steps').isVisible(),false);
+  assert.equal(await page.locator('#set_count').isVisible(),true,'number of takes stays on top');
+  assert.equal(await page.locator('#settings #set_steps').count(),0);
+  await page.locator('#moreSettingsGroup > summary').click();
+  assert.equal(await page.locator('#set_steps').isVisible(),true);
   await page.locator('#set_steps').fill('48');
   await page.locator('#set_weirdness').fill('70');
   await page.locator('#set_guidance').fill('1.4');
@@ -211,6 +222,11 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.locator('#set_lyrics').count(),0);
   await page.locator('#script').fill('Layered rain, a crackling fireplace and distant thunder. No music.');
   await page.locator('#trackTitle').fill('Rain at Home');
+  // Stable Audio: steps and seed wait in its own More settings, collapsed; the take count stays on top.
+  assert.equal(await page.locator('#moreSettings #set_seed').count(),1);
+  assert.equal(await page.locator('#moreSettingsGroup').evaluate(el=>el.open),false);
+  assert.equal(await page.locator('#set_seed').isVisible(),false);
+  assert.equal(await page.locator('#set_count').isVisible(),true);
   await page.locator('#set_duration').fill('60');
   await page.locator('#set_count').fill('4');
   assert.equal(await page.getByRole('combobox',{name:'Sound model',exact:true}).inputValue(),'3_medium');
@@ -231,6 +247,8 @@ const server=http.createServer((req,res)=>{
   assert.equal(sent.at(-1).body.soundModel,'3_small_sfx');
   await page.locator('[data-engine="yue2"]').click();
   assert.equal(await page.locator('#script').inputValue(),'A folk song about coming home');
+  assert.equal(await page.locator('#moreSettingsGroup').evaluate(el=>el.open),true,'More settings stays open across re-renders');
+  assert.equal(await page.locator('#set_steps').inputValue(),'48');
   await page.locator('[data-engine="stable"]').click();
   assert.equal(await page.locator('#trackTitle').inputValue(),'Rain at Home');
   assert.equal(await page.locator('#set_soundModel').inputValue(),'3_small_sfx');

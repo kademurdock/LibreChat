@@ -4,7 +4,7 @@ import type { Hooks, Input, InputBody, Output, Provider } from '../audio/jobs';
 import { createAudioRouter } from '../audio/jobs';
 
 export const yueCost =
-  'No reliable per-song cost estimate yet. YuE2 currently does not deduct from your credit balance. GPU time is paid by the second, at the rate of whichever graphics card runs the song, including startup and ten minutes awake after the last job. Up to two GPUs can run together; extra takes and higher settings use more GPU time.';
+  'YuE2 does not deduct from your credit balance yet, and there is no per-song estimate. GPU time is billed by the second, including startup and ten minutes awake after the last job; extra takes and higher settings use more.';
 
 /* Part 295: what a take costs depends on the card that ran it. RunPod serverless flex prices
  * per second (runpod.io/pricing, updated Sep 13 2026), matched against the worker's `gpu`
@@ -67,7 +67,7 @@ export function yueStylesEnabled(): boolean {
 /** The Style choice's hint in the booth guide (the `band` setting). Both styles were taught from
  * real recordings; it names no person and no folder. */
 export const yueStyleHint: string =
-  'A singing style taught to YuE2 from real recordings. Soul learned from soul and R&B records, most of them with a woman singing lead; write female lead vocal or male lead vocal in Music direction to choose the voice. Kids learned from recordings of children’s choirs and sings with a children’s choir. None is plain YuE2. The style leads the song and Music direction still steers it on top, for example slow and gentle, or piano only. Works for new songs and for covers.';
+  'A singing style taught to YuE2 from real recordings. Soul learned from soul and R&B records; write female lead vocal or male lead vocal in Music direction to choose the voice. Kids sings with a children’s choir, so its lyrics must be clean. None is plain YuE2. Works for new songs and covers.';
 /** Added to the Style hint for an account outside the Family feature pack, so a client that
  * does not read `locked` yet still says why the choice does nothing there. */
 export const yueStyleLockedSentence: string =
@@ -99,7 +99,12 @@ export function yueStyleAccess<T extends { key: string; hint: string }>(
  * must run the Part 295 image before the flag goes on: an older worker would ignore
  * `instrumental` and sing wordless takes. The two choices below are real guide settings, so the
  * web page and the iPhone render them without an update; their option values are the words
- * each client reads out. A client that sends nothing gets the server defaults. */
+ * each client reads out. A client that sends nothing gets the server defaults.
+ * Part 296 (Sep 27 2026, her ask to streamline the booth): Keep the original chords is also the
+ * chords choice for an ABC score, so the old "Following a score" setting (`cot`) leaves the guide
+ * while the flag is on. A request that still sends `cot` with a score (an older client) is read
+ * exactly as before; otherwise Yes is cot full and No is cot melody, for a score as for a
+ * recording, and a score now starts on the same default as a recording. */
 export function yueCoversEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.YUE_COVERS_V2 === '1';
 }
@@ -211,7 +216,16 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     return value;
   }
   const recording = !!body.reference_voice_url;
-  const keepChords = covers && recording ? yueKeepChordsChoice(body.keep_chords, env) : undefined;
+  /* A score reads an older client's `cot` first, so what it sends renders as it always did. */
+  const keepChords = !covers
+    ? undefined
+    : recording
+      ? yueKeepChordsChoice(body.keep_chords, env)
+      : body.abc
+        ? body.cot != null
+          ? body.cot === 'full'
+          : yueKeepChordsChoice(body.keep_chords, env)
+        : undefined;
   return {
     style: trained ? `${trained.lead} ${body.script.trim()}`.slice(0, 3000) : body.script.trim(),
     title: body.title?.trim() || body.script.trim().split(/\s+/).slice(0, 7).join(' ').slice(0, 80),
@@ -236,7 +250,7 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     lora_key: trained?.key,
     lora_scale: trained?.scale,
     seed: body.seed ?? Math.floor(Math.random() * 2147483647),
-    ...(covers ? coverFields(body, instrumental, keepChords) : {}),
+    ...(covers ? coverFields(body, instrumental, keepChords, recording) : {}),
   };
 }
 
@@ -245,12 +259,13 @@ function coverFields(
   body: InputBody,
   instrumental: boolean,
   keepChords: boolean | undefined,
+  recording: boolean,
 ): Pick<Input, 'instrumental' | 'keep_harmony' | 'match_score_tempo' | 'length_guard'> {
   const fields: Pick<Input, 'instrumental' | 'keep_harmony' | 'match_score_tempo' | 'length_guard'> = {};
   const score = !!body.abc && instrumental;
-  const keep = keepChords !== undefined ? keepChords : score ? body.cot === 'full' : undefined;
+  const keep = recording || score ? keepChords : undefined;
   if (instrumental) fields.instrumental = true;
-  if (keepChords !== undefined || score) fields.keep_harmony = keep;
+  if (keep !== undefined) fields.keep_harmony = keep;
   /* Upstream: keep the style's tempo consistent with the score's. Her own BPM always wins. */
   if (keep && !NAMES_BPM.test(String(body.script))) fields.match_score_tempo = true;
   if (Object.keys(fields).length) fields.length_guard = true;
@@ -268,6 +283,26 @@ export function yueCoverOptions(input: Input): YueCoverOptions {
   if (input.reference_voice_url && typeof input.keep_harmony === 'boolean')
     options.keep_chords = input.keep_harmony ? yueKeepChords.yes : yueKeepChords.no;
   return options;
+}
+
+/** A saved project's options as the booth opens them. A score's chords choice is saved as its
+ * `cot` (full or melody), so while the flag is on a score project opens with the same answer
+ * under Keep the original chords, including one saved before Part 296. */
+export function yueSavedOptions<T extends { abc?: unknown; cot?: unknown; keep_chords?: unknown; reference_voice_url?: unknown }>(
+  options: T,
+  env: NodeJS.ProcessEnv = process.env,
+): T {
+  if (
+    !yueCoversEnabled(env) ||
+    !options ||
+    typeof options.abc !== 'string' ||
+    !options.abc ||
+    options.reference_voice_url ||
+    typeof options.keep_chords === 'string' ||
+    (options.cot !== 'full' && options.cot !== 'melody')
+  )
+    return options;
+  return { ...options, keep_chords: options.cot === 'full' ? yueKeepChords.yes : yueKeepChords.no };
 }
 
 /** A library row's reason line; a project from before Part 295 keeps its old one. */
@@ -351,24 +386,23 @@ export type YueGuideSetting = {
   kind: string;
   options?: string[];
   default?: string | number | boolean;
+  /** Shown inside the one collapsed "More settings" group (Part 296). */
+  advanced?: boolean;
 };
-const COT_HINT_V2 =
-  'This does nothing for a brand new song. With an ABC score, Melody follows the tune and frees the arrangement; Full keeps the chords too. For a recording, use Keep the original chords instead.';
 
-/** The YuE2 guide settings with the two Part 295 choices; unchanged while the flag is off. */
+/** The YuE2 guide settings with the two Part 295 choices; unchanged while the flag is off. Keep
+ * the original chords also covers an ABC score, so the score's own `cot` choice is left out. */
 export function yueCoverSettings<T extends { key: string; hint: string }>(
   settings: T[],
   env: NodeJS.ProcessEnv = process.env,
 ): Array<T | YueGuideSetting> {
   if (!yueCoversEnabled(env)) return settings;
   const styles =
-    env.YUE_STYLES_ENABLED === '1'
-      ? ' Styles are for singing, so choose None under Style for an instrumental.'
-      : '';
+    env.YUE_STYLES_ENABLED === '1' ? ' Choose None under Style for an instrumental.' : '';
   const singing: YueGuideSetting = {
     key: 'singing',
     label: 'Singing or instrumental',
-    hint: `Instrumental plays the tune a singer would sing on instruments instead, for a new song or for a cover of a recording. Lyrics are optional then and nothing is sung; for a new song, section tags such as [Verse] and [Chorus] or a few words only guide its shape. It can still hum or sing a little now and then, so listen to check.${styles}`,
+    hint: `Instrumental plays the tune on instruments, for a new song or a cover. Lyrics are optional then; tags like [Verse] and [Chorus] only guide the shape. It may still hum or sing a little, so listen to check.${styles}`,
     kind: 'choice',
     options: [yueSinging.sung, yueSinging.instrumental],
     default: yueSinging.sung,
@@ -376,7 +410,7 @@ export function yueCoverSettings<T extends { key: string; hint: string }>(
   const chords: YueGuideSetting = {
     key: 'keep_chords',
     label: 'Keep the original chords',
-    hint: "Used only for a cover of a recording. Yes reads the recording's chords as well as its melody, so the cover sounds closer to the original song, and YuE2 is told the recording's tempo unless Music direction already names a BPM. No keeps only the melody and writes a new accompaniment that fits your style. In YuE2's published test on 948 songs, keeping the chords made covers easier to recognise; leaving them out fit the new style better and scored higher for musicality. A recording with no chords, such as one voice singing alone, uses its melody either way.",
+    hint: 'For a cover or an ABC score; it does nothing for a brand-new song. Yes keeps the chords as well as the melody, and a cover keeps its tempo unless Music direction names a BPM. No keeps only the melody.',
     kind: 'choice',
     options: [yueKeepChords.yes, yueKeepChords.no],
     default: yueKeepChordsDefault(env) ? yueKeepChords.yes : yueKeepChords.no,
@@ -384,7 +418,7 @@ export function yueCoverSettings<T extends { key: string; hint: string }>(
   return settings.flatMap((setting): Array<T | YueGuideSetting> => {
     if (setting.key === 'lyrics') return [singing, setting];
     if (setting.key === 'reference_voice_url') return [setting, chords];
-    if (setting.key === 'cot') return [{ ...setting, hint: COT_HINT_V2 }];
+    if (setting.key === 'cot') return [];
     return [setting];
   });
 }

@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -899,100 +899,96 @@ const GUIDE = {
         { label: 'Clean noise and room echo', task: 'edit', text: 'Remove background noise and reverberation. Preserve the voice and every spoken word.' },
         { label: 'Separate speech from background', task: 'edit', text: 'Isolate the main speaking voice and remove background sounds and music. Preserve every spoken word.' },
       ],
-      where: 'Runs on a rented RunPod GPU that sleeps between jobs. Your imported recording stays in your library.',
-      cost: 'Pay for GPU startup, processing and ten minutes awake after the last job. A sleeping worker takes longer. There is no reliable total estimate yet.',
-      bestFor: ['expressive speech and reference voices', 'changing words, emotion, pitch, pace, timbre or whispering', 'removing noise or reverb, separating voices from a recording'],
-      notFor: ['generating a complete background scene: use Seed Audio', 'guaranteed accent imitation or perfect word edits without listening back'],
+      where: 'Runs on a rented GPU that sleeps between jobs. Your recording stays in your library.',
+      cost: 'Billed by GPU time, including startup and ten minutes awake after the last job. No total estimate yet.',
+      bestFor: ['expressive speech, in a described or imported voice', 'editing the words, mood, pitch or pace of a recording', 'removing noise or echo, or separating a voice'],
+      notFor: ['a whole scene with sounds: use Seed Audio', 'exact accents or word edits without listening back'],
       howToWrite: [
-        'For speech, put only the words to say in the performance script. With no reference clip, Describe the voice sets the opening voice and delivery; later sections reuse that voice.',
-        'With a reference clip, speech follows the clip\'s voice and accent. To try a different accent, choose Edit, describe the change while preserving the speaker and words, then use the edited take as your voice reference. Adding an accent is experimental; removing a regional accent is a documented task. Listen before using the result.',
-        'To edit, choose edit under Task, import the source recording and fill in Edit instructions. For example: Change the emotion to cheerful while keeping the words and voice; Replace "Tuesday" with "Thursday"; Remove background noise; Raise pitch by two semitones.',
-        'Target seconds is optional for edits that preserve length. Set it when changing speed or adding or removing words. Leave it blank to keep the source duration.',
-        'Long recordings are processed in sections and joined. Edits spanning a join and voice continuity need listening review. Existing takes are kept.',
-        'AuK Base uses 32 steps with BF16 inference and CPU offload. Every take keeps a 24 kHz mono WAV master plus a listening MP3. It does not automatically retry pronunciation errors.',
-        'Use Seed Audio for generated ambience, music and sound effects. AuK can clean or separate an existing background.',
+        'For speech, put only the words to say in the script. With no reference, Describe a new voice sets the voice.',
+        'With a reference, speech uses its voice and accent. For another accent, edit the recording first and use that take as the reference; adding an accent is experimental.',
+        'To edit, choose edit under Task, import the recording and write Edit instructions, such as: Remove background noise; Raise pitch by two semitones; Replace one word with another.',
+        'Long recordings are made in sections and joined, so listen to the joins. Each take keeps a WAV master and an MP3.',
       ],
+      /* Part 296: `advanced` settings sit in one collapsed "More settings" group on both screens. */
       settings: [
         { key: 'auk_task', label: 'Task', hint: 'Speech creates a performance. Edit changes the imported recording.', kind: 'choice', options: ['speech', 'edit'], default: 'speech' },
-        { key: 'instruction', label: 'Edit instructions', hint: 'Describe what to change and what to preserve. Used only for edit.', kind: 'text' },
-        { key: 'voice_description', label: 'Describe a new voice (without a reference)', hint: 'Accent, age, texture and delivery when no reference is attached. A reference supplies its own voice and accent; use Edit to change it.', kind: 'text' },
-        { key: 'reference_voice_url', label: 'Import voice or recording', hint: 'Speech uses this recording\'s voice and accent. Edit changes the recording. To try another accent, edit first and use the new take as the reference. WAV, MP3 or M4A.', kind: 'clip', max: 1 },
-        { key: 'gen_seconds', label: 'Target seconds for edit', hint: 'Optional. Leave blank to retain source duration; set when changing speed or word count.', kind: 'number', min: 0.1 },
-        { key: 'pace', label: 'Speech pace allowance', hint: 'One is normal. Higher gives more time and slower speech; lower is quicker.', kind: 'number', min: 0.5, max: 3, default: 1 },
-        { key: 'seed', label: 'Seed', hint: 'Repeat a take with the same settings. A reference clip anchors voice identity more reliably than the seed alone.', kind: 'number', min: 0, max: 4294967295 },
+        { key: 'instruction', label: 'Edit instructions', hint: 'What to change and what to keep. Used only for edit.', kind: 'text' },
+        { key: 'voice_description', label: 'Describe a new voice (without a reference)', hint: 'Accent, age, texture and delivery, used when no reference is attached.', kind: 'text' },
+        { key: 'reference_voice_url', label: 'Import voice or recording', hint: 'Speech copies its voice and accent; Edit changes the recording. WAV, MP3 or M4A.', kind: 'clip', max: 1 },
+        { key: 'gen_seconds', label: 'Target seconds for edit', hint: 'Leave blank to keep the length; set it when changing speed or word count.', kind: 'number', min: 0.1, advanced: true },
+        { key: 'pace', label: 'Speech pace allowance', hint: 'One is normal; higher is slower, lower is quicker.', kind: 'number', min: 0.5, max: 3, default: 1, advanced: true },
+        { key: 'seed', label: 'Seed', hint: 'Reuse a number to repeat a take. A reference keeps a voice steadier than a seed.', kind: 'number', min: 0, max: 4294967295, advanced: true },
       ],
     },
     stable: effectsGuide,
     yue2: {
-      name: 'YuE2', tagline: 'Original songs with your lyrics and an editable composition.',
-      where: 'Runs on your separate sleeping RunPod music worker.',
+      name: 'YuE2', tagline: 'Songs with your own lyrics, and covers of a recording.',
+      where: 'Runs on a music GPU that sleeps between songs.',
       cost: yueCost,
-      bestFor: ['songs with your own lyrics', 'a cover with a different style and arrangement', 'a new arrangement from a composition score'],
-      notFor: ['saved singer personas or voice cloning', 'guaranteeing an exact transcription of the source melody'],
-      howToWrite: ['Describe the new style, instruments and singing voice in Music direction.', 'Put exact words under Lyrics, with [Verse] and [Chorus] tags. Use Transcribe reference lyrics after importing a cover to get an editable draft, then correct anything it misheard.', 'For a cover, import one source recording up to six minutes. The worker transcribes its melody, then makes a new arrangement. Listen for transcription errors; the source is kept intact.', 'Pasting a finished song laid out as Lyrics Box, Tag Box and Negative Tag Box? Paste it whole into Music direction. The booth puts the Lyrics Box under Lyrics and the Tag Box in Music direction, and leaves the Negative Tag Box out: YuE2 has no place for things to avoid, and naming them tends to add them.'],
+      bestFor: ['songs with your own lyrics', 'a cover in a new style', 'an arrangement of an ABC score'],
+      notFor: ['cloning a singer’s voice', 'an exact copy of the original melody'],
+      howToWrite: ['Describe the style, instruments and singing voice in Music direction.', 'Put the exact words under Lyrics, with [Verse] and [Chorus] tags. After importing a cover, Transcribe reference lyrics drafts them for you to correct.', 'A cover takes one recording up to six minutes. YuE2 hears its melody and makes a new arrangement, so listen for wrong notes.', 'A song laid out as Lyrics Box, Tag Box and Negative Tag Box can be pasted whole into Music direction. The booth sorts it and leaves out the Negative Tag Box, because naming things to avoid tends to add them.'],
       settings: [
-        { key: 'lyrics', label: 'Lyrics', hint: 'The words to sing. Use [Verse] and [Chorus] tags, or choose Write my song idea to draft them.', kind: 'text' },
-        { key: 'reference_voice_url', label: 'Recording to cover (optional)', hint: 'Import one song, up to six minutes. You can also paste a media link to a song, from YouTube or another media site. YuE2 uses its melody for a new arrangement; this does not clone the original singer. Add the words you want under Lyrics.', kind: 'clip', max: 1 },
-        { key: 'abc', label: 'Optional composition (ABC)', hint: 'Use a melody score instead of an imported recording.', kind: 'text' },
+        { key: 'lyrics', label: 'Lyrics', hint: 'The words to sing, with [Verse] and [Chorus] tags. Write my song idea can draft them.', kind: 'text' },
+        { key: 'reference_voice_url', label: 'Recording to cover (optional)', hint: 'Import one song, up to six minutes. Or paste a media link. YuE2 uses its melody, not the singer’s voice.', kind: 'clip', max: 1 },
+        { key: 'abc', label: 'Optional composition (ABC)', hint: 'An ABC melody score, used instead of a recording.', kind: 'text', advanced: true },
         /* Part 295: the hint lives in packages/api music/yue.ts (yueStyleHint); /health greys the
          * choice out for anyone outside the Family feature pack (withStyleAccess). */
         ...(yueStylesEnabled() ? [{ key: 'band', label: 'Style', hint: yueStyleHint, kind: 'choice', options: ['none', ...Object.keys(yueStyles)], default: 'none' }] : []),
-        { key: 'cot', label: 'Following a score (only used with an ABC composition)', hint: 'This does nothing for a brand new song. With an ABC score, Melody follows the tune and frees the arrangement; Full keeps the chords too. A cover from a recording always uses Melody.', kind: 'choice', options: ['melody','full'], default: 'melody' },
-        { key: 'count', label: 'Number of takes', hint: 'Request 1 to 4 variations together. Up to two generate in parallel when GPUs are available. Every take uses a different seed and additional GPU time.', kind: 'number', min: 1, max: 4, step: 1, default: 1 },
-        { key: 'weirdness', label: 'Creative variation (weirdness)', hint: '50 keeps the original sound settings. Lower is more predictable; higher explores less likely musical choices and may sound less coherent. Changes sampling temperature; this is a YuE2 control, not a copy of Suno.', kind: 'range', min: 0, max: 100, step: 1, default: 50 },
-        { key: 'steps', label: 'Inference steps', hint: '32 is the original setting. 16 is faster; up to 64 spends more time refining the audio. More steps do not guarantee a better song.', kind: 'number', min: 16, max: 64, step: 1, default: 32 },
-        { key: 'guidance', label: 'Prompt guidance', hint: '1 is the original setting. Higher values strengthen the style and lyric conditioning, but add work and can reduce naturalness. Experimental; try small changes.', kind: 'range', min: 1, max: 3, step: 0.1, default: 1 },
-        { key: 'seed', label: 'Optional seed', hint: 'Leave blank for a new take. Reuse a number for a similar starting point.', kind: 'number', min: 0, max: 2147483647 },
+        /* Shown only while YUE_COVERS_V2 is off; with it on, Keep the original chords covers a score too (yue.ts). */
+        { key: 'cot', label: 'Following a score (ABC only)', hint: 'Only for an ABC score; a recording always uses Melody. Melody follows the tune with a new arrangement; Full keeps the chords too.', kind: 'choice', options: ['melody','full'], default: 'melody', advanced: true },
+        { key: 'count', label: 'Number of takes', hint: '1 to 4 variations; up to two are made at once. Each take uses more GPU time.', kind: 'number', min: 1, max: 4, step: 1, default: 1 },
+        { key: 'weirdness', label: 'Creative variation (weirdness)', hint: '50 is normal. Lower is more predictable; higher is more surprising and can lose its way.', kind: 'range', min: 0, max: 100, step: 1, default: 50, advanced: true },
+        { key: 'steps', label: 'Inference steps', hint: '32 is normal. 16 is faster; up to 64 takes longer and is not always better.', kind: 'number', min: 16, max: 64, step: 1, default: 32, advanced: true },
+        { key: 'guidance', label: 'Prompt guidance', hint: '1 is normal. Higher follows your direction and lyrics more strictly but can sound less natural.', kind: 'range', min: 1, max: 3, step: 0.1, default: 1, advanced: true },
+        { key: 'seed', label: 'Optional seed', hint: 'Leave blank for a new take; reuse a number for a similar start.', kind: 'number', min: 0, max: 2147483647, advanced: true },
       ],
     },
     lyria: {
       name: 'Lyria',
       tagline: 'It writes the song and sings it.',
-      where: "Made on Google's servers, not here. Your brief leaves the house for this one.",
-      cost: 'About eight cents a song, and that is per SONG — not per minute, however long it comes out. Back in under a minute, usually.',
-      bestFor: ['a song, with a singer and words', 'an instrumental — a theme, an intro bed, something to play under a voice', 'a mood you can describe but could not play', 'a full arrangement in one pass, rather than one instrument at a time'],
-      notFor: ['speech — it sings and it plays, it does not read', 'a specific existing voice; there is no clip to clone from here', 'an exact edit of something you already made — every take is a new performance'],
+      where: "Made on Google's servers, so your brief leaves the house.",
+      cost: 'About eight cents a song, whatever its length. Usually back in under a minute.',
+      bestFor: ['a song with a singer and words', 'an instrumental theme or a bed under a voice', 'a full arrangement in one pass'],
+      notFor: ['speech: it sings and plays, it does not read', 'a specific existing voice', 'an exact edit of an earlier take'],
       howToWrite: [
-        'Write it in the order Google says this engine reads best, one idea per sentence. Genre and era first: "1970s Memphis soul", "a modern Nashville ballad", "2010s bedroom pop". A genre with a decade gets you a record; a feeling on its own gets you a guess. Put the feeling after the genre.',
-        'Then the instruments you want to hear and what each one is doing: "a Rhodes piano carries the chords, brushed drums keep it soft, an upright bass walks underneath, a horn section answers the vocal in the last chorus".',
-        'Then the shape, as section tags with arrows: [Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Bridge] -> [Chorus] -> [Outro], and a few words on what changes at each one. For an exact timeline, use timestamps instead: [0:00 - 0:10] piano alone, [0:10 - 0:40] the band comes in.',
-        'If somebody sings, describe the voice: sex, timbre, range and delivery. "A female vocalist, warm alto, breathy and close to the microphone, confiding rather than belting."',
-        'Then the mood in two or three plain adjectives, and last the technical line: a BPM number, the key, and how long. "Around 70 BPM, in D minor, a two-minute song." It reads the length from your words, so always say how long.',
-        'Your own lyrics go in the Your own lyrics box, not in the brief. The booth sends them under a "Lyrics:" heading, the way the engine expects; put [Verse 1], [Chorus] and [Bridge] on their own lines above each section, and (parentheses) around echoes and backing vocals. If you leave the box empty and ask for a singer, it writes the words itself.',
-        'For no singing, turn on No singing. The booth adds the one line the engine wants, "Instrumental only, no vocals."',
-        'Pasting a finished song laid out as Lyrics Box, Tag Box and Negative Tag Box? Paste it whole into Music direction. The booth puts the Lyrics Box in Your own lyrics and the Tag Box in Music direction, and leaves the Negative Tag Box out: this engine has no place for things to avoid, and naming them tends to add them.',
-        'The words it sang come back cleaned of its own markers and are kept with the project as the words it sang, separate from the description of the music. Every take is a new performance -- there is no seed here, so the same brief twice gives you two different records, which is a reason to render twice when you like where it is going.',
+        'Write in this order, one idea per sentence. Genre and era first, such as "1970s Memphis soul", then the feeling.',
+        'Then the instruments and what each does: "a Rhodes piano carries the chords, brushed drums keep it soft, horns answer in the last chorus".',
+        'Then the shape, as tags with arrows: [Intro] -> [Verse 1] -> [Chorus] -> [Bridge] -> [Outro]. For exact timing use timestamps: [0:00 - 0:10] piano alone.',
+        'For a singer, describe the voice: "a warm alto, breathy and close, confiding rather than belting".',
+        'End with the mood in two or three words, then BPM, key and length: "Around 70 BPM, in D minor, a two-minute song." Always say how long.',
+        'Your own words go in Your own lyrics, with [Verse 1], [Chorus] and [Bridge] on their own lines and backing vocals in (parentheses). Leave it empty and it writes the words.',
+        'A song laid out as Lyrics Box, Tag Box and Negative Tag Box can be pasted whole into Music direction. The booth sorts it and leaves out the Negative Tag Box, because naming things to avoid tends to add them.',
+        'There is no seed, so the same brief twice gives two different records.',
       ],
       settings: [
-        { key: 'instrumental', label: 'No singing', hint: 'Keeps it instrumental. Leave it off if you want a singer, and describe the voice in your brief.', kind: 'toggle', default: false },
-        { key: 'lyrics', label: 'Your own lyrics', hint: 'Paste words you have already written and it will sing these instead of writing its own. Put [Verse 1], [Chorus] and [Bridge] on their own lines above each part if you want to steer the shape. Leave it empty to let it write them.', kind: 'text' },
-        { key: 'keep_lyrics', label: 'Keep the words it wrote', hint: 'On by default. Saves the lyrics it came up with alongside the recording, so you can read them back or reuse them.', kind: 'toggle', default: true },
+        { key: 'instrumental', label: 'No singing', hint: 'Makes an instrumental. Leave it off for a singer.', kind: 'toggle', default: false },
+        { key: 'lyrics', label: 'Your own lyrics', hint: 'Words for it to sing, with [Verse 1] and [Chorus] on their own lines. Leave it empty and it writes its own.', kind: 'text' },
+        { key: 'keep_lyrics', label: 'Keep the words it wrote', hint: 'Saves the lyrics it wrote with the recording, to read or reuse.', kind: 'toggle', default: true, advanced: true },
       ],
     },
     seed: {
       name: 'Seed Audio',
       tagline: 'A whole scene in one pass.',
-      where: "Made on fal's servers, not here. Your words and any clips you import leave the house for this one.",
+      where: "Made on fal's servers, so your words and clips leave the house.",
       cost: 'About nineteen cents a minute. Back in seconds. Up to two minutes a pass.',
-      bestFor: ['two or three people talking', 'music, sound effects, and a place you can hear', 'a radio play, an ad, a scene from a story with the room around it', 'anything you need back right now'],
-      notFor: ['a long piece — two minutes a pass, made scene by scene after that', 'the finest acting from one voice — AuK is the stronger instrument for that', 'keeping the audio in the house'],
+      bestFor: ['two or three people talking', 'music, sound effects and a place you can hear', 'a radio play or an ad', 'anything you need back fast'],
+      notFor: ['more than two minutes in one pass', 'the finest acting from one voice: use AuK', 'keeping your audio in the house'],
       howToWrite: [
-        'Write it like a short scene brief, not a line to read. Five things, every time: the Setting, who is in it and what they are doing, the music and sound effects, notes on each voice, and the exact lines in quotes.',
-        'Every line has the same shape: the name, the voice in parentheses, how they say it, a colon, then the words in quotes. "Emma (teenage, soft, shy) lowers her voice, flustered: “I still haven’t finished.”"',
-        'Write long. The environment, the music and every delivery are things it makes, so every sentence you leave out is a decision handed back to it.',
-        'Spell the sounds out. A door "slap", a zipper "zzzip", a bell "ring-a-ling fading". Spelling a sound is more reliable than naming it.',
-        'Music by mood, not by genre: "soft piano that swells", not "C major ballad".',
-        'Write the prompt in the same language the lines are spoken in.',
-        'Up to three clips can be imported, and each one is tagged to a speaker: "the actor is @Audio1".',
+        'Write a short scene brief: the setting, who is there and what they do, the music and sounds, each voice, and the exact lines in quotes.',
+        'Each line: the name, the voice in parentheses, how they say it, a colon, then the words. Emma (teenage, soft, shy) lowers her voice: “I still haven’t finished.”',
+        'Write long, and spell sounds out: a door "slap", a zipper "zzzip". Whatever you leave out, it decides.',
+        'Describe music by mood, not genre: "soft piano that swells".',
+        'Write in the language the lines are spoken in. Imported clips are @Audio1 to @Audio3: "the actor is @Audio1".',
       ],
       settings: [
-        { key: 'voice', label: 'Preset voice', hint: 'One of the engine’s twenty built-in voices, for a single narrator. Leave it off when your prompt describes the voices, or when clips are imported.', kind: 'choice', options: ['', 'vivi_mixed_en_zh_ja_es_id', 'mindy_en_es_id_pt_zh', 'kian_en_zh', 'cedric_en_zh', 'sophie_en_zh', 'jean_en_zh', 'magnus_en_zh', 'mabel_en_zh', 'nadia_en_zh', 'opal_en_zh', 'pearl_en_zh', 'quentin_en_zh', 'corinne_mixed_en_zh', 'esther_mixed_en_zh', 'lyla_mixed_en_zh', 'tracy_es_zh', 'sandy_es_mixed_en_zh', 'felix_zh', 'celeste_zh', 'monkey_king_zh'], default: '' },
-        { key: 'audio_urls', label: 'Import clips to clone', hint: 'WAV, MP3, M4A or OGG. Up to three, each under thirty seconds, clean, one person each. They become @Audio1, @Audio2 and @Audio3 — name them in the script. Play each one back before you render.', kind: 'clip', max: 3 },
-        { key: 'speed', label: 'Speed', hint: 'One is normal. Half is half speed, two is double.', kind: 'number', min: 0.5, max: 2, default: 1 },
-        { key: 'pitch', label: 'Pitch', hint: 'In semitones. Zero is normal. Minus twelve is an octave down, twelve an octave up.', kind: 'number', min: -12, max: 12, default: 0 },
-        { key: 'volume', label: 'Volume', hint: 'One is normal. Half to double.', kind: 'number', min: 0.5, max: 2, default: 1 },
-        { key: 'multilingual', label: 'Multilingual', hint: 'Turn on for anything not in English, or mixed languages. Twenty languages.', kind: 'toggle', default: false },
-        { key: 'audio_quality', label: 'Studio quality', hint: 'On, the default: a forty-eight kilohertz WAV, the engine\u2019s best. Off: a forty-eight kilohertz MP3, a smaller file. Same price either way.', kind: 'toggle', default: true },
+        { key: 'voice', label: 'Preset voice', hint: 'A built-in voice for a single narrator. Leave it off when you describe the voices or import clips.', kind: 'choice', options: ['', 'vivi_mixed_en_zh_ja_es_id', 'mindy_en_es_id_pt_zh', 'kian_en_zh', 'cedric_en_zh', 'sophie_en_zh', 'jean_en_zh', 'magnus_en_zh', 'mabel_en_zh', 'nadia_en_zh', 'opal_en_zh', 'pearl_en_zh', 'quentin_en_zh', 'corinne_mixed_en_zh', 'esther_mixed_en_zh', 'lyla_mixed_en_zh', 'tracy_es_zh', 'sandy_es_mixed_en_zh', 'felix_zh', 'celeste_zh', 'monkey_king_zh'], default: '' },
+        { key: 'audio_urls', label: 'Import clips to clone', hint: 'Up to three clean clips under thirty seconds, one person each (WAV, MP3, M4A or OGG). Name them in the script as @Audio1, @Audio2 and @Audio3.', kind: 'clip', max: 3 },
+        { key: 'speed', label: 'Speed', hint: 'One is normal, from half to double.', kind: 'number', min: 0.5, max: 2, default: 1, advanced: true },
+        { key: 'pitch', label: 'Pitch', hint: 'In semitones: zero is normal; twelve is an octave up, minus twelve an octave down.', kind: 'number', min: -12, max: 12, default: 0, advanced: true },
+        { key: 'volume', label: 'Volume', hint: 'One is normal, from half to double.', kind: 'number', min: 0.5, max: 2, default: 1, advanced: true },
+        { key: 'multilingual', label: 'Multilingual', hint: 'Turn on for a language other than English, or a mix. Twenty languages.', kind: 'toggle', default: false, advanced: true },
+        { key: 'audio_quality', label: 'Studio quality', hint: 'On gives a WAV, off a smaller MP3. Same price.', kind: 'toggle', default: true, advanced: true },
       ],
     },
   },
@@ -1166,7 +1162,7 @@ function guidePriced(guide, factor) {
     ...guide,
     engines: {
       ...guide.engines,
-      lyria: { ...guide.engines.lyria, cost: `About ${cents(LYRIA_USD_PER_SONG)} a song, and that is per SONG — not per minute, however long it comes out. Back in under a minute, usually.` },
+      lyria: { ...guide.engines.lyria, cost: `About ${cents(LYRIA_USD_PER_SONG)} a song, whatever its length. Usually back in under a minute.` },
       seed: { ...guide.engines.seed, cost: `About ${cents(SEED_USD_PER_MIN)} a minute. Back in seconds. Up to two minutes a pass.` },
     },
   };
@@ -1321,7 +1317,8 @@ function projectView(p, factor = 1) {
     readback: oldSungReadback ? '' : p.readback,
     /* Lyria: the words the latest take sang ("Words it sang" on the web). */
     sungLyrics: p.sungLyrics || (oldSungReadback && !(p.options || {}).instrumental ? p.readback : '') || '',
-    options: p.engine === 'stable' ? { ...p.options, soundModel: p.options?.soundModel || '3_small_sfx' } : p.options || {},
+    /* Part 296: a YuE2 score opens with its chords choice under Keep the original chords (yue.ts). */
+    options: p.engine === 'stable' ? { ...p.options, soundModel: p.options?.soundModel || '3_small_sfx' } : p.engine === 'yue2' ? yueSavedOptions(p.options || {}) : p.options || {},
     /* Where this one could go next, so a client never has to know the rules. */
     carryTo: carry.destinationsFor(p.engine),
     carriedFrom: (p.options || {}).carriedFrom || null,
@@ -2961,8 +2958,9 @@ router.use(require('./kadeSoundBoothLink').createReferenceLinkRouter({
   features: boothFeatures,
   logger,
 }));
-/** Part 295: YuE2's Singing or instrumental and Keep the original chords choices, and the score
- * hint that points a recording at them, only while YUE_COVERS_V2 is on (packages/api music/yue.ts). */
+/** Part 295: YuE2's Singing or instrumental and Keep the original chords choices, only while
+ * YUE_COVERS_V2 is on (packages/api music/yue.ts). Part 296: Keep the original chords then also
+ * decides an ABC score's chords, so the separate score choice (`cot`) is left out. */
 function withYueCovers(guide) {
   const yue = guide && guide.engines && guide.engines.yue2;
   if (!yue || !Array.isArray(yue.settings)) return guide;

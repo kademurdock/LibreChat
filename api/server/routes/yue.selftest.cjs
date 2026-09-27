@@ -96,7 +96,7 @@ async function main() {
         strict_1.default.equal((await res.json()).state, 'cancelled');
         await covers(post, base, sentInputs, (next) => { state = next.state; extraOutput = next.output || {}; });
         console.log('YuE2 integration: validation, no-charge quote, durable queue, duplicate rejection, owner isolation, completion idempotency, uncertain submission, cancellation passed.');
-        console.log('YuE2 covers (Part 295): flag-off requests unchanged, cover and instrumental fields, trained-style refusal, saved choices, guide choices, price per card, take notes said once passed.');
+        console.log('YuE2 covers (Part 295): flag-off requests unchanged, cover and instrumental fields, trained-style refusal, saved choices, guide choices, score chords on Keep the original chords with old cot requests unchanged (Part 296), price per card, take notes said once passed.');
     }
     finally {
         server.close();
@@ -161,12 +161,39 @@ async function covers(post, base, sentInputs, provider) {
     const played = yueInput({ script: 'Banjo breakdown', lyrics: '', singing: INSTRUMENTAL, reference_voice_url: recording }, ON);
     assert.equal(played.instrumental, true); assert.equal(played.keep_harmony, true); assert.equal(played.cot, 'full'); assert.equal(played.match_score_tempo, true);
     assert.deepEqual(yueCoverOptions(played), { singing: INSTRUMENTAL, keep_chords: KEEP });
-    // A score: the existing Following a score choice decides its chords; a sung score is unchanged.
+    // Part 296: a score's chords are the same Keep the original chords choice (Yes = cot full,
+    // No = cot melody), on the same default as a recording; a sung score still sends no new field.
     const scored = yueInput({ script: 'Piano trio', abc: 'X:1', singing: INSTRUMENTAL }, ON);
-    assert.equal(scored.cot, 'melody'); assert.equal(scored.keep_harmony, false); assert.equal('match_score_tempo' in scored, false);
+    assert.equal(scored.cot, 'full'); assert.equal(scored.keep_harmony, true); assert.equal(scored.match_score_tempo, true);
+    const scoreMelody = yueInput({ script: 'Piano trio', abc: 'X:1', singing: INSTRUMENTAL, keep_chords: NEW }, ON);
+    assert.equal(scoreMelody.cot, 'melody'); assert.equal(scoreMelody.keep_harmony, false); assert.equal('match_score_tempo' in scoreMelody, false);
+    assert.equal(yueInput({ script: 'Piano trio', abc: 'X:1', singing: INSTRUMENTAL }, { ...ON, YUE_COVER_KEEP_CHORDS_DEFAULT: '0' }).cot, 'melody');
+    const sungScore = yueInput({ script: 'Piano trio', lyrics: 'la', abc: 'X:1' }, ON);
+    assert.equal(sungScore.cot, 'full'); assert.deepEqual(Object.keys(sungScore), LEGACY_KEYS);
+    const sungMelody = yueInput({ script: 'Piano trio', lyrics: 'la', abc: 'X:1', keep_chords: NEW }, ON);
+    assert.equal(sungMelody.cot, 'melody'); assert.deepEqual(Object.keys(sungMelody), LEGACY_KEYS);
+    assert.throws(() => yueInput({ script: 'Piano trio', lyrics: 'la', abc: 'X:1', keep_chords: 'maybe' }, ON), /Under Keep the original chords, choose Yes or No/);
+    // An older client that still sends cot with a score renders exactly as before, whatever else it sends.
     assert.equal(yueInput({ script: 'Piano trio', abc: 'X:1', cot: 'full', singing: INSTRUMENTAL }, ON).keep_harmony, true);
+    const oldMelody = yueInput({ script: 'Piano trio', abc: 'X:1', cot: 'melody', singing: INSTRUMENTAL, keep_chords: KEEP }, ON);
+    assert.equal(oldMelody.cot, 'melody'); assert.equal(oldMelody.keep_harmony, false); assert.equal('match_score_tempo' in oldMelody, false);
+    assert.equal(yueInput({ script: 'Piano trio', lyrics: 'la', abc: 'X:1', cot: 'melody' }, ON).cot, 'melody');
     assert.deepEqual(Object.keys(yueInput({ script: 'Piano trio', lyrics: 'la', abc: 'X:1', cot: 'full' }, ON)), LEGACY_KEYS);
+    // cot never changes a recording or a brand-new song, as before.
+    assert.equal(yueInput({ script: 'Jazz trio', lyrics: 'Words', reference_voice_url: recording, cot: 'melody' }, ON).cot, 'full');
+    assert.equal(yueInput({ script: 'Jazz', lyrics: 'Words', cot: 'melody', keep_chords: NEW }, ON).cot, 'full');
+    // Flag off: keep_chords is ignored for a score, which follows cot with its old melody default.
+    const offScore = yueInput({ script: 'Piano trio', lyrics: 'la', abc: 'X:1', keep_chords: KEEP }, {});
+    assert.equal(offScore.cot, 'melody'); assert.deepEqual(Object.keys(offScore), LEGACY_KEYS);
     assert.deepEqual(yueCoverOptions(scored), { singing: INSTRUMENTAL });
+    // A saved score opens with its chords answer under Keep the original chords, including an old one.
+    const { yueSavedOptions } = yue_1;
+    assert.deepEqual(yueSavedOptions({ abc: 'X:1', cot: 'melody', lyrics: 'la' }, ON), { abc: 'X:1', cot: 'melody', lyrics: 'la', keep_chords: NEW });
+    assert.equal(yueSavedOptions({ abc: 'X:1', cot: 'full' }, ON).keep_chords, KEEP);
+    for (const saved of [{ abc: 'X:1', cot: 'full', keep_chords: NEW }, { cot: 'full', lyrics: 'la' }, { abc: '', cot: 'full' }, { abc: 'X:1', cot: 'off' }, { abc: 'X:1', cot: 'full', reference_voice_url: recording }])
+        assert.equal(yueSavedOptions(saved, ON), saved, JSON.stringify(saved));
+    const flagOff = { abc: 'X:1', cot: 'full' };
+    assert.equal(yueSavedOptions(flagOff, {}), flagOff, 'flag off: saved options open unchanged');
 
     // Trained styles are singing styles sent score-free: an instrumental is refused up front.
     const before = process.env.YUE_STYLES_ENABLED;
@@ -199,20 +226,25 @@ async function covers(post, base, sentInputs, provider) {
     ];
     assert.equal(yueCoverSettings(settings, {}), settings);
     const shown = yueCoverSettings(settings, ON);
-    assert.deepEqual(shown.map((s) => s.key), ['singing', 'lyrics', 'reference_voice_url', 'keep_chords', 'abc', 'cot', 'count']);
+    // Part 296: one chords choice for a recording and a score, so the score's own choice leaves.
+    assert.deepEqual(shown.map((s) => s.key), ['singing', 'lyrics', 'reference_voice_url', 'keep_chords', 'abc', 'count']);
     const singing = shown[0], chords = shown[3];
     assert.equal(singing.label, 'Singing or instrumental'); assert.equal(singing.kind, 'choice');
     assert.deepEqual(singing.options, [SUNG, INSTRUMENTAL]); assert.equal(singing.default, SUNG);
     assert.equal(chords.label, 'Keep the original chords'); assert.equal(chords.kind, 'choice');
     assert.deepEqual(chords.options, [KEEP, NEW]); assert.equal(chords.default, KEEP);
     assert.equal(yueCoverSettings(settings, { ...ON, YUE_COVER_KEEP_CHORDS_DEFAULT: '0' })[3].default, NEW);
-    assert.match(shown[5].hint, /For a recording, use Keep the original chords instead\.$/);
-    assert.doesNotMatch(shown[5].hint, /always uses Melody/);
+    assert.match(chords.hint, /^For a cover or an ABC score; it does nothing for a brand-new song\./);
+    assert.match(chords.hint, /unless Music direction names a BPM/, 'the tempo it keeps is still said');
+    assert.equal('advanced' in singing || 'advanced' in chords, false, 'both stay on top');
     assert.doesNotMatch(singing.hint, /Style/);
-    assert.match(yueCoverSettings(settings, { ...ON, YUE_STYLES_ENABLED: '1' })[0].hint, /choose None under Style for an instrumental/);
+    assert.match(yueCoverSettings(settings, { ...ON, YUE_STYLES_ENABLED: '1' })[0].hint, /Choose None under Style for an instrumental\.$/);
     // Her rule: the booth's own words name no person and no private folder.
-    for (const words of [yueCost, singing.hint, chords.hint, shown[5].hint, SUNG, INSTRUMENTAL, KEEP, NEW, singing.label, chords.label])
+    for (const words of [yueCost, singing.hint, chords.hint, SUNG, INSTRUMENTAL, KEEP, NEW, singing.label, chords.label])
         assert.doesNotMatch(words, /Kade|your own folders|1\.22/);
+    // Part 296: short enough to be read aloud in one breath each.
+    for (const words of [yueCost, singing.hint, chords.hint]) assert.ok(words.split(/\s+/).length <= 45, words);
+    assert.match(yueCost, /does not deduct from your credit balance/);
 
     // Price per card, from the worker's gpu name; an unknown card is priced as the A40.
     const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} is not ${b}`);

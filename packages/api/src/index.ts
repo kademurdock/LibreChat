@@ -145,6 +145,7 @@ export {
   yueCoversEnabled,
   yueCoverSettings,
   yueCoverOptions,
+  yueSavedOptions,
   yueProjectWhy,
   yueTakeFacts,
   yueTakeCost,

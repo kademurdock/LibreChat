@@ -3,7 +3,7 @@ const fs = require('node:fs'), path = require('node:path'), ts = require('typesc
 const express = require('express'), axios = require('axios'), mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 require.extensions['.ts'] = (mod, filename) => mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText, filename);
-const { createEffectsRouter, effectsInput, downloadEffects, effectsPrice, effectsVariant } = require(path.resolve(__dirname, '../../../packages/api/src/audio/effects.ts'));
+const { createEffectsRouter, effectsInput, downloadEffects, effectsPrice, effectsVariant, effectsGuide } = require(path.resolve(__dirname, '../../../packages/api/src/audio/effects.ts'));
 const { notifyMusic } = require(path.resolve(__dirname, '../../../packages/api/src/music/notify.ts'));
 (async () => {
   const mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri());
@@ -57,8 +57,12 @@ const { notifyMusic } = require(path.resolve(__dirname, '../../../packages/api/s
     assert.equal(effectsInput(input).steps, 8);
     assert.equal(effectsInput(input).soundModel, '3_medium');
     assert.equal(effectsVariant().price, 0.0206, 'stored jobs without a model retain the original price');
+    // Part 296: steps and seed sit in More settings; the words are short and name no person.
+    assert.deepEqual(effectsGuide.settings.filter(s => s.advanced).map(s => s.key), ['steps', 'seed']);
+    for (const words of [effectsGuide.cost, effectsGuide.where, ...effectsGuide.settings.map(s => s.hint)]) assert.doesNotMatch(words, /Kade/, words);
+    assert.match(effectsGuide.cost, /3\.76 cents.*2\.06 cents.*does not deduct from your credit balance/);
     const routeSource = fs.readFileSync(path.join(__dirname, 'kadeSoundBooth.js'), 'utf8');
-    const projectView = require('node:vm').runInNewContext('(' + routeSource.slice(routeSource.indexOf('function projectView('), routeSource.indexOf('\nfunction titleFrom(')) + ')', { effectsVariant });
+    const projectView = require('node:vm').runInNewContext('(' + routeSource.slice(routeSource.indexOf('function projectView('), routeSource.indexOf('\nfunction titleFrom(')) + ')', { effectsVariant, KADE_PAYS_ENGINES: ['yue2', 'stable'], priced: (usd) => usd, carry: { destinationsFor: () => [] } });
     assert.equal(projectView({ engine: 'stable' }).options.soundModel, '3_small_sfx', 'opening an old project keeps its original model');
     assert.match(projectView({ engine: 'stable', options: { soundModel: '3_medium' } }).why, /3 Medium/);
     await assert.rejects(() => downloadEffects('http://127.0.0.1/private'));
