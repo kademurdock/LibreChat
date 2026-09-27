@@ -1538,6 +1538,62 @@ test('a whole job: describe, stop, continue, library, re-voice, script, correcti
 });
 const folderOf = (key) => key.replace(/\/source$/, '');
 
+test('describe again: a stopped run starts over from the original already kept, and a missing original is said plainly', async () => {
+  const id = await readyJob('again-owner', 'again-upload-0000001', 30);
+  const ready = (await call('get', `/jobs/${id}`, 'again-owner').expect(200)).body;
+  assert.equal(ready.describableAgain, false, 'a checked video starts with Create described copy');
+  const early = await call('post', `/jobs/${id}/reanalyze`, 'again-owner').send({ ...settings, expectedVersion: 1 }).expect(409);
+  assert.match(early.body.error, /Create described copy/);
+  await Jobs.collection.updateOne(
+    { _id: id },
+    { $set: { state: 'failed', active: false, settings, done: 0, sections: 2, crashes: 3, crashAt: 0, progress: 40, error: 'Stopped.' } },
+  );
+  const stopped = (await call('get', `/jobs/${id}`, 'again-owner').expect(200)).body;
+  assert.equal(stopped.resumable, false, 'Continue refuses after three stops at the same part');
+  assert.equal(stopped.describableAgain, true);
+  const ask = async (extra = {}) =>
+    (await call('post', `/jobs/${id}/estimate`, 'again-owner')
+      .send({ action: 'reanalyze', settings: { ...settings, ...extra } })
+      .expect(200)).body;
+  const quote = await ask({ detail: 'essential' });
+  assert.equal(quote.allowed, true, quote.reason);
+  assert.ok(quote.estimateUSD > 0);
+  const unversioned = await call('post', `/jobs/${id}/reanalyze`, 'again-owner').send({ ...settings, detail: 'essential' }).expect(400);
+  assert.equal(unversioned.body.field, 'expectedVersion');
+  const uploadsBefore = storageLog.filter((item) => item.method === 'PUT' && item.key?.endsWith('/source')).length;
+  const started = (
+    await call('post', `/jobs/${id}/reanalyze`, 'again-owner')
+      .send({ ...settings, detail: 'essential', expectedVersion: 1 })
+      .expect(202)
+  ).body;
+  assert.equal(started.version, 2, 'a new version, so the stopped attempt is never read');
+  assert.equal(started.estimatedUSD, quote.estimateUSD);
+  const queued = await Jobs.findById(id).lean();
+  assert.equal(queued.runKind, 'fresh');
+  assert.equal(queued.crashes, 0);
+  assert.equal(queued.progress, 0);
+  const done = await settle(id, ['done', 'failed'], 'again-owner');
+  assert.equal(done.state, 'done', done.error);
+  assert.equal(done.settings.detail, 'essential');
+  assert.equal(done.describableAgain, true);
+  assert.equal(
+    storageLog.filter((item) => item.method === 'PUT' && item.key?.endsWith('/source')).length,
+    uploadsBefore,
+    'the original is read where it is, never stored again',
+  );
+  objects.hide(`/test/${queued.key}`);
+  const gone = await ask();
+  assert.equal(gone.allowed, false);
+  assert.match(gone.reason, /original video is no longer on the server/);
+  const refused = await call('post', `/jobs/${id}/reanalyze`, 'again-owner')
+    .send({ ...settings, expectedVersion: done.version })
+    .expect(409);
+  assert.match(refused.body.error, /original video is no longer on the server/);
+  assert.equal((await Jobs.findById(id).lean()).state, 'done', 'nothing was reserved or started');
+  await call('delete', `/jobs/${id}`, 'again-owner').expect(200);
+  await Budgets.deleteMany({});
+});
+
 test('a preview renders a marked copy, then Describe the rest finishes the same version', async () => {
   await Budgets.deleteMany({});
   const id = await readyJob('preview-owner', 'preview-upload-00001', 150);

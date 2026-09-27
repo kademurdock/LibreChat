@@ -676,6 +676,12 @@ const roughCover = (seconds: number, stopAfter?: number) =>
 const crashLocked = (job: Job) => (job.crashes ?? 0) >= 3 && job.crashAt === (job.done ?? 0);
 const crashText =
   'The server stopped three times while working on the same part of this video, so it will not try that part again. Go back to the last finished version, or delete this video and describe it again with other settings or as a shorter part.';
+/**
+ * Sep 27 2026, her ask: a video that was checked, and whose run finished or stopped, can be
+ * described afresh from the original already kept here, never fetched again (YouTube may refuse
+ * the server the second time). The original stays until the video expires or is deleted.
+ */
+const describableAgain = (job: Job): boolean => terminal.includes(job.state) && !!job.seconds;
 
 function copiesFor(job: Job): FinishedCopy[] {
   if (job.copies?.length) return job.copies;
@@ -1197,6 +1203,17 @@ export function createDescriptionRouter(hooks: Hooks): {
     return (await sizeOf(key, signal)) !== undefined;
   }
   /**
+   * Describing again reads the original kept here (a Library video's own file for one from the
+   * Library). Refused only when storage says it is gone; a storage hiccup lets the run find out.
+   */
+  async function requireSource(job: Job): Promise<void> {
+    const kept = await exists(job.sourceKey || job.key).catch(() => true);
+    if (!kept)
+      throw new Problem(
+        'The original video is no longer on the server, so it cannot be described again. Choose the video again to describe it.',
+      );
+  }
+  /**
    * Downloads an object, or a byte range of it written at `offset`. Storage has two minutes to
    * start answering (a request may wait for a free connection), then gives up when it sends
    * nothing for a minute. A whole download is checked against the expected size.
@@ -1592,6 +1609,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       sections: job.sections,
       done: job.done,
       resumable: stopped && !!job.settings && !!job.seconds && !crashLocked(job),
+      describableAgain: describableAgain(job),
       abandonable: stopped && !!latest,
       keepable: keepable(job),
       finishable:
@@ -1945,15 +1963,26 @@ export function createDescriptionRouter(hooks: Hooks): {
       throw new Problem('This video has a newer version. Reopen it before making another.');
     return value;
   }
+  /**
+   * Fresh descriptions from the original already kept: after a finished copy, or after a run that
+   * stopped (failed, cancelled, even one Continue refuses), which then starts over at nothing
+   * done under a new version number, so none of the stopped attempt's looks are read.
+   */
   function launchReanalyze(job: Job, body: unknown, admin: boolean): Launch {
-    if (job.state !== 'done' || !job.seconds)
+    if (job.state === 'ready')
+      throw new Problem('This video has not been described yet. Use Create described copy.');
+    if (!describableAgain(job))
       throw new Problem('Wait for this video to finish before describing it again.');
     const expectedVersion = expected(job, body, true);
-    const launch = launchStart(job, body, ['done'], nextVersion(job), admin);
+    const launch = launchStart(job, body, [job.state], nextVersion(job), admin);
     return {
       ...launch,
       expectedVersion,
-      patch: { ...launch.patch, ...(!job.copies?.length ? { copies: copiesFor(job) } : {}) },
+      patch: {
+        ...launch.patch,
+        ...(job.state === 'done' ? {} : { progress: 0 }),
+        ...(!job.copies?.length ? { copies: copiesFor(job) } : {}),
+      },
     };
   }
   async function baseRecords(job: Job, copy: FinishedCopy, signal?: AbortSignal) {
@@ -2928,6 +2957,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     };
     try {
       const launch = await launchFor(job, input.action, body, false, isAdmin(req));
+      if (input.action === 'reanalyze') await requireSource(job);
       const { estimateUSD, breakdown, seconds } = launch.price;
       const approvedUSD =
         input.action === 'resume' && job.state === 'failed' && job.overQuote
@@ -3130,6 +3160,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     whenConfigured();
     const job = await owned(req);
     const launch = launchReanalyze(job, req.body, isAdmin(req));
+    await requireSource(job);
     await requireVoice(launch.settings.voice);
     res.status(202).json(await single(await enqueue(req, job, launch)));
   });
