@@ -395,7 +395,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var by = b.author ? ' by ' + b.author : '';
     var prog = b.progress && b.progress.where ? (b.kind !== 'text' ? ' · Part ' : ' · Chapter ') + b.progress.where : '';
     var donor = where === 'library' || where === 'borrowed' ? ' · Donated by ' + esc(b.ownerName || 'someone') : '';
-    if (where === 'archive') { var m = b.meta || {}; donor = [m.year, m.network || m.cableChannel || m.callSign, m.brand, m.market].filter(Boolean).map(esc).join(' · '); donor = donor ? ' · ' + donor : ''; if (b.described) donor += ' · described'; }
+    if (where === 'archive') { var m = b.meta || {}; donor = [m.year, m.network || m.cableChannel || m.callSign, m.brand, m.market].filter(Boolean).map(esc).join(' · '); donor = donor ? ' · ' + donor : ''; if (b.described && !/described/i.test(kind)) donor += ' · described'; }
     var len = b.listen ? ' · ' + b.listen : '';
     var pending = b.state === 'pending' ? ' · no recordings yet' : '';
     li.innerHTML = '<span class="t book"><strong>' + esc(b.title) + '</strong><span class="meta">' + esc(kind + by) + len + prog + donor + pending + (b.shared && where === 'mine' ? ' · in the library' : '') + '</span></span>';
@@ -612,7 +612,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       $('archivePager').hidden = pages <= 1;
       $('pageInfo').textContent = 'Page ' + (j.page + 1) + ' of ' + pages + ' (' + j.total + ' items here)';
       $('pagePrev').disabled = j.page <= 0; $('pageNext').disabled = j.page + 1 >= pages;
-      if (path !== undefined) say((archivePath || 'The archive') + ': ' + j.folders.length + ' folder' + (j.folders.length === 1 ? '' : 's') + ', ' + j.total + ' clip' + (j.total === 1 ? '' : 's') + '.');
+      // Part 296: the shelf is said by its display names ("Audio, Described audio movies and TV, Described audio movies")
+      if (path !== undefined) say((named && named.length ? named.map(function(c){ return c.name; }).join(', ') : (archivePath || 'The archive')) + ': ' + j.folders.length + ' folder' + (j.folders.length === 1 ? '' : 's') + ', ' + j.total + ' clip' + (j.total === 1 ? '' : 's') + '.');
     } catch(e) { ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
   }
   $('pagePrev').onclick = function(){ loadArchive(archivePath, archivePage - 1); };

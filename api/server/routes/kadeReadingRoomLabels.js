@@ -1,7 +1,7 @@
 /* ----------------------------------------------------------------------------
  * WHAT A LIBRARY ITEM IS CALLED, AND WHAT A FEW SHELVES ARE CALLED (Part 296, Sep 27 2026)
  *
- * Kade, Sep 27: "It's confusing in the library that the mp3 movies say movie, like the
+ * Her words, Sep 27: "It's confusing in the library that the mp3 movies say movie, like the
  * described tv and movies that are mp3, they should say described audio movie or
  * something. Video files would go under actual full movies and full tv."
  *
@@ -29,9 +29,22 @@ const DESCRIBED_SHELF = /^Audio\/Described Movies & TV(?:\/|$)/i;
 const NOT_DESCRIBED = /\b(?:not|non|un)[\s-]?described\b/i;
 /** Words that say an audio file off the described shelf is described audio. */
 const SAYS_DESCRIBED = /\b(?:audio[\s-]?described|described|descriptive video|audio description|DVS)\b/i;
+/** The describer's own note on every copy it makes (kadeDescribedVideo.js), for a copy with no `describedFrom`. */
+const DESCRIBER_NOTE = /\bAudio-described copy made by Kade-AI\b/i;
+/**
+ * A VIDEO whose own title or shelf says it carries description (a DVS copy of a film). Narrower than
+ * SAYS_DESCRIBED: a station's "Descriptive Video Service" notice, a bare DVS logo or a YouTube blurb
+ * that uses the word is not a described film.
+ */
+const VIDEO_DESCRIBED = /\baudio[\s-]?described\b|[([]\s*described\s*[)\]]|[-–:]\s*described\s*$|\bdescribed (?:version|video|audio|copy)\b|\bwith (?:audio )?descriptions?\b|\/Described Movies & TV(?:\/|$)/i;
 const TRAILERS = /\/Trailers & Previews(?:\/|$)/i;
 const FEATURE_FILMS = /\/Feature Films(?:\/|$)/i;
 const COMMERCIAL_BREAK = /\/Commercial Breaks(?:\/|$)|\b(?:commercial|ad)\s+breaks?\b|\bcommercial blocks?\b/i;
+/**
+ * A commercial shelf by its own name, whatever the category says: her Ozarks "Local Commercials" (the
+ * crown jewels) and "Commercial Breaks" carry the tv category because they sit on the local shelf.
+ */
+const COMMERCIAL_SHELF = /\/(?:[^/]* )?Commercials(?:\/|$)|\/Commercial Breaks(?:\/|$)|\/Political Ads(?:\/|$)/i;
 const INFOMERCIAL = /\/Infomercials?(?:\/|$)|\binfomercials?\b/i;
 /** A video this long in the movie category, or on a Feature Films shelf, is a whole film. */
 const FULL_MOVIE_SECONDS = 40 * 60;
@@ -60,7 +73,7 @@ function typeLabel(item) {
 
   if (kind === 'audio') {
     const onShelf = DESCRIBED_SHELF.test(path);
-    const describer = !!(it.meta && it.meta.describedFrom);
+    const describer = !!(it.meta && it.meta.describedFrom) || DESCRIBER_NOTE.test(String(it.description || ''));
     if (onShelf || describer) {
       const sub = onShelf ? String(path.split('/')[2] || '').toLowerCase() : '';
       const noun = sub === 'movies' ? 'movie' : sub === 'tv' ? 'episode' : DESCRIBED_NOUN[category] || '';
@@ -76,13 +89,23 @@ function typeLabel(item) {
     return AUDIO_WORDS[category] || 'Recording';
   }
 
-  // video
+  // video: a real picture. A film, a show or a tape with description mixed in says so ("Described full
+  // movie"), which is not the same thing as "Described audio movie" (sound only).
+  const word = videoWord(category, path, title, seconds);
+  if ((category === 'movie' || category === 'tv' || category === 'vhs')
+    && !NOT_DESCRIBED.test(`${title} ${path}`) && (VIDEO_DESCRIBED.test(title) || VIDEO_DESCRIBED.test(path))) {
+    return 'Described ' + (/^[A-Z][a-z]/.test(word) ? word.charAt(0).toLowerCase() + word.slice(1) : word);
+  }
+  return word;
+}
+
+function videoWord(category, path, title, seconds) {
   if (category === 'movie') {
     if (TRAILERS.test(path)) return 'Movie trailer';
     return seconds >= FULL_MOVIE_SECONDS ? 'Full movie' : 'Movie clip';
   }
   if (FEATURE_FILMS.test(path) && seconds >= FULL_MOVIE_SECONDS) return 'Full movie';
-  if (category === 'commercials') {
+  if (category === 'commercials' || COMMERCIAL_SHELF.test(path)) {
     if (COMMERCIAL_BREAK.test(path) || COMMERCIAL_BREAK.test(title)) return 'Commercial break';
     if (INFOMERCIAL.test(path) || INFOMERCIAL.test(title)) return 'Infomercial';
     return 'Commercial';

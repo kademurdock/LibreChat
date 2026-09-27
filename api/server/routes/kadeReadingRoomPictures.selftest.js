@@ -124,8 +124,8 @@ test('no block of picture words, no extra heading, no live region: only the alt 
     assert.ok(!body.includes(words), 'no shelf sentence sits in the page as text');
     assert.equal(readingRoomHtml.split(words).length - 1, 1, 'once, in the script');
   }
-  // today's words for a folder change are untouched
-  assert.ok(readingRoomHtml.includes("if (path !== undefined) say((archivePath || 'The archive') + ': ' + j.folders.length + ' folder' + (j.folders.length === 1 ? '' : 's') + ', ' + j.total + ' clip' + (j.total === 1 ? '' : 's') + '.');"));
+  // a folder change says the shelf and its counts, never a picture (Part 296: the shelf by its display names)
+  assert.ok(readingRoomHtml.includes("if (path !== undefined) say((named && named.length ? named.map(function(c){ return c.name; }).join(', ') : (archivePath || 'The archive')) + ': ' + j.folders.length + ' folder' + (j.folders.length === 1 ? '' : 's') + ', ' + j.total + ' clip' + (j.total === 1 ? '' : 's') + '.');"));
 });
 
 test('alt text is the art list sentences, word for word', () => {

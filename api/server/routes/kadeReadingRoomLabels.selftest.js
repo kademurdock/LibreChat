@@ -151,3 +151,43 @@ test('the web page reads the word, falls back to the category for an older answe
   assert.match(page, /named \? named\[i\]\.name : seg/);
   assert.match(page, /<option value="movie">Movie or described audio<\/option>/);
 });
+
+/* ── review fixes ── */
+test('a VIDEO with description mixed in still says described, and never "audio"', () => {
+  assert.equal(video('movie', 'Videos/Movies', { title: 'The Lion King (Described)', seconds: 5300 }), 'Described full movie');
+  assert.equal(video('movie', 'Videos/Movies', { title: 'The Lion King - Audio Described', seconds: 5300 }), 'Described full movie');
+  assert.equal(video('movie', 'Videos/Movies', { title: 'The Lion King - described', seconds: 5300 }), 'Described full movie');
+  assert.equal(video('vhs', 'Videos/Home Video (VHS)/Feature Films', { title: 'Millennium (1989, VHS) [described]', seconds: 6650 }), 'Described full movie');
+  assert.equal(video('movie', 'Videos/Described Movies & TV/Movies/L', { title: 'The Lion King', seconds: 5300 }), 'Described full movie', 'a video filed on a described shelf');
+  assert.equal(video('tv', 'Videos/TV Shows/Arthur', { title: 'Arthur - Season 1 Episode 2 (described version)', seconds: 1500 }), 'Described TV recording');
+  assert.equal(video('movie', 'Videos/Movies & Studios/1980s', { title: 'Intro (described)', seconds: 30 }), 'Described movie clip');
+  // not described, and the words that only look like it
+  assert.equal(video('movie', 'Videos/Movies', { title: 'The Lion King (not described)', seconds: 5300 }), 'Full movie');
+  assert.equal(video('other', 'Videos/Needs Filing/Archive Intake', { title: 'KETC Descriptive Video Service notice' }), 'Video');
+  assert.equal(video('tv', 'Videos/Channels/PBS/1990s', { title: 'PBS Descriptive Video Service (DVS) ident' }), 'TV recording');
+  assert.equal(video('tv', 'Videos/Channels/ABC/1990s', { title: 'ABC promo', description: 'The show was described as a hit.' }), 'TV recording', 'a blurb is never read for a video');
+  assert.equal(video('commercials', 'Videos/Commercials/Toys & Video Games/1990s', { title: 'Toy ad (described)' }), 'Commercial', 'only films, shows and tapes');
+});
+
+test('a commercial shelf is a commercial whatever its category: her Ozarks Local Commercials and breaks', () => {
+  assert.equal(video('tv', 'Videos/Ozarks (Springfield Area)/Local Commercials/1990s', { title: 'Meeks Lumber commercial, 1993' }), 'Commercial');
+  assert.equal(video('tv', 'Videos/Ozarks (Springfield Area)/Commercial Breaks/1980s', { title: 'KYTV break, 1987' }), 'Commercial break');
+  assert.equal(video('other', 'Videos/Needs Filing/Commercials', { title: 'x' }), 'Commercial');
+  assert.equal(video('commercials', 'Videos/Missouri/Political Ads/1990s', { title: 'x' }), 'Commercial');
+  assert.equal(video('tv', 'Videos/Ozarks (Springfield Area)/Local News/1990s', { title: 'KOLR 10 news open' }), 'TV recording');
+  assert.equal(video('tv', 'Videos/Ozarks (Springfield Area)/Station IDs & Sign-offs', { title: 'KSPR sign-off' }), 'TV recording');
+});
+
+test("a describer copy saved off the described shelf with no source still says described, by the describer's note", () => {
+  const note = 'A commercial for soap.\n\nAudio-described copy made by Kade-AI.';
+  assert.equal(audio('Audio/My Stuff', { category: 'commercials', description: note }), 'Described audio commercial');
+  assert.equal(audio('Audio/My Stuff', { category: 'tv', description: note }), 'Described audio episode');
+  assert.equal(audio('Audio/My Stuff', { category: 'other', description: note }), 'Described audio');
+  assert.equal(audio('Audio/Radio Commercials', { category: 'commercials', description: 'Folgers radio spot' }), 'Radio commercial');
+});
+
+test('the web row never says "described" twice, and a shelf is announced by its display names', () => {
+  const page = fs.readFileSync(require.resolve('./kadeReadingRoomPage'), 'utf8');
+  assert.match(page, /if \(b\.described && !\/described\/i\.test\(kind\)\) donor \+= ' · described';/);
+  assert.match(page, /say\(\(named && named\.length \? named\.map\(function\(c\)\{ return c\.name; \}\)\.join\(', '\) : \(archivePath \|\| 'The archive'\)\)/);
+});
