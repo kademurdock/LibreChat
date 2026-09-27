@@ -29,6 +29,11 @@ export type Settings = {
    * from anyone else's request (`readSettings`); absent, looks ask the server's tier.
    */
   tier?: Tier;
+  /**
+   * The Kade-AI credit (credit.ts) is on for every copy. Only `false` means anything: the
+   * administrator left it out of this job. The router drops it from anyone else's request.
+   */
+  credit?: boolean;
 };
 export const settingsSchema: z.ZodType<Settings, z.ZodTypeDef, unknown> = z
   .object({
@@ -54,6 +59,7 @@ export const settingsSchema: z.ZodType<Settings, z.ZodTypeDef, unknown> = z
       .optional(),
     /** A tier this server does not know is dropped, never an error. */
     tier: z.enum(tiers).optional().catch(undefined),
+    credit: z.boolean().optional().catch(undefined),
   })
   .refine(
     (value) => value.maxRate >= value.rate,
@@ -324,6 +330,20 @@ export type Meter = (
   part?: CostPart,
 ) => Promise<void>;
 export type Progress = (stage: string, progress: number) => Promise<void>;
+/** One credit line as it sits in the described copy, in output seconds from its logo's start. */
+export type CreditLine = { text: string; at: number; duration: number };
+/**
+ * The Kade-AI credit of one copy: `lead` seconds of opening credit before the film's first
+ * frame (every other output time in the report already includes it), and the closing card
+ * after the film's last frame. Copies made before Sep 27 2026 have none.
+ */
+export type CreditReport = {
+  lead: number;
+  /** Which sonic logo played, such as "logo 3"; absent when the words were said without it. */
+  logo?: string;
+  start?: CreditLine;
+  end?: CreditLine;
+};
 export type Report = {
   version: 2;
   title: string;
@@ -344,6 +364,8 @@ export type Report = {
   /** The part of the source that was described, in source seconds. */
   range?: Interval;
   language?: string;
+  /** The Kade-AI credit at the start and end, never among `descriptions`. */
+  credit?: CreditReport;
 };
 
 /** Raised when a job must stop rather than skip one item, such as reaching its allowance. */

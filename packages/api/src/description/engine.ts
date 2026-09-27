@@ -27,10 +27,14 @@ import type { Leftover, Variant } from './timing';
 import type { Brief, Heard } from './prompt';
 import type { Duck, Pause } from './mix';
 import type { FailedCall, FlexOutcome, Look } from './providers';
+import type { Credit } from './credit';
+import type { RenderedCredit } from './transcript';
 import {
   assemble,
   copyable,
+  decodeStereo,
   decodeVoice,
+  leadPicture,
   lookClip,
   MediaError,
   normalize,
@@ -40,11 +44,13 @@ import {
   soundtrack,
   stretch,
 } from './media';
+import { bareVoiceAt, creditComment, creditLines, endBreath, layCredit } from './credit';
 import {
   bridgeDucks,
   decibels,
   duckDepth,
   level,
+  loudness,
   mix,
   pauseProgram,
   pcmSeconds,
@@ -191,6 +197,11 @@ export type Request = {
   quotedUSD?: number;
   /** Section timings, failures and retries, for the server log. */
   log?: (message: string) => void;
+  /**
+   * The Kade-AI credit (credit.ts) at the start and end of the copy; absent or null, the copy has
+   * none (tests, and a job the administrator left it out of).
+   */
+  credit?: Credit | null;
 };
 export type Outcome = {
   video: string;
@@ -298,11 +309,18 @@ export function workingChapters(
   ];
 }
 
-/** Chapter times in the described copy, after the frozen pauses; later sections are dropped. */
-export function outputChapters(chapters: Chapter[], records: SectionRecord[]): Chapter[] {
+/**
+ * Chapter times in the described copy, after the opening credit (`lead` seconds) and the frozen
+ * pauses; later sections are dropped.
+ */
+export function outputChapters(
+  chapters: Chapter[],
+  records: SectionRecord[],
+  lead: number = 0,
+): Chapter[] {
   const ordered = [...records].sort((a, b) => a.index - b.index);
   const result: Chapter[] = [];
-  let offset = 0;
+  let offset = lead;
   for (const record of ordered) {
     for (const chapter of chapters)
       if (chapter.start >= record.start && chapter.start < record.end)
@@ -443,6 +461,8 @@ function failedCharge(error: unknown, reserve: number, aborted: boolean): number
 }
 
 type Voiced = { pcm: Float32Array; base: number };
+/** One rendered end of the Kade-AI credit, and the held first frame under an opening one. */
+type CreditPart = { file: string; picture?: string; seconds: number; text: string; logo?: string };
 type Looked = {
   analysis: Analysis | null;
   failure?: string;
@@ -1542,8 +1562,119 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     records.set(item.index, await render(item.index, looked, item.state, true));
   }
 
+  /**
+   * One end of the Kade-AI credit (credit.ts): the logo, with the line said over its tail by the
+   * job's narrator at the engine's own speed (never sped up to fit anything), levelled like the
+   * narration with the logo 3 LU under it, through the same limiter as the sections. Its speech is
+   * booked through the credit's own meter (the platform's included work) under a TTS session key
+   * of its own, so it never colours the first or last description. The opening credit is whole
+   * output frames long when the picture is re-encoded, with the film's first frame held under it.
+   * A credit whose speech or picture fails is left out and the copy finishes without it; a logo
+   * that cannot be read leaves the words alone.
+   */
+  async function creditPart(which: 'start' | 'end', credit: Credit): Promise<CreditPart | null> {
+    const dir = join(directory, 'credit');
+    const line = creditLines[which];
+    const where = which === 'start' ? 'opening' : 'closing';
+    try {
+      await mkdir(dir, { recursive: true });
+      const spoken = join(dir, `${which}-voice.wav`);
+      let words: Float32Array;
+      try {
+        await providers.synthesize(
+          line.said,
+          settings.voice,
+          `${request.session}:credit`,
+          spoken,
+          native,
+          signal,
+          credit.meter ?? meter,
+        );
+        words = trimSilence(await decodeVoice(spoken, signal));
+      } finally {
+        await rm(spoken, { force: true });
+      }
+      if (words.length <= sampleRate * 0.2) throw new Error('The voice returned no words.');
+      let logo: Float32Array | null = null;
+      if (credit.logo)
+        try {
+          const decoded = await decodeStereo(credit.logo.file, signal);
+          if (decoded.length >= sampleRate * 0.2 * 2) logo = decoded;
+          else throw new Error('The logo file is empty.');
+        } catch (error) {
+          if (signal.aborted) throw error;
+          log(
+            `The Kade-AI logo (${credit.logo.name}) could not be read, so the ${where} credit is said without it: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown error'}`,
+          );
+        }
+      const logoLevel = logo ? loudness(logo, 2) : -Infinity;
+      const laid = layCredit({
+        logo,
+        logoGain: Number.isFinite(logoLevel)
+          ? decibels(clamp(levels.narration - 3 - logoLevel, -30, 12))
+          : 1,
+        voice: level(words, levels.narration - 3.01),
+        voiceAt: logo && credit.logo ? credit.logo.voiceAt : bareVoiceAt,
+        before: which === 'end' ? endBreath : 0,
+      });
+      let pcm = laid.pcm;
+      let picture: string | undefined;
+      if (which === 'start' && !copyVideo) {
+        const frames = Math.max(
+          1,
+          Math.ceil(((pcm.length / 2 / sampleRate) * fps.num) / fps.den - 1e-6),
+        );
+        const whole = new Float32Array(Math.round(secondsOf(frames, fps) * sampleRate) * 2);
+        whole.set(pcm.subarray(0, Math.min(pcm.length, whole.length)));
+        pcm = whole;
+        picture = await leadPicture(source, dir, frames, fps, signal, media);
+      }
+      const file = join(dir, `credit-${which}.flac`);
+      await saveSound(pcm, file, signal);
+      return {
+        file,
+        ...(picture ? { picture } : {}),
+        seconds: pcm.length / 2 / sampleRate,
+        text: line.written,
+        logo: logo && credit.logo ? credit.logo.name : undefined,
+      };
+    } catch (error) {
+      if (signal.aborted) throw error;
+      const reason = axios.isAxiosError(error)
+        ? providerProblem(error, 'The voice service')
+        : error instanceof Error
+          ? error.message.slice(0, 300)
+          : 'unknown error';
+      log(`The Kade-AI ${where} credit was left out: ${reason}`);
+      return null;
+    }
+  }
+
   await keptWorking;
   const ordered = [...records.values()].sort((a, b) => a.index - b.index);
+  const credit = request.credit ?? undefined;
+  if (credit) await progress('Adding the Kade-AI credit', 93);
+  const opening = credit?.where === 'both' ? await creditPart('start', credit) : null;
+  const closing = credit && !partial ? await creditPart('end', credit) : null;
+  const rendered: RenderedCredit | undefined =
+    opening || closing
+      ? {
+          ...((opening?.logo ?? closing?.logo) ? { logo: opening?.logo ?? closing?.logo } : {}),
+          ...(opening ? { start: { text: opening.text, duration: opening.seconds } } : {}),
+          ...(closing ? { end: { text: closing.text, duration: closing.seconds } } : {}),
+        }
+      : undefined;
+  if (credit)
+    log(
+      `Kade-AI credit: ${[
+        credit.where === 'both'
+          ? `opening ${opening ? seconds1(opening.seconds) : 'left out'}`
+          : '',
+        partial ? '' : `closing ${closing ? seconds1(closing.seconds) : 'left out'}`,
+      ]
+        .filter(Boolean)
+        .join(', ')}${rendered ? `, ${rendered.logo ?? 'no logo'}` : ''}.`,
+    );
   await progress('Joining the finished sections', 93);
   const files = await pool(ordered, 4, async (record) => {
     const dir = join(directory, `section-${record.index}`);
@@ -1565,8 +1696,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     {
       ...(partial ? { preview: true } : {}),
       ...(settings.range ? { range: settings.range } : {}),
+      ...(rendered ? { credit: rendered } : {}),
     },
   );
+  const lead = report.credit?.lead ?? 0;
   const reportFile = join(directory, 'description.json');
   const transcript = join(directory, 'transcript.txt');
   const descriptions = join(directory, 'descriptions.vtt');
@@ -1579,13 +1712,24 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     await rm(source, { force: true });
   const output = await assemble(
     directory,
-    files.map((file) => file.sound),
-    copyVideo ? null : files.map((file) => file.picture || ''),
+    [
+      ...(opening ? [opening.file] : []),
+      ...files.map((file) => file.sound),
+      ...(closing ? [closing.file] : []),
+    ],
+    copyVideo
+      ? null
+      : [
+          ...(opening?.picture ? [opening.picture] : []),
+          ...files.map((file) => file.picture || ''),
+        ],
     source,
     `${request.title || 'Video'} (described)`,
     signal,
     {
       media,
+      ...(lead ? { lead } : {}),
+      ...(rendered ? { comment: creditComment } : {}),
       // The MP4 carries the dialogue captions only, and only when captions.vtt has a cue (the
       // same test as captionTrack). The description lines are already spoken, and a player that
       // switches their text track back on (AVKit from her captioning settings, Files, Photos,
@@ -1600,7 +1744,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
             },
           }
         : {}),
-      chapters: outputChapters(chapters, ordered),
+      chapters: outputChapters(chapters, ordered, lead),
     },
   );
   return {

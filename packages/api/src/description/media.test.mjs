@@ -1049,3 +1049,82 @@ test('the ffmpeg capability check is logged once and missing filters degrade', a
   const fallback = [media.deinterlace(hdr, plain), ...media.shape(hdr, plain, 320)].join(',');
   await media.command(ffmpegPath, ['-nostdin', '-v', 'error', '-i', hdrFile, '-vf', fallback, '-f', 'null', '-'], signal);
 });
+
+/* Sep 27 2026: the Kade-AI credit before the first frame and after the last (credit.ts). */
+test('Kade-AI credit: a copied picture starts after the opening credit, stays in step, the sound runs on past its last frame, and both files carry the comment', async () => {
+  const file = await make('credit-copy.mp4', [...lavfi(picture('320x240', 30, 6)), ...lavfi(sound(6)), ...h264, '-c:a', 'aac']);
+  const info = await media.probe(file, signal);
+  assert.equal(media.copyable(info), true);
+  const dir = await folder('credit-assemble');
+  const tone = (seconds) => {
+    const pcm = new Float32Array(Math.round(seconds * 48000) * 2);
+    for (let i = 0; i < pcm.length / 2; i++) pcm[2 * i] = pcm[2 * i + 1] = 0.2 * Math.sin((2 * Math.PI * 1000 * i) / 48000);
+    return pcm;
+  };
+  const lead = 3.77;
+  const start = join(dir, 'credit-start.flac');
+  const film = join(dir, 'sound.flac');
+  const end = join(dir, 'credit-end.flac');
+  await media.saveSound(tone(lead), start, signal);
+  await media.saveSound(await media.sectionSound(file, dir, 0, 6 * 48000, true, signal, info), film, signal);
+  await media.saveSound(tone(2.5), end, signal);
+  const comment = 'Audio description by Kade-AI, kademurdock.com';
+  const output = await media.assemble(dir, [start, film, end], null, file, 'Credit (described)', signal, {
+    media: info,
+    lead,
+    comment,
+    chapters: [{ start: lead + 2, title: 'Middle' }],
+  });
+  const data = await probeJson(output.video, 'format=duration:format_tags:stream=codec_type,start_time,duration');
+  const video = data.streams.find((s) => s.codec_type === 'video');
+  const audio = data.streams.find((s) => s.codec_type === 'audio');
+  const offset = info.videoStart - (info.formatStart ?? info.videoStart);
+  assert.ok(Math.abs(Number(video.start_time) - (lead + offset)) < 0.02, `picture starts at ${video.start_time}`);
+  assert.ok(Math.abs(Number(audio.start_time) - offset) < 0.02, `sound starts at ${audio.start_time}`);
+  assert.ok(Math.abs(Number(data.format.duration) - (offset + lead + 6 + 2.5)) < 0.1, `copy ${data.format.duration} s`);
+  near(bursts(await timedPcm(output.video)), flashes(await frames(output.video)), 0.05, 'the film’s picture and sound stay in step after the lead');
+  assert.equal(data.format.tags.comment, comment);
+  const audioTags = (await probeJson(output.audio, 'format_tags')).format.tags;
+  assert.equal(audioTags.comment, comment, 'the M4A keeps the comment through its chapter pass');
+  assert.match(audioTags.title, /Credit \(described\)/);
+});
+
+test('Kade-AI credit: the held first frame is exactly the frames asked for, shaped like a section, and joins the first section frame for frame', async () => {
+  const file = await make('credit-lead.mkv', [...lavfi(picture('320x240', 30, 4)), '-c:v', 'ffv1']);
+  const info = await media.probe(file, signal);
+  const dir = await folder('credit-lead');
+  const fps = { num: 30, den: 1 };
+  const held = await media.leadPicture(file, dir, 45, fps, signal, info);
+  const first = await media.sectionPicture(file, dir, 0, 0, 60, fps, [], signal, info);
+  const count = async (target) =>
+    Number(
+      (
+        await media.command(
+          ffprobePath.path,
+          ['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0', target],
+          signal,
+        )
+      ).toString(),
+    );
+  assert.equal(await count(held), 45);
+  const [a, b] = [await geometry(held), await geometry(first)];
+  assert.deepEqual([a.width, a.height, a.pix_fmt, a.profile], [b.width, b.height, b.pix_fmt, b.profile]);
+  const list = join(dir, 'parts.txt');
+  await writeFile(list, [held, first].map((part) => `file '${part.replace(/\\/g, '/')}'`).join('\n'));
+  const joinedFile = join(dir, 'joined.mp4');
+  await media.command(ffmpegPath, ['-nostdin', '-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', joinedFile], signal);
+  assert.equal(await count(joinedFile), 105, 'the lead and the section join by stream copy');
+  const lit = flashes(await frames(joinedFile));
+  near(lit, [1.5 + 1.5], 0.04, 'the film’s flash lands after the 1.5 s lead');
+
+  const stereo = await make('credit-logo.flac', ['-f', 'lavfi', '-i', "aevalsrc='0.5*sin(2*PI*1000*t)|0':s=44100:d=1.5", '-c:a', 'flac']);
+  const pcm = await media.decodeStereo(stereo, signal);
+  assert.equal(pcm.length, 1.5 * 48000 * 2, 'resampled to 48 kHz stereo');
+  let left = 0;
+  let right = 0;
+  for (let i = 0; i < pcm.length; i += 2) {
+    left = Math.max(left, Math.abs(pcm[i]));
+    right = Math.max(right, Math.abs(pcm[i + 1]));
+  }
+  assert.ok(left > 0.45 && right < 0.01, 'the channels stay apart');
+});

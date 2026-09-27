@@ -16,6 +16,18 @@
 
 Re-voicing a finished copy reuses the saved script and dialogue: only speech and mixing are paid. Voice samples (`POST /sample`) are cached per voice and speed and limited to 40 an hour.
 
+## The Kade-AI credit (Sep 27 2026)
+
+Every described copy names the platform that described it (`credit.ts`), outside the film so it never talks over dialogue, music or the opening:
+
+- **Before the first frame:** the sonic logo, then the job's narrator says "Audio description by Kade-AI." (about 3 to 4.5 s). Every output time moves by this lead: descriptions, dialogue and captions (`buildReport`), chapters (`outputChapters`), and the script's `outputAt` (`scriptCues(records, copy.lead)`; the copy record keeps `lead`).
+- **After the last frame:** 0.6 s of breath, the logo again, then "Described by Kade-AI. More at kademurdock dot com." A preview has no closing card: its film has not ended.
+- The lines are said at the engine's own speed (`min(1.5, rate)`) through `synthesize`, under the TTS session key `<session>:credit`, levelled like narration with the logo 3 LU under it and easing 4 dB down under the words. The voice proxy already says "Kade-AI" as "Kadie A I" and "kademurdock" as "Kadie Murdock". Their speech is booked through `includedMeter` (`speech-included`, charged 0).
+- **Picture.** Copy mode: the original picture starts `lead` seconds later (`-itsoffset` on the picture input, an MP4 edit list) and the sound runs on past its last frame. Re-encode mode: the lead is rounded up to whole output frames and the film's first frame is held under it (`leadPicture`, the same chain and encoder as `sectionPicture`); no picture is added for the closing card.
+- **Text.** `transcript.txt` has `0:00 Credit: …` and the closing Credit line at its time; `description.json` has `credit: {lead, logo, start, end}`. `descriptions.vtt` never carries the credit, so the website's next/previous-description jumps never land on it, and the description count leaves it out. Both files get the comment tag "Audio description by Kade-AI, kademurdock.com".
+- **Switches.** On for every copy. `KADE_DESCRIPTION_CREDIT` = `both` (default), `end` (closing card only) or `off`. `KADE_DESCRIPTION_LOGO` = 1 to 5 (default 3) or `none`; the logos are `api/server/assets/kade-ai-logo/logo-N.flac`, passed by the wrapper as `creditLogos` (the package build copies no binary files). Only the administrator may leave the credit out of one job (`settings.credit: false`, a checkbox on the website, also on Make a new version); anyone else's request has it dropped.
+- **Failure never costs the copy.** A credit whose speech or picture fails is left out and logged (`The Kade-AI opening credit was left out: …`); a logo that cannot be read leaves the words alone. `dv.claim` logs `credit`, and the engine log says `Kade-AI credit: opening 3.1 s, closing 5.1 s, logo 3.`
+
 ## Website corrections and inspection
 
 - `GET /jobs/:id/script` returns the latest finished script, its version, and stable section/cue IDs for that version. `POST /jobs/:id/revoice` accepts `expectedVersion` and a bounded `edits` array (full text, short text, or omission). Stale versions and unknown/duplicate IDs are rejected. Original cue timing is preserved. When voice, speed, mode and volume stay the same, unaffected sections reuse their rendered media. Browser drafts are local to the job and script version.

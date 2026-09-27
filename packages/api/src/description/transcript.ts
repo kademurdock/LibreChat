@@ -140,7 +140,12 @@ function reasonHeading(reason: string): string {
 
 /** Plain text for reading with a screen reader or braille display, in playback order. */
 export function transcriptText(report: Report): string {
+  const credit = report.credit;
+  const credits = [credit?.start, credit?.end].flatMap((line) =>
+    line ? [{ at: line.at, order: -1, who: 'Credit', voice: '', text: line.text }] : [],
+  );
   const entries = [
+    ...credits,
     ...report.descriptions.map((cue) => ({
       at: cue.outputAt,
       order: 0,
@@ -183,7 +188,7 @@ export function transcriptText(report: Report): string {
     report.language && !isEnglish(report.language)
       ? `Dialogue language: ${languageName(report.language)} (detected).`
       : '',
-    'Times are positions in the described version. Descriptions start with the word Description; speech starts with the speaker.',
+    `Times are positions in the described version. Descriptions start with the word Description; speech starts with the speaker.${credits.length ? ' The Kade-AI credit starts with the word Credit.' : ''}`,
     report.warning,
     '',
   ].filter((line, i, all) => line || i === all.length - 1);
@@ -317,6 +322,18 @@ function mostCommonKind(records: SectionRecord[], fallback: string): string {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? fallback;
 }
 
+/** The Kade-AI credit as the engine rendered it, before its place in the copy is known. */
+export type RenderedCredit = {
+  logo?: string;
+  start?: { text: string; duration: number };
+  end?: { text: string; duration: number };
+};
+
+/**
+ * The report of a copy. With a credit, every output time starts after the opening credit
+ * (`credit.start.duration` seconds), the closing card follows the last section, and
+ * `outputSeconds` counts both; the credit lines are never among the descriptions.
+ */
 export function buildReport(
   title: string,
   plan: Plan,
@@ -324,7 +341,7 @@ export function buildReport(
   settings: Settings,
   records: SectionRecord[],
   words: Word[],
-  extra?: { preview?: boolean; range?: Interval },
+  extra?: { preview?: boolean; range?: Interval; credit?: RenderedCredit },
 ): Report {
   const ordered = [...records].sort((a, b) => a.index - b.index);
   const last = ordered[ordered.length - 1]?.continuity ?? emptyContinuity;
@@ -371,7 +388,9 @@ export function buildReport(
     introduced.add(speaker);
     return person.label ? `${person.name} (${person.label})` : printed;
   };
-  let offset = 0;
+  const credit = extra?.credit;
+  const lead = credit?.start?.duration ?? 0;
+  let offset = lead;
   for (const record of ordered) {
     report.descriptions.push(
       ...record.placements.map((item) => ({
@@ -397,5 +416,14 @@ export function buildReport(
     offset += record.outputSeconds;
   }
   report.outputSeconds = offset;
+  if (credit && (credit.start || credit.end)) {
+    report.credit = {
+      lead,
+      ...(credit.logo ? { logo: credit.logo } : {}),
+      ...(credit.start ? { start: { ...credit.start, at: 0 } } : {}),
+      ...(credit.end ? { end: { ...credit.end, at: offset } } : {}),
+    };
+    report.outputSeconds = offset + (credit.end?.duration ?? 0);
+  }
   return report;
 }

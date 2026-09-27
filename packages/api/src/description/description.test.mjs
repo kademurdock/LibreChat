@@ -53,6 +53,7 @@ import { settingsSchema, Halt } from './types.ts';
 import { editsSchema, revise, scriptCues, libraryPathSchema } from './revision.ts';
 import { Refusal, analyze as realAnalyze } from './providers.ts';
 import { youtubeURL } from './youtube.ts';
+import { layCredit, creditComment } from './credit.ts';
 
 process.env.FFMPEG_PATH = ffmpegPath;
 process.env.FFPROBE_PATH = ffprobePath.path;
@@ -1605,6 +1606,7 @@ async function run(f, words, cues, overrides = {}) {
     workingCopy: overrides.workingCopy,
     sourceSeconds: overrides.sourceSeconds,
     log: overrides.log ? (line) => overrides.log.push(line) : undefined,
+    credit: overrides.credit,
   });
   return { ...result, backend };
 }
@@ -3279,4 +3281,357 @@ test('joining a long copy restores its saved sections a few at a time', async ()
   assert.equal(restored, 40);
   assert.ok(peak <= 4, `${peak} restores at once`);
   assert.ok(Math.abs(result.report.outputSeconds - 40) < 0.1);
+});
+
+/* Sep 27 2026: the Kade-AI credit (credit.ts). Before the film's first frame the sonic logo plays
+ * and the narrator says the start line; after its last frame the logo plays again with the end
+ * line. Every output time moves by the opening credit. */
+/** The level of one frequency in mono samples (Goertzel), as a sine's amplitude. */
+function toneLevel(x, frequency) {
+  let re = 0;
+  let im = 0;
+  for (let i = 0; i < x.length; i++) {
+    const phase = (2 * Math.PI * frequency * i) / sampleRate;
+    re += x[i] * Math.cos(phase);
+    im += x[i] * Math.sin(phase);
+  }
+  return (2 * Math.hypot(re, im)) / x.length;
+}
+/** The left channel of interleaved stereo between two times. */
+const leftOf = (pcm, from, to) => {
+  const start = Math.round(from * sampleRate);
+  const out = new Float32Array(Math.round((to - from) * sampleRate));
+  for (let i = 0; i < out.length; i++) out[i] = pcm[(start + i) * 2];
+  return out;
+};
+const peakOf = (x) => x.reduce((top, value) => Math.max(top, Math.abs(value)), 0);
+/** A tone file made locally: a stereo 48 kHz FLAC (a stand-in logo) or a 24 kHz mono WAV (a voice). */
+async function toneFile(dir, name, frequency, seconds, stereo = false) {
+  const file = join(dir, name);
+  await command(
+    ffmpegPath,
+    [
+      '-nostdin',
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      `sine=frequency=${frequency}:sample_rate=${stereo ? 48000 : 24000}:duration=${seconds}`,
+      ...(stereo ? ['-ac', '2', '-c:a', 'flac'] : []),
+      file,
+    ],
+    signal,
+  );
+  return file;
+}
+/**
+ * The test voice with a credit voice of its own (an 880 Hz tone), whose speech goes through the
+ * meter it is handed, as the production voice's does.
+ */
+function withCreditVoice(base, creditVoice, fails = false) {
+  const said = [];
+  return {
+    ...base,
+    said,
+    synthesize: async (text, voice, session, file, speed, sig, meter) => {
+      said.push({ text, session, speed });
+      if (!session.endsWith(':credit')) return base.synthesize(text, voice, session, file, speed, sig, meter);
+      await meter('speech', 0.002, async () => {
+        if (fails) throw new Error('The voice service could not be reached.');
+        await copyFile(creditVoice, file);
+        return { costUSD: 0.001 };
+      });
+    },
+  };
+}
+/** A file's whole first sound track as mono 48 kHz samples from its start. */
+const wholeSound = async (file) => {
+  const raw = await command(
+    ffmpegPath,
+    ['-nostdin', '-v', 'error', '-i', file, '-map', '0:a:0', '-ac', '1', '-ar', '48000', '-f', 'f32le', 'pipe:1'],
+    signal,
+    undefined,
+    64 * 1024 ** 2,
+  );
+  return new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
+};
+const probeStreams = async (file) =>
+  JSON.parse(
+    (
+      await command(
+        ffprobePath.path,
+        ['-v', 'error', '-show_entries', 'stream=codec_type,start_time,duration:format=duration:format_tags', '-of', 'json', file],
+        signal,
+      )
+    ).toString(),
+  );
+const vttStarts = (text) =>
+  [...text.matchAll(/(\d\d):(\d\d):(\d\d)\.(\d\d\d) -->/g)].map(
+    (m) => Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4]) / 1000,
+  );
+
+test('Kade-AI credit: the words start where the logo says, the logo eases 4 dB down under them, and the card ends softly', () => {
+  const logo = sine(2, 1320, 0.2, 2);
+  const voice = sine(1, 660, 0.3);
+  const { pcm, wordsAt } = layCredit({ logo, logoGain: 0.5, voice, voiceAt: 0.8, before: 0.6, frames: 4 * sampleRate });
+  assert.ok(Math.abs(wordsAt - 1.4) < 1e-9, `words at ${wordsAt}`);
+  assert.equal(pcm.length, 4 * sampleRate * 2, 'padded with silence to the frames asked for');
+  assert.equal(peakOf(leftOf(pcm, 0, 0.6)), 0, 'the breath before the closing card is silent');
+  const before = toneLevel(leftOf(pcm, 0.7, 1.2), 1320);
+  assert.ok(Math.abs(before - 0.1) < 0.005, `logo at its own gain before the words: ${before}`);
+  const under = toneLevel(leftOf(pcm, 1.7, 2.2), 1320);
+  assert.ok(Math.abs(under / before - 10 ** (-4 / 20)) < 0.02, `4 dB down under the words: ${under / before}`);
+  assert.ok(Math.abs(toneLevel(leftOf(pcm, 1.5, 2.3), 660) - 0.3) < 0.01, 'the words at their own level');
+  assert.ok(toneLevel(leftOf(pcm, 1.0, 1.35), 660) < 0.001, 'no words before their time');
+  const end = 1.4 + 1 + 0.45;
+  assert.ok(peakOf(leftOf(pcm, end - 0.01, end)) < 0.01, 'the soft end reaches silence');
+  assert.equal(peakOf(leftOf(pcm, end + 0.01, 4)), 0, 'then silence to the end of the padding');
+  const bare = layCredit({ logo: null, logoGain: 1, voice, voiceAt: 0.15 });
+  assert.ok(Math.abs(bare.pcm.length / 2 / sampleRate - (0.15 + 1 + 0.45)) < 0.001, 'without a logo: a breath, the words, a tail');
+});
+
+test('Kade-AI credit: chapters, the script and the transcript count the opening credit; the description track never carries it', () => {
+  const record = (index, start, end, placements = []) => ({
+    index,
+    start,
+    end,
+    analysis: { kind: '', setting: '', people: [], speakers: [], protectedSounds: [], cues: [{ ...cue, at: 2, until: 5 }] },
+    placements,
+    skipped: [],
+    outputSeconds: end - start,
+    continuity: { kind: '', setting: '', people: [], speakers: [], recent: [] },
+  });
+  const placement = { at: 2, outputAt: 2, duration: 1.5, rate: 1.5, text: cue.text, pauseAt: 2, pause: 0, inserted: false, shortened: false, importance: 3, id: '1:0' };
+  const records = [record(0, 0, 6), record(1, 6, 12, [placement])];
+  assert.deepEqual(
+    outputChapters([{ start: 0, title: 'Opening' }, { start: 8, title: 'Later' }], records, 3.5).map((c) => c.start),
+    [3.5, 11.5],
+  );
+  const cues = scriptCues(records, 3.5);
+  assert.equal(cues.find((item) => item.id === '1:0').outputAt, 3.5 + 6 + 2);
+  assert.equal(scriptCues(records).find((item) => item.id === '1:0').outputAt, 8, 'copies made before the credit have none');
+  const report = {
+    title: 'Test pattern',
+    sourceSeconds: 12,
+    outputSeconds: 3.5 + 12 + 4,
+    descriptions: [{ ...placement, at: 8, outputAt: 11.5 }],
+    dialogue: [],
+    skipped: [],
+    failedSections: [],
+    warning: '',
+    credit: {
+      lead: 3.5,
+      logo: 'logo 3',
+      start: { text: 'Audio description by Kade-AI.', at: 0, duration: 3.5 },
+      end: { text: 'Described by Kade-AI. More at kademurdock.com.', at: 15.5, duration: 4 },
+    },
+  };
+  const text = transcriptText(report);
+  const lines = text.split('\n');
+  const first = lines.findIndex((line) => line.startsWith('0:'));
+  assert.deepEqual(lines.slice(first, first + 3), [
+    '0:00 Credit: Audio description by Kade-AI.',
+    `0:11 Description: ${cue.text}`,
+    '0:15 Credit: Described by Kade-AI. More at kademurdock.com.',
+  ]);
+  assert.match(text, /The Kade-AI credit starts with the word Credit\./);
+  assert.match(text, /1 description\./, 'the credit lines are not counted as descriptions');
+  assert.doesNotMatch(transcriptText({ ...report, credit: undefined }), /Credit/);
+});
+
+test('Kade-AI credit, original picture kept: logo and start line before the first frame, end line after the last, every time shifted, charged to the credit meter only', async () => {
+  const f = await fixture('credit-copy');
+  const logo = await toneFile(f.dir, 'logo.flac', 1320, 2, true);
+  const creditVoice = await toneFile(f.dir, 'credit-voice.wav', 880, 1.2);
+  const words = [
+    { start: 0.3, end: 1.8, word: 'dialogue' },
+    { start: 6, end: 8.8, word: 'dialogue' },
+  ];
+  const backend = withCreditVoice(providers(f.voice, words, [{ ...cue, at: 2, until: 6 }]), creditVoice);
+  const booked = { credit: [], job: [] };
+  const log = [];
+  const result = await run(f, words, [], {
+    providers: backend,
+    credit: {
+      where: 'both',
+      logo: { file: logo, voiceAt: 0.8, name: 'logo t' },
+      meter: async (kind, _reserve, action) => {
+        booked.credit.push(kind);
+        await action();
+      },
+    },
+    meter: async (kind, _reserve, action) => {
+      booked.job.push(kind);
+      await action();
+    },
+    chapters: [
+      { start: 0, title: 'Opening' },
+      { start: 4, title: 'Middle' },
+    ],
+    log,
+  });
+  const credit = result.report.credit;
+  const said = backend.said.filter((item) => item.session === 'synthetic-test:credit');
+  assert.deepEqual(
+    said.map((item) => [item.text, item.speed]),
+    [
+      ['Audio description by Kade-AI.', 1.5],
+      ['Described by Kade-AI. More at kademurdock dot com.', 1.5],
+    ],
+    'the job’s narrator at the engine’s own speed, under a session key of its own',
+  );
+  assert.deepEqual(booked.credit, ['speech', 'speech']);
+  assert.deepEqual(booked.job, [], 'nothing of the credit on her meter');
+  assert.equal(credit.logo, 'logo t');
+  assert.ok(credit.lead > 0.8 + 1.2 + 0.4 && credit.lead < 0.8 + 1.2 + 0.7, `opening credit ${credit.lead} s`);
+  assert.equal(credit.start.at, 0);
+  assert.equal(credit.start.text, 'Audio description by Kade-AI.');
+  assert.equal(credit.end.text, 'Described by Kade-AI. More at kademurdock.com.');
+  assert.ok(Math.abs(credit.end.at - (credit.lead + 9)) < 0.05, 'the closing card follows the film');
+  assert.ok(Math.abs(result.report.outputSeconds - (credit.end.at + credit.end.duration)) < 1e-6);
+  assert.ok(credit.end.duration > 0.6 + 2.4, `closing card ${credit.end.duration} s`);
+  assert.ok(log.some((line) => /^Kade-AI credit: opening \d+\.\d s, closing \d+\.\d s, logo t\.$/.test(line)), log.join('\n'));
+  const narration = result.report.descriptions[0];
+  assert.ok(Math.abs(narration.outputAt - (narration.at + credit.lead)) < 0.01, 'a description moves by the opening credit');
+  assert.ok(Math.abs(result.report.dialogue[0].start - (0.3 + credit.lead)) < 0.05, 'and so does the dialogue');
+
+  assert.equal(await videoHash(result.video), await videoHash(f.file), 'the picture itself is untouched');
+  const info = await probeStreams(result.video);
+  const video = info.streams.find((s) => s.codec_type === 'video');
+  const audio = info.streams.find((s) => s.codec_type === 'audio');
+  assert.ok(Math.abs(Number(video.start_time) - credit.lead) < 0.05, `the picture starts at ${video.start_time}`);
+  assert.ok(Math.abs(Number(audio.start_time)) < 0.05, 'the sound starts at once');
+  assert.ok(Math.abs(Number(info.format.duration) - result.report.outputSeconds) < 0.1, `file ${info.format.duration} s`);
+  assert.equal(info.format.tags.comment, creditComment);
+  assert.equal((await probeStreams(result.audio)).format.tags.comment, creditComment);
+  /* The whole soundtrack as a player hears it from the start (no seek: a seek in the MP4 goes by
+   * the picture, which starts later). */
+  for (const file of [result.video, result.audio]) {
+    const heard = await wholeSound(file);
+    const at = (from, frequency) => toneLevel(heard.subarray(Math.round(from * sampleRate), Math.round((from + 0.25) * sampleRate)), frequency);
+    assert.ok(at(0.3, 1320) > 0.01, `the logo plays first (${file})`);
+    assert.ok(at(0.3, 220) < 0.004, 'before the film’s own sound');
+    assert.ok(at(0.8 + 0.4, 880) > 0.02, 'then the start line');
+    assert.ok(at(credit.lead + 0.5, 220) > 0.04, 'then the film');
+    assert.ok(at(credit.end.at + 0.9, 1320) > 0.01, 'the logo again after it');
+    assert.ok(at(credit.end.at + 0.9, 220) < 0.004, 'with the film over');
+    assert.ok(at(credit.end.at + 0.6 + 1.0, 880) > 0.02, 'and the end line');
+  }
+  /* The chapter times move by the opening credit; the file's first chapter still starts at the top. */
+  assert.deepEqual(
+    outputChapters([{ start: 0, title: 'Opening' }, { start: 4, title: 'Middle' }], [{ index: 0, start: 0, end: 9, placements: [], outputSeconds: 9 }], credit.lead).map((c) => c.start),
+    [credit.lead, credit.lead + 4],
+  );
+  for (const file of [result.video, result.audio]) {
+    const chapters = JSON.parse(
+      (await command(ffprobePath.path, ['-v', 'error', '-show_chapters', '-of', 'json', file], signal)).toString(),
+    ).chapters.map((c) => [Number(c.start_time), c.tags.title]);
+    assert.equal(chapters.length, 2, `chapters ${JSON.stringify(chapters)}`);
+    assert.deepEqual(chapters.map((c) => c[1]), ['Opening', 'Middle']);
+    assert.ok(Math.abs(chapters[1][0] - (credit.lead + 4)) < 0.01, `chapters ${JSON.stringify(chapters)}`);
+  }
+  const transcript = await readFile(result.files.transcript, 'utf8');
+  assert.match(transcript, /^0:00 Credit: Audio description by Kade-AI\.$/m);
+  assert.match(transcript, new RegExp(`^${clock(credit.end.at)} Credit: Described by Kade-AI\\. More at kademurdock\\.com\\.$`, 'm'));
+  const descriptions = await readFile(result.files.descriptions, 'utf8');
+  assert.doesNotMatch(descriptions, /Kade-AI/);
+  assert.ok(Math.abs(vttStarts(descriptions)[0] - narration.outputAt) < 0.002);
+  assert.ok(Math.abs(vttStarts(await readFile(result.files.captions, 'utf8'))[0] - (0.3 + credit.lead)) < 0.05);
+  assert.deepEqual(JSON.parse(await readFile(result.files.report, 'utf8')).credit, credit);
+});
+
+test('Kade-AI credit, picture re-encoded: the first frame is held under the opening credit for whole frames, and the closing card plays over the last one', async () => {
+  const f = await fixture('credit-pause');
+  const logo = await toneFile(f.dir, 'logo.flac', 1320, 2, true);
+  const creditVoice = await toneFile(f.dir, 'credit-voice.wav', 880, 1.2);
+  const words = Array.from({ length: 90 }, (_, i) => ({ start: i / 10, end: (i + 1) / 10, word: 'speech' }));
+  const backend = withCreditVoice(providers(f.voice, words, [{ ...cue, at: 2, until: 3, pauseAt: 2 }]), creditVoice);
+  const result = await run(f, words, [], {
+    providers: backend,
+    settings: { ...settings, mode: 'extended' },
+    credit: { where: 'both', logo: { file: logo, voiceAt: 0.8, name: 'logo t' } },
+  });
+  const credit = result.report.credit;
+  const leadFrames = credit.lead * 30;
+  assert.ok(Math.abs(leadFrames - Math.round(leadFrames)) < 1e-6, `the opening credit is ${leadFrames} frames`);
+  const placed = result.report.descriptions[0];
+  assert.ok(placed.inserted);
+  assert.ok(Math.abs(credit.end.at - (credit.lead + 9 + placed.pause)) < 0.05);
+  const frames = Number(
+    (
+      await command(
+        ffprobePath.path,
+        ['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0', result.video],
+        signal,
+      )
+    ).toString(),
+  );
+  assert.equal(frames, Math.round(credit.end.at * 30), 'held first frame, then the film, and no picture for the closing card');
+  const info = await probeStreams(result.video);
+  assert.ok(Math.abs(Number(info.format.duration) - result.report.outputSeconds) < 0.1);
+  assert.ok((await amplitude(result.video, placed.outputAt + 0.5, 660)) > 0.02, 'the frozen picture still lines up with its narration');
+  assert.ok((await amplitude(result.video, placed.outputAt + 0.5, 220)) < 0.003);
+  assert.ok((await amplitude(result.video, credit.lead - 0.4, 1320)) < 0.003, 'the opening card has ended before the film');
+  const count = Math.round(leadFrames);
+  const gray = await command(
+    ffmpegPath,
+    ['-nostdin', '-v', 'error', '-i', result.video, '-map', '0:v:0', '-frames:v', String(count), '-vf', 'scale=16:16,format=gray', '-f', 'rawvideo', 'pipe:1'],
+    signal,
+  );
+  assert.equal(gray.length, count * 256);
+  let drift = 0;
+  for (let k = 1; k < count; k++)
+    for (let i = 0; i < 256; i++) drift = Math.max(drift, Math.abs(gray[k * 256 + i] - gray[i]));
+  assert.ok(drift <= 4, `one still picture under the opening credit (largest change ${drift})`);
+});
+
+test('Kade-AI credit: a preview gets the opening only; the closing card only by the server switch; a missing logo leaves the words; a voice failure leaves the copy without it', async () => {
+  const f = await fixture('credit-preview', 20);
+  const creditVoice = await toneFile(f.dir, 'credit-voice.wav', 880, 1.2);
+  const logo = await toneFile(f.dir, 'logo.flac', 1320, 2, true);
+  const plan = savedPlan(20, [6.5, 13]);
+  const log = [];
+  const preview = await run(f, [], [], {
+    providers: withCreditVoice(providers(f.voice, [], [{ ...cue, at: 1, until: 5 }]), creditVoice),
+    keeper: keeperFor(plan).keeper,
+    stopAfter: 10,
+    credit: { where: 'both', logo: { file: logo, voiceAt: 0.8, name: 'logo t' } },
+    log,
+  });
+  assert.equal(preview.partial, true);
+  assert.ok(preview.report.credit.start && !preview.report.credit.end, 'the film has not ended');
+  assert.ok(Math.abs(preview.report.outputSeconds - (preview.report.credit.lead + 13)) < 0.05);
+  assert.ok(log.some((line) => /^Kade-AI credit: opening \d+\.\d s, logo t\.$/.test(line)), log.join('\n'));
+
+  const g = await fixture('credit-missing-logo');
+  const voice = await toneFile(g.dir, 'credit-voice.wav', 880, 1.2);
+  const missing = [];
+  const endOnly = await run(g, [], [{ ...cue, at: 2, until: 6 }], {
+    providers: withCreditVoice(providers(g.voice, [], [{ ...cue, at: 2, until: 6 }]), voice),
+    credit: { where: 'end', logo: { file: join(g.dir, 'no-such-logo.flac'), voiceAt: 0.8, name: 'logo 9' } },
+    log: missing,
+  });
+  const credit = endOnly.report.credit;
+  assert.equal(credit.lead, 0, 'no opening credit');
+  assert.equal(credit.start, undefined);
+  assert.equal(credit.logo, undefined, 'said without the logo');
+  assert.ok(Math.abs(credit.end.duration - (0.6 + 0.15 + 1.2 + 0.45)) < 0.15, `closing card ${credit.end.duration} s`);
+  assert.ok(missing.some((line) => /^The Kade-AI logo \(logo 9\) could not be read, so the closing credit is said without it/.test(line)), missing.join('\n'));
+  assert.ok(Math.abs(endOnly.report.descriptions[0].outputAt - endOnly.report.descriptions[0].at) < 0.01, 'nothing moves');
+
+  const h = await fixture('credit-voice-fails');
+  const failed = [];
+  const plain = await run(h, [], [], {
+    providers: withCreditVoice(providers(h.voice, [], [{ ...cue, at: 2, until: 6 }]), voice, true),
+    credit: { where: 'both' },
+    log: failed,
+  });
+  assert.equal(plain.report.credit, undefined);
+  assert.ok(Math.abs(plain.report.outputSeconds - 9) < 0.05, 'the copy is finished without it');
+  assert.ok(failed.some((line) => line === 'The Kade-AI opening credit was left out: The voice service could not be reached.'), failed.join('\n'));
+  assert.ok(failed.some((line) => line.startsWith('The Kade-AI closing credit was left out')));
+  assert.ok(failed.includes('Kade-AI credit: opening left out, closing left out.'));
+  assert.equal((await probeStreams(plain.video)).format.tags.comment, undefined, 'and no credit tag');
 });

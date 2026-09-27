@@ -82,6 +82,8 @@ let refuseSection = -1;
 process.env.KADE_DESCRIPTION_RETRY_SECONDS = '0';
 /* The tests written before the tiers quote the standard tier, as every run did then; the tier test sets its own. */
 process.env.KADE_DESCRIPTION_TIER = 'standard';
+/* The tests written before the Kade-AI credit measure copies without it; the credit test turns it on. */
+process.env.KADE_DESCRIPTION_CREDIT = 'off';
 let voicesDown = false;
 let realTranscribe = false;
 let simulateConcurrentCosts = false;
@@ -375,6 +377,8 @@ before(async () => {
     features: (req) =>
       familyFeatures(req.headers['x-pack'] === 'no' ? { id: '6b0000000000000000000000' } : { id: String(req.headers['x-user']), role: 'ADMIN' }),
     log: (message) => logLines.push(message),
+    /* The real bundled logos, so the credit test also proves they decode. */
+    creditLogos: fileURLToPath(new URL('../../../../api/server/assets/kade-ai-logo/', import.meta.url)),
     usage: async (owner, job, kind, costUSD, chargedUSD) => {
       usageLog.push({ owner, job, kind, costUSD, chargedUSD });
     },
@@ -4059,6 +4063,89 @@ test('tiers: quotes follow the tier; only the administrator may choose a job’s
     tierFor('standard');
     userFactor = 1;
     walletMode = false;
+    for (const [id, who] of jobs) {
+      await park(id);
+      await call('delete', `/jobs/${id}`, who).expect(200);
+    }
+  }
+});
+
+/* Sep 27 2026, her ask: every described copy says who described it. The credit sits before the
+ * film's first frame and after its last, in the job's narrator, at no charge to anyone. */
+test('Kade-AI credit: every copy begins and ends with it at no charge; only the administrator may leave it out', async () => {
+  const saved = process.env.KADE_DESCRIPTION_CREDIT;
+  delete process.env.KADE_DESCRIPTION_CREDIT;
+  sampleCost = 0.001;
+  const jobs = [];
+  try {
+    const adminConfig = (await call('get', '/config', 'credit-admin').expect(200)).body;
+    assert.deepEqual(adminConfig.credit, { where: 'both', logo: 3 }, 'both ends, logo 3 until she chooses');
+    const userConfig = (await call('get', '/config', 'credit-user').set('x-role', 'user').expect(200)).body;
+    assert.equal(userConfig.credit, undefined, 'only the administrator is offered the switch');
+
+    /* Anyone else's credit: false is dropped: their copy carries the credit. */
+    const from = logLines.length;
+    const theirs = await readyJob('credit-user', 'credit-user-00000001', 10);
+    jobs.push([theirs, 'credit-user']);
+    await call('post', `/jobs/${theirs}/start`, 'credit-user').set('x-role', 'user').send({ ...settings, credit: false }).expect(202);
+    assert.equal((await Jobs.findById(theirs).lean()).settings.credit, undefined, 'dropped before it is stored');
+    const done = await settle(theirs, ['done', 'failed'], 'credit-user');
+    assert.equal(done.state, 'done', done.error);
+    const asked = requests.at(-1).credit;
+    assert.equal(asked.where, 'both');
+    assert.deepEqual(asked.logo.name, 'logo 3');
+    assert.match(asked.logo.file.replace(/\\/g, '/'),/api\/server\/assets\/kade-ai-logo\/logo-3\.flac$/);
+    assert.equal(typeof asked.meter, 'function');
+    const claimed = logged(from, 'dv.claim').find((entry) => entry.id === theirs);
+    assert.equal(claimed.credit, 'both');
+    const engine = logged(from, 'dv.engine').filter((entry) => entry.id === theirs).map((entry) => entry.message);
+    const copy = (await Jobs.findById(theirs).lean()).copies.at(-1);
+    assert.ok(copy.lead > 2 && copy.lead < 6, `opening credit ${copy.lead} s: ${engine.join('\n')}`);
+    assert.ok(done.outputSeconds > 10 + copy.lead + 2, `copy ${done.outputSeconds} s with both ends`);
+    assert.ok(engine.some((message) => /^Kade-AI credit: opening \d+\.\d s, closing \d+\.\d s, logo 3\.$/.test(message)), engine.join('\n'));
+    const transcript = (await call('get', `/jobs/${theirs}/text/transcript`, 'credit-user').expect(200)).text;
+    assert.match(transcript, /^0:00 Credit: Audio description by Kade-AI\.$/m);
+    assert.match(transcript, /^0:1\d Credit: Described by Kade-AI\. More at kademurdock\.com\.$/m);
+    const descriptions = (await call('get', `/jobs/${theirs}/text/descriptions`, 'credit-user').expect(200)).text;
+    assert.doesNotMatch(descriptions, /Kade-AI/, 'the description jumps never land on the credit');
+    const first = /(\d\d):(\d\d):(\d\d)\.(\d\d\d) -->/.exec(descriptions);
+    const cueAt = Number(first[2]) * 60 + Number(first[3]) + Number(first[4]) / 1000;
+    const script = (await call('get', `/jobs/${theirs}/script`, 'credit-user').expect(200)).body;
+    const spoken = script.cues.find((cue) => cue.spoken);
+    assert.ok(Math.abs(spoken.outputAt - cueAt) < 0.01, `the script (${spoken.outputAt}) and the players (${cueAt}) agree`);
+    assert.ok(spoken.outputAt > copy.lead, 'after the opening credit');
+    const included = usageLog.filter((row) => row.job === theirs && row.kind === 'speech-included');
+    assert.equal(included.length, 2, 'the two credit lines are the platform’s own promotion');
+    assert.ok(included.every((row) => row.chargedUSD === 0));
+    sampleCost = 0;
+
+    /* Her own job: she may leave the credit out, and put it back when she makes a new version. */
+    const hers = await readyJob('credit-admin', 'credit-admin-0000001', 10);
+    jobs.push([hers, 'credit-admin']);
+    await call('post', `/jobs/${hers}/start`, 'credit-admin').send({ ...settings, credit: false }).expect(202);
+    assert.equal((await Jobs.findById(hers).lean()).settings.credit, false);
+    const plain = await settle(hers, ['done', 'failed'], 'credit-admin');
+    assert.equal(plain.state, 'done', plain.error);
+    assert.equal(requests.at(-1).credit, null, 'the engine is told to leave it out');
+    assert.equal((await Jobs.findById(hers).lean()).copies.at(-1).lead, undefined);
+    assert.ok(Math.abs(plain.outputSeconds - 10) < 0.1);
+    const plainText = (await call('get', `/jobs/${hers}/text/transcript`, 'credit-admin').expect(200)).text;
+    assert.doesNotMatch(plainText, /Credit:/);
+    await call('post', `/jobs/${hers}/revoice`, 'credit-admin').send({ voice: 'Voice 1', credit: true }).expect(202);
+    const again = await settle(hers, ['done', 'failed'], 'credit-admin');
+    assert.equal(again.state, 'done', again.error);
+    assert.equal(requests.at(-1).credit?.where, 'both', 'her new version has it again');
+    assert.ok((await Jobs.findById(hers).lean()).copies.at(-1).lead > 2);
+
+    process.env.KADE_DESCRIPTION_CREDIT = 'end';
+    assert.equal((await call('get', '/config', 'credit-admin').expect(200)).body.credit.where, 'end');
+    process.env.KADE_DESCRIPTION_LOGO = 'none';
+    assert.equal((await call('get', '/config', 'credit-admin').expect(200)).body.credit.logo, null);
+  } finally {
+    if (saved === undefined) delete process.env.KADE_DESCRIPTION_CREDIT;
+    else process.env.KADE_DESCRIPTION_CREDIT = saved;
+    delete process.env.KADE_DESCRIPTION_LOGO;
+    sampleCost = 0;
     for (const [id, who] of jobs) {
       await park(id);
       await call('delete', `/jobs/${id}`, who).expect(200);

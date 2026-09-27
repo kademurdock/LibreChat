@@ -1502,6 +1502,46 @@ test('Google tier: the administrator may choose one; it goes with the estimate a
   assert.equal(server.last(/\/start$/).body.tier, 'standard');
 });
 
+/* Sep 27 2026: the Kade-AI credit is on for every copy; only the administrator sees the switch. */
+test('Kade-AI credit: nobody else sees the switch or sends it; the credit stays on', async () => {
+  const server = makeServer();
+  const ready = server.add(jobOf({ name: 'Road Runner', seconds: 120 }));
+  const env = await boot({ server, search: '?id=' + ready.id });
+  await env.timers.advance(700);
+  assert.equal(env.$('credit-box').hidden, true);
+  assert.equal('credit' in server.last(/\/estimate$/).body.settings, false);
+  await env.click('start');
+  assert.equal('credit' in server.last(/\/start$/).body, false);
+});
+
+test('Kade-AI credit: the administrator may leave it out of a copy, the confirm says so, and a new version can put it back', async () => {
+  const server = makeServer();
+  server.override((method, path) => path === '/config', () => ({ status: 200, body: { ...config, credit: { where: 'both', logo: 3 } } }));
+  const ready = server.add(jobOf({ name: 'Road Runner', seconds: 120 }));
+  const env = await boot({ server, search: '?id=' + ready.id });
+  const { $ } = env;
+  await env.timers.advance(700);
+  assert.equal(visible($('credit-box')), true);
+  assert.equal($('credit').checked, true, 'on unless she turns it off');
+  assert.match($('credit').parentNode.textContent, /Kade-AI credit at the start and end/);
+  assert.match($('credit-help').textContent, /Everyone else’s copies always have it\./);
+  assert.equal('credit' in server.last(/\/estimate$/).body.settings, false, 'on sends nothing');
+  await env.tick('credit', false);
+  await env.click('start');
+  assert.match(env.dialogs.at(-1).text, /first look off, no Kade-AI credit, notes: none\./);
+  assert.equal(server.last(/\/start$/).body.credit, false);
+
+  const again = makeServer();
+  again.override((method, path) => path === '/config', () => ({ status: 200, body: { ...config, credit: { where: 'both', logo: 3 } } }));
+  const done = again.add(doneJob({ name: 'Ad', settings: { ...standardSettings, credit: false } }));
+  const view = await boot({ server: again, search: '?id=' + done.id });
+  await view.timers.advance(700);
+  assert.equal(view.$('credit').checked, false, 'the job’s own choice is shown');
+  await view.tick('credit', true);
+  await view.click('revoice');
+  assert.equal(again.last(/\/revoice$/).body.credit, true, 'a new version with the credit again');
+});
+
 /* ------------------------------------------------------------------------------------------
  * Preview, part of a video, redo, abandon, resume.
  * ---------------------------------------------------------------------------------------- */

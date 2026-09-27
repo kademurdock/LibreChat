@@ -99,13 +99,15 @@ type Found = { placement: Placement; start: number; own: boolean };
  * Every description of a copy, in order, with where it sits in the copy and whether it was
  * voiced. A placement carries its cue's id, including a line carried into the next section, so
  * the match is exact; older copies fall back to matching words and times within the section.
+ * `lead` is the copy's opening Kade-AI credit (`report.credit.lead`), which comes before the
+ * first section in the copy; copies made before Sep 27 2026 have none.
  */
-export function scriptCues(records: SectionRecord[]): ScriptCue[] {
+export function scriptCues(records: SectionRecord[], lead: number = 0): ScriptCue[] {
   const ordered = [...records].sort((a, b) => a.index - b.index);
   const starts = new Map<number, number>();
   const tagged = new Map<string, Found>();
   const skips = new Map<string, Skip>();
-  let offset = 0;
+  let offset = Number.isFinite(lead) && lead > 0 ? lead : 0;
   for (const record of ordered) {
     starts.set(record.index, offset);
     for (const placement of record.placements) {

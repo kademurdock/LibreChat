@@ -1,6 +1,7 @@
 const axios = require('axios');
 const mongoose = require('mongoose');
 const { createHash } = require('node:crypto');
+const { resolve: resolvePath } = require('node:path');
 const {
   initializeS3,
   describedVideoPage,
@@ -331,6 +332,10 @@ const { router, close } = createDescriptionRouter({
   /* Part 293: the Family feature pack map. The YouTube link import joins the pack only while
    * KADE_FAMILY_PACK_LINKS is '1' (the submitted iPhone 2.2.0 promises the demo account can use it). */
   features: (req) => familyFeatures(req.user),
+  /* Sep 27 2026: the Kade-AI credit's sonic logos (logo-1.flac to logo-5.flac). They live here,
+   * beside the server source, because the packages/api build copies no binary files.
+   * KADE_DESCRIPTION_LOGO picks one (3 until Kade chooses); KADE_DESCRIPTION_CREDIT=end|off. */
+  creditLogos: resolvePath(__dirname, '..', 'assets', 'kade-ai-logo'),
 });
 /* A redeploy stops the process: running work is marked to continue from its saved sections. */
 registerShutdownTask('described video', close);

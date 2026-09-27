@@ -1266,6 +1266,35 @@ export async function decodeVoice(file: string, signal: AbortSignal): Promise<Fl
   );
 }
 
+/** A short sound file (the Kade-AI logo) as 48 kHz interleaved stereo, at most a minute of it. */
+export async function decodeStereo(file: string, signal: AbortSignal): Promise<Float32Array> {
+  return floats(
+    await command(
+      ffmpeg(),
+      [
+        ...quiet,
+        '-format_whitelist',
+        audioFormats.join(','),
+        '-t',
+        '60',
+        '-i',
+        file,
+        '-vn',
+        '-ar',
+        String(sampleRate),
+        '-ac',
+        '2',
+        '-f',
+        'f32le',
+        'pipe:1',
+      ],
+      signal,
+      undefined,
+      64 * 1024 ** 2,
+    ),
+  );
+}
+
 /** Speeds narration up with pitch kept. */
 export async function stretch(
   pcm: Float32Array,
@@ -1410,6 +1439,69 @@ export async function sectionPicture(
       rate,
       '-frames:v',
       String(total),
+      '-movflags',
+      '+faststart',
+      output,
+    ],
+    signal,
+  );
+  return output;
+}
+
+/**
+ * The picture under the opening Kade-AI credit when the picture is re-encoded: the film's first
+ * frame held for `frames` frames of the output rate. It is made with the same chain and encoder
+ * settings as `sectionPicture` (and the same frozen lead a section at the very start would get),
+ * so the concat demuxer joins it to the first section frame-exactly.
+ */
+export async function leadPicture(
+  source: string,
+  directory: string,
+  frames: number,
+  fps: Rational,
+  signal: AbortSignal,
+  media?: Media,
+): Promise<string> {
+  const info = await mediaOf(source, media, signal);
+  const tools = await capabilities();
+  const rate = `${fps.num}/${fps.den}`;
+  const count = Math.max(1, Math.round(frames));
+  const filters = [
+    pictureClock(info, 0),
+    deinterlace(info, tools),
+    `fps=${rate}:start_time=0`,
+    ...shape(info, tools, 1280),
+    'trim=end_frame=1',
+    'setpts=PTS-STARTPTS',
+    ...(count > 1 ? [`tpad=stop_mode=clone:stop=${count - 1}`] : []),
+  ];
+  const output = join(directory, 'part-lead.mp4');
+  await command(
+    ffmpeg(),
+    [
+      ...quiet,
+      ...sourceOnly,
+      ...inputThreads(),
+      '-copyts',
+      '-i',
+      source,
+      '-map',
+      `0:v:${info.videoIndex ?? 0}`,
+      '-vf',
+      filters.join(','),
+      '-an',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+      '-crf',
+      '22',
+      ...colourTags(info, tools),
+      ...outputThreads(),
+      '-r',
+      rate,
+      '-frames:v',
+      String(count),
       '-movflags',
       '+faststart',
       output,
@@ -1665,7 +1757,19 @@ export function chapterMetadata(chapters: Chapter[], total: number): string | nu
 }
 
 export type Subtitle = { file: string; language: string; title: string };
-export type AssembleOptions = { media?: Media; captions?: Subtitle; chapters?: Chapter[] };
+export type AssembleOptions = {
+  media?: Media;
+  captions?: Subtitle;
+  chapters?: Chapter[];
+  /**
+   * Seconds of opening credit at the head of the soundtrack. With the original picture kept, the
+   * picture starts this much later (an MP4 edit list); re-encoded pictures carry their own held
+   * first frame (`leadPicture`) instead.
+   */
+  lead?: number;
+  /** A file-wide comment tag for both files (the Kade-AI credit). */
+  comment?: string;
+};
 
 /**
  * Joins the finished sections: one AAC soundtrack for both files, and either the original
@@ -1673,7 +1777,9 @@ export type AssembleOptions = { media?: Media; captions?: Subtitle; chapters?: C
  * sound) or the re-encoded sections with their pauses. The MP4's one possible text track is the
  * dialogue captions, as mov_text and switched off (quietTextTracks); the description lines are
  * already in the soundtrack, so their text never goes into either file (Part 295). Chapters
- * (output times) go into both files. The only file-wide tag is the title.
+ * (output times) go into both files. The file-wide tags are the title and, for a credited copy,
+ * the comment. A soundtrack longer than the picture (the closing Kade-AI card) plays on over the
+ * last frame.
  */
 export async function assemble(
   directory: string,
@@ -1688,7 +1794,11 @@ export async function assemble(
   await writeFile(soundList, listFile(sounds));
   const audio = join(directory, 'described.m4a');
   const video = join(directory, 'described.mp4');
-  const tag = ['-metadata', `title=${titleTag(title)}`];
+  const tag = [
+    '-metadata',
+    `title=${titleTag(title)}`,
+    ...(options.comment ? ['-metadata', `comment=${clip(oneLine(options.comment), 200)}`] : []),
+  ];
   await command(
     ffmpeg(),
     [
@@ -1745,6 +1855,8 @@ export async function assemble(
   const offset =
     copy && media ? Math.max(0, media.videoStart - (media.formatStart ?? media.videoStart)) : 0;
   const shift = offset > 0.0005 ? ['-itsoffset', offset.toFixed(6)] : [];
+  const lead = copy && (options.lead ?? 0) > 0.0005 ? (options.lead as number) : 0;
+  const late = lead ? ['-itsoffset', lead.toFixed(6)] : [];
   const end =
     copy && Number.isFinite(soundLength) ? ['-t', (offset + soundLength).toFixed(6)] : [];
   const captions = options.captions;
@@ -1753,6 +1865,7 @@ export async function assemble(
     [
       ...quiet,
       ...(pictures ? ['-f', 'concat', '-safe', '0'] : sourceOnly),
+      ...late,
       '-i',
       picture,
       ...shift,

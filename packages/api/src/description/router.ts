@@ -72,6 +72,8 @@ import { importYouTube, worthRetrying, youtubeURL } from './youtube';
 import { FAMILY_PACK_NOTE, FAMILY_PACK_REFUSAL } from '../family/pack';
 import type { FamilyFeatures } from '../family/pack';
 import { rehearsalProviders } from './rehearsal';
+import { creditWhere, logoChoice, logos } from './credit';
+import type { Credit } from './credit';
 import { MediaError, decodeVoice, dropDescriptionText, probe, stretch } from './media';
 import { clock, spokenLength } from './transcript';
 import { settingsSchema, Halt, tiers } from './types';
@@ -125,6 +127,8 @@ type FinishedCopy = {
   captionsOnly?: boolean;
   /** Its MP4's name in its folder when that is not described.mp4: quietOldCopy's rewrite. */
   video?: string;
+  /** Seconds of opening Kade-AI credit before the film's first frame (`report.credit.lead`). */
+  lead?: number;
 };
 type Actor = { id: string; role?: string; child?: boolean };
 /** A library track the owner may describe, found and checked by the library's own access rules. */
@@ -216,6 +220,11 @@ type Hooks = {
    * account is outside the pack. Without this hook every link import is open.
    */
   features?: (req: Request) => FamilyFeatures;
+  /**
+   * The folder of the Kade-AI sonic logos (logo-1.flac to logo-5.flac, 48 kHz stereo), chosen by
+   * KADE_DESCRIPTION_LOGO (credit.ts `logoChoice`). Without it the credit is said without a logo.
+   */
+  creditLogos?: string;
 };
 type Part = { number: number; etag: string; bytes: number; hash: string };
 type SourcePrivacy = { shared: boolean; grownUpsOnly: boolean; ownerIsActor: boolean };
@@ -494,6 +503,35 @@ const terminal = ['done', 'failed', 'cancelled'];
 const busy = ['reserving', 'queued', 'running'];
 const checking = ['checking', 'importing'];
 const describing: RunKind[] = ['fresh', 'preview', 'finish', 'rehearsal'];
+/**
+ * The Kade-AI credit for one run (credit.ts): both ends by default, the closing card only or none
+ * by KADE_DESCRIPTION_CREDIT, none when the administrator left it out of the job. The logo is
+ * `logo-N.flac` in the wrapper's logo folder, N from KADE_DESCRIPTION_LOGO.
+ */
+function creditFor(settings: Settings, meter: Meter, folder?: string): Credit | null {
+  const where = creditWhere();
+  if (where === 'off' || settings.credit === false) return null;
+  const number = logoChoice();
+  return {
+    where,
+    ...(number && folder
+      ? {
+          logo: {
+            file: join(folder, `logo-${number}.flac`),
+            voiceAt: logos[number].voiceAt,
+            name: `logo ${number}`,
+          },
+        }
+      : {}),
+    meter,
+  };
+}
+/** The administrator's Kade-AI credit choice in a request (true, false), or undefined when unsaid. */
+const creditAsked = (body: unknown): boolean | undefined =>
+  z
+    .object({ credit: z.boolean().optional().catch(undefined) })
+    .catch({})
+    .parse(body ?? {}).credit;
 const chunkBytes = 8 * 1024 ** 2;
 const maxUnfinished = 10;
 const second = 1000;
@@ -1998,7 +2036,8 @@ export function createDescriptionRouter(hooks: Hooks): {
     job.planKey === planKey(range) && (job.spans?.length ?? 0) > 1 ? job.spans : undefined;
   /**
    * A new run's settings from her request. The tier is the administrator's alone, to compare the
-   * two by ear: anyone else's is dropped, so their looks ask the server's tier.
+   * two by ear: anyone else's is dropped, so their looks ask the server's tier. So is leaving out
+   * the Kade-AI credit (`credit: false`): every other copy carries it.
    */
   function readSettings(
     job: Job,
@@ -2007,6 +2046,7 @@ export function createDescriptionRouter(hooks: Hooks): {
   ): { settings: Settings; preview: boolean } {
     const settings = settingsSchema.parse(body);
     if (!admin || !settings.tier) delete settings.tier;
+    if (!admin || settings.credit !== false) delete settings.credit;
     const preview =
       z.object({ preview: z.boolean().optional() }).parse(body ?? {}).preview === true;
     const seconds = job.seconds || 0;
@@ -2159,13 +2199,22 @@ export function createDescriptionRouter(hooks: Hooks): {
       );
     }
   }
-  async function launchRevoice(job: Job, body: unknown, strict: boolean): Promise<Launch> {
+  async function launchRevoice(
+    job: Job,
+    body: unknown,
+    strict: boolean,
+    admin: boolean = false,
+  ): Promise<Launch> {
     if (job.state !== 'done' || !job.seconds || !job.settings)
       throw new Problem('Only a finished described copy can be made again with new narration.');
     const base = latestCopy(job);
     if (!base) throw new Problem('There is no finished version to narrate again.');
     const input = voiceSchema.parse(body ?? {});
     const settings = settingsSchema.parse({ ...job.settings, ...input });
+    /** A new version keeps the job's credit choice; the administrator may change it here too. */
+    const credit = admin ? creditAsked(body) : undefined;
+    if (credit === false) settings.credit = false;
+    else if (credit === true || !admin) delete settings.credit;
     const edits = parseEdits((body as { edits?: unknown } | undefined)?.edits);
     const expectedVersion = expected(job, body, edits.length > 0);
     if (strict && edits.length) {
@@ -2505,7 +2554,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       );
     }
     if (action === 'reanalyze') return launchReanalyze(job, body, admin);
-    if (action === 'revoice') return launchRevoice(job, body, strict);
+    if (action === 'revoice') return launchRevoice(job, body, strict, admin);
     if (action === 'redo') return launchRedo(job, body);
     if (action === 'finish') return launchFinish(job);
     return launchResume(job, body);
@@ -2690,7 +2739,13 @@ export function createDescriptionRouter(hooks: Hooks): {
       setAside: rule(setAsideRule),
       approval: rule(approvalRule),
       keep: { days: keepDays, maxDays: keepMaxDays },
-      ...(isAdmin(req) ? { rehearsal: true, tiers: { default: tier, choices: [...tiers] } } : {}),
+      ...(isAdmin(req)
+        ? {
+            rehearsal: true,
+            tiers: { default: tier, choices: [...tiers] },
+            credit: { where: creditWhere(), logo: logoChoice() },
+          }
+        : {}),
       previewSeconds: previewSeconds(),
       library: !!hooks.library,
       defaultLibraryPath,
@@ -3327,7 +3382,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       typeof req.query.version === 'string' ? req.query.version : undefined,
     );
     const records = await baseRecords(job, copy);
-    res.json({ version: copy.version, cues: scriptCues([...records.values()]) });
+    res.json({ version: copy.version, cues: scriptCues([...records.values()], copy.lead ?? 0) });
   });
   route('post', '/jobs/:id/reanalyze', async (req, res) => {
     whenConfigured();
@@ -3348,7 +3403,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       res.json(await single(job));
       return;
     }
-    const launch = await launchRevoice(job, req.body, true);
+    const launch = await launchRevoice(job, req.body, true, isAdmin(req));
     await requireVoice(launch.settings.voice);
     res.status(202).json(await single(await enqueue(req, job, launch)));
   });
@@ -4455,6 +4510,7 @@ export function createDescriptionRouter(hooks: Hooks): {
             firstLook: !!runSettings.firstLook,
             tier: tierOf(settings),
             ...(settings.tier ? { tierChosen: true } : {}),
+            credit: settings.credit === false ? 'left out' : creditWhere(),
             estimateUSD: job.runEstimateUSD,
             setAsideUSD: reservation.cents / 100,
             approvedUSD: job.approvedUSD,
@@ -4775,6 +4831,12 @@ export function createDescriptionRouter(hooks: Hooks): {
             Object.entries(job.sectionNotes ?? {}).map(([index, note]) => [Number(index), note]),
           ),
           log: (message) => hooks.log(line('dv.engine', { id: job._id, message: scrub(message) })),
+          /*
+           * The Kade-AI credit is the platform's own promotion: its speech is booked as included
+           * work, charged to nobody and never counted against her approval. A rehearsal's
+           * stand-in voice never calls a meter.
+           */
+          credit: creditFor(settings, rehearsal ? meter : includedMeter, hooks.creditLogos),
         };
         const output = await (hooks.describe ?? describeVideo)(request);
         await progress('Saving the described copy', 97);
@@ -4825,6 +4887,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           firstLook: job.firstLookVersion,
           ...(rehearsal ? { rehearsal: true } : {}),
           captionsOnly: true,
+          ...(report.credit?.lead ? { lead: report.credit.lead } : {}),
         };
         const copies = [...(current.copies ?? []).filter((item) => item.version !== version), copy];
         const expiresAt = retain(current, rehearsal ? 3 : 7);
