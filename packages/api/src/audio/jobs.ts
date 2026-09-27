@@ -63,7 +63,12 @@ type LyricSyncReport = {
   /* Her sections: fitted to the tune, or kept as she wrote them (too few words heard clearly). */
   sections?: Array<{ index?: number; section?: string | null; words?: number; heard?: number; fitted?: boolean }>;
   repeats?: Array<{ section?: string | null; instances?: number[]; source?: number; fitted?: boolean }>;
-  score_touchup?: { applied?: boolean; ties?: number; folds?: number; places?: unknown[] } | null;
+  score_touchup?: {
+    applied?: boolean;
+    ties?: number;
+    folds?: number;
+    places?: Array<{ section?: string | null; phrase?: number; held_note?: number; kind?: string }>;
+  } | null;
 };
 type TempoFitReport = {
   applied?: boolean;
@@ -180,6 +185,9 @@ export type Config = {
   stopping: string;
   /** A short sentence about one finished take, said when the batch is done; '' for none. */
   takeNote?: (output: Output, input: Input) => string;
+  /** True when takeNote itself says a take that stopped at its length limit (the worker's
+   * `truncated`), on the take and in the library, so the batch's general sentence is not said too. */
+  notesTruncated?: boolean;
 };
 export type InputBody = {
   soundModel?: string;
@@ -578,7 +586,7 @@ export function createAudioRouter(hooks: Hooks, config: Config): Router {
       const progress = `${completed} of ${takes.length} takes ready.`;
       let spoken = job.error || 'Stopped. Completed takes are kept.';
       if (state === 'done')
-        spoken = `${progress} Open your library to compare them.${takes.some((take) => take.output?.truncated) ? ' A take reached a generation limit and may end early.' : ''}${sayTakeNotes(takes, job.input, config.takeNote)}`;
+        spoken = `${progress} Open your library to compare them.${!config.notesTruncated && takes.some((take) => take.output?.truncated) ? ' A take reached a generation limit and may end early.' : ''}${sayTakeNotes(takes, job.input, config.takeNote)}`;
       if (['queued', 'running'].includes(state))
         spoken = `${progress} ${config.working} You can leave this screen; a notification will open the Sound Booth when the batch finishes.`;
       return res.json({

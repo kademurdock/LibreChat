@@ -43,9 +43,10 @@
  * Fit by tempo (Sep 27 2026): with YUE_FIT_TEMPO=1 the limit is 6:40 (400 s,
  * or YUE_FIT_TEMPO_MAX_SECONDS between 360 and 400), because the YuE2 worker
  * sings a song over six minutes a little faster to fit instead of cutting it.
- * coverMaxSeconds is packages/api music/lyrics.ts musicReferenceMaxSeconds
- * (the tests hold them equal); every check, the download filter and the MP3
- * cut follow it. With the flag unset everything here is exactly as before.
+ * Links are for YuE2 covers only, so coverMaxSeconds is packages/api
+ * music/lyrics.ts musicReferenceMaxSeconds({ yueCover: true }) (the tests hold
+ * them equal); every check, the download filter and the MP3 cut follow it. With
+ * the flag unset everything here is exactly as before.
  * ========================================================================== */
 const express = require('express');
 

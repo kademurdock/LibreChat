@@ -100,7 +100,7 @@ async function main() {
         await lyricSync(post, base, sentInputs, (next) => { state = next.state; extraOutput = next.output || {}; });
         console.log('YuE2 lyric sync: flags off unchanged, fit and measure fields only for sung covers with words, take notes and facts from the timing report, kept sections, score touch-up, meter note, name-paired rows and no spoken fit score passed.');
         await fitTempo(post, base, sentInputs, (next) => { state = next.state; extraOutput = next.output || {}; });
-        console.log('YuE2 fit by tempo: flag off unchanged, fit_tempo only for covers of a recording, take note and facts from the tempo_fit report, said once passed.');
+        console.log('YuE2 fit by tempo: flag off unchanged, fit_tempo only for covers of a recording, take note and facts from the tempo_fit report, a cut take said on every take and never "to fit", no lyric sync field or note with its flags off, said once passed.');
     }
     finally {
         server.close();
@@ -471,6 +471,54 @@ async function fitTempo(post, base, sentInputs, provider) {
     assert.equal('tempoFit' in yueTakeFacts({ features, tempo_fit: { ...fit, applied: false } }, covered), false);
     assert.doesNotMatch(said, /Kade/);
 
+    // A take YuE2 still cut at its length limit (truncated) never says "to fit", sped up or not.
+    const cutSped = "Sped up 5%, but YuE2 still ran longer than the song, so this take stops at six minutes. Try another take.";
+    const fit5 = { ...fit, factor: 1.05, percent: 5, to_bpm: 90 };
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', tempo_fit: fit5, truncated: true, duration_s: 360 }, covered), cutSped);
+    assert.doesNotMatch(cutSped, /to fit/);
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', tempo_fit: { ...fit5, style_bpm: [[86, 90]] }, truncated: true, duration_s: 359.98 }, covered),
+        "Sped up 5%, but YuE2 still ran longer than the song, so this take stops at six minutes. Music direction's 86 BPM was sung as 90 BPM to match. Try another take.");
+    assert.equal(yueTakeNote({ features, cover_mode: 'melody', tempo_fit: fit5, truncated: true, duration_s: 360 }, covered),
+        cutSped + ' No chords were heard in the recording, so the cover used its melody with a new accompaniment.');
+    assert.deepEqual(yueTakeFacts({ features, cover_mode: 'harmony', tempo_fit: fit5, truncated: true, duration_s: 360 }, covered),
+        { coverMode: 'harmony', takeNote: cutSped, tempoFit: { percent: 5, fromBpm: 86, toBpm: 90 } }, 'kept on the take, still sped');
+    // Every YuE2 take that comes back cut says so, with or without fit by tempo, from any worker.
+    const cut = 'YuE2 had not finished when it reached its length limit, so this take stops abruptly at six minutes. Try another take.';
+    const newSong = yueInput({ script: 'Country duo', lyrics, seed: 9 }, {});
+    for (const [output, input, why] of [
+        [{ features, cover_mode: 'harmony', truncated: true, duration_s: 360 }, covered, 'a cover that needed no speed-up'],
+        [{ features, cover_mode: 'harmony', tempo_fit: { ...fit, applied: false, percent: 0 }, truncated: true, duration_s: 360 }, covered, 'fit already'],
+        [{ features, cover_mode: 'harmony', tempo_fit: fit5, truncated: true, duration_s: 360 }, yueInput(body, { YUE_COVERS_V2: '1' }), 'flag off'],
+        [{ features: ['keep-harmony'], truncated: true, duration_s: 360 }, newSong, 'a new song'],
+        [{ truncated: true, duration_s: 360 }, newSong, 'a worker older than Part 295'],
+    ]) assert.equal(yueTakeNote(output, input), cut, why);
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', truncated: true, duration_s: 220.4 }, covered),
+        'YuE2 had not finished when it reached its length limit, so this take stops abruptly at 3 minutes 40 seconds. Try another take.',
+        'the length guard stopped it sooner');
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', truncated: true, duration_s: 61 }, covered),
+        'YuE2 had not finished when it reached its length limit, so this take stops abruptly at 1 minute 1 second. Try another take.');
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', truncated: true }, covered),
+        'YuE2 had not finished when it reached its length limit, so this take stops abruptly. Try another take.', 'no length reported');
+    assert.equal(yueTakeNote({ truncated: false, duration_s: 360 }, newSong), '', 'an older worker says nothing else');
+    assert.deepEqual(yueTakeFacts({ truncated: true, duration_s: 360 }, newSong), { takeNote: cut }, 'kept on an older worker\'s take too');
+    assert.deepEqual(yueTakeFacts({ truncated: false }, newSong), {});
+    assert.equal(yueTakeNote({ features: ['keep-harmony'], truncated: true, duration_s: 360 }, { ...newSong, my_voice: true }),
+        cut + ' A version in your voice follows a few minutes after each take, beside it in this project.');
+    for (const text of [cut, cutSped]) assert.doesNotMatch(text, /Kade/);
+
+    // Lyric sync stays off: fit by tempo never brings a lyric sync field, and with those flags off no
+    // lyric sync note or fact is said or kept, whatever a newer worker reports.
+    const SYNC_KEYS = ['fit_lyrics', 'measure_fit', 'fit_score_touchup'];
+    for (const input of [yueInput(body, FIT), covered, instrumental]) for (const key of SYNC_KEYS) assert.equal(key in input, false, key);
+    const newer = [...features, 'lyric-sync', 'fit-score', 'score-touchup', 'lyric-fit-v2', 'meter-check'];
+    const report = { features: newer, cover_mode: 'harmony', instrumental: false, tempo_fit: fit, meter_check: { style_meter: '6/8', score_meter: '4/4' },
+        lyric_fit: { sections: [{ score_section: null, lyrics_section: 'Intro', sung_notes: null, syllables: 9, fit: 'no tune' }] },
+        lyric_sync: { applied: true, lyrics_fitted: true, words_without_tune: [], sections: [], fit_score: 88, held_words_on_note: { hits: 4, of: 5 } },
+        lyrics_used: '[Verse]\nSalt on the\nwindow' };
+    assert.equal(yueTakeNote(report, covered), said, 'only the speed-up is said');
+    assert.deepEqual(yueTakeFacts(report, covered), { instrumental: false, coverMode: 'harmony', takeNote: said, tempoFit: { percent: 8, fromBpm: 86, toBpm: 93 } },
+        'no lines YuE2 sang and no fit score are kept');
+
     // Through the router: fit_tempo reaches RunPod beside the cover fields, and the note is said once.
     const saved = { fit: process.env.YUE_FIT_TEMPO, covers: process.env.YUE_COVERS_V2 };
     Object.assign(process.env, { YUE_FIT_TEMPO: '1', YUE_COVERS_V2: '1' });
@@ -484,11 +532,25 @@ async function fitTempo(post, base, sentInputs, provider) {
         for (const input of sentInputs.slice(sentBefore)) {
             assert.equal(input.fit_tempo, true); assert.equal(input.length_guard, true); assert.equal(input.keep_harmony, true);
         }
+        for (const input of sentInputs.slice(sentBefore)) for (const key of SYNC_KEYS) assert.equal(key in input, false, key);
         provider({ state: 'COMPLETED', output: { features, gpu: 'NVIDIA A40', cover_mode: 'harmony', instrumental: false, tempo_fit: fit } });
         res = await fetch(base + '/status/' + job.jobId, { headers: { 'x-test-user': 'f' } });
         const done = await res.json();
         assert.equal(done.state, 'done');
         assert.equal(done.spoken, '2 of 2 takes ready. Open your library to compare them. ' + said);
+
+        // Sped up, but still cut at six minutes: the take note says so, and the batch's general
+        // sentence is not said as well.
+        provider({ state: 'IN_QUEUE' });
+        res = await post('/render', { engine: 'yue2', script: 'Country duo', lyrics, reference_voice_url: recording, count: 2 }, 'g');
+        assert.equal(res.status, 200);
+        const cutJob = await res.json();
+        provider({ state: 'COMPLETED', output: { features, gpu: 'NVIDIA A40', cover_mode: 'harmony', instrumental: false, tempo_fit: fit5, truncated: true, duration_s: 360 } });
+        res = await fetch(base + '/status/' + cutJob.jobId, { headers: { 'x-test-user': 'g' } });
+        const cutDone = await res.json();
+        assert.equal(cutDone.state, 'done');
+        assert.equal(cutDone.spoken, '2 of 2 takes ready. Open your library to compare them. ' + cutSped);
+        assert.doesNotMatch(cutDone.spoken, /generation limit|to fit/);
     } finally {
         for (const [key, value] of [['YUE_FIT_TEMPO', saved.fit], ['YUE_COVERS_V2', saved.covers]]) {
             if (value === undefined) delete process.env[key]; else process.env[key] = value;

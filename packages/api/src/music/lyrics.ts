@@ -319,13 +319,16 @@ export function lyricsWarning(model: string | undefined): string {
 }
 
 /* Fit by tempo (worker feature fit-tempo), behind YUE_FIT_TEMPO=1. YuE2 sings up to six minutes
- * (9,000 sound tokens). With the flag on, a cover recording up to YUE_FIT_TEMPO_MAX_SECONDS (400 s,
- * 6:40, by default and at most: the worker takes up to 402 s) is accepted, and the worker sings a
- * song whose score runs past 352 s a little faster to fit: its score's tempo line only, so the same
- * notes in the same key, about 15% at most for a 6:40 song and never more than 20%. Anything longer
- * is refused here, before anything is stored or any GPU wakes. With the flag unset every limit and
- * sentence is exactly as before. The live worker must run an image listing fit-tempo first, and
- * the booth sends fit_tempo only then (music/yue.ts yueFitTempoEnabled reads the same flag). */
+ * (9,000 sound tokens). With the flag on, a recording for a YuE2 cover up to
+ * YUE_FIT_TEMPO_MAX_SECONDS (400 s, 6:40, by default and at most: the worker takes up to 402 s) is
+ * accepted, and the worker sings a song whose score runs past 352 s a little faster to fit: its
+ * score's tempo line only, so the same notes in the same key, about 15% at most for a 6:40 song
+ * and never more than 20%. Anything longer is refused here, before anything is stored or any GPU
+ * wakes. Only a YuE2 cover gets the longer limit (`yueCover: true`): Sing it in my voice, which
+ * checks its recordings here too, keeps six minutes and its own words. With the flag unset every
+ * limit and sentence is exactly as before. The live worker must run an image listing fit-tempo
+ * first, and the booth sends fit_tempo only then (music/yue.ts yueFitTempoEnabled reads the same
+ * flag). */
 const COVER_SECONDS = 360;
 /** The worker's FIT_SECONDS: a sped score runs at most this long. */
 const FIT_SECONDS = 352;
@@ -333,9 +336,14 @@ const FIT_MAX_SECONDS = 400;
 export function musicFitTempoEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.YUE_FIT_TEMPO === '1';
 }
-/** The longest cover recording the booth accepts: 360 s, or up to 400 s with YUE_FIT_TEMPO=1. */
-export function musicReferenceMaxSeconds(env: NodeJS.ProcessEnv = process.env): number {
-  if (!musicFitTempoEnabled(env)) return COVER_SECONDS;
+/** What a recording is checked for: `yueCover` for a YuE2 cover of a recording, the only use that
+ * may run past six minutes; anything else (Sing it in my voice) keeps six minutes. */
+export type MusicReferenceUse = { yueCover?: boolean; env?: NodeJS.ProcessEnv };
+/** The longest recording the booth accepts: 360 s, or for a YuE2 cover up to 400 s with
+ * YUE_FIT_TEMPO=1. */
+export function musicReferenceMaxSeconds(use: MusicReferenceUse = {}): number {
+  const env = use.env ?? process.env;
+  if (use.yueCover !== true || !musicFitTempoEnabled(env)) return COVER_SECONDS;
   const said = Number(env.YUE_FIT_TEMPO_MAX_SECONDS);
   if (!env.YUE_FIT_TEMPO_MAX_SECONDS || !Number.isFinite(said)) return FIT_MAX_SECONDS;
   return Math.min(FIT_MAX_SECONDS, Math.max(COVER_SECONDS, Math.floor(said)));
@@ -350,11 +358,11 @@ function coverLength(seconds: number): string {
 
 export function musicReferenceError(
   seconds: number | null | undefined,
-  env: NodeJS.ProcessEnv = process.env,
+  use: MusicReferenceUse = {},
 ): string | undefined {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0)
     return 'The recording could not be read. Import a readable audio file before generating.';
-  const max = musicReferenceMaxSeconds(env);
+  const max = musicReferenceMaxSeconds(use);
   if (seconds <= max) return;
   const rounded = Math.round(seconds);
   const length = `This recording is ${Math.floor(rounded / 60)} minutes ${rounded % 60} seconds long.`;
@@ -364,9 +372,10 @@ export function musicReferenceError(
 }
 
 /**
- * With YUE_FIT_TEMPO=1, the sentence said when a cover recording lands that will be sped up to
- * fit, before any GPU time is spent: an estimate from the recording's own length (the take's
- * note gives the exact figure, from its score). '' when nothing will be sped up.
+ * With YUE_FIT_TEMPO=1, the sentence said when a recording for a YuE2 cover lands that will be
+ * sped up to fit, before any GPU time is spent: an estimate from the recording's own length (the
+ * take's note gives the exact figure, from its score). '' when nothing will be sped up. For YuE2
+ * covers only: the booth never says it for Sing it in my voice.
  */
 export function musicReferenceSpeedNote(
   seconds: number | null | undefined,
@@ -374,29 +383,31 @@ export function musicReferenceSpeedNote(
 ): string {
   if (!musicFitTempoEnabled(env) || typeof seconds !== 'number' || !Number.isFinite(seconds))
     return '';
-  if (seconds <= FIT_SECONDS || seconds > musicReferenceMaxSeconds(env)) return '';
+  if (seconds <= FIT_SECONDS || seconds > musicReferenceMaxSeconds({ yueCover: true, env }))
+    return '';
   const percent = Math.max(1, Math.ceil((seconds / FIT_SECONDS - 1) * 100 - 1e-9));
   return `YuE2 sings up to six minutes, so this cover will be sped up about ${percent}%, in the same key.`;
 }
 
 const COVER_HINT_TODAY = 'Import one song, up to six minutes.';
-const COVER_HOWTO_TODAY = 'For a cover, import one source recording up to six minutes.';
+const COVER_HOWTO_TODAY = 'A cover takes one recording up to six minutes.';
 /**
  * The YuE2 guide with its cover length said the fit-by-tempo way while YUE_FIT_TEMPO=1: the
- * recording field's hint and the how-to line. The same object back when the flag is off.
+ * recording field's hint and the how-to line. The same object back when the flag is off. Only
+ * the YuE2 engine is passed here; Sing it in my voice keeps its six minutes.
  */
 export function musicCoverLengthGuide<
   T extends { settings?: Array<{ key: string; hint?: string }>; howToWrite?: string[] },
 >(yue: T, env: NodeJS.ProcessEnv = process.env): T {
   if (!musicFitTempoEnabled(env) || !yue) return yue;
-  const max = coverLength(musicReferenceMaxSeconds(env));
+  const max = coverLength(musicReferenceMaxSeconds({ yueCover: true, env }));
   const sped = 'A song over six minutes is sped up a little to fit, in the same key.';
   return {
     ...yue,
     ...(Array.isArray(yue.howToWrite)
       ? {
           howToWrite: yue.howToWrite.map((line) =>
-            line.replace(COVER_HOWTO_TODAY, `For a cover, import one source recording up to ${max}. ${sped}`),
+            line.replace(COVER_HOWTO_TODAY, `A cover takes one recording up to ${max}. ${sped}`),
           ),
         }
       : {}),
@@ -428,10 +439,13 @@ async function ownedReference(user: string, key: string, hooks: Pick<Hooks, 'sav
   return References.findOne({ user, key }).lean();
 }
 
+/** Checks an imported recording before a render. `use.yueCover` for a YuE2 cover (the only use
+ * that may run past six minutes, with YUE_FIT_TEMPO=1); Sing it in my voice passes nothing. */
 export async function validateMusicReference(
   user: string,
   url: string,
   hooks: Pick<Hooks, 'savedSources' | 'refresh' | 'duration'>,
+  use: MusicReferenceUse = {},
 ): Promise<string> {
   const key = identity(url);
   const reference = await ownedReference(user, key, hooks);
@@ -455,7 +469,7 @@ export async function validateMusicReference(
       'Could not check the cover recording. No music request was sent. Import it again and retry.',
     );
   }
-  const error = musicReferenceError(seconds);
+  const error = musicReferenceError(seconds, use);
   if (error) throw new Error(error);
   return refreshed;
 }
@@ -523,7 +537,8 @@ export function createLyricsRouter(hooks: Hooks): Router {
           });
           const buffer = Buffer.from(audio.data);
           const seconds = await hooks.duration(buffer);
-          const durationError = musicReferenceError(seconds);
+          /* Transcribe reference lyrics is a YuE2 cover's button, so a cover's limit. */
+          const durationError = musicReferenceError(seconds, { yueCover: true });
           if (durationError || seconds === null) {
             res.status(400).json({ error: durationError });
             return;

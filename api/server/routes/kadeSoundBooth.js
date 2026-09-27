@@ -153,7 +153,8 @@ const myVoiceFollowUps = !MY_VOICE_READY ? MY_VOICE_OFF : createMyVoiceFollowUps
 router.use(createYueRouter({
   auth: requireJwtAuth,
   user: req => String(req.user.id),
-  validateReference: (user, url) => validateMusicReference(user, url, musicReferenceHooks),
+  /* A YuE2 cover's limit: up to 6:40 while YUE_FIT_TEMPO=1 (the worker sings it a little faster to fit). */
+  validateReference: (user, url) => validateMusicReference(user, url, musicReferenceHooks, { yueCover: true }),
   /* Sing it in my voice: the automatic choice only stands for an account with a voice model; anyone else's is dropped quietly. */
   prepare: async (user, input) => {
     if (!input.my_voice) return input;
@@ -3019,11 +3020,13 @@ async function storeReference(req, { buffer, ext, engine, name, source }) {
     clipAdvice = 'I could not convert it to a studio WAV, so the original file is attached as-is.';
   }
   if (engine === 'yue2' || engine === 'myvoice') {
-    const said = musicReferenceError(clipSeconds);
+    /* Only a YuE2 cover may run past six minutes (up to 6:40 while YUE_FIT_TEMPO=1); Sing it in my
+     * voice keeps six minutes and its own sentence. */
+    const said = musicReferenceError(clipSeconds, { yueCover: engine === 'yue2' });
     const error = said && engine === 'myvoice' ? said.replace('Covers support', 'Sing it in my voice takes recordings') : said;
     if (error) return { status: 400, body: { error } };
-    /* Fit by tempo (YUE_FIT_TEMPO=1): a recording over about 5:52 is sung a little faster to fit
-     * YuE2's six minutes. Said now, before any GPU time is spent; '' with the flag off. */
+    /* Fit by tempo (YUE_FIT_TEMPO=1): a YuE2 cover recording over about 5:52 is sung a little faster
+     * to fit YuE2's six minutes. Said now, before any GPU time is spent; '' with the flag off. */
     if (engine === 'yue2') speedNote = musicReferenceSpeedNote(clipSeconds);
   }
   const fileName = `soundbooth-ref-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${outExt}`;

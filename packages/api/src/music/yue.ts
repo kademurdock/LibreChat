@@ -137,8 +137,9 @@ export function yueScoreTouchupEnabled(env: NodeJS.ProcessEnv = process.env): bo
 /** YUE_FIT_TEMPO=1 (worker feature fit-tempo): a cover of a recording asks the worker to sing a
  * song too long for YuE2's six minutes a little faster to fit instead of cutting it: its score's
  * tempo line only, so the same notes in the same key, never more than 20% faster. music/lyrics.ts
- * reads the same flag for the longer import limit (musicReferenceMaxSeconds, 6:40). With it unset
- * every request is exactly as before; an older worker would refuse a recording over six minutes. */
+ * reads the same flag for a YuE2 cover's longer import limit (musicReferenceMaxSeconds, 6:40).
+ * With it unset every request is exactly as before; an older worker would refuse a recording over
+ * six minutes. */
 export function yueFitTempoEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.YUE_FIT_TEMPO === '1';
 }
@@ -454,17 +455,22 @@ function syncNotes(sync: NonNullable<Output['lyric_sync']>, input: Input): strin
   return notes;
 }
 
-/** A cover sped up to fit YuE2's six minutes (worker feature fit-tempo), in words; '' otherwise.
- * A BPM named in Music direction was sped up by the same amount, so it is said too. */
-function tempoNote(output: Output, input: Input): string {
+/** How much faster a cover was sung to fit YuE2's six minutes (worker feature fit-tempo), as a
+ * whole percentage; undefined when it was not sped up or the report is not one to trust. */
+function tempoPercent(output: Output, input: Input): number | undefined {
   const fit = output.tempo_fit;
   if (input.fit_tempo !== true || !output.features?.includes('fit-tempo') || !fit || fit.applied !== true)
-    return '';
+    return undefined;
   const percent = fit.percent;
-  if (typeof percent !== 'number' || !Number.isFinite(percent) || percent < 1 || percent > 20) return '';
-  const notes = [`Sped up ${Math.round(percent)}% to fit YuE2's six-minute limit, in the same key.`];
+  if (typeof percent !== 'number' || !Number.isFinite(percent) || percent < 1 || percent > 20)
+    return undefined;
+  return Math.round(percent);
+}
+/** Each BPM Music direction named, sped up by the same amount as the song, said once. */
+function bpmNotes(fit: Output['tempo_fit']): string[] {
+  const notes: string[] = [];
   const said = new Set<string>();
-  for (const pair of Array.isArray(fit.style_bpm) ? fit.style_bpm : []) {
+  for (const pair of Array.isArray(fit?.style_bpm) ? fit.style_bpm : []) {
     if (!Array.isArray(pair) || pair.length !== 2) continue;
     const [was, now] = pair;
     if (typeof was !== 'number' || typeof now !== 'number' || !Number.isFinite(was) || !Number.isFinite(now))
@@ -473,7 +479,46 @@ function tempoNote(output: Output, input: Input): string {
     said.add(`${was}>${now}`);
     notes.push(`Music direction's ${was} BPM was sung as ${now} BPM to match.`);
   }
-  return notes.join(' ');
+  return notes;
+}
+/** Where a take that ran out of room stops: "six minutes" at YuE2's cap, "3 minutes 40 seconds"
+ * when the length guard stopped a cover sooner, '' when the worker did not say. */
+function stoppedAt(output: Output): string {
+  const seconds = output.duration_s;
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return '';
+  if (seconds >= 359) return 'six minutes';
+  const total = Math.round(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  const minutes = m ? `${m} minute${m === 1 ? '' : 's'}` : '';
+  const rest = s ? `${s} second${s === 1 ? '' : 's'}` : '';
+  return [minutes, rest].filter(Boolean).join(' ');
+}
+/**
+ * The length part of a take note. A cover sped up to fit YuE2's six minutes says so, with any BPM
+ * Music direction named. A take the worker reports `truncated` (YuE2 had not finished when it
+ * reached its length limit, so the take stops abruptly) says so for EVERY YuE2 take, sped up or
+ * not and from any worker, which has always reported it: a sped take that was still cut never
+ * says "to fit". '' parts for anything else.
+ */
+function lengthNotes(output: Output, input: Input): string[] {
+  const percent = tempoPercent(output, input);
+  const cut = output.truncated === true;
+  const at = stoppedAt(output);
+  const notes: string[] = [];
+  if (percent !== undefined) {
+    notes.push(
+      cut
+        ? `Sped up ${percent}%, but YuE2 still ran longer than the song, so this take stops at ${at || 'six minutes'}.`
+        : `Sped up ${percent}% to fit YuE2's six-minute limit, in the same key.`,
+    );
+    notes.push(...bpmNotes(output.tempo_fit));
+  } else if (cut)
+    notes.push(
+      `YuE2 had not finished when it reached its length limit, so this take stops abruptly${at ? ` at ${at}` : ''}.`,
+    );
+  if (cut) notes.push('Try another take.');
+  return notes;
 }
 
 const METER_SAID = /^(?:\d{1,2}\/\d{1,2}|waltz)$/;
@@ -486,13 +531,21 @@ function meterNote(output: Output): string {
   return `Your style asks for ${asked}, but the song's score is in ${check.score_meter}, so the phrasing may sit off the beat. Leave the meter out of the style, or describe a ${check.score_meter} feel.`;
 }
 
-/** A short spoken note about one finished take, from what the worker reported. Reads `features`
- * first, so a worker older than Part 295 never gets a note. */
+/** Whether this request asked for lyric sync (YUE_FIT_LYRICS or YUE_MEASURE_FIT, both off): only
+ * then are the worker's lyric sync report and its round-2 notes (the meter note, the tuneless
+ * intro) said or kept, so with those flags off every note is as before whatever the worker sends. */
+function syncAsked(input: Input): boolean {
+  return input.fit_lyrics === 'timing' || input.measure_fit === true;
+}
+
+/** A short spoken note about one finished take, from what the worker reported. A take that stopped
+ * at its length limit is said for any worker; everything else reads `features` first, so a worker
+ * older than Part 295 gets no other note. */
 export function yueTakeNote(output: Output | undefined, input: Input): string {
-  if (!output || !Array.isArray(output.features)) return '';
-  const notes: string[] = [];
-  const tempo = tempoNote(output, input);
-  if (tempo) notes.push(tempo);
+  if (!output) return '';
+  const notes: string[] = lengthNotes(output, input);
+  if (!Array.isArray(output.features)) return notes.join(' ');
+  const sync = syncAsked(input);
   if (
     input.keep_harmony === true &&
     input.reference_voice_url &&
@@ -502,7 +555,7 @@ export function yueTakeNote(output: Output | undefined, input: Input): string {
     notes.push(
       'No chords were heard in the recording, so the cover used its melody with a new accompaniment.',
     );
-  if (!output.instrumental && output.features.includes('lyric-sync') && output.lyric_sync)
+  if (sync && !output.instrumental && output.features.includes('lyric-sync') && output.lyric_sync)
     /* The timing report replaces the rough per-section syllable rows, which pair sections by
      * position and misread a recording whose intro has words but no sung tune. */
     notes.push(...syncNotes(output.lyric_sync, input));
@@ -521,7 +574,7 @@ export function yueTakeNote(output: Output | undefined, input: Input): string {
       notes.push(`Words in ${rows.length - 2} more section${rows.length === 3 ? '' : 's'} may not fit their tune either.`);
     /* Worker feature lyric-fit-v2 pairs sections by name, so a "no tune" row is real: words
      * under [Intro] where the recording's intro has no sung tune. Older rows are skipped. */
-    if (output.features.includes('lyric-fit-v2')) {
+    if (sync && output.features.includes('lyric-fit-v2')) {
       const tuneless = (output.lyric_fit.sections || []).filter(
         (row) => row.fit === 'no tune' && row.lyrics_section,
       );
@@ -531,7 +584,7 @@ export function yueTakeNote(output: Output | undefined, input: Input): string {
         );
     }
   }
-  if (output.features.includes('meter-check')) {
+  if (sync && output.features.includes('meter-check')) {
     const meter = meterNote(output);
     if (meter) notes.push(meter);
   }
@@ -551,23 +604,29 @@ export type YueTakeFacts = {
   /** Fit by tempo: how much faster the take was sung than the recording's own tempo. */
   tempoFit?: { percent: number; fromBpm?: number; toBpm?: number };
 };
-/** What the asset keeps about a finished take; nothing for a worker older than Part 295. */
+/** What the asset keeps about a finished take; for a worker older than Part 295 only the note of a
+ * take that stopped at its length limit. */
 export function yueTakeFacts(output: Output | undefined, input: Input): YueTakeFacts {
-  if (!output || !Array.isArray(output.features)) return {};
+  if (!output) return {};
+  if (!Array.isArray(output.features)) {
+    const note = yueTakeNote(output, input);
+    return note ? { takeNote: note } : {};
+  }
   const facts: YueTakeFacts = {};
   if (typeof output.instrumental === 'boolean') facts.instrumental = output.instrumental;
   if (typeof output.cover_mode === 'string') facts.coverMode = output.cover_mode;
   if (typeof output.gpu === 'string') facts.gpu = output.gpu;
   const note = yueTakeNote(output, input);
   if (note) facts.takeNote = note;
-  if (output.features.includes('lyric-sync') && output.lyric_sync) {
+  if (syncAsked(input) && output.features.includes('lyric-sync') && output.lyric_sync) {
     if (output.lyric_sync.lyrics_fitted && typeof output.lyrics_used === 'string')
       facts.lyricsUsed = output.lyrics_used;
     if (typeof output.lyric_sync.fit_score === 'number') facts.fitScore = output.lyric_sync.fit_score;
   }
   const fit = output.tempo_fit;
-  if (tempoNote(output, input) && fit && typeof fit.percent === 'number') {
-    facts.tempoFit = { percent: Math.round(fit.percent) };
+  const percent = tempoPercent(output, input);
+  if (percent !== undefined && fit) {
+    facts.tempoFit = { percent };
     if (typeof fit.from_bpm === 'number') facts.tempoFit.fromBpm = fit.from_bpm;
     if (typeof fit.to_bpm === 'number') facts.tempoFit.toBpm = fit.to_bpm;
   }
@@ -668,5 +727,6 @@ export function createYueRouter(hooks: Hooks): Router {
     stopping:
       'Stop requested for unfinished takes. Finished takes are kept. GPU time already used is still billed.',
     takeNote: yueTakeNote,
+    notesTruncated: true,
   });
 }

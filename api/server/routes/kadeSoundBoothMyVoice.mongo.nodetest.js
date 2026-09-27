@@ -52,6 +52,33 @@ require.extensions['.ts'] = (m, filename) =>
   );
 const voice = require('../../../packages/api/src/music/myVoice.ts');
 const yue = require('../../../packages/api/src/music/yue.ts');
+/* The real recording limits, import words and guide lengths from music/lyrics.ts, with its transcriber's form-data and
+ * logger stubbed (as kadeSoundBoothLink.nodetest.js does), so Sing it in my voice is held to the real six minutes while a
+ * YuE2 cover may be sped up to fit (YUE_FIT_TEMPO=1). */
+function musicLyrics() {
+  const Module = require('node:module');
+  const filename = path.resolve(__dirname, '../../../packages/api/src/music/lyrics.ts');
+  const compiled = new Module(filename, module);
+  compiled.filename = filename;
+  compiled.paths = module.paths;
+  const stubs = {
+    'form-data': function FormData() {},
+    '@librechat/data-schemas': { logger: { info() {}, warn() {}, error() {} } },
+  };
+  compiled.require = (id) => (id in stubs ? stubs[id] : Module.prototype.require.call(compiled, id));
+  compiled._compile(
+    ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+        esModuleInterop: true,
+      },
+    }).outputText,
+    filename,
+  );
+  return compiled.exports;
+}
+const lyrics = musicLyrics();
 
 /* Nothing may reach the network: any real HTTP(S) request fails the test at once. */
 for (const lib of [require('node:http'), require('node:https')]) {
@@ -118,6 +145,7 @@ test('Sing it in my voice through the real booth', async (t) => {
     );
   const { KadeSoundBoothProject: Project } = require('../../models/kadeSoundBoothProject');
   const notified = [];
+  const referenceChecks = []; // what each render's recording was checked for (validateMusicReference's `use`)
   let clipSeconds = 181.2;
   const api = {
     ...yue, // every YuE2 export the booth reads (yueSavedOptions, yueStyleAccess, ...), so kade's own additions keep working
@@ -149,13 +177,15 @@ test('Sing it in my voice through the real booth', async (t) => {
       notified.push(args);
       return { at: new Date(), accepted: 1 };
     },
-    validateMusicReference: async (_user, url) => url,
+    validateMusicReference: async (_user, url, _hooks, use) => {
+      referenceChecks.push(use);
+      return url;
+    },
     musicReferenceSeconds: async () => 180,
     registerMusicReference: async () => {},
-    musicReferenceError: (s) =>
-      s > 360
-        ? `This recording is 6 minutes ${Math.round(s) - 360} seconds long. Covers support up to 6 minutes. Import a shorter recording or an excerpt; your original will not be trimmed automatically.`
-        : undefined,
+    musicReferenceError: lyrics.musicReferenceError,
+    musicReferenceSpeedNote: lyrics.musicReferenceSpeedNote,
+    musicCoverLengthGuide: lyrics.musicCoverLengthGuide,
     saveBufferToS3: async ({ fileName }) => `https://assets.test/audios/u/${fileName}`,
     needsRefresh: () => false,
     getNewS3URL: async (u) => u,
@@ -702,6 +732,116 @@ test('Sing it in my voice through the real booth', async (t) => {
       await followUps.advance();
       assert.equal(toldAbout().length, 1, 'said once');
       assert.deepEqual(toldAbout()[0].slice(2, 5), [2, 2, false], 'counting both versions');
+    },
+  );
+
+  await t.test(
+    'fit by tempo (YUE_FIT_TEMPO=1): a YuE2 cover may run to 6:40 and says it will be sped up; Sing it in my voice keeps six minutes',
+    async () => {
+      const saved = { flag: process.env.YUE_FIT_TEMPO, seconds: clipSeconds };
+      process.env.YUE_FIT_TEMPO = '1';
+      try {
+        const h = await call('/health', { user: OWNER });
+        const yueCover = h.data.guide.engines.yue2.settings.find((s) => s.key === 'reference_voice_url');
+        assert.match(
+          yueCover.hint,
+          /^Import one song, up to 6 minutes 40 seconds\. A song over six minutes is sped up a little to fit, in the same key\./,
+        );
+        assert.ok(
+          h.data.guide.engines.yue2.howToWrite.includes(
+            'A cover takes one recording up to 6 minutes 40 seconds. A song over six minutes is sped up a little to fit, in the same key. YuE2 hears its melody and makes a new arrangement, so listen for wrong notes.',
+          ),
+        );
+        const sing = JSON.stringify(h.data.guide.engines.myvoice);
+        assert.match(sing, /up to twenty megabytes and six minutes/);
+        assert.doesNotMatch(sing, /6 minutes 40|sped up/, 'Sing it in my voice keeps its six minutes');
+
+        clipSeconds = 380;
+        const song = await call('/reference', {
+          user: OWNER,
+          body: {},
+          headers: { 'x-engine': 'yue2', 'x-file-name': 'long.mp3', 'x-file-type': 'audio/mpeg' },
+        });
+        assert.equal(song.status, 200, JSON.stringify(song.data));
+        assert.match(
+          song.data.spoken,
+          /^Clip imported, 380 seconds\. YuE2 sings up to six minutes, so this cover will be sped up about 8%, in the same key\./,
+        );
+        const mine = await call('/reference', {
+          user: OWNER,
+          body: {},
+          headers: { 'x-engine': 'myvoice', 'x-file-name': 'long.mp3', 'x-file-type': 'audio/mpeg' },
+        });
+        assert.equal(mine.status, 400);
+        assert.equal(
+          mine.data.error,
+          'This recording is 6 minutes 20 seconds long. Sing it in my voice takes recordings up to 6 minutes. Import a shorter recording or an excerpt; your original will not be trimmed automatically.',
+        );
+        clipSeconds = 355;
+        const short = await call('/reference', {
+          user: OWNER,
+          body: {},
+          headers: { 'x-engine': 'myvoice', 'x-file-name': 'short.mp3', 'x-file-type': 'audio/mpeg' },
+        });
+        assert.equal(short.status, 200);
+        assert.doesNotMatch(short.data.spoken, /sped up/);
+
+        // Before a render: a YuE2 cover is checked against a cover's limit; Sing it in my voice against six minutes.
+        referenceChecks.length = 0;
+        const cover = await call('/render', {
+          user: OWNER,
+          body: { engine: 'yue2', script: 'Warm soul', lyrics: '[Verse]\nla la', reference_voice_url: url, estimateOnly: true },
+        });
+        assert.equal(cover.status, 200, JSON.stringify(cover.data));
+        const voiceQuote = await call('/render', {
+          user: OWNER,
+          body: { engine: 'myvoice', reference_voice_url: url, voice_source: 'Just a vocal', estimateOnly: true },
+        });
+        assert.equal(voiceQuote.status, 200, JSON.stringify(voiceQuote.data));
+        // (made inside the booth's vm, so compared through JSON: undefined in an array reads as null)
+        assert.equal(JSON.stringify(referenceChecks), '[{"yueCover":true},null]');
+        assert.equal(referenceChecks[1], undefined, 'Sing it in my voice passes nothing: six minutes');
+      } finally {
+        if (saved.flag === undefined) delete process.env.YUE_FIT_TEMPO;
+        else process.env.YUE_FIT_TEMPO = saved.flag;
+        clipSeconds = saved.seconds;
+      }
+    },
+  );
+
+  await t.test(
+    'a YuE2 take cut at its length limit says so on the take and in the library, not "may end early"',
+    async () => {
+      const SOMEONE = '6a0000000000000000000003';
+      Object.assign(rp.yueep, { status: 'IN_QUEUE' });
+      const r = await call('/render', {
+        user: SOMEONE,
+        body: { engine: 'yue2', script: 'Slow country waltz', lyrics: '[Verse]\nla la la' },
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.data));
+      Object.assign(rp.yueep, {
+        status: 'COMPLETED',
+        executionTime: 60000,
+        output: {
+          url: 'https://assets.test/yue2/cut/master.mp3',
+          wav_url: 'https://assets.test/yue2/cut/master.wav',
+          duration_s: 360,
+          truncated: true,
+          gpu: 'NVIDIA A40',
+          features: ['keep-harmony'],
+        },
+      });
+      const cut =
+        'YuE2 had not finished when it reached its length limit, so this take stops abruptly at six minutes. Try another take.';
+      const s = await call('/status/' + r.data.jobId, { user: SOMEONE });
+      assert.equal(s.data.state, 'done');
+      assert.equal(s.data.spoken, `1 of 1 takes ready. Open your library to compare them. ${cut}`);
+      const asset = await Asset.findOne({ user: SOMEONE, service: 'runpod_yue2' }).lean();
+      assert.equal(asset.metadata.truncated, true);
+      assert.equal(asset.metadata.takeNote, cut);
+      const listed = (await call('/projects', { user: SOMEONE })).data.projects.find((x) => x.id === r.data.projectId);
+      assert.equal(listed.takes[0].note, cut);
+      assert.doesNotMatch(JSON.stringify(listed), /Kade/);
     },
   );
 
