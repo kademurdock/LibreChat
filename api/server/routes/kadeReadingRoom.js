@@ -1467,6 +1467,8 @@ router.get('/tree', requireJwtAuth, async (req, res) => {
     const key = `${scope}:${own ? String(req.user.id) : 'family'}:${child ? 'child' : 'adult'}`;
     const kept = shelfTree.cached(key);
     if (kept) return res.json(kept);
+    // a write that lands while this is counted must not leave the older count cached for 5 minutes
+    const counted = shelfTree.currentGeneration();
     const ownerId = new mongoose.Types.ObjectId(String(req.user.id));
     const base = { state: 'ready', ...(own ? { owner: ownerId } : { shared: true }), ...(child ? { grownUpsOnly: { $ne: true } } : {}) };
     const since = new Date(Date.now() - STALLED_AFTER_MS);
@@ -1477,7 +1479,7 @@ router.get('/tree', requireJwtAuth, async (req, res) => {
     ]);
     const tree = shelfTree.buildTree(rows.map((r) => [r._id, r.n]), { local: !own });
     const body = { scope, ...tree, ...(scope === 'mine' ? { pending: { uploading, stalled } } : {}) };
-    res.json(shelfTree.remember(key, body));
+    res.json(shelfTree.remember(key, body, Date.now(), counted));
   } catch (e) {
     logger.error('[library/tree] error:', e);
     res.status(500).json({ error: 'Could not load the shelves.' });

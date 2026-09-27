@@ -204,6 +204,14 @@ test('the cache: kept five minutes, emptied by a library write, never by a reade
   T.remember('k', { b: 1 });
   T.forget();
   assert.equal(T.cached('k'), null);
+  // a tree counted before a write landed is answered, never kept
+  const before = T.currentGeneration();
+  T.forget();
+  assert.deepEqual(T.remember('late', { c: 1 }, Date.now(), before), { c: 1 });
+  assert.equal(T.cached('late'), null);
+  T.remember('fresh', { d: 1 }, Date.now(), T.currentGeneration());
+  assert.deepEqual(T.cached('fresh'), { d: 1 });
+  T.forget();
   assert.equal(T.writeClears('GET', '/tree'), false);
   assert.equal(T.writeClears('POST', '/book/abc/progress'), false);
   assert.equal(T.writeClears('POST', '/book/abc/bookmarks'), false);
@@ -237,7 +245,7 @@ test('the router empties the tree when a write finishes', () => {
 
 /* ── the routes, with a stand-in database ── */
 class ObjectId { constructor(s) { this.s = s; } toJSON() { return `oid:${this.s}`; } }
-function libraryRoutes({ member = true, treeRows = [], items = [], folders = [], total = 0, pending = [3, 2] } = {}) {
+function libraryRoutes({ member = true, treeRows = [], items = [], folders = [], total = 0, pending = [3, 2], duringCount = null } = {}) {
   const log = { aggregates: [], finds: [], counts: [] };
   const c = {
     router: { get: (path, ...handlers) => { c.routes[path] = handlers.at(-1); } },
@@ -255,6 +263,7 @@ function libraryRoutes({ member = true, treeRows = [], items = [], folders = [],
     KadeBook: {
       aggregate: (pipeline) => {
         log.aggregates.push(plain(pipeline));
+        if (duringCount) duringCount();
         const has = (key) => pipeline.some((stage) => key in stage);
         if (has('$group') && pipeline.find((s) => s.$group).$group._id?.$display) return Promise.resolve(treeRows);
         if (has('$group')) return Promise.resolve(folders);
@@ -322,6 +331,14 @@ test('GET /tree: one aggregation, the family library for members, own uploads on
   assert.equal(out.body.local, null);
   assert.deepEqual(r.log.aggregates[0][0], { $match: { state: 'ready', owner: 'oid:fam-holly' } });
   assert.ok(r.log.counts.every((q) => q.owner === 'fam-holly' && q.state === 'pending'));
+  T.forget();
+
+  // a library write that lands while the tree is counted: that answer goes out, but is not kept
+  r = libraryRoutes({ treeRows, duringCount: () => T.forget() });
+  out = await r.get('/tree', {});
+  assert.equal(out.body.total, 34);
+  await r.get('/tree', {});
+  assert.equal(r.log.aggregates.length, 2, 'the next reader counts again');
   T.forget();
 });
 

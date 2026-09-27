@@ -288,6 +288,9 @@ function buildTree(rows, options = {}) {
 const TTL_MS = 5 * 60 * 1000;
 const MAX_ENTRIES = 300;
 const cache = new Map();
+/** Bumped by every forget(): a tree counted while a write landed is answered but never kept. */
+let generation = 0;
+const currentGeneration = () => generation;
 
 function cached(key, now = Date.now()) {
   const hit = cache.get(key);
@@ -299,7 +302,9 @@ function cached(key, now = Date.now()) {
   return hit.body;
 }
 
-function remember(key, body, now = Date.now()) {
+/** `counted` is currentGeneration() from before the tree's aggregation started. */
+function remember(key, body, now = Date.now(), counted = generation) {
+  if (counted !== generation) return body;
   cache.delete(key);
   cache.set(key, { at: now, body });
   while (cache.size > MAX_ENTRIES) cache.delete(cache.keys().next().value);
@@ -308,6 +313,7 @@ function remember(key, body, now = Date.now()) {
 
 /** Any write that can move, add, share or remove an item empties every cached tree. */
 function forget() {
+  generation++;
   cache.clear();
 }
 
@@ -328,5 +334,6 @@ module.exports = {
   cached,
   remember,
   forget,
+  currentGeneration,
   writeClears,
 };
