@@ -176,7 +176,7 @@ test('Family feature pack: an unreadable pack answer counts as outside the pack'
     const res = await post('https://youtu.be/dQw4w9WgXcQ');
     assert.equal(res.statusCode, 403);
     assert.equal(spawns.length, 0);
-    assert.deepEqual(lane.loungeFeatures({ id: 'u1' }), { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false });
+    assert.deepEqual(lane.loungeFeatures({ id: 'u1' }), { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false, trainedStyles: false });
   } finally {
     lane.linkDeps.features = saved;
   }

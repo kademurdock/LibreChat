@@ -110,7 +110,7 @@ async function listHotelRooms() {
  * PACK_REFUSAL is packages/api family/pack.ts FAMILY_PACK_REFUSAL (the test
  * holds them equal). An unreadable answer counts as outside the pack. */
 const PACK_REFUSAL = 'Media links are part of the Family feature pack. Ask Kade to add it to your account.';
-const NO_FEATURES = { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false };
+const NO_FEATURES = { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false, trainedStyles: false };
 function loungeFeatures(user) {
   try {
     return linkDeps.features(user);
