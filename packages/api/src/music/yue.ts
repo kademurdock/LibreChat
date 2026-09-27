@@ -113,6 +113,39 @@ export function yueKeepChordsDefault(env: NodeJS.ProcessEnv = process.env): bool
   const said = String(env.YUE_COVER_KEEP_CHORDS_DEFAULT ?? '1').trim().toLowerCase();
   return !['0', 'false', 'no', 'off'].includes(said);
 }
+/* Lyric sync (the Part 295 follow-up; worker features lyric-sync and fit-score), behind
+ * YUE_FIT_LYRICS=1 and YUE_MEASURE_FIT=1. YuE2 lines lyrics up with a cover's score by itself,
+ * with every line end and comma on a phrase end of the tune, so lines that break inside the
+ * tune's phrases let held notes slip onto the next word. YUE_FIT_LYRICS asks the worker to
+ * re-break the lines to the recording's phrases from measured word timing (her words and their
+ * order never change); YUE_MEASURE_FIT asks it to score each take by which words landed on the
+ * long notes (about a tenth more GPU time per take). With both unset every request is exactly
+ * as before. The live worker must run an image that lists these features first: an older
+ * worker ignores both fields. */
+export function yueFitLyricsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.YUE_FIT_LYRICS === '1';
+}
+export function yueMeasureFitEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.YUE_MEASURE_FIT === '1';
+}
+const TAG_LINE = /^\s*\[[^\]\n]+\]\s*$/;
+/** Whether lyrics hold any word to sing outside [section] tag lines. */
+function hasSungWords(lyrics: string): boolean {
+  return lyrics.split(/\r?\n/).some((line) => !TAG_LINE.test(line) && /\p{L}/u.test(line));
+}
+/** The lyric sync fields for one request: only a sung cover of a recording, with words to sing. */
+function syncFields(
+  lyrics: string,
+  recording: boolean,
+  instrumental: boolean,
+  env: NodeJS.ProcessEnv,
+): Pick<Input, 'fit_lyrics' | 'measure_fit'> {
+  const fields: Pick<Input, 'fit_lyrics' | 'measure_fit'> = {};
+  if (!recording || instrumental || !hasSungWords(lyrics)) return fields;
+  if (yueFitLyricsEnabled(env)) fields.fit_lyrics = 'timing';
+  if (yueMeasureFitEnabled(env)) fields.measure_fit = true;
+  return fields;
+}
 export const yueSinging: { sung: string; instrumental: string } = {
   sung: 'Sung, with my lyrics',
   instrumental: 'Instrumental, no singing',
@@ -255,6 +288,7 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     lora_scale: trained?.scale,
     seed: body.seed ?? Math.floor(Math.random() * 2147483647),
     ...(covers ? coverFields(body, instrumental, keepChords, recording) : {}),
+    ...syncFields((body.lyrics || '').trim(), recording, instrumental, env),
     ...(myVoice ? { my_voice: true } : {}),
   };
 }
@@ -335,6 +369,43 @@ function sectionWords(name: string | null | undefined): string {
   return said ? `The ${said} words` : 'Some words';
 }
 
+/** Why the worker kept her line breaks, by its lyric_sync reason key. */
+export const yueSyncReasons: Record<string, string> = {
+  score: "the score's phrases could not be read",
+  notes: "the recording's note timing could not be read",
+  heard: 'too few of your words could be heard clearly in the recording',
+  words: 'your words did not line up with the tune',
+  empty: 'there are no words to sing',
+  align: 'your words could not be timed against the recording this time',
+};
+
+/** The lyric sync part of a take note: what moved, what was left out, and the take's fit. */
+function syncNotes(sync: NonNullable<Output['lyric_sync']>, input: Input): string[] {
+  const notes: string[] = [];
+  if (sync.lyrics_fitted) {
+    const phrases = sync.phrases_with_words;
+    notes.push(
+      typeof phrases === 'number'
+        ? `Your lines were re-broken to follow the tune's ${phrases} phrase${phrases === 1 ? '' : 's'}; your words are unchanged.`
+        : "Your lines were re-broken to follow the tune's phrases; your words are unchanged.",
+    );
+    for (const gone of (sync.words_without_tune || []).slice(0, 2))
+      notes.push(
+        `${sectionWords(gone.section)} have no sung tune in the recording, so this take left them out.`,
+      );
+  } else if (input.fit_lyrics === 'timing' && sync.reason && yueSyncReasons[sync.reason])
+    notes.push(`Your line breaks were kept as written: ${yueSyncReasons[sync.reason]}.`);
+  if (typeof sync.fit_score === 'number') {
+    const held = sync.held_words_on_note;
+    const kept =
+      held && typeof held.hits === 'number' && typeof held.of === 'number' && held.of > 0
+        ? `: ${held.hits} of ${held.of} long notes kept their words`
+        : '';
+    notes.push(`Fit score ${sync.fit_score} of 100${kept}.`);
+  }
+  return notes;
+}
+
 /** A short spoken note about one finished take, from what the worker reported. Reads `features`
  * first, so a worker older than Part 295 never gets a note. */
 export function yueTakeNote(output: Output | undefined, input: Input): string {
@@ -349,7 +420,11 @@ export function yueTakeNote(output: Output | undefined, input: Input): string {
     notes.push(
       'No chords were heard in the recording, so the cover used its melody with a new accompaniment.',
     );
-  if (!output.instrumental && output.features.includes('lyric-fit') && output.lyric_fit) {
+  if (!output.instrumental && output.features.includes('lyric-sync') && output.lyric_sync)
+    /* The timing report replaces the rough per-section syllable rows, which pair sections by
+     * position and misread a recording whose intro has words but no sung tune. */
+    notes.push(...syncNotes(output.lyric_sync, input));
+  else if (!output.instrumental && output.features.includes('lyric-fit') && output.lyric_fit) {
     const rows = (output.lyric_fit.sections || []).filter(
       (row) =>
         (row.fit === 'short' || row.fit === 'long') &&
@@ -373,6 +448,9 @@ export type YueTakeFacts = {
   coverMode?: string;
   gpu?: string;
   takeNote?: string;
+  /** Lyric sync: the lines YuE2 actually sang, when the worker re-broke them. */
+  lyricsUsed?: string;
+  fitScore?: number;
 };
 /** What the asset keeps about a finished take; nothing for a worker older than Part 295. */
 export function yueTakeFacts(output: Output | undefined, input: Input): YueTakeFacts {
@@ -383,6 +461,11 @@ export function yueTakeFacts(output: Output | undefined, input: Input): YueTakeF
   if (typeof output.gpu === 'string') facts.gpu = output.gpu;
   const note = yueTakeNote(output, input);
   if (note) facts.takeNote = note;
+  if (output.features.includes('lyric-sync') && output.lyric_sync) {
+    if (output.lyric_sync.lyrics_fitted && typeof output.lyrics_used === 'string')
+      facts.lyricsUsed = output.lyrics_used;
+    if (typeof output.lyric_sync.fit_score === 'number') facts.fitScore = output.lyric_sync.fit_score;
+  }
   return facts;
 }
 

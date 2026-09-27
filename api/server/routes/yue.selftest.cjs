@@ -97,6 +97,8 @@ async function main() {
         await covers(post, base, sentInputs, (next) => { state = next.state; extraOutput = next.output || {}; });
         console.log('YuE2 integration: validation, no-charge quote, durable queue, duplicate rejection, owner isolation, completion idempotency, uncertain submission, cancellation passed.');
         console.log('YuE2 covers (Part 295): flag-off requests unchanged, cover and instrumental fields, trained-style refusal, saved choices, guide choices, score chords on Keep the original chords with old cot requests unchanged (Part 296), price per card, take notes said once passed.');
+        await lyricSync(post, base, sentInputs, (next) => { state = next.state; extraOutput = next.output || {}; });
+        console.log('YuE2 lyric sync: flags off unchanged, fit and measure fields only for sung covers with words, take notes and facts from the timing report passed.');
     }
     finally {
         server.close();
@@ -305,6 +307,105 @@ async function covers(post, base, sentInputs, provider) {
         assert.doesNotMatch((await res.json()).estimate.spoken, /1\.22|Kade/);
     } finally {
         if (beforeFlag === undefined) delete process.env.YUE_COVERS_V2; else process.env.YUE_COVERS_V2 = beforeFlag;
+    }
+}
+/* Lyric sync (the Part 295 follow-up), behind YUE_FIT_LYRICS=1 and YUE_MEASURE_FIT=1. The lyrics are invented. */
+async function lyricSync(post, base, sentInputs, provider) {
+    const assert = strict_1.default;
+    const { yueInput, yueTakeNote, yueTakeFacts, yueFitLyricsEnabled, yueMeasureFitEnabled, yueSyncReasons } = yue_1;
+    const LEGACY_KEYS = ['style', 'title', 'count', 'weirdness', 'steps', 'guidance', 'lyrics', 'abc', 'reference_voice_url', 'cot', 'band', 'lora_key', 'lora_scale', 'seed'];
+    const COVER_KEYS = ['keep_harmony', 'match_score_tempo', 'length_guard'];
+    const recording = 'https://assets.test/source.wav';
+    const lyrics = '[Verse]\nPaper lanterns on the water\n[Chorus]\nCarry me home';
+    const body = { script: 'Folk duo', lyrics, seed: 5, reference_voice_url: recording };
+    const FIT = { YUE_FIT_LYRICS: '1' }, MEASURE = { YUE_MEASURE_FIT: '1' };
+    const BOTH = { YUE_FIT_LYRICS: '1', YUE_MEASURE_FIT: '1', YUE_COVERS_V2: '1' };
+
+    // Flags off (or set to anything but 1): exactly today's requests.
+    for (const env of [{}, { YUE_COVERS_V2: '1' }, { YUE_FIT_LYRICS: 'true', YUE_MEASURE_FIT: 'yes' }]) {
+        const input = yueInput(body, env);
+        assert.equal('fit_lyrics' in input, false); assert.equal('measure_fit' in input, false);
+    }
+    assert.deepEqual(Object.keys(yueInput(body, {})), LEGACY_KEYS);
+    assert.deepEqual(Object.keys(yueInput(body, { YUE_COVERS_V2: '1' })), [...LEGACY_KEYS, ...COVER_KEYS]);
+    assert.equal(yueFitLyricsEnabled({}), false); assert.equal(yueFitLyricsEnabled(FIT), true);
+    assert.equal(yueMeasureFitEnabled({}), false); assert.equal(yueMeasureFitEnabled(MEASURE), true);
+
+    // Flags on: a sung cover of a recording asks for them; nothing else about the request changes.
+    const fitted = yueInput(body, FIT);
+    assert.deepEqual(Object.keys(fitted), [...LEGACY_KEYS, 'fit_lyrics']);
+    assert.equal(fitted.fit_lyrics, 'timing'); assert.equal(fitted.cot, 'melody'); assert.equal(fitted.lyrics, lyrics);
+    const measured = yueInput(body, MEASURE);
+    assert.deepEqual(Object.keys(measured), [...LEGACY_KEYS, 'measure_fit']);
+    assert.equal(measured.measure_fit, true);
+    const both = yueInput(body, BOTH);
+    assert.deepEqual(Object.keys(both), [...LEGACY_KEYS, ...COVER_KEYS, 'fit_lyrics', 'measure_fit']);
+    assert.equal(both.keep_harmony, true); assert.equal(both.cot, 'full');
+    const { fit_lyrics: _fit, measure_fit: _measure, ...rest } = both;
+    assert.deepEqual(rest, yueInput(body, { YUE_COVERS_V2: '1' }));
+
+    // Never for a new song, a score, an instrumental, or lyrics that are only section tags.
+    for (const other of [
+        { script: 'Folk duo', lyrics, seed: 5 },
+        { script: 'Folk duo', lyrics, seed: 5, abc: 'X:1' },
+        { script: 'Folk duo', lyrics: '', seed: 5, reference_voice_url: recording, singing: 'Instrumental, no singing' },
+        { script: 'Folk duo', lyrics: '[Intro]\n\n[Verse]\n', seed: 5, reference_voice_url: recording },
+    ]) {
+        const input = yueInput(other, BOTH);
+        assert.equal('fit_lyrics' in input, false, JSON.stringify(other));
+        assert.equal('measure_fit' in input, false, JSON.stringify(other));
+    }
+
+    // Take notes come from the timing report, never from the rough syllable rows beside it.
+    const features = ['keep-harmony', 'instrumental', 'lyric-fit', 'chord-check', 'lyric-sync', 'fit-score'];
+    const rows = { sections: [{ score_section: 'verse', lyrics_section: 'Intro', sung_notes: 47, syllables: 9, fit: 'short' }], same_order: false };
+    const sync = { applied: true, reason: null, lyrics_fitted: true, phrases: 56, phrases_with_words: 55, lines: 50,
+        words_without_tune: [{ section: 'intro', words: 9, lines: 2 }], fit_score: 83,
+        held_words_on_note: { hits: 5, of: 6 }, phrase_starts_after_pause: { hits: 40, of: 50 }, words_heard: { hits: 300, of: 310 } };
+    const note = "Your lines were re-broken to follow the tune's 55 phrases; your words are unchanged. The intro words have no sung tune in the recording, so this take left them out. Fit score 83 of 100: 5 of 6 long notes kept their words.";
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_fit: rows, lyric_sync: sync }, both), note);
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_fit: rows, lyric_sync: { applied: false, reason: 'align', lyrics_fitted: false } }, both),
+        'Your line breaks were kept as written: your words could not be timed against the recording this time.');
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_sync: { applied: false, reason: 'unknown', lyrics_fitted: false } }, both), '');
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_sync: { applied: true, lyrics_fitted: false, fit_score: 61, held_words_on_note: { hits: 2, of: 6 } } }, measured),
+        'Fit score 61 of 100: 2 of 6 long notes kept their words.');
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_sync: { applied: true, lyrics_fitted: false, fit_score: 70, held_words_on_note: { hits: 0, of: 0 } } }, measured),
+        'Fit score 70 of 100.');
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', lyric_sync: { applied: false, reason: 'notes', lyrics_fitted: false } }, measured), '',
+        'she did not ask for new line breaks, so there is nothing to explain');
+    assert.equal(yueTakeNote({ features: features.slice(0, 4), cover_mode: 'harmony', lyric_fit: rows, lyric_sync: sync }, both),
+        'The intro words look short for its tune: 9 syllables for 47 notes.', 'an older worker keeps the old note');
+    for (const reason of Object.values(yueSyncReasons)) assert.doesNotMatch(reason, /Kade|\d/);
+
+    // What the asset keeps: the lines YuE2 sang, only when they were re-broken, and the fit score.
+    const used = '[Verse]\nPaper lanterns\non the water\n\n[Chorus]\nCarry me home';
+    assert.deepEqual(yueTakeFacts({ features, gpu: 'NVIDIA A40', cover_mode: 'harmony', instrumental: false, lyric_sync: sync, lyrics_used: used }, both),
+        { instrumental: false, coverMode: 'harmony', gpu: 'NVIDIA A40', takeNote: note, lyricsUsed: used, fitScore: 83 });
+    assert.equal('lyricsUsed' in yueTakeFacts({ features, lyric_sync: { lyrics_fitted: false }, lyrics_used: used }, both), false);
+    assert.deepEqual(yueTakeFacts({ features: features.slice(0, 4), lyric_sync: sync, lyrics_used: used }, both), {});
+
+    // Through the router: both fields reach RunPod and the note is said once.
+    const saved = { fit: process.env.YUE_FIT_LYRICS, measure: process.env.YUE_MEASURE_FIT, covers: process.env.YUE_COVERS_V2 };
+    Object.assign(process.env, BOTH);
+    try {
+        provider({ state: 'IN_QUEUE' });
+        const sentBefore = sentInputs.length;
+        let res = await post('/render', { engine: 'yue2', script: 'Folk duo', lyrics, reference_voice_url: recording, count: 2 }, 'e');
+        assert.equal(res.status, 200);
+        const job = await res.json();
+        assert.equal(sentInputs.length, sentBefore + 2);
+        for (const input of sentInputs.slice(sentBefore)) {
+            assert.equal(input.fit_lyrics, 'timing'); assert.equal(input.measure_fit, true); assert.equal(input.keep_harmony, true);
+        }
+        provider({ state: 'COMPLETED', output: { features, gpu: 'NVIDIA A40', cover_mode: 'harmony', instrumental: false, lyric_fit: rows, lyric_sync: sync, lyrics_used: used } });
+        res = await fetch(base + '/status/' + job.jobId, { headers: { 'x-test-user': 'e' } });
+        const done = await res.json();
+        assert.equal(done.state, 'done');
+        assert.equal(done.spoken, '2 of 2 takes ready. Open your library to compare them. ' + note);
+    } finally {
+        for (const [key, value] of [['YUE_FIT_LYRICS', saved.fit], ['YUE_MEASURE_FIT', saved.measure], ['YUE_COVERS_V2', saved.covers]]) {
+            if (value === undefined) delete process.env[key]; else process.env[key] = value;
+        }
     }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

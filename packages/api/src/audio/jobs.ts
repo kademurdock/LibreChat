@@ -29,6 +29,9 @@ export type Input = {
    * the server by the owner check (Hooks.prepare), never trusted from the client alone. */
   my_voice?: boolean;
   voice?: MyVoiceJob;
+  /* Lyric sync worker fields, sent only behind YUE_FIT_LYRICS and YUE_MEASURE_FIT (music/yue.ts). */
+  fit_lyrics?: 'timing';
+  measure_fit?: boolean;
   seed: number;
 };
 type LyricFitRow = {
@@ -37,6 +40,20 @@ type LyricFitRow = {
   sung_notes?: number | null;
   syllables?: number | null;
   fit?: string;
+};
+type HitCount = { hits?: number; of?: number };
+type LyricSyncReport = {
+  applied?: boolean;
+  reason?: string | null;
+  lyrics_fitted?: boolean;
+  phrases?: number;
+  phrases_with_words?: number;
+  lines?: number;
+  words_without_tune?: Array<{ section?: string | null; words?: number; lines?: number }>;
+  fit_score?: number | null;
+  held_words_on_note?: HitCount;
+  phrase_starts_after_pause?: HitCount;
+  words_heard?: HitCount;
 };
 export type Output = {
   url?: string;
@@ -58,6 +75,9 @@ export type Output = {
   /* The voice worker's extra files (music/myVoice.ts MyVoiceOutput). */
   vocal_url?: string;
   vocal_wav_url?: string;
+  /* Lyric sync report (worker features lyric-sync and fit-score): counts and indices only. */
+  lyric_sync?: LyricSyncReport | null;
+  lyrics_used?: string;
 };
 export type Provider = {
   id?: string;
